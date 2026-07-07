@@ -13,7 +13,24 @@
       "Bash(git init *)",
       "Bash(git config *)",
       "Bash(git add *)",
-      "Bash(git commit -q -m 'chore: estado inicial — spec, plano, logo e planilha de referência *)"
+      "Bash(git commit -q -m 'chore: estado inicial — spec, plano, logo e planilha de referência *)",
+      "Read(//home/rwtech/.claude/plugins/cache/superpowers-dev/superpowers/6.1.1/skills/subagent-driven-development/**)",
+      "Bash(bash scripts/task-brief \"/home/rwtech/Área de trabalho/ShopFloor/docs/superpowers/plans/2026-07-07-fundacao-base.md\" 1)",
+      "Bash(bash /home/rwtech/.claude/plugins/cache/superpowers-dev/superpowers/6.1.1/skills/subagent-driven-development/scripts/task-brief '/home/rwtech/Área de trabalho/ShopFloor/docs/superpowers/plans/2026-07-07-fundacao-base.md' 1 '/home/rwtech/Área de trabalho/ShopFloor/.superpowers/sdd/task-1-brief.md')",
+      "Bash(npm -v)",
+      "Bash(npx --yes create-next-app@latest --version)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias @/* --use-npm --no-turbopack --yes)",
+      "Bash(npx create-next-app@latest --help)",
+      "Bash(mkdir -p /tmp/claude-1000/-home-rwtech--rea-de-trabalho-ShopFloor/bb9e2abe-22f7-4b69-95e3-296b15f4b3e0/scratchpad)",
+      "Bash(rm -rf shopfloor-scaffold)",
+      "Bash(npx create-next-app@latest shopfloor-scaffold --typescript --tailwind --eslint --app --src-dir --import-alias @/* --use-npm --yes --disable-git)",
+      "Bash(npm install *)",
+      "Bash(npx vitest *)",
+      "Bash(npm run *)",
+      "Bash(npx shadcn@latest --version)",
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest add button input label card dropdown-menu avatar sonner -y)",
+      "Bash(npm test *)"
     ]
   }
 }
