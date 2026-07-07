@@ -8,8 +8,8 @@ Plano: docs/superpowers/plans/2026-07-07-fundacao-base.md
 - P3 Chaves Supabase: pendente (usuário preenche .env.local na Task 2)
 
 ## Tasks
-- [ ] Task 1: Scaffold Next.js + TS + Tailwind + shadcn + Vitest
-- [ ] Task 2: Clients Supabase + env + middleware
+- [x] Task 1: Scaffold Next.js + TS + Tailwind + shadcn + Vitest
+- [x] Task 2: Clients Supabase + env + middleware
 - [ ] Task 3: supabase init + link (interativo — usuário)
 - [ ] Task 4: Migration perfis/usuarios + RBAC + seed
 - [ ] Task 5: Migration listas
@@ -21,3 +21,7 @@ Plano: docs/superpowers/plans/2026-07-07-fundacao-base.md
 - [ ] Task 11: Login + actions auth
 - [ ] Task 12: Layout autenticado + menu por perfil + home
 - [ ] Task 13: Doc bootstrap admin
+
+Task 1: complete (commits 16661c4..1224ced, review PASS)
+  - Minor (p/ review final): globals.css `--font-sans` autorreferente → Geist Sans não aplica (fix 1 linha: `--font-sans: var(--font-geist-sans)`).
+  - Nota de stack: Next 16, React 19, Tailwind v4 (@config), shadcn/Base UI (não Radix).
