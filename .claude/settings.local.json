@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sudo -n true)",
+      "Bash(echo \"sudo sem senha? $\\(sudo -n true 2>/dev/null && echo SIM || echo 'NÃO \\(precisa de senha\\)'\\)\")",
+      "Bash(command -v curl)",
+      "Bash(echo \"curl: $\\(command -v curl || echo AUSENTE\\)\")",
+      "Bash(command -v node)",
+      "Bash(echo \"node: $\\(command -v node && node --version 2>/dev/null || echo AUSENTE\\)\")",
+      "Bash(command -v npm)",
+      "Bash(npm --version)",
+      "Bash(echo \"npm: $\\(command -v npm && npm --version 2>/dev/null || echo AUSENTE\\)\")",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'chore: estado inicial — spec, plano, logo e planilha de referência *)"
+    ]
+  }
+}
