@@ -37,7 +37,13 @@
       "Bash(bash /home/rwtech/.claude/plugins/cache/superpowers-dev/superpowers/6.1.1/skills/subagent-driven-development/scripts/task-brief '/home/rwtech/Área de trabalho/ShopFloor/docs/superpowers/plans/2026-07-07-fundacao-base.md' 2 '/home/rwtech/Área de trabalho/ShopFloor/.superpowers/sdd/task-2-brief.md')",
       "Bash(git -C '/home/rwtech/Área de trabalho/ShopFloor' rev-parse --short HEAD)",
       "Bash(git check-ignore *)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(echo \"exit=$? \\(1=not found=good\\)\")",
+      "Bash(git commit -m ' *)",
+      "Bash(npx eslint *)",
+      "Bash(supabase init *)",
+      "Bash(git commit -q -m 'chore: inicializa Supabase CLI \\(config.toml\\) *)",
+      "Bash(supabase migration *)"
     ]
   }
 }
