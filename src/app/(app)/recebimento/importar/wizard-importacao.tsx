@@ -23,7 +23,11 @@ import {
 import { importarPlanilha } from '@/modules/recebimento/application/importar-planilha'
 import { lerPlanilha } from '@/modules/recebimento/domain/ler-planilha'
 import { sugerirMapeamento, type CampoImportavel } from '@/modules/recebimento/domain/mapeamento'
-import { validarLinha, type LinhaValidada } from '@/modules/recebimento/domain/validacao-linha'
+import {
+  validarLinha,
+  linhaMapaVazia,
+  type LinhaValidada,
+} from '@/modules/recebimento/domain/validacao-linha'
 
 const TAMANHO_MAXIMO_BYTES = 20 * 1024 * 1024
 const LINHAS_PREVIEW = 20
@@ -116,20 +120,29 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
     [campos, mapeamento],
   )
 
-  const linhasValidadas: LinhaValidada[] = useMemo(() => {
-    if (passo < 3) return []
-    return linhasBrutas.map((linha) => {
+  const { linhasValidadas, linhasVazias } = useMemo(() => {
+    if (passo < 3) return { linhasValidadas: [] as LinhaValidada[], linhasVazias: 0 }
+    const validadas: LinhaValidada[] = []
+    let vazias = 0
+    for (const linha of linhasBrutas) {
       const linhaMapa: Record<string, unknown> = {}
       for (const campo of campos) {
         const coluna = mapeamento[campo.campo]
         linhaMapa[campo.campo] = coluna ? linha[coluna] : null
       }
-      return validarLinha(linhaMapa, campos, itensPorLista)
-    })
+      // Linhas totalmente em branco (comuns no fim de planilhas) são ignoradas:
+      // não entram na validação, no bloqueio de erro, nem na importação.
+      if (linhaMapaVazia(linhaMapa, campos)) {
+        vazias++
+        continue
+      }
+      validadas.push(validarLinha(linhaMapa, campos, itensPorLista))
+    }
+    return { linhasValidadas: validadas, linhasVazias: vazias }
   }, [passo, linhasBrutas, campos, mapeamento, itensPorLista])
 
   const totalComErro = linhasValidadas.filter((linha) => linha.erros.length > 0).length
-  const podeImportar = linhasBrutas.length > 0 && totalComErro === 0
+  const podeImportar = linhasValidadas.length > 0 && totalComErro === 0
 
   function onImportar() {
     setResultado(null)
@@ -171,7 +184,8 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
       {passo === 3 && (
         <PassoPreview
           campos={campos}
-          totalLinhas={linhasBrutas.length}
+          totalValidas={linhasValidadas.length}
+          linhasVazias={linhasVazias}
           linhasValidadas={linhasValidadas}
           totalComErro={totalComErro}
           podeAvancar={podeImportar}
@@ -375,7 +389,8 @@ function PassoMapear({
 
 interface PassoPreviewProps {
   campos: CampoImportavel[]
-  totalLinhas: number
+  totalValidas: number
+  linhasVazias: number
   linhasValidadas: LinhaValidada[]
   totalComErro: number
   podeAvancar: boolean
@@ -385,7 +400,8 @@ interface PassoPreviewProps {
 
 function PassoPreview({
   campos,
-  totalLinhas,
+  totalValidas,
+  linhasVazias,
   linhasValidadas,
   totalComErro,
   podeAvancar,
@@ -398,21 +414,27 @@ function PassoPreview({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <span>
-          {totalLinhas} linha{totalLinhas === 1 ? '' : 's'} na planilha
-          {totalLinhas > LINHAS_PREVIEW ? ` (mostrando as primeiras ${LINHAS_PREVIEW})` : ''}.
+          {totalValidas} linha{totalValidas === 1 ? '' : 's'} para importar
+          {totalValidas > LINHAS_PREVIEW ? ` (mostrando as primeiras ${LINHAS_PREVIEW})` : ''}.
+          {linhasVazias > 0
+            ? ` ${linhasVazias} linha${linhasVazias === 1 ? '' : 's'} em branco ignorada${
+                linhasVazias === 1 ? '' : 's'
+              }.`
+            : ''}
         </span>
         {totalComErro > 0 ? (
           <Badge variant="destructive">
             {totalComErro} linha{totalComErro === 1 ? '' : 's'} com erro
           </Badge>
         ) : (
-          totalLinhas > 0 && <Badge className="bg-green-100 text-green-800">Nenhum erro encontrado</Badge>
+          totalValidas > 0 && <Badge className="bg-green-100 text-green-800">Nenhum erro encontrado</Badge>
         )}
       </div>
 
-      {totalLinhas === 0 && (
+      {totalValidas === 0 && (
         <p className="flex items-center gap-1.5 text-sm text-red-600">
-          <AlertTriangleIcon className="size-4 shrink-0" /> A planilha não tem nenhuma linha de dados.
+          <AlertTriangleIcon className="size-4 shrink-0" /> A planilha não tem nenhuma linha de dados
+          preenchida para importar.
         </p>
       )}
 

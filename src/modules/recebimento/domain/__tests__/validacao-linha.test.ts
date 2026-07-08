@@ -1,10 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { validarLinha } from '../validacao-linha'
+import { validarLinha, linhaMapaVazia } from '../validacao-linha'
 
 const campos = [
   { campo: 'numero_pedido', rotulo: 'Nº Pedido', tipo: 'texto', listaChave: null, obrigatorioImportacao: true },
   { campo: 'quantidade_pedido', rotulo: 'Qtd', tipo: 'numero', listaChave: null, obrigatorioImportacao: true },
 ] as const
+
+describe('linhaMapaVazia', () => {
+  it('true quando todos os campos estão vazios (null/branco)', () => {
+    expect(linhaMapaVazia({ numero_pedido: null, quantidade_pedido: '  ' }, [...campos])).toBe(true)
+  })
+  it('false quando pelo menos um campo tem valor', () => {
+    expect(linhaMapaVazia({ numero_pedido: '0654/26', quantidade_pedido: null }, [...campos])).toBe(false)
+  })
+})
 
 describe('validarLinha', () => {
   it('erro quando obrigatório está vazio', () => {

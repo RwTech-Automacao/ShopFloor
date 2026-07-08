@@ -7,6 +7,22 @@ export type LinhaValidada = {
 }
 
 /**
+ * Uma linha mapeada está "vazia" quando todos os campos do sistema resultam em
+ * célula vazia (null/undefined/branco). Planilhas exportadas costumam trazer
+ * linhas em branco no fim ou entre blocos — elas devem ser IGNORADAS (não
+ * importadas nem contadas como erro), não tratadas como registros inválidos.
+ */
+export function linhaMapaVazia(
+  linhaMapa: Record<string, unknown>,
+  campos: CampoImportavel[],
+): boolean {
+  return campos.every((campo) => {
+    const v = linhaMapa[campo.campo]
+    return v === null || v === undefined || String(v).trim() === ''
+  })
+}
+
+/**
  * Valida e converte uma linha já mapeada (chaves = `campo`, valores = célula
  * bruta da planilha). Para cada campo: converte pelo tipo declarado; erro de
  * conversão vira `{ campo, erro }`. Campos obrigatórios (`obrigatorioImportacao`)
