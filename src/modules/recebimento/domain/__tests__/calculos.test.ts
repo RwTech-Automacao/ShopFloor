@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { diferencaDias, diferencaNumerica, buscarCriticidade, buscarNqa, calcularCamposCalculados } from '../calculos'
+import {
+  diferencaDias,
+  diferencaNumerica,
+  buscarCriticidade,
+  buscarNqa,
+  calcularCamposCalculados,
+  type CampoCalc,
+} from '../calculos'
 
 describe('diferencaDias', () => {
   it('positivo quando chegou depois', () => {
@@ -36,7 +43,7 @@ describe('buscarNqa', () => {
   })
 })
 describe('calcularCamposCalculados', () => {
-  const campos = [
+  const campos: CampoCalc[] = [
     { campo: 'atraso', formula: 'diferenca_dias', formulaConfig: { a: 'data_chegada', b: 'data_prevista' } },
     { campo: 'responsavel_contagem', formula: 'usuario_primeiro', formulaConfig: {} },
   ]
