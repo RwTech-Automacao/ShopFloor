@@ -11,6 +11,9 @@ export type ResultadoValidacaoTipoCampo =
  *   valor submetido para `tipo` é ignorado e o tipo atual é preservado.
  *   Isso impede que o formulário (mesmo adulterado) transforme um campo
  *   numérico/data em texto ou lista.
+ * - Campos editáveis (tipo atual `texto`/`lista`) só podem alternar entre
+ *   `texto` e `lista`. Promover para `numero`/`data` é rejeitado (esses tipos
+ *   são estruturais/seed-only, ligados ao tipo real da coluna no banco).
  * - Se o tipo resultante for `lista`, uma `lista_chave` é obrigatória.
  */
 export function validarTipoCampo(input: {
@@ -19,6 +22,14 @@ export function validarTipoCampo(input: {
   listaChave: string | null
 }): ResultadoValidacaoTipoCampo {
   const tipoAtualFixo = input.tipoAtual === 'numero' || input.tipoAtual === 'data'
+
+  if (!tipoAtualFixo && input.tipoSubmetido !== 'texto' && input.tipoSubmetido !== 'lista') {
+    return {
+      ok: false,
+      erro: 'Um campo editável só pode ser do tipo Texto ou Lista.',
+    }
+  }
+
   const tipo = tipoAtualFixo ? input.tipoAtual : input.tipoSubmetido
 
   if (tipo === 'lista' && !input.listaChave) {

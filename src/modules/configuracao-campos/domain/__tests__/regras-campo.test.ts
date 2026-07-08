@@ -38,4 +38,14 @@ describe('validarTipoCampo', () => {
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.tipo).toBe('data')
   })
+
+  it('rejeita promover um campo editável (texto) para numero', () => {
+    const r = validarTipoCampo({ tipoAtual: 'texto', tipoSubmetido: 'numero', listaChave: null })
+    expect(r.ok).toBe(false)
+  })
+
+  it('rejeita promover um campo editável (lista) para data', () => {
+    const r = validarTipoCampo({ tipoAtual: 'lista', tipoSubmetido: 'data', listaChave: null })
+    expect(r.ok).toBe(false)
+  })
 })
