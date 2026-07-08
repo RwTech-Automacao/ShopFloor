@@ -17,7 +17,13 @@ describe('mapearPerfil', () => {
       sistema: true,
     })
     expect(perfil.nome).toBe('Recebimento')
+    expect(perfil.permissoes.visualizar).toBe(true)
+    expect(perfil.permissoes.importar).toBe(true)
+    expect(perfil.permissoes.editar).toBe(true)
     expect(perfil.permissoes.finalizar).toBe(true)
+    expect(perfil.permissoes.editar_finalizado).toBe(false)
+    expect(perfil.permissoes.excluir).toBe(false)
+    expect(perfil.permissoes.gerar_etiqueta).toBe(true)
     expect(perfil.permissoes.administrar).toBe(false)
   })
 })

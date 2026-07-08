@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { buscarUsuarioAutenticado } from '../infra/usuario-repository'
 import type { Perfil } from '../domain/perfil'
 
@@ -8,6 +9,6 @@ export interface Sessao {
   perfil: Perfil
 }
 
-export async function getSessao(): Promise<Sessao | null> {
+export const getSessao = cache(async (): Promise<Sessao | null> => {
   return buscarUsuarioAutenticado()
-}
+})
