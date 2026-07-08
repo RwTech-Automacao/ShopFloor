@@ -5,6 +5,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
+import { calcularCamposCalculados, type CampoCalc } from '../domain/calculos'
 import { converterValor } from '../domain/conversao'
 import {
   atualizarProcesso,
@@ -12,6 +13,7 @@ import {
   carregarCamposFormulario,
   type PatchProcesso,
 } from '../infra/processo-detalhe-repository'
+import { carregarCriticidade, carregarTabelaNqa } from '../infra/referencias-repository'
 
 export type ResultadoSalvarProcesso = { ok: true } | { ok: false; erro: string }
 
@@ -28,6 +30,13 @@ export type ResultadoSalvarProcesso = { ok: true } | { ok: false; erro: string }
  * cada valor é validado/convertido pelo tipo do campo via `converterValor`
  * (campos do tipo `lista` aceitam o valor-texto tal como enviado — a
  * validação contra os itens da lista é responsabilidade da UI/select).
+ *
+ * Campos `calculado=true` (atraso, divergencia, critico, amostral,
+ * responsavel_contagem) nunca são aceitos do cliente: qualquer valor
+ * enviado para eles é descartado, e o servidor os recomputa
+ * autoritativamente com `calcularCamposCalculados`, a partir dos valores
+ * atuais do processo mesclados com as edições aceitas. O resultado
+ * sobrescreve o patch antes de gravar.
  *
  * Se o processo ainda estava `aberto`, a primeira edição promove
  * automaticamente o status para `em_conferencia` (fica registrado como uma
@@ -54,6 +63,9 @@ export async function salvarProcesso(
 
   const campos = await carregarCamposFormulario()
   const camposPorNome = new Map(campos.map((c) => [c.campo, c]))
+  const camposCalculados: CampoCalc[] = campos
+    .filter((c) => c.calculado)
+    .map((c) => ({ campo: c.campo, formula: c.formula, formulaConfig: c.formulaConfig }))
 
   const novosValores: Record<string, string | number | null> = {}
   const camposAlterados: string[] = []
@@ -61,6 +73,10 @@ export async function salvarProcesso(
   for (const [campo, bruto] of Object.entries(valores)) {
     const config = camposPorNome.get(campo)
     if (!config) continue // ignora campos desconhecidos/inativos vindos do form
+    // Campos calculados são recomputados autoritativamente pelo servidor
+    // logo abaixo — o valor enviado pelo cliente para eles é sempre
+    // ignorado, nunca gravado.
+    if (config.calculado) continue
 
     const resultado = converterValor(bruto, config.tipo)
     if (!resultado.ok) {
@@ -70,10 +86,35 @@ export async function salvarProcesso(
     camposAlterados.push(campo)
   }
 
+  // Recomputo autoritativo dos campos calculados: usa os valores atuais do
+  // processo mesclados com as edições aceitas (não-calculadas) acima, nunca
+  // o que o cliente eventualmente tenha enviado para um campo calculado.
+  const valoresAtuais = processo as unknown as Record<string, unknown>
+  const valoresParaCalculo: Record<string, unknown> = { ...valoresAtuais, ...novosValores }
+
+  const [criticidade, nqa] = await Promise.all([carregarCriticidade(), carregarTabelaNqa()])
+
+  const resultadoCalculo = calcularCamposCalculados(valoresParaCalculo, camposCalculados, {
+    criticidade,
+    nqa,
+    usuarioAtual: sessao.nome || sessao.email,
+    valoresAtuais,
+  })
+
+  const camposCalculadosAlterados: string[] = []
+  for (const [campo, valor] of Object.entries(resultadoCalculo)) {
+    // As colunas dos campos calculados (atraso, divergencia, critico,
+    // amostral, responsavel_contagem) são todas texto — o domínio de
+    // cálculo pode devolver number (diferenca_dias/diferenca_numerica/
+    // tabela_nqa), que precisa virar string antes de entrar no patch.
+    novosValores[campo] = typeof valor === 'number' ? String(valor) : valor
+    camposCalculadosAlterados.push(campo)
+  }
+
   const diff = calcularDiff(
     processo as unknown as Record<string, unknown>,
     novosValores,
-    camposAlterados,
+    [...camposAlterados, ...camposCalculadosAlterados],
   )
 
   const eraAberto = processo.status === 'aberto'

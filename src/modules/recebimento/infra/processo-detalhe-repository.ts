@@ -72,6 +72,9 @@ export interface CampoFormulario {
   origem: 'comercial' | 'recebimento'
   obrigatorioFinalizacao: boolean
   ordem: number
+  calculado: boolean
+  formula: string | null
+  formulaConfig: Record<string, string>
 }
 
 interface ConfiguracaoCampoFormularioRow {
@@ -83,6 +86,9 @@ interface ConfiguracaoCampoFormularioRow {
   origem: 'comercial' | 'recebimento'
   obrigatorio_finalizacao: boolean
   ordem: number
+  calculado: boolean
+  formula: string | null
+  formula_config: Record<string, string>
 }
 
 // Colunas de `processos_recebimento` que podem ser gravadas por
@@ -214,7 +220,9 @@ export async function carregarCamposFormulario(): Promise<CampoFormulario[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('configuracao_campos')
-    .select('campo, rotulo, grupo, tipo, lista_chave, origem, obrigatorio_finalizacao, ordem')
+    .select(
+      'campo, rotulo, grupo, tipo, lista_chave, origem, obrigatorio_finalizacao, ordem, calculado, formula, formula_config',
+    )
     .eq('ativo', true)
     .order('ordem', { ascending: true })
 
@@ -229,6 +237,9 @@ export async function carregarCamposFormulario(): Promise<CampoFormulario[]> {
     origem: row.origem,
     obrigatorioFinalizacao: row.obrigatorio_finalizacao,
     ordem: row.ordem,
+    calculado: row.calculado,
+    formula: row.formula,
+    formulaConfig: row.formula_config ?? {},
   }))
 }
 
