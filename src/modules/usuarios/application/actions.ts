@@ -12,6 +12,7 @@ import {
   atualizarUsuario,
   buscarUsuario,
   criarUsuarioAuth,
+  excluirUsuarioAuth,
 } from '../infra/usuario-admin-repository'
 
 export type ResultadoAcaoUsuario = { ok: true } | { erro: string }
@@ -34,7 +35,7 @@ function traduzirErroAdminApi(e: unknown): string {
     case 'email_address_invalid':
       return 'Informe um e-mail válido.'
     default:
-      return 'Não foi possível criar o usuário. Verifique os dados e tente novamente.'
+      return 'Não foi possível concluir a operação. Verifique os dados e tente novamente.'
   }
 }
 
@@ -68,7 +69,16 @@ export async function criarUsuario(
   try {
     await atualizarUsuario(novoId, { nome, perfilId, ativo: true })
   } catch {
-    return { erro: 'Usuário criado, mas não foi possível concluir a configuração do perfil.' }
+    // A conta de autenticação já foi criada (e o trigger `handle_new_user`
+    // já inseriu a linha em `usuarios` com o perfil "Consulta"), mas a
+    // configuração de nome/perfil falhou. Para não deixar uma conta órfã
+    // capaz de logar sem auditoria, desfazemos (rollback) a criação.
+    try {
+      await excluirUsuarioAuth(novoId)
+    } catch (rollbackErro) {
+      console.error('Falha ao desfazer criação de usuário após erro parcial:', rollbackErro)
+    }
+    return { erro: 'Não foi possível concluir o cadastro do usuário. Tente novamente.' }
   }
 
   await registrarLog({

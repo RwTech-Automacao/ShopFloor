@@ -51,6 +51,18 @@ export async function atualizarSenha(id: string, password: string): Promise<void
   if (error) throw error
 }
 
+/**
+ * Exclui a conta de autenticação. Usado para desfazer (rollback) um
+ * cadastro que falhou após a criação do usuário no Supabase Auth — evita
+ * contas órfãs capazes de logar sem terem passado pela configuração de
+ * nome/perfil.
+ */
+export async function excluirUsuarioAuth(id: string): Promise<void> {
+  const supabase = createServiceSupabase()
+  const { error } = await supabase.auth.admin.deleteUser(id)
+  if (error) throw error
+}
+
 export async function listarUsuarios(): Promise<UsuarioRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase

@@ -31,6 +31,16 @@ const CAMPOS_DIFF = [
   'pode_administrar',
 ]
 
+// Detecta violação de unicidade (constraint `perfis_nome_key`) para
+// retornar uma mensagem amigável em vez do erro genérico de salvamento.
+function eNomeDuplicado(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const codigo = 'code' in e ? (e as { code?: string }).code : undefined
+  if (codigo === '23505') return true
+  const mensagem = 'message' in e ? String((e as { message?: unknown }).message ?? '') : ''
+  return /duplicate key|unique/i.test(mensagem)
+}
+
 function lerFlags(formData: FormData): Omit<DadosPerfil, 'nome'> {
   return {
     pode_visualizar: formData.get('visualizar') === 'on',
@@ -74,7 +84,8 @@ export async function salvarPerfil(
 
     try {
       await atualizarPerfil(id, dados)
-    } catch {
+    } catch (e) {
+      if (eNomeDuplicado(e)) return { erro: 'Já existe um perfil com esse nome.' }
       return { erro: 'Não foi possível salvar o perfil.' }
     }
 
@@ -94,7 +105,8 @@ export async function salvarPerfil(
     let novo: { id: string }
     try {
       novo = await criarPerfil(dados)
-    } catch {
+    } catch (e) {
+      if (eNomeDuplicado(e)) return { erro: 'Já existe um perfil com esse nome.' }
       return { erro: 'Não foi possível criar o perfil.' }
     }
 
