@@ -1,0 +1,53 @@
+import { describe, it, expect } from 'vitest'
+import { diferencaDias, diferencaNumerica, buscarCriticidade, buscarNqa, calcularCamposCalculados } from '../calculos'
+
+describe('diferencaDias', () => {
+  it('positivo quando chegou depois', () => {
+    expect(diferencaDias('2026-06-10', '2026-06-05')).toBe(5)
+  })
+  it('negativo quando chegou antes', () => {
+    expect(diferencaDias('2026-06-03', '2026-06-05')).toBe(-2)
+  })
+  it('null quando falta uma data', () => {
+    expect(diferencaDias(null, '2026-06-05')).toBeNull()
+  })
+})
+describe('diferencaNumerica', () => {
+  it('subtrai', () => { expect(diferencaNumerica(8, 10)).toBe(-2) })
+  it('null quando falta um valor', () => { expect(diferencaNumerica(null, 10)).toBeNull() })
+})
+describe('buscarCriticidade', () => {
+  const t = [{ fornecedor: 'AVNET INC', critico: 'Sim' }]
+  it('acha (case/trim-insensível ao fornecedor exato)', () => {
+    expect(buscarCriticidade('AVNET INC', t)).toBe('Sim')
+  })
+  it('null quando não acha', () => { expect(buscarCriticidade('X', t)).toBeNull() })
+})
+describe('buscarNqa', () => {
+  const t = [
+    { quantidadeMin: 2, quantidadeMax: 8, tamanhoAmostra: 5 },
+    { quantidadeMin: 500001, quantidadeMax: null, tamanhoAmostra: 1250 },
+  ]
+  it('acha na faixa fechada', () => { expect(buscarNqa(5, t)).toBe(5) })
+  it('acha na faixa aberta (max null)', () => { expect(buscarNqa(999999, t)).toBe(1250) })
+  it('null quando fora de qualquer faixa', () => { expect(buscarNqa(20, t)).toBeNull() })
+  it('null quando a faixa não tem tamanho definido', () => {
+    expect(buscarNqa(5, [{ quantidadeMin: 2, quantidadeMax: 8, tamanhoAmostra: null }])).toBeNull()
+  })
+})
+describe('calcularCamposCalculados', () => {
+  const campos = [
+    { campo: 'atraso', formula: 'diferenca_dias', formulaConfig: { a: 'data_chegada', b: 'data_prevista' } },
+    { campo: 'responsavel_contagem', formula: 'usuario_primeiro', formulaConfig: {} },
+  ]
+  const ctx = { criticidade: [], nqa: [], usuarioAtual: 'João', valoresAtuais: {} }
+  it('calcula atraso e fixa o responsável no primeiro preenchimento', () => {
+    const r = calcularCamposCalculados({ data_chegada: '2026-06-10', data_prevista: '2026-06-05' }, campos, ctx)
+    expect(r.atraso).toBe(5)
+    expect(r.responsavel_contagem).toBe('João')
+  })
+  it('mantém o responsável já preenchido (write-once)', () => {
+    const r = calcularCamposCalculados({}, campos, { ...ctx, valoresAtuais: { responsavel_contagem: 'Maria' } })
+    expect(r.responsavel_contagem).toBe('Maria')
+  })
+})
