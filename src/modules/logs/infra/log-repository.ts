@@ -12,7 +12,7 @@ export interface NovoLog {
 
 export async function inserirLog(log: NovoLog): Promise<void> {
   const supabase = await createServerSupabase()
-  await supabase.from('logs').insert({
+  const { error } = await supabase.from('logs').insert({
     entidade: log.entidade,
     entidade_id: log.entidadeId ?? null,
     acao: log.acao,
@@ -21,4 +21,13 @@ export async function inserirLog(log: NovoLog): Promise<void> {
     usuario_id: log.usuarioId,
     usuario_nome: log.usuarioNome,
   })
+  // Auditoria: falha de escrita de log não deve derrubar a ação de negócio,
+  // mas nunca pode desaparecer silenciosamente.
+  if (error) {
+    console.error('[logs] falha ao inserir log', {
+      entidade: log.entidade,
+      acao: log.acao,
+      error,
+    })
+  }
 }
