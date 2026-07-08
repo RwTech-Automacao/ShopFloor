@@ -15,13 +15,15 @@ function caminhoProcesso(id: string): string {
 
 /**
  * Finaliza um processo de recebimento (`em_conferencia` → `finalizado`).
- * Exige a permissão `finalizar` e bloqueia se algum campo marcado como
- * `obrigatorio_finalizacao` estiver vazio nos valores já salvos do processo.
+ * Exige as permissões `editar` (a mesma que o RLS `processos_update` exige
+ * para qualquer gravação) e `finalizar`, e bloqueia se algum campo marcado
+ * como `obrigatorio_finalizacao` estiver vazio nos valores já salvos do
+ * processo.
  */
 export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoProcesso> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'finalizar')) {
-    return { ok: false, erro: 'Você não tem permissão para finalizar processos.' }
+  if (!sessao || !podeFazer(sessao.perfil, 'editar') || !podeFazer(sessao.perfil, 'finalizar')) {
+    return { ok: false, erro: 'Você não tem permissão para esta ação.' }
   }
 
   const processo = await buscarProcesso(id)
@@ -62,16 +64,17 @@ export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoP
 }
 
 /**
- * Cancela um processo de recebimento. Exige a permissão `excluir` e um
- * motivo não vazio. `cancelado` é terminal no ciclo de vida.
+ * Cancela um processo de recebimento. Exige as permissões `editar` (mesma
+ * exigência do RLS `processos_update`) e `excluir`, além de um motivo não
+ * vazio. `cancelado` é terminal no ciclo de vida.
  */
 export async function cancelarProcesso(
   id: string,
   motivo: string,
 ): Promise<ResultadoTransicaoProcesso> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'excluir')) {
-    return { ok: false, erro: 'Você não tem permissão para cancelar processos.' }
+  if (!sessao || !podeFazer(sessao.perfil, 'editar') || !podeFazer(sessao.perfil, 'excluir')) {
+    return { ok: false, erro: 'Você não tem permissão para esta ação.' }
   }
 
   const motivoLimpo = motivo.trim()
@@ -110,14 +113,16 @@ export async function cancelarProcesso(
 }
 
 /**
- * Reabre um processo finalizado (`finalizado` → `em_conferencia`). Exige a
- * permissão `editar_finalizado` e só é permitido a partir do status
- * `finalizado`.
+ * Reabre um processo finalizado (`finalizado` → `em_conferencia`). Exige as
+ * permissões `editar` (mesma exigência do RLS `processos_update`) e
+ * `editar_finalizado`, e só é permitido a partir do status `finalizado`.
+ * Limpa `finalizado_em`/`finalizado_por`, já que o processo deixa de estar
+ * finalizado.
  */
 export async function reabrirProcesso(id: string): Promise<ResultadoTransicaoProcesso> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'editar_finalizado')) {
-    return { ok: false, erro: 'Você não tem permissão para reabrir processos finalizados.' }
+  if (!sessao || !podeFazer(sessao.perfil, 'editar') || !podeFazer(sessao.perfil, 'editar_finalizado')) {
+    return { ok: false, erro: 'Você não tem permissão para esta ação.' }
   }
 
   const processo = await buscarProcesso(id)
@@ -131,6 +136,7 @@ export async function reabrirProcesso(id: string): Promise<ResultadoTransicaoPro
     await atualizarProcesso(id, {
       status: 'em_conferencia',
       finalizado_em: null,
+      finalizado_por: null,
     })
   } catch {
     return { ok: false, erro: 'Não foi possível reabrir o processo.' }

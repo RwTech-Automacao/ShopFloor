@@ -10,8 +10,7 @@ import {
   carregarCamposFormulario,
 } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
-import { AcoesProcesso } from './acoes-processo'
-import { ProcessoForm } from './processo-form'
+import { ProcessoDetalhe } from './processo-detalhe'
 
 interface ProcessoDetalhePageProps {
   params: Promise<{ id: string }>
@@ -79,17 +78,13 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
         </p>
       </div>
 
-      <ProcessoForm
+      <ProcessoDetalhe
         processoId={processo.id}
+        status={processo.status}
         campos={campos}
         itensPorLista={itensPorLista}
         valoresIniciais={valoresIniciais}
         somenteLeitura={somenteLeitura}
-      />
-
-      <AcoesProcesso
-        processoId={processo.id}
-        status={processo.status}
         podeFinalizar={podeFinalizar}
         podeExcluir={podeExcluir}
         podeEditarFinalizado={podeEditarFinalizado}

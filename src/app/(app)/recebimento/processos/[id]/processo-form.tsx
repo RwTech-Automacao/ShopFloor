@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { AlertTriangleIcon, CheckIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,9 +34,27 @@ interface ProcessoFormProps {
   itensPorLista: Record<string, string[]>
   valoresIniciais: Record<string, string | number | null>
   somenteLeitura: boolean
+  /**
+   * Notifica o pai sempre que o estado "tem alterações não salvas" mudar —
+   * usado para bloquear o botão Finalizar enquanto o formulário diverge dos
+   * valores salvos (evita finalizar com dados desatualizados/incompletos).
+   */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 type ResultadoSalvar = { ok: true } | { ok: false; erro: string }
+
+function valoresIniciaisComoTexto(
+  campos: CampoFormulario[],
+  valoresIniciais: Record<string, string | number | null>,
+): Record<string, string> {
+  const inicial: Record<string, string> = {}
+  for (const campo of campos) {
+    const valor = valoresIniciais[campo.campo]
+    inicial[campo.campo] = valor === null || valor === undefined ? '' : String(valor)
+  }
+  return inicial
+}
 
 export function ProcessoForm({
   processoId,
@@ -44,17 +62,25 @@ export function ProcessoForm({
   itensPorLista,
   valoresIniciais,
   somenteLeitura,
+  onDirtyChange,
 }: ProcessoFormProps) {
-  const [valores, setValores] = useState<Record<string, string>>(() => {
-    const inicial: Record<string, string> = {}
-    for (const campo of campos) {
-      const valor = valoresIniciais[campo.campo]
-      inicial[campo.campo] = valor === null || valor === undefined ? '' : String(valor)
-    }
-    return inicial
-  })
+  const [valores, setValores] = useState<Record<string, string>>(() =>
+    valoresIniciaisComoTexto(campos, valoresIniciais),
+  )
   const [salvando, startTransition] = useTransition()
   const [resultado, setResultado] = useState<ResultadoSalvar | null>(null)
+
+  const valoresIniciaisTexto = useMemo(
+    () => valoresIniciaisComoTexto(campos, valoresIniciais),
+    [campos, valoresIniciais],
+  )
+  const dirty = useMemo(
+    () => campos.some((campo) => (valores[campo.campo] ?? '') !== (valoresIniciaisTexto[campo.campo] ?? '')),
+    [campos, valores, valoresIniciaisTexto],
+  )
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
 
   function atualizarValor(campo: string, valor: string) {
     setResultado(null)

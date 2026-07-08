@@ -237,6 +237,12 @@ export async function carregarCamposFormulario(): Promise<CampoFormulario[]> {
  * estão em `COLUNAS_GRAVAVEIS` — qualquer outra chave é ignorada (defesa em
  * profundidade: a validação de quais campos podem ser editados já acontece
  * na Server Action, isto aqui é a segunda barreira antes do RLS).
+ *
+ * Verifica que a atualização de fato afetou uma linha: se o RLS
+ * (`processos_update`, exige `editar`) filtrar a linha por permissão, ou se
+ * o `id` não existir, o Postgrest retorna sucesso com zero linhas — sem essa
+ * checagem o chamador reportaria sucesso e gravaria um log de auditoria
+ * (imutável) para uma alteração que nunca aconteceu.
  */
 export async function atualizarProcesso(id: string, patch: PatchProcesso): Promise<void> {
   const supabase = await createServerSupabase()
@@ -249,6 +255,13 @@ export async function atualizarProcesso(id: string, patch: PatchProcesso): Promi
   }
   if (Object.keys(patchFiltrado).length === 0) return
 
-  const { error } = await supabase.from('processos_recebimento').update(patchFiltrado).eq('id', id)
+  const { data, error } = await supabase
+    .from('processos_recebimento')
+    .update(patchFiltrado)
+    .eq('id', id)
+    .select('id')
   if (error) throw error
+  if (!data || data.length === 0) {
+    throw new Error('Não foi possível salvar (registro não encontrado ou sem permissão).')
+  }
 }

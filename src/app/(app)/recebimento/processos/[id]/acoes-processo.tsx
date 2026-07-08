@@ -26,6 +26,12 @@ interface AcoesProcessoProps {
   podeFinalizar: boolean
   podeExcluir: boolean
   podeEditarFinalizado: boolean
+  /**
+   * Quando `true`, o botão Finalizar fica desabilitado com uma dica — usado
+   * enquanto o formulário tem alterações não salvas, para evitar finalizar
+   * com valores diferentes dos que o usuário está vendo/editando na tela.
+   */
+  finalizarBloqueado?: boolean
 }
 
 /**
@@ -40,6 +46,7 @@ export function AcoesProcesso({
   podeFinalizar,
   podeExcluir,
   podeEditarFinalizado,
+  finalizarBloqueado = false,
 }: AcoesProcessoProps) {
   const mostrarFinalizar = status === 'em_conferencia' && podeFinalizar
   const mostrarCancelar = (status === 'aberto' || status === 'em_conferencia') && podeExcluir
@@ -49,14 +56,16 @@ export function AcoesProcesso({
 
   return (
     <div className="flex flex-wrap items-start gap-3 border-t border-border pt-4">
-      {mostrarFinalizar && <BotaoFinalizar processoId={processoId} />}
+      {mostrarFinalizar && (
+        <BotaoFinalizar processoId={processoId} bloqueado={finalizarBloqueado} />
+      )}
       {mostrarReabrir && <BotaoReabrir processoId={processoId} />}
       {mostrarCancelar && <BotaoCancelar processoId={processoId} />}
     </div>
   )
 }
 
-function BotaoFinalizar({ processoId }: { processoId: string }) {
+function BotaoFinalizar({ processoId, bloqueado }: { processoId: string; bloqueado: boolean }) {
   const [pending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
 
@@ -70,9 +79,18 @@ function BotaoFinalizar({ processoId }: { processoId: string }) {
 
   return (
     <div className="flex flex-col gap-1">
-      <Button onClick={onClick} disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
+      <Button
+        onClick={onClick}
+        disabled={pending || bloqueado}
+        className="bg-enterplak hover:bg-enterplak-700"
+      >
         {pending ? 'Finalizando...' : 'Finalizar'}
       </Button>
+      {bloqueado && !erro && (
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Salve as alterações antes de finalizar.
+        </p>
+      )}
       {erro && (
         <p className="flex max-w-sm items-center gap-1.5 text-sm text-red-600">
           <AlertTriangleIcon className="size-4 shrink-0" /> {erro}
