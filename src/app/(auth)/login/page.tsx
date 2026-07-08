@@ -7,7 +7,7 @@ export default function LoginPage() {
       <div className="hidden items-center justify-center bg-enterplak p-12 lg:flex">
         <div className="text-center">
           <Image src="/Logo_Docs.png" alt="Enterplak" width={320} height={110} priority
-            className="mx-auto brightness-0 invert" />
+            style={{ height: 'auto' }} className="mx-auto brightness-0 invert" />
           <p className="mt-6 text-lg text-white/90">Sistema de Gestão Shop Floor</p>
         </div>
       </div>

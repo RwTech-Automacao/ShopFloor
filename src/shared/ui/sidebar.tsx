@@ -8,7 +8,7 @@ export function Sidebar({ perfil }: { perfil: Perfil }) {
   return (
     <aside className="flex w-64 flex-col border-r bg-white">
       <div className="p-6">
-        <Image src="/Logo_Docs.png" alt="Enterplak" width={140} height={48} />
+        <Image src="/Logo_Docs.png" alt="Enterplak" width={140} height={48} style={{ height: 'auto' }} />
       </div>
       <nav className="flex flex-col gap-1 px-3">
         {itens.map((i) => (
