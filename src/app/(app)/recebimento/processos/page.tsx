@@ -12,11 +12,12 @@ import {
 } from '@/components/ui/table'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
 import { listarProcessos } from '@/modules/recebimento/infra/processo-repository'
+import { ProcessosFiltros } from './processos-filtros'
 
 const TAMANHO_PAGINA = 25
 
 interface ProcessosPageProps {
-  searchParams: Promise<{ pagina?: string }>
+  searchParams: Promise<{ busca?: string; status?: string; pagina?: string }>
 }
 
 export default async function ProcessosPage({ searchParams }: ProcessosPageProps) {
@@ -24,7 +25,12 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
   const paginaSolicitada = Number.parseInt(sp.pagina ?? '0', 10)
   const pagina = Number.isFinite(paginaSolicitada) && paginaSolicitada > 0 ? paginaSolicitada : 0
 
-  const { linhas, total } = await listarProcessos({ pagina, tamanho: TAMANHO_PAGINA })
+  const { linhas, total } = await listarProcessos({
+    busca: sp.busca || undefined,
+    status: sp.status || undefined,
+    pagina,
+    tamanho: TAMANHO_PAGINA,
+  })
 
   const totalPaginas = Math.max(1, Math.ceil(total / TAMANHO_PAGINA))
   const temAnterior = pagina > 0
@@ -32,6 +38,8 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
 
   function hrefPagina(novaPagina: number): string {
     const params = new URLSearchParams()
+    if (sp.busca) params.set('busca', sp.busca)
+    if (sp.status) params.set('status', sp.status)
     if (novaPagina > 0) params.set('pagina', String(novaPagina))
     const query = params.toString()
     return query ? `/recebimento/processos?${query}` : '/recebimento/processos'
@@ -40,6 +48,8 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold">Processos</h1>
+
+      <ProcessosFiltros />
 
       <Table>
         <TableHeader>
@@ -56,7 +66,9 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
           {linhas.length === 0 && (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-muted-foreground">
-                Nenhum processo encontrado.
+                {sp.busca || sp.status
+                  ? 'Nenhum processo encontrado para os filtros selecionados.'
+                  : 'Nenhum processo encontrado.'}
               </TableCell>
             </TableRow>
           )}
