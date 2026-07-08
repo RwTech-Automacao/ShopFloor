@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon, ArrowRightIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -49,12 +49,13 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
             <TableHead>Fornecedor</TableHead>
             <TableHead>Material</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="text-right">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {linhas.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
+              <TableCell colSpan={6} className="text-center text-muted-foreground">
                 Nenhum processo encontrado.
               </TableCell>
             </TableRow>
@@ -73,6 +74,16 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
                 </TableCell>
                 <TableCell>
                   <Badge className={status.className}>{status.rotulo}</Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Abrir processo #${processo.numero}`}
+                    render={<Link href={`/recebimento/processos/${processo.id}`} />}
+                  >
+                    <ArrowRightIcon />
+                  </Button>
                 </TableCell>
               </TableRow>
             )
