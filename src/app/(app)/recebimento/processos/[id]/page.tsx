@@ -9,6 +9,7 @@ import {
   buscarProcesso,
   carregarCamposFormulario,
 } from '@/modules/recebimento/infra/processo-detalhe-repository'
+import { carregarCriticidade, carregarTabelaNqa } from '@/modules/recebimento/infra/referencias-repository'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
 import { ProcessoDetalhe } from './processo-detalhe'
 
@@ -22,7 +23,12 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
   const processo = await buscarProcesso(id)
   if (!processo) notFound()
 
-  const [sessao, campos] = await Promise.all([getSessao(), carregarCamposFormulario()])
+  const [sessao, campos, criticidade, nqa] = await Promise.all([
+    getSessao(),
+    carregarCamposFormulario(),
+    carregarCriticidade(),
+    carregarTabelaNqa(),
+  ])
 
   const chavesLista = [
     ...new Set(
@@ -56,6 +62,7 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
   }
 
   const status = rotuloStatusProcesso(processo.status)
+  const usuarioAtual = sessao?.nome || sessao?.email || ''
 
   return (
     <div className="flex flex-col gap-4">
@@ -88,6 +95,9 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
         podeFinalizar={podeFinalizar}
         podeExcluir={podeExcluir}
         podeEditarFinalizado={podeEditarFinalizado}
+        criticidade={criticidade}
+        nqa={nqa}
+        usuarioAtual={usuarioAtual}
       />
     </div>
   )

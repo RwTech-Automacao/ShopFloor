@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { StatusProcesso } from '@/modules/recebimento/domain/ciclo-vida'
 import type { CampoFormulario } from '@/modules/recebimento/infra/processo-detalhe-repository'
+import type { FaixaNqa } from '@/modules/recebimento/domain/calculos'
 import { AcoesProcesso } from './acoes-processo'
 import { ProcessoForm } from './processo-form'
 
@@ -16,6 +17,9 @@ interface ProcessoDetalheProps {
   podeFinalizar: boolean
   podeExcluir: boolean
   podeEditarFinalizado: boolean
+  criticidade: { fornecedor: string; critico: string }[]
+  nqa: FaixaNqa[]
+  usuarioAtual: string
 }
 
 /**
@@ -36,6 +40,9 @@ export function ProcessoDetalhe({
   podeFinalizar,
   podeExcluir,
   podeEditarFinalizado,
+  criticidade,
+  nqa,
+  usuarioAtual,
 }: ProcessoDetalheProps) {
   const [dirty, setDirty] = useState(false)
 
@@ -48,6 +55,9 @@ export function ProcessoDetalhe({
         valoresIniciais={valoresIniciais}
         somenteLeitura={somenteLeitura}
         onDirtyChange={setDirty}
+        criticidade={criticidade}
+        nqa={nqa}
+        usuarioAtual={usuarioAtual}
       />
 
       <AcoesProcesso
