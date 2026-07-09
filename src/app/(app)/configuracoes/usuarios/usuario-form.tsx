@@ -114,7 +114,13 @@ export function UsuarioForm({ usuario, perfis }: UsuarioFormProps) {
             <Label htmlFor="perfilId">Perfil</Label>
             <Select name="perfilId" defaultValue={usuario?.perfis.id} required>
               <SelectTrigger id="perfilId" className="w-full">
-                <SelectValue placeholder="Selecione um perfil" />
+                <SelectValue placeholder="Selecione um perfil">
+                  {(value: string | null) =>
+                    value
+                      ? (perfis.find((p) => p.id === value)?.nome ?? '')
+                      : 'Selecione um perfil'
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {perfis.map((perfil) => (
