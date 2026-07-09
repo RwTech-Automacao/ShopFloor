@@ -1,20 +1,14 @@
 import Link from 'next/link'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
+import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { EtiquetasCliente } from './etiquetas-cliente'
 
 export default async function EtiquetasPage() {
   const sessao = await getSessao()
 
   if (!sessao || !podeFazer(sessao.perfil, 'gerar_etiqueta')) {
-    return (
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">Etiquetas</h1>
-        <p className="text-sm text-muted-foreground">
-          Você não tem permissão para gerar etiquetas.
-        </p>
-      </div>
-    )
+    return <SemPermissao descricao="Você não tem permissão para gerar etiquetas." />
   }
 
   return (

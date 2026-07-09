@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
+import { SemPermissao } from '@/shared/ui/sem-permissao'
 import {
   carregarCamposComerciais,
   carregarItensPorLista,
@@ -9,7 +9,9 @@ import { WizardImportacao } from './wizard-importacao'
 
 export default async function ImportarPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'importar')) redirect('/home')
+  if (!sessao || !podeFazer(sessao.perfil, 'importar')) {
+    return <SemPermissao descricao="Você não tem permissão para importar planilhas." />
+  }
 
   const campos = await carregarCamposComerciais()
   const chaves = Array.from(
