@@ -18,8 +18,10 @@ describe('resolverDoc', () => {
   })
 })
 describe('padSeq / formatarVolume', () => {
-  it('2 dígitos por padrão, 3 se total >= 100', () => {
+  it('2 dígitos por padrão, 3 se total >= 100 (limite exato)', () => {
     expect(padSeq(1, 13)).toBe('01')
+    expect(padSeq(1, 99)).toBe('01')
+    expect(padSeq(1, 100)).toBe('001')
     expect(padSeq(1, 120)).toBe('001')
   })
   it('formatarVolume 1 de 13 -> 01-13', () => { expect(formatarVolume(1, 13)).toBe('01-13') })
@@ -48,8 +50,15 @@ describe('gerarEtiquetasDoProcesso (exemplo validado RWCN98)', () => {
 })
 
 describe('gerarCsv', () => {
-  it('aspas, CRLF, sem cabeçalho', () => {
+  it('uma linha: aspas, sem cabeçalho', () => {
     const csv = gerarCsv([{ partNumber: 'A', codigo: 'B', volume: '01-01' }])
     expect(csv).toBe('"A","B","01-01"')
+  })
+  it('várias linhas juntadas por CRLF e escape de aspas', () => {
+    const csv = gerarCsv([
+      { partNumber: 'A"B', codigo: 'C', volume: '01-02' },
+      { partNumber: 'X', codigo: 'Y', volume: '02-02' },
+    ])
+    expect(csv).toBe('"A""B","C","01-02"\r\n"X","Y","02-02"')
   })
 })
