@@ -1,137 +1,143 @@
-# Histórico da Sessão — ShopFloor Enterplak
+# Histórico do Projeto — ShopFloor Enterplak
 
-> Registro fiel da sessão de desenvolvimento (Fundação → Configurações → Recebimento
-> 3A/3B/3C). Serve de handoff: leia a Seção "Estado atual e próximos passos" antes de
-> retomar / subir para o GitHub.
+> Log fiel da construção (handoff). Leia a Seção "Estado atual e próximos passos" antes
+> de retomar. Atualizado ao longo das sessões.
 
 ---
 
 ## 1. Contexto e método
 
-Sistema **ShopFloor / MES** para a indústria eletrônica **Enterplak** (empresa rwtech),
+Sistema **Shop Floor / MES** para a indústria eletrônica **Enterplak** (empresa rwtech),
 substituindo planilhas Excel, Google Forms e Google Apps Script. Uso em produção,
-multi-setor, arquitetura para crescer por anos. Regra-guia do usuário: **implementação
-correta > rápida**; explicar decisões arquiteturais.
+multi-setor, arquitetura para crescer por anos. Regra do usuário: **implementação
+correta > rápida**; explicar decisões.
 
 **Stack:** Next.js 16 (App Router) + TypeScript strict + Tailwind v4 + shadcn/Base UI +
 Supabase (Postgres/Auth/RLS). Hospedagem alvo: Vercel + Supabase Cloud. Cor `#8D2033`.
 
-**Método de trabalho:** desenvolvimento orientado a subagentes (Superpowers) — cada
-tarefa: plano → implementador (TDD) → revisor adversarial → correção → review final do
-módulo. Revisão **pesada** em segurança/banco; **leve** em telas CRUD repetidas (a pedido
-do usuário, para acelerar). Esse método pegou vários bugs sérios antes de produção (ver
-Seção 7).
+**Método:** desenvolvimento orientado a subagentes (plano → implementador TDD → revisor
+adversarial → correção → review final). Revisão **pesada** em segurança/banco; **leve** em
+telas CRUD repetidas (a pedido do usuário, para acelerar). Pegou vários bugs sérios antes
+de produção (ver Seção 7).
 
-**Arquitetura:** monólito modular por feature (`src/modules/<feature>/{domain,
-application,infra}`); domínio em TS puro (sem Supabase/Next); Server Actions finos que
-checam permissão + logam; RLS como portão real no banco.
+**Arquitetura:** monólito modular por feature (`src/modules/<feature>/{domain,application,
+infra}`); domínio TS puro (sem Supabase/Next); Server Actions finos que checam permissão +
+logam; RLS como portão real no banco.
 
 ---
 
-## 2. Incrementos entregues
+## 2. Módulos entregues (todos validados por smoke)
 
-### Plano 1 — Fundação ✅ (completo e validado por smoke)
-Auth Supabase + login (identidade Enterplak); RBAC por flags booleanas em `perfis`
-(Administrador, Supervisor, Recebimento, Consulta) lidas pela RLS via `tem_permissao()`;
-layout autenticado com menu por perfil; schema base; **logs imutáveis**
-(UPDATE/DELETE/TRUNCATE bloqueados até para service_role); domínio de perfil (TS puro,
-testado). Smoke validado: login + RBAC no navegador.
-
-### Plano 2 — Configurações & Logs ✅ (completo, smoke OK)
-Telas admin (guard `administrar`): **Usuários** (cria conta no Supabase Auth via admin API
-service-role, com anti-lockout), **Perfis** (CRUD + flags + anti-lockout), **Listas**,
-**Campos** (`configuracao_campos`: obrigatoriedade + tipo texto↔lista configuráveis),
-**Logs** (read-only, filtros, paginação), **Sobre**. Infra de auditoria (`registrarLog` +
-`calcularDiff`) — toda mutação gera log imutável.
-
-### Plano 3A — Recebimento / Importação ✅ (completo e validado por smoke)
-Wizard de importação (SheetJS no cliente → mapeamento manual → preview com validação →
-RPC transacional `importar_processos`, SECURITY INVOKER); domínio de conversão com
-**parsing BR** (milhar `1.500`→1500; data `dd/mm/aaaa`) e **filtro de linhas em branco**;
-listas de Processos e Importações (menu Recebimento). Smoke validado: importou 32
-processos da planilha real (`EMB341EA - ESTADOS UNIDOS.xlsx`, 115 linhas − 83 em branco) +
-gerou log.
-
-### Plano 3B — Recebimento / Processos ✅ (completo, smoke OK "no geral bom")
-Formulário dinâmico (de `configuracao_campos`, por grupo/tipo); ciclo de vida
-Aberto→Em Conferência(auto no 1º salvamento)→Finalizado/Cancelado, Reabrir; máquina de
-estados (TS puro, testada); transições como Server Actions (permissão + log); busca/filtros
-na lista. Permissões: Finalizar=`finalizar`; Cancelar=`excluir` (Sup/Admin); Reabrir=
-`editar_finalizado` (Sup/Admin); reforço RLS (migration 0009). Fix wave do review final:
-integridade de auditoria (update de 0 linhas falha em vez de fingir sucesso), `editar` nas
-transições, Finalizar bloqueado com alterações não salvas.
-
-### Plano 3C — Recebimento / Campos Calculados ✅ CÓDIGO COMPLETO (falta review final + smoke)
-5 campos viraram automáticos (somente-leitura, cálculo ao vivo no form + recomputo
-autoritativo no servidor):
-- **Atraso** = Data Chegada − Data Prevista (dias com sinal)
-- **Divergência** = Qtd. Recebida − Qtd. no Pedido
-- **Crítico?** = lookup Fornecedor→Sim/Não (tabela configurável)
-- **Amostral** = tabela NQA sobre Qtd. Recebida (tabela configurável)
-- **Responsável** = usuário do 1º preenchimento (write-once)
-Duas telas novas de config: **Criticidade por Fornecedor** e **Tabela NQA** (faixas AQL
-padrão já semeadas, tamanhos em branco para o Admin preencher). Domínio de cálculo testado;
-review opus confirmou que um payload forjado **não** persiste em campo calculado.
+- **Fundação** — Auth Supabase + login (identidade Enterplak); RBAC por flags booleanas em
+  `perfis` (Administrador/Supervisor/Recebimento/Consulta) lidas por RLS via
+  `tem_permissao()`; layout autenticado com menu por perfil; **logs imutáveis**
+  (UPDATE/DELETE/TRUNCATE bloqueados até para service_role).
+- **Configurações & Logs** — telas admin (guard `administrar`): Usuários (cria conta no
+  Supabase Auth via admin API service-role + anti-lockout), Perfis (CRUD flags +
+  anti-lockout), Listas, Campos (`configuracao_campos`: obrigatoriedade E tipo
+  configuráveis), Logs (read-only + filtros), Sobre. Auditoria: `registrarLog` +
+  `calcularDiff`.
+- **Recebimento 3A — Importação** — wizard (SheetJS no cliente → mapeamento manual →
+  preview com validação → RPC transacional `importar_processos`, SECURITY INVOKER);
+  parsing BR (milhar `1.500`→1500; data `dd/mm/aaaa`) + filtro de linhas em branco; listas
+  de Processos e Importações.
+- **Recebimento 3B — Processos** — formulário dinâmico (de `configuracao_campos`) + ciclo
+  de vida Aberto→Em Conferência(auto 1º save)→Finalizado/Cancelado, Reabrir; máquina de
+  estados testada; Cancelar/Reabrir só Supervisor/Admin; busca/filtros na lista.
+- **Recebimento 3C — Campos calculados** — atraso (dias c/ sinal), divergência, crítico
+  (whitelist de fornecedores: presença=Sim), amostral (tabela NQA), responsável
+  (write-once). Cálculo compartilhado cliente(exibição)↔servidor(gravação autoritativa).
+  Telas de config: Criticidade e Tabela NQA.
+- **Etiquetas (Part Number)** — substitui o Apps Script. Busca por NF/EMB/Fornecedor →
+  seleciona processos → gera CSV `[PARTNUMBER,CODIGO,VOLUME]` (download no navegador, não
+  armazenado) + histórico (`geracoes_etiquetas`). **Formato validado empiricamente 1:1 com
+  o Apps Script** (exemplo RWCN98 travado em teste). Permissão `gerar_etiqueta`.
 
 ---
 
 ## 3. Banco de dados (Supabase Cloud)
 Projeto "Project Shop Floor" (ref `ykwkacfviarhfmxeisqk`, sa-east-1, PG17). Migrations
-**0001–0010** aplicadas. Tabelas: `perfis`, `usuarios`, `listas`/`lista_itens`,
-`configuracao_campos` (+ calculado/formula/formula_config), `importacoes`,
-`processos_recebimento`, `logs` (imutável), `criticidade_fornecedor`, `tabela_nqa`. RLS em
-todas. RPC transacional `importar_processos`.
+**0001–0012**. Tabelas: perfis, usuarios, listas/lista_itens, configuracao_campos,
+importacoes, processos_recebimento, logs (imutável), criticidade_fornecedor, tabela_nqa,
+geracoes_etiquetas. RLS em todas. RPC `importar_processos`.
+
+## 4. GitHub
+Repositório privado **github.com/MatheusSilvaRwTech/ShopFloor**, branch `main`. Higiene
+feita (README, .gitignore; untrack de `.env.local`, `.claude/settings.local.json`,
+`.superpowers/`, planilha real). ⚠️ **O local costuma ficar à frente do remoto** — lembrar
+de `git push` após mudanças (sem SSH/credential manager ainda; usa token — o token exposto
+no chat deve ser revogado). Push inicial feito; **há commits novos não enviados** (fix do
+Finalizar, Etiquetas, correções de UX).
 
 ---
 
-## 4. Estado atual e próximos passos (LER ANTES DE RETOMAR)
-- **Git:** ~57 commits em `master`. **Sem remoto ainda** → o plano é **subir para o GitHub
-  amanhã**. `.env.local` (segredos) está git-ignored — não sobe. Há um `.~lock…xlsx#`
-  (lock do LibreOffice) e mudanças em `.claude/settings.local.json` no working tree — não
-  versionar.
-- **Pendente do 3C:** (1) review final do branch 3C; (2) **smoke** no navegador dos campos
-  calculados (abrir um processo, ver Atraso/Divergência/Amostral/Crítico/Responsável
-  calculando; popular as tabelas Criticidade e NQA em Configurações). Só depois considerar
-  o 3C 100%.
-- **Próximo incremento:** **Etiquetas** (Incremento 2) — geração de CSV de Part Number.
-  ⚠️ Depende do **Google Apps Script atual** (o usuário precisa fornecer).
+## 5. Estado atual e próximos passos (LER ANTES DE RETOMAR)
 
-### Para subir ao GitHub (amanhã)
-1. Criar repositório no GitHub (privado). 2. `git remote add origin …`. 3. Conferir que
-`.env.local` e segredos não vão (já ignorados). 4. `git push -u origin master`.
+**Sistema FUNCIONALMENTE COMPLETO** (todos os fluxos das planilhas/Forms/Apps Script
+reproduzidos, com auditoria/permissões). Dados de teste foram **limpos** (processos,
+importações, gerações zerados; config preservada; logs imutáveis permanecem) para teste do
+zero.
+
+**Fase atual: melhorias de UX/UI + responsividade.**
+- Prioridade do usuário: **fazer tudo bonito e consistente de uma vez (foundation-first),
+  evitando retrabalho.**
+- Alvo responsivo: **desktop + tablet + celular** (mobile-first).
+- **Referência visual (fornecida pelo usuário):** o CRM da própria RWTech ("MeuCRM").
+  Linguagem: **split-login** (painel de marca à esquerda com headline/subtítulo + formas
+  decorativas; formulário limpo à direita, show/hide senha, lembrar-me, footer); **sidebar
+  de marca** (fundo vinho, logo, seção "MENU", itens com ícone + rótulo, item ativo em pill
+  destacada, colapsável); **topbar** (busca global, notificações, avatar+usuário dropdown);
+  **dashboard** com saudação, **cards de indicadores** (ícone + número grande + subtítulo) e
+  painéis de conteúdo; toasts. Cor primária = **Enterplak #8D2033** (no lugar do azul do
+  CRM). Prints em `docs/historico/` ou anexados na conversa.
+
+**Plano de UX (a executar, foundation-first):**
+1. Design system / tema: paleta Enterplak completa (vinho + neutros + estados), tipografia
+   (corrigir a fonte Geist que não aplica), espaçamentos/raios; tokens Tailwind.
+2. Esqueleto de layout responsivo: sidebar de marca colapsável (hambúrguer no mobile),
+   topbar (busca/notificações/usuário), breadcrumbs.
+3. Padrões base: tabela (cabeçalho fixo, zebra, ordenação, badges, empty state, skeleton →
+   vira cards no mobile), formulário (grid reflui 3→1 col; grupos em seções/abas), toasts
+   (Toaster) e diálogos de confirmação (no lugar de window.confirm).
+4. Home vira **painel** com atalhos + indicadores (processos por status, últimas
+   importações/gerações).
+5. Aplicar tela por tela (login, configurações, recebimento, etiquetas) com a nova base.
+   **Usar a skill frontend-design ao construir** (visual não-genérico).
+
+**Depois do UX:** deploy na Vercel; backlog remanescente.
 
 ---
 
-## 5. Backlog (registrado em `.superpowers/sdd/progress.md`)
-- `xlsx@0.18.5` tem CVEs (baixo risco: arquivos internos) — avaliar migrar p/ build oficial SheetJS.
-- Sugestão automática de mapeamento na importação não casou (colunas do Comercial ≠ rótulos) — melhorar heurística/aliases.
-- Warning Base UI (Button render=Link) na paginação — trocar por `<button>`/`nativeButton=false`.
-- Fonte Geist Sans não aplica (`--font-sans` autorreferente no globals.css do scaffold).
-- Adicionar script `typecheck` (`tsc --noEmit`) ao CI (o `next build` não cobre `__tests__`).
-- Minors: save sem alterações grava log de diff vazio; catch genérico não loga erro real; mensagem de erro de reset de senha; sem "último admin"/redefinir; melhorias pontuais que o usuário notou (a detalhar).
-- (3A opcional) calcular Atraso/Crítico já na importação (hoje calculam ao abrir/salvar).
+## 6. Backlog (em `.superpowers/sdd/progress.md`)
+CVE do `xlsx` (avaliar build oficial SheetJS); coluna "Nº" da lista de etiquetas mostra
+índice, não o `numero`; sugestão automática de mapeamento na importação; gate `typecheck`
+(tsc --noEmit) no CI; eventual trava de status na geração de etiquetas (hoje sem trava, por
+decisão do usuário); `formatarPedido` fallback sem teste; melhorias pontuais de UX que
+surgirem.
 
----
+## 7. Bugs pegos pela revisão / testes (valor do método)
+- Logs apagáveis via `TRUNCATE` → corrigido (trigger statement + REVOKE).
+- RLS impedia o perfil Recebimento de **finalizar** → corrigido.
+- Conta de usuário ficava **órfã** em falha parcial de cadastro → rollback.
+- Campo podia ser corrompido (promoção indevida de tipo) → travado.
+- **Parsing BR**: "1.500"→1,5 e "01/06"→janeiro → corrigido (achado no smoke).
+- Linhas em branco travavam a importação → ignoradas (achado no smoke).
+- Salvar processo podia gravar sem RLS e **logar mudança que não ocorreu** → guarda de 0 linhas.
+- **Finalizar travava após o 1º salvamento** (dirty considerava campos calculados) → corrigido.
+- Selects mostravam o **valor cru** (id/enum/chave) no lugar do rótulo (Base UI Select.Value)
+  → corrigido em Perfil, Logs (Entidade/Ação), Processos (Status), Campos (Tipo/Lista).
+- Ação sem permissão fazia **redirect silencioso** → agora esconde o item do menu + tela
+  "Acesso restrito" (Importar/Etiquetas).
 
-## 6. Decisões-chave (para não re-discutir)
+## 8. Decisões-chave (não re-discutir)
 1 processo = 1 material; ciclo Aberto→Em Conferência→Finalizado(+Cancelado); importação com
 mapeamento manual a cada vez; campos de lista guardam valor-texto (snapshot); obrigatoriedade
 E tipo de campo configuráveis; Cancelar/Reabrir só Sup/Admin; Atraso em dias com sinal;
-Amostral sobre Qtd. Recebida; Crítico Sim/Não; Responsável fixa no 1º preenchimento; tabelas
-Criticidade e NQA configuráveis pelo Admin.
+Amostral sobre Qtd. Recebida; Crítico = whitelist de fornecedores (Sim/Não); Responsável fixa
+no 1º preenchimento; tabelas Criticidade e NQA configuráveis; geração de etiqueta sem trava de
+status (por ora); Part Number = CÓDIGO-PEDIDOFMT+DOC+SEQ (validado).
 
-## 7. Bugs sérios pegos pela revisão (valor do método)
-- Logs apagáveis via `TRUNCATE` (a imutabilidade só cobria UPDATE/DELETE) → corrigido.
-- RLS impedia o perfil Recebimento de **finalizar** processos → corrigido.
-- Conta de usuário ficava **órfã** em falha parcial de cadastro → rollback.
-- Campo podia ser corrompido (promoção indevida de tipo) → travado.
-- **Parsing BR**: "1.500" virava 1,5 e "01/06" virava janeiro → corrigido (achado só com dados reais no smoke).
-- **Linhas em branco** da planilha travavam a importação → ignoradas (achado no smoke).
-- Salvar processo podia gravar sem RLS e **logar mudança que não ocorreu** → guarda de 0 linhas.
-
----
-
-## 8. Artefatos
+## 9. Artefatos
 Specs: `docs/superpowers/specs/`. Planos: `docs/superpowers/plans/`. Ledger de execução:
-`.superpowers/sdd/progress.md`. Procedimento de 1º admin: `docs/operacao/primeiro-admin.md`.
-Memória do projeto: `~/.claude/.../memory/projeto-shopfloor.md`.
+`.superpowers/sdd/progress.md`. Bootstrap admin: `docs/operacao/primeiro-admin.md`. Memória:
+`~/.claude/.../memory/projeto-shopfloor.md`.
