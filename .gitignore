@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local / scratch (não versionar)
+.claude/settings.local.json
+.superpowers/
+*.xlsx
+.~lock.*#
