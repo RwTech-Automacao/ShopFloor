@@ -85,11 +85,18 @@ export function ProcessoForm({
     () => valoresIniciaisComoTexto(campos, valoresIniciais),
     [campos, valoresIniciais],
   )
-  // Campos calculados nunca são editados via `atualizarValor` (são
-  // somente-leitura), então seu valor em `valores` permanece sempre igual ao
-  // inicial — não é preciso excluí-los explicitamente deste cálculo.
+  // "Alterações não salvas" considera SOMENTE os campos editáveis. Os campos
+  // calculados são recomputados pelo servidor ao salvar; após a revalidação, o
+  // `valoresIniciais` passa a conter os novos valores calculados enquanto o
+  // estado local ainda tem os antigos — se contados aqui, `dirty` ficaria
+  // eternamente verdadeiro e travaria o botão Finalizar. Por isso os excluímos.
   const dirty = useMemo(
-    () => campos.some((campo) => (valores[campo.campo] ?? '') !== (valoresIniciaisTexto[campo.campo] ?? '')),
+    () =>
+      campos.some(
+        (campo) =>
+          !campo.calculado &&
+          (valores[campo.campo] ?? '') !== (valoresIniciaisTexto[campo.campo] ?? ''),
+      ),
     [campos, valores, valoresIniciaisTexto],
   )
   useEffect(() => {
