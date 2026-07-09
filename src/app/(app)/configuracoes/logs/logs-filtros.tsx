@@ -74,7 +74,13 @@ export function LogsFiltros() {
           onValueChange={(valor) => setEntidade(valor === TODOS ? '' : String(valor))}
         >
           <SelectTrigger id="filtro-entidade" className="w-40">
-            <SelectValue placeholder="Todas" />
+            <SelectValue placeholder="Todas">
+              {(value: string | null) =>
+                !value || value === TODOS
+                  ? 'Todas'
+                  : (ENTIDADES.find((e) => e.valor === value)?.rotulo ?? String(value))
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={TODOS}>Todas</SelectItem>
@@ -94,7 +100,13 @@ export function LogsFiltros() {
           onValueChange={(valor) => setAcao(valor === TODOS ? '' : String(valor))}
         >
           <SelectTrigger id="filtro-acao" className="w-44">
-            <SelectValue placeholder="Todas" />
+            <SelectValue placeholder="Todas">
+              {(value: string | null) =>
+                !value || value === TODOS
+                  ? 'Todas'
+                  : (ACOES.find((a) => a.valor === value)?.rotulo ?? String(value))
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={TODOS}>Todas</SelectItem>

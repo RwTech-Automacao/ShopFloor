@@ -70,7 +70,13 @@ export function ProcessosFiltros() {
           onValueChange={(valor) => setStatus(valor === TODOS ? '' : String(valor))}
         >
           <SelectTrigger id="filtro-status" className="w-44">
-            <SelectValue placeholder="Todos" />
+            <SelectValue placeholder="Todos">
+              {(value: string | null) =>
+                !value || value === TODOS
+                  ? 'Todos'
+                  : (STATUS.find((s) => s.valor === value)?.rotulo ?? String(value))
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={TODOS}>Todos</SelectItem>

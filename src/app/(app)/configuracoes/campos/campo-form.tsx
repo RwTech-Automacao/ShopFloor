@@ -94,7 +94,11 @@ export function CampoForm({ campo, listas }: CampoFormProps) {
                 onValueChange={(valor) => setTipo(valor as TipoCampo)}
               >
                 <SelectTrigger id="tipo" className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(value: string | null) =>
+                      value === 'texto' ? 'Texto' : value === 'lista' ? 'Lista' : String(value ?? '')
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="texto">Texto</SelectItem>
@@ -113,7 +117,13 @@ export function CampoForm({ campo, listas }: CampoFormProps) {
                 required
               >
                 <SelectTrigger id="lista_chave" className="w-full">
-                  <SelectValue placeholder="Selecione uma lista" />
+                  <SelectValue placeholder="Selecione uma lista">
+                    {(value: string | null) =>
+                      value
+                        ? (listas.find((l) => l.chave === value)?.nome ?? String(value))
+                        : 'Selecione uma lista'
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {listas.map((lista) => (
