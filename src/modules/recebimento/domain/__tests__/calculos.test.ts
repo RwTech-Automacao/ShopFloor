@@ -24,11 +24,18 @@ describe('diferencaNumerica', () => {
   it('null quando falta um valor', () => { expect(diferencaNumerica(null, 10)).toBeNull() })
 })
 describe('buscarCriticidade', () => {
-  const t = [{ fornecedor: 'AVNET INC', critico: 'Sim' }]
-  it('acha (case/trim-insensível ao fornecedor exato)', () => {
-    expect(buscarCriticidade('AVNET INC', t)).toBe('Sim')
+  const t = ['AVNET INC']
+  it('Sim quando o fornecedor está na lista (case/trim-insensível)', () => {
+    expect(buscarCriticidade('avnet inc', t)).toBe('Sim')
   })
-  it('null quando não acha', () => { expect(buscarCriticidade('X', t)).toBeNull() })
+  it('Não quando o fornecedor não está na lista', () => {
+    expect(buscarCriticidade('X', t)).toBe('Não')
+  })
+  it('null quando o fornecedor é vazio/ausente', () => {
+    expect(buscarCriticidade(null, t)).toBeNull()
+    expect(buscarCriticidade('   ', t)).toBeNull()
+    expect(buscarCriticidade('', t)).toBeNull()
+  })
 })
 describe('buscarNqa', () => {
   const t = [
@@ -47,7 +54,7 @@ describe('calcularCamposCalculados', () => {
     { campo: 'atraso', formula: 'diferenca_dias', formulaConfig: { a: 'data_chegada', b: 'data_prevista' } },
     { campo: 'responsavel_contagem', formula: 'usuario_primeiro', formulaConfig: {} },
   ]
-  const ctx = { criticidade: [], nqa: [], usuarioAtual: 'João', valoresAtuais: {} }
+  const ctx = { fornecedoresCriticos: [], nqa: [], usuarioAtual: 'João', valoresAtuais: {} }
   it('calcula atraso e fixa o responsável no primeiro preenchimento', () => {
     const r = calcularCamposCalculados({ data_chegada: '2026-06-10', data_prevista: '2026-06-05' }, campos, ctx)
     expect(r.atraso).toBe(5)

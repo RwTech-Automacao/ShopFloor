@@ -17,7 +17,7 @@ interface ProcessoDetalheProps {
   podeFinalizar: boolean
   podeExcluir: boolean
   podeEditarFinalizado: boolean
-  criticidade: { fornecedor: string; critico: string }[]
+  fornecedoresCriticos: string[]
   nqa: FaixaNqa[]
   usuarioAtual: string
 }
@@ -40,7 +40,7 @@ export function ProcessoDetalhe({
   podeFinalizar,
   podeExcluir,
   podeEditarFinalizado,
-  criticidade,
+  fornecedoresCriticos,
   nqa,
   usuarioAtual,
 }: ProcessoDetalheProps) {
@@ -55,7 +55,7 @@ export function ProcessoDetalhe({
         valoresIniciais={valoresIniciais}
         somenteLeitura={somenteLeitura}
         onDirtyChange={setDirty}
-        criticidade={criticidade}
+        fornecedoresCriticos={fornecedoresCriticos}
         nqa={nqa}
         usuarioAtual={usuarioAtual}
       />

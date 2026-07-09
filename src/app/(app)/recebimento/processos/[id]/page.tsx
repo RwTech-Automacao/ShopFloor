@@ -23,7 +23,7 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
   const processo = await buscarProcesso(id)
   if (!processo) notFound()
 
-  const [sessao, campos, criticidade, nqa] = await Promise.all([
+  const [sessao, campos, fornecedoresCriticos, nqa] = await Promise.all([
     getSessao(),
     carregarCamposFormulario(),
     carregarCriticidade(),
@@ -95,7 +95,7 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
         podeFinalizar={podeFinalizar}
         podeExcluir={podeExcluir}
         podeEditarFinalizado={podeEditarFinalizado}
-        criticidade={criticidade}
+        fornecedoresCriticos={fornecedoresCriticos}
         nqa={nqa}
         usuarioAtual={usuarioAtual}
       />

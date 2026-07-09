@@ -92,10 +92,10 @@ export async function salvarProcesso(
   const valoresAtuais = processo as unknown as Record<string, unknown>
   const valoresParaCalculo: Record<string, unknown> = { ...valoresAtuais, ...novosValores }
 
-  const [criticidade, nqa] = await Promise.all([carregarCriticidade(), carregarTabelaNqa()])
+  const [fornecedoresCriticos, nqa] = await Promise.all([carregarCriticidade(), carregarTabelaNqa()])
 
   const resultadoCalculo = calcularCamposCalculados(valoresParaCalculo, camposCalculados, {
-    criticidade,
+    fornecedoresCriticos,
     nqa,
     usuarioAtual: sessao.nome || sessao.email,
     valoresAtuais,

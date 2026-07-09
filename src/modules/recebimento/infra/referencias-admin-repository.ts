@@ -3,7 +3,6 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 export interface CriticidadeRow {
   id: string
   fornecedor: string
-  critico: string
 }
 
 export interface NqaRow {
@@ -17,7 +16,6 @@ export interface NqaRow {
 interface CriticidadeRowDb {
   id: string
   fornecedor: string
-  critico: string
 }
 
 interface NqaRowDb {
@@ -29,15 +27,15 @@ interface NqaRowDb {
 }
 
 /**
- * Lista completa da tabela de criticidade por fornecedor, com id — usada
- * pela tela de administração (`configuracoes/criticidade`). Para o cálculo
- * do campo `critico`, ver `carregarCriticidade` em `referencias-repository`.
+ * Lista completa dos fornecedores críticos, com id — usada pela tela de
+ * administração (`configuracoes/criticidade`). Para o cálculo do campo
+ * `critico`, ver `carregarCriticidade` em `referencias-repository`.
  */
 export async function listarCriticidade(): Promise<CriticidadeRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('criticidade_fornecedor')
-    .select('id, fornecedor, critico')
+    .select('id, fornecedor')
     .order('fornecedor', { ascending: true })
   if (error) throw error
   return (data ?? []) as CriticidadeRowDb[]
@@ -47,34 +45,22 @@ export async function buscarCriticidadePorId(id: string): Promise<CriticidadeRow
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('criticidade_fornecedor')
-    .select('id, fornecedor, critico')
+    .select('id, fornecedor')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
   return (data as CriticidadeRowDb | null) ?? null
 }
 
-export async function criarCriticidade(dados: {
-  fornecedor: string
-  critico: string
-}): Promise<{ id: string }> {
+export async function criarCriticidade(fornecedor: string): Promise<{ id: string }> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('criticidade_fornecedor')
-    .insert(dados)
+    .insert({ fornecedor })
     .select('id')
     .single()
   if (error) throw error
   return { id: (data as { id: string }).id }
-}
-
-export async function atualizarCriticidade(
-  id: string,
-  dados: { fornecedor: string; critico: string },
-): Promise<void> {
-  const supabase = await createServerSupabase()
-  const { error } = await supabase.from('criticidade_fornecedor').update(dados).eq('id', id)
-  if (error) throw error
 }
 
 export async function excluirCriticidade(id: string): Promise<void> {

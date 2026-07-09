@@ -2,17 +2,10 @@
 
 import { useState, useTransition } from 'react'
 import { useActionState } from 'react'
-import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { PlusIcon, Trash2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -22,13 +15,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { salvarCriticidade, excluirCriticidade } from '@/modules/recebimento/application/referencias-actions'
-import type { CriticidadeRow } from '@/modules/recebimento/infra/referencias-admin-repository'
 
-interface CriticidadeFormProps {
-  registro?: CriticidadeRow
-}
-
-export function CriticidadeForm({ registro }: CriticidadeFormProps) {
+export function CriticidadeForm() {
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState(salvarCriticidade, undefined)
 
@@ -45,47 +33,20 @@ export function CriticidadeForm({ registro }: CriticidadeFormProps) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          registro ? (
-            <Button variant="ghost" size="icon-sm" aria-label="Editar fornecedor">
-              <PencilIcon />
-            </Button>
-          ) : (
-            <Button className="bg-enterplak hover:bg-enterplak-700">
-              <PlusIcon />
-              Novo fornecedor
-            </Button>
-          )
+          <Button className="bg-enterplak hover:bg-enterplak-700">
+            <PlusIcon />
+            Novo fornecedor
+          </Button>
         }
       />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{registro ? 'Editar fornecedor' : 'Novo fornecedor'}</DialogTitle>
+          <DialogTitle>Novo fornecedor crítico</DialogTitle>
         </DialogHeader>
         <form action={formAction} className="flex flex-col gap-4">
-          {registro && <input type="hidden" name="id" value={registro.id} />}
-
           <div className="flex flex-col gap-2">
             <Label htmlFor="fornecedor">Fornecedor</Label>
-            <Input
-              id="fornecedor"
-              name="fornecedor"
-              placeholder="Nome do fornecedor"
-              defaultValue={registro?.fornecedor}
-              required
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="critico">Crítico</Label>
-            <Select name="critico" defaultValue={registro?.critico ?? 'Não'}>
-              <SelectTrigger id="critico" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Sim">Sim</SelectItem>
-                <SelectItem value="Não">Não</SelectItem>
-              </SelectContent>
-            </Select>
+            <Input id="fornecedor" name="fornecedor" placeholder="Nome do fornecedor" required />
           </div>
 
           {state && 'erro' in state && <p className="text-sm text-red-600">{state.erro}</p>}

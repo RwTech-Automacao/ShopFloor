@@ -42,8 +42,8 @@ interface ProcessoFormProps {
    * valores salvos (evita finalizar com dados desatualizados/incompletos).
    */
   onDirtyChange?: (dirty: boolean) => void
-  /** Tabela de criticidade por fornecedor, para o cálculo ao vivo de `critico`. */
-  criticidade: { fornecedor: string; critico: string }[]
+  /** Lista de fornecedores críticos, para o cálculo ao vivo de `critico` (presença = crítico). */
+  fornecedoresCriticos: string[]
   /** Tabela NQA (faixas de quantidade -> amostra), para o cálculo ao vivo de `amostral`. */
   nqa: FaixaNqa[]
   /** Nome/e-mail do usuário logado, usado pelo cálculo ao vivo de `responsavel_contagem`. */
@@ -71,7 +71,7 @@ export function ProcessoForm({
   valoresIniciais,
   somenteLeitura,
   onDirtyChange,
-  criticidade,
+  fornecedoresCriticos,
   nqa,
   usuarioAtual,
 }: ProcessoFormProps) {
@@ -111,12 +111,12 @@ export function ProcessoForm({
   const valoresCalculados = useMemo(
     () =>
       calcularCamposCalculados(valores, camposCalculados, {
-        criticidade,
+        fornecedoresCriticos,
         nqa,
         usuarioAtual,
         valoresAtuais: valoresIniciais,
       }),
-    [valores, camposCalculados, criticidade, nqa, usuarioAtual, valoresIniciais],
+    [valores, camposCalculados, fornecedoresCriticos, nqa, usuarioAtual, valoresIniciais],
   )
 
   function atualizarValor(campo: string, valor: string) {

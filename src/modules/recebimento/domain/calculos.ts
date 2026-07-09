@@ -1,7 +1,7 @@
 export type FaixaNqa = { quantidadeMin: number; quantidadeMax: number | null; tamanhoAmostra: number | null }
 export type CampoCalc = { campo: string; formula: string | null; formulaConfig: Record<string, string> }
 export type ContextoCalculo = {
-  criticidade: { fornecedor: string; critico: string }[]
+  fornecedoresCriticos: string[]
   nqa: FaixaNqa[]
   usuarioAtual: string
   valoresAtuais: Record<string, unknown>
@@ -29,12 +29,12 @@ export function diferencaNumerica(a: unknown, b: unknown): number | null {
 
 export function buscarCriticidade(
   fornecedor: string | null,
-  tabela: { fornecedor: string; critico: string }[],
-): string | null {
-  if (!fornecedor) return null
+  fornecedoresCriticos: string[],
+): 'Sim' | 'Não' | null {
+  if (!fornecedor || !fornecedor.trim()) return null
   const alvo = fornecedor.trim().toLowerCase()
-  const achou = tabela.find((r) => r.fornecedor.trim().toLowerCase() === alvo)
-  return achou ? achou.critico : null
+  const achou = fornecedoresCriticos.some((f) => f.trim().toLowerCase() === alvo)
+  return achou ? 'Sim' : 'Não'
 }
 
 export function buscarNqa(quantidade: unknown, tabela: FaixaNqa[]): number | null {
@@ -69,7 +69,7 @@ export function calcularCamposCalculados(
       case 'lookup_fornecedor_critico':
         out[campo.campo] = buscarCriticidade(
           (valores[valorConfig(cfg, 'campo')] as string) ?? null,
-          ctx.criticidade,
+          ctx.fornecedoresCriticos,
         )
         break
       case 'tabela_nqa':

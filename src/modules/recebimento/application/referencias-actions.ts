@@ -6,7 +6,6 @@ import { podeFazer } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
 import {
-  atualizarCriticidade,
   atualizarTamanhoNqa,
   buscarCriticidadePorId,
   buscarNqaPorId,
@@ -17,7 +16,6 @@ import {
 export type ResultadoAcaoReferencia = { ok: true } | { erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para administrar essas referências.'
-const CRITICOS_VALIDOS = new Set(['Sim', 'Não'])
 
 export async function salvarCriticidade(
   _prev: ResultadoAcaoReferencia | undefined,
@@ -28,52 +26,24 @@ export async function salvarCriticidade(
     return { erro: SEM_PERMISSAO }
   }
 
-  const id = String(formData.get('id') ?? '').trim()
   const fornecedor = String(formData.get('fornecedor') ?? '').trim()
-  const critico = String(formData.get('critico') ?? '').trim()
 
   if (!fornecedor) return { erro: 'Informe o fornecedor.' }
-  if (!CRITICOS_VALIDOS.has(critico)) return { erro: 'Selecione se o fornecedor é crítico.' }
 
-  if (id) {
-    const antes = await buscarCriticidadePorId(id)
-    if (!antes) return { erro: 'Registro não encontrado.' }
-
-    const dados = { fornecedor, critico }
-    try {
-      await atualizarCriticidade(id, dados)
-    } catch {
-      return { erro: 'Não foi possível salvar. Verifique se o fornecedor já está cadastrado.' }
-    }
-
-    const diff = calcularDiff(
-      antes as unknown as Record<string, unknown>,
-      { ...antes, ...dados } as unknown as Record<string, unknown>,
-      ['fornecedor', 'critico'],
-    )
-    await registrarLog({
-      entidade: 'criticidade',
-      entidadeId: id,
-      acao: 'alterar_campo',
-      descricao: `Criticidade de "${fornecedor}" alterada`,
-      dados: diff,
-    })
-  } else {
-    let novo: { id: string }
-    try {
-      novo = await criarCriticidade({ fornecedor, critico })
-    } catch {
-      return { erro: 'Não foi possível criar. Verifique se o fornecedor já está cadastrado.' }
-    }
-
-    await registrarLog({
-      entidade: 'criticidade',
-      entidadeId: novo.id,
-      acao: 'criar',
-      descricao: `Criticidade de "${fornecedor}" cadastrada`,
-      dados: { fornecedor, critico },
-    })
+  let novo: { id: string }
+  try {
+    novo = await criarCriticidade(fornecedor)
+  } catch {
+    return { erro: 'Não foi possível criar. Verifique se o fornecedor já está cadastrado.' }
   }
+
+  await registrarLog({
+    entidade: 'criticidade',
+    entidadeId: novo.id,
+    acao: 'criar',
+    descricao: `Fornecedor crítico "${fornecedor}" cadastrado`,
+    dados: { fornecedor },
+  })
 
   revalidatePath('/configuracoes/criticidade')
   return { ok: true }

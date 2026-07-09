@@ -3,7 +3,6 @@ import type { FaixaNqa } from '../domain/calculos'
 
 interface CriticidadeFornecedorRow {
   fornecedor: string
-  critico: string
 }
 
 interface TabelaNqaRow {
@@ -13,14 +12,15 @@ interface TabelaNqaRow {
 }
 
 /**
- * Carrega a tabela de criticidade por fornecedor (`criticidade_fornecedor`),
- * usada pelo cálculo do campo `critico` (`lookup_fornecedor_critico`).
+ * Carrega a lista de fornecedores críticos (`criticidade_fornecedor`),
+ * usada pelo cálculo do campo `critico` (`lookup_fornecedor_critico`):
+ * presença nessa lista = crítico.
  */
-export async function carregarCriticidade(): Promise<CriticidadeFornecedorRow[]> {
+export async function carregarCriticidade(): Promise<string[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('criticidade_fornecedor').select('fornecedor, critico')
+  const { data, error } = await supabase.from('criticidade_fornecedor').select('fornecedor')
   if (error) throw error
-  return (data ?? []) as CriticidadeFornecedorRow[]
+  return ((data ?? []) as CriticidadeFornecedorRow[]).map((row) => row.fornecedor)
 }
 
 /**
