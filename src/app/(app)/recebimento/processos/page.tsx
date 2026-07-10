@@ -45,63 +45,104 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
     return query ? `/recebimento/processos?${query}` : '/recebimento/processos'
   }
 
+  const material = (p: (typeof linhas)[number]) =>
+    p.codigo_material ? `${p.codigo_material} — ${p.descricao_material ?? ''}` : '—'
+
+  const mensagemVazio =
+    sp.busca || sp.status
+      ? 'Nenhum processo encontrado para os filtros selecionados.'
+      : 'Nenhum processo encontrado.'
+
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Processos</h1>
-
       <ProcessosFiltros />
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Número</TableHead>
-            <TableHead>Nº NF</TableHead>
-            <TableHead>Fornecedor</TableHead>
-            <TableHead>Material</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Ações</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {linhas.length === 0 && (
+      {/* Desktop: tabela */}
+      <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                {sp.busca || sp.status
-                  ? 'Nenhum processo encontrado para os filtros selecionados.'
-                  : 'Nenhum processo encontrado.'}
-              </TableCell>
+              <TableHead>Número</TableHead>
+              <TableHead>Nº NF</TableHead>
+              <TableHead>Fornecedor</TableHead>
+              <TableHead>Material</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
-          )}
-          {linhas.map((processo) => {
-            const status = rotuloStatusProcesso(processo.status)
-            return (
-              <TableRow key={processo.id}>
-                <TableCell>{processo.numero}</TableCell>
-                <TableCell>{processo.numero_nf || '—'}</TableCell>
-                <TableCell>{processo.fornecedor || '—'}</TableCell>
-                <TableCell>
-                  {processo.codigo_material
-                    ? `${processo.codigo_material} — ${processo.descricao_material ?? ''}`
-                    : '—'}
-                </TableCell>
-                <TableCell>
-                  <Badge className={status.className}>{status.rotulo}</Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Abrir processo #${processo.numero}`}
-                    render={<Link href={`/recebimento/processos/${processo.id}`} />}
-                  >
-                    <ArrowRightIcon />
-                  </Button>
+          </TableHeader>
+          <TableBody>
+            {linhas.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  {mensagemVazio}
                 </TableCell>
               </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+            )}
+            {linhas.map((processo) => {
+              const status = rotuloStatusProcesso(processo.status)
+              return (
+                <TableRow key={processo.id}>
+                  <TableCell className="font-medium">{processo.numero}</TableCell>
+                  <TableCell>{processo.numero_nf || '—'}</TableCell>
+                  <TableCell>{processo.fornecedor || '—'}</TableCell>
+                  <TableCell>{material(processo)}</TableCell>
+                  <TableCell>
+                    <Badge className={status.className}>{status.rotulo}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Abrir processo #${processo.numero}`}
+                      render={<Link href={`/recebimento/processos/${processo.id}`} />}
+                    >
+                      <ArrowRightIcon />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Mobile: cards */}
+      <div className="space-y-3 md:hidden">
+        {linhas.length === 0 && (
+          <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
+            {mensagemVazio}
+          </p>
+        )}
+        {linhas.map((processo) => {
+          const status = rotuloStatusProcesso(processo.status)
+          return (
+            <Link
+              key={processo.id}
+              href={`/recebimento/processos/${processo.id}`}
+              className="block rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold">#{processo.numero}</span>
+                <Badge className={status.className}>{status.rotulo}</Badge>
+              </div>
+              <dl className="mt-3 space-y-1.5 text-sm">
+                <div className="flex gap-2">
+                  <dt className="w-24 shrink-0 text-muted-foreground">Nº NF</dt>
+                  <dd>{processo.numero_nf || '—'}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="w-24 shrink-0 text-muted-foreground">Fornecedor</dt>
+                  <dd className="min-w-0 flex-1">{processo.fornecedor || '—'}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="w-24 shrink-0 text-muted-foreground">Material</dt>
+                  <dd className="min-w-0 flex-1">{material(processo)}</dd>
+                </div>
+              </dl>
+            </Link>
+          )
+        })}
+      </div>
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
