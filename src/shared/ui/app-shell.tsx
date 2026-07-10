@@ -5,107 +5,196 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard,
+  Home,
   Inbox,
-  Settings,
+  Upload,
+  ClipboardList,
+  FileDown,
+  Tags,
+  Users,
+  ShieldCheck,
+  List,
+  SlidersHorizontal,
+  TriangleAlert,
+  Table2,
+  ScrollText,
+  Info,
+  ChevronDown,
   Menu,
   LogOut,
   type LucideIcon,
 } from 'lucide-react'
-import { NAV_ITENS } from './nav-config'
 import { sair } from '@/modules/auth/application/actions'
 import { cn } from '@/lib/utils'
 
-const ICONES: Record<string, LucideIcon> = {
-  home: LayoutDashboard,
-  recebimento: Inbox,
-  configuracoes: Settings,
+type Perms = Record<string, boolean>
+
+interface Folha {
+  chave: string
+  rotulo: string
+  href: string
+  icone: LucideIcon
+  perm: string
+}
+interface Grupo {
+  rotulo: string
+  perm?: string
+  itens: Folha[]
 }
 
+const HOME: Folha = { chave: 'home', rotulo: 'Home', href: '/home', icone: Home, perm: 'visualizar' }
+
+const RECEBIMENTO: Folha[] = [
+  { chave: 'importar', rotulo: 'Importar Planilha', href: '/recebimento/importar', icone: Upload, perm: 'importar' },
+  { chave: 'processos', rotulo: 'Processos', href: '/recebimento/processos', icone: ClipboardList, perm: 'visualizar' },
+  { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, perm: 'visualizar' },
+  { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, perm: 'gerar_etiqueta' },
+]
+
+const CONFIGURACOES: Grupo = {
+  rotulo: 'Configurações',
+  perm: 'administrar',
+  itens: [
+    { chave: 'usuarios', rotulo: 'Usuários', href: '/configuracoes/usuarios', icone: Users, perm: 'administrar' },
+    { chave: 'perfis', rotulo: 'Perfis', href: '/configuracoes/perfis', icone: ShieldCheck, perm: 'administrar' },
+    { chave: 'listas', rotulo: 'Listas Suspensas', href: '/configuracoes/listas', icone: List, perm: 'administrar' },
+    { chave: 'campos', rotulo: 'Campos', href: '/configuracoes/campos', icone: SlidersHorizontal, perm: 'administrar' },
+    { chave: 'criticidade', rotulo: 'Criticidade', href: '/configuracoes/criticidade', icone: TriangleAlert, perm: 'administrar' },
+    { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, perm: 'administrar' },
+    { chave: 'logs', rotulo: 'Logs do Sistema', href: '/configuracoes/logs', icone: ScrollText, perm: 'administrar' },
+  ],
+}
+
+const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/configuracoes/sobre', icone: Info, perm: 'administrar' }
+
 function iniciais(texto: string): string {
-  const partes = texto.trim().split(/[\s@.]+/).filter(Boolean)
-  const a = partes[0]?.[0] ?? '?'
-  const b = partes.length > 1 ? (partes[1]?.[0] ?? '') : ''
-  return (a + b).toUpperCase()
+  const p = texto.trim().split(/[\s@.]+/).filter(Boolean)
+  return ((p[0]?.[0] ?? '?') + (p[1]?.[0] ?? '')).toUpperCase()
+}
+
+function ehAtivo(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(href + '/')
 }
 
 export function AppShell({
   nome,
   email,
   perfilNome,
-  chavesVisiveis,
+  permissoes,
   children,
 }: {
   nome: string
   email: string
   perfilNome: string
-  chavesVisiveis: string[]
+  permissoes: Perms
   children: React.ReactNode
 }) {
   const pathname = usePathname()
   const [mobileAberto, setMobileAberto] = useState(false)
-  const itens = NAV_ITENS.filter((i) => chavesVisiveis.includes(i.chave))
+  const pode = (perm: string) => permissoes[perm] === true
 
-  const ehAtivo = (href: string) => {
-    const secao = '/' + (href.split('/')[1] ?? '')
-    return pathname.startsWith(secao)
-  }
+  const recebimentoVisivel = RECEBIMENTO.filter((i) => pode(i.perm))
+  const configVisivel = pode(CONFIGURACOES.perm ?? '') ? CONFIGURACOES.itens.filter((i) => pode(i.perm)) : []
+  const recebimentoAtivo = pathname.startsWith('/recebimento')
+  const [recAberto, setRecAberto] = useState(recebimentoAtivo)
+
+  const tituloPagina =
+    [HOME, ...RECEBIMENTO, ...CONFIGURACOES.itens, AJUDA]
+      .filter((i) => ehAtivo(pathname, i.href))
+      .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
+
+  const fechaMobile = () => setMobileAberto(false)
+
+  const linkClasse = (ativo: boolean) =>
+    cn(
+      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+      ativo
+        ? 'bg-primary text-primary-foreground shadow-sm'
+        : 'text-foreground/75 hover:bg-accent hover:text-accent-foreground',
+    )
+
+  const rotuloGrupo = (t: string) => (
+    <p className="px-3 pt-4 pb-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{t}</p>
+  )
 
   const sidebar = (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+    <div className="flex h-full flex-col border-r border-border bg-card">
       <div className="flex h-16 shrink-0 items-center px-5">
-        <Image
-          src="/Logo_Docs.png"
-          alt="Enterplak"
-          width={132}
-          height={44}
-          priority
-          style={{ height: 'auto' }}
-          className="brightness-0 invert"
-        />
+        <Image src="/Logo_Docs.png" alt="Enterplak" width={130} height={44} priority style={{ height: 'auto' }} />
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-        <p className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-sidebar-foreground/45 uppercase">
-          Menu
-        </p>
-        {itens.map((item) => {
-          const Icone = ICONES[item.chave] ?? LayoutDashboard
-          const ativo = ehAtivo(item.href)
-          return (
-            <Link
-              key={item.chave}
-              href={item.href}
-              onClick={() => setMobileAberto(false)}
-              aria-current={ativo ? 'page' : undefined}
-              className={cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                ativo
-                  ? 'bg-sidebar-accent text-white shadow-sm'
-                  : 'text-sidebar-foreground/80 hover:bg-white/10 hover:text-white',
-              )}
+      <nav className="flex-1 overflow-y-auto px-3 pb-4">
+        <Link href={HOME.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, HOME.href))}>
+          <HOME.icone className="size-[18px] shrink-0" />
+          {HOME.rotulo}
+        </Link>
+
+        {recebimentoVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('Recebimento')}
+            <button
+              type="button"
+              onClick={() => setRecAberto((v) => !v)}
+              className={cn(linkClasse(false), 'w-full justify-between')}
             >
-              <Icone className="size-[18px] shrink-0" />
-              {item.rotulo}
+              <span className="flex items-center gap-3">
+                <Inbox className="size-[18px] shrink-0" />
+                Recebimento
+              </span>
+              <ChevronDown className={cn('size-4 transition-transform', recAberto && 'rotate-180')} />
+            </button>
+            {recAberto && (
+              <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
+                {recebimentoVisivel.map((i) => (
+                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                    <i.icone className="size-[18px] shrink-0" />
+                    {i.rotulo}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {configVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('Configurações')}
+            <div className="space-y-1">
+              {configVisivel.map((i) => (
+                <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                  <i.icone className="size-[18px] shrink-0" />
+                  {i.rotulo}
+                </Link>
+              ))}
+            </div>
+          </>
+        )}
+
+        {pode(AJUDA.perm) && (
+          <>
+            {rotuloGrupo('Ajuda')}
+            <Link href={AJUDA.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, AJUDA.href))}>
+              <AJUDA.icone className="size-[18px] shrink-0" />
+              {AJUDA.rotulo}
             </Link>
-          )
-        })}
+          </>
+        )}
       </nav>
 
-      <div className="border-t border-sidebar-border p-3">
+      <div className="border-t border-border p-3">
         <div className="flex items-center gap-3 px-1 py-1">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-xs font-semibold text-white">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
             {iniciais(nome || email)}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">{nome || email}</p>
-            <p className="truncate text-xs text-sidebar-foreground/60">{perfilNome}</p>
+            <p className="truncate text-sm font-medium text-foreground">{nome || email}</p>
+            <p className="truncate text-xs text-muted-foreground">{perfilNome}</p>
           </div>
           <form action={sair}>
             <button
               type="submit"
               aria-label="Sair"
-              className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <LogOut className="size-4" />
             </button>
@@ -117,42 +206,26 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Sidebar fixa (desktop) */}
       <aside className="hidden w-64 shrink-0 lg:block">{sidebar}</aside>
 
-      {/* Drawer (mobile) */}
       {mobileAberto && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setMobileAberto(false)}
-            aria-hidden
-          />
+          <div className="absolute inset-0 bg-black/40" onClick={fechaMobile} aria-hidden />
           <div className="absolute inset-y-0 left-0 w-64 shadow-xl">{sidebar}</div>
         </div>
       )}
 
-      {/* Conteúdo */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/85 px-4 backdrop-blur sm:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-card px-4 sm:px-6">
           <button
             type="button"
             onClick={() => setMobileAberto(true)}
-            className="-ml-1 rounded-md p-2 text-muted-foreground hover:bg-muted lg:hidden"
+            className="-ml-1 rounded-md p-2 text-muted-foreground hover:bg-accent lg:hidden"
             aria-label="Abrir menu"
           >
             <Menu className="size-5" />
           </button>
-          <div className="lg:hidden">
-            <Image
-              src="/Logo_Docs.png"
-              alt="Enterplak"
-              width={110}
-              height={37}
-              style={{ height: 'auto' }}
-            />
-          </div>
-          <div className="flex-1" />
+          <h1 className="text-[15px] font-semibold text-foreground">{tituloPagina}</h1>
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
