@@ -11,13 +11,13 @@ const ROTULOS: Record<string, string> = {
 }
 
 const CORES: Record<string, string> = {
-  aberto: 'bg-gray-100 text-gray-700',
-  em_conferencia: 'bg-amber-100 text-amber-800',
-  finalizado: 'bg-green-100 text-green-800',
-  cancelado: 'bg-red-100 text-red-800',
+  aberto: 'bg-slate-50 text-slate-600 ring-1 ring-slate-500/25',
+  em_conferencia: 'bg-amber-50 text-amber-700 ring-1 ring-amber-600/30',
+  finalizado: 'bg-green-50 text-green-700 ring-1 ring-green-600/30',
+  cancelado: 'bg-red-50 text-red-700 ring-1 ring-red-600/30',
 }
 
-const COR_PADRAO = 'bg-gray-100 text-gray-700'
+const COR_PADRAO = 'bg-slate-50 text-slate-600 ring-1 ring-slate-500/25'
 
 /**
  * Rótulo em pt-BR e classes Tailwind (fundo/texto) para o status de um
