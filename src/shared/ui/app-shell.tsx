@@ -205,7 +205,7 @@ export function AppShell({
   )
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-dvh overflow-hidden bg-background">
       <aside className="hidden w-64 shrink-0 lg:block">{sidebar}</aside>
 
       {mobileAberto && (
@@ -215,8 +215,8 @@ export function AppShell({
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-card px-4 sm:px-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4 sm:px-6">
           <button
             type="button"
             onClick={() => setMobileAberto(true)}
@@ -228,7 +228,7 @@ export function AppShell({
           <h1 className="text-[15px] font-semibold text-foreground">{tituloPagina}</h1>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>
   )
