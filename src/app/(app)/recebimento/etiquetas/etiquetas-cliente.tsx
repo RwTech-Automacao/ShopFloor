@@ -175,54 +175,119 @@ export function EtiquetasCliente() {
             </span>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10" />
-                <TableHead>Nº</TableHead>
-                <TableHead>Código</TableHead>
-                <TableHead>Pedido</TableHead>
-                <TableHead>Doc</TableHead>
-                <TableHead>Volumes</TableHead>
-                <TableHead>Prévia (1º Part Number)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {resultados.length === 0 && (
+          {/* Desktop: tabela */}
+          <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
-                    Nenhum processo encontrado para os filtros selecionados.
-                  </TableCell>
+                  <TableHead className="w-10" />
+                  <TableHead>Nº</TableHead>
+                  <TableHead>Código</TableHead>
+                  <TableHead>Pedido</TableHead>
+                  <TableHead>Doc</TableHead>
+                  <TableHead>Volumes</TableHead>
+                  <TableHead>Prévia (1º Part Number)</TableHead>
                 </TableRow>
-              )}
-              {resultados.map((processo, indice) => {
-                const previa = previas.get(processo.id) ?? '— incompleto —'
-                const incompleto = previa === '— incompleto —'
-                return (
-                  <TableRow key={processo.id}>
-                    <TableCell>
-                      <input
-                        type="checkbox"
-                        aria-label={`Selecionar processo ${processo.codigoMaterial ?? processo.id}`}
-                        checked={selecionados.has(processo.id)}
-                        disabled={incompleto}
-                        onChange={(e) => alternarSelecao(processo.id, e.target.checked)}
-                        className="accent-enterplak"
-                      />
-                    </TableCell>
-                    <TableCell>{indice + 1}</TableCell>
-                    <TableCell>{processo.codigoMaterial || '—'}</TableCell>
-                    <TableCell>{processo.numeroPedido || '—'}</TableCell>
-                    <TableCell>{processo.diInpi || processo.numeroNf || '—'}</TableCell>
-                    <TableCell>{processo.volumes ?? '—'}</TableCell>
-                    <TableCell className={incompleto ? 'text-muted-foreground italic' : 'font-mono text-xs'}>
-                      {previa}
+              </TableHeader>
+              <TableBody>
+                {resultados.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      Nenhum processo encontrado para os filtros selecionados.
                     </TableCell>
                   </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+                )}
+                {resultados.map((processo, indice) => {
+                  const previa = previas.get(processo.id) ?? '— incompleto —'
+                  const incompleto = previa === '— incompleto —'
+                  return (
+                    <TableRow key={processo.id}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          aria-label={`Selecionar processo ${processo.codigoMaterial ?? processo.id}`}
+                          checked={selecionados.has(processo.id)}
+                          disabled={incompleto}
+                          onChange={(e) => alternarSelecao(processo.id, e.target.checked)}
+                          className="accent-enterplak"
+                        />
+                      </TableCell>
+                      <TableCell>{indice + 1}</TableCell>
+                      <TableCell>{processo.codigoMaterial || '—'}</TableCell>
+                      <TableCell>{processo.numeroPedido || '—'}</TableCell>
+                      <TableCell>{processo.diInpi || processo.numeroNf || '—'}</TableCell>
+                      <TableCell>{processo.volumes ?? '—'}</TableCell>
+                      <TableCell className={incompleto ? 'text-muted-foreground italic' : 'font-mono text-xs'}>
+                        {previa}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="space-y-3 md:hidden">
+            {resultados.length === 0 && (
+              <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
+                Nenhum processo encontrado para os filtros selecionados.
+              </p>
+            )}
+            {resultados.map((processo, indice) => {
+              const previa = previas.get(processo.id) ?? '— incompleto —'
+              const incompleto = previa === '— incompleto —'
+              return (
+                <div key={processo.id} className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Selecionar processo ${processo.codigoMaterial ?? processo.id}`}
+                      checked={selecionados.has(processo.id)}
+                      disabled={incompleto}
+                      onChange={(e) => alternarSelecao(processo.id, e.target.checked)}
+                      className="mt-1 accent-enterplak"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">#{indice + 1}</span>
+                      </div>
+                      <dl className="mt-2 space-y-1.5 text-sm">
+                        <div className="flex gap-2">
+                          <dt className="w-28 shrink-0 text-muted-foreground">Código</dt>
+                          <dd className="min-w-0 flex-1">{processo.codigoMaterial || '—'}</dd>
+                        </div>
+                        <div className="flex gap-2">
+                          <dt className="w-28 shrink-0 text-muted-foreground">Pedido</dt>
+                          <dd className="min-w-0 flex-1">{processo.numeroPedido || '—'}</dd>
+                        </div>
+                        <div className="flex gap-2">
+                          <dt className="w-28 shrink-0 text-muted-foreground">Doc</dt>
+                          <dd className="min-w-0 flex-1">{processo.diInpi || processo.numeroNf || '—'}</dd>
+                        </div>
+                        <div className="flex gap-2">
+                          <dt className="w-28 shrink-0 text-muted-foreground">Volumes</dt>
+                          <dd className="min-w-0 flex-1">{processo.volumes ?? '—'}</dd>
+                        </div>
+                        <div className="flex gap-2">
+                          <dt className="w-28 shrink-0 text-muted-foreground">Prévia</dt>
+                          <dd
+                            className={
+                              incompleto
+                                ? 'min-w-0 flex-1 text-muted-foreground italic'
+                                : 'min-w-0 flex-1 font-mono text-xs'
+                            }
+                          >
+                            {previa}
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
 
           <div className="flex flex-col items-start gap-2">
             <Button

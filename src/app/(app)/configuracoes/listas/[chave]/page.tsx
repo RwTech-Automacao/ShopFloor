@@ -46,42 +46,72 @@ export default async function ListaDetalhePage({ params }: ListaDetalhePageProps
       </div>
       <p className="text-sm text-muted-foreground">Chave: {lista.chave}</p>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Valor</TableHead>
-            <TableHead className="text-center">Ordem</TableHead>
-            <TableHead className="text-center">Ativo</TableHead>
-            <TableHead className="text-right">Ações</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {itens.map((item) => (
-            <TableRow key={item.id}>
-              <TableCell className="font-medium">{item.valor}</TableCell>
-              <TableCell className="text-center">{item.ordem}</TableCell>
-              <TableCell className="text-center">
-                <div className="flex justify-center">
-                  <AlternarItemAtivo id={item.id} ativo={item.ativo} />
-                </div>
-              </TableCell>
-              <TableCell className="text-right">
-                <div className="flex justify-end gap-1">
-                  <ItemForm listaId={lista.id} listaChave={lista.chave} item={item} />
-                  <ExcluirItemButton id={item.id} valor={item.valor} />
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-          {itens.length === 0 && (
+      {/* Desktop: tabela */}
+      <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                Nenhum item cadastrado nesta lista.
-              </TableCell>
+              <TableHead>Valor</TableHead>
+              <TableHead className="text-center">Ordem</TableHead>
+              <TableHead className="text-center">Ativo</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
-          )}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {itens.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell className="font-medium">{item.valor}</TableCell>
+                <TableCell className="text-center">{item.ordem}</TableCell>
+                <TableCell className="text-center">
+                  <div className="flex justify-center">
+                    <AlternarItemAtivo id={item.id} ativo={item.ativo} />
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <ItemForm listaId={lista.id} listaChave={lista.chave} item={item} />
+                    <ExcluirItemButton id={item.id} valor={item.valor} />
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {itens.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                  Nenhum item cadastrado nesta lista.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Mobile: cards */}
+      <div className="space-y-3 md:hidden">
+        {itens.length === 0 && (
+          <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
+            Nenhum item cadastrado nesta lista.
+          </p>
+        )}
+        {itens.map((item) => (
+          <div key={item.id} className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold">{item.valor}</span>
+              <AlternarItemAtivo id={item.id} ativo={item.ativo} />
+            </div>
+            <dl className="mt-3 space-y-1.5 text-sm">
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0 text-muted-foreground">Ordem</dt>
+                <dd className="min-w-0 flex-1">{item.ordem}</dd>
+              </div>
+            </dl>
+            <div className="mt-3 flex justify-end gap-1 border-t border-border pt-3">
+              <ItemForm listaId={lista.id} listaChave={lista.chave} item={item} />
+              <ExcluirItemButton id={item.id} valor={item.valor} />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

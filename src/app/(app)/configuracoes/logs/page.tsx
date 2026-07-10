@@ -110,47 +110,85 @@ export default async function LogsPage({ searchParams }: LogsPageProps) {
     return query ? `/configuracoes/logs?${query}` : '/configuracoes/logs'
   }
 
+  const mensagemVazio = 'Nenhum log encontrado para os filtros selecionados.'
+
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">Logs</h1>
-
       <LogsFiltros />
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Data/hora</TableHead>
-            <TableHead>Usuário</TableHead>
-            <TableHead>Entidade</TableHead>
-            <TableHead>Ação</TableHead>
-            <TableHead>Descrição</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {linhas.length === 0 && (
+      {/* Desktop: tabela */}
+      <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
-                Nenhum log encontrado para os filtros selecionados.
-              </TableCell>
+              <TableHead>Data/hora</TableHead>
+              <TableHead>Usuário</TableHead>
+              <TableHead>Entidade</TableHead>
+              <TableHead>Ação</TableHead>
+              <TableHead>Descrição</TableHead>
             </TableRow>
-          )}
-          {linhas.map((log) => (
-            <TableRow key={log.id}>
-              <TableCell className="whitespace-nowrap text-muted-foreground">
-                {formatadorData.format(new Date(log.created_at))}
-              </TableCell>
-              <TableCell>{log.usuario_nome || '—'}</TableCell>
-              <TableCell>
-                <Badge variant="outline">{ROTULOS_ENTIDADE[log.entidade] ?? log.entidade}</Badge>
-              </TableCell>
-              <TableCell>{ROTULOS_ACAO[log.acao] ?? log.acao}</TableCell>
-              <TableCell>
-                <DescricaoLog log={log} />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {linhas.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  {mensagemVazio}
+                </TableCell>
+              </TableRow>
+            )}
+            {linhas.map((log) => (
+              <TableRow key={log.id}>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {formatadorData.format(new Date(log.created_at))}
+                </TableCell>
+                <TableCell>{log.usuario_nome || '—'}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{ROTULOS_ENTIDADE[log.entidade] ?? log.entidade}</Badge>
+                </TableCell>
+                <TableCell>{ROTULOS_ACAO[log.acao] ?? log.acao}</TableCell>
+                <TableCell>
+                  <DescricaoLog log={log} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Mobile: cards */}
+      <div className="space-y-3 md:hidden">
+        {linhas.length === 0 && (
+          <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
+            {mensagemVazio}
+          </p>
+        )}
+        {linhas.map((log) => (
+          <div key={log.id} className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold">{ROTULOS_ACAO[log.acao] ?? log.acao}</span>
+              <Badge variant="outline">{ROTULOS_ENTIDADE[log.entidade] ?? log.entidade}</Badge>
+            </div>
+            <dl className="mt-3 space-y-1.5 text-sm">
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0 text-muted-foreground">Data/hora</dt>
+                <dd className="min-w-0 flex-1 text-muted-foreground">
+                  {formatadorData.format(new Date(log.created_at))}
+                </dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0 text-muted-foreground">Usuário</dt>
+                <dd className="min-w-0 flex-1">{log.usuario_nome || '—'}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0 text-muted-foreground">Descrição</dt>
+                <dd className="min-w-0 flex-1">
+                  <DescricaoLog log={log} />
+                </dd>
+              </div>
+            </dl>
+          </div>
+        ))}
+      </div>
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>

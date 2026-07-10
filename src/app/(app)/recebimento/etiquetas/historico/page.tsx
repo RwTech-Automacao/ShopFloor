@@ -37,40 +37,79 @@ export default async function HistoricoEtiquetasPage() {
         </Link>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Data/hora</TableHead>
-            <TableHead>Usuário</TableHead>
-            <TableHead>Filtro</TableHead>
-            <TableHead>Nº processos</TableHead>
-            <TableHead>Nº etiquetas</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {geracoes.length === 0 && (
+      {/* Desktop: tabela */}
+      <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
-                Nenhuma geração de etiquetas registrada ainda.
-              </TableCell>
+              <TableHead>Data/hora</TableHead>
+              <TableHead>Usuário</TableHead>
+              <TableHead>Filtro</TableHead>
+              <TableHead>Nº processos</TableHead>
+              <TableHead>Nº etiquetas</TableHead>
             </TableRow>
-          )}
-          {geracoes.map((geracao) => (
-            <TableRow key={geracao.id}>
-              <TableCell className="whitespace-nowrap text-muted-foreground">
+          </TableHeader>
+          <TableBody>
+            {geracoes.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  Nenhuma geração de etiquetas registrada ainda.
+                </TableCell>
+              </TableRow>
+            )}
+            {geracoes.map((geracao) => (
+              <TableRow key={geracao.id}>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {formatadorData.format(new Date(geracao.created_at))}
+                </TableCell>
+                <TableCell>{geracao.usuario_nome || '—'}</TableCell>
+                <TableCell>
+                  {ROTULOS_TIPO[geracao.filtro_tipo] ?? geracao.filtro_tipo}
+                  {geracao.filtro_valor ? `: ${geracao.filtro_valor}` : ''}
+                </TableCell>
+                <TableCell>{geracao.total_processos}</TableCell>
+                <TableCell>{geracao.total_etiquetas}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Mobile: cards */}
+      <div className="space-y-3 md:hidden">
+        {geracoes.length === 0 && (
+          <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
+            Nenhuma geração de etiquetas registrada ainda.
+          </p>
+        )}
+        {geracoes.map((geracao) => (
+          <div key={geracao.id} className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold">{geracao.usuario_nome || '—'}</span>
+              <span className="whitespace-nowrap text-muted-foreground">
                 {formatadorData.format(new Date(geracao.created_at))}
-              </TableCell>
-              <TableCell>{geracao.usuario_nome || '—'}</TableCell>
-              <TableCell>
-                {ROTULOS_TIPO[geracao.filtro_tipo] ?? geracao.filtro_tipo}
-                {geracao.filtro_valor ? `: ${geracao.filtro_valor}` : ''}
-              </TableCell>
-              <TableCell>{geracao.total_processos}</TableCell>
-              <TableCell>{geracao.total_etiquetas}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              </span>
+            </div>
+            <dl className="mt-3 space-y-1.5 text-sm">
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0 text-muted-foreground">Filtro</dt>
+                <dd className="min-w-0 flex-1">
+                  {ROTULOS_TIPO[geracao.filtro_tipo] ?? geracao.filtro_tipo}
+                  {geracao.filtro_valor ? `: ${geracao.filtro_valor}` : ''}
+                </dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0 text-muted-foreground">Nº processos</dt>
+                <dd className="min-w-0 flex-1">{geracao.total_processos}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0 text-muted-foreground">Nº etiquetas</dt>
+                <dd className="min-w-0 flex-1">{geracao.total_etiquetas}</dd>
+              </div>
+            </dl>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
