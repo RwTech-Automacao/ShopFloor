@@ -5,9 +5,13 @@ export interface ProcessoResumoRow {
   id: string
   numero: number
   numero_nf: string | null
+  numero_emb: string | null
+  di_inpi: string | null
+  acp_cliente: string | null
+  numero_pedido: string | null
+  tipo: string | null
   fornecedor: string | null
   codigo_material: string | null
-  descricao_material: string | null
   status: string
 }
 
@@ -42,9 +46,10 @@ export async function listarProcessos({
 
   let query = supabase
     .from('processos_recebimento')
-    .select('id, numero, numero_nf, fornecedor, codigo_material, descricao_material, status', {
-      count: 'exact',
-    })
+    .select(
+      'id, numero, numero_nf, numero_emb, di_inpi, acp_cliente, numero_pedido, tipo, fornecedor, codigo_material, status',
+      { count: 'exact' },
+    )
 
   if (status) query = query.eq('status', status)
 

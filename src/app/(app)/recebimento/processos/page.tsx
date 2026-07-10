@@ -45,27 +45,38 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
     return query ? `/recebimento/processos?${query}` : '/recebimento/processos'
   }
 
-  const material = (p: (typeof linhas)[number]) =>
-    p.codigo_material ? `${p.codigo_material} — ${p.descricao_material ?? ''}` : '—'
-
   const mensagemVazio =
     sp.busca || sp.status
       ? 'Nenhum processo encontrado para os filtros selecionados.'
       : 'Nenhum processo encontrado.'
 
+  // Campos exibidos, na ordem definida pelo usuário. Reaproveitado tanto pela
+  // tabela (desktop) quanto pelos cards (mobile) para manter uma só fonte de
+  // verdade sobre o quê aparece e em que ordem.
+  const campos: { rotulo: string; valor: (p: (typeof linhas)[number]) => string }[] = [
+    { rotulo: 'NF', valor: (p) => p.numero_nf || '—' },
+    { rotulo: 'Nº EMB', valor: (p) => p.numero_emb || '—' },
+    { rotulo: 'Nº DI/INPI', valor: (p) => p.di_inpi || '—' },
+    { rotulo: 'ACP/Cliente', valor: (p) => p.acp_cliente || '—' },
+    { rotulo: 'Nº Pedido', valor: (p) => p.numero_pedido || '—' },
+    { rotulo: 'Tipo', valor: (p) => p.tipo || '—' },
+    { rotulo: 'Fornecedor', valor: (p) => p.fornecedor || '—' },
+    { rotulo: 'Código', valor: (p) => p.codigo_material || '—' },
+  ]
+
   return (
     <div className="flex flex-col gap-4">
       <ProcessosFiltros />
 
-      {/* Desktop: tabela */}
-      <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
-        <Table>
+      {/* Desktop: tabela (fonte compacta; rola lateralmente se não couber) */}
+      <div className="hidden rounded-lg border border-border bg-card md:block">
+        <Table className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
           <TableHeader>
             <TableRow>
               <TableHead>Número</TableHead>
-              <TableHead>Nº NF</TableHead>
-              <TableHead>Fornecedor</TableHead>
-              <TableHead>Material</TableHead>
+              {campos.map((c) => (
+                <TableHead key={c.rotulo}>{c.rotulo}</TableHead>
+              ))}
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
@@ -73,7 +84,7 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
           <TableBody>
             {linhas.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={campos.length + 3} className="py-8 text-center text-muted-foreground">
                   {mensagemVazio}
                 </TableCell>
               </TableRow>
@@ -83,9 +94,9 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
               return (
                 <TableRow key={processo.id}>
                   <TableCell className="font-medium">{processo.numero}</TableCell>
-                  <TableCell>{processo.numero_nf || '—'}</TableCell>
-                  <TableCell>{processo.fornecedor || '—'}</TableCell>
-                  <TableCell>{material(processo)}</TableCell>
+                  {campos.map((c) => (
+                    <TableCell key={c.rotulo}>{c.valor(processo)}</TableCell>
+                  ))}
                   <TableCell>
                     <Badge className={status.className}>{status.rotulo}</Badge>
                   </TableCell>
@@ -126,18 +137,12 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
                 <Badge className={status.className}>{status.rotulo}</Badge>
               </div>
               <dl className="mt-3 space-y-1.5 text-sm">
-                <div className="flex gap-2">
-                  <dt className="w-24 shrink-0 text-muted-foreground">Nº NF</dt>
-                  <dd>{processo.numero_nf || '—'}</dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="w-24 shrink-0 text-muted-foreground">Fornecedor</dt>
-                  <dd className="min-w-0 flex-1">{processo.fornecedor || '—'}</dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="w-24 shrink-0 text-muted-foreground">Material</dt>
-                  <dd className="min-w-0 flex-1">{material(processo)}</dd>
-                </div>
+                {campos.map((c) => (
+                  <div key={c.rotulo} className="flex gap-2">
+                    <dt className="w-24 shrink-0 text-muted-foreground">{c.rotulo}</dt>
+                    <dd className="min-w-0 flex-1">{c.valor(processo)}</dd>
+                  </div>
+                ))}
               </dl>
             </Link>
           )

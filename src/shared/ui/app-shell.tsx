@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   List,
   SlidersHorizontal,
+  Settings,
+  Settings2,
   TriangleAlert,
   Table2,
   ScrollText,
@@ -36,12 +38,6 @@ interface Folha {
   icone: LucideIcon
   perm: string
 }
-interface Grupo {
-  rotulo: string
-  perm?: string
-  itens: Folha[]
-}
-
 const HOME: Folha = { chave: 'home', rotulo: 'Home', href: '/home', icone: Home, perm: 'visualizar' }
 
 const RECEBIMENTO: Folha[] = [
@@ -51,19 +47,28 @@ const RECEBIMENTO: Folha[] = [
   { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, perm: 'gerar_etiqueta' },
 ]
 
-const CONFIGURACOES: Grupo = {
-  rotulo: 'Configurações',
-  perm: 'administrar',
-  itens: [
-    { chave: 'usuarios', rotulo: 'Usuários', href: '/configuracoes/usuarios', icone: Users, perm: 'administrar' },
-    { chave: 'perfis', rotulo: 'Perfis', href: '/configuracoes/perfis', icone: ShieldCheck, perm: 'administrar' },
-    { chave: 'listas', rotulo: 'Listas Suspensas', href: '/configuracoes/listas', icone: List, perm: 'administrar' },
-    { chave: 'campos', rotulo: 'Campos', href: '/configuracoes/campos', icone: SlidersHorizontal, perm: 'administrar' },
-    { chave: 'criticidade', rotulo: 'Criticidade', href: '/configuracoes/criticidade', icone: TriangleAlert, perm: 'administrar' },
-    { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, perm: 'administrar' },
-    { chave: 'logs', rotulo: 'Logs do Sistema', href: '/configuracoes/logs', icone: ScrollText, perm: 'administrar' },
-  ],
-}
+const CONFIG_PERM = 'administrar'
+
+// Itens de Configurações que ficam "soltos" acima do accordion.
+const CONFIG_TOPO: Folha[] = [
+  { chave: 'usuarios', rotulo: 'Usuários', href: '/configuracoes/usuarios', icone: Users, perm: 'administrar' },
+  { chave: 'perfis', rotulo: 'Perfis', href: '/configuracoes/perfis', icone: ShieldCheck, perm: 'administrar' },
+]
+
+// Configurações específicas do módulo de Recebimento, agrupadas num accordion.
+const CONFIG_RECEBIMENTO: Folha[] = [
+  { chave: 'listas', rotulo: 'Listas Suspensas', href: '/configuracoes/listas', icone: List, perm: 'administrar' },
+  { chave: 'campos', rotulo: 'Campos', href: '/configuracoes/campos', icone: SlidersHorizontal, perm: 'administrar' },
+  { chave: 'criticidade', rotulo: 'Criticidade', href: '/configuracoes/criticidade', icone: TriangleAlert, perm: 'administrar' },
+  { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, perm: 'administrar' },
+]
+
+// Itens de Configurações que ficam "soltos" abaixo do accordion.
+const CONFIG_BASE: Folha[] = [
+  { chave: 'logs', rotulo: 'Logs do Sistema', href: '/configuracoes/logs', icone: ScrollText, perm: 'administrar' },
+]
+
+const CONFIG_TODOS: Folha[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...CONFIG_BASE]
 
 const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/configuracoes/sobre', icone: Info, perm: 'administrar' }
 
@@ -94,12 +99,20 @@ export function AppShell({
   const pode = (perm: string) => permissoes[perm] === true
 
   const recebimentoVisivel = RECEBIMENTO.filter((i) => pode(i.perm))
-  const configVisivel = pode(CONFIGURACOES.perm ?? '') ? CONFIGURACOES.itens.filter((i) => pode(i.perm)) : []
+  const podeConfig = pode(CONFIG_PERM)
+  const configTopo = podeConfig ? CONFIG_TOPO.filter((i) => pode(i.perm)) : []
+  const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter((i) => pode(i.perm)) : []
+  const configBase = podeConfig ? CONFIG_BASE.filter((i) => pode(i.perm)) : []
+  const temConfig = configTopo.length + configRec.length + configBase.length > 0
   const recebimentoAtivo = pathname.startsWith('/recebimento')
   const [recAberto, setRecAberto] = useState(recebimentoAtivo)
+  const configAtivo = CONFIG_TODOS.some((i) => ehAtivo(pathname, i.href))
+  const [configAberto, setConfigAberto] = useState(configAtivo)
+  const configRecAtivo = CONFIG_RECEBIMENTO.some((i) => ehAtivo(pathname, i.href))
+  const [configRecAberto, setConfigRecAberto] = useState(configRecAtivo)
 
   const tituloPagina =
-    [HOME, ...RECEBIMENTO, ...CONFIGURACOES.itens, AJUDA]
+    [HOME, ...RECEBIMENTO, ...CONFIG_TODOS, AJUDA]
       .filter((i) => ehAtivo(pathname, i.href))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
@@ -156,18 +169,63 @@ export function AppShell({
           </>
         )}
 
-        {configVisivel.length > 0 && (
-          <>
-            {rotuloGrupo('Configurações')}
-            <div className="space-y-1">
-              {configVisivel.map((i) => (
-                <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
-                  <i.icone className="size-[18px] shrink-0" />
-                  {i.rotulo}
-                </Link>
-              ))}
-            </div>
-          </>
+        {temConfig && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setConfigAberto((v) => !v)}
+              className={cn(linkClasse(false), 'w-full justify-between')}
+            >
+              <span className="flex items-center gap-3">
+                <Settings className="size-[18px] shrink-0" />
+                Configurações
+              </span>
+              <ChevronDown className={cn('size-4 transition-transform', configAberto && 'rotate-180')} />
+            </button>
+            {configAberto && (
+              <div className="mt-1 space-y-1">
+                {configTopo.map((i) => (
+                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                    <i.icone className="size-[18px] shrink-0" />
+                    {i.rotulo}
+                  </Link>
+                ))}
+
+                {configRec.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setConfigRecAberto((v) => !v)}
+                      className={cn(linkClasse(false), 'w-full justify-between')}
+                    >
+                      <span className="flex items-center gap-3">
+                        <Settings2 className="size-[18px] shrink-0" />
+                        Ajustes Recebimento
+                      </span>
+                      <ChevronDown className={cn('size-4 transition-transform', configRecAberto && 'rotate-180')} />
+                    </button>
+                    {configRecAberto && (
+                      <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
+                        {configRec.map((i) => (
+                          <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                            <i.icone className="size-[18px] shrink-0" />
+                            {i.rotulo}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {configBase.map((i) => (
+                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                    <i.icone className="size-[18px] shrink-0" />
+                    {i.rotulo}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {pode(AJUDA.perm) && (
