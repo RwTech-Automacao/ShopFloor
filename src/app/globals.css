@@ -50,38 +50,50 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Paleta Enterplak — vinho #8D2033 sobre névoa clara, cards brancos. */
+  --background: #f5f6f8;         /* névoa (fundo da aplicação) */
+  --foreground: #171a1f;         /* tinta (texto) */
+  --card: #ffffff;
+  --card-foreground: #171a1f;
+  --popover: #ffffff;
+  --popover-foreground: #171a1f;
+  --primary: #8d2033;            /* vinho Enterplak */
+  --primary-foreground: #ffffff;
+  --secondary: #f1f2f5;
+  --secondary-foreground: #171a1f;
+  --muted: #f1f2f5;
+  --muted-foreground: #6a7180;   /* suave */
+  --accent: #f9eef0;             /* tint de vinho (hover/realces) */
+  --accent-foreground: #8d2033;
+  --destructive: #b91c1c;        /* alinhado ao status Cancelado */
+  --border: #e6e8ec;
+  --input: #e6e8ec;
+  --ring: #8d2033;               /* foco na cor da marca */
+  --chart-1: #8d2033;
+  --chart-2: #b45309;
+  --chart-3: #15803d;
+  --chart-4: #64748b;
+  --chart-5: #7a1b2c;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Sidebar de marca (vinho profundo) */
+  --sidebar: #5e1522;
+  --sidebar-foreground: #f7e9ec;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #8d2033;
+  --sidebar-accent: #7a1b2c;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #7a1b2c;
+  --sidebar-ring: #f7e9ec;
+
+  /* Status do processo (badges) */
+  --status-aberto: #64748b;
+  --status-aberto-bg: #f1f5f9;
+  --status-conferencia: #b45309;
+  --status-conferencia-bg: #fef3c7;
+  --status-finalizado: #15803d;
+  --status-finalizado-bg: #dcfce7;
+  --status-cancelado: #b91c1c;
+  --status-cancelado-bg: #fee2e2;
 }
 
 .dark {
