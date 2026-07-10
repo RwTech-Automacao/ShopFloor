@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Inbox, Settings, Tags, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Inbox, type LucideIcon } from 'lucide-react'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer, type Permissao } from '@/modules/auth/domain/perfil'
 
@@ -18,20 +18,6 @@ const ATALHOS: Atalho[] = [
     href: '/recebimento/processos',
     icone: Inbox,
     permissao: 'visualizar',
-  },
-  {
-    titulo: 'Etiquetas',
-    descricao: 'Gere as etiquetas de Part Number a partir dos processos.',
-    href: '/recebimento/etiquetas',
-    icone: Tags,
-    permissao: 'gerar_etiqueta',
-  },
-  {
-    titulo: 'Configurações',
-    descricao: 'Gerencie usuários, perfis, listas e campos do sistema.',
-    href: '/configuracoes/usuarios',
-    icone: Settings,
-    permissao: 'administrar',
   },
 ]
 
