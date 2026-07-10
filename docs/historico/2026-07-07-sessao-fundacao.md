@@ -64,10 +64,11 @@ geracoes_etiquetas. RLS em todas. RPC `importar_processos`.
 ## 4. GitHub
 Repositório privado **github.com/MatheusSilvaRwTech/ShopFloor**, branch `main`. Higiene
 feita (README, .gitignore; untrack de `.env.local`, `.claude/settings.local.json`,
-`.superpowers/`, planilha real). ⚠️ **O local costuma ficar à frente do remoto** — lembrar
-de `git push` após mudanças (sem SSH/credential manager ainda; usa token — o token exposto
-no chat deve ser revogado). Push inicial feito; **há commits novos não enviados** (fix do
-Finalizar, Etiquetas, correções de UX).
+`.superpowers/`, planilha real). Autenticação migrada para **chave SSH**
+(`~/.ssh/id_ed25519_github`) — token antigo exposto no chat **deve ser revogado**. Commits
+atribuídos a `MatheusSilvaRwTech <matheus.silva@rwtech.com.br>` (config local), com Claude
+como co-autor. Tudo sincronizado com o remoto. ⚠️ **O local costuma ficar à frente do
+remoto** — lembrar de `git push` após mudanças (produção republica a partir do `main`).
 
 ---
 
@@ -78,33 +79,18 @@ reproduzidos, com auditoria/permissões). Dados de teste foram **limpos** (proce
 importações, gerações zerados; config preservada; logs imutáveis permanecem) para teste do
 zero.
 
-**Fase atual: melhorias de UX/UI + responsividade.**
-- Prioridade do usuário: **fazer tudo bonito e consistente de uma vez (foundation-first),
-  evitando retrabalho.**
-- Alvo responsivo: **desktop + tablet + celular** (mobile-first).
-- **Referência visual (fornecida pelo usuário):** o CRM da própria RWTech ("MeuCRM").
-  Linguagem: **split-login** (painel de marca à esquerda com headline/subtítulo + formas
-  decorativas; formulário limpo à direita, show/hide senha, lembrar-me, footer); **sidebar
-  de marca** (fundo vinho, logo, seção "MENU", itens com ícone + rótulo, item ativo em pill
-  destacada, colapsável); **topbar** (busca global, notificações, avatar+usuário dropdown);
-  **dashboard** com saudação, **cards de indicadores** (ícone + número grande + subtítulo) e
-  painéis de conteúdo; toasts. Cor primária = **Enterplak #8D2033** (no lugar do azul do
-  CRM). Prints em `docs/historico/` ou anexados na conversa.
+**UX/UI + responsividade: CONCLUÍDOS.** Redesign aplicado (identidade Enterplak vinho
+`#8D2033`): split-login com painel de marca; **sidebar branca** com accordions e item ativo
+em pill vinho (decisão do usuário: branca em vez de vinho); topbar enxuta; home só com o card
+de Recebimento; tokens de tema, badges de status refinados, toasts (sonner). Responsividade
+funcional em desktop/tablet/celular: **shell de viewport fixo** com scroll independente
+(sidebar × conteúdo) e **tabelas que viram cards no mobile** (padrão replicado a ~11 telas).
+`tsc`/lint/build limpos.
 
-**Plano de UX (a executar, foundation-first):**
-1. Design system / tema: paleta Enterplak completa (vinho + neutros + estados), tipografia
-   (corrigir a fonte Geist que não aplica), espaçamentos/raios; tokens Tailwind.
-2. Esqueleto de layout responsivo: sidebar de marca colapsável (hambúrguer no mobile),
-   topbar (busca/notificações/usuário), breadcrumbs.
-3. Padrões base: tabela (cabeçalho fixo, zebra, ordenação, badges, empty state, skeleton →
-   vira cards no mobile), formulário (grid reflui 3→1 col; grupos em seções/abas), toasts
-   (Toaster) e diálogos de confirmação (no lugar de window.confirm).
-4. Home vira **painel** com atalhos + indicadores (processos por status, últimas
-   importações/gerações).
-5. Aplicar tela por tela (login, configurações, recebimento, etiquetas) com a nova base.
-   **Usar a skill frontend-design ao construir** (visual não-genérico).
+**Deploy na Vercel: CONCLUÍDO (2026-07-10).** Sistema no ar. Ver **Seção 10**.
 
-**Depois do UX:** deploy na Vercel; backlog remanescente.
+**Fase atual / próximos passos:** domínio próprio `shopfloor.enterplak.com.br` **pausado**
+(ver Seção 10); backlog remanescente (Seção 6). Sistema em produção e em uso.
 
 ---
 
@@ -141,3 +127,42 @@ status (por ora); Part Number = CÓDIGO-PEDIDOFMT+DOC+SEQ (validado).
 Specs: `docs/superpowers/specs/`. Planos: `docs/superpowers/plans/`. Ledger de execução:
 `.superpowers/sdd/progress.md`. Bootstrap admin: `docs/operacao/primeiro-admin.md`. Memória:
 `~/.claude/.../memory/projeto-shopfloor.md`.
+
+---
+
+## 10. Sessão 2026-07-10 — Deploy em produção (Vercel)
+
+**Resultado: ShopFloor no ar 24/7 em `https://shop-floor-blush.vercel.app`.** Saiu do
+localhost; setores da fábrica acessam por esse endereço.
+
+**Modelo de deploy:** Vercel conectada ao GitHub → **deploy automático via Git** (produção =
+branch `main`; nada vai ao ar sem `commit`+`push`). Decisão do usuário: **conta Vercel nova e
+separada** ("Matheus RwTech", login pelo GitHub `MatheusSilvaRwTech`, dono do repo) para
+**isolar produção da máquina local** — por isso NÃO usamos a CLI (que publicaria código local
+direto). Framework Next.js autodetectado.
+
+**Variáveis de ambiente na Vercel** (as 3 do `.env.local`, inseridas pelo usuário no painel,
+nunca no chat): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`. O app não tem env de URL própria, então nada muda ao trocar de
+domínio.
+
+**Percalços resolvidos:**
+- Vercel não enxergava o GitHub certo (conta Vercel estava atada a outro GitHub). Solução:
+  criar conta Vercel logada com `MatheusSilvaRwTech`.
+- **Dois projetos criados sem querer** — o primeiro (`shop-floor-w7sj`) tinha **Deployment
+  Protection / Vercel Authentication** ligada (muro que exige login na Vercel; barraria a
+  fábrica). Diagnóstico via WebFetch (redirect p/ `vercel.com/sso-api`). Mantido o
+  `shop-floor-blush` (público, ok); `shop-floor-w7sj` **excluído**.
+
+**Supabase — URL Configuration** (Authentication): Site URL = `https://shop-floor-blush.vercel.app`
+(sem curinga — não é permitido ali); Redirect URLs = `https://shop-floor-blush.vercel.app/**`
++ `http://localhost:3000/**`. Hoje o login é por senha/cookie e **não usa** esses redirects;
+é preparação para futuros fluxos de e-mail (reset de senha/magic link).
+
+**Domínio próprio `shopfloor.enterplak.com.br` — PAUSADO** (imprevistos; usuário
+testando/corrigindo). Adicionado no painel Vercel (Production). ⚠️ Descoberta importante: o
+**DNS do `enterplak.com.br` é gerenciado na LOCAWEB** (nameservers `ns1/ns2/ns3.locaweb.com.br`)
+— NÃO no Registro.br e NÃO na hospedagem do site (FTP em `ftp.enterplak.hospedagemdesites.ws`,
+provedor diferente). **Retomar:** criar registro **CNAME `shopfloor` → `cname.vercel-dns.com`**
+em `painel.locaweb.com.br → Domínios → Zona de DNS`; confirmar o valor exato na tela da Vercel;
+após propagar, atualizar Site URL/Redirect no Supabase para o domínio novo.
