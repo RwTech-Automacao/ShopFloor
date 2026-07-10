@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
-import { AlertTriangleIcon, CheckIcon, LockIcon } from 'lucide-react'
+import { LockIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -50,7 +51,6 @@ interface ProcessoFormProps {
   usuarioAtual: string
 }
 
-type ResultadoSalvar = { ok: true } | { ok: false; erro: string }
 
 function valoresIniciaisComoTexto(
   campos: CampoFormulario[],
@@ -79,7 +79,6 @@ export function ProcessoForm({
     valoresIniciaisComoTexto(campos, valoresIniciais),
   )
   const [salvando, startTransition] = useTransition()
-  const [resultado, setResultado] = useState<ResultadoSalvar | null>(null)
 
   const valoresIniciaisTexto = useMemo(
     () => valoresIniciaisComoTexto(campos, valoresIniciais),
@@ -127,12 +126,10 @@ export function ProcessoForm({
   )
 
   function atualizarValor(campo: string, valor: string) {
-    setResultado(null)
     setValores((atual) => ({ ...atual, [campo]: valor }))
   }
 
   function onSalvar() {
-    setResultado(null)
     startTransition(async () => {
       const payload: Record<string, unknown> = {}
       for (const campo of campos) {
@@ -148,7 +145,8 @@ export function ProcessoForm({
         payload[campo.campo] = campo.tipo === 'numero' ? (bruto === '' ? null : Number(bruto)) : bruto
       }
       const r = await salvarProcesso(processoId, payload)
-      setResultado(r.ok ? { ok: true } : { ok: false, erro: r.erro })
+      if (r.ok) toast.success('Alterações salvas.')
+      else toast.error(r.erro)
     })
   }
 
@@ -186,19 +184,9 @@ export function ProcessoForm({
 
       {!somenteLeitura && (
         <div className="flex items-center gap-3">
-          <Button onClick={onSalvar} disabled={salvando} className="bg-enterplak hover:bg-enterplak-700">
-            {salvando ? 'Salvando...' : 'Salvar'}
+          <Button onClick={onSalvar} disabled={salvando}>
+            {salvando ? 'Salvando…' : 'Salvar'}
           </Button>
-          {resultado?.ok && (
-            <span className="flex items-center gap-1.5 text-sm text-green-700">
-              <CheckIcon className="size-4 shrink-0" /> Processo salvo.
-            </span>
-          )}
-          {resultado && !resultado.ok && (
-            <span className="flex items-center gap-1.5 text-sm text-red-600">
-              <AlertTriangleIcon className="size-4 shrink-0" /> {resultado.erro}
-            </span>
-          )}
         </div>
       )}
     </div>

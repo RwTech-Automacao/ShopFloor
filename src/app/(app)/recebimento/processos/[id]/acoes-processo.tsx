@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { AlertTriangleIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -67,33 +67,23 @@ export function AcoesProcesso({
 
 function BotaoFinalizar({ processoId, bloqueado }: { processoId: string; bloqueado: boolean }) {
   const [pending, startTransition] = useTransition()
-  const [erro, setErro] = useState<string | null>(null)
 
   function onClick() {
-    setErro(null)
     startTransition(async () => {
       const resultado = await finalizarProcesso(processoId)
-      if (!resultado.ok) setErro(resultado.erro)
+      if (resultado.ok) toast.success('Processo finalizado.')
+      else toast.error(resultado.erro)
     })
   }
 
   return (
     <div className="flex flex-col gap-1">
-      <Button
-        onClick={onClick}
-        disabled={pending || bloqueado}
-        className="bg-enterplak hover:bg-enterplak-700"
-      >
-        {pending ? 'Finalizando...' : 'Finalizar'}
+      <Button onClick={onClick} disabled={pending || bloqueado}>
+        {pending ? 'Finalizando…' : 'Finalizar'}
       </Button>
-      {bloqueado && !erro && (
+      {bloqueado && (
         <p className="max-w-sm text-sm text-muted-foreground">
           Salve as alterações antes de finalizar.
-        </p>
-      )}
-      {erro && (
-        <p className="flex max-w-sm items-center gap-1.5 text-sm text-red-600">
-          <AlertTriangleIcon className="size-4 shrink-0" /> {erro}
         </p>
       )}
     </div>
@@ -102,27 +92,19 @@ function BotaoFinalizar({ processoId, bloqueado }: { processoId: string; bloquea
 
 function BotaoReabrir({ processoId }: { processoId: string }) {
   const [pending, startTransition] = useTransition()
-  const [erro, setErro] = useState<string | null>(null)
 
   function onClick() {
-    setErro(null)
     startTransition(async () => {
       const resultado = await reabrirProcesso(processoId)
-      if (!resultado.ok) setErro(resultado.erro)
+      if (resultado.ok) toast.success('Processo reaberto.')
+      else toast.error(resultado.erro)
     })
   }
 
   return (
-    <div className="flex flex-col gap-1">
-      <Button variant="outline" onClick={onClick} disabled={pending}>
-        {pending ? 'Reabrindo...' : 'Reabrir'}
-      </Button>
-      {erro && (
-        <p className="flex max-w-sm items-center gap-1.5 text-sm text-red-600">
-          <AlertTriangleIcon className="size-4 shrink-0" /> {erro}
-        </p>
-      )}
-    </div>
+    <Button variant="outline" onClick={onClick} disabled={pending}>
+      {pending ? 'Reabrindo…' : 'Reabrir'}
+    </Button>
   )
 }
 
@@ -130,18 +112,17 @@ function BotaoCancelar({ processoId }: { processoId: string }) {
   const [open, setOpen] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [pending, startTransition] = useTransition()
-  const [erro, setErro] = useState<string | null>(null)
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setErro(null)
     startTransition(async () => {
       const resultado = await cancelarProcesso(processoId, motivo)
       if (resultado.ok) {
         setOpen(false)
         setMotivo('')
+        toast.success('Processo cancelado.')
       } else {
-        setErro(resultado.erro)
+        toast.error(resultado.erro)
       }
     })
   }
@@ -151,10 +132,7 @@ function BotaoCancelar({ processoId }: { processoId: string }) {
       open={open}
       onOpenChange={(novoAberto) => {
         setOpen(novoAberto)
-        if (!novoAberto) {
-          setErro(null)
-          setMotivo('')
-        }
+        if (!novoAberto) setMotivo('')
       }}
     >
       <DialogTrigger render={<Button variant="destructive">Cancelar</Button>} />
@@ -173,14 +151,9 @@ function BotaoCancelar({ processoId }: { processoId: string }) {
               required
             />
           </div>
-          {erro && (
-            <p className="flex items-center gap-1.5 text-sm text-red-600">
-              <AlertTriangleIcon className="size-4 shrink-0" /> {erro}
-            </p>
-          )}
           <DialogFooter>
             <Button type="submit" variant="destructive" disabled={pending}>
-              {pending ? 'Cancelando...' : 'Confirmar cancelamento'}
+              {pending ? 'Cancelando…' : 'Confirmar cancelamento'}
             </Button>
           </DialogFooter>
         </form>
