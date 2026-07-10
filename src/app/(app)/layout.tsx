@@ -1,21 +1,22 @@
 import { redirect } from 'next/navigation'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { Sidebar } from '@/shared/ui/sidebar'
-import { UserMenu } from '@/shared/ui/user-menu'
+import { AppShell } from '@/shared/ui/app-shell'
+import { NAV_ITENS, itensVisiveis } from '@/shared/ui/nav-config'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sessao = await getSessao()
   if (!sessao) redirect('/login')
 
+  const chavesVisiveis = itensVisiveis(NAV_ITENS, sessao.perfil).map((i) => i.chave)
+
   return (
-    <div className="flex min-h-screen">
-      <Sidebar perfil={sessao.perfil} />
-      <div className="flex flex-1 flex-col">
-        <header className="flex h-16 items-center justify-end border-b bg-white px-6">
-          <UserMenu nome={sessao.nome} perfil={sessao.perfil.nome} />
-        </header>
-        <main className="flex-1 bg-gray-50 p-8">{children}</main>
-      </div>
-    </div>
+    <AppShell
+      nome={sessao.nome}
+      email={sessao.email}
+      perfilNome={sessao.perfil.nome}
+      chavesVisiveis={chavesVisiveis}
+    >
+      {children}
+    </AppShell>
   )
 }

@@ -25,10 +25,11 @@ export default function LoginPage() {
           />
           <div className="max-w-md">
             <h1 className="text-4xl font-bold leading-[1.1] tracking-tight text-white">
-              Controle total do recebimento e do chão de fábrica.
+              Todo o chão de fábrica em um só sistema.
             </h1>
             <p className="mt-5 text-lg leading-relaxed text-white/80">
-              Importação, conferência, rastreabilidade e etiquetas — num só lugar.
+              Controle, registre e rastreie cada operação produtiva — com visibilidade e
+              padronização.
             </p>
           </div>
           <p className="text-sm text-white/50">© 2026 Enterplak · ShopFloor</p>
