@@ -18,14 +18,24 @@ para tirar na hora** (`input` com `accept="image/*" capture="environment"` abre 
 celular).
 - **Técnico:** Supabase Storage (bucket) + RLS + upload/download na tela do processo. Compressão
   no cliente antes do upload.
-- **Decidido:** só **fotos** (imagens); com opção de tirar na hora pela câmera.
-- **Recomendação de tamanho (aguardando confirmação):** limite de ~**5 MB por foto** com
-  **compressão automática no navegador** para ~1–1,5 MB / ~1600 px (fotos de celular vêm com
-  3–12 MB); limitar a ~**10 fotos por processo**. Motivo: o **free tier do Supabase Storage é
-  1 GB** — com compressão dá ~700–1000 fotos; sem compressão estoura rápido. HEIC (iPhone) pode
-  precisar de conversão.
-- **A confirmar depois:** quem pode anexar/excluir (proposta: anexa quem edita o processo;
-  excluir talvez só Supervisor/Admin) e se as fotos somem quando o processo é excluído.
+- **Decidido:** só **fotos** (imagens); com opção de tirar na hora pela câmera; **compressão no
+  cliente para ~500 KB** antes do upload.
+- **Estratégia de armazenamento (ideia do usuário):** o Supabase Storage é só um **buffer
+  temporário**. **1× por mês**, exportar as fotos para um **Drive** (externo) e **limpar** o
+  bucket do Supabase — assim o storage nunca enche (a 500 KB, 1 GB ≈ ~2000 fotos, e a limpeza
+  mensal renova). Na exportação, as fotos são **renomeadas** com campos do processo que façam
+  sentido no nome.
+  - **Renomear no momento da EXPORTAÇÃO**, a partir dos **valores atuais** do processo (o nome
+    reflete os dados corretos mesmo que tenham mudado depois do upload). Várias fotos do mesmo
+    processo ganham sufixo (`_1`, `_2`).
+  - **A decidir:** quais campos entram no nome (ex.: número, Nº NF, Item Recebido, Fornecedor,
+    data de chegada?); e o **mecanismo de exportação**:
+    - **v1 (simples):** botão admin "Exportar fotos do mês" → baixa um **.ZIP** com as fotos já
+      renomeadas (você sobe no Drive manualmente) → depois "Limpar fotos do período".
+    - **v2 (futura):** integração automática com Google Drive (agenda mensal) — mais complexo
+      (API/OAuth ou service account).
+- **A confirmar depois:** quem pode anexar/excluir foto individual (proposta: anexa quem edita o
+  processo; excluir só Supervisor/Admin).
 
 ## 2. Navegação entre processos (setas ‹ ›)
 Setas para ir do processo atual ao anterior/próximo **sem voltar à lista** (ex.: #179 → #178).
@@ -36,8 +46,7 @@ Setas para ir do processo atual ao anterior/próximo **sem voltar à lista** (ex
     ignorando filtros.
   - **(b) Ordem da lista:** segue o mesmo filtro/ordem (e a aba do mês, item 3) da lista de onde
     veio — "próximo" é o próximo daquela sequência, não necessariamente #180.
-  - **Recomendação:** (b), pois combina com o fluxo de conferir os processos "em lote" dentro de
-    um mês. Aguardando escolha do usuário.
+  - **Decidido: (b)** — segue a ordem/filtro/aba-do-mês da lista de onde veio.
 
 ## 3. Processos em abas/accordion por mês + novo ciclo de status
 - **Agrupar por mês** da **data de chegada** (accordion, ex.: "Maio/2026"). Se a data de chegada
