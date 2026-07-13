@@ -52,16 +52,10 @@ describe('buscarNqa', () => {
 describe('calcularCamposCalculados', () => {
   const campos: CampoCalc[] = [
     { campo: 'atraso', formula: 'diferenca_dias', formulaConfig: { a: 'data_chegada', b: 'data_prevista' } },
-    { campo: 'responsavel_contagem', formula: 'usuario_primeiro', formulaConfig: {} },
   ]
   const ctx = { fornecedoresCriticos: [], nqa: [], usuarioAtual: 'João', valoresAtuais: {} }
-  it('calcula atraso e fixa o responsável no primeiro preenchimento', () => {
+  it('calcula atraso', () => {
     const r = calcularCamposCalculados({ data_chegada: '2026-06-10', data_prevista: '2026-06-05' }, campos, ctx)
     expect(r.atraso).toBe(5)
-    expect(r.responsavel_contagem).toBe('João')
-  })
-  it('mantém o responsável já preenchido (write-once)', () => {
-    const r = calcularCamposCalculados({}, campos, { ...ctx, valoresAtuais: { responsavel_contagem: 'Maria' } })
-    expect(r.responsavel_contagem).toBe('Maria')
   })
 })

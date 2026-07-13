@@ -7,8 +7,8 @@ describe('rotuloStatusProcesso', () => {
   it.each([
     ['aberto', 'Aberto'],
     ['em_conferencia', 'Em conferência'],
-    ['finalizado', 'Finalizado'],
-    ['cancelado', 'Cancelado'],
+    ['Aprovado', 'Aprovado'],
+    ['Reprovado', 'Reprovado'],
   ])('mapeia "%s" para o rótulo "%s" e retorna um className', (status, rotulo) => {
     const info = rotuloStatusProcesso(status)
     expect(info.rotulo).toBe(rotulo)

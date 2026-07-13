@@ -6,15 +6,13 @@ export interface StatusProcessoInfo {
 const ROTULOS: Record<string, string> = {
   aberto: 'Aberto',
   em_conferencia: 'Em conferência',
-  finalizado: 'Finalizado',
-  cancelado: 'Cancelado',
 }
 
 const CORES: Record<string, string> = {
   aberto: 'bg-slate-50 text-slate-600 ring-1 ring-slate-500/25',
   em_conferencia: 'bg-amber-50 text-amber-700 ring-1 ring-amber-600/30',
-  finalizado: 'bg-green-50 text-green-700 ring-1 ring-green-600/30',
-  cancelado: 'bg-red-50 text-red-700 ring-1 ring-red-600/30',
+  Aprovado: 'bg-green-50 text-green-700 ring-1 ring-green-600/30',
+  Reprovado: 'bg-red-50 text-red-700 ring-1 ring-red-600/30',
 }
 
 const COR_PADRAO = 'bg-slate-50 text-slate-600 ring-1 ring-slate-500/25'

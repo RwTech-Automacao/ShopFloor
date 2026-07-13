@@ -75,14 +75,6 @@ export function calcularCamposCalculados(
       case 'tabela_nqa':
         out[campo.campo] = buscarNqa(valores[valorConfig(cfg, 'campo')], ctx.nqa)
         break
-      case 'usuario_primeiro': {
-        const atual = ctx.valoresAtuais[campo.campo]
-        out[campo.campo] =
-          atual === null || atual === undefined || String(atual).trim() === ''
-            ? ctx.usuarioAtual
-            : (atual as string)
-        break
-      }
       default:
         break
     }
