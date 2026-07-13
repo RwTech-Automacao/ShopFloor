@@ -1,3 +1,4 @@
+import { listarValoresStatus } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import { listarMesesProcessos } from '@/modules/recebimento/infra/processo-repository'
 import { ProcessosFiltros } from './processos-filtros'
 import { ProcessosPorMes } from './processos-por-mes'
@@ -9,7 +10,10 @@ interface ProcessosPageProps {
 export default async function ProcessosPage({ searchParams }: ProcessosPageProps) {
   const sp = await searchParams
   const filtros = { busca: sp.busca || undefined, status: sp.status || undefined }
-  const grupos = await listarMesesProcessos(filtros)
+  const [grupos, statusOpcoes] = await Promise.all([
+    listarMesesProcessos(filtros),
+    listarValoresStatus(),
+  ])
 
   // Abrem por padrão: "Aguardando chegada" (se existir) + o mês mais recente.
   const abertosInicial: string[] = []
@@ -19,7 +23,7 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
 
   return (
     <div className="flex flex-col gap-4">
-      <ProcessosFiltros />
+      <ProcessosFiltros statusOpcoes={statusOpcoes} />
       <ProcessosPorMes
         key={`${filtros.busca ?? ''}|${filtros.status ?? ''}`}
         grupos={grupos}

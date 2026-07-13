@@ -13,18 +13,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-const STATUS = [
-  { valor: 'aberto', rotulo: 'Aberto' },
-  { valor: 'em_conferencia', rotulo: 'Em conferência' },
-  { valor: 'finalizado', rotulo: 'Finalizado' },
-  { valor: 'cancelado', rotulo: 'Cancelado' },
-]
-
 // Sentinela: o Select não aceita item com value="" (usado internamente para
 // representar "nenhuma seleção"), então usamos um marcador para "Todos".
 const TODOS = '__todos__'
 
-export function ProcessosFiltros() {
+interface ProcessosFiltrosProps {
+  statusOpcoes: { valor: string; rotulo: string }[]
+}
+
+export function ProcessosFiltros({ statusOpcoes }: ProcessosFiltrosProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -73,13 +70,13 @@ export function ProcessosFiltros() {
               {(value: string | null) =>
                 !value || value === TODOS
                   ? 'Todos'
-                  : (STATUS.find((s) => s.valor === value)?.rotulo ?? String(value))
+                  : (statusOpcoes.find((s) => s.valor === value)?.rotulo ?? String(value))
               }
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={TODOS}>Todos</SelectItem>
-            {STATUS.map((item) => (
+            {statusOpcoes.map((item) => (
               <SelectItem key={item.valor} value={item.valor}>
                 {item.rotulo}
               </SelectItem>

@@ -1,30 +1,15 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import type { StatusProcesso } from '@/modules/recebimento/domain/ciclo-vida'
-import {
-  cancelarProcesso,
-  finalizarProcesso,
-  reabrirProcesso,
-} from '@/modules/recebimento/application/transicoes-processo'
+import { finalizarProcesso, reabrirProcesso } from '@/modules/recebimento/application/transicoes-processo'
 
 interface AcoesProcessoProps {
   processoId: string
   status: StatusProcesso
   podeFinalizar: boolean
-  podeExcluir: boolean
   podeEditarFinalizado: boolean
   /**
    * Quando `true`, o botão Finalizar fica desabilitado com uma dica — usado
@@ -37,22 +22,21 @@ interface AcoesProcessoProps {
 /**
  * Botões contextuais de mudança de status, conforme o status atual e as
  * permissões do usuário. As Server Actions (`finalizarProcesso`,
- * `cancelarProcesso`, `reabrirProcesso`) são a única fonte de verdade sobre o
- * que é permitido — os `pode*` aqui só controlam a exibição/UX do botão.
+ * `reabrirProcesso`) são a única fonte de verdade sobre o que é permitido —
+ * os `pode*` aqui só controlam a exibição/UX do botão.
  */
 export function AcoesProcesso({
   processoId,
   status,
   podeFinalizar,
-  podeExcluir,
   podeEditarFinalizado,
   finalizarBloqueado = false,
 }: AcoesProcessoProps) {
   const mostrarFinalizar = status === 'em_conferencia' && podeFinalizar
-  const mostrarCancelar = (status === 'aberto' || status === 'em_conferencia') && podeExcluir
-  const mostrarReabrir = status === 'finalizado' && podeEditarFinalizado
+  const mostrarReabrir =
+    status !== 'aberto' && status !== 'em_conferencia' && podeEditarFinalizado
 
-  if (!mostrarFinalizar && !mostrarCancelar && !mostrarReabrir) return null
+  if (!mostrarFinalizar && !mostrarReabrir) return null
 
   return (
     <div className="flex flex-wrap items-start gap-3 border-t border-border pt-4">
@@ -60,7 +44,6 @@ export function AcoesProcesso({
         <BotaoFinalizar processoId={processoId} bloqueado={finalizarBloqueado} />
       )}
       {mostrarReabrir && <BotaoReabrir processoId={processoId} />}
-      {mostrarCancelar && <BotaoCancelar processoId={processoId} />}
     </div>
   )
 }
@@ -105,59 +88,5 @@ function BotaoReabrir({ processoId }: { processoId: string }) {
     <Button variant="outline" onClick={onClick} disabled={pending}>
       {pending ? 'Reabrindo…' : 'Reabrir'}
     </Button>
-  )
-}
-
-function BotaoCancelar({ processoId }: { processoId: string }) {
-  const [open, setOpen] = useState(false)
-  const [motivo, setMotivo] = useState('')
-  const [pending, startTransition] = useTransition()
-
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    startTransition(async () => {
-      const resultado = await cancelarProcesso(processoId, motivo)
-      if (resultado.ok) {
-        setOpen(false)
-        setMotivo('')
-        toast.success('Processo cancelado.')
-      } else {
-        toast.error(resultado.erro)
-      }
-    })
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(novoAberto) => {
-        setOpen(novoAberto)
-        if (!novoAberto) setMotivo('')
-      }}
-    >
-      <DialogTrigger render={<Button variant="destructive">Cancelar</Button>} />
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Cancelar processo</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="motivo-cancelamento">Motivo do cancelamento</Label>
-            <Textarea
-              id="motivo-cancelamento"
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
-              placeholder="Descreva o motivo do cancelamento"
-              required
-            />
-          </div>
-          <DialogFooter>
-            <Button type="submit" variant="destructive" disabled={pending}>
-              {pending ? 'Cancelando…' : 'Confirmar cancelamento'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   )
 }

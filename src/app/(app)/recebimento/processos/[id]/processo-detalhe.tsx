@@ -15,7 +15,6 @@ interface ProcessoDetalheProps {
   valoresIniciais: Record<string, string | number | null>
   somenteLeitura: boolean
   podeFinalizar: boolean
-  podeExcluir: boolean
   podeEditarFinalizado: boolean
   fornecedoresCriticos: string[]
   nqa: FaixaNqa[]
@@ -38,7 +37,6 @@ export function ProcessoDetalhe({
   valoresIniciais,
   somenteLeitura,
   podeFinalizar,
-  podeExcluir,
   podeEditarFinalizado,
   fornecedoresCriticos,
   nqa,
@@ -64,7 +62,6 @@ export function ProcessoDetalhe({
         processoId={processoId}
         status={status}
         podeFinalizar={podeFinalizar}
-        podeExcluir={podeExcluir}
         podeEditarFinalizado={podeEditarFinalizado}
         finalizarBloqueado={dirty}
       />

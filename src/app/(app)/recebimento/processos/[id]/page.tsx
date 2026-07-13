@@ -42,17 +42,15 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
   const perfil = sessao?.perfil ?? null
   const podeEditar = podeFazer(perfil, 'editar')
   const podeFinalizar = podeFazer(perfil, 'finalizar')
-  const podeExcluir = podeFazer(perfil, 'excluir')
   const podeEditarFinalizado = podeFazer(perfil, 'editar_finalizado')
 
-  // Editável quando aberto/em_conferencia + `editar`; finalizado só com
-  // `editar_finalizado`; cancelado é sempre somente-leitura (terminal).
+  // Editável quando aberto/em_conferencia + `editar`; em status terminal
+  // (finalizado, ou qualquer outro resultado dinâmico) só com
+  // `editar_finalizado`.
   const editavelPorStatus =
     processo.status === 'aberto' || processo.status === 'em_conferencia'
       ? podeEditar
-      : processo.status === 'finalizado'
-        ? podeEditarFinalizado
-        : false
+      : podeEditarFinalizado
   const somenteLeitura = !editavelPorStatus
 
   const valoresIniciais: Record<string, string | number | null> = {}
@@ -93,7 +91,6 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
         valoresIniciais={valoresIniciais}
         somenteLeitura={somenteLeitura}
         podeFinalizar={podeFinalizar}
-        podeExcluir={podeExcluir}
         podeEditarFinalizado={podeEditarFinalizado}
         fornecedoresCriticos={fornecedoresCriticos}
         nqa={nqa}
