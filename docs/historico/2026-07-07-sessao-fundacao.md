@@ -166,3 +166,53 @@ testando/corrigindo). Adicionado no painel Vercel (Production). ⚠️ Descobert
 provedor diferente). **Retomar:** criar registro **CNAME `shopfloor` → `cname.vercel-dns.com`**
 em `painel.locaweb.com.br → Domínios → Zona de DNS`; confirmar o valor exato na tela da Vercel;
 após propagar, atualizar Site URL/Redirect no Supabase para o domínio novo.
+
+---
+
+## 11. Sessão 2026-07-10 — Refinamentos pós-deploy (já em produção)
+
+Ajustes feitos após o deploy, cada um verificado (typecheck + lint + testes + build) e
+publicado via push (deploy automático). Testes ao fim: **101 passando**.
+
+- **Fuso horário dos registros** — os `timestamptz` vêm em UTC do banco e as telas renderizam
+  no servidor (UTC na Vercel), o que mostrava os horários **+3h**. Fixado `timeZone:
+  'America/Sao_Paulo'` nos formatadores de **Logs**, **Importações** e **Histórico de
+  Etiquetas**, e no carimbo do **nome do CSV** de etiquetas. Só exibição; dados no banco
+  seguem em UTC.
+- **Colunas fantasma na importação** — Excel/Sheets guardam a "área usada" maior que os dados
+  reais; o SheetJS expunha colunas de cabeçalho vazio como "(vazias)" no mapeamento.
+  `ler-planilha.ts` passou a **descartar** colunas sem cabeçalho E sem dados (coluna com dado
+  é sempre mantida, mesmo sem cabeçalho — não perde informação). Com teste
+  (`ler-planilha.test.ts`).
+- **"Código do Material" → "Item Recebido"** — alinhado à planilha atual da Enterplak.
+  Migração **0013** troca o rótulo de `codigo_material` (reflete no formulário do processo, na
+  importação e na tela de Campos, que leem o rótulo do banco) + coluna da lista de Processos
+  (texto fixo no código). A coluna `codigo_material` do banco permanece.
+- **Campos calculados** (Atraso, Crítico, Divergência, Responsável, Amostral) — são
+  preenchidos pelo sistema: **removidos do mapeamento de importação** (`carregarCamposComerciais`
+  passou a filtrar `calculado=false`; some Atraso e Crítico, que vazavam) e **somente-leitura
+  na tela de Campos** (selo "Calculado" + cadeado no lugar do lápis, com trava também no
+  servidor: `salvarCampo` rejeita campo calculado). Decisão do usuário: manter visíveis (não
+  esconder) para transparência do inventário de campos.
+- **Menu Configurações** virou **accordion de topo**, com sub-accordion **"Ajustes
+  Recebimento"** (Listas, Campos, Criticidade, Tabela NQA); Usuários/Perfis/Logs soltos.
+- **Tela Sobre** reformulada (layout em cards) e **movida de `/configuracoes/sobre` →
+  `/sobre`**, saindo do guard de admin de `/configuracoes` (que redireciona não-admin para a
+  Home). Agora **"Ajuda → Sobre o Sistema" é visível e acessível a TODOS os usuários logados**.
+  Removido `config-nav.ts` (código morto, só usado pelo próprio teste, que passou a contradizer
+  a realidade).
+
+### ⚠️ Decisão pendente: isolar ambientes Dev × Produção (banco)
+
+**Problema:** hoje o **local** (`.env.local`) e a **produção** (Vercel) apontam para o **mesmo
+projeto Supabase**. Testar/desenvolver localmente escreve em dados de produção. Quando a
+fábrica estiver usando de verdade, não dá para testar sem sujar/arriscar os dados reais.
+
+**Solução recomendada:** um **2º projeto Supabase** ("ShopFloor Dev/Homologação" — o free tier
+permite 2 projetos por organização). O **local** aponta para o **Dev**; a **Vercel** continua
+no **Prod**. As migrations (`supabase/migrations/`) são aplicadas nos dois via `supabase db
+push` — no Dev primeiro (testar a migração), depois no Prod. Alternativas: Supabase local via
+**Docker** (`supabase start` — mais isolado, mas exige instalar Docker; hoje não instalado) ou
+**Supabase Branching** (recurso do plano Pro, pago). **Ainda não implementado** — o usuário vai
+primeiro apresentar o sistema para a equipe (usando produção com dados reais só para demonstrar
+exemplos de uso) e depois decide.
