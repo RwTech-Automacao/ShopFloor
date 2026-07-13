@@ -104,7 +104,7 @@ export async function atualizarUsuario(
  */
 export async function buscarNomesUsuarios(ids: string[]): Promise<Record<string, string>> {
   if (ids.length === 0) return {}
-  const supabase = await createServerSupabase()
+  const supabase = createServiceSupabase()
   const { data, error } = await supabase.from('usuarios').select('id, nome').in('id', ids)
   if (error) throw error
   const nomes: Record<string, string> = {}
