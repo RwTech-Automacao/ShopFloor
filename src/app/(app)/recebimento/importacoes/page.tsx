@@ -11,6 +11,8 @@ import { listarImportacoes } from '@/modules/recebimento/infra/importacao-reposi
 const formatadorData = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short',
   timeStyle: 'medium',
+  // Fuso fixo de Brasília (servidor renderiza em UTC na Vercel).
+  timeZone: 'America/Sao_Paulo',
 })
 
 export default async function ImportacoesPage() {

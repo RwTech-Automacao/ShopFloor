@@ -35,6 +35,10 @@ const ROTULOS_ACAO: Record<string, string> = {
 const formatadorData = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short',
   timeStyle: 'medium',
+  // Fuso fixo de Brasília: os timestamps vêm em UTC do banco e estas telas
+  // renderizam no servidor (UTC na Vercel). Sem isto, os horários apareceriam
+  // 3h à frente em produção.
+  timeZone: 'America/Sao_Paulo',
 })
 
 function formatarValor(valor: unknown): string {

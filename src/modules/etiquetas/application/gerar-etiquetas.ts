@@ -23,10 +23,20 @@ export type ResultadoGerarEtiquetas =
   | { ok: false; erro: string }
 
 function carimboDataHora(agora: Date): string {
-  const p2 = (n: number) => String(n).padStart(2, '0')
-  const data = `${agora.getFullYear()}${p2(agora.getMonth() + 1)}${p2(agora.getDate())}`
-  const hora = `${p2(agora.getHours())}${p2(agora.getMinutes())}${p2(agora.getSeconds())}`
-  return `${data}_${hora}`
+  // Componentes no fuso de Brasília (o servidor roda em UTC na Vercel), para o
+  // nome do arquivo refletir o horário local de quem gerou as etiquetas.
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(agora)
+  const parte = (tipo: Intl.DateTimeFormatPartTypes) => partes.find((p) => p.type === tipo)?.value ?? ''
+  return `${parte('year')}${parte('month')}${parte('day')}_${parte('hour')}${parte('minute')}${parte('second')}`
 }
 
 /**
