@@ -1,179 +1,26 @@
-import Link from 'next/link'
-import { ChevronLeftIcon, ChevronRightIcon, ArrowRightIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
-import { listarProcessos } from '@/modules/recebimento/infra/processo-repository'
+import { listarMesesProcessos } from '@/modules/recebimento/infra/processo-repository'
 import { ProcessosFiltros } from './processos-filtros'
-
-const TAMANHO_PAGINA = 25
+import { ProcessosPorMes } from './processos-por-mes'
 
 interface ProcessosPageProps {
-  searchParams: Promise<{ busca?: string; status?: string; pagina?: string }>
+  searchParams: Promise<{ busca?: string; status?: string }>
 }
 
 export default async function ProcessosPage({ searchParams }: ProcessosPageProps) {
   const sp = await searchParams
-  const paginaSolicitada = Number.parseInt(sp.pagina ?? '0', 10)
-  const pagina = Number.isFinite(paginaSolicitada) && paginaSolicitada > 0 ? paginaSolicitada : 0
+  const filtros = { busca: sp.busca || undefined, status: sp.status || undefined }
+  const grupos = await listarMesesProcessos(filtros)
 
-  const { linhas, total } = await listarProcessos({
-    busca: sp.busca || undefined,
-    status: sp.status || undefined,
-    pagina,
-    tamanho: TAMANHO_PAGINA,
-  })
-
-  const totalPaginas = Math.max(1, Math.ceil(total / TAMANHO_PAGINA))
-  const temAnterior = pagina > 0
-  const temProxima = pagina + 1 < totalPaginas
-
-  function hrefPagina(novaPagina: number): string {
-    const params = new URLSearchParams()
-    if (sp.busca) params.set('busca', sp.busca)
-    if (sp.status) params.set('status', sp.status)
-    if (novaPagina > 0) params.set('pagina', String(novaPagina))
-    const query = params.toString()
-    return query ? `/recebimento/processos?${query}` : '/recebimento/processos'
-  }
-
-  const mensagemVazio =
-    sp.busca || sp.status
-      ? 'Nenhum processo encontrado para os filtros selecionados.'
-      : 'Nenhum processo encontrado.'
-
-  // Campos exibidos, na ordem definida pelo usuário. Reaproveitado tanto pela
-  // tabela (desktop) quanto pelos cards (mobile) para manter uma só fonte de
-  // verdade sobre o quê aparece e em que ordem.
-  const campos: { rotulo: string; valor: (p: (typeof linhas)[number]) => string }[] = [
-    { rotulo: 'NF', valor: (p) => p.numero_nf || '—' },
-    { rotulo: 'Nº EMB', valor: (p) => p.numero_emb || '—' },
-    { rotulo: 'Nº DI/INPI', valor: (p) => p.di_inpi || '—' },
-    { rotulo: 'ACP/Cliente', valor: (p) => p.acp_cliente || '—' },
-    { rotulo: 'Nº Pedido', valor: (p) => p.numero_pedido || '—' },
-    { rotulo: 'Tipo', valor: (p) => p.tipo || '—' },
-    { rotulo: 'Fornecedor', valor: (p) => p.fornecedor || '—' },
-    { rotulo: 'Item Recebido', valor: (p) => p.codigo_material || '—' },
-  ]
+  // Abrem por padrão: "Aguardando chegada" (se existir) + o mês mais recente.
+  const abertosInicial: string[] = []
+  if (grupos.some((g) => g.chave === 'sem_data')) abertosInicial.push('sem_data')
+  const primeiroMes = grupos.find((g) => g.chave !== 'sem_data')
+  if (primeiroMes) abertosInicial.push(primeiroMes.chave)
 
   return (
     <div className="flex flex-col gap-4">
       <ProcessosFiltros />
-
-      {/* Desktop: tabela (fonte compacta; rola lateralmente se não couber) */}
-      <div className="hidden rounded-lg border border-border bg-card md:block">
-        <Table className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Número</TableHead>
-              {campos.map((c) => (
-                <TableHead key={c.rotulo}>{c.rotulo}</TableHead>
-              ))}
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {linhas.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={campos.length + 3} className="py-8 text-center text-muted-foreground">
-                  {mensagemVazio}
-                </TableCell>
-              </TableRow>
-            )}
-            {linhas.map((processo) => {
-              const status = rotuloStatusProcesso(processo.status)
-              return (
-                <TableRow key={processo.id}>
-                  <TableCell className="font-medium">{processo.numero}</TableCell>
-                  {campos.map((c) => (
-                    <TableCell key={c.rotulo}>{c.valor(processo)}</TableCell>
-                  ))}
-                  <TableCell>
-                    <Badge className={status.className}>{status.rotulo}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Abrir processo #${processo.numero}`}
-                      render={<Link href={`/recebimento/processos/${processo.id}`} />}
-                    >
-                      <ArrowRightIcon />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Mobile: cards */}
-      <div className="space-y-3 md:hidden">
-        {linhas.length === 0 && (
-          <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
-            {mensagemVazio}
-          </p>
-        )}
-        {linhas.map((processo) => {
-          const status = rotuloStatusProcesso(processo.status)
-          return (
-            <Link
-              key={processo.id}
-              href={`/recebimento/processos/${processo.id}`}
-              className="block rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold">#{processo.numero}</span>
-                <Badge className={status.className}>{status.rotulo}</Badge>
-              </div>
-              <dl className="mt-3 space-y-1.5 text-sm">
-                {campos.map((c) => (
-                  <div key={c.rotulo} className="flex gap-2">
-                    <dt className="w-24 shrink-0 text-muted-foreground">{c.rotulo}</dt>
-                    <dd className="min-w-0 flex-1">{c.valor(processo)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </Link>
-          )
-        })}
-      </div>
-
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Página {pagina + 1} de {totalPaginas} — {total} processo{total === 1 ? '' : 's'}
-        </span>
-        <div className="flex gap-1">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Página anterior"
-            disabled={!temAnterior}
-            render={<Link href={hrefPagina(pagina - 1)} />}
-          >
-            <ChevronLeftIcon />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Próxima página"
-            disabled={!temProxima}
-            render={<Link href={hrefPagina(pagina + 1)} />}
-          >
-            <ChevronRightIcon />
-          </Button>
-        </div>
-      </div>
+      <ProcessosPorMes grupos={grupos} filtros={filtros} abertosInicial={abertosInicial} />
     </div>
   )
 }

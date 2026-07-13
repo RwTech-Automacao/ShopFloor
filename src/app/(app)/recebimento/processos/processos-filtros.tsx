@@ -36,7 +36,6 @@ export function ProcessosFiltros() {
     const params = new URLSearchParams()
     if (busca) params.set('busca', busca)
     if (status) params.set('status', status)
-    // Nova consulta de filtros reinicia a paginação.
     const query = params.toString()
     router.push(query ? `${pathname}?${query}` : pathname)
   }
