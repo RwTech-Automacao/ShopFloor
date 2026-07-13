@@ -61,7 +61,7 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
     { rotulo: 'Nº Pedido', valor: (p) => p.numero_pedido || '—' },
     { rotulo: 'Tipo', valor: (p) => p.tipo || '—' },
     { rotulo: 'Fornecedor', valor: (p) => p.fornecedor || '—' },
-    { rotulo: 'Código', valor: (p) => p.codigo_material || '—' },
+    { rotulo: 'Item Recebido', valor: (p) => p.codigo_material || '—' },
   ]
 
   return (
