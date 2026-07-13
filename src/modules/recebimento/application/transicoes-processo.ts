@@ -8,6 +8,7 @@ import {
   camposFaltantesFinalizacao,
   podeFinalizar,
   podeReabrir,
+  STATUS_ABERTO,
   STATUS_EM_CONFERENCIA,
 } from '../domain/ciclo-vida'
 import { atualizarProcesso, buscarProcesso, carregarCamposFormulario } from '../infra/processo-detalhe-repository'
@@ -48,6 +49,10 @@ export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoP
   const novoStatus = String(processo.resultado ?? '').trim()
   if (!novoStatus) {
     return { ok: false, erro: 'Preencha o Resultado para finalizar.' }
+  }
+
+  if (novoStatus.toLowerCase() === STATUS_ABERTO || novoStatus.toLowerCase() === STATUS_EM_CONFERENCIA) {
+    return { ok: false, erro: 'O Resultado não pode ser um status reservado do sistema.' }
   }
 
   const statusAnterior = processo.status

@@ -90,10 +90,6 @@
   --status-aberto-bg: #f1f5f9;
   --status-conferencia: #b45309;
   --status-conferencia-bg: #fef3c7;
-  --status-finalizado: #15803d;
-  --status-finalizado-bg: #dcfce7;
-  --status-cancelado: #b91c1c;
-  --status-cancelado-bg: #fee2e2;
 }
 
 .dark {
