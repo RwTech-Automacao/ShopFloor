@@ -19,7 +19,7 @@ export function chaveMes(data: string | null | undefined): string {
 
 /** 'Julho/2026' ou 'Aguardando chegada'. */
 export function rotuloMes(chave: string): string {
-  if (chave === 'sem_data') return 'Aguardando chegada'
+  if (chave === 'sem_data') return 'Aguardando data de chegada'
   const [ano, mes] = chave.split('-')
   const nome = MESES_PT[Number(mes) - 1] ?? mes
   return `${nome}/${ano}`
