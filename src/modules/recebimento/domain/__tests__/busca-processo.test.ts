@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sanitizarTermoBusca } from '../busca-processo'
+import { sanitizarTermoBusca, condicaoBuscaProcesso } from '../busca-processo'
 
 describe('sanitizarTermoBusca', () => {
   it('retorna o termo original quando não há caracteres especiais', () => {
@@ -40,5 +40,17 @@ describe('sanitizarTermoBusca', () => {
 
   it('retorna string vazia para entrada composta só de caracteres especiais', () => {
     expect(sanitizarTermoBusca(',.()*%')).toBe('')
+  })
+})
+
+describe('condicaoBuscaProcesso', () => {
+  it('monta o or ilike quando há termo', () => {
+    expect(condicaoBuscaProcesso('abc')).toBe(
+      'numero_nf.ilike.%abc%,numero_pedido.ilike.%abc%,fornecedor.ilike.%abc%,codigo_material.ilike.%abc%,descricao_material.ilike.%abc%',
+    )
+  })
+  it('retorna null sem termo real', () => {
+    expect(condicaoBuscaProcesso(undefined)).toBeNull()
+    expect(condicaoBuscaProcesso('   ')).toBeNull()
   })
 })

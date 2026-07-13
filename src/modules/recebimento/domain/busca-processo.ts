@@ -22,3 +22,14 @@ export const COLUNAS_BUSCA_PROCESSO = [
 export function sanitizarTermoBusca(termo: string): string {
   return termo.replace(/[,.()*%]/g, '').trim()
 }
+
+/**
+ * Monta a string do filtro `.or(...)` de busca livre (ilike em várias colunas)
+ * a partir do termo sanitizado, ou `null` se não houver termo. Centraliza a
+ * construção usada por `listarProcessosDoMes` e `listarMesesProcessos`.
+ */
+export function condicaoBuscaProcesso(busca: string | undefined): string | null {
+  const termo = busca ? sanitizarTermoBusca(busca) : ''
+  if (!termo) return null
+  return COLUNAS_BUSCA_PROCESSO.map((coluna) => `${coluna}.ilike.%${termo}%`).join(',')
+}
