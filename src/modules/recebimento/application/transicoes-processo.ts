@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { camposFaltantesFinalizacao, podeTransicionar } from '../domain/ciclo-vida'
+import {
+  camposFaltantesFinalizacao,
+  podeFinalizar,
+  podeReabrir,
+  STATUS_EM_CONFERENCIA,
+} from '../domain/ciclo-vida'
 import { atualizarProcesso, buscarProcesso, carregarCamposFormulario } from '../infra/processo-detalhe-repository'
 
 export type ResultadoTransicaoProcesso = { ok: true } | { ok: false; erro: string }
@@ -29,7 +34,7 @@ export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoP
   const processo = await buscarProcesso(id)
   if (!processo) return { ok: false, erro: 'Processo não encontrado.' }
 
-  if (!podeTransicionar(processo.status, 'finalizado')) {
+  if (!podeFinalizar(processo.status)) {
     return { ok: false, erro: 'Este processo não pode ser finalizado no status atual.' }
   }
 
@@ -40,10 +45,15 @@ export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoP
     return { ok: false, erro: `Preencha os campos obrigatórios: ${rotulos.join(', ')}.` }
   }
 
+  const novoStatus = String(processo.resultado ?? '').trim()
+  if (!novoStatus) {
+    return { ok: false, erro: 'Preencha o Resultado para finalizar.' }
+  }
+
   const statusAnterior = processo.status
   try {
     await atualizarProcesso(id, {
-      status: 'finalizado',
+      status: novoStatus,
       finalizado_por: sessao.usuarioId,
       finalizado_em: new Date().toISOString(),
     })
@@ -55,8 +65,8 @@ export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoP
     entidade: 'processo',
     entidadeId: id,
     acao: 'mudar_status',
-    descricao: `Processo #${processo.numero}: ${statusAnterior} → finalizado`,
-    dados: { de: statusAnterior, para: 'finalizado' },
+    descricao: `Processo #${processo.numero}: ${statusAnterior} → ${novoStatus}`,
+    dados: { de: statusAnterior, para: novoStatus },
   })
 
   revalidatePath(caminhoProcesso(id))
@@ -64,60 +74,11 @@ export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoP
 }
 
 /**
- * Cancela um processo de recebimento. Exige as permissões `editar` (mesma
- * exigência do RLS `processos_update`) e `excluir`, além de um motivo não
- * vazio. `cancelado` é terminal no ciclo de vida.
- */
-export async function cancelarProcesso(
-  id: string,
-  motivo: string,
-): Promise<ResultadoTransicaoProcesso> {
-  const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'editar') || !podeFazer(sessao.perfil, 'excluir')) {
-    return { ok: false, erro: 'Você não tem permissão para esta ação.' }
-  }
-
-  const motivoLimpo = motivo.trim()
-  if (!motivoLimpo) {
-    return { ok: false, erro: 'Informe o motivo do cancelamento.' }
-  }
-
-  const processo = await buscarProcesso(id)
-  if (!processo) return { ok: false, erro: 'Processo não encontrado.' }
-
-  if (!podeTransicionar(processo.status, 'cancelado')) {
-    return { ok: false, erro: 'Este processo não pode ser cancelado no status atual.' }
-  }
-
-  const statusAnterior = processo.status
-  try {
-    await atualizarProcesso(id, {
-      status: 'cancelado',
-      cancelado_por: sessao.usuarioId,
-      motivo_cancelamento: motivoLimpo,
-    })
-  } catch {
-    return { ok: false, erro: 'Não foi possível cancelar o processo.' }
-  }
-
-  await registrarLog({
-    entidade: 'processo',
-    entidadeId: id,
-    acao: 'mudar_status',
-    descricao: `Processo #${processo.numero}: ${statusAnterior} → cancelado`,
-    dados: { de: statusAnterior, para: 'cancelado', motivo: motivoLimpo },
-  })
-
-  revalidatePath(caminhoProcesso(id))
-  return { ok: true }
-}
-
-/**
- * Reabre um processo finalizado (`finalizado` → `em_conferencia`). Exige as
- * permissões `editar` (mesma exigência do RLS `processos_update`) e
- * `editar_finalizado`, e só é permitido a partir do status `finalizado`.
+ * Reabre um processo concluído (status terminal → `em_conferencia`). Exige
+ * as permissões `editar` (mesma exigência do RLS `processos_update`) e
+ * `editar_finalizado`, e só é permitido a partir de um status terminal.
  * Limpa `finalizado_em`/`finalizado_por`, já que o processo deixa de estar
- * finalizado.
+ * concluído.
  */
 export async function reabrirProcesso(id: string): Promise<ResultadoTransicaoProcesso> {
   const sessao = await getSessao()
@@ -128,13 +89,14 @@ export async function reabrirProcesso(id: string): Promise<ResultadoTransicaoPro
   const processo = await buscarProcesso(id)
   if (!processo) return { ok: false, erro: 'Processo não encontrado.' }
 
-  if (processo.status !== 'finalizado' || !podeTransicionar(processo.status, 'em_conferencia')) {
-    return { ok: false, erro: 'Só é possível reabrir um processo finalizado.' }
+  if (!podeReabrir(processo.status)) {
+    return { ok: false, erro: 'Só é possível reabrir um processo concluído.' }
   }
 
+  const statusAnterior = processo.status
   try {
     await atualizarProcesso(id, {
-      status: 'em_conferencia',
+      status: STATUS_EM_CONFERENCIA,
       finalizado_em: null,
       finalizado_por: null,
     })
@@ -146,8 +108,8 @@ export async function reabrirProcesso(id: string): Promise<ResultadoTransicaoPro
     entidade: 'processo',
     entidadeId: id,
     acao: 'mudar_status',
-    descricao: `Processo #${processo.numero}: finalizado → em_conferencia`,
-    dados: { de: 'finalizado', para: 'em_conferencia' },
+    descricao: `Processo #${processo.numero}: ${statusAnterior} → em_conferencia`,
+    dados: { de: statusAnterior, para: STATUS_EM_CONFERENCIA },
   })
 
   revalidatePath(caminhoProcesso(id))
