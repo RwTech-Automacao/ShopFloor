@@ -32,7 +32,7 @@ export interface ProcessoRow {
   quantidade_recebida: number | null
   volumes: number | null
   divergencia: string | null
-  responsavel_contagem: string | null
+  responsavel_recebimento: string | null
   tipo_entrega: string | null
   amostral: string | null
   part_number_recebido: string | null
@@ -52,6 +52,7 @@ export interface ProcessoRow {
   rnc: string | null
   rac: string | null
   observacao: string | null
+  responsavel_qualidade: string | null
   // auditoria
   criado_por: string | null
   atualizado_por: string | null
@@ -117,7 +118,7 @@ type ColunaGravavel =
   | 'quantidade_recebida'
   | 'volumes'
   | 'divergencia'
-  | 'responsavel_contagem'
+  | 'responsavel_recebimento'
   | 'tipo_entrega'
   | 'amostral'
   | 'part_number_recebido'
@@ -136,6 +137,7 @@ type ColunaGravavel =
   | 'rnc'
   | 'rac'
   | 'observacao'
+  | 'responsavel_qualidade'
   | 'status'
   | 'atualizado_por'
   | 'finalizado_por'
@@ -163,7 +165,7 @@ const COLUNAS_GRAVAVEIS = new Set<ColunaGravavel>([
   'quantidade_recebida',
   'volumes',
   'divergencia',
-  'responsavel_contagem',
+  'responsavel_recebimento',
   'tipo_entrega',
   'amostral',
   'part_number_recebido',
@@ -182,6 +184,7 @@ const COLUNAS_GRAVAVEIS = new Set<ColunaGravavel>([
   'rnc',
   'rac',
   'observacao',
+  'responsavel_qualidade',
   'status',
   'atualizado_por',
   'finalizado_por',
@@ -191,6 +194,39 @@ const COLUNAS_GRAVAVEIS = new Set<ColunaGravavel>([
 ])
 
 export type PatchProcesso = Partial<Pick<ProcessoRow, ColunaGravavel>>
+
+interface ListaItemResultadoRow {
+  valor: string
+  listas: { chave: string } | null
+}
+
+/**
+ * Retorna os valores possíveis de `status` para o filtro da lista de
+ * Processos: os dois estados fixos do ciclo de vida (`aberto`,
+ * `em_conferencia`) seguidos dos terminais dinâmicos ativos cadastrados na
+ * lista "Resultado" (ex.: Aprovado, Reprovado, e o que o Admin adicionar).
+ */
+export async function listarValoresStatus(): Promise<{ valor: string; rotulo: string }[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('lista_itens')
+    .select('valor, listas!inner(chave)')
+    .eq('listas.chave', 'resultado')
+    .eq('ativo', true)
+    .order('ordem', { ascending: true })
+  if (error) throw error
+
+  const terminais = ((data ?? []) as unknown as ListaItemResultadoRow[]).map((row) => ({
+    valor: row.valor,
+    rotulo: row.valor,
+  }))
+
+  return [
+    { valor: 'aberto', rotulo: 'Aberto' },
+    { valor: 'em_conferencia', rotulo: 'Em conferência' },
+    ...terminais,
+  ]
+}
 
 /**
  * Busca um processo de recebimento pelo id (todas as colunas). `null` se não
