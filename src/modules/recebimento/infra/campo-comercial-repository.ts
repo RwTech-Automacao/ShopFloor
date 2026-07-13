@@ -25,6 +25,9 @@ export async function carregarCamposComerciais(): Promise<CampoImportavel[]> {
     .select('campo, rotulo, tipo, lista_chave, obrigatorio_importacao')
     .eq('origem', 'comercial')
     .eq('ativo', true)
+    // Campos calculados (ex.: Atraso, Crítico) são preenchidos automaticamente
+    // pelo sistema — nunca vêm da planilha, então não aparecem no mapeamento.
+    .eq('calculado', false)
     .order('ordem', { ascending: true })
 
   if (error) throw error

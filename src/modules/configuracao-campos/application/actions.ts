@@ -38,6 +38,13 @@ export async function salvarCampo(
   const antes = await buscarCampo(id)
   if (!antes) return { erro: 'Campo não encontrado.' }
 
+  // Campos calculados (atraso, divergência, crítico, amostral, responsável) são
+  // preenchidos automaticamente pelo sistema — não têm configuração editável
+  // (obrigatoriedade/tipo não se aplicam). Bloqueado no servidor, não só na UI.
+  if (antes.calculado) {
+    return { erro: 'Este é um campo calculado (automático) e não pode ser editado.' }
+  }
+
   const rotulo = String(formData.get('rotulo') ?? '').trim()
   if (!rotulo) return { erro: 'Informe um rótulo para o campo.' }
 

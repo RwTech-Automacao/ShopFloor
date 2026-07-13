@@ -15,6 +15,7 @@ export interface CampoRow {
   obrigatorio_finalizacao: boolean
   ordem: number
   ativo: boolean
+  calculado: boolean
 }
 
 // Campos editáveis pela tela de administração. `campo` e `origem` nunca são

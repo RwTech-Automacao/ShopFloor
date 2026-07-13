@@ -1,4 +1,5 @@
-import { CheckIcon, MinusIcon } from 'lucide-react'
+import { CheckIcon, MinusIcon, LockIcon } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import {
   Table,
   TableBody,
@@ -77,7 +78,14 @@ export default async function CamposPage() {
                 <TableBody>
                   {camposDoGrupo.map((campo) => (
                     <TableRow key={campo.id}>
-                      <TableCell className="font-medium">{campo.rotulo}</TableCell>
+                      <TableCell className="font-medium">
+                        <span className="flex items-center gap-2">
+                          {campo.rotulo}
+                          {campo.calculado && (
+                            <Badge variant="secondary" className="font-normal">Calculado</Badge>
+                          )}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-muted-foreground">
                         {ROTULOS_TIPO[campo.tipo] ?? campo.tipo}
                       </TableCell>
@@ -85,7 +93,14 @@ export default async function CamposPage() {
                       <FlagCell marcado={campo.obrigatorio_finalizacao} />
                       <FlagCell marcado={campo.ativo} />
                       <TableCell className="text-right">
-                        <CampoForm campo={campo} listas={listas} />
+                        {campo.calculado ? (
+                          <LockIcon
+                            className="ml-auto size-4 text-muted-foreground"
+                            aria-label="Campo automático (não editável)"
+                          />
+                        ) : (
+                          <CampoForm campo={campo} listas={listas} />
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -98,8 +113,20 @@ export default async function CamposPage() {
               {camposDoGrupo.map((campo) => (
                 <div key={campo.id} className="rounded-lg border border-border bg-card p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold">{campo.rotulo}</span>
-                    <CampoForm campo={campo} listas={listas} />
+                    <span className="flex items-center gap-2 font-semibold">
+                      {campo.rotulo}
+                      {campo.calculado && (
+                        <Badge variant="secondary" className="font-normal">Calculado</Badge>
+                      )}
+                    </span>
+                    {campo.calculado ? (
+                      <LockIcon
+                        className="size-4 shrink-0 text-muted-foreground"
+                        aria-label="Campo automático (não editável)"
+                      />
+                    ) : (
+                      <CampoForm campo={campo} listas={listas} />
+                    )}
                   </div>
                   <dl className="mt-3 space-y-1.5 text-sm">
                     <div className="flex gap-2">
