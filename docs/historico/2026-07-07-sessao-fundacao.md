@@ -216,3 +216,45 @@ push` — no Dev primeiro (testar a migração), depois no Prod. Alternativas: S
 **Supabase Branching** (recurso do plano Pro, pago). **Ainda não implementado** — o usuário vai
 primeiro apresentar o sistema para a equipe (usando produção com dados reais só para demonstrar
 exemplos de uso) e depois decide.
+
+---
+
+## 12. Sessão 2026-07-13 — Roadmap pós-apresentação (features 3b e #7+#3a)
+
+Duas features grandes do roadmap (`docs/roadmap-pos-apresentacao.md`) entregues em produção, via
+**subagent-driven-development** (implementador + revisor por task + review final adversarial), direto
+na `main` (sem dados reais em produção). Fluxo: brainstorming → spec → plano → execução.
+
+### 3b — Lista de Processos em accordions por mês
+- A lista virou **accordions por mês da data de chegada** (grupo **"Aguardando data de chegada"** no
+  topo p/ sem data; meses do mais recente ao mais antigo), com **carregamento sob demanda** (linhas
+  de cada mês carregam ao abrir; abrem por padrão o topo + mês mais recente).
+- **Escala:** a contagem por mês roda no banco via **RPC `processos_meses`** (migração **0014**,
+  GROUP BY, SECURITY INVOKER) — sem o teto de linhas do PostgREST. Filtro de status e badges seguem.
+- Correções do review: `key` no accordion (remonta ao trocar filtro), vazio sensível a filtro, guard
+  de `chave`. Spec/plano: `docs/superpowers/{specs,plans}/2026-07-13-processos-abas-por-mes*`.
+
+### #7 + #3a — Seções Recebimento/Qualidade + status dinâmico (migração 0015)
+- **Formulário em 2 seções independentes** (Recebimento, Qualidade), cada uma com **Salvar próprio**;
+  qualquer Salvar grava **Comercial + Material + a sua seção** e carimba o **responsável da seção**
+  (`responsavel_recebimento`/`responsavel_qualidade`, último que salvou; exibidos por **nome** —
+  resolvido via **service client** porque o RLS de `usuarios` bloquearia o nome de outro usuário).
+- **"Part Number recebido"** foi para a seção Qualidade (1º item). **Removidos:** `responsavel_contagem`
+  (campo/coluna/cálculo), o **Salvar único** e o **Cancelar** (botão/ação/status).
+- **Status dinâmico:** fixos `aberto`/`em_conferencia` + **terminais = valores da lista "Resultado"**
+  (Aprovado/Reprovado, e o que o Admin adicionar). A **constraint de status saiu do banco**; a máquina
+  de estados virou predicados (`ehTerminal`/`podeFinalizar`/`podeReabrir`/`podePromoverParaConferencia`).
+  **Finalizar** (mantido) exige só o campo `resultado` e grava `status = valor`; **guard** rejeita
+  `resultado`='aberto'/'em_conferencia'. **Reabrir** → em_conferencia. **RLS `processos_update`**:
+  "concluído" = status não-base (aberto/em_conferencia) → exige `editar_finalizado`.
+- Review final (Opus): **READY TO MERGE**; 1 Important corrigido (guard de status reservado) + 1
+  Critical corrigido no extra dos responsáveis (nome via service client). Spec/plano:
+  `docs/superpowers/{specs,plans}/2026-07-13-recebimento-qualidade-status*`.
+
+### Bug diagnosticado — exclusão de listas suspensas
+Reportado "não dá pra excluir listas". **Não é bug de código:** todas as listas atuais são
+`sistema=true` e a policy `listas_delete` (0006) bloqueia exclusão de listas de sistema **por design**
+(os campos/status dependem delas) — mensagem correta "Listas do sistema não podem ser excluídas.".
+Listas criadas pelo usuário nascem `sistema=false` e são excluíveis. Pendente: decidir UX (esconder
+botão de excluir em lista de sistema) e/ou desmarcar `sistema` de listas específicas que o usuário
+queira remover (após confirmar que nenhum campo as usa).
