@@ -95,3 +95,21 @@ export async function atualizarUsuario(
     .eq('id', id)
   if (error) throw error
 }
+
+/**
+ * Resolve um conjunto de ids de `usuarios` para seus nomes — usado para
+ * exibir "quem fez X" (ex.: responsável recebimento/qualidade de um
+ * processo) sem expor um objeto completo de usuário. Ids não encontrados
+ * simplesmente não aparecem no mapa retornado.
+ */
+export async function buscarNomesUsuarios(ids: string[]): Promise<Record<string, string>> {
+  if (ids.length === 0) return {}
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.from('usuarios').select('id, nome').in('id', ids)
+  if (error) throw error
+  const nomes: Record<string, string> = {}
+  for (const row of (data ?? []) as { id: string; nome: string }[]) {
+    nomes[row.id] = row.nome
+  }
+  return nomes
+}

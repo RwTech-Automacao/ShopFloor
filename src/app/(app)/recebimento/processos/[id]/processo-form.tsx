@@ -49,6 +49,10 @@ interface ProcessoFormProps {
   nqa: FaixaNqa[]
   /** Nome/e-mail do usuário logado, repassado ao contexto de cálculo ao vivo. */
   usuarioAtual: string
+  /** Nome de quem salvou por último a seção Recebimento, ou `null` se ainda não salva. Somente exibição. */
+  responsavelRecebimento: string | null
+  /** Nome de quem salvou por último a seção Qualidade, ou `null` se ainda não salva. Somente exibição. */
+  responsavelQualidade: string | null
 }
 
 
@@ -74,6 +78,8 @@ export function ProcessoForm({
   fornecedoresCriticos,
   nqa,
   usuarioAtual,
+  responsavelRecebimento,
+  responsavelQualidade,
 }: ProcessoFormProps) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     valoresIniciaisComoTexto(campos, valoresIniciais),
@@ -178,6 +184,8 @@ export function ProcessoForm({
         const secao: Secao | null =
           grupo.chave === 'recebimento' || grupo.chave === 'qualidade' ? grupo.chave : null
         const rotuloBotao = secao === 'recebimento' ? 'Salvar Recebimento' : 'Salvar Qualidade'
+        const responsavelSecao =
+          secao === 'recebimento' ? responsavelRecebimento : secao === 'qualidade' ? responsavelQualidade : null
 
         return (
           <Card key={grupo.chave}>
@@ -198,6 +206,13 @@ export function ProcessoForm({
                   />
                 ))}
               </div>
+
+              {secao && (
+                <ResponsavelSecaoControle
+                  rotulo={secao === 'recebimento' ? 'Responsável Recebimento' : 'Responsável Qualidade'}
+                  nome={responsavelSecao}
+                />
+              )}
 
               {secao && !somenteLeitura && (
                 <div className="flex items-center gap-3">
@@ -270,6 +285,37 @@ function CampoControle({ campo, valor, valorCalculado, itens, somenteLeitura, on
           disabled={somenteLeitura}
         />
       )}
+    </div>
+  )
+}
+
+interface ResponsavelSecaoControleProps {
+  rotulo: string
+  /** Nome do usuário que salvou por último a seção, ou `null` se ainda não salva. */
+  nome: string | null
+}
+
+/**
+ * Campo somente-leitura que exibe quem salvou por último uma seção
+ * (Recebimento/Qualidade) — nunca faz parte do payload de salvar, é
+ * meramente informativo. Mesmo visual de `CampoCalculadoControle` (sem o
+ * ícone de cadeado, já que não é um valor calculado a partir de fórmula).
+ */
+function ResponsavelSecaoControle({ rotulo, nome }: ResponsavelSecaoControleProps) {
+  const vazio = !nome
+  const textoExibido = vazio ? '—' : nome
+
+  return (
+    <div className="flex max-w-sm flex-col gap-2">
+      <Label className="text-muted-foreground">{rotulo}</Label>
+      <div
+        className={cn(
+          'flex h-8 w-full min-w-0 items-center rounded-lg border border-input bg-input/30 px-2.5 py-1 text-base text-foreground md:text-sm',
+          vazio && 'italic text-muted-foreground',
+        )}
+      >
+        <span className="truncate">{textoExibido}</span>
+      </div>
     </div>
   )
 }

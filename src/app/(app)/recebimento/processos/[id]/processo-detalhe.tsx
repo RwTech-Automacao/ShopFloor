@@ -19,6 +19,10 @@ interface ProcessoDetalheProps {
   fornecedoresCriticos: string[]
   nqa: FaixaNqa[]
   usuarioAtual: string
+  /** Nome de quem salvou por último a seção Recebimento, ou `null` se ainda não salva. */
+  responsavelRecebimento: string | null
+  /** Nome de quem salvou por último a seção Qualidade, ou `null` se ainda não salva. */
+  responsavelQualidade: string | null
 }
 
 /**
@@ -41,6 +45,8 @@ export function ProcessoDetalhe({
   fornecedoresCriticos,
   nqa,
   usuarioAtual,
+  responsavelRecebimento,
+  responsavelQualidade,
 }: ProcessoDetalheProps) {
   const [dirty, setDirty] = useState(false)
 
@@ -56,6 +62,8 @@ export function ProcessoDetalhe({
         fornecedoresCriticos={fornecedoresCriticos}
         nqa={nqa}
         usuarioAtual={usuarioAtual}
+        responsavelRecebimento={responsavelRecebimento}
+        responsavelQualidade={responsavelQualidade}
       />
 
       <AcoesProcesso

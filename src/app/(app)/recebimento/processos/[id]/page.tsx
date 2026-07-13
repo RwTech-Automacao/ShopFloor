@@ -11,6 +11,7 @@ import {
 } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import { carregarCriticidade, carregarTabelaNqa } from '@/modules/recebimento/infra/referencias-repository'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
+import { buscarNomesUsuarios } from '@/modules/usuarios/infra/usuario-admin-repository'
 import { ProcessoDetalhe } from './processo-detalhe'
 
 interface ProcessoDetalhePageProps {
@@ -38,6 +39,25 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
     ),
   ]
   const itensPorLista = await carregarItensPorLista(chavesLista)
+
+  // Nomes dos responsáveis por seção (exibição somente-leitura). São uuids
+  // de `usuarios` carimbados por `salvarSecaoProcesso` — resolvidos aqui com
+  // uma única consulta para os ids presentes.
+  const idsResponsaveis = [
+    ...new Set(
+      [processo.responsavel_recebimento, processo.responsavel_qualidade].filter(
+        (id): id is string => !!id,
+      ),
+    ),
+  ]
+  const nomesUsuarios =
+    idsResponsaveis.length > 0 ? await buscarNomesUsuarios(idsResponsaveis) : {}
+  const responsavelRecebimento = processo.responsavel_recebimento
+    ? (nomesUsuarios[processo.responsavel_recebimento] ?? null)
+    : null
+  const responsavelQualidade = processo.responsavel_qualidade
+    ? (nomesUsuarios[processo.responsavel_qualidade] ?? null)
+    : null
 
   const perfil = sessao?.perfil ?? null
   const podeEditar = podeFazer(perfil, 'editar')
@@ -95,6 +115,8 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
         fornecedoresCriticos={fornecedoresCriticos}
         nqa={nqa}
         usuarioAtual={usuarioAtual}
+        responsavelRecebimento={responsavelRecebimento}
+        responsavelQualidade={responsavelQualidade}
       />
     </div>
   )
