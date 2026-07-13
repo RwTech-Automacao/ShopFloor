@@ -20,7 +20,12 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
   return (
     <div className="flex flex-col gap-4">
       <ProcessosFiltros />
-      <ProcessosPorMes grupos={grupos} filtros={filtros} abertosInicial={abertosInicial} />
+      <ProcessosPorMes
+        key={`${filtros.busca ?? ''}|${filtros.status ?? ''}`}
+        grupos={grupos}
+        filtros={filtros}
+        abertosInicial={abertosInicial}
+      />
     </div>
   )
 }

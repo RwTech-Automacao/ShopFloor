@@ -58,7 +58,9 @@ export function ProcessosPorMes({ grupos, filtros, abertosInicial }: Props) {
   if (grupos.length === 0) {
     return (
       <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
-        Nenhum processo encontrado.
+        {filtros.busca || filtros.status
+          ? 'Nenhum processo encontrado para os filtros selecionados.'
+          : 'Nenhum processo encontrado.'}
       </p>
     )
   }
@@ -90,7 +92,7 @@ export function ProcessosPorMes({ grupos, filtros, abertosInicial }: Props) {
                 )}
                 {carga?.fase === 'erro' && (
                   <div className="py-4 text-center text-sm">
-                    <p className="text-red-600">{carga.erro}</p>
+                    <p className="text-destructive">{carga.erro}</p>
                     <button
                       type="button"
                       onClick={() => carregar(g.chave)}

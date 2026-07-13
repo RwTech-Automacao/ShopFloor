@@ -24,6 +24,9 @@ export async function carregarProcessosDoMes(
   if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) {
     return { ok: false, erro: 'Você não tem permissão para visualizar processos.' }
   }
+  if (chave !== 'sem_data' && !/^\d{4}-\d{2}$/.test(chave)) {
+    return { ok: false, erro: 'Mês inválido.' }
+  }
   try {
     const linhas = await listarProcessosDoMes(filtros, chave)
     return { ok: true, linhas }
