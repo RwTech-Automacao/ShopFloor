@@ -70,7 +70,7 @@ const CONFIG_BASE: Folha[] = [
 
 const CONFIG_TODOS: Folha[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...CONFIG_BASE]
 
-const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/configuracoes/sobre', icone: Info, perm: 'administrar' }
+const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/sobre', icone: Info, perm: 'visualizar' }
 
 function iniciais(texto: string): string {
   const p = texto.trim().split(/[\s@.]+/).filter(Boolean)
@@ -228,15 +228,13 @@ export function AppShell({
           </div>
         )}
 
-        {pode(AJUDA.perm) && (
-          <>
-            {rotuloGrupo('Ajuda')}
-            <Link href={AJUDA.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, AJUDA.href))}>
-              <AJUDA.icone className="size-[18px] shrink-0" />
-              {AJUDA.rotulo}
-            </Link>
-          </>
-        )}
+        {/* Sobre é visível a todos os usuários logados (fica fora do guard de
+            admin de /configuracoes, na rota /sobre). */}
+        {rotuloGrupo('Ajuda')}
+        <Link href={AJUDA.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, AJUDA.href))}>
+          <AJUDA.icone className="size-[18px] shrink-0" />
+          {AJUDA.rotulo}
+        </Link>
       </nav>
 
       <div className="border-t border-border p-3">
