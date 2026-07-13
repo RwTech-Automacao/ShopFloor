@@ -35,16 +35,12 @@ export function inicioProximoMes(chave: string): string {
   return `${proximoAno}-${String(proximoMes).padStart(2, '0')}-01`
 }
 
-/** Agrupa datas de chegada em {chave, rotulo, total}; ordena sem_data primeiro,
- *  depois meses do mais recente ao mais antigo. */
-export function agruparPorMes(datas: (string | null)[]): GrupoMes[] {
-  const contagem = new Map<string, number>()
-  for (const d of datas) {
-    const chave = chaveMes(d)
-    contagem.set(chave, (contagem.get(chave) ?? 0) + 1)
-  }
-  return [...contagem.entries()]
-    .map(([chave, total]) => ({ chave, rotulo: rotuloMes(chave), total }))
+/** Adiciona o rótulo e ordena os grupos `{chave, total}` já agregados pelo
+ *  banco (RPC `processos_meses`): 'sem_data' primeiro, depois os meses do mais
+ *  recente ao mais antigo. */
+export function montarGrupos(contagens: { chave: string; total: number }[]): GrupoMes[] {
+  return contagens
+    .map(({ chave, total }) => ({ chave, rotulo: rotuloMes(chave), total }))
     .sort((a, b) => {
       if (a.chave === 'sem_data') return -1
       if (b.chave === 'sem_data') return 1

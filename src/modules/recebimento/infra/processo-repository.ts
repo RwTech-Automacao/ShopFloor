@@ -1,7 +1,6 @@
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { COLUNAS_BUSCA_PROCESSO, sanitizarTermoBusca } from '../domain/busca-processo'
-import { agruparPorMes, inicioProximoMes, type GrupoMes } from '../domain/agrupamento-mes'
-import { condicaoBuscaProcesso } from '../domain/busca-processo'
+import { COLUNAS_BUSCA_PROCESSO, condicaoBuscaProcesso, sanitizarTermoBusca } from '../domain/busca-processo'
+import { inicioProximoMes, montarGrupos, type GrupoMes } from '../domain/agrupamento-mes'
 
 export interface ProcessoResumoRow {
   id: string
@@ -74,19 +73,19 @@ export interface FiltrosProcessos {
 
 /**
  * Grupos por mês da data de chegada (com contagem), respeitando busca/status.
- * Busca só a coluna `data_chegada` (query leve) e agrupa em TS — sem GROUP BY
- * no banco, sem migração.
+ * A contagem é agregada no banco pela RPC `processos_meses` (GROUP BY) —
+ * escala em qualquer volume, sem o teto de linhas do PostgREST. A RPC é
+ * SECURITY INVOKER, então respeita o RLS (só conta o que o usuário vê).
  */
 export async function listarMesesProcessos(filtros: FiltrosProcessos): Promise<GrupoMes[]> {
   const supabase = await createServerSupabase()
-  let query = supabase.from('processos_recebimento').select('data_chegada')
-  if (filtros.status) query = query.eq('status', filtros.status)
-  const or = condicaoBuscaProcesso(filtros.busca)
-  if (or) query = query.or(or)
-  const { data, error } = await query
+  const buscaSanitizada = filtros.busca ? sanitizarTermoBusca(filtros.busca) : ''
+  const { data, error } = await supabase.rpc('processos_meses', {
+    p_busca: buscaSanitizada || null,
+    p_status: filtros.status ?? null,
+  })
   if (error) throw error
-  const datas = (data ?? []).map((r) => (r as { data_chegada: string | null }).data_chegada)
-  return agruparPorMes(datas)
+  return montarGrupos((data ?? []) as { chave: string; total: number }[])
 }
 
 /**
