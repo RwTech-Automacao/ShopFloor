@@ -96,7 +96,37 @@ para ser preenchida.
 
 ---
 
-## Ordem sugerida quando começarmos
-1. **Grupo do ciclo de vida** (3 → 7 → 5), que se interligam e mudam status/estrutura do form.
-2. **Isolados** (4 adicionar processo, 2 navegação, 1 anexos) — a qualquer momento.
-3. **6** (Nº EMB) quando for retomado.
+## Plano de execução acordado (estado atual)
+
+**Pré-requisito:** montar o **ambiente Dev** (2º projeto Supabase) **antes** das features que
+mexem no banco (#3, #4, #7, #1) — para não rodar migração/testes em produção. O **#2 não
+precisa** (só leitura).
+
+**Prontas para começar já:**
+- **#2 Setas de navegação** — especificada (ordem = da lista), isolada, sem banco. Fazer numa
+  **branch** (não tocar `main`/produção durante a apresentação).
+
+**Aguardando conversa com o pessoal / mais definições:**
+- **#3 abas/mês + status, #5 etiqueta, #7 seções** — o #3 muda o **fluxo de status**
+  (Aprovado/Reprovado, remove Cancelado), decisão que a **equipe** deve validar; e os três se
+  **entrelaçam** (tocam os mesmos arquivos → desenhar juntos, na ordem **3 → 7 → 5**, para evitar
+  retrabalho e conflito).
+- **#4 Adicionar processo** — melhor **depois do #7** (o formulário será reestruturado).
+- **#1 Fotos** — falta o usuário fechar a spec (campos do nome, mecanismo de export v1 ZIP).
+- **#6 Nº EMB** — parado.
+
+**Decisão sobre paralelismo:** NÃO iniciar tudo junto — hoje só a #2 está madura; as demais estão
+bloqueadas (interligação, input da equipe, spec pendente). Paralelizar (subagentes) só o que for
+de fato independente, conforme desbloquear.
+
+**Sequência combinada:** (1) ambiente Dev + **#2** (eu); (2) usuário fecha spec da foto e alinha
+3/5/7 com o pessoal; (3) atacar cada frente conforme desbloqueia.
+**Status:** usuário vai **terminar de explicar/definir depois**. Nada iniciado ainda.
+
+## Fluxo de trabalho acordado (Dev × Prod)
+- **1 repositório** GitHub (ambientes diferem só por env vars, não por código).
+- Mudança de **código** → branch → testa local (no **Dev**) → merge na `main` → Vercel deploya.
+- Mudança de **estrutura do banco** → **migration** → aplica no **Dev** (testa) → aplica no
+  **Prod** (`supabase db push`) **antes** de mesclar → merge. (Merge NÃO aplica migração sozinho.)
+- Mudança de **configuração/dados** (usuários, listas, campos, NQA, criticidade) → pelas **telas
+  de Admin**, sem migração.
