@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { salvarProcesso } from '@/modules/recebimento/application/salvar-processo'
+import { salvarSecaoProcesso, type Secao } from '@/modules/recebimento/application/salvar-secao-processo'
 import { calcularCamposCalculados, type CampoCalc, type FaixaNqa } from '@/modules/recebimento/domain/calculos'
 import type { CampoFormulario } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import { cn } from '@/lib/utils'
@@ -47,7 +47,7 @@ interface ProcessoFormProps {
   fornecedoresCriticos: string[]
   /** Tabela NQA (faixas de quantidade -> amostra), para o cálculo ao vivo de `amostral`. */
   nqa: FaixaNqa[]
-  /** Nome/e-mail do usuário logado, usado pelo cálculo ao vivo de `responsavel_contagem`. */
+  /** Nome/e-mail do usuário logado, repassado ao contexto de cálculo ao vivo. */
   usuarioAtual: string
 }
 
@@ -102,11 +102,11 @@ export function ProcessoForm({
     onDirtyChange?.(dirty)
   }, [dirty, onDirtyChange])
 
-  // Campos calculados (atraso, divergencia, critico, amostral,
-  // responsavel_contagem): recomputados ao vivo no cliente conforme o
-  // usuário edita os campos de entrada, com a mesma função pura usada
-  // autoritativamente pelo servidor em `salvarProcesso`. Isto é só uma
-  // prévia — o servidor sempre recalcula ao salvar.
+  // Campos calculados (atraso, divergencia, critico, amostral): recomputados
+  // ao vivo no cliente conforme o usuário edita os campos de entrada, com a
+  // mesma função pura usada autoritativamente pelo servidor em
+  // `salvarSecaoProcesso`. Isto é só uma prévia — o servidor sempre recalcula
+  // ao salvar.
   const camposCalculados: CampoCalc[] = useMemo(
     () =>
       campos
@@ -129,23 +129,34 @@ export function ProcessoForm({
     setValores((atual) => ({ ...atual, [campo]: valor }))
   }
 
-  function onSalvar() {
+  // Monta o payload de uma seção (recebimento OU qualidade): valores dos
+  // campos não-calculados dos grupos base (comercial + material) mais os do
+  // próprio grupo da seção — os dois botões "Salvar" sempre regravam a base
+  // junto, então qualquer um deles persiste as edições feitas em Comercial
+  // ou Material mesmo que a seção salva não seja onde o usuário editou.
+  function payloadSecao(secao: Secao): Record<string, unknown> {
+    const gruposAceitos = new Set(['comercial', 'material', secao])
+    const payload: Record<string, unknown> = {}
+    for (const campo of campos) {
+      // Campos calculados nunca são enviados: são somente-leitura no
+      // formulário e o servidor os recomputa autoritativamente ao salvar
+      // (enviá-los seria inofensivo — o servidor os descarta — mas omiti-los
+      // deixa claro que o cliente nunca é a fonte da verdade).
+      if (campo.calculado) continue
+      if (!gruposAceitos.has(campo.grupo)) continue
+      const bruto = valores[campo.campo] ?? ''
+      // Campos numéricos são convertidos aqui (input type="number", ponto
+      // decimal) para não passar pelo parser BR de `converterValor`
+      // (pensado para células de planilha, vírgula decimal).
+      payload[campo.campo] = campo.tipo === 'numero' ? (bruto === '' ? null : Number(bruto)) : bruto
+    }
+    return payload
+  }
+
+  function onSalvarSecao(secao: Secao) {
     startTransition(async () => {
-      const payload: Record<string, unknown> = {}
-      for (const campo of campos) {
-        // Campos calculados nunca são enviados: são somente-leitura no
-        // formulário e o servidor os recomputa autoritativamente ao salvar
-        // (enviá-los seria inofensivo — `salvarProcesso` os descarta — mas
-        // omiti-los deixa claro que o cliente nunca é a fonte da verdade).
-        if (campo.calculado) continue
-        const bruto = valores[campo.campo] ?? ''
-        // Campos numéricos são convertidos aqui (input type="number", ponto
-        // decimal) para não passar pelo parser BR de `converterValor`
-        // (pensado para células de planilha, vírgula decimal).
-        payload[campo.campo] = campo.tipo === 'numero' ? (bruto === '' ? null : Number(bruto)) : bruto
-      }
-      const r = await salvarProcesso(processoId, payload)
-      if (r.ok) toast.success('Alterações salvas.')
+      const r = await salvarSecaoProcesso(processoId, secao, payloadSecao(secao))
+      if (r.ok) toast.success(secao === 'recebimento' ? 'Recebimento salvo.' : 'Qualidade salva.')
       else toast.error(r.erro)
     })
   }
@@ -159,36 +170,46 @@ export function ProcessoForm({
 
   return (
     <div className="flex flex-col gap-4">
-      {gruposComCampos.map((grupo) => (
-        <Card key={grupo.chave}>
-          <CardHeader>
-            <CardTitle>{grupo.rotulo}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {grupo.campos.map((campo) => (
-                <CampoControle
-                  key={campo.campo}
-                  campo={campo}
-                  valor={valores[campo.campo] ?? ''}
-                  valorCalculado={valoresCalculados[campo.campo]}
-                  itens={campo.listaChave ? (itensPorLista[campo.listaChave] ?? []) : []}
-                  somenteLeitura={somenteLeitura}
-                  onChange={(valor) => atualizarValor(campo.campo, valor)}
-                />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+      {gruposComCampos.map((grupo) => {
+        // Só recebimento e qualidade têm botão Salvar próprio — cada um
+        // grava a base (comercial + material) junto com os campos da sua
+        // seção. Comercial/Material não têm botão: são salvos por qualquer
+        // um dos dois botões de seção.
+        const secao: Secao | null =
+          grupo.chave === 'recebimento' || grupo.chave === 'qualidade' ? grupo.chave : null
+        const rotuloBotao = secao === 'recebimento' ? 'Salvar Recebimento' : 'Salvar Qualidade'
 
-      {!somenteLeitura && (
-        <div className="flex items-center gap-3">
-          <Button onClick={onSalvar} disabled={salvando}>
-            {salvando ? 'Salvando…' : 'Salvar'}
-          </Button>
-        </div>
-      )}
+        return (
+          <Card key={grupo.chave}>
+            <CardHeader>
+              <CardTitle>{grupo.rotulo}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {grupo.campos.map((campo) => (
+                  <CampoControle
+                    key={campo.campo}
+                    campo={campo}
+                    valor={valores[campo.campo] ?? ''}
+                    valorCalculado={valoresCalculados[campo.campo]}
+                    itens={campo.listaChave ? (itensPorLista[campo.listaChave] ?? []) : []}
+                    somenteLeitura={somenteLeitura}
+                    onChange={(valor) => atualizarValor(campo.campo, valor)}
+                  />
+                ))}
+              </div>
+
+              {secao && !somenteLeitura && (
+                <div className="flex items-center gap-3">
+                  <Button onClick={() => onSalvarSecao(secao)} disabled={salvando}>
+                    {salvando ? 'Salvando…' : rotuloBotao}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }
@@ -260,23 +281,16 @@ interface CampoCalculadoControleProps {
 
 /**
  * Renderização somente-leitura de um campo `calculado=true` (atraso,
- * divergencia, critico, amostral, responsavel_contagem): nunca vira um
- * input/select editável, mesmo que `campo.tipo` seja 'lista' — o valor vem
- * sempre do recálculo ao vivo (`calcularCamposCalculados`) feito no
- * componente pai, nunca de digitação do usuário. O estilo (fundo mutado +
- * ícone de cadeado) sinaliza visualmente que o campo é automático.
+ * divergencia, critico, amostral): nunca vira um input/select editável,
+ * mesmo que `campo.tipo` seja 'lista' — o valor vem sempre do recálculo ao
+ * vivo (`calcularCamposCalculados`) feito no componente pai, nunca de
+ * digitação do usuário. O estilo (fundo mutado + ícone de cadeado) sinaliza
+ * visualmente que o campo é automático.
  */
 function CampoCalculadoControle({ campo, valor }: CampoCalculadoControleProps) {
   const inputId = `campo-${campo.campo}`
   const vazio = valor === null || valor === undefined || String(valor).trim() === ''
-  // `responsavel_contagem` vazio significa que ninguém contou ainda: o
-  // usuário atual assumirá esse papel ao salvar (fórmula `usuario_primeiro`).
-  // Para os demais calculados vazios, um traço indica "sem valor".
-  const textoExibido = vazio
-    ? campo.campo === 'responsavel_contagem'
-      ? '(será você ao salvar)'
-      : '—'
-    : String(valor)
+  const textoExibido = vazio ? '—' : String(valor)
 
   return (
     <div className="flex flex-col gap-2">
