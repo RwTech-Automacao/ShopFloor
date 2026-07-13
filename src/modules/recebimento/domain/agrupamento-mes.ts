@@ -27,7 +27,9 @@ export function rotuloMes(chave: string): string {
 
 /** Primeiro dia do mês seguinte, 'YYYY-MM-01', para o recorte `< próximo`. */
 export function inicioProximoMes(chave: string): string {
-  const [ano, mes] = chave.split('-').map(Number)
+  const parts = chave.split('-').map(Number)
+  const ano = parts[0]!
+  const mes = parts[1]!
   const proximoMes = mes === 12 ? 1 : mes + 1
   const proximoAno = mes === 12 ? ano + 1 : ano
   return `${proximoAno}-${String(proximoMes).padStart(2, '0')}-01`
