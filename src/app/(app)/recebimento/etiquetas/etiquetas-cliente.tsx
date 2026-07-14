@@ -13,14 +13,26 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { buscarEtiquetas, gerarEtiquetas } from '@/modules/etiquetas/application/gerar-etiquetas'
-import { gerarEtiquetasDoProcesso, type ProcessoEtiqueta } from '@/modules/etiquetas/domain/partnumber'
+import {
+  elegivelParaEtiqueta,
+  gerarEtiquetasDoProcesso,
+  type MotivoInelegivel,
+  type ProcessoEtiqueta,
+} from '@/modules/etiquetas/domain/partnumber'
 import type { FiltroTipoEtiqueta } from '@/modules/etiquetas/infra/etiqueta-repository'
+import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
+import { Badge } from '@/components/ui/badge'
 
 const TIPOS: { valor: FiltroTipoEtiqueta; rotulo: string }[] = [
   { valor: 'nf', rotulo: 'Nº NF' },
   { valor: 'emb', rotulo: 'Nº embarque' },
   { valor: 'fornecedor', rotulo: 'Fornecedor' },
 ]
+
+const ROTULO_MOTIVO: Record<MotivoInelegivel, string> = {
+  aguardando: 'Aguardando conferência',
+  incompleto: 'Campos incompletos para etiqueta',
+}
 
 /** Prévia do 1º Part Number do processo, calculada no cliente com o mesmo
  * domínio (`gerarEtiquetasDoProcesso`) usado autoritativamente pelo servidor
@@ -61,6 +73,12 @@ export function EtiquetasCliente() {
     return mapa
   }, [resultados])
 
+  const elegibilidades = useMemo(() => {
+    const mapa = new Map<string, { elegivel: boolean; motivo: MotivoInelegivel | null }>()
+    for (const processo of resultados ?? []) mapa.set(processo.id, elegivelParaEtiqueta(processo))
+    return mapa
+  }, [resultados])
+
   function buscar() {
     setErroBusca(null)
     setMensagemGeracao(null)
@@ -86,9 +104,9 @@ export function EtiquetasCliente() {
     })
   }
 
-  function selecionarTodosCompletos() {
-    const completos = (resultados ?? []).filter((p) => previas.get(p.id) !== '— incompleto —')
-    setSelecionados(new Set(completos.map((p) => p.id)))
+  function selecionarTodosElegiveis() {
+    const elegiveis = (resultados ?? []).filter((p) => elegibilidades.get(p.id)?.elegivel)
+    setSelecionados(new Set(elegiveis.map((p) => p.id)))
   }
 
   function limparSelecao() {
@@ -163,8 +181,8 @@ export function EtiquetasCliente() {
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={selecionarTodosCompletos}>
-                Selecionar todos (completos)
+              <Button variant="outline" size="sm" onClick={selecionarTodosElegiveis}>
+                Selecionar todos (elegíveis)
               </Button>
               <Button variant="outline" size="sm" onClick={limparSelecao}>
                 Limpar seleção
@@ -182,6 +200,7 @@ export function EtiquetasCliente() {
                 <TableRow>
                   <TableHead className="w-10" />
                   <TableHead>Nº</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Código</TableHead>
                   <TableHead>Pedido</TableHead>
                   <TableHead>Doc</TableHead>
@@ -192,14 +211,20 @@ export function EtiquetasCliente() {
               <TableBody>
                 {resultados.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       Nenhum processo encontrado para os filtros selecionados.
                     </TableCell>
                   </TableRow>
                 )}
                 {resultados.map((processo, indice) => {
-                  const previa = previas.get(processo.id) ?? '— incompleto —'
-                  const incompleto = previa === '— incompleto —'
+                  const elegib = elegibilidades.get(processo.id) ?? {
+                    elegivel: false,
+                    motivo: 'incompleto' as MotivoInelegivel,
+                  }
+                  const status = rotuloStatusProcesso(processo.status)
+                  const textoPrevia = elegib.elegivel
+                    ? (previas.get(processo.id) ?? '')
+                    : ROTULO_MOTIVO[elegib.motivo!]
                   return (
                     <TableRow key={processo.id}>
                       <TableCell>
@@ -207,18 +232,23 @@ export function EtiquetasCliente() {
                           type="checkbox"
                           aria-label={`Selecionar processo ${processo.codigoMaterial ?? processo.id}`}
                           checked={selecionados.has(processo.id)}
-                          disabled={incompleto}
+                          disabled={!elegib.elegivel}
                           onChange={(e) => alternarSelecao(processo.id, e.target.checked)}
                           className="accent-enterplak"
                         />
                       </TableCell>
                       <TableCell>{indice + 1}</TableCell>
+                      <TableCell>
+                        <Badge className={status.className}>{status.rotulo}</Badge>
+                      </TableCell>
                       <TableCell>{processo.codigoMaterial || '—'}</TableCell>
                       <TableCell>{processo.numeroPedido || '—'}</TableCell>
                       <TableCell>{processo.diInpi || processo.numeroNf || '—'}</TableCell>
                       <TableCell>{processo.volumes ?? '—'}</TableCell>
-                      <TableCell className={incompleto ? 'text-muted-foreground italic' : 'font-mono text-xs'}>
-                        {previa}
+                      <TableCell
+                        className={!elegib.elegivel ? 'text-muted-foreground italic' : 'font-mono text-xs'}
+                      >
+                        {textoPrevia}
                       </TableCell>
                     </TableRow>
                   )
@@ -235,8 +265,14 @@ export function EtiquetasCliente() {
               </p>
             )}
             {resultados.map((processo, indice) => {
-              const previa = previas.get(processo.id) ?? '— incompleto —'
-              const incompleto = previa === '— incompleto —'
+              const elegib = elegibilidades.get(processo.id) ?? {
+                elegivel: false,
+                motivo: 'incompleto' as MotivoInelegivel,
+              }
+              const status = rotuloStatusProcesso(processo.status)
+              const textoPrevia = elegib.elegivel
+                ? (previas.get(processo.id) ?? '')
+                : ROTULO_MOTIVO[elegib.motivo!]
               return (
                 <div key={processo.id} className="rounded-lg border border-border bg-card p-4">
                   <div className="flex items-start gap-3">
@@ -244,7 +280,7 @@ export function EtiquetasCliente() {
                       type="checkbox"
                       aria-label={`Selecionar processo ${processo.codigoMaterial ?? processo.id}`}
                       checked={selecionados.has(processo.id)}
-                      disabled={incompleto}
+                      disabled={!elegib.elegivel}
                       onChange={(e) => alternarSelecao(processo.id, e.target.checked)}
                       className="mt-1 accent-enterplak"
                     />
@@ -253,6 +289,12 @@ export function EtiquetasCliente() {
                         <span className="font-semibold">#{indice + 1}</span>
                       </div>
                       <dl className="mt-2 space-y-1.5 text-sm">
+                        <div className="flex gap-2">
+                          <dt className="w-28 shrink-0 text-muted-foreground">Status</dt>
+                          <dd className="min-w-0 flex-1">
+                            <Badge className={status.className}>{status.rotulo}</Badge>
+                          </dd>
+                        </div>
                         <div className="flex gap-2">
                           <dt className="w-28 shrink-0 text-muted-foreground">Código</dt>
                           <dd className="min-w-0 flex-1">{processo.codigoMaterial || '—'}</dd>
@@ -273,12 +315,12 @@ export function EtiquetasCliente() {
                           <dt className="w-28 shrink-0 text-muted-foreground">Prévia</dt>
                           <dd
                             className={
-                              incompleto
+                              !elegib.elegivel
                                 ? 'min-w-0 flex-1 text-muted-foreground italic'
                                 : 'min-w-0 flex-1 font-mono text-xs'
                             }
                           >
-                            {previa}
+                            {textoPrevia}
                           </dd>
                         </div>
                       </dl>
