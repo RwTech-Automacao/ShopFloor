@@ -45,10 +45,11 @@ function carimboDataHora(agora: Date): string {
  * `carregarProcessosPorId` (banco), nunca do que o cliente eventualmente
  * tenha enviado sobre cada processo — o cliente só manda os `id`s.
  *
- * Exige a permissão `gerar_etiqueta`. Processos incompletos (sem código,
- * pedido ou documento válidos — ver `gerarEtiquetasDoProcesso`) são
- * ignorados e contados em `ignorados`; se nenhuma etiqueta sobrar, retorna
- * erro em vez de um CSV vazio.
+ * Exige a permissão `gerar_etiqueta`. Processos **não elegíveis** — não
+ * concluídos (status não terminal) ou com campos incompletos (sem código,
+ * pedido, documento DI/INPI-ou-NF, ou volumes < 1 — ver `elegivelParaEtiqueta`)
+ * — são ignorados e contados em `ignorados`; se nenhuma etiqueta sobrar,
+ * retorna erro em vez de um CSV vazio.
  *
  * Em caso de sucesso, registra a geração em `geracoes_etiquetas`
  * (histórico/auditoria) e loga a ação (`registrarLog`), usando o id da
