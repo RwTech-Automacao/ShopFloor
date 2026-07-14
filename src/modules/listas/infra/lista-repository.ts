@@ -89,6 +89,23 @@ export async function excluirLista(id: string): Promise<void> {
   }
 }
 
+/**
+ * Rótulos dos campos (`configuracao_campos`) que usam esta lista, pela `chave`.
+ * Vazio = a lista não está em uso e pode ser excluída. Usado para bloquear a
+ * exclusão de uma lista amarrada a um campo (que esvaziaria o dropdown / — no
+ * caso da lista `resultado` — quebraria os status).
+ */
+export async function camposQueUsamLista(chave: string): Promise<string[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('configuracao_campos')
+    .select('rotulo')
+    .eq('lista_chave', chave)
+    .order('rotulo', { ascending: true })
+  if (error) throw error
+  return ((data ?? []) as { rotulo: string }[]).map((r) => r.rotulo)
+}
+
 export async function listarItens(listaId: string): Promise<ItemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase

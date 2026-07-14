@@ -9,11 +9,11 @@ import {
   atualizarItem,
   buscarItem,
   buscarListaPorId,
+  camposQueUsamLista,
   criarItem,
   criarLista,
   excluirItem as excluirItemRepo,
   excluirLista as excluirListaRepo,
-  ERRO_LISTA_BLOQUEADA_EXCLUSAO,
 } from '../infra/lista-repository'
 
 export type ResultadoAcaoLista = { ok: true } | { erro: string }
@@ -67,12 +67,23 @@ export async function excluirListaAction(id: string): Promise<ResultadoAcaoLista
   const alvo = await buscarListaPorId(id)
   if (!alvo) return { erro: 'Lista não encontrada.' }
 
+  // Lista em uso por um campo não pode ser excluída (esvaziaria o dropdown; se
+  // for a lista `resultado`, quebraria os status). Bloqueia com aviso nomeando
+  // o(s) campo(s) — em vez do erro cru de FK do banco.
+  const usos = await camposQueUsamLista(alvo.chave)
+  if (usos.length > 0) {
+    return {
+      erro: `Esta lista é usada pelo(s) campo(s): ${usos.join(', ')}. Remova a associação antes de excluir.`,
+    }
+  }
+
   try {
     await excluirListaRepo(id)
   } catch (e) {
-    if (e instanceof Error && e.message === ERRO_LISTA_BLOQUEADA_EXCLUSAO) {
-      return { erro: 'Listas do sistema não podem ser excluídas.' }
-    }
+    // ERRO_LISTA_BLOQUEADA_EXCLUSAO (0 linhas) agora só ocorre por RLS/permissão
+    // ou lista já removida; e um erro de FK (corrida) também cai aqui. Mensagem
+    // genérica em qualquer caso — a lista não foi apagada.
+    void e
     return { erro: 'Não foi possível excluir a lista.' }
   }
 
