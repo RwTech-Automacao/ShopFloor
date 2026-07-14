@@ -1,4 +1,5 @@
 import { createServerSupabase } from '@/shared/lib/supabase/server'
+import { sanitizarTermoBusca } from '../domain/busca-processo'
 import type { StatusProcesso } from '../domain/ciclo-vida'
 
 /**
@@ -310,5 +311,30 @@ export async function atualizarProcesso(id: string, patch: PatchProcesso): Promi
   if (error) throw error
   if (!data || data.length === 0) {
     throw new Error('Não foi possível salvar (registro não encontrado ou sem permissão).')
+  }
+}
+
+/**
+ * Anterior/próximo do processo na ordem da lista filtrada, via RPC
+ * `processos_vizinhos`. Fail-safe: qualquer erro devolve ambos `null` (setas
+ * desabilitadas), sem quebrar a página.
+ */
+export async function buscarVizinhos(
+  id: string,
+  filtros: { busca?: string; status?: string },
+): Promise<{ anterior: string | null; proximo: string | null }> {
+  try {
+    const supabase = await createServerSupabase()
+    const buscaSanitizada = filtros.busca ? sanitizarTermoBusca(filtros.busca) : ''
+    const { data, error } = await supabase.rpc('processos_vizinhos', {
+      p_id: id,
+      p_busca: buscaSanitizada || null,
+      p_status: filtros.status ?? null,
+    })
+    if (error) throw error
+    const row = (data ?? [])[0] as { anterior: string | null; proximo: string | null } | undefined
+    return { anterior: row?.anterior ?? null, proximo: row?.proximo ?? null }
+  } catch {
+    return { anterior: null, proximo: null }
   }
 }
