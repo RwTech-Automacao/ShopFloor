@@ -73,6 +73,7 @@ export interface CampoFormulario {
   listaChave: string | null
   origem: 'comercial' | 'recebimento'
   obrigatorioFinalizacao: boolean
+  obrigatorioImportacao: boolean
   ordem: number
   calculado: boolean
   formula: string | null
@@ -87,6 +88,7 @@ interface ConfiguracaoCampoFormularioRow {
   lista_chave: string | null
   origem: 'comercial' | 'recebimento'
   obrigatorio_finalizacao: boolean
+  obrigatorio_importacao: boolean
   ordem: number
   calculado: boolean
   formula: string | null
@@ -258,7 +260,7 @@ export async function carregarCamposFormulario(): Promise<CampoFormulario[]> {
   const { data, error } = await supabase
     .from('configuracao_campos')
     .select(
-      'campo, rotulo, grupo, tipo, lista_chave, origem, obrigatorio_finalizacao, ordem, calculado, formula, formula_config',
+      'campo, rotulo, grupo, tipo, lista_chave, origem, obrigatorio_finalizacao, obrigatorio_importacao, ordem, calculado, formula, formula_config',
     )
     .eq('ativo', true)
     .order('ordem', { ascending: true })
@@ -273,6 +275,7 @@ export async function carregarCamposFormulario(): Promise<CampoFormulario[]> {
     listaChave: row.lista_chave,
     origem: row.origem,
     obrigatorioFinalizacao: row.obrigatorio_finalizacao,
+    obrigatorioImportacao: row.obrigatorio_importacao,
     ordem: row.ordem,
     calculado: row.calculado,
     formula: row.formula,
@@ -312,6 +315,37 @@ export async function atualizarProcesso(id: string, patch: PatchProcesso): Promi
   if (!data || data.length === 0) {
     throw new Error('Não foi possível salvar (registro não encontrado ou sem permissão).')
   }
+}
+
+/**
+ * Insere um novo processo de recebimento. Espelha a whitelist de
+ * `atualizarProcesso` (`COLUNAS_GRAVAVEIS`) e adiciona `criado_por`. NÃO
+ * envia `numero` (sequência `processos_numero_seq`, default) nem `status`
+ * (default 'aberto') — o banco atribui ambos. O RLS `processos_insert`
+ * (0004/0007) já autoriza o INSERT para quem tem `editar`. Retorna o id e o
+ * numero do processo recém-criado.
+ */
+export async function criarProcesso(
+  patch: PatchProcesso & { criado_por: string },
+): Promise<{ id: string; numero: number }> {
+  const supabase = await createServerSupabase()
+
+  const registro: Record<string, unknown> = { criado_por: patch.criado_por }
+  for (const [chave, valor] of Object.entries(patch)) {
+    if (chave === 'criado_por') continue
+    if (COLUNAS_GRAVAVEIS.has(chave as ColunaGravavel)) {
+      registro[chave] = valor
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('processos_recebimento')
+    .insert(registro)
+    .select('id, numero')
+    .single()
+  if (error) throw error
+  if (!data) throw new Error('Não foi possível criar o processo.')
+  return { id: data.id as string, numero: data.numero as number }
 }
 
 /**
