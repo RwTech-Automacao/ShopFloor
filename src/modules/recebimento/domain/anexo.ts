@@ -36,7 +36,7 @@ export function validarArquivoImagem(mime: string, tamanho: number): ResultadoVa
 function sanitizarNome(valor: string): string {
   return valor
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '') // remove diacríticos (acentos)
+    .replace(/[\u0300-\u036f]/g, '') // remove diacríticos (acentos)
     .replace(/[\/\\:*?"<>|\s]+/g, '-') // caracteres inválidos de arquivo + espaços → '-'
     .replace(/-+/g, '-') // colapsa '-' repetidos
     .replace(/^-+|-+$/g, '') // apara '-' das pontas
