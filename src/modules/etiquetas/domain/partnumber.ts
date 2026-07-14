@@ -1,5 +1,8 @@
+import { ehTerminal } from '@/modules/recebimento/domain/ciclo-vida'
+
 export type ProcessoEtiqueta = {
   id: string
+  status: string
   codigoMaterial: string | null
   numeroPedido: string | null
   diInpi: string | null
@@ -51,17 +54,36 @@ export function montarPartNumber(codigoBase: string, pedidoFmt: string, doc: str
   return `${codigoBase}-${pedidoFmt}${doc}${seq}`
 }
 
+/** True sse o processo tem os campos da etiqueta: código, pedido, documento
+ *  (DI/INPI ou NF) e volumes >= 1. */
+export function camposCompletosEtiqueta(p: ProcessoEtiqueta): boolean {
+  if (!normalizarCodigo(p.codigoMaterial)) return false
+  if (!formatarPedido(p.numeroPedido)) return false
+  if (!resolverDoc(p.diInpi, p.numeroNf)) return false
+  const volumes = typeof p.volumes === 'number' ? p.volumes : Number(p.volumes)
+  return Number.isFinite(volumes) && volumes >= 1
+}
+
+export type MotivoInelegivel = 'aguardando' | 'incompleto'
+
+/** Elegibilidade para gerar etiqueta: status terminal (concluído — não aberto/
+ *  em_conferencia) E campos completos. */
+export function elegivelParaEtiqueta(
+  p: ProcessoEtiqueta,
+): { elegivel: boolean; motivo: MotivoInelegivel | null } {
+  if (!ehTerminal(p.status)) return { elegivel: false, motivo: 'aguardando' }
+  if (!camposCompletosEtiqueta(p)) return { elegivel: false, motivo: 'incompleto' }
+  return { elegivel: true, motivo: null }
+}
+
 export function gerarEtiquetasDoProcesso(
   p: ProcessoEtiqueta,
 ): { incompleto: boolean; etiquetas: LinhaEtiqueta[] } {
+  if (!camposCompletosEtiqueta(p)) return { incompleto: true, etiquetas: [] }
   const codigoBase = normalizarCodigo(p.codigoMaterial)
   const pedidoFmt = formatarPedido(p.numeroPedido)
   const doc = resolverDoc(p.diInpi, p.numeroNf)
-  if (!codigoBase || !pedidoFmt || !doc) return { incompleto: true, etiquetas: [] }
-
-  let volumes = typeof p.volumes === 'number' ? p.volumes : parseInt(String(p.volumes), 10)
-  if (!Number.isFinite(volumes) || volumes <= 0) volumes = 1
-
+  const volumes = Math.trunc(Number(p.volumes))
   const etiquetas: LinhaEtiqueta[] = []
   for (let i = 1; i <= volumes; i++) {
     const seq = padSeq(i, volumes)

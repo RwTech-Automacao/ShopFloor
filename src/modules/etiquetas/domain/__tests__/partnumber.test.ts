@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   normalizarCodigo, formatarPedido, resolverDoc, padSeq, formatarVolume,
   gerarEtiquetasDoProcesso, gerarCsv,
+  camposCompletosEtiqueta, elegivelParaEtiqueta,
 } from '../partnumber'
 
 describe('formatarPedido', () => {
@@ -32,7 +33,7 @@ describe('normalizarCodigo', () => {
 
 describe('gerarEtiquetasDoProcesso (exemplo validado RWCN98)', () => {
   const p = {
-    id: 'x', codigoMaterial: 'RWCN98', numeroPedido: '0529/26',
+    id: 'x', status: 'Aprovado', codigoMaterial: 'RWCN98', numeroPedido: '0529/26',
     diInpi: '26BR0000902016-1', numeroNf: null, volumes: 13,
   }
   const r = gerarEtiquetasDoProcesso(p)
@@ -46,6 +47,56 @@ describe('gerarEtiquetasDoProcesso (exemplo validado RWCN98)', () => {
   })
   it('marca incompleto quando falta pedido', () => {
     expect(gerarEtiquetasDoProcesso({ ...p, numeroPedido: null }).incompleto).toBe(true)
+  })
+})
+
+describe('camposCompletosEtiqueta', () => {
+  const base = {
+    id: 'x',
+    status: 'Aprovado',
+    codigoMaterial: 'RWCN98',
+    numeroPedido: '5292/26',
+    diInpi: '260000902016',
+    numeroNf: null,
+    volumes: 13,
+  }
+  it('completo quando tem código, pedido, doc e volumes >= 1', () => {
+    expect(camposCompletosEtiqueta(base)).toBe(true)
+  })
+  it('incompleto sem código / sem pedido / sem doc', () => {
+    expect(camposCompletosEtiqueta({ ...base, codigoMaterial: null })).toBe(false)
+    expect(camposCompletosEtiqueta({ ...base, numeroPedido: '' })).toBe(false)
+    expect(camposCompletosEtiqueta({ ...base, diInpi: null, numeroNf: null })).toBe(false)
+  })
+  it('incompleto quando volumes < 1 / nulo', () => {
+    expect(camposCompletosEtiqueta({ ...base, volumes: 0 })).toBe(false)
+    expect(camposCompletosEtiqueta({ ...base, volumes: null })).toBe(false)
+  })
+  it('doc aceita NF quando DI/INPI vazio', () => {
+    expect(camposCompletosEtiqueta({ ...base, diInpi: null, numeroNf: '0665/26' })).toBe(true)
+  })
+})
+
+describe('elegivelParaEtiqueta', () => {
+  const base = {
+    id: 'x',
+    status: 'Aprovado',
+    codigoMaterial: 'RWCN98',
+    numeroPedido: '5292/26',
+    diInpi: '260000902016',
+    numeroNf: null,
+    volumes: 13,
+  }
+  it('não terminal → aguardando', () => {
+    expect(elegivelParaEtiqueta({ ...base, status: 'aberto' })).toEqual({ elegivel: false, motivo: 'aguardando' })
+    expect(elegivelParaEtiqueta({ ...base, status: 'em_conferencia' })).toEqual({ elegivel: false, motivo: 'aguardando' })
+  })
+  it('terminal mas incompleto → incompleto', () => {
+    expect(elegivelParaEtiqueta({ ...base, status: 'Reprovado', volumes: 0 })).toEqual({ elegivel: false, motivo: 'incompleto' })
+  })
+  it('terminal + completo → elegível (inclui status terminal custom)', () => {
+    expect(elegivelParaEtiqueta(base)).toEqual({ elegivel: true, motivo: null })
+    expect(elegivelParaEtiqueta({ ...base, status: 'Aprovado condicional' })).toEqual({ elegivel: true, motivo: null })
   })
 })
 
