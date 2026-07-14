@@ -258,3 +258,82 @@ Reportado "não dá pra excluir listas". **Não é bug de código:** todas as li
 Listas criadas pelo usuário nascem `sistema=false` e são excluíveis. Pendente: decidir UX (esconder
 botão de excluir em lista de sistema) e/ou desmarcar `sistema` de listas específicas que o usuário
 queira remover (após confirmar que nenhum campo as usa).
+
+---
+
+## 13. Sessão 2026-07-14 — Roadmap: #2, #5, #4, #1 (anexos A+B) + correções
+
+Todas via **subagent-driven-development** (implementador + revisor por task + review final Opus
+adversarial), direto na `main` (sem dados reais em produção), fluxo brainstorming → spec → plano →
+execução. Deploy automático na Vercel (`git push` → main). Domínio: MES Enterplak. Migrações
+aplicadas em produção pelo controller (com reload do schema cache do PostgREST).
+
+### #2 — Setas de navegação entre processos (migração 0016)
+Setas ‹ › no rodapé do detalhe (canto direito) para o processo **anterior/próximo na ordem da lista
+filtrada**, atravessando meses. RPC **`processos_vizinhos`** (migração **0016**); os filtros de
+busca/status seguem por query param (lista → detalhe → setas). Depois, ajuste visual: setas em
+**vinho-outline** (identidade Enterplak) — sem competir com o Finalizar (vinho cheio).
+
+### #5 — Trava de geração de etiqueta por elegibilidade (sem migração)
+Etiqueta só é gerada quando o processo está **terminal (`ehTerminal`) E com campos completos**
+(Item Recebido, Nº Pedido, DI/INPI-ou-NF, Volumes ≥ 1). Domínio `elegivelParaEtiqueta`
+(motivo `aguardando`|`incompleto`); `ProcessoEtiqueta` ganhou `status`; a UI mostra **todos** os
+processos com **badge de status** e desabilita a seleção dos não elegíveis com o motivo; o servidor
+(autoritativo) pula os não elegíveis na geração. Review Opus: READY TO MERGE.
+
+### Fix — processo concluído é somente-leitura
+Bug reportado: dava para editar um processo finalizado sem reabrir. Corrigido: processo em status
+**terminal** é **somente-leitura** — nem quem tem `editar_finalizado` edita direto; para editar é
+preciso **Reabrir** (volta a Em conferência). `editar_finalizado` passou a significar só "pode
+reabrir". Aplicado na tela (`editavelPorStatus=false` em terminal) e no servidor
+(`salvarSecaoProcesso` rejeita terminal). RLS `processos_update` mantida (o app é o portão).
+
+### #4 — Adicionar processo manual (sem migração)
+Botão **"Adicionar processo"** no topo da lista (gate `editar`) → página `/recebimento/processos/novo`
+com formulário dos grupos **Comercial + Material**, seguindo **as mesmas regras da importação**:
+obrigatórios = `obrigatorio_importacao` (novo `obrigatorioImportacao` em `CampoFormulario`),
+calculados computados no servidor, **campos de lista validados** (valor fora da lista → erro),
+processo nasce `aberto` com `numero` automático. Backend: `criarProcesso` (INSERT, exclui
+`status`/`numero`, whitelist `COLUNAS_GRAVAVEIS` + `criado_por`) + Server Action `criarProcessoManual`
+(log `criar`). `CampoControle` **extraído** para módulo compartilhado (reuso detalhe ↔ criação).
+RLS de INSERT já aceitava `editar`. Review Opus: READY TO MERGE (Minor de validação de lista
+resolvido antes do push).
+
+### #1 — Anexos de foto por processo (o maior; decomposto em A + B — os dois em produção)
+Supabase Storage era greenfield. Decisões do usuário: **compressão teto 1 MB**, **máx 3 fotos** por
+processo, **upload imediato** (não staged), rename `pedido-item-pNº-i`, **limpeza em 2 passos manuais**.
+
+- **A — núcleo (migração 0017):** bucket privado `anexos-processos` + tabela `anexos_processo` +
+  RLS via `tem_permissao` (ver=`visualizar`, anexar/excluir=`editar`). Card **"Fotos (N/3)"** no
+  detalhe (abaixo da Qualidade): captura câmera/arquivo → **compressão no cliente só se > 1 MB**
+  (`browser-image-compression`) → **upload imediato** via Server Actions `anexarFoto`/`removerFoto`
+  (gate `editar`; **terminal bloqueado**; limite 3; rollback de órfão; log `alterar_campo`/`excluir`);
+  miniatura via **signed URL**; `bodySizeLimit` das Server Actions elevado a **5 MB** (senão o Next
+  barraria foto > 1 MB — pego no review). Review Opus corrigiu 1 Important: `listarAnexosComUrl`
+  resiliente (URL falha não derruba a página) + `removerFoto` apaga metadado antes do objeto.
+- **B — export mensal + limpeza (migração 0018):** RPCs `anexos_meses` + `anexos_do_mes`. Tela
+  **"Exportar Fotos"** (gate `administrar`): lista meses (por `data_chegada`) com contagem; por mês
+  **[Exportar ZIP]** — montado **no navegador** com `jszip` (evita o teto de resposta serverless;
+  assina URLs em **lote** via `createSignedUrls`) com fotos renomeadas `{pedido}-{item}-p{numero}-{i}.ext`
+  (domínio puro `nomeArquivoFoto`, sanitiza acento/inválidos, fallback `p{numero}`, único) — e
+  **[Limpar fotos do mês]** separado, com confirmação (apaga **em lotes**: metadado antes do objeto;
+  log `excluir`). As actions/repository do B usam o **client de serviço** (server-only) com gate
+  `administrar` como portão. Google Drive API = **v2 futura** (arquivamento manual). Review Opus
+  (NEEDS WORK borderline) corrigiu 2 Important de escala (assinatura/limpeza em lote) antes do push.
+
+### Correção do menu + faxina de código morto
+"Exportar Fotos" não aparecia: tinha sido adicionado ao `RECEBIMENTO_NAV` (`recebimento-nav.ts`), que
+**não é consumido pela barra lateral** — o menu real é a constante `RECEBIMENTO` dentro de
+`app-shell.tsx`. Corrigido lá (ícone `ImageDown`, gate `administrar`). Depois, **faxina:** removido o
+`recebimento-nav.ts` + teste (código morto, 0 referências fora do próprio teste — verificado).
+Lição registrada na memória: menu é SEMPRE no `app-shell.tsx`.
+
+### Estado do roadmap ao fim da sessão
+- **Entregues em produção:** #2 (setas), 3b (accordions/mês), #7+#3a (seções + status dinâmico),
+  #5 (trava etiqueta), #4 (processo manual), #1 A+B (anexos completos), + fixes (terminal read-only,
+  cor das setas, menu, código morto).
+- **Pendentes:** **#6** (Nº EMB dos 8 primeiros chars do nome do arquivo — parado); **bug das listas**
+  (liberar exclusão de todas as listas — usuário quer; ~30–45 min na versão segura com checagem de
+  "em uso"); **ambiente Dev × Prod** (2º projeto Supabase — recomendado antes do uso diário real);
+  **domínio** `shopfloor.enterplak.com.br` (pausado no DNS da Locaweb). **Smokes pendentes:** #4,
+  #1 (anexar via câmera, exportar ZIP, limpar mês).
