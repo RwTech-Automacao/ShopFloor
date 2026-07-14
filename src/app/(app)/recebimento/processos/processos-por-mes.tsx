@@ -102,7 +102,7 @@ export function ProcessosPorMes({ grupos, filtros, abertosInicial }: Props) {
                     </button>
                   </div>
                 )}
-                {carga?.fase === 'pronto' && <LinhasProcessos linhas={carga.linhas} />}
+                {carga?.fase === 'pronto' && <LinhasProcessos linhas={carga.linhas} filtros={filtros} />}
               </div>
             )}
           </div>
