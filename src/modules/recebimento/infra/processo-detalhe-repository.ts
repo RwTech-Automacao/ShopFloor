@@ -333,6 +333,10 @@ export async function criarProcesso(
   const registro: Record<string, unknown> = { criado_por: patch.criado_por }
   for (const [chave, valor] of Object.entries(patch)) {
     if (chave === 'criado_por') continue
+    // `status` está em COLUNAS_GRAVAVEIS (usado por atualizarProcesso), mas o
+    // INSERT nunca deve enviá-lo: o banco aplica o default 'aberto'. Excluímos
+    // explicitamente para a regra não depender da disciplina do chamador.
+    if (chave === 'status') continue
     if (COLUNAS_GRAVAVEIS.has(chave as ColunaGravavel)) {
       registro[chave] = valor
     }
