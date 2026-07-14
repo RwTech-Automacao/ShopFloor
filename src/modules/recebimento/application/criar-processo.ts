@@ -12,6 +12,7 @@ import {
   type PatchProcesso,
 } from '../infra/processo-detalhe-repository'
 import { carregarCriticidade, carregarTabelaNqa } from '../infra/referencias-repository'
+import { carregarItensPorLista } from '../infra/campo-comercial-repository'
 
 export type ResultadoCriarProcesso = { ok: true; id: string } | { ok: false; erro: string }
 
@@ -32,6 +33,18 @@ export async function criarProcessoManual(
   const campos = await carregarCamposFormulario()
   const gruposBase = new Set(['comercial', 'material'])
 
+  // Itens das listas usadas pelos campos base — para validar campos do tipo
+  // `lista` contra os valores permitidos (mesma regra da importação; ver
+  // `validacao-linha.ts`). Sem isso, um valor fora da lista passaria no servidor.
+  const chavesLista = [
+    ...new Set(
+      campos
+        .filter((c) => gruposBase.has(c.grupo) && !c.calculado && c.tipo === 'lista' && c.listaChave)
+        .map((c) => c.listaChave as string),
+    ),
+  ]
+  const itensPorLista = await carregarItensPorLista(chavesLista)
+
   const novosValores: Record<string, string | number | null> = {}
   const camposAlterados: string[] = []
   for (const campo of campos) {
@@ -42,7 +55,8 @@ export async function criarProcessoManual(
     if (campo.obrigatorioImportacao && vazio) {
       return { ok: false, erro: `Campo obrigatório: ${campo.rotulo}.` }
     }
-    const r = converterValor(bruto, campo.tipo)
+    const itens = campo.listaChave ? itensPorLista[campo.listaChave] : undefined
+    const r = converterValor(bruto, campo.tipo, itens)
     if (!r.ok) return { ok: false, erro: `${campo.rotulo}: ${r.erro}` }
     novosValores[campo.campo] = r.valor
     camposAlterados.push(campo.campo)
