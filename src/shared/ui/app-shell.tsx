@@ -11,6 +11,7 @@ import {
   ClipboardList,
   FileDown,
   Tags,
+  ImageDown,
   Users,
   ShieldCheck,
   List,
@@ -45,6 +46,7 @@ const RECEBIMENTO: Folha[] = [
   { chave: 'processos', rotulo: 'Processos', href: '/recebimento/processos', icone: ClipboardList, perm: 'visualizar' },
   { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, perm: 'visualizar' },
   { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, perm: 'gerar_etiqueta' },
+  { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, perm: 'administrar' },
 ]
 
 const CONFIG_PERM = 'administrar'
