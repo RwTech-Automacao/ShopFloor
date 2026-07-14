@@ -4,7 +4,9 @@ import { useState } from 'react'
 import type { StatusProcesso } from '@/modules/recebimento/domain/ciclo-vida'
 import type { CampoFormulario } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import type { FaixaNqa } from '@/modules/recebimento/domain/calculos'
+import type { FiltrosProcessos } from '@/modules/recebimento/infra/processo-repository'
 import { AcoesProcesso } from './acoes-processo'
+import { NavegacaoProcesso } from './navegacao-processo'
 import { ProcessoForm } from './processo-form'
 
 interface ProcessoDetalheProps {
@@ -23,6 +25,11 @@ interface ProcessoDetalheProps {
   responsavelRecebimento: string | null
   /** Nome de quem salvou por último a seção Qualidade, ou `null` se ainda não salva. */
   responsavelQualidade: string | null
+  /** Uuid do processo anterior/próximo na ordem da lista filtrada, ou `null` na ponta da lista. */
+  anterior: string | null
+  proximo: string | null
+  /** Filtros de busca/status ativos na lista — preservados nas setas de navegação. */
+  filtros: FiltrosProcessos
 }
 
 /**
@@ -47,6 +54,9 @@ export function ProcessoDetalhe({
   usuarioAtual,
   responsavelRecebimento,
   responsavelQualidade,
+  anterior,
+  proximo,
+  filtros,
 }: ProcessoDetalheProps) {
   const [dirty, setDirty] = useState(false)
 
@@ -66,13 +76,16 @@ export function ProcessoDetalhe({
         responsavelQualidade={responsavelQualidade}
       />
 
-      <AcoesProcesso
-        processoId={processoId}
-        status={status}
-        podeFinalizar={podeFinalizar}
-        podeEditarFinalizado={podeEditarFinalizado}
-        finalizarBloqueado={dirty}
-      />
+      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+        <AcoesProcesso
+          processoId={processoId}
+          status={status}
+          podeFinalizar={podeFinalizar}
+          podeEditarFinalizado={podeEditarFinalizado}
+          finalizarBloqueado={dirty}
+        />
+        <NavegacaoProcesso anterior={anterior} proximo={proximo} filtros={filtros} />
+      </div>
     </>
   )
 }

@@ -7,6 +7,7 @@ import { podeFazer } from '@/modules/auth/domain/perfil'
 import { carregarItensPorLista } from '@/modules/recebimento/infra/campo-comercial-repository'
 import {
   buscarProcesso,
+  buscarVizinhos,
   carregarCamposFormulario,
 } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import { carregarCriticidade, carregarTabelaNqa } from '@/modules/recebimento/infra/referencias-repository'
@@ -16,13 +17,18 @@ import { ProcessoDetalhe } from './processo-detalhe'
 
 interface ProcessoDetalhePageProps {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ busca?: string; status?: string }>
 }
 
-export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePageProps) {
+export default async function ProcessoDetalhePage({ params, searchParams }: ProcessoDetalhePageProps) {
   const { id } = await params
+  const sp = await searchParams
+  const filtros = { busca: sp.busca || undefined, status: sp.status || undefined }
 
   const processo = await buscarProcesso(id)
   if (!processo) notFound()
+
+  const { anterior, proximo } = await buscarVizinhos(id, filtros)
 
   const [sessao, campos, fornecedoresCriticos, nqa] = await Promise.all([
     getSessao(),
@@ -117,6 +123,9 @@ export default async function ProcessoDetalhePage({ params }: ProcessoDetalhePag
         usuarioAtual={usuarioAtual}
         responsavelRecebimento={responsavelRecebimento}
         responsavelQualidade={responsavelQualidade}
+        anterior={anterior}
+        proximo={proximo}
+        filtros={filtros}
       />
     </div>
   )

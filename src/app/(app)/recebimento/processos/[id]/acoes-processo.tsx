@@ -39,7 +39,7 @@ export function AcoesProcesso({
   if (!mostrarFinalizar && !mostrarReabrir) return null
 
   return (
-    <div className="flex flex-wrap items-start gap-3 border-t border-border pt-4">
+    <div className="flex flex-wrap items-start gap-3">
       {mostrarFinalizar && (
         <BotaoFinalizar processoId={processoId} bloqueado={finalizarBloqueado} />
       )}
