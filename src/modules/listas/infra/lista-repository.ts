@@ -74,10 +74,11 @@ export async function criarLista(dados: { chave: string; nome: string }): Promis
   return { id: (data as { id: string }).id }
 }
 
-// Erro sentinela: a policy RLS de delete (listas_delete) usa uma cláusula
-// USING que exclui linhas com sistema=true do conjunto afetado — o Postgres
-// não retorna erro nesse caso, apenas 0 linhas afetadas. Detectamos isso e
-// sinalizamos para a camada de aplicação traduzir numa mensagem amigável.
+// Erro sentinela: quando o DELETE afeta 0 linhas (RLS de `listas_delete`
+// negando por falta de `administrar`, ou lista já removida), o Postgres não
+// retorna erro — apenas 0 linhas. Detectamos isso e sinalizamos para a camada
+// de aplicação traduzir numa mensagem amigável. (Após a migração 0019 a policy
+// não bloqueia mais por `sistema`.)
 export const ERRO_LISTA_BLOQUEADA_EXCLUSAO = 'LISTA_BLOQUEADA_EXCLUSAO'
 
 export async function excluirLista(id: string): Promise<void> {

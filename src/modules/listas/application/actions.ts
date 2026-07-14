@@ -67,6 +67,13 @@ export async function excluirListaAction(id: string): Promise<ResultadoAcaoLista
   const alvo = await buscarListaPorId(id)
   if (!alvo) return { erro: 'Lista não encontrada.' }
 
+  // A lista `resultado` é load-bearing: alimenta os status terminais dos
+  // processos (listarValoresStatus lê por chave fixa, independente de campo).
+  // Nunca pode ser excluída, mesmo que nenhum campo a referencie.
+  if (alvo.chave === 'resultado') {
+    return { erro: 'A lista "Resultado" define os status dos processos e não pode ser excluída.' }
+  }
+
   // Lista em uso por um campo não pode ser excluída (esvaziaria o dropdown; se
   // for a lista `resultado`, quebraria os status). Bloqueia com aviso nomeando
   // o(s) campo(s) — em vez do erro cru de FK do banco.
