@@ -36,8 +36,10 @@ export async function salvarSecaoProcesso(
 
   const processo = await buscarProcesso(id)
   if (!processo) return { ok: false, erro: 'Processo não encontrado.' }
-  if (ehTerminal(processo.status) && !podeFazer(sessao.perfil, 'editar_finalizado')) {
-    return { ok: false, erro: 'Você não tem permissão para editar um processo concluído.' }
+  // Processo concluído (status terminal) é somente-leitura: para editar é
+  // preciso Reabrir antes (ação separada, gateada por `editar_finalizado`).
+  if (ehTerminal(processo.status)) {
+    return { ok: false, erro: 'Processo concluído: reabra o processo para editar.' }
   }
 
   const campos = await carregarCamposFormulario()

@@ -70,13 +70,15 @@ export default async function ProcessoDetalhePage({ params, searchParams }: Proc
   const podeFinalizar = podeFazer(perfil, 'finalizar')
   const podeEditarFinalizado = podeFazer(perfil, 'editar_finalizado')
 
-  // Editável quando aberto/em_conferencia + `editar`; em status terminal
-  // (finalizado, ou qualquer outro resultado dinâmico) só com
-  // `editar_finalizado`.
+  // Editável só em aberto/em_conferencia (+ `editar`). Em status terminal
+  // (Aprovado/Reprovado ou qualquer outro resultado) o processo é
+  // SOMENTE-LEITURA — para editar é preciso Reabrir (ação separada, gateada por
+  // `editar_finalizado`). `editar_finalizado` não permite mais editar o
+  // concluído direto; agora só habilita o Reabrir.
   const editavelPorStatus =
     processo.status === 'aberto' || processo.status === 'em_conferencia'
       ? podeEditar
-      : podeEditarFinalizado
+      : false
   const somenteLeitura = !editavelPorStatus
 
   const valoresIniciais: Record<string, string | number | null> = {}
