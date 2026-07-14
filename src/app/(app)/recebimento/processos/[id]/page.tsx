@@ -4,6 +4,7 @@ import { ArrowLeftIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
+import { listarAnexosComUrl } from '@/modules/recebimento/infra/anexo-repository'
 import { carregarItensPorLista } from '@/modules/recebimento/infra/campo-comercial-repository'
 import {
   buscarProcesso,
@@ -30,11 +31,12 @@ export default async function ProcessoDetalhePage({ params, searchParams }: Proc
 
   const { anterior, proximo } = await buscarVizinhos(id, filtros)
 
-  const [sessao, campos, fornecedoresCriticos, nqa] = await Promise.all([
+  const [sessao, campos, fornecedoresCriticos, nqa, anexos] = await Promise.all([
     getSessao(),
     carregarCamposFormulario(),
     carregarCriticidade(),
     carregarTabelaNqa(),
+    listarAnexosComUrl(id),
   ])
 
   const chavesLista = [
@@ -128,6 +130,7 @@ export default async function ProcessoDetalhePage({ params, searchParams }: Proc
         anterior={anterior}
         proximo={proximo}
         filtros={filtros}
+        anexos={anexos}
       />
     </div>
   )

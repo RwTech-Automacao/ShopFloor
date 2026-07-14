@@ -5,7 +5,9 @@ import type { StatusProcesso } from '@/modules/recebimento/domain/ciclo-vida'
 import type { CampoFormulario } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import type { FaixaNqa } from '@/modules/recebimento/domain/calculos'
 import type { FiltrosProcessos } from '@/modules/recebimento/infra/processo-repository'
+import type { AnexoComUrl } from '@/modules/recebimento/infra/anexo-repository'
 import { AcoesProcesso } from './acoes-processo'
+import { AnexosProcesso } from './anexos-processo'
 import { NavegacaoProcesso } from './navegacao-processo'
 import { ProcessoForm } from './processo-form'
 
@@ -30,6 +32,8 @@ interface ProcessoDetalheProps {
   proximo: string | null
   /** Filtros de busca/status ativos na lista — preservados nas setas de navegação. */
   filtros: FiltrosProcessos
+  /** Fotos anexadas ao processo, com signed URL para exibição. */
+  anexos: AnexoComUrl[]
 }
 
 /**
@@ -57,6 +61,7 @@ export function ProcessoDetalhe({
   anterior,
   proximo,
   filtros,
+  anexos,
 }: ProcessoDetalheProps) {
   const [dirty, setDirty] = useState(false)
 
@@ -75,6 +80,8 @@ export function ProcessoDetalhe({
         responsavelRecebimento={responsavelRecebimento}
         responsavelQualidade={responsavelQualidade}
       />
+
+      <AnexosProcesso processoId={processoId} anexos={anexos} somenteLeitura={somenteLeitura} />
 
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
         <AcoesProcesso
