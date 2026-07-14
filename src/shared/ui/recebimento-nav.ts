@@ -12,6 +12,7 @@ export const RECEBIMENTO_NAV: RecebimentoNavItem[] = [
   { chave: 'processos', rotulo: 'Processos', href: '/recebimento/processos', permissao: 'visualizar' },
   { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', permissao: 'visualizar' },
   { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', permissao: 'gerar_etiqueta' },
+  { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', permissao: 'administrar' },
 ]
 
 /** Sub-itens do Recebimento visíveis para o perfil (esconde o que ele não pode usar). */
