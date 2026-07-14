@@ -41,21 +41,92 @@ separado, **limpar** essas fotos do Storage (que é buffer temporário).
 6. **Sem automação:** nada de job agendado apagando fotos — a limpeza é sempre
    um ato manual e explícito do administrador, após arquivar.
 
-## Notas de arquitetura (a detalhar no ciclo do B)
+## Arquitetura (aprovada)
 
-- **Consulta de meses com fotos:** join `anexos_processo` × `processos_recebimento`
-  agrupando por mês de `data_chegada` (provável RPC, como `processos_meses`
-  do 0014, para contagem correta em escala).
-- **Montagem do ZIP:** Server Action que carrega os objetos do mês do Storage
-  (client de serviço), aplica o rename e devolve o `.zip` (stream/base64) para
-  download no cliente. Atenção ao limite de resposta do Next/Vercel — se o
-  volume do mês for grande, avaliar signed URLs + zip no cliente, ou paginação.
-- **Limpeza:** Server Action gate `administrar` → `storage.remove([...paths])`
-  + delete das linhas (o `on delete cascade` da FK cobre a tabela se apagar
-  por processo; aqui apagamos por mês).
-- **Dependência nova:** `jszip`.
-- **Log:** reuso `excluir` (limpeza) e, se fizer sentido, um log da exportação
-  (`acao` reutilizada) — decidir no ciclo do B.
+Segue o monólito modular e os padrões do módulo recebimento. Reusa a infra do
+subsistema A (bucket `anexos-processos`, tabela `anexos_processo`).
+
+### Migração `0018_anexos_meses.sql`
+
+RPC `public.anexos_meses()` espelhando `processos_meses` (0014): join
+`anexos_processo` × `processos_recebimento`, agrupa por mês de `data_chegada`,
+conta as fotos. `'sem_data'` para processos sem data.
+
+```sql
+create or replace function public.anexos_meses()
+returns table (chave text, total bigint)
+language sql stable security invoker set search_path = public as $$
+  select coalesce(to_char(p.data_chegada, 'YYYY-MM'), 'sem_data') as chave,
+         count(*) as total
+  from public.anexos_processo a
+  join public.processos_recebimento p on p.id = a.processo_id
+  group by 1;
+$$;
+grant execute on function public.anexos_meses() to authenticated;
+```
+
+`security invoker` respeita o RLS (conta só o que o usuário vê). Aplicada em
+produção pelo controller após o review da task.
+
+### Entrega do ZIP — no CLIENTE (jszip)
+
+Evita o teto de resposta serverless da Vercel (~4.5 MB) e escala para meses
+grandes. Fluxo:
+
+1. **Server Action `listarFotosDoMes(mes: string)`** (gate `administrar`,
+   **client de serviço**): consulta as fotos do mês (join `anexos_processo` ×
+   `processos_recebimento` onde `to_char(data_chegada,'YYYY-MM') = mes`, ou
+   `data_chegada is null` quando `mes = 'sem_data'`), ordenadas por
+   `processo_id, created_at`. Para cada foto devolve `{ signedUrl, pedido,
+   item, numero, indice, ext }` — `indice` = posição da foto dentro do
+   processo (1..N, calculado na ordenação), `ext` derivada do `mime` ou do
+   `path`. As signed URLs são geradas via client de serviço (não depende de
+   `visualizar`).
+2. **Cliente** (`'use client'`): para cada foto, `fetch(signedUrl)` → `blob`;
+   `zip.file(nomeArquivoFoto(...), blob)`; ao terminar, `zip.generateAsync` +
+   dispara download `Fotos_{mes}.zip`. Erros por foto viram aviso (não abortam
+   o ZIP inteiro).
+
+### Limpeza — Server Action `limparFotosDoMes(mes)`
+
+Gate `administrar`, **client de serviço**, chamada só após confirmação na UI.
+Busca os `path`s + `id`s das fotos do mês (mesma consulta do export), remove os
+objetos do Storage (`storage.remove([...paths])`, em lotes se necessário) e
+apaga as linhas de `anexos_processo` por id. Loga `acao: 'excluir'`
+(`entidade: 'processo'` ou um marcador do mês) e `revalidatePath` da tela.
+
+### Permissão / client de serviço
+
+As duas Server Actions do B são operações administrativas em lote: o gate
+`administrar` no app é o portão autoritativo e elas usam o **client de
+serviço** (`createServiceSupabase`, server-only). Motivo: o RLS de delete de
+`anexos_processo`/`storage.objects` exige `editar` (regra do subsistema A) e um
+admin pode não ter `editar`; o service client evita essa dependência. Nenhuma
+mudança no RLS do A.
+
+### Domínio — rename (TDD)
+
+Função pura `nomeArquivoFoto(pedido, item, numero, indice, ext)`:
+- Sanitiza `pedido`/`item`: remove acentos e troca `/ \ : * ? " < > |` e espaços
+  por `-`; colapsa `-` repetidos.
+- Fallback `p{numero}` quando `pedido` ou `item` fica vazio após sanitizar.
+- Formato: `{pedido}-{item}-p{numero}-{indice}.{ext}` — único (garantido pelo
+  `numero` do processo + `indice`).
+
+### UI
+
+- Item de menu **"Exportar Fotos"** em `RECEBIMENTO_NAV` (`permissao:
+  'administrar'`, `href: '/recebimento/exportar-fotos'`).
+- Página `/recebimento/exportar-fotos` (server, gate `administrar` →
+  `<SemPermissao>`): carrega os meses via RPC `anexos_meses` e renderiza a lista
+  com contagem + um componente client por mês (Exportar / Limpar).
+- Cliente: **[Exportar ZIP]** chama `listarFotosDoMes` → monta o ZIP (jszip) →
+  download; **[Limpar fotos do mês]** pede confirmação (`window.confirm`) →
+  `limparFotosDoMes` → toast + refresh.
+
+### Dependência nova
+
+- `jszip` (montagem do ZIP no cliente).
 
 ## Fora de escopo
 
