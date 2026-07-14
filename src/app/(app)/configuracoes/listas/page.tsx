@@ -67,7 +67,7 @@ export default async function ListasPage() {
                     >
                       <ListIcon />
                     </Button>
-                    <ExcluirListaButton id={lista.id} nome={lista.nome} sistema={lista.sistema} />
+                    <ExcluirListaButton id={lista.id} nome={lista.nome} />
                   </div>
                 </TableCell>
               </TableRow>
@@ -113,7 +113,7 @@ export default async function ListasPage() {
               >
                 <ListIcon />
               </Button>
-              <ExcluirListaButton id={lista.id} nome={lista.nome} sistema={lista.sistema} />
+              <ExcluirListaButton id={lista.id} nome={lista.nome} />
             </div>
           </div>
         ))}

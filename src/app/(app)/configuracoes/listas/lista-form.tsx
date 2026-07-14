@@ -76,10 +76,9 @@ export function ListaForm() {
 interface ExcluirListaButtonProps {
   id: string
   nome: string
-  sistema: boolean
 }
 
-export function ExcluirListaButton({ id, nome, sistema }: ExcluirListaButtonProps) {
+export function ExcluirListaButton({ id, nome }: ExcluirListaButtonProps) {
   const [pending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
 
@@ -100,7 +99,7 @@ export function ExcluirListaButton({ id, nome, sistema }: ExcluirListaButtonProp
         variant="ghost"
         size="icon-sm"
         aria-label="Excluir lista"
-        disabled={sistema || pending}
+        disabled={pending}
         onClick={onClick}
         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
       >
