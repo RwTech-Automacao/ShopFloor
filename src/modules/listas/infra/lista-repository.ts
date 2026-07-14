@@ -102,6 +102,7 @@ export async function camposQueUsamLista(chave: string): Promise<string[]> {
     .from('configuracao_campos')
     .select('rotulo')
     .eq('lista_chave', chave)
+    .eq('calculado', false) // campo calculado não usa o dropdown (vínculo obsoleto)
     .order('rotulo', { ascending: true })
   if (error) throw error
   return ((data ?? []) as { rotulo: string }[]).map((r) => r.rotulo)
