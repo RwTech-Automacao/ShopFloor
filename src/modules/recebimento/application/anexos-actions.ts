@@ -103,8 +103,11 @@ export async function removerFoto(anexoId: string): Promise<ResultadoAnexo> {
   }
 
   try {
-    await removerObjeto(anexo.path)
+    // Remove o metadado ANTES do objeto: se o objeto falhar em seguida, sobra um
+    // objeto órfão (invisível na UI, limpo no subsistema B) — melhor que um
+    // metadado órfão apontando para objeto inexistente (quebraria a listagem).
     await removerAnexoMeta(anexoId)
+    await removerObjeto(anexo.path)
   } catch {
     return { ok: false, erro: 'Não foi possível remover a foto.' }
   }

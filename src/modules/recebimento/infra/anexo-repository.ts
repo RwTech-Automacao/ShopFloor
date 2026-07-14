@@ -86,7 +86,18 @@ export async function gerarUrlAnexo(path: string): Promise<string> {
 /** Lista os anexos de um processo já com signed URL para exibição. */
 export async function listarAnexosComUrl(processoId: string): Promise<AnexoComUrl[]> {
   const anexos = await listarAnexos(processoId)
-  return Promise.all(anexos.map(async (a) => ({ ...a, url: await gerarUrlAnexo(a.path) })))
+  const comUrl = await Promise.all(
+    anexos.map(async (a): Promise<AnexoComUrl | null> => {
+      try {
+        return { ...a, url: await gerarUrlAnexo(a.path) }
+      } catch {
+        // Falha ao assinar a URL (ex.: objeto órfão) não pode derrubar a página
+        // inteira do processo — apenas omite essa foto da listagem.
+        return null
+      }
+    }),
+  )
+  return comUrl.filter((a): a is AnexoComUrl => a !== null)
 }
 
 /** Sobe um objeto para o bucket de anexos (falha se o path já existir). */
