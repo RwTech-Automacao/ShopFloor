@@ -54,3 +54,15 @@ describe('condicaoBuscaProcesso', () => {
     expect(condicaoBuscaProcesso('   ')).toBeNull()
   })
 })
+
+import { queryProcessos } from '../busca-processo'
+
+describe('queryProcessos', () => {
+  it('monta o sufixo com busca e status', () => {
+    expect(queryProcessos({ busca: 'abc', status: 'Aprovado' })).toBe('?busca=abc&status=Aprovado')
+  })
+  it('omite vazios / retorna "" sem filtro', () => {
+    expect(queryProcessos({ busca: 'abc' })).toBe('?busca=abc')
+    expect(queryProcessos({})).toBe('')
+  })
+})
