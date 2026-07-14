@@ -332,8 +332,46 @@ Lição registrada na memória: menu é SEMPRE no `app-shell.tsx`.
 - **Entregues em produção:** #2 (setas), 3b (accordions/mês), #7+#3a (seções + status dinâmico),
   #5 (trava etiqueta), #4 (processo manual), #1 A+B (anexos completos), + fixes (terminal read-only,
   cor das setas, menu, código morto).
-- **Pendentes:** **#6** (Nº EMB dos 8 primeiros chars do nome do arquivo — parado); **bug das listas**
-  (liberar exclusão de todas as listas — usuário quer; ~30–45 min na versão segura com checagem de
-  "em uso"); **ambiente Dev × Prod** (2º projeto Supabase — recomendado antes do uso diário real);
-  **domínio** `shopfloor.enterplak.com.br` (pausado no DNS da Locaweb). **Smokes pendentes:** #4,
-  #1 (anexar via câmera, exportar ZIP, limpar mês).
+- **Pendentes (no fim da 1ª parte da sessão):** #6; bug das listas; ambiente Dev × Prod; domínio;
+  smokes. (Ver seções 14 e 15 abaixo — bug das listas e domínio foram concluídos na mesma sessão.)
+
+### Bug das listas — concluído (migrações 0019 + 0020)
+- **0019:** removida a trava `sistema=false` do RLS `listas_delete` — agora dá pra excluir qualquer
+  lista (gate `administrar`). Proteção que ficou: **lista em uso por um campo é bloqueada com aviso**
+  nomeando o campo (`camposQueUsamLista`), e a lista **`resultado`** tem trava direta (é load-bearing
+  p/ os status). Review Opus pegou que a proteção da `resultado` era só incidental → trava direta.
+- **0020 (follow-up):** os campos **calculados** (Amostral/Atraso/Crítico?/Divergência) mantinham um
+  `lista_chave` obsoleto (sobra da 0010) → davam falso "em uso". A 0020 limpou (`update ... set
+  lista_chave=null where calculado=true`) e `camposQueUsamLista` passou a ignorar calculados. Agora
+  essas 4 listas são excluíveis. Regra: **campo calculado não deve ter `lista_chave`**.
+- Entregue via subagent-driven; a branch ficou segurada (sem push) até o usuário liberar, aí a
+  migração 0019 foi aplicada + push (0020 veio logo depois).
+
+## 14. Sessão 2026-07-14 (parte 2) — Domínio próprio no ar
+
+`https://shopfloor.enterplak.com.br` **no ar com SSL** (Let's Encrypt, válido até out/2026), servido
+pelo Vercel. Passo a passo do que funcionou:
+
+- **DNS do `enterplak.com.br` é gerenciado na Locaweb** (nameservers `ns1/ns2/ns3.locaweb.com.br`) —
+  não no Registro.br nem no FTP (`ftp.enterplak.hospedagemdesites.ws`, que é só arquivos). O painel
+  certo é `painelhospedagem.locaweb.com.br` → Domínios, e a **Zona de DNS** em
+  `painel-dns.locaweb.com.br/shopfloor.enterplak.com.br`.
+- O `shopfloor` já existia como **subdomínio "Conteúdo de pasta"** (apontava pro IP da Locaweb
+  `186.202.150.79`). Na Zona de DNS, a entrada **`.`** (= o próprio `shopfloor.enterplak.com.br`) foi
+  trocada para **A → `76.76.21.21`** (IP oficial anycast do Vercel). **CNAME não serve** nessa entrada
+  porque `.` é topo de zona (tem NS/SOA) — por isso A record.
+- No Vercel (Settings → Domains) o domínio foi adicionado (Production). Após o DNS propagar, o Vercel
+  validou (ele mostra "DNS Change Recommended" sugerindo um CNAME novo
+  `dd98f00371df4db9.vercel-dns-017.com`, mas isso é só recomendação — o A record `76.76.21.21`
+  funciona; o próprio Vercel diz "will continue to work") e emitiu o SSL sozinho.
+- Ajuste do **tipo de subdomínio** na Locaweb: evitar "Conteúdo de pasta" e "Redirecionamento" (este
+  redirecionava pro `shop-floor-blush.vercel.app/home`, errado); o correto para apontar pra fora é
+  **"Apontamento"**.
+- Verificação (via `dig`/`curl`/`openssl`): DNS resolve `76.76.21.21`; `https` responde `307 → /login`,
+  `server: Vercel`, cert `CN=shopfloor.enterplak.com.br` emissor Let's Encrypt.
+- **Pendente:** **Supabase → Authentication → URL Configuration** — Site URL `https://shopfloor.enterplak.com.br`
+  + Redirect URLs `https://shopfloor.enterplak.com.br/**`, e testar login no domínio novo. Limpeza
+  opcional: sobrou um CNAME `shopfloor` na zona (virou `shopfloor.shopfloor...`, inofensivo).
+
+**Armadilha registrada:** o menu lateral do app é montado por constantes DENTRO de `app-shell.tsx`
+(`RECEBIMENTO`, `CONFIG_*`), NÃO pelo `recebimento-nav.ts` — que era código morto e foi removido.
