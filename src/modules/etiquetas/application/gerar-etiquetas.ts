@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { gerarCsv, gerarEtiquetasDoProcesso, type LinhaEtiqueta, type ProcessoEtiqueta } from '../domain/partnumber'
+import { elegivelParaEtiqueta, gerarCsv, gerarEtiquetasDoProcesso, type LinhaEtiqueta, type ProcessoEtiqueta } from '../domain/partnumber'
 import {
   buscarProcessosParaEtiqueta,
   carregarProcessosPorId,
@@ -77,16 +77,15 @@ export async function gerarEtiquetas({
   const linhas: LinhaEtiqueta[] = []
   let ignorados = 0
   for (const processo of processos) {
-    const { incompleto, etiquetas } = gerarEtiquetasDoProcesso(processo)
-    if (incompleto) {
+    if (!elegivelParaEtiqueta(processo).elegivel) {
       ignorados += 1
       continue
     }
-    linhas.push(...etiquetas)
+    linhas.push(...gerarEtiquetasDoProcesso(processo).etiquetas)
   }
 
   if (linhas.length === 0) {
-    return { ok: false, erro: 'Nenhuma etiqueta a gerar (itens incompletos ou sem dados).' }
+    return { ok: false, erro: 'Nenhuma etiqueta a gerar (processos não concluídos ou com campos incompletos).' }
   }
 
   const csv = gerarCsv(linhas)
