@@ -16,10 +16,11 @@ const COLUNA_POR_TIPO: Record<FiltroTipoEtiqueta, string> = {
 /** Teto de linhas retornadas pela busca, para evitar varreduras enormes. */
 const LIMITE_BUSCA = 500
 
-const SELECT_CAMPOS = 'id, codigo_material, numero_pedido, di_inpi, numero_nf, volumes'
+const SELECT_CAMPOS = 'id, status, codigo_material, numero_pedido, di_inpi, numero_nf, volumes'
 
 interface ProcessoEtiquetaRow {
   id: string
+  status: string
   codigo_material: string | null
   numero_pedido: string | null
   di_inpi: string | null
@@ -41,6 +42,7 @@ function sanitizarTermo(termo: string): string {
 function mapRow(row: ProcessoEtiquetaRow): ProcessoEtiqueta {
   return {
     id: row.id,
+    status: row.status,
     codigoMaterial: row.codigo_material,
     numeroPedido: row.numero_pedido,
     diInpi: row.di_inpi,
