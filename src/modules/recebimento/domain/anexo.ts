@@ -30,3 +30,32 @@ export function validarArquivoImagem(mime: string, tamanho: number): ResultadoVa
   }
   return { ok: true }
 }
+
+/** Sanitiza um trecho para uso em nome de arquivo: sem acentos, sem caracteres
+ *  inválidos, espaços/símbolos viram '-', sem '-' repetido nem nas pontas. */
+function sanitizarNome(valor: string): string {
+  return valor
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // remove diacríticos (acentos)
+    .replace(/[\/\\:*?"<>|\s]+/g, '-') // caracteres inválidos de arquivo + espaços → '-'
+    .replace(/-+/g, '-') // colapsa '-' repetidos
+    .replace(/^-+|-+$/g, '') // apara '-' das pontas
+}
+
+/**
+ * Nome do arquivo de uma foto no ZIP de export:
+ * `{pedido}-{item}-p{numero}-{indice}.{ext}`. Usa `p{numero}` como fallback
+ * quando `pedido` ou `item` fica vazio após sanitizar. A unicidade é garantida
+ * pelo `numero` do processo + `indice`.
+ */
+export function nomeArquivoFoto(
+  pedido: string,
+  item: string,
+  numero: number,
+  indice: number,
+  ext: string,
+): string {
+  const pedidoSan = sanitizarNome(pedido) || `p${numero}`
+  const itemSan = sanitizarNome(item) || `p${numero}`
+  return `${pedidoSan}-${itemSan}-p${numero}-${indice}.${ext}`
+}

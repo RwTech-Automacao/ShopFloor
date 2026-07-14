@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extensaoDoMime, validarArquivoImagem, TAMANHO_MAX_ANEXO } from '../anexo'
+import { extensaoDoMime, validarArquivoImagem, TAMANHO_MAX_ANEXO, nomeArquivoFoto } from '../anexo'
 
 describe('extensaoDoMime', () => {
   it('mapeia mimes de imagem suportados', () => {
@@ -32,5 +32,20 @@ describe('validarArquivoImagem', () => {
       ok: false,
       erro: 'Arquivo muito grande (máx. 5 MB).',
     })
+  })
+})
+
+describe('nomeArquivoFoto', () => {
+  it('monta {pedido}-{item}-p{numero}-{indice}.{ext}', () => {
+    expect(nomeArquivoFoto('1234', 'COD123', 57, 2, 'jpg')).toBe('1234-COD123-p57-2.jpg')
+  })
+  it('remove acentos e troca caracteres inválidos/espaços por hífen', () => {
+    expect(nomeArquivoFoto('PED 12/34', 'AÇO N5', 7, 1, 'png')).toBe('PED-12-34-ACO-N5-p7-1.png')
+  })
+  it('usa p{numero} quando pedido ou item fica vazio após sanitizar', () => {
+    expect(nomeArquivoFoto('', '///', 9, 1, 'webp')).toBe('p9-p9-p9-1.webp')
+  })
+  it('colapsa hífens repetidos e apara as pontas', () => {
+    expect(nomeArquivoFoto('  a  b  ', 'c', 3, 1, 'jpg')).toBe('a-b-c-p3-1.jpg')
   })
 })
