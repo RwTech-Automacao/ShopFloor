@@ -22,6 +22,7 @@ export function NavegacaoProcesso({
       <Button
         variant="outline"
         size="icon-sm"
+        className="border-enterplak text-enterplak hover:bg-enterplak hover:text-white"
         aria-label="Processo anterior"
         disabled={!anterior}
         render={anterior ? <Link href={`/recebimento/processos/${anterior}${q}`} /> : undefined}
@@ -31,6 +32,7 @@ export function NavegacaoProcesso({
       <Button
         variant="outline"
         size="icon-sm"
+        className="border-enterplak text-enterplak hover:bg-enterplak hover:text-white"
         aria-label="Próximo processo"
         disabled={!proximo}
         render={proximo ? <Link href={`/recebimento/processos/${proximo}${q}`} /> : undefined}
