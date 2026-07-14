@@ -556,6 +556,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `package.json` (+ `package-lock.json`) — dep `browser-image-compression`
+- Modify: `next.config.ts` — `bodySizeLimit` das Server Actions
 - Create: `src/app/(app)/recebimento/processos/[id]/anexos-processo.tsx`
 - Modify: `src/app/(app)/recebimento/processos/[id]/processo-detalhe.tsx`
 - Modify: `src/app/(app)/recebimento/processos/[id]/page.tsx`
@@ -568,6 +569,40 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 Run: `npm install browser-image-compression`
 Expected: adiciona a dep ao `package.json`/`package-lock.json` sem erro.
+
+- [ ] **Step 1b: Aumentar o limite de corpo das Server Actions**
+
+O upload de foto vai numa Server Action (`anexarFoto`) via `FormData`. O Next
+tem um **limite padrão de 1 MB** para o corpo de Server Actions — como a
+compressão do cliente mira ~1 MB (sem margem) e a validação do servidor
+(`TAMANHO_MAX_ANEXO`) aceita até 5 MB, sem aumentar esse limite uma foto um
+pouco acima de 1 MB seria rejeitada pelo Next antes de chegar na action (erro
+genérico, não a mensagem em PT-BR). Elevar para **5 MB** (mesmo teto da
+validação do servidor).
+
+**IMPORTANTE (AGENTS.md):** confirme o local/nome exato dessa opção na doc do
+Next 16 em `node_modules/next/dist/docs/` (procure por `bodySizeLimit` /
+`serverActions`) antes de escrever — a chave pode estar sob `experimental` ou
+não, dependendo da versão. Ajuste o `next.config.ts` conforme a doc. Referência
+do que se espera (validar contra a doc):
+
+```ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '5mb',
+    },
+  },
+};
+
+export default nextConfig;
+```
+
+Rode `npx tsc --noEmit` para confirmar que o `NextConfig` aceita o formato
+usado (se o tipo reclamar, é sinal de que a opção mudou de lugar na sua versão
+— siga a doc).
 
 - [ ] **Step 2: Criar o card client**
 
@@ -797,7 +832,7 @@ Expected: sem erros; a rota `/recebimento/processos/[id]` compila.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add package.json package-lock.json "src/app/(app)/recebimento/processos/[id]/anexos-processo.tsx" "src/app/(app)/recebimento/processos/[id]/processo-detalhe.tsx" "src/app/(app)/recebimento/processos/[id]/page.tsx"
+git add package.json package-lock.json next.config.ts "src/app/(app)/recebimento/processos/[id]/anexos-processo.tsx" "src/app/(app)/recebimento/processos/[id]/processo-detalhe.tsx" "src/app/(app)/recebimento/processos/[id]/page.tsx"
 git commit -m "feat(anexos): card de fotos no detalhe do processo (upload imediato + compressão)
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
