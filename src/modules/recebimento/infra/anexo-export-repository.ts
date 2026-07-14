@@ -45,7 +45,7 @@ function derivarExt(mime: string, path: string): string {
 }
 
 /**
- * Fotos de um mês, cada uma com signed URL (1 h) e os dados do rename. O
+ * Fotos de um mês, cada uma com signed URL (6 h) e os dados do rename. O
  * `indice` é a posição da foto dentro do processo (1..N), estável pela ordem
  * da RPC (numero, created_at). Fotos cuja signed URL falhar são omitidas.
  */
@@ -54,20 +54,32 @@ export async function listarFotosDoMes(mes: string): Promise<FotoExport[]> {
   const { data, error } = await supabase.rpc('anexos_do_mes', { p_mes: mes })
   if (error) throw error
   const rows = (data ?? []) as FotoRow[]
+  if (rows.length === 0) return []
+
+  // Assina todas as URLs de uma vez (batch) — evita centenas de round-trips
+  // sequenciais que estourariam o tempo da Server Action num mês grande. 6 h
+  // de validade dá folga para o download de muitos arquivos no cliente.
+  const { data: assinadas, error: signErr } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrls(
+      rows.map((r) => r.path),
+      21600,
+    )
+  if (signErr) throw signErr
+  const urlPorPath = new Map<string, string>()
+  for (const item of assinadas ?? []) {
+    if (item.path && item.signedUrl) urlPorPath.set(item.path, item.signedUrl)
+  }
 
   const indicePorProcesso = new Map<number, number>()
   const fotos: FotoExport[] = []
   for (const row of rows) {
     const indice = (indicePorProcesso.get(row.numero) ?? 0) + 1
     indicePorProcesso.set(row.numero, indice)
-
-    const { data: urlData, error: urlError } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(row.path, 3600)
-    if (urlError || !urlData) continue // resiliente: omite a foto sem URL
-
+    const signedUrl = urlPorPath.get(row.path)
+    if (!signedUrl) continue // resiliente: omite a foto sem URL
     fotos.push({
-      signedUrl: urlData.signedUrl,
+      signedUrl,
       pedido: row.numero_pedido ?? '',
       item: row.codigo_material ?? '',
       numero: row.numero,
@@ -86,12 +98,23 @@ export async function limparFotosDoMes(mes: string): Promise<number> {
   const rows = (data ?? []) as FotoRow[]
   if (rows.length === 0) return 0
 
-  const paths = rows.map((r) => r.path)
   const ids = rows.map((r) => r.id)
+  const paths = rows.map((r) => r.path)
+  const LOTE = 200
 
-  const { error: remErr } = await supabase.storage.from(BUCKET).remove(paths)
-  if (remErr) throw remErr
-  const { error: delErr } = await supabase.from('anexos_processo').delete().in('id', ids)
-  if (delErr) throw delErr
+  // Metadados ANTES dos objetos: se algo falhar no meio, sobra objeto órfão
+  // (invisível) em vez de metadado apontando para objeto inexistente. Lotes
+  // evitam estourar o comprimento da URL do filtro .in() num mês grande.
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const { error: delErr } = await supabase
+      .from('anexos_processo')
+      .delete()
+      .in('id', ids.slice(i, i + LOTE))
+    if (delErr) throw delErr
+  }
+  for (let i = 0; i < paths.length; i += LOTE) {
+    const { error: remErr } = await supabase.storage.from(BUCKET).remove(paths.slice(i, i + LOTE))
+    if (remErr) throw remErr
+  }
   return ids.length
 }
