@@ -438,3 +438,56 @@ desaconselhado; Drive via API = a "v2" já prevista).
   `processos_vizinhos` tem `ORDER BY` fixo — dívida declarada).
 - ⚠️ **Índices:** a tabela só tem em `status`/`importacao_id`; `ilike` faz varredura. Se o
   volume crescer, entra migração de índices (+ `pg_trgm`).
+
+## 16. Grid de Processos — Fase 1 (construída; **segurada**, aguardando smoke)
+
+**Estado:** 7 tasks executadas via subagent-driven (review por task + review final Opus +
+fix wave). Commits **locais** `8debef7..37e124f`; **push não feito** — o usuário valida o
+smoke antes. ⚠️ **A migração 0021 já está aplicada em produção** (o banco mudou; só o
+código está segurado): `colunas_lista` com 39 linhas / 11 visíveis, RPC
+`valores_distintos_processos` funcionando nos dois ramos, e coluna inválida levantando
+exceção (whitelist eficaz).
+
+**O que a Fase 1 entrega:** a tela de Processos virou planilha. Catálogo de 39 colunas
+(`configuracao_campos` + `numero`/`status`), **11 visíveis por padrão** (as 8 de antes +
+Número + **Data Chegada** + Status). Cada cabeçalho tem menu estilo Excel: **ordenar
+A→Z/Z→A**, **busca por texto** e **lista de valores com checkbox** (carregada sob demanda).
+**Tudo no servidor** — o requisito central do usuário: *filtrar na página 1 tem que achar o
+que estaria na "página 10"*. Rodapé com paginação e **seletor de linhas por página**
+(25/50/100/200) — que destravou a definição de volume que nunca chegou. O accordion por mês
+saiu; o **mês virou filtro da coluna Data Chegada** (o checkbox lista meses via `rotuloMes`,
+traduzidos para faixas de data na consulta).
+
+**Arquitetura:** estado do grid na URL (`?g=`) validado por domínio (`estado-grid.ts`, TDD)
+— coluna fora do catálogo é descartada, e essa é a whitelist que protege a consulta. Layout
+em `colunas_lista`, **separado** de `configuracao_campos` (a Fase 2 cria a tela de editar).
+Consulta via PostgREST, sem SQL dinâmico; a RPC de valores distintos é o único SQL dinâmico
+do projeto (whitelist via `information_schema` + `%I`, tipo resolvido **antes** de montar o
+SQL). Sem biblioteca de grid.
+
+### O que o review final (Opus) pegou — 2 críticos, ambos do plano
+1. **`decodeURIComponent` duplo.** O Next já entrega o `?g=` decodificado, e decodificávamos
+   de novo. Filtrar por `50%` lançava `URIError` → caía no `catch` → **apagava a ordenação e
+   todos os filtros, em silêncio**. Pior: `%41CME` decodificava para `ACME` e filtrava a
+   coisa errada, calado. **Lição:** o `catch` que existia para "param adulterado" estava
+   mascarando **entrada legítima**.
+2. **Busca de texto em coluna não-textual derrubava a rota.** A caixa de busca aparecia em
+   todas as colunas, mas `numero` (bigint) e `data_chegada` (date) — **2 das 11 visíveis** —
+   não têm `ilike`. Resultado: 400 do banco → `page.tsx` sem try/catch e sem `error.tsx` →
+   tela de erro, com o link quebrado (o estado mora na URL). Corrigido em 3 camadas (esconder
+   a busca, ignorar no repositório, e try/catch na página).
+
+Também no fix wave: checkbox de Status passou a falar pt-BR (`rotuloStatusProcesso`) e as
+células de data passaram a mostrar dd/mm/aaaa (sem `new Date()`, por causa do fuso).
+
+### Dívidas registradas (follow-up)
+- 🔴 **As setas ‹ › hoje não respeitam NEM busca/status** — o grid linka para o detalhe sem
+  query, então `buscarVizinhos` roda sem filtro. A dívida da **Fase 3** é maior que a
+  declarada originalmente ("só a ordenação").
+- `carregarProcessosGrid` nasceu **sem chamador** (a `page.tsx` chama `listarProcessosGrid`
+  direto) — remover ou ligar.
+- `sanitizarTermoBusca` remove `,.()` demais no contexto do `.ilike` (buscar "ACME S.A." não
+  acha) — ela foi escrita para a sintaxe do `.or()`.
+- Limpeza da Task 6 ficou pela metade: `condicaoBuscaProcesso`, `COLUNAS_BUSCA_PROCESSO`,
+  `montarGrupos`, `chaveMes`, `listarValoresStatus` e `ProcessoResumoRow` ficaram sem
+  consumidor.
