@@ -3,12 +3,13 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { elegivelParaEtiqueta, gerarCsv, gerarEtiquetasDoProcesso, type LinhaEtiqueta, type ProcessoEtiqueta } from '../domain/partnumber'
+import { elegivelParaEtiqueta, gerarCsv, gerarEtiquetasDoProcesso, type LinhaEtiqueta } from '../domain/partnumber'
 import {
   buscarProcessosParaEtiqueta,
   carregarProcessosPorId,
   registrarGeracao,
   type FiltroTipoEtiqueta,
+  type ProcessoEtiquetaLista,
 } from '../infra/etiqueta-repository'
 
 export type ResultadoGerarEtiquetas =
@@ -129,7 +130,7 @@ export async function gerarEtiquetas({
 export async function buscarEtiquetas(
   tipo: FiltroTipoEtiqueta,
   termo: string,
-): Promise<{ ok: true; processos: ProcessoEtiqueta[] } | { ok: false; erro: string }> {
+): Promise<{ ok: true; processos: ProcessoEtiquetaLista[] } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !(podeFazer(sessao.perfil, 'gerar_etiqueta') || podeFazer(sessao.perfil, 'visualizar'))) {
     return { ok: false, erro: 'Você não tem permissão para consultar processos.' }

@@ -16,16 +16,27 @@ const COLUNA_POR_TIPO: Record<FiltroTipoEtiqueta, string> = {
 /** Teto de linhas retornadas pela busca, para evitar varreduras enormes. */
 const LIMITE_BUSCA = 500
 
-const SELECT_CAMPOS = 'id, status, codigo_material, numero_pedido, di_inpi, numero_nf, volumes'
+const SELECT_CAMPOS = 'id, numero, status, codigo_material, numero_pedido, di_inpi, numero_nf, volumes'
 
 interface ProcessoEtiquetaRow {
   id: string
+  numero: number
   status: string
   codigo_material: string | null
   numero_pedido: string | null
   di_inpi: string | null
   numero_nf: string | null
   volumes: number | null
+}
+
+/**
+ * Processo para a TELA de etiquetas: o do domínio + o `numero` do processo, que
+ * é só exibição (a composição do part number não usa). Fica aqui, e não em
+ * `ProcessoEtiqueta`, para não colocar campo de UI no tipo do domínio — as
+ * funções do domínio aceitam este tipo normalmente (é um supertipo estrutural).
+ */
+export interface ProcessoEtiquetaLista extends ProcessoEtiqueta {
+  numero: number
 }
 
 /**
@@ -39,9 +50,10 @@ function sanitizarTermo(termo: string): string {
   return termo.replace(/[,.()*%]/g, '').trim()
 }
 
-function mapRow(row: ProcessoEtiquetaRow): ProcessoEtiqueta {
+function mapRow(row: ProcessoEtiquetaRow): ProcessoEtiquetaLista {
   return {
     id: row.id,
+    numero: row.numero,
     status: row.status,
     codigoMaterial: row.codigo_material,
     numeroPedido: row.numero_pedido,
@@ -63,7 +75,7 @@ export async function buscarProcessosParaEtiqueta({
 }: {
   tipo: FiltroTipoEtiqueta
   termo: string
-}): Promise<ProcessoEtiqueta[]> {
+}): Promise<ProcessoEtiquetaLista[]> {
   const supabase = await createServerSupabase()
   const coluna = COLUNA_POR_TIPO[tipo]
   const termoSanitizado = sanitizarTermo(termo)
@@ -84,7 +96,7 @@ export async function buscarProcessosParaEtiqueta({
  * a geração efetiva das etiquetas (o servidor nunca confia nos dados de
  * processo eventualmente enviados pelo cliente — apenas nos ids).
  */
-export async function carregarProcessosPorId(ids: string[]): Promise<ProcessoEtiqueta[]> {
+export async function carregarProcessosPorId(ids: string[]): Promise<ProcessoEtiquetaLista[]> {
   if (ids.length === 0) return []
 
   const supabase = await createServerSupabase()

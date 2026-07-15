@@ -19,7 +19,10 @@ import {
   type MotivoInelegivel,
   type ProcessoEtiqueta,
 } from '@/modules/etiquetas/domain/partnumber'
-import type { FiltroTipoEtiqueta } from '@/modules/etiquetas/infra/etiqueta-repository'
+import type {
+  FiltroTipoEtiqueta,
+  ProcessoEtiquetaLista,
+} from '@/modules/etiquetas/infra/etiqueta-repository'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
 import { Badge } from '@/components/ui/badge'
 
@@ -57,7 +60,7 @@ function dispararDownload(csv: string, fileName: string): void {
 export function EtiquetasCliente() {
   const [tipo, setTipo] = useState<FiltroTipoEtiqueta>('nf')
   const [termo, setTermo] = useState('')
-  const [resultados, setResultados] = useState<ProcessoEtiqueta[] | null>(null)
+  const [resultados, setResultados] = useState<ProcessoEtiquetaLista[] | null>(null)
   const [erroBusca, setErroBusca] = useState<string | null>(null)
   const [buscando, startBusca] = useTransition()
 
@@ -216,7 +219,7 @@ export function EtiquetasCliente() {
                     </TableCell>
                   </TableRow>
                 )}
-                {resultados.map((processo, indice) => {
+                {resultados.map((processo) => {
                   const elegib = elegibilidades.get(processo.id) ?? {
                     elegivel: false,
                     motivo: 'incompleto' as MotivoInelegivel,
@@ -237,7 +240,7 @@ export function EtiquetasCliente() {
                           className="accent-enterplak"
                         />
                       </TableCell>
-                      <TableCell>{indice + 1}</TableCell>
+                      <TableCell>{processo.numero}</TableCell>
                       <TableCell>
                         <Badge className={status.className}>{status.rotulo}</Badge>
                       </TableCell>
@@ -264,7 +267,7 @@ export function EtiquetasCliente() {
                 Nenhum processo encontrado para os filtros selecionados.
               </p>
             )}
-            {resultados.map((processo, indice) => {
+            {resultados.map((processo) => {
               const elegib = elegibilidades.get(processo.id) ?? {
                 elegivel: false,
                 motivo: 'incompleto' as MotivoInelegivel,
@@ -286,7 +289,7 @@ export function EtiquetasCliente() {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold">#{indice + 1}</span>
+                        <span className="font-semibold">#{processo.numero}</span>
                       </div>
                       <dl className="mt-2 space-y-1.5 text-sm">
                         <div className="flex gap-2">
