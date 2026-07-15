@@ -32,6 +32,9 @@ do processo é uma **coluna**, com **ordenação** e **filtro por coluna** imita
    usuário) e ordenação/filtro são no servidor, TanStack Table não agregaria.
 8. **Setas ‹ › ficam na ordem antiga** nesta fase — **dívida conhecida e declarada**,
    resolvida na Fase 3.
+9. **Linhas por página = seletor na própria tela** (25/50/100/200, **padrão 50**), no rodapé
+   junto da paginação, e faz parte do estado da URL. Assim o usuário calibra usando, sem
+   depender de ninguém definir o número antes — e sem precisar de deploy para mudar.
 
 ## Arquitetura
 
@@ -108,9 +111,12 @@ export interface EstadoGrid {
   ordenar: string          // nome da coluna
   direcao: 'asc' | 'desc'
   pagina: number           // 0-based
+  tamanho: number          // linhas por página (seletor da UI)
   filtros: Record<string, FiltroColuna>
 }
-export const ESTADO_GRID_PADRAO: EstadoGrid  // { ordenar:'numero', direcao:'desc', pagina:0, filtros:{} }
+export const TAMANHOS_PAGINA = [25, 50, 100, 200] as const
+export const ESTADO_GRID_PADRAO: EstadoGrid
+// { ordenar:'numero', direcao:'desc', pagina:0, tamanho:50, filtros:{} }
 
 export function codificarEstadoGrid(estado: EstadoGrid): string
 /** Decodifica E VALIDA contra a whitelist de colunas. Entrada inválida/adulterada
@@ -128,10 +134,9 @@ export interface ColunaLista { campo: string; visivel: boolean; ordem: number }
 export async function listarColunasLista(): Promise<ColunaLista[]>
 
 export async function listarProcessosGrid(params: {
-  estado: EstadoGrid
+  estado: EstadoGrid       // inclui ordenar/direcao/pagina/tamanho/filtros
   colunas: string[]        // colunas visíveis (o SELECT traz só elas + id)
   tiposPorCampo: Record<string, 'texto' | 'lista' | 'numero' | 'data'>
-  tamanho: number
 }): Promise<{ linhas: Record<string, unknown>[]; total: number }>
 
 export async function valoresDistintosColuna(campo: string): Promise<string[]>
@@ -147,7 +152,7 @@ Construção da consulta (PostgREST via supabase-js — **sem SQL dinâmico**):
     Vários meses = `.or(...)` das faixas. Reusa `inicioProximoMes` de `agrupamento-mes.ts`.
 - **Ordenação** → `.order(estado.ordenar, { ascending: estado.direcao === 'asc' })` — a
   coluna **é validada contra a whitelist** antes.
-- **Paginação** → `.range(pagina*tamanho, pagina*tamanho + tamanho - 1)` + `count: 'exact'`.
+- **Paginação** → `.range(pagina*tamanho, pagina*tamanho + tamanho - 1)` + `count: 'exact'` (o `tamanho` vem do seletor, validado contra `TAMANHOS_PAGINA`).
 
 ### Application
 
@@ -180,7 +185,7 @@ discriminada, erro genérico em PT-BR.
   ```
   Ao aplicar, atualiza o estado → `router.push('?g=' + codificarEstadoGrid(estado))` →
   o server recarrega a página do grid. Rodapé com **paginação** (total, página atual,
-  anterior/próxima).
+  anterior/próxima) e o **seletor de linhas por página** (25/50/100/200).
 - Reusa `ScrollHorizontalTopo` (a barra de rolagem espelho já existe).
 - **Novos primitives** (não existem em `components/ui/`): **Popover** e **Checkbox**
   (base-ui/shadcn).
@@ -232,7 +237,7 @@ discriminada, erro genérico em PT-BR.
 
 - **TDD (domínio):** `codificarEstadoGrid`/`decodificarEstadoGrid` — ida e volta; param
   inválido → padrão; **coluna fora da whitelist é descartada** (segurança); página negativa
-  → 0. E a tradução **mês → faixa de datas** (função pura, reusando `inicioProximoMes`).
+  → 0; **tamanho fora de `TAMANHOS_PAGINA` → o padrão (50)**. E a tradução **mês → faixa de datas** (função pura, reusando `inicioProximoMes`).
 - **Infra/app/UI:** build + smoke (a consulta real depende do banco).
 - **Smoke:** ordenar por Fornecedor A→Z e conferir a 1ª página; **filtrar uma coluna por um
   valor que está numa página distante e confirmar que aparece** (o requisito nº 4); filtrar
