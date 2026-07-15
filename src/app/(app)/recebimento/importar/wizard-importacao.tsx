@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { AlertTriangleIcon, CheckIcon, Loader2Icon, UploadIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -22,10 +24,14 @@ import {
 } from '@/components/ui/table'
 import { importarPlanilha } from '@/modules/recebimento/application/importar-planilha'
 import { lerPlanilha } from '@/modules/recebimento/domain/ler-planilha'
-import { sugerirMapeamento, type CampoImportavel } from '@/modules/recebimento/domain/mapeamento'
 import {
-  validarLinha,
-  linhaMapaVazia,
+  sugerirMapeamento,
+  numeroEmbDoArquivo,
+  CAMPOS_DIGITADOS,
+  type CampoImportavel,
+} from '@/modules/recebimento/domain/mapeamento'
+import {
+  prepararLinhasImportacao,
   type LinhaValidada,
 } from '@/modules/recebimento/domain/validacao-linha'
 
@@ -66,6 +72,36 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
   const [resultado, setResultado] = useState<ResultadoImportacao | null>(null)
   const [importando, startImportacao] = useTransition()
 
+  // Valores digitados uma vez no wizard e aplicados a TODAS as linhas (os itens
+  // de uma planilha chegam juntos). Chaves = nome da coluna no banco.
+  const [valoresDigitados, setValoresDigitados] = useState<Record<string, string>>({
+    data_chegada: '',
+    numero_emb: '',
+  })
+
+  /** Campos que o usuário mapeia de coluna (os digitados saem da tabela). */
+  const camposMapeaveis = useMemo(
+    () => campos.filter((campo) => !CAMPOS_DIGITADOS.includes(campo.campo)),
+    [campos],
+  )
+  /** Campos digitados presentes na configuração (para rótulo e obrigatoriedade). */
+  const camposDigitados = useMemo(
+    () => campos.filter((campo) => CAMPOS_DIGITADOS.includes(campo.campo)),
+    [campos],
+  )
+  /** Os valores digitados no formato que vai para as linhas ('' vira null). */
+  const valoresFixos = useMemo(
+    () => ({
+      data_chegada: valoresDigitados.data_chegada || null,
+      numero_emb: (valoresDigitados.numero_emb ?? '').trim() || null,
+    }),
+    [valoresDigitados],
+  )
+
+  function onMudarValorFixo(campo: string, valor: string) {
+    setValoresDigitados((atual) => ({ ...atual, [campo]: valor }))
+  }
+
   async function processarArquivo(file: File) {
     setErroArquivo(null)
 
@@ -95,7 +131,10 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
       setFormato(extensao)
       setColunas(colunasLidas)
       setLinhasBrutas(linhas)
-      setMapeamento(sugerirMapeamento(colunasLidas, campos))
+      // Só os mapeáveis: não faz sentido sugerir coluna para campo digitado.
+      setMapeamento(sugerirMapeamento(colunasLidas, camposMapeaveis))
+      // Nº EMB vem do nome do arquivo (editável no passo 2).
+      setValoresDigitados((atual) => ({ ...atual, numero_emb: numeroEmbDoArquivo(file.name) }))
       setResultado(null)
       setPasso(2)
     } finally {
@@ -116,30 +155,28 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
   }
 
   const camposFaltando = useMemo(
-    () => campos.filter((campo) => campo.obrigatorioImportacao && !mapeamento[campo.campo]),
-    [campos, mapeamento],
+    () =>
+      campos.filter((campo) => {
+        if (!campo.obrigatorioImportacao) return false
+        // Campo digitado: falta = valor em branco. Mapeável: falta = sem coluna.
+        return CAMPOS_DIGITADOS.includes(campo.campo)
+          ? !valoresFixos[campo.campo as keyof typeof valoresFixos]
+          : !mapeamento[campo.campo]
+      }),
+    [campos, mapeamento, valoresFixos],
   )
 
   const { linhasValidadas, linhasVazias } = useMemo(() => {
     if (passo < 3) return { linhasValidadas: [] as LinhaValidada[], linhasVazias: 0 }
-    const validadas: LinhaValidada[] = []
-    let vazias = 0
-    for (const linha of linhasBrutas) {
-      const linhaMapa: Record<string, unknown> = {}
-      for (const campo of campos) {
-        const coluna = mapeamento[campo.campo]
-        linhaMapa[campo.campo] = coluna ? linha[coluna] : null
-      }
-      // Linhas totalmente em branco (comuns no fim de planilhas) são ignoradas:
-      // não entram na validação, no bloqueio de erro, nem na importação.
-      if (linhaMapaVazia(linhaMapa, campos)) {
-        vazias++
-        continue
-      }
-      validadas.push(validarLinha(linhaMapa, campos, itensPorLista))
-    }
+    const { validadas, vazias } = prepararLinhasImportacao({
+      linhasBrutas,
+      campos,
+      mapeamento,
+      valoresFixos,
+      itensPorLista,
+    })
     return { linhasValidadas: validadas, linhasVazias: vazias }
-  }, [passo, linhasBrutas, campos, mapeamento, itensPorLista])
+  }, [passo, linhasBrutas, campos, mapeamento, valoresFixos, itensPorLista])
 
   const totalComErro = linhasValidadas.filter((linha) => linha.erros.length > 0).length
   const podeImportar = linhasValidadas.length > 0 && totalComErro === 0
@@ -169,7 +206,10 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
 
       {passo === 2 && (
         <PassoMapear
-          campos={campos}
+          campos={camposMapeaveis}
+          camposDigitados={camposDigitados}
+          valoresDigitados={valoresDigitados}
+          onMudarValorFixo={onMudarValorFixo}
           colunas={colunas}
           mapeamento={mapeamento}
           camposFaltando={camposFaltando}
@@ -198,6 +238,8 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
         <PassoImportar
           arquivoNome={arquivoNome}
           totalLinhas={linhasBrutas.length}
+          camposDigitados={camposDigitados}
+          valoresDigitados={valoresDigitados}
           importando={importando}
           resultado={resultado}
           onVoltar={() => setPasso(3)}
@@ -298,6 +340,9 @@ function PassoSelecionar({ inputRef, lendoArquivo, erro, onDrop, onInputChange }
 
 interface PassoMapearProps {
   campos: CampoImportavel[]
+  camposDigitados: CampoImportavel[]
+  valoresDigitados: Record<string, string>
+  onMudarValorFixo: (campo: string, valor: string) => void
   colunas: string[]
   mapeamento: Record<string, string>
   camposFaltando: CampoImportavel[]
@@ -308,6 +353,9 @@ interface PassoMapearProps {
 
 function PassoMapear({
   campos,
+  camposDigitados,
+  valoresDigitados,
+  onMudarValorFixo,
   colunas,
   mapeamento,
   camposFaltando,
@@ -321,6 +369,32 @@ function PassoMapear({
         Confira a coluna da planilha correspondente a cada campo do sistema. Campos marcados com{' '}
         <span className="text-red-600">*</span> são obrigatórios para importar.
       </p>
+
+      {camposDigitados.length > 0 && (
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-sm font-medium">Dados desta importação</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Aplicados a todos os processos da planilha (os itens chegam juntos).
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {camposDigitados.map((campo) => (
+              <div key={campo.campo} className="flex flex-col gap-1">
+                <Label htmlFor={`fixo-${campo.campo}`}>
+                  {campo.rotulo}
+                  {campo.obrigatorioImportacao && <span className="text-red-600"> *</span>}
+                </Label>
+                <Input
+                  id={`fixo-${campo.campo}`}
+                  type={campo.tipo === 'data' ? 'date' : 'text'}
+                  value={valoresDigitados[campo.campo] ?? ''}
+                  onChange={(e) => onMudarValorFixo(campo.campo, e.target.value)}
+                  className="w-56"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Table>
         <TableHeader>
@@ -367,7 +441,7 @@ function PassoMapear({
       {camposFaltando.length > 0 && (
         <p className="flex items-center gap-1.5 text-sm text-red-600">
           <AlertTriangleIcon className="size-4 shrink-0" />
-          Faltam mapear campos obrigatórios: {camposFaltando.map((campo) => campo.rotulo).join(', ')}.
+          Faltam campos obrigatórios: {camposFaltando.map((campo) => campo.rotulo).join(', ')}.
         </p>
       )}
 
@@ -496,6 +570,8 @@ function PassoPreview({
 interface PassoImportarProps {
   arquivoNome: string
   totalLinhas: number
+  camposDigitados: CampoImportavel[]
+  valoresDigitados: Record<string, string>
   importando: boolean
   resultado: ResultadoImportacao | null
   onVoltar: () => void
@@ -505,6 +581,8 @@ interface PassoImportarProps {
 function PassoImportar({
   arquivoNome,
   totalLinhas,
+  camposDigitados,
+  valoresDigitados,
   importando,
   resultado,
   onVoltar,
@@ -535,6 +613,12 @@ function PassoImportar({
         <p className="font-medium">{arquivoNome}</p>
         <p className="mt-3 text-sm text-muted-foreground">Linhas a importar</p>
         <p className="font-medium">{totalLinhas}</p>
+        {camposDigitados.map((campo) => (
+          <div key={campo.campo}>
+            <p className="mt-3 text-sm text-muted-foreground">{campo.rotulo}</p>
+            <p className="font-medium">{valoresDigitados[campo.campo] || '—'}</p>
+          </div>
+        ))}
       </div>
 
       {resultado && !resultado.ok && (
