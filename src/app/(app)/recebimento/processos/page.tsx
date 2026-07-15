@@ -3,30 +3,47 @@ import { PlusIcon } from 'lucide-react'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
 import { Button } from '@/components/ui/button'
-import { listarValoresStatus } from '@/modules/recebimento/infra/processo-detalhe-repository'
-import { listarMesesProcessos } from '@/modules/recebimento/infra/processo-repository'
-import { ProcessosFiltros } from './processos-filtros'
-import { ProcessosPorMes } from './processos-por-mes'
+import { decodificarEstadoGrid } from '@/modules/recebimento/domain/estado-grid'
+import {
+  carregarCatalogoColunas,
+  listarColunasLista,
+  listarProcessosGrid,
+} from '@/modules/recebimento/infra/processo-repository'
+import { ProcessosGrid } from './processos-grid'
 
 interface ProcessosPageProps {
-  searchParams: Promise<{ busca?: string; status?: string }>
+  searchParams: Promise<{ g?: string }>
 }
 
 export default async function ProcessosPage({ searchParams }: ProcessosPageProps) {
-  const sp = await searchParams
-  const filtros = { busca: sp.busca || undefined, status: sp.status || undefined }
-  const [grupos, statusOpcoes, sessao] = await Promise.all([
-    listarMesesProcessos(filtros),
-    listarValoresStatus(),
+  const { g } = await searchParams
+
+  const [sessao, catalogo, layout] = await Promise.all([
     getSessao(),
+    carregarCatalogoColunas(),
+    listarColunasLista(),
   ])
   const podeCriar = podeFazer(sessao?.perfil ?? null, 'editar')
 
-  // Abrem por padrão: "Aguardando chegada" (se existir) + o mês mais recente.
-  const abertosInicial: string[] = []
-  if (grupos.some((g) => g.chave === 'sem_data')) abertosInicial.push('sem_data')
-  const primeiroMes = grupos.find((g) => g.chave !== 'sem_data')
-  if (primeiroMes) abertosInicial.push(primeiroMes.chave)
+  // Estado vem da URL e é validado contra o catálogo (nada dele é confiável).
+  const estado = decodificarEstadoGrid(
+    g,
+    catalogo.map((c) => c.campo),
+  )
+
+  // Colunas visíveis, na ordem do layout, restritas ao catálogo.
+  const porCampo = new Map(catalogo.map((c) => [c.campo, c]))
+  const colunas = layout
+    .filter((c) => c.visivel)
+    .map((c) => porCampo.get(c.campo))
+    .filter((c): c is NonNullable<typeof c> => c !== undefined)
+
+  const tiposPorCampo = Object.fromEntries(catalogo.map((c) => [c.campo, c.tipo]))
+  const { linhas, total } = await listarProcessosGrid({
+    estado,
+    colunas: colunas.map((c) => c.campo),
+    tiposPorCampo,
+  })
 
   return (
     <div className="flex flex-col gap-4">
@@ -42,13 +59,8 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
           </Button>
         )}
       </div>
-      <ProcessosFiltros statusOpcoes={statusOpcoes} />
-      <ProcessosPorMes
-        key={`${filtros.busca ?? ''}|${filtros.status ?? ''}`}
-        grupos={grupos}
-        filtros={filtros}
-        abertosInicial={abertosInicial}
-      />
+
+      <ProcessosGrid colunas={colunas} linhas={linhas} total={total} estado={estado} />
     </div>
   )
 }
