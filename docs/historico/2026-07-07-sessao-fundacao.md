@@ -375,3 +375,66 @@ pelo Vercel. Passo a passo do que funcionou:
 
 **Armadilha registrada:** o menu lateral do app é montado por constantes DENTRO de `app-shell.tsx`
 (`RECEBIMENTO`, `CONFIG_*`), NÃO pelo `recebimento-nav.ts` — que era código morto e foi removido.
+
+---
+
+## 15. Sessão 2026-07-15 — Domínio concluído, apresentação e o novo roadmap
+
+### Fechamento do domínio próprio
+**Supabase → Authentication → URL Configuration** ajustado: **Site URL** =
+`https://shopfloor.enterplak.com.br`; **Redirect URLs** = o domínio novo + o `vercel.app`
+(fallback) + `localhost:3000` (dev). **Login testado e funcionando** no domínio novo →
+domínio 100% concluído.
+
+### Ajustes antes da apresentação
+- **Etiquetas — coluna "Nº":** mostrava `indice+1` (a posição na lista), não o número do
+  processo. Corrigido trazendo `numero` no SELECT e criando `ProcessoEtiquetaLista`
+  (infra = domínio + `numero`) — o tipo do domínio ficou **sem campo de UI** e os testes
+  não mudaram. Corrigiu a tabela desktop e o card mobile.
+- **Barra de rolagem no topo** da tabela de processos (`ScrollHorizontalTopo`): barra
+  "espelho" sincronizada com o overflow nativo do `Table`, some sozinha sem overflow.
+
+### Material de apoio da apresentação
+`docs/apresentacao/qa-e-seguranca.md` — Q&A provável + notas de segurança, baseado no
+código real:
+- **SQL injection: risco essencialmente nulo** — não há SQL dinâmico (o único `format()`
+  monta mensagem de log); tudo passa pelo cliente Supabase (valores como parâmetros); RPCs
+  com parâmetros tipados. O risco real era **injeção no filtro do PostgREST** (a string do
+  `.or()`), **tratado** por `sanitizarTermoBusca` com testes por caractere, nos 3 caminhos.
+  Defesa de fundo: **RLS**.
+- **Limitar por IP:** Vercel Firewall exige plano pago; middleware do Next dá pra fazer hoje
+  (protege só o app). ⚠️ **Conflito:** a foto pela câmera quebraria para quem está no 4G.
+  Recomendação: login + perfis + RLS + auditoria já são a camada que importa; IP é reforço.
+
+### A reunião → novo roadmap (decisões travadas em `memory/roadmap-pos-reuniao.md`)
+Ordem acordada: **importação → grid Processos → grid Etiquetas → mapeamentos reutilizáveis
+→ fotos**. Descartado: *"quantidade recebida 0 → zerar data de chegada"*.
+**Descoberta importante sobre fotos:** o pedido "salvar em servidor separado, no banco só o
+caminho" **já é a arquitetura atual** (Supabase Storage + `path` na tabela; nenhuma foto no
+banco). O usuário vai decidir se quer outro servidor (interno = precisaria de agente local,
+desaconselhado; Drive via API = a "v2" já prevista).
+
+### Importação: data de chegada digitada + Nº EMB do arquivo — ✅ EM PRODUÇÃO
+- **Data de chegada** deixou de ser mapeável e passou a ser **digitada** no Passo 2
+  (bloco "Dados desta importação"), aplicada a **todas** as linhas. **Nº EMB** vem dos
+  **8 primeiros caracteres do nome do arquivo** (`EMB341EA - ESTADOS UNIDOS.xlsx` →
+  `EMB341EA`), pré-preenchido e editável. Ambos **saíram do mapeamento**.
+- **Obrigatoriedade reusa o que já existia:** o switch "Obrigatório na importação"
+  (Configurações → Campos) passou a valer para os campos digitados — nada novo foi criado.
+- **Sem migração.** Domínio novo: `CAMPOS_DIGITADOS` + `numeroEmbDoArquivo` e
+  `prepararLinhasImportacao` (moveu a montagem das linhas do wizard para o domínio).
+- **Regra crítica virou teste:** os valores fixos são aplicados **depois** da checagem de
+  linha vazia — senão as dezenas de linhas em branco do fim da planilha virariam processos.
+
+### Grid de Processos (o grande) — quebrado em 3 fases; Fase 1 desenhada
+- **Fase 1 (spec+plano prontos):** cada campo = coluna (39 no catálogo), ordenar A→Z/Z→A e
+  **filtrar por coluna imitando o Excel** (busca **e** checkbox), **tudo no servidor** —
+  requisito explícito: *filtrar na página 1 tem que achar o que estaria na "página 10"*.
+  Accordion por mês **sai**; o mês vira filtro da coluna Data Chegada (por isso ela entra
+  nas **11 colunas padrão**). Layout em tabela nova `colunas_lista` (separada da config dos
+  campos). Estado na URL (`?g=`) validado por domínio com whitelist. **Seletor de linhas por
+  página** (25/50/100/200) — destravou a definição de volume que não chegou.
+- **Fases 2 e 3:** tela admin de layout; setas seguindo a ordem do grid (hoje a RPC
+  `processos_vizinhos` tem `ORDER BY` fixo — dívida declarada).
+- ⚠️ **Índices:** a tabela só tem em `status`/`importacao_id`; `ilike` faz varredura. Se o
+  volume crescer, entra migração de índices (+ `pg_trgm`).
