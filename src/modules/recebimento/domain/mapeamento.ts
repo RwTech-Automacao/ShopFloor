@@ -38,3 +38,21 @@ export function sugerirMapeamento(
   }
   return sugestao
 }
+
+/**
+ * Campos que NÃO são mapeados de coluna: o usuário digita/edita o valor uma vez
+ * no wizard e ele vale para TODAS as linhas da planilha. Os itens de uma
+ * importação chegam juntos, então data de chegada e Nº EMB são os mesmos para
+ * todos — mapear coluna para eles criaria duas fontes para o mesmo dado.
+ */
+export const CAMPOS_DIGITADOS: readonly string[] = ['data_chegada', 'numero_emb']
+
+/**
+ * Nº EMB a partir do nome do arquivo importado: os 8 primeiros caracteres
+ * ('EMB341EA - ESTADOS UNIDOS.xlsx' → 'EMB341EA'). Nome mais curto devolve o que
+ * houver, e espaços nas pontas são aparados. É só o pré-preenchimento — o campo
+ * é editável no wizard.
+ */
+export function numeroEmbDoArquivo(nomeArquivo: string): string {
+  return nomeArquivo.slice(0, 8).trim()
+}

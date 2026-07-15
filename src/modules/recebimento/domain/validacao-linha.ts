@@ -1,5 +1,5 @@
 import { converterValor } from './conversao'
-import type { CampoImportavel } from './mapeamento'
+import { CAMPOS_DIGITADOS, type CampoImportavel } from './mapeamento'
 
 export type LinhaValidada = {
   valores: Record<string, string | number | null>
@@ -51,4 +51,55 @@ export function validarLinha(
     valores[campo.campo] = r.valor
   }
   return { valores, erros }
+}
+
+/**
+ * Monta e valida todas as linhas da importação.
+ *
+ * Os `valoresFixos` (campos digitados no wizard — data de chegada e Nº EMB) são
+ * aplicados SOMENTE às linhas não-vazias e SEMPRE **depois** da checagem de
+ * vazio: como esses valores são iguais em toda linha, aplicá-los antes faria
+ * nenhuma linha ser considerada vazia, e as linhas em branco do fim da planilha
+ * (dezenas, nas planilhas reais) virariam processos.
+ *
+ * A checagem de vazio olha só os campos vindos da planilha (`campos` menos
+ * `CAMPOS_DIGITADOS`); a validação final usa a lista completa, para os campos
+ * digitados também serem convertidos e checados como obrigatórios.
+ */
+export function prepararLinhasImportacao({
+  linhasBrutas,
+  campos,
+  mapeamento,
+  valoresFixos,
+  itensPorLista,
+}: {
+  linhasBrutas: Record<string, unknown>[]
+  campos: CampoImportavel[]
+  mapeamento: Record<string, string>
+  valoresFixos: Record<string, string | null>
+  itensPorLista: Record<string, string[]>
+}): { validadas: LinhaValidada[]; vazias: number } {
+  const camposMapeaveis = campos.filter((campo) => !CAMPOS_DIGITADOS.includes(campo.campo))
+  const validadas: LinhaValidada[] = []
+  let vazias = 0
+
+  for (const linha of linhasBrutas) {
+    const linhaMapa: Record<string, unknown> = {}
+    for (const campo of camposMapeaveis) {
+      const coluna = mapeamento[campo.campo]
+      linhaMapa[campo.campo] = coluna ? linha[coluna] : null
+    }
+
+    if (linhaMapaVazia(linhaMapa, camposMapeaveis)) {
+      vazias += 1
+      continue
+    }
+
+    for (const [campo, valor] of Object.entries(valoresFixos)) {
+      linhaMapa[campo] = valor
+    }
+    validadas.push(validarLinha(linhaMapa, campos, itensPorLista))
+  }
+
+  return { validadas, vazias }
 }

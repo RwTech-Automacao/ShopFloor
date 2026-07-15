@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizarNome, sugerirMapeamento } from '../mapeamento'
+import { normalizarNome, sugerirMapeamento, CAMPOS_DIGITADOS, numeroEmbDoArquivo } from '../mapeamento'
 
 const campos = [
   { campo: 'numero_pedido', rotulo: 'Nº Pedido', tipo: 'texto', listaChave: null, obrigatorioImportacao: true },
@@ -21,5 +21,24 @@ describe('sugerirMapeamento', () => {
   it('não sugere quando não há coluna correspondente', () => {
     const m = sugerirMapeamento(['Outra Coluna'], [...campos])
     expect(m['fornecedor']).toBeUndefined()
+  })
+})
+
+describe('numeroEmbDoArquivo', () => {
+  it('pega os 8 primeiros caracteres do nome do arquivo', () => {
+    expect(numeroEmbDoArquivo('EMB341EA - ESTADOS UNIDOS.xlsx')).toBe('EMB341EA')
+  })
+  it('devolve o que houver quando o nome tem menos de 8 caracteres', () => {
+    expect(numeroEmbDoArquivo('ABC')).toBe('ABC')
+  })
+  it('apara espaços nas pontas', () => {
+    expect(numeroEmbDoArquivo('EMB34   - x.xlsx')).toBe('EMB34')
+  })
+})
+
+describe('CAMPOS_DIGITADOS', () => {
+  it('contém data_chegada e numero_emb (não são mapeados de coluna)', () => {
+    expect(CAMPOS_DIGITADOS).toContain('data_chegada')
+    expect(CAMPOS_DIGITADOS).toContain('numero_emb')
   })
 })
