@@ -13,6 +13,7 @@ import {
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
 import { queryProcessos } from '@/modules/recebimento/domain/busca-processo'
 import type { FiltrosProcessos, ProcessoResumoRow } from '@/modules/recebimento/infra/processo-repository'
+import { ScrollHorizontalTopo } from './scroll-horizontal-topo'
 
 const CAMPOS: { rotulo: string; valor: (p: ProcessoResumoRow) => string }[] = [
   { rotulo: 'NF', valor: (p) => p.numero_nf || '—' },
@@ -34,8 +35,10 @@ export function LinhasProcessos({ linhas, filtros }: { linhas: ProcessoResumoRow
   const q = queryProcessos(filtros)
   return (
     <>
-      {/* Desktop: tabela compacta com rolagem lateral */}
+      {/* Desktop: tabela compacta com rolagem lateral (barra espelho no topo,
+          para não precisar descer até o fim da lista para rolar). */}
       <div className="hidden md:block">
+        <ScrollHorizontalTopo>
         <Table className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
           <TableHeader>
             <TableRow>
@@ -74,6 +77,7 @@ export function LinhasProcessos({ linhas, filtros }: { linhas: ProcessoResumoRow
             })}
           </TableBody>
         </Table>
+        </ScrollHorizontalTopo>
       </div>
 
       {/* Mobile: cards */}
