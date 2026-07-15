@@ -39,11 +39,23 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
     .filter((c): c is NonNullable<typeof c> => c !== undefined)
 
   const tiposPorCampo = Object.fromEntries(catalogo.map((c) => [c.campo, c.tipo]))
-  const { linhas, total } = await listarProcessosGrid({
-    estado,
-    colunas: colunas.map((c) => c.campo),
-    tiposPorCampo,
-  })
+  // Sem isto, qualquer erro do banco (ex.: filtro inválido vindo do `?g=` editado
+  // à mão) derruba a rota inteira — e o link fica quebrado, já que o estado mora
+  // na URL. Degrada para a lista vazia com aviso.
+  let linhas: Record<string, unknown>[] = []
+  let total = 0
+  let erro: string | null = null
+  try {
+    const r = await listarProcessosGrid({
+      estado,
+      colunas: colunas.map((c) => c.campo),
+      tiposPorCampo,
+    })
+    linhas = r.linhas
+    total = r.total
+  } catch {
+    erro = 'Não foi possível carregar os processos. Verifique os filtros aplicados.'
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -60,6 +72,7 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
         )}
       </div>
 
+      {erro && <p className="text-sm text-red-600">{erro}</p>}
       <ProcessosGrid colunas={colunas} linhas={linhas} total={total} estado={estado} />
     </div>
   )

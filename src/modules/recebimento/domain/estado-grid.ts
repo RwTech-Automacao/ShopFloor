@@ -21,9 +21,11 @@ export const ESTADO_GRID_PADRAO: EstadoGrid = {
   filtros: {},
 }
 
-/** Serializa o estado para caber num único parâmetro de URL (`?g=`). */
+/** Serializa o estado para caber num parâmetro de URL. NÃO faz percent-encoding:
+ *  quem monta a URL (via URLSearchParams) é que codifica, e o Next já entrega o
+ *  parâmetro decodificado do outro lado. Codificar aqui causaria decode duplo. */
 export function codificarEstadoGrid(estado: EstadoGrid): string {
-  return encodeURIComponent(JSON.stringify(estado))
+  return JSON.stringify(estado)
 }
 
 /**
@@ -40,7 +42,7 @@ export function decodificarEstadoGrid(
 
   let bruto: unknown
   try {
-    bruto = JSON.parse(decodeURIComponent(param))
+    bruto = JSON.parse(param)
   } catch {
     return { ...ESTADO_GRID_PADRAO, filtros: {} }
   }

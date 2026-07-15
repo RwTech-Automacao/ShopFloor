@@ -61,6 +61,14 @@ describe('codificar/decodificarEstadoGrid', () => {
     })
     expect(decodificarEstadoGrid(param, COLUNAS).filtros).toEqual({})
   })
+
+  it('preserva texto com % e acentos (o decode duplo apagava o estado)', () => {
+    const estado: EstadoGrid = {
+      ...ESTADO_GRID_PADRAO,
+      filtros: { fornecedor: { texto: 'ALGODÃO 100%' } },
+    }
+    expect(decodificarEstadoGrid(codificarEstadoGrid(estado), COLUNAS)).toEqual(estado)
+  })
 })
 
 describe('faixaDoMes', () => {

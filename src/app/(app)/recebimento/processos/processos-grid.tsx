@@ -36,12 +36,18 @@ interface ProcessosGridProps {
   estado: EstadoGrid
 }
 
-/** Texto de uma célula. Data e status ganham formatação; o resto é o valor cru. */
+/** Texto de uma célula. Status vira Badge; data vira dd/mm/aaaa; o resto é o valor cru. */
 function celula(coluna: ColunaGrid, valor: unknown): React.ReactNode {
   if (valor === null || valor === undefined || valor === '') return '—'
   if (coluna.campo === 'status') {
     const s = rotuloStatusProcesso(String(valor))
     return <Badge className={s.className}>{s.rotulo}</Badge>
+  }
+  // Data vem como 'YYYY-MM-DD' do Postgres. Reordena os pedaços em vez de usar
+  // `new Date()` — evita o deslocamento de fuso que já nos mordeu antes.
+  if (coluna.tipo === 'data') {
+    const partes = String(valor).slice(0, 10).split('-')
+    return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : String(valor)
   }
   return String(valor)
 }
@@ -52,7 +58,8 @@ export function ProcessosGrid({ colunas, linhas, total, estado }: ProcessosGridP
 
   function aplicar(novo: EstadoGrid) {
     startNavegacao(() => {
-      router.push(`/recebimento/processos?g=${codificarEstadoGrid(novo)}`)
+      const params = new URLSearchParams({ g: codificarEstadoGrid(novo) })
+      router.push(`/recebimento/processos?${params.toString()}`)
     })
   }
 
@@ -205,6 +212,10 @@ function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar }: Me
     busca.trim() === '' ? true : rotulo(coluna, v).toLowerCase().includes(busca.trim().toLowerCase()),
   )
 
+  // `.ilike` só existe para texto. Colunas numero (bigint) e data (date) filtram
+  // pelo checkbox — oferecer busca nelas geraria erro 400 no banco.
+  const buscaTextual = coluna.tipo === 'texto' || coluna.tipo === 'lista'
+
   return (
     <Popover onOpenChange={aoAbrir}>
       <PopoverTrigger
@@ -225,18 +236,22 @@ function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar }: Me
             ↓ Ordenar de Z a A
           </button>
           <div className="border-t border-border" />
-          <div className="p-2">
-            <Input
-              placeholder="Buscar nesta coluna..."
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') aplicarFiltro()
-              }}
-              className="h-8"
-            />
-          </div>
-          <div className="border-t border-border" />
+          {buscaTextual && (
+            <>
+              <div className="p-2">
+                <Input
+                  placeholder="Buscar nesta coluna..."
+                  value={texto}
+                  onChange={(e) => setTexto(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') aplicarFiltro()
+                  }}
+                  className="h-8"
+                />
+              </div>
+              <div className="border-t border-border" />
+            </>
+          )}
           <div className="max-h-56 overflow-y-auto p-2">
             <Input
               placeholder="Filtrar valores..."
@@ -276,7 +291,11 @@ function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar }: Me
   )
 }
 
-/** Em coluna de data o valor é um MÊS ('YYYY-MM'/'sem_data') → mostra 'Julho/2026'. */
+/** Rótulo de um valor no checkbox do filtro. Em coluna de data o valor é um MÊS
+ *  ('YYYY-MM'/'sem_data') → 'Julho/2026'. Em status, usa o mesmo rótulo em pt-BR
+ *  que a célula exibe — senão o menu e a tabela falariam vocabulários diferentes. */
 function rotulo(coluna: ColunaGrid, valor: string): string {
-  return coluna.tipo === 'data' ? rotuloMes(valor) : valor
+  if (coluna.tipo === 'data') return rotuloMes(valor)
+  if (coluna.campo === 'status') return rotuloStatusProcesso(valor).rotulo
+  return valor
 }

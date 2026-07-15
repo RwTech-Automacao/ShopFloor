@@ -101,7 +101,10 @@ export async function listarProcessosGrid({
     .select(['id', ...colunas].join(', '), { count: 'exact' })
 
   for (const [campo, filtro] of Object.entries(estado.filtros)) {
-    if (filtro.texto) {
+    const tipo = tiposPorCampo[campo]
+    // `.ilike` não existe para bigint/date no Postgres — um texto vindo do `?g=`
+    // editado à mão viraria erro 400 e derrubaria a página. Só texto/lista buscam.
+    if (filtro.texto && (tipo === 'texto' || tipo === 'lista')) {
       const termo = sanitizarTermoBusca(filtro.texto)
       if (termo) query = query.ilike(campo, `%${termo}%`)
     }
