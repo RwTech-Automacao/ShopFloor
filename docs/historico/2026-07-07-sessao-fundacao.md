@@ -553,3 +553,36 @@ UI (`page.tsx` carrega, `wizard-importacao.tsx` ganha a barra).
 **Migração 0022 JÁ aplicada em produção** (verificada); código **local, sem push** (commits
 `dc21934..6804359`). O smoke fica com o usuário; o push vai junto com o grid + etiquetas.
 Spec/plano em `docs/superpowers/{specs,plans}/2026-07-16-padroes-importacao*`.
+
+Ajustes pós-smoke (aprovados): copy da barra alinhada para "mapeamento" ("Adicionar novo
+mapeamento", "Atualizar mapeamento", "Mapeamentos salvos"); o `Select.Value` do base-ui ganhou
+render function porque exibia o valor cru (o id/uuid, "só alguns caracteres") em vez do nome; e
+"Nenhum" no seletor passou a **desmarcar os campos** (mapeamento `{}`) além de soltar a seleção.
+
+## 19. Retrato do projeto (2026-07-16) — status, pendências e a escolha das Fotos
+
+**29 commits locais aguardando push** (`origin/main..HEAD`), nada enviado. Empacotados:
+- **Grid de Processos Fase 1** — 9 commits — aguardando **aprovação visual do superior**.
+- **Grid de Etiquetas** (sub-filtro) — 7 commits — aprovado no smoke.
+- **Padrões de mapeamento** — 13 commits — aprovado no smoke.
+
+As migrações **0021** (grid) e **0022** (padrões) já estão na produção; só o código está
+segurado. Um `git push` sobe os 29 de uma vez, quando o superior liberar o grid.
+
+**Pendências, ordenadas (estimativas grosseiras):**
+- *Independente de aprovação:* (1) **Modais do sistema** — trocar os 7 `window.confirm` nativos
+  do navegador por um `ConfirmDialog` próprio (primitivos `dialog.tsx`/`sonner.tsx` já existem),
+  ~2–3h; (2) **Ambiente Dev × Prod** — Supabase de dev pras migrações não irem direto na prod,
+  ~2–4h + ação do usuário; (3) **#5 Fotos em servidor** — ~1–2 dias se for Google Drive API,
+  precisa da decisão do "onde".
+- *Depende da aprovação do grid:* (4) **Grid Fase 2** layout admin ~4–6h; (5) **Grid Fase 3**
+  setas seguindo ordem/filtros ~5–7h (maior que o declarado — setas hoje não respeitam nem
+  busca/status); (6) **Grid responsivo em cards** ~3–5h.
+- *No fim:* (7) **Responsividade** (pacote único, tela a tela) ~1 sessão; (8) **Índices**
+  (numero/data_chegada/pg_trgm) ~1h quando o volume crescer.
+
+**Melhoria levantada pelo usuário (ponto 7):** as confirmações usam o `window.confirm` do
+navegador (feio, sem a identidade do sistema) — 7 telas. Vira o item "Modais do sistema" acima.
+
+**Decisão:** o usuário escolheu **as Fotos em servidor** como próximo (agrega mais valor). Entra
+em brainstorm — falta travar QUAL servidor (provável Google Drive/opção B) e o fluxo.
