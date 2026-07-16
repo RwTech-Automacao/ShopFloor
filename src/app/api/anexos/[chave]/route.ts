@@ -16,9 +16,11 @@ export async function GET(
   if (modoStorageFotos() !== 'drive') {
     return new Response('Indisponível', { status: 404 })
   }
+  // O Next já entrega o param de rota decodificado; não decodificar de novo
+  // (double-decode quebraria chaves com '%', como já mordeu no grid).
   const { chave } = await ctx.params
   try {
-    const { dados, mime } = await baixarFotoDrive(decodeURIComponent(chave))
+    const { dados, mime } = await baixarFotoDrive(chave)
     return new Response(dados, {
       headers: { 'Content-Type': mime, 'Cache-Control': 'private, max-age=3600' },
     })

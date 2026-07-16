@@ -91,7 +91,8 @@ export function AnexosProcesso({
                 className="group relative aspect-square overflow-hidden rounded-lg border border-border"
               >
                 <a href={anexo.url} target="_blank" rel="noopener noreferrer">
-                  {/* Signed URL dinâmica do Supabase Storage — <img> direto (sem next/image). */}
+                  {/* URL da foto conforme o storage ativo (R2/Supabase = URL assinada;
+                      Drive = rota proxy /api/anexos) — <img> direto (sem next/image). */}
                   <img
                     src={anexo.url}
                     alt={anexo.nomeOriginal}
