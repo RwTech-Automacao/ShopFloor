@@ -226,9 +226,10 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
     setErroPadrao(null)
   }
 
-  /** "Nenhum" no seletor: solta o mapeamento selecionado (o seletor volta a
-   *  "Nenhum" e some Atualizar/Excluir). Não mexe no mapeamento atual das colunas. */
+  /** "Nenhum" no seletor: solta o mapeamento selecionado e desmarca os campos
+   *  (todos voltam a "Não mapear"). */
   function onLimparPadrao() {
+    setMapeamento({})
     setPadraoSelecionadoId(null)
     setColunasNaoEncontradas([])
     setErroPadrao(null)
