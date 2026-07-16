@@ -3,20 +3,6 @@ import { sanitizarTermoBusca } from '../domain/busca-processo'
 import { faixaDoMes, type EstadoGrid } from '../domain/estado-grid'
 import { carregarCamposFormulario } from './processo-detalhe-repository'
 
-export interface ProcessoResumoRow {
-  id: string
-  numero: number
-  numero_nf: string | null
-  numero_emb: string | null
-  di_inpi: string | null
-  acp_cliente: string | null
-  numero_pedido: string | null
-  tipo: string | null
-  fornecedor: string | null
-  codigo_material: string | null
-  status: string
-}
-
 export interface FiltrosProcessos {
   busca?: string
   status?: string

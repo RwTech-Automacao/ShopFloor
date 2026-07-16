@@ -55,7 +55,7 @@ export function decodificarEstadoGrid(
     typeof o.ordenar === 'string' && validas.has(o.ordenar) ? o.ordenar : ESTADO_GRID_PADRAO.ordenar
   const direcao: 'asc' | 'desc' = o.direcao === 'asc' ? 'asc' : 'desc'
   const pagina =
-    typeof o.pagina === 'number' && Number.isInteger(o.pagina) && o.pagina > 0 ? o.pagina : 0
+    typeof o.pagina === 'number' && Number.isInteger(o.pagina) && o.pagina >= 0 ? o.pagina : 0
   const tamanho =
     typeof o.tamanho === 'number' && (TAMANHOS_PAGINA as readonly number[]).includes(o.tamanho)
       ? o.tamanho

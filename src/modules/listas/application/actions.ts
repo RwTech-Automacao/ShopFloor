@@ -68,7 +68,7 @@ export async function excluirListaAction(id: string): Promise<ResultadoAcaoLista
   if (!alvo) return { erro: 'Lista não encontrada.' }
 
   // A lista `resultado` é load-bearing: alimenta os status terminais dos
-  // processos (listarValoresStatus lê por chave fixa, independente de campo).
+  // processos (lida por chave fixa, independente de campo).
   // Nunca pode ser excluída, mesmo que nenhum campo a referencie.
   if (alvo.chave === 'resultado') {
     return { erro: 'A lista "Resultado" define os status dos processos e não pode ser excluída.' }

@@ -4,7 +4,7 @@ import type { StatusProcesso } from '../domain/ciclo-vida'
 
 /**
  * Linha completa de `processos_recebimento` (todas as colunas, em
- * snake_case — espelha o schema do banco, como em `ProcessoResumoRow`).
+ * snake_case — espelha o schema do banco).
  */
 export interface ProcessoRow {
   id: string
@@ -197,39 +197,6 @@ const COLUNAS_GRAVAVEIS = new Set<ColunaGravavel>([
 ])
 
 export type PatchProcesso = Partial<Pick<ProcessoRow, ColunaGravavel>>
-
-interface ListaItemResultadoRow {
-  valor: string
-  listas: { chave: string } | null
-}
-
-/**
- * Retorna os valores possíveis de `status` para o filtro da lista de
- * Processos: os dois estados fixos do ciclo de vida (`aberto`,
- * `em_conferencia`) seguidos dos terminais dinâmicos ativos cadastrados na
- * lista "Resultado" (ex.: Aprovado, Reprovado, e o que o Admin adicionar).
- */
-export async function listarValoresStatus(): Promise<{ valor: string; rotulo: string }[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('lista_itens')
-    .select('valor, listas!inner(chave)')
-    .eq('listas.chave', 'resultado')
-    .eq('ativo', true)
-    .order('ordem', { ascending: true })
-  if (error) throw error
-
-  const terminais = ((data ?? []) as unknown as ListaItemResultadoRow[]).map((row) => ({
-    valor: row.valor,
-    rotulo: row.valor,
-  }))
-
-  return [
-    { valor: 'aberto', rotulo: 'Aberto' },
-    { valor: 'em_conferencia', rotulo: 'Em conferência' },
-    ...terminais,
-  ]
-}
 
 /**
  * Busca um processo de recebimento pelo id (todas as colunas). `null` se não
