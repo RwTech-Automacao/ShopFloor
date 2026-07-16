@@ -226,6 +226,14 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
     setErroPadrao(null)
   }
 
+  /** "Nenhum" no seletor: solta o mapeamento selecionado (o seletor volta a
+   *  "Nenhum" e some Atualizar/Excluir). Não mexe no mapeamento atual das colunas. */
+  function onLimparPadrao() {
+    setPadraoSelecionadoId(null)
+    setColunasNaoEncontradas([])
+    setErroPadrao(null)
+  }
+
   function onSalvarPadrao() {
     setErroPadrao(null)
     startPadrao(async () => {
@@ -305,6 +313,7 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
             onSalvar={onSalvarPadrao}
             onAtualizar={onAtualizarPadrao}
             onExcluir={onExcluirPadrao}
+            onLimpar={onLimparPadrao}
           />
           <PassoMapear
             campos={camposMapeaveis}
@@ -762,6 +771,7 @@ interface BarraPadraoProps {
   onSalvar: () => void
   onAtualizar: () => void
   onExcluir: () => void
+  onLimpar: () => void
 }
 
 /** Barra do Passo 2: aplicar/salvar/atualizar/excluir padrões de mapeamento. */
@@ -780,6 +790,7 @@ function BarraPadrao({
   onSalvar,
   onAtualizar,
   onExcluir,
+  onLimpar,
 }: BarraPadraoProps) {
   const naoEncontradas = colunasNaoEncontradas.length
 
@@ -792,7 +803,8 @@ function BarraPadrao({
           <Select
             value={padraoSelecionadoId ?? SEM_PADRAO}
             onValueChange={(valor) => {
-              if (valor && valor !== SEM_PADRAO) onAplicar(valor)
+              if (!valor || valor === SEM_PADRAO) onLimpar()
+              else onAplicar(valor)
             }}
           >
             <SelectTrigger className="w-64">
