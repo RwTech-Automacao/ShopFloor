@@ -5,6 +5,7 @@ import {
   carregarCamposComerciais,
   carregarItensPorLista,
 } from '@/modules/recebimento/infra/campo-comercial-repository'
+import { listarPadroesImportacao } from '@/modules/recebimento/infra/padrao-importacao-repository'
 import { WizardImportacao } from './wizard-importacao'
 
 export default async function ImportarPage() {
@@ -18,11 +19,12 @@ export default async function ImportarPage() {
     new Set(campos.map((campo) => campo.listaChave).filter((chave): chave is string => chave !== null)),
   )
   const itensPorLista = await carregarItensPorLista(chaves)
+  const padroes = await listarPadroesImportacao()
 
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Importar planilha</h1>
-      <WizardImportacao campos={campos} itensPorLista={itensPorLista} />
+      <WizardImportacao campos={campos} itensPorLista={itensPorLista} padroes={padroes} />
     </div>
   )
 }

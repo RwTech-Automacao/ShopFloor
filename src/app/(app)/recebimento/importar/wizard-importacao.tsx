@@ -27,6 +27,7 @@ import { lerPlanilha } from '@/modules/recebimento/domain/ler-planilha'
 import {
   sugerirMapeamento,
   numeroEmbDoArquivo,
+  normalizarNome,
   CAMPOS_DIGITADOS,
   type CampoImportavel,
 } from '@/modules/recebimento/domain/mapeamento'
@@ -34,10 +35,18 @@ import {
   prepararLinhasImportacao,
   type LinhaValidada,
 } from '@/modules/recebimento/domain/validacao-linha'
+import { aplicarPadrao } from '@/modules/recebimento/domain/padrao-importacao'
+import type { PadraoImportacao } from '@/modules/recebimento/infra/padrao-importacao-repository'
+import {
+  salvarPadrao,
+  atualizarPadrao,
+  excluirPadrao,
+} from '@/modules/recebimento/application/padroes-importacao'
 
 const TAMANHO_MAXIMO_BYTES = 20 * 1024 * 1024
 const LINHAS_PREVIEW = 20
 const SEM_MAPEAMENTO = '__sem_mapeamento__'
+const SEM_PADRAO = '__sem_padrao__'
 
 const PASSOS = [
   { numero: 1, rotulo: 'Selecionar' },
@@ -55,9 +64,10 @@ type ResultadoImportacao =
 interface WizardImportacaoProps {
   campos: CampoImportavel[]
   itensPorLista: Record<string, string[]>
+  padroes: PadraoImportacao[]
 }
 
-export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProps) {
+export function WizardImportacao({ campos, itensPorLista, padroes: padroesIniciais }: WizardImportacaoProps) {
   const [passo, setPasso] = useState<NumeroPasso>(1)
 
   const [arquivoNome, setArquivoNome] = useState('')
@@ -71,6 +81,14 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
 
   const [resultado, setResultado] = useState<ResultadoImportacao | null>(null)
   const [importando, startImportacao] = useTransition()
+
+  const [padroes, setPadroes] = useState<PadraoImportacao[]>(padroesIniciais)
+  const [padraoSelecionadoId, setPadraoSelecionadoId] = useState<string | null>(null)
+  const [colunasNaoEncontradas, setColunasNaoEncontradas] = useState<string[]>([])
+  const [nomeNovoPadrao, setNomeNovoPadrao] = useState('')
+  const [mostrandoCampoNome, setMostrandoCampoNome] = useState(false)
+  const [erroPadrao, setErroPadrao] = useState<string | null>(null)
+  const [salvandoPadrao, startPadrao] = useTransition()
 
   // Valores digitados uma vez no wizard e aplicados a TODAS as linhas (os itens
   // de uma planilha chegam juntos). Chaves = nome da coluna no banco.
@@ -190,6 +208,57 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
     })
   }
 
+  function onAplicarPadrao(id: string) {
+    const padrao = padroes.find((p) => p.id === id)
+    if (!padrao) return
+    const r = aplicarPadrao(padrao.mapeamento, colunas, camposMapeaveis)
+    setMapeamento(r.mapeamento)
+    setColunasNaoEncontradas(r.colunasNaoEncontradas)
+    setPadraoSelecionadoId(id)
+    setErroPadrao(null)
+  }
+
+  function onSalvarPadrao() {
+    setErroPadrao(null)
+    startPadrao(async () => {
+      const r = await salvarPadrao(nomeNovoPadrao, mapeamento)
+      if (r.ok) {
+        setPadroes(r.padroes)
+        const novo = r.padroes.find((p) => normalizarNome(p.nome) === normalizarNome(nomeNovoPadrao))
+        setPadraoSelecionadoId(novo?.id ?? null)
+        setMostrandoCampoNome(false)
+        setNomeNovoPadrao('')
+      } else {
+        setErroPadrao(r.erro)
+      }
+    })
+  }
+
+  function onAtualizarPadrao() {
+    if (!padraoSelecionadoId) return
+    setErroPadrao(null)
+    startPadrao(async () => {
+      const r = await atualizarPadrao(padraoSelecionadoId, mapeamento)
+      if (r.ok) setPadroes(r.padroes)
+      else setErroPadrao(r.erro)
+    })
+  }
+
+  function onExcluirPadrao() {
+    if (!padraoSelecionadoId) return
+    if (!window.confirm('Excluir este padrão de mapeamento?')) return
+    setErroPadrao(null)
+    startPadrao(async () => {
+      const r = await excluirPadrao(padraoSelecionadoId)
+      if (r.ok) {
+        setPadroes(r.padroes)
+        setPadraoSelecionadoId(null)
+      } else {
+        setErroPadrao(r.erro)
+      }
+    })
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <Stepper passoAtual={passo} />
@@ -205,20 +274,45 @@ export function WizardImportacao({ campos, itensPorLista }: WizardImportacaoProp
       )}
 
       {passo === 2 && (
-        <PassoMapear
-          campos={camposMapeaveis}
-          camposDigitados={camposDigitados}
-          valoresDigitados={valoresDigitados}
-          onMudarValorFixo={onMudarValorFixo}
-          colunas={colunas}
-          mapeamento={mapeamento}
-          camposFaltando={camposFaltando}
-          onMudarMapeamento={(campo, coluna) =>
-            setMapeamento((atual) => ({ ...atual, [campo]: coluna }))
-          }
-          onVoltar={() => setPasso(1)}
-          onProximo={() => setPasso(3)}
-        />
+        <>
+          <BarraPadrao
+            padroes={padroes}
+            padraoSelecionadoId={padraoSelecionadoId}
+            colunasNaoEncontradas={colunasNaoEncontradas}
+            nomeNovoPadrao={nomeNovoPadrao}
+            mostrandoCampoNome={mostrandoCampoNome}
+            erro={erroPadrao}
+            salvando={salvandoPadrao}
+            onAplicar={onAplicarPadrao}
+            onIniciarSalvar={() => {
+              setMostrandoCampoNome(true)
+              setErroPadrao(null)
+            }}
+            onCancelarSalvar={() => {
+              setMostrandoCampoNome(false)
+              setNomeNovoPadrao('')
+              setErroPadrao(null)
+            }}
+            onMudarNome={setNomeNovoPadrao}
+            onSalvar={onSalvarPadrao}
+            onAtualizar={onAtualizarPadrao}
+            onExcluir={onExcluirPadrao}
+          />
+          <PassoMapear
+            campos={camposMapeaveis}
+            camposDigitados={camposDigitados}
+            valoresDigitados={valoresDigitados}
+            onMudarValorFixo={onMudarValorFixo}
+            colunas={colunas}
+            mapeamento={mapeamento}
+            camposFaltando={camposFaltando}
+            onMudarMapeamento={(campo, coluna) =>
+              setMapeamento((atual) => ({ ...atual, [campo]: coluna }))
+            }
+            onVoltar={() => setPasso(1)}
+            onProximo={() => setPasso(3)}
+          />
+        </>
       )}
 
       {passo === 3 && (
@@ -641,6 +735,135 @@ function PassoImportar({
           )}
         </Button>
       </div>
+    </div>
+  )
+}
+
+interface BarraPadraoProps {
+  padroes: PadraoImportacao[]
+  padraoSelecionadoId: string | null
+  colunasNaoEncontradas: string[]
+  nomeNovoPadrao: string
+  mostrandoCampoNome: boolean
+  erro: string | null
+  salvando: boolean
+  onAplicar: (id: string) => void
+  onIniciarSalvar: () => void
+  onCancelarSalvar: () => void
+  onMudarNome: (nome: string) => void
+  onSalvar: () => void
+  onAtualizar: () => void
+  onExcluir: () => void
+}
+
+/** Barra do Passo 2: aplicar/salvar/atualizar/excluir padrões de mapeamento. */
+function BarraPadrao({
+  padroes,
+  padraoSelecionadoId,
+  colunasNaoEncontradas,
+  nomeNovoPadrao,
+  mostrandoCampoNome,
+  erro,
+  salvando,
+  onAplicar,
+  onIniciarSalvar,
+  onCancelarSalvar,
+  onMudarNome,
+  onSalvar,
+  onAtualizar,
+  onExcluir,
+}: BarraPadraoProps) {
+  const naoEncontradas = colunasNaoEncontradas.length
+
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <p className="mb-2 text-sm font-medium">Padrão de mapeamento</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-1">
+          <Label>Aplicar padrão salvo</Label>
+          <Select
+            value={padraoSelecionadoId ?? SEM_PADRAO}
+            onValueChange={(valor) => {
+              if (valor && valor !== SEM_PADRAO) onAplicar(valor)
+            }}
+          >
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="Escolher padrão..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SEM_PADRAO}>Nenhum</SelectItem>
+              {padroes.map((padrao) => (
+                <SelectItem key={padrao.id} value={padrao.id}>
+                  {padrao.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {mostrandoCampoNome ? (
+          <div className="flex items-end gap-2">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="nome-padrao">Nome do padrão</Label>
+              <Input
+                id="nome-padrao"
+                value={nomeNovoPadrao}
+                onChange={(e) => onMudarNome(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSalvar()
+                }}
+                className="w-56"
+              />
+            </div>
+            <Button
+              className="bg-enterplak hover:bg-enterplak-700"
+              disabled={salvando}
+              onClick={onSalvar}
+            >
+              Salvar
+            </Button>
+            <Button variant="ghost" disabled={salvando} onClick={onCancelarSalvar}>
+              Cancelar
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Button variant="outline" disabled={salvando} onClick={onIniciarSalvar}>
+              Salvar como padrão
+            </Button>
+            {padraoSelecionadoId && (
+              <>
+                <Button variant="outline" disabled={salvando} onClick={onAtualizar}>
+                  Atualizar
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-red-600"
+                  disabled={salvando}
+                  onClick={onExcluir}
+                >
+                  Excluir
+                </Button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {naoEncontradas > 0 && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
+          <AlertTriangleIcon className="size-3.5 shrink-0" />
+          {naoEncontradas} coluna{naoEncontradas === 1 ? '' : 's'} do padrão não{' '}
+          {naoEncontradas === 1 ? 'foi encontrada' : 'foram encontradas'} nesta planilha e{' '}
+          {naoEncontradas === 1 ? 'ficou' : 'ficaram'} sem mapear.
+        </p>
+      )}
+
+      {erro && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
+          <AlertTriangleIcon className="size-3.5 shrink-0" /> {erro}
+        </p>
+      )}
     </div>
   )
 }
