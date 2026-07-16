@@ -88,19 +88,23 @@ export function AppShell({
   email,
   perfilNome,
   permissoes,
+  exportarFotosVisivel,
   children,
 }: {
   nome: string
   email: string
   perfilNome: string
   permissoes: Perms
+  exportarFotosVisivel: boolean
   children: React.ReactNode
 }) {
   const pathname = usePathname()
   const [mobileAberto, setMobileAberto] = useState(false)
   const pode = (perm: string) => permissoes[perm] === true
 
-  const recebimentoVisivel = RECEBIMENTO.filter((i) => pode(i.perm))
+  const recebimentoVisivel = RECEBIMENTO.filter(
+    (i) => pode(i.perm) && (i.chave !== 'exportar-fotos' || exportarFotosVisivel),
+  )
   const podeConfig = pode(CONFIG_PERM)
   const configTopo = podeConfig ? CONFIG_TOPO.filter((i) => pode(i.perm)) : []
   const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter((i) => pode(i.perm)) : []

@@ -2,6 +2,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarMesesAnexos } from '@/modules/recebimento/infra/anexo-export-repository'
+import { modoStorageFotos } from '@/modules/recebimento/infra/armazenamento'
 import { rotuloMes } from '@/modules/recebimento/domain/agrupamento-mes'
 import { ExportarFotosCliente } from './exportar-fotos-cliente'
 
@@ -9,6 +10,11 @@ export default async function ExportarFotosPage() {
   const sessao = await getSessao()
   if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
     return <SemPermissao descricao="Você não tem permissão para exportar fotos." />
+  }
+  if (modoStorageFotos() !== 'supabase') {
+    return (
+      <SemPermissao descricao="A exportação de fotos está indisponível no modo de armazenamento atual." />
+    )
   }
 
   const meses = await listarMesesAnexos()
