@@ -1,9 +1,12 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { ArrowDownAZIcon, ArrowUpAZIcon, FilterIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Table,
   TableBody,
@@ -13,6 +16,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { buscarEtiquetas, gerarEtiquetas } from '@/modules/etiquetas/application/gerar-etiquetas'
+import {
+  SUB_FILTRO_PADRAO,
+  aplicarSubFiltro,
+  valoresDistintosSub,
+  type Acessor,
+  type SubFiltroEtiquetas,
+} from '@/modules/etiquetas/domain/sub-filtro'
 import {
   elegivelParaEtiqueta,
   gerarEtiquetasDoProcesso,
@@ -57,6 +67,16 @@ function dispararDownload(csv: string, fileName: string): void {
   URL.revokeObjectURL(url)
 }
 
+/** Colunas do sub-filtro e como ler o valor de cada uma numa linha. `numero`
+ *  devolve number (ordena numericamente); `doc` é derivado (DI/INPI ou NF). */
+const ACESSORES = {
+  numero: (p: ProcessoEtiquetaLista) => p.numero,
+  status: (p: ProcessoEtiquetaLista) => p.status,
+  codigoMaterial: (p: ProcessoEtiquetaLista) => p.codigoMaterial ?? '',
+  numeroPedido: (p: ProcessoEtiquetaLista) => p.numeroPedido ?? '',
+  doc: (p: ProcessoEtiquetaLista) => p.diInpi || p.numeroNf || '',
+} satisfies Record<string, Acessor<ProcessoEtiquetaLista>>
+
 export function EtiquetasCliente() {
   const [tipo, setTipo] = useState<FiltroTipoEtiqueta>('nf')
   const [termo, setTermo] = useState('')
@@ -69,6 +89,26 @@ export function EtiquetasCliente() {
   const [erroGeracao, setErroGeracao] = useState<string | null>(null)
   const [mensagemGeracao, setMensagemGeracao] = useState<string | null>(null)
   const [gerando, startGeracao] = useTransition()
+
+  const [subFiltro, setSubFiltro] = useState<SubFiltroEtiquetas>(SUB_FILTRO_PADRAO)
+
+  /** Linhas exibidas = resultado da busca principal com o sub-filtro aplicado. */
+  const linhasVisiveis = useMemo(
+    () => aplicarSubFiltro(resultados ?? [], subFiltro, ACESSORES),
+    [resultados, subFiltro],
+  )
+
+  /** Valores distintos por coluna (dos resultados carregados), para o checkbox. */
+  const valoresPorColuna = useMemo(
+    () => ({
+      numero: valoresDistintosSub(resultados ?? [], ACESSORES.numero),
+      status: valoresDistintosSub(resultados ?? [], ACESSORES.status),
+      codigoMaterial: valoresDistintosSub(resultados ?? [], ACESSORES.codigoMaterial),
+      numeroPedido: valoresDistintosSub(resultados ?? [], ACESSORES.numeroPedido),
+      doc: valoresDistintosSub(resultados ?? [], ACESSORES.doc),
+    }),
+    [resultados],
+  )
 
   const previas = useMemo(() => {
     const mapa = new Map<string, string>()
@@ -91,6 +131,7 @@ export function EtiquetasCliente() {
       if (res.ok) {
         setResultados(res.processos)
         setSelecionados(new Set())
+        setSubFiltro(SUB_FILTRO_PADRAO)
       } else {
         setResultados(null)
         setErroBusca(res.erro)
@@ -108,7 +149,7 @@ export function EtiquetasCliente() {
   }
 
   function selecionarTodosElegiveis() {
-    const elegiveis = (resultados ?? []).filter((p) => elegibilidades.get(p.id)?.elegivel)
+    const elegiveis = linhasVisiveis.filter((p) => elegibilidades.get(p.id)?.elegivel)
     setSelecionados(new Set(elegiveis.map((p) => p.id)))
   }
 
@@ -192,7 +233,7 @@ export function EtiquetasCliente() {
               </Button>
             </div>
             <span className="text-sm text-muted-foreground">
-              {selecionados.size} selecionado(s) de {resultados.length} encontrado(s)
+              {selecionados.size} selecionado(s) de {linhasVisiveis.length} visível(is)
             </span>
           </div>
 
@@ -202,24 +243,34 @@ export function EtiquetasCliente() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10" />
-                  <TableHead>Nº</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Código</TableHead>
-                  <TableHead>Pedido</TableHead>
-                  <TableHead>Doc</TableHead>
+                  <TableHead>
+                    <MenuColunaEtiqueta campo="numero" rotulo="Nº" valores={valoresPorColuna.numero} subFiltro={subFiltro} onAplicar={setSubFiltro} />
+                  </TableHead>
+                  <TableHead>
+                    <MenuColunaEtiqueta campo="status" rotulo="Status" valores={valoresPorColuna.status} rotuloValor={(v) => rotuloStatusProcesso(v).rotulo} subFiltro={subFiltro} onAplicar={setSubFiltro} />
+                  </TableHead>
+                  <TableHead>
+                    <MenuColunaEtiqueta campo="codigoMaterial" rotulo="Código" valores={valoresPorColuna.codigoMaterial} subFiltro={subFiltro} onAplicar={setSubFiltro} />
+                  </TableHead>
+                  <TableHead>
+                    <MenuColunaEtiqueta campo="numeroPedido" rotulo="Pedido" valores={valoresPorColuna.numeroPedido} subFiltro={subFiltro} onAplicar={setSubFiltro} />
+                  </TableHead>
+                  <TableHead>
+                    <MenuColunaEtiqueta campo="doc" rotulo="Doc" valores={valoresPorColuna.doc} subFiltro={subFiltro} onAplicar={setSubFiltro} />
+                  </TableHead>
                   <TableHead>Volumes</TableHead>
                   <TableHead>Prévia (1º Part Number)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {resultados.length === 0 && (
+                {linhasVisiveis.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center text-muted-foreground">
                       Nenhum processo encontrado para os filtros selecionados.
                     </TableCell>
                   </TableRow>
                 )}
-                {resultados.map((processo) => {
+                {linhasVisiveis.map((processo) => {
                   const elegib = elegibilidades.get(processo.id) ?? {
                     elegivel: false,
                     motivo: 'incompleto' as MotivoInelegivel,
@@ -262,12 +313,12 @@ export function EtiquetasCliente() {
 
           {/* Mobile: cards */}
           <div className="space-y-3 md:hidden">
-            {resultados.length === 0 && (
+            {linhasVisiveis.length === 0 && (
               <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
                 Nenhum processo encontrado para os filtros selecionados.
               </p>
             )}
-            {resultados.map((processo) => {
+            {linhasVisiveis.map((processo) => {
               const elegib = elegibilidades.get(processo.id) ?? {
                 elegivel: false,
                 motivo: 'incompleto' as MotivoInelegivel,
@@ -348,5 +399,119 @@ export function EtiquetasCliente() {
         </div>
       )}
     </div>
+  )
+}
+
+interface MenuColunaEtiquetaProps {
+  campo: string
+  rotulo: string
+  valores: string[]
+  /** Como exibir um valor no checkbox (ex.: status em pt-BR). Padrão: o próprio valor. */
+  rotuloValor?: (valor: string) => string
+  subFiltro: SubFiltroEtiquetas
+  onAplicar: (novo: SubFiltroEtiquetas) => void
+}
+
+/** Cabeçalho de coluna com menu estilo Excel (ordenar A→Z/Z→A, busca por texto,
+ *  checkbox de valores). Client-side: os `valores` vêm das linhas já carregadas. */
+function MenuColunaEtiqueta({ campo, rotulo, valores, rotuloValor, subFiltro, onAplicar }: MenuColunaEtiquetaProps) {
+  const filtroAtual = subFiltro.filtros[campo] ?? {}
+  const [texto, setTexto] = useState(filtroAtual.texto ?? '')
+  const [marcados, setMarcados] = useState<string[]>(filtroAtual.valores ?? [])
+  const [busca, setBusca] = useState('')
+
+  const exibir = (v: string) => (rotuloValor ? rotuloValor(v) : v)
+  const ativo = Boolean(subFiltro.filtros[campo])
+  const ordenando = subFiltro.ordenar === campo
+
+  function ordenar(direcao: 'asc' | 'desc') {
+    onAplicar({ ...subFiltro, ordenar: campo, direcao })
+  }
+
+  function aplicarFiltro() {
+    const filtros = { ...subFiltro.filtros }
+    const filtro: { texto?: string; valores?: string[] } = {}
+    if (texto.trim() !== '') filtro.texto = texto.trim()
+    if (marcados.length > 0) filtro.valores = marcados
+    if (filtro.texto === undefined && filtro.valores === undefined) delete filtros[campo]
+    else filtros[campo] = filtro
+    onAplicar({ ...subFiltro, filtros })
+  }
+
+  function limpar() {
+    const filtros = { ...subFiltro.filtros }
+    delete filtros[campo]
+    setTexto('')
+    setMarcados([])
+    onAplicar({ ...subFiltro, filtros })
+  }
+
+  const listados = valores.filter((v) =>
+    busca.trim() === '' ? true : exibir(v).toLowerCase().includes(busca.trim().toLowerCase()),
+  )
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button type="button" className="flex items-center gap-1 font-medium hover:text-enterplak">
+            {rotulo}
+            {ordenando && (subFiltro.direcao === 'asc' ? <ArrowUpAZIcon className="size-3.5" /> : <ArrowDownAZIcon className="size-3.5" />)}
+            <FilterIcon className={ativo ? 'size-3 text-enterplak' : 'size-3 opacity-40'} />
+          </button>
+        }
+      />
+      <PopoverContent className="w-64 p-0" align="start">
+        <div className="flex flex-col">
+          <button type="button" className="px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => ordenar('asc')}>
+            ↑ Ordenar de A a Z
+          </button>
+          <button type="button" className="px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => ordenar('desc')}>
+            ↓ Ordenar de Z a A
+          </button>
+          <div className="border-t border-border" />
+          <div className="p-2">
+            <Input
+              placeholder="Buscar nesta coluna..."
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') aplicarFiltro()
+              }}
+              className="h-8"
+            />
+          </div>
+          <div className="border-t border-border" />
+          <div className="max-h-56 overflow-y-auto p-2">
+            <Input
+              placeholder="Filtrar valores..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="mb-2 h-7 text-xs"
+            />
+            {listados.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">Nenhum valor.</p>}
+            {listados.map((valor) => (
+              <label key={valor} className="flex items-center gap-2 px-1 py-1 text-sm">
+                <Checkbox
+                  checked={marcados.includes(valor)}
+                  onCheckedChange={(marcado) =>
+                    setMarcados((atual) => (marcado ? [...atual, valor] : atual.filter((v) => v !== valor)))
+                  }
+                />
+                <span className="truncate">{exibir(valor)}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-between gap-2 border-t border-border p-2">
+            <Button variant="outline" size="sm" onClick={limpar}>
+              Limpar
+            </Button>
+            <Button size="sm" className="bg-enterplak hover:bg-enterplak-700" onClick={aplicarFiltro}>
+              Aplicar
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
