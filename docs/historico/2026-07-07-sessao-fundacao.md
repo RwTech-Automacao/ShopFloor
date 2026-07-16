@@ -634,3 +634,11 @@ num processo, ver aparecer via a rota proxy, conferir na pasta, excluir).
 Nota importante: o refresh token do modo "teste" expira ~7 dias; para produção, pôr as env na
 Vercel e fazer a **verificação única** do app no Google para estabilizar. Como está tudo atrás
 da porta `ArmazenamentoFotos`, trocar para R2/S3/Supabase depois é uma variável de ambiente.
+
+**SMOKE APROVADO (2026-07-16):** o usuário anexou foto num processo → subiu pro Drive e
+apareceu no card; excluiu → sumiu do card e da pasta. Confirmado com ele que o banco
+(`anexos_processo`) guarda só metadado + `path` (= file ID do Drive no modo drive), nunca a
+foto. Registro de teste antigo (path estilo Supabase, com "/") foi limpo; a tabela ficou
+zerada. Fotos no Google Drive = **entregue e validado** (segurado, sem push). Para produção:
+env `GOOGLE_*` + `FOTOS_STORAGE=drive` na Vercel + verificação única do Google (token de teste
+expira ~7 dias).
