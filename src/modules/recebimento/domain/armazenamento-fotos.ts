@@ -1,4 +1,4 @@
-export type ModoStorage = 'r2' | 'supabase'
+export type ModoStorage = 'r2' | 'supabase' | 'drive'
 
 /**
  * Contrato de armazenamento de fotos. O app depende só desta porta; o backend
@@ -12,8 +12,11 @@ export interface ArmazenamentoFotos {
   remover(chave: string): Promise<void>
 }
 
-/** Resolve o modo a partir do valor de env. Default 'r2'; só 'supabase' (após
- *  trim/lowercase) escolhe o plano B; qualquer outra coisa cai em 'r2'. */
+/** Resolve o modo a partir do valor de env. Default 'r2'; 'supabase' e 'drive'
+ *  (após trim/lowercase) escolhem os outros; qualquer outra coisa cai em 'r2'. */
 export function resolverModoStorage(valor: string | undefined): ModoStorage {
-  return valor?.trim().toLowerCase() === 'supabase' ? 'supabase' : 'r2'
+  const v = valor?.trim().toLowerCase()
+  if (v === 'supabase') return 'supabase'
+  if (v === 'drive') return 'drive'
+  return 'r2'
 }
