@@ -1,6 +1,5 @@
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-
-const BUCKET = 'anexos-processos'
+import { armazenamentoAtual } from './armazenamento'
 
 export interface AnexoProcesso {
   id: string
@@ -75,12 +74,9 @@ export async function contarAnexos(processoId: string): Promise<number> {
   return count ?? 0
 }
 
-/** Signed URL (1 h) para exibir/baixar um objeto do bucket privado. */
+/** Signed URL (1 h) para exibir/baixar um objeto do storage ativo. */
 export async function gerarUrlAnexo(path: string): Promise<string> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600)
-  if (error || !data) throw error ?? new Error('Falha ao gerar URL do anexo.')
-  return data.signedUrl
+  return armazenamentoAtual().urlAssinada(path, 3600)
 }
 
 /** Lista os anexos de um processo já com signed URL para exibição. */
@@ -100,20 +96,14 @@ export async function listarAnexosComUrl(processoId: string): Promise<AnexoComUr
   return comUrl.filter((a): a is AnexoComUrl => a !== null)
 }
 
-/** Sobe um objeto para o bucket de anexos (falha se o path já existir). */
+/** Sobe um objeto para o storage ativo (falha se o path já existir, no adapter). */
 export async function subirObjeto(path: string, dados: ArrayBuffer, mime: string): Promise<void> {
-  const supabase = await createServerSupabase()
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, dados, { contentType: mime, upsert: false })
-  if (error) throw error
+  await armazenamentoAtual().subir(path, dados, mime)
 }
 
-/** Remove um objeto do bucket de anexos. */
+/** Remove um objeto do storage ativo. */
 export async function removerObjeto(path: string): Promise<void> {
-  const supabase = await createServerSupabase()
-  const { error } = await supabase.storage.from(BUCKET).remove([path])
-  if (error) throw error
+  await armazenamentoAtual().remover(path)
 }
 
 /** Insere a linha de metadados de um anexo (verifica que 1 linha foi criada). */
