@@ -1,3 +1,4 @@
+import 'server-only'
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -24,6 +25,9 @@ export function criarArmazenamentoR2(): ArmazenamentoFotos {
       accessKeyId: env('R2_ACCESS_KEY_ID'),
       secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
     },
+    // O aws-sdk liga checksums (CRC32) por padrão; o R2 pode recusar. Só quando exigido.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   })
 
   return {
