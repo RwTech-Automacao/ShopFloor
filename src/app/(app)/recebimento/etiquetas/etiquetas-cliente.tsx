@@ -21,6 +21,7 @@ import {
   aplicarSubFiltro,
   valoresDistintosSub,
   type Acessor,
+  type FiltroColunaSub,
   type SubFiltroEtiquetas,
 } from '@/modules/etiquetas/domain/sub-filtro'
 import {
@@ -415,7 +416,7 @@ interface MenuColunaEtiquetaProps {
 /** Fallback estável para "sem filtro aplicado nesta coluna". Precisa ser a MESMA
  *  referência em todo render (em vez de um `{}` recriado a cada chamada), senão
  *  a ressincronização abaixo dispararia a cada digitação. */
-const FILTRO_COLUNA_VAZIO: { texto?: string; valores?: string[] } = {}
+const FILTRO_COLUNA_VAZIO: FiltroColunaSub = {}
 
 /** Cabeçalho de coluna com menu estilo Excel (ordenar A→Z/Z→A, busca por texto,
  *  checkbox de valores). Client-side: os `valores` vêm das linhas já carregadas. */
