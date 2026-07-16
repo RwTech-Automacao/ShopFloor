@@ -491,3 +491,35 @@ células de data passaram a mostrar dd/mm/aaaa (sem `new Date()`, por causa do f
 - Limpeza da Task 6 ficou pela metade: `condicaoBuscaProcesso`, `COLUNAS_BUSCA_PROCESSO`,
   `montarGrupos`, `chaveMes`, `listarValoresStatus` e `ProcessoResumoRow` ficaram sem
   consumidor.
+
+## 17. Grid de Etiquetas — sub-filtro estilo planilha (spec + plano; execução em andamento)
+
+Item 3 do roadmap. Depois da busca principal das etiquetas (Nº NF / Nº embarque / Fornecedor,
+teto 500 linhas, **intocada**), o **resultado** ganha um **sub-filtro estilo Excel** nas
+colunas **Nº, Status, Código, Pedido, Doc**: cada uma com **ordenar A→Z/Z→A**, **busca por
+texto** e **checkbox de valores**.
+
+**Decisão de arquitetura — CLIENT-SIDE.** Ao contrário do grid de Processos (base ilimitada →
+tudo no servidor), aqui o resultado já veio limitado a ≤500 linhas e já está no navegador. O
+sub-filtro é uma **função pura de domínio** que recebe as linhas + o estado do sub-filtro e
+devolve as linhas filtradas/ordenadas. **Sem servidor, sem migração, sem URL.** Reusa só os
+primitivos **Popover/Checkbox** (que nasceram nos commits locais do grid de Processos) — logo
+esta feature **empilha em cima** daquela e, no push, sai junto.
+
+**Regras travadas:** Doc é acessor derivado (`diInpi || numeroNf`); Status filtra pelo valor
+cru mas o checkbox exibe o rótulo pt-BR (`rotuloStatusProcesso`); a **seleção persiste por id**
+— o sub-filtro só **esconde** linhas, nunca desmarca; "Selecionar todos (elegíveis)" e o
+contador passam a operar sobre as **linhas visíveis**; é efêmero (reseta ao refazer a busca);
+**só no desktop** (os cards mobile iteram as visíveis mas sem menu — sub-filtro no card fica
+para o pacote de responsividade do fim). Volumes e Prévia não ganham menu.
+
+**Domínio (TDD):** `src/modules/etiquetas/domain/sub-filtro.ts` — `valoresDistintosSub`
+(distintos, ordenados, sem vazios) e `aplicarSubFiltro` (texto case-insensitive; checkbox de
+valores; ordenar Nº **numérico**, resto por `localeCompare` pt-BR; **vazios sempre no fim**,
+mesmo em desc; não muta a entrada). UI: `MenuColunaEtiqueta` no `etiquetas-cliente.tsx`,
+reusando Popover/Checkbox.
+
+Spec: `docs/superpowers/specs/2026-07-15-grid-etiquetas-design.md`. Plano:
+`docs/superpowers/plans/2026-07-15-grid-etiquetas.md` (3 tasks: domínio → UI → verificação).
+Execução **subagent-driven**, **sem push** (usuário valida o smoke; e o grid de Processos, base
+desta, ainda está segurado aguardando aprovação do superior).
