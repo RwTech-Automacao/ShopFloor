@@ -586,3 +586,29 @@ navegador (feio, sem a identidade do sistema) — 7 telas. Vira o item "Modais d
 
 **Decisão:** o usuário escolheu **as Fotos em servidor** como próximo (agrega mais valor). Entra
 em brainstorm — falta travar QUAL servidor (provável Google Drive/opção B) e o fluxo.
+
+## 20. Fotos no R2 — construído/segurado + bloqueio do cartão (2026-07-16)
+
+A feature das Fotos no Cloudflare R2 foi **construída e revisada** (subagent-driven, 5 tasks +
+polish; review final opus = PRONTO PARA MERGE). Arquitetura: porta `ArmazenamentoFotos` +
+adapters R2 (ativo) e Supabase (dormente = plano B), env `FOTOS_STORAGE=r2|supabase` escolhendo
+o adapter E a visibilidade do export/limpeza. Bucket privado, URL assinada curta, sem migração
+de banco, sem duplicar foto, chave UUID. Polish: `requestChecksumCalculation: 'WHEN_REQUIRED'`
+(compat R2, evita erro conhecido do aws-sdk) + `server-only` no adapter. Commits locais
+`488fe79..24e7952`; verde (tsc / 164 testes / build). Spec/plano em
+`docs/superpowers/{specs,plans}/2026-07-16-fotos-r2*`.
+
+**Bloqueio no setup:** o usuário criou a conta Cloudflare (Account ID
+`67fa332454b1469fac827924de9412c1`), mas o **R2 exige cartão de crédito** mesmo no plano
+grátis. Ele não quer pôr cartão agora e pediu alternativa S3 sem cartão.
+
+**Insight-chave (e resposta ao "o que é S3"):** "S3" é um produto da AWS (armazenamento de
+objetos em "buckets"), mas a API dele virou um **padrão de fato** — por isso existe storage
+"S3-compatível" de vários provedores. Como nosso adapter foi escrito com o SDK do S3, ele
+funciona com **qualquer** provedor S3-compatível (R2, AWS S3, Backblaze B2, Storj, iDrive e2,
+Wasabi, MinIO...) só trocando endpoint + credencial — nenhuma reescrita.
+
+**Caminhos sem cartão:** (a) Backblaze B2 (10GB grátis) e Storj (25GB grátis), ambos
+S3-compatíveis e provavelmente sem cartão (verificar no cadastro); (b) o pragmático — rodar em
+`FOTOS_STORAGE=supabase` por enquanto (adapter já pronto, sem cartão, 1GB, com export/limpeza
+pra gerir a cota) e flipar pra R2/B2/S3 depois com uma env. A abstração foi feita pra isso.
