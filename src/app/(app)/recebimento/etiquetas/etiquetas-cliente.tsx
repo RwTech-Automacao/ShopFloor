@@ -412,13 +412,30 @@ interface MenuColunaEtiquetaProps {
   onAplicar: (novo: SubFiltroEtiquetas) => void
 }
 
+/** Fallback estável para "sem filtro aplicado nesta coluna". Precisa ser a MESMA
+ *  referência em todo render (em vez de um `{}` recriado a cada chamada), senão
+ *  a ressincronização abaixo dispararia a cada digitação. */
+const FILTRO_COLUNA_VAZIO: { texto?: string; valores?: string[] } = {}
+
 /** Cabeçalho de coluna com menu estilo Excel (ordenar A→Z/Z→A, busca por texto,
  *  checkbox de valores). Client-side: os `valores` vêm das linhas já carregadas. */
 function MenuColunaEtiqueta({ campo, rotulo, valores, rotuloValor, subFiltro, onAplicar }: MenuColunaEtiquetaProps) {
-  const filtroAtual = subFiltro.filtros[campo] ?? {}
+  const filtroAtual = subFiltro.filtros[campo] ?? FILTRO_COLUNA_VAZIO
   const [texto, setTexto] = useState(filtroAtual.texto ?? '')
   const [marcados, setMarcados] = useState<string[]>(filtroAtual.valores ?? [])
   const [busca, setBusca] = useState('')
+
+  // Ressincroniza com o filtro APLICADO da coluna quando ele muda por fora
+  // (reset de busca, Aplicar/Limpar de outro menu). Ajuste de estado durante
+  // a renderização (padrão recomendado pelo React em vez de useEffect) para
+  // não disparar um setState síncrono dentro de um efeito: só corrige quando
+  // o objeto de filtro aplicado muda, preservando a digitação em andamento.
+  const [filtroSincronizado, setFiltroSincronizado] = useState(filtroAtual)
+  if (filtroSincronizado !== filtroAtual) {
+    setFiltroSincronizado(filtroAtual)
+    setTexto(filtroAtual.texto ?? '')
+    setMarcados(filtroAtual.valores ?? [])
+  }
 
   const exibir = (v: string) => (rotuloValor ? rotuloValor(v) : v)
   const ativo = Boolean(subFiltro.filtros[campo])
