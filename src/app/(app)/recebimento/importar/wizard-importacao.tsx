@@ -153,6 +153,14 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
       setMapeamento(sugerirMapeamento(colunasLidas, camposMapeaveis))
       // Nº EMB vem do nome do arquivo (editável no passo 2).
       setValoresDigitados((atual) => ({ ...atual, numero_emb: numeroEmbDoArquivo(file.name) }))
+      // Nova planilha: o mapeamento foi resugerido do zero, então zera o padrão
+      // aplicado — senão o Select apontaria um padrão que não corresponde mais e
+      // "Atualizar" sobrescreveria o padrão salvo com o mapeamento da planilha errada.
+      setPadraoSelecionadoId(null)
+      setColunasNaoEncontradas([])
+      setMostrandoCampoNome(false)
+      setNomeNovoPadrao('')
+      setErroPadrao(null)
       setResultado(null)
       setPasso(2)
     } finally {
