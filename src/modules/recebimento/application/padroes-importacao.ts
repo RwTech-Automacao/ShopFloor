@@ -27,6 +27,15 @@ function ehViolacaoUnica(erro: unknown): boolean {
   )
 }
 
+/**
+ * Remove entradas sem coluna: no wizard, "Não mapear" deixa a chave do campo com
+ * valor `''`. Guardar isso salvaria um padrão sem coluna real e, ao reaplicar,
+ * geraria um aviso falso de "coluna não encontrada". Salva só o de-para de verdade.
+ */
+function mapeamentoLimpo(mapeamento: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(mapeamento).filter(([, coluna]) => coluna !== ''))
+}
+
 export async function salvarPadrao(
   nome: string,
   mapeamento: Record<string, string>,
@@ -34,11 +43,12 @@ export async function salvarPadrao(
   const sessao = await getSessao()
   if (!sessao || !podeFazer(sessao.perfil, 'importar')) return { ok: false, erro: SEM_PERMISSAO }
   if (!nomePadraoValido(nome)) return { ok: false, erro: 'Dê um nome ao padrão.' }
-  if (Object.keys(mapeamento).length < 1) {
+  const limpo = mapeamentoLimpo(mapeamento)
+  if (Object.keys(limpo).length < 1) {
     return { ok: false, erro: 'Mapeie ao menos uma coluna antes de salvar.' }
   }
   try {
-    await inserirPadraoImportacao(nome.trim(), mapeamento)
+    await inserirPadraoImportacao(nome.trim(), limpo)
     return { ok: true, padroes: await listarPadroesImportacao() }
   } catch (erro) {
     if (ehViolacaoUnica(erro)) return { ok: false, erro: 'Já existe um padrão com esse nome.' }
@@ -52,11 +62,12 @@ export async function atualizarPadrao(
 ): Promise<ResultadoPadroes> {
   const sessao = await getSessao()
   if (!sessao || !podeFazer(sessao.perfil, 'importar')) return { ok: false, erro: SEM_PERMISSAO }
-  if (Object.keys(mapeamento).length < 1) {
+  const limpo = mapeamentoLimpo(mapeamento)
+  if (Object.keys(limpo).length < 1) {
     return { ok: false, erro: 'Mapeie ao menos uma coluna antes de atualizar.' }
   }
   try {
-    await atualizarPadraoImportacao(id, mapeamento)
+    await atualizarPadraoImportacao(id, limpo)
     return { ok: true, padroes: await listarPadroesImportacao() }
   } catch {
     return { ok: false, erro: 'Não foi possível atualizar o padrão.' }
