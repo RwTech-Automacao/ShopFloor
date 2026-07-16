@@ -254,7 +254,7 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
 
   function onExcluirPadrao() {
     if (!padraoSelecionadoId) return
-    if (!window.confirm('Excluir este padrão de mapeamento?')) return
+    if (!window.confirm('Excluir este mapeamento?')) return
     setErroPadrao(null)
     startPadrao(async () => {
       const r = await excluirPadrao(padraoSelecionadoId)
@@ -785,10 +785,10 @@ function BarraPadrao({
 
   return (
     <div className="rounded-lg border border-border p-3">
-      <p className="mb-2 text-sm font-medium">Padrão de mapeamento</p>
+      <p className="mb-2 text-sm font-medium">Mapeamentos salvos</p>
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1">
-          <Label>Aplicar padrão salvo</Label>
+          <Label>Aplicar mapeamento salvo</Label>
           <Select
             value={padraoSelecionadoId ?? SEM_PADRAO}
             onValueChange={(valor) => {
@@ -796,7 +796,11 @@ function BarraPadrao({
             }}
           >
             <SelectTrigger className="w-64">
-              <SelectValue placeholder="Escolher padrão..." />
+              {/* Value mostra o nome do mapeamento; sem o render function o base-ui
+                  exibiria o valor cru (o id/uuid) — só alguns caracteres. */}
+              <SelectValue placeholder="Escolher mapeamento...">
+                {(id) => padroes.find((padrao) => padrao.id === id)?.nome ?? 'Escolher mapeamento...'}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={SEM_PADRAO}>Nenhum</SelectItem>
@@ -812,7 +816,7 @@ function BarraPadrao({
         {mostrandoCampoNome ? (
           <div className="flex items-end gap-2">
             <div className="flex flex-col gap-1">
-              <Label htmlFor="nome-padrao">Nome do padrão</Label>
+              <Label htmlFor="nome-padrao">Nome do mapeamento</Label>
               <Input
                 id="nome-padrao"
                 value={nomeNovoPadrao}
@@ -837,12 +841,12 @@ function BarraPadrao({
         ) : (
           <>
             <Button variant="outline" disabled={salvando} onClick={onIniciarSalvar}>
-              Salvar como padrão
+              Adicionar novo mapeamento
             </Button>
             {padraoSelecionadoId && (
               <>
                 <Button variant="outline" disabled={salvando} onClick={onAtualizar}>
-                  Atualizar
+                  Atualizar mapeamento
                 </Button>
                 <Button
                   variant="outline"
@@ -861,7 +865,7 @@ function BarraPadrao({
       {naoEncontradas > 0 && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
           <AlertTriangleIcon className="size-3.5 shrink-0" />
-          {naoEncontradas} coluna{naoEncontradas === 1 ? '' : 's'} do padrão não{' '}
+          {naoEncontradas} coluna{naoEncontradas === 1 ? '' : 's'} do mapeamento não{' '}
           {naoEncontradas === 1 ? 'foi encontrada' : 'foram encontradas'} nesta planilha e{' '}
           {naoEncontradas === 1 ? 'ficou' : 'ficaram'} sem mapear.
         </p>
