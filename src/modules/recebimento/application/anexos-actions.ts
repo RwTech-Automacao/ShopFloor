@@ -49,10 +49,11 @@ export async function anexarFoto(processoId: string, form: FormData): Promise<Re
   if (!validacao.ok) return { ok: false, erro: validacao.erro }
   const ext = extensaoDoMime(arquivo.type)! // garantido não-nulo pela validação acima
 
-  const path = `${processoId}/${crypto.randomUUID()}.${ext}`
+  const chaveSugerida = `${processoId}/${crypto.randomUUID()}.${ext}`
+  let path: string
   try {
     const bytes = await arquivo.arrayBuffer()
-    await subirObjeto(path, bytes, arquivo.type)
+    path = await subirObjeto(chaveSugerida, bytes, arquivo.type)
   } catch {
     return { ok: false, erro: 'Não foi possível enviar a foto.' }
   }

@@ -40,6 +40,7 @@ export function criarArmazenamentoR2(): ArmazenamentoFotos {
           ContentType: mime,
         }),
       )
+      return chave
     },
     async urlAssinada(chave, segundos = 3600) {
       return getSignedUrl(client, new GetObjectCommand({ Bucket: bucket, Key: chave }), {

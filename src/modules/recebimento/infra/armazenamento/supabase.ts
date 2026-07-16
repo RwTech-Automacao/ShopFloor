@@ -12,6 +12,7 @@ export function criarArmazenamentoSupabase(): ArmazenamentoFotos {
         .from(BUCKET)
         .upload(chave, dados, { contentType: mime, upsert: false })
       if (error) throw error
+      return chave
     },
     async urlAssinada(chave, segundos = 3600) {
       const supabase = await createServerSupabase()

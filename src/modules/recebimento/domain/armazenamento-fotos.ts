@@ -6,7 +6,9 @@ export type ModoStorage = 'r2' | 'supabase' | 'drive'
  * A `chave` é o caminho do objeto (hoje `${processoId}/${uuid}.${ext}`).
  */
 export interface ArmazenamentoFotos {
-  subir(chave: string, dados: ArrayBuffer, mime: string): Promise<void>
+  /** Sobe a foto e devolve a CHAVE a persistir no banco.
+   *  R2/Supabase: a própria `chave` recebida. Drive: o file ID gerado. */
+  subir(chave: string, dados: ArrayBuffer, mime: string): Promise<string>
   /** URL assinada de curta duração para exibir/baixar (padrão 1 h). */
   urlAssinada(chave: string, segundos?: number): Promise<string>
   remover(chave: string): Promise<void>

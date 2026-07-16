@@ -96,10 +96,10 @@ export async function listarAnexosComUrl(processoId: string): Promise<AnexoComUr
   return comUrl.filter((a): a is AnexoComUrl => a !== null)
 }
 
-/** Sobe um objeto para o storage ativo. A chave é um UUID fresco por upload
- *  (no adapter Supabase, upload duplicado falha; no R2, sobrescreveria). */
-export async function subirObjeto(path: string, dados: ArrayBuffer, mime: string): Promise<void> {
-  await armazenamentoAtual().subir(path, dados, mime)
+/** Sobe um objeto para o storage ativo e devolve a chave a persistir
+ *  (R2/Supabase: a mesma; Drive: o file ID). */
+export async function subirObjeto(path: string, dados: ArrayBuffer, mime: string): Promise<string> {
+  return armazenamentoAtual().subir(path, dados, mime)
 }
 
 /** Remove um objeto do storage ativo. */
