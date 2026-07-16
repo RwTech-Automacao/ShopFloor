@@ -522,4 +522,34 @@ reusando Popover/Checkbox.
 Spec: `docs/superpowers/specs/2026-07-15-grid-etiquetas-design.md`. Plano:
 `docs/superpowers/plans/2026-07-15-grid-etiquetas.md` (3 tasks: domínio → UI → verificação).
 Execução **subagent-driven**, **sem push** (usuário valida o smoke; e o grid de Processos, base
-desta, ainda está segurado aguardando aprovação do superior).
+desta, ainda está segurado aguardando aprovação do superior). **APROVADO no smoke** — push
+segurado para ir junto com o grid.
+
+## 18. Padrões de mapeamento reutilizáveis na importação (construído; **segurado**)
+
+Item 4 do roadmap, escolhido por ser 100% independente da aprovação do grid. Na importação,
+salvar o de-para de colunas (`Record<campo, coluna>` dos mapeáveis) com um nome e reaplicá-lo
+em planilhas futuras (pré-preenchido), tudo no **Passo 2 do wizard** (componente `BarraPadrao`).
+
+**Decisões:** compartilhado (quem importa gerencia, admin também; RLS `importar`/`administrar`);
+casar por **nome normalizado** (reusa `normalizarNome`, isolado no domínio → trocável para exato
+depois sem migração) usando o nome REAL da coluna atual; **aplicar substitui** o mapeamento
+inteiro; exige **≥1 coluna** e nome válido; **nome único** case-insensitive (Postgres 23505 →
+"Já existe um padrão com esse nome."); nunca guarda `data_chegada`/`numero_emb` (digitados).
+
+**Camadas:** migração `0022_padroes_importacao` (tabela JSONB + índice `lower(nome)` + RLS) →
+domínio `padrao-importacao.ts` (TDD: `aplicarPadrao` + `nomePadraoValido`) → infra
+`padrao-importacao-repository.ts` (CRUD PostgREST) → Server Actions `padroes-importacao.ts` →
+UI (`page.tsx` carrega, `wizard-importacao.tsx` ganha a barra).
+
+**Os reviews adversariais pegaram 2 bugs reais (corrigidos):**
+1. `processarArquivo` não zerava `padraoSelecionadoId`/`colunasNaoEncontradas` ao carregar outra
+   planilha — o Select apontava um padrão que não correspondia mais e **"Atualizar" sobrescreveria
+   o padrão salvo com o mapeamento da planilha errada** (corrupção de dado compartilhado).
+2. `salvarPadrao`/`atualizarPadrao` contavam `{campo: ''}` (vindo de "Não mapear") como coluna
+   válida → salvaria um padrão vazio e a reaplicação mostraria um aviso falso de "coluna não
+   encontrada". `mapeamentoLimpo()` filtra os `''` antes de validar/persistir.
+
+**Migração 0022 JÁ aplicada em produção** (verificada); código **local, sem push** (commits
+`dc21934..6804359`). O smoke fica com o usuário; o push vai junto com o grid + etiquetas.
+Spec/plano em `docs/superpowers/{specs,plans}/2026-07-16-padroes-importacao*`.
