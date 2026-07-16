@@ -612,3 +612,25 @@ Wasabi, MinIO...) só trocando endpoint + credencial — nenhuma reescrita.
 S3-compatíveis e provavelmente sem cartão (verificar no cadastro); (b) o pragmático — rodar em
 `FOTOS_STORAGE=supabase` por enquanto (adapter já pronto, sem cartão, 1GB, com export/limpeza
 pra gerir a cota) e flipar pra R2/B2/S3 depois com uma env. A abstração foi feita pra isso.
+
+## 21. Fotos no Google Drive — setup OAuth concluído (2026-07-16)
+
+O adapter Drive (Seção 20 / spec-plano `2026-07-16-fotos-drive*`) foi conectado a uma conta
+Google real. Setup feito com o usuário, passo a passo:
+- Projeto Google Cloud `shopfloor-fotos`; **Google Drive API** ativada.
+- Tela de consentimento OAuth: tipo **Externo**, escopo **`drive.file`** (aparece como "não
+  confidencial" — menos burocracia), usuário de teste `matheusrwtech@gmail.com`.
+- Cliente OAuth "ShopFloor Web" (Web app) com redirect `developers.google.com/oauthplayground`.
+- **Refresh token** gerado via **OAuth Playground** (com as próprias credenciais + escopo).
+- Pasta **`ShopFloor Fotos`** no Drive.
+- As 4 credenciais (`GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN/DRIVE_FOLDER_ID`) + `FOTOS_STORAGE=drive`
+  ficam no **`.env.local` (local, gitignored)** — nunca no repo.
+
+**Encanamento verificado** por um script throwaway (subir → baixar → apagar um arquivo na
+pasta): **funcionou** — confirmando que o escopo `drive.file` consegue escrever numa pasta
+criada pelo usuário (dúvida que eu tinha, resolvida). Falta só o **smoke na UI** (anexar foto
+num processo, ver aparecer via a rota proxy, conferir na pasta, excluir).
+
+Nota importante: o refresh token do modo "teste" expira ~7 dias; para produção, pôr as env na
+Vercel e fazer a **verificação única** do app no Google para estabilizar. Como está tudo atrás
+da porta `ArmazenamentoFotos`, trocar para R2/S3/Supabase depois é uma variável de ambiente.
