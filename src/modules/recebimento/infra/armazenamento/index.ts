@@ -1,5 +1,6 @@
 import type { ArmazenamentoFotos, ModoStorage } from '../../domain/armazenamento-fotos'
 import { resolverModoStorage } from '../../domain/armazenamento-fotos'
+import { criarArmazenamentoDrive } from './drive'
 import { criarArmazenamentoR2 } from './r2'
 import { criarArmazenamentoSupabase } from './supabase'
 
@@ -14,7 +15,12 @@ let cache: { modo: ModoStorage; impl: ArmazenamentoFotos } | null = null
 export function armazenamentoAtual(): ArmazenamentoFotos {
   const modo = modoStorageFotos()
   if (cache && cache.modo === modo) return cache.impl
-  const impl = modo === 'supabase' ? criarArmazenamentoSupabase() : criarArmazenamentoR2()
+  const impl =
+    modo === 'supabase'
+      ? criarArmazenamentoSupabase()
+      : modo === 'drive'
+        ? criarArmazenamentoDrive()
+        : criarArmazenamentoR2()
   cache = { modo, impl }
   return impl
 }
