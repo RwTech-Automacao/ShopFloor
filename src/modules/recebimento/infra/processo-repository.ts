@@ -1,6 +1,7 @@
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { sanitizarTermoBusca } from '../domain/busca-processo'
 import { faixaDoMes, type EstadoGrid } from '../domain/estado-grid'
+import type { ColunaLayout } from '../domain/layout-colunas'
 import { carregarCamposFormulario } from './processo-detalhe-repository'
 
 export interface FiltrosProcessos {
@@ -49,6 +50,18 @@ export async function listarColunasLista(): Promise<ColunaLista[]> {
     .order('ordem', { ascending: true })
   if (error) throw error
   return (data ?? []) as ColunaLista[]
+}
+
+/** Grava o layout inteiro da lista (upsert por `campo`). A RLS exige `administrar`. */
+export async function salvarColunasLista(layout: ColunaLayout[]): Promise<void> {
+  const supabase = await createServerSupabase()
+  const { error } = await supabase
+    .from('colunas_lista')
+    .upsert(
+      layout.map((c) => ({ campo: c.campo, visivel: c.visivel, ordem: c.ordem })),
+      { onConflict: 'campo' },
+    )
+  if (error) throw error
 }
 
 /** Valores distintos de uma coluna, para o checkbox do filtro. Em coluna de data, vêm
