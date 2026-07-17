@@ -47,7 +47,10 @@ export async function listarColunasLista(): Promise<ColunaLista[]> {
   const { data, error } = await supabase
     .from('colunas_lista')
     .select('campo, visivel, ordem')
+    // `campo` desempata: uma linha órfã (campo desativado e depois reativado) pode
+    // reaparecer com a ordem antiga e empatar com a coluna que ocupa a posição hoje.
     .order('ordem', { ascending: true })
+    .order('campo', { ascending: true })
   if (error) throw error
   return (data ?? []) as ColunaLista[]
 }

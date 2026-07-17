@@ -103,7 +103,7 @@ export function ColunasForm({
                       variant="outline"
                       size="icon-sm"
                       aria-label={`Mover ${col.rotulo} para cima`}
-                      disabled={i === 0}
+                      disabled={salvando || i === 0}
                       onClick={() => mover(i, -1)}
                     >
                       <ChevronUpIcon />
@@ -112,7 +112,7 @@ export function ColunasForm({
                       variant="outline"
                       size="icon-sm"
                       aria-label={`Mover ${col.rotulo} para baixo`}
-                      disabled={i === visiveis.length - 1}
+                      disabled={salvando || i === visiveis.length - 1}
                       onClick={() => mover(i, 1)}
                     >
                       <ChevronDownIcon />
@@ -128,11 +128,17 @@ export function ColunasForm({
                   </span>
                   {fixa ? (
                     <LockIcon
+                      role="img"
                       className="size-4 shrink-0 text-muted-foreground"
                       aria-label={`${col.rotulo} não pode ser ocultada`}
                     />
                   ) : (
-                    <Button variant="ghost" size="sm" onClick={() => ocultar(col.campo)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={salvando}
+                      onClick={() => ocultar(col.campo)}
+                    >
                       Ocultar
                     </Button>
                   )}
@@ -162,7 +168,12 @@ export function ColunasForm({
                 className="flex items-center gap-2 border-b border-border px-4 py-2 last:border-b-0"
               >
                 <span className="min-w-0 flex-1 truncate">{col.rotulo}</span>
-                <Button variant="ghost" size="sm" onClick={() => mostrar(col.campo)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={salvando}
+                  onClick={() => mostrar(col.campo)}
+                >
                   Mostrar
                 </Button>
               </li>
