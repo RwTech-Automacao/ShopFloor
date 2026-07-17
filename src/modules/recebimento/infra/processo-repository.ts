@@ -79,6 +79,50 @@ export async function valoresDistintosColuna(campo: string): Promise<string[]> {
   return ((data ?? []) as { valor: string }[]).map((r) => r.valor)
 }
 
+type ClienteSupabase = Awaited<ReturnType<typeof createServerSupabase>>
+
+/**
+ * Monta a query do grid: SELECT + filtros + ordenação. É o ÚNICO lugar onde a regra de
+ * filtro/ordem vive — a lista e as setas (vizinhos) chamam esta mesma função, então é
+ * estruturalmente impossível elas divergirem. Só a paginação (.range) fica no chamador.
+ */
+function montarQueryGrid(
+  supabase: ClienteSupabase,
+  select: string,
+  estado: EstadoGrid,
+  tiposPorCampo: Record<string, ColunaGrid['tipo']>,
+) {
+  let query = supabase.from('processos_recebimento').select(select, { count: 'exact' })
+
+  for (const [campo, filtro] of Object.entries(estado.filtros)) {
+    const tipo = tiposPorCampo[campo]
+    // `.ilike` não existe para bigint/date no Postgres — um texto vindo do `?g=`
+    // editado à mão viraria erro 400 e derrubaria a página. Só texto/lista buscam.
+    if (filtro.texto && (tipo === 'texto' || tipo === 'lista')) {
+      const termo = sanitizarTermoBusca(filtro.texto)
+      if (termo) query = query.ilike(campo, `%${termo}%`)
+    }
+    if (filtro.valores && filtro.valores.length > 0) {
+      if (tipo === 'data') {
+        // Em coluna de data os valores são MESES: cada um vira uma faixa
+        // [1º do mês, 1º do mês seguinte); 'sem_data' vira `is null`. As condições só
+        // contêm datas e literais nossos — nada digitado pelo usuário entra na string.
+        const condicoes = filtro.valores.map((mes) => {
+          const faixa = faixaDoMes(mes)
+          return faixa
+            ? `and(${campo}.gte.${faixa.inicio},${campo}.lt.${faixa.fim})`
+            : `${campo}.is.null`
+        })
+        query = query.or(condicoes.join(','))
+      } else {
+        query = query.in(campo, filtro.valores)
+      }
+    }
+  }
+
+  return query.order(estado.ordenar, { ascending: estado.direcao === 'asc' })
+}
+
 /**
  * Uma página do grid, com filtro e ordenação aplicados **no banco** — o resultado vale
  * sobre a base inteira, não sobre o que já estava carregado (requisito: filtrar na página
@@ -98,41 +142,39 @@ export async function listarProcessosGrid({
 }): Promise<{ linhas: Record<string, unknown>[]; total: number }> {
   const supabase = await createServerSupabase()
 
-  let query = supabase
-    .from('processos_recebimento')
-    .select(['id', ...colunas].join(', '), { count: 'exact' })
-
-  for (const [campo, filtro] of Object.entries(estado.filtros)) {
-    const tipo = tiposPorCampo[campo]
-    // `.ilike` não existe para bigint/date no Postgres — um texto vindo do `?g=`
-    // editado à mão viraria erro 400 e derrubaria a página. Só texto/lista buscam.
-    if (filtro.texto && (tipo === 'texto' || tipo === 'lista')) {
-      const termo = sanitizarTermoBusca(filtro.texto)
-      if (termo) query = query.ilike(campo, `%${termo}%`)
-    }
-    if (filtro.valores && filtro.valores.length > 0) {
-      if (tiposPorCampo[campo] === 'data') {
-        // Em coluna de data os valores são MESES: cada um vira uma faixa
-        // [1º do mês, 1º do mês seguinte); 'sem_data' vira `is null`. As condições só
-        // contêm datas e literais nossos — nada digitado pelo usuário entra na string.
-        const condicoes = filtro.valores.map((mes) => {
-          const faixa = faixaDoMes(mes)
-          return faixa
-            ? `and(${campo}.gte.${faixa.inicio},${campo}.lt.${faixa.fim})`
-            : `${campo}.is.null`
-        })
-        query = query.or(condicoes.join(','))
-      } else {
-        query = query.in(campo, filtro.valores)
-      }
-    }
-  }
-
   const inicio = estado.pagina * estado.tamanho
-  const { data, error, count } = await query
-    .order(estado.ordenar, { ascending: estado.direcao === 'asc' })
-    .range(inicio, inicio + estado.tamanho - 1)
+  const { data, error, count } = await montarQueryGrid(
+    supabase,
+    ['id', ...colunas].join(', '),
+    estado,
+    tiposPorCampo,
+  ).range(inicio, inicio + estado.tamanho - 1)
   if (error) throw error
 
   return { linhas: (data ?? []) as unknown as Record<string, unknown>[], total: count ?? 0 }
+}
+
+/** Teto de segurança das setas: acima disso elas desabilitam em vez de mentir.
+ *  Hoje há ~289 processos — folga de 17x. */
+export const TETO_VIZINHOS = 5000
+
+/**
+ * Ids do grid na MESMA ordem e com os MESMOS filtros da lista, sem paginação — é o que
+ * permite as setas ‹ › andarem exatamente como o grid mostra (inclusive atravessando
+ * página). Usa `montarQueryGrid`, então não há como divergir da lista.
+ *
+ * Busca até TETO+1 de propósito: se vier mais que o teto, o chamador SABE que a lista
+ * está truncada e desabilita as setas em vez de calcular vizinho errado.
+ */
+export async function listarIdsGrid(
+  estado: EstadoGrid,
+  tiposPorCampo: Record<string, ColunaGrid['tipo']>,
+): Promise<string[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await montarQueryGrid(supabase, 'id', estado, tiposPorCampo).range(
+    0,
+    TETO_VIZINHOS,
+  )
+  if (error) throw error
+  return ((data ?? []) as unknown as { id: string }[]).map((r) => r.id)
 }
