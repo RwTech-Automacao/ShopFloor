@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
   DialogContent,
@@ -121,11 +122,10 @@ interface ExcluirPerfilButtonProps {
 export function ExcluirPerfilButton({ id, nome, sistema }: ExcluirPerfilButtonProps) {
   const [pending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
+  const { confirmar, dialog } = useConfirmacao()
 
-  function onClick() {
-    if (typeof window !== 'undefined' && !window.confirm(`Excluir o perfil "${nome}"?`)) {
-      return
-    }
+  async function onClick() {
+    if (!(await confirmar({ titulo: `Excluir o perfil "${nome}"?` }))) return
     setErro(null)
     startTransition(async () => {
       const resultado = await excluirPerfil(id)
@@ -146,6 +146,7 @@ export function ExcluirPerfilButton({ id, nome, sistema }: ExcluirPerfilButtonPr
         <Trash2Icon />
       </Button>
       {erro && <p className="text-xs text-red-600">{erro}</p>}
+      {dialog}
     </div>
   )
 }
