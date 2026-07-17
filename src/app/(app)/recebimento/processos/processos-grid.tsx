@@ -417,7 +417,7 @@ function CardProcesso({
             setExpandido((v) => !v)
           }}
         >
-          {expandido ? '− ver menos' : `+ ver mais ${ocultas} colunas`}
+          {expandido ? '− ver menos' : `+ ver mais ${ocultas} ${ocultas === 1 ? 'coluna' : 'colunas'}`}
         </button>
       )}
     </Link>

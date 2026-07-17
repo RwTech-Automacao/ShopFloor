@@ -371,7 +371,9 @@ export function EtiquetasCliente() {
                             className={
                               elegib.elegivel
                                 ? 'max-w-[55%] truncate font-mono text-xs'
-                                : 'max-w-[55%] truncate text-sm text-muted-foreground italic'
+                                : // motivo da inelegibilidade: quebra em vez de truncar, senão o
+                                  // usuário não vê por que o checkbox está desabilitado.
+                                  'max-w-[60%] text-right text-sm text-muted-foreground italic'
                             }
                           >
                             {textoPrevia}
