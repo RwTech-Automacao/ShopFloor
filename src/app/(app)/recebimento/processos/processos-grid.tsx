@@ -70,63 +70,92 @@ export function ProcessosGrid({ colunas, linhas, total, estado }: ProcessosGridP
 
   return (
     <div className="flex flex-col gap-3">
-      <ScrollHorizontalTopo>
-        <Table className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
-          <TableHeader>
-            <TableRow>
-              {colunas.map((coluna) => (
-                <TableHead key={coluna.campo}>
-                  <MenuColuna
-                    coluna={coluna}
-                    estado={estado}
-                    onAplicar={aplicar}
-                    ativo={Boolean(estado.filtros[coluna.campo])}
-                    ordenando={estado.ordenar === coluna.campo}
-                    direcao={estado.direcao}
-                  />
-                </TableHead>
-              ))}
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {linhas.length === 0 && (
+      <div className="hidden lg:block">
+        <ScrollHorizontalTopo>
+          <Table className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={colunas.length + 1} className="py-6 text-center text-muted-foreground">
-                  Nenhum processo encontrado para os filtros aplicados.
-                </TableCell>
+                {colunas.map((coluna) => (
+                  <TableHead key={coluna.campo}>
+                    <MenuColuna
+                      coluna={coluna}
+                      estado={estado}
+                      onAplicar={aplicar}
+                      ativo={Boolean(estado.filtros[coluna.campo])}
+                      ordenando={estado.ordenar === coluna.campo}
+                      direcao={estado.direcao}
+                    />
+                  </TableHead>
+                ))}
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
-            )}
-            {linhas.map((linha, i) => {
-              // O detalhe precisa saber de onde você veio: `g` = estado do grid
-              // (ordem+filtros) e `i` = a posição global da linha na lista filtrada.
-              const q = new URLSearchParams({
-                g: codificarEstadoGrid(estado),
-                i: String(estado.pagina * estado.tamanho + i),
-              })
-              return (
-                <TableRow key={String(linha.id)}>
-                  {colunas.map((coluna) => (
-                    <TableCell key={coluna.campo}>{celula(coluna, linha[coluna.campo])}</TableCell>
-                  ))}
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Abrir processo #${String(linha.numero ?? '')}`}
-                      render={
-                        <Link href={`/recebimento/processos/${String(linha.id)}?${q.toString()}`} />
-                      }
-                    >
-                      <ArrowRightIcon />
-                    </Button>
+            </TableHeader>
+            <TableBody>
+              {linhas.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={colunas.length + 1} className="py-6 text-center text-muted-foreground">
+                    Nenhum processo encontrado para os filtros aplicados.
                   </TableCell>
                 </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </ScrollHorizontalTopo>
+              )}
+              {linhas.map((linha, i) => {
+                // O detalhe precisa saber de onde você veio: `g` = estado do grid
+                // (ordem+filtros) e `i` = a posição global da linha na lista filtrada.
+                const q = new URLSearchParams({
+                  g: codificarEstadoGrid(estado),
+                  i: String(estado.pagina * estado.tamanho + i),
+                })
+                return (
+                  <TableRow key={String(linha.id)}>
+                    {colunas.map((coluna) => (
+                      <TableCell key={coluna.campo}>{celula(coluna, linha[coluna.campo])}</TableCell>
+                    ))}
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Abrir processo #${String(linha.numero ?? '')}`}
+                        render={
+                          <Link href={`/recebimento/processos/${String(linha.id)}?${q.toString()}`} />
+                        }
+                      >
+                        <ArrowRightIcon />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </ScrollHorizontalTopo>
+      </div>
+
+      <div className="flex flex-col gap-3 lg:hidden">
+        {/* Barra de chips: os mesmos menus de coluna do desktop, em pílula */}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {colunas.map((coluna) => (
+            <MenuColuna
+              key={coluna.campo}
+              coluna={coluna}
+              estado={estado}
+              onAplicar={aplicar}
+              ativo={Boolean(estado.filtros[coluna.campo])}
+              ordenando={estado.ordenar === coluna.campo}
+              direcao={estado.direcao}
+              comoChip
+            />
+          ))}
+        </div>
+
+        {linhas.length === 0 && (
+          <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
+            Nenhum processo encontrado para os filtros aplicados.
+          </p>
+        )}
+        {linhas.map((linha, i) => (
+          <CardProcesso key={String(linha.id)} linha={linha} colunas={colunas} estado={estado} indice={i} />
+        ))}
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <span className="text-muted-foreground">
@@ -174,6 +203,7 @@ interface MenuColunaProps {
   ordenando: boolean
   direcao: 'asc' | 'desc'
   onAplicar: (estado: EstadoGrid) => void
+  comoChip?: boolean
 }
 
 /**
@@ -181,7 +211,7 @@ interface MenuColunaProps {
  * de valores com checkbox. Os valores distintos são buscados sob demanda (só ao abrir o
  * menu) — em coluna de data eles são MESES, exibidos com `rotuloMes`.
  */
-function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar }: MenuColunaProps) {
+function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar, comoChip }: MenuColunaProps) {
   const filtroAtual: FiltroColuna = estado.filtros[coluna.campo] ?? {}
   const [texto, setTexto] = useState(filtroAtual.texto ?? '')
   const [marcados, setMarcados] = useState<string[]>(filtroAtual.valores ?? [])
@@ -234,7 +264,18 @@ function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar }: Me
     <Popover onOpenChange={aoAbrir}>
       <PopoverTrigger
         render={
-          <button type="button" className="flex items-center gap-1 font-medium hover:text-enterplak">
+          <button
+            type="button"
+            className={
+              comoChip
+                ? `inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 text-[13px] ${
+                    ativo || ordenando
+                      ? 'border-enterplak bg-enterplak-50 text-enterplak'
+                      : 'border-border hover:bg-muted'
+                  }`
+                : 'flex items-center gap-1 font-medium hover:text-enterplak'
+            }
+          >
             {coluna.rotulo}
             {ordenando && (direcao === 'asc' ? <ArrowUpAZIcon className="size-3.5" /> : <ArrowDownAZIcon className="size-3.5" />)}
             <FilterIcon className={ativo ? 'size-3 text-enterplak' : 'size-3 opacity-40'} />
@@ -312,4 +353,73 @@ function rotulo(coluna: ColunaGrid, valor: string): string {
   if (coluna.tipo === 'data') return rotuloMes(valor)
   if (coluna.campo === 'status') return rotuloStatusProcesso(valor).rotulo
   return valor
+}
+
+const CAP_COLUNAS_CARD = 6
+
+/**
+ * Um processo como card (celular/tablet em pé). Nº como título + Status como badge; as
+ * demais colunas visíveis viram uma lista `rótulo···valor` com tracejado, com teto de 6 +
+ * "ver mais". O card inteiro é o mesmo link da seta da tabela (leva `?g=&i=`).
+ */
+function CardProcesso({
+  linha,
+  colunas,
+  estado,
+  indice,
+}: {
+  linha: Record<string, unknown>
+  colunas: ColunaGrid[]
+  estado: EstadoGrid
+  indice: number
+}) {
+  const [expandido, setExpandido] = useState(false)
+  const status = rotuloStatusProcesso(String(linha.status ?? ''))
+  const demais = colunas.filter((c) => c.campo !== 'numero' && c.campo !== 'status')
+  const visiveis = expandido ? demais : demais.slice(0, CAP_COLUNAS_CARD)
+  const ocultas = demais.length - CAP_COLUNAS_CARD
+
+  const q = new URLSearchParams({
+    g: codificarEstadoGrid(estado),
+    i: String(estado.pagina * estado.tamanho + indice),
+  })
+
+  return (
+    <Link
+      href={`/recebimento/processos/${String(linha.id)}?${q.toString()}`}
+      className="block rounded-lg border border-border bg-card p-4 hover:border-enterplak"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold">Nº {String(linha.numero ?? '—')}</span>
+        <Badge className={status.className}>{status.rotulo}</Badge>
+      </div>
+      <dl className="mt-3 flex flex-col gap-1.5">
+        {visiveis.map((coluna) => (
+          <div key={coluna.campo} className="flex items-baseline gap-1.5">
+            <dt className="whitespace-nowrap text-sm text-muted-foreground">{coluna.rotulo}</dt>
+            <span
+              aria-hidden
+              className="min-w-4 flex-1 -translate-y-1 border-b border-dotted border-border"
+            />
+            <dd className="max-w-[55%] truncate text-sm font-medium">
+              {celula(coluna, linha[coluna.campo])}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {ocultas > 0 && (
+        <button
+          type="button"
+          className="mt-2 text-sm font-medium text-enterplak hover:underline"
+          onClick={(e) => {
+            // Não navegar: o card é um link, mas este botão só expande.
+            e.preventDefault()
+            setExpandido((v) => !v)
+          }}
+        >
+          {expandido ? '− ver menos' : `+ ver mais ${ocultas} colunas`}
+        </button>
+      )}
+    </Link>
+  )
 }
