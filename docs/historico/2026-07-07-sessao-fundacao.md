@@ -778,3 +778,30 @@ mês de fotos, excluir mapeamento (Recebimento). Nuances: "Remover foto" e "Apag
 `rotuloConfirmar` próprio; a mensagem multi-linha do exportar-fotos virou título+descrição; no
 wizard o `{dialog}` fica no container raiz (existe em qualquer passo). Escopo travado: só as 7
 exclusões.
+
+## 27. Planejamento de escala — próximos passos (2026-07-17)
+
+Conversa de priorização depois de fechar o grid completo, os modais e o Drive. Ritmo esperado
+pelo usuário: **~centenas de processos/mês** (passa de 1.000 em poucos meses; 10.000 em 1–2 anos;
+hoje 289). Sequência combinada: **(1) ajuste das setas → (2) responsividade → (3) explicar
+índices**. Dev×Prod e keyset/índices ficam pra depois.
+
+**Setas (escala):** o teto de 1.000 é FUNCIONAL, não de performance, e degrada bem — só trava a
+navegação SEM filtro; qualquer filtro derruba o conjunto abaixo de 1.000. Fix barato: `listarIdsGrid`
+passa a buscar em BLOCOS de 1.000 (o `max_rows` do PostgREST) e para ao acabar a lista ou ao
+atingir `TETO_VIZINHOS` (5.000). Caso comum (<1000) = 1 requisição, idêntico a hoje. NÃO mexer no
+`max_rows` global (toda query sem paginação passaria a devolver 10k). Pré-requisito já garantido: o
+desempate `.order('numero')` da Fase 3 (sem ele os blocos se sobreporiam).
+
+**Índices:** sem índice o banco faz varredura sequencial (lê todas as linhas). Com 289 é
+instantâneo; só pesa a partir de ~5.000–10.000 linhas. Busca `ilike '%x%'` nem usa índice comum
+(precisa pg_trgm). Importa bem mais tarde — vira projeto junto com o keyset (1–2 anos).
+
+**Responsividade — retrato real (melhor que o previsto):** QUASE TUDO já é responsivo (tabela↔card):
+toda a Configurações, Etiquetas (busca), histórico, Importações, e o shell. Só **2 telas** não têm
+card: o **Grid de Processos** (a mais trabalhosa — ordenar/filtrar mora no cabeçalho, precisa de
+barra "Ordenar/Filtrar" no topo) e a **tabela de resultados do sub-filtro das Etiquetas**. Além
+disso, mover o corte de 768→1024 (pra tablet-em-pé cair em card). Pacote médio/focado, não grande.
+
+**Dev×Prod:** decisão do usuário — por último, montado a partir de um retrato limpo da prod no
+momento de entrar dado real (migrar direto na prod só é perigoso com dado real; hoje é grátis errar).
