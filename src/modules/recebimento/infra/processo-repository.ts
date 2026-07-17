@@ -115,7 +115,15 @@ function montarQueryGrid(
     }
   }
 
-  return query.order(estado.ordenar, { ascending: estado.direcao === 'asc' })
+  const ordenada = query.order(estado.ordenar, { ascending: estado.direcao === 'asc' })
+  // `numero` desempata. Sem isto, colunas com valores repetidos (status, fornecedor,
+  // data_chegada) saem em ordem NÃO-determinística: a consulta paginada (top-N) e a de
+  // ids (sort completo) podem resolver os empates diferente — a seta levaria a um
+  // processo que não é o da linha seguinte do grid. Também é o que faz a paginação da
+  // lista ser estável (sem isso, uma linha pode repetir ou sumir entre páginas).
+  return estado.ordenar === 'numero'
+    ? ordenada
+    : ordenada.order('numero', { ascending: false })
 }
 
 /**
@@ -149,27 +157,37 @@ export async function listarProcessosGrid({
   return { linhas: (data ?? []) as unknown as Record<string, unknown>[], total: count ?? 0 }
 }
 
-/** Teto de segurança das setas: acima disso elas desabilitam em vez de mentir.
- *  Hoje há ~289 processos — folga de 17x. */
-export const TETO_VIZINHOS = 5000
+/**
+ * Teto das setas: acima disso elas desabilitam em vez de mentir. O valor é amarrado ao
+ * `max_rows = 1000` do PostgREST (`supabase/config.toml`) — ele CORTA a resposta em 1000
+ * linhas independente do `.range()`, então pedir mais que isso é ilusão: a lista voltaria
+ * truncada e os vizinhos sairiam errados. Hoje há ~289 processos.
+ */
+export const TETO_VIZINHOS = 1000
 
 /**
  * Ids do grid na MESMA ordem e com os MESMOS filtros da lista, sem paginação — é o que
  * permite as setas ‹ › andarem exatamente como o grid mostra (inclusive atravessando
  * página). Usa `montarQueryGrid`, então não há como divergir da lista.
  *
- * Busca até TETO+1 de propósito: se vier mais que o teto, o chamador SABE que a lista
- * está truncada e desabilita as setas em vez de calcular vizinho errado.
+ * Devolve também o `total` (count exato no banco, não o tamanho do que veio): é ele que
+ * diz se o conjunto estourou o teto — `data.length` não serve, porque o PostgREST já
+ * truncou em `max_rows` e o estouro passaria despercebido.
  */
 export async function listarIdsGrid(
   estado: EstadoGrid,
   tiposPorCampo: Record<string, ColunaGrid['tipo']>,
-): Promise<string[]> {
+): Promise<{ ids: string[]; total: number }> {
   const supabase = await createServerSupabase()
-  const { data, error } = await montarQueryGrid(supabase, 'id', estado, tiposPorCampo).range(
-    0,
-    TETO_VIZINHOS,
-  )
+  const { data, error, count } = await montarQueryGrid(
+    supabase,
+    'id',
+    estado,
+    tiposPorCampo,
+  ).range(0, TETO_VIZINHOS - 1)
   if (error) throw error
-  return ((data ?? []) as unknown as { id: string }[]).map((r) => r.id)
+  return {
+    ids: ((data ?? []) as unknown as { id: string }[]).map((r) => r.id),
+    total: count ?? 0,
+  }
 }

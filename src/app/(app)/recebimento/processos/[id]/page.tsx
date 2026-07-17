@@ -13,7 +13,7 @@ import {
 import { carregarCriticidade, carregarTabelaNqa } from '@/modules/recebimento/infra/referencias-repository'
 import { ESTADO_GRID_PADRAO, decodificarEstadoGrid } from '@/modules/recebimento/domain/estado-grid'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
-import { vizinhosDaLista } from '@/modules/recebimento/domain/vizinhos'
+import { vizinhosDaLista, type Vizinhos } from '@/modules/recebimento/domain/vizinhos'
 import {
   TETO_VIZINHOS,
   carregarCatalogoColunas,
@@ -34,34 +34,32 @@ export default async function ProcessoDetalhePage({ params, searchParams }: Proc
   const processo = await buscarProcesso(id)
   if (!processo) notFound()
 
-  // Contexto do grid. Sem `?g=` (link direto/favorito), cai no padrão da lista — as
-  // setas seguem vivas, navegando tudo em número desc.
-  const catalogo = await carregarCatalogoColunas()
-  const estado = g
-    ? decodificarEstadoGrid(
-        g,
-        catalogo.map((c) => c.campo),
-      )
-    : ESTADO_GRID_PADRAO
-  const tiposPorCampo = Object.fromEntries(catalogo.map((c) => [c.campo, c.tipo]))
-
   // A posição que a linha ocupava quando o link foi gerado. Só é usada se o processo
   // tiver saído do filtro (ex.: você o finalizou) — aí ela diz de onde continuar.
   const posicao = i !== undefined && /^\d+$/.test(i) ? Number(i) : null
 
-  // Fail-safe: erro na consulta não pode derrubar a página do processo — as setas só
-  // desabilitam.
-  let ids: string[] = []
+  // Fail-safe: nada aqui pode derrubar a página do processo — se a busca do contexto
+  // falhar, as setas só desabilitam.
+  let vizinhos: Vizinhos = { anterior: null, proximo: null }
   try {
-    ids = await listarIdsGrid(estado, tiposPorCampo)
+    // Contexto do grid. Sem `?g=` (link direto/favorito), cai no padrão da lista — as
+    // setas seguem vivas, navegando tudo em número desc.
+    const catalogo = await carregarCatalogoColunas()
+    const estado = g
+      ? decodificarEstadoGrid(
+          g,
+          catalogo.map((c) => c.campo),
+        )
+      : ESTADO_GRID_PADRAO
+    const tiposPorCampo = Object.fromEntries(catalogo.map((c) => [c.campo, c.tipo]))
+    const { ids, total } = await listarIdsGrid(estado, tiposPorCampo)
+    // `total` é o count do banco: acima do teto a lista veio truncada pelo PostgREST e
+    // não dá para saber os vizinhos — melhor desabilitar do que apontar para o errado.
+    if (total <= TETO_VIZINHOS) vizinhos = vizinhosDaLista(ids, id, posicao)
   } catch {
-    ids = []
+    vizinhos = { anterior: null, proximo: null }
   }
-  // Veio mais que o teto → a lista está truncada e não dá para saber os vizinhos.
-  const { anterior, proximo } =
-    ids.length > TETO_VIZINHOS
-      ? { anterior: null, proximo: null }
-      : vizinhosDaLista(ids, id, posicao)
+  const { anterior, proximo } = vizinhos
 
   const [sessao, campos, fornecedoresCriticos, nqa, anexos] = await Promise.all([
     getSessao(),
@@ -127,7 +125,9 @@ export default async function ProcessoDetalhePage({ params, searchParams }: Proc
   return (
     <div className="flex flex-col gap-4">
       <Link
-        href="/recebimento/processos"
+        // Leva o `g` de volta: sem isso, voltar depois de navegar com as setas jogaria
+        // fora a ordenação e os filtros que a pessoa montou no grid.
+        href={g ? `/recebimento/processos?${new URLSearchParams({ g }).toString()}` : '/recebimento/processos'}
         className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-enterplak hover:underline"
       >
         <ArrowLeftIcon className="size-4" />

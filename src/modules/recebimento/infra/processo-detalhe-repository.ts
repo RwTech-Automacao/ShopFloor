@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import type { StatusProcesso } from '../domain/ciclo-vida'
 
@@ -221,7 +222,9 @@ export async function buscarProcesso(id: string): Promise<ProcessoRow | null> {
  * alfabética do texto do grupo (que colocaria "qualidade" antes de
  * "recebimento").
  */
-export async function carregarCamposFormulario(): Promise<CampoFormulario[]> {
+/** `cache()`: dedupe por request — o catálogo de colunas e o formulário do detalhe
+ *  pedem os mesmos campos, e sem isto seriam duas consultas idênticas por página. */
+export const carregarCamposFormulario = cache(async (): Promise<CampoFormulario[]> => {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('configuracao_campos')
@@ -247,7 +250,7 @@ export async function carregarCamposFormulario(): Promise<CampoFormulario[]> {
     formula: row.formula,
     formulaConfig: row.formula_config ?? {},
   }))
-}
+})
 
 /**
  * Atualiza um processo de recebimento. Só grava as chaves de `patch` que
