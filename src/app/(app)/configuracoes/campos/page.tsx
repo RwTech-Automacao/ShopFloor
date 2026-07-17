@@ -63,7 +63,7 @@ export default async function CamposPage() {
             <h2 className="text-lg font-medium">{grupo.rotulo}</h2>
 
             {/* Desktop: tabela */}
-            <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+            <div className="hidden overflow-hidden rounded-lg border border-border bg-card lg:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -109,7 +109,7 @@ export default async function CamposPage() {
             </div>
 
             {/* Mobile: cards */}
-            <div className="space-y-3 md:hidden">
+            <div className="space-y-3 lg:hidden">
               {camposDoGrupo.map((campo) => (
                 <div key={campo.id} className="rounded-lg border border-border bg-card p-4">
                   <div className="flex items-center justify-between gap-2">

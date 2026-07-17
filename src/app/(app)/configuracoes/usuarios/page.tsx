@@ -21,7 +21,7 @@ export default async function UsuariosPage() {
       </div>
 
       {/* Desktop: tabela */}
-      <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+      <div className="hidden overflow-hidden rounded-lg border border-border bg-card lg:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -63,7 +63,7 @@ export default async function UsuariosPage() {
       </div>
 
       {/* Mobile: cards */}
-      <div className="space-y-3 md:hidden">
+      <div className="space-y-3 lg:hidden">
         {usuarios.length === 0 && (
           <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
             Nenhum usuário encontrado.

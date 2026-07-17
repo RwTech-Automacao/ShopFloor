@@ -21,7 +21,7 @@ export default async function ImportacoesPage() {
   return (
     <div className="flex flex-col gap-4">
       {/* Desktop: tabela */}
-      <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+      <div className="hidden overflow-hidden rounded-lg border border-border bg-card lg:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -56,7 +56,7 @@ export default async function ImportacoesPage() {
       </div>
 
       {/* Mobile: cards */}
-      <div className="space-y-3 md:hidden">
+      <div className="space-y-3 lg:hidden">
         {importacoes.length === 0 && (
           <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
             Nenhuma importação encontrada.

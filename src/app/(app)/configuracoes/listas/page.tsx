@@ -23,7 +23,7 @@ export default async function ListasPage() {
       </div>
 
       {/* Desktop: tabela */}
-      <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+      <div className="hidden overflow-hidden rounded-lg border border-border bg-card lg:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -77,7 +77,7 @@ export default async function ListasPage() {
       </div>
 
       {/* Mobile: cards */}
-      <div className="space-y-3 md:hidden">
+      <div className="space-y-3 lg:hidden">
         {listas.length === 0 && (
           <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
             Nenhuma lista cadastrada.
