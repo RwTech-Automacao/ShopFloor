@@ -30,7 +30,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <Toaster position="bottom-right" richColors closeButton />
+        {/* top-center: os toasts no canto inferior direito ficavam por cima das setas
+            de navegação e do botão Finalizar, que moram no rodapé à direita. */}
+        <Toaster position="top-center" richColors closeButton />
       </body>
     </html>
   );
