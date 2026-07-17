@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   List,
   SlidersHorizontal,
+  Columns3,
   Settings,
   Settings2,
   TriangleAlert,
@@ -61,6 +62,7 @@ const CONFIG_TOPO: Folha[] = [
 const CONFIG_RECEBIMENTO: Folha[] = [
   { chave: 'listas', rotulo: 'Listas Suspensas', href: '/configuracoes/listas', icone: List, perm: 'administrar' },
   { chave: 'campos', rotulo: 'Campos', href: '/configuracoes/campos', icone: SlidersHorizontal, perm: 'administrar' },
+  { chave: 'colunas', rotulo: 'Colunas da Lista', href: '/configuracoes/colunas', icone: Columns3, perm: 'administrar' },
   { chave: 'criticidade', rotulo: 'Criticidade', href: '/configuracoes/criticidade', icone: TriangleAlert, perm: 'administrar' },
   { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, perm: 'administrar' },
 ]
