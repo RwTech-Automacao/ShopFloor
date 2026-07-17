@@ -689,3 +689,33 @@ código como plugins dormentes: trocar de storage é **uma variável de ambiente
 é local e gitignored; a Vercel tem o próprio conjunto. Por isso "configuramos o Drive ontem" e
 ainda assim a produção seguia no Supabase — cada ambiente decide o seu storage, e nenhum
 segredo fica no repositório.
+
+## 24. Grid Fase 2 — Colunas da Lista, EM PRODUÇÃO (2026-07-17)
+
+Tela **Configurações → Recebimento → "Colunas da Lista"** (`/configuracoes/colunas`): o admin
+escolhe quais colunas aparecem no grid de Processos e em que ordem, sem depender de dev.
+Commits `6641c76..c9e0a11` (push `870ce58..c9e0a11`). **Sem migração** — a `colunas_lista` já
+existia desde a 0021; a Fase 1 só lia dela, agora existe quem edita.
+
+**Decisões:** duas listas — **Visíveis** (ordem do grid, setas ↑↓, "Ocultar") e **Disponíveis**
+(ocultas, A→Z, "Mostrar" → entra no fim). **`numero` e `status` sempre visíveis** (cadeado +
+badge) **mas reordenáveis**. Salvar em bloco com indicador de "não salvas". Reordenar com
+**setas, sem lib nova** (arrastar exigiria dependência de ~30KB para tarefa rara de admin).
+Antes de codar, um **mockup interativo** foi publicado e aprovado pelo usuário.
+
+**Arquitetura:** o cliente manda **só `visiveis: string[]`** (ordenado); o servidor carrega o
+catálogo (whitelist) e o domínio puro `normalizarLayout` (TDD, 9 testes) **deriva** o resto —
+força as fixas, numera 1..N, ocultas depois. Três camadas de defesa: RLS (`administrar`) +
+a action revalida a sessão + whitelist do servidor. Audita (`registrarLog`) e
+`revalidatePath('/recebimento/processos')`.
+
+**O review final pegou 1 Importante (corrigido):** só o botão *Salvar* desabilitava durante a
+gravação — editar nesse meio-tempo fazia o `setSujo(false)` mentir **"Tudo salvo"** com o banco
+no estado antigo e a edição presa na tela (divergência silenciosa). Fix: setas/Ocultar/Mostrar
+travados enquanto salva. Menores: `.order('campo')` desempata uma linha órfã reativada;
+`role="img"` no cadeado.
+
+**Nota de ambiente:** o `npm run build` estoura a memória nesta máquina (7,6 GB) quando o
+`next dev` está de pé — o dev sozinho segura ~3,1 GB. Hábito: **matar o dev antes do build**,
+ou usar `NODE_OPTIONS=--max-old-space-size=4096`. Isso é custo de desenvolvimento apenas: em
+produção (Vercel, serverless) o app roda pré-compilado, sem servidor segurando RAM.
