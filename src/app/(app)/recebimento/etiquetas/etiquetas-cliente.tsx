@@ -239,7 +239,7 @@ export function EtiquetasCliente() {
           </div>
 
           {/* Desktop: tabela */}
-          <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+          <div className="hidden overflow-hidden rounded-lg border border-border bg-card lg:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -313,7 +313,14 @@ export function EtiquetasCliente() {
           </div>
 
           {/* Mobile: cards */}
-          <div className="space-y-3 md:hidden">
+          <div className="space-y-3 lg:hidden">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <MenuColunaEtiqueta campo="numero" rotulo="Nº" valores={valoresPorColuna.numero} subFiltro={subFiltro} onAplicar={setSubFiltro} comoChip />
+              <MenuColunaEtiqueta campo="status" rotulo="Status" valores={valoresPorColuna.status} rotuloValor={(v) => rotuloStatusProcesso(v).rotulo} subFiltro={subFiltro} onAplicar={setSubFiltro} comoChip />
+              <MenuColunaEtiqueta campo="codigoMaterial" rotulo="Código" valores={valoresPorColuna.codigoMaterial} subFiltro={subFiltro} onAplicar={setSubFiltro} comoChip />
+              <MenuColunaEtiqueta campo="numeroPedido" rotulo="Pedido" valores={valoresPorColuna.numeroPedido} subFiltro={subFiltro} onAplicar={setSubFiltro} comoChip />
+              <MenuColunaEtiqueta campo="doc" rotulo="Doc" valores={valoresPorColuna.doc} subFiltro={subFiltro} onAplicar={setSubFiltro} comoChip />
+            </div>
             {linhasVisiveis.length === 0 && (
               <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
                 Nenhum processo encontrado para os filtros selecionados.
@@ -342,37 +349,29 @@ export function EtiquetasCliente() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold">#{processo.numero}</span>
+                        <Badge className={status.className}>{status.rotulo}</Badge>
                       </div>
-                      <dl className="mt-2 space-y-1.5 text-sm">
-                        <div className="flex gap-2">
-                          <dt className="w-28 shrink-0 text-muted-foreground">Status</dt>
-                          <dd className="min-w-0 flex-1">
-                            <Badge className={status.className}>{status.rotulo}</Badge>
-                          </dd>
-                        </div>
-                        <div className="flex gap-2">
-                          <dt className="w-28 shrink-0 text-muted-foreground">Código</dt>
-                          <dd className="min-w-0 flex-1">{processo.codigoMaterial || '—'}</dd>
-                        </div>
-                        <div className="flex gap-2">
-                          <dt className="w-28 shrink-0 text-muted-foreground">Pedido</dt>
-                          <dd className="min-w-0 flex-1">{processo.numeroPedido || '—'}</dd>
-                        </div>
-                        <div className="flex gap-2">
-                          <dt className="w-28 shrink-0 text-muted-foreground">Doc</dt>
-                          <dd className="min-w-0 flex-1">{processo.diInpi || processo.numeroNf || '—'}</dd>
-                        </div>
-                        <div className="flex gap-2">
-                          <dt className="w-28 shrink-0 text-muted-foreground">Volumes</dt>
-                          <dd className="min-w-0 flex-1">{processo.volumes ?? '—'}</dd>
-                        </div>
-                        <div className="flex gap-2">
-                          <dt className="w-28 shrink-0 text-muted-foreground">Prévia</dt>
+                      <dl className="mt-2 flex flex-col gap-1.5">
+                        {[
+                          { rot: 'Código', val: processo.codigoMaterial || '—' },
+                          { rot: 'Pedido', val: processo.numeroPedido || '—' },
+                          { rot: 'Doc', val: processo.diInpi || processo.numeroNf || '—' },
+                          { rot: 'Volumes', val: processo.volumes ?? '—' },
+                        ].map((r) => (
+                          <div key={r.rot} className="flex items-baseline gap-1.5">
+                            <dt className="whitespace-nowrap text-sm text-muted-foreground">{r.rot}</dt>
+                            <span aria-hidden className="min-w-4 flex-1 -translate-y-1 border-b border-dotted border-border" />
+                            <dd className="max-w-[55%] truncate text-sm font-medium">{r.val}</dd>
+                          </div>
+                        ))}
+                        <div className="flex items-baseline gap-1.5">
+                          <dt className="whitespace-nowrap text-sm text-muted-foreground">Prévia</dt>
+                          <span aria-hidden className="min-w-4 flex-1 -translate-y-1 border-b border-dotted border-border" />
                           <dd
                             className={
-                              !elegib.elegivel
-                                ? 'min-w-0 flex-1 text-muted-foreground italic'
-                                : 'min-w-0 flex-1 font-mono text-xs'
+                              elegib.elegivel
+                                ? 'max-w-[55%] truncate font-mono text-xs'
+                                : 'max-w-[55%] truncate text-sm text-muted-foreground italic'
                             }
                           >
                             {textoPrevia}
@@ -411,6 +410,8 @@ interface MenuColunaEtiquetaProps {
   rotuloValor?: (valor: string) => string
   subFiltro: SubFiltroEtiquetas
   onAplicar: (novo: SubFiltroEtiquetas) => void
+  /** Exibe o gatilho como pílula (chip), para a barra de sub-filtro do card mobile. */
+  comoChip?: boolean
 }
 
 /** Fallback estável para "sem filtro aplicado nesta coluna". Precisa ser a MESMA
@@ -420,7 +421,7 @@ const FILTRO_COLUNA_VAZIO: FiltroColunaSub = {}
 
 /** Cabeçalho de coluna com menu estilo Excel (ordenar A→Z/Z→A, busca por texto,
  *  checkbox de valores). Client-side: os `valores` vêm das linhas já carregadas. */
-function MenuColunaEtiqueta({ campo, rotulo, valores, rotuloValor, subFiltro, onAplicar }: MenuColunaEtiquetaProps) {
+function MenuColunaEtiqueta({ campo, rotulo, valores, rotuloValor, subFiltro, onAplicar, comoChip }: MenuColunaEtiquetaProps) {
   const filtroAtual = subFiltro.filtros[campo] ?? FILTRO_COLUNA_VAZIO
   const [texto, setTexto] = useState(filtroAtual.texto ?? '')
   const [marcados, setMarcados] = useState<string[]>(filtroAtual.valores ?? [])
@@ -472,7 +473,18 @@ function MenuColunaEtiqueta({ campo, rotulo, valores, rotuloValor, subFiltro, on
     <Popover>
       <PopoverTrigger
         render={
-          <button type="button" className="flex items-center gap-1 font-medium hover:text-enterplak">
+          <button
+            type="button"
+            className={
+              comoChip
+                ? `inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 text-[13px] ${
+                    ativo || ordenando
+                      ? 'border-enterplak bg-enterplak-50 text-enterplak'
+                      : 'border-border hover:bg-muted'
+                  }`
+                : 'flex items-center gap-1 font-medium hover:text-enterplak'
+            }
+          >
             {rotulo}
             {ordenando && (subFiltro.direcao === 'asc' ? <ArrowUpAZIcon className="size-3.5" /> : <ArrowDownAZIcon className="size-3.5" />)}
             <FilterIcon className={ativo ? 'size-3 text-enterplak' : 'size-3 opacity-40'} />
