@@ -6,6 +6,7 @@ import { ImagePlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { anexarFoto, removerFoto } from '@/modules/recebimento/application/anexos-actions'
 import type { AnexoComUrl } from '@/modules/recebimento/infra/anexo-repository'
 
@@ -29,6 +30,7 @@ export function AnexosProcesso({
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [ocupado, startTransition] = useTransition()
+  const { confirmar, dialog } = useConfirmacao()
 
   const podeAdicionar = !somenteLeitura && anexos.length < LIMITE
 
@@ -64,8 +66,8 @@ export function AnexosProcesso({
     })
   }
 
-  function aoRemover(id: string) {
-    if (!window.confirm('Remover esta foto?')) return
+  async function aoRemover(id: string) {
+    if (!(await confirmar({ titulo: 'Remover esta foto?', rotuloConfirmar: 'Remover' }))) return
     startTransition(async () => {
       const r = await removerFoto(id)
       if (r.ok) toast.success('Foto removida.')
@@ -137,6 +139,7 @@ export function AnexosProcesso({
           </div>
         )}
       </CardContent>
+      {dialog}
     </Card>
   )
 }

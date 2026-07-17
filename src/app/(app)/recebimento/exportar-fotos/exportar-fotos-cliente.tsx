@@ -6,6 +6,7 @@ import JSZip from 'jszip'
 import { DownloadIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import {
   obterFotosDoMes,
   limparFotosDoMes,
@@ -24,6 +25,7 @@ export function ExportarFotosCliente({
 }) {
   const router = useRouter()
   const [ocupado, setOcupado] = useState(false)
+  const { confirmar, dialog } = useConfirmacao()
 
   async function exportar() {
     setOcupado(true)
@@ -60,11 +62,13 @@ export function ExportarFotosCliente({
     }
   }
 
-  function limpar() {
+  async function limpar() {
     if (
-      !window.confirm(
-        `Apagar TODAS as ${total} foto(s) de ${rotulo}? Faça o export antes — isto não tem desfazer.`,
-      )
+      !(await confirmar({
+        titulo: `Apagar TODAS as ${total} foto(s) de ${rotulo}?`,
+        descricao: 'Faça o export antes — isto não tem desfazer.',
+        rotuloConfirmar: 'Apagar',
+      }))
     ) {
       return
     }
@@ -102,6 +106,7 @@ export function ExportarFotosCliente({
           Limpar fotos do mês
         </Button>
       </div>
+      {dialog}
     </div>
   )
 }

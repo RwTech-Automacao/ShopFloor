@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import {
   Select,
   SelectContent,
@@ -68,6 +69,7 @@ interface WizardImportacaoProps {
 }
 
 export function WizardImportacao({ campos, itensPorLista, padroes: padroesIniciais }: WizardImportacaoProps) {
+  const { confirmar, dialog } = useConfirmacao()
   const [passo, setPasso] = useState<NumeroPasso>(1)
 
   const [arquivoNome, setArquivoNome] = useState('')
@@ -261,9 +263,9 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
     })
   }
 
-  function onExcluirPadrao() {
+  async function onExcluirPadrao() {
     if (!padraoSelecionadoId) return
-    if (!window.confirm('Excluir este mapeamento?')) return
+    if (!(await confirmar({ titulo: 'Excluir este mapeamento?' }))) return
     setErroPadrao(null)
     startPadrao(async () => {
       const r = await excluirPadrao(padraoSelecionadoId)
@@ -358,6 +360,7 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
           onImportar={onImportar}
         />
       )}
+      {dialog}
     </div>
   )
 }
