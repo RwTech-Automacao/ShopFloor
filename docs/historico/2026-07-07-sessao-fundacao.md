@@ -664,3 +664,28 @@ a tela de export/limpeza visível). O **Google Drive está pronto e validado**, 
 quando setarem `FOTOS_STORAGE=drive` + as 4 `GOOGLE_*` nas Environment Variables da Vercel — e,
 antes disso, convém **publicar o app OAuth** (o escopo `drive.file` é *não confidencial*, então
 publicar não exige a verificação pesada) para o refresh token parar de expirar a cada 7 dias.
+
+## 23. Fotos no Google Drive — ATIVAS EM PRODUÇÃO (2026-07-17)
+
+Fecha o item 5 do roadmap (o último dos grandes). Sequência executada com o usuário:
+
+1. **App OAuth publicado** (Google Auth Platform → Público-alvo → "Enviar para produção").
+   Publicou **sem verificação**, porque o app não tem logotipo, não tem 10+ domínios e usa
+   apenas o escopo **`drive.file`**, que é **não confidencial**. Status: "Em produção".
+   *É este passo que faz o refresh token parar de expirar a cada 7 dias.*
+2. **Refresh token novo gerado** pelo OAuth Playground — obrigatório, porque o token de ontem
+   fora emitido enquanto o app estava em "Teste" e carregaria a validade de 7 dias. Confirmado
+   que veio diferente do anterior e **testado por script** (subir → baixar → apagar na pasta).
+3. **5 env na Vercel** (ambiente Production): `FOTOS_STORAGE=drive` + `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_DRIVE_FOLDER_ID` → **redeploy**.
+4. **Validado no ar:** foto anexada num processo sobe pro Drive, aparece no card, e o
+   "Exportar Fotos" some do menu (sinal de que o modo `drive` pegou).
+
+**Resultado:** as fotos saíram do Supabase Storage — a **cota de 1 GB do Free deixou de ser um
+problema**, que era a motivação original. O Supabase (com export/limpeza) e o R2 continuam no
+código como plugins dormentes: trocar de storage é **uma variável de ambiente**.
+
+**Ponto didático da sessão:** variáveis de ambiente **não viajam com o código**. O `.env.local`
+é local e gitignored; a Vercel tem o próprio conjunto. Por isso "configuramos o Drive ontem" e
+ainda assim a produção seguia no Supabase — cada ambiente decide o seu storage, e nenhum
+segredo fica no repositório.
