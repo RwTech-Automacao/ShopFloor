@@ -642,3 +642,25 @@ foto. Registro de teste antigo (path estilo Supabase, com "/") foi limpo; a tabe
 zerada. Fotos no Google Drive = **entregue e validado** (segurado, sem push). Para produção:
 env `GOOGLE_*` + `FOTOS_STORAGE=drive` na Vercel + verificação única do Google (token de teste
 expira ~7 dias).
+
+## 22. PUSH — tudo em produção (2026-07-17)
+
+**49 commits enviados** (`8debef7..eb5aaad`), com aprovação do usuário. Subiram de uma vez:
+Grid de Processos Fase 1, Grid de Etiquetas (sub-filtro), Padrões de mapeamento da importação,
+e as Fotos (porta `ArmazenamentoFotos` + adapter R2 dormente + adapter Google Drive). As
+migrações 0021 e 0022 já estavam aplicadas na produção.
+
+**Bug pego na hora do push (o método valendo de novo):** o default do `FOTOS_STORAGE` era
+`r2`. Como essa env **não existe na Vercel**, o deploy cairia no adapter do R2 — que **não tem
+credencial em produção** — e **quebraria as fotos**: as existentes sumiriam da tela (o
+`listarAnexosComUrl` tolera falha por foto e omite) e o upload falharia. Corrigido antes de
+subir: **default = `supabase`** (o storage histórico, o único cujas credenciais sempre existem
+em qualquer ambiente); `r2` e `drive` passam a exigir **opt-in explícito** por env.
+**Lição:** o default de uma configuração tem que ser o caminho que funciona **sem configuração
+extra** — não o que está "na moda" no momento do desenho.
+
+**Estado da produção:** as fotos continuam no **Supabase Storage** (exatamente como antes, com
+a tela de export/limpeza visível). O **Google Drive está pronto e validado**, mas só entra no ar
+quando setarem `FOTOS_STORAGE=drive` + as 4 `GOOGLE_*` nas Environment Variables da Vercel — e,
+antes disso, convém **publicar o app OAuth** (o escopo `drive.file` é *não confidencial*, então
+publicar não exige a verificação pesada) para o refresh token parar de expirar a cada 7 dias.
