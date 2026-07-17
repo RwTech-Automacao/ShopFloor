@@ -757,3 +757,24 @@ o detalhe com 500); "Voltar para Processos" preserva ordem/filtros; `cache()` em
 **Lição de ordem de deploy:** o plano mandava aplicar a migração após o review, mas a RPC
 ainda era chamada pelo código **em produção** — dropar antes do push desabilitaria as setas à
 toa. Ordem certa (executada): **push → deploy → DROP**. Janela zero.
+
+## 26. Modais de confirmação — EM PRODUÇÃO (2026-07-17)
+
+Trocados os **7 `window.confirm`** nativos do navegador por um modal com a identidade Enterplak.
+Push `6bcf378..25102c3`. 100% frontend — sem migração, sem servidor.
+
+**O desafio:** `window.confirm` é síncrono (`if (!confirm()) return`); um modal é assíncrono. A
+solução foi um hook **`useConfirmacao`** (`src/components/ui/confirm-dialog.tsx`) que devolve
+`confirmar(): Promise<boolean>` + o `{dialog}` a renderizar. Cada tela troca ~1 linha
+(`window.confirm(...)` → `await confirmar({ titulo, descricao? })`, a função vira `async`) e
+renderiza `{dialog}`. A quebra assíncrona fica escondida no hook (guarda o `resolve` da Promise
+numa ref; Confirmar → resolve(true); Esc/fora/X via onOpenChange → resolve(false)).
+
+Aparência **sóbria** (decisão do usuário): botão confirmar em vinho Enterplak, sem vermelho nem
+ícone de alerta. Reusa o `Dialog` do base-ui.
+
+As 7 telas: criticidade, lista, item de lista, perfil (Configurações); remover foto, apagar
+mês de fotos, excluir mapeamento (Recebimento). Nuances: "Remover foto" e "Apagar" usam
+`rotuloConfirmar` próprio; a mensagem multi-linha do exportar-fotos virou título+descrição; no
+wizard o `{dialog}` fica no container raiz (existe em qualquer passo). Escopo travado: só as 7
+exclusões.
