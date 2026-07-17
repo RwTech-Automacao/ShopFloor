@@ -36,6 +36,7 @@ import type {
 } from '@/modules/etiquetas/infra/etiqueta-repository'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
 import { Badge } from '@/components/ui/badge'
+import { classeChipTrigger } from '@/lib/chip-trigger'
 
 const TIPOS: { valor: FiltroTipoEtiqueta; rotulo: string }[] = [
   { valor: 'nf', rotulo: 'Nº NF' },
@@ -479,11 +480,7 @@ function MenuColunaEtiqueta({ campo, rotulo, valores, rotuloValor, subFiltro, on
             type="button"
             className={
               comoChip
-                ? `inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 text-[13px] ${
-                    ativo || ordenando
-                      ? 'border-enterplak bg-enterplak-50 text-enterplak'
-                      : 'border-border hover:bg-muted'
-                  }`
+                ? classeChipTrigger(ativo, ordenando)
                 : 'flex items-center gap-1 font-medium hover:text-enterplak'
             }
           >

@@ -28,6 +28,7 @@ import {
 } from '@/modules/recebimento/domain/estado-grid'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
 import type { ColunaGrid } from '@/modules/recebimento/infra/processo-repository'
+import { classeChipTrigger } from '@/lib/chip-trigger'
 import { ScrollHorizontalTopo } from './scroll-horizontal-topo'
 
 interface ProcessosGridProps {
@@ -268,11 +269,7 @@ function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar, como
             type="button"
             className={
               comoChip
-                ? `inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 text-[13px] ${
-                    ativo || ordenando
-                      ? 'border-enterplak bg-enterplak-50 text-enterplak'
-                      : 'border-border hover:bg-muted'
-                  }`
+                ? classeChipTrigger(ativo, ordenando)
                 : 'flex items-center gap-1 font-medium hover:text-enterplak'
             }
           >
@@ -385,10 +382,15 @@ function CardProcesso({
   })
 
   return (
-    <Link
-      href={`/recebimento/processos/${String(linha.id)}?${q.toString()}`}
-      className="block rounded-lg border border-border bg-card p-4 hover:border-enterplak"
-    >
+    // Padrão "stretched link": o card é um <div> e o link de navegação é um <a> que cobre
+    // toda a área (absolute inset-0). Assim o "ver mais" pode ser um <button> de verdade
+    // (irmão com z-10, acima do link) — sem interativo aninhado em <a> nem preventDefault.
+    <div className="relative rounded-lg border border-border bg-card p-4 hover:border-enterplak focus-within:border-enterplak">
+      <Link
+        href={`/recebimento/processos/${String(linha.id)}?${q.toString()}`}
+        aria-label={`Abrir processo Nº ${String(linha.numero ?? '')}`}
+        className="absolute inset-0 rounded-lg"
+      />
       <div className="flex items-center justify-between gap-2">
         <span className="font-semibold">Nº {String(linha.numero ?? '—')}</span>
         <Badge className={status.className}>{status.rotulo}</Badge>
@@ -410,16 +412,12 @@ function CardProcesso({
       {ocultas > 0 && (
         <button
           type="button"
-          className="mt-2 text-sm font-medium text-enterplak hover:underline"
-          onClick={(e) => {
-            // Não navegar: o card é um link, mas este botão só expande.
-            e.preventDefault()
-            setExpandido((v) => !v)
-          }}
+          className="relative z-10 mt-2 text-sm font-medium text-enterplak hover:underline"
+          onClick={() => setExpandido((v) => !v)}
         >
           {expandido ? '− ver menos' : `+ ver mais ${ocultas} ${ocultas === 1 ? 'coluna' : 'colunas'}`}
         </button>
       )}
-    </Link>
+    </div>
   )
 }
