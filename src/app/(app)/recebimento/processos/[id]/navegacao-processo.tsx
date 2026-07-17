@@ -1,22 +1,27 @@
 import Link from 'next/link'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { queryProcessos } from '@/modules/recebimento/domain/busca-processo'
-import type { FiltrosProcessos } from '@/modules/recebimento/infra/processo-repository'
+import type { Vizinho } from '@/modules/recebimento/domain/vizinhos'
 
-/** Setas ‹ › para o processo anterior/próximo na ordem da lista filtrada. `null`
- *  → seta desabilitada (ponta da lista). Os filtros vão no href para manter a
- *  navegação dentro da mesma ordem. */
+/** Setas ‹ › para o processo anterior/próximo na MESMA ordem e filtros do grid.
+ *  `null` → seta desabilitada (ponta da lista, ou sem como saber). O estado do grid
+ *  (`g`) e a posição do vizinho (`i`) seguem no href para a navegação continuar. */
 export function NavegacaoProcesso({
   anterior,
   proximo,
-  filtros,
+  g,
 }: {
-  anterior: string | null
-  proximo: string | null
-  filtros: FiltrosProcessos
+  anterior: Vizinho | null
+  proximo: Vizinho | null
+  g: string
 }) {
-  const q = queryProcessos(filtros)
+  const href = (v: Vizinho) => {
+    const q = new URLSearchParams()
+    if (g) q.set('g', g)
+    q.set('i', String(v.posicao))
+    return `/recebimento/processos/${v.id}?${q.toString()}`
+  }
+
   return (
     <div className="ml-auto flex gap-1">
       <Button
@@ -25,7 +30,7 @@ export function NavegacaoProcesso({
         className="border-enterplak text-enterplak hover:bg-enterplak hover:text-white"
         aria-label="Processo anterior"
         disabled={!anterior}
-        render={anterior ? <Link href={`/recebimento/processos/${anterior}${q}`} /> : undefined}
+        render={anterior ? <Link href={href(anterior)} /> : undefined}
       >
         <ChevronLeftIcon />
       </Button>
@@ -35,7 +40,7 @@ export function NavegacaoProcesso({
         className="border-enterplak text-enterplak hover:bg-enterplak hover:text-white"
         aria-label="Próximo processo"
         disabled={!proximo}
-        render={proximo ? <Link href={`/recebimento/processos/${proximo}${q}`} /> : undefined}
+        render={proximo ? <Link href={href(proximo)} /> : undefined}
       >
         <ChevronRightIcon />
       </Button>

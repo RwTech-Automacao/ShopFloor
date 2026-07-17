@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { StatusProcesso } from '@/modules/recebimento/domain/ciclo-vida'
 import type { CampoFormulario } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import type { FaixaNqa } from '@/modules/recebimento/domain/calculos'
-import type { FiltrosProcessos } from '@/modules/recebimento/infra/processo-repository'
+import type { Vizinho } from '@/modules/recebimento/domain/vizinhos'
 import type { AnexoComUrl } from '@/modules/recebimento/infra/anexo-repository'
 import { AcoesProcesso } from './acoes-processo'
 import { AnexosProcesso } from './anexos-processo'
@@ -27,11 +27,11 @@ interface ProcessoDetalheProps {
   responsavelRecebimento: string | null
   /** Nome de quem salvou por último a seção Qualidade, ou `null` se ainda não salva. */
   responsavelQualidade: string | null
-  /** Uuid do processo anterior/próximo na ordem da lista filtrada, ou `null` na ponta da lista. */
-  anterior: string | null
-  proximo: string | null
-  /** Filtros de busca/status ativos na lista — preservados nas setas de navegação. */
-  filtros: FiltrosProcessos
+  /** Vizinho anterior/próximo na ordem da lista filtrada, ou `null` na ponta da lista. */
+  anterior: Vizinho | null
+  proximo: Vizinho | null
+  /** Estado codificado do grid (ordem+filtros) — preservado nas setas de navegação. */
+  g: string
   /** Fotos anexadas ao processo, com signed URL para exibição. */
   anexos: AnexoComUrl[]
 }
@@ -60,7 +60,7 @@ export function ProcessoDetalhe({
   responsavelQualidade,
   anterior,
   proximo,
-  filtros,
+  g,
   anexos,
 }: ProcessoDetalheProps) {
   const [dirty, setDirty] = useState(false)
@@ -91,7 +91,7 @@ export function ProcessoDetalhe({
           podeEditarFinalizado={podeEditarFinalizado}
           finalizarBloqueado={dirty}
         />
-        <NavegacaoProcesso anterior={anterior} proximo={proximo} filtros={filtros} />
+        <NavegacaoProcesso anterior={anterior} proximo={proximo} g={g} />
       </div>
     </>
   )

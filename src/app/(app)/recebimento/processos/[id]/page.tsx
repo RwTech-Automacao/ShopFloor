@@ -8,28 +8,60 @@ import { listarAnexosComUrl } from '@/modules/recebimento/infra/anexo-repository
 import { carregarItensPorLista } from '@/modules/recebimento/infra/campo-comercial-repository'
 import {
   buscarProcesso,
-  buscarVizinhos,
   carregarCamposFormulario,
 } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import { carregarCriticidade, carregarTabelaNqa } from '@/modules/recebimento/infra/referencias-repository'
+import { ESTADO_GRID_PADRAO, decodificarEstadoGrid } from '@/modules/recebimento/domain/estado-grid'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
+import { vizinhosDaLista } from '@/modules/recebimento/domain/vizinhos'
+import {
+  TETO_VIZINHOS,
+  carregarCatalogoColunas,
+  listarIdsGrid,
+} from '@/modules/recebimento/infra/processo-repository'
 import { buscarNomesUsuarios } from '@/modules/usuarios/infra/usuario-admin-repository'
 import { ProcessoDetalhe } from './processo-detalhe'
 
 interface ProcessoDetalhePageProps {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ busca?: string; status?: string }>
+  searchParams: Promise<{ g?: string; i?: string }>
 }
 
 export default async function ProcessoDetalhePage({ params, searchParams }: ProcessoDetalhePageProps) {
   const { id } = await params
-  const sp = await searchParams
-  const filtros = { busca: sp.busca || undefined, status: sp.status || undefined }
+  const { g, i } = await searchParams
 
   const processo = await buscarProcesso(id)
   if (!processo) notFound()
 
-  const { anterior, proximo } = await buscarVizinhos(id, filtros)
+  // Contexto do grid. Sem `?g=` (link direto/favorito), cai no padrão da lista — as
+  // setas seguem vivas, navegando tudo em número desc.
+  const catalogo = await carregarCatalogoColunas()
+  const estado = g
+    ? decodificarEstadoGrid(
+        g,
+        catalogo.map((c) => c.campo),
+      )
+    : ESTADO_GRID_PADRAO
+  const tiposPorCampo = Object.fromEntries(catalogo.map((c) => [c.campo, c.tipo]))
+
+  // A posição que a linha ocupava quando o link foi gerado. Só é usada se o processo
+  // tiver saído do filtro (ex.: você o finalizou) — aí ela diz de onde continuar.
+  const posicao = i !== undefined && /^\d+$/.test(i) ? Number(i) : null
+
+  // Fail-safe: erro na consulta não pode derrubar a página do processo — as setas só
+  // desabilitam.
+  let ids: string[] = []
+  try {
+    ids = await listarIdsGrid(estado, tiposPorCampo)
+  } catch {
+    ids = []
+  }
+  // Veio mais que o teto → a lista está truncada e não dá para saber os vizinhos.
+  const { anterior, proximo } =
+    ids.length > TETO_VIZINHOS
+      ? { anterior: null, proximo: null }
+      : vizinhosDaLista(ids, id, posicao)
 
   const [sessao, campos, fornecedoresCriticos, nqa, anexos] = await Promise.all([
     getSessao(),
@@ -129,7 +161,7 @@ export default async function ProcessoDetalhePage({ params, searchParams }: Proc
         responsavelQualidade={responsavelQualidade}
         anterior={anterior}
         proximo={proximo}
-        filtros={filtros}
+        g={g ?? ''}
         anexos={anexos}
       />
     </div>

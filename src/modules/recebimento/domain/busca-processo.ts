@@ -11,20 +11,3 @@ export function sanitizarTermoBusca(termo: string): string {
   return termo.replace(/[,.()*%]/g, '').trim()
 }
 
-export interface FiltrosLista {
-  busca?: string
-  status?: string
-}
-
-/**
- * Sufixo de query string ('?busca=…&status=…') a partir dos filtros da lista de
- * Processos; '' quando não há filtro. Usado nos links da lista e nas setas de
- * navegação para preservar o contexto/ordem.
- */
-export function queryProcessos(filtros: FiltrosLista): string {
-  const params = new URLSearchParams()
-  if (filtros.busca) params.set('busca', filtros.busca)
-  if (filtros.status) params.set('status', filtros.status)
-  const s = params.toString()
-  return s ? `?${s}` : ''
-}

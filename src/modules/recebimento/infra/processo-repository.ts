@@ -4,11 +4,6 @@ import { faixaDoMes, type EstadoGrid } from '../domain/estado-grid'
 import type { ColunaLayout } from '../domain/layout-colunas'
 import { carregarCamposFormulario } from './processo-detalhe-repository'
 
-export interface FiltrosProcessos {
-  busca?: string
-  status?: string
-}
-
 export interface ColunaGrid {
   campo: string
   rotulo: string

@@ -97,23 +97,33 @@ export function ProcessosGrid({ colunas, linhas, total, estado }: ProcessosGridP
                 </TableCell>
               </TableRow>
             )}
-            {linhas.map((linha) => (
-              <TableRow key={String(linha.id)}>
-                {colunas.map((coluna) => (
-                  <TableCell key={coluna.campo}>{celula(coluna, linha[coluna.campo])}</TableCell>
-                ))}
-                <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Abrir processo #${String(linha.numero ?? '')}`}
-                    render={<Link href={`/recebimento/processos/${String(linha.id)}`} />}
-                  >
-                    <ArrowRightIcon />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {linhas.map((linha, i) => {
+              // O detalhe precisa saber de onde você veio: `g` = estado do grid
+              // (ordem+filtros) e `i` = a posição global da linha na lista filtrada.
+              const q = new URLSearchParams({
+                g: codificarEstadoGrid(estado),
+                i: String(estado.pagina * estado.tamanho + i),
+              })
+              return (
+                <TableRow key={String(linha.id)}>
+                  {colunas.map((coluna) => (
+                    <TableCell key={coluna.campo}>{celula(coluna, linha[coluna.campo])}</TableCell>
+                  ))}
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Abrir processo #${String(linha.numero ?? '')}`}
+                      render={
+                        <Link href={`/recebimento/processos/${String(linha.id)}?${q.toString()}`} />
+                      }
+                    >
+                      <ArrowRightIcon />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       </ScrollHorizontalTopo>
