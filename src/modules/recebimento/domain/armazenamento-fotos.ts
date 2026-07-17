@@ -14,11 +14,18 @@ export interface ArmazenamentoFotos {
   remover(chave: string): Promise<void>
 }
 
-/** Resolve o modo a partir do valor de env. Default 'r2'; 'supabase' e 'drive'
- *  (após trim/lowercase) escolhem os outros; qualquer outra coisa cai em 'r2'. */
+/**
+ * Resolve o modo a partir do valor de env (trim/lowercase). 'r2' e 'drive' exigem
+ * opt-in EXPLÍCITO, porque dependem de credenciais próprias.
+ *
+ * Default = 'supabase': é o storage histórico e o único cujas credenciais sempre
+ * existem em qualquer ambiente. Um deploy sem `FOTOS_STORAGE` cairia num backend
+ * sem credencial e quebraria as fotos — então o default tem que ser o que funciona
+ * sem configuração extra.
+ */
 export function resolverModoStorage(valor: string | undefined): ModoStorage {
   const v = valor?.trim().toLowerCase()
-  if (v === 'supabase') return 'supabase'
+  if (v === 'r2') return 'r2'
   if (v === 'drive') return 'drive'
-  return 'r2'
+  return 'supabase'
 }
