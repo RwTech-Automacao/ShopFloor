@@ -157,37 +157,56 @@ export async function listarProcessosGrid({
   return { linhas: (data ?? []) as unknown as Record<string, unknown>[], total: count ?? 0 }
 }
 
-/**
- * Teto das setas: acima disso elas desabilitam em vez de mentir. O valor é amarrado ao
- * `max_rows = 1000` do PostgREST (`supabase/config.toml`) — ele CORTA a resposta em 1000
- * linhas independente do `.range()`, então pedir mais que isso é ilusão: a lista voltaria
- * truncada e os vizinhos sairiam errados. Hoje há ~289 processos.
- */
-export const TETO_VIZINHOS = 1000
+/** O PostgREST corta cada resposta em `max_rows` (`supabase/config.toml`: 1000). É o
+ *  tamanho de cada bloco em `listarIdsGrid`. */
+const MAX_LINHAS_POR_BLOCO = 1000
 
 /**
- * Ids do grid na MESMA ordem e com os MESMOS filtros da lista, sem paginação — é o que
- * permite as setas ‹ › andarem exatamente como o grid mostra (inclusive atravessando
+ * Teto das setas: acima disso elas desabilitam em vez de mentir. Buscamos os ids em blocos
+ * de `MAX_LINHAS_POR_BLOCO` (o corte do PostgREST) até chegar aqui — com ~centenas de
+ * processos/mês isso dá ~1 ano+ de folga. Passando disso, o keyset/seek (com índices) vira
+ * um projeto próprio. NÃO subimos o `max_rows` global (toda query sem paginação passaria a
+ * poder devolver milhares de linhas).
+ */
+export const TETO_VIZINHOS = 5000
+
+/**
+ * Ids do grid na MESMA ordem e com os MESMOS filtros da lista, sem paginação de tela — é o
+ * que permite as setas ‹ › andarem exatamente como o grid mostra (inclusive atravessando
  * página). Usa `montarQueryGrid`, então não há como divergir da lista.
  *
- * Devolve também o `total` (count exato no banco, não o tamanho do que veio): é ele que
- * diz se o conjunto estourou o teto — `data.length` não serve, porque o PostgREST já
- * truncou em `max_rows` e o estouro passaria despercebido.
+ * Busca em BLOCOS de `MAX_LINHAS_POR_BLOCO` porque o PostgREST corta cada resposta nesse
+ * tamanho. O caso comum (conjunto < 1 bloco) faz **1 requisição**, idêntico a antes; só um
+ * conjunto grande faz alguns blocos a mais, e a busca para assim que um bloco vem incompleto
+ * (fim da lista) ou ao atingir `TETO_VIZINHOS`. A ordem estável entre blocos depende do
+ * desempate `.order('numero')` de `montarQueryGrid` — sem ele os blocos se sobreporiam.
+ *
+ * Devolve também o `total` (count exato no banco, não o tamanho do que veio): é ele que diz
+ * se o conjunto estourou o teto (`total > TETO_VIZINHOS` → o chamador desabilita as setas).
  */
 export async function listarIdsGrid(
   estado: EstadoGrid,
   tiposPorCampo: Record<string, ColunaGrid['tipo']>,
 ): Promise<{ ids: string[]; total: number }> {
   const supabase = await createServerSupabase()
-  const { data, error, count } = await montarQueryGrid(
-    supabase,
-    'id',
-    estado,
-    tiposPorCampo,
-  ).range(0, TETO_VIZINHOS - 1)
-  if (error) throw error
-  return {
-    ids: ((data ?? []) as unknown as { id: string }[]).map((r) => r.id),
-    total: count ?? 0,
+  const ids: string[] = []
+  let total = 0
+
+  for (let inicio = 0; inicio < TETO_VIZINHOS; inicio += MAX_LINHAS_POR_BLOCO) {
+    const fim = Math.min(inicio + MAX_LINHAS_POR_BLOCO, TETO_VIZINHOS) - 1
+    const { data, error, count } = await montarQueryGrid(
+      supabase,
+      'id',
+      estado,
+      tiposPorCampo,
+    ).range(inicio, fim)
+    if (error) throw error
+    if (count !== null) total = count
+    const bloco = ((data ?? []) as unknown as { id: string }[]).map((r) => r.id)
+    ids.push(...bloco)
+    // Bloco incompleto = fim da lista; nada além disso para buscar.
+    if (bloco.length < fim - inicio + 1) break
   }
+
+  return { ids, total }
 }
