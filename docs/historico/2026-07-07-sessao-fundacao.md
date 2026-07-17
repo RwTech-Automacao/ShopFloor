@@ -805,3 +805,50 @@ disso, mover o corte de 768→1024 (pra tablet-em-pé cair em card). Pacote méd
 
 **Dev×Prod:** decisão do usuário — por último, montado a partir de um retrato limpo da prod no
 momento de entrar dado real (migrar direto na prod só é perigoso com dado real; hoje é grátis errar).
+
+## 28. Responsividade — pacote final, EM PRODUÇÃO (2026-07-17)
+
+Fechou a responsividade do sistema. Push `c41dc33..dad629d` (4 commits), aprovado no smoke do
+usuário. Execução subagent-driven (Task 1 haiku, 2–3 sonnet), review por task + review amplo do
+branch (opus) = PRONTO PARA MERGE. Verde: tsc / lint (só o warning `<img>` pré-existente) / build
+(23 páginas). Spec/plano: `docs/superpowers/{specs,plans}/2026-07-17-responsividade*`. Sem migração,
+sem servidor — 100% apresentação.
+
+**Corte 768→1024 (`md`→`lg`) em todo o sistema.** Troca cirúrgica: só as duas classes que fazem o
+switch tabela↔card (`space-y-3 md:hidden`→`lg:hidden` no bloco de cards; `bg-card md:block`→
+`lg:block` no bloco de tabela). Nenhum outro `md:` foi tocado — em especial `md:grid-cols-4` da
+grade de fotos em `anexos-processo.tsx` ficou intacto. Efeito: tablet em pé agora cai em card, não
+mais na tabela.
+
+**Card do Grid de Processos** (`processos-grid.tsx`, abaixo de 1024). A tabela existente foi
+envolvida em `hidden lg:block`; um bloco `lg:hidden` novo traz (a) uma **barra de chips** que reusa
+o MESMO componente `MenuColuna` — nova prop `comoChip` estiliza o trigger como pílula (ativo/ordenando
+em vinho), zero lógica de filtro/ordenação nova; e (b) o subcomponente `CardProcesso`: Nº como título
++ Status como badge no topo, as demais colunas visíveis como lista `rótulo···valor` com tracejado
+(um `<span>` `flex-1 border-b border-dotted -translate-y-1` entre `dt` e `dd`), teto de 6 colunas
+(`CAP_COLUNAS_CARD`) + botão "ver mais/menos". O card inteiro é um `<Link>` com o MESMO `?g=&i=` das
+setas → abrir um processo e navegar com as setas continua funcionando. O rodapé de paginação ficou
+fora dos dois blocos (serve tabela e card).
+
+**Card das Etiquetas** (`etiquetas-cliente.tsx`). Diferente do que a spec inicial supôs, o card
+mobile das Etiquetas JÁ existia — o trabalho foi um upgrade: corte md→lg, **barra de chips** com os
+`MenuColunaEtiqueta` (`comoChip`), que torna o sub-filtro usável no celular (antes só no cabeçalho
+da tabela desktop), Status como badge no topo e o corpo convertido para o mesmo tracejado. O checkbox
+de seleção e toda a lógica de gerar etiqueta ficaram intactos.
+
+**Review amplo pegou 2 Menores (corrigidos no commit `dad629d`):** (1) regressão real — no card das
+Etiquetas o motivo pelo qual um item é inelegível passou a truncar em 55% (`truncate`), escondendo do
+usuário POR QUE o checkbox está desabilitado; agora esse caso quebra linha e aparece inteiro; (2)
+plural "ver mais 1 coluna" (era "1 colunas").
+
+**Dívida Menor aceita (usuário mandou manter):** o botão "ver mais" fica dentro do `<Link>` do card
+do Grid — conteúdo interativo dentro de `<a>` é HTML tecnicamente inválido, mas funciona porque o
+`onClick` faz `e.preventDefault()` (o Next `Link` respeita `defaultPrevented`). Alternativa registrada
+se um dia incomodar: padrão stretched-link (card vira `<div>`, um `<a absolute inset-0>` cobre a área
+de navegação, o botão fica irmão com `z-10`). Também ficou anotado que a string Tailwind da pílula
+está duplicada em `MenuColuna` e `MenuColunaEtiqueta` — candidata a um helper compartilhado se a
+duplicação virar risco de divergência.
+
+**Lição:** ao converter uma lista `dl` densa para um layout mais enxuto, cuidado com `truncate` em
+campos que carregam informação de estado (o "porquê" de algo estar bloqueado) — economizar espaço
+escondendo a explicação é uma regressão silenciosa, não um ganho de layout.
