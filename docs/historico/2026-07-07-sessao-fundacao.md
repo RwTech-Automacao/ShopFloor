@@ -719,3 +719,41 @@ travados enquanto salva. Menores: `.order('campo')` desempata uma linha órfã r
 `next dev` está de pé — o dev sozinho segura ~3,1 GB. Hábito: **matar o dev antes do build**,
 ou usar `NODE_OPTIONS=--max-old-space-size=4096`. Isso é custo de desenvolvimento apenas: em
 produção (Vercel, serverless) o app roda pré-compilado, sem servidor segurando RAM.
+
+## 25. Grid Fase 3 — setas seguindo o grid, EM PRODUÇÃO (2026-07-17)
+
+Fecha o item 2 do roadmap (grid completo: Fase 1 lista, Fase 2 colunas, Fase 3 setas).
+Push `8463b6b..598fea2`; migração 0023 aplicada **depois** do deploy.
+
+**O problema:** as setas ‹ › do detalhe **mentiam**. Chamavam a RPC `processos_vizinhos`
+(0016), duplamente obsoleta: ORDER BY fixo da ordem do accordion por mês (que não existe
+desde a Fase 1) e parâmetros `p_busca`/`p_status` da lista antiga. E o grid linkava sem
+contexto nenhum — então elas navegavam TUDO, na ordem velha, ignorando filtro e ordenação.
+
+**A solução:** o link da linha leva `?g=<estado do grid>&i=<posição global>`; o detalhe
+decodifica (whitelist do catálogo), busca os ids com a **mesma consulta da lista**
+(`montarQueryGrid`, extraído e compartilhado — divergir virou estruturalmente impossível) e
+um domínio puro (`vizinhosDaLista`, TDD) calcula os vizinhos. Sem `?g=` cai no padrão do
+grid (setas vivas). Se o processo **sai do filtro** (você o finalizou), usa a posição
+guardada: a lista encolheu 1, então quem estava em `i+1` está em `i` → é o próximo da fila.
+Atravessa página naturalmente. RPC aposentada (0023).
+
+**O review final pegou 2 Importantes que o controller deixou passar:**
+1. **O teto de 5000 era ficção.** O PostgREST tem `max_rows = 1000` e **corta a resposta**,
+   então o guard por `ids.length` **nunca dispararia**: acima de 1000 processos a lista viria
+   truncada e as setas morreriam em silêncio — o caso exato que o teto existia para cobrir.
+   Agora o teto é 1000 (amarrado ao `max_rows`) e a detecção usa o **`count` do banco**.
+2. **Ordenação sem desempate.** Sem chave de desempate, colunas com valores repetidos
+   (status, fornecedor, data) saem em ordem não-determinística: a consulta paginada (top-N)
+   e a de ids (sort completo) podiam resolver os empates diferente → a seta levaria ao
+   processo errado, quebrando a promessa da feature. A RPC antiga *tinha* `numero desc` como
+   desempate — foi uma perda de determinismo. **Bônus: o fix conserta a paginação do grid**,
+   que desde a Fase 1 podia repetir/omitir linha entre páginas (bug pré-existente em prod).
+
+Menores corrigidos: fail-safe passou a cobrir `carregarCatalogoColunas` (falha nele derrubava
+o detalhe com 500); "Voltar para Processos" preserva ordem/filtros; `cache()` em
+`carregarCamposFormulario` (passara a rodar 2x por página).
+
+**Lição de ordem de deploy:** o plano mandava aplicar a migração após o review, mas a RPC
+ainda era chamada pelo código **em produção** — dropar antes do push desabilitaria as setas à
+toa. Ordem certa (executada): **push → deploy → DROP**. Janela zero.
