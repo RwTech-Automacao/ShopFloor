@@ -15,11 +15,14 @@ desktop = tabela).
   md:block` no bloco da tabela): toda a Configurações (Campos, Criticidade, Listas, Logs, NQA,
   Perfis, Usuários), Etiquetas (a busca), histórico de etiquetas, Importações; o shell já vira
   drawer.
-- **Só 2 telas não têm card:**
-  1. **Grid de Processos** (`processos-grid.tsx`) — só tabela com scroll horizontal.
-  2. **Tabela de resultados do sub-filtro das Etiquetas** (`etiquetas-cliente.tsx`) — a busca
-     já é responsiva; a grade de resultados, não.
+- **Correção (descoberta ao explorar o código):** as Etiquetas **já têm** um card mobile
+  completo (checkbox de seleção + Nº + Status + Código/Pedido/Doc/Volumes/Prévia,
+  iterando `linhasVisiveis`). Então **só o Grid de Processos** (`processos-grid.tsx`) está
+  de fato sem card. O card das Etiquetas existe mas: usa o corte `md`, e **não** tem os
+  menus de sub-filtro no mobile (o `MenuColunaEtiqueta` só vive no cabeçalho da tabela).
 - **Corte atual = 768px (`md`).** Tablet em pé (768) cai na tabela.
+- **~9 telas de Configurações + Importações** já têm card **simples** (rótulo à esquerda,
+  valor à direita, sem tracejado/ver mais).
 
 ## Decisões (aprovadas)
 
@@ -37,10 +40,16 @@ desktop = tabela).
    cada um sendo o **mesmo `MenuColuna`** que já existe no desktop (ordenar + busca + checkboxes).
    Chip com filtro/ordenação ativo fica destacado. **Zero lógica nova** — só relocação do menu.
 4. **Rodapé de paginação** reusado (já fica fora da `<Table>`, então serve os dois modos).
-5. **Card das Etiquetas (sub-filtro):** colunas fixas (Nº, Status, Código, Pedido, Doc, Volumes,
-   Prévia) como `rótulo···valor`; o **checkbox de seleção** (para gerar etiqueta) continua no
-   card, no topo junto do Nº. Os `MenuColunaEtiqueta` viram uma barra de chips análoga à do Grid.
-6. **Sem TDD** — é apresentação. Garantia por build + smoke.
+5. **Estilo novo (tracejado + "ver mais" + chips) só nas 2 GRADES** (Grid de Processos e
+   Etiquetas — telas de tabela pesada com muitas colunas). As **~9 telas de Configurações /
+   Importações mantêm o card simples** que já têm (poucas colunas fixas; retrofit seria
+   retrabalho por estética). Consistência entre as duas grades; simplicidade nas de config.
+6. **Etiquetas copia o Grid:** o card já existe — o upgrade é (a) converter os `dl` para o
+   estilo `rótulo···valor` com tracejado e (b) adicionar a **barra de chips** com os
+   `MenuColunaEtiqueta`, tornando o sub-filtro **usável no celular** (hoje só no desktop). O
+   checkbox de seleção e a lógica de gerar **não mudam**. ("Ver mais" não dispara — são ~5
+   colunas, abaixo do teto de 6.)
+7. **Sem TDD** — é apresentação. Garantia por build + smoke.
 
 ## Arquitetura
 
@@ -74,14 +83,13 @@ O componente já é client e já recebe `colunas` (visíveis), `linhas`, `estado
   - **Vazio:** "Nenhum processo encontrado para os filtros aplicados." (igual à tabela).
 - **Rodapé** de paginação: fica fora dos dois blocos (serve ambos).
 
-### Sub-filtro das Etiquetas — `etiquetas-cliente.tsx`
+### Etiquetas — `etiquetas-cliente.tsx` (upgrade do card existente)
 
-- Tabela de resultados envolvida em `hidden lg:block` (hoje já tem `md:` na parte da busca —
-  aqui é a **grade de resultados**).
-- Bloco de card `lg:hidden`: barra de chips com os `MenuColunaEtiqueta`; para cada resultado, um
-  card com o **checkbox de seleção** + `Nº` + badge de status no topo, e Código/Pedido/Doc/
-  Volumes/Prévia como `rótulo···valor`. O clique no checkbox seleciona (para gerar); o card não
-  é link (a tela de etiquetas não navega para o detalhe).
+- O corte da tabela/card de resultados já existe (`md:` → `lg:` pela Task do corte).
+- **Adicionar** ao bloco de card (`lg:hidden`, já existente): uma **barra de chips** no topo
+  com os `MenuColunaEtiqueta` (um por coluna do sub-filtro), tornando ordenar/filtrar usável no
+  celular. **Converter** os `dl` do card para o estilo `rótulo···valor` com tracejado (leader
+  dots). O **checkbox de seleção**, o Nº, o badge de status e a lógica de gerar **não mudam**.
 
 ### Leader dots (tracejado)
 
