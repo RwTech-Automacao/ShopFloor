@@ -4,6 +4,7 @@ import {
   codificarEstadoGrid,
   decodificarEstadoGrid,
   faixaDoMes,
+  rotulosOrdenacao,
   type EstadoGrid,
 } from '../estado-grid'
 
@@ -83,5 +84,35 @@ describe('faixaDoMes', () => {
   })
   it('valor inválido não tem faixa', () => {
     expect(faixaDoMes('abacaxi')).toBeNull()
+  })
+})
+
+describe('rotulosOrdenacao', () => {
+  it('texto → alfabético', () => {
+    expect(rotulosOrdenacao('texto')).toEqual({
+      asc: 'Ordenar de A a Z',
+      desc: 'Ordenar de Z a A',
+    })
+  })
+
+  it('lista → alfabético (é texto de uma lista suspensa)', () => {
+    expect(rotulosOrdenacao('lista')).toEqual({
+      asc: 'Ordenar de A a Z',
+      desc: 'Ordenar de Z a A',
+    })
+  })
+
+  it('numero → menor/maior (dizer "A a Z" num número não faz sentido)', () => {
+    expect(rotulosOrdenacao('numero')).toEqual({
+      asc: 'Do menor para o maior',
+      desc: 'Do maior para o menor',
+    })
+  })
+
+  it('data → mais antiga/mais recente', () => {
+    expect(rotulosOrdenacao('data')).toEqual({
+      asc: 'Da mais antiga para a mais recente',
+      desc: 'Da mais recente para a mais antiga',
+    })
   })
 })

@@ -3,6 +3,23 @@ import { inicioProximoMes } from './agrupamento-mes'
 /** Filtro de uma coluna: busca por texto e/ou valores marcados no checkbox (estilo Excel). */
 export type FiltroColuna = { texto?: string; valores?: string[] }
 
+/** Tipos de coluna do grid (espelha `configuracao_campos.tipo` + as de sistema). */
+export type TipoColuna = 'texto' | 'lista' | 'numero' | 'data'
+
+/**
+ * Rótulos das duas ações de ordenação, na língua da coluna — como o Excel faz.
+ * A ordenação em si sempre funcionou (o Postgres ordena número como número e data
+ * como data); o que faltava era o texto falar a língua certa: "A a Z" não significa
+ * nada numa coluna de Número ou de Data Chegada.
+ */
+export function rotulosOrdenacao(tipo: TipoColuna): { asc: string; desc: string } {
+  if (tipo === 'numero') return { asc: 'Do menor para o maior', desc: 'Do maior para o menor' }
+  if (tipo === 'data') {
+    return { asc: 'Da mais antiga para a mais recente', desc: 'Da mais recente para a mais antiga' }
+  }
+  return { asc: 'Ordenar de A a Z', desc: 'Ordenar de Z a A' }
+}
+
 export interface EstadoGrid {
   ordenar: string
   direcao: 'asc' | 'desc'

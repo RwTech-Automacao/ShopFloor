@@ -22,6 +22,7 @@ import { rotuloMes } from '@/modules/recebimento/domain/agrupamento-mes'
 import {
   TAMANHOS_PAGINA,
   codificarEstadoGrid,
+  rotulosOrdenacao,
   type EstadoGrid,
   type FiltroColuna,
 } from '@/modules/recebimento/domain/estado-grid'
@@ -216,6 +217,9 @@ function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar }: Me
   // pelo checkbox — oferecer busca nelas geraria erro 400 no banco.
   const buscaTextual = coluna.tipo === 'texto' || coluna.tipo === 'lista'
 
+  // "A a Z" não diz nada numa coluna de Número ou Data — o rótulo segue o tipo.
+  const rotulos = rotulosOrdenacao(coluna.tipo)
+
   return (
     <Popover onOpenChange={aoAbrir}>
       <PopoverTrigger
@@ -230,10 +234,10 @@ function MenuColuna({ coluna, estado, ativo, ordenando, direcao, onAplicar }: Me
       <PopoverContent className="w-64 p-0" align="start">
         <div className="flex flex-col">
           <button type="button" className="px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => ordenar('asc')}>
-            ↑ Ordenar de A a Z
+            ↑ {rotulos.asc}
           </button>
           <button type="button" className="px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => ordenar('desc')}>
-            ↓ Ordenar de Z a A
+            ↓ {rotulos.desc}
           </button>
           <div className="border-t border-border" />
           {buscaTextual && (
