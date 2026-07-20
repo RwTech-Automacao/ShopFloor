@@ -93,9 +93,10 @@ export function EtiquetasCliente() {
   const [gerando, startGeracao] = useTransition()
 
   const [subFiltro, setSubFiltro] = useState<SubFiltroEtiquetas>(SUB_FILTRO_PADRAO)
+  const [ocultarIncompletos, setOcultarIncompletos] = useState(false)
 
-  /** Linhas exibidas = resultado da busca principal com o sub-filtro aplicado. */
-  const linhasVisiveis = useMemo(
+  /** Resultados da busca principal com o sub-filtro (chips) aplicado. */
+  const subFiltradas = useMemo(
     () => aplicarSubFiltro(resultados ?? [], subFiltro, ACESSORES),
     [resultados, subFiltro],
   )
@@ -123,6 +124,22 @@ export function EtiquetasCliente() {
     for (const processo of resultados ?? []) mapa.set(processo.id, elegivelParaEtiqueta(processo))
     return mapa
   }, [resultados])
+
+  /**
+   * Linhas exibidas = sub-filtradas e — se "Ocultar incompletos" estiver ligado — só os
+   * elegíveis (que podem gerar etiqueta). Tabela e cards iteram esta lista. Precisa ficar
+   * DEPOIS de `elegibilidades` na ordem de declaração.
+   */
+  const linhasVisiveis = useMemo(
+    () =>
+      ocultarIncompletos
+        ? subFiltradas.filter((p) => elegibilidades.get(p.id)?.elegivel)
+        : subFiltradas,
+    [subFiltradas, ocultarIncompletos, elegibilidades],
+  )
+
+  /** Quantos incompletos o toggle está escondendo agora (0 quando desligado). */
+  const ocultos = subFiltradas.length - linhasVisiveis.length
 
   function buscar() {
     setErroBusca(null)
@@ -226,16 +243,26 @@ export function EtiquetasCliente() {
       {resultados !== null && (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={selecionarTodosElegiveis}>
                 Selecionar todos (elegíveis)
               </Button>
               <Button variant="outline" size="sm" onClick={limparSelecao}>
                 Limpar seleção
               </Button>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground select-none">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-enterplak"
+                  checked={ocultarIncompletos}
+                  onChange={(e) => setOcultarIncompletos(e.target.checked)}
+                />
+                Ocultar incompletos
+              </label>
             </div>
             <span className="text-sm text-muted-foreground">
               {selecionados.size} selecionado(s) de {linhasVisiveis.length} visível(is)
+              {ocultos > 0 && ` · ${ocultos} incompleto(s) oculto(s)`}
             </span>
           </div>
 
