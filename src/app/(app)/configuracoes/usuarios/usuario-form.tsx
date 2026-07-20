@@ -25,7 +25,7 @@ import {
 import {
   criarUsuario,
   editarUsuario,
-  redefinirSenha,
+  resetarSenha,
   alternarAtivo,
 } from '@/modules/usuarios/application/actions'
 import type { UsuarioRow } from '@/modules/usuarios/infra/usuario-admin-repository'
@@ -45,19 +45,28 @@ export function UsuarioForm({ usuario, perfis }: UsuarioFormProps) {
   const action = usuario ? editarUsuario : criarUsuario
   const [state, formAction, pending] = useActionState(action, undefined)
 
-  // Fecha o dialog quando a action retorna sucesso. Ajuste de estado durante
-  // a renderização (não em um efeito) evita o cascading render apontado
-  // pelo eslint-plugin-react-hooks (set-state-in-effect).
+  // No cadastro, o sucesso traz a senha temporária — mantemos o dialog aberto
+  // para mostrá-la uma vez. Na edição (sem temporária), fecha como antes.
+  const [senhaTemp, setSenhaTemp] = useState<string | null>(null)
   const [estadoProcessado, setEstadoProcessado] = useState(state)
   if (state !== estadoProcessado) {
     setEstadoProcessado(state)
-    if (state && 'ok' in state && state.ok) setOpen(false)
+    if (state && 'ok' in state && state.ok) {
+      if (state.senhaTemporaria) setSenhaTemp(state.senhaTemporaria)
+      else setOpen(false)
+    }
   }
 
   const ehEdicao = Boolean(usuario)
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(novoAberto) => {
+        setOpen(novoAberto)
+        if (!novoAberto) setSenhaTemp(null)
+      }}
+    >
       <DialogTrigger
         render={
           ehEdicao ? (
@@ -76,79 +85,96 @@ export function UsuarioForm({ usuario, perfis }: UsuarioFormProps) {
         <DialogHeader>
           <DialogTitle>{ehEdicao ? 'Editar usuário' : 'Novo usuário'}</DialogTitle>
         </DialogHeader>
-        <form action={formAction} className="flex flex-col gap-4">
-          {ehEdicao && <input type="hidden" name="id" value={usuario?.id} />}
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="nome">Nome</Label>
-            <Input
-              id="nome"
-              name="nome"
-              placeholder="Nome do usuário"
-              defaultValue={usuario?.nome ?? ''}
-              required
-            />
+        {senhaTemp ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Usuário criado. Entregue a senha temporária abaixo — ela{' '}
+              <strong>não será exibida de novo</strong>. No primeiro acesso, a pessoa vai
+              definir a própria senha.
+            </p>
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2">
+              <code className="font-mono text-base">{senhaTemp}</code>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => navigator.clipboard?.writeText(senhaTemp)}
+              >
+                Copiar
+              </Button>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                className="bg-enterplak hover:bg-enterplak-700"
+                onClick={() => setOpen(false)}
+              >
+                Concluir
+              </Button>
+            </DialogFooter>
           </div>
+        ) : (
+          <form action={formAction} className="flex flex-col gap-4">
+            {ehEdicao && <input type="hidden" name="id" value={usuario?.id} />}
 
-          {!ehEdicao && (
-            <>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="nome">Nome</Label>
+              <Input
+                id="nome"
+                name="nome"
+                placeholder="Nome do usuário"
+                defaultValue={usuario?.nome ?? ''}
+                required
+              />
+            </div>
+
+            {!ehEdicao && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="email">E-mail</Label>
                 <Input id="email" name="email" type="email" placeholder="usuario@empresa.com" required />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="senha">Senha</Label>
-                <Input
-                  id="senha"
-                  name="senha"
-                  type="password"
-                  placeholder="Mínimo 6 caracteres"
-                  minLength={6}
-                  required
-                />
-              </div>
-            </>
-          )}
+            )}
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="perfilId">Perfil</Label>
-            <Select name="perfilId" defaultValue={usuario?.perfis.id} required>
-              <SelectTrigger id="perfilId" className="w-full">
-                <SelectValue placeholder="Selecione um perfil">
-                  {(value: string | null) =>
-                    value
-                      ? (perfis.find((p) => p.id === value)?.nome ?? '')
-                      : 'Selecione um perfil'
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {perfis.map((perfil) => (
-                  <SelectItem key={perfil.id} value={perfil.id}>
-                    {perfil.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="perfilId">Perfil</Label>
+              <Select name="perfilId" defaultValue={usuario?.perfis.id} required>
+                <SelectTrigger id="perfilId" className="w-full">
+                  <SelectValue placeholder="Selecione um perfil">
+                    {(value: string | null) =>
+                      value
+                        ? (perfis.find((p) => p.id === value)?.nome ?? '')
+                        : 'Selecione um perfil'
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {perfis.map((perfil) => (
+                    <SelectItem key={perfil.id} value={perfil.id}>
+                      {perfil.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          {ehEdicao && (
-            <label
-              htmlFor="ativo"
-              className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm"
-            >
-              Ativo
-              <Switch id="ativo" name="ativo" defaultChecked={usuario?.ativo} />
-            </label>
-          )}
+            {ehEdicao && (
+              <label
+                htmlFor="ativo"
+                className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm"
+              >
+                Ativo
+                <Switch id="ativo" name="ativo" defaultChecked={usuario?.ativo} />
+              </label>
+            )}
 
-          {state && 'erro' in state && <p className="text-sm text-red-600">{state.erro}</p>}
-          <DialogFooter>
-            <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
-              {pending ? 'Salvando...' : 'Salvar'}
-            </Button>
-          </DialogFooter>
-        </form>
+            {state && 'erro' in state && <p className="text-sm text-red-600">{state.erro}</p>}
+            <DialogFooter>
+              <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
+                {pending ? 'Salvando...' : 'Salvar'}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -163,19 +189,14 @@ export function RedefinirSenhaButton({ id, nome }: RedefinirSenhaButtonProps) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
-  const [senha, setSenha] = useState('')
+  const [senhaTemp, setSenhaTemp] = useState<string | null>(null)
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  function resetar() {
     setErro(null)
     startTransition(async () => {
-      const resultado = await redefinirSenha(id, senha)
-      if ('erro' in resultado) {
-        setErro(resultado.erro)
-      } else {
-        setSenha('')
-        setOpen(false)
-      }
+      const resultado = await resetarSenha(id)
+      if ('erro' in resultado) setErro(resultado.erro)
+      else setSenhaTemp(resultado.senhaTemporaria ?? null)
     })
   }
 
@@ -186,41 +207,68 @@ export function RedefinirSenhaButton({ id, nome }: RedefinirSenhaButtonProps) {
         setOpen(novoAberto)
         if (!novoAberto) {
           setErro(null)
-          setSenha('')
+          setSenhaTemp(null)
         }
       }}
     >
       <DialogTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label={`Redefinir senha de ${nome}`}>
+          <Button variant="ghost" size="icon-sm" aria-label={`Resetar senha de ${nome}`}>
             <KeyRoundIcon />
           </Button>
         }
       />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Redefinir senha de {nome}</DialogTitle>
+          <DialogTitle>Resetar senha de {nome}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="nova-senha">Nova senha</Label>
-            <Input
-              id="nova-senha"
-              type="password"
-              placeholder="Mínimo 6 caracteres"
-              minLength={6}
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-              required
-            />
+        {senhaTemp ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Senha temporária gerada. Entregue-a — ela{' '}
+              <strong>não será exibida de novo</strong>. {nome} vai definir a própria senha no
+              próximo acesso.
+            </p>
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2">
+              <code className="font-mono text-base">{senhaTemp}</code>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => navigator.clipboard?.writeText(senhaTemp)}
+              >
+                Copiar
+              </Button>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                className="bg-enterplak hover:bg-enterplak-700"
+                onClick={() => setOpen(false)}
+              >
+                Concluir
+              </Button>
+            </DialogFooter>
           </div>
-          {erro && <p className="text-sm text-red-600">{erro}</p>}
-          <DialogFooter>
-            <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
-              {pending ? 'Salvando...' : 'Redefinir'}
-            </Button>
-          </DialogFooter>
-        </form>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Isto gera uma nova senha temporária para {nome}. A senha atual deixa de valer e a
+              pessoa terá de definir uma nova no próximo acesso.
+            </p>
+            {erro && <p className="text-sm text-red-600">{erro}</p>}
+            <DialogFooter>
+              <Button
+                type="button"
+                disabled={pending}
+                className="bg-enterplak hover:bg-enterplak-700"
+                onClick={resetar}
+              >
+                {pending ? 'Gerando...' : 'Gerar senha temporária'}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
