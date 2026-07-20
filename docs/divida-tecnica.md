@@ -57,12 +57,21 @@ total determinística, o keyset pula/repete linhas.
 
 Independentes do número de processos — seriam iguais com 10 ou 1 milhão de linhas.
 
-### 3. CVE do `xlsx` / SheetJS — **segurança**
-A lib que lê as planilhas de importação (SheetJS community) tem vulnerabilidades conhecidas sem
-correção na versão gratuita (prototype pollution, ReDoS). **Mitigado hoje** pelo modelo de
-confiança: só usuário interno autenticado importa arquivos que ele mesmo montou.
-**Se retomar:** trocar de biblioteca ou migrar pra versão paga/mantida, ou validar/sandbox do
-parse. Algumas horas.
+### 3. CVE do `xlsx` / SheetJS — **segurança** (risco BAIXO, adiado conscientemente)
+`xlsx@0.18.5` tem 2 CVEs (Prototype Pollution *high* + ReDoS *moderate*). O `npm audit` diz
+"No fix available" só porque a SheetJS **abandonou o npm**; a correção EXISTE nas versões novas
+(0.20.x) distribuídas pelo **CDN próprio** (`cdn.sheetjs.com`) — é quase drop-in (mesma API).
+**Por que o risco é baixo hoje:** o parse roda **100% no navegador** (`ler-planilha.ts` — o
+arquivo bruto nunca vai ao servidor), só **usuário interno logado** importa, as planilhas são
+quase todas **feitas internamente** (fornecedor externo é raro), e as falhas só disparam com um
+arquivo **forjado de propósito** (Excel normal não dispara). Blast radius = a própria aba de quem
+subiu; não vaza pro banco nem pra outros usuários. NÃO tem a ver com "pré-dado-real" (é client-side).
+**Gatilho pra retomar (observável, não "quando incomodar"):** (a) se passarem a importar planilhas
+de **origem externa com frequência**; ou (b) **oportunisticamente** — se mexermos no código de
+importação por outra feature, emendar o upgrade junto (custo marginal ~zero).
+**Como corrigir:** `npm install https://cdn.sheetjs.com/xlsx-0.20.x/xlsx-0.20.x.tgz` → rodar os
+testes de `ler-planilha` + smoke do wizard. ~30–45 min. Pegadinha: a dep passa a vir de URL de
+tarball (a Vercel aceita).
 
 ### 4. `<button>` dentro de `<Link>` no card do Grid — **acessibilidade** ✅ RESOLVIDO 2026-07-17
 ~~Conteúdo interativo dentro de `<a>` é HTML inválido; funcionava via `preventDefault`.~~
