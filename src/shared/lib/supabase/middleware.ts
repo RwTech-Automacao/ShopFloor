@@ -32,19 +32,22 @@ export async function updateSession(request: NextRequest) {
   // encerradas aqui para não prender o usuário em loop de redirecionamento
   // (o layout do app redireciona sessões inválidas para /login).
   let appUserValido = false
+  let senhaProvisoria = false
   if (user) {
     const { data: appUser } = await supabase
       .from('usuarios')
-      .select('ativo, perfil_id')
+      .select('ativo, perfil_id, senha_provisoria')
       .eq('id', user.id)
       .maybeSingle()
     appUserValido = appUser?.ativo === true && !!appUser?.perfil_id
+    senhaProvisoria = appUser?.senha_provisoria === true
     if (!appUserValido) {
       await supabase.auth.signOut()
     }
   }
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login')
+  const isDefinirSenha = request.nextUrl.pathname.startsWith('/definir-senha')
 
   const redirectTo = (pathname: string) => {
     const url = request.nextUrl.clone()
@@ -57,6 +60,10 @@ export async function updateSession(request: NextRequest) {
 
   if (!appUserValido && !isAuthRoute) return redirectTo('/login')
   if (appUserValido && isAuthRoute) return redirectTo('/home')
+  // Conta com senha provisória fica presa em /definir-senha até trocar.
+  if (appUserValido && senhaProvisoria && !isDefinirSenha) return redirectTo('/definir-senha')
+  // Quem já trocou não deve mais ver a tela de definição.
+  if (appUserValido && !senhaProvisoria && isDefinirSenha) return redirectTo('/home')
 
   return response
 }
