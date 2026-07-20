@@ -48,7 +48,7 @@ export default async function ImportacoesPage() {
                 <TableCell className="whitespace-nowrap text-muted-foreground">
                   {formatadorData.format(new Date(importacao.created_at))}
                 </TableCell>
-                <TableCell>{importacao.usuarios?.nome || '—'}</TableCell>
+                <TableCell>{importacao.usuario_nome || '—'}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -81,7 +81,7 @@ export default async function ImportacoesPage() {
               </div>
               <div className="flex gap-2">
                 <dt className="w-28 shrink-0 text-muted-foreground">Usuário</dt>
-                <dd className="min-w-0 flex-1">{importacao.usuarios?.nome || '—'}</dd>
+                <dd className="min-w-0 flex-1">{importacao.usuario_nome || '—'}</dd>
               </div>
             </dl>
           </div>

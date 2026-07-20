@@ -7,7 +7,7 @@ export interface ImportacaoRow {
   total_processos_criados: number
   created_at: string
   usuario_id: string | null
-  usuarios: { nome: string } | null
+  usuario_nome: string
 }
 
 interface RpcImportarProcessosResultado {
@@ -49,7 +49,7 @@ export async function listarImportacoes(): Promise<ImportacaoRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('importacoes')
-    .select('id, arquivo_nome, formato, total_processos_criados, created_at, usuario_id, usuarios(nome)')
+    .select('id, arquivo_nome, formato, total_processos_criados, created_at, usuario_id, usuario_nome')
     .order('created_at', { ascending: false })
 
   if (error) throw error
