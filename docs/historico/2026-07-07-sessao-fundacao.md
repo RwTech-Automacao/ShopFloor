@@ -852,3 +852,112 @@ duplicação virar risco de divergência.
 **Lição:** ao converter uma lista `dl` densa para um layout mais enxuto, cuidado com `truncate` em
 campos que carregam informação de estado (o "porquê" de algo estar bloqueado) — economizar espaço
 escondendo a explicação é uma regressão silenciosa, não um ganho de layout.
+
+## 29. Cada usuário define a própria senha (2026-07-20)
+
+Trocamos o fluxo "o gestor cria a conta **com** senha e passa na mão" por **senha temporária
+gerada + troca obrigatória no 1º acesso**, com reset pelo gestor. Brainstorm definiu o ponto
+crítico: quase todo fluxo de "defina sua senha" depende de **email**, e no chão de fábrica os
+operadores têm email mas só os gestores checam com facilidade — então o desenho é **sem email**.
+Também travamos "senha temporária **por pessoa**" (não uma padrão única), porque uma padrão
+conhecida deixa qualquer um entrar numa conta ainda não ativada e sequestrá-la antes do dono.
+
+**Como ficou.** Coluna `usuarios.senha_provisoria` (default `true` → conta nova nasce provisória
+pelo trigger `handle_new_user`, sem código extra; backfill `false` nas 6 contas existentes pra o
+admin não travar). Funções puras com TDD (`gerarSenhaTemporaria` — `crypto`, alfabeto sem
+ambíguos `0/O/1/l/I`, 10 chars; `validarForcaSenha` — mínimo 8). No cadastro/reset o sistema gera
+a temporária e a devolve **uma vez** pra UI mostrar (com Copiar + aviso "não será exibida de
+novo"); o form de Usuários perdeu o campo de senha. A pessoa troca com o **próprio cliente
+logado** (`auth.updateUser`) numa rota nova **`/definir-senha`** (fora do grupo `(app)`, sem
+menu). O **middleware** carrega `senha_provisoria` e prende a conta provisória em `/definir-senha`
+até ela trocar (e manda de volta pra `/home` quem já trocou) — como o middleware roda em toda
+rota não-estática, isso cobre até os POSTs de Server Action.
+
+**Segurança.** `senha_provisoria=false` só é setado pela própria pessoa (action escopada a
+`sessao.usuarioId`, via service-role porque o operador não tem `administrar`) ou pelo reset do
+gestor (`=true`). A coluna nunca entra em `atualizarUsuario` (cuja RLS exige `administrar`). A
+senha nunca é registrada em log. `resetarSenha(id)` mantém o gate de `administrar`.
+
+**Execução.** Subagent-driven, 5 tasks (migração+domínio TDD → backend → middleware+tela →
+form → verificação), review individual limpo em cada uma. **Detalhe de processo:** as Tasks 2–4
+formam uma unidade compilável — a Task 2 remove `redefinirSenha` (que o form ainda importava), e
+o `tsc` só fica 100% verde na Task 4; avisei os revisores das Tasks 2 e 3 pra não tratarem o erro
+esperado do form como defeito. O **review amplo final em subagente foi pulado a pedido do
+usuário** (as 4 tasks já tinham review limpo); como controller, confirmei inline os riscos-chave
+(ordem de deploy, priv-esc, enforcement). tsc/lint/build/**195 testes** verdes. A migração `0024`
+foi aplicada por mim na prod **antes** do push (o middleware faz `select senha_provisoria` — se a
+coluna não existisse, derrubaria as rotas; adicionar coluna não quebra o código antigo, então
+migração-antes-do-código é a ordem segura).
+
+**Lição:** senha temporária **por pessoa** é quase o mesmo trabalho que uma padrão única, mas
+fecha um furo real (sequestro de conta não ativada) — o "mais simples" às vezes é o inseguro. E o
+custo do fluxo self-service raramente é a UI; é a **infraestrutura de email** — quando ela não é
+confiável pro público-alvo, "temporária + troca no 1º acesso" entrega o mesmo valor sem depender
+de nada externo.
+
+## 29. Refactors pós-responsividade + limpeza do banco (2026-07-20)
+
+**Refactors (EM PRODUÇÃO, push `8017fec..a38e95f`):** stretched-link no card do Grid (card vira
+`<div>` + `<a absolute inset-0>` cobrindo a navegação + "ver mais" como `<button>` irmão `z-10` —
+removeu o interativo aninhado em `<a>` e o `preventDefault` frágil) e helper `classeChipTrigger` em
+`src/lib/chip-trigger.ts` (tirou a className da pílula duplicada dos dois grids). Criado
+`docs/divida-tecnica.md` — registro vivo do trabalho futuro de escala (índices, keyset — gatilho
+~5–10k processos), CVE do `xlsx` (baixo risco: parse client-side, uso interno; correção via CDN da
+SheetJS quando/se importar planilha externa com frequência) e Dev×Prod (às vésperas de dado real).
+
+**Toggle "Ocultar incompletos" nas Etiquetas (EM PRODUÇÃO, push `a38e95f..e981a5d`):** esconde os
+processos inelegíveis (que não geram etiqueta) da tabela e dos cards, com contador dos ocultos,
+desligado por padrão. Filtro client-side sobre o sub-filtro. Feito INLINE (1 arquivo, ~30 linhas) —
+lembrete de quando inline vs subagent-driven: inline compensa em mudança pequena/acoplada com o
+contexto já carregado; subagent-driven em trabalho grande/multi-arquivo/independente.
+
+**Banco de teste zerado (prod, só dado de teste):** apagados os transacionais — processos (289→0),
+importações (7→0), etiquetas geradas (5→0), anexos (já 0), padrões de importação (1→0); sequence
+`processos_numero_seq` reiniciada em 1. Mantidos: configuração e as 6 contas. **Logs (288→0)** só
+puderam ser apagados porque o USUÁRIO rodou o SQL no SQL Editor do Supabase (role `postgres`) — os
+logs são imutáveis por design (triggers `logs_no_delete/update/truncate`), e o classificador do
+Claude Code BLOQUEOU (corretamente) eu mesmo desligar o trigger pra apagar. Depois de apagar, os 3
+triggers foram religados (verificado). **Lição:** controle de auditoria que a gente construiu de
+propósito não deve ser contornado automaticamente — mexer nele é ação de humano, e o classificador
+reforça isso.
+
+**Segurança (auditoria de leitura):** injection/`DROP TABLE` estão cobertos estruturalmente — todo
+dado do usuário vira parâmetro do PostgREST ou arg tipado de função; o único SQL dinâmico
+(`valores_distintos_processos`) valida coluna contra `information_schema`; DDL não é exposto pela
+API REST; papéis da API não são donos/superuser; 14 tabelas com RLS; logs imutáveis. Lacunas (não
+críticas, anotadas): sem headers de segurança HTTP (CSP etc. — ganho fácil ~1h), sem rate limiting
+nas Server Actions, sem MFA. IP allowlist: só faz sentido na conexão direta do Postgres (feature
+paga do Supabase), não no endpoint REST que o navegador usa.
+
+## 30. Cada usuário define a própria senha (LOCAL, aguardando smoke — 2026-07-20)
+
+**Estado:** 5 commits locais `19479ed..166b639`, **não pushados**; migração **0024 aplicada na prod**
+(controller; backfill verificado — as 6 contas existentes ficaram `senha_provisoria=false`, admin
+não trava). tsc/lint/build/195 testes verdes.
+
+**O quê:** troca "gestor cria conta COM senha" por **senha temporária gerada pelo sistema + troca
+obrigatória no 1º acesso**; reset pelo gestor. Sem dependência de email (decisão do usuário:
+operadores têm email mas só gestores checam com facilidade → fluxo que não precisa enviar nada).
+Senha temporária **por pessoa** (não uma padrão única — evita o furo de "qualquer um entra numa
+conta ainda não ativada").
+
+**Arquitetura (5 tasks, subagent-driven, review individual por task):** coluna
+`usuarios.senha_provisoria` (default true → conta nova nasce provisória pelo trigger
+`handle_new_user`; backfill false nas existentes). Domínio TDD `senha.ts` (`gerarSenhaTemporaria` —
+crypto, alfabeto sem ambíguos, 10 chars; `validarForcaSenha` — mín 8). Repo
+`definirSenhaProvisoria(id,valor)` via service-role. Actions: `criarUsuario` gera a temp e a devolve
+uma vez; `resetarSenha(id)` (substituiu `redefinirSenha`, exige `administrar`, remarca provisória);
+`definirNovaSenha(nova)` (troca do próprio logado via `auth.updateUser` + limpa a marca com
+`sessao.usuarioId`). Middleware carrega `senha_provisoria` e prende a conta provisória na rota nova
+**`/definir-senha`** (fora do `(app)`, sem menu) até trocar. Form de Usuários: sem campo de senha;
+mostra a temporária **uma vez** (copiar) no cadastro e no reset.
+
+**Ordem de deploy (crítica):** o middleware faz `select senha_provisoria` — a migração TEM que ir
+**antes** do código. Adicionar coluna não quebra o código antigo em produção, então a ordem certa é
+aplicar a migração primeiro (feito) e só depois o push. Registrado como padrão.
+
+**Review amplo em subagente foi pulado a pedido do usuário** (as 4 tasks já tinham review individual
+limpo); o controller confirmou inline os riscos-chave (ordem de deploy; escalonamento de privilégio —
+`definirNovaSenha` só age na própria conta e `resetarSenha` exige `administrar`; enforcement — o
+middleware cobre até os POSTs de Server Action). Spec/plano:
+`docs/superpowers/{specs,plans}/2026-07-20-senha-propria-usuario*`.
