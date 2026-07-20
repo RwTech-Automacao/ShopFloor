@@ -6,16 +6,19 @@ import { podeFazer } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
 import { buscarPerfil } from '@/modules/perfis/infra/perfil-repository'
+import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { validarAcaoUsuario } from '../domain/regras-usuario'
+import { gerarSenhaTemporaria, validarForcaSenha } from '../domain/senha'
 import {
   atualizarSenha,
   atualizarUsuario,
   buscarUsuario,
   criarUsuarioAuth,
+  definirSenhaProvisoria,
   excluirUsuarioAuth,
 } from '../infra/usuario-admin-repository'
 
-export type ResultadoAcaoUsuario = { ok: true } | { erro: string }
+export type ResultadoAcaoUsuario = { ok: true; senhaTemporaria?: string } | { erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para administrar usuários.'
 const CAMPOS_DIFF = ['nome', 'perfil_id', 'ativo']
@@ -50,13 +53,15 @@ export async function criarUsuario(
 
   const nome = String(formData.get('nome') ?? '').trim()
   const email = String(formData.get('email') ?? '').trim()
-  const senha = String(formData.get('senha') ?? '')
   const perfilId = String(formData.get('perfilId') ?? '').trim()
 
   if (!nome) return { erro: 'Informe um nome.' }
   if (!email || !email.includes('@')) return { erro: 'Informe um e-mail válido.' }
-  if (senha.length < 6) return { erro: 'A senha deve ter ao menos 6 caracteres.' }
   if (!perfilId) return { erro: 'Selecione um perfil.' }
+
+  // Senha temporária gerada pelo sistema (a conta nasce provisória por default
+  // da coluna). Devolvida uma vez pro gestor entregar; a pessoa troca no 1º acesso.
+  const senha = gerarSenhaTemporaria()
 
   let novoId: string
   try {
@@ -90,7 +95,7 @@ export async function criarUsuario(
   })
 
   revalidatePath('/configuracoes/usuarios')
-  return { ok: true }
+  return { ok: true, senhaTemporaria: senha }
 }
 
 export async function editarUsuario(
@@ -148,16 +153,16 @@ export async function editarUsuario(
   return { ok: true }
 }
 
-export async function redefinirSenha(id: string, password: string): Promise<ResultadoAcaoUsuario> {
+export async function resetarSenha(id: string): Promise<ResultadoAcaoUsuario> {
   const sessao = await getSessao()
   if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
-  if (password.length < 6) return { erro: 'A senha deve ter ao menos 6 caracteres.' }
-
+  const temporaria = gerarSenhaTemporaria()
   try {
-    await atualizarSenha(id, password)
+    await atualizarSenha(id, temporaria)
+    await definirSenhaProvisoria(id, true)
   } catch (e) {
     return { erro: traduzirErroAdminApi(e) }
   }
@@ -167,11 +172,11 @@ export async function redefinirSenha(id: string, password: string): Promise<Resu
     entidade: 'usuario',
     entidadeId: id,
     acao: 'alterar_campo',
-    descricao: 'Senha redefinida',
+    descricao: 'Senha resetada (temporária) — troca obrigatória no próximo acesso',
   })
 
   revalidatePath('/configuracoes/usuarios')
-  return { ok: true }
+  return { ok: true, senhaTemporaria: temporaria }
 }
 
 export async function alternarAtivo(id: string, novoAtivo: boolean): Promise<ResultadoAcaoUsuario> {
@@ -205,5 +210,32 @@ export async function alternarAtivo(id: string, novoAtivo: boolean): Promise<Res
   })
 
   revalidatePath('/configuracoes/usuarios')
+  return { ok: true }
+}
+
+export async function definirNovaSenha(nova: string): Promise<ResultadoAcaoUsuario> {
+  const sessao = await getSessao()
+  if (!sessao) return { erro: 'Sessão expirada. Entre novamente.' }
+
+  const forca = validarForcaSenha(nova)
+  if (!forca.ok) return { erro: forca.erro! }
+
+  const supabase = await createServerSupabase()
+  const { error } = await supabase.auth.updateUser({ password: nova })
+  if (error) return { erro: traduzirErroAdminApi(error) }
+
+  try {
+    await definirSenhaProvisoria(sessao.usuarioId, false)
+  } catch {
+    return { erro: 'Senha alterada, mas houve um problema. Fale com o gestor.' }
+  }
+
+  await registrarLog({
+    entidade: 'usuario',
+    entidadeId: sessao.usuarioId,
+    acao: 'alterar_campo',
+    descricao: 'Senha definida pelo próprio usuário',
+  })
+
   return { ok: true }
 }

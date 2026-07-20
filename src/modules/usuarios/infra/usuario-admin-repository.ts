@@ -113,3 +113,15 @@ export async function buscarNomesUsuarios(ids: string[]): Promise<Record<string,
   }
   return nomes
 }
+
+/**
+ * Liga/desliga a marca de "senha provisória". `false` = a pessoa já definiu a
+ * própria senha; `true` = o gestor resetou e ela terá de trocar no próximo
+ * acesso. Via service-role porque o operador comum não tem `administrar` e
+ * ainda assim precisa limpar a própria marca ao trocar a senha.
+ */
+export async function definirSenhaProvisoria(id: string, valor: boolean): Promise<void> {
+  const supabase = createServiceSupabase()
+  const { error } = await supabase.from('usuarios').update({ senha_provisoria: valor }).eq('id', id)
+  if (error) throw error
+}
