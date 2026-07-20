@@ -64,7 +64,10 @@ export function UsuarioForm({ usuario, perfis }: UsuarioFormProps) {
       open={open}
       onOpenChange={(novoAberto) => {
         setOpen(novoAberto)
-        if (!novoAberto) setSenhaTemp(null)
+        // Limpa a temporária em qualquer transição (abrir OU fechar). O botão "Concluir"
+        // fecha via setOpen direto e NÃO dispara este callback — então limpar ao reabrir
+        // garante que a senha de um cadastro anterior não reapareça no próximo "Novo usuário".
+        setSenhaTemp(null)
       }}
     >
       <DialogTrigger
@@ -205,10 +208,11 @@ export function RedefinirSenhaButton({ id, nome }: RedefinirSenhaButtonProps) {
       open={open}
       onOpenChange={(novoAberto) => {
         setOpen(novoAberto)
-        if (!novoAberto) {
-          setErro(null)
-          setSenhaTemp(null)
-        }
+        // Limpa em qualquer transição (abrir OU fechar) — "Concluir" fecha via setOpen
+        // direto sem disparar este callback, então limpar ao reabrir evita a senha
+        // temporária anterior reaparecer no próximo reset.
+        setErro(null)
+        setSenhaTemp(null)
       }}
     >
       <DialogTrigger
