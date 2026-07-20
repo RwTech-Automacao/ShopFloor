@@ -28,12 +28,23 @@ export function ScrollHorizontalTopo({ children }: { children: React.ReactNode }
     if (!container) return
 
     // Largura do espelho = largura real do conteúdo da tabela; a barra só
-    // aparece se houver o que rolar.
+    // aparece se houver o que rolar. Re-consulta o container a cada medição
+    // para não segurar um nó velho caso a navegação o substitua.
     const medir = () => {
-      setLargura(container.scrollWidth)
-      setTemOverflow(container.scrollWidth > container.clientWidth)
+      const alvo =
+        wrapper.querySelector<HTMLElement>('[data-slot="table-container"]') ?? container
+      setLargura(alvo.scrollWidth)
+      setTemOverflow(alvo.scrollWidth > alvo.clientWidth)
     }
-    medir()
+
+    // Agenda a medição no próximo frame: dá tempo do layout assentar depois de
+    // montar/trocar dados (fontes e larguras de coluna só se acertam após o paint).
+    let frame = 0
+    const medirAgendado = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(medir)
+    }
+    medirAgendado()
 
     // Espelha a rolagem nos dois sentidos. Não há loop: atribuir o MESMO
     // scrollLeft não dispara um novo evento de scroll, então os dois convergem.
@@ -46,17 +57,29 @@ export function ScrollHorizontalTopo({ children }: { children: React.ReactNode }
     topo.addEventListener('scroll', aoRolarTopo)
     container.addEventListener('scroll', aoRolarTabela)
 
-    // Re-mede quando a janela/tabela muda de tamanho (ex.: redimensionar,
-    // colunas mudarem de largura).
-    const observador = new ResizeObserver(medir)
-    observador.observe(container)
+    // Re-mede quando a janela/tabela muda de TAMANHO (redimensionar, colunas
+    // mudarem de largura, sair do display:none do mobile).
+    const observadorTamanho = new ResizeObserver(medirAgendado)
+    observadorTamanho.observe(container)
     const tabela = container.querySelector('table')
-    if (tabela) observador.observe(tabela)
+    if (tabela) observadorTamanho.observe(tabela)
+
+    // Re-mede quando o CONTEÚDO muda (ordenar/filtrar/paginar troca as linhas
+    // sem mexer na caixa do container, então o ResizeObserver pode não disparar —
+    // era esse o caso em que a barra do topo às vezes não reaparecia).
+    const observadorConteudo = new MutationObserver(medirAgendado)
+    observadorConteudo.observe(container, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
 
     return () => {
+      cancelAnimationFrame(frame)
       topo.removeEventListener('scroll', aoRolarTopo)
       container.removeEventListener('scroll', aoRolarTabela)
-      observador.disconnect()
+      observadorTamanho.disconnect()
+      observadorConteudo.disconnect()
     }
   }, [])
 
