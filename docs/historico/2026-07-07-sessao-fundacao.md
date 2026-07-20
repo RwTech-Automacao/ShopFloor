@@ -961,3 +961,71 @@ limpo); o controller confirmou inline os riscos-chave (ordem de deploy; escalona
 `definirNovaSenha` só age na própria conta e `resetarSenha` exige `administrar`; enforcement — o
 middleware cobre até os POSTs de Server Action). Spec/plano:
 `docs/superpowers/{specs,plans}/2026-07-20-senha-propria-usuario*`.
+
+**→ Aprovado e EM PRODUÇÃO** (push `e981a5d..8e4ee30`); smoke feito pelo próprio usuário em produção.
+
+## 31. Smoke em produção + correções e ajustes (2026-07-20)
+
+Com a senha própria em produção, o usuário passou a **testar cenários reais** no Prod e trouxe
+ajustes e bugs — todos corrigidos e em produção no mesmo dia:
+
+- **"Olho" na tela de definir senha** (`/definir-senha`): botão mostrar/ocultar em cada campo
+  (`EyeIcon`/`EyeOffIcon`), padrão `text-muted-foreground/hover-enterplak`. Inline.
+- **Bug — senha temporária vazando ao reabrir o dialog:** o botão "Concluir" fecha via `setOpen`
+  direto, que **não** dispara o `onOpenChange` (onde a temp era limpa) → a senha de um cadastro/reset
+  anterior reaparecia ao reabrir. Fix: limpar a temp em **qualquer transição** do dialog (abrir ou
+  fechar). Valia p/ "Novo usuário" e "Resetar senha".
+- **Bug — barra de scroll do topo do grid sumindo:** ordenar/filtrar/paginar troca as **linhas** sem
+  mexer na caixa do container, então o `ResizeObserver` às vezes não disparava e a barra do topo não
+  reaparecia. Fix: `MutationObserver` (re-mede quando o conteúdo muda) + `requestAnimationFrame` +
+  re-consulta do container a cada medição.
+- **Feature — "Ocultar incompletos" nas Etiquetas:** toggle client-side que esconde os processos
+  inelegíveis (não geram etiqueta), com contador de ocultos; desligado por padrão. Filtro sobre o
+  sub-filtro (renomeou `linhasVisiveis`→`subFiltradas`, recriou `linhasVisiveis` derivado). Execução
+  **inline** (1 arquivo/~30 linhas) + review adversarial rápido. Spec/plano
+  `docs/superpowers/{specs,plans}/2026-07-20-ocultar-incompletos-etiquetas*`.
+- **Bug (0025) — Importações "Nº de processos" sempre 0:** a RPC `importar_processos` é SECURITY
+  INVOKER; o `update total_processos_criados` rodava como o usuário e era **filtrado silenciosamente
+  pela RLS** — `importacoes` só tinha policy de INSERT/SELECT, **faltava UPDATE** → coluna no default
+  0. O log registrava 129 (é INSERT, tem policy) → foi o que denunciou. Fix: **policy de UPDATE (dono
+  da linha)** + backfill. **Verificado end-to-end** simulando usuário autenticado (`set local role
+  authenticated` + `request.jwt.claims`). Lição: função SECURITY INVOKER + tabela sem policy de UPDATE
+  = update some sem erro.
+- **Bug (0026) — Importações "Usuário —" para não-admin:** o nome vinha por join `usuarios(nome)`,
+  mas a RLS de `usuarios` só deixa ver o próprio cadastro. Fix: **desnormalizar `usuario_nome`** na
+  importação (igual os logs já fazem), gravado pela RPC; a tela lê direto. + backfill.
+- **Correção de texto (0027) — "Nº DI/INPI" → "Nº DI/DUINPI":** o rótulo mora no banco
+  (`configuracao_campos.rotulo`); migração corretiva + troca em comentários/testes do código.
+- **Limpezas de banco de teste (várias):** transacionais por SQL (controller) + reset da sequence;
+  **logs pelo usuário no SQL Editor** (imutáveis, precisa desabilitar o trigger como `postgres`);
+  e **limpeza da pasta do Drive** — apagar o registro no banco **não** apaga a foto no Drive (só a
+  remoção pela tela apaga), então fotos órfãs se acumulam; limpas por script throwaway (`googleapis`).
+
+## 32. Ambiente Dev × Prod + entrega ao time (2026-07-20) — MARCO
+
+Fim do ciclo "pré-dado-real": montamos o ambiente de desenvolvimento e o sistema foi **entregue ao
+time**. Detalhe completo do workflow em `memory/dev-prod-workflow.md` e no doc de repo
+`docs/ambientes.md`.
+
+- **Decisão de arquitetura (com o usuário):** abordagem manual de **2 projetos Supabase** (Dev +
+  Prod), pois o Supabase **não** vai pro plano Pro (sem Branching nativo/PITR). Workflow: **branch →
+  desenvolve no Dev → aprova no smoke → aplica no Prod (banco antes do código) → merge → deploy**.
+  Regras de ouro: toda mudança de schema é migração aplicada nos **dois** bancos; só o schema precisa
+  bater, dados diferem.
+- **Setup executado:** projeto Dev criado (`drxmfcrrfzmzjpkvhpjr`, `sa-east-1`, auto-RLS igual Prod);
+  **27 migrações aplicadas via `db push`** → schema idêntico; `.env.local` apontando pro Dev (backup
+  do Prod em `.env.prod.local`); **pasta Drive própria do Dev** (isolada da produção — mesma conta
+  Google, só o folder difere; escrita testada); admin de dev criado via API do Auth (o `supabase-js`
+  quebra em Node<22 por WebSocket → `fetch` direto). **Prod verificado intocado** o tempo todo.
+- **Cópia da config Prod→Dev:** pra o Dev ter o mesmo ponto de partida, copiamos byte-a-byte as
+  tabelas de config de recebimento (`configuracao_campos`, `listas`, `lista_itens`,
+  `criticidade_fornecedor`, `tabela_nqa`, `colunas_lista`) via REST (GET no Prod, delete+POST no Dev),
+  em ordem pai→filha. **Usuários e processos não copiados.** Ficou idêntico ao Prod.
+- **Documentação:** `docs/ambientes.md` (guia dos ambientes + fluxo + backup sem Pro + reset) e
+  `docs/visao-tecnica.md` (stack, arquitetura, práticas — "mini-doc pro Notion"), ambos versionados.
+- **Entrega ao time:** os 6 usuários do Prod são os **reais**; a entrega é o gestor **resetar as
+  senhas** (fluxo senha-temporária) → cada um define a própria no 1º acesso. Prod 100% limpo.
+  **Backup-base fica pra quando entrar dado real.** Daqui pra frente: **time usa o Prod; toda
+  feature/módulo novo é desenvolvido no Dev** pelo workflow de branch.
+- **Preferência registrada:** o usuário quer **aprender fullstack** enquanto construímos os próximos
+  módulos → explicar conceitos "pra dev júnior" ao longo do caminho.
