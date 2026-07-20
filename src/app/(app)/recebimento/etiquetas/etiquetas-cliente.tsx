@@ -70,7 +70,7 @@ function dispararDownload(csv: string, fileName: string): void {
 }
 
 /** Colunas do sub-filtro e como ler o valor de cada uma numa linha. `numero`
- *  devolve number (ordena numericamente); `doc` é derivado (DI/INPI ou NF). */
+ *  devolve number (ordena numericamente); `doc` é derivado (DI/DUINPI ou NF). */
 const ACESSORES = {
   numero: (p: ProcessoEtiquetaLista) => p.numero,
   status: (p: ProcessoEtiquetaLista) => p.status,

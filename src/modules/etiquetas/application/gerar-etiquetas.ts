@@ -48,7 +48,7 @@ function carimboDataHora(agora: Date): string {
  *
  * Exige a permissão `gerar_etiqueta`. Processos **não elegíveis** — não
  * concluídos (status não terminal) ou com campos incompletos (sem código,
- * pedido, documento DI/INPI-ou-NF, ou volumes < 1 — ver `elegivelParaEtiqueta`)
+ * pedido, documento DI/DUINPI-ou-NF, ou volumes < 1 — ver `elegivelParaEtiqueta`)
  * — são ignorados e contados em `ignorados`; se nenhuma etiqueta sobrar,
  * retorna erro em vez de um CSV vazio.
  *

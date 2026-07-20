@@ -11,10 +11,10 @@ describe('formatarPedido', () => {
   it('vazio -> vazio', () => { expect(formatarPedido('')).toBe('') })
 })
 describe('resolverDoc', () => {
-  it('usa DI/INPI (só dígitos) quando presente', () => {
+  it('usa DI/DUINPI (só dígitos) quando presente', () => {
     expect(resolverDoc('26BR0000902016-1', '999')).toBe('2600009020161')
   })
-  it('cai para a NF quando DI/INPI vazio', () => {
+  it('cai para a NF quando DI/DUINPI vazio', () => {
     expect(resolverDoc('', '12345')).toBe('12345')
   })
 })
@@ -72,7 +72,7 @@ describe('camposCompletosEtiqueta', () => {
     expect(camposCompletosEtiqueta({ ...base, volumes: 0 })).toBe(false)
     expect(camposCompletosEtiqueta({ ...base, volumes: null })).toBe(false)
   })
-  it('doc aceita NF quando DI/INPI vazio', () => {
+  it('doc aceita NF quando DI/DUINPI vazio', () => {
     expect(camposCompletosEtiqueta({ ...base, diInpi: null, numeroNf: '0665/26' })).toBe(true)
   })
 })

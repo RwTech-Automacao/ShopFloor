@@ -55,7 +55,7 @@ export function montarPartNumber(codigoBase: string, pedidoFmt: string, doc: str
 }
 
 /** True sse o processo tem os campos da etiqueta: código, pedido, documento
- *  (DI/INPI ou NF) e volumes >= 1. */
+ *  (DI/DUINPI ou NF) e volumes >= 1. */
 export function camposCompletosEtiqueta(p: ProcessoEtiqueta): boolean {
   if (!normalizarCodigo(p.codigoMaterial)) return false
   if (!formatarPedido(p.numeroPedido)) return false
