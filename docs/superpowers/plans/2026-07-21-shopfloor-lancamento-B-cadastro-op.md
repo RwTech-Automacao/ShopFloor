@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Tela de CRUD de Ordens de Produção (PCP/admin) — listar, criar, editar e excluir OPs, incluindo os toggles de "quais postos aplicam" — no design do app, sobre as tabelas `sf_*` do Plano A, dentro de uma **seção de menu própria "Processo"** (módulo principal, como o Recebimento).
+**Goal:** Tela de CRUD de Ordens de Produção (PCP/admin) — listar, criar, editar e excluir OPs, incluindo os toggles de "quais postos aplicam" — no design do app, sobre as tabelas `sf_*` do Plano A, dentro de uma **seção de menu própria "Fluxo de Processos"** (módulo principal, como o Recebimento).
 
 **Architecture:** Novo módulo top-level em `src/app/(app)/shopfloor/` (rota `/shopfloor/ordens`), com seção própria no menu lateral (accordion, espelhando o de Recebimento). Page Server Component (com guard próprio de `administrar`) + form client via Dialog + `useActionState`; repositório em `infra/`; Server Actions em `application/`. A aplicabilidade (`sf_ordem_postos`) é ressincronizada a cada save.
 
@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Branch:** `feat/shopfloor-lancamento` (a mesma dos Planos A; continua nela).
-- **Módulo principal, NÃO Configurações:** o ShopFloor Processo é uma seção própria no menu (accordion "Processo"), igual ao Recebimento. A tela de Lançamento (operador) entra nessa mesma seção no Plano C.
+- **Módulo principal, NÃO Configurações:** o ShopFloor Processo é uma seção própria no menu (accordion "Fluxo de Processos"), igual ao Recebimento. A tela de Lançamento (operador) entra nessa mesma seção no Plano C.
 - Permissão: **`administrar`** para o Cadastro de OP. Como a rota NÃO está sob `/configuracoes` (que tem guard de layout), **a própria page se guarda**: `getSessao()` → se `!podeFazer(perfil,'administrar')` → `return <SemPermissao descricao="..." />` (padrão de `recebimento/importar/page.tsx`).
 - Aplicabilidade: toggles para **todos os postos exceto `Manutenção`** (Manutenção é caminho de reparo, não aplicabilidade de OP — coerente com o script de migração do Plano A).
 - Status da OP: `Select` com **Ativa** (armazena `'ATIVA'`) e **Finalizada** (`'FINALIZADA'`). Filtro de "ativa" é `status ≠ 'FINALIZADA'` — OPs migradas com status vazio continuam ativas.
@@ -28,7 +28,7 @@
 - Create: `src/app/(app)/shopfloor/ordens/page.tsx`
 - Create: `src/app/(app)/shopfloor/ordens/ordem-form.tsx`
 - Create: `src/app/(app)/shopfloor/ordens/excluir-ordem-botao.tsx`
-- Modify: `src/shared/ui/app-shell.tsx` (nova seção "Processo" no menu)
+- Modify: `src/shared/ui/app-shell.tsx` (nova seção "Fluxo de Processos" no menu)
 
 ---
 
@@ -407,7 +407,7 @@ EOF
 
 ---
 
-### Task 4: Tela de Cadastro (page + form + excluir) + seção "Processo" no menu
+### Task 4: Tela de Cadastro (page + form + excluir) + seção "Fluxo de Processos" no menu
 
 **Files:**
 - Create: `src/app/(app)/shopfloor/ordens/ordem-form.tsx`
@@ -729,7 +729,7 @@ export default async function OrdensPage() {
 }
 ```
 
-- [ ] **Step 4: Nova seção "Processo" no menu (`app-shell.tsx`)**
+- [ ] **Step 4: Nova seção "Fluxo de Processos" no menu (`app-shell.tsx`)**
 
 Em `src/shared/ui/app-shell.tsx`, fazer QUATRO edições (espelhando a seção `RECEBIMENTO`):
 
@@ -771,7 +771,7 @@ E incluir `...SHOPFLOOR` na lista do `tituloPagina`:
 ```tsx
         {shopfloorVisivel.length > 0 && (
           <>
-            {rotuloGrupo('Processo')}
+            {rotuloGrupo('Fluxo de Processos')}
             <button
               type="button"
               onClick={() => setShopfloorAberto((v) => !v)}
@@ -779,7 +779,7 @@ E incluir `...SHOPFLOOR` na lista do `tituloPagina`:
             >
               <span className="flex items-center gap-3">
                 <Factory className="size-[18px] shrink-0" />
-                Processo
+                Fluxo de Processos
               </span>
               <ChevronDown className={cn('size-4 transition-transform', shopfloorAberto && 'rotate-180')} />
             </button>
@@ -806,7 +806,7 @@ git add src/app/\(app\)/shopfloor/ src/shared/ui/app-shell.tsx
 git commit -F - << 'EOF'
 feat(shopfloor): módulo Processo — tela de Cadastro de OP + seção no menu
 
-Nova seção "Processo" no menu (módulo principal, como Recebimento) com o Cadastro
+Nova seção "Fluxo de Processos" no menu (módulo principal, como Recebimento) com o Cadastro
 de OP (lista/criar/editar/excluir + toggles de postos aplicáveis). Page com guard
 próprio de administrar.
 
@@ -824,7 +824,7 @@ EOF
 
 - [ ] **Step 2 (CONTROLLER): review amplo do branch** (subagent-driven-development → final code review, opus).
 
-- [ ] **Step 3 (CONTROLLER): smoke no Dev** — `npm run dev`, logar como admin, ver a seção **Processo → Ordens de Produção** no menu:
+- [ ] **Step 3 (CONTROLLER): smoke no Dev** — `npm run dev`, logar como admin, ver a seção **Fluxo de Processos → Ordens de Produção** no menu:
   - listar (deve mostrar as 115 OPs migradas);
   - criar uma OP nova (PMO/OP/cliente + faixa de SN + alguns postos) → aparece na lista;
   - editar a OP (mudar postos aplicáveis) → persiste;
@@ -837,11 +837,11 @@ EOF
 
 ## Notas de verificação (self-review)
 
-- **Cobertura da spec (Cadastro de OP):** listar/criar/editar/excluir (T2/T3/T4) ✅; toggles de postos aplicáveis (T4, ressincronizados em T2) ✅; restrito a admin (guard próprio da page + gate `administrar` nas actions) ✅; **módulo principal no menu** (seção "Processo", T4) ✅; validação (T1, TDD) ✅.
-- **Desvio consciente da spec:** a spec dizia `/configuracoes/ordens`; a pedido do usuário virou **módulo principal** `/shopfloor/ordens` (seção própria no menu, como Recebimento). O Lançamento (Plano C) entra na mesma seção "Processo".
+- **Cobertura da spec (Cadastro de OP):** listar/criar/editar/excluir (T2/T3/T4) ✅; toggles de postos aplicáveis (T4, ressincronizados em T2) ✅; restrito a admin (guard próprio da page + gate `administrar` nas actions) ✅; **módulo principal no menu** (seção "Fluxo de Processos", T4) ✅; validação (T1, TDD) ✅.
+- **Desvio consciente da spec:** a spec dizia `/configuracoes/ordens`; a pedido do usuário virou **módulo principal** `/shopfloor/ordens` (seção própria no menu, como Recebimento). O Lançamento (Plano C) entra na mesma seção "Fluxo de Processos".
 - **Tipos:** `DadosOrdem` (repo) e `OrdemView` (form) consistentes entre page/form/action; `ResultadoOrdem` idêntico em action e form.
 - **Sem placeholders:** todo passo traz o código completo; as 4 edições do `app-shell` têm âncora e código exatos.
 - **`noUncheckedIndexedAccess`:** acessos por `.map`/propriedade, sem índice numérico cru.
 - **Duplicidade:** tratada via código `23505` (constraint `unique(pmo,op)` do Plano A).
 - **Exclusão segura:** bloqueada se houver registros (guarda para o Plano C).
-- **Fora deste plano (Plano C):** a tela de Lançamento (operador) na seção "Processo", a action de submit transacional e a permissão `lancar` na UI de Perfis.
+- **Fora deste plano (Plano C):** a tela de Lançamento (operador) na seção "Fluxo de Processos", a action de submit transacional e a permissão `lancar` na UI de Perfis.

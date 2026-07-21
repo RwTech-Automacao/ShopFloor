@@ -91,7 +91,7 @@ Reproduz o `formulario.html` no nosso design:
 CRUD das OPs: criar/editar `pmo`, `op`, `cliente`, `qtd`, `descricao`, `acp`, `status`, faixa de
 SN, e os **toggles de quais postos aplicam**. Restrito a admin/PCP (guard próprio de `administrar`).
 
-**Menu:** o ShopFloor Processo é um **módulo principal** — seção própria "Processo" no menu
+**Menu:** o ShopFloor Processo é um **módulo principal** — seção própria "Fluxo de Processos" no menu
 lateral (accordion, como o Recebimento), NÃO dentro de Configurações. A seção agrupa o Cadastro
 de OP (admin) e o Lançamento (operador); cada item filtra pela sua permissão.
 
