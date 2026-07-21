@@ -1,0 +1,31 @@
+import { describe, it, expect } from 'vitest'
+import { postoAnteriorExigido, gateSatisfeito } from '../postos'
+
+const todosAplicaveis = () => true
+
+describe('postoAnteriorExigido', () => {
+  it('Manutenção não exige anterior', () => {
+    expect(postoAnteriorExigido('Manutenção', todosAplicaveis)).toBeNull()
+  })
+  it('Inicial (primeiro) não exige anterior', () => {
+    expect(postoAnteriorExigido('Inicial', todosAplicaveis)).toBeNull()
+  })
+  it('Teste exige o posto anterior aplicável', () => {
+    expect(postoAnteriorExigido('Teste', todosAplicaveis)).toBe('Inspeção PTH')
+  })
+  it('pula os postos não-aplicáveis para trás', () => {
+    const aplic = (p: string) => p !== 'Inspeção PTH' && p !== 'Inspeção SMD' && p !== 'Montagem PTH'
+    expect(postoAnteriorExigido('Teste', aplic)).toBe('Inspeção SPI')
+  })
+})
+
+describe('gateSatisfeito', () => {
+  it('Inicial/Integração/Embalagem: basta registrado', () => {
+    expect(gateSatisfeito('Inicial', { Inicial: { registrado: true } })).toBe(true)
+    expect(gateSatisfeito('Inicial', {})).toBe(false)
+  })
+  it('NQA e demais: exige aprovado', () => {
+    expect(gateSatisfeito('Teste', { Teste: { registrado: true } })).toBe(false)
+    expect(gateSatisfeito('Teste', { Teste: { aprovado: true } })).toBe(true)
+  })
+})
