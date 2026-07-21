@@ -7,6 +7,8 @@ import { usePathname } from 'next/navigation'
 import {
   Home,
   Inbox,
+  Factory,
+  FileStack,
   Upload,
   ClipboardList,
   FileDown,
@@ -48,6 +50,10 @@ const RECEBIMENTO: Folha[] = [
   { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, perm: 'visualizar' },
   { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, perm: 'gerar_etiqueta' },
   { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, perm: 'administrar' },
+]
+
+const SHOPFLOOR: Folha[] = [
+  { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, perm: 'administrar' },
 ]
 
 const CONFIG_PERM = 'administrar'
@@ -114,13 +120,16 @@ export function AppShell({
   const temConfig = configTopo.length + configRec.length + configBase.length > 0
   const recebimentoAtivo = pathname.startsWith('/recebimento')
   const [recAberto, setRecAberto] = useState(recebimentoAtivo)
+  const shopfloorVisivel = SHOPFLOOR.filter((i) => pode(i.perm))
+  const shopfloorAtivo = pathname.startsWith('/shopfloor')
+  const [shopfloorAberto, setShopfloorAberto] = useState(shopfloorAtivo)
   const configAtivo = CONFIG_TODOS.some((i) => ehAtivo(pathname, i.href))
   const [configAberto, setConfigAberto] = useState(configAtivo)
   const configRecAtivo = CONFIG_RECEBIMENTO.some((i) => ehAtivo(pathname, i.href))
   const [configRecAberto, setConfigRecAberto] = useState(configRecAtivo)
 
   const tituloPagina =
-    [HOME, ...RECEBIMENTO, ...CONFIG_TODOS, AJUDA]
+    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...CONFIG_TODOS, AJUDA]
       .filter((i) => ehAtivo(pathname, i.href))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
@@ -167,6 +176,33 @@ export function AppShell({
             {recAberto && (
               <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
                 {recebimentoVisivel.map((i) => (
+                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                    <i.icone className="size-[18px] shrink-0" />
+                    {i.rotulo}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {shopfloorVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('Fluxo de Processos')}
+            <button
+              type="button"
+              onClick={() => setShopfloorAberto((v) => !v)}
+              className={cn(linkClasse(false), 'w-full justify-between')}
+            >
+              <span className="flex items-center gap-3">
+                <Factory className="size-[18px] shrink-0" />
+                Fluxo de Processos
+              </span>
+              <ChevronDown className={cn('size-4 transition-transform', shopfloorAberto && 'rotate-180')} />
+            </button>
+            {shopfloorAberto && (
+              <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
+                {shopfloorVisivel.map((i) => (
                   <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                     <i.icone className="size-[18px] shrink-0" />
                     {i.rotulo}
