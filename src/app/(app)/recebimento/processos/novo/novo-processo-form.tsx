@@ -43,6 +43,14 @@ export function NovoProcessoForm({
   const [valores, setValores] = useState<Record<string, string>>({})
   // `linhas` guarda as linhas de Material do modo Coletivo.
   const [linhas, setLinhas] = useState<Record<string, string>[]>([{}])
+  // Texto da caixa "Quantidade": editável livremente; só APLICA no blur/Enter,
+  // pra digitar/reduzir o número não colapsar as linhas já preenchidas a cada tecla.
+  const [qtdTexto, setQtdTexto] = useState('1')
+  const [qtdSync, setQtdSync] = useState(linhas.length)
+  if (linhas.length !== qtdSync) {
+    setQtdSync(linhas.length)
+    setQtdTexto(String(linhas.length))
+  }
   const [salvando, startTransition] = useTransition()
 
   const comercialCampos = campos.filter((c) => c.grupo === 'comercial').sort((a, b) => a.ordem - b.ordem)
@@ -61,6 +69,15 @@ export function NovoProcessoForm({
       if (alvo < atual.length) return atual.slice(0, alvo)
       return [...atual, ...Array.from({ length: alvo - atual.length }, () => ({}) as Record<string, string>)]
     })
+  }
+  function comitarQuantidade() {
+    const n = Math.floor(Number(qtdTexto))
+    if (!Number.isFinite(n) || n < 1) {
+      setQtdTexto(String(linhas.length)) // valor inválido/vazio: volta ao atual
+      return
+    }
+    ajustarQuantidade(n)
+    setQtdTexto(String(n))
   }
   function adicionarLinha() {
     setLinhas((atual) => [...atual, {}])
@@ -170,8 +187,16 @@ export function NovoProcessoForm({
               <input
                 type="number"
                 min={1}
-                value={linhas.length}
-                onChange={(e) => ajustarQuantidade(Number(e.target.value))}
+                value={qtdTexto}
+                onChange={(e) => setQtdTexto(e.target.value)}
+                onBlur={comitarQuantidade}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    comitarQuantidade()
+                    e.currentTarget.blur()
+                  }
+                }}
                 className="h-9 w-16 rounded-lg border border-input bg-background text-center text-sm"
               />
             </label>
