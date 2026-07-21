@@ -20,6 +20,14 @@ describe('obrigatoriosPorPosto', () => {
     expect(obrigatoriosPorPosto('Teste', { ...base, status: 'Reprovado' }).ok).toBe(false)
     expect(obrigatoriosPorPosto('Teste', { ...base, status: 'Reprovado', cod: 'D', pos: 'R1', tipo: 'SMD' }).ok).toBe(true)
   })
+  it('SPI: exige status; aprovado não pede defeito', () => {
+    expect(obrigatoriosPorPosto('Inspeção SPI', base).ok).toBe(false)
+    expect(obrigatoriosPorPosto('Inspeção SPI', { ...base, status: 'Aprovado' }).ok).toBe(true)
+  })
+  it('SPI reprovado: exige ao menos posição (só posição, sem cód/tipo)', () => {
+    expect(obrigatoriosPorPosto('Inspeção SPI', { ...base, status: 'Reprovado' }).ok).toBe(false)
+    expect(obrigatoriosPorPosto('Inspeção SPI', { ...base, status: 'Reprovado', pos: 'R7' }).ok).toBe(true)
+  })
 })
 
 describe('caixaCheia', () => {

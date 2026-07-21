@@ -33,4 +33,9 @@ describe('serieDentroDaFaixa', () => {
     expect(serieDentroDaFaixa('A100C', 'A200C', 'A150D')).toBe(false) // sufixo diferente
     expect(serieDentroDaFaixa('A100C', 'A200C', 'A150C')).toBe(true)
   })
+  it('fallback lexical quando não há bloco único de dígitos', () => {
+    // SNs sem número (num = NaN) → comparação lexical entre início e fim
+    expect(serieDentroDaFaixa('ABC', 'ABZ', 'ABM')).toBe(true)
+    expect(serieDentroDaFaixa('ABC', 'ABZ', 'AAA')).toBe(false)
+  })
 })
