@@ -87,9 +87,13 @@ Reproduz o `formulario.html` no nosso design:
 - **Após enviar:** mensagem de sucesso (+ "peças na caixa X: N" na Embalagem), limpa e devolve o
   **foco pro Nº de Série** (fluxo de bipagem contínuo).
 
-### Cadastro de OP (`/configuracoes/ordens` — PCP/admin)
+### Cadastro de OP (`/shopfloor/ordens` — PCP/admin)
 CRUD das OPs: criar/editar `pmo`, `op`, `cliente`, `qtd`, `descricao`, `acp`, `status`, faixa de
-SN, e os **toggles de quais postos aplicam**. Restrito a admin/PCP.
+SN, e os **toggles de quais postos aplicam**. Restrito a admin/PCP (guard próprio de `administrar`).
+
+**Menu:** o ShopFloor Processo é um **módulo principal** — seção própria "Processo" no menu
+lateral (accordion, como o Recebimento), NÃO dentro de Configurações. A seção agrupa o Cadastro
+de OP (admin) e o Lançamento (operador); cada item filtra pela sua permissão.
 
 ## Migração (script único; o controller roda no Dev primeiro)
 
