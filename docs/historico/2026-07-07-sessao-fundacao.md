@@ -1055,3 +1055,42 @@ código. Detalhe em `memory/visao-produto-roadmap.md` e no arquivo de plano
 - **Nota de processo:** o **modo plan** do Claude Code foi usado nesta etapa — ele força
   explorar/entender antes, e trava edições (só o arquivo de plano) até a aprovação. Boa prática que
   reforça a cadência; para salvar memória/histórico foi preciso sair do modo plan.
+
+## 34. Módulo ShopFloor Processo — Planos A + B (LOCAL, aguardando smoke — 2026-07-21)
+
+Arranque do **módulo 3 (Shopfloor processo)** — o coração da rastreabilidade. Origem: webapp Google
+Apps Script (`Código.gs` + `formulario.html`) sobre a planilha `ShopFloor WebApp.xlsx` (registro de
+cada peça por **Nº de Série** ao passar por cada **posto**, por PMO/OP). Recriação no nosso stack.
+Decidido fatiar a sub-feature "Fundação + Lançamento" em **3 planos sequenciais** (A: dados; B:
+Cadastro de OP; C: Lançamento). Branch `feat/shopfloor-lancamento`. Spec/planos em
+`docs/superpowers/{specs,plans}/2026-07-21-shopfloor-lancamento*`.
+
+- **Plano A — Fundação de dados (feito, aplicado no DEV):** migração `0028` — tabelas `sf_postos`,
+  `sf_defeitos`, `sf_ordens`, `sf_ordem_postos`, `sf_registros` (+ RLS, permissão nova **`lancar`** e
+  perfil de sistema "Produção", seed dos 12 postos); **domínio puro com TDD** (série: parse/faixa/
+  normalização; postos: gate de sequência registrado×aprovado; regras por posto + limite de caixa);
+  **script `scripts/migrar-shopfloor.mjs`**. Resolvida a inconsistência da coluna **[18] = Inspeção
+  SPI** (o header da planilha rotula "Integração" por engano; o `Código.gs` é a verdade). Aplicado
+  **só no Dev**: `supabase db push` da 0028 + script → **165 defeitos, 115 OPs ativas, 554
+  aplicabilidades** (a aba Defeitos tem 1000 linhas mas só 165 com código; 835 são vazias).
+  Spot-check de aplicabilidade bateu. **Prod intocado.** Review amplo (opus): pronto para merge.
+- **Plano B — Cadastro de OP (feito, LOCAL):** tela de CRUD de OPs (listar/criar/editar/excluir +
+  toggles de "postos aplicáveis"). **Decisão do usuário: é MÓDULO PRINCIPAL**, não Configurações — nova
+  seção **"Fluxo de Processos"** no menu lateral (accordion, como o Recebimento), rota
+  `/shopfloor/ordens`, page com **guard próprio** de `administrar` (a rota `/shopfloor` não tem layout
+  guard). Validação TDD + repositório + server actions (guarda de duplicidade `unique(pmo,op)` e
+  guarda de exclusão se houver lançamentos) + a tela. Review amplo (opus): **PRONTO PARA MERGE**, zero
+  crítico/importante (segurança em profundidade: gate nas actions + guard da page + RLS). Fix de
+  robustez aplicado (exclusão sem rejeição silenciosa; `qtd` NaN→null). Suíte: 223 testes.
+- **Decisões registradas:** a **estação** loga no app (compartilhada) e o **colaborador é bipado** por
+  cima (log de usuário refinado depois). **OP sem faixa de SN deve BARRAR** o lançamento (Plano C) —
+  várias OPs migradas vêm com faixa vazia. Na promoção pro **Prod**: provavelmente **não** bulk-importar
+  as OPs (cadastrar via a tela, começar limpo); **defeitos** (catálogo) vale importar. **Dev mantém os
+  dados** pra construir/testar B e C.
+- **Nota técnica:** o CLI `supabase` neste host precisou do binário `supabase-go` (baixado em
+  `~/.local/share/supabase` + `export SUPABASE_GO_BINARY=...`) para o `db push` funcionar; o
+  `migration list` (leitura) já funcionava sem ele.
+- **Pendências:** smoke do Plano B pelo usuário (dev server no ar, aponta pro Dev). Depois **Plano C
+  (Lançamento — o coração):** tela do operador + submit transacional (faixa de SN, gate de sequência,
+  anti-duplicidade, caixa) + a permissão `lancar` na UI de Perfis. Sub-features futuras: Grade Geral,
+  Dashboard, Integração, Manutenção, Pesquisa, histórico de registros. **Nada pushado/mergeado/em Prod.**
