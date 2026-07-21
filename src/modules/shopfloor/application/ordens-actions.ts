@@ -25,7 +25,7 @@ function lerDados(fd: FormData): DadosOrdem {
     pmo: String(fd.get('pmo') ?? '').trim(),
     op: String(fd.get('op') ?? '').trim(),
     cliente: String(fd.get('cliente') ?? '').trim(),
-    qtd: qtdBruto === '' ? null : Number(qtdBruto),
+    qtd: qtdBruto === '' || Number.isNaN(Number(qtdBruto)) ? null : Number(qtdBruto),
     descricao: String(fd.get('descricao') ?? '').trim(),
     acp: String(fd.get('acp') ?? '').trim(),
     status: String(fd.get('status') ?? '').trim() || 'ATIVA',
@@ -101,12 +101,12 @@ export async function excluirOrdemAction(id: string): Promise<ResultadoOrdem> {
 
   const base = await buscarOrdemBase(id)
   if (!base) return { ok: false, erro: 'OP não encontrada.' }
-  const registros = await contarRegistros(base.pmo, base.op)
-  if (registros > 0) {
-    return { ok: false, erro: `Não é possível excluir: a OP já tem ${registros} lançamento(s).` }
-  }
 
   try {
+    const registros = await contarRegistros(base.pmo, base.op)
+    if (registros > 0) {
+      return { ok: false, erro: `Não é possível excluir: a OP já tem ${registros} lançamento(s).` }
+    }
     await excluirOrdem(id)
   } catch {
     return { ok: false, erro: 'Não foi possível excluir a OP.' }
