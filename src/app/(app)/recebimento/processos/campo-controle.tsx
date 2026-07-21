@@ -29,6 +29,8 @@ export interface CampoControleProps {
    *  (detalhe: obrigatório para finalizar; criação: obrigatório na criação). */
   obrigatorio: boolean
   onChange: (valor: string) => void
+  /** Oculta o rótulo (o chamador já mostra o label — ex.: cabeçalho de coluna numa tabela). Default: true. */
+  mostrarRotulo?: boolean
 }
 
 export function CampoControle({
@@ -39,6 +41,7 @@ export function CampoControle({
   somenteLeitura,
   obrigatorio,
   onChange,
+  mostrarRotulo = true,
 }: CampoControleProps) {
   const inputId = `campo-${campo.campo}`
 
@@ -48,10 +51,12 @@ export function CampoControle({
 
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor={inputId}>
-        {campo.rotulo}
-        {obrigatorio && <span className="text-red-600"> *</span>}
-      </Label>
+      {mostrarRotulo && (
+        <Label htmlFor={inputId}>
+          {campo.rotulo}
+          {obrigatorio && <span className="text-red-600"> *</span>}
+        </Label>
+      )}
 
       {campo.tipo === 'lista' ? (
         <Select
