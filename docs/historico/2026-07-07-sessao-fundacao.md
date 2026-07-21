@@ -1029,3 +1029,29 @@ time**. Detalhe completo do workflow em `memory/dev-prod-workflow.md` e no doc d
   feature/módulo novo é desenvolvido no Dev** pelo workflow de branch.
 - **Preferência registrada:** o usuário quer **aprender fullstack** enquanto construímos os próximos
   módulos → explicar conceitos "pra dev júnior" ao longo do caminho.
+
+## 33. Alinhamento de visão + roadmap de módulos (2026-07-20)
+
+Sessão de **alinhamento estratégico** (em modo plan): entender o negócio e mapear o roadmap, sem
+código. Detalhe em `memory/visao-produto-roadmap.md` e no arquivo de plano
+`~/.claude/plans/breezy-moseying-hollerith.md`.
+
+- **Quem é a Enterplak:** prestadora de serviços/mão de obra, foco em **montagem de eletrônicos —
+  principalmente placas (PCBs)**. O ShopFloor foi contratado para dar **rastreabilidade**.
+- **Estado atual da operação:** o "shopfloor" já existe, mas **quebrado** — cada área roda em
+  **planilha + formulário isolados**, lento e em parte pouco funcional.
+- **Conceito do que construímos:** não é um "app de recebimento", é a **fundação + 1º módulo de uma
+  plataforma MES modular**. O valor está na base (sistema de registro confiável com RLS/logs
+  imutáveis, config ao processo real, arquitetura modular, Dev×Prod) — o Recebimento é a cabeça de
+  ponte.
+- **Roadmap Fase 1 (acordado):** **copiar os 3 módulos atuais para software web e deixar
+  funcional**, mantendo-os **independentes** (como são hoje): (1) Recebimento ✅; (2) Set up e
+  reabastecimento de montagem; (3) Shopfloor processo. O padrão dos módulos 2/3 é
+  "planilha-como-banco + formulário" → "tabela Postgres + tela web" (o mesmo do Recebimento).
+- **Fase 2 (depois):** integrar os módulos (rastreabilidade fim-a-fim) e otimizar. Construir a
+  Fase 1 com fronteiras limpas pra isso ser fácil.
+- **Próximo passo:** o **time escolhe o próximo módulo por valor**; quando definirem, o usuário traz
+  o material (planilha + formulário) e a gente faz brainstorm → spec → plano → Dev×Prod.
+- **Nota de processo:** o **modo plan** do Claude Code foi usado nesta etapa — ele força
+  explorar/entender antes, e trava edições (só o arquivo de plano) até a aprovação. Boa prática que
+  reforça a cadência; para salvar memória/histórico foi preciso sair do modo plan.
