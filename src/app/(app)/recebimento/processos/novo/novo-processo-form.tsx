@@ -41,16 +41,10 @@ export function NovoProcessoForm({
   const [modo, setModo] = useState<Modo>('individual')
   // `valores` guarda o Comercial (e o Material no modo Individual).
   const [valores, setValores] = useState<Record<string, string>>({})
-  // `linhas` guarda as linhas de Material do modo Coletivo.
+  // `linhas` guarda as linhas de Material do modo Coletivo. A "Quantidade de
+  // processos" é só um contador de `linhas.length` — muda por "+ Adicionar linha"
+  // e por remover (×); não é digitável (evita reduzir/perder o que já foi preenchido).
   const [linhas, setLinhas] = useState<Record<string, string>[]>([{}])
-  // Texto da caixa "Quantidade": editável livremente; só APLICA no blur/Enter,
-  // pra digitar/reduzir o número não colapsar as linhas já preenchidas a cada tecla.
-  const [qtdTexto, setQtdTexto] = useState('1')
-  const [qtdSync, setQtdSync] = useState(linhas.length)
-  if (linhas.length !== qtdSync) {
-    setQtdSync(linhas.length)
-    setQtdTexto(String(linhas.length))
-  }
   const [salvando, startTransition] = useTransition()
 
   const comercialCampos = campos.filter((c) => c.grupo === 'comercial').sort((a, b) => a.ordem - b.ordem)
@@ -61,23 +55,6 @@ export function NovoProcessoForm({
   }
   function atualizarLinha(i: number, campo: string, valor: string) {
     setLinhas((atual) => atual.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
-  }
-  function ajustarQuantidade(n: number) {
-    const alvo = Math.min(200, Math.max(1, Math.floor(n) || 1))
-    setLinhas((atual) => {
-      if (alvo === atual.length) return atual
-      if (alvo < atual.length) return atual.slice(0, alvo)
-      return [...atual, ...Array.from({ length: alvo - atual.length }, () => ({}) as Record<string, string>)]
-    })
-  }
-  function comitarQuantidade() {
-    const n = Math.floor(Number(qtdTexto))
-    if (!Number.isFinite(n) || n < 1) {
-      setQtdTexto(String(linhas.length)) // valor inválido/vazio: volta ao atual
-      return
-    }
-    ajustarQuantidade(n)
-    setQtdTexto(String(n))
   }
   function adicionarLinha() {
     setLinhas((atual) => (atual.length >= 200 ? atual : [...atual, {}]))
@@ -182,24 +159,12 @@ export function NovoProcessoForm({
             <CardTitle>
               Material <span className="text-sm font-normal text-muted-foreground">· cada linha vira um processo</span>
             </CardTitle>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex items-center gap-2 text-sm text-muted-foreground">
               Quantidade de processos
-              <input
-                type="number"
-                min={1}
-                value={qtdTexto}
-                onChange={(e) => setQtdTexto(e.target.value)}
-                onBlur={comitarQuantidade}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    comitarQuantidade()
-                    e.currentTarget.blur()
-                  }
-                }}
-                className="h-9 w-16 rounded-lg border border-input bg-background text-center text-sm"
-              />
-            </label>
+              <span className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-input bg-muted px-2 text-sm font-medium text-foreground">
+                {linhas.length}
+              </span>
+            </span>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full min-w-[560px]">
