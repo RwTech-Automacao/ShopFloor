@@ -63,7 +63,7 @@ export function NovoProcessoForm({
     setLinhas((atual) => atual.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)))
   }
   function ajustarQuantidade(n: number) {
-    const alvo = Math.max(1, Math.floor(n) || 1)
+    const alvo = Math.min(200, Math.max(1, Math.floor(n) || 1))
     setLinhas((atual) => {
       if (alvo === atual.length) return atual
       if (alvo < atual.length) return atual.slice(0, alvo)
@@ -80,7 +80,7 @@ export function NovoProcessoForm({
     setQtdTexto(String(n))
   }
   function adicionarLinha() {
-    setLinhas((atual) => [...atual, {}])
+    setLinhas((atual) => (atual.length >= 200 ? atual : [...atual, {}]))
   }
   function removerLinha(i: number) {
     setLinhas((atual) => (atual.length <= 1 ? atual : atual.filter((_, idx) => idx !== i)))

@@ -34,6 +34,9 @@ export async function criarProcessosColetivo(
   if (materiais.length === 0) {
     return { ok: false, erro: 'Adicione ao menos uma linha de material.' }
   }
+  if (materiais.length > 200) {
+    return { ok: false, erro: 'Máximo de 200 processos por lote.' }
+  }
 
   const campos = await carregarCamposFormulario()
   const chavesLista = [
