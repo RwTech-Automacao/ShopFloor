@@ -320,3 +320,30 @@ export async function criarProcesso(
   if (!data) throw new Error('Não foi possível criar o processo.')
   return { id: data.id as string, numero: data.numero as number }
 }
+
+/**
+ * Cria N processos num ÚNICO insert (atômico: ou entram todos, ou nenhum). Mesma
+ * regra de colunas graváveis do `criarProcesso` (status vem do default 'aberto').
+ * Devolve id+numero de cada linha criada (ordem não garantida — o chamador ordena).
+ */
+export async function criarProcessosLote(
+  patches: Array<PatchProcesso & { criado_por: string }>,
+): Promise<Array<{ id: string; numero: number }>> {
+  const supabase = await createServerSupabase()
+
+  const registros = patches.map((patch) => {
+    const registro: Record<string, unknown> = { criado_por: patch.criado_por }
+    for (const [chave, valor] of Object.entries(patch)) {
+      if (chave === 'criado_por' || chave === 'status') continue
+      if (COLUNAS_GRAVAVEIS.has(chave as ColunaGravavel)) registro[chave] = valor
+    }
+    return registro
+  })
+
+  const { data, error } = await supabase
+    .from('processos_recebimento')
+    .insert(registros)
+    .select('id, numero')
+  if (error) throw error
+  return ((data ?? []) as { id: string; numero: number }[]).map((r) => ({ id: r.id, numero: r.numero }))
+}
