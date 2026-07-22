@@ -1094,3 +1094,44 @@ Cadastro de OP; C: Lançamento). Branch `feat/shopfloor-lancamento`. Spec/planos
   (Lançamento — o coração):** tela do operador + submit transacional (faixa de SN, gate de sequência,
   anti-duplicidade, caixa) + a permissão `lancar` na UI de Perfis. Sub-features futuras: Grade Geral,
   Dashboard, Integração, Manutenção, Pesquisa, histórico de registros. **Nada pushado/mergeado/em Prod.**
+
+## 35. ShopFloor Processo — "Fundação + Lançamento" COMPLETO na branch (2026-07-22)
+
+Fechamos a fatia inteira do módulo 3 (rastreabilidade de montagem/PCB) — de ponta a ponta, usável. Tudo por
+subagent-driven-development (reviews de spec+qualidade entre tasks + review amplo opus PRONTO PARA MERGE em
+cada plano). Branch `feat/shopfloor-lancamento`. Spec/planos em `docs/superpowers/{specs,plans}/2026-07-2*`.
+**Nada em Prod, nada na main** (decisão: seguir construindo as próximas sub-features antes de subir).
+
+- **Plano A — Fundação (aplicado no Dev):** migração `0028` (tabelas `sf_*`, RLS, permissão `lancar`, perfil
+  Produção, seed de postos), domínio TDD (série/gate/regras), script de migração de dados. Dev: 165 defeitos,
+  115 OPs ativas.
+- **Plano B — Cadastro de OP:** módulo PRINCIPAL "Fluxo de Processos" no menu (não Configurações), rota
+  `/shopfloor/ordens`, guard próprio de `administrar`. CRUD com guarda de duplicidade e de exclusão.
+- **Plano B2 — Fluxo de postos POR OP (aplicado no Dev, `0030`):** `sf_ordem_postos.ordem` (a sequência é
+  por OP, não mais global); 2 postos novos (**Burn-in**, **Extra máquina**); Cadastro vira **lista
+  reordenável** (↑/↓/×) + botão opcional "puxar fluxo de OP do mesmo PMO". A trava de sequência passou a
+  seguir a ordem da OP.
+- **Plano C1 — Backend do Lançamento (aplicado no Dev, `0031`):** permissão `lancar` na tela de Perfis;
+  função plpgsql **`sf_lancar`** (advisory lock por PMO/OP → atômica, substitui o LockService); domínio TDD
+  (linhas/status/modo); repositório + action `lancar`. **Smoke 9/9** contra o Dev (DUPLICADO,
+  DUPLICADO_APROVADO, SEQUENCIA, re-lançamento, caixa_count, 1 linha por defeito).
+- **Plano C2 — Tela de Lançamento (operador):** `/shopfloor/lancamento` (perm `lancar`); cascata
+  Cliente→PMO→OP, Posto filtrado pela OP, Nº de Série com foco/bipagem (Enter envia), campos dinâmicos por
+  posto (status/defeitos múltiplos/SPI/NQA/caixa), validação espelhando o servidor. Review final achou 1
+  bug importante (Integração/Extra máquina caíam no fallback com status) → corrigido no domínio + teste.
+
+- **Regras de re-lançamento (final, confirmadas com o usuário):** aprovado nunca repete o posto; reprovado
+  libera. Sem status (registra 1×): Inicial, Montagem PTH, Integração, Embalagem, Extra máquina. Com status
+  (reprovado libera): SPI, SMD, PTH, Inspeção Final, NQA (inline) + Teste, Teste Final, Burn-in (via
+  Manutenção no futuro; interino: reprovada libera). NQA deriva status de visual+funcional.
+
+- **Preview na Vercel (Dev×Prod sem quebrar o Prod):** configuramos o ambiente **Preview** da Vercel pra
+  apontar pro **Dev** (Supabase + pasta de fotos de teste), separado da Produção — as 3 do Supabase e o
+  `GOOGLE_DRIVE_FOLDER_ID` ficaram Production=Prod / Preview=Dev; `GOOGLE_CLIENT_ID/SECRET/REFRESH` e
+  `FOTOS_STORAGE` compartilhados. Branch pushada → preview automático em
+  `shop-floor-git-feat-shopfloor-lancamento-*.vercel.app` (login: admin do Dev). Serve pra apresentar/testar
+  visualmente sem tocar o Prod. Detalhe do fix do CLI em [[supabase-cli-db-push]].
+
+- **Combinado:** testes **visuais** no preview agora; **funcional** depois, com todas as telas prontas.
+- **Próximo:** as sub-features restantes (Grade/Dashboard/Integração/Manutenção/Pesquisa/histórico) — o
+  usuário escolhe por valor e traz os scripts Apps Script que faltam. Ver `memory/shopfloor-processo-modulo.md`.
