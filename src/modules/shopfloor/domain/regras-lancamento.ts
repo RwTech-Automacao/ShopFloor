@@ -23,7 +23,8 @@ export function obrigatoriosPorPosto(posto: string, d: DadosLancamento): Resulta
   const p = (posto || '').toLowerCase()
   const base = !vazio(d.colaborador) && !vazio(d.pmo) && !vazio(d.op) && !vazio(d.numeroSerie)
 
-  if (p === 'inicial' || p === 'montagem pth') {
+  // Postos sem status (só passagem): base apenas.
+  if (p === 'inicial' || p === 'montagem pth' || p === 'integração' || p === 'integracao' || p === 'extra máquina') {
     return base ? { ok: true } : { ok: false, erro: 'Preencha Colaborador, PMO, OP e Nº de Série.' }
   }
   if (p === 'embalagem') {

@@ -8,6 +8,11 @@ describe('obrigatoriosPorPosto', () => {
     expect(obrigatoriosPorPosto('Inicial', base).ok).toBe(true)
     expect(obrigatoriosPorPosto('Inicial', { ...base, numeroSerie: '' }).ok).toBe(false)
   })
+  it('Integração e Extra máquina: sem status, só base (não exige Status)', () => {
+    expect(obrigatoriosPorPosto('Integração', base).ok).toBe(true)
+    expect(obrigatoriosPorPosto('Extra máquina', base).ok).toBe(true)
+    expect(obrigatoriosPorPosto('Extra máquina', { ...base, pmo: '' }).ok).toBe(false)
+  })
   it('Embalagem: exige caixa e limite', () => {
     expect(obrigatoriosPorPosto('Embalagem', base).ok).toBe(false)
     expect(obrigatoriosPorPosto('Embalagem', { ...base, numeroCaixa: 'C1', limiteCaixa: '10' }).ok).toBe(true)
