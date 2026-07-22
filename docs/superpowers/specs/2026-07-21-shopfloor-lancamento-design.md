@@ -52,7 +52,11 @@ integração/otimização vêm depois.
 
 ## Regras de submit (Server Action — autoritativas no servidor)
 
-Reproduz o `_enviarFormularioComContagem_` do `Código.gs`, numa **transação** (no lugar do lock):
+Reproduz o `_enviarFormularioComContagem_` do `Código.gs`. As validações puras (obrigatórios, faixa de
+SN, posto aplicável) rodam **no servidor em TS** (reusando o domínio do Plano A) para feedback rápido; as
+checagens **sensíveis a corrida** (anti-duplicidade, sequência, caixa) + a gravação acontecem numa
+**função no banco (`sf_lancar`, plpgsql)** com **advisory lock por (pmo, op)** — substitui o `LockService`
+do Apps Script, garantindo atomicidade (sem janela de corrida). É uma migração nova.
 1. **Config da OP** (cliente, faixa de SN, aplicabilidade) — de `sf_ordens`/`sf_ordem_postos`.
 2. **Obrigatórios por posto:** Inicial/Montagem PTH → colaborador, posto, pmo, op, SN. Embalagem →
    + nº caixa + qtd por caixa. NQA → + visual + funcional. SPI → + status (reprovado: ≥1 posição).
@@ -62,7 +66,15 @@ Reproduz o `_enviarFormularioComContagem_` do `Código.gs`, numa **transação**
 4. **Posto aplicável:** o posto tem que aplicar à OP.
 5. **Trava de sequência:** o **posto anterior aplicável** precisa estar concluído — *registrado*
    p/ Inicial/Montagem/Integração/Embalagem; *aprovado* p/ NQA e demais.
-6. **Anti-duplicidade** por posto (regras do `código.gs`), na transação.
+6. **Anti-duplicidade / re-lançamento** por posto (olha o último registro daquela peça —
+   pmo+op+numero_serie_norm — naquele posto). Princípio: **aprovado nunca repete o posto**.
+   - **Sem status** (Inicial, Montagem PTH, Integração, Embalagem): registra 1× só; barra duplicado.
+   - **Inspeção SMD / Inspeção PTH**: re-lança se a última foi **reprovada** (retrabalho "extra-máquina" é
+     físico, fora do sistema); aprovada → barra.
+   - **Teste / Teste Final**: idem interino (re-lança se reprovada) — o gate de "passou por Manutenção"
+     entra quando o módulo Manutenção existir; aprovada → barra.
+   - **Inspeção SPI / Inspeção Final / NQA** (PROVISÓRIO, aguardando confirmação): mesma regra — aprovado
+     barra, reprovado libera.
 7. **Caixa (Embalagem):** conta peças na caixa (mesma PMO/OP/caixa); se ≥ limite → erro "caixa
    cheia"; grava e **devolve a contagem** pós-envio.
 8. **Gravação:** 1 registro; Reprovado com múltiplos defeitos → **1 registro por defeito**; SPI
