@@ -1,24 +1,8 @@
-/** Ordem lógica do fluxo (do Código.gs POSTO_FLOW_ORDER). Manutenção é fora do fluxo. */
-export const ORDEM_FLUXO_POSTOS = [
-  'Inicial', 'Inspeção SPI', 'Inspeção SMD', 'Montagem PTH', 'Inspeção PTH', 'Teste',
-  'Integração', 'Teste Final', 'Inspeção Final', 'Embalagem', 'Inspeção NQA', 'Manutenção',
-] as const
-
-/** Posto anterior aplicável que precisa estar concluído antes do posto atual (ou null). */
-export function postoAnteriorExigido(
-  postoAtual: string,
-  aplicavel: (posto: string) => boolean,
-): string | null {
-  if (/^manuten[çc][aã]o$/i.test(postoAtual)) return null
-  const seq = ORDEM_FLUXO_POSTOS
-  const idx = seq.findIndex((p) => p.toLowerCase() === postoAtual.toLowerCase())
+/** Posto imediatamente anterior a `postoAtual` na sequência ordenada da OP (ou null). */
+export function postoAnteriorNaSequencia(postoAtual: string, postosOrdenados: string[]): string | null {
+  const idx = postosOrdenados.findIndex((p) => p.toLowerCase() === postoAtual.toLowerCase())
   if (idx <= 0) return null
-  for (let j = idx - 1; j >= 0; j--) {
-    const cand = seq[j]!
-    if (cand === 'Manutenção') continue
-    if (aplicavel(cand)) return cand
-  }
-  return null
+  return postosOrdenados[idx - 1] ?? null
 }
 
 export interface SnapshotPosto {

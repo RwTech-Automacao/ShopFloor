@@ -1,21 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { postoAnteriorExigido, gateSatisfeito } from '../postos'
+import { postoAnteriorNaSequencia, gateSatisfeito } from '../postos'
 
-const todosAplicaveis = () => true
-
-describe('postoAnteriorExigido', () => {
-  it('Manutenção não exige anterior', () => {
-    expect(postoAnteriorExigido('Manutenção', todosAplicaveis)).toBeNull()
+describe('postoAnteriorNaSequencia', () => {
+  const fluxo = ['Inicial', 'Inspeção SMD', 'Teste', 'Embalagem']
+  it('devolve o posto imediatamente anterior na ordem da OP', () => {
+    expect(postoAnteriorNaSequencia('Teste', fluxo)).toBe('Inspeção SMD')
+    expect(postoAnteriorNaSequencia('Embalagem', fluxo)).toBe('Teste')
   })
-  it('Inicial (primeiro) não exige anterior', () => {
-    expect(postoAnteriorExigido('Inicial', todosAplicaveis)).toBeNull()
+  it('primeiro da lista não tem anterior', () => {
+    expect(postoAnteriorNaSequencia('Inicial', fluxo)).toBeNull()
   })
-  it('Teste exige o posto anterior aplicável', () => {
-    expect(postoAnteriorExigido('Teste', todosAplicaveis)).toBe('Inspeção PTH')
-  })
-  it('pula os postos não-aplicáveis para trás', () => {
-    const aplic = (p: string) => p !== 'Inspeção PTH' && p !== 'Inspeção SMD' && p !== 'Montagem PTH'
-    expect(postoAnteriorExigido('Teste', aplic)).toBe('Inspeção SPI')
+  it('posto fora da lista → null', () => {
+    expect(postoAnteriorNaSequencia('Burn-in', fluxo)).toBeNull()
   })
 })
 
