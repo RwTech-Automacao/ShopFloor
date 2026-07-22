@@ -108,3 +108,44 @@ export async function chamarSfLancar(
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
   return data as { ok: boolean; erro?: string; caixa_count?: number }
 }
+
+export interface OrdemLancamentoLista {
+  cliente: string
+  pmo: string
+  op: string
+  descricao: string
+  sn_ini: string
+  sn_fim: string
+  postos: string[]
+}
+
+/** Todas as OPs ativas com config + fluxo ordenado, para a cascata da tela de Lançamento. */
+export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_ordens')
+    .select('cliente,pmo,op,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem)')
+    .neq('status', 'FINALIZADA')
+    .order('cliente')
+    .order('pmo')
+    .order('op')
+  if (error) throw error
+  const rows = data as unknown as {
+    cliente: string
+    pmo: string
+    op: string
+    descricao: string
+    sn_ini: string
+    sn_fim: string
+    sf_ordem_postos: { posto: string; ordem: number }[]
+  }[]
+  return rows.map((r) => ({
+    cliente: r.cliente,
+    pmo: r.pmo,
+    op: r.op,
+    descricao: r.descricao,
+    sn_ini: r.sn_ini,
+    sn_fim: r.sn_fim,
+    postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
+  }))
+}
