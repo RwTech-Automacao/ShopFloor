@@ -90,12 +90,13 @@ normalização de SN) vira **domínio testável com TDD** — como no Recebiment
 
 ### Lançamento (`/shopfloor/lancamento` — operador)
 Reproduz o `formulario.html` no nosso design:
-- **Contexto/login:** Colaborador (texto **bipado**), Posto (10 opções), **Cliente → PMO → OP**
-  (selects em cascata), Descrição (auto, read-only), + Nº da Caixa / Qtd por Caixa quando
-  Embalagem.
-- **Form dinâmico por posto:** Status (some em Inicial/Montagem/Embalagem/NQA), **Nº de Série**
-  (foco automático, scanner-friendly), **defeitos múltiplos** (código via lista por tipo +
-  posição + tipo, quando Reprovado), SPI (só posição na reprova), NQA (visual + funcional).
+- **Contexto/login:** Colaborador (texto **bipado**), **Cliente → PMO → OP** (selects em cascata),
+  **Posto** (os postos DA OP, na ordem do fluxo — filtrado pela OP escolhida), Descrição (auto,
+  read-only), + Nº da Caixa / Qtd por Caixa quando Embalagem.
+- **Form dinâmico por posto:** Status (só nos postos com status), **Nº de Série** (foco automático,
+  scanner-friendly), **defeitos múltiplos** (código via lista de todos os defeitos + posição + tipo
+  [SMD/PTH/Integração/TOP/BOT/Funcional/Elétrico], quando Reprovado), SPI (só posição na reprova),
+  NQA (visual + funcional; status derivado no servidor).
 - **Validação no cliente** (espelha o servidor p/ feedback rápido): faixa de SN, posto aplicável,
   obrigatórios; o botão Enviar só habilita quando válido.
 - **Após enviar:** mensagem de sucesso (+ "peças na caixa X: N" na Embalagem), limpa e devolve o
