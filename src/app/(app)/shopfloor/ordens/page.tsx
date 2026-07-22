@@ -2,7 +2,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { listarOrdens, listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
+import { listarOrdens, listarPostos, listarFluxos } from '@/modules/shopfloor/infra/ordem-repository'
 import { OrdemForm, type OrdemView } from './ordem-form'
 import { ExcluirOrdemBotao } from './excluir-ordem-botao'
 
@@ -12,7 +12,7 @@ export default async function OrdensPage() {
     return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
   }
 
-  const [ordens, postos] = await Promise.all([listarOrdens(), listarPostos()])
+  const [ordens, postos, fluxos] = await Promise.all([listarOrdens(), listarPostos(), listarFluxos()])
   const chavesPostos = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const views: OrdemView[] = ordens.map((o) => ({
     id: o.id,
@@ -25,7 +25,7 @@ export default async function OrdensPage() {
     status: o.status,
     sn_ini: o.sn_ini,
     sn_fim: o.sn_fim,
-    postos: o.sf_ordem_postos.map((x) => x.posto),
+    postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
   }))
 
   return (
@@ -35,7 +35,7 @@ export default async function OrdensPage() {
           <h2 className="text-lg font-semibold text-tinta">Ordens de Produção</h2>
           <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
         </div>
-        <OrdemForm postos={chavesPostos} />
+        <OrdemForm postos={chavesPostos} fluxosExistentes={fluxos} />
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">
@@ -64,7 +64,7 @@ export default async function OrdensPage() {
                 <TableCell className="text-center">{o.postos.length}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <OrdemForm postos={chavesPostos} ordem={o} />
+                    <OrdemForm postos={chavesPostos} ordem={o} fluxosExistentes={fluxos} />
                     <ExcluirOrdemBotao id={o.id} rotulo={`${o.pmo}/${o.op}`} />
                   </div>
                 </TableCell>

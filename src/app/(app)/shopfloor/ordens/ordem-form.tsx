@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, Pencil, ArrowUp, ArrowDown, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   criarOrdemAction,
@@ -35,17 +34,51 @@ export interface OrdemView {
   postos: string[]
 }
 
-export function OrdemForm({ postos, ordem }: { postos: string[]; ordem?: OrdemView }) {
+export interface FluxoExistente {
+  pmo: string
+  op: string
+  postos: string[]
+}
+
+export function OrdemForm({
+  postos,
+  ordem,
+  fluxosExistentes,
+}: {
+  postos: string[]
+  ordem?: OrdemView
+  fluxosExistentes: FluxoExistente[]
+}) {
   const ehEdicao = ordem !== undefined
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState<ResultadoOrdem | undefined, FormData>(action, undefined)
 
-  // Fecha o dialog quando a action retorna ok (ajuste durante a render, sem useEffect).
+  const [pmo, setPmo] = useState(ordem?.pmo ?? '')
+  const [fluxo, setFluxo] = useState<string[]>(ordem?.postos ?? [])
+
   const [processado, setProcessado] = useState(state)
   if (state !== processado) {
     setProcessado(state)
     if (state?.ok) setOpen(false)
+  }
+
+  const disponiveis = postos.filter((p) => !fluxo.includes(p))
+  const fontes = fluxosExistentes.filter((f) => f.pmo === pmo && f.op !== ordem?.op && f.postos.length > 0)
+
+  function mover(i: number, delta: number) {
+    const j = i + delta
+    if (j < 0 || j >= fluxo.length) return
+    const copia = [...fluxo]
+    const [item] = copia.splice(i, 1)
+    copia.splice(j, 0, item!)
+    setFluxo(copia)
+  }
+  function remover(i: number) {
+    setFluxo(fluxo.filter((_, idx) => idx !== i))
+  }
+  function adicionar(posto: string) {
+    if (!fluxo.includes(posto)) setFluxo([...fluxo, posto])
   }
 
   return (
@@ -69,11 +102,12 @@ export function OrdemForm({ postos, ordem }: { postos: string[]; ordem?: OrdemVi
         </DialogHeader>
         <form action={formAction} className="flex flex-col gap-4">
           {ehEdicao && <input type="hidden" name="id" value={ordem.id} />}
+          <input type="hidden" name="fluxo" value={JSON.stringify(fluxo)} />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="pmo">PMO *</Label>
-              <Input id="pmo" name="pmo" defaultValue={ordem?.pmo ?? ''} required />
+              <Input id="pmo" name="pmo" value={pmo} onChange={(e) => setPmo(e.target.value)} required />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="op">Nº OP *</Label>
@@ -117,20 +151,64 @@ export function OrdemForm({ postos, ordem }: { postos: string[]; ordem?: OrdemVi
             </div>
           </div>
 
+          {/* Fluxo de postos (ordenado) */}
           <div>
-            <p className="mb-2 text-sm font-medium">Postos aplicáveis</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {postos.map((posto) => (
-                <label
-                  key={posto}
-                  htmlFor={`posto_${posto}`}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm"
-                >
-                  {posto}
-                  <Switch id={`posto_${posto}`} name={`posto_${posto}`} defaultChecked={ordem?.postos.includes(posto) ?? false} />
-                </label>
-              ))}
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">Fluxo de postos <span className="font-normal text-muted-foreground">· na ordem da linha</span></p>
+              {fontes.length > 0 && (
+                <Select value="" onValueChange={(op) => {
+                  const fonte = fontes.find((f) => f.op === op)
+                  if (fonte) setFluxo(fonte.postos)
+                }}>
+                  <SelectTrigger className="h-8 w-auto text-xs">
+                    <SelectValue placeholder="Puxar fluxo de OP…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {fontes.map((f) => (
+                      <SelectItem key={f.op} value={f.op}>{`OP ${f.op}`}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
+
+            <ol className="flex flex-col gap-1">
+              {fluxo.map((posto, i) => (
+                <li key={posto} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm">
+                  <span className="w-5 text-center text-xs font-medium text-enterplak">{i + 1}</span>
+                  <span className="flex-1">{posto}</span>
+                  <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                    <ArrowUp className="size-4" />
+                  </button>
+                  <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === fluxo.length - 1} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                    <ArrowDown className="size-4" />
+                  </button>
+                  <button type="button" aria-label="Remover" onClick={() => remover(i)} className="text-muted-foreground hover:text-red-600">
+                    <X className="size-4" />
+                  </button>
+                </li>
+              ))}
+              {fluxo.length === 0 && (
+                <li className="rounded-lg border border-dashed border-border px-2.5 py-3 text-center text-xs text-muted-foreground">
+                  Nenhum posto no fluxo. Adicione abaixo.
+                </li>
+              )}
+            </ol>
+
+            {disponiveis.length > 0 && (
+              <div className="mt-2">
+                <Select value="" onValueChange={(p) => p && adicionar(p)}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="+ Adicionar posto ao fluxo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {disponiveis.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           {state && !state.ok && <p className="text-sm text-red-600">{state.erro}</p>}
