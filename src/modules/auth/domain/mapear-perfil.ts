@@ -11,6 +11,7 @@ export interface PerfilRow {
   pode_excluir: boolean
   pode_gerar_etiqueta: boolean
   pode_administrar: boolean
+  pode_lancar: boolean
   sistema: boolean
 }
 
@@ -28,6 +29,7 @@ export function mapearPerfil(row: PerfilRow): Perfil {
       excluir: row.pode_excluir,
       gerar_etiqueta: row.pode_gerar_etiqueta,
       administrar: row.pode_administrar,
+      lancar: row.pode_lancar,
     },
   }
 }

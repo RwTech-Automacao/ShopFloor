@@ -14,6 +14,7 @@ describe('mapearPerfil', () => {
       pode_excluir: false,
       pode_gerar_etiqueta: true,
       pode_administrar: false,
+      pode_lancar: false,
       sistema: true,
     })
     expect(perfil.nome).toBe('Recebimento')

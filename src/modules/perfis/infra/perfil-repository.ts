@@ -11,6 +11,7 @@ export interface DadosPerfil {
   pode_excluir: boolean
   pode_gerar_etiqueta: boolean
   pode_administrar: boolean
+  pode_lancar: boolean
 }
 
 export async function listarPerfis(): Promise<PerfilRow[]> {

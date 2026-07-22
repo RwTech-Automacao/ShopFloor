@@ -7,6 +7,7 @@ export type Permissao =
   | 'excluir'
   | 'gerar_etiqueta'
   | 'administrar'
+  | 'lancar'
 
 export interface Perfil {
   id: string

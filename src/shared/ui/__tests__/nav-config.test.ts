@@ -7,6 +7,7 @@ const perfil = (over: Partial<Perfil['permissoes']>): Perfil => ({
   permissoes: {
     visualizar: true, importar: false, editar: false, finalizar: false,
     editar_finalizado: false, excluir: false, gerar_etiqueta: false, administrar: false,
+    lancar: false,
     ...over,
   },
 })

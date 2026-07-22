@@ -29,6 +29,7 @@ const CAMPOS_DIFF = [
   'pode_excluir',
   'pode_gerar_etiqueta',
   'pode_administrar',
+  'pode_lancar',
 ]
 
 // Detecta violação de unicidade (constraint `perfis_nome_key`) para
@@ -51,6 +52,7 @@ function lerFlags(formData: FormData): Omit<DadosPerfil, 'nome'> {
     pode_excluir: formData.get('excluir') === 'on',
     pode_gerar_etiqueta: formData.get('gerar_etiqueta') === 'on',
     pode_administrar: formData.get('administrar') === 'on',
+    pode_lancar: formData.get('lancar') === 'on',
   }
 }
 
