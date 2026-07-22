@@ -67,29 +67,35 @@ export function LancamentoForm({
   const reprovado = status.toLowerCase() === 'reprovado'
   const semFaixa = ordemSel !== null && (ordemSel.sn_ini.trim() === '' || ordemSel.sn_fim.trim() === '')
 
+  /** Limpa todos os campos dinâmicos da peça (evita dado velho ao trocar contexto/posto). */
+  function resetCamposDinamicos() {
+    setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
+    setNqaVisual(''); setNqaFuncional(''); setNumeroCaixa(''); setQtdPorCaixa('')
+  }
   function mudarCliente(v: string) {
-    setCliente(v); setPmo(''); setOp(''); setPosto('')
+    setCliente(v); setPmo(''); setOp(''); setPosto(''); resetCamposDinamicos()
   }
   function mudarPmo(v: string) {
-    setPmo(v); setOp(''); setPosto('')
+    setPmo(v); setOp(''); setPosto(''); resetCamposDinamicos()
   }
   function mudarOp(v: string) {
-    setOp(v); setPosto('')
+    setOp(v); setPosto(''); resetCamposDinamicos()
   }
   function mudarPosto(v: string) {
-    setPosto(v); setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
+    setPosto(v); resetCamposDinamicos()
   }
 
   const valido = useMemo(() => {
     if (!colaborador.trim() || !cliente || !pmo || !op || !posto || numeroSerie.trim() === '') return false
     if (!ordemSel || semFaixa) return false
     if (!serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) return false
-    if (ehEmbalagem && (numeroCaixa.trim() === '' || !(Number(qtdPorCaixa) > 0))) return false
+    if (ehEmbalagem && (numeroCaixa.trim() === '' || !Number.isInteger(Number(qtdPorCaixa)) || Number(qtdPorCaixa) <= 0)) return false
     if (ehNqa && (nqaVisual === '' || nqaFuncional === '')) return false
     if (comStatus && !ehNqa && status === '') return false
     if (comStatus && !ehNqa && reprovado) {
       if (ehSpi) return posicoesSPI.some((p) => p.trim() !== '')
-      return defeitosSel.some((d) => d.codigo.trim() !== '' || d.posicao.trim() !== '')
+      // servidor exige código E posição E tipo em ao menos um defeito
+      return defeitosSel.some((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
     }
     return true
   }, [colaborador, cliente, pmo, op, posto, numeroSerie, ordemSel, semFaixa, ehEmbalagem, numeroCaixa, qtdPorCaixa, ehNqa, nqaVisual, nqaFuncional, comStatus, status, reprovado, ehSpi, posicoesSPI, defeitosSel])
@@ -116,7 +122,7 @@ export function LancamentoForm({
         nqaFuncional: ehNqa ? nqaFuncional : undefined,
         defeitos:
           reprovado && !ehSpi
-            ? defeitosSel.filter((d) => d.codigo.trim() !== '' || d.posicao.trim() !== '')
+            ? defeitosSel.filter((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
             : undefined,
         posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
       })
@@ -185,7 +191,7 @@ export function LancamentoForm({
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="qtdcaixa">Qtd por caixa</Label>
-                <Input id="qtdcaixa" type="number" value={qtdPorCaixa} onChange={(e) => setQtdPorCaixa(e.target.value)} />
+                <Input id="qtdcaixa" type="number" min="1" step="1" value={qtdPorCaixa} onChange={(e) => setQtdPorCaixa(e.target.value)} />
               </div>
             </>
           )}
