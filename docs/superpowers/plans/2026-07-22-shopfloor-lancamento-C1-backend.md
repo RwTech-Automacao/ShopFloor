@@ -11,11 +11,11 @@
 ## Global Constraints
 
 - **Branch:** `feat/shopfloor-lancamento` (a mesma; continua nela).
-- **Regra de anti-duplicidade/re-lançamento** (olha o ÚLTIMO registro da peça — pmo+op+numero_serie_norm — NAQUELE posto; princípio: **aprovado nunca repete**):
-  - **Postos SEM status** (Inicial, Montagem PTH, Integração, Embalagem): registra 1× só → qualquer registro existente **barra**.
-  - **Postos COM status** (Inspeção SPI, Inspeção SMD, Montagem?, Inspeção PTH, Teste, Teste Final, Inspeção Final, NQA): se o último status foi **'aprovado'** → barra; se reprovado ou inexistente → libera. (Teste/Teste Final: o gate extra de "passou por Manutenção" fica pra quando o módulo Manutenção existir. SPI/Final/NQA: regra provisória, aguardando confirmação do usuário — mesma lógica.)
-- **Postos com status** = os que gravam `status` aprovado/reprovado: Inspeção SPI, Inspeção SMD, Inspeção PTH, Teste, Teste Final, Inspeção Final. (Inicial, Montagem PTH, Integração, Embalagem: sem status. NQA: usa visual+funcional — tratado como "com status" para re-lançamento, olhando `nqa_funcional`? Não: NQA grava em `status` o resultado consolidado? → Ver decisão na Task 2/3: NQA NÃO grava `status`; para re-lançamento, NQA conta como "sem status" nesta fatia (registra 1× por caixa/amostra). Confirmar com usuário depois.)
-- **Sequência:** o posto anterior aplicável precisa estar satisfeito — *registrado* p/ Inicial/Montagem PTH/Integração/Embalagem; *aprovado* p/ os demais (NQA e com-status). Computado em TS (domínio do Plano A), verificado no RPC.
+- **Regra de anti-duplicidade/re-lançamento** (FINAL — olha o ÚLTIMO registro da peça — pmo+op+numero_serie_norm — NAQUELE posto; princípio: **aprovado nunca repete**):
+  - **Postos SEM status** (Inicial, Montagem PTH, Integração, Embalagem, **Extra máquina**): registra 1× só → qualquer registro existente **barra**.
+  - **Postos COM status** (Inspeção SPI, Inspeção SMD, Inspeção PTH, Teste, **Burn-in**, Teste Final, Inspeção Final, NQA): último = 'aprovado' → barra; reprovado ou inexistente → libera. (Teste/Teste Final/**Burn-in**: o gate extra "passou por Manutenção" entra quando o módulo Manutenção existir — interino: só reprovada libera.)
+- **Postos com status** (gravam `status` aprovado/reprovado): Inspeção SPI, Inspeção SMD, Inspeção PTH, Teste, **Burn-in**, Teste Final, Inspeção Final. **NQA**: grava visual+funcional → a action **deriva um `status` consolidado** (aprovado se ambos aprovados, senão reprovado) e trata NQA como **com status** (`postoTemStatus`=true).
+- **Sequência (segue a ordem DA OP — do Plano B2):** o posto **imediatamente anterior na ordem da OP** (`postoAnteriorNaSequencia(posto, ordemPostos)`) precisa estar satisfeito — *registrado* p/ Inicial/Montagem PTH/Integração/Embalagem/**Extra máquina**; *aprovado* p/ os demais. Computado em TS (`precisaAprovado`), verificado no RPC.
 - **OP sem faixa de SN → barra** o lançamento (validação TS).
 - Permissão de submit: **`lancar`** (a estação loga; colaborador é bipado, texto livre).
 - Padrões: repositórios com `import 'server-only'` + `createServerSupabase()`; actions com `getSessao()`+`podeFazer` + `try/catch` + retorno `{ ok } | { ok:false, erro }`.
@@ -30,7 +30,7 @@
 - Modify: `src/modules/perfis/domain/regras-perfil.ts` (PERMISSOES += lancar)
 - Modify: `src/modules/perfis/application/actions.ts` (flag pode_lancar)
 - Create: `src/modules/shopfloor/domain/lancamento-linhas.ts` + `__tests__/lancamento-linhas.test.ts`
-- Create: `supabase/migrations/0029_sf_lancar.sql`
+- Create: `supabase/migrations/0031_sf_lancar.sql`
 - Create: `src/modules/shopfloor/infra/lancamento-repository.ts`
 - Create: `src/modules/shopfloor/application/lancar-action.ts`
 
@@ -109,7 +109,7 @@ EOF
 **Interfaces:**
 - Produces:
   - `POSTOS_COM_STATUS: string[]` e `postoTemStatus(posto): boolean`.
-  - `precisaAprovado(posto): boolean` — modo do gate de sequência (false p/ Inicial/Montagem PTH/Integração/Embalagem; true p/ os demais).
+  - `precisaAprovado(posto): boolean` — modo do gate de sequência (false p/ Inicial/Montagem PTH/Integração/Embalagem/Extra máquina; true p/ os demais).
   - `LinhaDefeito = { codigo_defeito: string; posicao: string; tipo_defeito: string }`.
   - `montarLinhas(posto, dados): LinhaDefeito[]` — expande em 1 linha por defeito; SPI reprovado → 1 por posição; aprovado / postos sem defeito → `[]` (o RPC grava 1 linha vazia).
 
@@ -125,8 +125,11 @@ describe('postoTemStatus', () => {
   it('classifica com/sem status', () => {
     expect(postoTemStatus('Teste')).toBe(true)
     expect(postoTemStatus('Inspeção SMD')).toBe(true)
+    expect(postoTemStatus('Burn-in')).toBe(true)
+    expect(postoTemStatus('Inspeção NQA')).toBe(true)
     expect(postoTemStatus('Inicial')).toBe(false)
     expect(postoTemStatus('Embalagem')).toBe(false)
+    expect(postoTemStatus('Extra máquina')).toBe(false)
   })
 })
 
@@ -134,7 +137,9 @@ describe('precisaAprovado', () => {
   it('sem status → basta registrado; demais → aprovado', () => {
     expect(precisaAprovado('Inicial')).toBe(false)
     expect(precisaAprovado('Embalagem')).toBe(false)
+    expect(precisaAprovado('Extra máquina')).toBe(false)
     expect(precisaAprovado('Teste')).toBe(true)
+    expect(precisaAprovado('Burn-in')).toBe(true)
     expect(precisaAprovado('Inspeção NQA')).toBe(true)
   })
 })
@@ -180,19 +185,22 @@ export const POSTOS_COM_STATUS = [
   'Inspeção SMD',
   'Inspeção PTH',
   'Teste',
+  'Burn-in',
   'Teste Final',
   'Inspeção Final',
+  'Inspeção NQA',
 ] as const
 
 export function postoTemStatus(posto: string): boolean {
   return POSTOS_COM_STATUS.some((p) => p.toLowerCase() === posto.toLowerCase())
 }
 
+/** Postos onde o gate de sequência basta estar REGISTRADO (não exige aprovado). */
+export const POSTOS_SO_REGISTRADO = ['inicial', 'montagem pth', 'integração', 'integracao', 'embalagem', 'extra máquina']
+
 /** Modo do gate de sequência: false = basta registrado; true = exige aprovado. */
 export function precisaAprovado(posto: string): boolean {
-  const p = posto.toLowerCase()
-  const soRegistrado = ['inicial', 'montagem pth', 'integração', 'integracao', 'embalagem']
-  return !soRegistrado.includes(p)
+  return !POSTOS_SO_REGISTRADO.includes(posto.toLowerCase())
 }
 
 export interface LinhaDefeito {
@@ -237,17 +245,17 @@ EOF
 
 ---
 
-### Task 3: Migração `0029` — função de submit `sf_lancar` (plpgsql, atômica)
+### Task 3: Migração `0031` — função de submit `sf_lancar` (plpgsql, atômica)
 
 **Files:**
-- Create: `supabase/migrations/0029_sf_lancar.sql`
+- Create: `supabase/migrations/0031_sf_lancar.sql`
 
 **Interfaces:**
 - Produces: `public.sf_lancar(...) returns jsonb` — faz advisory lock por (pmo,op), checa anti-duplicidade/re-lançamento + sequência + caixa, insere 1+ linhas, devolve `{ok:true, caixa_count?}` ou `{ok:false, erro:'CODIGO'}`.
 
 - [ ] **Step 1: Escrever a migração**
 
-`supabase/migrations/0029_sf_lancar.sql`:
+`supabase/migrations/0031_sf_lancar.sql`:
 
 ```sql
 -- =============================================================
@@ -376,14 +384,14 @@ end;
 $$;
 ```
 
-- [ ] **Step 2: Sanidade (sem aplicar)** — `grep -c "create or replace function public.sf_lancar" supabase/migrations/0029_sf_lancar.sql` → `1`. O controller aplica no Dev na Task 6.
+- [ ] **Step 2: Sanidade (sem aplicar)** — `grep -c "create or replace function public.sf_lancar" supabase/migrations/0031_sf_lancar.sql` → `1`. O controller aplica no Dev na Task 6.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add supabase/migrations/0029_sf_lancar.sql
+git add supabase/migrations/0031_sf_lancar.sql
 git commit -F - << 'EOF'
-feat(shopfloor): migração 0029 — função sf_lancar (submit atômico do Lançamento)
+feat(shopfloor): migração 0031 — função sf_lancar (submit atômico do Lançamento)
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 EOF
@@ -483,7 +491,7 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('cliente,descricao,sn_ini,sn_fim,sf_ordem_postos(posto)')
+    .select('cliente,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
@@ -494,14 +502,15 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
     descricao: string
     sn_ini: string
     sn_fim: string
-    sf_ordem_postos: { posto: string }[]
+    sf_ordem_postos: { posto: string; ordem: number }[]
   }
   return {
     cliente: row.cliente,
     descricao: row.descricao,
     sn_ini: row.sn_ini,
     sn_fim: row.sn_fim,
-    postos: row.sf_ordem_postos.map((p) => p.posto),
+    // postos NA ORDEM da OP (a sequência importa p/ a trava de sequência).
+    postos: [...row.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
   }
 }
 
@@ -544,7 +553,7 @@ EOF
 - Create: `src/modules/shopfloor/application/lancar-action.ts`
 
 **Interfaces:**
-- Consumes: domínio (`serie`: `serieDentroDaFaixa`, `normalizarSerie`, `limparSerie`; `postos`: `postoAnteriorExigido`; `regras-lancamento`: `obrigatoriosPorPosto`; `lancamento-linhas`: `postoTemStatus`, `precisaAprovado`, `montarLinhas`); repo (`carregarOrdem`, `chamarSfLancar`).
+- Consumes: domínio (`serie`: `serieDentroDaFaixa`, `normalizarSerie`, `limparSerie`; `postos`: `postoAnteriorNaSequencia`; `regras-lancamento`: `obrigatoriosPorPosto`; `lancamento-linhas`: `postoTemStatus`, `precisaAprovado`, `montarLinhas`); repo (`carregarOrdem`, `chamarSfLancar`).
 - Produces:
   - `type EntradaLancamento = { colaborador; posto; pmo; op; numeroSerie; status?; numeroCaixa?; qtdPorCaixa?; nqaVisual?; nqaFuncional?; defeitos?; posicoesSPI? }`
   - `type ResultadoLancamento = { ok: true; caixaCount?: number } | { ok: false; erro: string }`
@@ -560,7 +569,7 @@ EOF
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer } from '@/modules/auth/domain/perfil'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
-import { postoAnteriorExigido } from '../domain/postos'
+import { postoAnteriorNaSequencia } from '../domain/postos'
 import { obrigatoriosPorPosto } from '../domain/regras-lancamento'
 import { postoTemStatus, precisaAprovado, montarLinhas } from '../domain/lancamento-linhas'
 import { carregarOrdem, chamarSfLancar } from '../infra/lancamento-repository'
@@ -632,12 +641,22 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     return { ok: false, erro: 'Este posto não se aplica a esta OP.' }
   }
 
-  const prevPosto = postoAnteriorExigido(entrada.posto, aplicavel)
+  // Posto anterior EXIGIDO = o imediatamente anterior na ORDEM da OP (Plano B2).
+  const prevPosto = postoAnteriorNaSequencia(entrada.posto, ordem.postos)
   const qtdPorCaixa =
     entrada.qtdPorCaixa && entrada.qtdPorCaixa.trim() !== '' ? Number(entrada.qtdPorCaixa) : null
 
+  // NQA não tem campo Status: deriva aprovado/reprovado de visual+funcional.
+  const ehNqa = entrada.posto.toLowerCase() === 'inspeção nqa'
+  const statusFinal = ehNqa
+    ? (entrada.nqaVisual ?? '').toLowerCase() === 'aprovado' &&
+      (entrada.nqaFuncional ?? '').toLowerCase() === 'aprovado'
+      ? 'Aprovado'
+      : 'Reprovado'
+    : (entrada.status ?? '')
+
   const linhas = montarLinhas(entrada.posto, {
-    status: entrada.status,
+    status: statusFinal,
     defeitos: entrada.defeitos,
     posicoes: entrada.posicoesSPI,
   })
@@ -650,7 +669,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     p_colaborador: entrada.colaborador.trim(),
     p_numero_serie: limparSerie(entrada.numeroSerie),
     p_numero_serie_norm: normalizarSerie(entrada.numeroSerie),
-    p_status: entrada.status ?? '',
+    p_status: statusFinal,
     p_posto_tem_status: postoTemStatus(entrada.posto),
     p_numero_caixa: entrada.numeroCaixa ?? '',
     p_qtd_por_caixa: qtdPorCaixa,
@@ -689,7 +708,7 @@ EOF
 
 - [ ] **Step 2 (CONTROLLER): review amplo do branch** (subagent-driven-development → final review, opus) — foco: a função `sf_lancar` (corretude das checagens + advisory lock), a orquestração TS↔RPC, a permissão `lancar`.
 
-- [ ] **Step 3 (CONTROLLER): aplicar `0029` no Dev + smoke via script** — `supabase db push` (com `SUPABASE_GO_BINARY`), depois um script pontual que chama `sf_lancar` em cenários: lançar Inicial num SN; tentar Teste sem o anterior (SEQUENCIA); SN fora da faixa (barra no TS); Embalagem respeitando o limite; re-lançar aprovado (DUPLICADO/DUPLICADO_APROVADO); reprovado com 2 defeitos (2 linhas). Conferir contagens em `sf_registros`.
+- [ ] **Step 3 (CONTROLLER): aplicar `0031` no Dev + smoke via script** — `supabase db push` (com `SUPABASE_GO_BINARY`), depois um script pontual que chama `sf_lancar` em cenários: lançar Inicial num SN; tentar Teste sem o anterior (SEQUENCIA); SN fora da faixa (barra no TS); Embalagem respeitando o limite; re-lançar aprovado (DUPLICADO/DUPLICADO_APROVADO); reprovado com 2 defeitos (2 linhas). Conferir contagens em `sf_registros`.
 
 - [ ] **Step 4: NÃO push** — commits locais; smoke da tela vem no Plano C2.
 
@@ -699,7 +718,7 @@ EOF
 
 - **Cobertura:** permissão `lancar` end-to-end na UI de Perfis (T1) ✅; submit atômico com anti-duplicidade/sequência/caixa (T3, regras confirmadas) ✅; validações puras reusando o domínio dos Planos A (T5) ✅; catálogos em cascata p/ a tela do C2 (T4) ✅.
 - **Duplicação de regra:** a decisão de re-lançamento vive no RPC (depende de estado do banco); o TS não a reimplementa — evita 2 fontes. `postoTemStatus`/`precisaAprovado`/`montarLinhas` são puros e testados; o RPC recebe os flags já computados.
-- **Sincronia de nomes de posto:** `POSTOS_COM_STATUS` e `precisaAprovado` usam as mesmas chaves do seed `sf_postos`/`ORDEM_FLUXO_POSTOS` (com acento) — coerência confirmada no Plano A.
+- **Sincronia de nomes de posto:** `POSTOS_COM_STATUS` e `precisaAprovado` usam as mesmas chaves do seed `sf_postos` (com acento) — coerência confirmada nos Planos A/B2.
 - **Sem placeholders:** todo passo traz o código; a migração e a função estão completas.
 - **Provisório (marcado):** SPI/Final/NQA na regra de re-lançamento e o gate de Manutenção em Teste/Teste Final — ajustar quando o usuário confirmar / quando a Manutenção existir. NQA tratado como "sem status" nesta fatia (registra 1×) — confirmar.
 - **Fora deste plano (C2):** a tela de Lançamento (cascata Cliente→PMO→OP, campos dinâmicos, foco no Nº de Série, defeitos múltiplos, NQA) + o item de menu "Lançamento".
