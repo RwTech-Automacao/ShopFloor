@@ -34,10 +34,26 @@ function lerDados(fd: FormData): DadosOrdem {
   }
 }
 
-/** Postos marcados no form (`posto_<chave>` = 'on'), restritos ao catálogo real. */
+/** Fluxo ordenado enviado pelo form (campo `fluxo` = JSON de chaves), validado contra o catálogo. */
 async function lerPostos(fd: FormData): Promise<string[]> {
-  const postos = await listarPostos()
-  return postos.map((p) => p.chave).filter((chave) => fd.get(`posto_${chave}`) === 'on')
+  const catalogo = new Set((await listarPostos()).map((p) => p.chave))
+  let bruto: unknown
+  try {
+    bruto = JSON.parse(String(fd.get('fluxo') ?? '[]'))
+  } catch {
+    return []
+  }
+  if (!Array.isArray(bruto)) return []
+  const vistos = new Set<string>()
+  const fluxo: string[] = []
+  for (const item of bruto) {
+    const chave = String(item)
+    if (catalogo.has(chave) && !vistos.has(chave)) {
+      vistos.add(chave)
+      fluxo.push(chave)
+    }
+  }
+  return fluxo
 }
 
 function ehDuplicidade(e: unknown): boolean {

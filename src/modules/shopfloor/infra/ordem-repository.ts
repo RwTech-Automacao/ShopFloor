@@ -17,7 +17,7 @@ export interface OrdemRow {
   status: string
   sn_ini: string
   sn_fim: string
-  sf_ordem_postos: { posto: string }[]
+  sf_ordem_postos: { posto: string; ordem: number }[]
 }
 
 export interface DadosOrdem {
@@ -43,7 +43,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,sf_ordem_postos(posto)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,sf_ordem_postos(posto,ordem)')
     .order('pmo')
     .order('op')
   if (error) throw error
@@ -59,7 +59,7 @@ export async function criarOrdem(dados: DadosOrdem, postos: string[]): Promise<s
   if (postos.length > 0) {
     const { error: e2 } = await supabase
       .from('sf_ordem_postos')
-      .insert(postos.map((posto) => ({ ordem_id: id, posto })))
+      .insert(postos.map((posto, i) => ({ ordem_id: id, posto, ordem: i })))
     if (e2) throw e2
   }
   return id
@@ -78,9 +78,29 @@ export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: stri
   if (postos.length > 0) {
     const { error: eIns } = await supabase
       .from('sf_ordem_postos')
-      .insert(postos.map((posto) => ({ ordem_id: id, posto })))
+      .insert(postos.map((posto, i) => ({ ordem_id: id, posto, ordem: i })))
     if (eIns) throw eIns
   }
+}
+
+export async function listarFluxos(): Promise<{ pmo: string; op: string; postos: string[] }[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_ordens')
+    .select('pmo,op,sf_ordem_postos(posto,ordem)')
+    .order('pmo')
+    .order('op')
+  if (error) throw error
+  const linhas = data as unknown as {
+    pmo: string
+    op: string
+    sf_ordem_postos: { posto: string; ordem: number }[]
+  }[]
+  return linhas.map((l) => ({
+    pmo: l.pmo,
+    op: l.op,
+    postos: [...l.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
+  }))
 }
 
 export async function excluirOrdem(id: string): Promise<void> {
