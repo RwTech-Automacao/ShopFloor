@@ -33,15 +33,16 @@ integração/otimização vêm depois.
 
 ## Modelo de dados (Postgres, com RLS)
 
-- **`sf_postos`** — catálogo dos postos (chave, rótulo, ordem no fluxo). Seed fixo dos 12 na ordem:
-  Inicial, Inspeção SPI, Inspeção SMD, Montagem PTH, Inspeção PTH, Teste, Integração, Teste Final,
-  Inspeção Final, Embalagem, Inspeção NQA, Manutenção. (O Lançamento usa os **10** do dropdown;
-  Integração e Manutenção existem no catálogo pro **gate de sequência**, mas têm telas próprias.)
+- **`sf_postos`** — catálogo dos postos (chave, `ordem` = só ordem de exibição padrão do catálogo). Seed:
+  Inicial, Inspeção SPI, Inspeção SMD, Montagem PTH, Inspeção PTH, Teste, **Burn-in**, Integração,
+  Teste Final, Inspeção Final, Embalagem, Inspeção NQA, **Extra máquina**, Manutenção. (A **sequência real
+  é por OP** — ver `sf_ordem_postos.ordem`; a ordem global aqui é só um default de catálogo.)
 - **`sf_defeitos`** — código (texto), tipo (`1` peça | `2` teste). Migrado (~1000). Admin edita.
 - **`sf_ordens`** — a OP: `pmo`, `op`, `cliente`, `qtd`, `descricao`, `acp`, `status`, `sn_ini`,
   `sn_fim`. **Único (pmo, op).**
-- **`sf_ordem_postos`** — aplicabilidade: (ordem_id, posto) = quais postos aplicam à OP. A tela de
-  cadastro liga/desliga. (Normalizado; substitui as colunas SIM/NÃO da planilha.)
+- **`sf_ordem_postos`** — fluxo da OP: (ordem_id, posto, **`ordem`**) = quais postos aplicam à OP **e em que
+  sequência**. A tela de cadastro monta uma **lista reordenável**. (Normalizado; substitui as colunas SIM/NÃO
+  da planilha; a sequência por OP substitui a ordem global fixa no código.)
 - **`sf_registros`** — o evento **SN × posto** (o coração): `data_hora`, `colaborador`, `posto`,
   `pmo`, `op`, `cliente`, `numero_caixa`, `qtd_por_caixa`, `status`, `numero_serie`,
   `numero_serie_norm` (normalizado p/ comparação/duplicidade), `codigo_defeito`, `posicao`,
@@ -64,17 +65,18 @@ do Apps Script, garantindo atomicidade (sem janela de corrida). É uma migraçã
    tipo).
 3. **Faixa de SN:** o SN precisa estar entre `sn_ini` e `sn_fim` (parse prefixo+dígitos+sufixo).
 4. **Posto aplicável:** o posto tem que aplicar à OP.
-5. **Trava de sequência:** o **posto anterior aplicável** precisa estar concluído — *registrado*
-   p/ Inicial/Montagem/Integração/Embalagem; *aprovado* p/ NQA e demais.
+5. **Trava de sequência (segue a ordem DA OP):** o posto **imediatamente anterior na sequência da OP**
+   precisa estar concluído — *registrado* p/ Inicial/Montagem PTH/Integração/Embalagem/Extra máquina;
+   *aprovado* p/ NQA e demais.
 6. **Anti-duplicidade / re-lançamento** por posto (olha o último registro daquela peça —
    pmo+op+numero_serie_norm — naquele posto). Princípio: **aprovado nunca repete o posto**.
    - **Sem status** (Inicial, Montagem PTH, Integração, Embalagem): registra 1× só; barra duplicado.
-   - **Inspeção SMD / Inspeção PTH**: re-lança se a última foi **reprovada** (retrabalho "extra-máquina" é
-     físico, fora do sistema); aprovada → barra.
-   - **Teste / Teste Final**: idem interino (re-lança se reprovada) — o gate de "passou por Manutenção"
-     entra quando o módulo Manutenção existir; aprovada → barra.
-   - **Inspeção SPI / Inspeção Final / NQA** (PROVISÓRIO, aguardando confirmação): mesma regra — aprovado
-     barra, reprovado libera.
+   - **Com status, reprova libera INLINE:** Inspeção SPI, Inspeção SMD, Inspeção PTH, Inspeção Final, NQA
+     (SMD/PTH: retrabalho "extra-máquina" físico). Aprovada → barra.
+   - **Com status, reprova libera VIA MANUTENÇÃO:** Teste, Teste Final, **Burn-in**. Interino: re-lança se
+     reprovada (o gate de "passou por Manutenção" entra quando o módulo existir). Aprovada → barra.
+   - **Extra máquina:** sem status, registra 1× (por ora só passagem).
+   - NQA grava visual+funcional → derivar `status` consolidado (aprovado se ambos aprovados) p/ a regra.
 7. **Caixa (Embalagem):** conta peças na caixa (mesma PMO/OP/caixa); se ≥ limite → erro "caixa
    cheia"; grava e **devolve a contagem** pós-envio.
 8. **Gravação:** 1 registro; Reprovado com múltiplos defeitos → **1 registro por defeito**; SPI
@@ -101,7 +103,9 @@ Reproduz o `formulario.html` no nosso design:
 
 ### Cadastro de OP (`/shopfloor/ordens` — PCP/admin)
 CRUD das OPs: criar/editar `pmo`, `op`, `cliente`, `qtd`, `descricao`, `acp`, `status`, faixa de
-SN, e os **toggles de quais postos aplicam**. Restrito a admin/PCP (guard próprio de `administrar`).
+SN, e o **fluxo de postos** — uma **lista reordenável** (quais postos aplicam + a sequência). Botão
+**opcional** "Puxar fluxo de OP existente" (mesmo PMO por padrão) preenche postos+ordem. Restrito a
+admin/PCP (guard próprio de `administrar`).
 
 **Menu:** o ShopFloor Processo é um **módulo principal** — seção própria "Fluxo de Processos" no menu
 lateral (accordion, como o Recebimento), NÃO dentro de Configurações. A seção agrupa o Cadastro
