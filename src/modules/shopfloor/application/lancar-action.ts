@@ -40,6 +40,12 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
 
+  // Integração não é lançável aqui: exige o vínculo produto↔placas da tela de Integração.
+  const postoNorm = entrada.posto.toLowerCase()
+  if (postoNorm === 'integração' || postoNorm === 'integracao') {
+    return { ok: false, erro: 'O posto Integração é registrado na tela de Integração.' }
+  }
+
   // Obrigatórios por posto (domínio puro).
   const val = obrigatoriosPorPosto(entrada.posto, {
     colaborador: entrada.colaborador,

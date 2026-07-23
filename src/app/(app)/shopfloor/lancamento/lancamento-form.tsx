@@ -58,7 +58,10 @@ export function LancamentoForm({
     () => ordens.find((o) => o.cliente === cliente && o.pmo === pmo && o.op === op) ?? null,
     [ordens, cliente, pmo, op],
   )
-  const postosDaOp = ordemSel?.postos ?? []
+  // Integração tem tela própria (vínculo produto↔placas) — não é lançável aqui.
+  const postosDaOp = (ordemSel?.postos ?? []).filter(
+    (p) => p.toLowerCase() !== 'integração' && p.toLowerCase() !== 'integracao',
+  )
 
   const comStatus = posto !== '' && postoTemStatus(posto)
   const ehNqa = posto === 'Inspeção NQA'
