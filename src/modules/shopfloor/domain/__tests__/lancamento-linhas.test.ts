@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { postoTemStatus, precisaAprovado, montarLinhas } from '../lancamento-linhas'
+import { postoTemStatus, precisaAprovado, montarLinhas, exigeManutencao } from '../lancamento-linhas'
 
 describe('postoTemStatus', () => {
   it('classifica com/sem status', () => {
@@ -48,5 +48,16 @@ describe('montarLinhas', () => {
       { codigo_defeito: '', posicao: 'R1', tipo_defeito: '' },
       { codigo_defeito: '', posicao: 'R2', tipo_defeito: '' },
     ])
+  })
+})
+
+describe('exigeManutencao', () => {
+  it('só Teste, Burn-in e Teste Final exigem manutenção no re-lançamento', () => {
+    expect(exigeManutencao('Teste')).toBe(true)
+    expect(exigeManutencao('Burn-in')).toBe(true)
+    expect(exigeManutencao('Teste Final')).toBe(true)
+    expect(exigeManutencao('Inspeção SMD')).toBe(false)
+    expect(exigeManutencao('Inspeção PTH')).toBe(false)
+    expect(exigeManutencao('Inicial')).toBe(false)
   })
 })

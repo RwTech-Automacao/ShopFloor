@@ -22,6 +22,13 @@ export function precisaAprovado(posto: string): boolean {
   return !POSTOS_SO_REGISTRADO.includes(posto.toLowerCase())
 }
 
+/** Postos cuja reprova exige passar pela Manutenção antes do re-lançamento. */
+export const POSTOS_REPARO_VIA_MANUTENCAO = ['teste', 'burn-in', 'teste final']
+
+export function exigeManutencao(posto: string): boolean {
+  return POSTOS_REPARO_VIA_MANUTENCAO.includes(posto.toLowerCase())
+}
+
 export interface LinhaDefeito {
   codigo_defeito: string
   posicao: string
