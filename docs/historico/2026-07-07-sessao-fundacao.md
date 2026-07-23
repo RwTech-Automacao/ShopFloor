@@ -1135,3 +1135,43 @@ cada plano). Branch `feat/shopfloor-lancamento`. Spec/planos em `docs/superpower
 - **Combinado:** testes **visuais** no preview agora; **funcional** depois, com todas as telas prontas.
 - **Próximo:** as sub-features restantes (Grade/Dashboard/Integração/Manutenção/Pesquisa/histórico) — o
   usuário escolhe por valor e traz os scripts Apps Script que faltam. Ver `memory/shopfloor-processo-modulo.md`.
+
+## 36. ShopFloor Processo — módulo 100% na branch + Receita de Integração + ajustes de teste (2026-07-23)
+
+Fechamos **todas as telas** do módulo 3 e entramos no ciclo de teste visual no preview (o usuário testando, eu
+ajustando). Tudo por subagent-driven-development (reviews de spec+qualidade por task + review amplo opus). Branch
+`feat/shopfloor-lancamento`. **Nada em Prod, nada na main.** Migrações **0028–0035 só no Dev**.
+
+- **Histórico migrado (Dev):** `scripts/migrar-historico.mjs` (idempotente) trouxe **68.546 registros** (17 abas
+  de cliente, fev–jul/2026), **17 OPs finalizadas** (+ fluxos) e **2.692 integrações** (+4.597 placas). Fix junto:
+  paginação em `listarReprovasOrigem`/`listarReparos` (o volume passou do teto de 1.000 do PostgREST). Backfill do
+  status derivado das linhas NQA históricas (1.324 Aprovado / 17 Reprovado).
+- **Dashboard** (`/shopfloor/dashboard`, perm `visualizar`): contagem por posto (fluxo da OP + Manutenção) com
+  período opcional; total = qtd da OP (barra trava em 100%). Domínio `contarPorPosto` (TDD). Review final pegou a
+  infidelidade do **NQA "Não aplicável"** (o legado aceita e conta como aprovado) → corrigido no form + action +
+  script de migração + backfill. **Módulo passou a v1.1.0** (card "Fluxo de Processos" na Home + módulo no Sobre).
+- **Receita de Integração (BOM por PMO)** — feature nova (spec+plano+subagents): tabela `sf_ordem_componentes`
+  (receita por OP; **vazia = qualquer PMO**, adoção gradual). Cadastro de OP edita a receita **só quando Integração
+  está no fluxo**; o "Puxar fluxo" carrega a receita junto. A Integração **esconde** PMO fora da receita no dropdown
+  e o `sf_integrar` barra `PLACA_FORA_DA_RECEITA` (rede de segurança). **Whitelist só de PMO** (sem quantidade nem
+  lista completa — decisão do usuário). Domínio `receitaPermite` (fonte única cliente+SQL). Migração `0034`.
+- **Dois ajustes achados no teste visual:**
+  1. **Placas não podem ficar pela metade:** antes, linha com PMO/OP sem SN era descartada em silêncio (integrava só
+     a 1ª placa). Agora o botão exige SN em **todas** as linhas e o servidor rejeita linha iniciada sem SN (linha
+     totalmente vazia é ignorada). → `domain/integracao-itens.ts`.
+  2. **Integração virou "um posto" com trava de sequência** (decisão do usuário: Integração pode ser 1ª/intermediária/
+     última): exige o **posto imediatamente anterior do fluxo** satisfeito **para o produto** (registrado/aprovado);
+     1ª no fluxo → sem gate. Espelha o Lançamento. `sf_integrar` +`p_prev_posto`/`p_prev_precisa_aprovado`, erro
+     `SEQUENCIA`, migração `0035` (**drop da assinatura de 7 args antes do replace** — evita overload; smoke confirmou
+     assinatura única). A antiga "fidelidade ao legado: Integração não exige posto anterior" foi **substituída**.
+- **Backlog anotado** (em `docs/regras-de-negocio-shopfloor.md`): mover "Busca por SN" da Integração pra Pesquisa;
+  **finalização de OP condicionada aos lançamentos** (hoje é rótulo manual — caso real: PMO973/7892 FINALIZADA com 0
+  registros); **cliente padronizado** (dropdown de existentes, evitar duplicata por casing — achado: `LINCE` vs
+  `Lince`; a planilha tinha só a aba `Lince`, a divergência veio da coluna cliente em PMO_OPS); **tela de "Registros"**
+  (log bruto por cliente, equivalente à antiga aba); Extra máquina (opções); higiene técnica.
+- **Preview:** link fixo da branch (`shop-floor-git-feat-shopfloor-lancamento-*.vercel.app`) atualiza a cada push;
+  links com hash são snapshots congelados (não expiram enquanto o deploy existir). O banco não congela junto (deploy
+  antigo abre com dados do Dev atual).
+- **Próximo:** o usuário segue testando/ajustando as telas; depois, **promover pro Prod** (aplicar 0028–0035 + merge;
+  estratégia de dados em aberto — provável não bulk-importar OPs, só o catálogo de defeitos). Ver
+  `memory/shopfloor-processo-modulo.md` e `docs/regras-de-negocio-shopfloor.md`.
