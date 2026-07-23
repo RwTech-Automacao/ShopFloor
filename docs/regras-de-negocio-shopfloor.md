@@ -157,9 +157,6 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 - **Integração — mover a "Busca por Nº de Série"** para outra tela *(usuário, 2026-07-23)*: hoje a
   busca mora na própria tela de Integração (como no legado); avaliar movê-la — candidata natural: a
   futura tela de **Pesquisa** (que já busca o histórico por SN; pode incorporar a visão do vínculo).
-- **Manutenção**: pendências por reprova + registro de reparo (`REP-...`); ao existir, ligar o gate
-  "re-teste só após Manutenção" (Teste/Teste Final/Burn-in) e decidir a regra p/ SMD/PTH.
-- **Pesquisa + Grade Geral**: consulta por SN + matriz SN×postos com filtro por caixa/cliente.
 - **Extra máquina**: hoje só passagem; ganhará "outras opções" (a definir com o usuário).
 - Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
   funções); `gateSatisfeito` morto em postos.ts.
