@@ -173,6 +173,12 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
   **escolher o cliente de uma lista dos já existentes** (+ "novo cliente"), como as PMOs da receita —
   nunca auto-Title-Case (quebraria siglas legítimas: KTW, VMI, STB, RW Tech, AS Mídia). Inclui uma
   **limpeza pontual** dos dados já divergentes.
+- **Tela de "Registros" (log bruto por cliente)** *(usuário, 2026-07-23)*: equivale à antiga **aba do
+  cliente** da planilha (lista corrida, append-only, de todos os `sf_registros`). Hoje a Pesquisa é
+  orientada a consulta (por SN ou grade de uma OP) e **não** oferece o "despejo cronológico" de tudo
+  de um cliente. Avaliar uma tabela filtrável (cliente/OP/posto/data) com export. **Antes de
+  construir, confirmar se o pessoal usava a aba como lista corrida ou só consultava por SN/OP** — se
+  for o segundo, a Pesquisa já cobre.
 - **Extra máquina**: hoje só passagem; ganhará "outras opções" (a definir com o usuário).
 - Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
   funções); `gateSatisfeito` morto em postos.ts.
