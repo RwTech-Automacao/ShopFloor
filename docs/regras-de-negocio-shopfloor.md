@@ -184,6 +184,13 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
   de um cliente. Avaliar uma tabela filtrável (cliente/OP/posto/data) com export. **Antes de
   construir, confirmar se o pessoal usava a aba como lista corrida ou só consultava por SN/OP** — se
   for o segundo, a Pesquisa já cobre.
-- **Extra máquina**: hoje só passagem; ganhará "outras opções" (a definir com o usuário).
+- **Verificar o SN da placa na Integração** *(usuário, 2026-07-23 — decidir nível amanhã)*: hoje a
+  receita restringe *quais PMOs* de placa, mas o **SN da placa é livre** (dá pra bipar SN inexistente/
+  com typo). Ideia: validar o SN. Três níveis possíveis: **N1** SN dentro da faixa da OP da placa
+  (funciona pra todas — todas têm faixa; OP sem faixa → não verifica); **N2** placa tem ≥1 registro
+  (foi produzida); **N3** placa aprovada no posto final (rastreio máximo). **Dado decisivo levantado:**
+  a cobertura de rastreio das placas é **irregular** — algumas OPs de placa têm histórico peça-a-peça,
+  outras são "casca" (só metadados, 0 registros, ex.: PMO975/5937), igual às OPs finalizadas. Por isso
+  N2/N3 bloqueariam placas legítimas não-rastreadas; N1 é o mais seguro pra começar (adoção gradual).
 - Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
   funções); `gateSatisfeito` morto em postos.ts.
