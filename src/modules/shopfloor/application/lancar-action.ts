@@ -5,7 +5,12 @@ import { podeFazer } from '@/modules/auth/domain/perfil'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
 import { postoAnteriorNaSequencia } from '../domain/postos'
 import { obrigatoriosPorPosto } from '../domain/regras-lancamento'
-import { postoTemStatus, precisaAprovado, montarLinhas } from '../domain/lancamento-linhas'
+import {
+  postoTemStatus,
+  precisaAprovado,
+  montarLinhas,
+  exigeManutencao,
+} from '../domain/lancamento-linhas'
 import { carregarOrdem, chamarSfLancar } from '../infra/lancamento-repository'
 
 export interface EntradaLancamento {
@@ -31,6 +36,7 @@ const MENSAGENS: Record<string, string> = {
   DUPLICADO_APROVADO: 'Esta peça já foi aprovada neste posto e não pode ser lançada de novo.',
   SEQUENCIA: 'O posto anterior ainda não foi concluído para esta peça.',
   CAIXA_CHEIA: 'A caixa já atingiu o limite de peças.',
+  SEM_MANUTENCAO: 'A peça reprovou e precisa passar pela Manutenção antes de ser lançada de novo.',
   ERRO_INTERNO: 'Não foi possível registrar o lançamento.',
 }
 
@@ -125,6 +131,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     p_prev_posto: prevPosto ?? '',
     p_prev_precisa_aprovado: prevPosto ? precisaAprovado(prevPosto) : false,
     p_linhas: linhas,
+    p_exige_manutencao: exigeManutencao(entrada.posto),
   })
 
   if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }

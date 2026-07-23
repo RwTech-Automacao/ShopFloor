@@ -26,6 +26,7 @@ export interface SfLancarArgs {
   p_prev_posto: string
   p_prev_precisa_aprovado: boolean
   p_linhas: { codigo_defeito: string; posicao: string; tipo_defeito: string }[]
+  p_exige_manutencao: boolean
 }
 
 /** Clientes distintos das OPs ativas (status ≠ FINALIZADA). */
