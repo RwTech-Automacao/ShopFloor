@@ -67,13 +67,18 @@ Validações puras no servidor (TS) + checagens sensíveis a corrida na função
 Função atômica **`sf_integrar`** / **`sf_cancelar_integracao`** (migração `0032`).
 
 1. **Registrar** exige: colaborador, OP do produto (com **Integração no fluxo**), SN do produto
-   **na faixa** da OP, e ≥1 placa (cada uma com PMO/OP/SN).
+   **na faixa** da OP, e ≥1 placa **completa** (PMO + OP + SN). Linha totalmente vazia é ignorada,
+   mas linha **iniciada sem SN barra** — não integra pela metade (client exige SN em todas as linhas;
+   servidor rejeita linha PMO/OP sem SN). → `domain/integracao-itens.ts`
 2. **Duplicidades**: produto não pode estar em integração **ATIVA**; nenhuma placa pode estar
    vinculada a integração **ATIVA**; no mesmo envio, SN de placa **não pode repetir** nem ser igual
    ao do produto (melhoria sobre o legado). *Obs: o bloqueio de placa é global (qualquer cliente) —
    mais estrito que o legado, que só olhava a aba do cliente.*
-3. **Fidelidades ao legado**: placa **não** valida faixa de SN; a Integração **não** exige posto
-   anterior (o gate age sobre o posto seguinte do produto).
+3. **Trava de sequência (a Integração é um posto):** exige o **posto imediatamente anterior no
+   fluxo** da OP satisfeito **para o produto** — *registrado* (anterior sem status) ou *aprovado*
+   (anterior com status). Se a Integração é o **1º posto** do fluxo → sem anterior → libera. Espelha
+   a regra 4 do Lançamento (`sf_integrar` com `p_prev_posto`/`p_prev_precisa_aprovado`, erro
+   `SEQUENCIA`, migração `0035`). *Placa não valida faixa de SN (fidelidade ao legado).*
 4. **Efeito**: cria o cabeçalho (`INT-...`, ATIVA) + itens + **registros posto=Integração**
    (1 do produto + 1 por placa) — o registro do produto **satisfaz o gate** do Lançamento.
 5. **Busca**: por SN de produto OU placa; só integrações **ATIVAS**.

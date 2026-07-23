@@ -5,6 +5,8 @@ import { podeFazer } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
 import { validarItensIntegracao, type PlacaIntegracao } from '../domain/integracao-itens'
+import { postoAnteriorNaSequencia } from '../domain/postos'
+import { precisaAprovado } from '../domain/lancamento-linhas'
 import { carregarOrdem } from '../infra/lancamento-repository'
 import {
   buscarIntegracaoPorSn,
@@ -58,6 +60,9 @@ export async function integrar(
   const v = validarItensIntegracao(produtoSN, entrada.placas)
   if (!v.ok) return v
 
+  // Integração é um posto: exige o anterior do fluxo satisfeito p/ o produto (trava de sequência).
+  const prevPosto = postoAnteriorNaSequencia('Integração', ordem.postos)
+
   const r = await chamarSfIntegrar({
     p_colaborador: colaborador,
     p_cliente: ordem.cliente,
@@ -65,6 +70,8 @@ export async function integrar(
     p_op: op,
     p_produto_sn: produtoSN,
     p_produto_sn_norm: normalizarSerie(produtoSN),
+    p_prev_posto: prevPosto ?? '',
+    p_prev_precisa_aprovado: prevPosto ? precisaAprovado(prevPosto) : false,
     p_placas: v.placas.map((x) => ({
       pmo: x.pmo.trim(),
       op: x.op.trim(),
@@ -82,6 +89,9 @@ export async function integrar(
     }
     if (r.erro === 'PLACA_FORA_DA_RECEITA') {
       return { ok: false, erro: `A placa de PMO ${r.pmo ?? ''} não faz parte da receita deste produto.` }
+    }
+    if (r.erro === 'SEQUENCIA') {
+      return { ok: false, erro: `Não é possível integrar: o produto ainda não passou por ${r.posto ?? 'um posto anterior do fluxo'}.` }
     }
     return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
   }

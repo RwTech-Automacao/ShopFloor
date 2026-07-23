@@ -107,9 +107,10 @@ export function IntegracaoForm({
     setPlacas([{ ...LINHA_VAZIA }]); setProdutoSN(''); setQtdRapida('')
   }
 
+  // Habilita só quando TODAS as linhas de placa têm SN (não deixa integrar pela metade).
   const valido =
     colaborador.trim() !== '' && ordemSel !== null && produtoSN.trim() !== '' &&
-    placas.some((l) => l.sn.trim() !== '')
+    placas.length > 0 && placas.every((l) => l.sn.trim() !== '')
 
   function onRegistrar() {
     if (!valido || enviando) return
