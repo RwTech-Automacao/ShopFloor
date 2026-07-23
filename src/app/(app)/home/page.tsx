@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Inbox, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Inbox, Workflow, type LucideIcon } from 'lucide-react'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeFazer, type Permissao } from '@/modules/auth/domain/perfil'
 
@@ -18,6 +18,13 @@ const ATALHOS: Atalho[] = [
     href: '/recebimento/processos',
     icone: Inbox,
     permissao: 'visualizar',
+  },
+  {
+    titulo: 'Fluxo de Processos',
+    descricao: 'Lançamento por posto, integração, manutenção e rastreio das placas.',
+    href: '/shopfloor/lancamento',
+    icone: Workflow,
+    permissao: 'lancar',
   },
 ]
 
