@@ -107,6 +107,13 @@ Função atômica **`sf_integrar`** / **`sf_cancelar_integracao`** (migração `
 
 ## Backlog de regras/telas futuras
 
+- **Integração — placas restritas à PMO "mãe"** *(regra citada pelo usuário, 2026-07-23)*: hoje a
+  tabela de placas aceita **qualquer** PMO/OP ativa. Futuramente, cada PMO de produto ("mãe") deve
+  ter definido **quais PMOs de placa a compõem** (estrutura tipo BOM — ex.: no Cadastro de OP/PMO,
+  uma lista de "PMOs de componentes"), e a tela de Integração só oferecerá placas dessas PMOs.
+- **Integração — mover a "Busca por Nº de Série"** para outra tela *(usuário, 2026-07-23)*: hoje a
+  busca mora na própria tela de Integração (como no legado); avaliar movê-la — candidata natural: a
+  futura tela de **Pesquisa** (que já busca o histórico por SN; pode incorporar a visão do vínculo).
 - **Manutenção**: pendências por reprova + registro de reparo (`REP-...`); ao existir, ligar o gate
   "re-teste só após Manutenção" (Teste/Teste Final/Burn-in) e decidir a regra p/ SMD/PTH.
 - **Pesquisa + Grade Geral**: consulta por SN + matriz SN×postos com filtro por caixa/cliente.
