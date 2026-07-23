@@ -63,8 +63,14 @@ export function IntegracaoForm({
     [ordensIntegraveis, cliente, pmo, op],
   )
 
-  // Placas: qualquer OP ativa
-  const pmosPlaca = useMemo(() => [...new Set(ordens.map((o) => o.pmo))], [ordens])
+  // Placas: por padrão qualquer PMO; se o produto tem receita, só as PMOs dela.
+  const todasPmos = useMemo(() => [...new Set(ordens.map((o) => o.pmo))], [ordens])
+  const pmosPlaca = useMemo(() => {
+    const receita = ordemSel?.componentes ?? []
+    if (receita.length === 0) return todasPmos
+    const permitidas = new Set(receita.map((r) => r.toLowerCase()))
+    return todasPmos.filter((p) => permitidas.has(p.toLowerCase()))
+  }, [ordemSel, todasPmos])
   function opsDoPmo(p: string) {
     return ordens.filter((o) => o.pmo === p).map((o) => o.op)
   }
@@ -73,10 +79,14 @@ export function IntegracaoForm({
   }
 
   function mudarCliente(v: string) {
-    setCliente(v); setPmo(''); setOp('')
+    setCliente(v); setPmo(''); setOp(''); setPlacas([{ ...LINHA_VAZIA }])
   }
   function mudarPmo(v: string) {
-    setPmo(v); setOp('')
+    setPmo(v); setOp(''); setPlacas([{ ...LINHA_VAZIA }])
+  }
+  function mudarOpProduto(v: string) {
+    setOp(v ?? '')
+    setPlacas([{ ...LINHA_VAZIA }])
   }
 
   function atualizarPlaca(i: number, patch: Partial<LinhaPlaca>) {
@@ -173,7 +183,7 @@ export function IntegracaoForm({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>OP</Label>
-              <Select value={op} onValueChange={(v) => setOp(v ?? '')} disabled={pmo === ''}>
+              <Select value={op} onValueChange={(v) => mudarOpProduto(v ?? '')} disabled={pmo === ''}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{ops.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
               </Select>
@@ -194,6 +204,11 @@ export function IntegracaoForm({
                 <Button type="button" variant="outline" size="sm" onClick={limpar}>Limpar</Button>
               </span>
             </div>
+            {(ordemSel?.componentes?.length ?? 0) > 0 && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                Este produto aceita apenas placas das PMOs: {ordemSel!.componentes.join(', ')}.
+              </p>
+            )}
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>

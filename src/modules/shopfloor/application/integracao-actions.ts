@@ -80,6 +80,9 @@ export async function integrar(
     if (r.erro === 'PLACA_JA_VINCULADA') {
       return { ok: false, erro: `Placa ${r.placa ?? ''} já vinculada à integração ${r.codigo ?? ''}.` }
     }
+    if (r.erro === 'PLACA_FORA_DA_RECEITA') {
+      return { ok: false, erro: `A placa de PMO ${r.pmo ?? ''} não faz parte da receita deste produto.` }
+    }
     return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
   }
 

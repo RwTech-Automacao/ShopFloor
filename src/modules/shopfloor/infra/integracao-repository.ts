@@ -100,11 +100,11 @@ export interface SfIntegrarArgs {
 
 export async function chamarSfIntegrar(
   args: SfIntegrarArgs,
-): Promise<{ ok: boolean; erro?: string; codigo?: string; placa?: string }> {
+): Promise<{ ok: boolean; erro?: string; codigo?: string; placa?: string; pmo?: string }> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_integrar', args)
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
-  return data as { ok: boolean; erro?: string; codigo?: string; placa?: string }
+  return data as { ok: boolean; erro?: string; codigo?: string; placa?: string; pmo?: string }
 }
 
 export async function chamarSfCancelarIntegracao(

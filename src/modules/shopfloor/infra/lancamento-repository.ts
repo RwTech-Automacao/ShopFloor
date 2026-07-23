@@ -121,6 +121,7 @@ export interface OrdemLancamentoLista {
   sn_ini: string
   sn_fim: string
   postos: string[]
+  componentes: string[]
 }
 
 /** Todas as OPs ativas com config + fluxo ordenado, para a cascata da tela de Lançamento. */
@@ -128,7 +129,9 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('cliente,pmo,op,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem)')
+    .select(
+      'cliente,pmo,op,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)',
+    )
     .neq('status', 'FINALIZADA')
     .order('cliente')
     .order('pmo')
@@ -142,6 +145,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_ini: string
     sn_fim: string
     sf_ordem_postos: { posto: string; ordem: number }[]
+    sf_ordem_componentes: { pmo_componente: string }[]
   }[]
   return rows.map((r) => ({
     cliente: r.cliente,
@@ -151,5 +155,6 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
+    componentes: r.sf_ordem_componentes.map((c) => c.pmo_componente),
   }))
 }

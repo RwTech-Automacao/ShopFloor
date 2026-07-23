@@ -80,6 +80,11 @@ Função atômica **`sf_integrar`** / **`sf_cancelar_integracao`** (migração `
 6. **Cancelamento (só admin)**: marca CANCELADA (quem/quando) + **apaga os registros** da
    integração → o gate volta a travar e produto/placas ficam livres pra re-integrar; cabeçalho e
    itens ficam como histórico. Registros de postos posteriores já lançados **não** são apagados.
+7. **Receita (BOM por PMO)**: a OP do produto pode ter uma lista de PMOs de placa permitidas
+   (cadastrada no fluxo, só quando Integração está no fluxo; reaproveitada pelo Puxar fluxo).
+   **Vazia = qualquer PMO.** Definida = a Integração só oferece/aceita placas dessas PMOs (dropdown
+   esconde; `sf_integrar` barra `PLACA_FORA_DA_RECEITA` como rede de segurança). Só restringe QUAIS
+   PMOs — sem quantidade nem exigir a lista completa.
 
 ## Regras da Manutenção (`/shopfloor/manutencao`)
 
@@ -123,7 +128,9 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 1. OP única por `(pmo, op)` — duplicada barra com mensagem.
 2. PMO, OP e cliente obrigatórios; faixa de SN opcional, mas **os dois limites juntos** ou nenhum.
 3. **Fluxo de postos**: lista ordenável (quais postos + sequência); **"Puxar fluxo" opcional** de
-   uma OP existente do mesmo PMO (modelo por produto). Manutenção não entra no fluxo.
+   uma OP existente do mesmo PMO (modelo por produto). Manutenção não entra no fluxo. Quando
+   **Integração** está no fluxo, também se cadastra a **receita** (PMOs de placa permitidas — vazia
+   = qualquer PMO; ver regra 7 da Integração), reaproveitada pelo Puxar fluxo.
 4. **Exclusão bloqueada** se a OP já tem lançamentos.
 5. Status Ativa/Finalizada — OPs FINALIZADAS somem das cascatas do Lançamento/Integração.
 
@@ -138,9 +145,10 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 ## Onde as regras vivem (mapa rápido)
 
 - **Domínio puro (testado, TDD):** `src/modules/shopfloor/domain/` — serie, postos,
-  regras-lancamento, lancamento-linhas, validar-ordem, integracao-itens, dashboard.
+  regras-lancamento, lancamento-linhas, validar-ordem, integracao-itens, dashboard, `receita.ts`
+  (receita/BOM por PMO).
 - **Funções atômicas no banco (corrida/duplicidade):** `supabase/migrations/0031_sf_lancar.sql`,
-  `0032_sf_integracoes.sql`.
+  `0032_sf_integracoes.sql`. Receita: tabela `sf_ordem_componentes` (migração `0034`).
 - **Orquestração:** `src/modules/shopfloor/application/` — lancar-action, ordens-actions,
   integracao-actions, dashboard-actions.
 - **Dashboard:** `domain/dashboard.ts` (`contarPorPosto`) · `application/dashboard-actions.ts`
@@ -150,10 +158,6 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 
 ## Backlog de regras/telas futuras
 
-- **Integração — placas restritas à PMO "mãe"** *(regra citada pelo usuário, 2026-07-23)*: hoje a
-  tabela de placas aceita **qualquer** PMO/OP ativa. Futuramente, cada PMO de produto ("mãe") deve
-  ter definido **quais PMOs de placa a compõem** (estrutura tipo BOM — ex.: no Cadastro de OP/PMO,
-  uma lista de "PMOs de componentes"), e a tela de Integração só oferecerá placas dessas PMOs.
 - **Integração — mover a "Busca por Nº de Série"** para outra tela *(usuário, 2026-07-23)*: hoje a
   busca mora na própria tela de Integração (como no legado); avaliar movê-la — candidata natural: a
   futura tela de **Pesquisa** (que já busca o histórico por SN; pode incorporar a visão do vínculo).
