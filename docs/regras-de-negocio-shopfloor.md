@@ -167,6 +167,12 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
   existia na origem). Avaliar exigir/avisar na finalização: só permitir marcar "Finalizada" quando
   todas as peças da faixa estiverem concluídas (ou avisar "faltam X peças"). No legado não havia
   essa trava.
+- **Cliente padronizado (evitar duplicata por casing)** *(usuário, 2026-07-23)*: `cliente` é texto
+  livre → grafias divergentes duplicam na cascata (achado real: `LINCE` vs `Lince`; a planilha tinha
+  só a aba `Lince`, a divergência veio da coluna de cliente em PMO_OPS). Solução: no Cadastro de OP,
+  **escolher o cliente de uma lista dos já existentes** (+ "novo cliente"), como as PMOs da receita —
+  nunca auto-Title-Case (quebraria siglas legítimas: KTW, VMI, STB, RW Tech, AS Mídia). Inclui uma
+  **limpeza pontual** dos dados já divergentes.
 - **Extra máquina**: hoje só passagem; ganhará "outras opções" (a definir com o usuário).
 - Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
   funções); `gateSatisfeito` morto em postos.ts.
