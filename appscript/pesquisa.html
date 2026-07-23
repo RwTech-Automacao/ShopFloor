@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Registros ShopFloor</title>
+    <style>
+      /* ===== largura e cores padrão desta página ===== */
+      :root{
+        --content-max: 1000px;     /* pesquisa é mais larga */
+        --sf-blue: #1E88E5;
+        --sf-blue-100: #E8F2FF;
+        --sf-blue-200: #DBEAFE;
+      }
+
+      body{
+        font-family:'Segoe UI', Roboto, sans-serif;
+        background:#f4f4f4;
+        padding:20px;
+        margin:0;
+      }
+
+      /* ===== HEADER + NAV (padrão do projeto) ===== */
+      .sf-header{ display:flex; justify-content:center; }
+      .sf-header .nav-shell{
+        width: calc(100% - 32px);
+        max-width: var(--content-max);
+        margin: 16px auto 8px;
+        background:#fff;
+        border:1px solid var(--sf-blue-200);
+        border-radius:12px;
+        box-shadow:0 6px 24px rgba(0,0,0,.08);
+        padding:12px 16px 14px;
+      }
+
+      .topnav{ display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
+      .topnav a{
+        text-decoration:none; color:#222; font-weight:700;
+        padding:6px 8px; border-radius:999px;
+        border:1px solid transparent; background:#fff;
+        transition:background .15s, border-color .15s, color .15s;
+      }
+      .topnav a:hover{ background:#f7f7f7; }
+      .topnav a.active{
+        background:var(--sf-blue-100);
+        border-color:var(--sf-blue-200);
+        color:var(--sf-blue);
+      }
+
+      /* Logo + título (abaixo das abas), centralizados como conjunto */
+      .brandline{
+        margin-top:26px;
+        display:flex; align-items:center; justify-content:center;
+        gap:14px; flex-wrap:wrap;
+      }
+      .brandline .brand{ height:44px; width:auto; object-fit:contain; }
+      .brandline .page-title{ margin:0; font-size:22px; font-weight:800; }
+      @media (max-width:740px){ .brandline .brand{ height:28px; } }
+
+      /* ===== CARD principal (mesma largura do nav) ===== */
+      .container{
+        background:#ffffff;
+        width:100%;
+        max-width: var(--content-max);
+        margin:auto;
+        padding:24px;
+        border-radius:12px;
+        box-shadow:0 4px 12px rgba(0,0,0,0.1);
+      }
+
+      /* ====== seu CSS existente (filtros/inputs) ====== */
+      h2{ text-align:center; margin-bottom:20px; } /* pode remover o <h2> se usar o título do header */
+      label{ display:block; margin-top:16px; font-weight:bold; }
+      input, select{
+        width:100%; padding:10px; font-size:16px;
+        border-radius:8px; border:1px solid #ccc; background:#fdfdfd;
+      }
+
+      .grupo-login{
+        display:flex; border:1px solid #ddd; border-radius:8px;
+        padding:16px; padding-right:16px; margin-top:24px; background:#fafafa;
+      }
+      .grupo-filtros, .grupo-detalhes{
+        display:flex; flex-wrap:wrap; gap:16px; margin-top:16px; padding-right:16px;
+      }
+      .campo{
+        flex:1 1 30%; display:flex; flex-direction:column; min-width:200px; padding-right:16px;
+      }
+      .campo label{ margin-bottom:4px; font-weight:600; }
+      .campo input, .campo select{
+        padding:10px; font-size:16px; border-radius:8px; border:1px solid #ccc; background:#fdfdfd;
+      }
+
+      .status-chip{ font-weight:bold; white-space:nowrap; font-size:12px; }
+
+      .input-with-btn{ display:flex; gap:8px; align-items:center; }
+      .input-with-btn input{ flex:1; }
+
+      .refresh-btn{
+        padding:10px 14px; border:none; border-radius:8px; cursor:pointer;
+        background:#1E88E5; color:#fff; font-weight:600; white-space:nowrap;
+      }
+      .refresh-btn:disabled{ opacity:.6; cursor:default; }
+
+      /* Relatório detalhado */
+#tabelaDetalhada { overflow-x: auto; }
+.tabela-detalhada{
+  border-collapse: collapse;
+  table-layout: fixed;      /* respeita os widths do <colgroup> */
+  border-spacing: 0;
+  width: max-content;       /* deixa a tabela crescer além do container */
+}
+.tabela-detalhada th,
+.tabela-detalhada td{
+  padding: 6px;
+  border: 1px solid #ccc;
+  white-space: nowrap;      /* sem quebras de linha */
+  overflow: hidden;         /* se a célula ficar menor que o conteúdo */
+  text-overflow: ellipsis;  /* mostra "…" dentro da célula */
+}
+    </style>
+  </head>
+  <body>
+
+    <!-- ===== HEADER + NAV ===== -->
+    <header class="sf-header">
+      <div class="nav-shell">
+        <!-- Abas -->
+        <nav class="topnav" id="sf-nav">
+          <a data-page="formulario">Lançamento</a>
+          <a data-page="integracao">Integração</a>
+          <a data-page="manutencao">Manutenção</a>
+          <a data-page="dashboard">Dashboard</a>
+          <a data-page="pesquisa">Pesquisa</a>
+        </nav>
+
+        <!-- Logo + Título -->
+        <div class="brandline">
+          <img class="brand" src="https://enterplak.com.br/wp-content/uploads/2024/09/logo-5.png" alt="Enterplak">
+          <h1 class="page-title">Consulta de Registros do ShopFloor</h1>
+        </div>
+      </div>
+    </header>
+
+    <script>
+      (function initNav(){
+        // URL ABSOLUTA do seu deploy /exec
+        const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwNyHVxF6I30zfRS2uRYvmuNSZKsIJor1nK_TKXHj9BAis_w54-7iusgF7p4jjK1JdAoA/exec';
+
+        // página atual
+        const params  = new URLSearchParams(location.search);
+        const current = (params.get('page') || 'pesquisa').toLowerCase();
+
+        // define links e marca ativo
+        document.querySelectorAll('#sf-nav a[data-page]').forEach(a=>{
+          const pg = a.getAttribute('data-page');
+          a.href = WEBAPP_URL + '?page=' + encodeURIComponent(pg);
+          if (pg.toLowerCase() === current) a.classList.add('active');
+        });
+
+        // título da aba
+        const titles = {
+          formulario:'Lançamento • ShopFloor',
+          integracao:'Integração • ShopFloor',
+          manutencao:'Manutenção • ShopFloor',
+          dashboard :'Dashboard • ShopFloor',
+          pesquisa  :'Pesquisa • ShopFloor'
+        };
+        document.title = titles[current] || 'ShopFloor';
+      })();
+    </script>
+    
+    <!-- ===== CONTEÚDO ===== -->
+    <div class="container">
+    <!-- ==== Relatório Detalhado por SN ==== -->
+  <div style="margin-top:24px;">
+    <label for="inputDetalhadoSN"><strong>Relatório Detalhado por Nº de Série:</strong></label>
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+      <input type="text" id="inputDetalhadoSN" placeholder="Digite o SN" style="flex:1; padding:8px; font-size:16px;">
+      <button type="button" id="btnBuscar" class="refresh-btn" onclick="buscarDetalhadoSN()">Buscar</button>
+    </div>
+    <div id="tabelaDetalhada" style="overflow-x:auto;"></div>
+  </div>
+
+
+  <!-- Linha 1: PMO, OP e Quantidade -->
+  <div class="grupo-filtros">
+    <div class="campo">
+    <label for="filtroCliente">Cliente:</label>
+    <select id="filtroCliente" onchange="carregarPMOsFiltro()">
+      <option value="">Selecione</option>
+    </select>
+    </div>
+
+    <div class="campo">
+      <label for="filtroPMO">PMO:</label>
+      <select id="filtroPMO" onchange="carregarOPsFiltro()">
+        <option value="">Selecione</option>
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="filtroOP">OP:</label>
+      <select id="filtroOP" onchange="carregarDadosPMO_OP()">
+        <option value="">Selecione</option>
+      </select>
+    </div>
+
+    <div class="campo">
+   <label for="filtroCaixa">Nº da Caixa:</label>
+   <select id="filtroCaixa" onchange="gerarTabelaVisualizacaoGeral()">
+    <option value="">Todas</option>
+  </select>
+     </div>
+  </div>
+
+  <!-- Linha 2: Descrição -->
+  <div class="grupo-detalhes">
+    <div class="campo" style="flex: 1 1 80%;">
+      <label>Descrição:</label>
+      <input type="text" id="descricao" disabled>
+    </div>
+  </div>
+
+  <!-- Linha 3: Qtd e ACP -->
+  <div class="grupo-detalhes">
+       <div class="campo" style="flex:1;">
+      <label for="quantidade">Qtd:</label>
+      <input type="text" id="quantidade" disabled>
+    </div>
+  <div class="campo" style="flex:1;">
+    <label>ACP:</label>
+    <div class="input-with-btn">
+      <input type="text" id="acp" disabled>
+      <button type="button" id="btnAtualizar" class="refresh-btn" onclick="refreshOPData()">Atualizar</button>
+    </div>
+  </div>
+</div>
+  
+  <!-- Grade geral -->
+  <h3 style="margin-top: 40px;">Visão Geral da OP</h3>
+  <div id="tabelaGeral" style="overflow-x: auto;"></div>
+</div>
+
+    <script>
+       let clientPmoMap = {}; // cliente -> [PMOs]
+       let pmoOpsMap    = {}; // PMO     -> [OPs]   
+      
+  google.script.run
+  .withSuccessHandler(buildMapsClientePMOOP)
+  .obterCLIENTE_PMO_OPS();
+
+function buildMapsClientePMOOP(rows) {
+  clientPmoMap = {};
+  pmoOpsMap    = {};
+
+  // rows = [cliente, pmo, op, descricao]
+  rows.forEach(([cliente, pmo, op]) => {
+    if (!clientPmoMap[cliente]) clientPmoMap[cliente] = [];
+    if (!clientPmoMap[cliente].includes(pmo)) clientPmoMap[cliente].push(pmo);
+
+    if (!pmoOpsMap[pmo]) pmoOpsMap[pmo] = [];
+    if (!pmoOpsMap[pmo].includes(op)) pmoOpsMap[pmo].push(op);
+  });
+
+  // Preenche o select de Cliente
+  const selCliente = document.getElementById("filtroCliente");
+  selCliente.innerHTML = '<option value="">Selecione</option>';
+  Object.keys(clientPmoMap).sort().forEach(cli => {
+    selCliente.appendChild(new Option(cli, cli));
+  });
+}
+
+
+  const postosPadrao = [
+    "Inicial",
+    "Inspeção SPI",
+    "Inspeção SMD",
+    "Montagem PTH",
+    "Inspeção PTH",
+    "Teste",
+    "Integração",
+    "Teste Final",
+    "Inspeção Final",
+    "Embalagem",
+    "Inspeção NQA",
+    "Manutenção"
+];
+     
+   function carregarPMOsFiltro() {
+  const cliente = document.getElementById("filtroCliente").value;
+
+  const selPMO = document.getElementById("filtroPMO");
+  const selOP  = document.getElementById("filtroOP");
+
+  // limpa PMO/OP e os campos de detalhes
+  selPMO.innerHTML = '<option value="">Selecione</option>';
+  selOP.innerHTML  = '<option value="">Selecione</option>';
+  document.getElementById("descricao").value = "";
+  document.getElementById("acp").value       = "";
+  document.getElementById("quantidade").value = "";
+  document.getElementById("tabelaGeral").innerHTML = "";
+
+  // preenche PMOs do cliente
+  if (clientPmoMap[cliente]) {
+    clientPmoMap[cliente].slice().sort().forEach(pmo => {
+      selPMO.appendChild(new Option(pmo, pmo));
+    });
+  }
+}
+
+function carregarOPsFiltro() {
+  const pmoSelecionado = document.getElementById("filtroPMO").value;
+  const opSelect = document.getElementById("filtroOP");
+  opSelect.innerHTML = '<option value="">Selecione</option>';
+
+  // limpa filtro de caixa SEM tocar em nenhum id inexistente
+  const selCx = document.getElementById('filtroCaixa');
+  if (selCx) selCx.innerHTML = '<option value="">Todas</option>';
+
+  if (pmoOpsMap[pmoSelecionado]) {
+    pmoOpsMap[pmoSelecionado].slice().sort().forEach(op => {
+      opSelect.appendChild(new Option(op, op));
+    });
+  }
+
+  // limpa visual
+  document.getElementById("tabelaGeral").innerHTML = "";
+  document.getElementById("descricao").value = "";
+  document.getElementById("acp").value       = "";
+  document.getElementById("quantidade").value = "";
+}
+
+function carregarDadosPMO_OP() {
+  const pmo = document.getElementById("filtroPMO").value;
+  const op  = document.getElementById("filtroOP").value;
+  if (!pmo || !op) return;
+
+  google.script.run.withSuccessHandler(preencherCamposPMO_OP).buscarPMO_OP(pmo, op);
+
+  const sel = document.getElementById('filtroCaixa');
+  sel.innerHTML = '<option value="">Carregando...</option>';
+
+  google.script.run
+  .withSuccessHandler(lista => {
+    const sel = document.getElementById('filtroCaixa');
+    sel.innerHTML = '<option value="">Todas</option>';
+    (lista || []).forEach(cx => sel.appendChild(new Option(cx, cx)));
+  })
+  .withFailureHandler(err => {
+    console.error('listarCaixasPorOP falhou:', err.message);
+    const sel = document.getElementById('filtroCaixa');
+    sel.innerHTML = '<option value="">Todas</option>';
+  })
+  .listarCaixasPorOP(pmo, op);
+}
+
+
+function refreshOPData() {
+  const pmo = document.getElementById("filtroPMO").value;
+  const op  = document.getElementById("filtroOP").value;
+  const cx  = document.getElementById("filtroCaixa").value || '';
+  const btn = document.getElementById("btnAtualizar");
+
+  if (!pmo || !op) {
+    // opcional: feedback não bloqueante
+    console.warn("Selecione PMO e OP para atualizar.");
+    return;
+  }
+
+  // estado de carregamento do botão
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Atualizando...";
+
+  // Precisamos completar 2 chamadas (dados da OP + tabela)
+  let pendentes = 2;
+  const done = () => {
+    pendentes--;
+    if (pendentes <= 0) {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  };
+
+  // 1) Recarregar dados da OP (Qtd/Descrição/ACP)
+  google.script.run
+    .withSuccessHandler(dados => { preencherCamposPMO_OP(dados); done(); })
+    .withFailureHandler(err => { console.error("Erro buscarPMO_OP:", err.message); done(); })
+    .buscarPMO_OP(pmo, op);
+
+  // 2) Recarregar a tabela “Visão Geral da OP”
+  google.script.run
+    .withSuccessHandler(data => { montarTabelaVisual(data); done(); })
+    .withFailureHandler(err => { console.error("Erro gerarTabelaGeral:", err.message); done(); })
+    .gerarTabelaGeral(pmo, op, cx);
+}
+       
+      function gerarTabelaGrade(dados) {
+      const { postos, mapaStatus } = dados;
+     const container = document.getElementById("resultadoSerie");
+     container.innerHTML = "";
+
+     const tabela = document.createElement("table");
+     tabela.style.width = "100%";
+     tabela.style.borderCollapse = "collapse";
+     tabela.style.fontSize = "14px";
+
+       // cabeçalho
+      let cabecalho = "<tr><th style='border: 1px solid #ccc; padding: 8px;'>Nº de Série</th>";
+     postos.forEach(p => {
+     cabecalho += `<th style='border: 1px solid #ccc; padding: 8px;'>${p}</th>`;
+      });
+     cabecalho += "</tr>";
+      tabela.innerHTML = cabecalho;
+
+      // linhas
+     Object.entries(mapaStatus).forEach(([sn, statusPorPosto]) => {
+      let linha = `<tr><td style='border: 1px solid #ccc; padding: 8px;'>${sn}</td>`;
+      postos.forEach(p => {
+      const status = statusPorPosto[p] || "Pendente";
+      let cor = "#eee";
+      if (status === "Aprovado") cor = "#d4edda";
+      else if (status === "Reprovado") cor = "#f8d7da";
+
+      linha += `<td style='border: 1px solid #ccc; padding: 8px; background: ${cor}; text-align: center;'>${status}</td>`;
+      });
+      linha += "</tr>";
+      tabela.innerHTML += linha;
+    });
+
+  container.appendChild(tabela);
+}
+
+      function preencherCamposPMO_OP(dados) {
+        if (!dados) return;
+        document.getElementById("descricao").value = dados.descricao || "";
+        document.getElementById("acp").value = dados.acp || "";
+        document.getElementById("quantidade").value = dados.quantidade || "";
+      }
+
+
+function gerarTabelaVisualizacaoGeral() {
+  const pmo = document.getElementById("filtroPMO").value;
+  const op = document.getElementById("filtroOP").value;
+  const cx  = document.getElementById("filtroCaixa").value || '';
+
+  if (!pmo || !op) return;
+  google.script.run
+    .withSuccessHandler(data => { montarTabelaVisual(data); })
+    .withFailureHandler(err => { console.error("❌ Erro gerarTabelaGeral:", err.message); })
+    .gerarTabelaGeral(pmo, op, cx); // <- agora com filtro opcional
+}
+function montarTabelaVisual(dados) {
+  const container = document.getElementById("tabelaGeral");
+  if (!dados || !dados.length) {
+    container.innerHTML = "<p style='color:#999'>Nenhuma informação disponível.</p>";
+    return;
+  }
+
+  // Contagens (ignorando Manutenção nos totais usuais)
+  const produced = {}, approved = {}, rejected = {}, pending = {};
+  postosPadrao.forEach(p => { produced[p]=0; approved[p]=0; rejected[p]=0; pending[p]=0; });
+
+  // NOVO: total de manutenção concluída (para a linha "Produzido")
+  let manutencaoTotal = 0;
+
+  dados.forEach(linha => {
+    postosPadrao.forEach(p => {
+      const s = (linha[p] || '').trim();
+
+      // conta manutenção separadamente
+      if (p === 'Manutenção') {
+        if (s === 'Concluído') manutencaoTotal += 1;
+        return; // não entra nos demais totais
+      }
+
+      if (s && s !== 'Pendente' && s !== 'Não aplicável') produced[p] += 1;
+      if (s === 'Aprovado' || s === 'Registrado') approved[p] += 1;
+      if (s === 'Reprovado') rejected[p] += 1;
+      if (s === 'Pendente')  pending[p]  += 1;
+    });
+  });
+
+  let html = `<table style="width:100%; border-collapse: collapse; text-align:center;">`;
+  html += `<thead><tr><th style="border:1px solid #ccc; padding:6px;">Nº Série</th>`;
+  postosPadrao.forEach(p => { html += `<th style="border:1px solid #ccc; padding:6px;">${p}</th>`; });
+  html += `</tr></thead><tbody>`;
+
+  // helper p/ células de totais (mostra "—" em Manutenção)
+  function totalCell(p, val){
+    return (p==='Manutenção')
+      ? `<td style="border:1px solid #ccc; padding:6px; background:#f0f0f0;">—</td>`
+      : `<td style="border:1px solid #ccc; padding:6px;">${val}</td>`;
+  }
+
+  // PRODUZIDO: usa manutencaoTotal na coluna Manutenção
+  html += `<tr style="background:#a4dce6; font-weight:bold;">
+    <td style="border:1px solid #ccc; padding:6px; text-align:left;">Produzido</td>
+    ${postosPadrao.map(p => {
+      if (p === 'Manutenção') {
+        return `<td style="border:1px solid #ccc; padding:6px;">${manutencaoTotal}</td>`;
+      }
+      return `<td style="border:1px solid #ccc; padding:6px;">${produced[p]}</td>`;
+    }).join('')}
+  </tr>`;
+
+  // os demais mantêm "—" para Manutenção
+  html += `<tr style="background:#fff7cc; font-weight:bold; color:#6b5e00;">
+    <td style="border:1px solid #ccc; padding:6px; text-align:left;">Pendentes</td>
+    ${postosPadrao.map(p => totalCell(p, pending[p])).join('')}
+  </tr>`;
+  html += `<tr style="background:#d4edda; font-weight:bold; color:#155724;">
+    <td style="border:1px solid #ccc; padding:6px; text-align:left;">Aprovados</td>
+    ${postosPadrao.map(p => totalCell(p, approved[p])).join('')}
+  </tr>`;
+  html += `<tr style="background:#f8d7da; font-weight:bold; color:#721c24;">
+    <td style="border:1px solid #ccc; padding:6px; text-align:left;">Reprovados</td>
+    ${postosPadrao.map(p => totalCell(p, rejected[p])).join('')}
+  </tr>`;
+
+  // Linhas por SN (sem mudanças)
+  dados.forEach(linha => {
+    html += `<tr><td style="border:1px solid #ccc; padding:6px;">${linha.sn}</td>`;
+    postosPadrao.forEach(p => {
+      const status = (linha[p] || '').trim();
+      let cor = "#eee", txt = "#555", label = status || '—';
+
+      if (p === 'Embalagem') {
+        if (status && status !== 'Pendente' && status !== 'Não aplicável') { cor = "#d4edda"; txt = "#155724"; }
+        else if (status === 'Pendente') { cor = "#fff7cc"; txt = "#6b5e00"; }
+        else if (status === 'Não aplicável') { cor = "#e0e0e0"; txt = "#6b6b6b"; }
+      } else if (p === 'Manutenção') {
+        if (status === 'Concluído') { cor = "#d4edda"; txt = "#155724"; }
+        else { cor = "#f0f0f0"; txt = "#666"; }
+      } else {
+        if (status === "Aprovado" || status === "Registrado") { cor = "#d4edda"; txt = "#155724"; }
+        else if (status === "Reprovado") { cor = "#f8d7da"; txt = "#721c24"; }
+        else if (status === "Pendente")  { cor = "#fff7cc"; txt = "#6b5e00"; }
+        else if (status === "Não aplicável") { cor = "#e0e0e0"; txt = "#6b6b6b"; }
+      }
+
+      html += `<td style="border:1px solid #ccc; padding:6px; background:${cor}; color:${txt}; font-weight:bold; white-space:nowrap; font-size:12px;">${label}</td>`;
+    });
+    html += `</tr>`;
+  });
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+}
+
+
+
+/**
+ * Dispara a busca detalhada e monta a tabela.
+ */
+function buscarDetalhadoSN() {
+  const snInput   = document.getElementById("inputDetalhadoSN");
+  const btn       = document.getElementById("btnBuscar");
+  const container = document.getElementById("tabelaDetalhada");
+  const sn = (snInput.value || "").trim();
+
+  container.innerHTML = "";
+  if (!sn) {
+    container.innerHTML = '<p style="color:#999">Informe um Nº de Série.</p>';
+    return;
+  }
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Buscando...";
+
+  const done = () => {
+    btn.disabled = false;
+    btn.textContent = original;
+  };
+
+  google.script.run
+    .withSuccessHandler(dados => { montarTabelaDetalhada(dados); done(); })
+    .withFailureHandler(err => { container.innerHTML = `<p class="erro">Erro: ${err.message}</p>`; done(); })
+    .buscarDetalhadoPorNumeroSerie(sn);
+}
+
+// atalho: Enter no campo SN dispara a busca
+document.getElementById("inputDetalhadoSN").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    buscarDetalhadoSN();
+  }
+});
+
+
+/**
+ * Monta uma tabela HTML com os campos desejados.
+ */
+function montarTabelaDetalhada(dados) {
+  const container = document.getElementById("tabelaDetalhada");
+  if (!dados || !dados.length) {
+    container.innerHTML = '<p style="color:#999">Nenhum registro encontrado para esse SN.</p>';
+    return;
+  }
+
+  // parse dd/MM/yyyy HH:mm:ss → timestamp (ms)
+  const parseBRDateTime = (s) => {
+    if (!s) return 0;
+    const m = String(s).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!m) return 0;
+    const dd = +m[1], mm = +m[2], yyyy = +m[3];
+    const hh = +(m[4]||0), mi = +(m[5]||0), ss = +(m[6]||0);
+    return new Date(yyyy, mm - 1, dd, hh, mi, ss).getTime();
+  };
+
+  // mais recente primeiro
+  const itens = dados.slice().sort((a, b) => parseBRDateTime(b.dataHora) - parseBRDateTime(a.dataHora));
+
+  const cols = [
+    { key: 'dataHora',          label: 'Data/Hora' },
+    { key: 'colaborador',       label: 'Colaborador' },
+    { key: 'posto',             label: 'Posto' },
+    { key: 'status',            label: 'Status' },
+    { key: 'numeroCaixa',       label: 'Nº da Caixa' },
+    { key: 'cod',               label: 'Código do Defeito' },
+    { key: 'pos',               label: 'Posição' },
+    { key: 'tipo',              label: 'Tipo' },
+    { key: 'inspeVisualNQA',    label: 'Inspeção Visual NQA' },
+    { key: 'inspeFuncionalNQA', label: 'Inspeção Funcional NQA' },
+    { key: 'idIntegracao',      label: 'ID Integração' },
+    { key: 'reparoConserto',    label: 'Reparo – Conserto' },
+    { key: 'reparoPosicao',     label: 'Reparo – Posição' }
+  ];
+
+  // seus larguras personalizadas
+  const colWidths = {
+     dataHora: 140, colaborador: 120, posto: 140, status: 110,
+    numeroCaixa: 120, cod: 160, pos: 80, tipo: 80,
+    inspeVisualNQA: 110, inspeFuncionalNQA: 110,
+    idIntegracao: 170, reparoConserto: 220, reparoPosicao: 80
+  };
+
+  // força a tabela a ficar mais larga que o container → habilita a rolagem
+  const minW = cols.reduce((acc, c) => acc + (colWidths[c.key] || 120), 0);
+
+  let html = `<table class="tabela-detalhada" style="min-width:${minW}px"><colgroup>`;
+  cols.forEach(c => { html += `<col style="width:${colWidths[c.key]||120}px">`; });
+  html += `</colgroup><thead><tr>`;
+  cols.forEach(c => { html += `<th>${c.label}</th>`; });
+  html += `</tr></thead><tbody>`;
+
+  itens.forEach(row => {
+    html += `<tr>`;
+    cols.forEach(c => {
+      const val = row[c.key] ?? '';
+      const esc = String(val).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      html += `<td title="${esc}">${val}</td>`; // sem word-break; agora respeita widths
+    });
+    html += `</tr>`;
+  });
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+}
+
+
+    </script>
+  </body>
+</html>

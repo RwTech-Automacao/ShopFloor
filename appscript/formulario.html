@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base target="_top">
+  <title>Registro do ShopFloor</title>
+  <style>
+    /* ===== largura e cores padrão desta página ===== */
+    :root{
+      --content-max: 600px;           /* formulário = 600px */
+      --sf-blue: #1E88E5;
+      --sf-blue-100: #E8F2FF;
+      --sf-blue-200: #DBEAFE;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      background: #f4f4f4; padding: 20px; margin: 0;
+    }
+
+    /* ===== header/nav ===== */
+    .sf-header{ display:flex; justify-content:center; }
+    .sf-header .nav-shell{
+      width: calc(100% - 32px);
+      max-width: var(--content-max);
+      margin: 16px auto 8px;
+      background:#fff;
+      border:1px solid var(--sf-blue-200);
+      border-radius:12px;
+      box-shadow:0 6px 24px rgba(0,0,0,.08);
+      padding:12px 16px 14px;
+    }
+
+    .topnav{
+  display:flex; flex-wrap:wrap; justify-content:center; gap:10px;
+}
+.topnav a{
+  text-decoration:none; color:#222; font-weight:700;
+  padding:6px 8px; border-radius:999px;
+  border:1px solid transparent; background:#fff;
+  transition:background .15s, border-color .15s, color .15s;
+}
+.topnav a:hover{ background:#f7f7f7; }
+.topnav a.active{
+  background:var(--sf-blue-100);
+  border-color:var(--sf-blue-200);
+  color:var(--sf-blue);
+}
+/* Linha de logo + título (abaixo das abas) — o conjunto é centralizado */
+.brandline{
+  margin-top:26px;
+  display:flex; align-items:center; justify-content:center;
+  gap:14px;
+}
+.brandline .brand{ height:44px; width:auto; object-fit:contain; }
+.brandline .page-title{ margin:0; font-size:22px; font-weight:800; }
+
+@media (max-width:740px){
+  .brandline .brand{ height:24px; }
+}
+    /* ===== CARD (mesma largura do nav) ===== */
+    .container{
+      background:#ffffff; width:100%; max-width: var(--content-max); margin:auto;
+      padding:24px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    label { font-weight: 600; display: block; margin-bottom: 4px; margin-top: 16px; }
+    input, select {
+      width: 100%; padding: 10px; font-size: 20px; border-radius: 8px;
+      border: 1px solid #ccc; background-color: #fdfdfd;
+    }
+    button {
+      font-size: 20px; padding: 12px; border: none; border-radius: 8px;
+      cursor: pointer; display: block; width: 100%; margin-top: 24px;
+    }
+    #limparBtn { background-color: #ffffff; color: #f70f0f; }
+    .oculto { display: none !important; }
+    .sucesso { color: green; margin-top: 16px; }
+    .erro { color: red; margin-top: 16px; }
+
+    .grupo-login{
+      border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:24px;
+      background:#fafafa; display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:center;
+    }
+    .campo{ display:flex; flex-direction:column; }
+    .col-span-2{ grid-column:1 / -1; }
+
+    .logo{ height:48px; width:auto; object-fit:contain; } /* caso reaproveite */
+
+    .input-ok{
+       background:#E8F8EE;          /* verde bem claro */
+      border-color:#22c55e;         /* verde */
+      transition: background .15s, border-color .15s;
+     }
+
+    .verde{ background-color:#d4edda !important; color:#155724; font-weight:bold; }
+    .vermelho{ background-color:#f8d7da !important; color:#721c24; font-weight:bold; }
+    .input-error{ border-color:#b3261e; background:#fdecea; }
+    .hint-erro{ color:#b3261e; font-size:12px; margin-top:4px; }
+
+    /* ===== múltiplos defeitos ===== */
+    .btn-sec{ background:#eeeeee; color:#333; width:auto; display:inline-block; margin-top:8px; }
+    .defeito-bloco{ border:1px dashed #ddd; border-radius:8px; padding:12px; margin-top:12px; }
+    .def-flex{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .def-flex .full{ grid-column:1 / -1; }
+    .pos-wrap{ display:grid; grid-template-columns:1fr 2fr; gap:10px; align-items:center; }
+
+    @media (max-width:640px){
+      .def-flex{ grid-template-columns:1fr; }
+      .pos-wrap{ grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== HEADER + NAV PADRÃO ===== -->
+<header class="sf-header">
+  <div class="nav-shell">
+    <!-- Abas (em cima) -->
+    <nav class="topnav" id="sf-nav">
+      <a data-page="formulario">Lançamento</a>
+      <a data-page="integracao">Integração</a>
+      <a data-page="manutencao">Manutenção</a>
+      <a data-page="dashboard">Dashboard</a>
+      <a data-page="pesquisa">Pesquisa</a>
+    </nav>
+
+    <!-- Logo à esquerda + título à direita, centralizados como conjunto -->
+    <div class="brandline">
+      <img class="brand" src="https://enterplak.com.br/wp-content/uploads/2024/09/logo-5.png" alt="Enterplak">
+      <h1 class="page-title">Formulário de Registro do ShopFloor</h1>
+    </div>
+  </div>
+</header>
+
+
+<script>
+(function initNav(){
+  // URL ABSOLUTA do seu deploy /exec
+  const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwNyHVxF6I30zfRS2uRYvmuNSZKsIJor1nK_TKXHj9BAis_w54-7iusgF7p4jjK1JdAoA/exec';
+
+  // página atual
+  const params = new URLSearchParams(location.search);
+  const current = (params.get('page') || 'formulario').toLowerCase();
+
+  // define links e marca ativo
+  document.querySelectorAll('#sf-nav a[data-page]').forEach(a=>{
+    const pg = a.getAttribute('data-page');
+    a.href = WEBAPP_URL + '?page=' + encodeURIComponent(pg);
+    if(pg.toLowerCase() === current) a.classList.add('active');
+  });
+
+  // título da aba do navegador
+  const titles = {
+    formulario:'Lançamento • ShopFloor',
+    integracao:'Integração • ShopFloor',
+    manutencao:'Manutenção • ShopFloor',
+    dashboard :'Dashboard • ShopFloor',
+    pesquisa  :'Pesquisa • ShopFloor'
+  };
+  document.title = titles[current] || 'ShopFloor';
+})();
+</script>
+<!-- ===== /HEADER ===== -->
+
+<div class="container">
+
+    <div class="grupo-login">
+      <!-- Linha 1: Colaborador | Posto -->
+      <div class="campo">
+        <label>Colaborador:</label>
+        <input type="text" id="colaborador" required>
+      </div>
+
+      <div class="campo">
+        <label>Posto:</label>
+        <select id="posto" required onchange="onPostoChange()">
+          <option value="">Selecione</option>
+          <option>Inicial</option>
+          <option>Inspeção SPI</option>
+          <option>Inspeção SMD</option>
+          <option>Montagem PTH</option>
+          <option>Inspeção PTH</option>
+          <option>Teste</option>
+          <option>Embalagem</option>
+          <option>Teste Final</option>
+          <option>Inspeção Final</option>
+          <option>Inspeção NQA</option>
+        </select>
+      </div>
+
+      <!-- Linha 2: Cliente | PMO -->
+      <div class="campo">
+        <label>Cliente:</label>
+        <select id="cliente" required onchange="carregarPMOs()">
+          <option value="">Selecione</option>
+        </select>
+      </div>
+
+      <div class="campo">
+        <label>PMO:</label>
+        <select id="pmo" required onchange="carregarOPs()">
+          <option value="">Selecione</option>
+        </select>
+      </div>
+
+      <!-- Linha 3: Descrição -->
+      <div class="campo col-span-2">
+        <label>Descrição:</label>
+        <input type="text" id="descricaoPMO" disabled>
+      </div>
+
+      <!-- Linha 4: Nº da OP -->
+      <div class="campo col-span-2">
+        <label>Nº da OP:</label>
+        <select id="op" required onchange="onOPChange()">
+          <option value="">Selecione</option>
+        </select>
+      </div>
+
+      <!-- Campos fixos de embalagem -->
+      <div id="camposEmbalagemFixos" class="oculto col-span-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="campo">
+          <label>Nº da Caixa:</label>
+          <input type="text" id="caixaAtual">
+        </div>
+        <div class="campo">
+          <label>Qtd. por Caixa:</label>
+          <input type="number" id="limiteCaixa" min="1">
+        </div>
+      </div>
+    </div>
+
+    <form id="formulario">
+      <p id="mensagem"></p>
+
+      <div id="statusCampo">
+        <label>Status:</label>
+        <select name="status" id="status">
+          <option value="">Selecione</option>
+          <option value="Aprovado" selected>Aprovado</option>
+          <option value="Reprovado">Reprovado</option>
+        </select>
+      </div>
+
+      <div id="caixaCampo" class="oculto">
+        <label>Nº da Caixa:</label>
+        <input type="text" name="numeroCaixa">
+      </div>
+
+      <label>Nº de Série:</label>
+      <input type="text" name="numeroSerie" required>
+
+      <!-- ====== BLOCO DEFEITOS (MÚLTIPLOS) ====== -->
+      <div id="defeitosWrapper" class="oculto">
+        <div id="defeitosContainer">
+          <!-- bloco inicial -->
+          <div class="defeito-bloco">
+            <div class="def-flex">
+              <div class="campo">
+                <label>Código do Defeito:</label>
+                <input type="text" class="cod-defeito" list="listaDefeitos" autocomplete="off">
+              </div>
+              <div class="campo">
+                <label>Posição:</label>
+                <div class="pos-wrap">
+                  <select class="pos-mode" onchange="onPosModeChange(this)">
+                    <option value="digitar" selected>Digitar</option>
+                    <option value="NA">NA</option>
+                  </select>
+                  <input type="text" class="pos-defeito" placeholder="Ex.: R15, U3 (ou múltiplas: R5, R7)">
+                </div>
+              </div>
+              <div class="campo full">
+                <label>Tipo:</label>
+                <select class="tipo-defeito">
+                  <option value="">Selecione</option>
+                  <option>SMD</option>
+                  <option>PTH</option>
+                  <option>Integração</option>
+                  <option>TOP</option>
+                  <option>BOT</option>
+                  <option>Funcional</option>
+                  <option>Elétrico</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button type="button" id="addDefeitoBtn" class="btn-sec oculto" onclick="adicionarDefeito()">Adicionar campos</button>
+        <datalist id="listaDefeitos"></datalist>
+      </div>
+
+      <!-- ====== SPI: só posição na reprova (sem código/tipo) ====== -->
+      <div id="spiPosWrapper" class="oculto">
+        <label>Posição:</label>
+        <input type="text" id="spiPosicao" placeholder="Ex.: R15 (ou múltiplas: R5, R7)" autocomplete="off">
+      </div>
+
+      <!-- NQA -->
+      <div id="nqaCampos" class="oculto">
+        <label>Inspeção Visual:</label>
+        <select name="nqaVisualStatus">
+          <option value="">Selecione</option>
+          <option>Aprovado</option>
+          <option>Reprovado</option>
+        </select>
+
+        <label>Inspeção Funcional:</label>
+        <select name="nqaFuncionalStatus">
+          <option value="">Selecione</option>
+          <option>Aprovado</option>
+          <option>Reprovado</option>
+          <option>Não aplicável</option>
+        </select>
+      </div>
+
+      <button type="button" id="btnEnviar" style="background-color: #1E88E5; color: #ffffff;" onclick="enviarFormulario()">Enviar</button>
+    </form>
+
+    <button id="limparBtn" type="button" onclick="limparLogin()">Limpar Login</button>
+  </div>
+
+  <script>
+    const form = document.getElementById("formulario");
+    const statusCampo = document.getElementById("statusCampo");
+    const defeitosWrapper = document.getElementById("defeitosWrapper");
+    const spiPosWrapper = document.getElementById("spiPosWrapper");
+    const defeitosContainer = document.getElementById("defeitosContainer");
+    const addDefeitoBtn = document.getElementById("addDefeitoBtn");
+    const caixaCampo = document.getElementById("caixaCampo");
+    const nqaCampos = document.getElementById("nqaCampos");
+    const msg = document.getElementById("mensagem");
+    const botaoEnviar = document.getElementById("btnEnviar");
+
+    // Hint inline para Nº de Série
+    const snInput = document.querySelector('input[name="numeroSerie"]');
+    const snHint  = document.createElement('div');
+    snHint.id = 'snHint'; snHint.className = 'hint-erro'; snHint.style.display = 'none';
+    snInput.insertAdjacentElement('afterend', snHint);
+
+   function showInlineError(textOrList) {
+   const items = Array.isArray(textOrList) ? textOrList.filter(Boolean) : [textOrList];
+   const html = `<ul style="margin:6px 0 0 18px; padding:0;">
+     ${items.map(t=>`<li>${String(t)}</li>`).join('')}
+   </ul>`;
+      snHint.innerHTML = html;
+      snHint.style.display = 'block';
+      snInput.classList.add('input-error');
+      botaoEnviar.disabled = true;
+    }
+    function clearInlineError() {
+      snHint.innerHTML = '';
+      snHint.style.display = 'none';
+      snInput.classList.remove('input-error');
+      snInput.classList.remove('input-ok');
+      botaoEnviar.disabled = false;
+    }
+
+    // ----- estado de validação (única fonte de verdade) -----
+const validation = {
+  localOk: false,
+  localMsg: ''
+};
+
+function overallValid(){
+  return validation.localOk;
+}
+
+function applyValidationUI(){
+
+ // durante a janela de silêncio, não mostra nada → só esconde e bloqueia o botão
+  if (Date.now() < _suppressHintUntil){
+    clearInlineError();
+    botaoEnviar.disabled = true;
+    return;
+  }
+
+  // escolhe a mensagem a exibir (apenas validação local)
+  if (!validation.localOk){
+    const list = validation.localMsg ? [validation.localMsg] : ['Corrija os campos obrigatórios.'];
+    showInlineError(list);
+  } else {
+    clearInlineError();
+  }
+
+  // botão só habilita quando a validação local passou
+  botaoEnviar.disabled = !overallValid();
+  // verde só quando a validação local passou
+  snInput.classList.toggle('input-ok', overallValid());
+}
+
+    /* === Posto & Defeitos por tipo === */
+    function getTipoByPosto(postoLower){
+      if (postoLower === 'inspeção smd' || postoLower === 'inspeção pth') return 1; // peça
+      if (postoLower === 'teste' || postoLower === 'teste final') return 2;         // teste
+      return null;
+    }
+
+    function preencherDatalist(lista){
+      const datalist = document.getElementById("listaDefeitos");
+      datalist.innerHTML = "";
+      (lista||[]).forEach(opcao => {
+        const o = document.createElement("option");
+        o.value = opcao;
+        datalist.appendChild(o);
+      });
+    }
+
+    function carregarDefeitosParaPosto(){
+      const postoLower = (document.getElementById("posto").value||'').toLowerCase();
+      const tipo = getTipoByPosto(postoLower);
+      if (!tipo) { preencherDatalist([]); return; }
+
+      // prefere obterDefeitosPorTipo(tipo); fallback para obterDefeitos()
+      google.script.run
+        .withSuccessHandler(preencherDatalist)
+        .withFailureHandler(() => {
+          google.script.run.withSuccessHandler(preencherDatalist).obterDefeitos(); // fallback
+        })
+        .obterDefeitosPorTipo(tipo);
+    }
+
+    function onPostoChange(){
+      atualizarCampos();
+      carregarDefeitosParaPosto(); // assim que trocar o posto, já carrega o datalist correto
+    }
+
+    function atualizarCampos() {
+      const posto = document.getElementById("posto").value.toLowerCase();
+      const isInicial = posto === "inicial";
+      const isMontagemPTH = posto === "montagem pth";
+      const isEmbalagem = posto === "embalagem";
+      const isNQA = posto === "inspeção nqa";
+      const isSPI = posto === "inspeção spi";
+      const camposEmbalagemFixos = document.getElementById("camposEmbalagemFixos");
+
+      camposEmbalagemFixos.classList.toggle("oculto", !isEmbalagem);
+      statusCampo.classList.toggle("oculto", isInicial || isMontagemPTH || isEmbalagem || isNQA);
+      defeitosWrapper.classList.add("oculto");
+      addDefeitoBtn.classList.add("oculto");
+      spiPosWrapper.classList.add("oculto");
+      nqaCampos.classList.toggle("oculto", !isNQA);
+
+      if (isSPI) {
+        // SPI: inspeção com defeito reduzido — na reprova exibe só a Posição.
+        form.status.onchange = function () {
+          spiPosWrapper.classList.toggle("oculto", form.status.value !== "Reprovado");
+        };
+        spiPosWrapper.classList.toggle("oculto", form.status.value !== "Reprovado");
+      } else if (!isInicial && !isMontagemPTH && !isEmbalagem && !isNQA) {
+        form.status.onchange = function () {
+          const isReprovado = form.status.value === "Reprovado";
+          defeitosWrapper.classList.toggle("oculto", !isReprovado);
+          addDefeitoBtn.classList.toggle("oculto", !isReprovado);
+          if (isReprovado) carregarDefeitosParaPosto();
+        };
+      } else {
+        form.status.value = "";
+      }
+    }
+
+    function limparLogin() {
+      document.getElementById("colaborador").value = "";
+      document.getElementById("cliente").value = "";
+      document.getElementById("pmo").value = "";
+      document.getElementById("op").value = "";
+      document.getElementById("descricaoPMO").value = "";
+      document.getElementById("posto").value = "";
+      document.getElementById("caixaAtual").value = "";
+      document.getElementById("limiteCaixa").value = "";
+
+      // limpa PMOs e OPs
+      const pmoSelect = document.getElementById("pmo");
+      const opSelect  = document.getElementById("op");
+      pmoSelect.innerHTML = `<option value="">Selecione</option>`;
+      opSelect.innerHTML  = `<option value="">Selecione</option>`;
+
+      currentRangeSN = null;
+      currentApplicablePosts = null;
+      clearInlineError();
+
+      resetDefeitos();
+      preencherDatalist([]);
+      atualizarCampos();
+      msg.textContent = "";
+    }
+
+    // ===== Validações (SN e Posto aplicável) =====
+    let currentRangeSN = null;
+    let currentApplicablePosts = null;
+
+    function parseSNParts(sn) {
+      const cleaned = (sn || '').toString().replace(/[^A-Za-z0-9]/g, '').trim();
+      const m = cleaned.match(/(\d+)$/);
+      return { cleaned, prefix: cleaned.replace(/(\d+)$/, ''), num: m ? parseInt(m[1], 10) : NaN };
+    }
+    function isSNInRange(sn, range) {
+      if (!range || !range.ini || !range.fim) return true;
+      const a = parseSNParts(range.ini), b = parseSNParts(range.fim), x = parseSNParts(sn);
+      if (!isNaN(a.num) && !isNaN(b.num) && !isNaN(x.num)) {
+        if ((a.prefix || b.prefix) && (x.prefix !== a.prefix || a.prefix !== b.prefix)) return false;
+        const lo = Math.min(a.num, b.num), hi = Math.max(a.num, b.num);
+        return x.num >= lo && x.num <= hi;
+      }
+      const s1=a.cleaned, s2=b.cleaned, sx=x.cleaned;
+      const lo = s1 < s2 ? s1 : s2, hi = s1 > s2 ? s1 : s2;
+      return sx >= lo && sx <= hi;
+    }
+
+    function isPostoAplicavel(posto) {
+      if (!currentApplicablePosts) return true;
+      return !!currentApplicablePosts[posto];
+    }
+
+function validateAllInline() {
+  const posto = document.getElementById('posto').value;
+  const sn = (snInput.value || '').trim();
+
+  // início: assume inválido até provar o contrário
+  validation.localOk = false;
+  validation.localMsg = '';
+
+  if (posto && !isPostoAplicavel(posto)) {
+    validation.localMsg = 'Posto não-aplicável para essa OP.';
+    applyValidationUI(); 
+    return false;
+  }
+
+  if (sn && currentRangeSN && !isSNInRange(sn, currentRangeSN)) {
+    validation.localMsg = 'Número de série inválido para esta OP.';
+    applyValidationUI();
+    return false;
+  }
+
+  // campos obrigatórios mínimos antes de permitir pré-validação server
+  const pmo   = document.getElementById('pmo').value;
+  const op    = document.getElementById('op').value;
+  if (!pmo || !op || !posto || !sn){
+    validation.localMsg = 'Preencha PMO, OP, Posto e Nº de Série.';
+    applyValidationUI();
+    return false;
+  }
+
+  // passou nas regras locais
+  validation.localOk = true;
+  validation.localMsg = '';
+  applyValidationUI();
+  return true;
+}
+
+/* ===== Validação local durante a digitação (única validação no front) =====
+   O preflight no servidor foi removido (PRD-004 / ADR-0003). Duplicado e
+   posto anterior passam a ser verificados de forma autoritativa no Enviar. */
+
+// reforços para scanner/tablet
+snInput.setAttribute('autocomplete','off');
+snInput.setAttribute('autocapitalize','off');
+snInput.setAttribute('spellcheck','false');
+
+// enquanto digita/bipa: some erro antigo e revalida localmente (faixa + campos)
+function _revalidarLocal(){
+  clearInlineError();
+  validateAllInline();
+}
+
+snInput.addEventListener('input', () => { snInput.classList.remove('input-ok'); _revalidarLocal(); });
+snInput.addEventListener('change', _revalidarLocal);
+snInput.addEventListener('paste', () => setTimeout(_revalidarLocal, 0));
+
+// posto/status/NQA mudaram → revalida localmente
+document.getElementById('status').addEventListener('change', validateAllInline);
+if (form.nqaVisualStatus)   form.nqaVisualStatus.addEventListener('change', validateAllInline);
+if (form.nqaFuncionalStatus)form.nqaFuncionalStatus.addEventListener('change', validateAllInline);
+
+
+    // ===== Cor de status =====
+    const statusSelect = document.getElementById("status");
+    function atualizarCorStatus() {
+      statusSelect.classList.remove("verde", "vermelho");
+      if (statusSelect.value === "Aprovado") statusSelect.classList.add("verde");
+      else if (statusSelect.value === "Reprovado") statusSelect.classList.add("vermelho");
+    }
+    statusSelect.addEventListener("change", atualizarCorStatus);
+
+    // ===== OP alterada → carrega range e aplicabilidade =====
+    function onOPChange() {
+      const pmo = document.getElementById('pmo').value;
+      const op  = document.getElementById('op').value;
+      currentRangeSN = null;
+      currentApplicablePosts = null;
+      clearInlineError();
+      if (!pmo || !op) return;
+      
+      google.script.run
+        .withSuccessHandler(range => { currentRangeSN = (range && (range.ini || range.fim)) ? range : null; validateAllInline(); })
+        .withFailureHandler(() => { currentRangeSN = null; validateAllInline(); })
+        .obterRangeSN(pmo, op);
+
+      google.script.run
+        .withSuccessHandler(map => { currentApplicablePosts = map; validateAllInline(); })
+        .withFailureHandler(() => { currentApplicablePosts = null; validateAllInline(); })
+        .obterAplicabilidadePostos(pmo, op);
+
+    validateAllInline();
+    }
+
+    // ===== Cliente/PMO/OP (maps) =====
+    let clientPmoMap = {}; // cliente -> [PMOs]
+    let pmoOpsMap    = {}; // PMO     -> [OPs]
+    let pmoDescMap   = {}; // PMO     -> descrição
+
+    google.script.run.withSuccessHandler(buildMapsClientePMOOP).obterCLIENTE_PMO_OPS();
+
+    function buildMapsClientePMOOP(rows) {
+      clientPmoMap = {}; pmoOpsMap = {}; pmoDescMap = {};
+      rows.forEach(([cliente, pmo, op, descricao]) => {
+        if (!clientPmoMap[cliente]) clientPmoMap[cliente] = [];
+        if (!clientPmoMap[cliente].includes(pmo)) clientPmoMap[cliente].push(pmo);
+        if (!pmoOpsMap[pmo]) pmoOpsMap[pmo] = [];
+        if (!pmoOpsMap[pmo].includes(op)) pmoOpsMap[pmo].push(op);
+        pmoDescMap[pmo] = (descricao || '').toString();
+      });
+      const clienteSel = document.getElementById("cliente");
+      clienteSel.innerHTML = `<option value="">Selecione</option>`;
+      Object.keys(clientPmoMap).sort().forEach(cli => {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = cli;
+        clienteSel.appendChild(opt);
+      });
+    }
+
+    function carregarPMOs() {
+      const cliente = document.getElementById("cliente").value;
+      const pmoSelect = document.getElementById("pmo");
+      const opSelect  = document.getElementById("op");
+
+      pmoSelect.innerHTML = `<option value="">Selecione</option>`;
+      opSelect.innerHTML  = `<option value="">Selecione</option>`;
+      document.getElementById("descricaoPMO").value = "";
+
+      currentRangeSN = null;
+      currentApplicablePosts = null;
+      clearInlineError();
+
+      if (clientPmoMap[cliente]) {
+        clientPmoMap[cliente].slice().sort().forEach(pmo => {
+          const opt = document.createElement("option");
+          opt.value = opt.textContent = pmo;
+          pmoSelect.appendChild(opt);
+        });
+      }
+    }
+
+    function carregarOPs() {
+      const pmoSelecionado = document.getElementById("pmo").value;
+      const opSelect = document.getElementById("op");
+      opSelect.innerHTML = `<option value="">Selecione</option>`;
+
+      currentRangeSN = null;
+      currentApplicablePosts = null;
+      clearInlineError();
+
+      const ops = pmoOpsMap[pmoSelecionado] || [];
+      ops.slice().sort().forEach(op => {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = op;
+        opSelect.appendChild(opt);
+      });
+
+      document.getElementById("descricaoPMO").value = pmoDescMap[pmoSelecionado] || "";
+    }
+
+    /* ====== Posição: modo "Digitar" vs "NA" ====== */
+    function onPosModeChange(sel){
+      const wrap = sel.closest('.pos-wrap');
+      const input = wrap.querySelector('.pos-defeito');
+      if (sel.value === 'NA'){
+        input.value = 'NA';
+        input.disabled = true;
+      } else {
+        input.disabled = false;
+        if (input.value.trim().toUpperCase() === 'NA') input.value = '';
+        input.focus();
+      }
+    }
+
+    /* ====== Múltiplos defeitos ====== */
+    function adicionarDefeito(){
+      const bloco = document.createElement('div');
+      bloco.className = 'defeito-bloco';
+      bloco.innerHTML =
+        `<div class="def-flex">
+           <div class="campo">
+             <label>Código do Defeito:</label>
+             <input type="text" class="cod-defeito" list="listaDefeitos" autocomplete="off">
+           </div>
+           <div class="campo">
+             <label>Posição:</label>
+             <div class="pos-wrap">
+               <select class="pos-mode" onchange="onPosModeChange(this)">
+                 <option value="digitar" selected>Digitar</option>
+                 <option value="NA">NA</option>
+               </select>
+               <input type="text" class="pos-defeito" placeholder="Ex.: R15, U3 (ou múltiplas: R5, R7)">
+             </div>
+           </div>
+           <div class="campo full">
+             <label>Tipo:</label>
+             <select class="tipo-defeito">
+               <option value="">Selecione</option>
+               <option>SMD</option>
+               <option>PTH</option>
+               <option>Integração</option>
+               <option>TOP</option>
+               <option>BOT</option>
+               <option>Funcional</option>
+               <option>Elétrico</option>
+             </select>
+           </div>
+         </div>`;
+      defeitosContainer.appendChild(bloco);
+    }
+
+    function resetDefeitos(){
+      defeitosContainer.innerHTML = '';
+      adicionarDefeito(); // 1 bloco base
+    }
+
+    function coletarDefeitos(){
+      const blocos = Array.from(defeitosContainer.querySelectorAll('.defeito-bloco'));
+      const out = [];
+      blocos.forEach(b=>{
+        const cod = (b.querySelector('.cod-defeito')||{}).value || '';
+        const modeSel = (b.querySelector('.pos-mode')||{value:'digitar'}).value;
+        const posInput = (b.querySelector('.pos-defeito')||{ value:'' });
+        const pos = (modeSel === 'NA') ? 'NA' : (posInput.value || '');
+        const tipo= (b.querySelector('.tipo-defeito')||{}).value || '';
+        if (cod.trim()) out.push({ cod: cod.trim(), pos: pos.trim(), tipo: tipo.trim() });
+      });
+      return out;
+    }
+
+    // ===== Inicialização =====
+    function finalizarEnvio() {
+      botaoEnviar.disabled = false;
+      botaoEnviar.textContent = "Enviar";
+    }
+
+    window.onload = () => {
+      atualizarCampos();
+      atualizarCorStatus();
+      resetDefeitos();
+      document.getElementById('posto').addEventListener('change', validateAllInline);
+      snInput.addEventListener('blur',  validateAllInline);
+    };
+
+    /* ===== Sequencial de múltiplos defeitos ===== */
+    function enviarVariosDefeitosSequencial(baseDados, defeitos, done, fail){
+      let i = 0;
+      const next = () => {
+        if (i >= defeitos.length) { done(i); return; }
+        const d = defeitos[i++];
+        const payload = Object.assign({}, baseDados, { cod: d.cod, pos: d.pos, tipo: d.tipo });
+        google.script.run
+          .withSuccessHandler(next)
+          .withFailureHandler(fail)
+          .enviarFormulario(payload);
+      };
+      next();
+    }
+
+    /* ===== ENVIO ===== */
+function enviarFormulario() {
+  // evita duplo clique
+  if (botaoEnviar.disabled) return;
+  botaoEnviar.disabled = true;
+  botaoEnviar.textContent = "Enviando...";
+  msg.textContent = "";
+  msg.className = "";
+
+  const dados = Object.fromEntries(new FormData(form));
+  dados.colaborador = document.getElementById("colaborador").value;
+  dados.op          = document.getElementById("op").value;
+  dados.posto       = document.getElementById("posto").value;
+  dados.pmo         = document.getElementById("pmo").value;
+
+  // ----- BARREIRA FINAL (uma vez só) -----
+  if (!validateAllInline()){
+    applyValidationUI();
+    finalizarEnvio();
+    return;
+  }
+
+  const postoLower = (dados.posto||'').toLowerCase();
+
+  // Campos específicos por posto
+  if (postoLower === "inspeção nqa") {
+    dados.nqaVisualStatus   = form.nqaVisualStatus.value;
+    dados.nqaFuncionalStatus= form.nqaFuncionalStatus.value;
+  }
+  if (postoLower === "embalagem") {
+    dados.numeroCaixa = document.getElementById("caixaAtual").value;
+    const limStr = document.getElementById("limiteCaixa").value;
+    dados.limiteCaixa = limStr ? parseInt(limStr, 10) : null;
+
+    // bloqueio amigável no front (evita cair no “Demais postos”)
+    if (!dados.numeroCaixa || !dados.limiteCaixa || isNaN(dados.limiteCaixa)) {
+      msg.className = "erro";
+      msg.textContent = 'Para Embalagem, preencha "Nº da Caixa" e "Qtd. por Caixa".';
+      finalizarEnvio();
+      applyValidationUI();
+      return;
+    }
+  }
+
+  const caixaAtual = document.getElementById("caixaAtual").value;
+
+  // ===== Embalagem: gravar + contar peças
+  if (postoLower === "embalagem") {
+    google.script.run
+      .withSuccessHandler(res => {
+        msg.className = "sucesso";
+        msg.innerHTML = `${res.message.replace(/\n/g, "<br>")}<br><strong>Peças na caixa ${dados.numeroCaixa}: ${res.qtd}</strong>`;
+        finalizarEnvio();
+        form.reset();
+        resetDefeitos();
+        atualizarCampos();
+
+        // reset de validação pós-reset
+        clearInlineError();
+        botaoEnviar.disabled = true;
+        applyValidationUI();
+
+        snInput.focus(); snInput.select();
+      })
+      .withFailureHandler(err => {
+        msg.className = "erro";
+        msg.textContent = err && err.message ? err.message : 'Erro ao contar peças na caixa.';
+        finalizarEnvio();
+        applyValidationUI();
+      })
+      .enviarRelatorioEContarPecasNaCaixa(dados, dados.numeroCaixa);
+    return;
+  }
+
+  // ===== Demais postos
+  const statusVal   = document.getElementById('status').value;
+  const isReprovado = statusVal === 'Reprovado';
+
+  // ===== Inspeção SPI reprovada: só posição (sem código/tipo), 1 linha por posição
+  if (postoLower === "inspeção spi" && isReprovado) {
+    const posSpi = (document.getElementById("spiPosicao").value || '').trim();
+    if (!posSpi) {
+      msg.className = "erro";
+      msg.textContent = 'Para Inspeção SPI reprovada, informe ao menos uma posição.';
+      finalizarEnvio();
+      applyValidationUI();
+      return;
+    }
+    dados.cod  = '';
+    dados.tipo = '';
+    dados.pos  = posSpi; // o backend divide por vírgula e grava 1 linha por posição
+    google.script.run
+      .withSuccessHandler(res => {
+        msg.className = "sucesso";
+        msg.innerHTML = res.replace(/\n/g, "<br>");
+        finalizarEnvio();
+        form.reset();
+        document.getElementById("spiPosicao").value = "";
+        resetDefeitos();
+        atualizarCampos();
+
+        clearInlineError();
+        botaoEnviar.disabled = true;
+        applyValidationUI();
+
+        snInput.focus(); snInput.select();
+      })
+      .withFailureHandler(err => {
+        msg.className = "erro";
+        msg.textContent = err && err.message ? err.message : 'Falha no envio.';
+        finalizarEnvio();
+        applyValidationUI();
+      })
+      .enviarFormulario(dados);
+    return;
+  }
+
+  if (isReprovado) {
+    const lista = coletarDefeitos();
+    if (!lista.length) {
+      msg.className = "erro";
+      msg.textContent = 'Para status "Reprovado", adicione ao menos 1 defeito.';
+      finalizarEnvio();
+      applyValidationUI();
+      return;
+    }
+
+    enviarVariosDefeitosSequencial(
+      dados,
+      lista,
+      (count) => {
+        msg.className = "sucesso";
+        msg.innerHTML = `Registro enviado com sucesso!<br>${count} linha(s) gravadas para o mesmo Nº de Série.`;
+        finalizarEnvio();
+        form.reset();
+        resetDefeitos();
+        atualizarCampos();
+
+        // reset de validação pós-reset
+        clearInlineError();
+        botaoEnviar.disabled = true;
+        applyValidationUI();
+
+        snInput.focus(); snInput.select();
+      },
+      (err) => {
+        msg.className = "erro";
+        msg.textContent = (err && err.message) ? err.message : 'Falha ao enviar os defeitos.';
+        finalizarEnvio();
+        applyValidationUI();
+      }
+    );
+  } else {
+    // Aprovado / NQA (envio único)
+    google.script.run
+      .withSuccessHandler(res => {
+        msg.className = "sucesso";
+        msg.innerHTML = res.replace(/\n/g, "<br>");
+        finalizarEnvio();
+        form.reset();
+        resetDefeitos();
+        atualizarCampos();
+
+        // reset de validação pós-reset
+        clearInlineError();
+        botaoEnviar.disabled = true;
+        applyValidationUI();
+
+        snInput.focus(); snInput.select();
+      })
+      .withFailureHandler(err => {
+        msg.className = "erro";
+        msg.textContent = err && err.message ? err.message : 'Falha no envio.';
+        finalizarEnvio();
+        applyValidationUI();
+      })
+      .enviarFormulario(dados);
+  }
+}
+
+// ---- SILÊNCIO de UI enquanto o usuário digita SN ----
+  let _suppressHintUntil = 0; // timestamp (ms)
+
+  function beginQuietUI(ms = 400){
+    _suppressHintUntil = Date.now() + ms;
+    clearInlineError();              // esconde imediatamente
+    botaoEnviar.disabled = true;     // evita envio antes do retorno
+  }
+
+    // inicial: datalist vazio; será preenchido após escolher o posto
+    preencherDatalist([]);
+  </script>
+
+</body>
+</html>

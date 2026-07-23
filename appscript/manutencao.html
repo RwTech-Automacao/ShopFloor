@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manutenção • ShopFloor</title>
+  <style>
+    :root{
+      --content-max: 1100px;      /* mesma largura da sua .wrap */
+      --sf-blue:#1E88E5;
+      --sf-blue-100:#E8F2FF;
+      --sf-blue-200:#DBEAFE;
+    }
+
+    body{ margin:0; background:#f4f4f4; font-family:'Segoe UI', Roboto, sans-serif; }
+
+    /* ===== HEADER + NAV (padrão do projeto) ===== */
+    .sf-header{ display:flex; justify-content:center; }
+    .sf-header .nav-shell{
+      width: calc(100% - 32px);
+      max-width: var(--content-max);
+      margin: 16px auto 8px;
+      background:#fff;
+      border:1px solid var(--sf-blue-200);
+      border-radius:12px;
+      box-shadow:0 6px 24px rgba(0,0,0,.08);
+      padding:12px 16px 14px;
+    }
+    .topnav{ display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
+    .topnav a{
+      text-decoration:none; color:#222; font-weight:700;
+      padding:6px 8px; border-radius:999px;
+      border:1px solid transparent; background:#fff;
+      transition:background .15s, border-color .15s, color .15s;
+    }
+    .topnav a:hover{ background:#f7f7f7; }
+    .topnav a.active{
+      background:var(--sf-blue-100);
+      border-color:var(--sf-blue-200);
+      color:var(--sf-blue);
+    }
+    .brandline{
+      margin-top:26px;
+      display:flex; align-items:center; justify-content:center;
+      gap:14px; flex-wrap:wrap;
+    }
+    .brandline .brand{ height:52px; width:auto; object-fit:contain; } /* ajuste aqui p/ logo maior/menor */
+    .brandline .page-title{ margin:0; font-size:22px; font-weight:800; }
+
+    @media (max-width:740px){
+      .brandline .brand{ height:30px; }
+    }
+
+    /* ===== CONTEÚDO (mantém seu layout original) ===== */
+    .wrap{
+      max-width: var(--content-max);
+      margin:24px auto;
+      background:#fff;
+      border-radius:16px;
+      padding:24px 24px 32px;
+      box-shadow:0 6px 24px rgba(0,0,0,.08);
+    }
+    h2{ text-align:center; margin:0 0 16px; }
+
+    .grid{ display:grid; grid-template-columns: repeat(12, 1fr); gap:12px; }
+    .campo{ display:flex; flex-direction:column; }
+    .campo label{ font-weight:600; margin-bottom:4px; font-size:14px; }
+    .campo input, .campo select{ padding:10px; border:1px solid #ccc; border-radius:8px; font-size:14px; background:#fdfdfd; }
+    .span-3{ grid-column: span 3; }
+    .span-4{ grid-column: span 4; }
+    .span-6{ grid-column: span 6; }
+    .span-12{ grid-column: 1 / -1; }
+
+    .btn{ border:none; border-radius:8px; padding:10px 16px; font-weight:600; cursor:pointer; }
+    .btn-primary{ background:#1E88E5; color:#fff; }
+    .btn-warning{ background:#D6B656; color:#000; }
+    .btn-success{ background:#A7E3BF; color:#155724; }
+    .btn-ghost{ background:#eee; }
+
+    table{ width:100%; border-collapse:collapse; }
+    th, td{ border:1px solid #e0e0e0; padding:8px; text-align:center; font-size:13px; }
+    th{ background:#f2f2f2; }
+
+    .muted{ color:#666; font-size:12px; }
+    .ok{ color:#155724; }
+    .err{ color:#8B0000; }
+    .row-actions{ text-align:right; }
+
+    .chip{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; }
+    .chip-pend{ background:#FFF3CD; color:#7a5d00; }
+    .chip-done{ background:#D4EDDA; color:#155724; }
+
+    @media (max-width: 720px){
+      .span-3, .span-4, .span-6{ grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== HEADER + NAV ===== -->
+  <header class="sf-header">
+    <div class="nav-shell">
+      <nav class="topnav" id="sf-nav">
+        <a data-page="formulario">Lançamento</a>
+        <a data-page="integracao">Integração</a>
+        <a data-page="manutencao">Manutenção</a>
+        <a data-page="dashboard">Dashboard</a>
+        <a data-page="pesquisa">Pesquisa</a>
+      </nav>
+      <div class="brandline">
+        <img class="brand" src="https://enterplak.com.br/wp-content/uploads/2024/09/logo-5.png" alt="Enterplak">
+        <h1 class="page-title">Manutenção e Reparo</h1>
+      </div>
+    </div>
+  </header>
+
+  <script>
+    (function initNav(){
+      // URL ABSOLUTA do seu deploy /exec
+      const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwNyHVxF6I30zfRS2uRYvmuNSZKsIJor1nK_TKXHj9BAis_w54-7iusgF7p4jjK1JdAoA/exec';
+
+      // página atual
+      const params = new URLSearchParams(location.search);
+      const current = (params.get('page') || 'manutencao').toLowerCase();
+
+      // define links e marca ativo
+      document.querySelectorAll('#sf-nav a[data-page]').forEach(a=>{
+        const pg = a.getAttribute('data-page');
+        a.href = WEBAPP_URL + '?page=' + encodeURIComponent(pg);
+        if (pg.toLowerCase() === current) a.classList.add('active');
+      });
+
+      // título da aba do navegador
+      const titles = {
+        formulario:'Lançamento • ShopFloor',
+        integracao:'Integração • ShopFloor',
+        manutencao:'Manutenção • ShopFloor',
+        dashboard :'Dashboard • ShopFloor',
+        pesquisa  :'Pesquisa • ShopFloor'
+      };
+      document.title = titles[current] || 'ShopFloor';
+    })();
+  </script>
+  <!-- ===== /HEADER ===== -->
+
+  <!-- ===== CONTEÚDO ===== -->
+  <div class="wrap">
+    <!-- FILTROS CABEÇALHO -->
+    <div class="grid">
+      <div class="campo span-3">
+        <label>Cliente:</label>
+        <select id="filtroCliente" onchange="carregarPMOsFiltro()"><option value="">Todos</option></select>
+      </div>
+      <div class="campo span-3">
+        <label>PMO:</label>
+        <select id="filtroPMO" onchange="carregarOPsFiltro()"><option value="">Todas</option></select>
+      </div>
+      <div class="campo span-3">
+        <label>OP:</label>
+        <select id="filtroOP"><option value="">Todas</option></select>
+      </div>
+      <div class="campo span-3">
+        <label>Status:</label>
+        <select id="filtroStatus">
+          <option value="">Todos</option>
+          <option value="Pendente">Pendente</option>
+          <option value="Concluído">Concluído</option>
+        </select>
+      </div>
+
+      <div class="campo span-6">
+        <label>Descrição:</label>
+        <input id="descPMO" disabled>
+      </div>
+      <div class="campo span-3">
+        <label>Data Inicial:</label>
+        <input type="date" id="filtroInicio">
+      </div>
+      <div class="campo span-3">
+        <label>Data Final:</label>
+        <input type="date" id="filtroFim">
+      </div>
+      <div class="campo span-9">
+        <label>Filtro por Nº de Série:</label>
+        <input id="filtroSN" placeholder="Digite o SN (opcional)">
+      </div>
+      <div class="span-12 row-actions">
+        <button id="btnFiltrar" class="btn btn-primary">Consultar</button>
+      </div>
+    </div>
+
+    <p class="muted" style="margin:12px 0 6px;">Peças reprovadas em Inspeção SMD, Inspeção PTH, Teste e Teste Final</p>
+    <div id="tabelaPendentes" class="span-12"></div>
+
+    <div class="row-actions" style="margin-top:8px;">
+      <button id="btnIniciar" class="btn btn-warning" disabled>Iniciar Reparo</button>
+    </div>
+
+    <!-- FORM DE REPARO -->
+    <hr style="margin:24px 0;">
+    <div class="grid">
+      <div class="campo span-4"><label>Cliente:</label><input id="repCliente" disabled></div>
+      <div class="campo span-4"><label>PMO:</label><input id="repPMO" disabled></div>
+      <div class="campo span-4"><label>OP:</label><input id="repOP" disabled></div>
+
+      <div class="campo span-12"><label>Código defeito:</label><input id="repCod" disabled></div>
+
+      <div class="campo span-4"><label>Posição:</label><input id="repPos" disabled></div>
+      <div class="campo span-4"><label>Tipo:</label><input id="repTipo" disabled></div>
+      <div class="campo span-4"><label>Colaborador:</label><input id="repColab"></div>
+
+      <div class="campo span-12"><label>Conserto realizado:</label><input id="repCon0" placeholder="Descreva o conserto"></div>
+      <div class="campo span-12"><label>Posição do conserto:</label><input id="repConPos0" placeholder="Ex.: R15, U3, trilha, etc."></div>
+
+      <!-- Identidade da ocorrência selecionada (casa o reparo com a ocorrência no backend) -->
+      <input type="hidden" id="repPostoOrigem">
+      <input type="hidden" id="repDataHoraOrigem">
+    </div>
+
+    <div id="reparosContainer"></div>
+    <div class="grid" style="margin-top:8px;">
+      <div class="span-6">
+        <button id="btnAdd" class="btn btn-ghost">Adicionar campos</button>
+      </div>
+      <div class="span-6 row-actions">
+        <button id="btnFinalizar" class="btn btn-success" disabled>Finalizar Reparo</button>
+      </div>
+    </div>
+
+    <p id="msg" class="muted"></p>
+  </div>
+
+  <script>
+    // ========= Util =========
+    function normLowerNoAcc(s){
+      return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+    }
+    function setMsg(t, isErr){
+      const el = document.getElementById('msg');
+      el.textContent = t || '';
+      el.className   = 'muted ' + (isErr ? 'err' : 'ok');
+    }
+
+    // ===== Maps Cliente/PMO/OP/Descrição =====
+    let clientPmoMap = {}, pmoOpsMap = {}, pmoDescMap = {};
+    google.script.run.withSuccessHandler(buildMaps).obterCLIENTE_PMO_OPS();
+
+    function buildMaps(rows){
+      clientPmoMap={}; pmoOpsMap={}; pmoDescMap={};
+      rows.forEach(([cliente,pmo,op,desc])=>{
+        if(!clientPmoMap[cliente]) clientPmoMap[cliente]=[];
+        if(!clientPmoMap[cliente].includes(pmo)) clientPmoMap[cliente].push(pmo);
+        if(!pmoOpsMap[pmo]) pmoOpsMap[pmo]=[];
+        if(!pmoOpsMap[pmo].includes(op)) pmoOpsMap[pmo].push(op);
+        pmoDescMap[pmo]=desc||'';
+      });
+      const selC = document.getElementById('filtroCliente');
+      selC.innerHTML = '<option value="">Todos</option>';
+      Object.keys(clientPmoMap).sort().forEach(c=> selC.append(new Option(c,c)));
+    }
+    function carregarPMOsFiltro(){
+      const cli = document.getElementById('filtroCliente').value;
+      const selP= document.getElementById('filtroPMO');
+      const selO= document.getElementById('filtroOP');
+      selP.innerHTML = '<option value="">Todas</option>';
+      selO.innerHTML = '<option value="">Todas</option>';
+      document.getElementById('descPMO').value='';
+      if(clientPmoMap[cli]) clientPmoMap[cli].slice().sort().forEach(p=> selP.append(new Option(p,p)));
+    }
+    function carregarOPsFiltro(){
+      const pmo = document.getElementById('filtroPMO').value;
+      const selO= document.getElementById('filtroOP');
+      selO.innerHTML = '<option value="">Todas</option>';
+      if(pmoOpsMap[pmo]) pmoOpsMap[pmo].slice().sort().forEach(o=> selO.append(new Option(o,o)));
+      document.getElementById('descPMO').value = pmoDescMap[pmo]||'';
+    }
+
+    // ===== Pendências (grid superior) =====
+    let pendentesRows = [];
+    let selectedIndex = -1;
+
+function carregarPendentes(){
+  setMsg('');
+  selectedIndex = -1;
+  document.getElementById('btnIniciar').disabled  = true;
+  document.getElementById('btnFinalizar').disabled = true;
+
+  const btn = document.getElementById('btnFiltrar');
+  const tbl = document.getElementById('tabelaPendentes');
+  const original = btn.textContent;
+
+  // estado do botão + feedback visual
+  btn.disabled = true;
+  btn.textContent = 'Consultando...';
+  tbl.innerHTML = '<p style="color:#666">Carregando…</p>';
+
+  const filtros = {
+    cliente: (document.getElementById('filtroCliente')||{}).value || '',
+    pmo    : (document.getElementById('filtroPMO')||{}).value || '',
+    op     : (document.getElementById('filtroOP')||{}).value || '',
+    status : (document.getElementById('filtroStatus')||{}).value || '',
+    dtIni  : (document.getElementById('filtroInicio')||{}).value || '',
+    dtFim  : (document.getElementById('filtroFim')||{}).value || '',
+    sn     : (document.getElementById('filtroSN')||{}).value || ''
+  };
+
+  google.script.run
+    .withSuccessHandler(rows => {
+      pendentesRows = rows || [];
+      renderPendentes(pendentesRows);
+      btn.disabled = false;
+      btn.textContent = original;
+    })
+    .withFailureHandler(err => {
+      setMsg('Erro ao carregar pendências: '+(err.message||err), true);
+      tbl.innerHTML = '';
+      btn.disabled = false;
+      btn.textContent = original;
+    })
+    .manut_listar(filtros);
+}
+
+
+    function renderPendentes(rows){
+      const c = document.getElementById('tabelaPendentes');
+      if(!rows || !rows.length){
+        c.innerHTML = '<p class="muted">Nada pendente/concluído no período/critério.</p>';
+        return;
+      }
+      let html = '<div style="overflow-x:auto;"><table><thead><tr>'+
+        '<th></th><th>Data</th><th>Cliente</th><th>PMO</th><th>OP</th><th>SN</th>'+
+        '<th>Posto de Origem</th><th>Código Defeito</th><th>Posição</th><th>Tipo</th><th>Status</th></tr></thead><tbody>';
+
+      rows.forEach((r,i)=>{
+        const st = normLowerNoAcc(r.status);
+        const isDone = (st === 'concluido');
+        const badge  = isDone ? '<span class="chip chip-done">Concluído</span>' : '<span class="chip chip-pend">Pendente</span>';
+        const disableRadio = isDone ? 'disabled' : '';
+        html += `<tr>
+          <td><input type="radio" name="pickRow" value="${i}" onchange="onPickRow(${i})" ${disableRadio}></td>
+          <td>${r.data||''}</td><td>${r.cliente||''}</td><td>${r.pmo||''}</td><td>${r.op||''}</td><td>${r.sn||''}</td>
+          <td>${r.postoOrigem||''}</td><td>${r.cod||''}</td><td>${r.pos||''}</td><td>${r.tipo||''}</td><td>${badge}</td>
+        </tr>`;
+      });
+
+      html += '</tbody></table></div>';
+      c.innerHTML = html;
+    }
+
+    function onPickRow(i){
+      selectedIndex = i;
+      const r = pendentesRows[i] || {};
+      const isPendente = (normLowerNoAcc(r.status) === 'pendente');
+      document.getElementById('btnIniciar').disabled  = !isPendente;
+      // não habilita finalizar aqui; só depois de “iniciar” (quando o form estiver preenchido)
+    }
+
+    // ===== Iniciar / Finalizar =====
+    function iniciarReparo(){
+      setMsg('');
+      if (selectedIndex < 0){ setMsg('Selecione uma linha na tabela.', true); return; }
+      const r = pendentesRows[selectedIndex];
+
+      // Preenche formulário inferior
+      document.getElementById('repCliente').value = r.cliente || '';
+      document.getElementById('repPMO').value     = r.pmo || '';
+      document.getElementById('repOP').value      = r.op || '';
+      document.getElementById('repCod').value     = r.cod || '';
+      document.getElementById('repPos').value     = r.pos || '';
+      document.getElementById('repTipo').value    = r.tipo || '';
+      document.getElementById('repColab').value   = '';
+      // Identidade da ocorrência: usada para fechar exatamente esta ocorrência ao finalizar.
+      document.getElementById('repPostoOrigem').value   = r.postoOrigem || '';
+      document.getElementById('repDataHoraOrigem').value = r.data || '';
+      // limpa campos de conserto
+      document.getElementById('repCon0').value    = '';
+      document.getElementById('repConPos0').value = '';
+      document.getElementById('reparosContainer').innerHTML = '';
+      extraIdx = 1;
+
+      document.getElementById('btnFinalizar').disabled = false;
+      setMsg('Preencha o(s) conserto(s) e clique em Finalizar Reparo.', false);
+    }
+
+    let extraIdx = 1;
+    function adicionarCampos(){
+      const cont = document.getElementById('reparosContainer');
+      const block = document.createElement('div');
+      block.className = 'grid rep-item';
+      block.style.marginTop = '8px';
+      block.innerHTML =
+        `<div class="campo span-12"><label>Conserto realizado:</label><input class="rep-desc" id="repCon${extraIdx}" placeholder="Descreva o conserto"></div>
+         <div class="campo span-12"><label>Posição do conserto:</label><input class="rep-pos" id="repConPos${extraIdx}" placeholder="Ex.: R15, U3, trilha, etc."></div>`;
+      cont.appendChild(block);
+      extraIdx++;
+    }
+
+    function coletarConsertos(){
+      const lista = [];
+      const c0 = document.getElementById('repCon0').value.trim();
+      const p0 = document.getElementById('repConPos0').value.trim();
+      if(c0) lista.push({ descricao: c0, posicao: p0 });
+
+      for(let i=1; i<extraIdx; i++){
+        const c = document.getElementById('repCon'+i);
+        const p = document.getElementById('repConPos'+i);
+        if(c && c.value.trim()){
+          lista.push({ descricao: c.value.trim(), posicao: (p && p.value.trim()) || '' });
+        }
+      }
+      return lista;
+    }
+
+    function finalizarReparo(){
+      setMsg('');
+      const colab = document.getElementById('repColab').value.trim();
+      if(!colab){ setMsg('Informe o colaborador.', true); return; }
+
+      const consertos = coletarConsertos();
+      if(!consertos.length){ setMsg('Adicione ao menos um conserto.', true); return; }
+
+      // monta payload esperado pelo backend manut_registrarReparo
+      const payload = {
+        colaborador: colab,
+        pmo: (document.getElementById('repPMO')||{}).value || '',
+        op : (document.getElementById('repOP')||{}).value || '',
+        sn : (pendentesRows[selectedIndex]?.sn || ''),
+        cod: (document.getElementById('repCod')||{}).value || '',
+        pos: (document.getElementById('repPos')||{}).value || '',
+        tipo:(document.getElementById('repTipo')||{}).value || '',
+        postoOrigem:    (document.getElementById('repPostoOrigem')||{}).value || '',
+        dataHoraOrigem: (document.getElementById('repDataHoraOrigem')||{}).value || '',
+        consertos // [{descricao, posicao}, ...]
+      };
+
+      if(!payload.pmo || !payload.op || !payload.sn){
+        setMsg('Dados insuficientes do item selecionado (PMO/OP/SN). Selecione novamente na tabela.', true);
+        return;
+      }
+
+      setMsg('Gravando...', false);
+      google.script.run
+        .withSuccessHandler(res=>{
+          if(!res || !res.ok){
+            setMsg(res && res.error ? ('Falha: '+res.error) : 'Falha ao finalizar.', true);
+            return;
+          }
+          setMsg(res.message || 'Reparo concluído.', false);
+          // Desabilita finalizar até o próximo “iniciar”
+          document.getElementById('btnFinalizar').disabled = true;
+
+          // Limpa formulário
+          document.getElementById('repCliente').value =
+          document.getElementById('repPMO').value =
+          document.getElementById('repOP').value =
+          document.getElementById('repCod').value =
+          document.getElementById('repPos').value =
+          document.getElementById('repTipo').value = '';
+          document.getElementById('repColab').value = '';
+          document.getElementById('repCon0').value = '';
+          document.getElementById('repConPos0').value = '';
+          document.getElementById('repPostoOrigem').value = '';
+          document.getElementById('repDataHoraOrigem').value = '';
+          document.getElementById('reparosContainer').innerHTML = '';
+          extraIdx = 1;
+
+          // Atualiza grid (o item deve aparecer como “Concluído”)
+          carregarPendentes();
+        })
+        .withFailureHandler(err => setMsg('Erro ao finalizar: '+(err.message||err), true))
+        .manut_registrarReparo(payload);
+    }
+
+    // ===== Bindings =====
+    window.addEventListener('DOMContentLoaded', () => {
+      // filtros
+      document.getElementById('btnFiltrar')?.addEventListener('click', carregarPendentes);
+      const fSN = document.getElementById('filtroSN');
+      if (fSN) fSN.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ carregarPendentes(); } });
+
+      // ações
+      document.getElementById('btnIniciar')?.addEventListener('click', iniciarReparo);
+      document.getElementById('btnFinalizar')?.addEventListener('click', finalizarReparo);
+      document.getElementById('btnAdd')?.addEventListener('click', adicionarCampos);
+    });
+  </script>
+  <script>
+  window.addEventListener('load', () => { document.title = 'Manutenção ShopFloor'; });
+</script>
+
+</body>
+</html>
