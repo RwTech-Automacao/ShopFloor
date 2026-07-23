@@ -161,6 +161,12 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 - **Integração — mover a "Busca por Nº de Série"** para outra tela *(usuário, 2026-07-23)*: hoje a
   busca mora na própria tela de Integração (como no legado); avaliar movê-la — candidata natural: a
   futura tela de **Pesquisa** (que já busca o histórico por SN; pode incorporar a visão do vínculo).
+- **Finalização de OP condicionada aos lançamentos** *(usuário, 2026-07-23)*: hoje o status
+  Ativa/Finalizada é um **rótulo manual**, independente dos registros (a OP PMO973/7892 veio do
+  histórico como FINALIZADA com **0 lançamentos** — a flag foi migrada, o histórico peça-a-peça não
+  existia na origem). Avaliar exigir/avisar na finalização: só permitir marcar "Finalizada" quando
+  todas as peças da faixa estiverem concluídas (ou avisar "faltam X peças"). No legado não havia
+  essa trava.
 - **Extra máquina**: hoje só passagem; ganhará "outras opções" (a definir com o usuário).
 - Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
   funções); `gateSatisfeito` morto em postos.ts.
