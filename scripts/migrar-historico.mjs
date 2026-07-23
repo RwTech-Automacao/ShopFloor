@@ -139,6 +139,17 @@ for (const aba of abasCliente) {
     if (!posto && !sn) continue // linha vazia
     const dataHora = parseDataHora(r[0])
     if (!dataHora) { ignoradas++; continue }
+    // Inspeção NQA no legado não gravava status na coluna 7 — o veredito ficava em
+    // nqa_visual/nqa_funcional (cols 12/13). Deriva aqui p/ manter paridade com o Lançamento novo.
+    let status = s(r[7])
+    if (posto === 'Inspeção NQA' && status === '') {
+      const visual = s(r[12]).toLowerCase()
+      const funcional = s(r[13]).toLowerCase()
+      status =
+        visual === 'aprovado' && ['aprovado', 'não aplicável', 'nao aplicavel'].includes(funcional)
+          ? 'Aprovado'
+          : 'Reprovado'
+    }
     const reg = {
       data_hora: dataHora,
       colaborador: s(r[1]),
@@ -148,7 +159,7 @@ for (const aba of abasCliente) {
       cliente: aba,
       numero_caixa: s(r[5]),
       qtd_por_caixa: parseInt(s(r[6]), 10) || null,
-      status: s(r[7]),
+      status,
       numero_serie: sn,
       numero_serie_norm: normSN(sn),
       codigo_defeito: s(r[9]),

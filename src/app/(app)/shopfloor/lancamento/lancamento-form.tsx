@@ -15,6 +15,8 @@ import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-
 
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
 const OPCOES_STATUS = ['Aprovado', 'Reprovado']
+// Paridade com o legado (Código.gs): NQA Funcional também aceita "Não aplicável" (conta como aprovado).
+const OPCOES_NQA_FUNCIONAL = ['Aprovado', 'Reprovado', 'Não aplicável']
 
 interface DefeitoLinha {
   codigo: string
@@ -248,7 +250,7 @@ export function LancamentoForm({
                 <Label>Inspeção Funcional</Label>
                 <Select value={nqaFuncional} onValueChange={(v) => setNqaFuncional(v ?? '')}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{OPCOES_STATUS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  <SelectContent>{OPCOES_NQA_FUNCIONAL.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>

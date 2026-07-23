@@ -35,7 +35,8 @@ Validações puras no servidor (TS) + checagens sensíveis a corrida na função
 1. **Obrigatórios por posto** → `domain/regras-lancamento.ts`
    - Sem status: colaborador + PMO + OP + SN.
    - Embalagem: + Nº da caixa + Qtd por caixa (**inteiro > 0**).
-   - NQA: + Inspeção Visual + Funcional.
+   - NQA: + Inspeção Visual + Funcional (Funcional aceita **Aprovado, Reprovado ou "Não
+     aplicável"** — paridade com o legado; Visual só Aprovado/Reprovado).
    - SPI: + Status; reprovado exige **≥1 posição** (sem código/tipo).
    - Demais com status: + Status; reprovado exige **código + posição + tipo** do defeito.
 2. **Faixa de SN**: o SN deve estar na faixa da OP. **OP sem faixa cadastrada → barra.**
@@ -56,7 +57,8 @@ Validações puras no servidor (TS) + checagens sensíveis a corrida na função
      SMD/PTH na Manutenção, nós NÃO).
 6. **Caixa (Embalagem)**: conta as peças da caixa (mesma PMO/OP/caixa); `≥ limite` → barra
    ("caixa cheia"); devolve a contagem pós-envio.
-7. **NQA**: status derivado — Aprovado se visual **e** funcional aprovados, senão Reprovado.
+7. **NQA**: status derivado — Aprovado se visual **aprovado** e funcional **aprovado OU "não
+   aplicável"**, senão Reprovado (paridade com o legado, `appscript/Código.gs`).
 8. **Gravação**: 1 registro; Reprovado com N defeitos → **1 registro por defeito**; SPI reprovado →
    **1 registro por posição**.
 
@@ -94,6 +96,28 @@ Função atômica **`sf_registrar_reparo`** (migração `0033`). Perm `lancar`.
    Lançamento).
 4. SMD/PTH **não** geram pendência (extra-máquina física).
 
+## Regras do Dashboard (`/shopfloor/dashboard`)
+
+Perm `visualizar`. Consulta somente leitura — sem função atômica (não grava nada).
+
+1. **Colunas**: o **fluxo da OP** (`sf_ordem_postos`, na ordem cadastrada) **+ Manutenção** (sempre
+   incluída, mesmo fora do fluxo).
+   → `domain/dashboard.ts` (`contarPorPosto`)
+2. **Contagem por coluna** (mesma regra do grupo sem-status/com-status do Lançamento):
+   - Posto **sem status** (Inicial, Montagem PTH, Integração, Embalagem, Extra máquina): conta
+     **cada registro**.
+   - Posto **com status** (inclui Manutenção): conta só os registros com `status = Aprovado`.
+   - **NQA** usa o `status` já derivado e gravado no lançamento (regra 7 do Lançamento: Visual
+     aprovado **e** Funcional aprovado **ou "não aplicável"** → Aprovado, senão Reprovado) — o
+     Dashboard não reprocessa `nqa_visual`/`nqa_funcional`, só lê `status`.
+3. **Filtro de período**: opcional, por `data_hora` do registro, **dia inteiro** (`00:00:00` a
+   `23:59:59`, fuso **-03:00**, inclusive nos dois extremos).
+   → `infra/dashboard-repository.ts` (`listarContagemDaOp`)
+4. **Total/barra**: total = `qtd` cadastrada na OP. **Sem `qtd` → só a contagem aparece (sem
+   barra nem "/ total")**. Com `qtd`, a contagem **pode ultrapassar o total** (ex.: Manutenção
+   conta cada conserto, e uma peça pode ser reparada mais de uma vez) — a barra visual **trava em
+   100%**, mas o número exibido é o real.
+
 ## Regras do Cadastro de OP (`/shopfloor/ordens` — admin)
 
 1. OP única por `(pmo, op)` — duplicada barra com mensagem.
@@ -114,11 +138,14 @@ Função atômica **`sf_registrar_reparo`** (migração `0033`). Perm `lancar`.
 ## Onde as regras vivem (mapa rápido)
 
 - **Domínio puro (testado, TDD):** `src/modules/shopfloor/domain/` — serie, postos,
-  regras-lancamento, lancamento-linhas, validar-ordem, integracao-itens.
+  regras-lancamento, lancamento-linhas, validar-ordem, integracao-itens, dashboard.
 - **Funções atômicas no banco (corrida/duplicidade):** `supabase/migrations/0031_sf_lancar.sql`,
   `0032_sf_integracoes.sql`.
 - **Orquestração:** `src/modules/shopfloor/application/` — lancar-action, ordens-actions,
-  integracao-actions.
+  integracao-actions, dashboard-actions.
+- **Dashboard:** `domain/dashboard.ts` (`contarPorPosto`) · `application/dashboard-actions.ts`
+  (`carregarDashboard`) · `infra/dashboard-repository.ts` (`listarContagemDaOp`) ·
+  `app/(app)/shopfloor/dashboard/` (tela).
 - **Legado de referência:** `appscript/` (Código.gs + telas).
 
 ## Backlog de regras/telas futuras
@@ -133,7 +160,6 @@ Função atômica **`sf_registrar_reparo`** (migração `0033`). Perm `lancar`.
 - **Manutenção**: pendências por reprova + registro de reparo (`REP-...`); ao existir, ligar o gate
   "re-teste só após Manutenção" (Teste/Teste Final/Burn-in) e decidir a regra p/ SMD/PTH.
 - **Pesquisa + Grade Geral**: consulta por SN + matriz SN×postos com filtro por caixa/cliente.
-- **Dashboard**: contagens por posto com período.
 - **Extra máquina**: hoje só passagem; ganhará "outras opções" (a definir com o usuário).
 - Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
   funções); `gateSatisfeito` morto em postos.ts.

@@ -100,10 +100,12 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
   }
 
   // NQA não tem campo Status: deriva aprovado/reprovado de visual+funcional.
+  // Paridade com o legado: Funcional "Não aplicável" também conta como aprovado.
   const ehNqa = entrada.posto.toLowerCase() === 'inspeção nqa'
+  const nqaFuncionalNorm = (entrada.nqaFuncional ?? '').toLowerCase()
   const statusFinal = ehNqa
     ? (entrada.nqaVisual ?? '').toLowerCase() === 'aprovado' &&
-      (entrada.nqaFuncional ?? '').toLowerCase() === 'aprovado'
+      (nqaFuncionalNorm === 'aprovado' || nqaFuncionalNorm === 'não aplicável')
       ? 'Aprovado'
       : 'Reprovado'
     : (entrada.status ?? '')

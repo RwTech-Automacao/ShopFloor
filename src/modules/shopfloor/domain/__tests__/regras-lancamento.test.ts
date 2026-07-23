@@ -21,6 +21,9 @@ describe('obrigatoriosPorPosto', () => {
     expect(obrigatoriosPorPosto('Inspeção NQA', base).ok).toBe(false)
     expect(obrigatoriosPorPosto('Inspeção NQA', { ...base, nqaVisual: 'Aprovado', nqaFuncional: 'Aprovado' }).ok).toBe(true)
   })
+  it('NQA: funcional "Não aplicável" satisfaz o obrigatório (paridade com o legado)', () => {
+    expect(obrigatoriosPorPosto('Inspeção NQA', { ...base, nqaVisual: 'Aprovado', nqaFuncional: 'Não aplicável' }).ok).toBe(true)
+  })
   it('Teste reprovado: exige código, posição e tipo', () => {
     expect(obrigatoriosPorPosto('Teste', { ...base, status: 'Reprovado' }).ok).toBe(false)
     expect(obrigatoriosPorPosto('Teste', { ...base, status: 'Reprovado', cod: 'D', pos: 'R1', tipo: 'SMD' }).ok).toBe(true)

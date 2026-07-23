@@ -26,7 +26,7 @@ export function DashboardForm({ ordens }: { ordens: OrdemPesquisa[] }) {
 
   function atualizar(opSel?: string) {
     const alvo = opSel ?? op
-    if (!alvo || carregando) return
+    if (!alvo) return
     startTransition(async () => {
       const r = await carregarDashboard(pmo, alvo, de, ate)
       if (r.ok) {
@@ -67,11 +67,11 @@ export function DashboardForm({ ordens }: { ordens: OrdemPesquisa[] }) {
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="dashDe">De</Label>
-            <Input id="dashDe" type="date" value={de} onChange={(e) => setDe(e.target.value)} />
+            <Input id="dashDe" type="date" value={de} onChange={(e) => { setDe(e.target.value); setItens(null) }} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="dashAte">Até</Label>
-            <Input id="dashAte" type="date" value={ate} onChange={(e) => setAte(e.target.value)} />
+            <Input id="dashAte" type="date" value={ate} onChange={(e) => { setAte(e.target.value); setItens(null) }} />
           </div>
         </div>
         <div>
