@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState, useMemo, useState } from 'react'
 import { Plus, Pencil, ArrowUp, ArrowDown, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,22 +32,26 @@ export interface OrdemView {
   sn_ini: string
   sn_fim: string
   postos: string[]
+  componentes: string[]
 }
 
 export interface FluxoExistente {
   pmo: string
   op: string
   postos: string[]
+  componentes: string[]
 }
 
 export function OrdemForm({
   postos,
   ordem,
   fluxosExistentes,
+  pmosExistentes,
 }: {
   postos: string[]
   ordem?: OrdemView
   fluxosExistentes: FluxoExistente[]
+  pmosExistentes: string[]
 }) {
   const ehEdicao = ordem !== undefined
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
@@ -56,6 +60,7 @@ export function OrdemForm({
 
   const [pmo, setPmo] = useState(ordem?.pmo ?? '')
   const [fluxo, setFluxo] = useState<string[]>(ordem?.postos ?? [])
+  const [receita, setReceita] = useState<string[]>(ordem?.componentes ?? [])
 
   const [processado, setProcessado] = useState(state)
   if (state !== processado) {
@@ -103,6 +108,7 @@ export function OrdemForm({
         <form action={formAction} className="flex flex-col gap-4">
           {ehEdicao && <input type="hidden" name="id" value={ordem.id} />}
           <input type="hidden" name="fluxo" value={JSON.stringify(fluxo)} />
+          <input type="hidden" name="componentes" value={JSON.stringify(fluxo.includes('Integração') ? receita : [])} />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
@@ -158,7 +164,7 @@ export function OrdemForm({
               {fontes.length > 0 && (
                 <Select value="" onValueChange={(op) => {
                   const fonte = fontes.find((f) => f.op === op)
-                  if (fonte) setFluxo(fonte.postos)
+                  if (fonte) { setFluxo(fonte.postos); setReceita(fonte.componentes) }
                 }}>
                   <SelectTrigger className="h-8 w-auto text-xs">
                     <SelectValue placeholder="Puxar fluxo de OP…" />
@@ -211,6 +217,15 @@ export function OrdemForm({
             )}
           </div>
 
+          {/* Receita da Integração (só quando Integração está no fluxo) */}
+          {fluxo.includes('Integração') && (
+            <ReceitaIntegracao
+              receita={receita}
+              setReceita={setReceita}
+              pmosDisponiveis={pmosExistentes.filter((p) => p !== pmo && !receita.includes(p))}
+            />
+          )}
+
           {state && !state.ok && <p className="text-sm text-red-600">{state.erro}</p>}
 
           <DialogFooter>
@@ -221,5 +236,50 @@ export function OrdemForm({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function ReceitaIntegracao({
+  receita,
+  setReceita,
+  pmosDisponiveis,
+}: {
+  receita: string[]
+  setReceita: (r: string[]) => void
+  pmosDisponiveis: string[]
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium">
+        Receita da Integração{' '}
+        <span className="font-normal text-muted-foreground">· PMOs de placa que compõem este produto</span>
+      </p>
+      {receita.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {receita.map((c) => (
+            <span key={c} className="inline-flex items-center gap-1 rounded-full border border-border bg-accent px-2.5 py-1 text-xs">
+              {c}
+              <button type="button" aria-label={`Remover ${c}`} onClick={() => setReceita(receita.filter((x) => x !== c))} className="text-muted-foreground hover:text-red-600">
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mb-2 text-xs text-muted-foreground">Sem receita: a Integração aceita placas de qualquer PMO.</p>
+      )}
+      {pmosDisponiveis.length > 0 && (
+        <Select value="" onValueChange={(p) => p && setReceita([...receita, p])}>
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="+ Adicionar PMO à receita" />
+          </SelectTrigger>
+          <SelectContent>
+            {pmosDisponiveis.map((p) => (
+              <SelectItem key={p} value={p}>{p}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
   )
 }

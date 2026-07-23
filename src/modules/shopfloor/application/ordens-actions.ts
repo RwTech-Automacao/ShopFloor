@@ -56,6 +56,27 @@ async function lerPostos(fd: FormData): Promise<string[]> {
   return fluxo
 }
 
+/** Componentes (receita) enviados pelo form (campo `componentes` = JSON de strings). */
+function lerComponentes(fd: FormData): string[] {
+  let bruto: unknown
+  try {
+    bruto = JSON.parse(String(fd.get('componentes') ?? '[]'))
+  } catch {
+    return []
+  }
+  if (!Array.isArray(bruto)) return []
+  const vistos = new Set<string>()
+  const out: string[] = []
+  for (const item of bruto) {
+    const v = String(item).trim()
+    if (v !== '' && !vistos.has(v.toLowerCase())) {
+      vistos.add(v.toLowerCase())
+      out.push(v)
+    }
+  }
+  return out
+}
+
 function ehDuplicidade(e: unknown): boolean {
   return typeof e === 'object' && e !== null && (e as { code?: string }).code === '23505'
 }
@@ -71,10 +92,11 @@ export async function criarOrdemAction(
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
   if (!v.ok) return v
   const postos = await lerPostos(formData)
+  const componentes = postos.includes('Integração') ? lerComponentes(formData) : []
 
   let id: string
   try {
-    id = await criarOrdem(dados, postos)
+    id = await criarOrdem(dados, postos, componentes)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
     return { ok: false, erro: 'Não foi possível criar a OP.' }
@@ -98,9 +120,10 @@ export async function editarOrdemAction(
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
   if (!v.ok) return v
   const postos = await lerPostos(formData)
+  const componentes = postos.includes('Integração') ? lerComponentes(formData) : []
 
   try {
-    await atualizarOrdem(id, dados, postos)
+    await atualizarOrdem(id, dados, postos, componentes)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
     return { ok: false, erro: 'Não foi possível salvar a OP.' }

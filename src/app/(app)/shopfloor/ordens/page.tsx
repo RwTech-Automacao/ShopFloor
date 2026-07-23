@@ -26,7 +26,9 @@ export default async function OrdensPage() {
     sn_ini: o.sn_ini,
     sn_fim: o.sn_fim,
     postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
+    componentes: o.sf_ordem_componentes.map((c) => c.pmo_componente),
   }))
+  const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
 
   return (
     <div className="flex flex-col gap-4">
@@ -35,7 +37,7 @@ export default async function OrdensPage() {
           <h2 className="text-lg font-semibold text-tinta">Ordens de Produção</h2>
           <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
         </div>
-        <OrdemForm postos={chavesPostos} fluxosExistentes={fluxos} />
+        <OrdemForm postos={chavesPostos} fluxosExistentes={fluxos} pmosExistentes={pmosExistentes} />
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">
@@ -64,7 +66,7 @@ export default async function OrdensPage() {
                 <TableCell className="text-center">{o.postos.length}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <OrdemForm postos={chavesPostos} ordem={o} fluxosExistentes={fluxos} />
+                    <OrdemForm postos={chavesPostos} ordem={o} fluxosExistentes={fluxos} pmosExistentes={pmosExistentes} />
                     <ExcluirOrdemBotao id={o.id} rotulo={`${o.pmo}/${o.op}`} />
                   </div>
                 </TableCell>

@@ -18,6 +18,7 @@ export interface OrdemRow {
   sn_ini: string
   sn_fim: string
   sf_ordem_postos: { posto: string; ordem: number }[]
+  sf_ordem_componentes: { pmo_componente: string }[]
 }
 
 export interface DadosOrdem {
@@ -43,15 +44,15 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,sf_ordem_postos(posto,ordem)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)')
     .order('pmo')
     .order('op')
   if (error) throw error
   return data as unknown as OrdemRow[]
 }
 
-/** Insere a OP e a aplicabilidade; devolve o id. */
-export async function criarOrdem(dados: DadosOrdem, postos: string[]): Promise<string> {
+/** Insere a OP, a aplicabilidade e a receita; devolve o id. */
+export async function criarOrdem(dados: DadosOrdem, postos: string[], componentes: string[]): Promise<string> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.from('sf_ordens').insert(dados).select('id').single()
   if (error) throw error
@@ -62,11 +63,17 @@ export async function criarOrdem(dados: DadosOrdem, postos: string[]): Promise<s
       .insert(postos.map((posto, i) => ({ ordem_id: id, posto, ordem: i })))
     if (e2) throw e2
   }
+  if (componentes.length > 0) {
+    const { error: e3 } = await supabase
+      .from('sf_ordem_componentes')
+      .insert(componentes.map((pmo_componente) => ({ ordem_id: id, pmo_componente })))
+    if (e3) throw e3
+  }
   return id
 }
 
-/** Atualiza a OP e RESSINCRONIZA a aplicabilidade (apaga e reinsere). */
-export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[]): Promise<void> {
+/** Atualiza a OP e RESSINCRONIZA a aplicabilidade e a receita (apaga e reinsere). */
+export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], componentes: string[]): Promise<void> {
   const supabase = await createServerSupabase()
   const { error } = await supabase
     .from('sf_ordens')
@@ -81,13 +88,21 @@ export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: stri
       .insert(postos.map((posto, i) => ({ ordem_id: id, posto, ordem: i })))
     if (eIns) throw eIns
   }
+  const { error: eDelC } = await supabase.from('sf_ordem_componentes').delete().eq('ordem_id', id)
+  if (eDelC) throw eDelC
+  if (componentes.length > 0) {
+    const { error: eInsC } = await supabase
+      .from('sf_ordem_componentes')
+      .insert(componentes.map((pmo_componente) => ({ ordem_id: id, pmo_componente })))
+    if (eInsC) throw eInsC
+  }
 }
 
-export async function listarFluxos(): Promise<{ pmo: string; op: string; postos: string[] }[]> {
+export async function listarFluxos(): Promise<{ pmo: string; op: string; postos: string[]; componentes: string[] }[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('pmo,op,sf_ordem_postos(posto,ordem)')
+    .select('pmo,op,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)')
     .order('pmo')
     .order('op')
   if (error) throw error
@@ -95,11 +110,13 @@ export async function listarFluxos(): Promise<{ pmo: string; op: string; postos:
     pmo: string
     op: string
     sf_ordem_postos: { posto: string; ordem: number }[]
+    sf_ordem_componentes: { pmo_componente: string }[]
   }[]
   return linhas.map((l) => ({
     pmo: l.pmo,
     op: l.op,
     postos: [...l.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
+    componentes: l.sf_ordem_componentes.map((c) => c.pmo_componente),
   }))
 }
 
