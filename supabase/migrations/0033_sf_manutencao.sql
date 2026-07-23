@@ -51,6 +51,11 @@ end;
 $$;
 
 -- ---------- sf_lancar v2 (substitui a 0031; adiciona o gate de Manutenção) ----------
+-- IMPORTANTE: a v2 tem aridade diferente (17 params). Sem o drop, o create or replace
+-- criaria um OVERLOAD (a v1 de 16 params continuaria existindo e chamadas ficariam
+-- ambíguas → 42725 "function is not unique"). Drop explícito da assinatura antiga:
+drop function if exists public.sf_lancar(text,text,text,text,text,text,text,text,boolean,text,int,text,text,text,boolean,jsonb);
+
 create or replace function public.sf_lancar(
   p_pmo                  text,
   p_op                   text,
