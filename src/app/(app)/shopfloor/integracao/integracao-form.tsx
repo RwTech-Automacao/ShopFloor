@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { receitaPermite } from '@/modules/shopfloor/domain/receita'
 import {
   integrar,
   buscarIntegracao,
@@ -63,13 +64,12 @@ export function IntegracaoForm({
     [ordensIntegraveis, cliente, pmo, op],
   )
 
-  // Placas: por padrão qualquer PMO; se o produto tem receita, só as PMOs dela.
+  // Placas: por padrão qualquer PMO; se o produto tem receita, só as PMOs dela
+  // (mesma regra do domínio/servidor via receitaPermite — fonte única de verdade).
   const todasPmos = useMemo(() => [...new Set(ordens.map((o) => o.pmo))], [ordens])
   const pmosPlaca = useMemo(() => {
     const receita = ordemSel?.componentes ?? []
-    if (receita.length === 0) return todasPmos
-    const permitidas = new Set(receita.map((r) => r.toLowerCase()))
-    return todasPmos.filter((p) => permitidas.has(p.toLowerCase()))
+    return todasPmos.filter((p) => receitaPermite(receita, p))
   }, [ordemSel, todasPmos])
   function opsDoPmo(p: string) {
     return ordens.filter((o) => o.pmo === p).map((o) => o.op)
