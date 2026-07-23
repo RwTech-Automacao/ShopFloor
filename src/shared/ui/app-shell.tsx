@@ -10,6 +10,7 @@ import {
   Factory,
   FileStack,
   ScanLine,
+  Link2,
   Upload,
   ClipboardList,
   FileDown,
@@ -55,6 +56,7 @@ const RECEBIMENTO: Folha[] = [
 
 const SHOPFLOOR: Folha[] = [
   { chave: 'lancamento', rotulo: 'Lançamento', href: '/shopfloor/lancamento', icone: ScanLine, perm: 'lancar' },
+  { chave: 'integracao', rotulo: 'Integração', href: '/shopfloor/integracao', icone: Link2, perm: 'lancar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, perm: 'administrar' },
 ]
 
