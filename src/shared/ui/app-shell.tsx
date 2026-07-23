@@ -30,6 +30,7 @@ import {
   ChevronDown,
   Menu,
   LogOut,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -57,6 +58,7 @@ const RECEBIMENTO: Folha[] = [
 const SHOPFLOOR: Folha[] = [
   { chave: 'lancamento', rotulo: 'Lançamento', href: '/shopfloor/lancamento', icone: ScanLine, perm: 'lancar' },
   { chave: 'integracao', rotulo: 'Integração', href: '/shopfloor/integracao', icone: Link2, perm: 'lancar' },
+  { chave: 'manutencao', rotulo: 'Manutenção', href: '/shopfloor/manutencao', icone: Wrench, perm: 'lancar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, perm: 'administrar' },
 ]
 
