@@ -104,9 +104,9 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
    incluída, mesmo fora do fluxo).
    → `domain/dashboard.ts` (`contarPorPosto`)
 2. **Contagem por coluna** (mesma regra do grupo sem-status/com-status do Lançamento):
-   - Posto **sem status** (Inicial, Montagem PTH, Integração, Embalagem, Extra máquina): conta
-     **cada registro**.
-   - Posto **com status** (inclui Manutenção): conta só os registros com `status = Aprovado`.
+   - Posto **sem status** (Inicial, Montagem PTH, Integração, Embalagem, Extra máquina **e
+     Manutenção**): conta **cada registro**.
+   - Posto **com status**: conta só os registros com `status = Aprovado`.
    - **NQA** usa o `status` já derivado e gravado no lançamento (regra 7 do Lançamento: Visual
      aprovado **e** Funcional aprovado **ou "não aplicável"** → Aprovado, senão Reprovado) — o
      Dashboard não reprocessa `nqa_visual`/`nqa_funcional`, só lê `status`.
