@@ -49,10 +49,11 @@ Validações puras no servidor (TS) + checagens sensíveis a corrida na função
    - **Princípio: peça APROVADA num posto nunca repete aquele posto.**
    - Sem status → registra **1× só** (qualquer registro barra).
    - Com status → último **Reprovado** (ou inexistente) **libera** re-lançamento; Aprovado barra.
-   - **Regra futura já definida:** Teste, Teste Final e Burn-in só poderão re-lançar se a peça
-     **passou pela Manutenção** após a reprova (entra quando o módulo Manutenção existir).
-     SMD/PTH seguem liberando direto (retrabalho "extra-máquina" é físico, fora do sistema).
-     *Pendente de alinhamento: no legado, reprovas de SMD/PTH também geram pendência de Manutenção.*
+   - **Gate de Manutenção (ATIVO desde 2026-07-23):** em **Teste, Burn-in e Teste Final**, peça
+     reprovada só re-lança se existir **reparo registrado** (posto Manutenção, mesmo posto de
+     origem) **após a última reprova** — senão erro `SEM_MANUTENCAO`. **SMD/PTH liberam direto**
+     (retrabalho "extra-máquina" é físico, fora do sistema — decisão do usuário; o legado incluía
+     SMD/PTH na Manutenção, nós NÃO).
 6. **Caixa (Embalagem)**: conta as peças da caixa (mesma PMO/OP/caixa); `≥ limite` → barra
    ("caixa cheia"); devolve a contagem pós-envio.
 7. **NQA**: status derivado — Aprovado se visual **e** funcional aprovados, senão Reprovado.
@@ -77,6 +78,21 @@ Função atômica **`sf_integrar`** / **`sf_cancelar_integracao`** (migração `
 6. **Cancelamento (só admin)**: marca CANCELADA (quem/quando) + **apaga os registros** da
    integração → o gate volta a travar e produto/placas ficam livres pra re-integrar; cabeçalho e
    itens ficam como histórico. Registros de postos posteriores já lançados **não** são apagados.
+
+## Regras da Manutenção (`/shopfloor/manutencao`)
+
+Função atômica **`sf_registrar_reparo`** (migração `0033`). Perm `lancar`.
+
+1. **Pendência é derivada** (não se cadastra): cada reprova em **Teste, Burn-in ou Teste Final**
+   vira uma **ocorrência** — identidade `PMO|OP|SN|posto de origem|data/hora`; várias posições da
+   mesma reprova são agregadas numa ocorrência só.
+2. **Status:** *Concluída* quando existe registro de Manutenção casando com a ocorrência (posto de
+   origem + data/hora de origem); senão *Pendente*.
+3. **Registrar reparo:** N consertos (descrição obrigatória + posição) → **1 registro por
+   conserto** (posto=`Manutenção`, com o defeito original + posto/data de origem). Um envio
+   conclui a ocorrência inteira e **libera o re-lançamento** no posto de origem (regra 5 do
+   Lançamento).
+4. SMD/PTH **não** geram pendência (extra-máquina física).
 
 ## Regras do Cadastro de OP (`/shopfloor/ordens` — admin)
 
