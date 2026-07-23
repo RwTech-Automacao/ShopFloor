@@ -51,18 +51,31 @@ export async function buscarRegistrosPorSn(snNorm: string): Promise<RegistroHist
 
 export async function listarRegistrosDaOp(pmo: string, op: string): Promise<RegistroGrade[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_registros')
-    .select('numero_serie_norm,posto,status,numero_caixa')
-    .eq('pmo', pmo)
-    .eq('op', op)
-  if (error) throw error
-  return (data as { numero_serie_norm: string; posto: string; status: string; numero_caixa: string }[]).map((r) => ({
-    snNorm: r.numero_serie_norm,
-    posto: r.posto,
-    status: r.status,
-    numeroCaixa: r.numero_caixa,
-  }))
+  // PAGINADO: o PostgREST trunca em 1.000 linhas SILENCIOSAMENTE — uma OP grande
+  // (SNs × postos × defeitos) passa disso fácil e a grade mentiria "Pendente".
+  const PAGINA = 1000
+  const out: RegistroGrade[] = []
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await supabase
+      .from('sf_registros')
+      .select('numero_serie_norm,posto,status,numero_caixa')
+      .eq('pmo', pmo)
+      .eq('op', op)
+      .order('id', { ascending: true })
+      .range(de, de + PAGINA - 1)
+    if (error) throw error
+    const rows = data as { numero_serie_norm: string; posto: string; status: string; numero_caixa: string }[]
+    out.push(
+      ...rows.map((r) => ({
+        snNorm: r.numero_serie_norm,
+        posto: r.posto,
+        status: r.status,
+        numeroCaixa: r.numero_caixa,
+      })),
+    )
+    if (rows.length < PAGINA) break
+  }
+  return out
 }
 
 export interface OrdemPesquisa {

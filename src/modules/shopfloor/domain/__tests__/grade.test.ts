@@ -50,4 +50,8 @@ describe('montarGrade', () => {
     const [l] = montarGrade(['0100'], postos, [reg({ snNorm: '100' })])
     expect(l!.celulas['Inicial']).toBe('Registrado')
   })
+  it('casa SN com PREFIXO sem zero-padding (bloco numérico, como o legado)', () => {
+    const [l] = montarGrade(['AB009C'], postos, [reg({ snNorm: 'ab9c' })])
+    expect(l!.celulas['Inicial']).toBe('Registrado')
+  })
 })

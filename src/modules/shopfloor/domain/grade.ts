@@ -42,6 +42,17 @@ export interface LinhaGrade {
   celulas: Record<string, string>
 }
 
+/**
+ * Chave canônica de casamento de SN (como o legado): pelo BLOCO NUMÉRICO dentro
+ * do prefixo/sufixo — assim 'AB9C' casa com a linha 'AB009C' independente do
+ * zero-padding. Sem bloco numérico, cai no normalizado puro.
+ */
+function chaveSn(s: string): string {
+  const p = partesSerie(s)
+  if (Number.isNaN(p.num)) return normalizarSerie(s)
+  return `${p.prefixo.toLowerCase()}|${p.num}|${p.sufixo.toLowerCase()}`
+}
+
 /** Monta a matriz SN × postos. Colunas = postos do fluxo da OP + 'Manutenção'. */
 export function montarGrade(
   sns: string[],
@@ -50,13 +61,14 @@ export function montarGrade(
 ): LinhaGrade[] {
   const porSn = new Map<string, RegistroGrade[]>()
   for (const r of registros) {
-    const arr = porSn.get(r.snNorm)
+    const chave = chaveSn(r.snNorm)
+    const arr = porSn.get(chave)
     if (arr) arr.push(r)
-    else porSn.set(r.snNorm, [r])
+    else porSn.set(chave, [r])
   }
   const colunas = [...postosDaOp, 'Manutenção']
   return sns.map((sn) => {
-    const regs = porSn.get(normalizarSerie(sn)) ?? []
+    const regs = porSn.get(chaveSn(sn)) ?? []
     const celulas: Record<string, string> = {}
     for (const posto of colunas) {
       const doPosto = regs.filter((r) => r.posto.toLowerCase() === posto.toLowerCase())
