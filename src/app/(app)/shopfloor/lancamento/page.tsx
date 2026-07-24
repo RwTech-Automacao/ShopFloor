@@ -1,12 +1,12 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdensParaLancamento, listarDefeitos } from '@/modules/shopfloor/infra/lancamento-repository'
 import { LancamentoForm } from './lancamento-form'
 
 export default async function LancamentoPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'lancar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return <SemPermissao descricao="Você não tem permissão para lançar." />
   }
 

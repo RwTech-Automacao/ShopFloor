@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { validarOrdem } from '../domain/validar-ordem'
 import {
@@ -86,7 +86,7 @@ export async function criarOrdemAction(
   formData: FormData,
 ): Promise<ResultadoOrdem> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const dados = lerDados(formData)
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
@@ -112,7 +112,7 @@ export async function editarOrdemAction(
   formData: FormData,
 ): Promise<ResultadoOrdem> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const id = String(formData.get('id') ?? '').trim()
   if (id === '') return { ok: false, erro: 'OP inválida.' }
@@ -136,7 +136,7 @@ export async function editarOrdemAction(
 
 export async function excluirOrdemAction(id: string): Promise<ResultadoOrdem> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const base = await buscarOrdemBase(id)
   if (!base) return { ok: false, erro: 'OP não encontrada.' }

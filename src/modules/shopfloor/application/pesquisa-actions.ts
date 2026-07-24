@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { normalizarSerie } from '../domain/serie'
 import { gerarFaixaSNs, montarGrade, type LinhaGrade } from '../domain/grade'
 import { carregarOrdem } from '../infra/lancamento-repository'
@@ -18,7 +18,7 @@ export async function buscarHistoricoSN(
   sn: string,
 ): Promise<{ ok: true; registros: RegistroHistorico[] } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   const alvo = normalizarSerie(sn)
   if (alvo === '') return { ok: true, registros: [] }
   try {
@@ -33,7 +33,7 @@ export async function carregarGrade(
   op: string,
 ): Promise<{ ok: true; colunas: string[]; linhas: LinhaGrade[] } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const ordem = await carregarOrdem(pmo.trim(), op.trim())
   if (!ordem) return { ok: false, erro: 'OP não encontrada.' }

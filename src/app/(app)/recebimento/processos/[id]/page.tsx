@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeftIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { listarAnexosComUrl } from '@/modules/recebimento/infra/anexo-repository'
 import { carregarItensPorLista } from '@/modules/recebimento/infra/campo-comercial-repository'
 import {
@@ -98,9 +98,9 @@ export default async function ProcessoDetalhePage({ params, searchParams }: Proc
     : null
 
   const perfil = sessao?.perfil ?? null
-  const podeEditar = podeFazer(perfil, 'editar')
-  const podeFinalizar = podeFazer(perfil, 'finalizar')
-  const podeEditarFinalizado = podeFazer(perfil, 'editar_finalizado')
+  const podeEditar = podeNoModulo(perfil, 'recebimento', 'editar')
+  const podeFinalizar = podeNoModulo(perfil, 'recebimento', 'finalizar')
+  const podeEditarFinalizado = podeNoModulo(perfil, 'recebimento', 'editar_finalizado')
 
   // Editável só em aberto/em_conferencia (+ `editar`). Em status terminal
   // (Aprovado/Reprovado ou qualquer outro resultado) o processo é

@@ -1,12 +1,12 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarBurninAberto } from '@/modules/shopfloor/infra/burnin-repository'
 import { BurninPainel } from './burnin-painel'
 
 export default async function BurnInPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) {
     return <SemPermissao descricao="Você não tem permissão para acessar o Burn-in." />
   }
   const itens = await listarBurninAberto()

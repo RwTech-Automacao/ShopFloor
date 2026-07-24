@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { normalizarSerie, limparSerie } from '../domain/serie'
 import { agruparPendencias, type Ocorrencia } from '../domain/manutencao-pendencias'
@@ -22,7 +22,7 @@ export async function listarOcorrencias(): Promise<
   { ok: true; ocorrencias: Ocorrencia[] } | { ok: false; erro: string }
 > {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'lancar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
   try {
@@ -43,7 +43,7 @@ export async function registrarReparo(
   entrada: EntradaReparo,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'lancar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
 

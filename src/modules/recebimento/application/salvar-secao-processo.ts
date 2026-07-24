@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
 import { ehTerminal, podePromoverParaConferencia, STATUS_EM_CONFERENCIA } from '../domain/ciclo-vida'
@@ -30,7 +30,7 @@ export async function salvarSecaoProcesso(
   valores: Record<string, unknown>,
 ): Promise<ResultadoSalvarProcesso> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'editar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'editar')) {
     return { ok: false, erro: 'Você não tem permissão para editar processos.' }
   }
 

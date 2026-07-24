@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import {
   carregarCamposFormulario,
@@ -28,7 +28,7 @@ export async function criarProcessosColetivo(
   materiais: Array<Record<string, unknown>>,
 ): Promise<ResultadoColetivo> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'editar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'editar')) {
     return { ok: false, erro: 'Você não tem permissão para criar processos.' }
   }
   if (materiais.length === 0) {

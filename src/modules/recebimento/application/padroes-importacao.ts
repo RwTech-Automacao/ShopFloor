@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { nomePadraoValido } from '../domain/padrao-importacao'
 import {
   atualizarPadraoImportacao,
@@ -41,7 +41,7 @@ export async function salvarPadrao(
   mapeamento: Record<string, string>,
 ): Promise<ResultadoPadroes> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'importar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'importar')) return { ok: false, erro: SEM_PERMISSAO }
   if (!nomePadraoValido(nome)) return { ok: false, erro: 'Dê um nome ao padrão.' }
   const limpo = mapeamentoLimpo(mapeamento)
   if (Object.keys(limpo).length < 1) {
@@ -61,7 +61,7 @@ export async function atualizarPadrao(
   mapeamento: Record<string, string>,
 ): Promise<ResultadoPadroes> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'importar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'importar')) return { ok: false, erro: SEM_PERMISSAO }
   const limpo = mapeamentoLimpo(mapeamento)
   if (Object.keys(limpo).length < 1) {
     return { ok: false, erro: 'Mapeie ao menos uma coluna antes de atualizar.' }
@@ -76,7 +76,7 @@ export async function atualizarPadrao(
 
 export async function excluirPadrao(id: string): Promise<ResultadoPadroes> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'importar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'importar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
     await excluirPadraoImportacao(id)
     return { ok: true, padroes: await listarPadroesImportacao() }

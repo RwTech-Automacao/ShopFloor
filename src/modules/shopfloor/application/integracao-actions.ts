@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
 import { validarItensIntegracao, type PlacaIntegracao } from '../domain/integracao-itens'
@@ -33,7 +33,7 @@ export async function integrar(
   entrada: EntradaIntegracao,
 ): Promise<{ ok: true; codigo: string } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'lancar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
 
@@ -121,7 +121,7 @@ export async function buscarIntegracao(
   sn: string,
 ): Promise<{ ok: true; detalhe: IntegracaoDetalhe | null } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'lancar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
   const alvo = normalizarSerie(sn)
@@ -138,7 +138,7 @@ export async function cancelarIntegracao(
   codigo: string,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
   const r = await chamarSfCancelarIntegracao(codigo.trim(), sessao.nome || sessao.email)

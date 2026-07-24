@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { normalizarLayout } from '../domain/layout-colunas'
 import { carregarCatalogoColunas, salvarColunasLista } from '../infra/processo-repository'
@@ -16,7 +16,7 @@ export type ResultadoLayout = { ok: true } | { ok: false; erro: string }
  */
 export async function salvarLayoutColunas(visiveis: string[]): Promise<ResultadoLayout> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { ok: false, erro: 'Você não tem permissão para alterar as colunas da lista.' }
   }
 

@@ -1,13 +1,14 @@
 import Link from 'next/link'
 import { ArrowRight, Inbox, Workflow, type LucideIcon } from 'lucide-react'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer, type Permissao } from '@/modules/auth/domain/perfil'
+import { podeNoModulo, type Modulo, type Permissao } from '@/modules/auth/domain/perfil'
 
 interface Atalho {
   titulo: string
   descricao: string
   href: string
   icone: LucideIcon
+  modulo: Modulo
   permissao: Permissao
 }
 
@@ -17,6 +18,7 @@ const ATALHOS: Atalho[] = [
     descricao: 'Importe planilhas, confira e acompanhe os processos de recebimento.',
     href: '/recebimento/processos',
     icone: Inbox,
+    modulo: 'recebimento',
     permissao: 'visualizar',
   },
   {
@@ -24,6 +26,7 @@ const ATALHOS: Atalho[] = [
     descricao: 'Lançamento por posto, integração, manutenção e rastreio das placas.',
     href: '/shopfloor/lancamento',
     icone: Workflow,
+    modulo: 'shopfloor',
     permissao: 'lancar',
   },
 ]
@@ -31,7 +34,7 @@ const ATALHOS: Atalho[] = [
 export default async function HomePage() {
   const sessao = await getSessao()
   const primeiroNome = (sessao?.nome || sessao?.email || '').split(/[\s@]/)[0]
-  const atalhos = ATALHOS.filter((a) => podeFazer(sessao?.perfil ?? null, a.permissao))
+  const atalhos = ATALHOS.filter((a) => podeNoModulo(sessao?.perfil ?? null, a.modulo, a.permissao))
 
   return (
     <div className="mx-auto max-w-5xl">

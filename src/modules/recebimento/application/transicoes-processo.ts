@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import {
   camposFaltantesFinalizacao,
@@ -28,7 +28,11 @@ function caminhoProcesso(id: string): string {
  */
 export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoProcesso> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'editar') || !podeFazer(sessao.perfil, 'finalizar')) {
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'editar') ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'finalizar')
+  ) {
     return { ok: false, erro: 'Você não tem permissão para esta ação.' }
   }
 
@@ -87,7 +91,11 @@ export async function finalizarProcesso(id: string): Promise<ResultadoTransicaoP
  */
 export async function reabrirProcesso(id: string): Promise<ResultadoTransicaoProcesso> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'editar') || !podeFazer(sessao.perfil, 'editar_finalizado')) {
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'editar') ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'editar_finalizado')
+  ) {
     return { ok: false, erro: 'Você não tem permissão para esta ação.' }
   }
 

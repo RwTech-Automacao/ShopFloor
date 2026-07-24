@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { contarPorPosto } from '../domain/dashboard'
 import { carregarOrdem } from '../infra/lancamento-repository'
 import { listarContagemDaOp } from '../infra/dashboard-repository'
@@ -18,7 +18,7 @@ export async function carregarDashboard(
   ate?: string,
 ): Promise<{ ok: true; itens: ItemDashboard[]; total: number | null } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) {
     return { ok: false, erro: 'Você não tem permissão para ver o dashboard.' }
   }
   const ordem = await carregarOrdem(pmo.trim(), op.trim())

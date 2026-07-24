@@ -1,12 +1,12 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarTodasOrdens } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { PesquisaForm } from './pesquisa-form'
 
 export default async function PesquisaPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) {
     return <SemPermissao descricao="Você não tem permissão para acessar a Pesquisa." />
   }
   const ordens = await listarTodasOrdens()

@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { elegivelParaEtiqueta, gerarCsv, gerarEtiquetasDoProcesso, type LinhaEtiqueta } from '../domain/partnumber'
 import {
@@ -66,7 +66,7 @@ export async function gerarEtiquetas({
   filtroValor: string
 }): Promise<ResultadoGerarEtiquetas> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'gerar_etiqueta')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'gerar_etiqueta')) {
     return { ok: false, erro: 'Você não tem permissão para gerar etiquetas.' }
   }
 
@@ -132,7 +132,9 @@ export async function buscarEtiquetas(
   termo: string,
 ): Promise<{ ok: true; processos: ProcessoEtiquetaLista[] } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !(podeFazer(sessao.perfil, 'gerar_etiqueta') || podeFazer(sessao.perfil, 'visualizar'))) {
+  const podeGerar = podeNoModulo(sessao?.perfil ?? null, 'recebimento', 'gerar_etiqueta')
+  const podeVisualizar = podeNoModulo(sessao?.perfil ?? null, 'recebimento', 'visualizar')
+  if (!sessao || !(podeGerar || podeVisualizar)) {
     return { ok: false, erro: 'Você não tem permissão para consultar processos.' }
   }
 

@@ -1,5 +1,5 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarMesesAnexos } from '@/modules/recebimento/infra/anexo-export-repository'
 import { modoStorageFotos } from '@/modules/recebimento/infra/armazenamento'
@@ -8,7 +8,7 @@ import { ExportarFotosCliente } from './exportar-fotos-cliente'
 
 export default async function ExportarFotosPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return <SemPermissao descricao="Você não tem permissão para exportar fotos." />
   }
   if (modoStorageFotos() !== 'supabase') {

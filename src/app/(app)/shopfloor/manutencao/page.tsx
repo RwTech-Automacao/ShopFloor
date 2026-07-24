@@ -1,5 +1,5 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarReprovasOrigem, listarReparos } from '@/modules/shopfloor/infra/manutencao-repository'
 import { agruparPendencias } from '@/modules/shopfloor/domain/manutencao-pendencias'
@@ -7,7 +7,7 @@ import { ManutencaoLista } from './manutencao-lista'
 
 export default async function ManutencaoPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'lancar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return <SemPermissao descricao="Você não tem permissão para acessar a Manutenção." />
   }
 

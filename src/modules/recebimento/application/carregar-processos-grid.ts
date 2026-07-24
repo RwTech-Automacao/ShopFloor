@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { carregarCatalogoColunas, valoresDistintosColuna } from '../infra/processo-repository'
 
 export type ResultadoValores = { ok: true; valores: string[] } | { ok: false; erro: string }
@@ -9,7 +9,7 @@ export type ResultadoValores = { ok: true; valores: string[] } | { ok: false; er
 /** Valores distintos de uma coluna, para a lista de checkbox do filtro. */
 export async function carregarValoresColuna(campo: string): Promise<ResultadoValores> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'visualizar')) {
     return { ok: false, erro: 'Você não tem permissão para visualizar processos.' }
   }
 

@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
 import { postoAnteriorNaSequencia } from '../domain/postos'
 import { obrigatoriosPorPosto } from '../domain/regras-lancamento'
@@ -46,7 +46,7 @@ const MENSAGENS: Record<string, string> = {
 
 export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLancamento> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'lancar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
 

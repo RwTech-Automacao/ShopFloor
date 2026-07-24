@@ -1,5 +1,5 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdens, listarPostos, listarFluxos } from '@/modules/shopfloor/infra/ordem-repository'
 import { OrdemForm, type OrdemView } from './ordem-form'
@@ -7,7 +7,7 @@ import { OrdensLista } from './ordens-lista'
 
 export default async function OrdensPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
     return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
   }
 

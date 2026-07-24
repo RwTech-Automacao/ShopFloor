@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer, type Modulo, type Permissao } from '@/modules/auth/domain/perfil'
+import { podeNoModulo, type Modulo, type Permissao } from '@/modules/auth/domain/perfil'
 import { MODULOS, PERMISSOES_POR_MODULO } from '@/modules/auth/domain/modulos'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
@@ -82,7 +82,7 @@ export async function salvarPerfil(
   formData: FormData,
 ): Promise<ResultadoAcaoPerfil> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'sistema', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
@@ -151,7 +151,7 @@ export async function salvarPerfil(
 
 export async function excluirPerfil(id: string): Promise<ResultadoAcaoPerfil> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'sistema', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 

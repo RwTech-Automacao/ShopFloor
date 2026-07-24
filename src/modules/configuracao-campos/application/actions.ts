@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
 import { validarTipoCampo, type TipoCampo } from '../domain/regras-campo'
@@ -28,7 +28,7 @@ export async function salvarCampo(
   formData: FormData,
 ): Promise<ResultadoAcaoCampo> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 

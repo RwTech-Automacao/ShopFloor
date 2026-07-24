@@ -37,60 +37,64 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
+import { podeNoModulo, type Modulo, type Perfil, type Permissao } from '@/modules/auth/domain/perfil'
 import { cn } from '@/lib/utils'
-
-type Perms = Record<string, boolean>
 
 interface Folha {
   chave: string
   rotulo: string
   href: string
   icone: LucideIcon
-  perm: string
+  perm: Permissao
 }
+
+// Itens sujeitos ao gate fino por módulo (menu lateral).
+interface FolhaModular extends Folha {
+  modulo: Modulo
+}
+
 const HOME: Folha = { chave: 'home', rotulo: 'Home', href: '/home', icone: Home, perm: 'visualizar' }
 
-const RECEBIMENTO: Folha[] = [
-  { chave: 'importar', rotulo: 'Importar Planilha', href: '/recebimento/importar', icone: Upload, perm: 'importar' },
-  { chave: 'processos', rotulo: 'Processos', href: '/recebimento/processos', icone: ClipboardList, perm: 'visualizar' },
-  { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, perm: 'visualizar' },
-  { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, perm: 'gerar_etiqueta' },
-  { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, perm: 'administrar' },
+const RECEBIMENTO: FolhaModular[] = [
+  { chave: 'importar', rotulo: 'Importar Planilha', href: '/recebimento/importar', icone: Upload, modulo: 'recebimento', perm: 'importar' },
+  { chave: 'processos', rotulo: 'Processos', href: '/recebimento/processos', icone: ClipboardList, modulo: 'recebimento', perm: 'visualizar' },
+  { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, modulo: 'recebimento', perm: 'visualizar' },
+  { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, modulo: 'recebimento', perm: 'gerar_etiqueta' },
+  { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, modulo: 'recebimento', perm: 'administrar' },
 ]
 
-const SHOPFLOOR: Folha[] = [
-  { chave: 'lancamento', rotulo: 'Lançamento', href: '/shopfloor/lancamento', icone: ScanLine, perm: 'lancar' },
-  { chave: 'integracao', rotulo: 'Integração', href: '/shopfloor/integracao', icone: Link2, perm: 'lancar' },
-  { chave: 'manutencao', rotulo: 'Manutenção', href: '/shopfloor/manutencao', icone: Wrench, perm: 'lancar' },
-  { chave: 'burn-in', rotulo: 'Burn-in', href: '/shopfloor/burn-in', icone: Timer, perm: 'visualizar' },
-  { chave: 'pesquisa', rotulo: 'Pesquisa', href: '/shopfloor/pesquisa', icone: Search, perm: 'visualizar' },
-  { chave: 'dashboard', rotulo: 'Dashboard', href: '/shopfloor/dashboard', icone: ChartColumn, perm: 'visualizar' },
-  { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, perm: 'administrar' },
+const SHOPFLOOR: FolhaModular[] = [
+  { chave: 'lancamento', rotulo: 'Lançamento', href: '/shopfloor/lancamento', icone: ScanLine, modulo: 'shopfloor', perm: 'lancar' },
+  { chave: 'integracao', rotulo: 'Integração', href: '/shopfloor/integracao', icone: Link2, modulo: 'shopfloor', perm: 'lancar' },
+  { chave: 'manutencao', rotulo: 'Manutenção', href: '/shopfloor/manutencao', icone: Wrench, modulo: 'shopfloor', perm: 'lancar' },
+  { chave: 'burn-in', rotulo: 'Burn-in', href: '/shopfloor/burn-in', icone: Timer, modulo: 'shopfloor', perm: 'visualizar' },
+  { chave: 'pesquisa', rotulo: 'Pesquisa', href: '/shopfloor/pesquisa', icone: Search, modulo: 'shopfloor', perm: 'visualizar' },
+  { chave: 'dashboard', rotulo: 'Dashboard', href: '/shopfloor/dashboard', icone: ChartColumn, modulo: 'shopfloor', perm: 'visualizar' },
+  { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
 ]
-
-const CONFIG_PERM = 'administrar'
 
 // Itens de Configurações que ficam "soltos" acima do accordion.
-const CONFIG_TOPO: Folha[] = [
-  { chave: 'usuarios', rotulo: 'Usuários', href: '/configuracoes/usuarios', icone: Users, perm: 'administrar' },
-  { chave: 'perfis', rotulo: 'Perfis', href: '/configuracoes/perfis', icone: ShieldCheck, perm: 'administrar' },
+const CONFIG_TOPO: FolhaModular[] = [
+  { chave: 'usuarios', rotulo: 'Usuários', href: '/configuracoes/usuarios', icone: Users, modulo: 'sistema', perm: 'administrar' },
+  { chave: 'perfis', rotulo: 'Perfis', href: '/configuracoes/perfis', icone: ShieldCheck, modulo: 'sistema', perm: 'administrar' },
 ]
 
 // Configurações específicas do módulo de Recebimento, agrupadas num accordion.
-const CONFIG_RECEBIMENTO: Folha[] = [
-  { chave: 'listas', rotulo: 'Listas Suspensas', href: '/configuracoes/listas', icone: List, perm: 'administrar' },
-  { chave: 'campos', rotulo: 'Campos', href: '/configuracoes/campos', icone: SlidersHorizontal, perm: 'administrar' },
-  { chave: 'colunas', rotulo: 'Colunas da Lista', href: '/configuracoes/colunas', icone: Columns3, perm: 'administrar' },
-  { chave: 'criticidade', rotulo: 'Criticidade', href: '/configuracoes/criticidade', icone: TriangleAlert, perm: 'administrar' },
-  { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, perm: 'administrar' },
+const CONFIG_RECEBIMENTO: FolhaModular[] = [
+  { chave: 'listas', rotulo: 'Listas Suspensas', href: '/configuracoes/listas', icone: List, modulo: 'recebimento', perm: 'administrar' },
+  { chave: 'campos', rotulo: 'Campos', href: '/configuracoes/campos', icone: SlidersHorizontal, modulo: 'recebimento', perm: 'administrar' },
+  { chave: 'colunas', rotulo: 'Colunas da Lista', href: '/configuracoes/colunas', icone: Columns3, modulo: 'recebimento', perm: 'administrar' },
+  { chave: 'criticidade', rotulo: 'Criticidade', href: '/configuracoes/criticidade', icone: TriangleAlert, modulo: 'recebimento', perm: 'administrar' },
+  { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, modulo: 'recebimento', perm: 'administrar' },
 ]
 
-// Itens de Configurações que ficam "soltos" abaixo do accordion.
-const CONFIG_BASE: Folha[] = [
-  { chave: 'logs', rotulo: 'Logs do Sistema', href: '/configuracoes/logs', icone: ScrollText, perm: 'administrar' },
+// Itens de Configurações que ficam "soltos" abaixo do accordion. Logs do
+// sistema não é específico de um módulo de negócio — trata-se como 'sistema'.
+const CONFIG_BASE: FolhaModular[] = [
+  { chave: 'logs', rotulo: 'Logs do Sistema', href: '/configuracoes/logs', icone: ScrollText, modulo: 'sistema', perm: 'administrar' },
 ]
 
-const CONFIG_TODOS: Folha[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...CONFIG_BASE]
+const CONFIG_TODOS: FolhaModular[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...CONFIG_BASE]
 
 const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/sobre', icone: Info, perm: 'visualizar' }
 
@@ -107,32 +111,34 @@ export function AppShell({
   nome,
   email,
   perfilNome,
-  permissoes,
+  perfil,
   exportarFotosVisivel,
   children,
 }: {
   nome: string
   email: string
   perfilNome: string
-  permissoes: Perms
+  perfil: Perfil
   exportarFotosVisivel: boolean
   children: React.ReactNode
 }) {
   const pathname = usePathname()
   const [mobileAberto, setMobileAberto] = useState(false)
-  const pode = (perm: string) => permissoes[perm] === true
+  const pode = (item: FolhaModular) => podeNoModulo(perfil, item.modulo, item.perm)
 
   const recebimentoVisivel = RECEBIMENTO.filter(
-    (i) => pode(i.perm) && (i.chave !== 'exportar-fotos' || exportarFotosVisivel),
+    (i) => pode(i) && (i.chave !== 'exportar-fotos' || exportarFotosVisivel),
   )
-  const podeConfig = pode(CONFIG_PERM)
-  const configTopo = podeConfig ? CONFIG_TOPO.filter((i) => pode(i.perm)) : []
-  const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter((i) => pode(i.perm)) : []
-  const configBase = podeConfig ? CONFIG_BASE.filter((i) => pode(i.perm)) : []
+  // Gate "de área": qualquer admin (em algum módulo) abre o accordion; os
+  // itens internos filtram fino por módulo logo abaixo.
+  const podeConfig = perfil.permissoes.administrar === true
+  const configTopo = podeConfig ? CONFIG_TOPO.filter(pode) : []
+  const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter(pode) : []
+  const configBase = podeConfig ? CONFIG_BASE.filter(pode) : []
   const temConfig = configTopo.length + configRec.length + configBase.length > 0
   const recebimentoAtivo = pathname.startsWith('/recebimento')
   const [recAberto, setRecAberto] = useState(recebimentoAtivo)
-  const shopfloorVisivel = SHOPFLOOR.filter((i) => pode(i.perm))
+  const shopfloorVisivel = SHOPFLOOR.filter(pode)
   const shopfloorAtivo = pathname.startsWith('/shopfloor')
   const [shopfloorAberto, setShopfloorAberto] = useState(shopfloorAtivo)
   const configAtivo = CONFIG_TODOS.some((i) => ehAtivo(pathname, i.href))
