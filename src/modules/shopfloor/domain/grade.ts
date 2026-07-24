@@ -1,5 +1,6 @@
 import { partesSerie, normalizarSerie } from './serie'
 import { postoTemStatus } from './lancamento-linhas'
+import { pareaBurnin, estaAberto } from './burnin'
 
 const MAX_SNS = 2000
 
@@ -35,6 +36,7 @@ export interface RegistroGrade {
   posto: string
   status: string
   numeroCaixa: string
+  dataHora: string
 }
 
 export interface LinhaGrade {
@@ -43,15 +45,12 @@ export interface LinhaGrade {
 }
 
 /**
- * Ciclo de Burn-in aberto (peça ainda "dentro"), sem depender de dataHora (que
- * `RegistroGrade` não carrega). Ordem-independente: entrada tem status='';
- * saída tem status preenchido. Mais entradas que saídas ⇒ há uma entrada sem
- * saída correspondente, ou seja, ciclo aberto.
+ * Ciclo de Burn-in aberto (peça ainda "dentro"). Pareia entrada↔saída por `dataHora`
+ * (via `pareaBurnin`), robusto a saída Reprovado com N defeitos (N registros com o
+ * mesmo instante) + re-entrada — casos que uma contagem simples confundiria.
  */
-export function burninEmAndamento(registrosDoPosto: { status: string }[]): boolean {
-  const entradas = registrosDoPosto.filter((r) => r.status.trim() === '').length
-  const saidas = registrosDoPosto.length - entradas
-  return entradas > saidas
+export function burninEmAndamento(registrosDoPosto: { dataHora: string; status: string }[]): boolean {
+  return estaAberto(pareaBurnin(registrosDoPosto))
 }
 
 /**

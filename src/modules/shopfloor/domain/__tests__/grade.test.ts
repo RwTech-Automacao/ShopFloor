@@ -19,8 +19,8 @@ describe('gerarFaixaSNs', () => {
 
 describe('montarGrade', () => {
   const postos = ['Inicial', 'Teste', 'Embalagem']
-  const reg = (over: Partial<{ snNorm: string; posto: string; status: string; numeroCaixa: string }>) => ({
-    snNorm: '100', posto: 'Inicial', status: '', numeroCaixa: '', ...over,
+  const reg = (over: Partial<{ snNorm: string; posto: string; status: string; numeroCaixa: string; dataHora: string }>) => ({
+    snNorm: '100', posto: 'Inicial', status: '', numeroCaixa: '', dataHora: '2026-01-01T00:00:00Z', ...over,
   })
   it('sem registro → Pendente em tudo; Manutenção → —', () => {
     const [l] = montarGrade(['100'], postos, [])
@@ -55,39 +55,53 @@ describe('montarGrade', () => {
     expect(l!.celulas['Inicial']).toBe('Registrado')
   })
 
-  it('Burn-in com ciclo aberto → Em andamento (entrada sem saída, mesmo com status vazio)', () => {
-    const postosComBurnin = ['Inicial', 'Burn-in', 'Embalagem']
-    const [l] = montarGrade(['100'], postosComBurnin, [reg({ posto: 'Burn-in', status: '' })])
+  const bi = ['Inicial', 'Burn-in', 'Embalagem']
+  it('Burn-in com ciclo aberto → Em andamento (entrada sem saída)', () => {
+    const [l] = montarGrade(['100'], bi, [reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T08:00:00Z' })])
     expect(l!.celulas['Burn-in']).toBe('Em andamento')
   })
-
-  it('Burn-in fechado (entrada + saída) → segue a regra com-status normal', () => {
-    const postosComBurnin = ['Inicial', 'Burn-in', 'Embalagem']
-    const [l] = montarGrade(['100'], postosComBurnin, [
-      reg({ posto: 'Burn-in', status: '' }),
-      reg({ posto: 'Burn-in', status: 'Aprovado' }),
+  it('Burn-in fechado (entrada + saída) → regra com-status normal', () => {
+    const [l] = montarGrade(['100'], bi, [
+      reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T08:00:00Z' }),
+      reg({ posto: 'Burn-in', status: 'Aprovado', dataHora: '2026-07-24T14:00:00Z' }),
     ])
     expect(l!.celulas['Burn-in']).toBe('Aprovado')
   })
-
-  it('Burn-in com novo ciclo aberto após um ciclo fechado → Em andamento', () => {
-    const postosComBurnin = ['Inicial', 'Burn-in', 'Embalagem']
-    const [l] = montarGrade(['100'], postosComBurnin, [
-      reg({ posto: 'Burn-in', status: '' }),
-      reg({ posto: 'Burn-in', status: 'Reprovado' }),
-      reg({ posto: 'Burn-in', status: '' }),
+  it('novo ciclo aberto após um fechado → Em andamento', () => {
+    const [l] = montarGrade(['100'], bi, [
+      reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T08:00:00Z' }),
+      reg({ posto: 'Burn-in', status: 'Reprovado', dataHora: '2026-07-24T10:00:00Z' }),
+      reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T12:00:00Z' }),
+    ])
+    expect(l!.celulas['Burn-in']).toBe('Em andamento')
+  })
+  it('reprova com 2 defeitos (2 registros mesmo instante) + re-entrada → Em andamento', () => {
+    // caso que a contagem simples errava: 2 entradas vs 2 saídas
+    const [l] = montarGrade(['100'], bi, [
+      reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T08:00:00Z' }),
+      reg({ posto: 'Burn-in', status: 'Reprovado', dataHora: '2026-07-24T10:00:00Z' }),
+      reg({ posto: 'Burn-in', status: 'Reprovado', dataHora: '2026-07-24T10:00:00Z' }),
+      reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T12:00:00Z' }),
     ])
     expect(l!.celulas['Burn-in']).toBe('Em andamento')
   })
 })
 
 describe('burninEmAndamento', () => {
-  it('mais entradas que saídas → aberto', () => {
-    expect(burninEmAndamento([{ status: '' }])).toBe(true)
-    expect(burninEmAndamento([{ status: '' }, { status: 'Aprovado' }, { status: '' }])).toBe(true)
+  const e = (dataHora: string, status: string) => ({ dataHora, status })
+  it('entrada sem saída → aberto', () => {
+    expect(burninEmAndamento([e('2026-07-24T08:00:00Z', '')])).toBe(true)
   })
-  it('entradas == saídas → fechado', () => {
+  it('entrada + saída → fechado', () => {
     expect(burninEmAndamento([])).toBe(false)
-    expect(burninEmAndamento([{ status: '' }, { status: 'Aprovado' }])).toBe(false)
+    expect(burninEmAndamento([e('2026-07-24T08:00:00Z', ''), e('2026-07-24T14:00:00Z', 'Aprovado')])).toBe(false)
+  })
+  it('reprova multi-defeito + re-entrada → aberto (não confunde N saídas)', () => {
+    expect(burninEmAndamento([
+      e('2026-07-24T08:00:00Z', ''),
+      e('2026-07-24T10:00:00Z', 'Reprovado'),
+      e('2026-07-24T10:00:00Z', 'Reprovado'),
+      e('2026-07-24T12:00:00Z', ''),
+    ])).toBe(true)
   })
 })
