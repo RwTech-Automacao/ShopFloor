@@ -16,11 +16,13 @@ export function OrdensLista({
   chavesPostos,
   fluxos,
   pmosExistentes,
+  clientesExistentes,
 }: {
   views: OrdemView[]
   chavesPostos: string[]
   fluxos: FluxoExistente[]
   pmosExistentes: string[]
+  clientesExistentes: string[]
 }) {
   const [cliente, setCliente] = useState(TODOS)
   const [status, setStatus] = useState(TODOS)
@@ -107,7 +109,7 @@ export function OrdensLista({
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                     <FluxoBotao pmo={o.pmo} op={o.op} postos={o.postos} />
-                    <OrdemForm postos={chavesPostos} ordem={o} fluxosExistentes={fluxos} pmosExistentes={pmosExistentes} />
+                    <OrdemForm postos={chavesPostos} ordem={o} fluxosExistentes={fluxos} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} />
                     <ExcluirOrdemBotao id={o.id} rotulo={`${o.pmo}/${o.op}`} />
                   </div>
                 </TableCell>

@@ -42,16 +42,20 @@ export interface FluxoExistente {
   componentes: string[]
 }
 
+const CLIENTE_NOVO = '__novo_cliente__'
+
 export function OrdemForm({
   postos,
   ordem,
   fluxosExistentes,
   pmosExistentes,
+  clientesExistentes,
 }: {
   postos: string[]
   ordem?: OrdemView
   fluxosExistentes: FluxoExistente[]
   pmosExistentes: string[]
+  clientesExistentes: string[]
 }) {
   const ehEdicao = ordem !== undefined
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
@@ -61,6 +65,12 @@ export function OrdemForm({
   const [pmo, setPmo] = useState(ordem?.pmo ?? '')
   const [fluxo, setFluxo] = useState<string[]>(ordem?.postos ?? [])
   const [receita, setReceita] = useState<string[]>(ordem?.componentes ?? [])
+  const [cliente, setCliente] = useState(ordem?.cliente ?? '')
+  const [modoNovoCliente, setModoNovoCliente] = useState(false)
+  // Reaproveita a grafia existente se o "novo" bater com um cadastrado (evita LINCE vs Lince).
+  const clienteFinal = modoNovoCliente
+    ? clientesExistentes.find((c) => c.toLowerCase() === cliente.trim().toLowerCase()) ?? cliente.trim()
+    : cliente
 
   const [processado, setProcessado] = useState(state)
   if (state !== processado) {
@@ -120,8 +130,30 @@ export function OrdemForm({
               <Input id="op" name="op" defaultValue={ordem?.op ?? ''} required />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cliente">Cliente *</Label>
-              <Input id="cliente" name="cliente" defaultValue={ordem?.cliente ?? ''} required />
+              <Label>Cliente *</Label>
+              <input type="hidden" name="cliente" value={clienteFinal} />
+              <Select
+                value={modoNovoCliente ? CLIENTE_NOVO : cliente}
+                onValueChange={(v) => {
+                  if (v === CLIENTE_NOVO) { setModoNovoCliente(true); setCliente('') }
+                  else { setModoNovoCliente(false); setCliente(v ?? '') }
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione o cliente" /></SelectTrigger>
+                <SelectContent>
+                  {clientesExistentes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  <SelectItem value={CLIENTE_NOVO}>＋ Novo cliente…</SelectItem>
+                </SelectContent>
+              </Select>
+              {modoNovoCliente && (
+                <Input
+                  aria-label="Nome do novo cliente"
+                  value={cliente}
+                  onChange={(e) => setCliente(e.target.value)}
+                  placeholder="Nome do novo cliente"
+                  autoFocus
+                />
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="qtd">Quantidade</Label>

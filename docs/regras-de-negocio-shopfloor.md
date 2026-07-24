@@ -230,12 +230,11 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
   existia na origem). Avaliar exigir/avisar na finalização: só permitir marcar "Finalizada" quando
   todas as peças da faixa estiverem concluídas (ou avisar "faltam X peças"). No legado não havia
   essa trava.
-- **Cliente padronizado (evitar duplicata por casing)** *(usuário, 2026-07-23)*: `cliente` é texto
-  livre → grafias divergentes duplicam na cascata (achado real: `LINCE` vs `Lince`; a planilha tinha
-  só a aba `Lince`, a divergência veio da coluna de cliente em PMO_OPS). Solução: no Cadastro de OP,
-  **escolher o cliente de uma lista dos já existentes** (+ "novo cliente"), como as PMOs da receita —
-  nunca auto-Title-Case (quebraria siglas legítimas: KTW, VMI, STB, RW Tech, AS Mídia). Inclui uma
-  **limpeza pontual** dos dados já divergentes.
+- **Cliente padronizado (ENTREGUE 2026-07-24)**: no Cadastro de OP o campo Cliente virou um **Select
+  dos clientes já existentes** (distintos de `sf_ordens`) + item **"＋ Novo cliente…"** (revela texto).
+  Se o "novo" bater com um existente ignorando maiúsculas, **reaproveita a grafia existente** (mata o
+  LINCE vs Lince na fonte). Só a tela de OP (as outras pegam o cliente da OP). A limpeza pontual dos
+  dados já divergentes (LINCE→Lince) foi feita no Dev em 2026-07-23. `ordem-form.tsx` + `page.tsx`.
 - **Tela de "Registros" (log bruto por cliente)** *(usuário, 2026-07-23)*: equivale à antiga **aba do
   cliente** da planilha (lista corrida, append-only, de todos os `sf_registros`). Hoje a Pesquisa é
   orientada a consulta (por SN ou grade de uma OP) e **não** oferece o "despejo cronológico" de tudo

@@ -28,6 +28,7 @@ export default async function OrdensPage() {
     componentes: o.sf_ordem_componentes.map((c) => c.pmo_componente),
   }))
   const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
+  const clientesExistentes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()
 
   return (
     <div className="flex flex-col gap-4">
@@ -36,10 +37,10 @@ export default async function OrdensPage() {
           <h2 className="text-lg font-semibold text-tinta">Ordens de Produção</h2>
           <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
         </div>
-        <OrdemForm postos={chavesPostos} fluxosExistentes={fluxos} pmosExistentes={pmosExistentes} />
+        <OrdemForm postos={chavesPostos} fluxosExistentes={fluxos} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} />
       </div>
 
-      <OrdensLista views={views} chavesPostos={chavesPostos} fluxos={fluxos} pmosExistentes={pmosExistentes} />
+      <OrdensLista views={views} chavesPostos={chavesPostos} fluxos={fluxos} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} />
     </div>
   )
 }
