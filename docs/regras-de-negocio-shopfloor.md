@@ -258,11 +258,16 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
   fluxo daquela OP. Duas ambições: (a) **texto + setas** (`Inicial → SMD → Teste → …`) — barato, num
   modal/expansão; (b) **diagrama de blocos estilo n8n** — bem maior. Fazer (a) primeiro; (b) fica junto
   do "flow-builder visual" (montador de fluxo) já sonhado pro Cadastro.
-- **Permissões de admin por módulo (RBAC granular)** *(usuário, 2026-07-24)*: hoje as permissões são
-  flags globais no perfil. Evoluir para: um **perfil** define **quais módulos** acessa e **quais
-  permissões dentro de cada módulo** (UI com modais + accordions). Mudança **estrutural** (perfis,
-  RLS, telas de auth) — precisa de design próprio; idealmente resolver **antes** de abrir o Prod a
-  vários perfis. Big rock.
+- **RBAC por módulo — Fase 2 (RLS por módulo)** *(Fase 1 entregue 2026-07-24)*: a **Fase 1** entregou o
+  modelo (`perfil_permissao` = grants por módulo, fonte da verdade; `pode_*` derivadas), a tela de perfil
+  com accordions por módulo, e o **enforcement no app** (menu + guards `podeNoModulo`). Migrações 0038/0039.
+  **Fase 2** (falta): tornar o **RLS consciente de módulo** — hoje as ~82 políticas ainda leem os `pode_*`
+  globais, então a separação é de **interface/uso**, não de banco (um admin de um módulo ainda alcançaria
+  dados de outro via API direta). Itens do review a resolver na Fase 2: (a) páginas de leitura de
+  `configuracoes/usuarios` e `perfis` só têm o guard global do layout — um admin de módulo alcançaria a
+  **leitura** por URL direta (as escritas já exigem `sistema.administrar`); dar guard por página; (b)
+  `validarEdicaoPerfil` usa o OR global — dá pra tirar `sistema.administrar` de si mesmo mantendo outro
+  admin (auto-lockout, não escalação); (c) `salvarPerfil` grava `pode_*` e grants sem transação real.
 - **Tela de Registros / log por módulo** *(usuário, 2026-07-24; relacionado ao item "Tela de
   Registros" acima)*: os `sf_registros` (produção) são dado diferente do **log de ações de usuário**
   (auditoria) que já existe. Avaliar: (a) uma tela **Registros** dedicada no módulo (produção,
