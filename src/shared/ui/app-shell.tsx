@@ -33,6 +33,7 @@ import {
   Wrench,
   Search,
   ChartColumn,
+  Timer,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -61,6 +62,7 @@ const SHOPFLOOR: Folha[] = [
   { chave: 'lancamento', rotulo: 'Lançamento', href: '/shopfloor/lancamento', icone: ScanLine, perm: 'lancar' },
   { chave: 'integracao', rotulo: 'Integração', href: '/shopfloor/integracao', icone: Link2, perm: 'lancar' },
   { chave: 'manutencao', rotulo: 'Manutenção', href: '/shopfloor/manutencao', icone: Wrench, perm: 'lancar' },
+  { chave: 'burn-in', rotulo: 'Burn-in', href: '/shopfloor/burn-in', icone: Timer, perm: 'visualizar' },
   { chave: 'pesquisa', rotulo: 'Pesquisa', href: '/shopfloor/pesquisa', icone: Search, perm: 'visualizar' },
   { chave: 'dashboard', rotulo: 'Dashboard', href: '/shopfloor/dashboard', icone: ChartColumn, perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, perm: 'administrar' },
