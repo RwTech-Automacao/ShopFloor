@@ -43,6 +43,18 @@ export interface LinhaGrade {
 }
 
 /**
+ * Ciclo de Burn-in aberto (peça ainda "dentro"), sem depender de dataHora (que
+ * `RegistroGrade` não carrega). Ordem-independente: entrada tem status='';
+ * saída tem status preenchido. Mais entradas que saídas ⇒ há uma entrada sem
+ * saída correspondente, ou seja, ciclo aberto.
+ */
+export function burninEmAndamento(registrosDoPosto: { status: string }[]): boolean {
+  const entradas = registrosDoPosto.filter((r) => r.status.trim() === '').length
+  const saidas = registrosDoPosto.length - entradas
+  return entradas > saidas
+}
+
+/**
  * Chave canônica de casamento de SN (como o legado): pelo BLOCO NUMÉRICO dentro
  * do prefixo/sufixo — assim 'AB9C' casa com a linha 'AB009C' independente do
  * zero-padding. Sem bloco numérico, cai no normalizado puro.
@@ -83,6 +95,10 @@ export function montarGrade(
       if (posto.toLowerCase() === 'embalagem') {
         const caixa = doPosto.find((r) => r.numeroCaixa.trim() !== '')?.numeroCaixa ?? ''
         celulas[posto] = caixa !== '' ? caixa : 'Registrado'
+        continue
+      }
+      if (posto.toLowerCase() === 'burn-in' && burninEmAndamento(doPosto)) {
+        celulas[posto] = 'Em andamento'
         continue
       }
       if (postoTemStatus(posto)) {

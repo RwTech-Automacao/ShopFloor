@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gerarFaixaSNs, montarGrade } from '../grade'
+import { gerarFaixaSNs, montarGrade, burninEmAndamento } from '../grade'
 
 describe('gerarFaixaSNs', () => {
   it('gera a faixa com zero-padding e prefixo/sufixo', () => {
@@ -53,5 +53,41 @@ describe('montarGrade', () => {
   it('casa SN com PREFIXO sem zero-padding (bloco numérico, como o legado)', () => {
     const [l] = montarGrade(['AB009C'], postos, [reg({ snNorm: 'ab9c' })])
     expect(l!.celulas['Inicial']).toBe('Registrado')
+  })
+
+  it('Burn-in com ciclo aberto → Em andamento (entrada sem saída, mesmo com status vazio)', () => {
+    const postosComBurnin = ['Inicial', 'Burn-in', 'Embalagem']
+    const [l] = montarGrade(['100'], postosComBurnin, [reg({ posto: 'Burn-in', status: '' })])
+    expect(l!.celulas['Burn-in']).toBe('Em andamento')
+  })
+
+  it('Burn-in fechado (entrada + saída) → segue a regra com-status normal', () => {
+    const postosComBurnin = ['Inicial', 'Burn-in', 'Embalagem']
+    const [l] = montarGrade(['100'], postosComBurnin, [
+      reg({ posto: 'Burn-in', status: '' }),
+      reg({ posto: 'Burn-in', status: 'Aprovado' }),
+    ])
+    expect(l!.celulas['Burn-in']).toBe('Aprovado')
+  })
+
+  it('Burn-in com novo ciclo aberto após um ciclo fechado → Em andamento', () => {
+    const postosComBurnin = ['Inicial', 'Burn-in', 'Embalagem']
+    const [l] = montarGrade(['100'], postosComBurnin, [
+      reg({ posto: 'Burn-in', status: '' }),
+      reg({ posto: 'Burn-in', status: 'Reprovado' }),
+      reg({ posto: 'Burn-in', status: '' }),
+    ])
+    expect(l!.celulas['Burn-in']).toBe('Em andamento')
+  })
+})
+
+describe('burninEmAndamento', () => {
+  it('mais entradas que saídas → aberto', () => {
+    expect(burninEmAndamento([{ status: '' }])).toBe(true)
+    expect(burninEmAndamento([{ status: '' }, { status: 'Aprovado' }, { status: '' }])).toBe(true)
+  })
+  it('entradas == saídas → fechado', () => {
+    expect(burninEmAndamento([])).toBe(false)
+    expect(burninEmAndamento([{ status: '' }, { status: 'Aprovado' }])).toBe(false)
   })
 })

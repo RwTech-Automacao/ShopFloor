@@ -2,7 +2,7 @@
 
 > **Documento vivo.** Toda regra em vigor no módulo está aqui, com o ponteiro de onde ela é
 > implementada. Ao criar/mudar uma regra: atualize este arquivo na mesma PR.
-> Última atualização: 2026-07-23.
+> Última atualização: 2026-07-24.
 
 ## Conceitos
 
@@ -26,6 +26,11 @@ Integração · Teste Final · Inspeção Final · Embalagem · Inspeção NQA �
 
 → classificação: `src/modules/shopfloor/domain/lancamento-linhas.ts` (`POSTOS_COM_STATUS`,
 `POSTOS_SO_REGISTRADO`)
+
+> **Burn-in não é mais um "com status" simples.** Continua listado em `POSTOS_COM_STATUS` (o gate de
+> sequência do posto seguinte exige *aprovado*), mas o **lançamento** do posto tem um lifecycle
+> próprio de **entrada/saída** (2 registros) em vez de 1 registro com status — ver seção dedicada
+> abaixo.
 
 ## Regras do Lançamento (`/shopfloor/lancamento`)
 
@@ -61,6 +66,48 @@ Validações puras no servidor (TS) + checagens sensíveis a corrida na função
    aplicável"**, senão Reprovado (paridade com o legado, `appscript/Código.gs`).
 8. **Gravação**: 1 registro; Reprovado com N defeitos → **1 registro por defeito**; SPI reprovado →
    **1 registro por posição**.
+
+## Regras do Burn-in — entrada/saída (posto `Burn-in`)
+
+Função atômica dedicada **`sf_burnin`** + view **`sf_burnin_aberto`** (migração `0037`; não passa
+pelo `sf_lancar` — lifecycle próprio). Domínio puro: `src/modules/shopfloor/domain/burnin.ts`
+(`pareaBurnin`, `estaAberto`, `formatarDuracao`).
+
+1. **Modelo: 2 registros por ciclo**, distinguidos pelo `status`:
+   - **Entrada** = registro `posto='Burn-in'`, `status=''`.
+   - **Saída** = registro `posto='Burn-in'`, `status='Aprovado'`/`'Reprovado'` (+ defeitos se
+     reprovado, mesma regra de "1 registro por defeito" do Lançamento).
+   - **Ciclo aberto** = o último registro de Burn-in da peça naquela OP é uma entrada (`status=''`)
+     sem saída correspondente ainda.
+2. **Entrada** exige: último evento de Burn-in da peça **não** pode já ser uma entrada aberta
+   (`JA_DENTRO`) nem uma saída **Aprovado** (`JA_APROVADO`); se a última saída foi **Reprovado** e o
+   posto exige Manutenção (`exigeManutencao`), precisa existir reparo (posto `Manutenção`, origem
+   `Burn-in`) **após** aquela reprova (`SEM_MANUTENCAO` — mesmo gate de Manutenção do Lançamento,
+   regra 5). Além disso, a trava de sequência normal se aplica (posto anterior satisfeito).
+3. **Saída** exige uma **entrada aberta**: se o último evento não é uma entrada (`status=''`), barra
+   com `SEM_ENTRADA`. A saída grava o `status` informado (Aprovado/Reprovado); reprovado exige
+   código + posição + tipo do defeito.
+4. **Posto seguinte no fluxo** só libera com a **saída Aprovado** — o gate de sequência (regra 4 do
+   Lançamento) olha o posto Burn-in como qualquer "com status": exige o último registro com
+   `status='aprovado'`, então uma entrada aberta ou uma saída Reprovado **não** libera o próximo
+   posto.
+5. **Painel "em andamento"** (`/shopfloor/burn-in`): lista as peças com ciclo aberto agora
+   (`sf_burnin_aberto` — `DISTINCT ON` no último registro de Burn-in por peça, filtrado por
+   `status=''`), com tempo decorrido ao vivo (`formatarDuracao`, atualizado a cada minuto).
+   → `app/(app)/shopfloor/burn-in/`, `infra/burnin-repository.ts` (`listarBurninAberto`)
+6. **Duração no histórico**: a tela de **Pesquisa** (busca por SN) e a **Grade Geral** mostram o
+   efeito do ciclo:
+   - **Pesquisa** pareia entrada↔saída dos registros de Burn-in do SN (`pareaBurnin`, usa
+     `dataHora`) e exibe a coluna **Duração**: tempo do ciclo (`formatarDuracao`) na linha da
+     saída, ou **"há X"** (tempo decorrido até agora) na linha da entrada se o ciclo está aberto.
+   - **Grade Geral** não carrega `dataHora` (só `posto/status/numeroCaixa`, por volume); detecta
+     ciclo aberto por **contagem** (entradas > saídas para aquele SN/posto = ordem-independente) e
+     mostra a célula **'Em andamento'** — só cai na regra "com status" normal (Aprovado vence
+     Reprovado) quando não há ciclo aberto. → `domain/grade.ts` (`burninEmAndamento`,
+     `montarGrade`)
+7. Regras 1–8 do Lançamento (obrigatórios, faixa de SN, posto aplicável, gate de Manutenção) valem
+   igual para o Burn-in, só a *gravação* do status muda de 1 registro para o par entrada/saída.
+   **Só informativo**: não há tela separada de "consulta de ciclos" além do painel e da Pesquisa.
 
 ## Regras da Integração (`/shopfloor/integracao`)
 
@@ -160,11 +207,13 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 
 - **Domínio puro (testado, TDD):** `src/modules/shopfloor/domain/` — serie, postos,
   regras-lancamento, lancamento-linhas, validar-ordem, integracao-itens, dashboard, `receita.ts`
-  (receita/BOM por PMO).
+  (receita/BOM por PMO), `burnin.ts` (`pareaBurnin`/`estaAberto`/`formatarDuracao`), `grade.ts`
+  (`montarGrade`/`burninEmAndamento`).
 - **Funções atômicas no banco (corrida/duplicidade):** `supabase/migrations/0031_sf_lancar.sql`,
-  `0032_sf_integracoes.sql`. Receita: tabela `sf_ordem_componentes` (migração `0034`).
+  `0032_sf_integracoes.sql`, `0037_sf_burnin.sql` (+ view `sf_burnin_aberto`). Receita: tabela
+  `sf_ordem_componentes` (migração `0034`).
 - **Orquestração:** `src/modules/shopfloor/application/` — lancar-action, ordens-actions,
-  integracao-actions, dashboard-actions.
+  integracao-actions, dashboard-actions, burnin-actions.
 - **Dashboard:** `domain/dashboard.ts` (`contarPorPosto`) · `application/dashboard-actions.ts`
   (`carregarDashboard`) · `infra/dashboard-repository.ts` (`listarContagemDaOp`) ·
   `app/(app)/shopfloor/dashboard/` (tela).
@@ -209,10 +258,6 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
   fluxo daquela OP. Duas ambições: (a) **texto + setas** (`Inicial → SMD → Teste → …`) — barato, num
   modal/expansão; (b) **diagrama de blocos estilo n8n** — bem maior. Fazer (a) primeiro; (b) fica junto
   do "flow-builder visual" (montador de fluxo) já sonhado pro Cadastro.
-- **Burn-in com entrada/saída + duração** *(usuário, 2026-07-24)*: o posto Burn-in deve registrar
-  **hora de entrada** e **hora de saída** (2 registros). Calcular quantas horas a peça ficou; se só
-  houver entrada, calcular **há quanto tempo está lá** (tempo decorrido ao vivo). Muda o modelo do
-  posto (hoje Burn-in é só Aprovado/Reprovado). Feature própria (spec).
 - **Permissões de admin por módulo (RBAC granular)** *(usuário, 2026-07-24)*: hoje as permissões são
   flags globais no perfil. Evoluir para: um **perfil** define **quais módulos** acessa e **quais
   permissões dentro de cada módulo** (UI com modais + accordions). Mudança **estrutural** (perfis,

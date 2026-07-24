@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -12,12 +12,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { buscarHistoricoSN, carregarGrade } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { RegistroHistorico, OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
 import type { LinhaGrade } from '@/modules/shopfloor/domain/grade'
+import { pareaBurnin, formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 
 const TODAS = '__todas__'
 
 function corCelula(v: string): string {
   if (v === 'Aprovado' || v === 'Concluído') return 'text-green-700 font-medium'
   if (v === 'Reprovado') return 'text-red-600 font-medium'
+  if (v === 'Em andamento') return 'text-amber-600 font-medium'
   if (v === 'Pendente' || v === '—') return 'text-muted-foreground'
   return 'text-tinta'
 }
@@ -92,6 +94,32 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
     return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('pt-BR')
   }
 
+  // --- duração dos ciclos de Burn-in (entrada/saída) para a linha do tempo do SN ---
+  const [agora, setAgora] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setAgora(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const ciclosBurnin = useMemo(() => {
+    const doBurnin = (registros ?? [])
+      .filter((r) => r.posto.toLowerCase() === 'burn-in')
+      .map((r) => ({ dataHora: r.dataHora, status: r.status }))
+    return pareaBurnin(doBurnin)
+  }, [registros])
+
+  function duracaoLinha(r: RegistroHistorico): string | null {
+    if (r.posto.toLowerCase() !== 'burn-in') return null
+    if (r.status.trim() === '') {
+      const ciclo = ciclosBurnin.find((c) => c.entrada === r.dataHora)
+      if (!ciclo || ciclo.saida !== null) return null
+      const min = Math.max(0, Math.round((agora - Date.parse(ciclo.entrada)) / 60000))
+      return `há ${formatarDuracao(min)}`
+    }
+    const ciclo = ciclosBurnin.find((c) => c.saida === r.dataHora)
+    return ciclo && ciclo.duracaoMin !== null ? formatarDuracao(ciclo.duracaoMin) : null
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Busca por SN */}
@@ -120,6 +148,7 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                     <TableHead>Posto</TableHead>
                     <TableHead>PMO/OP</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Duração</TableHead>
                     <TableHead>Caixa</TableHead>
                     <TableHead>Defeito</TableHead>
                     <TableHead>NQA</TableHead>
@@ -135,6 +164,7 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                       <TableCell>{r.posto}</TableCell>
                       <TableCell>{r.pmo}/{r.op}</TableCell>
                       <TableCell className={corCelula(r.status)}>{r.status || '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{duracaoLinha(r) ?? '—'}</TableCell>
                       <TableCell>{r.numeroCaixa || '—'}</TableCell>
                       <TableCell>{[r.cod, r.pos, r.tipo].filter(Boolean).join(' · ') || '—'}</TableCell>
                       <TableCell>{[r.nqaVisual, r.nqaFuncional].filter(Boolean).join(' / ') || '—'}</TableCell>
