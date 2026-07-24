@@ -158,3 +158,68 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     componentes: r.sf_ordem_componentes.map((c) => c.pmo_componente),
   }))
 }
+
+export interface OrdemIntegracao {
+  cliente: string
+  pmo: string
+  op: string
+  descricao: string
+  sn_ini: string
+  sn_fim: string
+  qtd: number | null
+  status: string
+  postos: string[]
+  componentes: string[]
+  concluidas: number
+}
+
+/** TODAS as OPs (ativas + finalizadas) enriquecidas p/ a tela de Integração. */
+export async function listarOrdensParaIntegracao(): Promise<OrdemIntegracao[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_ordens')
+    .select('cliente,pmo,op,descricao,sn_ini,sn_fim,qtd,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)')
+    .order('cliente')
+    .order('pmo')
+    .order('op')
+  if (error) throw error
+  const rows = data as unknown as {
+    cliente: string
+    pmo: string
+    op: string
+    descricao: string
+    sn_ini: string
+    sn_fim: string
+    qtd: number | null
+    status: string
+    sf_ordem_postos: { posto: string; ordem: number }[]
+    sf_ordem_componentes: { pmo_componente: string }[]
+  }[]
+  const resumo = await supabase.from('sf_ordem_resumo').select('pmo,op,concluidas')
+  if (resumo.error) throw resumo.error
+  const mapa = new Map<string, number>()
+  for (const r of resumo.data as { pmo: string; op: string; concluidas: number }[]) {
+    mapa.set(`${r.pmo}||${r.op}`, r.concluidas)
+  }
+  return rows.map((r) => ({
+    cliente: r.cliente,
+    pmo: r.pmo,
+    op: r.op,
+    descricao: r.descricao,
+    sn_ini: r.sn_ini,
+    sn_fim: r.sn_fim,
+    qtd: r.qtd,
+    status: r.status,
+    postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
+    componentes: r.sf_ordem_componentes.map((c) => c.pmo_componente),
+    concluidas: mapa.get(`${r.pmo}||${r.op}`) ?? 0,
+  }))
+}
+
+/** Faixas de SN de todas as OPs (p/ a verificação N1 do SN da placa). */
+export async function listarFaixasOrdens(): Promise<{ pmo: string; op: string; sn_ini: string; sn_fim: string }[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.from('sf_ordens').select('pmo,op,sn_ini,sn_fim')
+  if (error) throw error
+  return data as { pmo: string; op: string; sn_ini: string; sn_fim: string }[]
+}
