@@ -11,7 +11,7 @@ import {
   montarLinhas,
   exigeManutencao,
 } from '../domain/lancamento-linhas'
-import { carregarOrdem, chamarSfLancar } from '../infra/lancamento-repository'
+import { carregarOrdem, chamarSfLancar, chamarSfBurnin } from '../infra/lancamento-repository'
 
 export interface EntradaLancamento {
   colaborador: string
@@ -26,6 +26,7 @@ export interface EntradaLancamento {
   nqaFuncional?: string
   defeitos?: { codigo: string; posicao: string; tipo: string }[]
   posicoesSPI?: string[]
+  burninEvento?: 'entrada' | 'saida'
 }
 
 export type ResultadoLancamento = { ok: true; caixaCount?: number } | { ok: false; erro: string }
@@ -37,6 +38,9 @@ const MENSAGENS: Record<string, string> = {
   SEQUENCIA: 'O posto anterior ainda não foi concluído para esta peça.',
   CAIXA_CHEIA: 'A caixa já atingiu o limite de peças.',
   SEM_MANUTENCAO: 'A peça reprovou e precisa passar pela Manutenção antes de ser lançada de novo.',
+  JA_DENTRO: 'Esta peça já está no Burn-in (entrada aberta).',
+  JA_APROVADO: 'Esta peça já concluiu o Burn-in aprovada.',
+  SEM_ENTRADA: 'Não há entrada de Burn-in aberta para esta peça — registre a entrada primeiro.',
   ERRO_INTERNO: 'Não foi possível registrar o lançamento.',
 }
 
@@ -52,22 +56,39 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     return { ok: false, erro: 'O posto Integração é registrado na tela de Integração.' }
   }
 
-  // Obrigatórios por posto (domínio puro).
-  const val = obrigatoriosPorPosto(entrada.posto, {
-    colaborador: entrada.colaborador,
-    pmo: entrada.pmo,
-    op: entrada.op,
-    numeroSerie: entrada.numeroSerie,
-    status: entrada.status,
-    numeroCaixa: entrada.numeroCaixa,
-    limiteCaixa: entrada.qtdPorCaixa,
-    nqaVisual: entrada.nqaVisual,
-    nqaFuncional: entrada.nqaFuncional,
-    cod: entrada.defeitos?.[0]?.codigo,
-    pos: entrada.defeitos?.[0]?.posicao ?? entrada.posicoesSPI?.[0],
-    tipo: entrada.defeitos?.[0]?.tipo,
-  })
-  if (!val.ok) return { ok: false, erro: val.erro }
+  // Burn-in tem lifecycle próprio (entrada/saída) — obrigatórios à parte.
+  const ehBurnin = postoNorm === 'burn-in'
+  if (ehBurnin) {
+    if (
+      entrada.colaborador.trim() === '' || entrada.pmo.trim() === '' ||
+      entrada.op.trim() === '' || entrada.numeroSerie.trim() === ''
+    ) {
+      return { ok: false, erro: 'Preencha Colaborador, PMO, OP e o Nº de Série.' }
+    }
+    if (entrada.burninEvento === 'saida') {
+      const reprov = (entrada.status ?? '').toLowerCase() === 'reprovado'
+      if (reprov && !(entrada.defeitos?.[0]?.codigo && entrada.defeitos[0].posicao && entrada.defeitos[0].tipo)) {
+        return { ok: false, erro: 'Reprovado exige código, posição e tipo do defeito.' }
+      }
+    }
+  } else {
+    // Obrigatórios por posto (domínio puro).
+    const val = obrigatoriosPorPosto(entrada.posto, {
+      colaborador: entrada.colaborador,
+      pmo: entrada.pmo,
+      op: entrada.op,
+      numeroSerie: entrada.numeroSerie,
+      status: entrada.status,
+      numeroCaixa: entrada.numeroCaixa,
+      limiteCaixa: entrada.qtdPorCaixa,
+      nqaVisual: entrada.nqaVisual,
+      nqaFuncional: entrada.nqaFuncional,
+      cod: entrada.defeitos?.[0]?.codigo,
+      pos: entrada.defeitos?.[0]?.posicao ?? entrada.posicoesSPI?.[0],
+      tipo: entrada.defeitos?.[0]?.tipo,
+    })
+    if (!val.ok) return { ok: false, erro: val.erro }
+  }
 
   // Config da OP.
   const ordem = await carregarOrdem(entrada.pmo, entrada.op)
@@ -89,6 +110,38 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
 
   // Posto anterior EXIGIDO = o imediatamente anterior na ORDEM da OP (Plano B2).
   const prevPosto = postoAnteriorNaSequencia(entrada.posto, ordem.postos)
+
+  // Burn-in: entrada/saída via RPC dedicada sf_burnin (lifecycle próprio).
+  if (ehBurnin) {
+    const evento: 'entrada' | 'saida' = entrada.burninEvento === 'saida' ? 'saida' : 'entrada'
+    if (evento === 'saida') {
+      const st = (entrada.status ?? '').trim()
+      if (st !== 'Aprovado' && st !== 'Reprovado') {
+        return { ok: false, erro: 'Informe Aprovado ou Reprovado na saída do Burn-in.' }
+      }
+    }
+    const linhasBurn =
+      evento === 'saida'
+        ? montarLinhas(entrada.posto, { status: entrada.status ?? '', defeitos: entrada.defeitos })
+        : []
+    const rb = await chamarSfBurnin({
+      p_evento: evento,
+      p_pmo: entrada.pmo,
+      p_op: entrada.op,
+      p_cliente: ordem.cliente,
+      p_colaborador: entrada.colaborador.trim(),
+      p_sn: limparSerie(entrada.numeroSerie),
+      p_sn_norm: normalizarSerie(entrada.numeroSerie),
+      p_status: evento === 'saida' ? (entrada.status ?? '') : '',
+      p_prev_posto: prevPosto ?? '',
+      p_prev_precisa_aprovado: prevPosto ? precisaAprovado(prevPosto) : false,
+      p_exige_manutencao: exigeManutencao(entrada.posto),
+      p_linhas: linhasBurn,
+    })
+    if (!rb.ok) return { ok: false, erro: MENSAGENS[rb.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
+    return { ok: true }
+  }
+
   const qtdPorCaixa =
     entrada.qtdPorCaixa && entrada.qtdPorCaixa.trim() !== '' ? Number(entrada.qtdPorCaixa) : null
 

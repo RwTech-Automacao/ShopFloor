@@ -44,6 +44,7 @@ export function LancamentoForm({
   const [nqaFuncional, setNqaFuncional] = useState('')
   const [defeitosSel, setDefeitosSel] = useState<DefeitoLinha[]>([{ codigo: '', posicao: '', tipo: '' }])
   const [posicoesSPI, setPosicoesSPI] = useState<string[]>([''])
+  const [burninEvento, setBurninEvento] = useState<'entrada' | 'saida'>('entrada')
   const [enviando, startTransition] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
 
@@ -69,13 +70,21 @@ export function LancamentoForm({
   const ehNqa = posto === 'Inspeção NQA'
   const ehSpi = posto === 'Inspeção SPI'
   const ehEmbalagem = posto === 'Embalagem'
+  const ehBurnin = posto === 'Burn-in'
+  // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
+  const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
   const semFaixa = ordemSel !== null && (ordemSel.sn_ini.trim() === '' || ordemSel.sn_fim.trim() === '')
 
   /** Limpa todos os campos dinâmicos da peça (evita dado velho ao trocar contexto/posto). */
   function resetCamposDinamicos() {
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    setNqaVisual(''); setNqaFuncional(''); setNumeroCaixa(''); setQtdPorCaixa('')
+    setNqaVisual(''); setNqaFuncional(''); setNumeroCaixa(''); setQtdPorCaixa(''); setBurninEvento('entrada')
+  }
+  /** Trocar entrada/saída limpa o status/defeitos (evita defeito velho da saída ao voltar p/ entrada). */
+  function mudarBurninEvento(v: 'entrada' | 'saida') {
+    setBurninEvento(v)
+    setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
   }
   function mudarCliente(v: string) {
     setCliente(v); setPmo(''); setOp(''); setPosto(''); resetCamposDinamicos()
@@ -96,14 +105,14 @@ export function LancamentoForm({
     if (!serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) return false
     if (ehEmbalagem && (numeroCaixa.trim() === '' || !Number.isInteger(Number(qtdPorCaixa)) || Number(qtdPorCaixa) <= 0)) return false
     if (ehNqa && (nqaVisual === '' || nqaFuncional === '')) return false
-    if (comStatus && !ehNqa && status === '') return false
-    if (comStatus && !ehNqa && reprovado) {
+    if (mostraStatus && status === '') return false
+    if (mostraStatus && reprovado) {
       if (ehSpi) return posicoesSPI.some((p) => p.trim() !== '')
       // servidor exige código E posição E tipo em ao menos um defeito
       return defeitosSel.some((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
     }
     return true
-  }, [colaborador, cliente, pmo, op, posto, numeroSerie, ordemSel, semFaixa, ehEmbalagem, numeroCaixa, qtdPorCaixa, ehNqa, nqaVisual, nqaFuncional, comStatus, status, reprovado, ehSpi, posicoesSPI, defeitosSel])
+  }, [colaborador, cliente, pmo, op, posto, numeroSerie, ordemSel, semFaixa, ehEmbalagem, numeroCaixa, qtdPorCaixa, ehNqa, nqaVisual, nqaFuncional, mostraStatus, status, reprovado, ehSpi, posicoesSPI, defeitosSel])
 
   function limparPeca() {
     setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional('')
@@ -120,7 +129,8 @@ export function LancamentoForm({
         pmo,
         op,
         numeroSerie,
-        status: comStatus && !ehNqa ? status : undefined,
+        status: mostraStatus ? status : undefined,
+        burninEvento: ehBurnin ? burninEvento : undefined,
         numeroCaixa: ehEmbalagem ? numeroCaixa : undefined,
         qtdPorCaixa: ehEmbalagem ? qtdPorCaixa : undefined,
         nqaVisual: ehNqa ? nqaVisual : undefined,
@@ -227,7 +237,20 @@ export function LancamentoForm({
             />
           </div>
 
-          {comStatus && !ehNqa && (
+          {ehBurnin && (
+            <div className="flex flex-col gap-1.5 sm:max-w-xs">
+              <Label>Evento</Label>
+              <Select value={burninEvento} onValueChange={(v) => mudarBurninEvento((v ?? 'entrada') as 'entrada' | 'saida')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entrada">Entrada</SelectItem>
+                  <SelectItem value="saida">Saída</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {mostraStatus && (
             <div className="flex flex-col gap-1.5 sm:max-w-xs">
               <Label>Status</Label>
               <Select value={status} onValueChange={(v) => setStatus(v ?? '')}>
@@ -257,7 +280,7 @@ export function LancamentoForm({
           )}
 
           {/* SPI reprovado → posições */}
-          {comStatus && ehSpi && reprovado && (
+          {mostraStatus && ehSpi && reprovado && (
             <div className="flex flex-col gap-2">
               <Label>Posições reprovadas</Label>
               {posicoesSPI.map((p, i) => (
@@ -280,7 +303,7 @@ export function LancamentoForm({
           )}
 
           {/* Demais reprovado → defeitos múltiplos */}
-          {comStatus && !ehSpi && !ehNqa && reprovado && (
+          {mostraStatus && !ehSpi && reprovado && (
             <div className="flex flex-col gap-2">
               <Label>Defeitos</Label>
               <datalist id="defeitos-list">
