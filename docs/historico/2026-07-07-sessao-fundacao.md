@@ -1244,3 +1244,24 @@ Permissões de perfil passam a ser **por módulo** (antes: flags globais). Fase 
   direta só com guard global; auto-lockout no `validarEdicaoPerfil`; sem transação real no save) → **backlog Fase 2**.
 - **Fase 2 (backlog):** tornar as ~82 políticas de RLS conscientes de módulo (`tem_permissao('shopfloor.administrar')`)
   — só aí a separação vira **real no banco**. Hoje é de interface/uso.
+
+## 40. RBAC Fase 2a — RLS por módulo (só ShopFloor) (2026-07-24)
+
+Segundo passo do RBAC: tornar o **RLS** das tabelas `sf_*` consciente de módulo (a Fase 1 era só no app).
+Escopo escolhido = **só ShopFloor** (Dev, baixo risco; Recebimento/Sistema em Prod ficam pra Fase 2b/2c).
+
+- **Nova `tem_permissao(modulo, perm)`** lê os grants (`perfil_permissao`); a `tem_permissao(perm)` antiga
+  PERMANECE (Recebimento/Sistema + os RPCs de `lancar` — `pode_lancar ≡ shopfloor.lancar`). As 13 políticas
+  `sf_*` (+ `sf_cancelar_integracao`) passam a exigir `'shopfloor'`. Migração `0040`.
+- **BUG CRÍTICO pego pelo review (opus):** o param `modulo` era **sombreado** pela coluna `perfil_permissao.modulo`
+  → `pp.modulo = modulo` virava `pp.modulo = pp.modulo` (sempre true) → o filtro de módulo sumia e o vazamento
+  continuava. `create or replace` **não renomeia** parâmetro (42P13) e qualificar (`tem_permissao.modulo`) /
+  posicional (`$1/$2`) **não** surtiram efeito nesse contexto. Fix definitivo (`0043`): **drop das 14 políticas +
+  drop da função + recreate com `p_modulo/p_perm` + recreate das políticas**.
+- **Teste de isolamento ponta-a-ponta** (essencial — o smoke com service-role não pega, pois `auth.uid()` é nulo):
+  criar perfil só-Recebimento + user real + login → tentar ler `sf_ordens` = **0 linhas (bloqueado)**; +grant
+  `shopfloor.visualizar` → **libera**. Pegadinha do teste: o **trigger `auth.users→usuarios` do Supabase** cria a
+  linha do usuário com um perfil padrão → tem que **UPDATE** o perfil_id (não INSERT). Confirmado o isolamento real.
+- `0044-0049` = objetos de diagnóstico (canário + funções de debug SECURITY DEFINER) — **removidos** ao fim.
+- **Fase 2b/2c (backlog):** Recebimento (37 políticas, Prod) + Sistema (auth, Prod). Só aí a separação é total.
+  Migrações do módulo agora 0028–0049.
