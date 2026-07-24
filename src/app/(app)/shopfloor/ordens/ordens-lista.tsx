@@ -81,8 +81,7 @@ export function OrdensLista({
         Mostrando {filtradas.length} de {views.length} OP(s)
       </p>
 
-      <div className="max-h-[65vh] overflow-auto rounded-lg border border-border">
-        <Table>
+      <Table containerClassName="max-h-[65vh] overflow-auto rounded-lg border border-border">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow>
               <TableHead>PMO</TableHead>
@@ -122,8 +121,7 @@ export function OrdensLista({
               </TableRow>
             )}
           </TableBody>
-        </Table>
-      </div>
+      </Table>
     </div>
   )
 }

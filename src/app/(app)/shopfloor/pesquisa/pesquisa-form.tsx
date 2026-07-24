@@ -190,9 +190,8 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
           {carregando && <p className="text-sm text-muted-foreground">Carregando grade…</p>}
 
           {linhasFiltradas && (
-            <div className="max-h-[70vh] overflow-auto rounded-lg border border-border">
-              <Table>
-                <TableHeader className="sticky top-0 bg-card">
+            <Table containerClassName="max-h-[70vh] overflow-auto rounded-lg border border-border">
+                <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead>Nº de Série</TableHead>
                     {colunas.map((p) => <TableHead key={p}>{p}</TableHead>)}
@@ -209,7 +208,6 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                   ))}
                 </TableBody>
               </Table>
-            </div>
           )}
         </CardContent>
       </Card>
