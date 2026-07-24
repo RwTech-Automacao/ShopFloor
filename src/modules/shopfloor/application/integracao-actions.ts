@@ -7,7 +7,7 @@ import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/seri
 import { validarItensIntegracao, type PlacaIntegracao } from '../domain/integracao-itens'
 import { postoAnteriorNaSequencia } from '../domain/postos'
 import { precisaAprovado } from '../domain/lancamento-linhas'
-import { carregarOrdem } from '../infra/lancamento-repository'
+import { carregarOrdem, listarFaixasOrdens } from '../infra/lancamento-repository'
 import {
   buscarIntegracaoPorSn,
   chamarSfIntegrar,
@@ -59,6 +59,17 @@ export async function integrar(
 
   const v = validarItensIntegracao(produtoSN, entrada.placas)
   if (!v.ok) return v
+
+  // N1: cada placa com faixa cadastrada na sua OP precisa ter o SN dentro dela (gradual: sem faixa → passa).
+  const faixas = await listarFaixasOrdens()
+  const mapaFaixa = new Map(faixas.map((f) => [`${f.pmo.trim()}||${f.op.trim()}`, f]))
+  for (let i = 0; i < v.placas.length; i++) {
+    const placa = v.placas[i]!
+    const f = mapaFaixa.get(`${placa.pmo.trim()}||${placa.op.trim()}`)
+    if (f && f.sn_ini.trim() !== '' && f.sn_fim.trim() !== '' && !serieDentroDaFaixa(f.sn_ini, f.sn_fim, placa.sn)) {
+      return { ok: false, erro: `Nº de Série da placa ${i + 1} fora da faixa da OP ${placa.op}.` }
+    }
+  }
 
   // Integração é um posto: exige o anterior do fluxo satisfeito p/ o produto (trava de sequência).
   const prevPosto = postoAnteriorNaSequencia('Integração', ordem.postos)
