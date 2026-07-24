@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeFazer, type Modulo, type Permissao } from '@/modules/auth/domain/perfil'
+import { MODULOS, PERMISSOES_POR_MODULO } from '@/modules/auth/domain/modulos'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
 import { validarEdicaoPerfil } from '../domain/regras-perfil'
@@ -11,6 +12,7 @@ import {
   buscarPerfil,
   criarPerfil,
   excluirPerfil as excluirPerfilRepo,
+  sincronizarGrants,
   ERRO_PERFIL_BLOQUEADO_EXCLUSAO,
   type DadosPerfil,
 } from '../infra/perfil-repository'
@@ -42,17 +44,36 @@ function eNomeDuplicado(e: unknown): boolean {
   return /duplicate key|unique/i.test(mensagem)
 }
 
-function lerFlags(formData: FormData): Omit<DadosPerfil, 'nome'> {
+type Grant = { modulo: Modulo; permissao: Permissao }
+
+// Lê os grants marcados no FormData: um switch por (módulo, permissão),
+// nomeado "<modulo>.<permissao>" — ver PerfilForm (accordion por módulo).
+function lerGrants(formData: FormData): Grant[] {
+  const grants: Grant[] = []
+  for (const modulo of MODULOS) {
+    for (const permissao of PERMISSOES_POR_MODULO[modulo.chave]) {
+      if (formData.get(`${modulo.chave}.${permissao}`) === 'on') {
+        grants.push({ modulo: modulo.chave, permissao })
+      }
+    }
+  }
+  return grants
+}
+
+// Os pode_* seguem como colunas derivadas (usadas pelo RLS): cada uma vira
+// true se a permissão correspondente foi concedida em QUALQUER módulo (OR).
+function calcularFlags(grants: Grant[]): Omit<DadosPerfil, 'nome'> {
+  const concedida = (permissao: Permissao) => grants.some((g) => g.permissao === permissao)
   return {
-    pode_visualizar: formData.get('visualizar') === 'on',
-    pode_importar: formData.get('importar') === 'on',
-    pode_editar: formData.get('editar') === 'on',
-    pode_finalizar: formData.get('finalizar') === 'on',
-    pode_editar_finalizado: formData.get('editar_finalizado') === 'on',
-    pode_excluir: formData.get('excluir') === 'on',
-    pode_gerar_etiqueta: formData.get('gerar_etiqueta') === 'on',
-    pode_administrar: formData.get('administrar') === 'on',
-    pode_lancar: formData.get('lancar') === 'on',
+    pode_visualizar: concedida('visualizar'),
+    pode_importar: concedida('importar'),
+    pode_editar: concedida('editar'),
+    pode_finalizar: concedida('finalizar'),
+    pode_editar_finalizado: concedida('editar_finalizado'),
+    pode_excluir: concedida('excluir'),
+    pode_gerar_etiqueta: concedida('gerar_etiqueta'),
+    pode_administrar: concedida('administrar'),
+    pode_lancar: concedida('lancar'),
   }
 }
 
@@ -71,7 +92,8 @@ export async function salvarPerfil(
     return { erro: 'Informe um nome para o perfil.' }
   }
 
-  const dados: DadosPerfil = { nome, ...lerFlags(formData) }
+  const grants = lerGrants(formData)
+  const dados: DadosPerfil = { nome, ...calcularFlags(grants) }
 
   if (id) {
     const validacao = validarEdicaoPerfil({
@@ -86,6 +108,7 @@ export async function salvarPerfil(
 
     try {
       await atualizarPerfil(id, dados)
+      await sincronizarGrants(id, grants)
     } catch (e) {
       if (eNomeDuplicado(e)) return { erro: 'Já existe um perfil com esse nome.' }
       return { erro: 'Não foi possível salvar o perfil.' }
@@ -107,6 +130,7 @@ export async function salvarPerfil(
     let novo: { id: string }
     try {
       novo = await criarPerfil(dados)
+      await sincronizarGrants(novo.id, grants)
     } catch (e) {
       if (eNomeDuplicado(e)) return { erro: 'Já existe um perfil com esse nome.' }
       return { erro: 'Não foi possível criar o perfil.' }

@@ -8,7 +8,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { listarPerfis } from '@/modules/perfis/infra/perfil-repository'
+import { listarPerfisComGrants } from '@/modules/perfis/infra/perfil-repository'
 import { PERMISSOES } from '@/modules/perfis/domain/regras-perfil'
 import type { PerfilRow } from '@/modules/auth/domain/mapear-perfil'
 import { PerfilForm, ExcluirPerfilButton } from './perfil-form'
@@ -34,7 +34,7 @@ function FlagIcon({ marcado }: { marcado: boolean }) {
 }
 
 export default async function PerfisPage() {
-  const perfis = await listarPerfis()
+  const perfis = await listarPerfisComGrants()
 
   return (
     <div className="flex flex-col gap-4">
@@ -84,7 +84,7 @@ export default async function PerfisPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <PerfilForm perfil={perfil} />
+                    <PerfilForm perfil={perfil} grants={perfil.perfil_permissao} />
                     <ExcluirPerfilButton
                       id={perfil.id}
                       nome={perfil.nome}
@@ -125,7 +125,7 @@ export default async function PerfisPage() {
               })}
             </dl>
             <div className="mt-3 flex justify-end gap-1 border-t border-border pt-3">
-              <PerfilForm perfil={perfil} />
+              <PerfilForm perfil={perfil} grants={perfil.perfil_permissao} />
               <ExcluirPerfilButton id={perfil.id} nome={perfil.nome} sistema={perfil.sistema} />
             </div>
           </div>

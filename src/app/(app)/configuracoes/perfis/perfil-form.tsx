@@ -17,16 +17,21 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { PERMISSOES } from '@/modules/perfis/domain/regras-perfil'
+import { MODULOS, PERMISSOES_POR_MODULO } from '@/modules/auth/domain/modulos'
 import { salvarPerfil, excluirPerfil } from '@/modules/perfis/application/actions'
 import type { PerfilRow } from '@/modules/auth/domain/mapear-perfil'
 
+const ROTULO_PERMISSAO = new Map(PERMISSOES.map((p) => [p.chave, p.rotulo]))
+
 interface PerfilFormProps {
   perfil?: PerfilRow
+  grants?: { modulo: string; permissao: string }[]
 }
 
-export function PerfilForm({ perfil }: PerfilFormProps) {
+export function PerfilForm({ perfil, grants = [] }: PerfilFormProps) {
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState(salvarPerfil, undefined)
+  const grantsMarcados = new Set(grants.map((g) => `${g.modulo}.${g.permissao}`))
 
   // Fecha o dialog quando a action retorna sucesso. Ajuste de estado durante
   // a renderização (não em um efeito) evita o cascading render apontado
@@ -77,26 +82,35 @@ export function PerfilForm({ perfil }: PerfilFormProps) {
             />
           </div>
           <div className="flex flex-col gap-3">
-            <Label>Permissões</Label>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {PERMISSOES.map((permissao) => {
-                const campo = `pode_${permissao.chave}` as keyof PerfilRow
-                const marcado = perfil ? Boolean(perfil[campo]) : false
-                return (
-                  <label
-                    key={permissao.chave}
-                    htmlFor={`flag-${permissao.chave}`}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm"
-                  >
-                    {permissao.rotulo}
-                    <Switch
-                      id={`flag-${permissao.chave}`}
-                      name={permissao.chave}
-                      defaultChecked={marcado}
-                    />
-                  </label>
-                )
-              })}
+            <Label>Permissões por módulo</Label>
+            <div className="flex flex-col gap-2">
+              {MODULOS.map((modulo) => (
+                <details
+                  key={modulo.chave}
+                  className="group rounded-lg border border-border px-3 py-2"
+                  open
+                >
+                  <summary className="cursor-pointer text-sm font-medium select-none">
+                    {modulo.rotulo}
+                  </summary>
+                  <div className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    {PERMISSOES_POR_MODULO[modulo.chave].map((permissao) => {
+                      const nome = `${modulo.chave}.${permissao}`
+                      const marcado = grantsMarcados.has(nome)
+                      return (
+                        <label
+                          key={nome}
+                          htmlFor={`flag-${nome}`}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm"
+                        >
+                          {ROTULO_PERMISSAO.get(permissao) ?? permissao}
+                          <Switch id={`flag-${nome}`} name={nome} defaultChecked={marcado} />
+                        </label>
+                      )
+                    })}
+                  </div>
+                </details>
+              ))}
             </div>
           </div>
           {state && 'erro' in state && (
