@@ -78,7 +78,7 @@ Função atômica **`sf_integrar`** / **`sf_cancelar_integracao`** (migração `
    fluxo** da OP satisfeito **para o produto** — *registrado* (anterior sem status) ou *aprovado*
    (anterior com status). Se a Integração é o **1º posto** do fluxo → sem anterior → libera. Espelha
    a regra 4 do Lançamento (`sf_integrar` com `p_prev_posto`/`p_prev_precisa_aprovado`, erro
-   `SEQUENCIA`, migração `0035`). *Placa não valida faixa de SN (fidelidade ao legado).*
+   `SEQUENCIA`, migração `0035`).
 4. **Efeito**: cria o cabeçalho (`INT-...`, ATIVA) + itens + **registros posto=Integração**
    (1 do produto + 1 por placa) — o registro do produto **satisfaz o gate** do Lançamento.
 5. **Busca**: por SN de produto OU placa; só integrações **ATIVAS**.
@@ -90,6 +90,15 @@ Função atômica **`sf_integrar`** / **`sf_cancelar_integracao`** (migração `
    **Vazia = qualquer PMO.** Definida = a Integração só oferece/aceita placas dessas PMOs (dropdown
    esconde; `sf_integrar` barra `PLACA_FORA_DA_RECEITA` como rede de segurança). Só restringe QUAIS
    PMOs — sem quantidade nem exigir a lista completa.
+8. **N1 (verificação do SN da placa)**: o SN da placa deve estar na faixa (`sn_ini..sn_fim`) da OP
+   da placa — validado no cliente (aviso inline por linha, trava o botão) e na action `integrar`
+   (`serieDentroDaFaixa`, erro `Nº de Série da placa N fora da faixa da OP <op>`). **Gradual:** OP
+   sem faixa cadastrada não bloqueia. (N2 — placa produzida — e N3 — placa aprovada — ficam no
+   backlog; cobertura de rastreio das placas é irregular.)
+9. **Dropdown da OP da placa**: mostra `{op} ({qtd ?? '—'}/{concluídas})` + bolinha de status
+   (verde = Ativa, cinza = Finalizada), e **lista ativas + finalizadas** (restaura o comportamento do
+   legado `obterPMO_OPS`, que não filtrava status; a cascata do **produto** segue só-ativas).
+   `concluídas` vem da view `sf_ordem_resumo` (migração `0036`) via `listarOrdensParaIntegracao`.
 
 ## Regras da Manutenção (`/shopfloor/manutencao`)
 

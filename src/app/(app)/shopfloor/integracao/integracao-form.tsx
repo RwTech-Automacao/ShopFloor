@@ -10,13 +10,14 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { receitaPermite } from '@/modules/shopfloor/domain/receita'
+import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import {
   integrar,
   buscarIntegracao,
   cancelarIntegracao,
 } from '@/modules/shopfloor/application/integracao-actions'
 import type { IntegracaoDetalhe } from '@/modules/shopfloor/infra/integracao-repository'
-import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
+import type { OrdemIntegracao } from '@/modules/shopfloor/infra/lancamento-repository'
 
 interface LinhaPlaca {
   pmo: string
@@ -31,7 +32,7 @@ export function IntegracaoForm({
   ordens,
   podeCancelar,
 }: {
-  ordens: OrdemLancamentoLista[]
+  ordens: OrdemIntegracao[]
   podeCancelar: boolean
 }) {
   const [colaborador, setColaborador] = useState('')
@@ -48,8 +49,11 @@ export function IntegracaoForm({
   const [buscando, startBusca] = useTransition()
   const produtoRef = useRef<HTMLInputElement>(null)
 
-  // Cascata do PRODUTO: só OPs com Integração no fluxo
-  const ordensIntegraveis = useMemo(() => ordens.filter((o) => o.postos.includes('Integração')), [ordens])
+  // Cascata do PRODUTO: só OPs ativas com Integração no fluxo
+  const ordensIntegraveis = useMemo(
+    () => ordens.filter((o) => o.status.toUpperCase() !== 'FINALIZADA' && o.postos.includes('Integração')),
+    [ordens],
+  )
   const clientes = useMemo(() => [...new Set(ordensIntegraveis.map((o) => o.cliente))], [ordensIntegraveis])
   const pmos = useMemo(
     () => [...new Set(ordensIntegraveis.filter((o) => o.cliente === cliente).map((o) => o.pmo))],
@@ -71,11 +75,19 @@ export function IntegracaoForm({
     const receita = ordemSel?.componentes ?? []
     return todasPmos.filter((p) => receitaPermite(receita, p))
   }, [ordemSel, todasPmos])
-  function opsDoPmo(p: string) {
-    return ordens.filter((o) => o.pmo === p).map((o) => o.op)
+  // OPs (objetos) de um PMO de placa — todas (ativas + finalizadas), p/ o dropdown enriquecido.
+  function ordensDoPmo(p: string) {
+    return ordens.filter((o) => o.pmo === p)
   }
   function descricaoDe(p: string, o: string) {
     return ordens.find((x) => x.pmo === p && x.op === o)?.descricao ?? ''
+  }
+  // N1 (cliente): SN da placa fora da faixa da OP dela? (sem faixa → não acusa)
+  function snForaDaFaixa(l: LinhaPlaca): boolean {
+    if (l.sn.trim() === '' || l.pmo === '' || l.op === '') return false
+    const o = ordens.find((x) => x.pmo === l.pmo && x.op === l.op)
+    if (!o || o.sn_ini.trim() === '' || o.sn_fim.trim() === '') return false
+    return !serieDentroDaFaixa(o.sn_ini, o.sn_fim, l.sn)
   }
 
   function mudarCliente(v: string) {
@@ -110,7 +122,8 @@ export function IntegracaoForm({
   // Habilita só quando TODAS as linhas de placa têm SN (não deixa integrar pela metade).
   const valido =
     colaborador.trim() !== '' && ordemSel !== null && produtoSN.trim() !== '' &&
-    placas.length > 0 && placas.every((l) => l.sn.trim() !== '')
+    placas.length > 0 && placas.every((l) => l.sn.trim() !== '') &&
+    !placas.some(snForaDaFaixa)
 
   function onRegistrar() {
     if (!valido || enviando) return
@@ -235,14 +248,32 @@ export function IntegracaoForm({
                       <TableCell className="min-w-[110px]">
                         <Select value={l.op} onValueChange={(v) => atualizarPlaca(i, { op: v ?? '' })} disabled={l.pmo === ''}>
                           <SelectTrigger><SelectValue placeholder="OP" /></SelectTrigger>
-                          <SelectContent>{opsDoPmo(l.pmo).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                          <SelectContent>{ordensDoPmo(l.pmo).map((o) => (
+                            <SelectItem key={o.op} value={o.op}>
+                              <span className="flex items-center gap-1.5">
+                                <span className={`inline-block size-2 shrink-0 rounded-full ${o.status.toUpperCase() === 'FINALIZADA' ? 'bg-muted-foreground/50' : 'bg-green-500'}`} />
+                                {o.op}
+                                <span className="text-muted-foreground">({o.qtd ?? '—'}/{o.concluidas})</span>
+                              </span>
+                            </SelectItem>
+                          ))}</SelectContent>
                         </Select>
                       </TableCell>
                       <TableCell className="min-w-[160px]">
                         <Input value={descricaoDe(l.pmo, l.op)} readOnly disabled />
                       </TableCell>
                       <TableCell className="min-w-[160px]">
-                        <Input value={l.sn} onChange={(e) => atualizarPlaca(i, { sn: e.target.value })} placeholder="Bipe o SN da placa" autoComplete="off" />
+                        <Input
+                          value={l.sn}
+                          onChange={(e) => atualizarPlaca(i, { sn: e.target.value })}
+                          placeholder="Bipe o SN da placa"
+                          autoComplete="off"
+                          aria-invalid={snForaDaFaixa(l)}
+                          className={snForaDaFaixa(l) ? 'border-red-500 focus-visible:ring-red-500' : ''}
+                        />
+                        {snForaDaFaixa(l) && (
+                          <p className="mt-1 text-xs text-red-600">SN fora da faixa da OP.</p>
+                        )}
                       </TableCell>
                       <TableCell>
                         <button type="button" aria-label={`Remover placa ${i + 1}`} onClick={() => removerLinha(i)} disabled={placas.length <= 1} className="text-muted-foreground hover:text-red-600 disabled:opacity-30">
