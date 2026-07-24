@@ -1175,3 +1175,29 @@ ajustando). Tudo por subagent-driven-development (reviews de spec+qualidade por 
 - **Próximo:** o usuário segue testando/ajustando as telas; depois, **promover pro Prod** (aplicar 0028–0035 + merge;
   estratégia de dados em aberto — provável não bulk-importar OPs, só o catálogo de defeitos). Ver
   `memory/shopfloor-processo-modulo.md` e `docs/regras-de-negocio-shopfloor.md`.
+
+## 37. ShopFloor — Integração (N1 + info OP), limpeza de dados, refino do backlog e Tela de OP (2026-07-24)
+
+Continuação do ciclo teste-visual → ajuste. Branch `feat/shopfloor-lancamento`, migrações **0028–0036 só no Dev**.
+
+- **Integração — N1 + info da OP no dropdown** (migração `0036`): (1) **N1** — SN da placa validado contra a
+  faixa da OP da placa (cliente avisa + action `serieDentroDaFaixa`; **gradual**: OP sem faixa não bloqueia;
+  N2/N3 no backlog). (2) **Dropdown da OP da placa** mostra `{op} (qtd/concluídas)` + **bolinha** (verde
+  Ativa/cinza Finalizada) e passa a listar **ativas + finalizadas** (restaura o legado `obterPMO_OPS`, que não
+  filtrava status; o **produto** segue só-ativas). `concluídas` = SNs distintos no **posto final** do fluxo, via
+  view `sf_ordem_resumo` (security_invoker). **Nota (dado, não bug):** `concluídas=0` quando o posto final
+  cadastrado não tem histórico (ex. PMOB76/8236 tem 6.698 registros mas o final config "Inspeção NQA" está vazio).
+- **Limpeza `LINCE → Lince`** no Dev (6 OPs + 670 integrações) — some a duplicata do cliente na cascata.
+- **Refino + priorização do backlog** (grande dump de ideias do usuário): **Tier 1** = tela de OP com filtros+
+  scroll (padrão Recebimento) + olhinho "ver fluxo"; **Tier 2** = Burn-in entrada/saída+duração, análise de telas
+  redundantes; **Tier 3 (big rock)** = **RBAC por módulo** (perfil define módulos + permissões por módulo; UI
+  modais/accordions — resolver antes do Prod multi-perfil); **Diferido** = diagrama n8n do fluxo, tela de
+  Registros/filtro por módulo no log, responsividade (após funcional), Extra máquina (aguarda definição). Análise
+  de redundância (1º passe): a única real é a "Busca por SN" duplicada Integração×Pesquisa (já no backlog mover).
+- **Git Flow × worktree** (discutido): recomendação = **GitHub Flow leve** (o que já fazemos: 1 branch/feature →
+  merge no `main`=Prod) + **worktrees** pra paralelizar (2 implementações ao mesmo tempo, merge de volta na branch
+  de integração — nada vai pra `main` até promover). Git Flow completo (develop/release) = cerimônia demais por ora.
+- **Tier 1 entregue (na branch):** tela de **Ordem de Produção** ganhou barra de filtros (Cliente/Status/busca
+  PMO·OP·descrição, client-side ~130 OPs), **header fixo + scroll** (`max-h-[65vh]`), e **olhinho 👁** por linha
+  abrindo modal com o **fluxo em texto+setas**. Extraído `OrdensLista` (client) da page + `FluxoBotao`; reusa
+  `OrdemForm`/`ExcluirOrdemBotao`. tsc/lint/test verdes (255/255). Commit 3220c61 — **falta review + push**.
