@@ -223,3 +223,27 @@ export async function listarFaixasOrdens(): Promise<{ pmo: string; op: string; s
   if (error) throw error
   return data as { pmo: string; op: string; sn_ini: string; sn_fim: string }[]
 }
+
+export interface SfBurninArgs {
+  p_evento: 'entrada' | 'saida'
+  p_pmo: string
+  p_op: string
+  p_cliente: string
+  p_colaborador: string
+  p_sn: string
+  p_sn_norm: string
+  p_status: string
+  p_prev_posto: string
+  p_prev_precisa_aprovado: boolean
+  p_exige_manutencao: boolean
+  p_linhas: { codigo_defeito: string; posicao: string; tipo_defeito: string }[]
+}
+
+export async function chamarSfBurnin(
+  args: SfBurninArgs,
+): Promise<{ ok: boolean; erro?: string; evento?: string }> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_burnin', args)
+  if (error) return { ok: false, erro: 'ERRO_INTERNO' }
+  return data as { ok: boolean; erro?: string; evento?: string }
+}
