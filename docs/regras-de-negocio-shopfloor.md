@@ -202,5 +202,36 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
   bloqueia — senão quebraria as OPs migradas sem faixa). Futuro possível: **exigir faixa em toda OP**
   (tornar o N1 obrigatório, sem o "escape" gradual) e/ou tornar o Nº de Série obrigatório onde hoje é
   opcional. Decidir quando a cobertura de faixas estiver boa.
+- **Cadastro de OP — filtros + scroll (padrão Recebimento)** *(usuário, 2026-07-24)*: a tela de OP é
+  tabela crua; com 130+ OPs (crescendo) precisa de filtros (cliente/PMO/status/busca) + header fixo/
+  scroll, reusando o padrão da tela de processos do Recebimento. **P1.**
+- **Ver o fluxo de postos da OP (olhinho na linha)** *(usuário, 2026-07-24)*: botão/ícone que abre o
+  fluxo daquela OP. Duas ambições: (a) **texto + setas** (`Inicial → SMD → Teste → …`) — barato, num
+  modal/expansão; (b) **diagrama de blocos estilo n8n** — bem maior. Fazer (a) primeiro; (b) fica junto
+  do "flow-builder visual" (montador de fluxo) já sonhado pro Cadastro.
+- **Burn-in com entrada/saída + duração** *(usuário, 2026-07-24)*: o posto Burn-in deve registrar
+  **hora de entrada** e **hora de saída** (2 registros). Calcular quantas horas a peça ficou; se só
+  houver entrada, calcular **há quanto tempo está lá** (tempo decorrido ao vivo). Muda o modelo do
+  posto (hoje Burn-in é só Aprovado/Reprovado). Feature própria (spec).
+- **Permissões de admin por módulo (RBAC granular)** *(usuário, 2026-07-24)*: hoje as permissões são
+  flags globais no perfil. Evoluir para: um **perfil** define **quais módulos** acessa e **quais
+  permissões dentro de cada módulo** (UI com modais + accordions). Mudança **estrutural** (perfis,
+  RLS, telas de auth) — precisa de design próprio; idealmente resolver **antes** de abrir o Prod a
+  vários perfis. Big rock.
+- **Tela de Registros / log por módulo** *(usuário, 2026-07-24; relacionado ao item "Tela de
+  Registros" acima)*: os `sf_registros` (produção) são dado diferente do **log de ações de usuário**
+  (auditoria) que já existe. Avaliar: (a) uma tela **Registros** dedicada no módulo (produção,
+  filtrável); e/ou (b) adicionar **filtro por módulo** no log de usuários existente (isso vale pra
+  auditoria multi-módulo). Não misturar produção com auditoria sem decidir.
+- **Análise de telas redundantes** *(usuário, 2026-07-24)*: revisar se telas se sobrepõem (ex.:
+  Pesquisa-grade × Dashboard; Busca-por-SN da Integração × Pesquisa). Análise barata; fazer cedo,
+  informa as outras decisões.
+- **Responsividade das telas do módulo** *(usuário, 2026-07-24)*: fazer **depois** que o funcional
+  estiver travado (evita retrabalho de layout).
+- **Extra máquina — "outras opções"** *(usuário; definição pendente)*: hoje só passagem; ganhará
+  opções — o usuário vai verificar como e detalhar.
+- **Processo de dev — Git Flow + worktree** *(usuário, 2026-07-24)*: avaliar adotar. Ver a análise
+  na conversa (recomendação: modelo leve tipo GitHub Flow + worktrees pra trabalho paralelo; Git Flow
+  completo com develop/release provavelmente é cerimônia demais pro tamanho atual).
 - Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
   funções); `gateSatisfeito` morto em postos.ts.
