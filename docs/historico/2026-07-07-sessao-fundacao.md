@@ -1222,3 +1222,25 @@ Feature nova (brainstorm→spec→plano→subagents; migração `0037` só no De
   passou a carregar `data_hora`); +2 testes. 266 testes verdes. Smoke da view no Dev ok (entrada→painel, saída→sai).
 - **Só informativo** (sem tempo-alvo/limite — no backlog). Task 3 (action+form) implementada direto pelo controller
   (classificador de Agent/Bash caiu no meio) e escrutinada no review final.
+
+## 39. RBAC por módulo — Fase 1 (2026-07-24)
+
+Permissões de perfil passam a ser **por módulo** (antes: flags globais). Fase escolhida pelo usuário:
+**Fase 1 = modelo + tela + enforcement no app**; RLS por módulo fica pra Fase 2. Migrações `0038`/`0039` só no Dev.
+
+- **Modelo:** tabela `perfil_permissao(perfil_id, modulo, permissao)` = **fonte da verdade** granular; as
+  colunas `pode_*` de `perfis` viram **derivadas** (OR dos módulos) — o **RLS segue lendo os `pode_*`**, intacto.
+  Migração popula os grants a partir dos flags atuais (preserva o comportamento; Admin=tudo, Consulta=só ver).
+- **Domínio:** `auth/domain/modulos.ts` (catálogo: recebimento/shopfloor/sistema × permissões); `podeNoModulo`;
+  `Perfil.porModulo`; `mapearPerfil` monta `porModulo` do embed `perfil_permissao`; sessão carrega os grants.
+- **Tela de perfil:** accordions por módulo (checkboxes por permissão, nome `<modulo>.<permissao>`); a action
+  grava os grants e **recalcula os `pode_*`** (OR) — RLS continua correto.
+- **Enforcement no app:** menu + ~40 guards de página/action trocam `podeFazer` → `podeNoModulo('<modulo>', X)`.
+  Insight que reduziu o risco: só `visualizar` e `administrar` são compartilhados entre módulos; o resto
+  (lancar/importar/editar/…) já é de um módulo só → conversão idêntica.
+- **Review final (opus): sem escalação de privilégio.** Achou 1 lockout latente (a policy de SELECT de
+  `perfil_permissao` exigia `visualizar` → perfil só-lançar não carregava os grents) → **corrigido** na
+  migração `0039` (select público, como `perfis`). Findings menores (leitura de usuários/perfis por URL
+  direta só com guard global; auto-lockout no `validarEdicaoPerfil`; sem transação real no save) → **backlog Fase 2**.
+- **Fase 2 (backlog):** tornar as ~82 políticas de RLS conscientes de módulo (`tem_permissao('shopfloor.administrar')`)
+  — só aí a separação vira **real no banco**. Hoje é de interface/uso.
