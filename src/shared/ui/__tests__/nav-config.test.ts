@@ -10,6 +10,7 @@ const perfil = (over: Partial<Perfil['permissoes']>): Perfil => ({
     lancar: false,
     ...over,
   },
+  porModulo: { recebimento: {}, shopfloor: {}, sistema: {} },
 })
 
 describe('itensVisiveis', () => {
