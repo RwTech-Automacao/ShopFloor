@@ -1201,3 +1201,24 @@ Continuação do ciclo teste-visual → ajuste. Branch `feat/shopfloor-lancament
   PMO·OP·descrição, client-side ~130 OPs), **header fixo + scroll** (`max-h-[65vh]`), e **olhinho 👁** por linha
   abrindo modal com o **fluxo em texto+setas**. Extraído `OrdensLista` (client) da page + `FluxoBotao`; reusa
   `OrdemForm`/`ExcluirOrdemBotao`. tsc/lint/test verdes (255/255). Commit 3220c61 — **falta review + push**.
+
+## 38. Burn-in com entrada/saída + tempo (2026-07-24)
+
+Feature nova (brainstorm→spec→plano→subagents; migração `0037` só no Dev). O posto **Burn-in** deixa de ser
+1 registro com status e passa a ter **lifecycle entrada/saída**.
+
+- **Modelo (sem migração na `sf_registros`):** entrada = registro `posto='Burn-in'` `status=''`; saída =
+  `status` Aprovado/Reprovado (+1 registro por defeito). Ciclo aberto = último evento de Burn-in da peça é
+  `status=''`. Duração = saída−entrada; aberto = agora−entrada.
+- **RPC dedicada `sf_burnin`** (não toca `sf_lancar`): entrada barra `JA_DENTRO`/`JA_APROVADO`/`SEM_MANUTENCAO`
+  + trava de sequência; saída exige entrada aberta (`SEM_ENTRADA`) + status. Posto seguinte só libera com a
+  **saída Aprovado** (gate genérico já funciona). Domínio `burnin.ts` (`pareaBurnin`/`estaAberto`/`formatarDuracao`, TDD).
+- **Lançamento:** posto=Burn-in mostra seletor **Entrada/Saída** (entrada neutra; saída pede Aprovado/Reprovado+defeito).
+- **Painel novo `/shopfloor/burn-in`** (perm `visualizar`): peças com entrada aberta + **tempo decorrido ao vivo**
+  (view `sf_burnin_aberto`, `DISTINCT ON` último evento, `security_invoker`). **Pesquisa:** coluna Duração por ciclo.
+  **Grade:** célula "Em andamento".
+- **Review final (opus) pegou 1 bug Important:** a grade detectava "em andamento" por contagem (entradas>saídas),
+  que errava com reprova de N defeitos + re-entrada → **corrigido** com paridade real por `dataHora` (`RegistroGrade`
+  passou a carregar `data_hora`); +2 testes. 266 testes verdes. Smoke da view no Dev ok (entrada→painel, saída→sai).
+- **Só informativo** (sem tempo-alvo/limite — no backlog). Task 3 (action+form) implementada direto pelo controller
+  (classificador de Agent/Bash caiu no meio) e escrutinada no review final.
