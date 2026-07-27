@@ -1286,3 +1286,23 @@ testado só no Dev). Mesmo padrão da 2a.
   dormentes) → no backlog decidir criar as telas ou remover.
 - 0050/0052 = objetos de debug (dump de pg_policies), já removidos. Migrações do módulo agora **0028–0052**.
 - **Falta Fase 2c** (Sistema) + storage no Prod → aí o RBAC fica 100% e dá pra remover a `tem_permissao(perm)` antiga.
+
+## 42. RBAC Fase 2c — RLS por módulo (Sistema) — RBAC COMPLETO (2026-07-24)
+
+Última fase do RBAC: RLS por módulo nas tabelas de **Sistema** (`usuarios`, `perfis`, `perfil_permissao`, `logs`).
+Migração `0054`. Com isso o RBAC por módulo fica **completo** (Fase 1 app + 2a sf_* + 2b Recebimento + 2c Sistema).
+
+- 9 políticas → `tem_permissao('sistema','administrar')`. **`logs_select` restrito a admin de sistema** (era
+  'visualizar' — decisão do usuário). **Preservado o crítico:** `id = auth.uid()` no `usuarios_select_self`
+  (cada um lê a própria linha → **login/getSessao não quebra**) e `sistema = false` no delete de perfis.
+  **Não tocadas:** `perfis_select`/`perfil_permissao_select` (using(true), getSessao), `logs_insert` (registrarLog).
+- **Validado com login real:** admin de **Recebimento** (sem sistema) lê **só a própria** linha de usuarios,
+  **não cria perfil (403 — escalação fechada)**, não lê logs; admin de **Sistema** gerencia tudo. (Antes, com
+  `pode_administrar` global, um admin de Recebimento conseguiria gerenciar usuários/perfis!)
+- **Review (opus): READY, sem escalação/lockout** — auth intacto; o seed do `0038` garante que os admins atuais
+  mantêm `sistema.administrar` (sem lockout na migração).
+- **1-arg `tem_permissao(perm)` mantida** (os 4 RPCs de `lancar` ainda a usam — `pode_lancar ≡ shopfloor.lancar`).
+  Pra removê-la um dia, migrar esses RPCs (reproduzir os corpos → deferido).
+- **Falta só (na promoção do Prod):** as políticas de **storage** (bucket `anexos-processos`, só no Prod) →
+  `recebimento.*`; e confirmar que o `0038` (seed dos grants) rodou no Prod **antes** do `0054` (senão admin
+  travaria). Migrações do módulo agora **0028–0054**.

@@ -195,13 +195,40 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 4. **Exclusão bloqueada** se a OP já tem lançamentos.
 5. Status Ativa/Finalizada — OPs FINALIZADAS somem das cascatas do Lançamento/Integração.
 
-## Permissões
+## Permissões — relação completa (por módulo)
 
-| Ação | Permissão |
+Desde o **RBAC por módulo** (2026-07-24), as permissões são **por módulo** (`perfil_permissao`). Um perfil
+concede permissões dentro de cada módulo de forma independente. O RLS do banco é consciente de módulo
+(`tem_permissao('<modulo>','<perm>')`) — Fase 1 (app) + 2a (`sf_*`) + 2b (Recebimento) + 2c (Sistema).
+
+### Módulo `shopfloor` (Fluxo de Processos)
+| Permissão | O que deixa fazer |
 |---|---|
-| Lançar, Integrar, Buscar integração | `lancar` |
-| Cadastro de OP, Cancelar integração | `administrar` |
-| Ver telas/relatórios | `visualizar` |
+| `visualizar` | Ver **Pesquisa** (histórico por SN), **Grade**, **Dashboard**, painel **Burn-in**. Ler as tabelas `sf_*` (OPs, registros, integrações, defeitos). |
+| `lancar` | **Lançar** peças por posto; **Integrar** (vincular produto↔placas) e buscar integração; **Manutenção** (registrar reparo); **Burn-in** entrada/saída. (RPCs `sf_lancar`/`sf_integrar`/`sf_burnin`/`sf_registrar_reparo`.) |
+| `administrar` | **Cadastro de OP** (criar/editar/excluir OP, fluxo de postos, receita); **cancelar Integração**. |
+
+### Módulo `recebimento`
+| Permissão | O que deixa fazer |
+|---|---|
+| `visualizar` | Ver processos, importações, anexos, etiquetas geradas (leitura). |
+| `importar` | Importar planilhas de processos; criar/gerir **padrões de importação**; (com `editar`) inserir processos. |
+| `editar` | Criar/editar **processos** (nos status aberto/em conferência); gerir **anexos** do processo. |
+| `finalizar` | **Finalizar** um processo (status → finalizado); criar um processo já como finalizado. |
+| `editar_finalizado` | Editar um processo que **já está finalizado**. |
+| `excluir` | **Apagar** um processo (DELETE). ⚠️ **Sem UI hoje** — guard dormente (ver backlog). |
+| `gerar_etiqueta` | **Gerar etiquetas** dos processos. |
+| `administrar` | Gerir a **configuração** do Recebimento: listas e itens de lista, colunas da lista, campos, critérios de fornecedor, tabela NQA, padrões de importação. |
+
+### Módulo `sistema`
+| Permissão | O que deixa fazer |
+|---|---|
+| `administrar` | Gerir **usuários** (criar/editar/desativar/excluir), gerir **perfis** e suas permissões (grants), e ver o **log de auditoria** (`logs`). Único que abre a área de Sistema. |
+
+**Notas:** cada usuário sempre lê a **própria** linha de `usuarios` (login funciona sem `sistema.administrar`).
+`lancar` só existe no `shopfloor`; `importar`/`editar`/`finalizar`/`editar_finalizado`/`excluir`/`gerar_etiqueta`
+só no `recebimento`; `visualizar` e `administrar` existem em vários módulos (é por isso que a separação por
+módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
 
 ## Onde as regras vivem (mapa rápido)
 
