@@ -1336,3 +1336,37 @@ Migração `0054`. Com isso o RBAC por módulo fica **completo** (Fase 1 app + 2
     `recebimento.*` (hoje usam `tem_permissao('visualizar'/'editar')` global → vazam arquivos p/ só-ShopFloor).
   - **Merge → deploy** (Vercel Prod), depois **smoke pós-deploy** (Recebimento OK + ShopFloor escondido).
   - **Rollback:** código = redeploy do build anterior na Vercel; banco = restaurar os dumps (só se RLS travar).
+
+## 44. PROMOÇÃO PRO PROD — CONCLUÍDA (ShopFloor no ar, dark launch) (2026-07-27)
+
+Retomada e finalizada a promoção. Passo a passo executado (usuário rodou os comandos com segredos no
+próprio terminal; eu guiei e verifiquei as saídas não-secretas):
+
+- **Backup (Passo 1):** `pg_dump -Fc` (client PG **17.10**, instalado via PGDG — codename Mint "zena" →
+  usar base `noble`). Dump de **383K / 49 tabelas** (`prod_backup_20260727_1423.dump`), verificado com
+  `pg_restore -l`. Conexão via **Session pooler** (IPv4, `aws-1-sa-east-1.pooler.supabase.com:5432`,
+  user `postgres.ykwkacfviarhfmxeisqk`). Senha do banco resetada p/ alfanumérica (evita percent-encode).
+  ⚠️ **Segredos nunca no chat** — ficaram só no shell do usuário (`export PROD='...'`). `*.dump` no gitignore.
+- **Migrações (Passo 2):** `supabase db push --db-url "$PROD"` aplicou **0028–0056** sem erro (warning de
+  Docker é normal). **Verificação de lockout (crítica):** os grants foram semeados certo — `Administrador` e
+  `Supervisor` com `sistema=1`/`recebimento=8`/`shopfloor=3` (admins mantêm gestão de usuários/perfis);
+  perfis de operação escopados mantêm acesso. **Sem lockout.** (Curiosidade: o Prod tem perfil literal
+  'Consulta', então o `0056` só deixou à prova de renomeação — inofensivo.)
+- **Storage (Passo 3, migração `0057`):** capturadas as 3 políticas reais do bucket `anexos-processos`
+  (`anexos_obj_select/insert/delete`) e reescritas de `tem_permissao('visualizar'/'editar')` global →
+  `tem_permissao('recebimento', …)`. `postgres` tinha permissão no storage (sem `must be owner`). Confirmado
+  via `pg_policies`. Banco do Prod **100% migrado (0028–0057)** — RBAC por módulo em todas as camadas.
+- **Verificação local pré-deploy:** 266 testes ✅; `next build` + TypeScript + 31 rotas ✅. (OOM na 1ª
+  tentativa era só RAM local — `NODE_OPTIONS=--max-old-space-size=4096` resolveu.)
+- **Merge → deploy (Passo 4):** feito pelo **fluxo de PR** (jeito profissional): push da branch → **PR #1**
+  `feat/shopfloor-lancamento` → `main` → Vercel gerou **Preview** (smoke ok) → **merge commit** → deploy de
+  **Production** (zero-downtime). Janela de baixa utilização confirmada por `auth.sessions` (0 ativos/30min).
+- **Smoke pós-deploy (Passo 5):** Recebimento ok, ShopFloor **escondido por permissão**. "Fluxo de Processos"
+  liberado **só pro gestor da área** (visualização), rollout conversado à parte.
+- **Versão na tela Sobre:** revertida **1.1.0 → 1.0.0** — só sobe pra 1.1.0 quando a função for **liberada
+  de fato** pra uso (hoje é dark launch).
+- **A investigar (não-bloqueante):** o usuário relatou que **alguns perfis apareceram com config "padrão do
+  sistema"** na tela de perfis e ele **corrigiu manualmente**. Provável efeito da derivação **global→por-módulo**
+  (o seed `0038` inferiu grants por módulo a partir dos `pode_*` globais; o que era global vira o mesmo em
+  cada módulo, o que pode divergir da intenção por-módulo). Reconferir a saúde dos grants e a tela de perfis
+  (leitura/derivação `salvarPerfil`).
