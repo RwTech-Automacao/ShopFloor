@@ -315,5 +315,10 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   **`cancelar`** (status → `cancelado`) **também não tem UI hoje** (confirmado pelo usuário). **Decidir:**
   criar as telas de excluir/cancelar processo, ou remover a permissão/policy órfã. É do módulo Recebimento;
   registrado aqui porque surgiu ao mexer no RLS dele. (Na Fase 2b, `excluir` foi mapeada p/ `recebimento.excluir`.)
-- Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
-  funções); `gateSatisfeito` morto em postos.ts.
+- **Higiene (ENTREGUE 2026-07-24):** removidos código morto (`gateSatisfeito`+`SnapshotPosto` em
+  postos.ts, `burnin-actions.ts`, `nav-config.ts`) e a **policy de INSERT direto em `sf_registros`**
+  (migração `0055`) — toda escrita passa pelos RPCs `security definer`; a policy era brecha (permitia
+  forjar registro cru pulando as validações). Confirmado: INSERT direto → 403.
+- **Higiene restante (opcional, pré-Prod):** follow-ups menores dos reviews — guard por página em
+  `configuracoes/{usuarios,perfis,logs}` (hoje só o guard global do layout + RLS de backstop);
+  `validarEdicaoPerfil` usa OR global; `salvarPerfil` grava `pode_*` e grants sem transação real.
