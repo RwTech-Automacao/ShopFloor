@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import {
   limparFotosDoMes as limparFotosDoMesRepo,
@@ -16,7 +16,7 @@ export type ResultadoLimpeza = { ok: true; removidos: number } | { ok: false; er
 /** Fotos de um mês para montar o ZIP no cliente. Gate `administrar`. */
 export async function obterFotosDoMes(mes: string): Promise<ResultadoExport> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { ok: false, erro: 'Você não tem permissão para exportar fotos.' }
   }
   try {
@@ -31,7 +31,7 @@ export async function obterFotosDoMes(mes: string): Promise<ResultadoExport> {
 /** Apaga as fotos de um mês do Storage e da tabela. Gate `administrar`. */
 export async function limparFotosDoMes(mes: string): Promise<ResultadoLimpeza> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { ok: false, erro: 'Você não tem permissão para limpar fotos.' }
   }
   let removidos: number

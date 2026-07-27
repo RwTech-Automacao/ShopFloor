@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard • ShopFloor</title>
+  <style>
+    :root{
+      --content-max: 1080px;    /* mesma largura do dashboard */
+      --sf-blue: #1E88E5;
+      --sf-blue-100:#E8F2FF;
+      --sf-blue-200:#DBEAFE;
+    }
+
+    body { margin: 0; height: 100vh; overflow-y: auto; overflow-x: hidden; }
+
+    /* ====== HEADER + NAV (padrão do projeto) ====== */
+    .sf-header{ display:flex; justify-content:center; }
+    .sf-header .nav-shell{
+      width: calc(100% - 32px);
+      max-width: var(--content-max);
+      margin: 16px auto 8px;
+      background:#fff;
+      border:1px solid var(--sf-blue-200);
+      border-radius:12px;
+      box-shadow:0 6px 24px rgba(0,0,0,.08);
+      padding:12px 16px 14px;
+      font-family: 'Segoe UI', Roboto, sans-serif;
+    }
+    .topnav{
+      display:flex; flex-wrap:wrap; justify-content:center; gap:10px;
+    }
+    .topnav a{
+      text-decoration:none; color:#222; font-weight:700;
+      padding:6px 8px; border-radius:999px;
+      border:1px solid transparent; background:#fff;
+      transition:background .15s, border-color .15s, color .15s;
+    }
+    .topnav a:hover{ background:#f7f7f7; }
+    .topnav a.active{
+      background:var(--sf-blue-100);
+      border-color:var(--sf-blue-200);
+      color:var(--sf-blue);
+    }
+    .brandline{
+      margin-top:26px;
+      display:flex; align-items:center; justify-content:center;
+      gap:14px; flex-wrap:wrap;
+    }
+    .brandline .brand{ height:48px; width:auto; object-fit:contain; }
+    .brandline .page-title{ margin:0; font-size:22px; font-weight:800; }
+    @media (max-width:740px){
+      .brandline .brand{ height:28px; }
+    }
+
+    /* ====== CONTAINER do dashboard (mantive os seus estilos) ====== */
+    .container{
+      position: relative;
+      width: min(100vw, var(--content-max));
+      min-height: 100vh;
+      background: #ffffff;
+      margin: 0 auto 24px;
+      padding: 24px;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Roboto, sans-serif;
+    }
+
+    /* scrollbar opcional */
+    .container::-webkit-scrollbar { width: 10px; }
+    .container::-webkit-scrollbar-track { background: #f1f1f1; }
+    .container::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 6px; }
+
+    /* logo antiga do canto — se ainda usar */
+    .logo{
+      position: absolute;
+      top: 12px; right: 12px;
+      height: 56px; width: auto;
+    }
+
+    h2{
+      text-align: left;
+      font-size: clamp(18px, 2.4vw, 32px);
+      margin: 0 0 16px 0;
+    }
+
+    .filtros { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 4px; }
+    .campo { flex: 1 1 200px; display: flex; flex-direction: column; }
+    .campo label { font-weight: 600; margin-bottom: 4px; font-size: 16px; }
+    .campo input, .campo select {
+      padding: 8px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box;
+    }
+    button { margin-top: 8px; padding: 10px 16px; font-size: 16px; border: none; border-radius: 8px; background: #1E88E5; color: #fff; cursor: pointer; }
+
+    #lastUpdated { font-size: 12px; color: #666; margin-bottom: 16px; }
+    #tabelaDashboard { overflow-x: auto; margin-top: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    .status-cell { font-weight: bold; }
+    .row-produced td { background: #d4edda; }
+    .row-remaining td { background: #fff7cc; }
+
+    .gauges-container{
+      display:grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 2px;
+      margin-top:24px;
+      justify-items:center;
+    }
+    .gauge-box { display:flex; flex-direction:column; align-items:center; width:100%; max-width: 280px; }
+    .gauge-title{ font-weight:600; text-transform:uppercase; margin:0; font-size:16px; text-align:center; line-height: 1.1; }
+    .gauge-percent{ font-size:20px; font-weight:bold; margin:0; line-height: 1.1; }
+
+    @media (max-width: 1024px){
+      .gauges-container{ grid-template-columns: repeat(2, 1fr); }
+      .logo{ height:48px; }
+    }
+    @media (max-width: 600px){
+      .gauges-container{ grid-template-columns: 1fr; }
+      .gauge-box{ max-width: 320px; }
+      .logo{ height:40px; }
+      .campo{ flex:1 1 100%; }
+      th,td{ padding:6px; }
+    }
+  </style>
+
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+</head>
+<body>
+
+  <!-- ===== HEADER + NAV ===== -->
+  <header class="sf-header">
+    <div class="nav-shell">
+      <nav class="topnav" id="sf-nav">
+        <a data-page="formulario">Lançamento</a>
+        <a data-page="integracao">Integração</a>
+        <a data-page="manutencao">Manutenção</a>
+        <a data-page="dashboard">Dashboard</a>
+        <a data-page="pesquisa">Pesquisa</a>
+      </nav>
+      <div class="brandline">
+        <img class="brand" src="https://enterplak.com.br/wp-content/uploads/2024/09/logo-5.png" alt="Enterplak">
+        <h1 class="page-title">Dashboard do ShopFloor</h1>
+      </div>
+    </div>
+  </header>
+
+  <script>
+    (function initNav(){
+      const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwNyHVxF6I30zfRS2uRYvmuNSZKsIJor1nK_TKXHj9BAis_w54-7iusgF7p4jjK1JdAoA/exec';
+      const params = new URLSearchParams(location.search);
+      const current = (params.get('page') || 'dashboard').toLowerCase();
+
+      document.querySelectorAll('#sf-nav a[data-page]').forEach(a=>{
+        const pg = a.getAttribute('data-page');
+        a.href = WEBAPP_URL + '?page=' + encodeURIComponent(pg);
+        if (pg.toLowerCase() === current) a.classList.add('active');
+      });
+
+      const titles = {
+        formulario:'Lançamento • ShopFloor',
+        integracao:'Integração • ShopFloor',
+        manutencao:'Manutenção • ShopFloor',
+        dashboard :'Dashboard • ShopFloor',
+        pesquisa  :'Pesquisa • ShopFloor'
+      };
+      document.title = titles[current] || 'ShopFloor';
+    })();
+  </script>
+<!-- /NAV SUPERIOR -->
+
+  <div class="container">
+    <div class="filtros">
+      <div class="campo"><label>Cliente:</label><select id="filtroCliente" onchange="carregarPMOsFiltro()"><option value="">Selecione</option></select></div>
+      <div class="campo"><label>PMO:</label><select id="filtroPMO" onchange="carregarOPsFiltro()"><option value="">Selecione</option></select></div>
+      <div class="campo"><label>Descrição Placa:</label><input type="text" id="descPlaca" disabled></div>
+      <div class="campo"><label>OP:</label><select id="filtroOP" onchange="atualizarDashboard()"><option value="">Selecione</option></select></div>
+      <div class="campo"><label>Data Início:</label><input type="date" id="dataInicio" onchange="atualizarDashboard()"></div>
+      <div class="campo"><label>Data Fim:</label><input type="date" id="dataFim" onchange="atualizarDashboard()"></div>
+      <button id="btnAtualizar" onclick="atualizarDashboard()">Atualizar</button>
+    </div>
+    <div id="lastUpdated">Última atualização: n/a</div>
+    <div id="tabelaDashboard"></div>
+    <div class="gauges-container" id="gauges"></div>
+  </div>
+  <script>
+    google.charts.load('current',{packages:['corechart']});
+    google.charts.setOnLoadCallback(init);
+
+    let lastDashboardData = null;  // guarda o último payload para redesenhar
+    window.addEventListener('resize', () => {
+    if (lastDashboardData) drawGauges(lastDashboardData);
+    });
+
+    let clientPmoMap = {}, pmoOpsMap = {}, pmoDescMap = {};
+
+    const postosPadrao = [
+      "Inicial","Inspeção SPI","Inspeção SMD","Montagem PTH","Inspeção PTH","Teste","Integração","Teste Final",
+      "Inspeção Final","Embalagem","Inspeção NQA","Manutenção"
+     ];
+
+    function init() {
+      google.script.run.withSuccessHandler(buildMaps).obterCLIENTE_PMO_OPS();
+      setInterval(()=>atualizarDashboard(true), 1 * 60 * 1000);
+    }
+    function buildMaps(data) {
+      data.forEach(([cliente,pmo,op,descricao]) => {
+        clientPmoMap[cliente] = clientPmoMap[cliente]||[];
+        if (!clientPmoMap[cliente].includes(pmo)) clientPmoMap[cliente].push(pmo);
+        pmoOpsMap[pmo] = pmoOpsMap[pmo]||[];
+        if (!pmoOpsMap[pmo].includes(op)) pmoOpsMap[pmo].push(op);
+        pmoDescMap[pmo] = descricao;
+      });
+      const selC = document.getElementById('filtroCliente');
+      selC.innerHTML = '<option value="">Selecione</option>';
+      Object.keys(clientPmoMap).forEach(c => selC.append(new Option(c,c)));
+    }
+    function carregarPMOsFiltro() {
+      const cliente = document.getElementById('filtroCliente').value;
+      const selP = document.getElementById('filtroPMO');
+      selP.innerHTML = '<option value="">Selecione</option>';
+      if (clientPmoMap[cliente]) clientPmoMap[cliente].forEach(p => selP.append(new Option(p,p)));
+      document.getElementById('descPlaca').value = '';
+      document.getElementById('filtroOP').innerHTML = '<option value="">Selecione</option>';
+      document.getElementById('lastUpdated').textContent = 'Última atualização: n/a';
+    }
+    function carregarOPsFiltro() {
+      const pmo = document.getElementById('filtroPMO').value;
+      const selO = document.getElementById('filtroOP');
+      selO.innerHTML = '<option value="">Selecione</option>';
+      if (pmoOpsMap[pmo]) pmoOpsMap[pmo].forEach(o => selO.append(new Option(o,o)));
+      document.getElementById('descPlaca').value = pmoDescMap[pmo]||'';
+      document.getElementById('lastUpdated').textContent = 'Última atualização: n/a';
+    }
+
+    function setAtualizando(on){
+     const b = document.getElementById('btnAtualizar');
+      if (!b) return;
+      b.disabled = !!on;
+      b.textContent = on ? 'Atualizando...' : 'Atualizar';
+    }
+
+  function atualizarDashboard(silent){
+  const cliente = document.getElementById('filtroCliente').value;
+  const pmo     = document.getElementById('filtroPMO').value;
+  const op      = document.getElementById('filtroOP').value;
+  const inicio  = document.getElementById('dataInicio').value;
+  const fim     = document.getElementById('dataFim').value;
+
+  // só ativa o loading via botão quando não for "silencioso"
+  if (!cliente || !pmo || !op) { if (!silent) setAtualizando(false); return; }
+  if (!silent) setAtualizando(true);
+
+  google.script.run
+    .withSuccessHandler(data=>{
+      renderDashboard(data);
+      const now = new Date();
+      document.getElementById('lastUpdated').textContent =
+        'Última atualização: ' + now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
+      if (!silent) setAtualizando(false);
+    })
+    .withFailureHandler(err=>{
+      console.error('Falha ao atualizar dashboard:', err);
+      if (!silent) setAtualizando(false);
+    })
+    .getDashboardData(inicio, fim, pmo, op);
+ }
+
+
+    function renderDashboard(data) {
+      const cont=document.getElementById('tabelaDashboard');
+      let html='<table><thead><tr><th>Posto</th>';
+      postosPadrao.forEach(p=>html+=`<th>${p}</th>`);
+      html+='</tr></thead><tbody>';
+      html+='<tr class="row-produced"><td>Produzido</td>';
+      postosPadrao.forEach(p=>html+=`<td class="status-cell">${data.counts[p]||0}</td>`);
+      html+='</tr><tr class="row-remaining"><td>Faltam</td>';
+      postosPadrao.forEach(p=>{
+       const aplicavel = data.aplicMap ? !!data.aplicMap[p] : true;   // Manutenção vem true do backend
+       const falta = aplicavel ? Math.max((data.totalRequired||0) - (data.counts[p]||0), 0) : 0;
+       html += `<td class="status-cell">${falta}</td>`;
+      });
+      html+='</tr></tbody></table>';
+      cont.innerHTML=html;
+      lastDashboardData = data;   // salva para redimensionar depois
+      drawGauges(data);
+    }
+
+    function drawGauges(payload){
+  const gc = document.getElementById('gauges');
+  gc.innerHTML = '';
+  postosPadrao.forEach((p,i)=>{
+    const prod = payload.counts[p]||0;
+    const tot  = payload.totalRequired||0;
+    const rem  = Math.max(tot - prod, 0);
+    const pct  = tot ? Math.round(prod/tot*100) : 0;
+
+    // cria box
+    const box = document.createElement('div');
+    box.className = 'gauge-box';
+
+    const t = document.createElement('div');
+    t.className = 'gauge-title';
+    t.innerText = p;
+
+    const pc = document.createElement('div');
+    pc.className = 'gauge-percent';
+    pc.innerText = pct + '%';
+
+    const d = document.createElement('div');
+    d.id = `gauge_${i}`;
+    d.style.width = '100%';
+
+    box.append(t, pc, d);
+    gc.appendChild(box);
+
+    // calcula altura com base na largura disponível do box (responsivo)
+    // semicircular bonito: ~60–70% da largura
+    const w = box.clientWidth || 180;
+    const h = Math.max(140, Math.round(w * 0.80));
+    d.style.height = h + 'px';
+
+    // desenha o “velocímetro” (semi-donut)
+    const cd = google.visualization.arrayToDataTable([
+      ['Label','Value'],
+      ['Prod', prod],
+      ['Rest', rem]
+    ]);
+    const opts = {
+      pieHole: 0.60,
+      pieStartAngle: 180,
+      legend: 'none',
+      pieSliceText: 'none',
+      tooltip: { trigger:'none' },
+      slices: { 0:{color:'#71d0e1'}, 1:{color:'#DDD'} },
+      backgroundColor: 'transparent'
+    };
+    new google.visualization.PieChart(d).draw(cd, opts);
+  });
+}
+  </script>
+  <script>
+  window.addEventListener('load', () => { document.title = 'Dashboard ShopFloor'; });
+</script>
+
+</body>
+</html>

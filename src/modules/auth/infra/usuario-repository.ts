@@ -18,7 +18,7 @@ export async function buscarUsuarioAutenticado(): Promise<UsuarioComPerfil | nul
 
   const { data, error } = await supabase
     .from('usuarios')
-    .select('id, nome, email, ativo, perfis(*)')
+    .select('id, nome, email, ativo, perfis(*, perfil_permissao(modulo,permissao))')
     .eq('id', user.id)
     .single()
 

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 
 export default async function RecebimentoLayout({
   children,
@@ -8,7 +8,7 @@ export default async function RecebimentoLayout({
   children: React.ReactNode
 }) {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) redirect('/home')
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'visualizar')) redirect('/home')
 
   // A navegação do Recebimento vive no menu lateral (AppShell). Aqui só o guard.
   return <>{children}</>

@@ -1,14 +1,15 @@
-import { Factory, Inbox, type LucideIcon } from 'lucide-react'
+import { Factory, Inbox, Workflow, type LucideIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const MODULOS: { icone: LucideIcon; nome: string; descricao: string }[] = [
   { icone: Inbox, nome: 'Recebimento', descricao: 'Importação, processos e conferência' },
+  { icone: Workflow, nome: 'Fluxo de Processos', descricao: 'Lançamento, integração, manutenção e rastreio' },
 ]
 
 const INFORMACOES: { rotulo: string; valor: string }[] = [
   { rotulo: 'Sistema', valor: 'ShopFloor — Enterplak MES' },
-  { rotulo: 'Versão', valor: '1.0.0' },
+  { rotulo: 'Versão', valor: '1.1.0' },
   { rotulo: 'Empresa', valor: 'Enterplak Indústria Eletrônica Ltda.' },
 ]
 
@@ -24,7 +25,7 @@ export default function SobrePage() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">ShopFloor</h2>
-              <Badge variant="secondary">v1.0.0</Badge>
+              <Badge variant="secondary">v1.1.0</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               Sistema de gestão de chão de fábrica (MES) da Enterplak — controle, registro e

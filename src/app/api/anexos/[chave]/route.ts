@@ -1,5 +1,5 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { modoStorageFotos } from '@/modules/recebimento/infra/armazenamento'
 import { baixarFotoDrive } from '@/modules/recebimento/infra/armazenamento/drive'
 
@@ -10,7 +10,7 @@ export async function GET(
   ctx: { params: Promise<{ chave: string }> },
 ): Promise<Response> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'visualizar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'visualizar')) {
     return new Response('Não autorizado', { status: 403 })
   }
   if (modoStorageFotos() !== 'drive') {

@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base target="_top">
+  <title>Integração – ShopFloor</title>
+  <style>
+    /* ===== largura e cores padrão desta página ===== */
+    :root{
+      --content-max: 1000px;     /* Integração é mais larga */
+      --sf-blue: #1E88E5;
+      --sf-blue-100: #E8F2FF;
+      --sf-blue-200: #DBEAFE;
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      font-family:'Segoe UI', Roboto, sans-serif;
+      background:#f4f4f4; padding:20px; margin:0;
+    }
+
+    /* ===== HEADER + NAV (padrão do projeto) ===== */
+    .sf-header{ display:flex; justify-content:center; }
+    .sf-header .nav-shell{
+      width: calc(100% - 32px);
+      max-width: var(--content-max);
+      margin: 16px auto 8px;
+      background:#fff;
+      border:1px solid var(--sf-blue-200);
+      border-radius:12px;
+      box-shadow:0 6px 24px rgba(0,0,0,.08);
+      padding:12px 16px 14px;
+    }
+
+    .topnav{ display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
+    .topnav a{
+      text-decoration:none; color:#222; font-weight:700;
+      padding:6px 8px; border-radius:999px;
+      border:1px solid transparent; background:#fff;
+      transition:background .15s, border-color .15s, color .15s;
+    }
+    .topnav a:hover{ background:#f7f7f7; }
+    .topnav a.active{
+      background:var(--sf-blue-100);
+      border-color:var(--sf-blue-200);
+      color:var(--sf-blue);
+    }
+
+    /* Logo + título (abaixo das abas), centralizados como conjunto */
+    .brandline{
+      margin-top:26px;
+      display:flex; align-items:center; justify-content:center;
+      gap:14px; flex-wrap:wrap;
+    }
+    .brandline .brand{ height:44px; width:auto; object-fit:contain; } /* ajuste aqui p/ maior/menor */
+    .brandline .page-title{ margin:0; font-size:22px; font-weight:800; }
+    @media (max-width:740px){ .brandline .brand{ height:28px; } }
+
+    /* ===== CARD principal (mesma largura do nav) ===== */
+    .container{
+      background:#fff; width:100%; max-width: var(--content-max); margin:auto;
+      padding:24px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.1);
+    }
+
+    /* ===== seu CSS já existente ===== */
+    h2{ text-align:center; margin-bottom:8px; } /* (não usaremos o <h2> no card, título vai no header) */
+    label{ font-weight:600; display:block; margin-bottom:4px; margin-top:16px; }
+    input, select{ width:100%; padding:10px; font-size:16px; border-radius:8px; border:1px solid #ccc; background:#fdfdfd; }
+    button{ font-size:16px; padding:10px 14px; border:none; border-radius:8px; cursor:pointer; }
+    .primary{ background-color:#1E88E5; color:#fff; }
+    .muted{ background:#fff; color:#1E88E5; border:1px solid #1E88E5; }
+    .grupo{ border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:24px; background:#fafafa; }
+    .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:center; }
+    .grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; align-items:center; }
+    .table{ width:100%; border-collapse:collapse; margin-top:8px; table-layout:fixed; }
+    .table th, .table td{ border:1px solid #ddd; padding:8px; font-size:14px; }
+    .table td select, .table td input{ width:100%; }
+    .actions{ display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+    .msg{ margin-top:12px; }
+    .ok{ color:#155724; background:#d4edda; padding:8px 12px; border-radius:8px; }
+    .err{ color:#721c24; background:#f8d7da; padding:8px 12px; border-radius:8px; }
+    .searchbox{ display:flex; gap:8px; align-items:center; margin-top:8px; }
+    .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#e0e0e0; }
+  </style>
+</head>
+<body>
+
+  <!-- ===== HEADER + NAV ===== -->
+  <header class="sf-header">
+    <div class="nav-shell">
+      <!-- Abas -->
+      <nav class="topnav" id="sf-nav">
+        <a data-page="formulario">Lançamento</a>
+        <a data-page="integracao">Integração</a>
+        <a data-page="manutencao">Manutenção</a>
+        <a data-page="dashboard">Dashboard</a>
+        <a data-page="pesquisa">Pesquisa</a>
+      </nav>
+
+      <!-- Logo + Título -->
+      <div class="brandline">
+        <img class="brand" src="https://enterplak.com.br/wp-content/uploads/2024/09/logo-5.png" alt="Enterplak">
+        <h1 class="page-title">Integração de Placas</h1>
+      </div>
+    </div>
+  </header>
+
+  <script>
+    (function initNav(){
+      // URL ABSOLUTA do seu deploy /exec
+      const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwNyHVxF6I30zfRS2uRYvmuNSZKsIJor1nK_TKXHj9BAis_w54-7iusgF7p4jjK1JdAoA/exec';
+
+      // página atual
+      const params  = new URLSearchParams(location.search);
+      const current = (params.get('page') || 'integracao').toLowerCase();
+
+      // define links e marca ativo
+      document.querySelectorAll('#sf-nav a[data-page]').forEach(a=>{
+        const pg = a.getAttribute('data-page');
+        a.href = WEBAPP_URL + '?page=' + encodeURIComponent(pg);
+        if (pg.toLowerCase() === current) a.classList.add('active');
+      });
+
+      // título da aba
+      const titles = {
+        formulario:'Lançamento • ShopFloor',
+        integracao:'Integração • ShopFloor',
+        manutencao:'Manutenção • ShopFloor',
+        dashboard :'Dashboard • ShopFloor',
+        pesquisa  :'Pesquisa • ShopFloor'
+      };
+      document.title = titles[current] || 'ShopFloor';
+    })();
+  </script>
+  <!-- ===== /HEADER ===== -->
+  <!-- ===== CONTEÚDO ===== -->
+  <div class="container">
+    <!-- Cabeçalho fixo -->
+    <div class="grupo">
+      <div class="grid2">
+        <div>
+          <label>Colaborador:</label>
+          <input id="colab">
+        </div>
+        <div>
+          <label>Cliente:</label>
+          <select id="cliente" onchange="carregarPMOsCabecalho()"><option value="">Selecione</option></select>
+        </div>
+      </div>
+      <div class="grid3">
+        <div>
+          <label>PMO (Produto Final):</label>
+          <select id="pmo" onchange="carregarOPsCabecalho()"><option value="">Selecione</option></select>
+        </div>
+        <div>
+          <label>OP:</label>
+          <select id="op" onchange="updateDescricaoCabecalho()"><option value="">Selecione</option></select>
+        </div>
+        <div>
+          <label>Descrição (OP):</label>
+          <input id="descOP" disabled>
+        </div>
+      </div>
+    </div>
+
+    <!-- Placas (cada linha com PMO + Descrição + SN) -->
+    <div class="grupo">
+      <div class="actions">
+        <button class="muted" onclick="adicionarLinha()">+ Adicionar linha</button>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <span>Qtd. rápida:</span>
+          <input id="qtdRapida" type="number" min="1" style="width:90px;">
+          <button class="muted" onclick="gerarLinhasRapidas()">Gerar</button>
+        </div>
+        <div style="margin-left:auto;">
+          <button class="muted" id="btnLimpar" type="button" onclick="limpar()">Limpar</button>
+        </div>
+      </div>
+      <table class="table">
+        <colgroup>
+  <col style="width:60px">   <!-- Seq -->
+  <col style="width:130px">  <!-- PMO (pequeno) -->
+  <col style="width:100px">  <!-- OP  (pequeno) -->
+  <col style="width:auto">   <!-- Descrição (grande) -->
+  <col style="width:200px">  <!-- Nº de Série -->
+  <col style="width:70px">   <!-- Del -->
+</colgroup>
+  <thead>
+  <tr>
+    <th>Seq</th>
+    <th>PMO da Placa</th>
+    <th>OP da Placa</th>
+    <th>Descrição (auto)</th>
+    <th>Nº de Série da Placa</th>
+    <th>Del</th>
+  </tr>
+</thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div id="msg" class="msg"></div>
+    </div>
+
+   <!-- Produto final -->
+    <div class="grupo">
+      <div class="grid2">
+        <div>
+          <label>Produto Final (Nº de Série):</label>
+          <input id="produtoSN" placeholder="Scan SN do produto final">
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="primary" id="btnRegistrar" onclick="registrar()">Registrar Integração</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ===== Persistência simples (localStorage) =====
+  const LS = {
+    set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+    get(k, def){ try{ const v = JSON.parse(localStorage.getItem(k)); return (v===null||v===undefined)?def:v; }catch(e){ return def; } },
+    del(k){ try{ localStorage.removeItem(k);}catch(e){} }
+  };
+
+  // ===== Maps Cliente → PMOs → OPs =====
+  let clientPmoMap = {}, pmoOpsMap = {}, pmoDescMap = {};
+  google.script.run.withSuccessHandler(buildMaps).obterCLIENTE_PMO_OPS();
+
+  function buildMaps(rows) {
+    clientPmoMap = {}; pmoOpsMap = {}; pmoDescMap = {};
+    rows.forEach(([cliente, pmo, op, desc]) => {
+      if (!clientPmoMap[cliente]) clientPmoMap[cliente] = [];
+      if (!clientPmoMap[cliente].includes(pmo)) clientPmoMap[cliente].push(pmo);
+      if (!pmoOpsMap[pmo]) pmoOpsMap[pmo] = [];
+      if (!pmoOpsMap[pmo].includes(op)) pmoOpsMap[pmo].push(op);
+      pmoDescMap[pmo] = (desc||'').toString();
+    });
+
+    // Preenche Cliente e restaura estado
+    const sel = document.getElementById('cliente');
+    sel.innerHTML = '<option value="">Selecione</option>';
+    Object.keys(clientPmoMap).sort().forEach(cli => sel.appendChild(new Option(cli, cli)));
+    restoreHeader();
+    restoreRowsConfig()
+  }
+
+  // ===== Cabeçalho (fixo) =====
+  function carregarPMOsCabecalho() {
+    const c = document.getElementById('cliente').value;
+    const sp = document.getElementById('pmo'); sp.innerHTML = '<option value="">Selecione</option>';
+    const so = document.getElementById('op');  so.innerHTML = '<option value="">Selecione</option>';
+    document.getElementById('descOP').value = '';
+    if (clientPmoMap[c]) clientPmoMap[c].slice().sort().forEach(p => sp.appendChild(new Option(p,p)));
+    persistHeader();
+    // também precisamos atualizar os SELECTs por linha para a lista do novo cliente (se mudar)
+    repopularPMOsDasLinhas();
+  }
+
+  function carregarOPsCabecalho() {
+    const p = document.getElementById('pmo').value;
+    const so = document.getElementById('op'); so.innerHTML = '<option value="">Selecione</option>';
+    if (pmoOpsMap[p]) pmoOpsMap[p].slice().sort().forEach(o => so.appendChild(new Option(o,o)));
+    updateDescricaoCabecalho();
+    persistHeader();
+  }
+
+  function updateDescricaoCabecalho() {
+    const p = document.getElementById('pmo').value;
+    document.getElementById('descOP').value = pmoDescMap[p] || '';
+    persistHeader();
+  }
+
+  function persistHeader() {
+    LS.set('sf_colab',  document.getElementById('colab').value);
+    LS.set('sf_cliente',document.getElementById('cliente').value);
+    LS.set('sf_pmo',    document.getElementById('pmo').value);
+    LS.set('sf_op',     document.getElementById('op').value);
+    LS.set('sf_descOP', document.getElementById('descOP').value);
+  }
+
+  function restoreHeader() {
+    document.getElementById('colab').value   = LS.get('sf_colab','');
+    const cliente = LS.get('sf_cliente','');
+    const pmo     = LS.get('sf_pmo','');
+    const op      = LS.get('sf_op','');
+
+    if (cliente && clientPmoMap[cliente]) {
+      document.getElementById('cliente').value = cliente;
+      carregarPMOsCabecalho();
+      document.getElementById('pmo').value = pmo || '';
+      carregarOPsCabecalho();
+      document.getElementById('op').value = op || '';
+      document.getElementById('descOP').value = LS.get('sf_descOP','');
+    }
+  }
+
+  // ===== Linhas (PMO por placa + Descrição + SN) =====
+  function linhaHTML(seq, pmo='', op='', desc='', sn='') {
+    return `<tr data-seq="${seq}">
+      <td style="text-align:center;">${seq}</td>
+      <td>
+        <select id="pmo_row_${seq}" onchange="onRowPMOChange(${seq})"><option value="">Selecione</option></select>
+      </td>
+      <td>
+        <select id="op_row_${seq}"><option value="">Selecione</option></select>
+      </td>
+      <td><input id="desc_row_${seq}" value="${desc||''}" disabled></td>
+      <td><input id="sn_row_${seq}" value="${sn||''}" placeholder="scan SN da placa"></td>
+      <td style="text-align:center;"><button class="muted" onclick="delLinha(${seq})">X</button></td>
+    </tr>`;
+  }
+
+  function populateRowPMOOptions(seq, selectedPMO='') {
+    const cliente = document.getElementById('cliente').value;
+    const sel = document.getElementById(`pmo_row_${seq}`);
+    sel.innerHTML = '<option value="">Selecione</option>';
+    if (clientPmoMap[cliente]) {
+      clientPmoMap[cliente].slice().sort().forEach(p => {
+        const opt = new Option(p, p);
+        if (p === selectedPMO) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+  }
+
+  function populateRowOPOptions(seq, pmo, selectedOP='') {
+  const sel = document.getElementById(`op_row_${seq}`);
+  sel.innerHTML = '<option value="">Selecione</option>';
+  if (pmo && pmoOpsMap[pmo]) {
+    pmoOpsMap[pmo].slice().sort().forEach(o => {
+      const opt = new Option(o, o);
+      if (o === selectedOP) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+}
+
+  function onRowPMOChange(seq) {
+    const pmo = document.getElementById(`pmo_row_${seq}`).value;
+    const descInput = document.getElementById(`desc_row_${seq}`);
+    populateRowOPOptions(seq, pmo, '');
+    if (!pmo) { descInput.value = ''; saveRowsConfig(); return; }
+    google.script.run.withSuccessHandler(desc => {
+      descInput.value = desc || '';
+      saveRowsConfig();
+    }).buscarDescricaoPorPMO(pmo);
+  }
+
+  function renumerar() {
+    [...document.querySelectorAll('#tbody tr')].forEach((tr,i)=>{
+      tr.setAttribute('data-seq', i+1);
+      tr.children[0].innerHTML = i+1;
+      tr.querySelector('#pmo_row_'+(i+1))?.setAttribute('id', `pmo_row_${i+1}`);
+      tr.querySelector('#op_row_'+(i+1))?.setAttribute('id', `op_row_${i+1}`);
+      tr.querySelector('#desc_row_'+(i+1))?.setAttribute('id', `desc_row_${i+1}`);
+      tr.querySelector('#sn_row_'+(i+1))?.setAttribute('id', `sn_row_${i+1}`);
+      tr.querySelector('button').setAttribute('onclick', `delLinha(${i+1})`);
+    });
+    saveRowsConfig();
+  }
+
+  function adicionarLinha(pmo='', op='', desc='') {
+    const tb = document.getElementById('tbody');
+    const seq = tb.children.length + 1;
+    tb.insertAdjacentHTML('beforeend', linhaHTML(seq, pmo, op, desc, ''));
+    populateRowPMOOptions(seq, pmo);
+    populateRowOPOptions(seq, pmo, op);
+    if (pmo && !desc) onRowPMOChange(seq); // pega descrição se faltou
+    saveRowsConfig();
+  }
+
+  function delLinha(seq) {
+    const tr = document.querySelector(`#tbody tr[data-seq="${seq}"]`);
+    if (tr) tr.remove();
+    renumerar();
+  }
+
+
+  function gerarLinhasRapidas() {
+    const qtd = parseInt(document.getElementById('qtdRapida').value||'0',10);
+    if (!qtd || qtd<1) return;
+    const tb = document.getElementById('tbody');
+    tb.innerHTML = '';
+    for (let i=1;i<=qtd;i++) adicionarLinha();
+  }
+
+  function repopularPMOsDasLinhas() {
+    [...document.querySelectorAll('#tbody tr')].forEach(tr=>{
+      const seq = parseInt(tr.getAttribute('data-seq'),10);
+      const currentPMO = document.getElementById(`pmo_row_${seq}`).value;
+      const currentOP  = document.getElementById(`op_row_${seq}`).value;
+      populateRowPMOOptions(seq, currentPMO);
+      populateRowOPOptions(seq, currentPMO, currentOP);
+    });
+    saveRowsConfig();
+  }
+
+
+  function saveRowsConfig() {
+    const rows = [...document.querySelectorAll('#tbody tr')].map(tr=>{
+      const seq = parseInt(tr.getAttribute('data-seq'),10);
+      return {
+        pmo: document.getElementById(`pmo_row_${seq}`).value,
+        op : document.getElementById(`op_row_${seq}`).value,
+        desc: document.getElementById(`desc_row_${seq}`).value
+      };
+    });
+    LS.set('sf_rows', rows);
+  }
+
+
+  function restoreRowsConfig() {
+    const rows = LS.get('sf_rows', null);
+    const tb = document.getElementById('tbody');
+    tb.innerHTML = '';
+    if (rows && rows.length) {
+      rows.forEach(r => adicionarLinha(r.pmo||'', r.op||'', r.desc||'')); 
+    } else {
+      // default: 2 linhas
+      adicionarLinha();
+      adicionarLinha();
+    }
+  }
+
+  // ===== Limpar (zera tudo: cabeçalho + linhas configuradas) =====
+  function limpar() {
+  // 1) Limpa memórias persistidas
+  ['sf_colab','sf_cliente','sf_pmo','sf_op','sf_descOP','sf_rows'].forEach(k => LS.del(k));
+
+  // 2) Zera cabeçalho (sem recarregar)
+  const colab   = document.getElementById('colab');
+  const cliente = document.getElementById('cliente');
+  const pmoSel  = document.getElementById('pmo');
+  const opSel   = document.getElementById('op');
+  const descOP  = document.getElementById('descOP');
+
+  colab.value = '';
+  cliente.value = '';
+
+  // Limpa PMO/OP/descrição do cabeçalho
+  pmoSel.innerHTML = '<option value="">Selecione</option>';
+  opSel.innerHTML  = '<option value="">Selecione</option>';
+  descOP.value = '';
+
+  // 3) Zera tabela de placas e recria 2 linhas vazias
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = '';
+  adicionarLinha();
+  adicionarLinha();
+
+  // 4) Zera produto final + mensagens + pesquisa
+  const produtoSN = document.getElementById('produtoSN');
+  const msg       = document.getElementById('msg');
+  const buscaSN   = document.getElementById('buscaSN');
+  const resBusca  = document.getElementById('resultadoBusca');
+
+  if (produtoSN) produtoSN.value = '';
+  if (msg)       msg.innerHTML   = '';
+  if (buscaSN)   buscaSN.value   = '';
+  if (resBusca)  resBusca.innerHTML = '';
+
+  // 5) Foco amigável
+  colab.focus();
+}
+  // ===== Registrar =====
+  function registrar(){
+    const msg = document.getElementById('msg'); msg.innerHTML='';
+    const btn = document.getElementById('btnRegistrar'); btn.disabled = true; btn.textContent='Registrando...';
+
+    const colaborador = document.getElementById('colab').value.trim();
+    const cliente     = document.getElementById('cliente').value.trim();
+    const pmo         = document.getElementById('pmo').value.trim();
+    const op          = document.getElementById('op').value.trim();
+    const produtoSN   = document.getElementById('produtoSN').value.trim();
+
+    const itens = [...document.querySelectorAll('#tbody tr')].map(tr=>{
+      const seq = parseInt(tr.getAttribute('data-seq'),10);
+      return {
+        Seq: seq,
+        PlacaPMO: document.getElementById(`pmo_row_${seq}`).value.trim(),
+        PlacaOP : document.getElementById(`op_row_${seq}`).value.trim(),
+        PlacaSN : document.getElementById(`sn_row_${seq}`).value.trim()
+      };
+    }).filter(x => x.PlacaSN);
+
+    // valida PMO e OP por linha
+    const faltando = itens.find(x => !x.PlacaPMO || !x.PlacaOP);
+    if (faltando) {
+      msg.innerHTML = `<span class="err">Selecione PMO e OP na linha ${faltando.Seq}.</span>`;
+      btn.disabled=false; btn.textContent='Registrar Integração';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(res=>{
+        if(res.ok){
+          msg.innerHTML = `<span class="ok">✅ Integração registrada (ID <b>${res.id}</b>).</span>`;
+          // limpa APENAS SNs:
+          document.getElementById('produtoSN').value = '';
+          [...document.querySelectorAll('#tbody tr')].forEach(tr=>{
+            const seq = parseInt(tr.getAttribute('data-seq'),10);
+            document.getElementById(`sn_row_${seq}`).value = '';
+          });
+        } else {
+          msg.innerHTML = `<span class="err">❌ ${res.error}</span>`;
+        }
+        btn.disabled=false; btn.textContent='Registrar Integração';
+      })
+      .withFailureHandler(err=>{
+        msg.innerHTML = `<span class="err">❌ ${err.message}</span>`;
+        btn.disabled=false; btn.textContent='Registrar Integração';
+      })
+      .registrarIntegracao({ colaborador, cliente, pmo, op, produtoSN, itens });
+  }
+
+  // ===== Pesquisa por SN =====
+  function pesquisar(){
+    const sn=document.getElementById('buscaSN').value.trim();
+    const out=document.getElementById('resultadoBusca'); out.innerHTML='';
+    if(!sn){ out.innerHTML='<span class="badge">Informe um SN</span>'; return; }
+    google.script.run
+      .withSuccessHandler(res=>{
+        if(!res.ok){ out.innerHTML='<span class="err">Erro na pesquisa</span>'; return; }
+        if(!res.encontrado){ out.innerHTML='<span class="badge">Nenhum vínculo encontrado.</span>'; return; }
+        let html = `<div class="ok" style="background:#eef7ff; color:#0b4a7a;">
+  <div><strong>Encontrado como ${res.tipo==='produto'?'PRODUTO FINAL':'PLACA'}</strong></div>
+  <div>ID: <strong>${res.hdr.id}</strong> | Data/Hora: ${res.hdr.dataHora}</div>
+  <div>Cliente: ${res.hdr.cliente||''} | PMO/OP: ${res.hdr.pmo} / ${res.hdr.op||''}</div>
+  <div>Produto Final: <strong>${res.hdr.produtoSN}</strong></div>
+</div>`;
+
+html += `<table class="table" style="margin-top:8px;">
+  <thead><tr>
+    <th style="width:60px;">Seq</th>
+    <th style="width:110px;">Tipo</th>
+    <th>PMO</th>
+    <th>Nº de Série</th>
+  </tr></thead><tbody>`;
+
+(res.itens||[]).forEach((it,idx)=>{
+  html += `<tr>
+    <td style="text-align:center;">${idx+1}</td>
+    <td>${it.Tipo||'Placa'}</td>
+    <td>${it.PlacaPMO||''}</td>
+    <td>${it.PlacaSN||''}</td>
+  </tr>`;
+});
+
+html += `</tbody></table>`;
+out.innerHTML = html;
+      })
+      .withFailureHandler(err=>{ out.innerHTML=`<span class="err">❌ ${err.message}</span>`; })
+      .buscarIntegracaoPorSN(sn);
+  }
+
+  // inicial
+  window.onload = ()=>{
+    
+  };
+
+  // Expor handlers usados no HTML (onclick/onchange) para o escopo global
+Object.assign(window, {
+  adicionarLinha,
+  delLinha,
+  gerarLinhasRapidas,
+  onRowPMOChange,
+  registrar,
+  pesquisar,
+  limpar
+});
+</script>
+<script>
+  window.addEventListener('load', () => { document.title = 'Integração ShopFloor'; });
+</script>
+
+</body>
+</html>

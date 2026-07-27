@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
 import { buscarPerfil } from '@/modules/perfis/infra/perfil-repository'
@@ -47,7 +47,7 @@ export async function criarUsuario(
   formData: FormData,
 ): Promise<ResultadoAcaoUsuario> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'sistema', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
@@ -103,7 +103,7 @@ export async function editarUsuario(
   formData: FormData,
 ): Promise<ResultadoAcaoUsuario> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'sistema', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
@@ -155,7 +155,7 @@ export async function editarUsuario(
 
 export async function resetarSenha(id: string): Promise<ResultadoAcaoUsuario> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'sistema', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
@@ -181,7 +181,7 @@ export async function resetarSenha(id: string): Promise<ResultadoAcaoUsuario> {
 
 export async function alternarAtivo(id: string, novoAtivo: boolean): Promise<ResultadoAcaoUsuario> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'sistema', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { calcularDiff } from '@/modules/logs/domain/diff'
 import {
@@ -26,7 +26,7 @@ export async function salvarLista(
   formData: FormData,
 ): Promise<ResultadoAcaoLista> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
@@ -60,7 +60,7 @@ export async function salvarLista(
 
 export async function excluirListaAction(id: string): Promise<ResultadoAcaoLista> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
@@ -110,7 +110,7 @@ export async function salvarItem(
   formData: FormData,
 ): Promise<ResultadoAcaoLista> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
@@ -172,7 +172,7 @@ export async function salvarItem(
 
 export async function alternarItemAtivo(id: string): Promise<ResultadoAcaoLista> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
@@ -200,7 +200,7 @@ export async function alternarItemAtivo(id: string): Promise<ResultadoAcaoLista>
 
 export async function excluirItemAction(id: string): Promise<ResultadoAcaoLista> {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 

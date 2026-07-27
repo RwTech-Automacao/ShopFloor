@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { PlusIcon } from 'lucide-react'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { Button } from '@/components/ui/button'
 import { decodificarEstadoGrid } from '@/modules/recebimento/domain/estado-grid'
 import {
@@ -23,7 +23,7 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
     carregarCatalogoColunas(),
     listarColunasLista(),
   ])
-  const podeCriar = podeFazer(sessao?.perfil ?? null, 'editar')
+  const podeCriar = podeNoModulo(sessao?.perfil ?? null, 'recebimento', 'editar')
 
   // Estado vem da URL e é validado contra o catálogo (nada dele é confiável).
   const estado = decodificarEstadoGrid(

@@ -12,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       nome={sessao.nome}
       email={sessao.email}
       perfilNome={sessao.perfil.nome}
-      permissoes={sessao.perfil.permissoes}
+      perfil={sessao.perfil}
       exportarFotosVisivel={modoStorageFotos() === 'supabase'}
     >
       {children}

@@ -1,7 +1,7 @@
 'use server'
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { chamarImportarProcessos } from '../infra/importacao-repository'
 
 export async function importarPlanilha(payload: {
@@ -13,7 +13,7 @@ export async function importarPlanilha(payload: {
   { ok: true; importacaoId: string; total: number } | { ok: false; erro: string }
 > {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'importar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'importar')) {
     return { ok: false, erro: 'Você não tem permissão para importar.' }
   }
   if (payload.linhas.length === 0) return { ok: false, erro: 'Nenhuma linha para importar.' }

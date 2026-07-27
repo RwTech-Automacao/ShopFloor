@@ -1055,3 +1055,284 @@ código. Detalhe em `memory/visao-produto-roadmap.md` e no arquivo de plano
 - **Nota de processo:** o **modo plan** do Claude Code foi usado nesta etapa — ele força
   explorar/entender antes, e trava edições (só o arquivo de plano) até a aprovação. Boa prática que
   reforça a cadência; para salvar memória/histórico foi preciso sair do modo plan.
+
+## 34. Módulo ShopFloor Processo — Planos A + B (LOCAL, aguardando smoke — 2026-07-21)
+
+Arranque do **módulo 3 (Shopfloor processo)** — o coração da rastreabilidade. Origem: webapp Google
+Apps Script (`Código.gs` + `formulario.html`) sobre a planilha `ShopFloor WebApp.xlsx` (registro de
+cada peça por **Nº de Série** ao passar por cada **posto**, por PMO/OP). Recriação no nosso stack.
+Decidido fatiar a sub-feature "Fundação + Lançamento" em **3 planos sequenciais** (A: dados; B:
+Cadastro de OP; C: Lançamento). Branch `feat/shopfloor-lancamento`. Spec/planos em
+`docs/superpowers/{specs,plans}/2026-07-21-shopfloor-lancamento*`.
+
+- **Plano A — Fundação de dados (feito, aplicado no DEV):** migração `0028` — tabelas `sf_postos`,
+  `sf_defeitos`, `sf_ordens`, `sf_ordem_postos`, `sf_registros` (+ RLS, permissão nova **`lancar`** e
+  perfil de sistema "Produção", seed dos 12 postos); **domínio puro com TDD** (série: parse/faixa/
+  normalização; postos: gate de sequência registrado×aprovado; regras por posto + limite de caixa);
+  **script `scripts/migrar-shopfloor.mjs`**. Resolvida a inconsistência da coluna **[18] = Inspeção
+  SPI** (o header da planilha rotula "Integração" por engano; o `Código.gs` é a verdade). Aplicado
+  **só no Dev**: `supabase db push` da 0028 + script → **165 defeitos, 115 OPs ativas, 554
+  aplicabilidades** (a aba Defeitos tem 1000 linhas mas só 165 com código; 835 são vazias).
+  Spot-check de aplicabilidade bateu. **Prod intocado.** Review amplo (opus): pronto para merge.
+- **Plano B — Cadastro de OP (feito, LOCAL):** tela de CRUD de OPs (listar/criar/editar/excluir +
+  toggles de "postos aplicáveis"). **Decisão do usuário: é MÓDULO PRINCIPAL**, não Configurações — nova
+  seção **"Fluxo de Processos"** no menu lateral (accordion, como o Recebimento), rota
+  `/shopfloor/ordens`, page com **guard próprio** de `administrar` (a rota `/shopfloor` não tem layout
+  guard). Validação TDD + repositório + server actions (guarda de duplicidade `unique(pmo,op)` e
+  guarda de exclusão se houver lançamentos) + a tela. Review amplo (opus): **PRONTO PARA MERGE**, zero
+  crítico/importante (segurança em profundidade: gate nas actions + guard da page + RLS). Fix de
+  robustez aplicado (exclusão sem rejeição silenciosa; `qtd` NaN→null). Suíte: 223 testes.
+- **Decisões registradas:** a **estação** loga no app (compartilhada) e o **colaborador é bipado** por
+  cima (log de usuário refinado depois). **OP sem faixa de SN deve BARRAR** o lançamento (Plano C) —
+  várias OPs migradas vêm com faixa vazia. Na promoção pro **Prod**: provavelmente **não** bulk-importar
+  as OPs (cadastrar via a tela, começar limpo); **defeitos** (catálogo) vale importar. **Dev mantém os
+  dados** pra construir/testar B e C.
+- **Nota técnica:** o CLI `supabase` neste host precisou do binário `supabase-go` (baixado em
+  `~/.local/share/supabase` + `export SUPABASE_GO_BINARY=...`) para o `db push` funcionar; o
+  `migration list` (leitura) já funcionava sem ele.
+- **Pendências:** smoke do Plano B pelo usuário (dev server no ar, aponta pro Dev). Depois **Plano C
+  (Lançamento — o coração):** tela do operador + submit transacional (faixa de SN, gate de sequência,
+  anti-duplicidade, caixa) + a permissão `lancar` na UI de Perfis. Sub-features futuras: Grade Geral,
+  Dashboard, Integração, Manutenção, Pesquisa, histórico de registros. **Nada pushado/mergeado/em Prod.**
+
+## 35. ShopFloor Processo — "Fundação + Lançamento" COMPLETO na branch (2026-07-22)
+
+Fechamos a fatia inteira do módulo 3 (rastreabilidade de montagem/PCB) — de ponta a ponta, usável. Tudo por
+subagent-driven-development (reviews de spec+qualidade entre tasks + review amplo opus PRONTO PARA MERGE em
+cada plano). Branch `feat/shopfloor-lancamento`. Spec/planos em `docs/superpowers/{specs,plans}/2026-07-2*`.
+**Nada em Prod, nada na main** (decisão: seguir construindo as próximas sub-features antes de subir).
+
+- **Plano A — Fundação (aplicado no Dev):** migração `0028` (tabelas `sf_*`, RLS, permissão `lancar`, perfil
+  Produção, seed de postos), domínio TDD (série/gate/regras), script de migração de dados. Dev: 165 defeitos,
+  115 OPs ativas.
+- **Plano B — Cadastro de OP:** módulo PRINCIPAL "Fluxo de Processos" no menu (não Configurações), rota
+  `/shopfloor/ordens`, guard próprio de `administrar`. CRUD com guarda de duplicidade e de exclusão.
+- **Plano B2 — Fluxo de postos POR OP (aplicado no Dev, `0030`):** `sf_ordem_postos.ordem` (a sequência é
+  por OP, não mais global); 2 postos novos (**Burn-in**, **Extra máquina**); Cadastro vira **lista
+  reordenável** (↑/↓/×) + botão opcional "puxar fluxo de OP do mesmo PMO". A trava de sequência passou a
+  seguir a ordem da OP.
+- **Plano C1 — Backend do Lançamento (aplicado no Dev, `0031`):** permissão `lancar` na tela de Perfis;
+  função plpgsql **`sf_lancar`** (advisory lock por PMO/OP → atômica, substitui o LockService); domínio TDD
+  (linhas/status/modo); repositório + action `lancar`. **Smoke 9/9** contra o Dev (DUPLICADO,
+  DUPLICADO_APROVADO, SEQUENCIA, re-lançamento, caixa_count, 1 linha por defeito).
+- **Plano C2 — Tela de Lançamento (operador):** `/shopfloor/lancamento` (perm `lancar`); cascata
+  Cliente→PMO→OP, Posto filtrado pela OP, Nº de Série com foco/bipagem (Enter envia), campos dinâmicos por
+  posto (status/defeitos múltiplos/SPI/NQA/caixa), validação espelhando o servidor. Review final achou 1
+  bug importante (Integração/Extra máquina caíam no fallback com status) → corrigido no domínio + teste.
+
+- **Regras de re-lançamento (final, confirmadas com o usuário):** aprovado nunca repete o posto; reprovado
+  libera. Sem status (registra 1×): Inicial, Montagem PTH, Integração, Embalagem, Extra máquina. Com status
+  (reprovado libera): SPI, SMD, PTH, Inspeção Final, NQA (inline) + Teste, Teste Final, Burn-in (via
+  Manutenção no futuro; interino: reprovada libera). NQA deriva status de visual+funcional.
+
+- **Preview na Vercel (Dev×Prod sem quebrar o Prod):** configuramos o ambiente **Preview** da Vercel pra
+  apontar pro **Dev** (Supabase + pasta de fotos de teste), separado da Produção — as 3 do Supabase e o
+  `GOOGLE_DRIVE_FOLDER_ID` ficaram Production=Prod / Preview=Dev; `GOOGLE_CLIENT_ID/SECRET/REFRESH` e
+  `FOTOS_STORAGE` compartilhados. Branch pushada → preview automático em
+  `shop-floor-git-feat-shopfloor-lancamento-*.vercel.app` (login: admin do Dev). Serve pra apresentar/testar
+  visualmente sem tocar o Prod. Detalhe do fix do CLI em [[supabase-cli-db-push]].
+
+- **Combinado:** testes **visuais** no preview agora; **funcional** depois, com todas as telas prontas.
+- **Próximo:** as sub-features restantes (Grade/Dashboard/Integração/Manutenção/Pesquisa/histórico) — o
+  usuário escolhe por valor e traz os scripts Apps Script que faltam. Ver `memory/shopfloor-processo-modulo.md`.
+
+## 36. ShopFloor Processo — módulo 100% na branch + Receita de Integração + ajustes de teste (2026-07-23)
+
+Fechamos **todas as telas** do módulo 3 e entramos no ciclo de teste visual no preview (o usuário testando, eu
+ajustando). Tudo por subagent-driven-development (reviews de spec+qualidade por task + review amplo opus). Branch
+`feat/shopfloor-lancamento`. **Nada em Prod, nada na main.** Migrações **0028–0035 só no Dev**.
+
+- **Histórico migrado (Dev):** `scripts/migrar-historico.mjs` (idempotente) trouxe **68.546 registros** (17 abas
+  de cliente, fev–jul/2026), **17 OPs finalizadas** (+ fluxos) e **2.692 integrações** (+4.597 placas). Fix junto:
+  paginação em `listarReprovasOrigem`/`listarReparos` (o volume passou do teto de 1.000 do PostgREST). Backfill do
+  status derivado das linhas NQA históricas (1.324 Aprovado / 17 Reprovado).
+- **Dashboard** (`/shopfloor/dashboard`, perm `visualizar`): contagem por posto (fluxo da OP + Manutenção) com
+  período opcional; total = qtd da OP (barra trava em 100%). Domínio `contarPorPosto` (TDD). Review final pegou a
+  infidelidade do **NQA "Não aplicável"** (o legado aceita e conta como aprovado) → corrigido no form + action +
+  script de migração + backfill. **Módulo passou a v1.1.0** (card "Fluxo de Processos" na Home + módulo no Sobre).
+- **Receita de Integração (BOM por PMO)** — feature nova (spec+plano+subagents): tabela `sf_ordem_componentes`
+  (receita por OP; **vazia = qualquer PMO**, adoção gradual). Cadastro de OP edita a receita **só quando Integração
+  está no fluxo**; o "Puxar fluxo" carrega a receita junto. A Integração **esconde** PMO fora da receita no dropdown
+  e o `sf_integrar` barra `PLACA_FORA_DA_RECEITA` (rede de segurança). **Whitelist só de PMO** (sem quantidade nem
+  lista completa — decisão do usuário). Domínio `receitaPermite` (fonte única cliente+SQL). Migração `0034`.
+- **Dois ajustes achados no teste visual:**
+  1. **Placas não podem ficar pela metade:** antes, linha com PMO/OP sem SN era descartada em silêncio (integrava só
+     a 1ª placa). Agora o botão exige SN em **todas** as linhas e o servidor rejeita linha iniciada sem SN (linha
+     totalmente vazia é ignorada). → `domain/integracao-itens.ts`.
+  2. **Integração virou "um posto" com trava de sequência** (decisão do usuário: Integração pode ser 1ª/intermediária/
+     última): exige o **posto imediatamente anterior do fluxo** satisfeito **para o produto** (registrado/aprovado);
+     1ª no fluxo → sem gate. Espelha o Lançamento. `sf_integrar` +`p_prev_posto`/`p_prev_precisa_aprovado`, erro
+     `SEQUENCIA`, migração `0035` (**drop da assinatura de 7 args antes do replace** — evita overload; smoke confirmou
+     assinatura única). A antiga "fidelidade ao legado: Integração não exige posto anterior" foi **substituída**.
+- **Backlog anotado** (em `docs/regras-de-negocio-shopfloor.md`): mover "Busca por SN" da Integração pra Pesquisa;
+  **finalização de OP condicionada aos lançamentos** (hoje é rótulo manual — caso real: PMO973/7892 FINALIZADA com 0
+  registros); **cliente padronizado** (dropdown de existentes, evitar duplicata por casing — achado: `LINCE` vs
+  `Lince`; a planilha tinha só a aba `Lince`, a divergência veio da coluna cliente em PMO_OPS); **tela de "Registros"**
+  (log bruto por cliente, equivalente à antiga aba); Extra máquina (opções); higiene técnica.
+- **Preview:** link fixo da branch (`shop-floor-git-feat-shopfloor-lancamento-*.vercel.app`) atualiza a cada push;
+  links com hash são snapshots congelados (não expiram enquanto o deploy existir). O banco não congela junto (deploy
+  antigo abre com dados do Dev atual).
+- **Próximo:** o usuário segue testando/ajustando as telas; depois, **promover pro Prod** (aplicar 0028–0035 + merge;
+  estratégia de dados em aberto — provável não bulk-importar OPs, só o catálogo de defeitos). Ver
+  `memory/shopfloor-processo-modulo.md` e `docs/regras-de-negocio-shopfloor.md`.
+
+## 37. ShopFloor — Integração (N1 + info OP), limpeza de dados, refino do backlog e Tela de OP (2026-07-24)
+
+Continuação do ciclo teste-visual → ajuste. Branch `feat/shopfloor-lancamento`, migrações **0028–0036 só no Dev**.
+
+- **Integração — N1 + info da OP no dropdown** (migração `0036`): (1) **N1** — SN da placa validado contra a
+  faixa da OP da placa (cliente avisa + action `serieDentroDaFaixa`; **gradual**: OP sem faixa não bloqueia;
+  N2/N3 no backlog). (2) **Dropdown da OP da placa** mostra `{op} (qtd/concluídas)` + **bolinha** (verde
+  Ativa/cinza Finalizada) e passa a listar **ativas + finalizadas** (restaura o legado `obterPMO_OPS`, que não
+  filtrava status; o **produto** segue só-ativas). `concluídas` = SNs distintos no **posto final** do fluxo, via
+  view `sf_ordem_resumo` (security_invoker). **Nota (dado, não bug):** `concluídas=0` quando o posto final
+  cadastrado não tem histórico (ex. PMOB76/8236 tem 6.698 registros mas o final config "Inspeção NQA" está vazio).
+- **Limpeza `LINCE → Lince`** no Dev (6 OPs + 670 integrações) — some a duplicata do cliente na cascata.
+- **Refino + priorização do backlog** (grande dump de ideias do usuário): **Tier 1** = tela de OP com filtros+
+  scroll (padrão Recebimento) + olhinho "ver fluxo"; **Tier 2** = Burn-in entrada/saída+duração, análise de telas
+  redundantes; **Tier 3 (big rock)** = **RBAC por módulo** (perfil define módulos + permissões por módulo; UI
+  modais/accordions — resolver antes do Prod multi-perfil); **Diferido** = diagrama n8n do fluxo, tela de
+  Registros/filtro por módulo no log, responsividade (após funcional), Extra máquina (aguarda definição). Análise
+  de redundância (1º passe): a única real é a "Busca por SN" duplicada Integração×Pesquisa (já no backlog mover).
+- **Git Flow × worktree** (discutido): recomendação = **GitHub Flow leve** (o que já fazemos: 1 branch/feature →
+  merge no `main`=Prod) + **worktrees** pra paralelizar (2 implementações ao mesmo tempo, merge de volta na branch
+  de integração — nada vai pra `main` até promover). Git Flow completo (develop/release) = cerimônia demais por ora.
+- **Tier 1 entregue (na branch):** tela de **Ordem de Produção** ganhou barra de filtros (Cliente/Status/busca
+  PMO·OP·descrição, client-side ~130 OPs), **header fixo + scroll** (`max-h-[65vh]`), e **olhinho 👁** por linha
+  abrindo modal com o **fluxo em texto+setas**. Extraído `OrdensLista` (client) da page + `FluxoBotao`; reusa
+  `OrdemForm`/`ExcluirOrdemBotao`. tsc/lint/test verdes (255/255). Commit 3220c61 — **falta review + push**.
+
+## 38. Burn-in com entrada/saída + tempo (2026-07-24)
+
+Feature nova (brainstorm→spec→plano→subagents; migração `0037` só no Dev). O posto **Burn-in** deixa de ser
+1 registro com status e passa a ter **lifecycle entrada/saída**.
+
+- **Modelo (sem migração na `sf_registros`):** entrada = registro `posto='Burn-in'` `status=''`; saída =
+  `status` Aprovado/Reprovado (+1 registro por defeito). Ciclo aberto = último evento de Burn-in da peça é
+  `status=''`. Duração = saída−entrada; aberto = agora−entrada.
+- **RPC dedicada `sf_burnin`** (não toca `sf_lancar`): entrada barra `JA_DENTRO`/`JA_APROVADO`/`SEM_MANUTENCAO`
+  + trava de sequência; saída exige entrada aberta (`SEM_ENTRADA`) + status. Posto seguinte só libera com a
+  **saída Aprovado** (gate genérico já funciona). Domínio `burnin.ts` (`pareaBurnin`/`estaAberto`/`formatarDuracao`, TDD).
+- **Lançamento:** posto=Burn-in mostra seletor **Entrada/Saída** (entrada neutra; saída pede Aprovado/Reprovado+defeito).
+- **Painel novo `/shopfloor/burn-in`** (perm `visualizar`): peças com entrada aberta + **tempo decorrido ao vivo**
+  (view `sf_burnin_aberto`, `DISTINCT ON` último evento, `security_invoker`). **Pesquisa:** coluna Duração por ciclo.
+  **Grade:** célula "Em andamento".
+- **Review final (opus) pegou 1 bug Important:** a grade detectava "em andamento" por contagem (entradas>saídas),
+  que errava com reprova de N defeitos + re-entrada → **corrigido** com paridade real por `dataHora` (`RegistroGrade`
+  passou a carregar `data_hora`); +2 testes. 266 testes verdes. Smoke da view no Dev ok (entrada→painel, saída→sai).
+- **Só informativo** (sem tempo-alvo/limite — no backlog). Task 3 (action+form) implementada direto pelo controller
+  (classificador de Agent/Bash caiu no meio) e escrutinada no review final.
+
+## 39. RBAC por módulo — Fase 1 (2026-07-24)
+
+Permissões de perfil passam a ser **por módulo** (antes: flags globais). Fase escolhida pelo usuário:
+**Fase 1 = modelo + tela + enforcement no app**; RLS por módulo fica pra Fase 2. Migrações `0038`/`0039` só no Dev.
+
+- **Modelo:** tabela `perfil_permissao(perfil_id, modulo, permissao)` = **fonte da verdade** granular; as
+  colunas `pode_*` de `perfis` viram **derivadas** (OR dos módulos) — o **RLS segue lendo os `pode_*`**, intacto.
+  Migração popula os grants a partir dos flags atuais (preserva o comportamento; Admin=tudo, Consulta=só ver).
+- **Domínio:** `auth/domain/modulos.ts` (catálogo: recebimento/shopfloor/sistema × permissões); `podeNoModulo`;
+  `Perfil.porModulo`; `mapearPerfil` monta `porModulo` do embed `perfil_permissao`; sessão carrega os grants.
+- **Tela de perfil:** accordions por módulo (checkboxes por permissão, nome `<modulo>.<permissao>`); a action
+  grava os grants e **recalcula os `pode_*`** (OR) — RLS continua correto.
+- **Enforcement no app:** menu + ~40 guards de página/action trocam `podeFazer` → `podeNoModulo('<modulo>', X)`.
+  Insight que reduziu o risco: só `visualizar` e `administrar` são compartilhados entre módulos; o resto
+  (lancar/importar/editar/…) já é de um módulo só → conversão idêntica.
+- **Review final (opus): sem escalação de privilégio.** Achou 1 lockout latente (a policy de SELECT de
+  `perfil_permissao` exigia `visualizar` → perfil só-lançar não carregava os grents) → **corrigido** na
+  migração `0039` (select público, como `perfis`). Findings menores (leitura de usuários/perfis por URL
+  direta só com guard global; auto-lockout no `validarEdicaoPerfil`; sem transação real no save) → **backlog Fase 2**.
+- **Fase 2 (backlog):** tornar as ~82 políticas de RLS conscientes de módulo (`tem_permissao('shopfloor.administrar')`)
+  — só aí a separação vira **real no banco**. Hoje é de interface/uso.
+
+## 40. RBAC Fase 2a — RLS por módulo (só ShopFloor) (2026-07-24)
+
+Segundo passo do RBAC: tornar o **RLS** das tabelas `sf_*` consciente de módulo (a Fase 1 era só no app).
+Escopo escolhido = **só ShopFloor** (Dev, baixo risco; Recebimento/Sistema em Prod ficam pra Fase 2b/2c).
+
+- **Nova `tem_permissao(modulo, perm)`** lê os grants (`perfil_permissao`); a `tem_permissao(perm)` antiga
+  PERMANECE (Recebimento/Sistema + os RPCs de `lancar` — `pode_lancar ≡ shopfloor.lancar`). As 13 políticas
+  `sf_*` (+ `sf_cancelar_integracao`) passam a exigir `'shopfloor'`. Migração `0040`.
+- **BUG CRÍTICO pego pelo review (opus):** o param `modulo` era **sombreado** pela coluna `perfil_permissao.modulo`
+  → `pp.modulo = modulo` virava `pp.modulo = pp.modulo` (sempre true) → o filtro de módulo sumia e o vazamento
+  continuava. `create or replace` **não renomeia** parâmetro (42P13) e qualificar (`tem_permissao.modulo`) /
+  posicional (`$1/$2`) **não** surtiram efeito nesse contexto. Fix definitivo (`0043`): **drop das 14 políticas +
+  drop da função + recreate com `p_modulo/p_perm` + recreate das políticas**.
+- **Teste de isolamento ponta-a-ponta** (essencial — o smoke com service-role não pega, pois `auth.uid()` é nulo):
+  criar perfil só-Recebimento + user real + login → tentar ler `sf_ordens` = **0 linhas (bloqueado)**; +grant
+  `shopfloor.visualizar` → **libera**. Pegadinha do teste: o **trigger `auth.users→usuarios` do Supabase** cria a
+  linha do usuário com um perfil padrão → tem que **UPDATE** o perfil_id (não INSERT). Confirmado o isolamento real.
+- `0044-0049` = objetos de diagnóstico (canário + funções de debug SECURITY DEFINER) — **removidos** ao fim.
+- **Fase 2b/2c (backlog):** Recebimento (37 políticas, Prod) + Sistema (auth, Prod). Só aí a separação é total.
+  Migrações do módulo agora 0028–0049.
+
+## 41. RBAC Fase 2b — RLS por módulo (Recebimento) (2026-07-24)
+
+Terceiro passo do RBAC: RLS por módulo nas tabelas do **Recebimento** (dados vivos de Prod, mas construído/
+testado só no Dev). Mesmo padrão da 2a.
+
+- **21 políticas em 11 tabelas** (processos_recebimento, listas, lista_itens, colunas_lista,
+  configuracao_campos, criticidade_fornecedor, tabela_nqa, importacoes, padroes_importacao, anexos_processo,
+  geracoes_etiquetas) → `tem_permissao('recebimento', X)`, **preservando a lógica composta** (status, auth.uid,
+  OR/AND). Migração `0051`. Ground-truth tirado do `pg_policies` (havia redefinições nos arquivos — o que vale
+  é o estado atual). `usuarios/perfis/logs` (Sistema) ficam pra Fase 2c.
+- **Validação com login real (bidirecional):** usuário Recebimento lê `processos_recebimento` (5) mas **não**
+  `sf_ordens` (0); usuário só-ShopFloor lê `sf_ordens` (5) mas **não** `processos_recebimento` (0);
+  `recebimento.administrar` **grava** em `listas` (201) — sem lockout de read nem write.
+- **Review (opus): READY, sem escalação/lockout** — rewrite fiel (expressões compostas byte-a-byte), Sistema
+  intacto, nenhuma política órfã. Menores: **storage** (bucket de fotos só no Prod) segue cego a módulo →
+  tratar na promoção; cosmético (`public.` qualifier).
+- **Achado (Recebimento):** as permissões/ações **`excluir` e `cancelar` de processo não têm UI hoje** (guards
+  dormentes) → no backlog decidir criar as telas ou remover.
+- 0050/0052 = objetos de debug (dump de pg_policies), já removidos. Migrações do módulo agora **0028–0052**.
+- **Falta Fase 2c** (Sistema) + storage no Prod → aí o RBAC fica 100% e dá pra remover a `tem_permissao(perm)` antiga.
+
+## 42. RBAC Fase 2c — RLS por módulo (Sistema) — RBAC COMPLETO (2026-07-24)
+
+Última fase do RBAC: RLS por módulo nas tabelas de **Sistema** (`usuarios`, `perfis`, `perfil_permissao`, `logs`).
+Migração `0054`. Com isso o RBAC por módulo fica **completo** (Fase 1 app + 2a sf_* + 2b Recebimento + 2c Sistema).
+
+- 9 políticas → `tem_permissao('sistema','administrar')`. **`logs_select` restrito a admin de sistema** (era
+  'visualizar' — decisão do usuário). **Preservado o crítico:** `id = auth.uid()` no `usuarios_select_self`
+  (cada um lê a própria linha → **login/getSessao não quebra**) e `sistema = false` no delete de perfis.
+  **Não tocadas:** `perfis_select`/`perfil_permissao_select` (using(true), getSessao), `logs_insert` (registrarLog).
+- **Validado com login real:** admin de **Recebimento** (sem sistema) lê **só a própria** linha de usuarios,
+  **não cria perfil (403 — escalação fechada)**, não lê logs; admin de **Sistema** gerencia tudo. (Antes, com
+  `pode_administrar` global, um admin de Recebimento conseguiria gerenciar usuários/perfis!)
+- **Review (opus): READY, sem escalação/lockout** — auth intacto; o seed do `0038` garante que os admins atuais
+  mantêm `sistema.administrar` (sem lockout na migração).
+- **1-arg `tem_permissao(perm)` mantida** (os 4 RPCs de `lancar` ainda a usam — `pode_lancar ≡ shopfloor.lancar`).
+  Pra removê-la um dia, migrar esses RPCs (reproduzir os corpos → deferido).
+- **Falta só (na promoção do Prod):** as políticas de **storage** (bucket `anexos-processos`, só no Prod) →
+  `recebimento.*`; e confirmar que o `0038` (seed dos grants) rodou no Prod **antes** do `0054` (senão admin
+  travaria). Migrações do módulo agora **0028–0054**.
+
+## 43. Higiene pré-Prod + smoke OK + PROMOÇÃO PRO PROD INICIADA (pausada) (2026-07-24 → 27)
+
+- **Higiene pré-Prod:** removidos código morto (`gateSatisfeito`+`SnapshotPosto` de postos.ts,
+  `burnin-actions.ts`, `nav-config.ts` + testes) e **dropada a policy de INSERT direto em `sf_registros`**
+  (migração `0055`) — era brecha (permitia forjar registro cru pulando as validações dos RPCs; confirmado
+  INSERT direto → 403). 266 testes.
+- **Fix `handle_new_user` (0056):** a criação de usuário quebrava (500, `23502` NOT NULL de `usuarios.perfil_id`)
+  porque o trigger procurava um perfil chamado exatamente **'Consulta'** e o usuário o renomeou p/
+  **'Consulta Recebimento'**. Trigger agora tem **fallback** (perfil de menor privilégio) — o perfil default é
+  só placeholder transitório (a action de criar usuário sobrescreve). **Não era regressão do RBAC.**
+- **SMOKE do Recebimento no preview: PASSOU** — testado com **perfis escopados reais** (Somente Importar,
+  Inspeção, Recebimento) criados pela UI; cada um só faz o que deve. RBAC validado ponta-a-ponta + Recebimento
+  sem regressão. **Módulo pronto pro Prod.** Migrações do módulo agora **0028–0056** (só no Dev).
+- **PROMOÇÃO PRO PROD — INICIADA, PAUSADA no Passo 1 (backup).** Roteiro completo em
+  `docs/promocao-prod-shopfloor.md`. **Retomar daqui:**
+  - **Passo 1 (backup/dump do Prod)** — o `pg_dump` local NÃO está instalado (e a versão do cliente Ubuntu
+    < PG17 do Supabase daria mismatch) → usar **`supabase db dump`** (traz ferramenta compatível).
+    Comandos: `supabase db dump --db-url "$PROD" -f prod_schema_*.sql` e `... --data-only --use-copy -f prod_data_*.sql`.
+  - **Conexão do Prod:** a **Direct connection** (`db.<ref>.supabase.co`) é **IPv6** → não conecta em rede IPv4
+    (rwtech) → usar a **Session pooler** (`aws-0-<região>.pooler.supabase.com:5432`, user `postgres.<ref>`;
+    Transaction pooler 6543 NÃO serve pra dump). **Resetar a senha do banco** p/ alfanumérica (Settings →
+    Database → Reset database password) evita percent-encode. Project ref do Prod = `ykwkacfviarhfmxeisqk`.
+  - **Depois do backup:** aplicar migrações **0028–0056** no Prod (`supabase db push` linkado ao Prod, ou
+    `--db-url`) — confirmar no output que **0038 (seed grants) vem antes de 0040/0051/0054** (senão admin trava).
+  - **Storage (0057, criar na hora):** capturar as políticas reais de `storage.objects` do bucket
+    `anexos-processos` no Prod (`select … from pg_policies where schemaname='storage'…`) e reescrever p/
+    `recebimento.*` (hoje usam `tem_permissao('visualizar'/'editar')` global → vazam arquivos p/ só-ShopFloor).
+  - **Merge → deploy** (Vercel Prod), depois **smoke pós-deploy** (Recebimento OK + ShopFloor escondido).
+  - **Rollback:** código = redeploy do build anterior na Vercel; banco = restaurar os dumps (só se RLS travar).

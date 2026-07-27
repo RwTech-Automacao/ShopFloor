@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { ArrowLeftIcon } from 'lucide-react'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeFazer } from '@/modules/auth/domain/perfil'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { carregarCamposFormulario } from '@/modules/recebimento/infra/processo-detalhe-repository'
 import { carregarItensPorLista } from '@/modules/recebimento/infra/campo-comercial-repository'
@@ -9,7 +9,7 @@ import { NovoProcessoForm } from './novo-processo-form'
 
 export default async function NovoProcessoPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeFazer(sessao.perfil, 'editar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'editar')) {
     return <SemPermissao descricao="Você não tem permissão para criar processos." />
   }
 

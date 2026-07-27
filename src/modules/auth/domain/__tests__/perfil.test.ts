@@ -8,7 +8,9 @@ const consulta: Perfil = {
   permissoes: {
     visualizar: true, importar: false, editar: false, finalizar: false,
     editar_finalizado: false, excluir: false, gerar_etiqueta: false, administrar: false,
+    lancar: false,
   },
+  porModulo: { recebimento: {}, shopfloor: {}, sistema: {} },
 }
 
 describe('podeFazer', () => {
