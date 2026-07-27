@@ -1306,3 +1306,33 @@ Migração `0054`. Com isso o RBAC por módulo fica **completo** (Fase 1 app + 2
 - **Falta só (na promoção do Prod):** as políticas de **storage** (bucket `anexos-processos`, só no Prod) →
   `recebimento.*`; e confirmar que o `0038` (seed dos grants) rodou no Prod **antes** do `0054` (senão admin
   travaria). Migrações do módulo agora **0028–0054**.
+
+## 43. Higiene pré-Prod + smoke OK + PROMOÇÃO PRO PROD INICIADA (pausada) (2026-07-24 → 27)
+
+- **Higiene pré-Prod:** removidos código morto (`gateSatisfeito`+`SnapshotPosto` de postos.ts,
+  `burnin-actions.ts`, `nav-config.ts` + testes) e **dropada a policy de INSERT direto em `sf_registros`**
+  (migração `0055`) — era brecha (permitia forjar registro cru pulando as validações dos RPCs; confirmado
+  INSERT direto → 403). 266 testes.
+- **Fix `handle_new_user` (0056):** a criação de usuário quebrava (500, `23502` NOT NULL de `usuarios.perfil_id`)
+  porque o trigger procurava um perfil chamado exatamente **'Consulta'** e o usuário o renomeou p/
+  **'Consulta Recebimento'**. Trigger agora tem **fallback** (perfil de menor privilégio) — o perfil default é
+  só placeholder transitório (a action de criar usuário sobrescreve). **Não era regressão do RBAC.**
+- **SMOKE do Recebimento no preview: PASSOU** — testado com **perfis escopados reais** (Somente Importar,
+  Inspeção, Recebimento) criados pela UI; cada um só faz o que deve. RBAC validado ponta-a-ponta + Recebimento
+  sem regressão. **Módulo pronto pro Prod.** Migrações do módulo agora **0028–0056** (só no Dev).
+- **PROMOÇÃO PRO PROD — INICIADA, PAUSADA no Passo 1 (backup).** Roteiro completo em
+  `docs/promocao-prod-shopfloor.md`. **Retomar daqui:**
+  - **Passo 1 (backup/dump do Prod)** — o `pg_dump` local NÃO está instalado (e a versão do cliente Ubuntu
+    < PG17 do Supabase daria mismatch) → usar **`supabase db dump`** (traz ferramenta compatível).
+    Comandos: `supabase db dump --db-url "$PROD" -f prod_schema_*.sql` e `... --data-only --use-copy -f prod_data_*.sql`.
+  - **Conexão do Prod:** a **Direct connection** (`db.<ref>.supabase.co`) é **IPv6** → não conecta em rede IPv4
+    (rwtech) → usar a **Session pooler** (`aws-0-<região>.pooler.supabase.com:5432`, user `postgres.<ref>`;
+    Transaction pooler 6543 NÃO serve pra dump). **Resetar a senha do banco** p/ alfanumérica (Settings →
+    Database → Reset database password) evita percent-encode. Project ref do Prod = `ykwkacfviarhfmxeisqk`.
+  - **Depois do backup:** aplicar migrações **0028–0056** no Prod (`supabase db push` linkado ao Prod, ou
+    `--db-url`) — confirmar no output que **0038 (seed grants) vem antes de 0040/0051/0054** (senão admin trava).
+  - **Storage (0057, criar na hora):** capturar as políticas reais de `storage.objects` do bucket
+    `anexos-processos` no Prod (`select … from pg_policies where schemaname='storage'…`) e reescrever p/
+    `recebimento.*` (hoje usam `tem_permissao('visualizar'/'editar')` global → vazam arquivos p/ só-ShopFloor).
+  - **Merge → deploy** (Vercel Prod), depois **smoke pós-deploy** (Recebimento OK + ShopFloor escondido).
+  - **Rollback:** código = redeploy do build anterior na Vercel; banco = restaurar os dumps (só se RLS travar).
