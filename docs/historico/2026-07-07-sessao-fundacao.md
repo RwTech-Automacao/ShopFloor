@@ -1265,3 +1265,24 @@ Escopo escolhido = **só ShopFloor** (Dev, baixo risco; Recebimento/Sistema em P
 - `0044-0049` = objetos de diagnóstico (canário + funções de debug SECURITY DEFINER) — **removidos** ao fim.
 - **Fase 2b/2c (backlog):** Recebimento (37 políticas, Prod) + Sistema (auth, Prod). Só aí a separação é total.
   Migrações do módulo agora 0028–0049.
+
+## 41. RBAC Fase 2b — RLS por módulo (Recebimento) (2026-07-24)
+
+Terceiro passo do RBAC: RLS por módulo nas tabelas do **Recebimento** (dados vivos de Prod, mas construído/
+testado só no Dev). Mesmo padrão da 2a.
+
+- **21 políticas em 11 tabelas** (processos_recebimento, listas, lista_itens, colunas_lista,
+  configuracao_campos, criticidade_fornecedor, tabela_nqa, importacoes, padroes_importacao, anexos_processo,
+  geracoes_etiquetas) → `tem_permissao('recebimento', X)`, **preservando a lógica composta** (status, auth.uid,
+  OR/AND). Migração `0051`. Ground-truth tirado do `pg_policies` (havia redefinições nos arquivos — o que vale
+  é o estado atual). `usuarios/perfis/logs` (Sistema) ficam pra Fase 2c.
+- **Validação com login real (bidirecional):** usuário Recebimento lê `processos_recebimento` (5) mas **não**
+  `sf_ordens` (0); usuário só-ShopFloor lê `sf_ordens` (5) mas **não** `processos_recebimento` (0);
+  `recebimento.administrar` **grava** em `listas` (201) — sem lockout de read nem write.
+- **Review (opus): READY, sem escalação/lockout** — rewrite fiel (expressões compostas byte-a-byte), Sistema
+  intacto, nenhuma política órfã. Menores: **storage** (bucket de fotos só no Prod) segue cego a módulo →
+  tratar na promoção; cosmético (`public.` qualifier).
+- **Achado (Recebimento):** as permissões/ações **`excluir` e `cancelar` de processo não têm UI hoje** (guards
+  dormentes) → no backlog decidir criar as telas ou remover.
+- 0050/0052 = objetos de debug (dump de pg_policies), já removidos. Migrações do módulo agora **0028–0052**.
+- **Falta Fase 2c** (Sistema) + storage no Prod → aí o RBAC fica 100% e dá pra remover a `tem_permissao(perm)` antiga.
