@@ -282,5 +282,11 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 - **Processo de dev — Git Flow + worktree** *(usuário, 2026-07-24)*: avaliar adotar. Ver a análise
   na conversa (recomendação: modelo leve tipo GitHub Flow + worktrees pra trabalho paralelo; Git Flow
   completo com develop/release provavelmente é cerimônia demais pro tamanho atual).
+- **(Recebimento) Permissões/ações órfãs — `excluir` e `cancelar`** *(achado 2026-07-24, durante o RBAC
+  Fase 2b)*: a permissão **`excluir`** protege (no RLS) o DELETE de `processos_recebimento`, mas **não há
+  função no front nem action** que apague um processo — guard dormente (delete só manual pelo banco). E o
+  **`cancelar`** (status → `cancelado`) **também não tem UI hoje** (confirmado pelo usuário). **Decidir:**
+  criar as telas de excluir/cancelar processo, ou remover a permissão/policy órfã. É do módulo Recebimento;
+  registrado aqui porque surgiu ao mexer no RLS dele. (Na Fase 2b, `excluir` foi mapeada p/ `recebimento.excluir`.)
 - Higiene técnica: remover policy de INSERT direto em `sf_registros` (toda escrita já passa pelas
   funções); `gateSatisfeito` morto em postos.ts.
