@@ -11,6 +11,12 @@ import { listarUsuarios } from '@/modules/usuarios/infra/usuario-admin-repositor
 import { listarPerfis } from '@/modules/perfis/infra/perfil-repository'
 import { UsuarioForm, RedefinirSenhaButton, AlternarAtivoUsuario } from './usuario-form'
 
+// Esta página busca usuários via API admin (service-role, sem cookies), então o
+// Next não a detecta como dinâmica sozinho e tenta avaliá-la na coleta de dados
+// do build — o que faz uma chamada real ao Supabase e quebra o build se a rede
+// falha. Forçamos render dinâmico: a página é sempre por-requisição mesmo.
+export const dynamic = 'force-dynamic'
+
 export default async function UsuariosPage() {
   const [usuarios, perfis] = await Promise.all([listarUsuarios(), listarPerfis()])
 
