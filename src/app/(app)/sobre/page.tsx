@@ -1,10 +1,9 @@
-import { Factory, Inbox, Workflow, type LucideIcon } from 'lucide-react'
+import { Factory, Inbox, type LucideIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const MODULOS: { icone: LucideIcon; nome: string; descricao: string }[] = [
   { icone: Inbox, nome: 'Recebimento', descricao: 'Importação, processos e conferência' },
-  { icone: Workflow, nome: 'Fluxo de Processos', descricao: 'Lançamento, integração, manutenção e rastreio' },
 ]
 
 const INFORMACOES: { rotulo: string; valor: string }[] = [
