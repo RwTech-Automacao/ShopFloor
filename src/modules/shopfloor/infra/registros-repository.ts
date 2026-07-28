@@ -18,6 +18,11 @@ export interface RegistroRow {
   tipo_defeito: string
   nqa_visual: string
   nqa_funcional: string
+  id_integracao: string
+  reparo_conserto: string
+  reparo_posicao: string
+  posto_origem: string
+  data_hora_origem: string | null
 }
 
 export interface ResultadoRegistros {
@@ -26,7 +31,7 @@ export interface ResultadoRegistros {
 }
 
 const COLUNAS =
-  'id,data_hora,colaborador,posto,pmo,op,cliente,numero_caixa,qtd_por_caixa,status,numero_serie,codigo_defeito,posicao,tipo_defeito,nqa_visual,nqa_funcional'
+  'id,data_hora,colaborador,posto,pmo,op,cliente,numero_caixa,qtd_por_caixa,status,numero_serie,codigo_defeito,posicao,tipo_defeito,nqa_visual,nqa_funcional,id_integracao,reparo_conserto,reparo_posicao,posto_origem,data_hora_origem'
 
 export async function consultarRegistros(
   filtros: FiltrosRegistros,

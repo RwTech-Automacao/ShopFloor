@@ -61,6 +61,17 @@ function CampoDetalhe({ rotulo, valor }: CampoDetalheProps) {
   )
 }
 
+/** Campo opcional: omite a linha inteira quando o valor é vazio/nulo (sem "—"). */
+function linha(rotulo: string, valor: string | number | null | undefined) {
+  if (valor === null || valor === undefined || valor === '') return null
+  return (
+    <div className="flex gap-2" key={rotulo}>
+      <dt className="w-32 shrink-0 text-muted-foreground">{rotulo}</dt>
+      <dd className="min-w-0 flex-1">{valor}</dd>
+    </div>
+  )
+}
+
 interface RegistrosTabelaProps {
   linhas: RegistroRow[]
 }
@@ -142,13 +153,21 @@ export function RegistrosTabela({ linhas }: RegistrosTabelaProps) {
                 <CampoDetalhe rotulo="SN" valor={sel.numero_serie} />
                 <CampoDetalhe rotulo="Status" valor={rotuloStatus(sel.status)} />
                 <CampoDetalhe rotulo="Colaborador" valor={sel.colaborador} />
-                <CampoDetalhe rotulo="Nº caixa" valor={sel.numero_caixa} />
-                <CampoDetalhe rotulo="Qtd/caixa" valor={sel.qtd_por_caixa} />
-                <CampoDetalhe rotulo="Código defeito" valor={sel.codigo_defeito} />
-                <CampoDetalhe rotulo="Posição" valor={sel.posicao} />
-                <CampoDetalhe rotulo="Tipo defeito" valor={sel.tipo_defeito} />
-                <CampoDetalhe rotulo="NQA visual" valor={sel.nqa_visual} />
-                <CampoDetalhe rotulo="NQA funcional" valor={sel.nqa_funcional} />
+                {linha('Nº caixa', sel.numero_caixa)}
+                {linha('Qtd/caixa', sel.qtd_por_caixa)}
+                {linha('Código defeito', sel.codigo_defeito)}
+                {linha('Posição', sel.posicao)}
+                {linha('Tipo defeito', sel.tipo_defeito)}
+                {linha('NQA visual', sel.nqa_visual)}
+                {linha('NQA funcional', sel.nqa_funcional)}
+                {linha('ID Integração', sel.id_integracao)}
+                {linha('Reparo (conserto)', sel.reparo_conserto)}
+                {linha('Reparo (posição)', sel.reparo_posicao)}
+                {linha('Posto de origem', sel.posto_origem)}
+                {linha(
+                  'Data/hora origem',
+                  sel.data_hora_origem ? formatarDataHora(sel.data_hora_origem) : null,
+                )}
               </dl>
             </>
           )}
