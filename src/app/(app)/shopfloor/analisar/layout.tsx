@@ -1,6 +1,3 @@
-import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeNoModulo } from '@/modules/auth/domain/perfil'
-import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { AbasFluxo } from '../abas-fluxo'
 
 const ABAS = [
@@ -9,11 +6,7 @@ const ABAS = [
   { rotulo: 'Burn-in', href: '/shopfloor/analisar/burn-in' },
 ]
 
-export default async function AnalisarLayout({ children }: { children: React.ReactNode }) {
-  const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) {
-    return <SemPermissao descricao="Você não tem permissão para ver a Análise do Fluxo de Processos." />
-  }
+export default function AnalisarLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col">
       <AbasFluxo tabs={ABAS} />
