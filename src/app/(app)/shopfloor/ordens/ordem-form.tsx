@@ -180,13 +180,16 @@ export function OrdemForm({
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="sn_ini">SN inicial</Label>
-              <Input id="sn_ini" name="sn_ini" defaultValue={ordem?.sn_ini ?? ''} />
+              <Label htmlFor="sn_ini">SN inicial *</Label>
+              <Input id="sn_ini" name="sn_ini" defaultValue={ordem?.sn_ini ?? ''} required />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="sn_fim">SN final</Label>
-              <Input id="sn_fim" name="sn_fim" defaultValue={ordem?.sn_fim ?? ''} />
+              <Label htmlFor="sn_fim">SN final *</Label>
+              <Input id="sn_fim" name="sn_fim" defaultValue={ordem?.sn_fim ?? ''} required />
             </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Faixa de SN obrigatória — mesmo formato nos dois limites (ex.: <code>SN0001</code> a <code>SN0500</code>).
+            </p>
           </div>
 
           {/* Fluxo de postos (ordenado) */}
