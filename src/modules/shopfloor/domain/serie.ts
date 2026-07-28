@@ -45,3 +45,24 @@ export function serieDentroDaFaixa(snIni: string, snFim: string, serie: string):
   const hi = s1 > s2 ? s1 : s2
   return sx >= lo && sx <= hi
 }
+
+/**
+ * Verdadeiro se snIni..snFim formam uma faixa COERENTE: mesmo formato e início ≤ fim.
+ * Espelha a lógica de `serieDentroDaFaixa` (numérico: prefixo/sufixo iguais e
+ * comparação do bloco de dígitos; senão lexical). Um lado numérico e o outro
+ * não → incoerente. Vazio em qualquer lado → incoerente.
+ */
+export function faixaCoerente(snIni: string, snFim: string): boolean {
+  const ai = partesSerie(snIni)
+  const af = partesSerie(snFim)
+  if (ai.limpo === '' || af.limpo === '') return false
+  const iniNum = !Number.isNaN(ai.num)
+  const fimNum = !Number.isNaN(af.num)
+  if (iniNum && fimNum) {
+    const lc = (s: string) => s.toLowerCase()
+    if (lc(ai.prefixo) !== lc(af.prefixo) || lc(ai.sufixo) !== lc(af.sufixo)) return false
+    return ai.num <= af.num
+  }
+  if (iniNum !== fimNum) return false // misto
+  return ai.limpo <= af.limpo // lexical
+}
