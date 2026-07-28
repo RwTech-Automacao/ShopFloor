@@ -324,3 +324,9 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
 - **Higiene restante (opcional, pré-Prod):** follow-ups menores dos reviews — guard por página em
   `configuracoes/{usuarios,perfis,logs}` (hoje só o guard global do layout + RLS de backstop);
   `validarEdicaoPerfil` usa OR global; `salvarPerfil` grava `pode_*` e grants sem transação real.
+- **Tela de Perfis — trocar a matriz de checks por "ver permissões" (olhinho)** *(usuário, 2026-07-28)*:
+  hoje `/configuracoes/perfis` é uma **tabela larga** (Nome + ~10 colunas de permissão com ✓/—) que rola
+  horizontal e piora conforme crescem permissões/módulos. Ideia: deixar só a **lista de perfis** (nome +
+  ações) e, por linha, um **ícone de olho / botão "Ver permissões"** que abre as permissões daquele perfil
+  (modal/painel, provavelmente agrupadas por módulo) — em vez da grade de checks inline. Mesmo padrão do
+  "olhinho" do fluxo de postos da OP. Melhora legibilidade e escala.
