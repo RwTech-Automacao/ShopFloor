@@ -92,11 +92,25 @@ export function RegistrosTabela({ linhas }: RegistrosTabelaProps) {
               </TableRow>
             )}
             {linhas.map((l) => (
-              <TableRow key={l.id} className="cursor-pointer" onClick={() => setSel(l)}>
+              <TableRow
+                key={l.id}
+                className="cursor-pointer"
+                onClick={() => setSel(l)}
+                tabIndex={0}
+                role="button"
+                aria-label={`Detalhes do registro ${l.numero_serie}`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setSel(l)
+                  }
+                }}
+              >
                 <TableCell className="whitespace-nowrap text-muted-foreground">
                   {formatarDataHora(l.data_hora)}
                 </TableCell>
                 <TableCell>{l.cliente || '—'}</TableCell>
+                {/* PMO e OP são obrigatórios no domínio de Ordens, nunca vazios: sem fallback "—" */}
                 <TableCell>{`${l.pmo}·${l.op}`}</TableCell>
                 <TableCell>{l.posto || '—'}</TableCell>
                 <TableCell>{l.numero_serie || '—'}</TableCell>
@@ -113,7 +127,7 @@ export function RegistrosTabela({ linhas }: RegistrosTabelaProps) {
       </div>
 
       <Dialog open={sel !== null} onOpenChange={(o) => !o && setSel(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           {sel && (
             <>
               <DialogHeader>
@@ -122,6 +136,7 @@ export function RegistrosTabela({ linhas }: RegistrosTabelaProps) {
               <dl className="space-y-1.5 text-sm">
                 <CampoDetalhe rotulo="Data/Hora" valor={formatarDataHora(sel.data_hora)} />
                 <CampoDetalhe rotulo="Cliente" valor={sel.cliente} />
+                {/* PMO e OP são obrigatórios no domínio de Ordens, nunca vazios: sem fallback "—" */}
                 <CampoDetalhe rotulo="PMO·OP" valor={`${sel.pmo}·${sel.op}`} />
                 <CampoDetalhe rotulo="Posto" valor={sel.posto} />
                 <CampoDetalhe rotulo="SN" valor={sel.numero_serie} />

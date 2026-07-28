@@ -32,6 +32,8 @@ export function parsearFiltrosRegistros(
   const de = input.de?.trim()
   if (de) f.de = de
   const ate = input.ate?.trim()
-  if (ate) f.ate = ate
+  // data_hora é timestamptz; um `ate` só-data (YYYY-MM-DD) precisa virar fim do
+  // dia, senão exclui os registros do próprio dia (após 00:00).
+  if (ate) f.ate = ate.length === 10 ? `${ate}T23:59:59.999` : ate
   return f
 }

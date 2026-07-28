@@ -4,7 +4,10 @@ import { parsearFiltrosRegistros } from '../registros-filtros'
 describe('parsearFiltrosRegistros', () => {
   it('passa cliente/posto/status/busca/de/ate (com trim)', () => {
     const f = parsearFiltrosRegistros({ cliente: ' Lince ', posto: 'Teste', status: 'aprovado', busca: ' 100 ', de: '2026-07-01', ate: '2026-07-28' })
-    expect(f).toEqual({ cliente: 'Lince', posto: 'Teste', status: 'aprovado', busca: '100', de: '2026-07-01', ate: '2026-07-28' })
+    expect(f).toEqual({ cliente: 'Lince', posto: 'Teste', status: 'aprovado', busca: '100', de: '2026-07-01', ate: '2026-07-28T23:59:59.999' })
+  })
+  it('estende ate (só-data) pro fim do dia', () => {
+    expect(parsearFiltrosRegistros({ ate: '2026-07-28' }).ate).toBe('2026-07-28T23:59:59.999')
   })
   it('normaliza o SN pra numero_serie_norm', () => {
     const f = parsearFiltrosRegistros({ sn: '00-25.7891/001' })
