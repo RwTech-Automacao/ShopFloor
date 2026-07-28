@@ -25,6 +25,7 @@ import {
   Settings2,
   TriangleAlert,
   Table2,
+  History,
   ScrollText,
   Info,
   ChevronDown,
@@ -70,6 +71,7 @@ const SHOPFLOOR: FolhaModular[] = [
   { chave: 'burn-in', rotulo: 'Burn-in', href: '/shopfloor/burn-in', icone: Timer, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'pesquisa', rotulo: 'Pesquisa', href: '/shopfloor/pesquisa', icone: Search, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'dashboard', rotulo: 'Dashboard', href: '/shopfloor/dashboard', icone: ChartColumn, modulo: 'shopfloor', perm: 'visualizar' },
+  { chave: 'registros', rotulo: 'Registros', href: '/shopfloor/registros', icone: History, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
 ]
 
