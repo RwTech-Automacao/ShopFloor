@@ -30,10 +30,11 @@ export function parsearFiltrosRegistros(
   const status = input.status?.trim()
   if (status) f.status = status
   const de = input.de?.trim()
-  if (de) f.de = de
+  // data_hora é timestamptz; ancoramos as datas só-data em BRT (UTC-3, sem
+  // horário de verão desde 2019). Sem o fuso, o Postgres leria como UTC e a
+  // janela deslizaria ~3h (perderia registros do fim do dia local).
+  if (de) f.de = de.length === 10 ? `${de}T00:00:00-03:00` : de
   const ate = input.ate?.trim()
-  // data_hora é timestamptz; um `ate` só-data (YYYY-MM-DD) precisa virar fim do
-  // dia, senão exclui os registros do próprio dia (após 00:00).
-  if (ate) f.ate = ate.length === 10 ? `${ate}T23:59:59.999` : ate
+  if (ate) f.ate = ate.length === 10 ? `${ate}T23:59:59.999-03:00` : ate
   return f
 }
