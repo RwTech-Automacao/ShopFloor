@@ -1,15 +1,11 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
-import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdensParaIntegracao } from '@/modules/shopfloor/infra/lancamento-repository'
 import { IntegracaoForm } from './integracao-form'
 
 export default async function IntegracaoPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
-    return <SemPermissao descricao="Você não tem permissão para acessar a Integração." />
-  }
-
+  if (!sessao) return null
   const ordens = await listarOrdensParaIntegracao()
   const podeCancelar = podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')
 
