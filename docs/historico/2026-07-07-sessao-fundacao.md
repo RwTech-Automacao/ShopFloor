@@ -1370,3 +1370,33 @@ próprio terminal; eu guiei e verifiquei as saídas não-secretas):
   (o seed `0038` inferiu grants por módulo a partir dos `pode_*` globais; o que era global vira o mesmo em
   cada módulo, o que pode divergir da intenção por-módulo). Reconferir a saúde dos grants e a tela de perfis
   (leitura/derivação `salvarPerfil`).
+
+## 45. Pós-promoção: ajustes cosméticos + episódio do build (env por branch na Vercel) (2026-07-27)
+
+- **PR #2 (cosmético, mergeado):** tela Sobre `1.1.0 → 1.0.0` + remoção do card "Fluxo de Processos"
+  (módulo em dark launch; sobe pra 1.1.0 e volta o card quando liberar de fato). Deploy de Prod ok.
+- **Grants pós-fix manual do usuário (saudável):** o usuário removeu manualmente o `shopfloor.visualizar`
+  que o seed `0038` tinha dado a vários perfis (Inspeção/Recebimento/Somente importar foram shopfloor
+  1→0) — **apertou** o dark launch. Administrador/Supervisor seguem com `sistema=1` (sem lockout). Perfil
+  **Produção** ainda tem `shopfloor=2` (operadores veriam o módulo) → revisar quando definir permissões.
+- **Episódio do build quebrado + causa raiz (aprendizado forte):** o Preview do PR #2 falhava com
+  `Failed to collect page data for /configuracoes/usuarios` e depois `/recebimento/exportar-fotos`. Build
+  local e Produção passavam. **Correlação:** previews da branch `feat/shopfloor-lancamento` passavam,
+  os da `chore/...` falhavam. **Causa raiz:** as env vars do Supabase na Vercel estavam com **escopo de
+  Preview amarrado à branch `feat/shopfloor-lancamento`** → outras branches não recebiam as credenciais →
+  o fetch ao Supabase **durante o build** quebrava. **NÃO era código; a Produção sempre esteve segura**
+  (tem as vars no escopo Production). São **4** vars nesse grupo: `NEXT_PUBLIC_SUPABASE_URL`,
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` e **`FOTOS_STORAGE`** (seletor de backend
+  de fotos; default 'supabase', hoje 'r2' ativo — se faltar num preview, as fotos quebram).
+- **Correção definitiva:** setar as 4 vars de Preview como **"All Preview branches"** (não amarrar a uma
+  branch) → qualquer branch de dev builda e roda contra o Dev; só `main`/Production usa o Prod.
+- **`force-dynamic` (hot-fix que virou desnecessário):** adicionado `export const dynamic =
+  'force-dynamic'` na página de usuários (`a7323a8`, **está em Prod** — inofensivo, a página já era `ƒ`)
+  e no layout `(app)` (`b82fe08`, **descartado**, nunca publicado). Como a causa era env, não é a correção
+  real. Mantido o de usuarios (higiene inócua); layout descartado.
+- **Doc de aprendizados:** criado `docs/aprendizados-promocao-prod-2026-07-27.md` (comandos explicados +
+  resumo técnico + conceitos: pooler×direct, sombreamento SQL, RLS por módulo, env por branch, fluxo de
+  PR, semver/tags, dinâmico×estático no Next 16, debugar por correlação).
+- **Workflow de branch nova (pra continuar dev):** `git checkout main && git pull` → `git checkout -b
+  feat/<nome>` → `git push` → na Vercel garantir as 4 env vars em "All Preview branches" → PR gera Preview
+  contra Dev → merge na main dispara Prod.
