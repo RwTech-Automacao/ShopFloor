@@ -340,3 +340,21 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   ações) e, por linha, um **ícone de olho / botão "Ver permissões"** que abre as permissões daquele perfil
   (modal/painel, provavelmente agrupadas por módulo) — em vez da grade de checks inline. Mesmo padrão do
   "olhinho" do fluxo de postos da OP. Melhora legibilidade e escala.
+
+## Priorização do backlog (2026-07-28, usuário)
+- **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**
+  — ligado à reestruturação de telas abaixo (decidir a estrutura antes de mover peças soltas).
+- **Backlog 2 (adiado por ora):** Cadastro de OP filtros+scroll; Finalização de OP condicionada aos
+  lançamentos; Export da Tela de Registros (Excel); Config de campos do detalhe de Registros.
+- **Branch separada (afeta tela de Prod):** **Tela de Perfis com "olhinho/ver permissões"** — NÃO entra no
+  batch atual do ShopFloor; merece PR próprio pra `main`, porque mexe numa tela **viva** (Configurações ›
+  Perfis, usada em Prod). É importante, mas isolada.
+- **Pós-funcional (quando as telas estiverem quase fechadas):** **responsividade**.
+
+## Reestruturação das telas do Fluxo — aproximar do formulário legado *(usuário, 2026-07-28)*
+No legado (Apps Script), só **Registros** e **Ordem de Produção** eram separados (eram planilhas); o resto —
+**Lançamento, Integração, Manutenção, Dashboard, Pesquisa** — vivia **junto num único formulário** com **abas
+no topo** (Lançamento | Integração | Manutenção | Dashboard | Pesquisa). Hoje no web cada um é uma tela/rota
+separada no menu. **Avaliar aproximar disso:** as telas operacionais dentro de um **container com abas** (não
+precisa ser idêntico ao legado). Liga-se direto à "análise de telas redundantes" e à consolidação da busca por
+SN — por isso essas decisões são tomadas juntas.
