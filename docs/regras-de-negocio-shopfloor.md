@@ -350,6 +350,17 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   batch atual do ShopFloor; merece PR próprio pra `main`, porque mexe numa tela **viva** (Configurações ›
   Perfis, usada em Prod). É importante, mas isolada.
 - **Pós-funcional (quando as telas estiverem quase fechadas):** **responsividade**.
+- **Técnico/higiene — ADIADO (análise 2026-07-28, não entra no batch atual):**
+  - **Guard-por-página em `usuarios`/`perfis`/`logs`:** hoje essas telas dependem só do guard **no layout** de
+    Configurações (`administrar` global) + RLS — é o **mesmo padrão auth-no-layout** que o opus apontou no
+    ShopFloor. Correção = guard `sistema.administrar` **na página** (re-checa na navegação). **Rápido e baixo
+    risco** quando for feito.
+  - **Remover `tem_permissao(1-arg)`:** os únicos usos vivos são os **4 RPCs de `lancar`**
+    (sf_lancar/sf_integrar/sf_registrar_reparo/sf_burnin). Remover exige **redefinir os 4 RPCs** (só pra trocar
+    1 linha) + dropar a função. **Risco × valor ruim** (a função de 1-arg funciona; é só dívida técnica) →
+    **baixa prioridade**; se fizer, redefinição cuidadosa + smoke pesado do Lançamento.
+  - **Órfãs Recebimento (`excluir`/`cancelar`):** deixadas como estão por ora (policies dormentes, sem UI, sem
+    risco imediato) — decidir depois entre criar a UI ou remover as policies.
 
 ## Reestruturação das telas do Fluxo — aproximar do formulário legado *(usuário, 2026-07-28)*
 No legado (Apps Script), só **Registros** e **Ordem de Produção** eram separados (eram planilhas); o resto —
