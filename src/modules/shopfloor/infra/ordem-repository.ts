@@ -98,28 +98,6 @@ export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: stri
   }
 }
 
-export async function listarFluxos(): Promise<{ pmo: string; op: string; postos: string[]; componentes: string[] }[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select('pmo,op,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)')
-    .order('pmo')
-    .order('op')
-  if (error) throw error
-  const linhas = data as unknown as {
-    pmo: string
-    op: string
-    sf_ordem_postos: { posto: string; ordem: number }[]
-    sf_ordem_componentes: { pmo_componente: string }[]
-  }[]
-  return linhas.map((l) => ({
-    pmo: l.pmo,
-    op: l.op,
-    postos: [...l.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
-    componentes: l.sf_ordem_componentes.map((c) => c.pmo_componente),
-  }))
-}
-
 export async function excluirOrdem(id: string): Promise<void> {
   const supabase = await createServerSupabase()
   const { error } = await supabase.from('sf_ordens').delete().eq('id', id)

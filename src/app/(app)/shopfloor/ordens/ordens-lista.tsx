@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { OrdemForm, type OrdemView, type FluxoExistente } from './ordem-form'
+import { OrdemForm, type OrdemView, type PadraoFluxo } from './ordem-form'
 import { ExcluirOrdemBotao } from './excluir-ordem-botao'
 import { FluxoBotao } from './fluxo-botao'
 
@@ -14,13 +14,13 @@ const TODOS = '__todos__'
 export function OrdensLista({
   views,
   chavesPostos,
-  fluxos,
+  padroes,
   pmosExistentes,
   clientesExistentes,
 }: {
   views: OrdemView[]
   chavesPostos: string[]
-  fluxos: FluxoExistente[]
+  padroes: PadraoFluxo[]
   pmosExistentes: string[]
   clientesExistentes: string[]
 }) {
@@ -109,7 +109,7 @@ export function OrdensLista({
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                     <FluxoBotao pmo={o.pmo} op={o.op} postos={o.postos} />
-                    <OrdemForm postos={chavesPostos} ordem={o} fluxosExistentes={fluxos} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} />
+                    <OrdemForm postos={chavesPostos} ordem={o} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} />
                     <ExcluirOrdemBotao id={o.id} rotulo={`${o.pmo}/${o.op}`} />
                   </div>
                 </TableCell>
