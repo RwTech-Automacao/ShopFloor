@@ -209,6 +209,16 @@ concede permissões dentro de cada módulo de forma independente. O RLS do banco
 | `lancar` | **Lançar** peças por posto; **Integrar** (vincular produto↔placas) e buscar integração; **Manutenção** (registrar reparo); **Burn-in** entrada/saída. (RPCs `sf_lancar`/`sf_integrar`/`sf_burnin`/`sf_registrar_reparo`.) |
 | `administrar` | **Cadastro de OP** (criar/editar/excluir OP, fluxo de postos, receita); **cancelar Integração**. |
 
+**Mapa item-de-menu → permissão** (Fluxo de Processos — confirmado com o usuário 2026-07-28; é o que o
+`app-shell.tsx` já aplica):
+- **`visualizar`** (só acompanhar): **Pesquisa** (+ Grade), **Dashboard**, **Burn-in**, **Registros**.
+- **`lancar`** (operar o chão): **Lançamento**, **Integração**, **Manutenção**.
+- **`administrar`** (gerir): **Ordens de Produção** (Cadastro de OP + fluxo/receita).
+
+Hierarquia: `visualizar` < `lancar` < `administrar`. O operador de chão (`lancar`) lança/integra/repara; o
+gestor (`administrar`) cadastra OPs e monta o fluxo; quem só acompanha os números usa `visualizar`. (No
+ShopFloor não há `editar` — o tier operacional é o `lancar`, equivalente ao `editar` do Recebimento.)
+
 ### Módulo `recebimento`
 | Permissão | O que deixa fazer |
 |---|---|
