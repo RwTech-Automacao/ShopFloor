@@ -24,7 +24,7 @@ const ATALHOS: Atalho[] = [
   {
     titulo: 'Fluxo de Processos',
     descricao: 'Lançamento por posto, integração, manutenção e rastreio das placas.',
-    href: '/shopfloor/lancamento',
+    href: '/shopfloor/operar/lancamento',
     icone: Workflow,
     modulo: 'shopfloor',
     permissao: 'lancar',

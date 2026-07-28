@@ -9,8 +9,8 @@ import {
   Inbox,
   Factory,
   FileStack,
-  ScanLine,
-  Link2,
+  Cog,
+  LineChart,
   Upload,
   ClipboardList,
   FileDown,
@@ -31,10 +31,6 @@ import {
   ChevronDown,
   Menu,
   LogOut,
-  Wrench,
-  Search,
-  ChartColumn,
-  Timer,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -65,12 +61,8 @@ const RECEBIMENTO: FolhaModular[] = [
 ]
 
 const SHOPFLOOR: FolhaModular[] = [
-  { chave: 'lancamento', rotulo: 'Lançamento', href: '/shopfloor/lancamento', icone: ScanLine, modulo: 'shopfloor', perm: 'lancar' },
-  { chave: 'integracao', rotulo: 'Integração', href: '/shopfloor/integracao', icone: Link2, modulo: 'shopfloor', perm: 'lancar' },
-  { chave: 'manutencao', rotulo: 'Manutenção', href: '/shopfloor/manutencao', icone: Wrench, modulo: 'shopfloor', perm: 'lancar' },
-  { chave: 'burn-in', rotulo: 'Burn-in', href: '/shopfloor/burn-in', icone: Timer, modulo: 'shopfloor', perm: 'visualizar' },
-  { chave: 'pesquisa', rotulo: 'Pesquisa', href: '/shopfloor/pesquisa', icone: Search, modulo: 'shopfloor', perm: 'visualizar' },
-  { chave: 'dashboard', rotulo: 'Dashboard', href: '/shopfloor/dashboard', icone: ChartColumn, modulo: 'shopfloor', perm: 'visualizar' },
+  { chave: 'operar', rotulo: 'Operação', href: '/shopfloor/operar', icone: Cog, modulo: 'shopfloor', perm: 'lancar' },
+  { chave: 'analisar', rotulo: 'Análise', href: '/shopfloor/analisar', icone: LineChart, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'registros', rotulo: 'Registros', href: '/shopfloor/registros', icone: History, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
 ]
