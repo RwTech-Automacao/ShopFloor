@@ -187,7 +187,8 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 ## Regras do Cadastro de OP (`/shopfloor/ordens` — admin)
 
 1. OP única por `(pmo, op)` — duplicada barra com mensagem.
-2. PMO, OP e cliente obrigatórios; faixa de SN opcional, mas **os dois limites juntos** ou nenhum.
+2. PMO, OP e cliente obrigatórios; **faixa de SN obrigatória**: os dois limites, **coerentes**
+   (mesmo prefixo/sufixo, início ≤ fim; início==fim vale = OP de 1 peça).
 3. **Fluxo de postos**: lista ordenável (quais postos + sequência); **"Puxar fluxo" opcional** de
    uma OP existente do mesmo PMO (modelo por produto). Manutenção não entra no fluxo. Quando
    **Integração** está no fluxo, também se cadastra a **receita** (PMOs de placa permitidas — vazia
@@ -273,10 +274,11 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   (foi produzida); **N3** placa aprovada no posto final (rastreio máximo). **Dado decisivo:** a cobertura
   de rastreio das placas é **irregular** — algumas OPs de placa têm histórico peça-a-peça, outras são
   "casca" (0 registros, ex.: PMO975/5937). Por isso N2/N3 bloqueariam placas legítimas não-rastreadas.
-- **Obrigatoriedade de faixa/Nº de Série** *(usuário, 2026-07-24)*: o N1 é **gradual** (OP sem faixa não
-  bloqueia — senão quebraria as OPs migradas sem faixa). Futuro possível: **exigir faixa em toda OP**
-  (tornar o N1 obrigatório, sem o "escape" gradual) e/ou tornar o Nº de Série obrigatório onde hoje é
-  opcional. Decidir quando a cobertura de faixas estiver boa.
+- **Obrigatoriedade de faixa/Nº de Série** *(usuário, 2026-07-24; faixa obrigatória no cadastro **feita** 2026-07-28)*:
+  **exigir faixa em toda OP (no cadastro)** foi implementado — a faixa é agora obrigatória no Cadastro de
+  OP com coerência validada (mesmo prefixo/sufixo, início ≤ fim). Permanecem no backlog: o N1 **não-gradual**
+  no Lançamento/Integração (hoje o N1 é gradual — OP sem faixa não bloqueia) e a **obrigatoriedade do SN
+  individual** no Lançamento (hoje ainda opcional em alguns postos).
 - **Cadastro de OP — filtros + scroll (padrão Recebimento)** *(usuário, 2026-07-24)*: a tela de OP é
   tabela crua; com 130+ OPs (crescendo) precisa de filtros (cliente/PMO/status/busca) + header fixo/
   scroll, reusando o padrão da tela de processos do Recebimento. **P1.**
