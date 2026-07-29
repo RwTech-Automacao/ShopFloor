@@ -23,6 +23,7 @@ import {
   Columns3,
   Settings,
   Settings2,
+  Bug,
   TriangleAlert,
   Table2,
   History,
@@ -82,13 +83,18 @@ const CONFIG_RECEBIMENTO: FolhaModular[] = [
   { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, modulo: 'recebimento', perm: 'administrar' },
 ]
 
+// Configurações específicas do módulo ShopFloor, agrupadas num accordion.
+const CONFIG_SHOPFLOOR: FolhaModular[] = [
+  { chave: 'sf-defeitos', rotulo: 'Defeitos', href: '/configuracoes/sf-defeitos', icone: Bug, modulo: 'shopfloor', perm: 'administrar' },
+]
+
 // Itens de Configurações que ficam "soltos" abaixo do accordion. Logs do
 // sistema não é específico de um módulo de negócio — trata-se como 'sistema'.
 const CONFIG_BASE: FolhaModular[] = [
   { chave: 'logs', rotulo: 'Logs do Sistema', href: '/configuracoes/logs', icone: ScrollText, modulo: 'sistema', perm: 'administrar' },
 ]
 
-const CONFIG_TODOS: FolhaModular[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...CONFIG_BASE]
+const CONFIG_TODOS: FolhaModular[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...CONFIG_SHOPFLOOR, ...CONFIG_BASE]
 
 const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/sobre', icone: Info, perm: 'visualizar' }
 
@@ -128,8 +134,9 @@ export function AppShell({
   const podeConfig = perfil.permissoes.administrar === true
   const configTopo = podeConfig ? CONFIG_TOPO.filter(pode) : []
   const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter(pode) : []
+  const configSf = podeConfig ? CONFIG_SHOPFLOOR.filter(pode) : []
   const configBase = podeConfig ? CONFIG_BASE.filter(pode) : []
-  const temConfig = configTopo.length + configRec.length + configBase.length > 0
+  const temConfig = configTopo.length + configRec.length + configSf.length + configBase.length > 0
   const recebimentoAtivo = pathname.startsWith('/recebimento')
   const [recAberto, setRecAberto] = useState(recebimentoAtivo)
   const shopfloorVisivel = SHOPFLOOR.filter(pode)
@@ -139,6 +146,8 @@ export function AppShell({
   const [configAberto, setConfigAberto] = useState(configAtivo)
   const configRecAtivo = CONFIG_RECEBIMENTO.some((i) => ehAtivo(pathname, i.href))
   const [configRecAberto, setConfigRecAberto] = useState(configRecAtivo)
+  const configSfAtivo = CONFIG_SHOPFLOOR.some((i) => ehAtivo(pathname, i.href))
+  const [configSfAberto, setConfigSfAberto] = useState(configSfAtivo)
 
   const tituloPagina =
     [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...CONFIG_TODOS, AJUDA]
@@ -263,6 +272,32 @@ export function AppShell({
                     {configRecAberto && (
                       <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
                         {configRec.map((i) => (
+                          <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                            <i.icone className="size-[18px] shrink-0" />
+                            {i.rotulo}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {configSf.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setConfigSfAberto((v) => !v)}
+                      className={cn(linkClasse(false), 'w-full justify-between')}
+                    >
+                      <span className="flex items-center gap-3">
+                        <Settings2 className="size-[18px] shrink-0" />
+                        Ajustes ShopFloor
+                      </span>
+                      <ChevronDown className={cn('size-4 transition-transform', configSfAberto && 'rotate-180')} />
+                    </button>
+                    {configSfAberto && (
+                      <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
+                        {configSf.map((i) => (
                           <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                             <i.icone className="size-[18px] shrink-0" />
                             {i.rotulo}
