@@ -10,8 +10,10 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import { postoTemStatus } from '@/modules/shopfloor/domain/lancamento-linhas'
-import { lancar } from '@/modules/shopfloor/application/lancar-action'
+import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
+import { lancar, buscarEntradaBurnin } from '@/modules/shopfloor/application/lancar-action'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
+import { useConfirmacao } from '@/components/ui/confirm-dialog'
 
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
 const OPCOES_STATUS = ['Aprovado', 'Reprovado']
@@ -47,6 +49,7 @@ export function LancamentoForm({
   const [burninEvento, setBurninEvento] = useState<'entrada' | 'saida'>('entrada')
   const [enviando, startTransition] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
+  const { confirmar, dialog } = useConfirmacao()
 
   const clientes = useMemo(() => [...new Set(ordens.map((o) => o.cliente))], [ordens])
   const pmos = useMemo(
@@ -120,8 +123,24 @@ export function LancamentoForm({
     setTimeout(() => snRef.current?.focus(), 0)
   }
 
-  function onEnviar() {
+  async function onEnviar() {
     if (!valido || enviando) return
+    // Aviso de tempo mínimo de Burn-in (só na saída; não trava).
+    if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempo_min_burnin ?? 0) > 0) {
+      const entradaIso = await buscarEntradaBurnin(pmo, op, numeroSerie)
+      if (entradaIso) {
+        const decorridoMin = (Date.now() - Date.parse(entradaIso)) / 60000
+        const min = ordemSel!.tempo_min_burnin
+        if (decorridoMin < min) {
+          const faltam = formatarDuracao(Math.max(1, Math.ceil(min - decorridoMin)))
+          const ok = await confirmar({
+            titulo: 'Sair antes do tempo mínimo de Burn-in?',
+            descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
+          })
+          if (!ok) return
+        }
+      }
+    }
     startTransition(async () => {
       const r = await lancar({
         colaborador,
@@ -335,6 +354,7 @@ export function LancamentoForm({
           </div>
         </CardContent>
       </Card>
+      {dialog}
     </div>
   )
 }
