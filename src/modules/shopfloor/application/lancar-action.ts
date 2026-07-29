@@ -196,6 +196,11 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
 export async function buscarEntradaBurnin(pmo: string, op: string, numeroSerie: string): Promise<string | null> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return null
-  const snNorm = normalizarSerie(numeroSerie)
-  return buscarEntradaBurninAberta(pmo, op, snNorm)
+
+  try {
+    const snNorm = normalizarSerie(numeroSerie)
+    return await buscarEntradaBurninAberta(pmo, op, snNorm)
+  } catch {
+    return null // fail-open: erro no lookup não bloqueia o operador (é só aviso)
+  }
 }
