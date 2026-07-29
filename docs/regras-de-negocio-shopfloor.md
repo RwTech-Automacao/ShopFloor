@@ -340,6 +340,20 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   ações) e, por linha, um **ícone de olho / botão "Ver permissões"** que abre as permissões daquele perfil
   (modal/painel, provavelmente agrupadas por módulo) — em vez da grade de checks inline. Mesmo padrão do
   "olhinho" do fluxo de postos da OP. Melhora legibilidade e escala.
+- **Lançamento — campo Código de defeito vira combobox (abrir ao clicar)** *(usuário, 2026-07-29)*: hoje o
+  campo Código do defeito no Lançamento usa `<datalist>` nativo (`lancamento-form.tsx:309-314`), que só
+  mostra as sugestões **depois de digitar** (limitação do navegador; no Firefox clicar no campo vazio não
+  abre a lista). Trocar por um **combobox** de verdade: abre a lista inteira ao focar/clicar e filtra ao
+  digitar. Retoque pequeno e localizado. **ADIADO (anotado).**
+- **Catálogo de defeitos — fazer o `tipo` peça/teste FILTRAR por posto** *(achado 2026-07-29)*: o
+  `sf_defeitos.tipo` (1=peça | 2=teste) **hoje é inerte** no web — a lista de sugestões do Código no
+  Lançamento mostra **todos** os códigos sem filtrar (`lancamento-form.tsx:310`, `defeitos.map` sem filtro).
+  Veio do **legado**, que tinha **duas listas separadas** (defeitos de peça × de teste). Intenção original:
+  postos de **inspeção visual/montagem** oferecem defeitos de **peça**; postos de **teste/burn-in** oferecem
+  defeitos de **teste**. **Casar com a onda de "perfis de posto"** (onde os tipos de posto serão mapeados de
+  qualquer forma). ⚠️ Não confundir com o **Tipo por linha** do Lançamento (`SMD/PTH/Integração/TOP/BOT/
+  Funcional/Elétrico` — natureza/lugar do defeito na placa, `lancamento-form.tsx:16`), que é outra coisa e
+  continua igual. **ADIADO (anotado).**
 
 ## Priorização do backlog (2026-07-28, usuário)
 - **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**
