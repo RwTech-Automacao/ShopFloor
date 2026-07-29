@@ -5,4 +5,4 @@
 
 | Data | Entregue | Commits | Notas |
 |---|---|---|---|
-| 2026-07-29 | Refino dos **Padrões de Fluxo**: remoção dos chips vermelhos + botão **"Excluir padrão"** (seleciona no dropdown → botão apaga o selecionado, com confirmação). | 2 | Início da medição. **Contexto:** a branch `feat/shopfloor-pos-prod` acumula **4 features** prontas (Faixa de SN · Tela de Registros · Reestruturação Operação/Análise · Padrões de Fluxo), aguardando **smoke + batch merge** pro Prod. Dev com migrações 0058+0059. |
+| 2026-07-29 | **Refino + rework dos Padrões de Fluxo:** remoção dos chips + botão "Excluir padrão"; fix do nome no dropdown; **rework** (brainstorm→spec→plano→2 tasks): auto-preencher **Cliente+Descrição pela PMO** (OP mais recente), padrão **"Associar à PMO"** escolhida no lugar da descrição, dropdown só o nome, **fix do bug do "cache"** (form reseta ao reabrir) + fix do banner de erro grudento. | 8 | Início da medição. Rework via subagentes (reviews limpos + opus Ready-to-merge). **Batch** na `feat/shopfloor-pos-prod` agora com **5 melhorias** (Faixa SN · Registros · Reestruturação · Padrões · rework), aguardando smoke + batch merge. Dev com 0058+0059. |
