@@ -267,7 +267,12 @@ export function OrdemForm({
                         if (padrao) { setFluxo(padrao.postos); setReceita(padrao.componentes) }
                       }}>
                         <SelectTrigger className="h-8 w-auto text-xs">
-                          <SelectValue placeholder="Puxar de padrão…" />
+                          <SelectValue>
+                            {(value: string | null) => {
+                              const p = padroesDoPmo.find((x) => x.id === value)
+                              return p ? (p.descricao ? `${p.nome} — ${p.descricao}` : p.nome) : 'Puxar de padrão…'
+                            }}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {padroesDoPmo.map((p) => (
