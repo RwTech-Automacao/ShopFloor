@@ -27,6 +27,7 @@ export default async function OrdensPage() {
     sn_fim: o.sn_fim,
     postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
     componentes: o.sf_ordem_componentes.map((c) => c.pmo_componente),
+    tempo_min_burnin: o.tempo_min_burnin,
   }))
   const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
   const clientesExistentes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()

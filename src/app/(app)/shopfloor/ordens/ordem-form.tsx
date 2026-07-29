@@ -22,6 +22,7 @@ import {
   type ResultadoOrdem,
 } from '@/modules/shopfloor/application/ordens-actions'
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
+import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
 
 export interface OrdemView {
   id: string
@@ -36,6 +37,7 @@ export interface OrdemView {
   sn_fim: string
   postos: string[]
   componentes: string[]
+  tempo_min_burnin: number
 }
 
 export interface PadraoFluxo {
@@ -74,6 +76,7 @@ export function OrdemForm({
   const [receita, setReceita] = useState<string[]>(ordem?.componentes ?? [])
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
   const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
+  const [tempoBurnin, setTempoBurnin] = useState(ordem?.tempo_min_burnin ? minutosParaTempo(ordem.tempo_min_burnin) : '')
   const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
   // Reaproveita a grafia existente se o "novo" bater com um cadastrado (evita LINCE vs Lince).
@@ -179,6 +182,7 @@ export function OrdemForm({
           setReceita(ordem?.componentes ?? [])
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
+          setTempoBurnin(ordem?.tempo_min_burnin ? minutosParaTempo(ordem.tempo_min_burnin) : '')
           setModoNovoCliente(false)
           setPadraoSelecionado('')
           setMostrarErro(false)
@@ -282,6 +286,12 @@ export function OrdemForm({
               <p className="text-xs text-muted-foreground sm:col-span-2">
                 Faixa de SN obrigatória — mesmo formato nos dois limites (ex.: <code>SN0001</code> a <code>SN0500</code>).
               </p>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="tempo_min_burnin">Tempo mín. Burn-in</Label>
+                <Input id="tempo_min_burnin" name="tempo_min_burnin" value={tempoBurnin}
+                  onChange={(e) => setTempoBurnin(e.target.value)} placeholder="ex.: 2:00" autoComplete="off" />
+                <p className="text-xs text-muted-foreground">Formato hh:mm. Vazio = sem mínimo.</p>
+              </div>
             </div>
 
             {/* Fluxo de postos (ordenado) */}
