@@ -22,3 +22,27 @@ export function formatarDuracao(min: number): string {
   if (mm === 0) return `${h}h`
   return `${h}h ${mm}min`
 }
+
+/** Input mask: auto-inserts colon for duration field (hh:mm). User types only digits.
+ * Keeps ONLY digits, caps to 5 (3h + 2m), and returns h:mm format for 3+ digits.
+ * E.g. '230' → '2:30', '12:34' → '12:34', '100000' → '100:00' (capped).
+ */
+export function mascararTempoAuto(bruto: string): string {
+  // Keep only digits
+  const digits = bruto.replace(/\D/g, '')
+
+  // If no digits, return empty
+  if (digits.length === 0) return ''
+
+  // Cap to 5 digits max (3 hours + 2 minutes)
+  const capped = digits.slice(0, 5)
+
+  // If 1 or 2 digits, return raw
+  if (capped.length <= 2) return capped
+
+  // 3+ digits: split into hours and minutes (last 2 are minutes)
+  const hours = capped.slice(0, capped.length - 2)
+  const minutes = capped.slice(capped.length - 2)
+
+  return `${hours}:${minutes}`
+}
