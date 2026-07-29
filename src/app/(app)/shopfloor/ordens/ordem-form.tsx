@@ -22,7 +22,7 @@ import {
   type ResultadoOrdem,
 } from '@/modules/shopfloor/application/ordens-actions'
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
-import { minutosParaTempo, mascararTempoAuto } from '@/modules/shopfloor/domain/tempo-burnin'
+import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
 
 export interface OrdemView {
   id: string
@@ -76,7 +76,9 @@ export function OrdemForm({
   const [receita, setReceita] = useState<string[]>(ordem?.componentes ?? [])
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
   const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
-  const [tempoBurnin, setTempoBurnin] = useState(ordem?.tempo_min_burnin ? minutosParaTempo(ordem.tempo_min_burnin) : '')
+  const [tempoBurnin, setTempoBurnin] = useState(
+    ehEdicao ? (ordem?.tempo_min_burnin ? minutosParaTempo(ordem.tempo_min_burnin) : '') : '6:00'
+  )
   const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
   // Reaproveita a grafia existente se o "novo" bater com um cadastrado (evita LINCE vs Lince).
@@ -182,7 +184,9 @@ export function OrdemForm({
           setReceita(ordem?.componentes ?? [])
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
-          setTempoBurnin(ordem?.tempo_min_burnin ? minutosParaTempo(ordem.tempo_min_burnin) : '')
+          setTempoBurnin(
+            ehEdicao ? (ordem?.tempo_min_burnin ? minutosParaTempo(ordem.tempo_min_burnin) : '') : '6:00'
+          )
           setModoNovoCliente(false)
           setPadraoSelecionado('')
           setMostrarErro(false)
@@ -348,7 +352,7 @@ export function OrdemForm({
                           id="tempo_min_burnin"
                           name="tempo_min_burnin"
                           value={tempoBurnin}
-                          onChange={(e) => setTempoBurnin(mascararTempoAuto(e.target.value))}
+                          onChange={(e) => setTempoBurnin(mascararTempoFiltro(e.target.value))}
                           inputMode="numeric"
                           placeholder="hhh:mm"
                           className="h-7 w-20 text-sm"
