@@ -55,12 +55,14 @@ export function OrdemForm({
   padroesExistentes,
   pmosExistentes,
   clientesExistentes,
+  dadosPorPmo,
 }: {
   postos: string[]
   ordem?: OrdemView
   padroesExistentes: PadraoFluxo[]
   pmosExistentes: string[]
   clientesExistentes: string[]
+  dadosPorPmo: Record<string, { cliente: string; descricao: string }>
 }) {
   const ehEdicao = ordem !== undefined
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
@@ -71,6 +73,8 @@ export function OrdemForm({
   const [fluxo, setFluxo] = useState<string[]>(ordem?.postos ?? [])
   const [receita, setReceita] = useState<string[]>(ordem?.componentes ?? [])
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
+  const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
+  const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
   // Reaproveita a grafia existente se o "novo" bater com um cadastrado (evita LINCE vs Lince).
   const clienteFinal = modoNovoCliente
@@ -78,8 +82,10 @@ export function OrdemForm({
     : cliente
 
   const [processado, setProcessado] = useState(state)
+  const [mostrarErro, setMostrarErro] = useState(false)
   if (state !== processado) {
     setProcessado(state)
+    setMostrarErro(true)
     if (state?.ok) setOpen(false)
   }
 
@@ -88,7 +94,7 @@ export function OrdemForm({
 
   const [salvarAberto, setSalvarAberto] = useState(false)
   const [nomePadrao, setNomePadrao] = useState('')
-  const [descricaoPadrao, setDescricaoPadrao] = useState('')
+  const [pmoPadrao, setPmoPadrao] = useState('')
   const [salvandoPadrao, startSalvarPadrao] = useTransition()
   const [padraoSelecionado, setPadraoSelecionado] = useState('')
   const [excluindoPadrao, startExcluirPadrao] = useTransition()
@@ -96,29 +102,34 @@ export function OrdemForm({
 
   function abrirSalvarPadrao() {
     setNomePadrao('')
-    setDescricaoPadrao('')
+    setPmoPadrao(pmo)
     setSalvarAberto(true)
   }
 
   async function onConfirmarSalvarPadrao() {
     const nome = nomePadrao.trim()
+    const pmoAlvo = pmoPadrao.trim()
     if (nome === '') {
       toast.error('Informe o nome do padrão.')
       return
     }
-    const existente = padroesDoPmo.find((p) => p.nome === nome)
+    if (pmoAlvo === '') {
+      toast.error('Informe a PMO à qual associar o padrão.')
+      return
+    }
+    const existente = padroesExistentes.find((p) => p.pmo === pmoAlvo && p.nome === nome)
     if (existente) {
       const ok = await confirmar({
-        titulo: `Já existe um padrão "${nome}" para este PMO. Sobrescrever?`,
+        titulo: `Já existe um padrão "${nome}" para a PMO ${pmoAlvo}. Sobrescrever?`,
         rotuloConfirmar: 'Sobrescrever',
       })
       if (!ok) return
     }
     startSalvarPadrao(async () => {
       const r = await salvarPadraoAction({
-        pmo,
+        pmo: pmoAlvo,
         nome,
-        descricao: descricaoPadrao.trim(),
+        descricao: '',
         postos: fluxo,
         componentes: receita,
       })
@@ -159,7 +170,21 @@ export function OrdemForm({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(v) => {
+        setOpen(v)
+        if (v) {
+          // Reset ao abrir: "Nova OP" limpa; edição recarrega a OP (fix do "cache").
+          setPmo(ordem?.pmo ?? '')
+          setFluxo(ordem?.postos ?? [])
+          setReceita(ordem?.componentes ?? [])
+          setCliente(ordem?.cliente ?? '')
+          setDescricao(ordem?.descricao ?? '')
+          setModoNovoCliente(false)
+          setPadraoSelecionado('')
+          setMostrarErro(false)
+          setInstanciaForm((n) => n + 1)
+        }
+      }}>
         <DialogTrigger
           render={
             ehEdicao ? (
@@ -177,7 +202,7 @@ export function OrdemForm({
           <DialogHeader>
             <DialogTitle>{ehEdicao ? 'Editar OP' : 'Nova OP'}</DialogTitle>
           </DialogHeader>
-          <form action={formAction} className="flex flex-col gap-4">
+          <form key={instanciaForm} action={formAction} className="flex flex-col gap-4">
             {ehEdicao && <input type="hidden" name="id" value={ordem.id} />}
             <input type="hidden" name="fluxo" value={JSON.stringify(fluxo)} />
             <input type="hidden" name="componentes" value={JSON.stringify(fluxo.includes('Integração') ? receita : [])} />
@@ -185,7 +210,12 @@ export function OrdemForm({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="pmo">PMO *</Label>
-                <Input id="pmo" name="pmo" value={pmo} onChange={(e) => setPmo(e.target.value)} required />
+                <Input id="pmo" name="pmo" value={pmo} onChange={(e) => {
+                  const novo = e.target.value
+                  setPmo(novo)
+                  const dados = dadosPorPmo[novo.trim()]
+                  if (dados) { setCliente(dados.cliente); setDescricao(dados.descricao); setModoNovoCliente(false) }
+                }} required />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="op">Nº OP *</Label>
@@ -223,7 +253,7 @@ export function OrdemForm({
               </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="descricao">Descrição</Label>
-                <Input id="descricao" name="descricao" defaultValue={ordem?.descricao ?? ''} />
+                <Input id="descricao" name="descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="acp">ACP</Label>
@@ -270,13 +300,13 @@ export function OrdemForm({
                           <SelectValue>
                             {(value: string | null) => {
                               const p = padroesDoPmo.find((x) => x.id === value)
-                              return p ? (p.descricao ? `${p.nome} — ${p.descricao}` : p.nome) : 'Puxar de padrão…'
+                              return p ? p.nome : 'Puxar de padrão…'
                             }}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {padroesDoPmo.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>{p.descricao ? `${p.nome} — ${p.descricao}` : p.nome}</SelectItem>
+                            <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -350,7 +380,7 @@ export function OrdemForm({
               />
             )}
 
-            {state && !state.ok && <p className="text-sm text-red-600">{state.erro}</p>}
+            {mostrarErro && state && !state.ok && <p className="text-sm text-red-600">{state.erro}</p>}
 
             <DialogFooter>
               <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
@@ -377,11 +407,11 @@ export function OrdemForm({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="descricaoPadrao">Descrição</Label>
+              <Label htmlFor="pmoPadrao">Associar à PMO *</Label>
               <Input
-                id="descricaoPadrao"
-                value={descricaoPadrao}
-                onChange={(e) => setDescricaoPadrao(e.target.value)}
+                id="pmoPadrao"
+                value={pmoPadrao}
+                onChange={(e) => setPmoPadrao(e.target.value)}
               />
             </div>
           </div>
