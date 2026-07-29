@@ -62,32 +62,38 @@ defeitos do catálogo, sem migração de banco.
 - `excluirDefeito(codigo: string): Promise<void>` — `delete().eq('codigo', codigo)`.
 
 ### 3. Application — `application/defeitos-actions.ts`
-Segue **exatamente** o padrão de `padroes-fluxo-actions.ts`: `'use server'`, `type Resultado = { ok: true }
-| { ok: false; erro: string }`, guard inline `const sessao = await getSessao(); if (!sessao ||
-!podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: '…' }`. Sem log (as
-actions dos Padrões não logam).
-- `cadastrarDefeitoAction(dados: { codigo: string; tipo: number }): Promise<Resultado>`:
-  - guard acima (`erro: 'Você não tem permissão para gerenciar defeitos.'`);
-  - `validarDefeito(dados)`; se `!ok` retorna o erro; chama `inserirDefeito(v.valor)` (propaga o
-    `'Esse defeito já existe.'` do repo); `revalidatePath('/configuracoes/sf-defeitos')`; retorna `{ ok: true }`.
-- `excluirDefeitoAction(codigo: string): Promise<Resultado>`:
-  - mesmo guard; `try { await excluirDefeito(codigo) } catch { return { ok:false, erro:'Erro ao excluir o defeito.' } }`;
+Segue o padrão das telas de **Configurações do Recebimento** (`referencias-actions.ts`/criticidade):
+`'use server'`, `type ResultadoAcaoDefeito = { ok: true } | { erro: string }`, guard inline
+`const sessao = await getSessao(); if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar'))
+return { erro: SEM_PERMISSAO }`, e **log** via `registrarLog` (as telas de config logam criar/excluir).
+- `cadastrarDefeitoAction(_prev: ResultadoAcaoDefeito | undefined, formData: FormData): Promise<ResultadoAcaoDefeito>`
+  (assinatura `useActionState`):
+  - guard acima;
+  - `const codigo = String(formData.get('codigo') ?? '')`; `const tipo = Number(formData.get('tipo'))`;
+  - `validarDefeito({ codigo, tipo })`; se `!ok` → `{ erro: v.erro }`;
+  - `inserirDefeito(v.valor)` — se retornar `{ ok:false, erro }`, repassa `{ erro }` (propaga
+    `'Esse defeito já existe.'`); `registrarLog({ entidade: 'sf_defeito', entidadeId: v.valor.codigo, acao: 'criar', … })`;
     `revalidatePath('/configuracoes/sf-defeitos')`; `{ ok: true }`.
+- `excluirDefeitoAction(codigo: string): Promise<ResultadoAcaoDefeito>`:
+  - mesmo guard; `await excluirDefeito(codigo)` (em `try/catch` → `{ erro: 'Erro ao excluir o defeito.' }`);
+    `registrarLog({ … acao: 'excluir' })`; `revalidatePath('/configuracoes/sf-defeitos')`; `{ ok: true }`.
 
 ### 4. UI — `app/(app)/configuracoes/sf-defeitos/`
-- **`page.tsx`** (server): guard **na página** no padrão de `ordens/page.tsx` —
+- **`page.tsx`** (server): guard **na página** no padrão de `ordens/page.tsx` (não copiar o smell das
+  páginas de config do Recebimento, que dependem só do layout) —
   `const sessao = await getSessao(); if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar'))
   return <SemPermissao descricao="Você não tem permissão para gerenciar defeitos." />`; busca
-  `listarDefeitos()` (do novo `defeitos-repository`); renderiza `<DefeitosLista defeitos={...} />`.
-- **`defeitos-lista.tsx`** (client):
-  - busca (filtra por substring do código, client-side, `useState`), contador, tabela (Código | Tipo | ações);
-  - **badge de tipo** peça/teste;
-  - botão **"Novo defeito"** → Dialog (base-ui) com Código (controlado) + Tipo (radios/Select); ao confirmar,
-    chama `cadastrarDefeitoAction({ codigo, tipo })` (não é `useActionState`/`formData` — chamada direta como
-    nos Padrões), trata `{ ok, erro }` com `useTransition` p/ pending; **reset ao abrir** o Dialog (evita
-    "cache" — lição do form de OP);
-  - **excluir** por linha com confirmação → `excluirDefeitoAction(codigo)`.
-  - Segue os componentes/estilos já usados nas telas de Configurações do Recebimento.
+  `listarDefeitos()` (do novo `defeitos-repository`); renderiza tabela desktop + cards mobile (padrão da
+  página de criticidade) com `<DefeitoForm />` e `<ExcluirDefeitoButton />`.
+- **`defeitos-form.tsx`** (client): espelha `criticidade-form.tsx`:
+  - `DefeitoForm`: Dialog + `useActionState(cadastrarDefeitoAction, undefined)`, `<form action={formAction}>`
+    com **Código** (`<Input name="codigo" required>`) + **Tipo** (dois `<input type="radio" name="tipo">`
+    valor `1`/`2`, "Peça" default marcado); fecha no sucesso via o mesmo truque de estado
+    (`estadoProcessado`) da criticidade; mostra `state.erro`.
+  - `ExcluirDefeitoButton`: `useConfirmacao` + `useTransition` chamando `excluirDefeitoAction(codigo)`
+    (confirmação cita o código; texto lembra que não afeta o histórico).
+  - **Busca** por substring do código: filtro client-side simples (`useState` na página-cliente ou num
+    wrapper) — pode ficar como um `<input>` que filtra as linhas renderizadas.
 
 ### 5. Menu — `shared/ui/app-shell.tsx`
 - Novo array `CONFIG_SHOPFLOOR: FolhaModular[]` com
