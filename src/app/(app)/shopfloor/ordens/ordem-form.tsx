@@ -21,7 +21,7 @@ import {
   editarOrdemAction,
   type ResultadoOrdem,
 } from '@/modules/shopfloor/application/ordens-actions'
-import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
+import { salvarPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
 
 export interface OrdemView {
   id: string
@@ -90,7 +90,6 @@ export function OrdemForm({
   const [nomePadrao, setNomePadrao] = useState('')
   const [descricaoPadrao, setDescricaoPadrao] = useState('')
   const [salvandoPadrao, startSalvarPadrao] = useTransition()
-  const [excluindoPadrao, startExcluirPadrao] = useTransition()
   const { confirmar, dialog: dialogConfirmacao } = useConfirmacao()
 
   function abrirSalvarPadrao() {
@@ -126,15 +125,6 @@ export function OrdemForm({
       } else {
         toast.error(r.erro)
       }
-    })
-  }
-
-  async function onApagarPadrao(p: PadraoFluxo) {
-    const ok = await confirmar({ titulo: `Apagar o padrão "${p.nome}"?`, rotuloConfirmar: 'Apagar' })
-    if (!ok) return
-    startExcluirPadrao(async () => {
-      const r = await excluirPadraoAction(p.id)
-      if (!r.ok) toast.error(r.erro)
     })
   }
 
@@ -277,25 +267,6 @@ export function OrdemForm({
                   )}
                 </div>
               </div>
-
-              {padroesDoPmo.length > 0 && (
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {padroesDoPmo.map((p) => (
-                    <span key={p.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-accent px-2.5 py-1 text-xs text-muted-foreground">
-                      {p.nome}
-                      <button
-                        type="button"
-                        aria-label={`Apagar padrão ${p.nome}`}
-                        onClick={() => onApagarPadrao(p)}
-                        disabled={excluindoPadrao}
-                        className="hover:text-red-600 disabled:opacity-30"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
 
               <ol className="flex flex-col gap-1">
                 {fluxo.map((posto, i) => (
