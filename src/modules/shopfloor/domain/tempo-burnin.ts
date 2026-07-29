@@ -42,7 +42,12 @@ export function mascararTempoAuto(bruto: string): string {
 
   // 3+ digits: split into hours and minutes (last 2 are minutes)
   const hours = capped.slice(0, capped.length - 2)
-  const minutes = capped.slice(capped.length - 2)
+  let minutes = capped.slice(capped.length - 2)
+
+  // Clamp minutes to 00-59
+  if (Number(minutes) > 59) {
+    minutes = '59'
+  }
 
   return `${hours}:${minutes}`
 }

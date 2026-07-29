@@ -49,4 +49,20 @@ describe('mascararTempoAuto', () => {
   it('strips non-digit characters and keeps only digits', () => {
     expect(mascararTempoAuto('x9x9')).toBe('99')
   })
+
+  it('clamps minutes to 59 when exceeding 59 (3 digits)', () => {
+    expect(mascararTempoAuto('299')).toBe('2:59')
+  })
+
+  it('clamps minutes to 59 when exceeding 59 (4 digits)', () => {
+    expect(mascararTempoAuto('2992')).toBe('29:59')
+  })
+
+  it('clamps 60 minutes to 59 (3 digits)', () => {
+    expect(mascararTempoAuto('160')).toBe('1:59')
+  })
+
+  it('keeps valid minutes unchanged (3 digits)', () => {
+    expect(mascararTempoAuto('130')).toBe('1:30')
+  })
 })
