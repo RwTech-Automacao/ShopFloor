@@ -11,7 +11,7 @@ import {
   montarLinhas,
   exigeManutencao,
 } from '../domain/lancamento-linhas'
-import { carregarOrdem, chamarSfLancar, chamarSfBurnin } from '../infra/lancamento-repository'
+import { carregarOrdem, chamarSfLancar, chamarSfBurnin, buscarEntradaBurninAberta } from '../infra/lancamento-repository'
 
 export interface EntradaLancamento {
   colaborador: string
@@ -191,4 +191,11 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
 
   if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
   return { ok: true, caixaCount: r.caixa_count }
+}
+
+export async function buscarEntradaBurnin(pmo: string, op: string, numeroSerie: string): Promise<string | null> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return null
+  const snNorm = normalizarSerie(numeroSerie)
+  return buscarEntradaBurninAberta(pmo, op, snNorm)
 }
