@@ -22,7 +22,7 @@ import {
   type ResultadoOrdem,
 } from '@/modules/shopfloor/application/ordens-actions'
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
-import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
+import { minutosParaTempo, mascararTempoAuto } from '@/modules/shopfloor/domain/tempo-burnin'
 
 export interface OrdemView {
   id: string
@@ -286,12 +286,6 @@ export function OrdemForm({
               <p className="text-xs text-muted-foreground sm:col-span-2">
                 Faixa de SN obrigatória — mesmo formato nos dois limites (ex.: <code>SN0001</code> a <code>SN0500</code>).
               </p>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="tempo_min_burnin">Tempo mín. Burn-in</Label>
-                <Input id="tempo_min_burnin" name="tempo_min_burnin" value={tempoBurnin}
-                  onChange={(e) => setTempoBurnin(e.target.value)} placeholder="ex.: 2:00" autoComplete="off" />
-                <p className="text-xs text-muted-foreground">Formato hh:mm. Vazio = sem mínimo.</p>
-              </div>
             </div>
 
             {/* Fluxo de postos (ordenado) */}
@@ -347,6 +341,21 @@ export function OrdemForm({
                   <li key={posto} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm">
                     <span className="w-5 text-center text-xs font-medium text-enterplak">{i + 1}</span>
                     <span className="flex-1">{posto}</span>
+                    {posto === 'Burn-in' && (
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">mín.</span>
+                        <Input
+                          id="tempo_min_burnin"
+                          name="tempo_min_burnin"
+                          value={tempoBurnin}
+                          onChange={(e) => setTempoBurnin(mascararTempoAuto(e.target.value))}
+                          inputMode="numeric"
+                          placeholder="hhh:mm"
+                          className="h-7 w-20 text-sm"
+                          autoComplete="off"
+                        />
+                      </span>
+                    )}
                     <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
                       <ArrowUp className="size-4" />
                     </button>
