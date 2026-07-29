@@ -31,6 +31,16 @@ export default async function OrdensPage() {
   const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
   const clientesExistentes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()
 
+  // Cliente + descrição da OP MAIS RECENTE de cada PMO (pra auto-preencher no form).
+  const maisRecentePorPmo: Record<string, string> = {}
+  const dadosPorPmo: Record<string, { cliente: string; descricao: string }> = {}
+  for (const o of ordens) {
+    if (!maisRecentePorPmo[o.pmo] || o.created_at > maisRecentePorPmo[o.pmo]!) {
+      maisRecentePorPmo[o.pmo] = o.created_at
+      dadosPorPmo[o.pmo] = { cliente: o.cliente, descricao: o.descricao }
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
@@ -38,10 +48,10 @@ export default async function OrdensPage() {
           <h2 className="text-lg font-semibold text-tinta">Ordens de Produção</h2>
           <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
         </div>
-        <OrdemForm postos={chavesPostos} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} />
+        <OrdemForm postos={chavesPostos} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
       </div>
 
-      <OrdensLista views={views} chavesPostos={chavesPostos} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} />
+      <OrdensLista views={views} chavesPostos={chavesPostos} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
     </div>
   )
 }
