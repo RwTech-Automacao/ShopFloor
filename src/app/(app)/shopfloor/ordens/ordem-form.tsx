@@ -21,7 +21,7 @@ import {
   editarOrdemAction,
   type ResultadoOrdem,
 } from '@/modules/shopfloor/application/ordens-actions'
-import { salvarPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
+import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
 
 export interface OrdemView {
   id: string
@@ -90,6 +90,8 @@ export function OrdemForm({
   const [nomePadrao, setNomePadrao] = useState('')
   const [descricaoPadrao, setDescricaoPadrao] = useState('')
   const [salvandoPadrao, startSalvarPadrao] = useTransition()
+  const [padraoSelecionado, setPadraoSelecionado] = useState('')
+  const [excluindoPadrao, startExcluirPadrao] = useTransition()
   const { confirmar, dialog: dialogConfirmacao } = useConfirmacao()
 
   function abrirSalvarPadrao() {
@@ -125,6 +127,18 @@ export function OrdemForm({
       } else {
         toast.error(r.erro)
       }
+    })
+  }
+
+  async function onApagarPadraoSelecionado() {
+    const p = padroesDoPmo.find((x) => x.id === padraoSelecionado)
+    if (!p) return
+    const ok = await confirmar({ titulo: `Apagar o padrão "${p.nome}"?`, rotuloConfirmar: 'Apagar' })
+    if (!ok) return
+    startExcluirPadrao(async () => {
+      const r = await excluirPadraoAction(p.id)
+      if (r.ok) setPadraoSelecionado('')
+      else toast.error(r.erro)
     })
   }
 
@@ -246,19 +260,34 @@ export function OrdemForm({
                 <p className="text-sm font-medium">Fluxo de postos <span className="font-normal text-muted-foreground">· na ordem da linha</span></p>
                 <div className="flex flex-wrap items-center gap-2">
                   {padroesDoPmo.length > 0 && (
-                    <Select value="" onValueChange={(id) => {
-                      const padrao = padroesDoPmo.find((p) => p.id === id)
-                      if (padrao) { setFluxo(padrao.postos); setReceita(padrao.componentes) }
-                    }}>
-                      <SelectTrigger className="h-8 w-auto text-xs">
-                        <SelectValue placeholder="Puxar de padrão…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {padroesDoPmo.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.descricao ? `${p.nome} — ${p.descricao}` : p.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-1">
+                      <Select value={padraoSelecionado} onValueChange={(id) => {
+                        setPadraoSelecionado(id ?? '')
+                        const padrao = padroesDoPmo.find((p) => p.id === id)
+                        if (padrao) { setFluxo(padrao.postos); setReceita(padrao.componentes) }
+                      }}>
+                        <SelectTrigger className="h-8 w-auto text-xs">
+                          <SelectValue placeholder="Puxar de padrão…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {padroesDoPmo.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.descricao ? `${p.nome} — ${p.descricao}` : p.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {padraoSelecionado !== '' && padroesDoPmo.some((p) => p.id === padraoSelecionado) && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={onApagarPadraoSelecionado}
+                          disabled={excluindoPadrao}
+                          className="h-8 text-xs text-red-600 hover:text-red-700"
+                        >
+                          Excluir padrão
+                        </Button>
+                      )}
+                    </div>
                   )}
                   {pmo.trim() !== '' && fluxo.length > 0 && (
                     <Button type="button" size="sm" variant="outline" onClick={abrirSalvarPadrao}>
