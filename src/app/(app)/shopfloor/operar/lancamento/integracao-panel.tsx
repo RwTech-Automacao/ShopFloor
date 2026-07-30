@@ -41,7 +41,7 @@ export function IntegracaoPanel({
   const semReceita = componentes.length === 0
   const preenchidas = componentes.filter((pm) => linhas[pm] !== undefined).length
   const todasPreenchidas = !semReceita && preenchidas === componentes.length
-  const valido = todasPreenchidas && produtoSN.trim() !== ''
+  const valido = todasPreenchidas && produtoSN.trim() !== '' && colaborador.trim() !== ''
 
   function refocarBipe() {
     setTimeout(() => bipeRef.current?.focus(), 0)
