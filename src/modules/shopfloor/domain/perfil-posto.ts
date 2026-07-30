@@ -28,11 +28,12 @@ export const perfilExigeManutencao = (p: PerfilPosto): boolean => p.exigeManuten
  * amarrado ao NOME/estado de UM posto, então um SEGUNDO posto com esse perfil não funciona:
  *  - manutencao: posto paralelo (tela de reparo própria), fora do fluxo.
  *  - burnin: RPC grava posto='Burn-in' fixo; tempo mínimo é 1 por OP.
- *  - integracao: tela/ação casam o posto 'Integração' fixo; receita (BOM) é 1 por OP.
- * Generalizar (receita/tempo POR posto, telas/RPCs por perfil) é a onda "Integração vira
- * posto" (Fase 2). Os postos existentes (Manutenção/Burn-in/Integração) seguem funcionando.
+ * integracao SAIU desta lista: agora é perfil-driven (RPC recebe p_posto, resolve pelo
+ * posto real do fluxo) e funciona como qualquer outro posto do Lançamento — pode ser
+ * atribuído a um posto novo. Generalizar burnin/manutencao (tempo/tela POR posto) fica
+ * pra uma onda futura.
  */
-const RECURSOS_NAO_ATRIBUIVEIS: RecursoPosto[] = ['burnin', 'integracao', 'manutencao']
+const RECURSOS_NAO_ATRIBUIVEIS: RecursoPosto[] = ['burnin', 'manutencao']
 
 /** O perfil pode ser atribuído a um posto novo pela tela de Cadastrar Posto? */
 export function perfilAtribuivel(p: PerfilPosto): boolean {

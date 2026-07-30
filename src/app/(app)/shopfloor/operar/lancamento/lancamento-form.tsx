@@ -14,6 +14,7 @@ import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, buscarEntradaBurnin } from '@/modules/shopfloor/application/lancar-action'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
+import { IntegracaoPanel } from './integracao-panel'
 
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
 const OPCOES_STATUS = ['Aprovado', 'Reprovado']
@@ -68,14 +69,14 @@ export function LancamentoForm({
   )
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
 
-  // Integração tem tela própria (vínculo produto↔placas) — não é lançável aqui.
-  const postosDaOp = (ordemSel?.postos ?? []).filter((p) => perfilDo(p).recurso !== 'integracao')
+  const postosDaOp = ordemSel?.postos ?? []
 
   const comStatus = posto !== '' && perfilTemStatus(perfilDo(posto))
   const ehNqa = perfilDo(posto).recurso === 'nqa'
   const ehSpi = perfilDo(posto).reprova === 'posicoes'
   const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
+  const ehIntegracao = posto !== '' && perfilDo(posto).recurso === 'integracao'
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
@@ -237,7 +238,19 @@ export function LancamentoForm({
         </CardContent>
       </Card>
 
+      {ehIntegracao && (
+        <IntegracaoPanel
+          colaborador={colaborador}
+          cliente={cliente}
+          pmo={pmo}
+          op={op}
+          descricao={ordemSel?.descricao ?? ''}
+          componentes={ordemSel?.componentes ?? []}
+        />
+      )}
+
       {/* Bipagem */}
+      {!ehIntegracao && (
       <Card>
         <CardHeader>
           <CardTitle>Peça</CardTitle>
@@ -356,6 +369,7 @@ export function LancamentoForm({
           </div>
         </CardContent>
       </Card>
+      )}
       {dialog}
     </div>
   )
