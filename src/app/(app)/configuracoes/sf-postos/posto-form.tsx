@@ -114,6 +114,12 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
   const [pending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
 
+  // Só perfis atribuíveis no dropdown — mais o perfil ATUAL do posto (caso seja um bespoke,
+  // p/ ele aparecer e poder ser mantido). Assim não dá pra atribuir Manutenção/Burn-in/Integração.
+  const atribuiveis = perfis.filter(perfilAtribuivel)
+  const atual = perfis.find((p) => p.chave === posto.perfil)
+  const perfisEdicao = atual && !atribuiveis.some((p) => p.chave === atual.chave) ? [...atribuiveis, atual] : atribuiveis
+
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
@@ -153,7 +159,7 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="perfil-editar">Perfil</Label>
-            <PerfilSelect id="perfil-editar" perfis={perfis} defaultValue={posto.perfil} />
+            <PerfilSelect id="perfil-editar" perfis={perfisEdicao} defaultValue={posto.perfil} />
           </div>
 
           {erro && <p className="text-sm text-red-600">{erro}</p>}
