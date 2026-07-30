@@ -7,7 +7,8 @@ import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/seri
 import { validarItensIntegracao, type PlacaIntegracao } from '../domain/integracao-itens'
 import { postoAnteriorNaSequencia } from '../domain/postos'
 import { perfilPrecisaAprovado, PERFIL_PADRAO } from '../domain/perfil-posto'
-import { carregarOrdem, listarFaixasOrdens } from '../infra/lancamento-repository'
+import { resolverPlaca } from '../domain/integracao-matching'
+import { carregarOrdem, listarFaixasOrdens, listarOrdensParaLancamento } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import {
   buscarIntegracaoPorSn,
@@ -48,9 +49,9 @@ export async function integrar(
 
   const ordem = await carregarOrdem(pmo, op)
   if (!ordem) return { ok: false, erro: 'OP não encontrada.' }
-  if (!ordem.postos.includes('Integração')) {
-    return { ok: false, erro: 'O posto Integração não se aplica a esta OP.' }
-  }
+  const mapa = await mapaPostoPerfil()
+  const postoIntegr = ordem.postos.find((p) => mapa[p]?.recurso === 'integracao')
+  if (!postoIntegr) return { ok: false, erro: 'Esta OP não tem um posto de Integração no fluxo.' }
   if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
     return { ok: false, erro: 'Esta OP não tem faixa de Nº de Série cadastrada.' }
   }
@@ -73,8 +74,7 @@ export async function integrar(
   }
 
   // Integração é um posto: exige o anterior do fluxo satisfeito p/ o produto (trava de sequência).
-  const prevPosto = postoAnteriorNaSequencia('Integração', ordem.postos)
-  const mapa = await mapaPostoPerfil()
+  const prevPosto = postoAnteriorNaSequencia(postoIntegr, ordem.postos)
 
   const r = await chamarSfIntegrar({
     p_colaborador: colaborador,
@@ -91,6 +91,7 @@ export async function integrar(
       sn: limparSerie(x.sn),
       sn_norm: normalizarSerie(x.sn),
     })),
+    p_posto: postoIntegr,
   })
 
   if (!r.ok) {
@@ -117,6 +118,36 @@ export async function integrar(
     dados: { produtoSN, pmo, op, placas: v.placas },
   })
   return { ok: true, codigo: r.codigo! }
+}
+
+/** Resolve o SN de uma placa bipada para a OP/PMO da receita do produto (Integração por bipe). */
+export async function resolverPlacaIntegracaoAction(
+  pmoProduto: string,
+  opProduto: string,
+  sn: string,
+): Promise<{ ok: true; pmo: string; op: string } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
+    return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
+  }
+  const pmo = pmoProduto.trim()
+  const op = opProduto.trim()
+  const ordens = await listarOrdensParaLancamento()
+  const ordem = ordens.find((o) => o.pmo === pmo && o.op === op)
+  if (!ordem) return { ok: false, erro: 'OP do produto não encontrada.' }
+  const receita = ordem.componentes ?? []
+  const faixas = await listarFaixasOrdens()
+  const r = resolverPlaca(receita, faixas, limparSerie(sn))
+  if (!r.ok) {
+    const msg =
+      r.erro === 'FORA_RECEITA'
+        ? 'Essa placa não faz parte da receita deste produto.'
+        : r.erro === 'AMBIGUO'
+          ? 'SN ambíguo (mais de uma OP da receita contém esse número).'
+          : 'SN não encontrado em nenhuma OP.'
+    return { ok: false, erro: msg }
+  }
+  return { ok: true, pmo: r.pmo, op: r.op }
 }
 
 export async function buscarIntegracao(

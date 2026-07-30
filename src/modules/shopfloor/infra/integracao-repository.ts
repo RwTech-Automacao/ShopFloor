@@ -98,6 +98,7 @@ export interface SfIntegrarArgs {
   p_prev_posto: string
   p_prev_precisa_aprovado: boolean
   p_placas: { pmo: string; op: string; sn: string; sn_norm: string }[]
+  p_posto: string
 }
 
 export async function chamarSfIntegrar(
