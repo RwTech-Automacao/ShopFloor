@@ -360,6 +360,12 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   cor/ícone forte, texto grande). Vale um padrão único reusável em todo o módulo (Lançamento, Integração,
   Manutenção, cadastros…). Definir o formato (toast maior × banner fixo × modal) num brainstorm quando pegar
   o item. **ADIADO (anotado).**
+- **Manutenção/reparo — apresentação de "relatado × constatado" na Pesquisa/Registros** *(usuário, smoke
+  2026-07-30)*: um reparo gera **≥2 linhas** em `sf_registros` na visão da Pesquisa/Registros — a(s) de
+  **conserto** (que carregam o **defeito RELATADO**, ex.: `157 ERRO COMUNICAÇÃO`) e a(s) de **defeito
+  CONSTATADO** (`reparo_constatado=true`, ex.: `9999 DEFEITO…`). Fica confuso ver duas linhas de "Manutenção"
+  com defeitos diferentes. **Melhorar a apresentação:** agrupar o reparo numa visão só, ou rotular claramente
+  "relatado" vs "constatado" (a coluna/flag `reparo_constatado` já existe pra distinguir). **ADIADO (anotado).**
 
 ## Priorização do backlog (2026-07-28, usuário)
 - **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**
