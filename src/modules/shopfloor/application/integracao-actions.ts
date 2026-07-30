@@ -147,7 +147,10 @@ export async function resolverPlacaIntegracaoAction(
           : 'SN não encontrado em nenhuma OP.'
     return { ok: false, erro: msg }
   }
-  return { ok: true, pmo: r.pmo, op: r.op }
+  // Devolve a PMO na caixa da RECEITA (é por ela que o painel indexa as linhas); a faixa
+  // (sf_ordens.pmo) pode ter caixa diferente, pois PMO é campo livre.
+  const pmoReceita = receita.find((c) => c.trim().toLowerCase() === r.pmo.trim().toLowerCase()) ?? r.pmo
+  return { ok: true, pmo: pmoReceita, op: r.op }
 }
 
 export async function buscarIntegracao(
