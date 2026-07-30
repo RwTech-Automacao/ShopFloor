@@ -373,6 +373,11 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   embalagem/burn-in) — migrar pra perfil/recurso; (c) `sf_postos.perfil` poderia virar `NOT NULL` (hoje há fallback
   `PERFIL_PADRAO`). **Fase 1 entregue** (perfis seed + atribuir + tela Cadastrar Posto). **ADIADO (anotado).**
 
+- **Cadastrar Posto — guia/preview do perfil** *(usuário, smoke 2026-07-30)*: ao criar um posto, mostrar uma
+  **visualização/guia** do que o perfil escolhido faz — quais campos/telas o posto terá (ex.: "Inspeção → pede
+  Status; reprovado → defeitos"; "Passagem → só registra"; "Embalagem → Nº caixa + QTD"). Deixa claro o que
+  está sendo criado antes de salvar. **ADIADO (anotado).**
+
 ## Priorização do backlog (2026-07-28, usuário)
 - **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**
   — ligado à reestruturação de telas abaixo (decidir a estrutura antes de mover peças soltas).
