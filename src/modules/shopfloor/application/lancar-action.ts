@@ -150,8 +150,8 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
   const qtdPorCaixa =
     entrada.qtdPorCaixa && entrada.qtdPorCaixa.trim() !== '' ? Number(entrada.qtdPorCaixa) : null
 
-  // Embalagem exige quantidade por caixa numérica e positiva (evita NaN furar o limite).
-  if (entrada.posto.toLowerCase() === 'embalagem') {
+  // Recurso "caixa" (Embalagem) exige quantidade por caixa numérica e positiva (evita NaN furar o limite).
+  if (perfil.recurso === 'caixa') {
     if (qtdPorCaixa === null || !Number.isInteger(qtdPorCaixa) || qtdPorCaixa <= 0) {
       return { ok: false, erro: 'Informe uma quantidade por caixa válida (inteiro maior que zero).' }
     }
@@ -159,7 +159,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
 
   // NQA não tem campo Status: deriva aprovado/reprovado de visual+funcional.
   // Paridade com o legado: Funcional "Não aplicável" também conta como aprovado.
-  const ehNqa = entrada.posto.toLowerCase() === 'inspeção nqa'
+  const ehNqa = perfil.recurso === 'nqa'
   const nqaFuncionalNorm = (entrada.nqaFuncional ?? '').toLowerCase()
   const statusFinal = ehNqa
     ? (entrada.nqaVisual ?? '').toLowerCase() === 'aprovado' &&
