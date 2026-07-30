@@ -24,12 +24,14 @@ export const perfilPrecisaAprovado = (p: PerfilPosto): boolean => p.gate === 'ap
 export const perfilExigeManutencao = (p: PerfilPosto): boolean => p.exigeManutencao
 
 /**
- * Recursos "de sistema" cujo comportamento é amarrado ao NOME do posto no código
- * (RPCs/telas próprias): Burn-in, Integração, Manutenção. Atribuir esses perfis a um
- * posto NOVO não funciona (o RPC/tela grava/usa o nome fixo) — então NÃO são oferecidos
- * no cadastro de posto.
+ * Perfil NÃO oferecido no Cadastrar Posto. Só a **Manutenção**: ela não é um posto de
+ * fluxo (não entra em nenhuma OP) — é onde os reparos são gravados, tem tela própria; um
+ * posto novo com esse perfil não faria nada (cairia como Passagem).
+ * (Burn-in e Integração SÃO postos de fluxo reais, então continuam atribuíveis. Ressalva:
+ * criar uma SEGUNDA Burn-in/Integração ainda não funciona 100% porque o RPC/tela desses
+ * grava/usa o nome fixo — parametrizar isso é Fase 2.)
  */
-const RECURSOS_NAO_ATRIBUIVEIS: RecursoPosto[] = ['burnin', 'integracao', 'manutencao']
+const RECURSOS_NAO_ATRIBUIVEIS: RecursoPosto[] = ['manutencao']
 
 /** O perfil pode ser atribuído a um posto novo pela tela de Cadastrar Posto? */
 export function perfilAtribuivel(p: PerfilPosto): boolean {
