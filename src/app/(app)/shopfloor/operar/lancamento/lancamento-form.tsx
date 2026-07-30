@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
-import { postoTemStatus } from '@/modules/shopfloor/domain/lancamento-linhas'
+import { PERFIL_PADRAO, perfilTemStatus, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, buscarEntradaBurnin } from '@/modules/shopfloor/application/lancar-action'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
@@ -29,9 +29,11 @@ interface DefeitoLinha {
 export function LancamentoForm({
   ordens,
   defeitos,
+  postosPerfil,
 }: {
   ordens: OrdemLancamentoLista[]
   defeitos: { codigo: string; tipo: number }[]
+  postosPerfil: Record<string, PerfilPosto>
 }) {
   const [colaborador, setColaborador] = useState('')
   const [cliente, setCliente] = useState('')
@@ -64,16 +66,16 @@ export function LancamentoForm({
     () => ordens.find((o) => o.cliente === cliente && o.pmo === pmo && o.op === op) ?? null,
     [ordens, cliente, pmo, op],
   )
-  // Integração tem tela própria (vínculo produto↔placas) — não é lançável aqui.
-  const postosDaOp = (ordemSel?.postos ?? []).filter(
-    (p) => p.toLowerCase() !== 'integração' && p.toLowerCase() !== 'integracao',
-  )
+  const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
 
-  const comStatus = posto !== '' && postoTemStatus(posto)
-  const ehNqa = posto === 'Inspeção NQA'
-  const ehSpi = posto === 'Inspeção SPI'
-  const ehEmbalagem = posto === 'Embalagem'
-  const ehBurnin = posto === 'Burn-in'
+  // Integração tem tela própria (vínculo produto↔placas) — não é lançável aqui.
+  const postosDaOp = (ordemSel?.postos ?? []).filter((p) => perfilDo(p).recurso !== 'integracao')
+
+  const comStatus = posto !== '' && perfilTemStatus(perfilDo(posto))
+  const ehNqa = perfilDo(posto).recurso === 'nqa'
+  const ehSpi = perfilDo(posto).reprova === 'posicoes'
+  const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
+  const ehBurnin = perfilDo(posto).recurso === 'burnin'
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
