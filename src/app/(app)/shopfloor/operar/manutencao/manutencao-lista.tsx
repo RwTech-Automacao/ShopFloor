@@ -206,21 +206,6 @@ export function ManutencaoLista({
                 <Input id="colabRep" value={colaborador} onChange={(e) => setColaborador(e.target.value)} autoComplete="off" />
               </div>
               <div className="flex flex-col gap-2">
-                <Label>Consertos</Label>
-                {consertos.map((c, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_120px_auto] items-center gap-2">
-                    <Input value={c.descricao} onChange={(e) => setConsertos(consertos.map((x, idx) => (idx === i ? { ...x, descricao: e.target.value } : x)))} placeholder="Descrição do conserto" />
-                    <Input value={c.posicao} onChange={(e) => setConsertos(consertos.map((x, idx) => (idx === i ? { ...x, posicao: e.target.value } : x)))} placeholder="Posição" />
-                    <button type="button" aria-label={`Remover conserto ${i + 1}`} onClick={() => setConsertos(consertos.length > 1 ? consertos.filter((_, idx) => idx !== i) : consertos)} disabled={consertos.length <= 1} className="text-muted-foreground hover:text-red-600 disabled:opacity-30">
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                ))}
-                <button type="button" onClick={() => setConsertos([...consertos, { descricao: '', posicao: '' }])} className="self-start text-sm font-medium text-enterplak hover:underline">
-                  <Plus className="mr-1 inline size-4" /> Adicionar conserto
-                </button>
-              </div>
-              <div className="flex flex-col gap-2">
                 <Label>Defeitos constatados</Label>
                 <datalist id="defeitos-constatados-list">
                   {defeitosCatalogo.map((c) => <option key={c} value={c} />)}
@@ -251,6 +236,21 @@ export function ManutencaoLista({
                   className="self-start text-sm font-medium text-enterplak hover:underline"
                 >
                   <Plus className="mr-1 inline size-4" /> Adicionar defeito constatado
+                </button>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Consertos</Label>
+                {consertos.map((c, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_120px_auto] items-center gap-2">
+                    <Input value={c.descricao} onChange={(e) => setConsertos(consertos.map((x, idx) => (idx === i ? { ...x, descricao: e.target.value } : x)))} placeholder="Descrição do conserto" />
+                    <Input value={c.posicao} onChange={(e) => setConsertos(consertos.map((x, idx) => (idx === i ? { ...x, posicao: e.target.value } : x)))} placeholder="Posição" />
+                    <button type="button" aria-label={`Remover conserto ${i + 1}`} onClick={() => setConsertos(consertos.length > 1 ? consertos.filter((_, idx) => idx !== i) : consertos)} disabled={consertos.length <= 1} className="text-muted-foreground hover:text-red-600 disabled:opacity-30">
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setConsertos([...consertos, { descricao: '', posicao: '' }])} className="self-start text-sm font-medium text-enterplak hover:underline">
+                  <Plus className="mr-1 inline size-4" /> Adicionar conserto
                 </button>
               </div>
               <DialogFooter>
