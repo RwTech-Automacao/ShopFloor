@@ -1,5 +1,4 @@
 import { partesSerie, normalizarSerie } from './serie'
-import { postoTemStatus } from './lancamento-linhas'
 import { pareaBurnin, estaAberto } from './burnin'
 
 const MAX_SNS = 2000
@@ -69,6 +68,7 @@ export function montarGrade(
   sns: string[],
   postosDaOp: string[],
   registros: RegistroGrade[],
+  temStatus: (posto: string) => boolean,
 ): LinhaGrade[] {
   const porSn = new Map<string, RegistroGrade[]>()
   for (const r of registros) {
@@ -100,7 +100,7 @@ export function montarGrade(
         celulas[posto] = 'Em andamento'
         continue
       }
-      if (postoTemStatus(posto)) {
+      if (temStatus(posto)) {
         if (doPosto.some((r) => r.status.toLowerCase() === 'aprovado')) celulas[posto] = 'Aprovado'
         else if (doPosto.some((r) => r.status.toLowerCase() === 'reprovado')) celulas[posto] = 'Reprovado'
         else celulas[posto] = 'Registrado'
