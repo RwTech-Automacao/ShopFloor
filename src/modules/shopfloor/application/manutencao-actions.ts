@@ -15,6 +15,7 @@ import {
 const MENSAGENS: Record<string, string> = {
   SEM_PERMISSAO: 'Você não tem permissão para esta ação.',
   SEM_CONSERTOS: 'Informe ao menos um conserto.',
+  SEM_CONSTATADOS_DEFEITO: 'Informe ao menos um defeito constatado.',
   ERRO_INTERNO: 'Não foi possível concluir a operação.',
 }
 
@@ -37,6 +38,7 @@ export interface EntradaReparo {
   colaborador: string
   ocorrencia: { pmo: string; op: string; sn: string; posto: string; dataHora: string; cod: string; pos: string; tipo: string }
   consertos: { descricao: string; posicao: string }[]
+  defeitosConstatados: string[]
 }
 
 export async function registrarReparo(
@@ -58,6 +60,11 @@ export async function registrarReparo(
   }
   if (consertos.length === 0) return { ok: false, erro: MENSAGENS.SEM_CONSERTOS! }
 
+  const defeitosConstatados = entrada.defeitosConstatados
+    .map((c) => c.trim())
+    .filter((c) => c !== '')
+  if (defeitosConstatados.length === 0) return { ok: false, erro: MENSAGENS.SEM_CONSTATADOS_DEFEITO! }
+
   const ordem = await carregarOrdem(o.pmo, o.op)
 
   const r = await chamarSfRegistrarReparo({
@@ -73,6 +80,7 @@ export async function registrarReparo(
     p_posto_origem: o.posto,
     p_data_hora_origem: o.dataHora,
     p_consertos: consertos,
+    p_defeitos_constatados: defeitosConstatados,
   })
   if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
 
@@ -80,8 +88,8 @@ export async function registrarReparo(
     entidade: 'sf_reparo',
     entidadeId: `${o.pmo}/${o.op}/${o.sn}`,
     acao: 'criar',
-    descricao: `Reparo de ${o.sn} (${o.pmo}/${o.op}, origem ${o.posto}): ${consertos.length} conserto(s)`,
-    dados: { ocorrencia: o, consertos },
+    descricao: `Reparo de ${o.sn} (${o.pmo}/${o.op}, origem ${o.posto}): ${consertos.length} conserto(s), ${defeitosConstatados.length} constatado(s)`,
+    dados: { ocorrencia: o, consertos, defeitosConstatados },
   })
   return { ok: true }
 }

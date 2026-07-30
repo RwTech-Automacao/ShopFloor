@@ -97,6 +97,7 @@ export interface SfRegistrarReparoArgs {
   p_posto_origem: string
   p_data_hora_origem: string
   p_consertos: { descricao: string; posicao: string }[]
+  p_defeitos_constatados: string[]
 }
 
 export async function chamarSfRegistrarReparo(
