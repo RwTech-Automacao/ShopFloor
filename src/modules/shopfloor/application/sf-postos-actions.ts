@@ -12,6 +12,7 @@ import {
   listarPerfis,
 } from '@/modules/shopfloor/infra/postos-repository'
 import { listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
+import { perfilAtribuivel } from '@/modules/shopfloor/domain/perfil-posto'
 
 export type ResultadoAcaoPosto = { ok: true } | { erro: string }
 
@@ -32,7 +33,8 @@ export async function cadastrarPostoAction(
   if (!chave) return { erro: 'Informe o nome do posto.' }
 
   const perfis = await listarPerfis()
-  if (!perfis.some((p) => p.chave === perfil)) return { erro: 'Selecione um perfil válido.' }
+  const perfilEscolhido = perfis.find((p) => p.chave === perfil)
+  if (!perfilEscolhido || !perfilAtribuivel(perfilEscolhido)) return { erro: 'Selecione um perfil válido.' }
 
   // Ordem de catálogo é automática: entra no fim da lista (não é a sequência da OP).
   const postos = await listarPostos()

@@ -23,6 +23,19 @@ export const perfilTemStatus = (p: PerfilPosto): boolean => p.temStatus
 export const perfilPrecisaAprovado = (p: PerfilPosto): boolean => p.gate === 'aprovado'
 export const perfilExigeManutencao = (p: PerfilPosto): boolean => p.exigeManutencao
 
+/**
+ * Recursos "de sistema" cujo comportamento é amarrado ao NOME do posto no código
+ * (RPCs/telas próprias): Burn-in, Integração, Manutenção. Atribuir esses perfis a um
+ * posto NOVO não funciona (o RPC/tela grava/usa o nome fixo) — então NÃO são oferecidos
+ * no cadastro de posto.
+ */
+const RECURSOS_NAO_ATRIBUIVEIS: RecursoPosto[] = ['burnin', 'integracao', 'manutencao']
+
+/** O perfil pode ser atribuído a um posto novo pela tela de Cadastrar Posto? */
+export function perfilAtribuivel(p: PerfilPosto): boolean {
+  return !RECURSOS_NAO_ATRIBUIVEIS.includes(p.recurso)
+}
+
 /** Expande a reprova em linhas conforme o perfil. Não reprovado → []. */
 export function montarLinhasPerfil(p: PerfilPosto, dados: DadosLinhas): LinhaDefeito[] {
   const reprovado = (dados.status ?? '').toLowerCase() === 'reprovado'

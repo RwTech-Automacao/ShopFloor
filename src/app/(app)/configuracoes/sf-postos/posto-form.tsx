@@ -27,7 +27,7 @@ import {
   excluirPostoAction,
 } from '@/modules/shopfloor/application/sf-postos-actions'
 import type { PostoRow } from '@/modules/shopfloor/infra/ordem-repository'
-import type { PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
+import { perfilAtribuivel, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 
 interface PerfilSelectProps {
   id: string
@@ -88,7 +88,7 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="perfil">Perfil</Label>
-            <PerfilSelect id="perfil" perfis={perfis} />
+            <PerfilSelect id="perfil" perfis={perfis.filter(perfilAtribuivel)} />
           </div>
 
           {state && 'erro' in state && <p className="text-sm text-red-600">{state.erro}</p>}
