@@ -354,6 +354,12 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   qualquer forma). ⚠️ Não confundir com o **Tipo por linha** do Lançamento (`SMD/PTH/Integração/TOP/BOT/
   Funcional/Elétrico` — natureza/lugar do defeito na placa, `lancamento-form.tsx:16`), que é outra coisa e
   continua igual. **ADIADO (anotado).**
+- **Feedbacks de sucesso/falha — maiores e mais claros** *(usuário, reunião 2026-07-30)*: hoje os retornos de
+  ação usam `toast` (sonner) discreto no canto. A operação pediu **pop-ups/feedbacks maiores e mais claros**
+  (sucesso E falha) — mais visíveis pro operador no chão de fábrica (ex.: banner/modal central destacado,
+  cor/ícone forte, texto grande). Vale um padrão único reusável em todo o módulo (Lançamento, Integração,
+  Manutenção, cadastros…). Definir o formato (toast maior × banner fixo × modal) num brainstorm quando pegar
+  o item. **ADIADO (anotado).**
 
 ## Priorização do backlog (2026-07-28, usuário)
 - **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**
