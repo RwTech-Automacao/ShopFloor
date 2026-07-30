@@ -9,7 +9,6 @@ export default async function IntegracaoPage() {
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return <SemPermissao descricao="Você não tem permissão para acessar a Integração." />
   }
-
   const ordens = await listarOrdensParaIntegracao()
   const podeCancelar = podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')
 

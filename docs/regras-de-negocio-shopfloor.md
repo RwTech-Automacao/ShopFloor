@@ -187,7 +187,8 @@ Perm `visualizar`. Consulta somente leitura — sem função atômica (não grav
 ## Regras do Cadastro de OP (`/shopfloor/ordens` — admin)
 
 1. OP única por `(pmo, op)` — duplicada barra com mensagem.
-2. PMO, OP e cliente obrigatórios; faixa de SN opcional, mas **os dois limites juntos** ou nenhum.
+2. PMO, OP e cliente obrigatórios; **faixa de SN obrigatória**: os dois limites, **coerentes**
+   (mesmo prefixo/sufixo, início ≤ fim; início==fim vale = OP de 1 peça).
 3. **Fluxo de postos**: lista ordenável (quais postos + sequência); **"Puxar fluxo" opcional** de
    uma OP existente do mesmo PMO (modelo por produto). Manutenção não entra no fluxo. Quando
    **Integração** está no fluxo, também se cadastra a **receita** (PMOs de placa permitidas — vazia
@@ -207,6 +208,16 @@ concede permissões dentro de cada módulo de forma independente. O RLS do banco
 | `visualizar` | Ver **Pesquisa** (histórico por SN), **Grade**, **Dashboard**, painel **Burn-in**. Ler as tabelas `sf_*` (OPs, registros, integrações, defeitos). |
 | `lancar` | **Lançar** peças por posto; **Integrar** (vincular produto↔placas) e buscar integração; **Manutenção** (registrar reparo); **Burn-in** entrada/saída. (RPCs `sf_lancar`/`sf_integrar`/`sf_burnin`/`sf_registrar_reparo`.) |
 | `administrar` | **Cadastro de OP** (criar/editar/excluir OP, fluxo de postos, receita); **cancelar Integração**. |
+
+**Mapa item-de-menu → permissão** (Fluxo de Processos — confirmado com o usuário 2026-07-28; é o que o
+`app-shell.tsx` já aplica):
+- **`visualizar`** (só acompanhar): **Pesquisa** (+ Grade), **Dashboard**, **Burn-in**, **Registros**.
+- **`lancar`** (operar o chão): **Lançamento**, **Integração**, **Manutenção**.
+- **`administrar`** (gerir): **Ordens de Produção** (Cadastro de OP + fluxo/receita).
+
+Hierarquia: `visualizar` < `lancar` < `administrar`. O operador de chão (`lancar`) lança/integra/repara; o
+gestor (`administrar`) cadastra OPs e monta o fluxo; quem só acompanha os números usa `visualizar`. (No
+ShopFloor não há `editar` — o tier operacional é o `lancar`, equivalente ao `editar` do Recebimento.)
 
 ### Módulo `recebimento`
 | Permissão | O que deixa fazer |
@@ -273,10 +284,11 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   (foi produzida); **N3** placa aprovada no posto final (rastreio máximo). **Dado decisivo:** a cobertura
   de rastreio das placas é **irregular** — algumas OPs de placa têm histórico peça-a-peça, outras são
   "casca" (0 registros, ex.: PMO975/5937). Por isso N2/N3 bloqueariam placas legítimas não-rastreadas.
-- **Obrigatoriedade de faixa/Nº de Série** *(usuário, 2026-07-24)*: o N1 é **gradual** (OP sem faixa não
-  bloqueia — senão quebraria as OPs migradas sem faixa). Futuro possível: **exigir faixa em toda OP**
-  (tornar o N1 obrigatório, sem o "escape" gradual) e/ou tornar o Nº de Série obrigatório onde hoje é
-  opcional. Decidir quando a cobertura de faixas estiver boa.
+- **Obrigatoriedade de faixa/Nº de Série** *(usuário, 2026-07-24; faixa obrigatória no cadastro **feita** 2026-07-28)*:
+  **exigir faixa em toda OP (no cadastro)** foi implementado — a faixa é agora obrigatória no Cadastro de
+  OP com coerência validada (mesmo prefixo/sufixo, início ≤ fim). Permanecem no backlog: o N1 **não-gradual**
+  no Lançamento/Integração (hoje o N1 é gradual — OP sem faixa não bloqueia) e a **obrigatoriedade do SN
+  individual** no Lançamento (hoje ainda opcional em alguns postos).
 - **Cadastro de OP — filtros + scroll (padrão Recebimento)** *(usuário, 2026-07-24)*: a tela de OP é
   tabela crua; com 130+ OPs (crescendo) precisa de filtros (cliente/PMO/status/busca) + header fixo/
   scroll, reusando o padrão da tela de processos do Recebimento. **P1.**
@@ -322,3 +334,52 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
 - **Higiene restante (opcional, pré-Prod):** follow-ups menores dos reviews — guard por página em
   `configuracoes/{usuarios,perfis,logs}` (hoje só o guard global do layout + RLS de backstop);
   `validarEdicaoPerfil` usa OR global; `salvarPerfil` grava `pode_*` e grants sem transação real.
+- **Tela de Perfis — trocar a matriz de checks por "ver permissões" (olhinho)** *(usuário, 2026-07-28)*:
+  hoje `/configuracoes/perfis` é uma **tabela larga** (Nome + ~10 colunas de permissão com ✓/—) que rola
+  horizontal e piora conforme crescem permissões/módulos. Ideia: deixar só a **lista de perfis** (nome +
+  ações) e, por linha, um **ícone de olho / botão "Ver permissões"** que abre as permissões daquele perfil
+  (modal/painel, provavelmente agrupadas por módulo) — em vez da grade de checks inline. Mesmo padrão do
+  "olhinho" do fluxo de postos da OP. Melhora legibilidade e escala.
+- **Lançamento — campo Código de defeito vira combobox (abrir ao clicar)** *(usuário, 2026-07-29)*: hoje o
+  campo Código do defeito no Lançamento usa `<datalist>` nativo (`lancamento-form.tsx:309-314`), que só
+  mostra as sugestões **depois de digitar** (limitação do navegador; no Firefox clicar no campo vazio não
+  abre a lista). Trocar por um **combobox** de verdade: abre a lista inteira ao focar/clicar e filtra ao
+  digitar. Retoque pequeno e localizado. **ADIADO (anotado).**
+- **Catálogo de defeitos — fazer o `tipo` peça/teste FILTRAR por posto** *(achado 2026-07-29)*: o
+  `sf_defeitos.tipo` (1=peça | 2=teste) **hoje é inerte** no web — a lista de sugestões do Código no
+  Lançamento mostra **todos** os códigos sem filtrar (`lancamento-form.tsx:310`, `defeitos.map` sem filtro).
+  Veio do **legado**, que tinha **duas listas separadas** (defeitos de peça × de teste). Intenção original:
+  postos de **inspeção visual/montagem** oferecem defeitos de **peça**; postos de **teste/burn-in** oferecem
+  defeitos de **teste**. **Casar com a onda de "perfis de posto"** (onde os tipos de posto serão mapeados de
+  qualquer forma). ⚠️ Não confundir com o **Tipo por linha** do Lançamento (`SMD/PTH/Integração/TOP/BOT/
+  Funcional/Elétrico` — natureza/lugar do defeito na placa, `lancamento-form.tsx:16`), que é outra coisa e
+  continua igual. **ADIADO (anotado).**
+
+## Priorização do backlog (2026-07-28, usuário)
+- **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**
+  — ligado à reestruturação de telas abaixo (decidir a estrutura antes de mover peças soltas).
+- **Backlog 2 (adiado por ora):** Cadastro de OP filtros+scroll; Finalização de OP condicionada aos
+  lançamentos; Export da Tela de Registros (Excel); Config de campos do detalhe de Registros.
+- **Branch separada (afeta tela de Prod):** **Tela de Perfis com "olhinho/ver permissões"** — NÃO entra no
+  batch atual do ShopFloor; merece PR próprio pra `main`, porque mexe numa tela **viva** (Configurações ›
+  Perfis, usada em Prod). É importante, mas isolada.
+- **Pós-funcional (quando as telas estiverem quase fechadas):** **responsividade**.
+- **Técnico/higiene — ADIADO (análise 2026-07-28, não entra no batch atual):**
+  - **Guard-por-página em `usuarios`/`perfis`/`logs`:** hoje essas telas dependem só do guard **no layout** de
+    Configurações (`administrar` global) + RLS — é o **mesmo padrão auth-no-layout** que o opus apontou no
+    ShopFloor. Correção = guard `sistema.administrar` **na página** (re-checa na navegação). **Rápido e baixo
+    risco** quando for feito.
+  - **Remover `tem_permissao(1-arg)`:** os únicos usos vivos são os **4 RPCs de `lancar`**
+    (sf_lancar/sf_integrar/sf_registrar_reparo/sf_burnin). Remover exige **redefinir os 4 RPCs** (só pra trocar
+    1 linha) + dropar a função. **Risco × valor ruim** (a função de 1-arg funciona; é só dívida técnica) →
+    **baixa prioridade**; se fizer, redefinição cuidadosa + smoke pesado do Lançamento.
+  - **Órfãs Recebimento (`excluir`/`cancelar`):** deixadas como estão por ora (policies dormentes, sem UI, sem
+    risco imediato) — decidir depois entre criar a UI ou remover as policies.
+
+## Reestruturação das telas do Fluxo — aproximar do formulário legado *(usuário, 2026-07-28)*
+No legado (Apps Script), só **Registros** e **Ordem de Produção** eram separados (eram planilhas); o resto —
+**Lançamento, Integração, Manutenção, Dashboard, Pesquisa** — vivia **junto num único formulário** com **abas
+no topo** (Lançamento | Integração | Manutenção | Dashboard | Pesquisa). Hoje no web cada um é uma tela/rota
+separada no menu. **Avaliar aproximar disso:** as telas operacionais dentro de um **container com abas** (não
+precisa ser idêntico ao legado). Liga-se direto à "análise de telas redundantes" e à consolidação da busca por
+SN — por isso essas decisões são tomadas juntas.

@@ -122,6 +122,7 @@ export interface OrdemLancamentoLista {
   sn_fim: string
   postos: string[]
   componentes: string[]
+  tempo_min_burnin: number
 }
 
 /** Todas as OPs ativas com config + fluxo ordenado, para a cascata da tela de Lançamento. */
@@ -130,7 +131,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
   const { data, error } = await supabase
     .from('sf_ordens')
     .select(
-      'cliente,pmo,op,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)',
+      'cliente,pmo,op,descricao,sn_ini,sn_fim,tempo_min_burnin,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)',
     )
     .neq('status', 'FINALIZADA')
     .order('cliente')
@@ -144,6 +145,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     descricao: string
     sn_ini: string
     sn_fim: string
+    tempo_min_burnin: number
     sf_ordem_postos: { posto: string; ordem: number }[]
     sf_ordem_componentes: { pmo_componente: string }[]
   }[]
@@ -156,6 +158,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_fim: r.sn_fim,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
     componentes: r.sf_ordem_componentes.map((c) => c.pmo_componente),
+    tempo_min_burnin: r.tempo_min_burnin,
   }))
 }
 
@@ -246,4 +249,19 @@ export async function chamarSfBurnin(
   const { data, error } = await supabase.rpc('sf_burnin', args)
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
   return data as { ok: boolean; erro?: string; evento?: string }
+}
+
+/** data_hora (ISO) da ENTRADA de Burn-in aberta da peça; null se não houver entrada aberta. */
+export async function buscarEntradaBurninAberta(pmo: string, op: string, snNorm: string): Promise<string | null> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_registros')
+    .select('status,data_hora')
+    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', snNorm).eq('posto', 'Burn-in')
+    .order('data_hora', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  const linha = (data ?? [])[0] as { status: string; data_hora: string } | undefined
+  if (!linha || linha.status !== '') return null // sem entrada aberta (último evento não é entrada)
+  return linha.data_hora
 }

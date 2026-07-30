@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizarSerie, limparSerie, partesSerie, serieDentroDaFaixa } from '../serie'
+import { normalizarSerie, limparSerie, partesSerie, serieDentroDaFaixa, faixaCoerente } from '../serie'
 
 describe('normalizarSerie', () => {
   it('remove separadores, zeros à esquerda e caixa', () => {
@@ -37,5 +37,30 @@ describe('serieDentroDaFaixa', () => {
     // SNs sem número (num = NaN) → comparação lexical entre início e fim
     expect(serieDentroDaFaixa('ABC', 'ABZ', 'ABM')).toBe(true)
     expect(serieDentroDaFaixa('ABC', 'ABZ', 'AAA')).toBe(false)
+  })
+})
+
+describe('faixaCoerente', () => {
+  it('numérico válido (mesmo formato, início ≤ fim)', () => {
+    expect(faixaCoerente('SN0001', 'SN0500')).toBe(true)
+    expect(faixaCoerente('SN0001', 'SN0001')).toBe(true) // OP de 1 peça
+  })
+  it('início > fim → false', () => {
+    expect(faixaCoerente('SN0500', 'SN0001')).toBe(false)
+  })
+  it('prefixos/sufixos divergentes → false', () => {
+    expect(faixaCoerente('SN0001', 'XX0500')).toBe(false)
+    expect(faixaCoerente('0001A', '0500B')).toBe(false)
+  })
+  it('lexical válido/invertido', () => {
+    expect(faixaCoerente('ABC', 'ABD')).toBe(true)
+    expect(faixaCoerente('ABD', 'ABC')).toBe(false)
+  })
+  it('misto (um numérico, outro não) → false', () => {
+    expect(faixaCoerente('SN0001', 'ABC')).toBe(false)
+  })
+  it('algum vazio → false', () => {
+    expect(faixaCoerente('', 'SN0500')).toBe(false)
+    expect(faixaCoerente('SN0001', '')).toBe(false)
   })
 })

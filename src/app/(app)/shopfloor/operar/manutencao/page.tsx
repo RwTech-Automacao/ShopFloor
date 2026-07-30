@@ -10,7 +10,6 @@ export default async function ManutencaoPage() {
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return <SemPermissao descricao="Você não tem permissão para acessar a Manutenção." />
   }
-
   const [reprovas, reparos] = await Promise.all([listarReprovasOrigem(), listarReparos()])
   const ocorrencias = agruparPendencias(reprovas, reparos)
 

@@ -9,7 +9,6 @@ export default async function LancamentoPage() {
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return <SemPermissao descricao="Você não tem permissão para lançar." />
   }
-
   const [ordens, defeitos] = await Promise.all([listarOrdensParaLancamento(), listarDefeitos()])
 
   return (

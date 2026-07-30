@@ -5,6 +5,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { validarOrdem } from '../domain/validar-ordem'
+import { tempoParaMinutos } from '../domain/tempo-burnin'
 import {
   criarOrdem,
   atualizarOrdem,
@@ -31,6 +32,7 @@ function lerDados(fd: FormData): DadosOrdem {
     status: String(fd.get('status') ?? '').trim() || 'ATIVA',
     sn_ini: String(fd.get('sn_ini') ?? '').trim(),
     sn_fim: String(fd.get('sn_fim') ?? '').trim(),
+    tempo_min_burnin: 0, // placeholder; sobrescrito na action após validar o hh:mm
   }
 }
 
@@ -89,6 +91,9 @@ export async function criarOrdemAction(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const dados = lerDados(formData)
+  const tempoMin = tempoParaMinutos(String(formData.get('tempo_min_burnin') ?? ''))
+  if (tempoMin === null) return { ok: false, erro: 'Tempo mínimo de Burn-in inválido (use hh:mm).' }
+  dados.tempo_min_burnin = tempoMin
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
   if (!v.ok) return v
   const postos = await lerPostos(formData)
@@ -117,6 +122,9 @@ export async function editarOrdemAction(
   const id = String(formData.get('id') ?? '').trim()
   if (id === '') return { ok: false, erro: 'OP inválida.' }
   const dados = lerDados(formData)
+  const tempoMin = tempoParaMinutos(String(formData.get('tempo_min_burnin') ?? ''))
+  if (tempoMin === null) return { ok: false, erro: 'Tempo mínimo de Burn-in inválido (use hh:mm).' }
+  dados.tempo_min_burnin = tempoMin
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
   if (!v.ok) return v
   const postos = await lerPostos(formData)
