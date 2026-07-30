@@ -378,6 +378,15 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   Status; reprovado → defeitos"; "Passagem → só registra"; "Embalagem → Nº caixa + QTD"). Deixa claro o que
   está sendo criado antes de salvar. **ADIADO (anotado).**
 
+- **Perfis bespoke para MÚLTIPLOS postos (Integração/Burn-in) — Fase 2** *(usuário, smoke 2026-07-30)*: hoje
+  Integração e Burn-in são **singletons** — o comportamento é amarrado a UM posto: a **receita (BOM) é por OP**
+  (`sf_ordem_componentes`) + tela de Integração + `id_integracao`; o Burn-in grava `posto='Burn-in'` fixo e o
+  **tempo é por OP** (`sf_ordens.tempo_min_burnin`). Então um **2º** posto com esses perfis **não funciona**
+  (ex.: um Integração novo não mostra receita própria; um Burn-in novo grava sob 'Burn-in'). Pra generalizar:
+  **receita por posto** (não por OP), **tempo por posto**, e parametrizar a tela de Integração/RPCs pelo nome
+  do posto. Enquanto isso, esses perfis **não são oferecidos** no "Novo posto" (tratados como singletons, como
+  a Manutenção). **ADIADO (anotado).**
+
 ## Priorização do backlog (2026-07-28, usuário)
 - **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**
   — ligado à reestruturação de telas abaixo (decidir a estrutura antes de mover peças soltas).
