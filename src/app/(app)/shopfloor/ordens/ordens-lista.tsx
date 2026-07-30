@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { OrdemForm, type OrdemView, type PadraoFluxo } from './ordem-form'
+import type { PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { ExcluirOrdemBotao } from './excluir-ordem-botao'
 import { FluxoBotao } from './fluxo-botao'
 
@@ -14,6 +15,7 @@ const TODOS = '__todos__'
 export function OrdensLista({
   views,
   chavesPostos,
+  postosPerfil,
   padroes,
   pmosExistentes,
   clientesExistentes,
@@ -21,6 +23,7 @@ export function OrdensLista({
 }: {
   views: OrdemView[]
   chavesPostos: string[]
+  postosPerfil: Record<string, PerfilPosto>
   padroes: PadraoFluxo[]
   pmosExistentes: string[]
   clientesExistentes: string[]
@@ -111,7 +114,7 @@ export function OrdensLista({
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                     <FluxoBotao pmo={o.pmo} op={o.op} postos={o.postos} />
-                    <OrdemForm postos={chavesPostos} ordem={o} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+                    <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} ordem={o} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
                     <ExcluirOrdemBotao id={o.id} rotulo={`${o.pmo}/${o.op}`} />
                   </div>
                 </TableCell>

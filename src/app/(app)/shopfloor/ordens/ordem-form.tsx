@@ -23,6 +23,7 @@ import {
 } from '@/modules/shopfloor/application/ordens-actions'
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
 import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
+import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 
 export interface OrdemView {
   id: string
@@ -53,6 +54,7 @@ const CLIENTE_NOVO = '__novo_cliente__'
 
 export function OrdemForm({
   postos,
+  postosPerfil,
   ordem,
   padroesExistentes,
   pmosExistentes,
@@ -60,6 +62,7 @@ export function OrdemForm({
   dadosPorPmo,
 }: {
   postos: string[]
+  postosPerfil: Record<string, PerfilPosto>
   ordem?: OrdemView
   padroesExistentes: PadraoFluxo[]
   pmosExistentes: string[]
@@ -67,6 +70,7 @@ export function OrdemForm({
   dadosPorPmo: Record<string, { cliente: string; descricao: string }>
 }) {
   const ehEdicao = ordem !== undefined
+  const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState<ResultadoOrdem | undefined, FormData>(action, undefined)
@@ -345,7 +349,7 @@ export function OrdemForm({
                   <li key={posto} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm">
                     <span className="w-5 text-center text-xs font-medium text-enterplak">{i + 1}</span>
                     <span className="flex-1">{posto}</span>
-                    {posto === 'Burn-in' && (
+                    {perfilDo(posto).recurso === 'burnin' && (
                       <span className="flex items-center gap-1.5">
                         <span className="text-xs text-muted-foreground">mín.</span>
                         <Input
