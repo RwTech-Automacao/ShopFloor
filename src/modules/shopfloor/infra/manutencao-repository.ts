@@ -1,8 +1,8 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import type { ReprovaRow, ReparoRow } from '../domain/manutencao-pendencias'
-
-const POSTOS_ORIGEM = ['Teste', 'Burn-in', 'Teste Final']
+import { mapaPostoPerfil } from './postos-repository'
+import { perfilExigeManutencao } from '../domain/perfil-posto'
 
 // PAGINADO: o PostgREST trunca em 1.000 linhas SILENCIOSAMENTE — com o histórico
 // migrado, reparos/reprovas passam disso e a lista mentiria (reparada → "Pendente").
@@ -10,12 +10,17 @@ const PAGINA = 1000
 
 export async function listarReprovasOrigem(): Promise<ReprovaRow[]> {
   const supabase = await createServerSupabase()
+  // Postos de origem = QUALQUER posto cujo perfil exige Manutenção (não mais nomes fixos).
+  const mapa = await mapaPostoPerfil()
+  const postosOrigem = Object.entries(mapa)
+    .filter(([, p]) => perfilExigeManutencao(p))
+    .map(([nome]) => nome)
   const out: ReprovaRow[] = []
   for (let de = 0; ; de += PAGINA) {
     const { data, error } = await supabase
       .from('sf_registros')
       .select('data_hora,cliente,pmo,op,numero_serie,numero_serie_norm,posto,codigo_defeito,posicao,tipo_defeito')
-      .in('posto', POSTOS_ORIGEM)
+      .in('posto', postosOrigem)
       .eq('status', 'Reprovado')
       .order('data_hora', { ascending: false })
       .order('id', { ascending: true })
