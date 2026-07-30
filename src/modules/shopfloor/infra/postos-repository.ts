@@ -45,9 +45,9 @@ export async function criarPosto(p: { chave: string; ordem: number; perfil: stri
   const { error } = await supabase.from('sf_postos').insert({ chave: p.chave, ordem: p.ordem, perfil: p.perfil })
   if (error) throw error
 }
-export async function atualizarPosto(chave: string, p: { ordem: number; perfil: string }): Promise<void> {
+export async function atualizarPosto(chave: string, p: { perfil: string }): Promise<void> {
   const supabase = await createServerSupabase()
-  const { error } = await supabase.from('sf_postos').update({ ordem: p.ordem, perfil: p.perfil }).eq('chave', chave)
+  const { error } = await supabase.from('sf_postos').update({ perfil: p.perfil }).eq('chave', chave)
   if (error) throw error
 }
 export async function excluirPosto(chave: string): Promise<void> {

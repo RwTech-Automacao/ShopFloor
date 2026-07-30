@@ -37,7 +37,6 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
-              <TableHead>Ordem</TableHead>
               <TableHead>Perfil</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
@@ -45,7 +44,7 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
           <TableBody>
             {lista.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
                   {vazio}
                 </TableCell>
               </TableRow>
@@ -55,7 +54,6 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
               return (
                 <TableRow key={p.chave}>
                   <TableCell className="font-medium">{p.chave}</TableCell>
-                  <TableCell>{p.ordem}</TableCell>
                   <TableCell>{nomePerfil(p.perfil)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
@@ -84,9 +82,7 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
                   <span className="font-semibold">{p.chave}</span>
-                  <span className="text-xs text-muted-foreground">
-                    Ordem {p.ordem} · {nomePerfil(p.perfil)}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{nomePerfil(p.perfil)}</span>
                   {bloqueado && (
                     <span className="text-xs text-amber-700 dark:text-amber-400">
                       Em uso em uma OP

@@ -117,11 +117,10 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    const ordem = Number(formData.get('ordem'))
     const perfil = String(formData.get('perfil') ?? '')
     setErro(null)
     startTransition(async () => {
-      const r = await atualizarPostoAction(posto.chave, { ordem, perfil })
+      const r = await atualizarPostoAction(posto.chave, { perfil })
       if ('erro' in r) setErro(r.erro)
       else setOpen(false)
     })
@@ -150,11 +149,6 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
           <div className="flex flex-col gap-2">
             <Label>Nome</Label>
             <Input value={posto.chave} disabled readOnly />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="ordem-editar">Ordem</Label>
-            <Input id="ordem-editar" name="ordem" type="number" defaultValue={posto.ordem} required />
           </div>
 
           <div className="flex flex-col gap-2">

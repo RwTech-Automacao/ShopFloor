@@ -11,7 +11,9 @@ export default async function PostosPage() {
     return <SemPermissao descricao="Você não tem permissão para gerenciar postos." />
   }
 
-  const [postos, perfis] = await Promise.all([listarPostos(), listarPerfis()])
+  const [postosTodos, perfis] = await Promise.all([listarPostos(), listarPerfis()])
+  // Manutenção é um posto PARALELO (tela própria de reparo, fora do fluxo) — não entra na gestão de Postos.
+  const postos = postosTodos.filter((p) => p.perfil !== 'manutencao')
 
   const emUso = new Set<string>()
   await Promise.all(

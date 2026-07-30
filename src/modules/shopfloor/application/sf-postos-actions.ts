@@ -62,7 +62,7 @@ export async function cadastrarPostoAction(
 
 export async function atualizarPostoAction(
   chave: string,
-  dados: { ordem: number; perfil: string },
+  dados: { perfil: string },
 ): Promise<ResultadoAcaoPosto> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
@@ -73,15 +73,12 @@ export async function atualizarPostoAction(
     return { erro: 'Posto em uso em uma OP — não pode editar.' }
   }
 
-  if (!Number.isFinite(dados.ordem) || !Number.isInteger(dados.ordem)) {
-    return { erro: 'Informe uma ordem válida.' }
-  }
-
+  // Editar só troca o perfil (a ordem de catálogo é interna/automática, não é editável).
   const perfis = await listarPerfis()
   if (!perfis.some((p) => p.chave === dados.perfil)) return { erro: 'Selecione um perfil válido.' }
 
   try {
-    await atualizarPosto(chave, dados)
+    await atualizarPosto(chave, { perfil: dados.perfil })
   } catch {
     return { erro: 'Não foi possível editar o posto.' }
   }
@@ -90,7 +87,7 @@ export async function atualizarPostoAction(
     entidade: 'sf_posto',
     entidadeId: chave,
     acao: 'alterar_campo',
-    descricao: `Posto "${chave}" editado (ordem ${dados.ordem}, perfil ${dados.perfil})`,
+    descricao: `Posto "${chave}" editado (perfil ${dados.perfil})`,
     dados,
   })
 
