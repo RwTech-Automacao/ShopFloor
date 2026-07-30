@@ -367,6 +367,12 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   com defeitos diferentes. **Melhorar a apresentação:** agrupar o reparo numa visão só, ou rotular claramente
   "relatado" vs "constatado" (a coluna/flag `reparo_constatado` já existe pra distinguir). **ADIADO (anotado).**
 
+- **Perfis de Posto — Fase 2** *(2026-07-30)*: (a) **criar perfis novos por config** (compor tem_status/reprova/
+  gate/exige_manutencao; recurso=nenhum — bespoke continua código); (b) **Análise 100% name-free** — `grade.ts`/
+  `dashboard.ts`/`pesquisa-form.tsx` ainda casam alguns postos por **nome** só na EXIBIÇÃO (célula de Manutenção/
+  embalagem/burn-in) — migrar pra perfil/recurso; (c) `sf_postos.perfil` poderia virar `NOT NULL` (hoje há fallback
+  `PERFIL_PADRAO`). **Fase 1 entregue** (perfis seed + atribuir + tela Cadastrar Posto). **ADIADO (anotado).**
+
 ## Priorização do backlog (2026-07-28, usuário)
 - **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**
   — ligado à reestruturação de telas abaixo (decidir a estrutura antes de mover peças soltas).
