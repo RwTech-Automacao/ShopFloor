@@ -19,7 +19,7 @@ insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exig
   ('nqa',        'Inspeção NQA',        true,  'nenhum',   'aprovado',   false, 'nqa'),
   ('embalagem',  'Embalagem',           false, 'nenhum',   'registrado', false, 'caixa'),
   ('integracao', 'Integração',          false, 'nenhum',   'registrado', false, 'integracao'),
-  ('burnin',     'Burn-in',             true,  'defeitos', 'registrado', true,  'burnin'),
+  ('burnin',     'Burn-in',             true,  'defeitos', 'aprovado',   true,  'burnin'),
   ('manutencao', 'Manutenção',          false, 'nenhum',   'registrado', false, 'manutencao');
 
 alter table public.sf_postos add column if not exists perfil text references public.sf_posto_perfis(chave);
