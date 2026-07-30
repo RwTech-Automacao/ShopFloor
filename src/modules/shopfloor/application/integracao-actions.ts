@@ -6,8 +6,9 @@ import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
 import { validarItensIntegracao, type PlacaIntegracao } from '../domain/integracao-itens'
 import { postoAnteriorNaSequencia } from '../domain/postos'
-import { precisaAprovado } from '../domain/lancamento-linhas'
+import { perfilPrecisaAprovado, PERFIL_PADRAO } from '../domain/perfil-posto'
 import { carregarOrdem, listarFaixasOrdens } from '../infra/lancamento-repository'
+import { mapaPostoPerfil } from '../infra/postos-repository'
 import {
   buscarIntegracaoPorSn,
   chamarSfIntegrar,
@@ -73,6 +74,7 @@ export async function integrar(
 
   // Integração é um posto: exige o anterior do fluxo satisfeito p/ o produto (trava de sequência).
   const prevPosto = postoAnteriorNaSequencia('Integração', ordem.postos)
+  const mapa = await mapaPostoPerfil()
 
   const r = await chamarSfIntegrar({
     p_colaborador: colaborador,
@@ -82,7 +84,7 @@ export async function integrar(
     p_produto_sn: produtoSN,
     p_produto_sn_norm: normalizarSerie(produtoSN),
     p_prev_posto: prevPosto ?? '',
-    p_prev_precisa_aprovado: prevPosto ? precisaAprovado(prevPosto) : false,
+    p_prev_precisa_aprovado: prevPosto ? perfilPrecisaAprovado(mapa[prevPosto] ?? PERFIL_PADRAO) : false,
     p_placas: v.placas.map((x) => ({
       pmo: x.pmo.trim(),
       op: x.op.trim(),
