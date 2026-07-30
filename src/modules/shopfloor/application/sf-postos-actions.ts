@@ -80,7 +80,11 @@ export async function atualizarPostoAction(
   const perfis = await listarPerfis()
   if (!perfis.some((p) => p.chave === dados.perfil)) return { erro: 'Selecione um perfil válido.' }
 
-  await atualizarPosto(chave, dados)
+  try {
+    await atualizarPosto(chave, dados)
+  } catch {
+    return { erro: 'Não foi possível editar o posto.' }
+  }
 
   await registrarLog({
     entidade: 'sf_posto',
@@ -104,7 +108,11 @@ export async function excluirPostoAction(chave: string): Promise<ResultadoAcaoPo
     return { erro: 'Posto em uso em uma OP — não pode excluir.' }
   }
 
-  await excluirPosto(chave)
+  try {
+    await excluirPosto(chave)
+  } catch {
+    return { erro: 'Não foi possível excluir o posto.' }
+  }
 
   await registrarLog({
     entidade: 'sf_posto',
