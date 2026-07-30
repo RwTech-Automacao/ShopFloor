@@ -2,6 +2,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarReprovasOrigem, listarReparos } from '@/modules/shopfloor/infra/manutencao-repository'
+import { listarDefeitos } from '@/modules/shopfloor/infra/lancamento-repository'
 import { agruparPendencias } from '@/modules/shopfloor/domain/manutencao-pendencias'
 import { ManutencaoLista } from './manutencao-lista'
 
@@ -10,8 +11,13 @@ export default async function ManutencaoPage() {
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return <SemPermissao descricao="Você não tem permissão para acessar a Manutenção." />
   }
-  const [reprovas, reparos] = await Promise.all([listarReprovasOrigem(), listarReparos()])
+  const [reprovas, reparos, defeitos] = await Promise.all([
+    listarReprovasOrigem(),
+    listarReparos(),
+    listarDefeitos(),
+  ])
   const ocorrencias = agruparPendencias(reprovas, reparos)
+  const defeitosCatalogo = defeitos.map((d) => d.codigo)
 
   return (
     <div className="flex flex-col gap-4">
@@ -21,7 +27,7 @@ export default async function ManutencaoPage() {
           Pendências de reparo (reprovas em Teste, Burn-in e Teste Final) e registro de conserto.
         </p>
       </div>
-      <ManutencaoLista ocorrencias={ocorrencias} />
+      <ManutencaoLista ocorrencias={ocorrencias} defeitosCatalogo={defeitosCatalogo} />
     </div>
   )
 }
