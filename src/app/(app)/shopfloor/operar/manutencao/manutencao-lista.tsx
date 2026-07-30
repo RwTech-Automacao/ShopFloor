@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { ScrollHorizontalTopo } from '@/shared/ui/scroll-horizontal-topo'
 import { registrarReparo } from '@/modules/shopfloor/application/manutencao-actions'
 import type { Ocorrencia } from '@/modules/shopfloor/domain/manutencao-pendencias'
 
@@ -125,8 +126,8 @@ export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) 
       </div>
 
       {/* Lista */}
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <Table>
+      <ScrollHorizontalTopo>
+        <Table containerClassName="rounded-lg border border-border">
           <TableHeader>
             <TableRow>
               <TableHead>Data</TableHead>
@@ -173,7 +174,7 @@ export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) 
             )}
           </TableBody>
         </Table>
-      </div>
+      </ScrollHorizontalTopo>
 
       {/* Dialog de reparo */}
       <Dialog open={alvo !== null} onOpenChange={(aberto) => { if (!aberto) setAlvo(null) }}>

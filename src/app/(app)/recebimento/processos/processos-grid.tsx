@@ -29,7 +29,7 @@ import {
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
 import type { ColunaGrid } from '@/modules/recebimento/infra/processo-repository'
 import { classeChipTrigger } from '@/lib/chip-trigger'
-import { ScrollHorizontalTopo } from './scroll-horizontal-topo'
+import { ScrollHorizontalTopo } from '@/shared/ui/scroll-horizontal-topo'
 
 interface ProcessosGridProps {
   colunas: ColunaGrid[]
