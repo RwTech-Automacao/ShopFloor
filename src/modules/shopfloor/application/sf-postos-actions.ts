@@ -11,15 +11,11 @@ import {
   postoEmUsoEmOrdem,
   listarPerfis,
 } from '@/modules/shopfloor/infra/postos-repository'
+import { listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
 
 export type ResultadoAcaoPosto = { ok: true } | { erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar postos.'
-
-function ordemValida(valor: FormDataEntryValue | null): number | null {
-  const n = Number(valor)
-  return Number.isFinite(n) && Number.isInteger(n) ? n : null
-}
 
 export async function cadastrarPostoAction(
   _prev: ResultadoAcaoPosto | undefined,
@@ -32,13 +28,15 @@ export async function cadastrarPostoAction(
 
   const chave = String(formData.get('chave') ?? '').trim()
   const perfil = String(formData.get('perfil') ?? '').trim()
-  const ordem = ordemValida(formData.get('ordem'))
 
   if (!chave) return { erro: 'Informe o nome do posto.' }
-  if (ordem === null) return { erro: 'Informe uma ordem válida.' }
 
   const perfis = await listarPerfis()
   if (!perfis.some((p) => p.chave === perfil)) return { erro: 'Selecione um perfil válido.' }
+
+  // Ordem de catálogo é automática: entra no fim da lista (não é a sequência da OP).
+  const postos = await listarPostos()
+  const ordem = postos.reduce((maior, p) => Math.max(maior, p.ordem), 0) + 1
 
   try {
     await criarPosto({ chave, ordem, perfil })

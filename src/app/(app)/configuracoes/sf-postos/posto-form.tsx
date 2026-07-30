@@ -87,11 +87,6 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="ordem">Ordem</Label>
-            <Input id="ordem" name="ordem" type="number" placeholder="0" required />
-          </div>
-
-          <div className="flex flex-col gap-2">
             <Label htmlFor="perfil">Perfil</Label>
             <PerfilSelect id="perfil" perfis={perfis} />
           </div>
