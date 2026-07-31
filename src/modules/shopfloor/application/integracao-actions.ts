@@ -148,6 +148,12 @@ export async function resolverPlacaIntegracaoAction(
   // Devolve a PMO na caixa da RECEITA (é por ela que o painel indexa as linhas); a faixa
   // (sf_ordens.pmo) pode ter caixa diferente, pois PMO é campo livre.
   const paraReceita = (p: string) => receita.find((c) => c.trim().toLowerCase() === p.trim().toLowerCase()) ?? p
+  // Aviso já no bipe: se a placa já está em outra integração ATIVA, barra aqui
+  // (não deixa montar tudo e só reclamar no Registrar).
+  const jaVinculada = await buscarIntegracaoPorSn(normalizarSerie(sn))
+  if (jaVinculada) {
+    return { ok: false, erro: `Placa já vinculada à integração ${jaVinculada.codigo}.` }
+  }
   const r = resolverPlaca(receita, faixas, limparSerie(sn))
   if (r.ok) return { ok: true, pmo: paraReceita(r.pmo), op: r.op }
   if (r.erro === 'AMBIGUO') {
