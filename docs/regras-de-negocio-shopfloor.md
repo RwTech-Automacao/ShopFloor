@@ -354,6 +354,38 @@ módulo importa). Catálogo em `src/modules/auth/domain/modulos.ts`.
   qualquer forma). ⚠️ Não confundir com o **Tipo por linha** do Lançamento (`SMD/PTH/Integração/TOP/BOT/
   Funcional/Elétrico` — natureza/lugar do defeito na placa, `lancamento-form.tsx:16`), que é outra coisa e
   continua igual. **ADIADO (anotado).**
+- **Feedbacks de sucesso/falha — maiores e mais claros** *(usuário, reunião 2026-07-30)*: hoje os retornos de
+  ação usam `toast` (sonner) discreto no canto. A operação pediu **pop-ups/feedbacks maiores e mais claros**
+  (sucesso E falha) — mais visíveis pro operador no chão de fábrica (ex.: banner/modal central destacado,
+  cor/ícone forte, texto grande). Vale um padrão único reusável em todo o módulo (Lançamento, Integração,
+  Manutenção, cadastros…). Definir o formato (toast maior × banner fixo × modal) num brainstorm quando pegar
+  o item. **ADIADO (anotado).**
+- **Manutenção/reparo — apresentação de "relatado × constatado" na Pesquisa/Registros** *(usuário, smoke
+  2026-07-30)*: um reparo gera **≥2 linhas** em `sf_registros` na visão da Pesquisa/Registros — a(s) de
+  **conserto** (que carregam o **defeito RELATADO**, ex.: `157 ERRO COMUNICAÇÃO`) e a(s) de **defeito
+  CONSTATADO** (`reparo_constatado=true`, ex.: `9999 DEFEITO…`). Fica confuso ver duas linhas de "Manutenção"
+  com defeitos diferentes. **Melhorar a apresentação:** agrupar o reparo numa visão só, ou rotular claramente
+  "relatado" vs "constatado" (a coluna/flag `reparo_constatado` já existe pra distinguir). **ADIADO (anotado).**
+
+- **Perfis de Posto — Fase 2** *(2026-07-30)*: (a) **criar perfis novos por config** (compor tem_status/reprova/
+  gate/exige_manutencao; recurso=nenhum — bespoke continua código); (b) **Análise 100% name-free** — `grade.ts`/
+  `dashboard.ts`/`pesquisa-form.tsx` ainda casam alguns postos por **nome** só na EXIBIÇÃO (célula de Manutenção/
+  embalagem/burn-in) — migrar pra perfil/recurso; (c) `sf_postos.perfil` poderia virar `NOT NULL` (hoje há fallback
+  `PERFIL_PADRAO`). **Fase 1 entregue** (perfis seed + atribuir + tela Cadastrar Posto). **ADIADO (anotado).**
+
+- **Cadastrar Posto — guia/preview do perfil** *(usuário, smoke 2026-07-30)*: ao criar um posto, mostrar uma
+  **visualização/guia** do que o perfil escolhido faz — quais campos/telas o posto terá (ex.: "Inspeção → pede
+  Status; reprovado → defeitos"; "Passagem → só registra"; "Embalagem → Nº caixa + QTD"). Deixa claro o que
+  está sendo criado antes de salvar. **ADIADO (anotado).**
+
+- **Perfis bespoke para MÚLTIPLOS postos (Integração/Burn-in) — Fase 2** *(usuário, smoke 2026-07-30)*: hoje
+  Integração e Burn-in são **singletons** — o comportamento é amarrado a UM posto: a **receita (BOM) é por OP**
+  (`sf_ordem_componentes`) + tela de Integração + `id_integracao`; o Burn-in grava `posto='Burn-in'` fixo e o
+  **tempo é por OP** (`sf_ordens.tempo_min_burnin`). Então um **2º** posto com esses perfis **não funciona**
+  (ex.: um Integração novo não mostra receita própria; um Burn-in novo grava sob 'Burn-in'). Pra generalizar:
+  **receita por posto** (não por OP), **tempo por posto**, e parametrizar a tela de Integração/RPCs pelo nome
+  do posto. Enquanto isso, esses perfis **não são oferecidos** no "Novo posto" (tratados como singletons, como
+  a Manutenção). **ADIADO (anotado).**
 
 ## Priorização do backlog (2026-07-28, usuário)
 - **Fazendo agora:** **consolidar busca por SN** (Integração → Pesquisa) + **análise de telas redundantes**

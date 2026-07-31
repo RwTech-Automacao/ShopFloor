@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { gerarFaixaSNs, montarGrade, burninEmAndamento } from '../grade'
 
+const temStatus = (p: string) =>
+  ['Inspeção SPI', 'Inspeção SMD', 'Inspeção PTH', 'Teste', 'Burn-in', 'Teste Final', 'Inspeção Final', 'Inspeção NQA'].some(
+    (x) => x.toLowerCase() === p.toLowerCase(),
+  )
+
 describe('gerarFaixaSNs', () => {
   it('gera a faixa com zero-padding e prefixo/sufixo', () => {
     const r = gerarFaixaSNs('AB008C', 'AB011C')
@@ -23,11 +28,11 @@ describe('montarGrade', () => {
     snNorm: '100', posto: 'Inicial', status: '', numeroCaixa: '', dataHora: '2026-01-01T00:00:00Z', ...over,
   })
   it('sem registro → Pendente em tudo; Manutenção → —', () => {
-    const [l] = montarGrade(['100'], postos, [])
+    const [l] = montarGrade(['100'], postos, [], temStatus)
     expect(l!.celulas).toEqual({ Inicial: 'Pendente', Teste: 'Pendente', Embalagem: 'Pendente', 'Manutenção': '—' })
   })
   it('sem status → Registrado; Embalagem mostra a caixa', () => {
-    const [l] = montarGrade(['100'], postos, [reg({}), reg({ posto: 'Embalagem', numeroCaixa: 'CX-01' })])
+    const [l] = montarGrade(['100'], postos, [reg({}), reg({ posto: 'Embalagem', numeroCaixa: 'CX-01' })], temStatus)
     expect(l!.celulas['Inicial']).toBe('Registrado')
     expect(l!.celulas['Embalagem']).toBe('CX-01')
   })
@@ -35,36 +40,36 @@ describe('montarGrade', () => {
     const [l] = montarGrade(['100'], postos, [
       reg({ posto: 'Teste', status: 'Reprovado' }),
       reg({ posto: 'Teste', status: 'Aprovado' }),
-    ])
+    ], temStatus)
     expect(l!.celulas['Teste']).toBe('Aprovado')
   })
   it('com status só reprovado → Reprovado; Manutenção com reparo → Concluído', () => {
     const [l] = montarGrade(['100'], postos, [
       reg({ posto: 'Teste', status: 'Reprovado' }),
       reg({ posto: 'Manutenção' }),
-    ])
+    ], temStatus)
     expect(l!.celulas['Teste']).toBe('Reprovado')
     expect(l!.celulas['Manutenção']).toBe('Concluído')
   })
   it('casa SN da linha com registros pelo normalizado', () => {
-    const [l] = montarGrade(['0100'], postos, [reg({ snNorm: '100' })])
+    const [l] = montarGrade(['0100'], postos, [reg({ snNorm: '100' })], temStatus)
     expect(l!.celulas['Inicial']).toBe('Registrado')
   })
   it('casa SN com PREFIXO sem zero-padding (bloco numérico, como o legado)', () => {
-    const [l] = montarGrade(['AB009C'], postos, [reg({ snNorm: 'ab9c' })])
+    const [l] = montarGrade(['AB009C'], postos, [reg({ snNorm: 'ab9c' })], temStatus)
     expect(l!.celulas['Inicial']).toBe('Registrado')
   })
 
   const bi = ['Inicial', 'Burn-in', 'Embalagem']
   it('Burn-in com ciclo aberto → Em andamento (entrada sem saída)', () => {
-    const [l] = montarGrade(['100'], bi, [reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T08:00:00Z' })])
+    const [l] = montarGrade(['100'], bi, [reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T08:00:00Z' })], temStatus)
     expect(l!.celulas['Burn-in']).toBe('Em andamento')
   })
   it('Burn-in fechado (entrada + saída) → regra com-status normal', () => {
     const [l] = montarGrade(['100'], bi, [
       reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T08:00:00Z' }),
       reg({ posto: 'Burn-in', status: 'Aprovado', dataHora: '2026-07-24T14:00:00Z' }),
-    ])
+    ], temStatus)
     expect(l!.celulas['Burn-in']).toBe('Aprovado')
   })
   it('novo ciclo aberto após um fechado → Em andamento', () => {
@@ -72,7 +77,7 @@ describe('montarGrade', () => {
       reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T08:00:00Z' }),
       reg({ posto: 'Burn-in', status: 'Reprovado', dataHora: '2026-07-24T10:00:00Z' }),
       reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T12:00:00Z' }),
-    ])
+    ], temStatus)
     expect(l!.celulas['Burn-in']).toBe('Em andamento')
   })
   it('reprova com 2 defeitos (2 registros mesmo instante) + re-entrada → Em andamento', () => {
@@ -82,7 +87,7 @@ describe('montarGrade', () => {
       reg({ posto: 'Burn-in', status: 'Reprovado', dataHora: '2026-07-24T10:00:00Z' }),
       reg({ posto: 'Burn-in', status: 'Reprovado', dataHora: '2026-07-24T10:00:00Z' }),
       reg({ posto: 'Burn-in', status: '', dataHora: '2026-07-24T12:00:00Z' }),
-    ])
+    ], temStatus)
     expect(l!.celulas['Burn-in']).toBe('Em andamento')
   })
 })

@@ -2,7 +2,10 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdens, listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
+import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarPadroes } from '@/modules/shopfloor/infra/padroes-fluxo-repository'
+import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
+import { agruparTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { OrdemForm, type OrdemView } from './ordem-form'
 import { OrdensLista } from './ordens-lista'
 
@@ -12,7 +15,7 @@ export default async function OrdensPage() {
     return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
   }
 
-  const [ordens, postos, padroes] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes()])
+  const [ordens, postos, padroes, postosPerfil] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil()])
   const chavesPostos = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const views: OrdemView[] = ordens.map((o) => ({
     id: o.id,
@@ -26,8 +29,8 @@ export default async function OrdensPage() {
     sn_ini: o.sn_ini,
     sn_fim: o.sn_fim,
     postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
-    componentes: o.sf_ordem_componentes.map((c) => c.pmo_componente),
-    tempo_min_burnin: o.tempo_min_burnin,
+    receitaPorPosto: agruparReceitaPorPosto(o.sf_ordem_componentes),
+    tempoBurninPorPosto: agruparTempoBurninPorPosto(o.sf_ordem_burnin),
   }))
   const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
   const clientesExistentes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()
@@ -49,10 +52,10 @@ export default async function OrdensPage() {
           <h2 className="text-lg font-semibold text-tinta">Ordens de Produção</h2>
           <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
         </div>
-        <OrdemForm postos={chavesPostos} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+        <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
       </div>
 
-      <OrdensLista views={views} chavesPostos={chavesPostos} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+      <OrdensLista views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
     </div>
   )
 }

@@ -24,6 +24,7 @@ import {
   Settings,
   Settings2,
   Bug,
+  Waypoints,
   TriangleAlert,
   Table2,
   History,
@@ -85,6 +86,7 @@ const CONFIG_RECEBIMENTO: FolhaModular[] = [
 
 // Configurações específicas do módulo ShopFloor, agrupadas num accordion.
 const CONFIG_SHOPFLOOR: FolhaModular[] = [
+  { chave: 'sf-postos', rotulo: 'Postos', href: '/configuracoes/sf-postos', icone: Waypoints, modulo: 'shopfloor', perm: 'administrar' },
   { chave: 'sf-defeitos', rotulo: 'Defeitos', href: '/configuracoes/sf-defeitos', icone: Bug, modulo: 'shopfloor', perm: 'administrar' },
 ]
 

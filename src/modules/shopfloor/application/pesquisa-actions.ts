@@ -4,7 +4,9 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { normalizarSerie } from '../domain/serie'
 import { gerarFaixaSNs, montarGrade, type LinhaGrade } from '../domain/grade'
+import { PERFIL_PADRAO, perfilTemStatus } from '../domain/perfil-posto'
 import { carregarOrdem } from '../infra/lancamento-repository'
+import { mapaPostoPerfil } from '../infra/postos-repository'
 import {
   buscarRegistrosPorSn,
   listarRegistrosDaOp,
@@ -44,11 +46,15 @@ export async function carregarGrade(
   if (!faixa.ok) return faixa
 
   try {
-    const registros = await listarRegistrosDaOp(pmo.trim(), op.trim())
+    const [registros, mapa] = await Promise.all([
+      listarRegistrosDaOp(pmo.trim(), op.trim()),
+      mapaPostoPerfil(),
+    ])
+    const temStatus = (posto: string) => perfilTemStatus(mapa[posto] ?? PERFIL_PADRAO)
     return {
       ok: true,
       colunas: [...ordem.postos, 'Manutenção'],
-      linhas: montarGrade(faixa.sns, ordem.postos, registros),
+      linhas: montarGrade(faixa.sns, ordem.postos, registros, temStatus),
     }
   } catch {
     return { ok: false, erro: ERRO_INTERNO }

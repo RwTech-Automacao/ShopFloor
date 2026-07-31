@@ -3,8 +3,10 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { contarPorPosto } from '../domain/dashboard'
+import { PERFIL_PADRAO, perfilTemStatus } from '../domain/perfil-posto'
 import { carregarOrdem } from '../infra/lancamento-repository'
 import { listarContagemDaOp } from '../infra/dashboard-repository'
+import { mapaPostoPerfil } from '../infra/postos-repository'
 
 export interface ItemDashboard {
   posto: string
@@ -24,8 +26,12 @@ export async function carregarDashboard(
   const ordem = await carregarOrdem(pmo.trim(), op.trim())
   if (!ordem) return { ok: false, erro: 'OP não encontrada.' }
   try {
-    const registros = await listarContagemDaOp(pmo.trim(), op.trim(), de || undefined, ate || undefined)
-    const contagens = contarPorPosto(ordem.postos, registros)
+    const [registros, mapa] = await Promise.all([
+      listarContagemDaOp(pmo.trim(), op.trim(), de || undefined, ate || undefined),
+      mapaPostoPerfil(),
+    ])
+    const temStatus = (posto: string) => perfilTemStatus(mapa[posto] ?? PERFIL_PADRAO)
+    const contagens = contarPorPosto(ordem.postos, registros, temStatus)
     const itens = [...ordem.postos, 'Manutenção'].map((posto) => ({ posto, contagem: contagens[posto] ?? 0 }))
     return { ok: true, itens, total: ordem.qtd }
   } catch {

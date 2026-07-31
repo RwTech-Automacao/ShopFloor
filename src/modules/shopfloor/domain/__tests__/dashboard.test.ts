@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { contarPorPosto } from '../dashboard'
 
+const temStatus = (p: string) =>
+  ['Inspeção SPI', 'Inspeção SMD', 'Inspeção PTH', 'Teste', 'Burn-in', 'Teste Final', 'Inspeção Final', 'Inspeção NQA'].some(
+    (x) => x.toLowerCase() === p.toLowerCase(),
+  )
+
 describe('contarPorPosto', () => {
   const postos = ['Inicial', 'Teste', 'Embalagem']
   it('sem-status conta cada registro; com-status só aprovado; Manutenção incluída', () => {
@@ -12,10 +17,10 @@ describe('contarPorPosto', () => {
       { posto: 'Embalagem', status: '' },
       { posto: 'Manutenção', status: '' },
       { posto: 'Inspeção SMD', status: 'Aprovado' }, // fora do fluxo → ignora
-    ])
+    ], temStatus)
     expect(r).toEqual({ Inicial: 2, Teste: 1, Embalagem: 1, 'Manutenção': 1 })
   })
   it('zera postos sem registro', () => {
-    expect(contarPorPosto(['Inicial'], [])).toEqual({ Inicial: 0, 'Manutenção': 0 })
+    expect(contarPorPosto(['Inicial'], [], temStatus)).toEqual({ Inicial: 0, 'Manutenção': 0 })
   })
 })

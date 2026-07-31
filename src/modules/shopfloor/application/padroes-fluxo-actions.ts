@@ -5,6 +5,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { validarPadraoFluxo } from '@/modules/shopfloor/domain/validar-padrao'
 import { upsertPadrao, excluirPadrao } from '@/modules/shopfloor/infra/padroes-fluxo-repository'
+import type { ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 
 type Resultado = { ok: true } | { ok: false; erro: string }
 
@@ -13,7 +14,7 @@ export async function salvarPadraoAction(dados: {
   nome: string
   descricao: string
   postos: string[]
-  componentes: string[]
+  componentes: ReceitaPorPosto
 }): Promise<Resultado> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {

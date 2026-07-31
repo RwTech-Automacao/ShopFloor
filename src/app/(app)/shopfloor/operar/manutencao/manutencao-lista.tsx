@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { ScrollHorizontalTopo } from '@/shared/ui/scroll-horizontal-topo'
 import { registrarReparo } from '@/modules/shopfloor/application/manutencao-actions'
 import type { Ocorrencia } from '@/modules/shopfloor/domain/manutencao-pendencias'
 
@@ -24,7 +25,13 @@ interface Conserto {
   posicao: string
 }
 
-export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) {
+export function ManutencaoLista({
+  ocorrencias,
+  defeitosCatalogo,
+}: {
+  ocorrencias: Ocorrencia[]
+  defeitosCatalogo: string[]
+}) {
   const router = useRouter()
   const [fCliente, setFCliente] = useState('')
   const [fStatus, setFStatus] = useState('Pendente')
@@ -32,6 +39,7 @@ export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) 
   const [alvo, setAlvo] = useState<Ocorrencia | null>(null)
   const [colaborador, setColaborador] = useState('')
   const [consertos, setConsertos] = useState<Conserto[]>([{ descricao: '', posicao: '' }])
+  const [constatados, setConstatados] = useState<string[]>([''])
   const [salvando, startTransition] = useTransition()
 
   const clientes = useMemo(() => [...new Set(ocorrencias.map((o) => o.cliente).filter(Boolean))], [ocorrencias])
@@ -51,9 +59,13 @@ export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) 
     setAlvo(o)
     setColaborador('')
     setConsertos([{ descricao: '', posicao: '' }])
+    setConstatados([''])
   }
 
-  const valido = colaborador.trim() !== '' && consertos.some((c) => c.descricao.trim() !== '')
+  const valido =
+    colaborador.trim() !== '' &&
+    consertos.some((c) => c.descricao.trim() !== '') &&
+    constatados.some((c) => c.trim() !== '')
 
   function onSalvar() {
     if (!alvo || !valido || salvando) return
@@ -71,6 +83,7 @@ export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) 
           tipo: alvo.tipo,
         },
         consertos,
+        defeitosConstatados: constatados,
       })
       if (r.ok) {
         toast.success('Reparo registrado.')
@@ -125,8 +138,8 @@ export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) 
       </div>
 
       {/* Lista */}
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <Table>
+      <ScrollHorizontalTopo>
+        <Table containerClassName="rounded-lg border border-border">
           <TableHeader>
             <TableRow>
               <TableHead>Data</TableHead>
@@ -173,7 +186,7 @@ export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) 
             )}
           </TableBody>
         </Table>
-      </div>
+      </ScrollHorizontalTopo>
 
       {/* Dialog de reparo */}
       <Dialog open={alvo !== null} onOpenChange={(aberto) => { if (!aberto) setAlvo(null) }}>
@@ -186,10 +199,44 @@ export function ManutencaoLista({ ocorrencias }: { ocorrencias: Ocorrencia[] }) 
               <p className="text-sm text-muted-foreground">
                 {alvo.sn} · {alvo.pmo}/{alvo.op} · reprovada em <b>{alvo.posto}</b> em {fmtData(alvo.dataHora)}
                 {alvo.posicoes.length > 0 && <> · posições: {alvo.posicoes.join(', ')}</>}
+                {alvo.cod && <> · defeito relatado: <b>{alvo.cod}</b></>}
               </p>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="colabRep">Colaborador</Label>
                 <Input id="colabRep" value={colaborador} onChange={(e) => setColaborador(e.target.value)} autoComplete="off" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Defeitos constatados</Label>
+                <datalist id="defeitos-constatados-list">
+                  {defeitosCatalogo.map((c) => <option key={c} value={c} />)}
+                </datalist>
+                {constatados.map((c, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <Input
+                      list="defeitos-constatados-list"
+                      value={c}
+                      onChange={(e) => setConstatados(constatados.map((x, idx) => (idx === i ? e.target.value : x)))}
+                      placeholder="Código do defeito (do catálogo)"
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remover defeito constatado ${i + 1}`}
+                      onClick={() => setConstatados(constatados.length > 1 ? constatados.filter((_, idx) => idx !== i) : constatados)}
+                      disabled={constatados.length <= 1}
+                      className="text-muted-foreground hover:text-red-600 disabled:opacity-30"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setConstatados([...constatados, ''])}
+                  className="self-start text-sm font-medium text-enterplak hover:underline"
+                >
+                  <Plus className="mr-1 inline size-4" /> Adicionar defeito constatado
+                </button>
               </div>
               <div className="flex flex-col gap-2">
                 <Label>Consertos</Label>

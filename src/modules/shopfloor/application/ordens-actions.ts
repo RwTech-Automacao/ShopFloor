@@ -5,7 +5,9 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { validarOrdem } from '../domain/validar-ordem'
-import { tempoParaMinutos } from '../domain/tempo-burnin'
+import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto'
+import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-posto'
+import { mapaPostoPerfil } from '../infra/postos-repository'
 import {
   criarOrdem,
   atualizarOrdem,
@@ -32,7 +34,6 @@ function lerDados(fd: FormData): DadosOrdem {
     status: String(fd.get('status') ?? '').trim() || 'ATIVA',
     sn_ini: String(fd.get('sn_ini') ?? '').trim(),
     sn_fim: String(fd.get('sn_fim') ?? '').trim(),
-    tempo_min_burnin: 0, // placeholder; sobrescrito na action após validar o hh:mm
   }
 }
 
@@ -58,25 +59,23 @@ async function lerPostos(fd: FormData): Promise<string[]> {
   return fluxo
 }
 
-/** Componentes (receita) enviados pelo form (campo `componentes` = JSON de strings). */
-function lerComponentes(fd: FormData): string[] {
-  let bruto: unknown
-  try {
-    bruto = JSON.parse(String(fd.get('componentes') ?? '[]'))
-  } catch {
-    return []
-  }
-  if (!Array.isArray(bruto)) return []
-  const vistos = new Set<string>()
-  const out: string[] = []
-  for (const item of bruto) {
-    const v = String(item).trim()
-    if (v !== '' && !vistos.has(v.toLowerCase())) {
-      vistos.add(v.toLowerCase())
-      out.push(v)
-    }
-  }
-  return out
+/** Receita por posto vinda do form; mantém só postos de Integração (perfil) do fluxo. */
+async function lerReceita(fd: FormData, postos: string[]): Promise<{ posto: string; pmo: string }[]> {
+  const mapa = await mapaPostoPerfil()
+  const postosIntegracao = postos.filter((p) => mapa[p]?.recurso === 'integracao')
+  if (postosIntegracao.length === 0) return []
+  const receita = parseReceitaPorPosto(String(fd.get('componentes') ?? '{}'), postosIntegracao)
+  return receitaParaLinhas(receita)
+}
+
+/** Tempo mínimo de Burn-in por posto vindo do form; mantém só postos de Burn-in (perfil) do fluxo. */
+async function lerBurnin(fd: FormData, postos: string[]): Promise<{ ok: true; rows: { posto: string; tempo_min: number }[] } | { ok: false; erro: string }> {
+  const mapa = await mapaPostoPerfil()
+  const postosBurnin = postos.filter((p) => mapa[p]?.recurso === 'burnin')
+  if (postosBurnin.length === 0) return { ok: true, rows: [] }
+  const r = parseTempoBurninPorPosto(String(fd.get('tempo_burnin') ?? '{}'), postosBurnin)
+  if (!r.ok) return { ok: false, erro: `Tempo mínimo de Burn-in inválido no posto ${r.posto} (use hhh:mm).` }
+  return { ok: true, rows: temposParaLinhas(r.tempos) }
 }
 
 function ehDuplicidade(e: unknown): boolean {
@@ -91,17 +90,16 @@ export async function criarOrdemAction(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const dados = lerDados(formData)
-  const tempoMin = tempoParaMinutos(String(formData.get('tempo_min_burnin') ?? ''))
-  if (tempoMin === null) return { ok: false, erro: 'Tempo mínimo de Burn-in inválido (use hh:mm).' }
-  dados.tempo_min_burnin = tempoMin
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
   if (!v.ok) return v
   const postos = await lerPostos(formData)
-  const componentes = postos.includes('Integração') ? lerComponentes(formData) : []
+  const receita = await lerReceita(formData, postos)
+  const burnin = await lerBurnin(formData, postos)
+  if (!burnin.ok) return { ok: false, erro: burnin.erro }
 
   let id: string
   try {
-    id = await criarOrdem(dados, postos, componentes)
+    id = await criarOrdem(dados, postos, receita, burnin.rows)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
     return { ok: false, erro: 'Não foi possível criar a OP.' }
@@ -122,16 +120,15 @@ export async function editarOrdemAction(
   const id = String(formData.get('id') ?? '').trim()
   if (id === '') return { ok: false, erro: 'OP inválida.' }
   const dados = lerDados(formData)
-  const tempoMin = tempoParaMinutos(String(formData.get('tempo_min_burnin') ?? ''))
-  if (tempoMin === null) return { ok: false, erro: 'Tempo mínimo de Burn-in inválido (use hh:mm).' }
-  dados.tempo_min_burnin = tempoMin
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
   if (!v.ok) return v
   const postos = await lerPostos(formData)
-  const componentes = postos.includes('Integração') ? lerComponentes(formData) : []
+  const receita = await lerReceita(formData, postos)
+  const burnin = await lerBurnin(formData, postos)
+  if (!burnin.ok) return { ok: false, erro: burnin.erro }
 
   try {
-    await atualizarOrdem(id, dados, postos, componentes)
+    await atualizarOrdem(id, dados, postos, receita, burnin.rows)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
     return { ok: false, erro: 'Não foi possível salvar a OP.' }

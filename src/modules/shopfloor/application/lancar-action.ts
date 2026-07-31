@@ -4,14 +4,16 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
 import { postoAnteriorNaSequencia } from '../domain/postos'
-import { obrigatoriosPorPosto } from '../domain/regras-lancamento'
 import {
-  postoTemStatus,
-  precisaAprovado,
-  montarLinhas,
-  exigeManutencao,
-} from '../domain/lancamento-linhas'
+  PERFIL_PADRAO,
+  perfilTemStatus,
+  perfilPrecisaAprovado,
+  perfilExigeManutencao,
+  montarLinhasPerfil,
+  obrigatoriosPorPerfil,
+} from '../domain/perfil-posto'
 import { carregarOrdem, chamarSfLancar, chamarSfBurnin, buscarEntradaBurninAberta } from '../infra/lancamento-repository'
+import { mapaPostoPerfil } from '../infra/postos-repository'
 
 export interface EntradaLancamento {
   colaborador: string
@@ -50,14 +52,16 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
 
+  const mapa = await mapaPostoPerfil()
+  const perfil = mapa[entrada.posto] ?? PERFIL_PADRAO
+
   // Integração não é lançável aqui: exige o vínculo produto↔placas da tela de Integração.
-  const postoNorm = entrada.posto.toLowerCase()
-  if (postoNorm === 'integração' || postoNorm === 'integracao') {
+  if (perfil.recurso === 'integracao') {
     return { ok: false, erro: 'O posto Integração é registrado na tela de Integração.' }
   }
 
   // Burn-in tem lifecycle próprio (entrada/saída) — obrigatórios à parte.
-  const ehBurnin = postoNorm === 'burn-in'
+  const ehBurnin = perfil.recurso === 'burnin'
   if (ehBurnin) {
     if (
       entrada.colaborador.trim() === '' || entrada.pmo.trim() === '' ||
@@ -72,8 +76,8 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
       }
     }
   } else {
-    // Obrigatórios por posto (domínio puro).
-    const val = obrigatoriosPorPosto(entrada.posto, {
+    // Obrigatórios por perfil (domínio puro).
+    const val = obrigatoriosPorPerfil(perfil, {
       colaborador: entrada.colaborador,
       pmo: entrada.pmo,
       op: entrada.op,
@@ -110,6 +114,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
 
   // Posto anterior EXIGIDO = o imediatamente anterior na ORDEM da OP (Plano B2).
   const prevPosto = postoAnteriorNaSequencia(entrada.posto, ordem.postos)
+  const perfilPrev = prevPosto ? (mapa[prevPosto] ?? PERFIL_PADRAO) : null
 
   // Burn-in: entrada/saída via RPC dedicada sf_burnin (lifecycle próprio).
   if (ehBurnin) {
@@ -122,7 +127,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     }
     const linhasBurn =
       evento === 'saida'
-        ? montarLinhas(entrada.posto, { status: entrada.status ?? '', defeitos: entrada.defeitos })
+        ? montarLinhasPerfil(perfil, { status: entrada.status ?? '', defeitos: entrada.defeitos })
         : []
     const rb = await chamarSfBurnin({
       p_evento: evento,
@@ -134,9 +139,10 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
       p_sn_norm: normalizarSerie(entrada.numeroSerie),
       p_status: evento === 'saida' ? (entrada.status ?? '') : '',
       p_prev_posto: prevPosto ?? '',
-      p_prev_precisa_aprovado: prevPosto ? precisaAprovado(prevPosto) : false,
-      p_exige_manutencao: exigeManutencao(entrada.posto),
+      p_prev_precisa_aprovado: perfilPrev ? perfilPrecisaAprovado(perfilPrev) : false,
+      p_exige_manutencao: perfilExigeManutencao(perfil),
       p_linhas: linhasBurn,
+      p_posto: entrada.posto,
     })
     if (!rb.ok) return { ok: false, erro: MENSAGENS[rb.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
     return { ok: true }
@@ -145,8 +151,8 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
   const qtdPorCaixa =
     entrada.qtdPorCaixa && entrada.qtdPorCaixa.trim() !== '' ? Number(entrada.qtdPorCaixa) : null
 
-  // Embalagem exige quantidade por caixa numérica e positiva (evita NaN furar o limite).
-  if (entrada.posto.toLowerCase() === 'embalagem') {
+  // Recurso "caixa" (Embalagem) exige quantidade por caixa numérica e positiva (evita NaN furar o limite).
+  if (perfil.recurso === 'caixa') {
     if (qtdPorCaixa === null || !Number.isInteger(qtdPorCaixa) || qtdPorCaixa <= 0) {
       return { ok: false, erro: 'Informe uma quantidade por caixa válida (inteiro maior que zero).' }
     }
@@ -154,7 +160,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
 
   // NQA não tem campo Status: deriva aprovado/reprovado de visual+funcional.
   // Paridade com o legado: Funcional "Não aplicável" também conta como aprovado.
-  const ehNqa = entrada.posto.toLowerCase() === 'inspeção nqa'
+  const ehNqa = perfil.recurso === 'nqa'
   const nqaFuncionalNorm = (entrada.nqaFuncional ?? '').toLowerCase()
   const statusFinal = ehNqa
     ? (entrada.nqaVisual ?? '').toLowerCase() === 'aprovado' &&
@@ -163,7 +169,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
       : 'Reprovado'
     : (entrada.status ?? '')
 
-  const linhas = montarLinhas(entrada.posto, {
+  const linhas = montarLinhasPerfil(perfil, {
     status: statusFinal,
     defeitos: entrada.defeitos,
     posicoes: entrada.posicoesSPI,
@@ -178,28 +184,28 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     p_numero_serie: limparSerie(entrada.numeroSerie),
     p_numero_serie_norm: normalizarSerie(entrada.numeroSerie),
     p_status: statusFinal,
-    p_posto_tem_status: postoTemStatus(entrada.posto),
+    p_posto_tem_status: perfilTemStatus(perfil),
     p_numero_caixa: entrada.numeroCaixa ?? '',
     p_qtd_por_caixa: qtdPorCaixa,
     p_nqa_visual: entrada.nqaVisual ?? '',
     p_nqa_funcional: entrada.nqaFuncional ?? '',
     p_prev_posto: prevPosto ?? '',
-    p_prev_precisa_aprovado: prevPosto ? precisaAprovado(prevPosto) : false,
+    p_prev_precisa_aprovado: perfilPrev ? perfilPrecisaAprovado(perfilPrev) : false,
     p_linhas: linhas,
-    p_exige_manutencao: exigeManutencao(entrada.posto),
+    p_exige_manutencao: perfilExigeManutencao(perfil),
   })
 
   if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
   return { ok: true, caixaCount: r.caixa_count }
 }
 
-export async function buscarEntradaBurnin(pmo: string, op: string, numeroSerie: string): Promise<string | null> {
+export async function buscarEntradaBurnin(pmo: string, op: string, numeroSerie: string, posto: string): Promise<string | null> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return null
 
   try {
     const snNorm = normalizarSerie(numeroSerie)
-    return await buscarEntradaBurninAberta(pmo, op, snNorm)
+    return await buscarEntradaBurninAberta(pmo, op, snNorm, posto)
   } catch {
     return null // fail-open: erro no lookup não bloqueia o operador (é só aviso)
   }

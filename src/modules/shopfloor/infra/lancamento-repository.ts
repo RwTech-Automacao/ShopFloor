@@ -1,5 +1,7 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
+import { agruparReceitaPorPosto, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
+import { agruparTempoBurninPorPosto, type TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 
 export interface OrdemLancamento {
   cliente: string
@@ -121,8 +123,8 @@ export interface OrdemLancamentoLista {
   sn_ini: string
   sn_fim: string
   postos: string[]
-  componentes: string[]
-  tempo_min_burnin: number
+  receitaPorPosto: ReceitaPorPosto
+  tempoBurninPorPosto: TempoBurninPorPosto
 }
 
 /** Todas as OPs ativas com config + fluxo ordenado, para a cascata da tela de Lançamento. */
@@ -131,7 +133,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
   const { data, error } = await supabase
     .from('sf_ordens')
     .select(
-      'cliente,pmo,op,descricao,sn_ini,sn_fim,tempo_min_burnin,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)',
+      'cliente,pmo,op,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
     )
     .neq('status', 'FINALIZADA')
     .order('cliente')
@@ -145,9 +147,9 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     descricao: string
     sn_ini: string
     sn_fim: string
-    tempo_min_burnin: number
     sf_ordem_postos: { posto: string; ordem: number }[]
-    sf_ordem_componentes: { pmo_componente: string }[]
+    sf_ordem_componentes: { posto: string; pmo_componente: string }[]
+    sf_ordem_burnin: { posto: string; tempo_min: number }[]
   }[]
   return rows.map((r) => ({
     cliente: r.cliente,
@@ -157,8 +159,8 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
-    componentes: r.sf_ordem_componentes.map((c) => c.pmo_componente),
-    tempo_min_burnin: r.tempo_min_burnin,
+    receitaPorPosto: agruparReceitaPorPosto(r.sf_ordem_componentes),
+    tempoBurninPorPosto: agruparTempoBurninPorPosto(r.sf_ordem_burnin),
   }))
 }
 
@@ -240,6 +242,7 @@ export interface SfBurninArgs {
   p_prev_precisa_aprovado: boolean
   p_exige_manutencao: boolean
   p_linhas: { codigo_defeito: string; posicao: string; tipo_defeito: string }[]
+  p_posto: string
 }
 
 export async function chamarSfBurnin(
@@ -251,13 +254,13 @@ export async function chamarSfBurnin(
   return data as { ok: boolean; erro?: string; evento?: string }
 }
 
-/** data_hora (ISO) da ENTRADA de Burn-in aberta da peça; null se não houver entrada aberta. */
-export async function buscarEntradaBurninAberta(pmo: string, op: string, snNorm: string): Promise<string | null> {
+/** data_hora (ISO) da ENTRADA de Burn-in aberta da peça NESTE POSTO; null se não houver entrada aberta. */
+export async function buscarEntradaBurninAberta(pmo: string, op: string, snNorm: string, posto: string): Promise<string | null> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_registros')
     .select('status,data_hora')
-    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', snNorm).eq('posto', 'Burn-in')
+    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', snNorm).eq('posto', posto)
     .order('data_hora', { ascending: false })
     .limit(1)
   if (error) throw error

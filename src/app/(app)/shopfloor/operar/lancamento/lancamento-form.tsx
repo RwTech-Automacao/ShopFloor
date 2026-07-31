@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
-import { postoTemStatus } from '@/modules/shopfloor/domain/lancamento-linhas'
+import { PERFIL_PADRAO, perfilTemStatus, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, buscarEntradaBurnin } from '@/modules/shopfloor/application/lancar-action'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
+import { IntegracaoPanel } from './integracao-panel'
 
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
 const OPCOES_STATUS = ['Aprovado', 'Reprovado']
@@ -29,9 +30,11 @@ interface DefeitoLinha {
 export function LancamentoForm({
   ordens,
   defeitos,
+  postosPerfil,
 }: {
   ordens: OrdemLancamentoLista[]
   defeitos: { codigo: string; tipo: number }[]
+  postosPerfil: Record<string, PerfilPosto>
 }) {
   const [colaborador, setColaborador] = useState('')
   const [cliente, setCliente] = useState('')
@@ -64,16 +67,16 @@ export function LancamentoForm({
     () => ordens.find((o) => o.cliente === cliente && o.pmo === pmo && o.op === op) ?? null,
     [ordens, cliente, pmo, op],
   )
-  // Integração tem tela própria (vínculo produto↔placas) — não é lançável aqui.
-  const postosDaOp = (ordemSel?.postos ?? []).filter(
-    (p) => p.toLowerCase() !== 'integração' && p.toLowerCase() !== 'integracao',
-  )
+  const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
 
-  const comStatus = posto !== '' && postoTemStatus(posto)
-  const ehNqa = posto === 'Inspeção NQA'
-  const ehSpi = posto === 'Inspeção SPI'
-  const ehEmbalagem = posto === 'Embalagem'
-  const ehBurnin = posto === 'Burn-in'
+  const postosDaOp = ordemSel?.postos ?? []
+
+  const comStatus = posto !== '' && perfilTemStatus(perfilDo(posto))
+  const ehNqa = perfilDo(posto).recurso === 'nqa'
+  const ehSpi = perfilDo(posto).reprova === 'posicoes'
+  const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
+  const ehBurnin = perfilDo(posto).recurso === 'burnin'
+  const ehIntegracao = posto !== '' && perfilDo(posto).recurso === 'integracao'
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
@@ -126,16 +129,17 @@ export function LancamentoForm({
   async function onEnviar() {
     if (!valido || enviando) return
     // Aviso de tempo mínimo de Burn-in (só na saída; não trava).
-    if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempo_min_burnin ?? 0) > 0) {
-      const entradaIso = await buscarEntradaBurnin(pmo, op, numeroSerie)
+    if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempoBurninPorPosto?.[posto] ?? 0) > 0) {
+      const entradaIso = await buscarEntradaBurnin(pmo, op, numeroSerie, posto)
       if (entradaIso) {
         const decorridoMin = (Date.now() - Date.parse(entradaIso)) / 60000
-        const min = ordemSel!.tempo_min_burnin
+        const min = ordemSel!.tempoBurninPorPosto[posto]!
         if (decorridoMin < min) {
           const faltam = formatarDuracao(Math.max(1, Math.ceil(min - decorridoMin)))
           const ok = await confirmar({
             titulo: 'Sair antes do tempo mínimo de Burn-in?',
             descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
+            rotuloConfirmar: 'Registrar saída',
           })
           if (!ok) return
         }
@@ -235,7 +239,20 @@ export function LancamentoForm({
         </CardContent>
       </Card>
 
+      {ehIntegracao && (
+        <IntegracaoPanel
+          colaborador={colaborador}
+          cliente={cliente}
+          pmo={pmo}
+          op={op}
+          posto={posto}
+          descricao={ordemSel?.descricao ?? ''}
+          componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
+        />
+      )}
+
       {/* Bipagem */}
+      {!ehIntegracao && (
       <Card>
         <CardHeader>
           <CardTitle>Peça</CardTitle>
@@ -354,6 +371,7 @@ export function LancamentoForm({
           </div>
         </CardContent>
       </Card>
+      )}
       {dialog}
     </div>
   )

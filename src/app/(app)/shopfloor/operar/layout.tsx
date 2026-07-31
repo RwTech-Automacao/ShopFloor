@@ -2,7 +2,6 @@ import { AbasFluxo } from '../abas-fluxo'
 
 const ABAS = [
   { rotulo: 'Lançamento', href: '/shopfloor/operar/lancamento' },
-  { rotulo: 'Integração', href: '/shopfloor/operar/integracao' },
   { rotulo: 'Manutenção', href: '/shopfloor/operar/manutencao' },
 ]
 
