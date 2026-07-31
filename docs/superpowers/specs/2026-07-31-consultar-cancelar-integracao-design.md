@@ -21,8 +21,7 @@ ATIVAS** (uma por posto de Integração no fluxo). O `buscarIntegracaoPorSn` usa
 
 ## Objetivo
 
-Reconstruir a **consulta/cancelamento** como aba própria em **Operar** (`Lançamento | Manutenção | Consultar
-Integração`), fiel à antiga, com: busca por SN (produto ou placa) → mostra **todas** as integrações ativas
+Reconstruir a **consulta/cancelamento** como aba própria em **Operar** (`Lançamento | Consultar Integração | Manutenção`), fiel à antiga, com: busca por SN (produto ou placa) → mostra **todas** as integrações ativas
 daquele SN (com o **posto**) → **cancelar** (só admin). Duas modernizações: diálogo de confirmação do sistema
 (não `window.confirm`) e campo bipe-friendly.
 
@@ -69,7 +68,7 @@ daquele SN (com o **posto**) → **cancelar** (só admin). Duas modernizações:
 - `cancelarIntegracao(codigo)` — **inalterada** (exige `administrar`, chama a RPC, loga).
 
 ### 3. Rota + aba
-- **`operar/layout.tsx`:** `ABAS` += `{ rotulo: 'Consultar Integração', href: '/shopfloor/operar/integracao' }`.
+- **`operar/layout.tsx`:** inserir `{ rotulo: 'Consultar Integração', href: '/shopfloor/operar/integracao' }` **entre** Lançamento e Manutenção (ordem final: `Lançamento | Consultar Integração | Manutenção`).
 - **`operar/integracao/page.tsx`:** deixa de ser `redirect`; vira server component: `getSessao`, calcula
   `podeCancelar = podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')`, guarda de acesso (precisa `lancar`
   pra ver — senão redireciona/lança), e renderiza `<ConsultaIntegracaoForm podeCancelar={podeCancelar} />`.
