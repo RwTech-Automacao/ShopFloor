@@ -5,6 +5,7 @@ import { listarOrdens, listarPostos } from '@/modules/shopfloor/infra/ordem-repo
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarPadroes } from '@/modules/shopfloor/infra/padroes-fluxo-repository'
 import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
+import { agruparTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { OrdemForm, type OrdemView } from './ordem-form'
 import { OrdensLista } from './ordens-lista'
 
@@ -29,7 +30,7 @@ export default async function OrdensPage() {
     sn_fim: o.sn_fim,
     postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
     receitaPorPosto: agruparReceitaPorPosto(o.sf_ordem_componentes),
-    tempo_min_burnin: o.tempo_min_burnin,
+    tempoBurninPorPosto: agruparTempoBurninPorPosto(o.sf_ordem_burnin),
   }))
   const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
   const clientesExistentes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()

@@ -25,6 +25,7 @@ import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/app
 import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
+import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 
 export interface OrdemView {
   id: string
@@ -39,7 +40,7 @@ export interface OrdemView {
   sn_fim: string
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
-  tempo_min_burnin: number
+  tempoBurninPorPosto: TempoBurninPorPosto
 }
 
 export interface PadraoFluxo {
@@ -52,6 +53,12 @@ export interface PadraoFluxo {
 }
 
 const CLIENTE_NOVO = '__novo_cliente__'
+
+function tempoBurninInicial(ordem?: OrdemView): Record<string, string> {
+  const m: Record<string, string> = {}
+  for (const [posto, min] of Object.entries(ordem?.tempoBurninPorPosto ?? {})) m[posto] = minutosParaTempo(min)
+  return m
+}
 
 export function OrdemForm({
   postos,
@@ -81,9 +88,7 @@ export function OrdemForm({
   const [receita, setReceita] = useState<ReceitaPorPosto>(ordem?.receitaPorPosto ?? {})
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
   const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
-  const [tempoBurnin, setTempoBurnin] = useState(
-    ehEdicao ? (ordem?.tempo_min_burnin ? minutosParaTempo(ordem.tempo_min_burnin) : '') : '6:00'
-  )
+  const [tempoBurnin, setTempoBurnin] = useState<Record<string, string>>(tempoBurninInicial(ordem))
   const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
   // Reaproveita a grafia existente se o "novo" bater com um cadastrado (evita LINCE vs Lince).
@@ -175,12 +180,20 @@ export function OrdemForm({
     setFluxo(fluxo.filter((_, idx) => idx !== i))
   }
   function adicionar(posto: string) {
-    if (!fluxo.includes(posto)) setFluxo([...fluxo, posto])
+    if (fluxo.includes(posto)) return
+    setFluxo([...fluxo, posto])
+    if (perfilDo(posto).recurso === 'burnin' && (tempoBurnin[posto] ?? '') === '') {
+      setTempoBurnin((prev) => ({ ...prev, [posto]: '6:00' }))
+    }
   }
 
   const postosIntegracao = fluxo.filter((p) => perfilDo(p).recurso === 'integracao')
   const receitaFiltrada: ReceitaPorPosto = Object.fromEntries(
     postosIntegracao.filter((p) => (receita[p]?.length ?? 0) > 0).map((p) => [p, receita[p]!]),
+  )
+  const postosBurnin = fluxo.filter((p) => perfilDo(p).recurso === 'burnin')
+  const tempoFiltrado: Record<string, string> = Object.fromEntries(
+    postosBurnin.map((p) => [p, tempoBurnin[p] ?? '']).filter(([, v]) => v !== ''),
   )
 
   return (
@@ -194,9 +207,7 @@ export function OrdemForm({
           setReceita(ordem?.receitaPorPosto ?? {})
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
-          setTempoBurnin(
-            ehEdicao ? (ordem?.tempo_min_burnin ? minutosParaTempo(ordem.tempo_min_burnin) : '') : '6:00'
-          )
+          setTempoBurnin(tempoBurninInicial(ordem))
           setModoNovoCliente(false)
           setPadraoSelecionado('')
           setMostrarErro(false)
@@ -224,6 +235,7 @@ export function OrdemForm({
             {ehEdicao && <input type="hidden" name="id" value={ordem.id} />}
             <input type="hidden" name="fluxo" value={JSON.stringify(fluxo)} />
             <input type="hidden" name="componentes" value={JSON.stringify(receitaFiltrada)} />
+            <input type="hidden" name="tempo_burnin" value={JSON.stringify(tempoFiltrado)} />
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
@@ -359,10 +371,8 @@ export function OrdemForm({
                       <span className="flex items-center gap-1.5">
                         <span className="text-xs text-muted-foreground">mín.</span>
                         <Input
-                          id="tempo_min_burnin"
-                          name="tempo_min_burnin"
-                          value={tempoBurnin}
-                          onChange={(e) => setTempoBurnin(mascararTempoFiltro(e.target.value))}
+                          value={tempoBurnin[posto] ?? ''}
+                          onChange={(e) => setTempoBurnin((prev) => ({ ...prev, [posto]: mascararTempoFiltro(e.target.value) }))}
                           inputMode="numeric"
                           placeholder="hhh:mm"
                           className="h-7 w-20 text-sm"

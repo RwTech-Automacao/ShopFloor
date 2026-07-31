@@ -19,9 +19,9 @@ export interface OrdemRow {
   sn_ini: string
   sn_fim: string
   created_at: string
-  tempo_min_burnin: number
   sf_ordem_postos: { posto: string; ordem: number }[]
   sf_ordem_componentes: { posto: string; pmo_componente: string }[]
+  sf_ordem_burnin: { posto: string; tempo_min: number }[]
 }
 
 export interface DadosOrdem {
@@ -34,7 +34,6 @@ export interface DadosOrdem {
   status: string
   sn_ini: string
   sn_fim: string
-  tempo_min_burnin: number
 }
 
 export async function listarPostos(): Promise<PostoRow[]> {
@@ -48,7 +47,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,created_at,tempo_min_burnin,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)')
     .order('pmo')
     .order('op')
   if (error) throw error
@@ -56,7 +55,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
 }
 
 /** Insere a OP, a aplicabilidade e a receita; devolve o id. */
-export async function criarOrdem(dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[]): Promise<string> {
+export async function criarOrdem(dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[]): Promise<string> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.from('sf_ordens').insert(dados).select('id').single()
   if (error) throw error
@@ -73,11 +72,17 @@ export async function criarOrdem(dados: DadosOrdem, postos: string[], receita: {
       .insert(receita.map((r) => ({ ordem_id: id, posto: r.posto, pmo_componente: r.pmo })))
     if (e3) throw e3
   }
+  if (burnin.length > 0) {
+    const { error: e4 } = await supabase
+      .from('sf_ordem_burnin')
+      .insert(burnin.map((b) => ({ ordem_id: id, posto: b.posto, tempo_min: b.tempo_min })))
+    if (e4) throw e4
+  }
   return id
 }
 
 /** Atualiza a OP e RESSINCRONIZA a aplicabilidade e a receita (apaga e reinsere). */
-export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[]): Promise<void> {
+export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[]): Promise<void> {
   const supabase = await createServerSupabase()
   const { error } = await supabase
     .from('sf_ordens')
@@ -99,6 +104,14 @@ export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: stri
       .from('sf_ordem_componentes')
       .insert(receita.map((r) => ({ ordem_id: id, posto: r.posto, pmo_componente: r.pmo })))
     if (eInsC) throw eInsC
+  }
+  const { error: eDelB } = await supabase.from('sf_ordem_burnin').delete().eq('ordem_id', id)
+  if (eDelB) throw eDelB
+  if (burnin.length > 0) {
+    const { error: eInsB } = await supabase
+      .from('sf_ordem_burnin')
+      .insert(burnin.map((b) => ({ ordem_id: id, posto: b.posto, tempo_min: b.tempo_min })))
+    if (eInsB) throw eInsB
   }
 }
 
