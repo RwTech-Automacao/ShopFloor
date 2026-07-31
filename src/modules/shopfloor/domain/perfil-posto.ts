@@ -27,13 +27,12 @@ export const perfilExigeManutencao = (p: PerfilPosto): boolean => p.exigeManuten
  * Perfis NÃO oferecidos no Cadastrar Posto (singletons "bespoke"): o comportamento está
  * amarrado ao NOME/estado de UM posto, então um SEGUNDO posto com esse perfil não funciona:
  *  - manutencao: posto paralelo (tela de reparo própria), fora do fluxo.
- *  - burnin: RPC grava posto='Burn-in' fixo; tempo mínimo é 1 por OP.
- * integracao SAIU desta lista: agora é perfil-driven (RPC recebe p_posto, resolve pelo
- * posto real do fluxo) e funciona como qualquer outro posto do Lançamento — pode ser
- * atribuído a um posto novo. Generalizar burnin/manutencao (tempo/tela POR posto) fica
- * pra uma onda futura.
+ * integracao E burnin SAÍRAM desta lista: agora são perfil-driven (RPC recebe p_posto,
+ * resolve pelo posto real do fluxo — integração 0064/0065, burn-in 0068/0069: tempo mínimo
+ * E ciclo entrada/saída por posto) e funcionam como qualquer posto do Lançamento — podem
+ * ser atribuídos a um posto novo. Só manutencao segue não-atribuível (posto paralelo).
  */
-const RECURSOS_NAO_ATRIBUIVEIS: RecursoPosto[] = ['burnin', 'manutencao']
+const RECURSOS_NAO_ATRIBUIVEIS: RecursoPosto[] = ['manutencao']
 
 /** O perfil pode ser atribuído a um posto novo pela tela de Cadastrar Posto? */
 export function perfilAtribuivel(p: PerfilPosto): boolean {
