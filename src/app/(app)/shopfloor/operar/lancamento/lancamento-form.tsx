@@ -129,11 +129,11 @@ export function LancamentoForm({
   async function onEnviar() {
     if (!valido || enviando) return
     // Aviso de tempo mínimo de Burn-in (só na saída; não trava).
-    if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempo_min_burnin ?? 0) > 0) {
+    if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempoBurninPorPosto?.[posto] ?? 0) > 0) {
       const entradaIso = await buscarEntradaBurnin(pmo, op, numeroSerie)
       if (entradaIso) {
         const decorridoMin = (Date.now() - Date.parse(entradaIso)) / 60000
-        const min = ordemSel!.tempo_min_burnin
+        const min = ordemSel!.tempoBurninPorPosto[posto]!
         if (decorridoMin < min) {
           const faltam = formatarDuracao(Math.max(1, Math.ceil(min - decorridoMin)))
           const ok = await confirmar({

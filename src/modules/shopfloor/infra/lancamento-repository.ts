@@ -1,6 +1,7 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { agruparReceitaPorPosto, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
+import { agruparTempoBurninPorPosto, type TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 
 export interface OrdemLancamento {
   cliente: string
@@ -123,7 +124,7 @@ export interface OrdemLancamentoLista {
   sn_fim: string
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
-  tempo_min_burnin: number
+  tempoBurninPorPosto: TempoBurninPorPosto
 }
 
 /** Todas as OPs ativas com config + fluxo ordenado, para a cascata da tela de Lançamento. */
@@ -132,7 +133,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
   const { data, error } = await supabase
     .from('sf_ordens')
     .select(
-      'cliente,pmo,op,descricao,sn_ini,sn_fim,tempo_min_burnin,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente)',
+      'cliente,pmo,op,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
     )
     .neq('status', 'FINALIZADA')
     .order('cliente')
@@ -146,9 +147,9 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     descricao: string
     sn_ini: string
     sn_fim: string
-    tempo_min_burnin: number
     sf_ordem_postos: { posto: string; ordem: number }[]
     sf_ordem_componentes: { posto: string; pmo_componente: string }[]
+    sf_ordem_burnin: { posto: string; tempo_min: number }[]
   }[]
   return rows.map((r) => ({
     cliente: r.cliente,
@@ -159,7 +160,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_fim: r.sn_fim,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
     receitaPorPosto: agruparReceitaPorPosto(r.sf_ordem_componentes),
-    tempo_min_burnin: r.tempo_min_burnin,
+    tempoBurninPorPosto: agruparTempoBurninPorPosto(r.sf_ordem_burnin),
   }))
 }
 
