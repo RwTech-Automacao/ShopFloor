@@ -23,6 +23,7 @@ export interface EntradaIntegracao {
   op: string
   produtoSN: string
   placas: PlacaIntegracao[]
+  posto: string
 }
 
 const MENSAGENS: Record<string, string> = {
@@ -49,9 +50,11 @@ export async function integrar(
 
   const ordem = await carregarOrdem(pmo, op)
   if (!ordem) return { ok: false, erro: 'OP não encontrada.' }
+  const posto = entrada.posto.trim()
   const mapa = await mapaPostoPerfil()
-  const postoIntegr = ordem.postos.find((p) => mapa[p]?.recurso === 'integracao')
-  if (!postoIntegr) return { ok: false, erro: 'Esta OP não tem um posto de Integração no fluxo.' }
+  if (!posto || !ordem.postos.includes(posto) || mapa[posto]?.recurso !== 'integracao') {
+    return { ok: false, erro: 'Posto de Integração inválido para esta OP.' }
+  }
   if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
     return { ok: false, erro: 'Esta OP não tem faixa de Nº de Série cadastrada.' }
   }
@@ -74,7 +77,7 @@ export async function integrar(
   }
 
   // Integração é um posto: exige o anterior do fluxo satisfeito p/ o produto (trava de sequência).
-  const prevPosto = postoAnteriorNaSequencia(postoIntegr, ordem.postos)
+  const prevPosto = postoAnteriorNaSequencia(posto, ordem.postos)
 
   const r = await chamarSfIntegrar({
     p_colaborador: colaborador,
@@ -91,7 +94,7 @@ export async function integrar(
       sn: limparSerie(x.sn),
       sn_norm: normalizarSerie(x.sn),
     })),
-    p_posto: postoIntegr,
+    p_posto: posto,
   })
 
   if (!r.ok) {
@@ -124,6 +127,7 @@ export async function integrar(
 export async function resolverPlacaIntegracaoAction(
   pmoProduto: string,
   opProduto: string,
+  posto: string,
   sn: string,
 ): Promise<
   | { ok: true; pmo: string; op: string }
@@ -139,7 +143,7 @@ export async function resolverPlacaIntegracaoAction(
   const ordens = await listarOrdensParaLancamento()
   const ordem = ordens.find((o) => o.pmo === pmo && o.op === op)
   if (!ordem) return { ok: false, erro: 'OP do produto não encontrada.' }
-  const receita = ordem.componentes ?? []
+  const receita = ordem.receitaPorPosto?.[posto.trim()] ?? []
   const faixas = await listarFaixasOrdens()
   // Devolve a PMO na caixa da RECEITA (é por ela que o painel indexa as linhas); a faixa
   // (sf_ordens.pmo) pode ter caixa diferente, pois PMO é campo livre.

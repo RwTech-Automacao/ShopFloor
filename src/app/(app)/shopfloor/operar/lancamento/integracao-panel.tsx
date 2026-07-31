@@ -20,6 +20,7 @@ export function IntegracaoPanel({
   cliente: _cliente,
   pmo,
   op,
+  posto,
   descricao,
   componentes,
 }: {
@@ -27,6 +28,7 @@ export function IntegracaoPanel({
   cliente: string
   pmo: string
   op: string
+  posto: string
   descricao: string
   componentes: string[]
 }) {
@@ -52,7 +54,7 @@ export function IntegracaoPanel({
     if (bipe.trim() === '' || resolvendo || semReceita) return
     const snBipado = bipe
     startResolucao(async () => {
-      const r = await resolverPlacaIntegracaoAction(pmo, op, snBipado)
+      const r = await resolverPlacaIntegracaoAction(pmo, op, posto, snBipado)
       if (!r.ok) {
         if ('candidatos' in r) {
           // SN ambíguo: o operador escolhe a qual PMO/OP associar.
@@ -98,7 +100,7 @@ export function IntegracaoPanel({
     if (!valido || registrando) return
     const placas = componentes.map((pm) => ({ pmo: pm, op: linhas[pm]!.op, sn: linhas[pm]!.sn }))
     startRegistro(async () => {
-      const r = await integrar({ colaborador, pmo, op, produtoSN, placas })
+      const r = await integrar({ colaborador, pmo, op, produtoSN, placas, posto })
       if (r.ok) {
         toast.success(`Integração registrada: ${r.codigo}`)
         limpar()

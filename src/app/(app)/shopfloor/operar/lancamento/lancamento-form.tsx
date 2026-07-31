@@ -244,8 +244,9 @@ export function LancamentoForm({
           cliente={cliente}
           pmo={pmo}
           op={op}
+          posto={posto}
           descricao={ordemSel?.descricao ?? ''}
-          componentes={ordemSel?.componentes ?? []}
+          componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
         />
       )}
 

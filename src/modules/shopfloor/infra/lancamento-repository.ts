@@ -1,5 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
+import { agruparReceitaPorPosto, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 
 export interface OrdemLancamento {
   cliente: string
@@ -121,7 +122,7 @@ export interface OrdemLancamentoLista {
   sn_ini: string
   sn_fim: string
   postos: string[]
-  componentes: string[]
+  receitaPorPosto: ReceitaPorPosto
   tempo_min_burnin: number
 }
 
@@ -131,7 +132,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
   const { data, error } = await supabase
     .from('sf_ordens')
     .select(
-      'cliente,pmo,op,descricao,sn_ini,sn_fim,tempo_min_burnin,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)',
+      'cliente,pmo,op,descricao,sn_ini,sn_fim,tempo_min_burnin,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente)',
     )
     .neq('status', 'FINALIZADA')
     .order('cliente')
@@ -147,7 +148,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_fim: string
     tempo_min_burnin: number
     sf_ordem_postos: { posto: string; ordem: number }[]
-    sf_ordem_componentes: { pmo_componente: string }[]
+    sf_ordem_componentes: { posto: string; pmo_componente: string }[]
   }[]
   return rows.map((r) => ({
     cliente: r.cliente,
@@ -157,7 +158,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
-    componentes: r.sf_ordem_componentes.map((c) => c.pmo_componente),
+    receitaPorPosto: agruparReceitaPorPosto(r.sf_ordem_componentes),
     tempo_min_burnin: r.tempo_min_burnin,
   }))
 }
