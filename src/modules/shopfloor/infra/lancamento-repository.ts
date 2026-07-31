@@ -242,6 +242,7 @@ export interface SfBurninArgs {
   p_prev_precisa_aprovado: boolean
   p_exige_manutencao: boolean
   p_linhas: { codigo_defeito: string; posicao: string; tipo_defeito: string }[]
+  p_posto: string
 }
 
 export async function chamarSfBurnin(
@@ -253,13 +254,13 @@ export async function chamarSfBurnin(
   return data as { ok: boolean; erro?: string; evento?: string }
 }
 
-/** data_hora (ISO) da ENTRADA de Burn-in aberta da peça; null se não houver entrada aberta. */
-export async function buscarEntradaBurninAberta(pmo: string, op: string, snNorm: string): Promise<string | null> {
+/** data_hora (ISO) da ENTRADA de Burn-in aberta da peça NESTE POSTO; null se não houver entrada aberta. */
+export async function buscarEntradaBurninAberta(pmo: string, op: string, snNorm: string, posto: string): Promise<string | null> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_registros')
     .select('status,data_hora')
-    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', snNorm).eq('posto', 'Burn-in')
+    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', snNorm).eq('posto', posto)
     .order('data_hora', { ascending: false })
     .limit(1)
   if (error) throw error

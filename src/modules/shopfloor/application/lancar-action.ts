@@ -142,6 +142,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
       p_prev_precisa_aprovado: perfilPrev ? perfilPrecisaAprovado(perfilPrev) : false,
       p_exige_manutencao: perfilExigeManutencao(perfil),
       p_linhas: linhasBurn,
+      p_posto: entrada.posto,
     })
     if (!rb.ok) return { ok: false, erro: MENSAGENS[rb.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
     return { ok: true }
@@ -198,13 +199,13 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
   return { ok: true, caixaCount: r.caixa_count }
 }
 
-export async function buscarEntradaBurnin(pmo: string, op: string, numeroSerie: string): Promise<string | null> {
+export async function buscarEntradaBurnin(pmo: string, op: string, numeroSerie: string, posto: string): Promise<string | null> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return null
 
   try {
     const snNorm = normalizarSerie(numeroSerie)
-    return await buscarEntradaBurninAberta(pmo, op, snNorm)
+    return await buscarEntradaBurninAberta(pmo, op, snNorm, posto)
   } catch {
     return null // fail-open: erro no lookup não bloqueia o operador (é só aviso)
   }

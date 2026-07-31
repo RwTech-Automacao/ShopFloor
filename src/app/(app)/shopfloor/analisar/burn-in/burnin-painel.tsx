@@ -20,6 +20,7 @@ export function BurninPainel({ itens }: { itens: BurninAberto[] }) {
           <TableRow>
             <TableHead>Cliente</TableHead>
             <TableHead>PMO/OP</TableHead>
+            <TableHead>Posto</TableHead>
             <TableHead>Nº de Série</TableHead>
             <TableHead>Entrada</TableHead>
             <TableHead className="text-right">Há quanto tempo</TableHead>
@@ -29,9 +30,10 @@ export function BurninPainel({ itens }: { itens: BurninAberto[] }) {
           {itens.map((it) => {
             const min = Math.max(0, Math.round((agora - Date.parse(it.entrada)) / 60000))
             return (
-              <TableRow key={`${it.pmo}/${it.op}/${it.numeroSerie}`}>
+              <TableRow key={`${it.pmo}/${it.op}/${it.posto}/${it.numeroSerie}`}>
                 <TableCell>{it.cliente}</TableCell>
                 <TableCell>{it.pmo}/{it.op}</TableCell>
+                <TableCell>{it.posto}</TableCell>
                 <TableCell className="font-medium">{it.numeroSerie}</TableCell>
                 <TableCell>{new Date(it.entrada).toLocaleString('pt-BR')}</TableCell>
                 <TableCell className="text-right tabular-nums">há {formatarDuracao(min)}</TableCell>
@@ -40,7 +42,7 @@ export function BurninPainel({ itens }: { itens: BurninAberto[] }) {
           })}
           {itens.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                 Nenhuma peça em Burn-in no momento.
               </TableCell>
             </TableRow>
