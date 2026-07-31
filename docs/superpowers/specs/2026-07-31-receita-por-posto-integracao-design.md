@@ -101,6 +101,7 @@ na query de `v_receita` (0064 linha ~86), trocar `where ordem_id = v_ordem_id` p
   lançamento, padrões) — sequenciar pra build verde; testes de domínio onde houver.
 - **RPC:** `create or replace` puro (assinatura já tem p_posto do 0064) — só a query de receita muda.
 - **Backfill:** receitas e padrões existentes → posto 'Integração' (nome histórico do posto integracao).
-- **Padrões:** se preferir, dá pra adiar a parte de padrões (manter flat, aplicar ao 1º integracao) — mas o
-  consistente é por-posto. Decidir na revisão.
+- **Padrões:** DECIDIDO (2026-07-31) — **opção (A): padrões por posto**. `componentes` do padrão vira
+  `Record<posto, string[]>`; salvar/puxar padrão restaura cada receita no seu posto. Backfill dos padrões
+  existentes → `{ "Integração": [...] }`.
 - Smoke pesado: OP 1 integracao (paridade) + OP 2 integracao (novo) + registrar cada + padrão com receita.
