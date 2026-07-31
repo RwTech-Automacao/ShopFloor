@@ -108,6 +108,22 @@ export function IntegracaoPanel({
           </p>
         ) : (
           <>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bipePlaca">Bipe a placa</Label>
+              <Input
+                id="bipePlaca"
+                ref={bipeRef}
+                value={bipe}
+                onChange={(e) => setBipe(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBipar() } }}
+                placeholder="Bipe o SN da placa"
+                autoComplete="off"
+                autoFocus
+                className="h-12 text-lg"
+                disabled={resolvendo}
+              />
+            </div>
+
             <div>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium">
@@ -144,22 +160,6 @@ export function IntegracaoPanel({
                   </TableBody>
                 </Table>
               </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="bipePlaca">Bipe a placa</Label>
-              <Input
-                id="bipePlaca"
-                ref={bipeRef}
-                value={bipe}
-                onChange={(e) => setBipe(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBipar() } }}
-                placeholder="Bipe o SN da placa"
-                autoComplete="off"
-                autoFocus
-                className="h-12 text-lg"
-                disabled={resolvendo}
-              />
             </div>
           </>
         )}
