@@ -139,6 +139,7 @@ export function LancamentoForm({
           const ok = await confirmar({
             titulo: 'Sair antes do tempo mínimo de Burn-in?',
             descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
+            rotuloConfirmar: 'Registrar saída',
           })
           if (!ok) return
         }
