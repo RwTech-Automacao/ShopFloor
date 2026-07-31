@@ -24,6 +24,7 @@ import {
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
 import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
+import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 
 export interface OrdemView {
   id: string
@@ -37,7 +38,7 @@ export interface OrdemView {
   sn_ini: string
   sn_fim: string
   postos: string[]
-  componentes: string[]
+  receitaPorPosto: ReceitaPorPosto
   tempo_min_burnin: number
 }
 
@@ -47,7 +48,7 @@ export interface PadraoFluxo {
   nome: string
   descricao: string
   postos: string[]
-  componentes: string[]
+  componentes: ReceitaPorPosto
 }
 
 const CLIENTE_NOVO = '__novo_cliente__'
@@ -77,7 +78,7 @@ export function OrdemForm({
 
   const [pmo, setPmo] = useState(ordem?.pmo ?? '')
   const [fluxo, setFluxo] = useState<string[]>(ordem?.postos ?? [])
-  const [receita, setReceita] = useState<string[]>(ordem?.componentes ?? [])
+  const [receita, setReceita] = useState<ReceitaPorPosto>(ordem?.receitaPorPosto ?? {})
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
   const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
   const [tempoBurnin, setTempoBurnin] = useState(
@@ -140,7 +141,7 @@ export function OrdemForm({
         nome,
         descricao: '',
         postos: fluxo,
-        componentes: receita,
+        componentes: receitaFiltrada,
       })
       if (r.ok) {
         setSalvarAberto(false)
@@ -177,6 +178,11 @@ export function OrdemForm({
     if (!fluxo.includes(posto)) setFluxo([...fluxo, posto])
   }
 
+  const postosIntegracao = fluxo.filter((p) => perfilDo(p).recurso === 'integracao')
+  const receitaFiltrada: ReceitaPorPosto = Object.fromEntries(
+    postosIntegracao.filter((p) => (receita[p]?.length ?? 0) > 0).map((p) => [p, receita[p]!]),
+  )
+
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => {
@@ -185,7 +191,7 @@ export function OrdemForm({
           // Reset ao abrir: "Nova OP" limpa; edição recarrega a OP (fix do "cache").
           setPmo(ordem?.pmo ?? '')
           setFluxo(ordem?.postos ?? [])
-          setReceita(ordem?.componentes ?? [])
+          setReceita(ordem?.receitaPorPosto ?? {})
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
           setTempoBurnin(
@@ -217,7 +223,7 @@ export function OrdemForm({
           <form key={instanciaForm} action={formAction} className="flex flex-col gap-4">
             {ehEdicao && <input type="hidden" name="id" value={ordem.id} />}
             <input type="hidden" name="fluxo" value={JSON.stringify(fluxo)} />
-            <input type="hidden" name="componentes" value={JSON.stringify(fluxo.includes('Integração') ? receita : [])} />
+            <input type="hidden" name="componentes" value={JSON.stringify(receitaFiltrada)} />
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
@@ -306,7 +312,7 @@ export function OrdemForm({
                       <Select value={padraoSelecionado} onValueChange={(id) => {
                         setPadraoSelecionado(id ?? '')
                         const padrao = padroesDoPmo.find((p) => p.id === id)
-                        if (padrao) { setFluxo(padrao.postos); setReceita(padrao.componentes) }
+                        if (padrao) { setFluxo(padrao.postos); setReceita(coagirReceitaPadrao(padrao.componentes)) }
                       }}>
                         <SelectTrigger className="h-8 w-auto text-xs">
                           <SelectValue>
@@ -398,14 +404,16 @@ export function OrdemForm({
               )}
             </div>
 
-            {/* Receita da Integração (só quando Integração está no fluxo) */}
-            {fluxo.includes('Integração') && (
+            {/* Receita da Integração (uma seção por posto de Integração no fluxo) */}
+            {postosIntegracao.map((posto) => (
               <ReceitaIntegracao
-                receita={receita}
-                setReceita={setReceita}
-                pmosDisponiveis={pmosExistentes.filter((p) => p !== pmo && !receita.includes(p))}
+                key={posto}
+                posto={posto}
+                receita={receita[posto] ?? []}
+                setReceita={(lista) => setReceita((prev) => ({ ...prev, [posto]: lista }))}
+                pmosDisponiveis={pmosExistentes.filter((p) => p !== pmo && !(receita[posto] ?? []).includes(p))}
               />
-            )}
+            ))}
 
             {mostrarErro && state && !state.ok && <p className="text-sm text-red-600">{state.erro}</p>}
 
@@ -464,10 +472,12 @@ export function OrdemForm({
 }
 
 function ReceitaIntegracao({
+  posto,
   receita,
   setReceita,
   pmosDisponiveis,
 }: {
+  posto: string
   receita: string[]
   setReceita: (r: string[]) => void
   pmosDisponiveis: string[]
@@ -475,7 +485,7 @@ function ReceitaIntegracao({
   return (
     <div>
       <p className="mb-2 text-sm font-medium">
-        Receita da Integração{' '}
+        Receita · {posto}{' '}
         <span className="font-normal text-muted-foreground">· PMOs de placa que compõem este produto</span>
       </p>
       {receita.length > 0 ? (

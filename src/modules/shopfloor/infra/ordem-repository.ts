@@ -21,7 +21,7 @@ export interface OrdemRow {
   created_at: string
   tempo_min_burnin: number
   sf_ordem_postos: { posto: string; ordem: number }[]
-  sf_ordem_componentes: { pmo_componente: string }[]
+  sf_ordem_componentes: { posto: string; pmo_componente: string }[]
 }
 
 export interface DadosOrdem {
@@ -48,7 +48,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,created_at,tempo_min_burnin,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,created_at,tempo_min_burnin,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente)')
     .order('pmo')
     .order('op')
   if (error) throw error
@@ -56,7 +56,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
 }
 
 /** Insere a OP, a aplicabilidade e a receita; devolve o id. */
-export async function criarOrdem(dados: DadosOrdem, postos: string[], componentes: string[]): Promise<string> {
+export async function criarOrdem(dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[]): Promise<string> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.from('sf_ordens').insert(dados).select('id').single()
   if (error) throw error
@@ -67,17 +67,17 @@ export async function criarOrdem(dados: DadosOrdem, postos: string[], componente
       .insert(postos.map((posto, i) => ({ ordem_id: id, posto, ordem: i })))
     if (e2) throw e2
   }
-  if (componentes.length > 0) {
+  if (receita.length > 0) {
     const { error: e3 } = await supabase
       .from('sf_ordem_componentes')
-      .insert(componentes.map((pmo_componente) => ({ ordem_id: id, pmo_componente })))
+      .insert(receita.map((r) => ({ ordem_id: id, posto: r.posto, pmo_componente: r.pmo })))
     if (e3) throw e3
   }
   return id
 }
 
 /** Atualiza a OP e RESSINCRONIZA a aplicabilidade e a receita (apaga e reinsere). */
-export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], componentes: string[]): Promise<void> {
+export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[]): Promise<void> {
   const supabase = await createServerSupabase()
   const { error } = await supabase
     .from('sf_ordens')
@@ -94,10 +94,10 @@ export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: stri
   }
   const { error: eDelC } = await supabase.from('sf_ordem_componentes').delete().eq('ordem_id', id)
   if (eDelC) throw eDelC
-  if (componentes.length > 0) {
+  if (receita.length > 0) {
     const { error: eInsC } = await supabase
       .from('sf_ordem_componentes')
-      .insert(componentes.map((pmo_componente) => ({ ordem_id: id, pmo_componente })))
+      .insert(receita.map((r) => ({ ordem_id: id, posto: r.posto, pmo_componente: r.pmo })))
     if (eInsC) throw eInsC
   }
 }

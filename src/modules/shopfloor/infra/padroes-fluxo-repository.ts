@@ -1,4 +1,5 @@
 import { createServerSupabase } from '@/shared/lib/supabase/server'
+import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 
 export interface PadraoFluxoRow {
   id: string
@@ -6,7 +7,7 @@ export interface PadraoFluxoRow {
   nome: string
   descricao: string
   postos: string[]
-  componentes: string[]
+  componentes: ReceitaPorPosto
 }
 
 export async function listarPadroes(): Promise<PadraoFluxoRow[]> {
@@ -25,7 +26,7 @@ export async function listarPadroes(): Promise<PadraoFluxoRow[]> {
       nome: row.nome,
       descricao: row.descricao,
       postos: Array.isArray(row.postos) ? (row.postos as string[]) : [],
-      componentes: Array.isArray(row.componentes) ? (row.componentes as string[]) : [],
+      componentes: coagirReceitaPadrao(row.componentes),
     }
   })
 }
@@ -35,7 +36,7 @@ export async function upsertPadrao(p: {
   nome: string
   descricao: string
   postos: string[]
-  componentes: string[]
+  componentes: ReceitaPorPosto
 }): Promise<void> {
   const supabase = await createServerSupabase()
   const { error } = await supabase

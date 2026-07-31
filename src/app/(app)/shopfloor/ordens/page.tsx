@@ -4,6 +4,7 @@ import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdens, listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarPadroes } from '@/modules/shopfloor/infra/padroes-fluxo-repository'
+import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import { OrdemForm, type OrdemView } from './ordem-form'
 import { OrdensLista } from './ordens-lista'
 
@@ -27,7 +28,7 @@ export default async function OrdensPage() {
     sn_ini: o.sn_ini,
     sn_fim: o.sn_fim,
     postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
-    componentes: o.sf_ordem_componentes.map((c) => c.pmo_componente),
+    receitaPorPosto: agruparReceitaPorPosto(o.sf_ordem_componentes),
     tempo_min_burnin: o.tempo_min_burnin,
   }))
   const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
