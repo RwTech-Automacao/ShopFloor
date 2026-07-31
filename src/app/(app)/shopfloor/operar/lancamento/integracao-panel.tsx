@@ -33,6 +33,7 @@ export function IntegracaoPanel({
   const [linhas, setLinhas] = useState<Record<string, LinhaEncaixada>>({})
   const [bipe, setBipe] = useState('')
   const [produtoSN, setProdutoSN] = useState('')
+  const [ambiguo, setAmbiguo] = useState<{ sn: string; candidatos: { pmo: string; op: string }[] } | null>(null)
   const [resolvendo, startResolucao] = useTransition()
   const [registrando, startRegistro] = useTransition()
   const bipeRef = useRef<HTMLInputElement>(null)
@@ -53,6 +54,12 @@ export function IntegracaoPanel({
     startResolucao(async () => {
       const r = await resolverPlacaIntegracaoAction(pmo, op, snBipado)
       if (!r.ok) {
+        if ('candidatos' in r) {
+          // SN ambíguo: o operador escolhe a qual PMO/OP associar.
+          setAmbiguo({ sn: snBipado.trim(), candidatos: r.candidatos })
+          setBipe('')
+          return
+        }
         toast.error(r.erro)
         bipeRef.current?.select()
         return
@@ -69,9 +76,22 @@ export function IntegracaoPanel({
     })
   }
 
+  function escolherCandidato(pmoEscolhido: string, opEscolhida: string) {
+    if (!ambiguo) return
+    if (linhas[pmoEscolhido] !== undefined) {
+      toast.error('PMO já tem placa')
+      return
+    }
+    setLinhas((prev) => ({ ...prev, [pmoEscolhido]: { sn: ambiguo.sn, op: opEscolhida } }))
+    toast.success(`Placa encaixada em ${pmoEscolhido}`)
+    setAmbiguo(null)
+    refocarBipe()
+  }
+
   function limpar() {
     setLinhas({})
     setProdutoSN('')
+    setAmbiguo(null)
   }
 
   function onRegistrar() {
@@ -123,6 +143,30 @@ export function IntegracaoPanel({
                 disabled={resolvendo}
               />
             </div>
+
+            {ambiguo && (
+              <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40">
+                <p className="mb-2 text-sm font-medium">
+                  O SN <span className="font-mono">{ambiguo.sn}</span> aparece em mais de uma PMO da receita — escolha a qual associar:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {ambiguo.candidatos.map((c) => (
+                    <Button
+                      key={`${c.pmo}||${c.op}`}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => escolherCandidato(c.pmo, c.op)}
+                    >
+                      {c.pmo} · OP {c.op}
+                    </Button>
+                  ))}
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setAmbiguo(null); refocarBipe() }}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

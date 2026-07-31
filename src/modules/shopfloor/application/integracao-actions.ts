@@ -125,7 +125,11 @@ export async function resolverPlacaIntegracaoAction(
   pmoProduto: string,
   opProduto: string,
   sn: string,
-): Promise<{ ok: true; pmo: string; op: string } | { ok: false; erro: string }> {
+): Promise<
+  | { ok: true; pmo: string; op: string }
+  | { ok: false; erro: string }
+  | { ok: false; erro: 'AMBIGUO'; candidatos: { pmo: string; op: string }[] }
+> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
@@ -137,20 +141,19 @@ export async function resolverPlacaIntegracaoAction(
   if (!ordem) return { ok: false, erro: 'OP do produto não encontrada.' }
   const receita = ordem.componentes ?? []
   const faixas = await listarFaixasOrdens()
-  const r = resolverPlaca(receita, faixas, limparSerie(sn))
-  if (!r.ok) {
-    const msg =
-      r.erro === 'FORA_RECEITA'
-        ? 'Essa placa não faz parte da receita deste produto.'
-        : r.erro === 'AMBIGUO'
-          ? 'SN ambíguo (mais de uma OP da receita contém esse número).'
-          : 'SN não encontrado em nenhuma OP.'
-    return { ok: false, erro: msg }
-  }
   // Devolve a PMO na caixa da RECEITA (é por ela que o painel indexa as linhas); a faixa
   // (sf_ordens.pmo) pode ter caixa diferente, pois PMO é campo livre.
-  const pmoReceita = receita.find((c) => c.trim().toLowerCase() === r.pmo.trim().toLowerCase()) ?? r.pmo
-  return { ok: true, pmo: pmoReceita, op: r.op }
+  const paraReceita = (p: string) => receita.find((c) => c.trim().toLowerCase() === p.trim().toLowerCase()) ?? p
+  const r = resolverPlaca(receita, faixas, limparSerie(sn))
+  if (r.ok) return { ok: true, pmo: paraReceita(r.pmo), op: r.op }
+  if (r.erro === 'AMBIGUO') {
+    // Ambíguo: devolve os candidatos (PMO na caixa da receita) pro operador escolher.
+    return { ok: false, erro: 'AMBIGUO', candidatos: r.candidatos.map((c) => ({ pmo: paraReceita(c.pmo), op: c.op })) }
+  }
+  return {
+    ok: false,
+    erro: r.erro === 'FORA_RECEITA' ? 'Essa placa não faz parte da receita deste produto.' : 'SN não encontrado em nenhuma OP.',
+  }
 }
 
 export async function buscarIntegracao(

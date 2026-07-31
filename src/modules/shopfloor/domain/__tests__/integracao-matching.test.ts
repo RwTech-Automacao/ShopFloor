@@ -20,8 +20,15 @@ describe('resolverPlaca', () => {
   it('SN que não cai em nenhuma faixa → SEM_OP', () => {
     expect(resolverPlaca(RECEITA, FAIXAS, 'Z0001')).toEqual({ ok: false, erro: 'SEM_OP' })
   })
-  it('duas OPs da receita contendo o SN → AMBIGUO', () => {
+  it('duas OPs da receita contendo o SN → AMBIGUO com os candidatos', () => {
     const dupl = [F('PMOB76', '8801', 'B7600', 'B7699'), F('PMOB76', '8802', 'B7600', 'B7699')]
-    expect(resolverPlaca(['pmob76'], dupl, 'B7601')).toEqual({ ok: false, erro: 'AMBIGUO' })
+    expect(resolverPlaca(['pmob76'], dupl, 'B7601')).toEqual({
+      ok: false,
+      erro: 'AMBIGUO',
+      candidatos: [
+        { pmo: 'PMOB76', op: '8801' },
+        { pmo: 'PMOB76', op: '8802' },
+      ],
+    })
   })
 })
