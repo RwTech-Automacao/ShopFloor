@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { integrar, resolverPlacaIntegracaoAction } from '@/modules/shopfloor/application/integracao-actions'
+import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 interface LinhaEncaixada {
   sn: string
@@ -50,6 +51,13 @@ export function IntegracaoPanel({
     setTimeout(() => bipeRef.current?.focus(), 0)
   }
 
+  /** PMO cuja placa já usa este SN (normalizado), ou null — evita o mesmo SN em duas PMOs. */
+  function pmoComSn(sn: string): string | null {
+    const alvo = normalizarSerie(sn)
+    const achado = Object.entries(linhas).find(([, l]) => normalizarSerie(l.sn) === alvo)
+    return achado ? achado[0] : null
+  }
+
   function onBipar() {
     if (bipe.trim() === '' || resolvendo || semReceita) return
     const snBipado = bipe
@@ -71,6 +79,12 @@ export function IntegracaoPanel({
         bipeRef.current?.select()
         return
       }
+      const pmoRepetido = pmoComSn(snBipado)
+      if (pmoRepetido) {
+        toast.error(`Esse Nº de Série já foi encaixado em ${pmoRepetido}.`)
+        bipeRef.current?.select()
+        return
+      }
       setLinhas((prev) => ({ ...prev, [r.pmo]: { sn: snBipado.trim(), op: r.op } }))
       toast.success(`Placa encaixada em ${r.pmo}`)
       setBipe('')
@@ -82,6 +96,11 @@ export function IntegracaoPanel({
     if (!ambiguo) return
     if (linhas[pmoEscolhido] !== undefined) {
       toast.error('PMO já tem placa')
+      return
+    }
+    const pmoRepetido = pmoComSn(ambiguo.sn)
+    if (pmoRepetido) {
+      toast.error(`Esse Nº de Série já foi encaixado em ${pmoRepetido}.`)
       return
     }
     setLinhas((prev) => ({ ...prev, [pmoEscolhido]: { sn: ambiguo.sn, op: opEscolhida } }))
