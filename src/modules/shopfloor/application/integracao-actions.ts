@@ -11,7 +11,7 @@ import { resolverPlaca } from '../domain/integracao-matching'
 import { carregarOrdem, listarFaixasOrdens, listarOrdensParaLancamento } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import {
-  buscarIntegracaoPorSn,
+  buscarIntegracoesPorSn,
   chamarSfIntegrar,
   chamarSfCancelarIntegracao,
   type IntegracaoDetalhe,
@@ -150,9 +150,9 @@ export async function resolverPlacaIntegracaoAction(
   const paraReceita = (p: string) => receita.find((c) => c.trim().toLowerCase() === p.trim().toLowerCase()) ?? p
   // Aviso já no bipe: se a placa já está em outra integração ATIVA, barra aqui
   // (não deixa montar tudo e só reclamar no Registrar).
-  const jaVinculada = await buscarIntegracaoPorSn(normalizarSerie(sn))
-  if (jaVinculada) {
-    return { ok: false, erro: `Placa já vinculada à integração ${jaVinculada.codigo}.` }
+  const vinc = await buscarIntegracoesPorSn(normalizarSerie(sn))
+  if (vinc.length > 0) {
+    return { ok: false, erro: `Placa já vinculada à integração ${vinc[0]!.codigo}.` }
   }
   const r = resolverPlaca(receita, faixas, limparSerie(sn))
   if (r.ok) return { ok: true, pmo: paraReceita(r.pmo), op: r.op }
@@ -168,16 +168,16 @@ export async function resolverPlacaIntegracaoAction(
 
 export async function buscarIntegracao(
   sn: string,
-): Promise<{ ok: true; detalhe: IntegracaoDetalhe | null } | { ok: false; erro: string }> {
+): Promise<{ ok: true; detalhes: IntegracaoDetalhe[] } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
   const alvo = normalizarSerie(sn)
-  if (alvo === '') return { ok: true, detalhe: null }
+  if (alvo === '') return { ok: true, detalhes: [] }
   try {
-    const detalhe = await buscarIntegracaoPorSn(alvo)
-    return { ok: true, detalhe }
+    const detalhes = await buscarIntegracoesPorSn(alvo)
+    return { ok: true, detalhes }
   } catch {
     return { ok: false, erro: MENSAGENS.ERRO_INTERNO! }
   }

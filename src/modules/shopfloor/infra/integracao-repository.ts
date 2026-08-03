@@ -15,6 +15,7 @@ export interface IntegracaoDetalhe {
   cliente: string
   pmo: string
   op: string
+  posto: string
   produtoSn: string
   qtdPlacas: number
   itens: ItemIntegracao[]
@@ -30,6 +31,7 @@ interface IntegracaoRow {
   op: string
   produto_sn: string
   qtd_placas: number
+  posto: string
 }
 
 async function montarDetalhe(row: IntegracaoRow): Promise<IntegracaoDetalhe> {
@@ -52,40 +54,44 @@ async function montarDetalhe(row: IntegracaoRow): Promise<IntegracaoDetalhe> {
     cliente: row.cliente,
     pmo: row.pmo,
     op: row.op,
+    posto: row.posto,
     produtoSn: row.produto_sn,
     qtdPlacas: row.qtd_placas,
     itens: [{ tipo: 'Produto', pmo: row.pmo, op: row.op, sn: row.produto_sn }, ...placas],
   }
 }
 
-const CAMPOS_HDR = 'id,codigo,data_hora,colaborador,cliente,pmo,op,produto_sn,qtd_placas'
+const CAMPOS_HDR = 'id,codigo,data_hora,colaborador,cliente,pmo,op,produto_sn,qtd_placas,posto'
 
-/** Busca a integração ATIVA em que o SN aparece como produto OU como placa. */
-export async function buscarIntegracaoPorSn(snNorm: string): Promise<IntegracaoDetalhe | null> {
+/** TODAS as integrações ATIVAS em que o SN aparece como produto OU placa (produto pode
+ *  estar em várias — uma por posto). Dedup por código, ordenadas por data desc. */
+export async function buscarIntegracoesPorSn(snNorm: string): Promise<IntegracaoDetalhe[]> {
   const supabase = await createServerSupabase()
 
-  // 1) como produto
-  const { data: prod, error: e1 } = await supabase
+  // como PRODUTO (pode haver N)
+  const { data: prods, error: e1 } = await supabase
     .from('sf_integracoes')
     .select(CAMPOS_HDR)
     .eq('produto_sn_norm', snNorm)
     .eq('status', 'ATIVA')
-    .maybeSingle()
   if (e1) throw e1
-  if (prod) return montarDetalhe(prod as unknown as IntegracaoRow)
 
-  // 2) como placa
-  const { data: item, error: e2 } = await supabase
+  // como PLACA
+  const { data: itens, error: e2 } = await supabase
     .from('sf_integracao_itens')
-    .select('integracao_id,sf_integracoes!inner(id,codigo,data_hora,colaborador,cliente,pmo,op,produto_sn,qtd_placas,status)')
+    .select('sf_integracoes!inner(id,codigo,data_hora,colaborador,cliente,pmo,op,produto_sn,qtd_placas,posto,status)')
     .eq('placa_sn_norm', snNorm)
     .eq('sf_integracoes.status', 'ATIVA')
-    .limit(1)
-    .maybeSingle()
   if (e2) throw e2
-  if (!item) return null
-  const hdr = (item as unknown as { sf_integracoes: IntegracaoRow }).sf_integracoes
-  return montarDetalhe(hdr)
+
+  const rows: IntegracaoRow[] = [
+    ...((prods ?? []) as unknown as IntegracaoRow[]),
+    ...((itens ?? []) as unknown as { sf_integracoes: IntegracaoRow }[]).map((i) => i.sf_integracoes),
+  ]
+  const porCodigo = new Map<string, IntegracaoRow>()
+  for (const r of rows) if (!porCodigo.has(r.codigo)) porCodigo.set(r.codigo, r)
+  const detalhes = await Promise.all([...porCodigo.values()].map(montarDetalhe))
+  return detalhes.sort((a, b) => (a.dataHora < b.dataHora ? 1 : -1))
 }
 
 export interface SfIntegrarArgs {
