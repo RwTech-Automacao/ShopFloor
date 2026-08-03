@@ -90,7 +90,7 @@ export function EmbalagemPanel({
         <CardHeader><CardTitle>Embalagem concluída</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">Total embaladas: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}.</p>
-          <Button variant="outline" size="sm" className="w-fit" onClick={() => { setConcluida(false); recarregar() }}>Continuar embalando</Button>
+          <p className="text-xs text-muted-foreground">A última caixa desta OP foi fechada.</p>
         </CardContent>
       </Card>
     )
