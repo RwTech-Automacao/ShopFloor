@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
-import { carregarEstadoEmbalagem, garantirCaixa, chamarFecharCaixa, type EstadoEmbalagem } from '@/modules/shopfloor/infra/caixa-repository'
+import { carregarEstadoEmbalagem, garantirCaixa, chamarFecharCaixa, carregarCaixasDaOp, type EstadoEmbalagem, type CaixaConsulta } from '@/modules/shopfloor/infra/caixa-repository'
 import { lancar } from './lancar-action'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
@@ -62,4 +62,16 @@ export async function fecharCaixa(
   const r = await chamarFecharCaixa(pmo.trim(), op.trim(), posto.trim(), seq, ultima)
   if (!r.ok) return { ok: false, erro: r.erro === 'CAIXA_VAZIA' ? 'A caixa está vazia.' : 'Não foi possível fechar a caixa.' }
   return { ok: true, codigo: r.codigo! }
+}
+
+export async function caixasDaOp(
+  pmo: string, op: string,
+): Promise<{ ok: true; caixas: CaixaConsulta[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    return { ok: true, caixas: await carregarCaixasDaOp(pmo.trim(), op.trim()) }
+  } catch {
+    return { ok: false, erro: 'Não foi possível carregar as caixas.' }
+  }
 }

@@ -70,3 +70,68 @@ export async function chamarFecharCaixa(pmo: string, op: string, posto: string, 
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
   return data as { ok: boolean; erro?: string; codigo?: string }
 }
+
+export interface OpComCaixa { pmo: string; op: string; cliente: string }
+export interface CaixaConsulta {
+  seq: number
+  posto: string
+  fechada: boolean
+  limite: number
+  codigo: string   // fechada → código final; aberta → 'CX{seq} (aberta)'
+  qtd: number      // nº de peças (contagem real)
+  sns: string[]    // SNs dentro da caixa
+}
+
+/** OPs que têm ao menos uma caixa (distinct pmo/op), com o cliente (de sf_ordens). */
+export async function listarOpsComCaixas(): Promise<OpComCaixa[]> {
+  const supabase = await createServerSupabase()
+  const { data: cxs, error } = await supabase.from('sf_caixas').select('pmo,op')
+  if (error) throw error
+  const pares = new Map<string, { pmo: string; op: string }>()
+  for (const c of (cxs ?? []) as { pmo: string; op: string }[]) pares.set(`${c.pmo}||${c.op}`, { pmo: c.pmo, op: c.op })
+  if (pares.size === 0) return []
+  const { data: ord, error: e2 } = await supabase.from('sf_ordens').select('pmo,op,cliente')
+  if (e2) throw e2
+  const cli = new Map<string, string>()
+  for (const o of (ord ?? []) as { pmo: string; op: string; cliente: string }[]) cli.set(`${o.pmo}||${o.op}`, o.cliente)
+  return [...pares.values()]
+    .map((p) => ({ pmo: p.pmo, op: p.op, cliente: cli.get(`${p.pmo}||${p.op}`) ?? '' }))
+    .sort((a, b) => (a.pmo === b.pmo ? a.op.localeCompare(b.op) : a.pmo.localeCompare(b.pmo)))
+}
+
+/** Caixas de uma OP (todos os postos), com as peças de cada uma. */
+export async function carregarCaixasDaOp(pmo: string, op: string): Promise<CaixaConsulta[]> {
+  const supabase = await createServerSupabase()
+  const { data: caixasData, error: e1 } = await supabase
+    .from('sf_caixas').select('seq,posto,limite,fechada,codigo')
+    .eq('pmo', pmo).eq('op', op).order('posto', { ascending: true }).order('seq', { ascending: true })
+  if (e1) throw e1
+  const caixas = (caixasData ?? []) as { seq: number; posto: string; limite: number; fechada: boolean; codigo: string }[]
+  if (caixas.length === 0) return []
+
+  const { data: regsData, error: e2 } = await supabase
+    .from('sf_registros').select('numero_serie,numero_caixa,data_hora')
+    .eq('pmo', pmo).eq('op', op).like('numero_caixa', 'CX%')
+    .order('data_hora', { ascending: true })
+  if (e2) throw e2
+  const grupos = new Map<string, string[]>()
+  for (const r of (regsData ?? []) as { numero_serie: string; numero_caixa: string }[]) {
+    const arr = grupos.get(r.numero_caixa) ?? []
+    arr.push(r.numero_serie)
+    grupos.set(r.numero_caixa, arr)
+  }
+
+  return caixas.map((c) => {
+    const chave = c.fechada ? c.codigo : marcadorCaixaAberta(c.seq)
+    const sns = grupos.get(chave) ?? []
+    return {
+      seq: c.seq,
+      posto: c.posto,
+      fechada: c.fechada,
+      limite: c.limite,
+      codigo: c.fechada ? c.codigo : `CX${c.seq} (aberta)`,
+      qtd: sns.length,
+      sns,
+    }
+  })
+}
