@@ -30,6 +30,7 @@ export function EmbalagemPanel({
 
   function recarregar() {
     startCarregar(async () => {
+      setResultado(null) // contexto novo (troca de OP/posto) → limpa o painel da ação anterior
       const r = await carregarEmbalagem(pmo, op, posto)
       if (!r.ok) { setResultado({ tipo: 'erro', titulo: r.erro }); return }
       setSeq(r.estado.seq)

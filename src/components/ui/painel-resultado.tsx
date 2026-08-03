@@ -13,8 +13,8 @@ export function PainelResultado({ resultado }: { resultado: ResultadoAcao | null
   const ok = resultado.tipo === 'ok'
   return (
     <div
-      role="status"
-      aria-live="polite"
+      role={ok ? 'status' : 'alert'}
+      aria-live={ok ? 'polite' : 'assertive'}
       className={`flex gap-3 rounded-lg border border-l-4 p-4 ${
         ok ? 'border-green-600 bg-green-50 dark:bg-green-950/30' : 'border-red-600 bg-red-50 dark:bg-red-950/30'
       }`}
