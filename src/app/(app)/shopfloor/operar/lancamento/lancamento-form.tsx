@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
+import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, buscarEntradaBurnin } from '@/modules/shopfloor/application/lancar-action'
@@ -50,19 +51,12 @@ export function LancamentoForm({
   const [defeitosSel, setDefeitosSel] = useState<DefeitoLinha[]>([{ codigo: '', posicao: '', tipo: '' }])
   const [posicoesSPI, setPosicoesSPI] = useState<string[]>([''])
   const [burninEvento, setBurninEvento] = useState<'entrada' | 'saida'>('entrada')
+  const [bipeCab, setBipeCab] = useState('')
   const [enviando, startTransition] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
+  const bipeCabRef = useRef<HTMLInputElement>(null)
   const { confirmar, dialog } = useConfirmacao()
 
-  const clientes = useMemo(() => [...new Set(ordens.map((o) => o.cliente))], [ordens])
-  const pmos = useMemo(
-    () => [...new Set(ordens.filter((o) => o.cliente === cliente).map((o) => o.pmo))],
-    [ordens, cliente],
-  )
-  const ops = useMemo(
-    () => ordens.filter((o) => o.cliente === cliente && o.pmo === pmo).map((o) => o.op),
-    [ordens, cliente, pmo],
-  )
   const ordemSel = useMemo(
     () => ordens.find((o) => o.cliente === cliente && o.pmo === pmo && o.op === op) ?? null,
     [ordens, cliente, pmo, op],
@@ -92,17 +86,30 @@ export function LancamentoForm({
     setBurninEvento(v)
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
   }
-  function mudarCliente(v: string) {
-    setCliente(v); setPmo(''); setOp(''); setPosto(''); resetCamposDinamicos()
-  }
-  function mudarPmo(v: string) {
-    setPmo(v); setOp(''); setPosto(''); resetCamposDinamicos()
-  }
-  function mudarOp(v: string) {
-    setOp(v); setPosto(''); resetCamposDinamicos()
-  }
   function mudarPosto(v: string) {
     setPosto(v); resetCamposDinamicos()
+  }
+  function onBiparCabecalho() {
+    if (bipeCab.trim() === '') return
+    const r = resolverOpPorSn(ordens, bipeCab)
+    if (!r.ok) {
+      toast.error(r.erro === 'SEM_OP' ? 'SN não encontrado em nenhuma OP.' : 'SN cai em mais de uma OP.')
+      bipeCabRef.current?.select()
+      return
+    }
+    setCliente(r.ordem.cliente)
+    setPmo(r.ordem.pmo)
+    setOp(r.ordem.op)
+    if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
+    resetCamposDinamicos()
+    setBipeCab('')
+    setTimeout(() => snRef.current?.focus(), 0)
+  }
+  function atualizarCabecalho() {
+    setCliente(''); setPmo(''); setOp('')
+    setNumeroSerie(''); resetCamposDinamicos()
+    setBipeCab('')
+    setTimeout(() => bipeCabRef.current?.focus(), 0)
   }
 
   const valido = useMemo(() => {
@@ -181,62 +188,74 @@ export function LancamentoForm({
     <div className="flex flex-col gap-4">
       {/* Contexto */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle>Contexto</CardTitle>
+          {op !== '' && (
+            <Button variant="outline" size="sm" onClick={atualizarCabecalho}>Atualizar cabeçalho</Button>
+          )}
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="colaborador">Colaborador</Label>
-            <Input id="colaborador" value={colaborador} onChange={(e) => setColaborador(e.target.value)} autoComplete="off" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Cliente</Label>
-            <Select value={cliente} onValueChange={(v) => mudarCliente(v ?? '')}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-              <SelectContent>{clientes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>PMO</Label>
-            <Select value={pmo} onValueChange={(v) => mudarPmo(v ?? '')} disabled={cliente === ''}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-              <SelectContent>{pmos.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>OP</Label>
-            <Select value={op} onValueChange={(v) => mudarOp(v ?? '')} disabled={pmo === ''}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-              <SelectContent>{ops.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Posto</Label>
-            <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={op === ''}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-              <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Descrição</Label>
-            <Input value={ordemSel?.descricao ?? ''} readOnly disabled />
-          </div>
-          {ehEmbalagem && (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="caixa">Nº da Caixa</Label>
-                <Input id="caixa" value={numeroCaixa} onChange={(e) => setNumeroCaixa(e.target.value)} autoComplete="off" />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="qtdcaixa">Qtd por caixa</Label>
-                <Input id="qtdcaixa" type="number" min="1" step="1" value={qtdPorCaixa} onChange={(e) => setQtdPorCaixa(e.target.value)} />
-              </div>
-            </>
-          )}
-          {semFaixa && (
-            <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">Esta OP não tem faixa de Nº de Série cadastrada — não é possível lançar.</p>
-          )}
-        </CardContent>
+        {op === '' ? (
+          <CardContent className="flex flex-col gap-2">
+            <Label htmlFor="bipeCab">Bipe o Nº de Série para carregar a OP</Label>
+            <Input
+              id="bipeCab"
+              ref={bipeCabRef}
+              value={bipeCab}
+              onChange={(e) => setBipeCab(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBiparCabecalho() } }}
+              placeholder="Bipe ou digite o SN e Enter"
+              autoComplete="off"
+              autoFocus
+              className="h-12 text-lg"
+            />
+            <p className="text-xs text-muted-foreground">Digitar + Enter também funciona (sem scanner).</p>
+          </CardContent>
+        ) : (
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="colaborador">Colaborador</Label>
+              <Input id="colaborador" value={colaborador} onChange={(e) => setColaborador(e.target.value)} autoComplete="off" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Cliente</Label>
+              <Input value={cliente} readOnly disabled />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>PMO</Label>
+              <Input value={pmo} readOnly disabled />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>OP</Label>
+              <Input value={op} readOnly disabled />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Posto</Label>
+              <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Descrição</Label>
+              <Input value={ordemSel?.descricao ?? ''} readOnly disabled />
+            </div>
+            {ehEmbalagem && (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="caixa">Nº da Caixa</Label>
+                  <Input id="caixa" value={numeroCaixa} onChange={(e) => setNumeroCaixa(e.target.value)} autoComplete="off" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="qtdcaixa">Qtd por caixa</Label>
+                  <Input id="qtdcaixa" type="number" min="1" step="1" value={qtdPorCaixa} onChange={(e) => setQtdPorCaixa(e.target.value)} />
+                </div>
+              </>
+            )}
+            {semFaixa && (
+              <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">Esta OP não tem faixa de Nº de Série cadastrada — não é possível lançar.</p>
+            )}
+          </CardContent>
+        )}
       </Card>
 
       {ehIntegracao && (
