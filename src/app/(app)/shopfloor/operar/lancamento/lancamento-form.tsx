@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
@@ -51,6 +52,7 @@ export function LancamentoForm({
   const [posicoesSPI, setPosicoesSPI] = useState<string[]>([''])
   const [burninEvento, setBurninEvento] = useState<'entrada' | 'saida'>('entrada')
   const [bipeCab, setBipeCab] = useState('')
+  const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [enviando, startTransition] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
@@ -78,7 +80,7 @@ export function LancamentoForm({
   /** Limpa todos os campos dinâmicos da peça (evita dado velho ao trocar contexto/posto). */
   function resetCamposDinamicos() {
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    setNqaVisual(''); setNqaFuncional(''); setBurninEvento('entrada')
+    setNqaVisual(''); setNqaFuncional(''); setBurninEvento('entrada'); setResultado(null)
   }
   /** Trocar entrada/saída limpa o status/defeitos (evita defeito velho da saída ao voltar p/ entrada). */
   function mudarBurninEvento(v: 'entrada' | 'saida') {
@@ -169,10 +171,27 @@ export function LancamentoForm({
         posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
       })
       if (r.ok) {
-        toast.success('Registrado.')
+        setResultado({
+          tipo: 'ok',
+          titulo: ehBurnin
+            ? (burninEvento === 'saida' ? 'Saída de Burn-in registrada' : 'Entrada de Burn-in registrada')
+            : 'Peça registrada',
+          chips: [
+            { rotulo: 'Nº Série', valor: numeroSerie.trim(), mono: true },
+            { rotulo: 'Posto', valor: posto },
+            ...(mostraStatus && status ? [{ valor: status, destaque: status === 'Aprovado' }] : []),
+          ],
+        })
         limparPeca()
       } else {
-        toast.error(r.erro)
+        setResultado({
+          tipo: 'erro',
+          titulo: r.erro,
+          chips: [
+            { rotulo: 'Nº Série', valor: numeroSerie.trim(), mono: true },
+            { rotulo: 'Posto', valor: posto },
+          ],
+        })
       }
     })
   }
@@ -262,6 +281,7 @@ export function LancamentoForm({
           <CardTitle>Peça</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <PainelResultado resultado={resultado} />
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="sn">Nº de Série</Label>
             <Input
