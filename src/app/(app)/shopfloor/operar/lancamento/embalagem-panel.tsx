@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
+import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { carregarEmbalagem, embalarPeca, fecharCaixa } from '@/modules/shopfloor/application/embalagem-actions'
 
 export function EmbalagemPanel({
@@ -21,6 +21,7 @@ export function EmbalagemPanel({
   const [concluida, setConcluida] = useState(false)
   const [sn, setSn] = useState('')
   const [ehUltima, setEhUltima] = useState(false)
+  const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [carregando, startCarregar] = useTransition()
   const [embalando, startEmbalar] = useTransition()
   const [fechando, startFechar] = useTransition()
@@ -30,7 +31,7 @@ export function EmbalagemPanel({
   function recarregar() {
     startCarregar(async () => {
       const r = await carregarEmbalagem(pmo, op, posto)
-      if (!r.ok) { toast.error(r.erro); return }
+      if (!r.ok) { setResultado({ tipo: 'erro', titulo: r.erro }); return }
       setSeq(r.estado.seq)
       setLimite(r.estado.limite)
       setQtdNaCaixa(r.estado.qtdNaCaixa)
@@ -43,7 +44,7 @@ export function EmbalagemPanel({
 
   function definirLimite() {
     const n = Number(limiteInput)
-    if (!Number.isInteger(n) || n <= 0) { toast.error('Informe um limite válido (inteiro > 0).'); return }
+    if (!Number.isInteger(n) || n <= 0) { setResultado({ tipo: 'erro', titulo: 'Informe um limite válido (inteiro > 0).' }); return }
     setLimite(n)
     setTimeout(() => snRef.current?.focus(), 0)
   }
@@ -53,8 +54,22 @@ export function EmbalagemPanel({
     const alvo = sn
     startEmbalar(async () => {
       const r = await embalarPeca({ colaborador, pmo, op, posto, seq, limite, numeroSerie: alvo })
-      if (!r.ok) { toast.error(r.erro); snRef.current?.select(); return }
+      if (!r.ok) {
+        setResultado({
+          tipo: 'erro',
+          titulo: r.erro,
+          chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
+          dica: /cheia/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
+        })
+        snRef.current?.select()
+        return
+      }
       setSn('')
+      setResultado({
+        tipo: 'ok',
+        titulo: 'Peça embalada',
+        chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }, { rotulo: 'Caixa', valor: `CX${seq} · ${qtdNaCaixa + 1}/${limite}` }],
+      })
       setQtdNaCaixa((q) => q + 1)
       setTotalEmbaladas((t) => t + 1)
       setUltimasSns((prev) => [alvo.trim(), ...prev].slice(0, 8))
@@ -74,8 +89,8 @@ export function EmbalagemPanel({
     }
     startFechar(async () => {
       const r = await fecharCaixa(pmo, op, posto, seq, ehUltima)
-      if (!r.ok) { toast.error(r.erro); return }
-      toast.success(`Caixa fechada: ${r.codigo}`)
+      if (!r.ok) { setResultado({ tipo: 'erro', titulo: r.erro }); return }
+      setResultado({ tipo: 'ok', titulo: 'Caixa fechada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }] })
       if (ehUltima) { setConcluida(true) }
       else { setSeq((s) => s + 1); setQtdNaCaixa(0); setUltimasSns([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
     })
@@ -130,6 +145,7 @@ export function EmbalagemPanel({
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <PainelResultado resultado={resultado} />
         <div>
           <div className="mb-1 flex justify-between text-sm">
             <span className="font-medium">{qtdNaCaixa} / {limite} nesta caixa</span>

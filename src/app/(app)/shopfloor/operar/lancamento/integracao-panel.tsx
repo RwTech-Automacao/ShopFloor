@@ -1,12 +1,12 @@
 'use client'
 
 import { useMemo, useRef, useState, useTransition } from 'react'
-import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { integrar, resolverPlacaIntegracaoAction } from '@/modules/shopfloor/application/integracao-actions'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
@@ -37,6 +37,7 @@ export function IntegracaoPanel({
   const [bipe, setBipe] = useState('')
   const [produtoSN, setProdutoSN] = useState('')
   const [ambiguo, setAmbiguo] = useState<{ sn: string; candidatos: { pmo: string; op: string }[] } | null>(null)
+  const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [resolvendo, startResolucao] = useTransition()
   const [registrando, startRegistro] = useTransition()
   const bipeRef = useRef<HTMLInputElement>(null)
@@ -70,23 +71,23 @@ export function IntegracaoPanel({
           setBipe('')
           return
         }
-        toast.error(r.erro)
+        setResultado({ tipo: 'erro', titulo: r.erro })
         bipeRef.current?.select()
         return
       }
       if (linhas[r.pmo] !== undefined) {
-        toast.error('PMO já tem placa')
+        setResultado({ tipo: 'erro', titulo: 'PMO já tem placa' })
         bipeRef.current?.select()
         return
       }
       const pmoRepetido = pmoComSn(snBipado)
       if (pmoRepetido) {
-        toast.error(`Esse Nº de Série já foi encaixado em ${pmoRepetido}.`)
+        setResultado({ tipo: 'erro', titulo: `Esse Nº de Série já foi encaixado em ${pmoRepetido}.` })
         bipeRef.current?.select()
         return
       }
       setLinhas((prev) => ({ ...prev, [r.pmo]: { sn: snBipado.trim(), op: r.op } }))
-      toast.success(`Placa encaixada em ${r.pmo}`)
+      setResultado({ tipo: 'ok', titulo: 'Placa encaixada', chips: [{ rotulo: 'PMO', valor: r.pmo }, { rotulo: 'Nº Série', valor: snBipado.trim(), mono: true }] })
       setBipe('')
       refocarBipe()
     })
@@ -95,16 +96,16 @@ export function IntegracaoPanel({
   function escolherCandidato(pmoEscolhido: string, opEscolhida: string) {
     if (!ambiguo) return
     if (linhas[pmoEscolhido] !== undefined) {
-      toast.error('PMO já tem placa')
+      setResultado({ tipo: 'erro', titulo: 'PMO já tem placa' })
       return
     }
     const pmoRepetido = pmoComSn(ambiguo.sn)
     if (pmoRepetido) {
-      toast.error(`Esse Nº de Série já foi encaixado em ${pmoRepetido}.`)
+      setResultado({ tipo: 'erro', titulo: `Esse Nº de Série já foi encaixado em ${pmoRepetido}.` })
       return
     }
     setLinhas((prev) => ({ ...prev, [pmoEscolhido]: { sn: ambiguo.sn, op: opEscolhida } }))
-    toast.success(`Placa encaixada em ${pmoEscolhido}`)
+    setResultado({ tipo: 'ok', titulo: 'Placa encaixada', chips: [{ rotulo: 'PMO', valor: pmoEscolhido }, { rotulo: 'Nº Série', valor: ambiguo.sn, mono: true }] })
     setAmbiguo(null)
     refocarBipe()
   }
@@ -121,11 +122,11 @@ export function IntegracaoPanel({
     startRegistro(async () => {
       const r = await integrar({ colaborador, pmo, op, produtoSN, placas, posto })
       if (r.ok) {
-        toast.success(`Integração registrada: ${r.codigo}`)
+        setResultado({ tipo: 'ok', titulo: 'Integração registrada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }, { rotulo: 'Produto', valor: produtoSN.trim(), mono: true }] })
         limpar()
         setTimeout(() => produtoRef.current?.focus(), 0)
       } else {
-        toast.error(r.erro)
+        setResultado({ tipo: 'erro', titulo: r.erro })
       }
     })
   }
@@ -138,6 +139,7 @@ export function IntegracaoPanel({
         <CardTitle>Integração</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <PainelResultado resultado={resultado} />
         <div className="flex flex-col gap-1.5">
           <Label>Descrição</Label>
           <Input value={descricao} readOnly disabled />
