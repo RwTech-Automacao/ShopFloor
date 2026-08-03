@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useTransition, useActionState } from 'react'
+import { useEffect, useState, useTransition, useActionState } from 'react'
 import { PlusIcon, Trash2Icon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,23 +15,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { cadastrarDefeitoAction, excluirDefeitoAction } from '@/modules/shopfloor/application/defeitos-actions'
 
-export function DefeitoForm({ onSucesso }: { onSucesso?: (r: ResultadoAcao) => void }) {
+export function DefeitoForm() {
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState(cadastrarDefeitoAction, undefined)
 
-  // Fecha o dialog quando a action retorna sucesso (ajuste de estado na
-  // renderização, não em efeito — evita o cascading render do eslint).
-  const [estadoProcessado, setEstadoProcessado] = useState(state)
-  if (state !== estadoProcessado) {
-    setEstadoProcessado(state)
-    if (state && 'ok' in state && state.ok) {
-      onSucesso?.({ tipo: 'ok', titulo: `Defeito ${state.codigo} criado` })
+  useEffect(() => {
+    if (!state) return
+    if ('ok' in state && state.ok) {
+      toast.success('Defeito criado', { description: state.codigo ?? '', position: 'bottom-center' })
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpen(false)
+    } else if ('erro' in state) {
+      toast.error(state.erro, { position: 'bottom-center' })
     }
-  }
+  }, [state])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -72,7 +72,6 @@ export function DefeitoForm({ onSucesso }: { onSucesso?: (r: ResultadoAcao) => v
             </div>
           </div>
 
-          {state && 'erro' in state && <PainelResultado resultado={{ tipo: 'erro', titulo: state.erro }} />}
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
               {pending ? 'Salvando...' : 'Cadastrar'}
@@ -86,10 +85,8 @@ export function DefeitoForm({ onSucesso }: { onSucesso?: (r: ResultadoAcao) => v
 
 export function ExcluirDefeitoButton({
   codigo,
-  onResultado,
 }: {
   codigo: string
-  onResultado?: (r: ResultadoAcao) => void
 }) {
   const [pending, startTransition] = useTransition()
   const { confirmar, dialog } = useConfirmacao()
@@ -102,8 +99,8 @@ export function ExcluirDefeitoButton({
     if (!ok) return
     startTransition(async () => {
       const r = await excluirDefeitoAction(codigo)
-      if ('erro' in r) onResultado?.({ tipo: 'erro', titulo: r.erro })
-      else onResultado?.({ tipo: 'ok', titulo: `Defeito ${codigo} excluído` })
+      if ('erro' in r) toast.error(r.erro, { position: 'bottom-center' })
+      else toast.success(`Defeito ${codigo} excluído`, { position: 'bottom-center' })
     })
   }
 

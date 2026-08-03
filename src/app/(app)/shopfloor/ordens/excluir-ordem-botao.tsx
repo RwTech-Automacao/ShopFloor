@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -12,10 +13,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import type { ResultadoAcao } from '@/components/ui/painel-resultado'
 import { excluirOrdemAction } from '@/modules/shopfloor/application/ordens-actions'
 
-export function ExcluirOrdemBotao({ id, rotulo, onResultado }: { id: string; rotulo: string; onResultado?: (r: ResultadoAcao) => void }) {
+export function ExcluirOrdemBotao({ id, rotulo }: { id: string; rotulo: string }) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
 
@@ -23,10 +23,10 @@ export function ExcluirOrdemBotao({ id, rotulo, onResultado }: { id: string; rot
     startTransition(async () => {
       const r = await excluirOrdemAction(id)
       if (r.ok) {
-        onResultado?.({ tipo: 'ok', titulo: `OP ${rotulo} excluída` })
+        toast.success(`OP ${rotulo} excluída`, { position: 'bottom-center' })
         setOpen(false)
       } else {
-        onResultado?.({ tipo: 'erro', titulo: r.erro })
+        toast.error(r.erro, { position: 'bottom-center' })
       }
     })
   }

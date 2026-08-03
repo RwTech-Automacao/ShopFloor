@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { OrdemForm, type OrdemView, type PadraoFluxo } from './ordem-form'
 import type { PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { ExcluirOrdemBotao } from './excluir-ordem-botao'
@@ -33,7 +32,6 @@ export function OrdensLista({
   const [cliente, setCliente] = useState(TODOS)
   const [status, setStatus] = useState(TODOS)
   const [busca, setBusca] = useState('')
-  const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
 
   const clientes = useMemo(() => [...new Set(views.map((v) => v.cliente))].sort(), [views])
 
@@ -51,10 +49,8 @@ export function OrdensLista({
 
   return (
     <div className="flex flex-col gap-3">
-      <PainelResultado resultado={resultado} />
-
       <div className="flex justify-end">
-        <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} onSucesso={setResultado} />
+        <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
       </div>
 
       {/* Filtros */}
@@ -122,8 +118,8 @@ export function OrdensLista({
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                     <FluxoBotao pmo={o.pmo} op={o.op} postos={o.postos} />
-                    <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} ordem={o} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} onSucesso={setResultado} />
-                    <ExcluirOrdemBotao id={o.id} rotulo={`${o.pmo}/${o.op}`} onResultado={setResultado} />
+                    <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} ordem={o} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+                    <ExcluirOrdemBotao id={o.id} rotulo={`${o.pmo}/${o.op}`} />
                   </div>
                 </TableCell>
               </TableRow>
