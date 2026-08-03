@@ -14,9 +14,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { cadastrarDefeitoAction, excluirDefeitoAction } from '@/modules/shopfloor/application/defeitos-actions'
 
-export function DefeitoForm() {
+export function DefeitoForm({ onSucesso }: { onSucesso?: (r: ResultadoAcao) => void }) {
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState(cadastrarDefeitoAction, undefined)
 
@@ -25,7 +26,10 @@ export function DefeitoForm() {
   const [estadoProcessado, setEstadoProcessado] = useState(state)
   if (state !== estadoProcessado) {
     setEstadoProcessado(state)
-    if (state && 'ok' in state && state.ok) setOpen(false)
+    if (state && 'ok' in state && state.ok) {
+      onSucesso?.({ tipo: 'ok', titulo: `Defeito ${state.codigo} criado` })
+      setOpen(false)
+    }
   }
 
   return (
@@ -68,7 +72,7 @@ export function DefeitoForm() {
             </div>
           </div>
 
-          {state && 'erro' in state && <p className="text-sm text-red-600">{state.erro}</p>}
+          {state && 'erro' in state && <PainelResultado resultado={{ tipo: 'erro', titulo: state.erro }} />}
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
               {pending ? 'Salvando...' : 'Cadastrar'}
@@ -80,9 +84,14 @@ export function DefeitoForm() {
   )
 }
 
-export function ExcluirDefeitoButton({ codigo }: { codigo: string }) {
+export function ExcluirDefeitoButton({
+  codigo,
+  onResultado,
+}: {
+  codigo: string
+  onResultado?: (r: ResultadoAcao) => void
+}) {
   const [pending, startTransition] = useTransition()
-  const [erro, setErro] = useState<string | null>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   async function onClick() {
@@ -91,10 +100,10 @@ export function ExcluirDefeitoButton({ codigo }: { codigo: string }) {
       descricao: 'Não afeta o histórico — os registros já lançados guardam o texto do defeito.',
     })
     if (!ok) return
-    setErro(null)
     startTransition(async () => {
       const r = await excluirDefeitoAction(codigo)
-      if ('erro' in r) setErro(r.erro)
+      if ('erro' in r) onResultado?.({ tipo: 'erro', titulo: r.erro })
+      else onResultado?.({ tipo: 'ok', titulo: `Defeito ${codigo} excluído` })
     })
   }
 
@@ -110,7 +119,6 @@ export function ExcluirDefeitoButton({ codigo }: { codigo: string }) {
       >
         <Trash2Icon />
       </Button>
-      {erro && <p className="text-xs text-red-600">{erro}</p>}
       {dialog}
     </div>
   )

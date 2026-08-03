@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import type { Defeito } from '@/modules/shopfloor/domain/defeito'
 import { DefeitoForm, ExcluirDefeitoButton } from './defeitos-form'
 
@@ -33,9 +34,12 @@ export function DefeitosLista({ defeitos }: { defeitos: Defeito[] }) {
   const vazio = 'Nenhum defeito cadastrado.'
   const semBusca = 'Nenhum defeito encontrado para essa busca.'
   const mensagem = defeitos.length === 0 ? vazio : semBusca
+  const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
 
   return (
     <div className="flex flex-col gap-4">
+      <PainelResultado resultado={resultado} />
+
       <div className="flex items-center justify-between gap-3">
         <div className="relative w-full max-w-xs">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -47,7 +51,7 @@ export function DefeitosLista({ defeitos }: { defeitos: Defeito[] }) {
             aria-label="Buscar defeito"
           />
         </div>
-        <DefeitoForm />
+        <DefeitoForm onSucesso={setResultado} />
       </div>
 
       {/* Desktop: tabela */}
@@ -74,7 +78,7 @@ export function DefeitosLista({ defeitos }: { defeitos: Defeito[] }) {
                 <TableCell><Tipo tipo={d.tipo} /></TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <ExcluirDefeitoButton codigo={d.codigo} />
+                    <ExcluirDefeitoButton codigo={d.codigo} onResultado={setResultado} />
                   </div>
                 </TableCell>
               </TableRow>
@@ -97,7 +101,7 @@ export function DefeitosLista({ defeitos }: { defeitos: Defeito[] }) {
                 <span className="font-semibold">{d.codigo}</span>
                 <Tipo tipo={d.tipo} />
               </div>
-              <ExcluirDefeitoButton codigo={d.codigo} />
+              <ExcluirDefeitoButton codigo={d.codigo} onResultado={setResultado} />
             </div>
           </div>
         ))}
