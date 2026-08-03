@@ -107,6 +107,7 @@ export function LancamentoForm({
   }
   function atualizarCabecalho() {
     setCliente(''); setPmo(''); setOp('')
+    setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
     setNumeroSerie(''); resetCamposDinamicos()
     setBipeCab('')
     setTimeout(() => bipeCabRef.current?.focus(), 0)
