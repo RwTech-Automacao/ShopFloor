@@ -120,6 +120,7 @@ export interface OrdemLancamentoLista {
   pmo: string
   op: string
   descricao: string
+  qtd: number | null
   sn_ini: string
   sn_fim: string
   postos: string[]
@@ -133,7 +134,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
   const { data, error } = await supabase
     .from('sf_ordens')
     .select(
-      'cliente,pmo,op,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
+      'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
     )
     .neq('status', 'FINALIZADA')
     .order('cliente')
@@ -145,6 +146,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     pmo: string
     op: string
     descricao: string
+    qtd: number | null
     sn_ini: string
     sn_fim: string
     sf_ordem_postos: { posto: string; ordem: number }[]
@@ -156,6 +158,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     pmo: r.pmo,
     op: r.op,
     descricao: r.descricao,
+    qtd: r.qtd,
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
