@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import {
   Table,
   TableBody,
@@ -8,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import type { PostoRow } from '@/modules/shopfloor/infra/ordem-repository'
 import type { PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { PostoForm, EditarPostoButton, ExcluirPostoButton } from './posto-form'
@@ -23,12 +25,15 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
   const lista = [...postos].sort((a, b) => a.ordem - b.ordem)
   const nomePerfil = (chave: string) => perfis.find((p) => p.chave === chave)?.nome ?? chave
   const vazio = 'Nenhum posto cadastrado.'
+  const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
 
   return (
     <div className="flex flex-col gap-4">
+      <PainelResultado resultado={resultado} />
+
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">Postos</h1>
-        <PostoForm perfis={perfis} />
+        <PostoForm perfis={perfis} onSucesso={setResultado} />
       </div>
 
       {/* Desktop: tabela */}
@@ -57,8 +62,8 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
                   <TableCell>{nomePerfil(p.perfil)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <EditarPostoButton posto={p} perfis={perfis} bloqueado={bloqueado} />
-                      <ExcluirPostoButton chave={p.chave} bloqueado={bloqueado} />
+                      <EditarPostoButton posto={p} perfis={perfis} bloqueado={bloqueado} onSucesso={setResultado} />
+                      <ExcluirPostoButton chave={p.chave} bloqueado={bloqueado} onResultado={setResultado} />
                     </div>
                   </TableCell>
                 </TableRow>
@@ -90,8 +95,8 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
                   )}
                 </div>
                 <div className="flex gap-1">
-                  <EditarPostoButton posto={p} perfis={perfis} bloqueado={bloqueado} />
-                  <ExcluirPostoButton chave={p.chave} bloqueado={bloqueado} />
+                  <EditarPostoButton posto={p} perfis={perfis} bloqueado={bloqueado} onSucesso={setResultado} />
+                  <ExcluirPostoButton chave={p.chave} bloqueado={bloqueado} onResultado={setResultado} />
                 </div>
               </div>
             </div>

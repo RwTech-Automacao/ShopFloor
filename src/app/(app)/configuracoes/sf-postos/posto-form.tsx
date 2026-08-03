@@ -21,6 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import {
   cadastrarPostoAction,
   atualizarPostoAction,
@@ -54,7 +55,7 @@ function PerfilSelect({ id, perfis, defaultValue }: PerfilSelectProps) {
   )
 }
 
-export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
+export function PostoForm({ perfis, onSucesso }: { perfis: PerfilPosto[]; onSucesso?: (r: ResultadoAcao) => void }) {
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState(cadastrarPostoAction, undefined)
 
@@ -63,7 +64,10 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
   const [estadoProcessado, setEstadoProcessado] = useState(state)
   if (state !== estadoProcessado) {
     setEstadoProcessado(state)
-    if (state && 'ok' in state && state.ok) setOpen(false)
+    if (state && 'ok' in state && state.ok) {
+      onSucesso?.({ tipo: 'ok', titulo: `Posto ${state.nome ?? ''} criado` })
+      setOpen(false)
+    }
   }
 
   return (
@@ -91,7 +95,7 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
             <PerfilSelect id="perfil" perfis={perfis.filter(perfilAtribuivel)} />
           </div>
 
-          {state && 'erro' in state && <p className="text-sm text-red-600">{state.erro}</p>}
+          {state && 'erro' in state && <PainelResultado resultado={{ tipo: 'erro', titulo: state.erro }} />}
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
               {pending ? 'Salvando...' : 'Cadastrar'}
@@ -107,9 +111,10 @@ interface EditarPostoButtonProps {
   posto: PostoRow
   perfis: PerfilPosto[]
   bloqueado: boolean
+  onSucesso?: (r: ResultadoAcao) => void
 }
 
-export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButtonProps) {
+export function EditarPostoButton({ posto, perfis, bloqueado, onSucesso }: EditarPostoButtonProps) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
@@ -128,7 +133,10 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
     startTransition(async () => {
       const r = await atualizarPostoAction(posto.chave, { perfil })
       if ('erro' in r) setErro(r.erro)
-      else setOpen(false)
+      else {
+        onSucesso?.({ tipo: 'ok', titulo: `Posto ${r.nome ?? posto.chave} editado` })
+        setOpen(false)
+      }
     })
   }
 
@@ -162,7 +170,7 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
             <PerfilSelect id="perfil-editar" perfis={perfisEdicao} defaultValue={posto.perfil} />
           </div>
 
-          {erro && <p className="text-sm text-red-600">{erro}</p>}
+          {erro && <PainelResultado resultado={{ tipo: 'erro', titulo: erro }} />}
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
               {pending ? 'Salvando...' : 'Salvar'}
@@ -174,9 +182,16 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
   )
 }
 
-export function ExcluirPostoButton({ chave, bloqueado }: { chave: string; bloqueado: boolean }) {
+export function ExcluirPostoButton({
+  chave,
+  bloqueado,
+  onResultado,
+}: {
+  chave: string
+  bloqueado: boolean
+  onResultado?: (r: ResultadoAcao) => void
+}) {
   const [pending, startTransition] = useTransition()
-  const [erro, setErro] = useState<string | null>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   async function onClick() {
@@ -185,10 +200,10 @@ export function ExcluirPostoButton({ chave, bloqueado }: { chave: string; bloque
       descricao: 'Essa ação não pode ser desfeita.',
     })
     if (!ok) return
-    setErro(null)
     startTransition(async () => {
       const r = await excluirPostoAction(chave)
-      if ('erro' in r) setErro(r.erro)
+      if ('erro' in r) onResultado?.({ tipo: 'erro', titulo: r.erro })
+      else onResultado?.({ tipo: 'ok', titulo: `Posto ${chave} excluído` })
     })
   }
 
@@ -205,7 +220,6 @@ export function ExcluirPostoButton({ chave, bloqueado }: { chave: string; bloque
       >
         <Trash2Icon />
       </Button>
-      {erro && <p className="text-xs text-red-600">{erro}</p>}
       {dialog}
     </div>
   )

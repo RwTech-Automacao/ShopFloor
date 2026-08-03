@@ -14,7 +14,7 @@ import {
 import { listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
 import { perfilAtribuivel } from '@/modules/shopfloor/domain/perfil-posto'
 
-export type ResultadoAcaoPosto = { ok: true } | { erro: string }
+export type ResultadoAcaoPosto = { ok: true; nome?: string } | { erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar postos.'
 
@@ -57,7 +57,7 @@ export async function cadastrarPostoAction(
   })
 
   revalidatePath('/configuracoes/sf-postos')
-  return { ok: true }
+  return { ok: true, nome: chave }
 }
 
 export async function atualizarPostoAction(
@@ -92,7 +92,7 @@ export async function atualizarPostoAction(
   })
 
   revalidatePath('/configuracoes/sf-postos')
-  return { ok: true }
+  return { ok: true, nome: chave }
 }
 
 export async function excluirPostoAction(chave: string): Promise<ResultadoAcaoPosto> {
