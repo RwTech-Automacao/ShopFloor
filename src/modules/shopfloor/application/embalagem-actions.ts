@@ -26,16 +26,26 @@ export async function embalarPeca(entrada: {
 }): Promise<{ ok: true; caixaCount?: number } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
+  // Valida o limite ANTES de criar a caixa: como garantirCaixa é idempotente (não sobrescreve),
+  // um limite inválido gravaria a caixa com limite ruim de forma permanente.
+  if (!Number.isInteger(entrada.limite) || entrada.limite <= 0) {
+    return { ok: false, erro: 'Limite da caixa inválido.' }
+  }
+  // Trim consistente: garantirCaixa (sf_caixas) e lancar (sf_registros) precisam da MESMA chave,
+  // senão as contagens/fechamento (que trimam) não casam com os registros.
+  const pmo = entrada.pmo.trim()
+  const op = entrada.op.trim()
+  const posto = entrada.posto.trim()
   try {
-    await garantirCaixa(entrada.pmo.trim(), entrada.op.trim(), entrada.posto.trim(), entrada.seq, entrada.limite)
+    await garantirCaixa(pmo, op, posto, entrada.seq, entrada.limite)
   } catch {
     return { ok: false, erro: 'Não foi possível abrir a caixa.' }
   }
   const r = await lancar({
     colaborador: entrada.colaborador,
-    posto: entrada.posto,
-    pmo: entrada.pmo,
-    op: entrada.op,
+    posto,
+    pmo,
+    op,
     numeroSerie: entrada.numeroSerie,
     numeroCaixa: marcadorCaixaAberta(entrada.seq),
     qtdPorCaixa: String(entrada.limite),

@@ -22,9 +22,10 @@ export async function carregarEstadoEmbalagem(pmo: string, op: string, posto: st
   const caixas = (caixasData ?? []) as CaixaRow[]
   const ultima = caixas[caixas.length - 1]
 
-  const { count: total } = await supabase
+  const { count: total, error: eTot } = await supabase
     .from('sf_registros').select('*', { count: 'exact', head: true })
     .eq('pmo', pmo).eq('op', op).eq('posto', posto)
+  if (eTot) throw eTot
   const totalEmbaladas = total ?? 0
 
   // concluída: a última caixa está fechada e marcada como última
@@ -41,10 +42,11 @@ export async function carregarEstadoEmbalagem(pmo: string, op: string, posto: st
   let ultimasSns: string[] = []
   if (abertaExiste) {
     const marc = marcadorCaixaAberta(seq)
-    const { data: regs } = await supabase
+    const { data: regs, error: eReg } = await supabase
       .from('sf_registros').select('numero_serie,data_hora')
       .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', marc)
       .order('data_hora', { ascending: false })
+    if (eReg) throw eReg
     const rows = (regs ?? []) as { numero_serie: string; data_hora: string }[]
     qtdNaCaixa = rows.length
     ultimasSns = rows.slice(0, 8).map((r) => r.numero_serie)
