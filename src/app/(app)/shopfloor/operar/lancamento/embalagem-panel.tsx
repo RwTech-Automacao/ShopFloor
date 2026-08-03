@@ -1,0 +1,162 @@
+'use client'
+
+import { useEffect, useRef, useState, useTransition } from 'react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { useConfirmacao } from '@/components/ui/confirm-dialog'
+import { carregarEmbalagem, embalarPeca, fecharCaixa } from '@/modules/shopfloor/application/embalagem-actions'
+
+export function EmbalagemPanel({
+  colaborador, pmo, op, posto, qtdOP,
+}: { colaborador: string; pmo: string; op: string; posto: string; qtdOP: number | null }) {
+  const [seq, setSeq] = useState(1)
+  const [limite, setLimite] = useState<number | null>(null)
+  const [limiteInput, setLimiteInput] = useState('')
+  const [qtdNaCaixa, setQtdNaCaixa] = useState(0)
+  const [totalEmbaladas, setTotalEmbaladas] = useState(0)
+  const [ultimasSns, setUltimasSns] = useState<string[]>([])
+  const [concluida, setConcluida] = useState(false)
+  const [sn, setSn] = useState('')
+  const [ehUltima, setEhUltima] = useState(false)
+  const [carregando, startCarregar] = useTransition()
+  const [embalando, startEmbalar] = useTransition()
+  const [fechando, startFechar] = useTransition()
+  const snRef = useRef<HTMLInputElement>(null)
+  const { confirmar, dialog } = useConfirmacao()
+
+  function recarregar() {
+    startCarregar(async () => {
+      const r = await carregarEmbalagem(pmo, op, posto)
+      if (!r.ok) { toast.error(r.erro); return }
+      setSeq(r.estado.seq)
+      setLimite(r.estado.limite)
+      setQtdNaCaixa(r.estado.qtdNaCaixa)
+      setTotalEmbaladas(r.estado.totalEmbaladas)
+      setUltimasSns(r.estado.ultimasSns)
+      setConcluida(r.estado.concluida)
+    })
+  }
+  useEffect(() => { recarregar() }, [pmo, op, posto]) // recarrega ao entrar / trocar contexto
+
+  function definirLimite() {
+    const n = Number(limiteInput)
+    if (!Number.isInteger(n) || n <= 0) { toast.error('Informe um limite válido (inteiro > 0).'); return }
+    setLimite(n)
+    setTimeout(() => snRef.current?.focus(), 0)
+  }
+
+  function onBipar() {
+    if (sn.trim() === '' || embalando || limite === null) return
+    const alvo = sn
+    startEmbalar(async () => {
+      const r = await embalarPeca({ colaborador, pmo, op, posto, seq, limite, numeroSerie: alvo })
+      if (!r.ok) { toast.error(r.erro); snRef.current?.select(); return }
+      setSn('')
+      setQtdNaCaixa((q) => q + 1)
+      setTotalEmbaladas((t) => t + 1)
+      setUltimasSns((prev) => [alvo.trim(), ...prev].slice(0, 8))
+      setTimeout(() => snRef.current?.focus(), 0)
+    })
+  }
+
+  async function onFechar() {
+    if (fechando || limite === null || qtdNaCaixa === 0) return
+    if (qtdNaCaixa < limite) {
+      const ok = await confirmar({
+        titulo: `Fechar a caixa com ${qtdNaCaixa}/${limite}?`,
+        descricao: 'A caixa vai ser fechada antes de atingir o limite.',
+        rotuloConfirmar: 'Fechar caixa',
+      })
+      if (!ok) return
+    }
+    startFechar(async () => {
+      const r = await fecharCaixa(pmo, op, posto, seq, ehUltima)
+      if (!r.ok) { toast.error(r.erro); return }
+      toast.success(`Caixa fechada: ${r.codigo}`)
+      if (ehUltima) { setConcluida(true) }
+      else { setSeq((s) => s + 1); setQtdNaCaixa(0); setUltimasSns([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
+    })
+  }
+
+  if (carregando && limite === null && !concluida) {
+    return <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Carregando…</CardContent></Card>
+  }
+  if (concluida) {
+    return (
+      <Card>
+        <CardHeader><CardTitle>Embalagem concluída</CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">Total embaladas: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}.</p>
+          <p className="text-xs text-muted-foreground">A última caixa desta OP foi fechada.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+  if (limite === null) {
+    return (
+      <Card>
+        <CardHeader><CardTitle>Embalagem</CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <Label htmlFor="limite">Limite por caixa</Label>
+          <div className="flex gap-2">
+            <Input id="limite" type="number" min="1" step="1" value={limiteInput}
+              onChange={(e) => setLimiteInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); definirLimite() } }}
+              className="h-11 w-32" autoFocus />
+            <Button onClick={definirLimite} className="h-11">Começar</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Definido uma vez; vale pras próximas caixas.</p>
+        </CardContent>
+        {dialog}
+      </Card>
+    )
+  }
+
+  const pct = Math.min(100, Math.round((qtdNaCaixa / limite) * 100))
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <CardTitle>Caixa CX{seq} <span className="text-sm font-normal text-muted-foreground">· limite {limite}</span></CardTitle>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-sm">
+            <input type="checkbox" checked={ehUltima} onChange={(e) => setEhUltima(e.target.checked)} /> Última caixa
+          </label>
+          <Button variant="outline" size="sm" onClick={onFechar} disabled={fechando || qtdNaCaixa === 0}>
+            {fechando ? 'Fechando…' : 'Fechar caixa'}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div>
+          <div className="mb-1 flex justify-between text-sm">
+            <span className="font-medium">{qtdNaCaixa} / {limite} nesta caixa</span>
+            <span className="text-muted-foreground">Total: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full bg-enterplak" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_16rem]">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="snCaixa">Nº de Série</Label>
+            <Input id="snCaixa" ref={snRef} value={sn} onChange={(e) => setSn(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBipar() } }}
+              placeholder="Bipe a peça" autoComplete="off" autoFocus className="h-12 text-lg" disabled={embalando} />
+          </div>
+          <div className="rounded-lg border border-border p-2">
+            <p className="mb-1 text-xs font-medium text-muted-foreground">Últimas nesta caixa</p>
+            <ul className="flex flex-col gap-0.5 text-sm">
+              {ultimasSns.length === 0 && <li className="text-muted-foreground">—</li>}
+              {ultimasSns.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
+            </ul>
+          </div>
+        </div>
+      </CardContent>
+      {dialog}
+    </Card>
+  )
+}

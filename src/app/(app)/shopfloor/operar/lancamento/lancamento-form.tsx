@@ -16,6 +16,7 @@ import { lancar, buscarEntradaBurnin } from '@/modules/shopfloor/application/lan
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
+import { EmbalagemPanel } from './embalagem-panel'
 
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
 const OPCOES_STATUS = ['Aprovado', 'Reprovado']
@@ -44,8 +45,6 @@ export function LancamentoForm({
   const [posto, setPosto] = useState('')
   const [numeroSerie, setNumeroSerie] = useState('')
   const [status, setStatus] = useState('')
-  const [numeroCaixa, setNumeroCaixa] = useState('')
-  const [qtdPorCaixa, setQtdPorCaixa] = useState('')
   const [nqaVisual, setNqaVisual] = useState('')
   const [nqaFuncional, setNqaFuncional] = useState('')
   const [defeitosSel, setDefeitosSel] = useState<DefeitoLinha[]>([{ codigo: '', posicao: '', tipo: '' }])
@@ -79,7 +78,7 @@ export function LancamentoForm({
   /** Limpa todos os campos dinâmicos da peça (evita dado velho ao trocar contexto/posto). */
   function resetCamposDinamicos() {
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    setNqaVisual(''); setNqaFuncional(''); setNumeroCaixa(''); setQtdPorCaixa(''); setBurninEvento('entrada')
+    setNqaVisual(''); setNqaFuncional(''); setBurninEvento('entrada')
   }
   /** Trocar entrada/saída limpa o status/defeitos (evita defeito velho da saída ao voltar p/ entrada). */
   function mudarBurninEvento(v: 'entrada' | 'saida') {
@@ -117,7 +116,6 @@ export function LancamentoForm({
     if (!colaborador.trim() || !cliente || !pmo || !op || !posto || numeroSerie.trim() === '') return false
     if (!ordemSel || semFaixa) return false
     if (!serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) return false
-    if (ehEmbalagem && (numeroCaixa.trim() === '' || !Number.isInteger(Number(qtdPorCaixa)) || Number(qtdPorCaixa) <= 0)) return false
     if (ehNqa && (nqaVisual === '' || nqaFuncional === '')) return false
     if (mostraStatus && status === '') return false
     if (mostraStatus && reprovado) {
@@ -126,7 +124,7 @@ export function LancamentoForm({
       return defeitosSel.some((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
     }
     return true
-  }, [colaborador, cliente, pmo, op, posto, numeroSerie, ordemSel, semFaixa, ehEmbalagem, numeroCaixa, qtdPorCaixa, ehNqa, nqaVisual, nqaFuncional, mostraStatus, status, reprovado, ehSpi, posicoesSPI, defeitosSel])
+  }, [colaborador, cliente, pmo, op, posto, numeroSerie, ordemSel, semFaixa, ehNqa, nqaVisual, nqaFuncional, mostraStatus, status, reprovado, ehSpi, posicoesSPI, defeitosSel])
 
   function limparPeca() {
     setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional('')
@@ -162,8 +160,6 @@ export function LancamentoForm({
         numeroSerie,
         status: mostraStatus ? status : undefined,
         burninEvento: ehBurnin ? burninEvento : undefined,
-        numeroCaixa: ehEmbalagem ? numeroCaixa : undefined,
-        qtdPorCaixa: ehEmbalagem ? qtdPorCaixa : undefined,
         nqaVisual: ehNqa ? nqaVisual : undefined,
         nqaFuncional: ehNqa ? nqaFuncional : undefined,
         defeitos:
@@ -173,11 +169,7 @@ export function LancamentoForm({
         posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
       })
       if (r.ok) {
-        toast.success(
-          ehEmbalagem && r.caixaCount != null
-            ? `Registrado. Peças na caixa ${numeroCaixa}: ${r.caixaCount}`
-            : 'Registrado.',
-        )
+        toast.success('Registrado.')
         limparPeca()
       } else {
         toast.error(r.erro)
@@ -240,18 +232,6 @@ export function LancamentoForm({
               <Label>Descrição</Label>
               <Input value={ordemSel?.descricao ?? ''} readOnly disabled />
             </div>
-            {ehEmbalagem && (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="caixa">Nº da Caixa</Label>
-                  <Input id="caixa" value={numeroCaixa} onChange={(e) => setNumeroCaixa(e.target.value)} autoComplete="off" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="qtdcaixa">Qtd por caixa</Label>
-                  <Input id="qtdcaixa" type="number" min="1" step="1" value={qtdPorCaixa} onChange={(e) => setQtdPorCaixa(e.target.value)} />
-                </div>
-              </>
-            )}
             {semFaixa && (
               <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">Esta OP não tem faixa de Nº de Série cadastrada — não é possível lançar.</p>
             )}
@@ -271,8 +251,12 @@ export function LancamentoForm({
         />
       )}
 
+      {ehEmbalagem && (
+        <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+      )}
+
       {/* Bipagem */}
-      {!ehIntegracao && (
+      {!ehIntegracao && !ehEmbalagem && (
       <Card>
         <CardHeader>
           <CardTitle>Peça</CardTitle>

@@ -4,6 +4,7 @@ const ABAS = [
   { rotulo: 'Dashboard', href: '/shopfloor/analisar/dashboard' },
   { rotulo: 'Pesquisa', href: '/shopfloor/analisar/pesquisa' },
   { rotulo: 'Burn-in', href: '/shopfloor/analisar/burn-in' },
+  { rotulo: 'Caixas', href: '/shopfloor/analisar/caixas' },
 ]
 
 export default function AnalisarLayout({ children }: { children: React.ReactNode }) {
