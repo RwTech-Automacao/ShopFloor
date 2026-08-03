@@ -110,20 +110,23 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
   if (caixas.length === 0) return []
 
   const { data: regsData, error: e2 } = await supabase
-    .from('sf_registros').select('numero_serie,numero_caixa,data_hora')
+    .from('sf_registros').select('numero_serie,numero_caixa,posto,data_hora')
     .eq('pmo', pmo).eq('op', op).like('numero_caixa', 'CX%')
     .order('data_hora', { ascending: true })
   if (e2) throw e2
+  // Agrupa por (posto, numero_caixa): o marcador/código da caixa NÃO carrega o posto, então
+  // dois postos de perfil caixa poderiam ter 'CX[1]' e as peças se misturariam sem o posto na chave.
   const grupos = new Map<string, string[]>()
-  for (const r of (regsData ?? []) as { numero_serie: string; numero_caixa: string }[]) {
-    const arr = grupos.get(r.numero_caixa) ?? []
+  for (const r of (regsData ?? []) as { numero_serie: string; numero_caixa: string; posto: string }[]) {
+    const k = `${r.posto}||${r.numero_caixa}`
+    const arr = grupos.get(k) ?? []
     arr.push(r.numero_serie)
-    grupos.set(r.numero_caixa, arr)
+    grupos.set(k, arr)
   }
 
   return caixas.map((c) => {
     const chave = c.fechada ? c.codigo : marcadorCaixaAberta(c.seq)
-    const sns = grupos.get(chave) ?? []
+    const sns = grupos.get(`${c.posto}||${chave}`) ?? []
     return {
       seq: c.seq,
       posto: c.posto,
