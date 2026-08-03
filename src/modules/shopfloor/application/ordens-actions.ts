@@ -18,7 +18,7 @@ import {
   type DadosOrdem,
 } from '../infra/ordem-repository'
 
-export type ResultadoOrdem = { ok: true; id?: string } | { ok: false; erro: string }
+export type ResultadoOrdem = { ok: true; id?: string; pmo?: string; op?: string } | { ok: false; erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar ordens de produção.'
 
@@ -107,7 +107,7 @@ export async function criarOrdemAction(
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'criar', descricao: `OP ${dados.pmo}/${dados.op} criada`, dados })
   revalidatePath('/shopfloor/ordens')
-  return { ok: true, id }
+  return { ok: true, id, pmo: dados.pmo, op: dados.op }
 }
 
 export async function editarOrdemAction(
@@ -136,7 +136,7 @@ export async function editarOrdemAction(
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados })
   revalidatePath('/shopfloor/ordens')
-  return { ok: true, id }
+  return { ok: true, id, pmo: dados.pmo, op: dados.op }
 }
 
 export async function excluirOrdemAction(id: string): Promise<ResultadoOrdem> {

@@ -16,6 +16,7 @@ import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import {
   criarOrdemAction,
   editarOrdemAction,
@@ -68,6 +69,7 @@ export function OrdemForm({
   pmosExistentes,
   clientesExistentes,
   dadosPorPmo,
+  onSucesso,
 }: {
   postos: string[]
   postosPerfil: Record<string, PerfilPosto>
@@ -76,6 +78,7 @@ export function OrdemForm({
   pmosExistentes: string[]
   clientesExistentes: string[]
   dadosPorPmo: Record<string, { cliente: string; descricao: string }>
+  onSucesso?: (r: ResultadoAcao) => void
 }) {
   const ehEdicao = ordem !== undefined
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
@@ -101,7 +104,10 @@ export function OrdemForm({
   if (state !== processado) {
     setProcessado(state)
     setMostrarErro(true)
-    if (state?.ok) setOpen(false)
+    if (state?.ok) {
+      onSucesso?.({ tipo: 'ok', titulo: ehEdicao ? `OP ${state.pmo}/${state.op} editada` : `OP ${state.pmo}/${state.op} criada` })
+      setOpen(false)
+    }
   }
 
   const disponiveis = postos.filter((p) => !fluxo.includes(p))
@@ -425,7 +431,7 @@ export function OrdemForm({
               />
             ))}
 
-            {mostrarErro && state && !state.ok && <p className="text-sm text-red-600">{state.erro}</p>}
+            {mostrarErro && state && !state.ok && <PainelResultado resultado={{ tipo: 'erro', titulo: state.erro }} />}
 
             <DialogFooter>
               <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
