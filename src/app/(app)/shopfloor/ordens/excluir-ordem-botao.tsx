@@ -23,10 +23,10 @@ export function ExcluirOrdemBotao({ id, rotulo }: { id: string; rotulo: string }
     startTransition(async () => {
       const r = await excluirOrdemAction(id)
       if (r.ok) {
-        toast.success('OP excluída.')
+        toast.success(`OP ${rotulo} excluída`, { position: 'bottom-center' })
         setOpen(false)
       } else {
-        toast.error(r.erro)
+        toast.error(r.erro, { position: 'bottom-center' })
       }
     })
   }

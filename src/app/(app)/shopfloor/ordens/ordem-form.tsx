@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useState, useTransition } from 'react'
+import { useActionState, useEffect, useState, useTransition } from 'react'
 import { Plus, Pencil, ArrowUp, ArrowDown, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -96,13 +96,23 @@ export function OrdemForm({
     ? clientesExistentes.find((c) => c.toLowerCase() === cliente.trim().toLowerCase()) ?? cliente.trim()
     : cliente
 
-  const [processado, setProcessado] = useState(state)
-  const [mostrarErro, setMostrarErro] = useState(false)
-  if (state !== processado) {
-    setProcessado(state)
-    setMostrarErro(true)
-    if (state?.ok) setOpen(false)
-  }
+  useEffect(() => {
+    if (!state) return
+    if ('ok' in state && state.ok) {
+      toast.success(ehEdicao ? 'OP editada' : 'OP criada', {
+        description: `${state.pmo}/${state.op}`,
+        position: 'bottom-center',
+      })
+      // Fecha o dialog em reação ao sucesso da action — não é o efeito
+      // que "produz" o estado, então o alerta de cascading render do
+      // eslint-plugin-react-hooks (set-state-in-effect) não se aplica aqui.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOpen(false)
+    } else if ('erro' in state) {
+      toast.error(state.erro, { position: 'bottom-center' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
 
   const disponiveis = postos.filter((p) => !fluxo.includes(p))
   const padroesDoPmo = padroesExistentes.filter((p) => p.pmo === pmo)
@@ -125,11 +135,11 @@ export function OrdemForm({
     const nome = nomePadrao.trim()
     const pmoAlvo = pmoPadrao.trim()
     if (nome === '') {
-      toast.error('Informe o nome do padrão.')
+      toast.error('Informe o nome do padrão.', { position: 'bottom-center' })
       return
     }
     if (pmoAlvo === '') {
-      toast.error('Informe a PMO à qual associar o padrão.')
+      toast.error('Informe a PMO à qual associar o padrão.', { position: 'bottom-center' })
       return
     }
     const existente = padroesExistentes.find((p) => p.pmo === pmoAlvo && p.nome === nome)
@@ -151,7 +161,7 @@ export function OrdemForm({
       if (r.ok) {
         setSalvarAberto(false)
       } else {
-        toast.error(r.erro)
+        toast.error(r.erro, { position: 'bottom-center' })
       }
     })
   }
@@ -164,7 +174,7 @@ export function OrdemForm({
     startExcluirPadrao(async () => {
       const r = await excluirPadraoAction(p.id)
       if (r.ok) setPadraoSelecionado('')
-      else toast.error(r.erro)
+      else toast.error(r.erro, { position: 'bottom-center' })
     })
   }
 
@@ -210,7 +220,6 @@ export function OrdemForm({
           setTempoBurnin(tempoBurninInicial(ordem))
           setModoNovoCliente(false)
           setPadraoSelecionado('')
-          setMostrarErro(false)
           setInstanciaForm((n) => n + 1)
         }
       }}>
@@ -424,8 +433,6 @@ export function OrdemForm({
                 pmosDisponiveis={pmosExistentes.filter((p) => p !== pmo && !(receita[posto] ?? []).includes(p))}
               />
             ))}
-
-            {mostrarErro && state && !state.ok && <p className="text-sm text-red-600">{state.erro}</p>}
 
             <DialogFooter>
               <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">

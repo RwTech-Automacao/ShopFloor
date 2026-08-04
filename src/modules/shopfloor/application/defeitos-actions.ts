@@ -7,7 +7,7 @@ import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { validarDefeito } from '@/modules/shopfloor/domain/defeito'
 import { inserirDefeito, excluirDefeito } from '@/modules/shopfloor/infra/defeitos-repository'
 
-export type ResultadoAcaoDefeito = { ok: true } | { erro: string }
+export type ResultadoAcaoDefeito = { ok: true; codigo?: string } | { erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar defeitos.'
 
@@ -38,7 +38,7 @@ export async function cadastrarDefeitoAction(
   })
 
   revalidatePath('/configuracoes/sf-defeitos')
-  return { ok: true }
+  return { ok: true, codigo: v.valor.codigo }
 }
 
 export async function excluirDefeitoAction(codigo: string): Promise<ResultadoAcaoDefeito> {

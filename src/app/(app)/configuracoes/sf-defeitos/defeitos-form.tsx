@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useTransition, useActionState } from 'react'
+import { useEffect, useState, useTransition, useActionState } from 'react'
 import { PlusIcon, Trash2Icon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,13 +21,16 @@ export function DefeitoForm() {
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState(cadastrarDefeitoAction, undefined)
 
-  // Fecha o dialog quando a action retorna sucesso (ajuste de estado na
-  // renderização, não em efeito — evita o cascading render do eslint).
-  const [estadoProcessado, setEstadoProcessado] = useState(state)
-  if (state !== estadoProcessado) {
-    setEstadoProcessado(state)
-    if (state && 'ok' in state && state.ok) setOpen(false)
-  }
+  useEffect(() => {
+    if (!state) return
+    if ('ok' in state && state.ok) {
+      toast.success('Defeito criado', { description: state.codigo ?? '', position: 'bottom-center' })
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOpen(false)
+    } else if ('erro' in state) {
+      toast.error(state.erro, { position: 'bottom-center' })
+    }
+  }, [state])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -68,7 +72,6 @@ export function DefeitoForm() {
             </div>
           </div>
 
-          {state && 'erro' in state && <p className="text-sm text-red-600">{state.erro}</p>}
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
               {pending ? 'Salvando...' : 'Cadastrar'}
@@ -80,9 +83,12 @@ export function DefeitoForm() {
   )
 }
 
-export function ExcluirDefeitoButton({ codigo }: { codigo: string }) {
+export function ExcluirDefeitoButton({
+  codigo,
+}: {
+  codigo: string
+}) {
   const [pending, startTransition] = useTransition()
-  const [erro, setErro] = useState<string | null>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   async function onClick() {
@@ -91,10 +97,10 @@ export function ExcluirDefeitoButton({ codigo }: { codigo: string }) {
       descricao: 'Não afeta o histórico — os registros já lançados guardam o texto do defeito.',
     })
     if (!ok) return
-    setErro(null)
     startTransition(async () => {
       const r = await excluirDefeitoAction(codigo)
-      if ('erro' in r) setErro(r.erro)
+      if ('erro' in r) toast.error(r.erro, { position: 'bottom-center' })
+      else toast.success(`Defeito ${codigo} excluído`, { position: 'bottom-center' })
     })
   }
 
@@ -110,7 +116,6 @@ export function ExcluirDefeitoButton({ codigo }: { codigo: string }) {
       >
         <Trash2Icon />
       </Button>
-      {erro && <p className="text-xs text-red-600">{erro}</p>}
       {dialog}
     </div>
   )

@@ -49,6 +49,10 @@ export function OrdensLista({
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+      </div>
+
       {/* Filtros */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="flex flex-col gap-1.5">

@@ -6,7 +6,7 @@ import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarPadroes } from '@/modules/shopfloor/infra/padroes-fluxo-repository'
 import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import { agruparTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
-import { OrdemForm, type OrdemView } from './ordem-form'
+import type { OrdemView } from './ordem-form'
 import { OrdensLista } from './ordens-lista'
 
 export default async function OrdensPage() {
@@ -47,12 +47,9 @@ export default async function OrdensPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-tinta">Ordens de Produção</h2>
-          <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
-        </div>
-        <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+      <div>
+        <h2 className="text-lg font-semibold text-tinta">Ordens de Produção</h2>
+        <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
       </div>
 
       <OrdensLista views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />

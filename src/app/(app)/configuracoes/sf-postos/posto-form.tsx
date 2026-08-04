@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useTransition, useActionState, type FormEvent } from 'react'
+import { useEffect, useState, useTransition, useActionState, type FormEvent } from 'react'
 import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -58,13 +59,16 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState(cadastrarPostoAction, undefined)
 
-  // Fecha o dialog quando a action retorna sucesso (ajuste de estado na
-  // renderização, não em efeito — evita o cascading render do eslint).
-  const [estadoProcessado, setEstadoProcessado] = useState(state)
-  if (state !== estadoProcessado) {
-    setEstadoProcessado(state)
-    if (state && 'ok' in state && state.ok) setOpen(false)
-  }
+  useEffect(() => {
+    if (!state) return
+    if ('ok' in state && state.ok) {
+      toast.success('Posto criado', { description: state.nome ?? '', position: 'bottom-center' })
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOpen(false)
+    } else if ('erro' in state) {
+      toast.error(state.erro, { position: 'bottom-center' })
+    }
+  }, [state])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -91,7 +95,6 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
             <PerfilSelect id="perfil" perfis={perfis.filter(perfilAtribuivel)} />
           </div>
 
-          {state && 'erro' in state && <p className="text-sm text-red-600">{state.erro}</p>}
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
               {pending ? 'Salvando...' : 'Cadastrar'}
@@ -112,7 +115,6 @@ interface EditarPostoButtonProps {
 export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButtonProps) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
-  const [erro, setErro] = useState<string | null>(null)
 
   // Só perfis atribuíveis no dropdown — mais o perfil ATUAL do posto (caso seja um bespoke,
   // p/ ele aparecer e poder ser mantido). Assim não dá pra atribuir Manutenção/Burn-in/Integração.
@@ -124,11 +126,14 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
     const perfil = String(formData.get('perfil') ?? '')
-    setErro(null)
     startTransition(async () => {
       const r = await atualizarPostoAction(posto.chave, { perfil })
-      if ('erro' in r) setErro(r.erro)
-      else setOpen(false)
+      if ('erro' in r) {
+        toast.error(r.erro, { position: 'bottom-center' })
+      } else {
+        toast.success('Posto editado', { description: r.nome ?? posto.chave, position: 'bottom-center' })
+        setOpen(false)
+      }
     })
   }
 
@@ -162,7 +167,6 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
             <PerfilSelect id="perfil-editar" perfis={perfisEdicao} defaultValue={posto.perfil} />
           </div>
 
-          {erro && <p className="text-sm text-red-600">{erro}</p>}
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
               {pending ? 'Salvando...' : 'Salvar'}
@@ -174,9 +178,14 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
   )
 }
 
-export function ExcluirPostoButton({ chave, bloqueado }: { chave: string; bloqueado: boolean }) {
+export function ExcluirPostoButton({
+  chave,
+  bloqueado,
+}: {
+  chave: string
+  bloqueado: boolean
+}) {
   const [pending, startTransition] = useTransition()
-  const [erro, setErro] = useState<string | null>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   async function onClick() {
@@ -185,10 +194,10 @@ export function ExcluirPostoButton({ chave, bloqueado }: { chave: string; bloque
       descricao: 'Essa ação não pode ser desfeita.',
     })
     if (!ok) return
-    setErro(null)
     startTransition(async () => {
       const r = await excluirPostoAction(chave)
-      if ('erro' in r) setErro(r.erro)
+      if ('erro' in r) toast.error(r.erro, { position: 'bottom-center' })
+      else toast.success(`Posto ${chave} excluído`, { position: 'bottom-center' })
     })
   }
 
@@ -205,7 +214,6 @@ export function ExcluirPostoButton({ chave, bloqueado }: { chave: string; bloque
       >
         <Trash2Icon />
       </Button>
-      {erro && <p className="text-xs text-red-600">{erro}</p>}
       {dialog}
     </div>
   )
