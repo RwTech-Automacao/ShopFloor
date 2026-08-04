@@ -17,7 +17,8 @@ function FluxoNodeBase({ data }: NodeProps) {
   const d = data as unknown as FluxoNodePayload
   return (
     <div className={`min-w-44 rounded-xl border bg-card shadow-sm ${d.ehManutencao ? 'border-amber-500' : 'border-border'}`}>
-      {!d.ehManutencao && <Handle type="target" position={Position.Left} />}
+      {/* Todo nó pode ser destino (Manutenção é sempre target das arestas de reprova); só postos da cadeia são source. */}
+      <Handle type="target" position={Position.Left} />
       <button
         type="button"
         onClick={() => d.onAbrir(d.posto)}
@@ -59,7 +60,7 @@ function FluxoNodeBase({ data }: NodeProps) {
           )}
         </div>
       )}
-      <Handle type="source" position={Position.Right} />
+      {!d.ehManutencao && <Handle type="source" position={Position.Right} />}
     </div>
   )
 }
