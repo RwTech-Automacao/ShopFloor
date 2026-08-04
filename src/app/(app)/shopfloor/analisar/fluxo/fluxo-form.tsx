@@ -7,9 +7,9 @@ import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { carregarFluxo, snsDoPosto } from '@/modules/shopfloor/application/fluxo-actions'
+import { carregarFluxo, snsDoPosto, snsManutencao } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
-import type { FluxoNodePos, FluxoEdge } from '@/modules/shopfloor/domain/fluxo-op'
+import { MANUTENCAO, type FluxoNodePos, type FluxoEdge } from '@/modules/shopfloor/domain/fluxo-op'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 
 function paraEdges(es: FluxoEdge[]): Edge[] {
@@ -39,7 +39,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     if (aberto === posto) return
     const { pmo, op } = ctx.current
     startSns(async () => {
-      const r = await snsDoPosto(pmo, op, posto)
+      // Manutenção é ramo: o detalhe são as peças que estão nela agora (último bipe reprovado),
+      // coerente com o badge (WIP). Os demais postos listam quem passou por ali (histórico).
+      const r = posto === MANUTENCAO ? await snsManutencao(pmo, op) : await snsDoPosto(pmo, op, posto)
       if (r.ok) setSns(r.sns)
       else toast.error(r.erro)
     })

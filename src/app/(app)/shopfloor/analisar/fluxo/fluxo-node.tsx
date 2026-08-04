@@ -35,7 +35,9 @@ function FluxoNodeBase({ data }: NodeProps) {
 
       {d.aberto && (
         <div className="border-t border-border px-3 py-2 text-xs">
-          {d.temStatus ? (
+          {d.ehManutencao ? (
+            <div className="mb-2 text-amber-700">Em manutenção agora: {d.wip}</div>
+          ) : d.temStatus ? (
             <div className="mb-2 flex gap-3">
               <span className="text-green-700">Aprov.: {d.aprovadas}</span>
               <span className="text-red-600">Reprov.: {d.reprovadas}</span>
@@ -44,7 +46,9 @@ function FluxoNodeBase({ data }: NodeProps) {
           ) : (
             <div className="mb-2 text-muted-foreground">Registradas: {d.registros}</div>
           )}
-          <p className="mb-1 font-medium text-muted-foreground">Nº de Série ({d.sns.length})</p>
+          <p className="mb-1 font-medium text-muted-foreground">
+            {d.ehManutencao ? 'Peças travadas' : 'Nº de Série'} ({d.sns.length})
+          </p>
           {d.carregandoSns ? (
             <p className="text-muted-foreground">Carregando…</p>
           ) : (

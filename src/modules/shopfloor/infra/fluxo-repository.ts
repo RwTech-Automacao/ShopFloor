@@ -76,3 +76,41 @@ export async function carregarSnsDoPosto(pmo: string, op: string, posto: string)
   }
   return [...porSn.values()].sort((a, b) => a.sn.localeCompare(b.sn))
 }
+
+/**
+ * SNs que estão em Manutenção AGORA = peças cujo ÚLTIMO bipe (em qualquer posto) foi reprovado
+ * — mesma regra do WIP de Manutenção na RPC. O `status` traz o posto onde reprovou (onde a peça travou).
+ * (Difere de carregarSnsDoPosto('Manutenção'), que traria só registros de reparo.)
+ */
+export async function carregarSnsEmManutencao(pmo: string, op: string): Promise<SnDoPosto[]> {
+  const supabase = await createServerSupabase()
+  const PAGINA = 1000
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string }[] = []
+  for (let i = 0; ; i++) {
+    const { data, error } = await supabase
+      .from('sf_registros')
+      .select('numero_serie,numero_serie_norm,status,posto,data_hora,id')
+      .eq('pmo', pmo)
+      .eq('op', op)
+      .neq('numero_serie_norm', '')
+      .order('data_hora', { ascending: false })
+      .order('id', { ascending: false })
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (error) throw error
+    const lote = (data ?? []) as typeof linhas
+    linhas.push(...lote)
+    if (lote.length < PAGINA) break
+  }
+  // linhas desc por (data_hora,id): a PRIMEIRA de cada SN é o último bipe. Em manutenção = último = reprovado.
+  const visto = new Set<string>()
+  const res: SnDoPosto[] = []
+  for (const l of linhas) {
+    const chave = l.numero_serie_norm || l.numero_serie
+    if (visto.has(chave)) continue
+    visto.add(chave)
+    if (l.status.toLowerCase() === 'reprovado') {
+      res.push({ sn: l.numero_serie, status: `Reprovado · ${l.posto}`, vezes: 1 })
+    }
+  }
+  return res.sort((a, b) => a.sn.localeCompare(b.sn))
+}
