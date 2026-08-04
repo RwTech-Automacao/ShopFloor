@@ -5,6 +5,7 @@ import type { FluxoAgregado } from '../domain/fluxo-op'
 
 export interface OpItem { pmo: string; op: string; cliente: string; descricao: string }
 export interface SnDoPosto { sn: string; status: string; vezes: number }
+export interface DetalhePosto { agora: SnDoPosto[]; historico: SnDoPosto[] }
 
 /** Todas as OPs (pra escolher no seletor do Fluxo). */
 export async function listarOrdens(): Promise<OpItem[]> {
@@ -57,35 +58,51 @@ export async function carregarFluxoOp(
   return { postos, agregados, temStatus, recurso, qtd }
 }
 
-/** SNs registrados num posto da OP (lazy, ao abrir o nó). Paginado. */
-export async function carregarSnsDoPosto(pmo: string, op: string, posto: string): Promise<SnDoPosto[]> {
+/**
+ * Detalhe de um posto (lazy, ao abrir o nó). Um único scan da OP devolve:
+ *  - `agora`: peças que estão NO posto neste momento (posição atual = último bipe no posto, não reprovado
+ *     — reprovado está em Manutenção), coerente com o WIP/badge;
+ *  - `historico`: todas as peças que já passaram pelo posto (último status ali + nº de bipes).
+ */
+export async function carregarDetalhePosto(pmo: string, op: string, posto: string): Promise<DetalhePosto> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; data_hora: string }[] = []
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,data_hora,id')
+      .select('numero_serie,numero_serie_norm,status,posto,data_hora,id')
       .eq('pmo', pmo)
       .eq('op', op)
-      .ilike('posto', posto)
+      .neq('numero_serie_norm', '')
       .order('data_hora', { ascending: false })
-      .order('id', { ascending: false }) // desempate estável: sem isso, data_hora empatado embaralha as páginas (repete/pula SN)
+      .order('id', { ascending: false }) // desempate estável (data_hora empatado embaralharia as páginas)
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (error) throw error
     const lote = (data ?? []) as typeof linhas
     linhas.push(...lote)
     if (lote.length < PAGINA) break
   }
-  // Agrupa por SN (normalizado): status = o mais recente (linhas já vêm desc por data_hora), vezes = nº de registros.
-  const porSn = new Map<string, SnDoPosto>()
+  const alvo = posto.toLowerCase()
+  const hist = new Map<string, SnDoPosto>() // histórico NO posto
+  const atual = new Map<string, { posto: string; status: string; sn: string }>() // posição atual (1º visto = mais recente)
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
-    const atual = porSn.get(chave)
-    if (atual) atual.vezes += 1
-    else porSn.set(chave, { sn: l.numero_serie, status: l.status, vezes: 1 })
+    if (!atual.has(chave)) atual.set(chave, { posto: l.posto, status: l.status, sn: l.numero_serie })
+    if (l.posto.toLowerCase() === alvo) {
+      const a = hist.get(chave)
+      if (a) a.vezes += 1
+      else hist.set(chave, { sn: l.numero_serie, status: l.status, vezes: 1 })
+    }
   }
-  return [...porSn.values()].sort((a, b) => a.sn.localeCompare(b.sn))
+  const agora: SnDoPosto[] = []
+  for (const v of atual.values()) {
+    if (v.posto.toLowerCase() === alvo && v.status.toLowerCase() !== 'reprovado') {
+      agora.push({ sn: v.sn, status: v.status, vezes: 1 })
+    }
+  }
+  const ordena = (a: SnDoPosto, b: SnDoPosto) => a.sn.localeCompare(b.sn)
+  return { agora: agora.sort(ordena), historico: [...hist.values()].sort(ordena) }
 }
 
 /**
