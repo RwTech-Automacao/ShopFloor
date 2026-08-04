@@ -54,11 +54,12 @@ export async function carregarSnsDoPosto(pmo: string, op: string, posto: string)
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,data_hora')
+      .select('numero_serie,numero_serie_norm,status,data_hora,id')
       .eq('pmo', pmo)
       .eq('op', op)
       .ilike('posto', posto)
       .order('data_hora', { ascending: false })
+      .order('id', { ascending: false }) // desempate estável: sem isso, data_hora empatado embaralha as páginas (repete/pula SN)
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (error) throw error
     const lote = (data ?? []) as typeof linhas
