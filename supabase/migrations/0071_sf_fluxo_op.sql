@@ -18,6 +18,9 @@ stable
 security definer
 set search_path = public
 as $$
+-- OUT columns do RETURNS TABLE (posto/wip/...) viram variáveis no plpgsql e colidiriam
+-- com as colunas homônimas das CTEs; use_column resolve toda referência bare como coluna.
+#variable_conflict use_column
 begin
   if not tem_permissao('visualizar') then
     raise exception 'SEM_PERMISSAO';
