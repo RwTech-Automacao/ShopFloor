@@ -17,7 +17,8 @@ function paraEdges(es: FluxoEdge[]): Edge[] {
   return es.map((e) => ({
     id: e.id, source: e.source, target: e.target,
     animated: e.tipo === 'reprova',
-    style: e.tipo === 'reprova' ? { strokeDasharray: '4 4', stroke: '#f59e0b' } : { stroke: '#a3a3a3' },
+    // reprova → Manutenção em vermelho do sistema (tracejada); cadeia em cinza.
+    style: e.tipo === 'reprova' ? { strokeDasharray: '4 4', stroke: '#8D2033' } : { stroke: '#94a3b8' },
   }))
 }
 
@@ -94,12 +95,11 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
         )}
 
-        <div className="relative h-[70vh] w-full overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+        <div className="relative h-[70vh] w-full overflow-hidden rounded-lg border border-border bg-neutral-100">
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
-            colorMode="dark"
             fitView
             nodesDraggable={false}
             nodesConnectable={false}
@@ -110,49 +110,49 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           </ReactFlow>
 
           {detalhe && (
-            <aside className="absolute right-0 top-0 flex h-full w-80 max-w-[85%] flex-col border-l border-neutral-800 bg-neutral-900/95 text-neutral-100 backdrop-blur">
-              <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+            <aside className="absolute right-0 top-0 flex h-full w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur">
+              <header className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{detalhe.posto}</p>
-                  <p className="text-xs text-neutral-400">
+                  <p className="text-xs text-muted-foreground">
                     {detalhe.ehManutencao ? 'Ramo · Manutenção' : detalhe.concluido ? 'Concluído' : detalhe.temStatus ? 'Teste/Inspeção' : 'Passagem'}
                   </p>
                 </div>
-                <button type="button" onClick={() => setAberto(null)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100" aria-label="Fechar">
+                <button type="button" onClick={() => setAberto(null)} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Fechar">
                   <X className="size-4" />
                 </button>
               </header>
 
               <div className="flex-1 overflow-y-auto px-4 py-3 text-sm">
                 {detalhe.ehManutencao ? (
-                  <p className="mb-3 text-amber-400">Em manutenção agora: <span className="font-bold">{detalhe.wip}</span></p>
+                  <p className="mb-3 text-enterplak">Em manutenção agora: <span className="font-bold">{detalhe.wip}</span></p>
                 ) : (
                   <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1">
                     <span>No posto agora: <span className="font-bold">{detalhe.wip}</span></span>
                     {detalhe.temStatus ? (
                       <>
-                        <span className="text-green-400">Aprov.: {detalhe.aprovadas}</span>
-                        <span className="text-red-400">Reprov.: {detalhe.reprovadas}</span>
-                        <span className="text-neutral-400">Retestes: {detalhe.retestes}</span>
+                        <span className="text-green-700">Aprov.: {detalhe.aprovadas}</span>
+                        <span className="text-red-600">Reprov.: {detalhe.reprovadas}</span>
+                        <span className="text-muted-foreground">Retestes: {detalhe.retestes}</span>
                       </>
                     ) : (
-                      <span className="text-neutral-400">Registradas: {detalhe.registros}</span>
+                      <span className="text-muted-foreground">Registradas: {detalhe.registros}</span>
                     )}
                   </div>
                 )}
 
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {detalhe.ehManutencao ? 'Peças travadas' : 'Nº de Série'} ({sns.length})
                 </p>
                 {carregandoSns ? (
-                  <p className="text-neutral-400">Carregando…</p>
+                  <p className="text-muted-foreground">Carregando…</p>
                 ) : (
                   <ul className="flex flex-col gap-0.5">
-                    {sns.length === 0 && <li className="text-neutral-500">—</li>}
+                    {sns.length === 0 && <li className="text-muted-foreground">—</li>}
                     {sns.map((s, i) => (
                       <li key={`${s.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
                         <span>{s.sn}</span>
-                        <span className="text-neutral-400">{s.status || '—'}{s.vezes > 1 ? ` ×${s.vezes}` : ''}</span>
+                        <span className="text-muted-foreground">{s.status || '—'}{s.vezes > 1 ? ` ×${s.vezes}` : ''}</span>
                       </li>
                     ))}
                   </ul>

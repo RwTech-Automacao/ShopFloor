@@ -27,36 +27,34 @@ function iconeDo(d: FluxoNodePayload) {
 function FluxoNodeBase({ data }: NodeProps) {
   const d = data as unknown as FluxoNodePayload
   const borda = d.selecionado
-    ? 'border-enterplak ring-2 ring-enterplak/50'
-    : d.concluido
+    ? 'border-enterplak ring-2 ring-enterplak/40'
+    : d.concluido || d.ehManutencao
       ? 'border-enterplak'
-      : d.ehManutencao
-        ? 'border-amber-500/70'
-        : 'border-neutral-700'
+      : 'border-border'
 
   return (
-    <div className={`w-[200px] rounded-xl border-2 bg-neutral-900 shadow-lg transition-colors ${borda}`}>
-      <Handle type="target" position={Position.Left} className="!border-neutral-600 !bg-neutral-400" />
+    <div className={`w-[200px] rounded-xl border-2 bg-card shadow-sm transition-colors ${borda}`}>
+      <Handle type="target" position={Position.Left} />
 
       <div className="flex items-center gap-2.5 px-3 py-2.5">
-        <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${d.ehManutencao ? 'bg-amber-500/15 text-amber-400' : 'bg-enterplak/15 text-enterplak'}`}>
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
           {iconeDo(d)}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-neutral-100">{d.posto}</p>
-          <p className="text-xs text-neutral-400">
+          <p className="truncate text-sm font-medium text-foreground">{d.posto}</p>
+          <p className="text-xs text-muted-foreground">
             {d.ehManutencao ? 'em manutenção' : d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end">
-          <span className={`rounded-md px-2 py-0.5 text-sm font-bold ${d.wip > 0 ? 'bg-enterplak text-white' : 'bg-neutral-800 text-neutral-500'}`}>
+          <span className={`rounded-md px-2 py-0.5 text-sm font-bold ${d.wip > 0 ? 'bg-enterplak text-white' : 'bg-muted text-muted-foreground'}`}>
             {d.wip}
           </span>
           {d.concluido && <Check className="mt-0.5 size-3.5 text-enterplak" />}
         </div>
       </div>
 
-      {!d.ehManutencao && <Handle type="source" position={Position.Right} className="!border-neutral-600 !bg-neutral-400" />}
+      {!d.ehManutencao && <Handle type="source" position={Position.Right} />}
     </div>
   )
 }
