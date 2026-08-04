@@ -1,19 +1,17 @@
 'use client'
 
-import { useCallback, useState, useTransition } from 'react'
-import { ReactFlow, Background, Controls, type Node, type Edge } from '@xyflow/react'
+import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
+import { ReactFlow, Background, Controls, type Node, type Edge, type NodeTypes } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { carregarFluxo } from '@/modules/shopfloor/application/fluxo-actions'
-import type { OpItem } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxo, snsDoPosto } from '@/modules/shopfloor/application/fluxo-actions'
+import type { OpItem, SnDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
 import type { FluxoNodePos, FluxoEdge } from '@/modules/shopfloor/domain/fluxo-op'
+import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 
-function paraNodes(pos: FluxoNodePos[]): Node[] {
-  return pos.map((n) => ({ id: n.id, position: { x: n.x, y: n.y }, data: { label: `${n.data.posto} · ${n.data.wip}` } }))
-}
 function paraEdges(es: FluxoEdge[]): Edge[] {
   return es.map((e) => ({
     id: e.id, source: e.source, target: e.target,
@@ -24,24 +22,55 @@ function paraEdges(es: FluxoEdge[]): Edge[] {
 
 export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [sel, setSel] = useState('')
-  const [nodes, setNodes] = useState<Node[]>([])
+  const [dom, setDom] = useState<FluxoNodePos[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
+  const [aberto, setAberto] = useState<string | null>(null)
+  const [sns, setSns] = useState<SnDoPosto[]>([])
   const [buscou, setBuscou] = useState(false)
   const [carregando, startCarregar] = useTransition()
+  const [carregandoSns, startSns] = useTransition()
+  const ctx = useRef<{ pmo: string; op: string }>({ pmo: '', op: '' })
+
+  const nodeTypes = useMemo<NodeTypes>(() => ({ fluxo: FluxoNode }), [])
+
+  const onAbrir = useCallback((posto: string) => {
+    setAberto((a) => (a === posto ? null : posto))
+    setSns([])
+    if (aberto === posto) return
+    const { pmo, op } = ctx.current
+    startSns(async () => {
+      const r = await snsDoPosto(pmo, op, posto)
+      if (r.ok) setSns(r.sns)
+      else toast.error(r.erro)
+    })
+  }, [aberto])
 
   const escolher = useCallback((v: string) => {
-    setSel(v)
-    setBuscou(false)
+    setSel(v); setBuscou(false); setAberto(null); setSns([])
     const [pmo, op] = v.split('||')
     if (!pmo || !op) return
+    ctx.current = { pmo, op }
     startCarregar(async () => {
       const r = await carregarFluxo(pmo, op)
       if (!r.ok) { toast.error(r.erro); return }
-      setNodes(paraNodes(r.nodes))
+      setDom(r.nodes)
       setEdges(paraEdges(r.edges))
       setBuscou(true)
     })
   }, [])
+
+  const nodes = useMemo<Node[]>(() => dom.map((n) => ({
+    id: n.id,
+    type: 'fluxo',
+    position: { x: n.x, y: n.y },
+    data: {
+      ...n.data,
+      aberto: aberto === n.id,
+      carregandoSns: aberto === n.id && carregandoSns,
+      sns: aberto === n.id ? sns : [],
+      onAbrir,
+    } satisfies FluxoNodePayload,
+  })), [dom, aberto, sns, carregandoSns, onAbrir])
 
   return (
     <Card>
@@ -66,7 +95,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
         )}
 
         <div className="h-[70vh] w-full rounded-lg border border-border">
-          <ReactFlow nodes={nodes} edges={edges} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}>
+          <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}>
             <Background />
             <Controls showInteractive={false} />
           </ReactFlow>
