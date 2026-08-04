@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  perfilTemStatus, perfilPrecisaAprovado, perfilExigeManutencao,
+  perfilTemStatus, perfilPrecisaAprovado, perfilExigeManutencao, perfilPedeConfirmacaoConserto,
   montarLinhasPerfil, obrigatoriosPorPerfil, PERFIL_PADRAO, type PerfilPosto,
 } from '../perfil-posto'
 
@@ -14,6 +14,16 @@ describe('flags por perfil', () => {
     expect(perfilPrecisaAprovado(P({ gate: 'aprovado' }))).toBe(true)
     expect(perfilPrecisaAprovado(P({ gate: 'registrado' }))).toBe(false)
     expect(perfilExigeManutencao(P({ exigeManutencao: true }))).toBe(true)
+  })
+
+  it('pedeConfirmacaoConserto: coleta defeito E sem manutenção', () => {
+    // inspeção que conserta no próprio posto → pede confirmação
+    expect(perfilPedeConfirmacaoConserto(P({ reprova: 'defeitos', exigeManutencao: false }))).toBe(true)
+    expect(perfilPedeConfirmacaoConserto(P({ reprova: 'posicoes', exigeManutencao: false }))).toBe(true)
+    // vai pra manutenção → NÃO pede (tem reparo próprio)
+    expect(perfilPedeConfirmacaoConserto(P({ reprova: 'defeitos', exigeManutencao: true }))).toBe(false)
+    // não coleta defeito → NÃO pede
+    expect(perfilPedeConfirmacaoConserto(P({ reprova: 'nenhum', exigeManutencao: false }))).toBe(false)
   })
 })
 

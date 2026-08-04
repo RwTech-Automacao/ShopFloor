@@ -11,9 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
-import { PERFIL_PADRAO, perfilTemStatus, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
+import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
-import { lancar, buscarEntradaBurnin } from '@/modules/shopfloor/application/lancar-action'
+import { lancar, buscarEntradaBurnin, verificarConserto } from '@/modules/shopfloor/application/lancar-action'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
@@ -28,6 +28,15 @@ interface DefeitoLinha {
   codigo: string
   posicao: string
   tipo: string
+}
+
+/** Texto curto de um defeito para o diálogo de confirmação de conserto. */
+function descreverDefeito(d: { codigo: string; posicao: string; tipo: string }): string {
+  const partes: string[] = []
+  if (d.posicao.trim()) partes.push(`Posição ${d.posicao.trim()}`)
+  if (d.codigo.trim()) partes.push(`Cód ${d.codigo.trim()}`)
+  if (d.tipo.trim()) partes.push(d.tipo.trim())
+  return partes.join(' · ') || 'defeito relatado'
 }
 
 export function LancamentoForm({
@@ -153,6 +162,23 @@ export function LancamentoForm({
         }
       }
     }
+    // Confirmação de conserto: ao APROVAR num posto que coleta defeito e conserta no próprio posto,
+    // se o último registro da peça ali foi reprova, confirmar que o defeito foi consertado.
+    let conservoConfirmado: { codigo: string; posicao: string; tipo: string }[] | undefined
+    if (!ehBurnin && comStatus && status === 'Aprovado' && perfilPedeConfirmacaoConserto(perfilDo(posto))) {
+      const defeitos = await verificarConserto(pmo, op, numeroSerie, posto)
+      if (defeitos && defeitos.length > 0) {
+        const lista = defeitos.map(descreverDefeito).join(' · ')
+        const ok = await confirmar({
+          titulo: 'Confirmar conserto do defeito?',
+          descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
+          rotuloConfirmar: 'Sim, foi consertado',
+        })
+        if (!ok) return
+        conservoConfirmado = defeitos
+      }
+    }
+
     startTransition(async () => {
       const r = await lancar({
         colaborador,
@@ -169,6 +195,7 @@ export function LancamentoForm({
             ? defeitosSel.filter((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
             : undefined,
         posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
+        conservoConfirmado,
       })
       if (r.ok) {
         setResultado({

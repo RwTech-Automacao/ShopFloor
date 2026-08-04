@@ -9,10 +9,14 @@ import {
   perfilTemStatus,
   perfilPrecisaAprovado,
   perfilExigeManutencao,
+  perfilPedeConfirmacaoConserto,
   montarLinhasPerfil,
   obrigatoriosPorPerfil,
 } from '../domain/perfil-posto'
-import { carregarOrdem, chamarSfLancar, chamarSfBurnin, buscarEntradaBurninAberta } from '../infra/lancamento-repository'
+import {
+  carregarOrdem, chamarSfLancar, chamarSfBurnin, buscarEntradaBurninAberta,
+  buscarUltimaReprovaDoPosto, inserirConservoConfirmado, type DefeitoConfirmavel,
+} from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 
 export interface EntradaLancamento {
@@ -29,6 +33,8 @@ export interface EntradaLancamento {
   defeitos?: { codigo: string; posicao: string; tipo: string }[]
   posicoesSPI?: string[]
   burninEvento?: 'entrada' | 'saida'
+  /** Defeitos que o operador confirmou terem sido consertados (auditoria ao aprovar). */
+  conservoConfirmado?: DefeitoConfirmavel[]
 }
 
 export type ResultadoLancamento = { ok: true; caixaCount?: number } | { ok: false; erro: string }
@@ -196,7 +202,44 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
   })
 
   if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
+
+  // Auditoria de conserto confirmado (só quando o operador confirmou no diálogo, ao aprovar).
+  // Secundária: se falhar, o lançamento já ocorreu — não bloqueia o chão de fábrica.
+  if (entrada.conservoConfirmado?.length) {
+    try {
+      await inserirConservoConfirmado(
+        entrada.conservoConfirmado.map((d) => ({
+          colaborador: entrada.colaborador.trim(), pmo: entrada.pmo, op: entrada.op,
+          numeroSerie: limparSerie(entrada.numeroSerie), numeroSerieNorm: normalizarSerie(entrada.numeroSerie),
+          posto: entrada.posto, codigo: d.codigo, posicao: d.posicao, tipo: d.tipo,
+        })),
+      )
+    } catch {
+      // ignora: auditoria é secundária
+    }
+  }
+
   return { ok: true, caixaCount: r.caixa_count }
+}
+
+/**
+ * Ao aprovar: se o posto pede confirmação de conserto (coleta defeito + sem manutenção) e o
+ * último registro da peça neste posto foi uma reprova, devolve os defeitos a confirmar. Senão, null.
+ * Fail-open: erro no lookup não bloqueia (retorna null).
+ */
+export async function verificarConserto(
+  pmo: string, op: string, numeroSerie: string, posto: string,
+): Promise<DefeitoConfirmavel[] | null> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return null
+  try {
+    const mapa = await mapaPostoPerfil()
+    const perfil = mapa[posto] ?? PERFIL_PADRAO
+    if (!perfilPedeConfirmacaoConserto(perfil)) return null
+    return await buscarUltimaReprovaDoPosto(pmo, op, normalizarSerie(numeroSerie), posto)
+  } catch {
+    return null
+  }
 }
 
 export async function buscarEntradaBurnin(pmo: string, op: string, numeroSerie: string, posto: string): Promise<string | null> {

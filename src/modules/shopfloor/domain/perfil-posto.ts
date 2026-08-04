@@ -24,6 +24,13 @@ export const perfilPrecisaAprovado = (p: PerfilPosto): boolean => p.gate === 'ap
 export const perfilExigeManutencao = (p: PerfilPosto): boolean => p.exigeManutencao
 
 /**
+ * Posto que coleta defeito na reprova E conserta no próprio posto (não vai pra Manutenção).
+ * Nesses, ao APROVAR uma peça que tinha reprova, pedimos confirmação de que o defeito foi consertado.
+ */
+export const perfilPedeConfirmacaoConserto = (p: PerfilPosto): boolean =>
+  p.reprova !== 'nenhum' && !p.exigeManutencao
+
+/**
  * Perfis NÃO oferecidos no Cadastrar Posto (singletons "bespoke"): o comportamento está
  * amarrado ao NOME/estado de UM posto, então um SEGUNDO posto com esse perfil não funciona:
  *  - manutencao: posto paralelo (tela de reparo própria), fora do fluxo.
