@@ -133,8 +133,8 @@ export function EmbalagemPanel({
 
   const pct = Math.min(100, Math.round((qtdNaCaixa / limite) * 100))
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+    <Card className="flex min-h-0 flex-col">
+      <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Caixa CX{seq} <span className="text-sm font-normal text-muted-foreground">· limite {limite}</span></CardTitle>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-sm">
@@ -145,9 +145,11 @@ export function EmbalagemPanel({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <PainelResultado resultado={resultado} />
-        <div>
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+        <div className="shrink-0">
+          <PainelResultado resultado={resultado} />
+        </div>
+        <div className="shrink-0">
           <div className="mb-1 flex justify-between text-sm">
             <span className="font-medium">{qtdNaCaixa} / {limite} nesta caixa</span>
             <span className="text-muted-foreground">Total: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}</span>
@@ -157,16 +159,16 @@ export function EmbalagemPanel({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_16rem]">
-          <div className="flex flex-col gap-1.5">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-[1fr_16rem]">
+          <div className="flex shrink-0 flex-col gap-1.5">
             <Label htmlFor="snCaixa">Nº de Série</Label>
             <Input id="snCaixa" ref={snRef} value={sn} onChange={(e) => setSn(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBipar() } }}
               placeholder="Bipe a peça" autoComplete="off" autoFocus className="h-12 text-lg" disabled={embalando} />
           </div>
-          <div className="rounded-lg border border-border p-2">
-            <p className="mb-1 text-xs font-medium text-muted-foreground">Últimas nesta caixa</p>
-            <ul className="flex flex-col gap-0.5 text-sm">
+          <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
+            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Últimas nesta caixa</p>
+            <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto text-sm">
               {ultimasSns.length === 0 && <li className="text-muted-foreground">—</li>}
               {ultimasSns.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
             </ul>
