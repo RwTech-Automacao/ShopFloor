@@ -134,13 +134,15 @@ export function IntegracaoPanel({
   const contador = useMemo(() => `${preenchidas} / ${componentes.length} placas`, [preenchidas, componentes.length])
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex min-h-0 flex-col">
+      <CardHeader className="shrink-0">
         <CardTitle>Integração</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <PainelResultado resultado={resultado} />
-        <div className="flex flex-col gap-1.5">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+        <div className="shrink-0">
+          <PainelResultado resultado={resultado} />
+        </div>
+        <div className="flex shrink-0 flex-col gap-1.5">
           <Label>Descrição</Label>
           <Input value={descricao} readOnly disabled />
         </div>
@@ -151,7 +153,7 @@ export function IntegracaoPanel({
           </p>
         ) : (
           <>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex shrink-0 flex-col gap-1.5">
               <Label htmlFor="bipePlaca">Bipe a placa</Label>
               <Input
                 id="bipePlaca"
@@ -168,7 +170,7 @@ export function IntegracaoPanel({
             </div>
 
             {ambiguo && (
-              <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40">
+              <div className="shrink-0 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40">
                 <p className="mb-2 text-sm font-medium">
                   O SN <span className="font-mono">{ambiguo.sn}</span> aparece em mais de uma PMO da receita — escolha a qual associar:
                 </p>
@@ -191,14 +193,14 @@ export function IntegracaoPanel({
               </div>
             )}
 
-            <div>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium">
                   Receita <span className="font-normal text-muted-foreground">· 1 placa por PMO</span>
                 </p>
                 <span className="text-sm text-muted-foreground">{contador}</span>
               </div>
-              <div className="overflow-x-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -231,7 +233,7 @@ export function IntegracaoPanel({
           </>
         )}
 
-        <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-[1fr_auto]">
+        <div className="grid shrink-0 grid-cols-1 items-end gap-4 sm:grid-cols-[1fr_auto]">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="produtoSN">Produto Final (Nº de Série)</Label>
             <Input
