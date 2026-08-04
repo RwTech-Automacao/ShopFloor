@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
@@ -33,6 +33,8 @@ import {
   ChevronDown,
   Menu,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -126,6 +128,16 @@ export function AppShell({
 }) {
   const pathname = usePathname()
   const [mobileAberto, setMobileAberto] = useState(false)
+  const [menuRecolhido, setMenuRecolhido] = useState(false)
+  useEffect(() => {
+    if (localStorage.getItem('sf:menu-recolhido') === '1') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMenuRecolhido(true)
+    }
+  }, [])
+  useEffect(() => {
+    localStorage.setItem('sf:menu-recolhido', menuRecolhido ? '1' : '0')
+  }, [menuRecolhido])
   const pode = (item: FolhaModular) => podeNoModulo(perfil, item.modulo, item.perm)
 
   const recebimentoVisivel = RECEBIMENTO.filter(
@@ -355,7 +367,14 @@ export function AppShell({
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
-      <aside className="hidden w-64 shrink-0 lg:block">{sidebar}</aside>
+      <aside
+        className={cn(
+          'hidden shrink-0 overflow-hidden transition-[width] duration-200 lg:block',
+          menuRecolhido ? 'lg:w-0' : 'lg:w-64',
+        )}
+      >
+        {sidebar}
+      </aside>
 
       {mobileAberto && (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -366,6 +385,14 @@ export function AppShell({
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setMenuRecolhido((v) => !v)}
+            className="-ml-1 hidden rounded-md p-2 text-muted-foreground hover:bg-accent lg:inline-flex"
+            aria-label={menuRecolhido ? 'Mostrar menu' : 'Recolher menu'}
+          >
+            {menuRecolhido ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
+          </button>
           <button
             type="button"
             onClick={() => setMobileAberto(true)}
