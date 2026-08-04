@@ -18,22 +18,29 @@ export async function listarOrdens(): Promise<OpItem[]> {
   return (data ?? []) as OpItem[]
 }
 
-/** Postos ordenados do fluxo + agregados (RPC) + mapa temStatus por posto. */
+/** Postos ordenados do fluxo + agregados (RPC) + mapa temStatus/recurso por posto + qtd da OP. */
 export async function carregarFluxoOp(
   pmo: string,
   op: string,
-): Promise<{ postos: string[]; agregados: FluxoAgregado[]; temStatus: Record<string, boolean> }> {
+): Promise<{
+  postos: string[]
+  agregados: FluxoAgregado[]
+  temStatus: Record<string, boolean>
+  recurso: Record<string, string>
+  qtd: number | null
+}> {
   const supabase = await createServerSupabase()
 
   const { data: ordem, error: e1 } = await supabase
     .from('sf_ordens')
-    .select('sf_ordem_postos(posto,ordem)')
+    .select('qtd,sf_ordem_postos(posto,ordem)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
   if (e1) throw e1
   const lista = ((ordem?.sf_ordem_postos ?? []) as { posto: string; ordem: number }[])
   const postos = [...lista].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto)
+  const qtd = (ordem?.qtd ?? null) as number | null
 
   const { data: agg, error: e2 } = await supabase.rpc('sf_fluxo_op', { p_pmo: pmo, p_op: op })
   if (e2) throw e2
@@ -41,9 +48,13 @@ export async function carregarFluxoOp(
 
   const perfis = await mapaPostoPerfil()
   const temStatus: Record<string, boolean> = {}
-  for (const p of postos) temStatus[p] = perfis[p]?.temStatus ?? false
+  const recurso: Record<string, string> = {}
+  for (const p of postos) {
+    temStatus[p] = perfis[p]?.temStatus ?? false
+    recurso[p] = perfis[p]?.recurso ?? 'nenhum'
+  }
 
-  return { postos, agregados, temStatus }
+  return { postos, agregados, temStatus, recurso, qtd }
 }
 
 /** SNs registrados num posto da OP (lazy, ao abrir o nó). Paginado. */

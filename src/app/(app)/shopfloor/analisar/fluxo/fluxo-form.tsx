@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
-import { ReactFlow, Background, Controls, type Node, type Edge, type NodeTypes } from '@xyflow/react'
+import { ReactFlow, Background, Controls, type Node, type Edge, type NodeTypes, type NodeMouseHandler } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -16,7 +17,7 @@ function paraEdges(es: FluxoEdge[]): Edge[] {
   return es.map((e) => ({
     id: e.id, source: e.source, target: e.target,
     animated: e.tipo === 'reprova',
-    style: e.tipo === 'reprova' ? { strokeDasharray: '4 4' } : undefined,
+    style: e.tipo === 'reprova' ? { strokeDasharray: '4 4', stroke: '#f59e0b' } : { stroke: '#a3a3a3' },
   }))
 }
 
@@ -33,19 +34,20 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
 
   const nodeTypes = useMemo<NodeTypes>(() => ({ fluxo: FluxoNode }), [])
 
-  const onAbrir = useCallback((posto: string) => {
-    setAberto((a) => (a === posto ? null : posto))
+  const abrir = useCallback((id: string) => {
     setSns([])
-    if (aberto === posto) return
+    setAberto((a) => (a === id ? null : id))
+    if (aberto === id) return
     const { pmo, op } = ctx.current
     startSns(async () => {
-      // Manutenção é ramo: o detalhe são as peças que estão nela agora (último bipe reprovado),
-      // coerente com o badge (WIP). Os demais postos listam quem passou por ali (histórico).
-      const r = posto === MANUTENCAO ? await snsManutencao(pmo, op) : await snsDoPosto(pmo, op, posto)
+      // Manutenção é ramo: detalhe = peças que estão nela agora (último bipe reprovado), coerente com o badge.
+      const r = id === MANUTENCAO ? await snsManutencao(pmo, op) : await snsDoPosto(pmo, op, id)
       if (r.ok) setSns(r.sns)
       else toast.error(r.erro)
     })
   }, [aberto])
+
+  const onNodeClick = useCallback<NodeMouseHandler>((_, node) => abrir(node.id), [abrir])
 
   const escolher = useCallback((v: string) => {
     setSel(v); setBuscou(false); setAberto(null); setSns([])
@@ -65,14 +67,10 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     id: n.id,
     type: 'fluxo',
     position: { x: n.x, y: n.y },
-    data: {
-      ...n.data,
-      aberto: aberto === n.id,
-      carregandoSns: aberto === n.id && carregandoSns,
-      sns: aberto === n.id ? sns : [],
-      onAbrir,
-    } satisfies FluxoNodePayload,
-  })), [dom, aberto, sns, carregandoSns, onAbrir])
+    data: { ...n.data, selecionado: aberto === n.id } satisfies FluxoNodePayload,
+  })), [dom, aberto])
+
+  const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
 
   return (
     <Card>
@@ -96,11 +94,72 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
         )}
 
-        <div className="h-[70vh] w-full rounded-lg border border-border">
-          <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}>
+        <div className="relative h-[70vh] w-full overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            colorMode="dark"
+            fitView
+            nodesDraggable={false}
+            nodesConnectable={false}
+            onNodeClick={onNodeClick}
+          >
             <Background />
             <Controls showInteractive={false} />
           </ReactFlow>
+
+          {detalhe && (
+            <aside className="absolute right-0 top-0 flex h-full w-80 max-w-[85%] flex-col border-l border-neutral-800 bg-neutral-900/95 text-neutral-100 backdrop-blur">
+              <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{detalhe.posto}</p>
+                  <p className="text-xs text-neutral-400">
+                    {detalhe.ehManutencao ? 'Ramo · Manutenção' : detalhe.concluido ? 'Concluído' : detalhe.temStatus ? 'Teste/Inspeção' : 'Passagem'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setAberto(null)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100" aria-label="Fechar">
+                  <X className="size-4" />
+                </button>
+              </header>
+
+              <div className="flex-1 overflow-y-auto px-4 py-3 text-sm">
+                {detalhe.ehManutencao ? (
+                  <p className="mb-3 text-amber-400">Em manutenção agora: <span className="font-bold">{detalhe.wip}</span></p>
+                ) : (
+                  <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1">
+                    <span>No posto agora: <span className="font-bold">{detalhe.wip}</span></span>
+                    {detalhe.temStatus ? (
+                      <>
+                        <span className="text-green-400">Aprov.: {detalhe.aprovadas}</span>
+                        <span className="text-red-400">Reprov.: {detalhe.reprovadas}</span>
+                        <span className="text-neutral-400">Retestes: {detalhe.retestes}</span>
+                      </>
+                    ) : (
+                      <span className="text-neutral-400">Registradas: {detalhe.registros}</span>
+                    )}
+                  </div>
+                )}
+
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  {detalhe.ehManutencao ? 'Peças travadas' : 'Nº de Série'} ({sns.length})
+                </p>
+                {carregandoSns ? (
+                  <p className="text-neutral-400">Carregando…</p>
+                ) : (
+                  <ul className="flex flex-col gap-0.5">
+                    {sns.length === 0 && <li className="text-neutral-500">—</li>}
+                    {sns.map((s, i) => (
+                      <li key={`${s.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
+                        <span>{s.sn}</span>
+                        <span className="text-neutral-400">{s.status || '—'}{s.vezes > 1 ? ` ×${s.vezes}` : ''}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </aside>
+          )}
         </div>
       </CardContent>
     </Card>

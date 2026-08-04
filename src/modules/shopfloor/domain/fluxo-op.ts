@@ -1,6 +1,6 @@
 export const MANUTENCAO = 'Manutenção'
-const ESPACO_X = 220
-const Y_MANUTENCAO = 180
+const ESPACO_X = 260
+const Y_MANUTENCAO = 220
 
 export interface FluxoAgregado {
   posto: string
@@ -14,6 +14,10 @@ export interface FluxoAgregado {
 export interface FluxoNodeData extends FluxoAgregado {
   ehManutencao: boolean
   temStatus: boolean
+  /** Recurso do perfil do posto (nenhum/caixa/nqa/integracao/burnin/manutencao) — define o ícone. */
+  recurso: string
+  /** Todas as peças da OP já passaram por este posto (passou ≥ qtd da OP). Manutenção nunca conclui. */
+  concluido: boolean
 }
 
 export interface FluxoNodePos {
@@ -35,17 +39,32 @@ function acharAgg(agregados: FluxoAgregado[], posto: string): FluxoAgregado | un
   return agregados.find((a) => a.posto.toLowerCase() === alvo)
 }
 
-function dados(posto: string, agregados: FluxoAgregado[], temStatus: boolean, ehManutencao: boolean): FluxoNodeData {
+function dados(
+  posto: string,
+  agregados: FluxoAgregado[],
+  temStatus: boolean,
+  ehManutencao: boolean,
+  recurso: string,
+  qtd: number | null,
+): FluxoNodeData {
   const a = acharAgg(agregados, posto)
+  const aprovadas = a?.aprovadas ?? 0
+  const registros = a?.registros ?? 0
+  // "Concluído" = todas as peças da OP já passaram por aqui (aprovadas p/ posto com status; registros p/ sem).
+  // Manutenção é ramo, não conclui.
+  const passou = temStatus ? aprovadas : registros
+  const concluido = !ehManutencao && qtd != null && qtd > 0 && passou >= qtd
   return {
     posto,
     wip: a?.wip ?? 0,
-    registros: a?.registros ?? 0,
-    aprovadas: a?.aprovadas ?? 0,
+    registros,
+    aprovadas,
     reprovadas: a?.reprovadas ?? 0,
     retestes: a?.retestes ?? 0,
     temStatus,
     ehManutencao,
+    recurso,
+    concluido,
   }
 }
 
@@ -54,12 +73,14 @@ export function construirFluxo(
   postosOrdenados: string[],
   agregados: FluxoAgregado[],
   temStatus: (posto: string) => boolean,
+  recursoDe: (posto: string) => string = () => 'nenhum',
+  qtd: number | null = null,
 ): { nodes: FluxoNodePos[]; edges: FluxoEdge[] } {
   const nodes: FluxoNodePos[] = postosOrdenados.map((posto, i) => ({
     id: posto,
     x: i * ESPACO_X,
     y: 0,
-    data: dados(posto, agregados, temStatus(posto), false),
+    data: dados(posto, agregados, temStatus(posto), false, recursoDe(posto), qtd),
   }))
 
   const xManut = postosOrdenados.length > 0 ? ((postosOrdenados.length - 1) * ESPACO_X) / 2 : 0
@@ -67,7 +88,7 @@ export function construirFluxo(
     id: MANUTENCAO,
     x: xManut,
     y: Y_MANUTENCAO,
-    data: dados(MANUTENCAO, agregados, false, true),
+    data: dados(MANUTENCAO, agregados, false, true, 'manutencao', qtd),
   })
 
   const edges: FluxoEdge[] = []

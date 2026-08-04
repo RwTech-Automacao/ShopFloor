@@ -2,69 +2,61 @@
 
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Wrench } from 'lucide-react'
+import {
+  Wrench, Package, GitMerge, Flame, ShieldCheck, ClipboardCheck, CircleDot, Check,
+} from 'lucide-react'
 import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
-import type { SnDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
 
 export interface FluxoNodePayload extends FluxoNodeData {
-  aberto: boolean
-  carregandoSns: boolean
-  sns: SnDoPosto[]
-  onAbrir: (posto: string) => void
+  selecionado: boolean
+}
+
+/** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus). */
+function iconeDo(d: FluxoNodePayload) {
+  const cls = 'size-5'
+  switch (d.recurso) {
+    case 'manutencao': return <Wrench className={cls} />
+    case 'caixa': return <Package className={cls} />
+    case 'integracao': return <GitMerge className={cls} />
+    case 'burnin': return <Flame className={cls} />
+    case 'nqa': return <ShieldCheck className={cls} />
+    default: return d.temStatus ? <ClipboardCheck className={cls} /> : <CircleDot className={cls} />
+  }
 }
 
 function FluxoNodeBase({ data }: NodeProps) {
   const d = data as unknown as FluxoNodePayload
-  return (
-    <div className={`min-w-44 rounded-xl border bg-card shadow-sm ${d.ehManutencao ? 'border-amber-500' : 'border-border'}`}>
-      {/* Todo nó pode ser destino (Manutenção é sempre target das arestas de reprova); só postos da cadeia são source. */}
-      <Handle type="target" position={Position.Left} />
-      <button
-        type="button"
-        onClick={() => d.onAbrir(d.posto)}
-        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
-      >
-        <span className="flex items-center gap-1.5 text-sm font-medium">
-          {d.ehManutencao && <Wrench className="size-3.5 text-amber-600" />}
-          {d.posto}
-        </span>
-        <span className={`rounded-md px-2 py-0.5 text-sm font-semibold ${d.wip > 0 ? 'bg-enterplak text-white' : 'bg-muted text-muted-foreground'}`}>
-          {d.wip}
-        </span>
-      </button>
+  const borda = d.selecionado
+    ? 'border-enterplak ring-2 ring-enterplak/50'
+    : d.concluido
+      ? 'border-enterplak'
+      : d.ehManutencao
+        ? 'border-amber-500/70'
+        : 'border-neutral-700'
 
-      {d.aberto && (
-        <div className="border-t border-border px-3 py-2 text-xs">
-          {d.ehManutencao ? (
-            <div className="mb-2 text-amber-700">Em manutenção agora: {d.wip}</div>
-          ) : d.temStatus ? (
-            <div className="mb-2 flex gap-3">
-              <span className="text-green-700">Aprov.: {d.aprovadas}</span>
-              <span className="text-red-600">Reprov.: {d.reprovadas}</span>
-              <span className="text-muted-foreground">Retestes: {d.retestes}</span>
-            </div>
-          ) : (
-            <div className="mb-2 text-muted-foreground">Registradas: {d.registros}</div>
-          )}
-          <p className="mb-1 font-medium text-muted-foreground">
-            {d.ehManutencao ? 'Peças travadas' : 'Nº de Série'} ({d.sns.length})
-          </p>
-          {d.carregandoSns ? (
-            <p className="text-muted-foreground">Carregando…</p>
-          ) : (
-            <ul className="flex max-h-40 flex-col gap-0.5 overflow-y-auto">
-              {d.sns.length === 0 && <li className="text-muted-foreground">—</li>}
-              {d.sns.map((s, i) => (
-                <li key={`${s.sn}-${i}`} className="flex justify-between gap-2 font-mono">
-                  <span>{s.sn}</span>
-                  <span className="text-muted-foreground">{s.status || '—'}{s.vezes > 1 ? ` ×${s.vezes}` : ''}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+  return (
+    <div className={`w-[200px] rounded-xl border-2 bg-neutral-900 shadow-lg transition-colors ${borda}`}>
+      <Handle type="target" position={Position.Left} className="!border-neutral-600 !bg-neutral-400" />
+
+      <div className="flex items-center gap-2.5 px-3 py-2.5">
+        <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${d.ehManutencao ? 'bg-amber-500/15 text-amber-400' : 'bg-enterplak/15 text-enterplak'}`}>
+          {iconeDo(d)}
         </div>
-      )}
-      {!d.ehManutencao && <Handle type="source" position={Position.Right} />}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-neutral-100">{d.posto}</p>
+          <p className="text-xs text-neutral-400">
+            {d.ehManutencao ? 'em manutenção' : d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col items-end">
+          <span className={`rounded-md px-2 py-0.5 text-sm font-bold ${d.wip > 0 ? 'bg-enterplak text-white' : 'bg-neutral-800 text-neutral-500'}`}>
+            {d.wip}
+          </span>
+          {d.concluido && <Check className="mt-0.5 size-3.5 text-enterplak" />}
+        </div>
+      </div>
+
+      {!d.ehManutencao && <Handle type="source" position={Position.Right} className="!border-neutral-600 !bg-neutral-400" />}
     </div>
   )
 }

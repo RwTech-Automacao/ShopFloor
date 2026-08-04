@@ -9,9 +9,10 @@ describe('construirFluxo', () => {
     const ids = nodes.map((n) => n.id)
     expect(ids).toEqual(['Solda', 'Teste', MANUTENCAO])
     expect(nodes[0].x).toBe(0)
-    expect(nodes[1].x).toBe(220)
-    expect(nodes.find((n) => n.id === MANUTENCAO)!.ehManutencao ?? nodes.find((n) => n.id === MANUTENCAO)!.data.ehManutencao).toBe(true)
-    expect(nodes.find((n) => n.id === MANUTENCAO)!.y).toBe(180)
+    expect(nodes[1].x).toBe(260)
+    const manut = nodes.find((n) => n.id === MANUTENCAO)!
+    expect(manut.data.ehManutencao).toBe(true)
+    expect(manut.y).toBe(220)
   })
 
   it('encaixa os agregados no nó certo (case-insensitive) e aplica temStatus', () => {
@@ -38,5 +39,28 @@ describe('construirFluxo', () => {
     expect(edges).toContainEqual({ id: 'f:Solda->Teste', source: 'Solda', target: 'Teste', tipo: 'fluxo' })
     expect(edges).toContainEqual({ id: 'r:Teste', source: 'Teste', target: MANUTENCAO, tipo: 'reprova' })
     expect(edges.some((e) => e.id === 'r:Solda')).toBe(false)
+  })
+
+  it('marca concluído quando passou ≥ qtd da OP (aprovadas p/ com status; registros p/ sem)', () => {
+    const agg: FluxoAgregado[] = [
+      { ...zero('Teste'), aprovadas: 100, registros: 130 }, // com status: usa aprovadas
+      { ...zero('Embalagem'), aprovadas: 0, registros: 100 }, // sem status: usa registros
+      { ...zero('Solda'), aprovadas: 40, registros: 40 }, // faltou
+    ]
+    const { nodes } = construirFluxo(['Solda', 'Teste', 'Embalagem'], agg, (p) => p === 'Teste', () => 'nenhum', 100)
+    const de = (id: string) => nodes.find((n) => n.id === id)!.data
+    expect(de('Teste').concluido).toBe(true)
+    expect(de('Embalagem').concluido).toBe(true)
+    expect(de('Solda').concluido).toBe(false)
+    // Manutenção nunca conclui; sem qtd também não conclui
+    expect(de(MANUTENCAO).concluido).toBe(false)
+    const semQtd = construirFluxo(['Teste'], agg, () => true).nodes.find((n) => n.id === 'Teste')!.data
+    expect(semQtd.concluido).toBe(false)
+  })
+
+  it('passa o recurso pro nó (define o ícone); Manutenção recebe recurso manutencao', () => {
+    const { nodes } = construirFluxo(['Burn-in'], [], () => false, (p) => (p === 'Burn-in' ? 'burnin' : 'nenhum'))
+    expect(nodes.find((n) => n.id === 'Burn-in')!.data.recurso).toBe('burnin')
+    expect(nodes.find((n) => n.id === MANUTENCAO)!.data.recurso).toBe('manutencao')
   })
 })
