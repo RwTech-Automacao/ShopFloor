@@ -404,7 +404,6 @@ export function LancamentoForm({
                     onChange={(e) => setNumeroSerie(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (ehScanner) { onAcao() } else { onEnviar() } } }}
                     autoComplete="off"
-                    autoFocus
                     className="h-12 text-lg"
                     placeholder={ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série'}
                   />
