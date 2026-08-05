@@ -50,6 +50,11 @@ export function ReprovarModal({
       setErro('Informe ao menos um defeito com código e posição')
       return
     }
+    if (sn.trim() === '') {
+      setErro('Bipe o Nº de Série da peça')
+      snRef.current?.focus()
+      return
+    }
     if (snEsperado !== '' && norm(sn) !== norm(snEsperado)) {
       setErro('SN diferente — bipe a mesma peça')
       snRef.current?.select()
