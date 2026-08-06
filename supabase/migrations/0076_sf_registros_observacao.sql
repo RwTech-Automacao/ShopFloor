@@ -8,6 +8,11 @@
 -- =============================================================
 alter table public.sf_registros add column if not exists observacao text not null default '';
 
+-- A assinatura muda (ganha p_observacao) → aridade diferente. Sem o drop, o create or replace
+-- criaria uma SEGUNDA função e deixaria a versão antiga (17 params, sem observacao) viva.
+-- Removemos a versão antiga primeiro (mesma abordagem do 0033).
+drop function if exists public.sf_lancar(text,text,text,text,text,text,text,text,boolean,text,int,text,text,text,boolean,jsonb,boolean);
+
 create or replace function public.sf_lancar(
   p_pmo                  text,
   p_op                   text,
