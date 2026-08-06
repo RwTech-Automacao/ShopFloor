@@ -260,6 +260,7 @@ export function LancamentoForm({
     const sn = aprovarSn
     if (sn === null || enviando) return
     setAprovarSn(null) // fecha o modal na hora
+    setTimeout(() => snRef.current?.focus(), 0) // foco volta já; se houver diálogo de conserto, ele assume
 
     // Confirmação de conserto: se o posto pede e a peça tinha reprova, confirma que o defeito foi
     // consertado antes de gravar o Aprovado (mesma regra do fluxo antigo, agora no caminho scanner).
