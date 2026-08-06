@@ -84,6 +84,7 @@ export function LancamentoForm({
   const burninEventoTriggerRef = useRef<HTMLButtonElement>(null)
   const nqaVisualRef = useRef<HTMLInputElement>(null)
   const nqaFuncionalRef = useRef<HTMLInputElement>(null)
+  const nqaObservacaoRef = useRef<HTMLInputElement>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   const ordemSel = useMemo(
@@ -588,7 +589,7 @@ export function LancamentoForm({
                         value={nqaFuncional}
                         onKeyDown={(e) => {
                           const v = statusPorTecla(e.key, true)
-                          if (v) { e.preventDefault(); setNqaFuncional(v); setTimeout(() => snRef.current?.focus(), 0) }
+                          if (v) { e.preventDefault(); setNqaFuncional(v); setTimeout(() => nqaObservacaoRef.current?.focus(), 0) }
                         }}
                         placeholder="Aperte A, R ou N"
                         className={`h-12 text-lg ${nqaFuncional === 'Aprovado' ? 'text-green-700' : nqaFuncional === 'Reprovado' ? 'text-red-600' : ''}`}
@@ -598,9 +599,11 @@ export function LancamentoForm({
                       <Label htmlFor="nqaObservacao">Comentário</Label>
                       <Input
                         id="nqaObservacao"
+                        ref={nqaObservacaoRef}
                         value={observacao}
                         onChange={(e) => setObservacao(e.target.value)}
-                        placeholder="Comentário livre (opcional)"
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); snRef.current?.focus() } }}
+                        placeholder="Comentário livre (opcional) — Enter/Tab vai para o Nº de Série"
                         autoComplete="off"
                       />
                     </div>
