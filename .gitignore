@@ -48,3 +48,8 @@ next-env.d.ts
 .~lock.*#
 *.dump
 prod_*.sql
+
+# Dados reais de produção (não versionar)
+emb390*.csv
+emb390*.sql
+backup-processos.sql
