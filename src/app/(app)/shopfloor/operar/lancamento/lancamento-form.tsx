@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
-import { classificarAcao } from '@/modules/shopfloor/domain/acao-lancamento'
+import { classificarAcao, defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, buscarEntradaBurnin, verificarConserto } from '@/modules/shopfloor/application/lancar-action'
@@ -63,6 +63,7 @@ export function LancamentoForm({
   const [defeitosSel, setDefeitosSel] = useState<DefeitoLinha[]>([{ codigo: '', posicao: '', tipo: '' }])
   const [posicoesSPI, setPosicoesSPI] = useState<string[]>([''])
   const [burninEvento, setBurninEvento] = useState<'entrada' | 'saida'>('entrada')
+  const [observacao, setObservacao] = useState('')
   const [bipeCab, setBipeCab] = useState('')
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [aprovarSn, setAprovarSn] = useState<string | null>(null)
@@ -89,7 +90,9 @@ export function LancamentoForm({
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
   const ehIntegracao = posto !== '' && perfilDo(posto).recurso === 'integracao'
   // Postos de teste/inspeção com defeito: status implícito pelo que se bipa (SN→aprova, defeito→reprova).
-  const ehScanner = comStatus && !ehBurnin && !ehNqa && !ehSpi && perfilDo(posto).reprova === 'defeitos'
+  // SPI (migração 0075) também é reprova==='defeitos' → entra aqui (usa lista fixa de solda via defeitosPosto).
+  const ehScanner = comStatus && !ehBurnin && !ehNqa && perfilDo(posto).reprova === 'defeitos'
+  const defeitosPosto = useMemo(() => defeitosDoPosto(perfilDo(posto).chave, defeitos), [posto, defeitos, postosPerfil])
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
@@ -98,7 +101,7 @@ export function LancamentoForm({
   /** Limpa todos os campos dinâmicos da peça (evita dado velho ao trocar contexto/posto). */
   function resetCamposDinamicos() {
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    setNqaVisual(''); setNqaFuncional(''); setBurninEvento('entrada'); setResultado(null)
+    setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setBurninEvento('entrada'); setResultado(null)
   }
   /** Trocar entrada/saída limpa o status/defeitos (evita defeito velho da saída ao voltar p/ entrada). */
   function mudarBurninEvento(v: 'entrada' | 'saida') {
@@ -148,7 +151,7 @@ export function LancamentoForm({
   }, [colaborador, cliente, pmo, op, posto, numeroSerie, ordemSel, semFaixa, ehNqa, nqaVisual, nqaFuncional, mostraStatus, status, reprovado, ehSpi, posicoesSPI, defeitosSel])
 
   function limparPeca() {
-    setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional('')
+    setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao('')
     setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
     setTimeout(() => snRef.current?.focus(), 0)
   }
@@ -200,6 +203,7 @@ export function LancamentoForm({
         burninEvento: ehBurnin ? burninEvento : undefined,
         nqaVisual: ehNqa ? nqaVisual : undefined,
         nqaFuncional: ehNqa ? nqaFuncional : undefined,
+        observacao: ehNqa ? observacao : undefined,
         defeitos:
           reprovado && !ehSpi
             ? defeitosSel.filter((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
@@ -245,7 +249,7 @@ export function LancamentoForm({
       setResultado({ tipo: 'erro', titulo: 'Preencha Colaborador e Posto (com OP e faixa de Nº de Série) antes de bipar.' })
       return
     }
-    const r = classificarAcao(numeroSerie, defeitos, ordemSel.sn_ini, ordemSel.sn_fim)
+    const r = classificarAcao(numeroSerie, defeitosPosto, ordemSel.sn_ini, ordemSel.sn_fim)
     if (r.tipo === 'aprovado') {
       setAprovarSn(numeroSerie.trim())
     } else if (r.tipo === 'reprovado') {
@@ -447,7 +451,7 @@ export function LancamentoForm({
                   <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
                   {ehScanner && (
                     <datalist id="acao-defeitos-list">
-                      {defeitos.map((d) => <option key={d.codigo} value={d.codigo} />)}
+                      {defeitosPosto.map((d) => <option key={d.codigo} value={d.codigo} />)}
                     </datalist>
                   )}
                   <Input
@@ -502,29 +506,16 @@ export function LancamentoForm({
                         <SelectContent>{OPCOES_NQA_FUNCIONAL.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                  </div>
-                )}
-
-                {/* SPI reprovado → posições */}
-                {mostraStatus && ehSpi && reprovado && (
-                  <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-                    <Label>Posições reprovadas</Label>
-                    {posicoesSPI.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <Input
-                          value={p}
-                          onChange={(e) => setPosicoesSPI(posicoesSPI.map((x, idx) => (idx === i ? e.target.value : x)))}
-                          placeholder="Posição"
-                          className="sm:max-w-xs"
-                        />
-                        <button type="button" aria-label="Remover posição" onClick={() => setPosicoesSPI(posicoesSPI.length > 1 ? posicoesSPI.filter((_, idx) => idx !== i) : posicoesSPI)} className="text-muted-foreground hover:text-red-600 disabled:opacity-30" disabled={posicoesSPI.length <= 1}>
-                          <X className="size-4" />
-                        </button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={() => setPosicoesSPI([...posicoesSPI, ''])} className="self-start text-sm font-medium text-enterplak hover:underline">
-                      <Plus className="mr-1 inline size-4" /> Adicionar posição
-                    </button>
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label htmlFor="nqaObservacao">Comentário</Label>
+                      <Input
+                        id="nqaObservacao"
+                        value={observacao}
+                        onChange={(e) => setObservacao(e.target.value)}
+                        placeholder="Comentário livre (opcional)"
+                        autoComplete="off"
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -579,7 +570,7 @@ export function LancamentoForm({
       <ReprovarModal
         aberto={reprovarCodigo !== null}
         codigoInicial={reprovarCodigo ?? ''}
-        defeitosCatalogo={defeitos.map((d) => d.codigo)}
+        defeitosCatalogo={defeitosPosto.map((d) => d.codigo)}
         snEsperado=""
         onConfirmar={gravarReprovado}
         onCancelar={() => { setReprovarCodigo(null); setTimeout(() => snRef.current?.focus(), 0) }}
