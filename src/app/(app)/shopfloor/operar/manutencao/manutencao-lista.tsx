@@ -28,9 +28,11 @@ interface Conserto {
 export function ManutencaoLista({
   ocorrencias,
   defeitosCatalogo,
+  consertosCatalogo,
 }: {
   ocorrencias: Ocorrencia[]
   defeitosCatalogo: string[]
+  consertosCatalogo: string[]
 }) {
   const router = useRouter()
   const [fCliente, setFCliente] = useState('')
@@ -240,9 +242,12 @@ export function ManutencaoLista({
               </div>
               <div className="flex flex-col gap-2">
                 <Label>Consertos</Label>
+                <datalist id="consertos-list">
+                  {consertosCatalogo.map((c) => <option key={c} value={c} />)}
+                </datalist>
                 {consertos.map((c, i) => (
                   <div key={i} className="grid grid-cols-[1fr_120px_auto] items-center gap-2">
-                    <Input value={c.descricao} onChange={(e) => setConsertos(consertos.map((x, idx) => (idx === i ? { ...x, descricao: e.target.value } : x)))} placeholder="Descrição do conserto" />
+                    <Input list="consertos-list" value={c.descricao} onChange={(e) => setConsertos(consertos.map((x, idx) => (idx === i ? { ...x, descricao: e.target.value } : x)))} placeholder="Conserto (do catálogo)" autoComplete="off" />
                     <Input value={c.posicao} onChange={(e) => setConsertos(consertos.map((x, idx) => (idx === i ? { ...x, posicao: e.target.value } : x)))} placeholder="Posição" />
                     <button type="button" aria-label={`Remover conserto ${i + 1}`} onClick={() => setConsertos(consertos.length > 1 ? consertos.filter((_, idx) => idx !== i) : consertos)} disabled={consertos.length <= 1} className="text-muted-foreground hover:text-red-600 disabled:opacity-30">
                       <X className="size-4" />
