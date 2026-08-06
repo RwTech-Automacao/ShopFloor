@@ -60,7 +60,11 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
 
-  const mapa = await mapaPostoPerfil()
+  // Perfis e config da OP são independentes → buscar em paralelo (menos latência por lançamento).
+  const [mapa, ordem] = await Promise.all([
+    mapaPostoPerfil(),
+    carregarOrdem(entrada.pmo, entrada.op),
+  ])
   const perfil = mapa[entrada.posto] ?? PERFIL_PADRAO
 
   // Integração não é lançável aqui: exige o vínculo produto↔placas da tela de Integração.
@@ -102,8 +106,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     if (!val.ok) return { ok: false, erro: val.erro }
   }
 
-  // Config da OP.
-  const ordem = await carregarOrdem(entrada.pmo, entrada.op)
+  // Config da OP (já buscada em paralelo acima).
   if (!ordem) return { ok: false, erro: 'OP não encontrada.' }
 
   // Faixa de SN (OP sem faixa → barra).
