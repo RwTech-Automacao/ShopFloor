@@ -32,7 +32,7 @@ export function EmbalagemPanel({
     startCarregar(async () => {
       setResultado(null) // contexto novo (troca de OP/posto) → limpa o painel da ação anterior
       const r = await carregarEmbalagem(pmo, op, posto)
-      if (!r.ok) { setResultado({ tipo: 'erro', titulo: r.erro }); return }
+      if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
       setSeq(r.estado.seq)
       setLimite(r.estado.limite)
       setQtdNaCaixa(r.estado.qtdNaCaixa)
@@ -45,7 +45,7 @@ export function EmbalagemPanel({
 
   function definirLimite() {
     const n = Number(limiteInput)
-    if (!Number.isInteger(n) || n <= 0) { setResultado({ tipo: 'erro', titulo: 'Informe um limite válido (inteiro > 0).' }); return }
+    if (!Number.isInteger(n) || n <= 0) { setResultado({ tipo: 'aviso', titulo: 'Informe um limite válido (inteiro > 0).' }); return }
     setLimite(n)
     setTimeout(() => snRef.current?.focus(), 0)
   }
@@ -57,7 +57,7 @@ export function EmbalagemPanel({
       const r = await embalarPeca({ colaborador, pmo, op, posto, seq, limite, numeroSerie: alvo })
       if (!r.ok) {
         setResultado({
-          tipo: 'erro',
+          tipo: 'aviso',
           titulo: r.erro,
           chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
           dica: /cheia/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
@@ -90,7 +90,7 @@ export function EmbalagemPanel({
     }
     startFechar(async () => {
       const r = await fecharCaixa(pmo, op, posto, seq, ehUltima)
-      if (!r.ok) { setResultado({ tipo: 'erro', titulo: r.erro }); return }
+      if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
       setResultado({ tipo: 'ok', titulo: 'Caixa fechada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }] })
       if (ehUltima) { setConcluida(true) }
       else { setSeq((s) => s + 1); setQtdNaCaixa(0); setUltimasSns([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }

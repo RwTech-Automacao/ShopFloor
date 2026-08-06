@@ -1,31 +1,36 @@
 export interface ChipResultado { rotulo?: string; valor: string; mono?: boolean; destaque?: boolean }
+/** ok=✓ verde (aprovado/registro neutro) · reprova=✗ vermelho · aviso=! amarelo (erro/bloqueio). */
+export type TipoResultado = 'ok' | 'reprova' | 'aviso'
 export interface ResultadoAcao {
-  tipo: 'ok' | 'erro'
+  tipo: TipoResultado
   titulo: string
   detalhe?: string
   chips?: ChipResultado[]
   dica?: string
 }
 
-/** Painel grande de resultado da última ação (fica na tela até a próxima). */
+const ICONE: Record<TipoResultado, { simbolo: string; cor: string }> = {
+  ok: { simbolo: '✓', cor: 'bg-green-600' },
+  reprova: { simbolo: '✗', cor: 'bg-red-600' },
+  aviso: { simbolo: '!', cor: 'bg-amber-500' },
+}
+
+/** Painel grande de resultado da última ação — fundo neutro, só o ícone é colorido. Fica até a próxima. */
 export function PainelResultado({ resultado }: { resultado: ResultadoAcao | null }) {
   if (!resultado) return null
-  const ok = resultado.tipo === 'ok'
+  const ic = ICONE[resultado.tipo]
+  const alerta = resultado.tipo === 'aviso'
   return (
     <div
-      role={ok ? 'status' : 'alert'}
-      aria-live={ok ? 'polite' : 'assertive'}
-      className={`flex gap-3 rounded-lg border border-l-4 p-4 ${
-        ok ? 'border-green-600 bg-green-50 dark:bg-green-950/30' : 'border-red-600 bg-red-50 dark:bg-red-950/30'
-      }`}
+      role={alerta ? 'alert' : 'status'}
+      aria-live={alerta ? 'assertive' : 'polite'}
+      className="flex gap-3 rounded-lg border border-border bg-muted/40 p-4"
     >
-      <div className={`flex size-9 flex-none items-center justify-center rounded-lg text-lg font-bold text-white ${ok ? 'bg-green-600' : 'bg-red-600'}`}>
-        {ok ? '✓' : '!'}
+      <div className={`flex size-9 flex-none items-center justify-center rounded-lg text-lg font-bold text-white ${ic.cor}`}>
+        {ic.simbolo}
       </div>
       <div className="min-w-0 flex-1">
-        <p className={`text-base font-semibold ${ok ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'}`}>
-          {resultado.titulo}
-        </p>
+        <p className="text-base font-semibold text-foreground">{resultado.titulo}</p>
         {resultado.detalhe && <p className="mt-0.5 text-sm text-muted-foreground">{resultado.detalhe}</p>}
         {resultado.chips && resultado.chips.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">

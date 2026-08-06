@@ -71,18 +71,18 @@ export function IntegracaoPanel({
           setBipe('')
           return
         }
-        setResultado({ tipo: 'erro', titulo: r.erro })
+        setResultado({ tipo: 'aviso', titulo: r.erro })
         bipeRef.current?.select()
         return
       }
       if (linhas[r.pmo] !== undefined) {
-        setResultado({ tipo: 'erro', titulo: 'PMO já tem placa' })
+        setResultado({ tipo: 'aviso', titulo: 'PMO já tem placa' })
         bipeRef.current?.select()
         return
       }
       const pmoRepetido = pmoComSn(snBipado)
       if (pmoRepetido) {
-        setResultado({ tipo: 'erro', titulo: `Esse Nº de Série já foi encaixado em ${pmoRepetido}.` })
+        setResultado({ tipo: 'aviso', titulo: `Esse Nº de Série já foi encaixado em ${pmoRepetido}.` })
         bipeRef.current?.select()
         return
       }
@@ -96,12 +96,12 @@ export function IntegracaoPanel({
   function escolherCandidato(pmoEscolhido: string, opEscolhida: string) {
     if (!ambiguo) return
     if (linhas[pmoEscolhido] !== undefined) {
-      setResultado({ tipo: 'erro', titulo: 'PMO já tem placa' })
+      setResultado({ tipo: 'aviso', titulo: 'PMO já tem placa' })
       return
     }
     const pmoRepetido = pmoComSn(ambiguo.sn)
     if (pmoRepetido) {
-      setResultado({ tipo: 'erro', titulo: `Esse Nº de Série já foi encaixado em ${pmoRepetido}.` })
+      setResultado({ tipo: 'aviso', titulo: `Esse Nº de Série já foi encaixado em ${pmoRepetido}.` })
       return
     }
     setLinhas((prev) => ({ ...prev, [pmoEscolhido]: { sn: ambiguo.sn, op: opEscolhida } }))
@@ -126,7 +126,7 @@ export function IntegracaoPanel({
         limpar()
         setTimeout(() => produtoRef.current?.focus(), 0)
       } else {
-        setResultado({ tipo: 'erro', titulo: r.erro })
+        setResultado({ tipo: 'aviso', titulo: r.erro })
       }
     })
   }
