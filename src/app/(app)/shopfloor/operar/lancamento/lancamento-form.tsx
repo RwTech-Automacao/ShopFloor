@@ -25,7 +25,6 @@ import { ReprovarModal } from './reprovar-modal'
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
 const OPCOES_STATUS = ['Aprovado', 'Reprovado']
 // Paridade com o legado (Código.gs): NQA Funcional também aceita "Não aplicável" (conta como aprovado).
-const OPCOES_NQA_FUNCIONAL = ['Aprovado', 'Reprovado', 'Não aplicável']
 
 interface DefeitoLinha {
   codigo: string
@@ -40,6 +39,15 @@ function descreverDefeito(d: { codigo: string; posicao: string; tipo: string }):
   if (d.codigo.trim()) partes.push(`Cód ${d.codigo.trim()}`)
   if (d.tipo.trim()) partes.push(d.tipo.trim())
   return partes.join(' · ') || 'defeito relatado'
+}
+
+/** NQA sem mouse: A→Aprovado, R→Reprovado, N→Não aplicável (só no Funcional). */
+function statusPorTecla(k: string, comNaoAplicavel: boolean): string | null {
+  const l = k.toLowerCase()
+  if (l === 'a') return 'Aprovado'
+  if (l === 'r') return 'Reprovado'
+  if (comNaoAplicavel && l === 'n') return 'Não aplicável'
+  return null
 }
 
 export function LancamentoForm({
@@ -74,6 +82,8 @@ export function LancamentoForm({
   const colaboradorRef = useRef<HTMLInputElement>(null)
   const postoTriggerRef = useRef<HTMLButtonElement>(null)
   const burninEventoTriggerRef = useRef<HTMLButtonElement>(null)
+  const nqaVisualRef = useRef<HTMLInputElement>(null)
+  const nqaFuncionalRef = useRef<HTMLInputElement>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   const ordemSel = useMemo(
@@ -115,9 +125,13 @@ export function LancamentoForm({
   }
   function mudarPosto(v: string) {
     setPosto(v); resetCamposDinamicos()
-    const ehBurninV = (postosPerfil[v] ?? PERFIL_PADRAO).recurso === 'burnin'
-    // Burn-in: foco vai pro seletor de Evento primeiro; demais postos vão direto pro campo de ação.
-    setTimeout(() => (ehBurninV ? burninEventoTriggerRef.current?.focus() : snRef.current?.focus()), 0)
+    const perfilV = postosPerfil[v] ?? PERFIL_PADRAO
+    // Burn-in → seletor de Evento; NQA → Inspeção Visual (A/R); demais → campo de ação (SN).
+    setTimeout(() => {
+      if (perfilV.recurso === 'burnin') burninEventoTriggerRef.current?.focus()
+      else if (perfilV.recurso === 'nqa') nqaVisualRef.current?.focus()
+      else snRef.current?.focus()
+    }, 0)
   }
   function onBiparCabecalho() {
     if (bipeCab.trim() === '') return
@@ -545,6 +559,51 @@ export function LancamentoForm({
                   </div>
                 )}
 
+                {ehNqa && (
+                  <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-lg">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="nqaVisual">Inspeção Visual <span className="text-sm font-normal text-gray-500">(A = Aprovado · R = Reprovado)</span></Label>
+                      <Input
+                        id="nqaVisual"
+                        ref={nqaVisualRef}
+                        readOnly
+                        value={nqaVisual}
+                        onKeyDown={(e) => {
+                          const v = statusPorTecla(e.key, false)
+                          if (v) { e.preventDefault(); setNqaVisual(v); setTimeout(() => nqaFuncionalRef.current?.focus(), 0) }
+                        }}
+                        placeholder="Aperte A ou R"
+                        className={`h-12 text-lg ${nqaVisual === 'Aprovado' ? 'text-green-700' : nqaVisual === 'Reprovado' ? 'text-red-600' : ''}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="nqaFuncional">Inspeção Funcional <span className="text-sm font-normal text-gray-500">(A · R · N = Não aplicável)</span></Label>
+                      <Input
+                        id="nqaFuncional"
+                        ref={nqaFuncionalRef}
+                        readOnly
+                        value={nqaFuncional}
+                        onKeyDown={(e) => {
+                          const v = statusPorTecla(e.key, true)
+                          if (v) { e.preventDefault(); setNqaFuncional(v); setTimeout(() => snRef.current?.focus(), 0) }
+                        }}
+                        placeholder="Aperte A, R ou N"
+                        className={`h-12 text-lg ${nqaFuncional === 'Aprovado' ? 'text-green-700' : nqaFuncional === 'Reprovado' ? 'text-red-600' : ''}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5 sm:col-span-2">
+                      <Label htmlFor="nqaObservacao">Comentário</Label>
+                      <Input
+                        id="nqaObservacao"
+                        value={observacao}
+                        onChange={(e) => setObservacao(e.target.value)}
+                        placeholder="Comentário livre (opcional)"
+                        autoComplete="off"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex shrink-0 flex-col gap-1.5">
                   <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
                   {ehScanner && (
@@ -572,35 +631,6 @@ export function LancamentoForm({
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>{OPCOES_STATUS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                     </Select>
-                  </div>
-                )}
-
-                {ehNqa && (
-                  <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-lg">
-                    <div className="flex flex-col gap-1.5">
-                      <Label>Inspeção Visual</Label>
-                      <Select value={nqaVisual} onValueChange={(v) => setNqaVisual(v ?? '')}>
-                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                        <SelectContent>{OPCOES_STATUS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Label>Inspeção Funcional</Label>
-                      <Select value={nqaFuncional} onValueChange={(v) => setNqaFuncional(v ?? '')}>
-                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                        <SelectContent>{OPCOES_NQA_FUNCIONAL.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex flex-col gap-1.5 sm:col-span-2">
-                      <Label htmlFor="nqaObservacao">Comentário</Label>
-                      <Input
-                        id="nqaObservacao"
-                        value={observacao}
-                        onChange={(e) => setObservacao(e.target.value)}
-                        placeholder="Comentário livre (opcional)"
-                        autoComplete="off"
-                      />
-                    </div>
                   </div>
                 )}
 
