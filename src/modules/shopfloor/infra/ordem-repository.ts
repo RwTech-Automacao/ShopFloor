@@ -133,6 +133,17 @@ export async function contarRegistros(pmo: string, op: string): Promise<number> 
   return count ?? 0
 }
 
+/** OP já usa esse número (em qualquer PMO)? Regra de OP única global. `excetoId` ignora a própria OP na edição. */
+export async function buscarOpEmUso(op: string, excetoId?: string): Promise<{ id: string; pmo: string; op: string } | null> {
+  const supabase = await createServerSupabase()
+  let q = supabase.from('sf_ordens').select('id,pmo,op').eq('op', op).limit(1)
+  if (excetoId) q = q.neq('id', excetoId)
+  const { data, error } = await q
+  if (error) throw error
+  const row = data?.[0]
+  return row ? (row as { id: string; pmo: string; op: string }) : null
+}
+
 export async function buscarOrdemBase(id: string): Promise<{ pmo: string; op: string } | null> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.from('sf_ordens').select('pmo,op').eq('id', id).single()
