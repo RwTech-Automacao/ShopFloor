@@ -5,6 +5,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { validarOrdem } from '../domain/validar-ordem'
+import { mensagemOpDuplicada } from '../domain/op-unica'
 import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-posto'
 import { mapaPostoPerfil } from '../infra/postos-repository'
@@ -14,6 +15,7 @@ import {
   excluirOrdem,
   contarRegistros,
   buscarOrdemBase,
+  buscarOpEmUso,
   listarPostos,
   type DadosOrdem,
 } from '../infra/ordem-repository'
@@ -92,6 +94,9 @@ export async function criarOrdemAction(
   const dados = lerDados(formData)
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
   if (!v.ok) return v
+  // OP única global: o número da OP não pode existir em nenhum outro PMO.
+  const emUso = await buscarOpEmUso(dados.op)
+  if (emUso) return { ok: false, erro: mensagemOpDuplicada(emUso) }
   const postos = await lerPostos(formData)
   const receita = await lerReceita(formData, postos)
   const burnin = await lerBurnin(formData, postos)
@@ -122,6 +127,9 @@ export async function editarOrdemAction(
   const dados = lerDados(formData)
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
   if (!v.ok) return v
+  // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).
+  const emUso = await buscarOpEmUso(dados.op, id)
+  if (emUso) return { ok: false, erro: mensagemOpDuplicada(emUso) }
   const postos = await lerPostos(formData)
   const receita = await lerReceita(formData, postos)
   const burnin = await lerBurnin(formData, postos)
