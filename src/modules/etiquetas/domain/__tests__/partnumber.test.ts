@@ -33,7 +33,7 @@ describe('normalizarCodigo', () => {
 
 describe('gerarEtiquetasDoProcesso (exemplo validado RWCN98)', () => {
   const p = {
-    id: 'x', status: 'Aprovado', codigoMaterial: 'RWCN98', numeroPedido: '0529/26',
+    id: 'x', status: 'Aprovado', responsavelRecebimento: 'u', codigoMaterial: 'RWCN98', numeroPedido: '0529/26',
     diInpi: '26BR0000902016-1', numeroNf: null, volumes: 13,
   }
   const r = gerarEtiquetasDoProcesso(p)
@@ -54,6 +54,7 @@ describe('camposCompletosEtiqueta', () => {
   const base = {
     id: 'x',
     status: 'Aprovado',
+    responsavelRecebimento: 'u',
     codigoMaterial: 'RWCN98',
     numeroPedido: '5292/26',
     diInpi: '260000902016',
@@ -80,23 +81,24 @@ describe('camposCompletosEtiqueta', () => {
 describe('elegivelParaEtiqueta', () => {
   const base = {
     id: 'x',
-    status: 'Aprovado',
+    status: 'em_conferencia',
+    responsavelRecebimento: 'user-1',
     codigoMaterial: 'RWCN98',
     numeroPedido: '5292/26',
     diInpi: '260000902016',
     numeroNf: null,
     volumes: 13,
   }
-  it('não terminal → aguardando', () => {
-    expect(elegivelParaEtiqueta({ ...base, status: 'aberto' })).toEqual({ elegivel: false, motivo: 'aguardando' })
-    expect(elegivelParaEtiqueta({ ...base, status: 'em_conferencia' })).toEqual({ elegivel: false, motivo: 'aguardando' })
+  it('Recebimento ainda não salvo → aguardando', () => {
+    expect(elegivelParaEtiqueta({ ...base, responsavelRecebimento: null })).toEqual({ elegivel: false, motivo: 'aguardando' })
+    expect(elegivelParaEtiqueta({ ...base, responsavelRecebimento: '  ' })).toEqual({ elegivel: false, motivo: 'aguardando' })
   })
-  it('terminal mas incompleto → incompleto', () => {
-    expect(elegivelParaEtiqueta({ ...base, status: 'Reprovado', volumes: 0 })).toEqual({ elegivel: false, motivo: 'incompleto' })
+  it('Recebimento salvo mas incompleto → incompleto', () => {
+    expect(elegivelParaEtiqueta({ ...base, volumes: 0 })).toEqual({ elegivel: false, motivo: 'incompleto' })
   })
-  it('terminal + completo → elegível (inclui status terminal custom)', () => {
+  it('Recebimento salvo + completo → elegível (status/finalização não importam mais)', () => {
     expect(elegivelParaEtiqueta(base)).toEqual({ elegivel: true, motivo: null })
-    expect(elegivelParaEtiqueta({ ...base, status: 'Aprovado condicional' })).toEqual({ elegivel: true, motivo: null })
+    expect(elegivelParaEtiqueta({ ...base, status: 'aberto' })).toEqual({ elegivel: true, motivo: null })
   })
 })
 
