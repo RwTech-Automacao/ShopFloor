@@ -271,3 +271,49 @@ export async function buscarEntradaBurninAberta(pmo: string, op: string, snNorm:
   if (!linha || linha.status !== '') return null // sem entrada aberta (último evento não é entrada)
   return linha.data_hora
 }
+
+export interface DefeitoConfirmavel { codigo: string; posicao: string; tipo: string }
+
+/**
+ * Se o ÚLTIMO registro da peça neste posto é uma REPROVA, devolve os defeitos daquela reprova
+ * (todas as linhas do mesmo evento = mesmo data_hora mais recente). Senão, null.
+ * Usado para pedir confirmação de conserto ao aprovar.
+ */
+export async function buscarUltimaReprovaDoPosto(
+  pmo: string, op: string, snNorm: string, posto: string,
+): Promise<DefeitoConfirmavel[] | null> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_registros')
+    .select('status,data_hora,codigo_defeito,posicao,tipo_defeito')
+    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', snNorm).eq('posto', posto)
+    .order('data_hora', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(50)
+  if (error) throw error
+  const linhas = (data ?? []) as { status: string; data_hora: string; codigo_defeito: string; posicao: string; tipo_defeito: string }[]
+  const topo = linhas[0]
+  if (!topo || topo.status.toLowerCase() !== 'reprovado') return null // último evento não é reprova
+  // Defeitos do MESMO evento (mesmo data_hora do topo) que são reprova.
+  const defeitos = linhas
+    .filter((l) => l.data_hora === topo.data_hora && l.status.toLowerCase() === 'reprovado')
+    .map((l) => ({ codigo: l.codigo_defeito, posicao: l.posicao, tipo: l.tipo_defeito }))
+    .filter((d) => d.codigo.trim() !== '' || d.posicao.trim() !== '' || d.tipo.trim() !== '')
+  return defeitos.length > 0 ? defeitos : null
+}
+
+/** Grava a auditoria de conserto confirmado (uma linha por defeito). Respeita RLS (insert = 'lancar'). */
+export async function inserirConservoConfirmado(
+  linhas: { colaborador: string; pmo: string; op: string; numeroSerie: string; numeroSerieNorm: string; posto: string; codigo: string; posicao: string; tipo: string }[],
+): Promise<void> {
+  if (linhas.length === 0) return
+  const supabase = await createServerSupabase()
+  const { error } = await supabase.from('sf_conserto_confirmado').insert(
+    linhas.map((l) => ({
+      colaborador: l.colaborador, pmo: l.pmo, op: l.op,
+      numero_serie: l.numeroSerie, numero_serie_norm: l.numeroSerieNorm, posto: l.posto,
+      codigo_defeito: l.codigo, posicao: l.posicao, tipo_defeito: l.tipo,
+    })),
+  )
+  if (error) throw error
+}
