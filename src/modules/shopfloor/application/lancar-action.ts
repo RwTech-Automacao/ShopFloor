@@ -35,6 +35,8 @@ export interface EntradaLancamento {
   burninEvento?: 'entrada' | 'saida'
   /** Defeitos que o operador confirmou terem sido consertados (auditoria ao aprovar). */
   conservoConfirmado?: DefeitoConfirmavel[]
+  /** Comentário livre (usado no NQA). */
+  observacao?: string
 }
 
 export type ResultadoLancamento = { ok: true; caixaCount?: number } | { ok: false; erro: string }
@@ -199,6 +201,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     p_prev_precisa_aprovado: perfilPrev ? perfilPrecisaAprovado(perfilPrev) : false,
     p_linhas: linhas,
     p_exige_manutencao: perfilExigeManutencao(perfil),
+    p_observacao: entrada.observacao ?? '',
   })
 
   if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
