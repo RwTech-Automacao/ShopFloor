@@ -11,13 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
-import { PERFIL_PADRAO, perfilTemStatus, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
+import { classificarAcao } from '@/modules/shopfloor/domain/acao-lancamento'
+import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
-import { lancar, buscarEntradaBurnin } from '@/modules/shopfloor/application/lancar-action'
+import { lancar, buscarEntradaBurnin, verificarConserto } from '@/modules/shopfloor/application/lancar-action'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
 import { EmbalagemPanel } from './embalagem-panel'
+import { AprovarModal } from './aprovar-modal'
+import { ReprovarModal } from './reprovar-modal'
 
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
 const OPCOES_STATUS = ['Aprovado', 'Reprovado']
@@ -28,6 +31,15 @@ interface DefeitoLinha {
   codigo: string
   posicao: string
   tipo: string
+}
+
+/** Texto curto de um defeito para o diálogo de confirmação de conserto. */
+function descreverDefeito(d: { codigo: string; posicao: string; tipo: string }): string {
+  const partes: string[] = []
+  if (d.posicao.trim()) partes.push(`Posição ${d.posicao.trim()}`)
+  if (d.codigo.trim()) partes.push(`Cód ${d.codigo.trim()}`)
+  if (d.tipo.trim()) partes.push(d.tipo.trim())
+  return partes.join(' · ') || 'defeito relatado'
 }
 
 export function LancamentoForm({
@@ -53,9 +65,13 @@ export function LancamentoForm({
   const [burninEvento, setBurninEvento] = useState<'entrada' | 'saida'>('entrada')
   const [bipeCab, setBipeCab] = useState('')
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
+  const [aprovarSn, setAprovarSn] = useState<string | null>(null)
+  const [reprovarCodigo, setReprovarCodigo] = useState<string | null>(null)
   const [enviando, startTransition] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
+  const colaboradorRef = useRef<HTMLInputElement>(null)
+  const postoTriggerRef = useRef<HTMLButtonElement>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   const ordemSel = useMemo(
@@ -72,6 +88,8 @@ export function LancamentoForm({
   const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
   const ehIntegracao = posto !== '' && perfilDo(posto).recurso === 'integracao'
+  // Postos de teste/inspeção com defeito: status implícito pelo que se bipa (SN→aprova, defeito→reprova).
+  const ehScanner = comStatus && !ehBurnin && !ehNqa && !ehSpi && perfilDo(posto).reprova === 'defeitos'
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
@@ -89,6 +107,7 @@ export function LancamentoForm({
   }
   function mudarPosto(v: string) {
     setPosto(v); resetCamposDinamicos()
+    setTimeout(() => snRef.current?.focus(), 0) // foco vai pro campo de ação
   }
   function onBiparCabecalho() {
     if (bipeCab.trim() === '') return
@@ -104,7 +123,7 @@ export function LancamentoForm({
     if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
     resetCamposDinamicos()
     setBipeCab('')
-    setTimeout(() => snRef.current?.focus(), 0)
+    setTimeout(() => colaboradorRef.current?.focus(), 0)
   }
   function atualizarCabecalho() {
     setCliente(''); setPmo(''); setOp('')
@@ -153,6 +172,23 @@ export function LancamentoForm({
         }
       }
     }
+    // Confirmação de conserto: ao APROVAR num posto que coleta defeito e conserta no próprio posto,
+    // se o último registro da peça ali foi reprova, confirmar que o defeito foi consertado.
+    let conservoConfirmado: { codigo: string; posicao: string; tipo: string }[] | undefined
+    if (!ehBurnin && comStatus && status === 'Aprovado' && perfilPedeConfirmacaoConserto(perfilDo(posto))) {
+      const defeitos = await verificarConserto(pmo, op, numeroSerie, posto)
+      if (defeitos && defeitos.length > 0) {
+        const lista = defeitos.map(descreverDefeito).join(' · ')
+        const ok = await confirmar({
+          titulo: 'Confirmar conserto do defeito?',
+          descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
+          rotuloConfirmar: 'Sim, foi consertado',
+        })
+        if (!ok) return
+        conservoConfirmado = defeitos
+      }
+    }
+
     startTransition(async () => {
       const r = await lancar({
         colaborador,
@@ -169,6 +205,7 @@ export function LancamentoForm({
             ? defeitosSel.filter((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
             : undefined,
         posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
+        conservoConfirmado,
       })
       if (r.ok) {
         setResultado({
@@ -189,6 +226,117 @@ export function LancamentoForm({
           titulo: r.erro,
           chips: [
             { rotulo: 'Nº Série', valor: numeroSerie.trim(), mono: true },
+            { rotulo: 'Posto', valor: posto },
+          ],
+        })
+      }
+    })
+  }
+
+  /** Rótulo do tipo de defeito a partir do catálogo (backend exige tipo preenchido no reprovado; nunca vazio). */
+  function tipoTextoDoCodigo(codigo: string): string {
+    const d = defeitos.find((x) => x.codigo === codigo)
+    return d?.tipo === 2 ? 'Teste' : 'Peça'
+  }
+
+  /** Postos-scanner: decide aprovado/reprovado pelo que foi bipado no campo de ação. */
+  function onAcao() {
+    if (!colaborador.trim() || !posto || !ordemSel || semFaixa) {
+      setResultado({ tipo: 'erro', titulo: 'Preencha Colaborador e Posto (com OP e faixa de Nº de Série) antes de bipar.' })
+      return
+    }
+    const r = classificarAcao(numeroSerie, defeitos, ordemSel.sn_ini, ordemSel.sn_fim)
+    if (r.tipo === 'aprovado') {
+      setAprovarSn(numeroSerie.trim())
+    } else if (r.tipo === 'reprovado') {
+      setReprovarCodigo(r.codigo)
+    } else {
+      setResultado({ tipo: 'erro', titulo: 'Não reconhecido: nem SN da faixa, nem defeito do catálogo.' })
+      snRef.current?.select()
+    }
+  }
+
+  async function gravarAprovado() {
+    const sn = aprovarSn
+    if (sn === null || enviando) return
+    setAprovarSn(null) // fecha o modal na hora
+    setTimeout(() => snRef.current?.focus(), 0) // foco volta já; se houver diálogo de conserto, ele assume
+
+    // Confirmação de conserto: se o posto pede e a peça tinha reprova, confirma que o defeito foi
+    // consertado antes de gravar o Aprovado (mesma regra do fluxo antigo, agora no caminho scanner).
+    let conservoConfirmado: { codigo: string; posicao: string; tipo: string }[] | undefined
+    if (perfilPedeConfirmacaoConserto(perfilDo(posto))) {
+      const defeitos = await verificarConserto(pmo, op, sn, posto)
+      if (defeitos && defeitos.length > 0) {
+        const lista = defeitos.map(descreverDefeito).join(' · ')
+        const ok = await confirmar({
+          titulo: 'Confirmar conserto do defeito?',
+          descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
+          rotuloConfirmar: 'Sim, foi consertado',
+        })
+        if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a aprovação
+        conservoConfirmado = defeitos
+      }
+    }
+    setTimeout(() => snRef.current?.focus(), 0)
+    startTransition(async () => {
+      const r = await lancar({ colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado })
+      if (r.ok) {
+        setResultado({
+          tipo: 'ok',
+          titulo: 'Peça registrada',
+          chips: [
+            { rotulo: 'Nº Série', valor: sn.trim(), mono: true },
+            { rotulo: 'Posto', valor: posto },
+            { valor: 'Aprovado', destaque: true },
+          ],
+        })
+        limparPeca()
+      } else {
+        setResultado({
+          tipo: 'erro',
+          titulo: r.erro,
+          chips: [
+            { rotulo: 'Nº Série', valor: sn.trim(), mono: true },
+            { rotulo: 'Posto', valor: posto },
+          ],
+        })
+      }
+    })
+  }
+
+  function gravarReprovado(dados: { defeitos: { codigo: string; posicao: string }[]; sn: string }) {
+    if (enviando) return
+    setReprovarCodigo(null) // fecha o modal na hora; o registro roda em 2º plano
+    setTimeout(() => snRef.current?.focus(), 0)
+    startTransition(async () => {
+      const r = await lancar({
+        colaborador,
+        posto,
+        pmo,
+        op,
+        numeroSerie: dados.sn,
+        status: 'Reprovado',
+        defeitos: dados.defeitos.map((x) => ({ codigo: x.codigo, posicao: x.posicao, tipo: tipoTextoDoCodigo(x.codigo) })),
+      })
+      setReprovarCodigo(null)
+      if (r.ok) {
+        setResultado({
+          tipo: 'ok',
+          titulo: 'Peça registrada',
+          chips: [
+            { rotulo: 'Nº Série', valor: dados.sn.trim(), mono: true },
+            { rotulo: 'Posto', valor: posto },
+            { valor: 'Reprovado', destaque: false },
+          ],
+        })
+        limparPeca()
+      } else {
+        setResultado({
+          tipo: 'erro',
+          titulo: r.erro,
+          chips: [
+            { rotulo: 'Nº Série', valor: dados.sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
         })
@@ -226,7 +374,14 @@ export function LancamentoForm({
           <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="colaborador">Colaborador</Label>
-              <Input id="colaborador" value={colaborador} onChange={(e) => setColaborador(e.target.value)} autoComplete="off" />
+              <Input
+                id="colaborador"
+                ref={colaboradorRef}
+                value={colaborador}
+                onChange={(e) => setColaborador(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); postoTriggerRef.current?.focus() } }}
+                autoComplete="off"
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Cliente</Label>
@@ -243,7 +398,7 @@ export function LancamentoForm({
             <div className="flex flex-col gap-1.5">
               <Label>Posto</Label>
               <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectTrigger ref={postoTriggerRef}><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
               </Select>
             </div>
@@ -289,17 +444,22 @@ export function LancamentoForm({
               </CardHeader>
               <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
                 <div className="flex shrink-0 flex-col gap-1.5">
-                  <Label htmlFor="sn">Nº de Série</Label>
+                  <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
+                  {ehScanner && (
+                    <datalist id="acao-defeitos-list">
+                      {defeitos.map((d) => <option key={d.codigo} value={d.codigo} />)}
+                    </datalist>
+                  )}
                   <Input
                     id="sn"
                     ref={snRef}
                     value={numeroSerie}
                     onChange={(e) => setNumeroSerie(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onEnviar() } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (ehScanner) { onAcao() } else { onEnviar() } } }}
                     autoComplete="off"
-                    autoFocus
+                    list={ehScanner ? 'acao-defeitos-list' : undefined}
                     className="h-12 text-lg"
-                    placeholder="Bipe o Nº de Série"
+                    placeholder={ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série'}
                   />
                 </div>
 
@@ -316,7 +476,7 @@ export function LancamentoForm({
                   </div>
                 )}
 
-                {mostraStatus && (
+                {mostraStatus && !ehScanner && (
                   <div className="flex shrink-0 flex-col gap-1.5 sm:max-w-xs">
                     <Label>Status</Label>
                     <Select value={status} onValueChange={(v) => setStatus(v ?? '')}>
@@ -369,7 +529,7 @@ export function LancamentoForm({
                 )}
 
                 {/* Demais reprovado → defeitos múltiplos */}
-                {mostraStatus && !ehSpi && reprovado && (
+                {mostraStatus && !ehSpi && !ehScanner && reprovado && (
                   <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
                     <Label>Defeitos</Label>
                     <datalist id="defeitos-list">
@@ -394,11 +554,13 @@ export function LancamentoForm({
                   </div>
                 )}
 
-                <div className="shrink-0">
-                  <Button onClick={onEnviar} disabled={!valido || enviando} className="h-11 bg-enterplak px-8 hover:bg-enterplak-700">
-                    {enviando ? 'Enviando…' : 'Enviar'}
-                  </Button>
-                </div>
+                {!ehScanner && (
+                  <div className="shrink-0">
+                    <Button onClick={onEnviar} disabled={!valido || enviando} className="h-11 bg-enterplak px-8 hover:bg-enterplak-700">
+                      {enviando ? 'Enviando…' : 'Enviar'}
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -408,6 +570,20 @@ export function LancamentoForm({
           </>
         )}
       </div>
+      <AprovarModal
+        aberto={aprovarSn !== null}
+        sn={aprovarSn ?? ''}
+        onConfirmar={gravarAprovado}
+        onCancelar={() => { setAprovarSn(null); setTimeout(() => snRef.current?.focus(), 0) }}
+      />
+      <ReprovarModal
+        aberto={reprovarCodigo !== null}
+        codigoInicial={reprovarCodigo ?? ''}
+        defeitosCatalogo={defeitos.map((d) => d.codigo)}
+        snEsperado=""
+        onConfirmar={gravarReprovado}
+        onCancelar={() => { setReprovarCodigo(null); setTimeout(() => snRef.current?.focus(), 0) }}
+      />
       {dialog}
     </div>
   )
