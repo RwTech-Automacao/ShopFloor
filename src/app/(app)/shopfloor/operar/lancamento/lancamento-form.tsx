@@ -73,6 +73,7 @@ export function LancamentoForm({
   const bipeCabRef = useRef<HTMLInputElement>(null)
   const colaboradorRef = useRef<HTMLInputElement>(null)
   const postoTriggerRef = useRef<HTMLButtonElement>(null)
+  const burninEventoTriggerRef = useRef<HTMLButtonElement>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   const ordemSel = useMemo(
@@ -91,7 +92,10 @@ export function LancamentoForm({
   const ehIntegracao = posto !== '' && perfilDo(posto).recurso === 'integracao'
   // Postos de teste/inspeção com defeito: status implícito pelo que se bipa (SN→aprova, defeito→reprova).
   // SPI (migração 0075) também é reprova==='defeitos' → entra aqui (usa lista fixa de solda via defeitosPosto).
-  const ehScanner = comStatus && !ehBurnin && !ehNqa && perfilDo(posto).reprova === 'defeitos'
+  // Burn-in entra só na SAÍDA (entrada é neutra: grava direto, sem classificar SN/defeito).
+  const ehScanner = comStatus && !ehNqa && ((!ehBurnin && perfilDo(posto).reprova === 'defeitos') || (ehBurnin && burninEvento === 'saida'))
+  // Burn-in entrada também passa pelo campo de ação (grava direto, sem classificar) — usado no roteamento Enter/Enviar.
+  const usaAcao = ehScanner || (ehBurnin && burninEvento === 'entrada')
   const defeitosPosto = useMemo(() => defeitosDoPosto(perfilDo(posto).chave, defeitos), [posto, defeitos, postosPerfil])
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
@@ -107,10 +111,13 @@ export function LancamentoForm({
   function mudarBurninEvento(v: 'entrada' | 'saida') {
     setBurninEvento(v)
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
+    setTimeout(() => snRef.current?.focus(), 0) // escolhido o evento, foco vai pro campo de ação
   }
   function mudarPosto(v: string) {
     setPosto(v); resetCamposDinamicos()
-    setTimeout(() => snRef.current?.focus(), 0) // foco vai pro campo de ação
+    const ehBurninV = (postosPerfil[v] ?? PERFIL_PADRAO).recurso === 'burnin'
+    // Burn-in: foco vai pro seletor de Evento primeiro; demais postos vão direto pro campo de ação.
+    setTimeout(() => (ehBurninV ? burninEventoTriggerRef.current?.focus() : snRef.current?.focus()), 0)
   }
   function onBiparCabecalho() {
     if (bipeCab.trim() === '') return
@@ -249,6 +256,11 @@ export function LancamentoForm({
       setResultado({ tipo: 'erro', titulo: 'Preencha Colaborador e Posto (com OP e faixa de Nº de Série) antes de bipar.' })
       return
     }
+    // Burn-in entrada é neutra: não classifica (não é aprovação/reprova) — grava direto.
+    if (ehBurnin && burninEvento === 'entrada') {
+      gravarBurninEntrada()
+      return
+    }
     const r = classificarAcao(numeroSerie, defeitosPosto, ordemSel.sn_ini, ordemSel.sn_fim)
     if (r.tipo === 'aprovado') {
       setAprovarSn(numeroSerie.trim())
@@ -260,14 +272,63 @@ export function LancamentoForm({
     }
   }
 
+  /** Burn-in entrada: SN bipado grava direto (sem modal, sem status — evento neutro). */
+  function gravarBurninEntrada() {
+    if (enviando) return
+    const sn = numeroSerie.trim()
+    if (sn === '') return
+    startTransition(async () => {
+      const r = await lancar({ colaborador, posto, pmo, op, numeroSerie: sn, burninEvento: 'entrada' })
+      if (r.ok) {
+        setResultado({
+          tipo: 'ok',
+          titulo: 'Entrada de Burn-in registrada',
+          chips: [
+            { rotulo: 'Nº Série', valor: sn, mono: true },
+            { rotulo: 'Posto', valor: posto },
+          ],
+        })
+        limparPeca()
+      } else {
+        setResultado({
+          tipo: 'erro',
+          titulo: r.erro,
+          chips: [
+            { rotulo: 'Nº Série', valor: sn, mono: true },
+            { rotulo: 'Posto', valor: posto },
+          ],
+        })
+      }
+    })
+  }
+
   async function gravarAprovado() {
     const sn = aprovarSn
     if (sn === null || enviando) return
     setAprovarSn(null) // fecha o modal na hora
-    setTimeout(() => snRef.current?.focus(), 0) // foco volta já; se houver diálogo de conserto, ele assume
+    setTimeout(() => snRef.current?.focus(), 0) // foco volta já; se houver diálogo de aviso/conserto, ele assume
+
+    // Aviso de tempo mínimo de Burn-in (saída antecipada; não trava — só confirma).
+    if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempoBurninPorPosto?.[posto] ?? 0) > 0) {
+      const entradaIso = await buscarEntradaBurnin(pmo, op, sn, posto)
+      if (entradaIso) {
+        const decorridoMin = (Date.now() - Date.parse(entradaIso)) / 60000
+        const min = ordemSel!.tempoBurninPorPosto[posto]!
+        if (decorridoMin < min) {
+          const faltam = formatarDuracao(Math.max(1, Math.ceil(min - decorridoMin)))
+          const ok = await confirmar({
+            titulo: 'Sair antes do tempo mínimo de Burn-in?',
+            descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
+            rotuloConfirmar: 'Registrar saída',
+          })
+          if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
+        }
+      }
+    }
 
     // Confirmação de conserto: se o posto pede e a peça tinha reprova, confirma que o defeito foi
     // consertado antes de gravar o Aprovado (mesma regra do fluxo antigo, agora no caminho scanner).
+    // Burn-in exige manutenção → perfilPedeConfirmacaoConserto é sempre false pra ele; não roda aqui.
     let conservoConfirmado: { codigo: string; posicao: string; tipo: string }[] | undefined
     if (perfilPedeConfirmacaoConserto(perfilDo(posto))) {
       const defeitos = await verificarConserto(pmo, op, sn, posto)
@@ -284,11 +345,14 @@ export function LancamentoForm({
     }
     setTimeout(() => snRef.current?.focus(), 0)
     startTransition(async () => {
-      const r = await lancar({ colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado })
+      const r = await lancar({
+        colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado,
+        burninEvento: ehBurnin ? 'saida' : undefined,
+      })
       if (r.ok) {
         setResultado({
           tipo: 'ok',
-          titulo: 'Peça registrada',
+          titulo: ehBurnin ? 'Saída de Burn-in registrada' : 'Peça registrada',
           chips: [
             { rotulo: 'Nº Série', valor: sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
@@ -309,10 +373,29 @@ export function LancamentoForm({
     })
   }
 
-  function gravarReprovado(dados: { defeitos: { codigo: string; posicao: string }[]; sn: string }) {
+  async function gravarReprovado(dados: { defeitos: { codigo: string; posicao: string }[]; sn: string }) {
     if (enviando) return
     setReprovarCodigo(null) // fecha o modal na hora; o registro roda em 2º plano
     setTimeout(() => snRef.current?.focus(), 0)
+
+    // Aviso de tempo mínimo de Burn-in (saída antecipada; não trava — só confirma).
+    if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempoBurninPorPosto?.[posto] ?? 0) > 0) {
+      const entradaIso = await buscarEntradaBurnin(pmo, op, dados.sn, posto)
+      if (entradaIso) {
+        const decorridoMin = (Date.now() - Date.parse(entradaIso)) / 60000
+        const min = ordemSel!.tempoBurninPorPosto[posto]!
+        if (decorridoMin < min) {
+          const faltam = formatarDuracao(Math.max(1, Math.ceil(min - decorridoMin)))
+          const ok = await confirmar({
+            titulo: 'Sair antes do tempo mínimo de Burn-in?',
+            descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
+            rotuloConfirmar: 'Registrar saída',
+          })
+          if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
+        }
+      }
+    }
+
     startTransition(async () => {
       const r = await lancar({
         colaborador,
@@ -322,12 +405,13 @@ export function LancamentoForm({
         numeroSerie: dados.sn,
         status: 'Reprovado',
         defeitos: dados.defeitos.map((x) => ({ codigo: x.codigo, posicao: x.posicao, tipo: tipoTextoDoCodigo(x.codigo) })),
+        burninEvento: ehBurnin ? 'saida' : undefined,
       })
       setReprovarCodigo(null)
       if (r.ok) {
         setResultado({
           tipo: 'ok',
-          titulo: 'Peça registrada',
+          titulo: ehBurnin ? 'Saída de Burn-in registrada' : 'Peça registrada',
           chips: [
             { rotulo: 'Nº Série', valor: dados.sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
@@ -447,6 +531,20 @@ export function LancamentoForm({
                 <CardTitle>Peça</CardTitle>
               </CardHeader>
               <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+                {/* Burn-in: Evento vem ANTES do campo de ação (define entrada=neutra / saída=scanner). */}
+                {ehBurnin && (
+                  <div className="flex shrink-0 flex-col gap-1.5 sm:max-w-xs">
+                    <Label>Evento</Label>
+                    <Select value={burninEvento} onValueChange={(v) => mudarBurninEvento((v ?? 'entrada') as 'entrada' | 'saida')}>
+                      <SelectTrigger ref={burninEventoTriggerRef}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="entrada">Entrada</SelectItem>
+                        <SelectItem value="saida">Saída</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div className="flex shrink-0 flex-col gap-1.5">
                   <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
                   {ehScanner && (
@@ -459,26 +557,13 @@ export function LancamentoForm({
                     ref={snRef}
                     value={numeroSerie}
                     onChange={(e) => setNumeroSerie(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (ehScanner) { onAcao() } else { onEnviar() } } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (usaAcao) { onAcao() } else { onEnviar() } } }}
                     autoComplete="off"
                     list={ehScanner ? 'acao-defeitos-list' : undefined}
                     className="h-12 text-lg"
                     placeholder={ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série'}
                   />
                 </div>
-
-                {ehBurnin && (
-                  <div className="flex shrink-0 flex-col gap-1.5 sm:max-w-xs">
-                    <Label>Evento</Label>
-                    <Select value={burninEvento} onValueChange={(v) => mudarBurninEvento((v ?? 'entrada') as 'entrada' | 'saida')}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="entrada">Entrada</SelectItem>
-                        <SelectItem value="saida">Saída</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
 
                 {mostraStatus && !ehScanner && (
                   <div className="flex shrink-0 flex-col gap-1.5 sm:max-w-xs">
@@ -545,7 +630,7 @@ export function LancamentoForm({
                   </div>
                 )}
 
-                {!ehScanner && (
+                {!usaAcao && (
                   <div className="shrink-0">
                     <Button onClick={onEnviar} disabled={!valido || enviando} className="h-11 bg-enterplak px-8 hover:bg-enterplak-700">
                       {enviando ? 'Enviando…' : 'Enviar'}
