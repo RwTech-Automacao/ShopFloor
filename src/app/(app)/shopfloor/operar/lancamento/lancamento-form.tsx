@@ -541,8 +541,11 @@ export function LancamentoForm({
         {!ehIntegracao && !ehEmbalagem && (
           <>
             <Card className="flex min-h-0 flex-col">
-              <CardHeader className="shrink-0">
+              <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
                 <CardTitle>Peça</CardTitle>
+                {ehNqa && (
+                  <span className="text-sm text-gray-500">A = Aprovado · R = Reprovado · N = Não aplicável</span>
+                )}
               </CardHeader>
               <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
                 {/* Burn-in: Evento vem ANTES do campo de ação (define entrada=neutra / saída=scanner). */}
@@ -562,7 +565,7 @@ export function LancamentoForm({
                 {ehNqa && (
                   <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-lg">
                     <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="nqaVisual">Inspeção Visual <span className="text-sm font-normal text-gray-500">(A = Aprovado · R = Reprovado)</span></Label>
+                      <Label htmlFor="nqaVisual" className="whitespace-nowrap">Inspeção Visual</Label>
                       <Input
                         id="nqaVisual"
                         ref={nqaVisualRef}
@@ -577,7 +580,7 @@ export function LancamentoForm({
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="nqaFuncional">Inspeção Funcional <span className="text-sm font-normal text-gray-500">(A · R · N = Não aplicável)</span></Label>
+                      <Label htmlFor="nqaFuncional" className="whitespace-nowrap">Inspeção Funcional</Label>
                       <Input
                         id="nqaFuncional"
                         ref={nqaFuncionalRef}
