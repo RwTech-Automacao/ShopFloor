@@ -6,6 +6,17 @@ export type AcaoLancamento =
   | { tipo: 'reprovado'; codigo: string }
   | { tipo: 'invalido' }
 
+export const DEFEITOS_SPI: DefeitoCatalogo[] = [
+  { codigo: 'FALTA DE SOLDA', tipo: 1 },
+  { codigo: 'INSUFICIÊNCIA DE SOLDA', tipo: 1 },
+  { codigo: 'EXAGERO DE SOLDA', tipo: 1 },
+  { codigo: 'CURTO', tipo: 1 },
+]
+
+export function defeitosDoPosto(perfilChave: string, catalogo: DefeitoCatalogo[]): DefeitoCatalogo[] {
+  return perfilChave === 'spi' ? DEFEITOS_SPI : catalogo
+}
+
 function norm(s: string): string {
   return s.trim().replace(/\s+/g, ' ').toUpperCase()
 }
