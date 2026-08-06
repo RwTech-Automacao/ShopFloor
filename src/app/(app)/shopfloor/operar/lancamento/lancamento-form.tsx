@@ -232,9 +232,10 @@ export function LancamentoForm({
   function gravarAprovado() {
     const sn = aprovarSn
     if (sn === null || enviando) return
+    setAprovarSn(null) // fecha o modal na hora; o registro roda em 2º plano (Enter não "trava")
+    setTimeout(() => snRef.current?.focus(), 0)
     startTransition(async () => {
       const r = await lancar({ colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado' })
-      setAprovarSn(null)
       if (r.ok) {
         setResultado({
           tipo: 'ok',
@@ -261,6 +262,8 @@ export function LancamentoForm({
 
   function gravarReprovado(dados: { defeitos: { codigo: string; posicao: string }[]; sn: string }) {
     if (enviando) return
+    setReprovarCodigo(null) // fecha o modal na hora; o registro roda em 2º plano
+    setTimeout(() => snRef.current?.focus(), 0)
     startTransition(async () => {
       const r = await lancar({
         colaborador,
@@ -397,6 +400,11 @@ export function LancamentoForm({
               <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
                 <div className="flex shrink-0 flex-col gap-1.5">
                   <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
+                  {ehScanner && (
+                    <datalist id="acao-defeitos-list">
+                      {defeitos.map((d) => <option key={d.codigo} value={d.codigo} />)}
+                    </datalist>
+                  )}
                   <Input
                     id="sn"
                     ref={snRef}
@@ -404,6 +412,7 @@ export function LancamentoForm({
                     onChange={(e) => setNumeroSerie(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (ehScanner) { onAcao() } else { onEnviar() } } }}
                     autoComplete="off"
+                    list={ehScanner ? 'acao-defeitos-list' : undefined}
                     className="h-12 text-lg"
                     placeholder={ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série'}
                   />
