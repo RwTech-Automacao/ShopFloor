@@ -1,8 +1,8 @@
-import { ehTerminal } from '@/modules/recebimento/domain/ciclo-vida'
-
 export type ProcessoEtiqueta = {
   id: string
   status: string
+  /** Quem salvou a seção Recebimento (null = ainda não salva). Libera a etiqueta. */
+  responsavelRecebimento: string | null
   codigoMaterial: string | null
   numeroPedido: string | null
   diInpi: string | null
@@ -66,12 +66,14 @@ export function camposCompletosEtiqueta(p: ProcessoEtiqueta): boolean {
 
 export type MotivoInelegivel = 'aguardando' | 'incompleto'
 
-/** Elegibilidade para gerar etiqueta: status terminal (concluído — não aberto/
- *  em_conferencia) E campos completos. */
+/** Elegibilidade para gerar etiqueta: a seção Recebimento já foi salva
+ *  (`responsavelRecebimento` preenchido) E campos completos. O produto precisa
+ *  estar etiquetado já no recebimento (antes das fotos/qualidade), então NÃO
+ *  espera o processo ser finalizado (Aprovado/Reprovado). */
 export function elegivelParaEtiqueta(
   p: ProcessoEtiqueta,
 ): { elegivel: boolean; motivo: MotivoInelegivel | null } {
-  if (!ehTerminal(p.status)) return { elegivel: false, motivo: 'aguardando' }
+  if (safe(p.responsavelRecebimento) === '') return { elegivel: false, motivo: 'aguardando' }
   if (!camposCompletosEtiqueta(p)) return { elegivel: false, motivo: 'incompleto' }
   return { elegivel: true, motivo: null }
 }

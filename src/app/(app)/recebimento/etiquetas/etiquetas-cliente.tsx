@@ -45,7 +45,7 @@ const TIPOS: { valor: FiltroTipoEtiqueta; rotulo: string }[] = [
 ]
 
 const ROTULO_MOTIVO: Record<MotivoInelegivel, string> = {
-  aguardando: 'Aguardando conferência',
+  aguardando: 'Recebimento ainda não salvo',
   incompleto: 'Campos incompletos para etiqueta',
 }
 

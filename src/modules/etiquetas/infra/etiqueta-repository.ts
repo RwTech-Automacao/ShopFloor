@@ -16,12 +16,13 @@ const COLUNA_POR_TIPO: Record<FiltroTipoEtiqueta, string> = {
 /** Teto de linhas retornadas pela busca, para evitar varreduras enormes. */
 const LIMITE_BUSCA = 500
 
-const SELECT_CAMPOS = 'id, numero, status, codigo_material, numero_pedido, di_inpi, numero_nf, volumes'
+const SELECT_CAMPOS = 'id, numero, status, responsavel_recebimento, codigo_material, numero_pedido, di_inpi, numero_nf, volumes'
 
 interface ProcessoEtiquetaRow {
   id: string
   numero: number
   status: string
+  responsavel_recebimento: string | null
   codigo_material: string | null
   numero_pedido: string | null
   di_inpi: string | null
@@ -55,6 +56,7 @@ function mapRow(row: ProcessoEtiquetaRow): ProcessoEtiquetaLista {
     id: row.id,
     numero: row.numero,
     status: row.status,
+    responsavelRecebimento: row.responsavel_recebimento,
     codigoMaterial: row.codigo_material,
     numeroPedido: row.numero_pedido,
     diInpi: row.di_inpi,
