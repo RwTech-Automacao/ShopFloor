@@ -19,7 +19,7 @@ function SimboloStatus({ status }: { status: 'aprovado' | 'reprovado' | null }) 
 export function HistoricoLancamentos({ linhas }: { linhas: LinhaHistorico[] }) {
   if (linhas.length === 0) return null
   return (
-    <div className="mt-3 max-h-[12.5rem] overflow-y-auto rounded-lg border border-border">
+    <div className="mt-3 max-h-[8rem] overflow-y-auto rounded-lg border border-border">
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
