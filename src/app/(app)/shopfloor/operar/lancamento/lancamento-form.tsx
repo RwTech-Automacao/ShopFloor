@@ -122,6 +122,8 @@ export function LancamentoForm({
     if (linha) {
       setHistorico((h) => [linha, ...h].slice(0, 30))
       setUltimoEhLancamento(true)
+      // Lançamento recusado (duplicado, sequência, fora da faixa…) também limpa o campo pra próxima bipagem.
+      if (!linha.lancamento) limparPeca()
     } else {
       setUltimoEhLancamento(false)
     }
@@ -140,7 +142,7 @@ export function LancamentoForm({
     setTimeout(() => snRef.current?.focus(), 0) // escolhido o evento, foco vai pro campo de ação
   }
   function mudarPosto(v: string) {
-    setPosto(v); resetCamposDinamicos()
+    setPosto(v); resetCamposDinamicos(); setHistorico([]) // novo posto → histórico da sessão zera
     const perfilV = postosPerfil[v] ?? PERFIL_PADRAO
     // Burn-in → seletor de Evento; NQA → Inspeção Visual (A/R); demais → campo de ação (SN).
     setTimeout(() => {
@@ -161,31 +163,34 @@ export function LancamentoForm({
     setPmo(r.ordem.pmo)
     setOp(r.ordem.op)
     if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
-    resetCamposDinamicos()
+    resetCamposDinamicos(); setHistorico([]) // nova OP → histórico zera
     setBipeCab('')
     setTimeout(() => colaboradorRef.current?.focus(), 0)
   }
   function atualizarCabecalho() {
     setCliente(''); setPmo(''); setOp('')
     setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
-    setNumeroSerie(''); resetCamposDinamicos()
+    setNumeroSerie(''); resetCamposDinamicos(); setHistorico([]) // reset total → histórico zera
     setBipeCab('')
     setTimeout(() => bipeCabRef.current?.focus(), 0)
   }
 
-  const valido = useMemo(() => {
-    if (!colaborador.trim() || !cliente || !pmo || !op || !posto || numeroSerie.trim() === '') return false
-    if (!ordemSel || semFaixa) return false
-    if (!serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) return false
-    if (ehNqa && (nqaVisual === '' || nqaFuncional === '')) return false
-    if (mostraStatus && status === '') return false
+  /** Motivo de o lançamento estar inválido (null = ok). Usado pro botão E pro feedback do Enter. */
+  function motivoLancamento(): string | null {
+    if (!colaborador.trim() || !cliente || !pmo || !op || !posto) return 'Preencha Colaborador, contexto (OP) e Posto antes de bipar.'
+    if (numeroSerie.trim() === '') return 'Bipe o Nº de Série.'
+    if (!ordemSel || semFaixa) return 'Esta OP não tem faixa de Nº de Série cadastrada.'
+    if (!serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) return 'Nº de Série fora da faixa desta OP.'
+    if (ehNqa && (nqaVisual === '' || nqaFuncional === '')) return 'Marque a Inspeção Visual e a Funcional (A/R/N).'
+    if (mostraStatus && status === '') return 'Selecione o Status (Aprovado/Reprovado).'
     if (mostraStatus && reprovado) {
-      if (ehSpi) return posicoesSPI.some((p) => p.trim() !== '')
+      if (ehSpi) { if (!posicoesSPI.some((p) => p.trim() !== '')) return 'Informe ao menos uma posição do defeito.' }
       // servidor exige código E posição E tipo em ao menos um defeito
-      return defeitosSel.some((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
+      else if (!defeitosSel.some((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')) return 'Preencha código, posição e tipo do defeito.'
     }
-    return true
-  }, [colaborador, cliente, pmo, op, posto, numeroSerie, ordemSel, semFaixa, ehNqa, nqaVisual, nqaFuncional, mostraStatus, status, reprovado, ehSpi, posicoesSPI, defeitosSel])
+    return null
+  }
+  const valido = motivoLancamento() === null
 
   function limparPeca() {
     setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao('')
@@ -195,7 +200,10 @@ export function LancamentoForm({
   }
 
   async function onEnviar() {
-    if (!valido || enviando) return
+    if (enviando) return
+    if (numeroSerie.trim() === '') { setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0); return }
+    const motivo = motivoLancamento()
+    if (motivo) { mostrar({ tipo: 'aviso', titulo: motivo }); limparPeca(); return } // erro claro + limpa o campo
     // Aviso de tempo mínimo de Burn-in (só na saída; não trava).
     if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempoBurninPorPosto?.[posto] ?? 0) > 0) {
       const entradaIso = await buscarEntradaBurnin(pmo, op, numeroSerie, posto)
@@ -301,8 +309,8 @@ export function LancamentoForm({
     } else if (r.tipo === 'reprovado') {
       setReprovarCodigo(r.codigo)
     } else {
-      mostrar({ tipo: 'aviso', titulo: 'Não reconhecido: nem SN da faixa, nem defeito do catálogo.' })
-      snRef.current?.select()
+      mostrar({ tipo: 'aviso', titulo: 'Não reconhecido: nem SN da faixa desta OP, nem defeito do catálogo.' })
+      limparPeca() // limpa o campo pra próxima bipagem
     }
   }
 
