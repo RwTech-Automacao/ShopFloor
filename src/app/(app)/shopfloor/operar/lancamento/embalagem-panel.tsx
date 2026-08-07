@@ -173,7 +173,7 @@ export function EmbalagemPanel({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-[1fr_16rem]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] gap-4 sm:grid-cols-[1fr_16rem] sm:grid-rows-[minmax(0,1fr)]">
           <div className="flex shrink-0 flex-col gap-1.5">
             <Label htmlFor="snCaixa">Nº de Série</Label>
             <Input id="snCaixa" ref={snRef} value={sn} onChange={(e) => setSn(e.target.value)}
