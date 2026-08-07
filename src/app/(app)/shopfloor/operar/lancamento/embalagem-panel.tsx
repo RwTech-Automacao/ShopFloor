@@ -26,7 +26,21 @@ export function EmbalagemPanel({
   const [embalando, startEmbalar] = useTransition()
   const [fechando, startFechar] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
+  const acaoAposEmbalar = useRef<null | 'focus' | 'select'>(null)
   const { confirmar, dialog } = useConfirmacao()
+
+  // O input fica disabled durante a transição de embalar; refoca (ou seleciona, no erro)
+  // quando ela termina, pra o operador bipar a próxima peça sem tocar no mouse.
+  useEffect(() => {
+    if (embalando) return
+    const a = acaoAposEmbalar.current
+    if (!a) return
+    acaoAposEmbalar.current = null
+    const el = snRef.current
+    if (!el) return
+    el.focus()
+    if (a === 'select') el.select()
+  }, [embalando])
 
   function recarregar() {
     startCarregar(async () => {
@@ -62,7 +76,7 @@ export function EmbalagemPanel({
           chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
           dica: /cheia/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
         })
-        snRef.current?.select()
+        acaoAposEmbalar.current = 'select'
         return
       }
       setSn('')
@@ -74,7 +88,7 @@ export function EmbalagemPanel({
       setQtdNaCaixa((q) => q + 1)
       setTotalEmbaladas((t) => t + 1)
       setSnsNaCaixa((prev) => [alvo.trim(), ...prev])
-      setTimeout(() => snRef.current?.focus(), 0)
+      acaoAposEmbalar.current = 'focus' // refoca quando a transição terminar (input volta a habilitar)
     })
   }
 
@@ -133,7 +147,7 @@ export function EmbalagemPanel({
 
   const pct = Math.min(100, Math.round((qtdNaCaixa / limite) * 100))
   return (
-    <Card className="flex min-h-0 flex-col">
+    <Card className="flex min-h-0 flex-1 flex-col">
       <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Caixa CX{seq} <span className="text-sm font-normal text-muted-foreground">· limite {limite}</span></CardTitle>
         <div className="flex items-center gap-3">

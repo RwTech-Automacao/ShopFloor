@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -52,6 +52,20 @@ export function IntegracaoPanel({
     setTimeout(() => bipeRef.current?.focus(), 0)
   }
 
+  // Encaixe: o campo de bipe fica disabled durante a resolução; refoca/seleciona quando termina,
+  // pra o operador bipar a próxima placa sem tocar no mouse (mesmo padrão da Embalagem).
+  const acaoAposResolver = useRef<null | 'focus' | 'select'>(null)
+  useEffect(() => {
+    if (resolvendo) return
+    const a = acaoAposResolver.current
+    if (!a) return
+    acaoAposResolver.current = null
+    const el = bipeRef.current
+    if (!el) return
+    el.focus()
+    if (a === 'select') el.select()
+  }, [resolvendo])
+
   /** PMO cuja placa já usa este SN (normalizado), ou null — evita o mesmo SN em duas PMOs. */
   function pmoComSn(sn: string): string | null {
     const alvo = normalizarSerie(sn)
@@ -72,24 +86,24 @@ export function IntegracaoPanel({
           return
         }
         setResultado({ tipo: 'aviso', titulo: r.erro })
-        bipeRef.current?.select()
+        acaoAposResolver.current = 'select'
         return
       }
       if (linhas[r.pmo] !== undefined) {
         setResultado({ tipo: 'aviso', titulo: 'PMO já tem placa' })
-        bipeRef.current?.select()
+        acaoAposResolver.current = 'select'
         return
       }
       const pmoRepetido = pmoComSn(snBipado)
       if (pmoRepetido) {
         setResultado({ tipo: 'aviso', titulo: `Esse Nº de Série já foi encaixado em ${pmoRepetido}.` })
-        bipeRef.current?.select()
+        acaoAposResolver.current = 'select'
         return
       }
       setLinhas((prev) => ({ ...prev, [r.pmo]: { sn: snBipado.trim(), op: r.op } }))
       setResultado({ tipo: 'ok', titulo: 'Placa encaixada', chips: [{ rotulo: 'PMO', valor: r.pmo }, { rotulo: 'Nº Série', valor: snBipado.trim(), mono: true }] })
       setBipe('')
-      refocarBipe()
+      acaoAposResolver.current = 'focus' // refoca quando a resolução terminar (input volta a habilitar)
     })
   }
 

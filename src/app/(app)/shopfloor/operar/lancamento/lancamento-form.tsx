@@ -190,7 +190,8 @@ export function LancamentoForm({
   function limparPeca() {
     setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao('')
     setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    setTimeout(() => snRef.current?.focus(), 0)
+    // Volta pro início do ciclo da tela: NQA começa na Inspeção Visual; demais, no campo de SN.
+    setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0)
   }
 
   async function onEnviar() {
@@ -551,7 +552,7 @@ export function LancamentoForm({
         )}
 
         {ehEmbalagem && (
-          <div className="flex min-h-0 flex-col lg:col-span-2">
+          <div className="flex min-h-0 flex-1 flex-col lg:col-span-2">
             <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
           </div>
         )}
