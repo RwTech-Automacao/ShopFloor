@@ -552,7 +552,7 @@ export function LancamentoForm({
         )}
 
         {ehEmbalagem && (
-          <div className="flex min-h-0 flex-1 flex-col lg:col-span-2">
+          <div className="flex min-h-0 flex-col lg:col-span-2">
             <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
           </div>
         )}

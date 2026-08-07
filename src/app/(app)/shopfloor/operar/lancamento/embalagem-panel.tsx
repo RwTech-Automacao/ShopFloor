@@ -147,7 +147,7 @@ export function EmbalagemPanel({
 
   const pct = Math.min(100, Math.round((qtdNaCaixa / limite) * 100))
   return (
-    <Card className="flex min-h-0 flex-1 flex-col">
+    <Card className="flex min-h-0 flex-col">
       <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Caixa CX{seq} <span className="text-sm font-normal text-muted-foreground">· limite {limite}</span></CardTitle>
         <div className="flex items-center gap-3">
@@ -173,16 +173,17 @@ export function EmbalagemPanel({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] gap-4 sm:grid-cols-[1fr_16rem] sm:grid-rows-[minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_16rem]">
           <div className="flex shrink-0 flex-col gap-1.5">
             <Label htmlFor="snCaixa">Nº de Série</Label>
             <Input id="snCaixa" ref={snRef} value={sn} onChange={(e) => setSn(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBipar() } }}
               placeholder="Bipe a peça" autoComplete="off" autoFocus className="h-12 text-lg" disabled={embalando} />
           </div>
-          <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
+          <div className="flex flex-col rounded-lg border border-border p-2">
             <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Nesta caixa ({snsNaCaixa.length})</p>
-            <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto text-sm">
+            {/* Mostra ~8 SNs; o resto rola dentro do card. */}
+            <ul className="flex max-h-[11.5rem] flex-col gap-0.5 overflow-y-auto text-sm">
               {snsNaCaixa.length === 0 && <li className="text-muted-foreground">—</li>}
               {snsNaCaixa.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
             </ul>
