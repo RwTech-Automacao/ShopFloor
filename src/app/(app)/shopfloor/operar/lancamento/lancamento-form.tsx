@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useRef, useState, useTransition } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -74,6 +74,7 @@ export function LancamentoForm({
   const [reprovarCodigo, setReprovarCodigo] = useState<string | null>(null)
   const [enviando, startTransition] = useTransition()
   const [processando, setProcessando] = useState(false) // trava a UI do confirm até o resultado (não deixa bipar em cima)
+  const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
   const colaboradorRef = useRef<HTMLInputElement>(null)
@@ -102,7 +103,14 @@ export function LancamentoForm({
   const ehScanner = comStatus && !ehNqa && ((!ehBurnin && perfilDo(posto).reprova === 'defeitos') || (ehBurnin && burninEvento === 'saida'))
   // Burn-in entrada também passa pelo campo de ação (grava direto, sem classificar) — usado no roteamento Enter/Enviar.
   const usaAcao = ehScanner || (ehBurnin && burninEvento === 'entrada')
+  // Postos de defeito não-Burn-in (Inspeção/Teste/SPI): o campo é SÓ o Nº de Série; o defeito vem de uma
+  // lista em acordeão no mesmo campo (touch, sem depender do teclado ruim). Burn-in saída segue bipando no campo.
+  const usaAcordeao = ehScanner && !ehBurnin
   const defeitosPosto = useMemo(() => defeitosDoPosto(perfilDo(posto).chave, defeitos), [posto, defeitos, postosPerfil])
+  const defeitosFiltrados = useMemo(() => {
+    const f = numeroSerie.trim().toUpperCase()
+    return f === '' ? defeitosPosto : defeitosPosto.filter((d) => d.codigo.toUpperCase().includes(f))
+  }, [numeroSerie, defeitosPosto])
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
@@ -125,7 +133,7 @@ export function LancamentoForm({
   function resetCamposDinamicos() {
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
     setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setBurninEvento('entrada')
-    setResultado(null); setUltimoEhLancamento(false) // balão some → tabela volta a mostrar o histórico completo
+    setResultado(null); setUltimoEhLancamento(false); setListaAberta(false) // balão some → tabela volta a mostrar o histórico completo
   }
   /** Trocar entrada/saída limpa o status/defeitos (evita defeito velho da saída ao voltar p/ entrada). */
   function mudarBurninEvento(v: 'entrada' | 'saida') {
@@ -185,7 +193,7 @@ export function LancamentoForm({
   const valido = motivoLancamento() === null
 
   function limparPeca() {
-    setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao('')
+    setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setListaAberta(false)
     setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
     // Volta pro início do ciclo da tela: NQA começa na Inspeção Visual; demais, no campo de SN.
     setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0)
@@ -297,6 +305,17 @@ export function LancamentoForm({
       gravarBurninEntrada()
       return
     }
+    // Inspeção/Teste/SPI: o campo é SÓ Nº de Série — reprova é pela lista (acordeão).
+    if (usaAcordeao) {
+      if (serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) {
+        setAprovarSn(numeroSerie.trim())
+      } else {
+        mostrar({ tipo: 'aviso', titulo: 'Nº de Série fora da faixa desta OP. Para reprovar, abra a lista de defeitos (seta).' })
+        limparPeca()
+      }
+      return
+    }
+    // Burn-in saída (demais scanner): classifica SN ou defeito bipado no campo.
     const r = classificarAcao(numeroSerie, defeitosPosto, ordemSel.sn_ini, ordemSel.sn_fim)
     if (r.tipo === 'aprovado') {
       setAprovarSn(numeroSerie.trim())
@@ -306,6 +325,19 @@ export function LancamentoForm({
       mostrar({ tipo: 'aviso', titulo: 'Não reconhecido: nem SN da faixa desta OP, nem defeito do catálogo.' })
       limparPeca() // limpa o campo pra próxima bipagem
     }
+  }
+
+  /** Abre/fecha o acordeão de defeitos e limpa o campo (SN ↔ filtro não se misturam). */
+  function alternarLista() {
+    setListaAberta((a) => !a)
+    setNumeroSerie('')
+    setTimeout(() => snRef.current?.focus(), 0)
+  }
+  /** Escolher um defeito da lista abre o modal de reprova (SN é bipado lá dentro). */
+  function escolherDefeito(codigo: string) {
+    setReprovarCodigo(codigo)
+    setListaAberta(false)
+    setNumeroSerie('')
   }
 
   /** Burn-in entrada: SN bipado grava direto (sem modal, sem status — evento neutro). */
@@ -619,30 +651,67 @@ export function LancamentoForm({
 
                 <div className="flex shrink-0 flex-col gap-1.5">
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
+                    <Label htmlFor="sn">{ehScanner && !usaAcordeao ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
                     {(enviando || processando) && (
                       <span className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-600" aria-live="polite">
                         <span className="size-3 animate-spin rounded-full border-2 border-amber-600 border-t-transparent" /> Gravando…
                       </span>
                     )}
                   </div>
-                  {ehScanner && (
+                  {ehScanner && !usaAcordeao && (
                     <datalist id="acao-defeitos-list">
                       {defeitosPosto.map((d) => <option key={d.codigo} value={d.codigo} />)}
                     </datalist>
                   )}
-                  <Input
-                    id="sn"
-                    ref={snRef}
-                    value={numeroSerie}
-                    onChange={(e) => setNumeroSerie(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (usaAcao) { onAcao() } else { onEnviar() } } }}
-                    autoComplete="off"
-                    disabled={enviando || processando}
-                    list={ehScanner ? 'acao-defeitos-list' : undefined}
-                    className="h-12 text-lg disabled:opacity-60"
-                    placeholder={ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série'}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="sn"
+                      ref={snRef}
+                      value={numeroSerie}
+                      onChange={(e) => setNumeroSerie(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return
+                        e.preventDefault()
+                        if (usaAcordeao && listaAberta) { const d0 = defeitosFiltrados[0]; if (d0) escolherDefeito(d0.codigo) }
+                        else if (usaAcao) onAcao()
+                        else onEnviar()
+                      }}
+                      autoComplete="off"
+                      disabled={enviando || processando}
+                      list={ehScanner && !usaAcordeao ? 'acao-defeitos-list' : undefined}
+                      className={`h-12 text-lg disabled:opacity-60 ${usaAcordeao ? 'pr-12' : ''}`}
+                      placeholder={usaAcordeao ? (listaAberta ? 'Filtre o defeito…' : 'Bipe o Nº de Série') : (ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série')}
+                    />
+                    {usaAcordeao && (
+                      <button
+                        type="button"
+                        aria-label={listaAberta ? 'Fechar lista de defeitos' : 'Abrir lista de defeitos'}
+                        aria-expanded={listaAberta}
+                        onClick={alternarLista}
+                        disabled={enviando || processando}
+                        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-enterplak disabled:opacity-40"
+                      >
+                        {listaAberta ? <ChevronUp className="size-5" /> : <ChevronDown className="size-5" />}
+                      </button>
+                    )}
+                  </div>
+                  {usaAcordeao && listaAberta && (
+                    <div className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-border">
+                      {defeitosFiltrados.length === 0 && (
+                        <p className="px-3 py-3 text-sm text-muted-foreground">Nenhum defeito com “{numeroSerie.trim()}”.</p>
+                      )}
+                      {defeitosFiltrados.map((d) => (
+                        <button
+                          key={d.codigo}
+                          type="button"
+                          onClick={() => escolherDefeito(d.codigo)}
+                          className="block w-full border-b border-border px-3 py-2.5 text-left text-base last:border-b-0 hover:bg-muted"
+                        >
+                          {d.codigo}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {mostraStatus && !ehScanner && (
