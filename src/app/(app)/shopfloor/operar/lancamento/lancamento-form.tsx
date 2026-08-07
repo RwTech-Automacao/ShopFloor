@@ -507,7 +507,7 @@ export function LancamentoForm({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
       {/* Contexto */}
       <Card size="sm" className="shrink-0">
         <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -577,9 +577,9 @@ export function LancamentoForm({
 
       {/* Área de ação: empilha no estreito, 2 colunas no lg (bipe/ação à esquerda, resultado à direita).
           grid-rows minmax(0,1fr) trava a linha → a coluna direita (histórico) rola por dentro, não empurra a página. */}
-      <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)] lg:gap-4">
+      <div className={`flex flex-col ${ehIntegracao ? '' : 'min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)] lg:gap-4'}`}>
         {ehIntegracao && (
-          <div className="flex min-h-0 flex-col lg:col-span-2">
+          <div className="flex flex-col">
             <IntegracaoPanel
               colaborador={colaborador}
               cliente={cliente}

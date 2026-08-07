@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
@@ -37,6 +38,7 @@ export function IntegracaoPanel({
   const [bipe, setBipe] = useState('')
   const [produtoSN, setProdutoSN] = useState('')
   const [ambiguo, setAmbiguo] = useState<{ sn: string; candidatos: { pmo: string; op: string }[] } | null>(null)
+  const [etapa, setEtapa] = useState<'nenhuma' | 'confirmar' | 'produto'>('nenhuma') // fluxo final por modal
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [resolvendo, startResolucao] = useTransition()
   const [registrando, startRegistro] = useTransition()
@@ -66,11 +68,21 @@ export function IntegracaoPanel({
     if (a === 'select') el.select()
   }, [resolvendo])
 
+  // Ao entrar na etapa 'produto', foca o campo do produto final dentro do modal.
+  useEffect(() => {
+    if (etapa === 'produto') { const id = setTimeout(() => produtoRef.current?.focus(), 0); return () => clearTimeout(id) }
+  }, [etapa])
+
   /** PMO cuja placa já usa este SN (normalizado), ou null — evita o mesmo SN em duas PMOs. */
   function pmoComSn(sn: string): string | null {
     const alvo = normalizarSerie(sn)
     const achado = Object.entries(linhas).find(([, l]) => normalizarSerie(l.sn) === alvo)
     return achado ? achado[0] : null
+  }
+
+  /** Encaixou a última placa? Abre o modal de conferência automaticamente. */
+  function abrirConferenciaSeCompleto(pmoAdicionado: string) {
+    if (componentes.every((c) => c === pmoAdicionado || linhas[c] !== undefined)) setEtapa('confirmar')
   }
 
   function onBipar() {
@@ -103,6 +115,7 @@ export function IntegracaoPanel({
       setLinhas((prev) => ({ ...prev, [r.pmo]: { sn: snBipado.trim(), op: r.op } }))
       setResultado({ tipo: 'ok', titulo: 'Placa encaixada', chips: [{ rotulo: 'PMO', valor: r.pmo }, { rotulo: 'Nº Série', valor: snBipado.trim(), mono: true }] })
       setBipe('')
+      abrirConferenciaSeCompleto(r.pmo)
       acaoAposResolver.current = 'focus' // refoca quando a resolução terminar (input volta a habilitar)
     })
   }
@@ -121,6 +134,7 @@ export function IntegracaoPanel({
     setLinhas((prev) => ({ ...prev, [pmoEscolhido]: { sn: ambiguo.sn, op: opEscolhida } }))
     setResultado({ tipo: 'ok', titulo: 'Placa encaixada', chips: [{ rotulo: 'PMO', valor: pmoEscolhido }, { rotulo: 'Nº Série', valor: ambiguo.sn, mono: true }] })
     setAmbiguo(null)
+    abrirConferenciaSeCompleto(pmoEscolhido)
     refocarBipe()
   }
 
@@ -128,6 +142,7 @@ export function IntegracaoPanel({
     setLinhas({})
     setProdutoSN('')
     setAmbiguo(null)
+    setEtapa('nenhuma')
   }
 
   function onRegistrar() {
@@ -138,7 +153,7 @@ export function IntegracaoPanel({
       if (r.ok) {
         setResultado({ tipo: 'ok', titulo: 'Integração registrada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }, { rotulo: 'Produto', valor: produtoSN.trim(), mono: true }] })
         limpar()
-        setTimeout(() => produtoRef.current?.focus(), 0)
+        refocarBipe()
       } else {
         setResultado({ tipo: 'aviso', titulo: r.erro })
       }
@@ -148,11 +163,11 @@ export function IntegracaoPanel({
   const contador = useMemo(() => `${preenchidas} / ${componentes.length} placas`, [preenchidas, componentes.length])
 
   return (
-    <Card className="flex min-h-0 flex-col">
+    <Card className="flex flex-col">
       <CardHeader className="shrink-0">
         <CardTitle>Integração</CardTitle>
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+      <CardContent className="flex flex-col gap-4">
         <div className="shrink-0">
           <PainelResultado resultado={resultado} />
         </div>
@@ -207,14 +222,14 @@ export function IntegracaoPanel({
               </div>
             )}
 
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-col">
               <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium">
                   Receita <span className="font-normal text-muted-foreground">· 1 placa por PMO</span>
                 </p>
                 <span className="text-sm text-muted-foreground">{contador}</span>
               </div>
-              <div className="min-h-0 flex-1 overflow-auto">
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -244,12 +259,58 @@ export function IntegracaoPanel({
                 </Table>
               </div>
             </div>
+
+            {todasPreenchidas && etapa === 'nenhuma' && (
+              <Button onClick={() => setEtapa('confirmar')} className="h-11 shrink-0 self-start bg-enterplak px-8 hover:bg-enterplak-700">
+                Conferir placas e finalizar
+              </Button>
+            )}
           </>
         )}
+      </CardContent>
 
-        <div className="grid shrink-0 grid-cols-1 items-end gap-4 sm:grid-cols-[1fr_auto]">
+      {/* Etapa 1: conferir placas → colaborador dá o "ok final" */}
+      <Dialog open={etapa === 'confirmar'} onOpenChange={(o) => { if (!o) setEtapa('nenhuma') }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Placas encaixadas — conferir</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Confira as placas do produto e siga para bipar o produto final.</p>
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>PMO</TableHead>
+                  <TableHead>Nº de Série</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {componentes.map((pm) => (
+                  <TableRow key={pm}>
+                    <TableCell className="font-medium">{pm}</TableCell>
+                    <TableCell className="font-mono">{linhas[pm]?.sn ?? '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEtapa('nenhuma')}>Voltar</Button>
+            <Button onClick={() => setEtapa('produto')} className="bg-enterplak hover:bg-enterplak-700">
+              Placas OK — bipar produto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Etapa 2: bipar o Nº de Série do produto final */}
+      <Dialog open={etapa === 'produto'} onOpenChange={(o) => { if (!o) setEtapa('confirmar') }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Produto final</DialogTitle>
+          </DialogHeader>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="produtoSN">Produto Final (Nº de Série)</Label>
+            <Label htmlFor="produtoSN">Bipe o Nº de Série do produto final</Label>
             <Input
               id="produtoSN"
               ref={produtoRef}
@@ -259,16 +320,17 @@ export function IntegracaoPanel({
               placeholder="Bipe o SN do produto final"
               autoComplete="off"
               className="h-12 text-lg"
-              disabled={semReceita}
+              disabled={registrando}
             />
           </div>
-          {!semReceita && (
-            <Button onClick={onRegistrar} disabled={!valido || registrando} className="h-11 bg-enterplak px-8 hover:bg-enterplak-700">
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEtapa('confirmar')}>Voltar</Button>
+            <Button onClick={onRegistrar} disabled={!valido || registrando} className="bg-enterplak hover:bg-enterplak-700">
               {registrando ? 'Registrando…' : 'Registrar Integração'}
             </Button>
-          )}
-        </div>
-      </CardContent>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
