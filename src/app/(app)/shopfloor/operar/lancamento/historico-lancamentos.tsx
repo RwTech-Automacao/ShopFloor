@@ -21,7 +21,7 @@ export function HistoricoLancamentos({ linhas }: { linhas: LinhaHistorico[] }) {
   return (
     <div className="mt-3 max-h-[8rem] overflow-y-auto rounded-lg border border-border">
       <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
+        <thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground shadow-[0_1px_0_var(--color-border,#e5e7eb)]">
           <tr>
             <th className="px-3 py-2 text-center font-medium">Lançamento</th>
             <th className="px-3 py-2 text-center font-medium">Status</th>

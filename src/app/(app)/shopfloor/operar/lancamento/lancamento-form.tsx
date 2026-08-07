@@ -80,6 +80,7 @@ export function LancamentoForm({
   const [aprovarSn, setAprovarSn] = useState<string | null>(null)
   const [reprovarCodigo, setReprovarCodigo] = useState<string | null>(null)
   const [enviando, startTransition] = useTransition()
+  const [processando, setProcessando] = useState(false) // trava a UI do confirm até o resultado (não deixa bipar em cima)
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
   const colaboradorRef = useRef<HTMLInputElement>(null)
@@ -204,6 +205,7 @@ export function LancamentoForm({
     if (numeroSerie.trim() === '') { setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0); return }
     const motivo = motivoLancamento()
     if (motivo) { mostrar({ tipo: 'aviso', titulo: motivo }); limparPeca(); return } // erro claro + limpa o campo
+    setProcessando(true) // trava o campo até o resultado
     // Aviso de tempo mínimo de Burn-in (só na saída; não trava).
     if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempoBurninPorPosto?.[posto] ?? 0) > 0) {
       const entradaIso = await buscarEntradaBurnin(pmo, op, numeroSerie, posto)
@@ -262,6 +264,7 @@ export function LancamentoForm({
         ? (nqaVisual === 'Reprovado' || nqaFuncional === 'Reprovado' ? 'reprovado' : 'aprovado')
         : (mostraStatus && status ? (status === 'Reprovado' ? 'reprovado' : 'aprovado') : null)
       const sn = numeroSerie.trim()
+      setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
           tipo: outcome === 'reprovado' ? 'reprova' : 'ok',
@@ -319,8 +322,10 @@ export function LancamentoForm({
     if (enviando) return
     const sn = numeroSerie.trim()
     if (sn === '') return
+    setProcessando(true) // trava o campo até o resultado
     startTransition(async () => {
       const r = await lancar({ colaborador, posto, pmo, op, numeroSerie: sn, burninEvento: 'entrada' })
+      setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
           tipo: 'ok',
@@ -348,6 +353,7 @@ export function LancamentoForm({
     const sn = aprovarSn
     if (sn === null || enviando) return
     setAprovarSn(null) // fecha o modal na hora
+    setProcessando(true) // trava o campo até o resultado
     setTimeout(() => snRef.current?.focus(), 0) // foco volta já; se houver diálogo de aviso/conserto, ele assume
 
     // Aviso de tempo mínimo de Burn-in (saída antecipada; não trava — só confirma).
@@ -363,7 +369,7 @@ export function LancamentoForm({
             descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
             rotuloConfirmar: 'Registrar saída',
           })
-          if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
+          if (!ok) { setProcessando(false); setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
         }
       }
     }
@@ -381,7 +387,7 @@ export function LancamentoForm({
           descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
           rotuloConfirmar: 'Sim, foi consertado',
         })
-        if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a aprovação
+        if (!ok) { setProcessando(false); setTimeout(() => snRef.current?.focus(), 0); return } // aborta a aprovação
         conservoConfirmado = defeitos
       }
     }
@@ -391,6 +397,7 @@ export function LancamentoForm({
         colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado,
         burninEvento: ehBurnin ? 'saida' : undefined,
       })
+      setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
           tipo: 'ok',
@@ -418,6 +425,7 @@ export function LancamentoForm({
   async function gravarReprovado(dados: { defeitos: { codigo: string; posicao: string }[]; sn: string }) {
     if (enviando) return
     setReprovarCodigo(null) // fecha o modal na hora; o registro roda em 2º plano
+    setProcessando(true) // trava o campo até o resultado
     setTimeout(() => snRef.current?.focus(), 0)
 
     // Aviso de tempo mínimo de Burn-in (saída antecipada; não trava — só confirma).
@@ -433,7 +441,7 @@ export function LancamentoForm({
             descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
             rotuloConfirmar: 'Registrar saída',
           })
-          if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
+          if (!ok) { setProcessando(false); setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
         }
       }
     }
@@ -450,6 +458,7 @@ export function LancamentoForm({
         burninEvento: ehBurnin ? 'saida' : undefined,
       })
       setReprovarCodigo(null)
+      setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
           tipo: 'reprova',
@@ -639,7 +648,14 @@ export function LancamentoForm({
                 )}
 
                 <div className="flex shrink-0 flex-col gap-1.5">
-                  <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
+                    {(enviando || processando) && (
+                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-600" aria-live="polite">
+                        <span className="size-3 animate-spin rounded-full border-2 border-amber-600 border-t-transparent" /> Gravando…
+                      </span>
+                    )}
+                  </div>
                   {ehScanner && (
                     <datalist id="acao-defeitos-list">
                       {defeitosPosto.map((d) => <option key={d.codigo} value={d.codigo} />)}
@@ -652,8 +668,9 @@ export function LancamentoForm({
                     onChange={(e) => setNumeroSerie(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (usaAcao) { onAcao() } else { onEnviar() } } }}
                     autoComplete="off"
+                    disabled={enviando || processando}
                     list={ehScanner ? 'acao-defeitos-list' : undefined}
-                    className="h-12 text-lg"
+                    className="h-12 text-lg disabled:opacity-60"
                     placeholder={ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série'}
                   />
                 </div>
