@@ -17,7 +17,7 @@ export function EmbalagemPanel({
   const [limiteInput, setLimiteInput] = useState('')
   const [qtdNaCaixa, setQtdNaCaixa] = useState(0)
   const [totalEmbaladas, setTotalEmbaladas] = useState(0)
-  const [ultimasSns, setUltimasSns] = useState<string[]>([])
+  const [snsNaCaixa, setSnsNaCaixa] = useState<string[]>([])
   const [concluida, setConcluida] = useState(false)
   const [sn, setSn] = useState('')
   const [ehUltima, setEhUltima] = useState(false)
@@ -26,18 +26,32 @@ export function EmbalagemPanel({
   const [embalando, startEmbalar] = useTransition()
   const [fechando, startFechar] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
+  const acaoAposEmbalar = useRef<null | 'focus' | 'select'>(null)
   const { confirmar, dialog } = useConfirmacao()
+
+  // O input fica disabled durante a transição de embalar; refoca (ou seleciona, no erro)
+  // quando ela termina, pra o operador bipar a próxima peça sem tocar no mouse.
+  useEffect(() => {
+    if (embalando) return
+    const a = acaoAposEmbalar.current
+    if (!a) return
+    acaoAposEmbalar.current = null
+    const el = snRef.current
+    if (!el) return
+    el.focus()
+    if (a === 'select') el.select()
+  }, [embalando])
 
   function recarregar() {
     startCarregar(async () => {
       setResultado(null) // contexto novo (troca de OP/posto) → limpa o painel da ação anterior
       const r = await carregarEmbalagem(pmo, op, posto)
-      if (!r.ok) { setResultado({ tipo: 'erro', titulo: r.erro }); return }
+      if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
       setSeq(r.estado.seq)
       setLimite(r.estado.limite)
       setQtdNaCaixa(r.estado.qtdNaCaixa)
       setTotalEmbaladas(r.estado.totalEmbaladas)
-      setUltimasSns(r.estado.ultimasSns)
+      setSnsNaCaixa(r.estado.snsNaCaixa)
       setConcluida(r.estado.concluida)
     })
   }
@@ -45,7 +59,7 @@ export function EmbalagemPanel({
 
   function definirLimite() {
     const n = Number(limiteInput)
-    if (!Number.isInteger(n) || n <= 0) { setResultado({ tipo: 'erro', titulo: 'Informe um limite válido (inteiro > 0).' }); return }
+    if (!Number.isInteger(n) || n <= 0) { setResultado({ tipo: 'aviso', titulo: 'Informe um limite válido (inteiro > 0).' }); return }
     setLimite(n)
     setTimeout(() => snRef.current?.focus(), 0)
   }
@@ -57,12 +71,12 @@ export function EmbalagemPanel({
       const r = await embalarPeca({ colaborador, pmo, op, posto, seq, limite, numeroSerie: alvo })
       if (!r.ok) {
         setResultado({
-          tipo: 'erro',
+          tipo: 'aviso',
           titulo: r.erro,
           chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
           dica: /cheia/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
         })
-        snRef.current?.select()
+        acaoAposEmbalar.current = 'select'
         return
       }
       setSn('')
@@ -73,8 +87,8 @@ export function EmbalagemPanel({
       })
       setQtdNaCaixa((q) => q + 1)
       setTotalEmbaladas((t) => t + 1)
-      setUltimasSns((prev) => [alvo.trim(), ...prev].slice(0, 8))
-      setTimeout(() => snRef.current?.focus(), 0)
+      setSnsNaCaixa((prev) => [alvo.trim(), ...prev])
+      acaoAposEmbalar.current = 'focus' // refoca quando a transição terminar (input volta a habilitar)
     })
   }
 
@@ -90,10 +104,10 @@ export function EmbalagemPanel({
     }
     startFechar(async () => {
       const r = await fecharCaixa(pmo, op, posto, seq, ehUltima)
-      if (!r.ok) { setResultado({ tipo: 'erro', titulo: r.erro }); return }
+      if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
       setResultado({ tipo: 'ok', titulo: 'Caixa fechada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }] })
       if (ehUltima) { setConcluida(true) }
-      else { setSeq((s) => s + 1); setQtdNaCaixa(0); setUltimasSns([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
+      else { setSeq((s) => s + 1); setQtdNaCaixa(0); setSnsNaCaixa([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
     })
   }
 
@@ -159,18 +173,19 @@ export function EmbalagemPanel({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-[1fr_16rem]">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_16rem]">
           <div className="flex shrink-0 flex-col gap-1.5">
             <Label htmlFor="snCaixa">Nº de Série</Label>
             <Input id="snCaixa" ref={snRef} value={sn} onChange={(e) => setSn(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBipar() } }}
               placeholder="Bipe a peça" autoComplete="off" autoFocus className="h-12 text-lg" disabled={embalando} />
           </div>
-          <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
-            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Últimas nesta caixa</p>
-            <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto text-sm">
-              {ultimasSns.length === 0 && <li className="text-muted-foreground">—</li>}
-              {ultimasSns.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
+          <div className="flex flex-col rounded-lg border border-border p-2">
+            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Nesta caixa ({snsNaCaixa.length})</p>
+            {/* Mostra ~8 SNs; o resto rola dentro do card. */}
+            <ul className="flex max-h-[11.5rem] flex-col gap-0.5 overflow-y-auto text-sm">
+              {snsNaCaixa.length === 0 && <li className="text-muted-foreground">—</li>}
+              {snsNaCaixa.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
             </ul>
           </div>
         </div>

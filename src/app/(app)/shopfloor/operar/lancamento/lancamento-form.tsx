@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
+import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { classificarAcao, defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
@@ -74,6 +75,8 @@ export function LancamentoForm({
   const [observacao, setObservacao] = useState('')
   const [bipeCab, setBipeCab] = useState('')
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
+  const [historico, setHistorico] = useState<LinhaHistorico[]>([])
+  const [ultimoEhLancamento, setUltimoEhLancamento] = useState(false)
   const [aprovarSn, setAprovarSn] = useState<string | null>(null)
   const [reprovarCodigo, setReprovarCodigo] = useState<string | null>(null)
   const [enviando, startTransition] = useTransition()
@@ -113,10 +116,22 @@ export function LancamentoForm({
   const reprovado = status.toLowerCase() === 'reprovado'
   const semFaixa = ordemSel !== null && (ordemSel.sn_ini.trim() === '' || ordemSel.sn_fim.trim() === '')
 
+  /** Mostra o resultado no balão; se `linha` vier, registra no histórico (lançamento efetivo). */
+  function mostrar(res: ResultadoAcao, linha?: LinhaHistorico) {
+    setResultado(res)
+    if (linha) {
+      setHistorico((h) => [linha, ...h].slice(0, 30))
+      setUltimoEhLancamento(true)
+    } else {
+      setUltimoEhLancamento(false)
+    }
+  }
+
   /** Limpa todos os campos dinâmicos da peça (evita dado velho ao trocar contexto/posto). */
   function resetCamposDinamicos() {
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setBurninEvento('entrada'); setResultado(null)
+    setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setBurninEvento('entrada')
+    setResultado(null); setUltimoEhLancamento(false) // balão some → tabela volta a mostrar o histórico completo
   }
   /** Trocar entrada/saída limpa o status/defeitos (evita defeito velho da saída ao voltar p/ entrada). */
   function mudarBurninEvento(v: 'entrada' | 'saida') {
@@ -175,7 +190,8 @@ export function LancamentoForm({
   function limparPeca() {
     setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao('')
     setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    setTimeout(() => snRef.current?.focus(), 0)
+    // Volta pro início do ciclo da tela: NQA começa na Inspeção Visual; demais, no campo de SN.
+    setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0)
   }
 
   async function onEnviar() {
@@ -233,28 +249,31 @@ export function LancamentoForm({
         posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
         conservoConfirmado,
       })
+      // Resultado (aprovado/reprovado) do posto: NQA é derivado de Visual/Funcional; demais, do Status.
+      const outcome: 'aprovado' | 'reprovado' | null = ehNqa
+        ? (nqaVisual === 'Reprovado' || nqaFuncional === 'Reprovado' ? 'reprovado' : 'aprovado')
+        : (mostraStatus && status ? (status === 'Reprovado' ? 'reprovado' : 'aprovado') : null)
+      const sn = numeroSerie.trim()
       if (r.ok) {
-        setResultado({
-          tipo: 'ok',
-          titulo: ehBurnin
-            ? (burninEvento === 'saida' ? 'Saída de Burn-in registrada' : 'Entrada de Burn-in registrada')
-            : 'Peça registrada',
+        mostrar({
+          tipo: outcome === 'reprovado' ? 'reprova' : 'ok',
+          titulo: 'Peça registrada',
           chips: [
-            { rotulo: 'Nº Série', valor: numeroSerie.trim(), mono: true },
+            { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
             ...(mostraStatus && status ? [{ valor: status, destaque: status === 'Aprovado' }] : []),
           ],
-        })
+        }, { lancamento: true, status: outcome, sn })
         limparPeca()
       } else {
-        setResultado({
-          tipo: 'erro',
+        mostrar({
+          tipo: 'aviso',
           titulo: r.erro,
           chips: [
-            { rotulo: 'Nº Série', valor: numeroSerie.trim(), mono: true },
+            { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        })
+        }, { lancamento: false, status: null, sn })
       }
     })
   }
@@ -268,7 +287,7 @@ export function LancamentoForm({
   /** Postos-scanner: decide aprovado/reprovado pelo que foi bipado no campo de ação. */
   function onAcao() {
     if (!colaborador.trim() || !posto || !ordemSel || semFaixa) {
-      setResultado({ tipo: 'erro', titulo: 'Preencha Colaborador e Posto (com OP e faixa de Nº de Série) antes de bipar.' })
+      mostrar({ tipo: 'aviso', titulo: 'Preencha Colaborador e Posto (com OP e faixa de Nº de Série) antes de bipar.' })
       return
     }
     // Burn-in entrada é neutra: não classifica (não é aprovação/reprova) — grava direto.
@@ -282,7 +301,7 @@ export function LancamentoForm({
     } else if (r.tipo === 'reprovado') {
       setReprovarCodigo(r.codigo)
     } else {
-      setResultado({ tipo: 'erro', titulo: 'Não reconhecido: nem SN da faixa, nem defeito do catálogo.' })
+      mostrar({ tipo: 'aviso', titulo: 'Não reconhecido: nem SN da faixa, nem defeito do catálogo.' })
       snRef.current?.select()
     }
   }
@@ -295,24 +314,24 @@ export function LancamentoForm({
     startTransition(async () => {
       const r = await lancar({ colaborador, posto, pmo, op, numeroSerie: sn, burninEvento: 'entrada' })
       if (r.ok) {
-        setResultado({
+        mostrar({
           tipo: 'ok',
           titulo: 'Entrada de Burn-in registrada',
           chips: [
             { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        })
+        }, { lancamento: true, status: null, sn })
         limparPeca()
       } else {
-        setResultado({
-          tipo: 'erro',
+        mostrar({
+          tipo: 'aviso',
           titulo: r.erro,
           chips: [
             { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        })
+        }, { lancamento: false, status: null, sn })
       }
     })
   }
@@ -365,7 +384,7 @@ export function LancamentoForm({
         burninEvento: ehBurnin ? 'saida' : undefined,
       })
       if (r.ok) {
-        setResultado({
+        mostrar({
           tipo: 'ok',
           titulo: ehBurnin ? 'Saída de Burn-in registrada' : 'Peça registrada',
           chips: [
@@ -373,17 +392,17 @@ export function LancamentoForm({
             { rotulo: 'Posto', valor: posto },
             { valor: 'Aprovado', destaque: true },
           ],
-        })
+        }, { lancamento: true, status: 'aprovado', sn: sn.trim() })
         limparPeca()
       } else {
-        setResultado({
-          tipo: 'erro',
+        mostrar({
+          tipo: 'aviso',
           titulo: r.erro,
           chips: [
             { rotulo: 'Nº Série', valor: sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        })
+        }, { lancamento: false, status: null, sn: sn.trim() })
       }
     })
   }
@@ -424,25 +443,25 @@ export function LancamentoForm({
       })
       setReprovarCodigo(null)
       if (r.ok) {
-        setResultado({
-          tipo: 'ok',
+        mostrar({
+          tipo: 'reprova',
           titulo: ehBurnin ? 'Saída de Burn-in registrada' : 'Peça registrada',
           chips: [
             { rotulo: 'Nº Série', valor: dados.sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
             { valor: 'Reprovado', destaque: false },
           ],
-        })
+        }, { lancamento: true, status: 'reprovado', sn: dados.sn.trim() })
         limparPeca()
       } else {
-        setResultado({
-          tipo: 'erro',
+        mostrar({
+          tipo: 'aviso',
           titulo: r.erro,
           chips: [
             { rotulo: 'Nº Série', valor: dados.sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        })
+        }, { lancamento: false, status: null, sn: dados.sn.trim() })
       }
     })
   }
@@ -676,8 +695,9 @@ export function LancamentoForm({
               </CardContent>
             </Card>
 
-            <div className="min-h-0 shrink-0">
+            <div className="flex min-h-0 flex-1 flex-col">
               <PainelResultado resultado={resultado} />
+              <HistoricoLancamentos linhas={ultimoEhLancamento ? historico.slice(1) : historico} />
             </div>
           </>
         )}
