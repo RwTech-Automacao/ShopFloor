@@ -7,7 +7,7 @@ export interface EstadoEmbalagem {
   limite: number | null  // null = ainda não definido (operador digita)
   qtdNaCaixa: number     // peças na caixa atual
   totalEmbaladas: number // todas as peças embaladas nesta OP+posto
-  ultimasSns: string[]   // últimos SNs da caixa atual (mais recentes primeiro)
+  snsNaCaixa: string[]   // todos os SNs da caixa atual (mais recentes primeiro)
   concluida: boolean     // última caixa já foi fechada
 }
 
@@ -30,7 +30,7 @@ export async function carregarEstadoEmbalagem(pmo: string, op: string, posto: st
 
   // concluída: a última caixa está fechada e marcada como última
   if (ultima && ultima.fechada && ultima.ultima) {
-    return { seq: ultima.seq, limite: ultima.limite, qtdNaCaixa: 0, totalEmbaladas, ultimasSns: [], concluida: true }
+    return { seq: ultima.seq, limite: ultima.limite, qtdNaCaixa: 0, totalEmbaladas, snsNaCaixa: [], concluida: true }
   }
 
   // caixa atual: última aberta, ou a próxima (seq+1) se a última está fechada
@@ -39,7 +39,7 @@ export async function carregarEstadoEmbalagem(pmo: string, op: string, posto: st
   const limite = ultima ? ultima.limite : null
 
   let qtdNaCaixa = 0
-  let ultimasSns: string[] = []
+  let snsNaCaixa: string[] = []
   if (abertaExiste) {
     const marc = marcadorCaixaAberta(seq)
     const { data: regs, error: eReg } = await supabase
@@ -49,10 +49,10 @@ export async function carregarEstadoEmbalagem(pmo: string, op: string, posto: st
     if (eReg) throw eReg
     const rows = (regs ?? []) as { numero_serie: string; data_hora: string }[]
     qtdNaCaixa = rows.length
-    ultimasSns = rows.slice(0, 8).map((r) => r.numero_serie)
+    snsNaCaixa = rows.map((r) => r.numero_serie) // todos os SNs da caixa (mais recentes primeiro)
   }
 
-  return { seq, limite, qtdNaCaixa, totalEmbaladas, ultimasSns, concluida: false }
+  return { seq, limite, qtdNaCaixa, totalEmbaladas, snsNaCaixa, concluida: false }
 }
 
 /** Cria a linha da caixa (seq, limite) se ainda não existir. Idempotente. */

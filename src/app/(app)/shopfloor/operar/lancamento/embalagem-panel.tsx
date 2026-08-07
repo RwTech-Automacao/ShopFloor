@@ -17,7 +17,7 @@ export function EmbalagemPanel({
   const [limiteInput, setLimiteInput] = useState('')
   const [qtdNaCaixa, setQtdNaCaixa] = useState(0)
   const [totalEmbaladas, setTotalEmbaladas] = useState(0)
-  const [ultimasSns, setUltimasSns] = useState<string[]>([])
+  const [snsNaCaixa, setSnsNaCaixa] = useState<string[]>([])
   const [concluida, setConcluida] = useState(false)
   const [sn, setSn] = useState('')
   const [ehUltima, setEhUltima] = useState(false)
@@ -37,7 +37,7 @@ export function EmbalagemPanel({
       setLimite(r.estado.limite)
       setQtdNaCaixa(r.estado.qtdNaCaixa)
       setTotalEmbaladas(r.estado.totalEmbaladas)
-      setUltimasSns(r.estado.ultimasSns)
+      setSnsNaCaixa(r.estado.snsNaCaixa)
       setConcluida(r.estado.concluida)
     })
   }
@@ -73,7 +73,7 @@ export function EmbalagemPanel({
       })
       setQtdNaCaixa((q) => q + 1)
       setTotalEmbaladas((t) => t + 1)
-      setUltimasSns((prev) => [alvo.trim(), ...prev].slice(0, 8))
+      setSnsNaCaixa((prev) => [alvo.trim(), ...prev])
       setTimeout(() => snRef.current?.focus(), 0)
     })
   }
@@ -93,7 +93,7 @@ export function EmbalagemPanel({
       if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
       setResultado({ tipo: 'ok', titulo: 'Caixa fechada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }] })
       if (ehUltima) { setConcluida(true) }
-      else { setSeq((s) => s + 1); setQtdNaCaixa(0); setUltimasSns([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
+      else { setSeq((s) => s + 1); setQtdNaCaixa(0); setSnsNaCaixa([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
     })
   }
 
@@ -167,10 +167,10 @@ export function EmbalagemPanel({
               placeholder="Bipe a peça" autoComplete="off" autoFocus className="h-12 text-lg" disabled={embalando} />
           </div>
           <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
-            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Últimas nesta caixa</p>
+            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Nesta caixa ({snsNaCaixa.length})</p>
             <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto text-sm">
-              {ultimasSns.length === 0 && <li className="text-muted-foreground">—</li>}
-              {ultimasSns.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
+              {snsNaCaixa.length === 0 && <li className="text-muted-foreground">—</li>}
+              {snsNaCaixa.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
             </ul>
           </div>
         </div>
