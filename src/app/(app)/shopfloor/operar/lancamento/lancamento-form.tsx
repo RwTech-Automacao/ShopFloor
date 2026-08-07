@@ -535,8 +535,9 @@ export function LancamentoForm({
         )}
       </Card>
 
-      {/* Área de ação: empilha no estreito, 2 colunas no lg (bipe/ação à esquerda, resultado à direita) */}
-      <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2 lg:gap-4">
+      {/* Área de ação: empilha no estreito, 2 colunas no lg (bipe/ação à esquerda, resultado à direita).
+          grid-rows minmax(0,1fr) trava a linha → a coluna direita (histórico) rola por dentro, não empurra a página. */}
+      <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)] lg:gap-4">
         {ehIntegracao && (
           <div className="flex min-h-0 flex-col lg:col-span-2">
             <IntegracaoPanel
