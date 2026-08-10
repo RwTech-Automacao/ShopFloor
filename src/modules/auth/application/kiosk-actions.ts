@@ -31,7 +31,8 @@ export async function validarSupervisorKiosk(email: string, senha: string): Prom
     .select('ativo, perfis(*, perfil_permissao(modulo,permissao))')
     .eq('id', login.user.id)
     .single()
-  await auth.auth.signOut().catch(() => {})
+  // NÃO dar signOut: o signOut padrão é GLOBAL e revogaria os tokens do supervisor —
+  // se o terminal estiver logado com a mesma conta, derrubaria a sessão. Só verificamos.
 
   if (e2 || !data || !data.ativo || !data.perfis) return { ok: false, erro: 'Usuário sem acesso ao sistema.' }
   const perfil = mapearPerfil(data.perfis as unknown as PerfilRow)
