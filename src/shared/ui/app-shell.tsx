@@ -36,11 +36,17 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Lock,
+  MonitorCog,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
 import { podeNoModulo, type Modulo, type Perfil, type Permissao } from '@/modules/auth/domain/perfil'
 import { cn } from '@/lib/utils'
+import { useKiosk } from './kiosk/kiosk-context'
+import { KioskGuard } from './kiosk/kiosk-guard'
+import { KioskExitDialog } from './kiosk/kiosk-exit-dialog'
+import { KioskSetupDialog } from './kiosk/kiosk-setup-dialog'
 
 interface Folha {
   chave: string
@@ -131,6 +137,9 @@ export function AppShell({
   const pathname = usePathname()
   const [mobileAberto, setMobileAberto] = useState(false)
   const [menuRecolhido, setMenuRecolhido] = useState(false)
+  const { ligado: kioskLigado } = useKiosk()
+  const [setupAberto, setSetupAberto] = useState(false)
+  const [exitAberto, setExitAberto] = useState(false)
   useEffect(() => {
     if (localStorage.getItem('sf:menu-recolhido') === '1') {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -345,6 +354,15 @@ export function AppShell({
       </nav>
 
       <div className="border-t border-border p-3">
+        {podeConfig && !kioskLigado && (
+          <button
+            type="button"
+            onClick={() => setSetupAberto(true)}
+            className="mb-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <MonitorCog className="size-[18px] shrink-0" /> Ativar modo quiosque
+          </button>
+        )}
         <div className="flex items-center gap-3 px-1 py-1">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
             {iniciais(nome || email)}
@@ -369,16 +387,22 @@ export function AppShell({
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
-      <aside
-        className={cn(
-          'hidden shrink-0 overflow-hidden transition-[width] duration-200 lg:block',
-          menuRecolhido ? 'lg:w-0' : 'lg:w-64',
-        )}
-      >
-        {sidebar}
-      </aside>
+      <KioskGuard />
+      <KioskExitDialog aberto={exitAberto} onFechar={() => setExitAberto(false)} />
+      {podeConfig && <KioskSetupDialog aberto={setupAberto} onFechar={() => setSetupAberto(false)} />}
 
-      {mobileAberto && (
+      {!kioskLigado && (
+        <aside
+          className={cn(
+            'hidden shrink-0 overflow-hidden transition-[width] duration-200 lg:block',
+            menuRecolhido ? 'lg:w-0' : 'lg:w-64',
+          )}
+        >
+          {sidebar}
+        </aside>
+      )}
+
+      {!kioskLigado && mobileAberto && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={fechaMobile} aria-hidden />
           <div className="absolute inset-y-0 left-0 w-64 shadow-xl">{sidebar}</div>
@@ -387,23 +411,36 @@ export function AppShell({
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4 sm:px-6">
-          <button
-            type="button"
-            onClick={() => setMenuRecolhido((v) => !v)}
-            className="-ml-1 hidden rounded-md p-2 text-muted-foreground hover:bg-accent lg:inline-flex"
-            aria-label={menuRecolhido ? 'Mostrar menu' : 'Recolher menu'}
-          >
-            {menuRecolhido ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileAberto(true)}
-            className="-ml-1 rounded-md p-2 text-muted-foreground hover:bg-accent lg:hidden"
-            aria-label="Abrir menu"
-          >
-            <Menu className="size-5" />
-          </button>
+          {!kioskLigado && (
+            <>
+              <button
+                type="button"
+                onClick={() => setMenuRecolhido((v) => !v)}
+                className="-ml-1 hidden rounded-md p-2 text-muted-foreground hover:bg-accent lg:inline-flex"
+                aria-label={menuRecolhido ? 'Mostrar menu' : 'Recolher menu'}
+              >
+                {menuRecolhido ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileAberto(true)}
+                className="-ml-1 rounded-md p-2 text-muted-foreground hover:bg-accent lg:hidden"
+                aria-label="Abrir menu"
+              >
+                <Menu className="size-5" />
+              </button>
+            </>
+          )}
           <h1 className="text-[15px] font-semibold text-foreground">{tituloPagina}</h1>
+          {kioskLigado && (
+            <button
+              type="button"
+              onClick={() => setExitAberto(true)}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <Lock className="size-4" /> Sair do quiosque
+            </button>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>

@@ -1,17 +1,10 @@
 import { AbasFluxo } from '../abas-fluxo'
-
-const ABAS = [
-  { rotulo: 'Dashboard', href: '/shopfloor/analisar/dashboard' },
-  { rotulo: 'Pesquisa', href: '/shopfloor/analisar/pesquisa' },
-  { rotulo: 'Burn-in', href: '/shopfloor/analisar/burn-in' },
-  { rotulo: 'Caixas', href: '/shopfloor/analisar/caixas' },
-  { rotulo: 'Fluxo', href: '/shopfloor/analisar/fluxo' },
-]
+import { ABAS_ANALISE } from '@/shared/ui/kiosk/abas'
 
 export default function AnalisarLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col">
-      <AbasFluxo tabs={ABAS} />
+      <AbasFluxo tabs={ABAS_ANALISE} />
       {children}
     </div>
   )
