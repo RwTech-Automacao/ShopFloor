@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +13,7 @@ export function KioskExitDialog({ aberto, onFechar }: { aberto: boolean; onFecha
   const { sair } = useKiosk()
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [mostrarSenha, setMostrarSenha] = useState(false)
   const [erro, setErro] = useState('')
   const [validando, start] = useTransition()
 
@@ -40,14 +42,25 @@ export function KioskExitDialog({ aberto, onFechar }: { aberto: boolean; onFecha
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="k-senha">Senha</Label>
-            <Input
-              id="k-senha"
-              type="password"
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmar() } }}
-              autoComplete="off"
-            />
+            <div className="relative">
+              <Input
+                id="k-senha"
+                type={mostrarSenha ? 'text' : 'password'}
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmar() } }}
+                autoComplete="off"
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setMostrarSenha((v) => !v)}
+                aria-label={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground"
+              >
+                {mostrarSenha ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
           </div>
           {erro && <p className="text-sm text-red-600">{erro}</p>}
         </div>
