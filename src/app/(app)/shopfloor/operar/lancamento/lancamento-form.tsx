@@ -12,7 +12,7 @@ import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resu
 import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
-import { classificarAcao, defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
+import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, buscarEntradaBurnin, verificarConserto } from '@/modules/shopfloor/application/lancar-action'
@@ -104,9 +104,9 @@ export function LancamentoForm({
   const ehScanner = comStatus && !ehNqa && ((!ehBurnin && perfilDo(posto).reprova === 'defeitos') || (ehBurnin && burninEvento === 'saida'))
   // Burn-in entrada também passa pelo campo de ação (grava direto, sem classificar) — usado no roteamento Enter/Enviar.
   const usaAcao = ehScanner || (ehBurnin && burninEvento === 'entrada')
-  // Postos de defeito não-Burn-in (Inspeção/Teste/SPI): o campo é SÓ o Nº de Série; o defeito vem de uma
-  // lista em acordeão no mesmo campo (touch, sem depender do teclado ruim). Burn-in saída segue bipando no campo.
-  const usaAcordeao = ehScanner && !ehBurnin
+  // Postos de defeito no scanner (Inspeção/Teste/SPI e Burn-in na SAÍDA): o campo é SÓ o Nº de Série; o
+  // defeito vem de uma lista em acordeão no mesmo campo (touch, sem depender do teclado ruim).
+  const usaAcordeao = ehScanner
   const defeitosPosto = useMemo(() => defeitosDoPosto(perfilDo(posto).chave, defeitos), [posto, defeitos, postosPerfil])
   const defeitosFiltrados = useMemo(() => {
     const f = numeroSerie.trim().toUpperCase()
@@ -322,25 +322,12 @@ export function LancamentoForm({
       gravarBurninEntrada()
       return
     }
-    // Inspeção/Teste/SPI: o campo é SÓ Nº de Série — reprova é pela lista (acordeão).
-    if (usaAcordeao) {
-      if (serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) {
-        setAprovarSn(numeroSerie.trim())
-      } else {
-        mostrar({ tipo: 'aviso', titulo: 'Nº de Série fora da faixa desta OP. Para reprovar, abra a lista de defeitos (seta).' })
-        limparPeca()
-      }
-      return
-    }
-    // Burn-in saída (demais scanner): classifica SN ou defeito bipado no campo.
-    const r = classificarAcao(numeroSerie, defeitosPosto, ordemSel.sn_ini, ordemSel.sn_fim)
-    if (r.tipo === 'aprovado') {
+    // Inspeção/Teste/SPI e Burn-in saída: o campo é SÓ Nº de Série — reprova é pela lista (acordeão).
+    if (serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) {
       setAprovarSn(numeroSerie.trim())
-    } else if (r.tipo === 'reprovado') {
-      setReprovarCodigo(r.codigo)
     } else {
-      mostrar({ tipo: 'aviso', titulo: 'Não reconhecido: nem SN da faixa desta OP, nem defeito do catálogo.' })
-      limparPeca() // limpa o campo pra próxima bipagem
+      mostrar({ tipo: 'aviso', titulo: 'Nº de Série fora da faixa desta OP. Para reprovar, abra a lista de defeitos (seta).' })
+      limparPeca()
     }
   }
 
@@ -712,6 +699,9 @@ export function LancamentoForm({
                       </button>
                     )}
                   </div>
+                  {usaAcordeao && !listaAberta && (
+                    <p className="text-xs text-muted-foreground">Em caso de defeito, toque na seta ▾ para escolher.</p>
+                  )}
                   {usaAcordeao && listaAberta && (
                     <div className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-border">
                       {defeitosFiltrados.length === 0 && (

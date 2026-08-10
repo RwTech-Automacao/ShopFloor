@@ -37,6 +37,7 @@ export function IntegracaoPanel({
   const [linhas, setLinhas] = useState<Record<string, LinhaEncaixada>>({})
   const [bipe, setBipe] = useState('')
   const [produtoSN, setProdutoSN] = useState('')
+  const [erroProduto, setErroProduto] = useState('') // erro mostrado DENTRO do modal do produto final
   const [ambiguo, setAmbiguo] = useState<{ sn: string; candidatos: { pmo: string; op: string }[] } | null>(null)
   const [etapa, setEtapa] = useState<'nenhuma' | 'confirmar' | 'produto'>('nenhuma') // fluxo final por modal
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
@@ -70,7 +71,11 @@ export function IntegracaoPanel({
 
   // Ao entrar na etapa 'produto', foca o campo do produto final dentro do modal.
   useEffect(() => {
-    if (etapa === 'produto') { const id = setTimeout(() => produtoRef.current?.focus(), 0); return () => clearTimeout(id) }
+    if (etapa !== 'produto') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setErroProduto('')
+    const id = setTimeout(() => produtoRef.current?.focus(), 0)
+    return () => clearTimeout(id)
   }, [etapa])
 
   /** PMO cuja placa já usa este SN (normalizado), ou null — evita o mesmo SN em duas PMOs. */
@@ -141,6 +146,7 @@ export function IntegracaoPanel({
   function limpar() {
     setLinhas({})
     setProdutoSN('')
+    setErroProduto('')
     setAmbiguo(null)
     setEtapa('nenhuma')
   }
@@ -155,7 +161,8 @@ export function IntegracaoPanel({
         limpar()
         refocarBipe()
       } else {
-        setResultado({ tipo: 'aviso', titulo: r.erro })
+        setResultado({ tipo: 'aviso', titulo: r.erro }) // mantém na tela de trás
+        setErroProduto(r.erro)                            // e também sobre o modal
       }
     })
   }
@@ -315,13 +322,15 @@ export function IntegracaoPanel({
               id="produtoSN"
               ref={produtoRef}
               value={produtoSN}
-              onChange={(e) => setProdutoSN(e.target.value)}
+              onChange={(e) => { setProdutoSN(e.target.value); if (erroProduto) setErroProduto('') }}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onRegistrar() } }}
               placeholder="Bipe o SN do produto final"
               autoComplete="off"
               className="h-12 text-lg"
               disabled={registrando}
+              aria-invalid={erroProduto !== '' || undefined}
             />
+            {erroProduto && <p className="text-sm text-red-600">{erroProduto}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEtapa('confirmar')}>Voltar</Button>
