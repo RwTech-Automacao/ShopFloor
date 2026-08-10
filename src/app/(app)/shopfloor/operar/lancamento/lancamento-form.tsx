@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -81,6 +81,7 @@ export function LancamentoForm({
   const postoTriggerRef = useRef<HTMLButtonElement>(null)
   const burninEventoTriggerRef = useRef<HTMLButtonElement>(null)
   const nqaVisualRef = useRef<HTMLButtonElement>(null) // trigger do Select de Inspeção Visual
+  const focarAposLancar = useRef(false) // pedir foco no início do ciclo quando o campo destravar (fim da gravação)
   const { confirmar, dialog } = useConfirmacao()
 
   const ordemSel = useMemo(
@@ -192,12 +193,28 @@ export function LancamentoForm({
   }
   const valido = motivoLancamento() === null
 
+  /** Elemento do início do ciclo: NQA começa na Inspeção Visual; demais, no campo de SN. */
+  function campoInicioCiclo(): HTMLElement | null {
+    return ehNqa ? nqaVisualRef.current : snRef.current
+  }
   function limparPeca() {
     setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setListaAberta(false)
     setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    // Volta pro início do ciclo da tela: NQA começa na Inspeção Visual; demais, no campo de SN.
-    setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0)
+    // Volta pro início do ciclo. Se o campo estiver travado (gravando), o efeito refoca quando destravar.
+    focarAposLancar.current = true
+    setTimeout(() => {
+      const el = campoInicioCiclo()
+      if (el && !(el as HTMLInputElement).disabled) { focarAposLancar.current = false; el.focus() }
+    }, 0)
   }
+  // Refoca o início do ciclo assim que o campo destrava (gravação terminou) — o setTimeout do limparPeca
+  // não consegue focar enquanto disabled=true (transição em voo).
+  useEffect(() => {
+    if (enviando || processando) return
+    if (!focarAposLancar.current) return
+    focarAposLancar.current = false
+    campoInicioCiclo()?.focus()
+  }, [enviando, processando])
 
   async function onEnviar() {
     if (enviando) return
