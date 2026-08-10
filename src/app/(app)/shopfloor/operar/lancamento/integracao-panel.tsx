@@ -49,7 +49,6 @@ export function IntegracaoPanel({
   const semReceita = componentes.length === 0
   const preenchidas = componentes.filter((pm) => linhas[pm] !== undefined).length
   const todasPreenchidas = !semReceita && preenchidas === componentes.length
-  const valido = todasPreenchidas && produtoSN.trim() !== '' && colaborador.trim() !== ''
 
   function refocarBipe() {
     setTimeout(() => bipeRef.current?.focus(), 0)
@@ -151,18 +150,25 @@ export function IntegracaoPanel({
     setEtapa('nenhuma')
   }
 
-  function onRegistrar() {
-    if (!valido || registrando) return
+  // snArg vem do Enter (valor lido direto do campo) — imune a atraso do estado quando o scanner bipa rápido.
+  function onRegistrar(snArg?: string) {
+    if (registrando) return
+    const sn = (snArg ?? produtoSN).trim()
+    if (!todasPreenchidas) { setErroProduto('Faltam placas encaixadas.'); return }
+    if (colaborador.trim() === '') { setErroProduto('Falta o colaborador — bipe no cabeçalho.'); return }
+    if (sn === '') { setErroProduto('Bipe o Nº de Série do produto final.'); return }
     const placas = componentes.map((pm) => ({ pmo: pm, op: linhas[pm]!.op, sn: linhas[pm]!.sn }))
     startRegistro(async () => {
-      const r = await integrar({ colaborador, pmo, op, produtoSN, placas, posto })
+      const r = await integrar({ colaborador, pmo, op, produtoSN: sn, placas, posto })
       if (r.ok) {
-        setResultado({ tipo: 'ok', titulo: 'Integração registrada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }, { rotulo: 'Produto', valor: produtoSN.trim(), mono: true }] })
+        setResultado({ tipo: 'ok', titulo: 'Integração registrada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }, { rotulo: 'Produto', valor: sn, mono: true }] })
         limpar()
         refocarBipe()
       } else {
         setResultado({ tipo: 'aviso', titulo: r.erro }) // mantém na tela de trás
         setErroProduto(r.erro)                            // e também sobre o modal
+        setProdutoSN('')                                  // bipe errado → limpa pra bipar outro
+        setTimeout(() => produtoRef.current?.focus(), 0)
       }
     })
   }
@@ -323,7 +329,7 @@ export function IntegracaoPanel({
               ref={produtoRef}
               value={produtoSN}
               onChange={(e) => { setProdutoSN(e.target.value); if (erroProduto) setErroProduto('') }}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onRegistrar() } }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onRegistrar(e.currentTarget.value) } }}
               placeholder="Bipe o SN do produto final"
               autoComplete="off"
               className="h-12 text-lg"
@@ -334,7 +340,7 @@ export function IntegracaoPanel({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEtapa('confirmar')}>Voltar</Button>
-            <Button onClick={onRegistrar} disabled={!valido || registrando} className="bg-enterplak hover:bg-enterplak-700">
+            <Button onClick={() => onRegistrar()} disabled={registrando} className="bg-enterplak hover:bg-enterplak-700">
               {registrando ? 'Registrando…' : 'Registrar Integração'}
             </Button>
           </DialogFooter>
