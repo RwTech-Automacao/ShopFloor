@@ -20,6 +20,7 @@ export async function entrar(
 
 export async function sair(): Promise<void> {
   const supabase = await createServerSupabase()
-  await supabase.auth.signOut()
+  // scope 'local': desloga só ESTE aparelho (não revoga a sessão do mesmo usuário em outros terminais).
+  await supabase.auth.signOut({ scope: 'local' })
   redirect('/login')
 }

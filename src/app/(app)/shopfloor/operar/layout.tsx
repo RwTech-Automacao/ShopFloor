@@ -1,15 +1,10 @@
 import { AbasFluxo } from '../abas-fluxo'
-
-const ABAS = [
-  { rotulo: 'Lançamento', href: '/shopfloor/operar/lancamento' },
-  { rotulo: 'Consultar Integração', href: '/shopfloor/operar/integracao' },
-  { rotulo: 'Manutenção', href: '/shopfloor/operar/manutencao' },
-]
+import { ABAS_OPERAR } from '@/shared/ui/kiosk/abas'
 
 export default function OperarLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col">
-      <AbasFluxo tabs={ABAS} />
+      <AbasFluxo tabs={ABAS_OPERAR} />
       {children}
     </div>
   )
