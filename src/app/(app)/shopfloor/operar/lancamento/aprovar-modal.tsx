@@ -25,14 +25,15 @@ export function AprovarModal({
   const [erro, setErro] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Começa SEMPRE vazio ao abrir OU quando o SN esperado muda (evita valor em cache do bipe anterior).
   useEffect(() => {
-    if (!aberto) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setValor('')
     setErro('')
+    if (!aberto) return
     const id = setTimeout(() => inputRef.current?.focus(), 0)
     return () => clearTimeout(id)
-  }, [aberto])
+  }, [aberto, sn])
 
   function confirmar() {
     if (norm(valor) === norm(sn)) {
@@ -40,7 +41,8 @@ export function AprovarModal({
       return
     }
     setErro('SN diferente — bipe a mesma peça')
-    inputRef.current?.select()
+    setValor('') // bipe errado → limpa o campo pra bipar de novo
+    setTimeout(() => inputRef.current?.focus(), 0)
   }
 
   return (

@@ -76,7 +76,8 @@ export function EmbalagemPanel({
           chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
           dica: /cheia/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
         })
-        acaoAposEmbalar.current = 'select'
+        setSn('') // bipe errado → limpa o campo pra bipar outro
+        acaoAposEmbalar.current = 'focus'
         return
       }
       setSn('')

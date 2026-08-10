@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
-import { Plus, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,7 +12,7 @@ import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resu
 import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
 import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
-import { classificarAcao, defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
+import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, buscarEntradaBurnin, verificarConserto } from '@/modules/shopfloor/application/lancar-action'
@@ -26,6 +26,7 @@ import { ReprovarModal } from './reprovar-modal'
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
 const OPCOES_STATUS = ['Aprovado', 'Reprovado']
 // Paridade com o legado (Código.gs): NQA Funcional também aceita "Não aplicável" (conta como aprovado).
+const OPCOES_NQA_FUNCIONAL = ['Aprovado', 'Reprovado', 'Não aplicável']
 
 interface DefeitoLinha {
   codigo: string
@@ -42,14 +43,6 @@ function descreverDefeito(d: { codigo: string; posicao: string; tipo: string }):
   return partes.join(' · ') || 'defeito relatado'
 }
 
-/** NQA sem mouse: A→Aprovado, R→Reprovado, N→Não aplicável (só no Funcional). */
-function statusPorTecla(k: string, comNaoAplicavel: boolean): string | null {
-  const l = k.toLowerCase()
-  if (l === 'a') return 'Aprovado'
-  if (l === 'r') return 'Reprovado'
-  if (comNaoAplicavel && l === 'n') return 'Não aplicável'
-  return null
-}
 
 export function LancamentoForm({
   ordens,
@@ -80,14 +73,15 @@ export function LancamentoForm({
   const [aprovarSn, setAprovarSn] = useState<string | null>(null)
   const [reprovarCodigo, setReprovarCodigo] = useState<string | null>(null)
   const [enviando, startTransition] = useTransition()
+  const [processando, setProcessando] = useState(false) // trava a UI do confirm até o resultado (não deixa bipar em cima)
+  const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
   const colaboradorRef = useRef<HTMLInputElement>(null)
   const postoTriggerRef = useRef<HTMLButtonElement>(null)
   const burninEventoTriggerRef = useRef<HTMLButtonElement>(null)
-  const nqaVisualRef = useRef<HTMLInputElement>(null)
-  const nqaFuncionalRef = useRef<HTMLInputElement>(null)
-  const nqaObservacaoRef = useRef<HTMLInputElement>(null)
+  const nqaVisualRef = useRef<HTMLButtonElement>(null) // trigger do Select de Inspeção Visual
+  const focarAposLancar = useRef(false) // pedir foco no início do ciclo quando o campo destravar (fim da gravação)
   const { confirmar, dialog } = useConfirmacao()
 
   const ordemSel = useMemo(
@@ -110,7 +104,14 @@ export function LancamentoForm({
   const ehScanner = comStatus && !ehNqa && ((!ehBurnin && perfilDo(posto).reprova === 'defeitos') || (ehBurnin && burninEvento === 'saida'))
   // Burn-in entrada também passa pelo campo de ação (grava direto, sem classificar) — usado no roteamento Enter/Enviar.
   const usaAcao = ehScanner || (ehBurnin && burninEvento === 'entrada')
+  // Postos de defeito no scanner (Inspeção/Teste/SPI e Burn-in na SAÍDA): o campo é SÓ o Nº de Série; o
+  // defeito vem de uma lista em acordeão no mesmo campo (touch, sem depender do teclado ruim).
+  const usaAcordeao = ehScanner
   const defeitosPosto = useMemo(() => defeitosDoPosto(perfilDo(posto).chave, defeitos), [posto, defeitos, postosPerfil])
+  const defeitosFiltrados = useMemo(() => {
+    const f = numeroSerie.trim().toUpperCase()
+    return f === '' ? defeitosPosto : defeitosPosto.filter((d) => d.codigo.toUpperCase().includes(f))
+  }, [numeroSerie, defeitosPosto])
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
@@ -122,6 +123,8 @@ export function LancamentoForm({
     if (linha) {
       setHistorico((h) => [linha, ...h].slice(0, 30))
       setUltimoEhLancamento(true)
+      // Lançamento recusado (duplicado, sequência, fora da faixa…) também limpa o campo pra próxima bipagem.
+      if (!linha.lancamento) limparPeca()
     } else {
       setUltimoEhLancamento(false)
     }
@@ -131,7 +134,7 @@ export function LancamentoForm({
   function resetCamposDinamicos() {
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
     setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setBurninEvento('entrada')
-    setResultado(null); setUltimoEhLancamento(false) // balão some → tabela volta a mostrar o histórico completo
+    setResultado(null); setUltimoEhLancamento(false); setListaAberta(false) // balão some → tabela volta a mostrar o histórico completo
   }
   /** Trocar entrada/saída limpa o status/defeitos (evita defeito velho da saída ao voltar p/ entrada). */
   function mudarBurninEvento(v: 'entrada' | 'saida') {
@@ -140,7 +143,7 @@ export function LancamentoForm({
     setTimeout(() => snRef.current?.focus(), 0) // escolhido o evento, foco vai pro campo de ação
   }
   function mudarPosto(v: string) {
-    setPosto(v); resetCamposDinamicos()
+    setPosto(v); resetCamposDinamicos(); setHistorico([]) // novo posto → histórico da sessão zera
     const perfilV = postosPerfil[v] ?? PERFIL_PADRAO
     // Burn-in → seletor de Evento; NQA → Inspeção Visual (A/R); demais → campo de ação (SN).
     setTimeout(() => {
@@ -161,41 +164,64 @@ export function LancamentoForm({
     setPmo(r.ordem.pmo)
     setOp(r.ordem.op)
     if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
-    resetCamposDinamicos()
+    resetCamposDinamicos(); setHistorico([]) // nova OP → histórico zera
     setBipeCab('')
     setTimeout(() => colaboradorRef.current?.focus(), 0)
   }
   function atualizarCabecalho() {
     setCliente(''); setPmo(''); setOp('')
     setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
-    setNumeroSerie(''); resetCamposDinamicos()
+    setNumeroSerie(''); resetCamposDinamicos(); setHistorico([]) // reset total → histórico zera
     setBipeCab('')
     setTimeout(() => bipeCabRef.current?.focus(), 0)
   }
 
-  const valido = useMemo(() => {
-    if (!colaborador.trim() || !cliente || !pmo || !op || !posto || numeroSerie.trim() === '') return false
-    if (!ordemSel || semFaixa) return false
-    if (!serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) return false
-    if (ehNqa && (nqaVisual === '' || nqaFuncional === '')) return false
-    if (mostraStatus && status === '') return false
+  /** Motivo de o lançamento estar inválido (null = ok). Usado pro botão E pro feedback do Enter. */
+  function motivoLancamento(): string | null {
+    if (!colaborador.trim() || !cliente || !pmo || !op || !posto) return 'Preencha Colaborador, contexto (OP) e Posto antes de bipar.'
+    if (numeroSerie.trim() === '') return 'Bipe o Nº de Série.'
+    if (!ordemSel || semFaixa) return 'Esta OP não tem faixa de Nº de Série cadastrada.'
+    if (!serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) return 'Nº de Série fora da faixa desta OP.'
+    if (ehNqa && (nqaVisual === '' || nqaFuncional === '')) return 'Selecione a Inspeção Visual e a Funcional.'
+    if (mostraStatus && status === '') return 'Selecione o Status (Aprovado/Reprovado).'
     if (mostraStatus && reprovado) {
-      if (ehSpi) return posicoesSPI.some((p) => p.trim() !== '')
+      if (ehSpi) { if (!posicoesSPI.some((p) => p.trim() !== '')) return 'Informe ao menos uma posição do defeito.' }
       // servidor exige código E posição E tipo em ao menos um defeito
-      return defeitosSel.some((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
+      else if (!defeitosSel.some((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')) return 'Preencha código, posição e tipo do defeito.'
     }
-    return true
-  }, [colaborador, cliente, pmo, op, posto, numeroSerie, ordemSel, semFaixa, ehNqa, nqaVisual, nqaFuncional, mostraStatus, status, reprovado, ehSpi, posicoesSPI, defeitosSel])
-
-  function limparPeca() {
-    setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao('')
-    setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
-    // Volta pro início do ciclo da tela: NQA começa na Inspeção Visual; demais, no campo de SN.
-    setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0)
+    return null
   }
+  const valido = motivoLancamento() === null
+
+  /** Elemento do início do ciclo: NQA começa na Inspeção Visual; demais, no campo de SN. */
+  function campoInicioCiclo(): HTMLElement | null {
+    return ehNqa ? nqaVisualRef.current : snRef.current
+  }
+  function limparPeca() {
+    setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setListaAberta(false)
+    setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
+    // Volta pro início do ciclo. Se o campo estiver travado (gravando), o efeito refoca quando destravar.
+    focarAposLancar.current = true
+    setTimeout(() => {
+      const el = campoInicioCiclo()
+      if (el && !(el as HTMLInputElement).disabled) { focarAposLancar.current = false; el.focus() }
+    }, 0)
+  }
+  // Refoca o início do ciclo assim que o campo destrava (gravação terminou) — o setTimeout do limparPeca
+  // não consegue focar enquanto disabled=true (transição em voo).
+  useEffect(() => {
+    if (enviando || processando) return
+    if (!focarAposLancar.current) return
+    focarAposLancar.current = false
+    campoInicioCiclo()?.focus()
+  }, [enviando, processando])
 
   async function onEnviar() {
-    if (!valido || enviando) return
+    if (enviando) return
+    if (numeroSerie.trim() === '') { setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0); return }
+    const motivo = motivoLancamento()
+    if (motivo) { mostrar({ tipo: 'aviso', titulo: motivo }); limparPeca(); return } // erro claro + limpa o campo
+    setProcessando(true) // trava o campo até o resultado
     // Aviso de tempo mínimo de Burn-in (só na saída; não trava).
     if (ehBurnin && burninEvento === 'saida' && (ordemSel?.tempoBurninPorPosto?.[posto] ?? 0) > 0) {
       const entradaIso = await buscarEntradaBurnin(pmo, op, numeroSerie, posto)
@@ -254,6 +280,7 @@ export function LancamentoForm({
         ? (nqaVisual === 'Reprovado' || nqaFuncional === 'Reprovado' ? 'reprovado' : 'aprovado')
         : (mostraStatus && status ? (status === 'Reprovado' ? 'reprovado' : 'aprovado') : null)
       const sn = numeroSerie.trim()
+      setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
           tipo: outcome === 'reprovado' ? 'reprova' : 'ok',
@@ -295,15 +322,26 @@ export function LancamentoForm({
       gravarBurninEntrada()
       return
     }
-    const r = classificarAcao(numeroSerie, defeitosPosto, ordemSel.sn_ini, ordemSel.sn_fim)
-    if (r.tipo === 'aprovado') {
+    // Inspeção/Teste/SPI e Burn-in saída: o campo é SÓ Nº de Série — reprova é pela lista (acordeão).
+    if (serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) {
       setAprovarSn(numeroSerie.trim())
-    } else if (r.tipo === 'reprovado') {
-      setReprovarCodigo(r.codigo)
     } else {
-      mostrar({ tipo: 'aviso', titulo: 'Não reconhecido: nem SN da faixa, nem defeito do catálogo.' })
-      snRef.current?.select()
+      mostrar({ tipo: 'aviso', titulo: 'Nº de Série fora da faixa desta OP. Para reprovar, abra a lista de defeitos (seta).' })
+      limparPeca()
     }
+  }
+
+  /** Abre/fecha o acordeão de defeitos e limpa o campo (SN ↔ filtro não se misturam). */
+  function alternarLista() {
+    setListaAberta((a) => !a)
+    setNumeroSerie('')
+    setTimeout(() => snRef.current?.focus(), 0)
+  }
+  /** Escolher um defeito da lista abre o modal de reprova (SN é bipado lá dentro). */
+  function escolherDefeito(codigo: string) {
+    setReprovarCodigo(codigo)
+    setListaAberta(false)
+    setNumeroSerie('')
   }
 
   /** Burn-in entrada: SN bipado grava direto (sem modal, sem status — evento neutro). */
@@ -311,8 +349,10 @@ export function LancamentoForm({
     if (enviando) return
     const sn = numeroSerie.trim()
     if (sn === '') return
+    setProcessando(true) // trava o campo até o resultado
     startTransition(async () => {
       const r = await lancar({ colaborador, posto, pmo, op, numeroSerie: sn, burninEvento: 'entrada' })
+      setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
           tipo: 'ok',
@@ -340,6 +380,7 @@ export function LancamentoForm({
     const sn = aprovarSn
     if (sn === null || enviando) return
     setAprovarSn(null) // fecha o modal na hora
+    setProcessando(true) // trava o campo até o resultado
     setTimeout(() => snRef.current?.focus(), 0) // foco volta já; se houver diálogo de aviso/conserto, ele assume
 
     // Aviso de tempo mínimo de Burn-in (saída antecipada; não trava — só confirma).
@@ -355,7 +396,7 @@ export function LancamentoForm({
             descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
             rotuloConfirmar: 'Registrar saída',
           })
-          if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
+          if (!ok) { setProcessando(false); setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
         }
       }
     }
@@ -373,7 +414,7 @@ export function LancamentoForm({
           descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
           rotuloConfirmar: 'Sim, foi consertado',
         })
-        if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a aprovação
+        if (!ok) { setProcessando(false); setTimeout(() => snRef.current?.focus(), 0); return } // aborta a aprovação
         conservoConfirmado = defeitos
       }
     }
@@ -383,6 +424,7 @@ export function LancamentoForm({
         colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado,
         burninEvento: ehBurnin ? 'saida' : undefined,
       })
+      setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
           tipo: 'ok',
@@ -410,6 +452,7 @@ export function LancamentoForm({
   async function gravarReprovado(dados: { defeitos: { codigo: string; posicao: string }[]; sn: string }) {
     if (enviando) return
     setReprovarCodigo(null) // fecha o modal na hora; o registro roda em 2º plano
+    setProcessando(true) // trava o campo até o resultado
     setTimeout(() => snRef.current?.focus(), 0)
 
     // Aviso de tempo mínimo de Burn-in (saída antecipada; não trava — só confirma).
@@ -425,7 +468,7 @@ export function LancamentoForm({
             descricao: `Faltavam ${faltam} para o mínimo. Registrar a saída mesmo assim?`,
             rotuloConfirmar: 'Registrar saída',
           })
-          if (!ok) { setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
+          if (!ok) { setProcessando(false); setTimeout(() => snRef.current?.focus(), 0); return } // aborta a saída
         }
       }
     }
@@ -442,6 +485,7 @@ export function LancamentoForm({
         burninEvento: ehBurnin ? 'saida' : undefined,
       })
       setReprovarCodigo(null)
+      setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
           tipo: 'reprova',
@@ -467,7 +511,7 @@ export function LancamentoForm({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
       {/* Contexto */}
       <Card size="sm" className="shrink-0">
         <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -535,10 +579,11 @@ export function LancamentoForm({
         )}
       </Card>
 
-      {/* Área de ação: empilha no estreito, 2 colunas no lg (bipe/ação à esquerda, resultado à direita) */}
-      <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2 lg:gap-4">
+      {/* Área de ação: empilha no estreito, 2 colunas no lg (bipe/ação à esquerda, resultado à direita).
+          grid-rows minmax(0,1fr) trava a linha → a coluna direita (histórico) rola por dentro, não empurra a página. */}
+      <div className={`flex flex-col ${ehIntegracao ? '' : 'min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)] lg:gap-4'}`}>
         {ehIntegracao && (
-          <div className="flex min-h-0 flex-col lg:col-span-2">
+          <div className="flex flex-col">
             <IntegracaoPanel
               colaborador={colaborador}
               cliente={cliente}
@@ -563,9 +608,6 @@ export function LancamentoForm({
             <Card className="flex min-h-0 flex-col">
               <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
                 <CardTitle>Peça</CardTitle>
-                {ehNqa && (
-                  <span className="text-sm text-gray-500">A = Aprovado · R = Reprovado · N = Não aplicável</span>
-                )}
               </CardHeader>
               <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
                 {/* Burn-in: Evento vem ANTES do campo de ação (define entrada=neutra / saída=scanner). */}
@@ -585,44 +627,26 @@ export function LancamentoForm({
                 {ehNqa && (
                   <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-lg">
                     <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="nqaVisual" className="whitespace-nowrap">Inspeção Visual</Label>
-                      <Input
-                        id="nqaVisual"
-                        ref={nqaVisualRef}
-                        readOnly
-                        value={nqaVisual}
-                        onKeyDown={(e) => {
-                          const v = statusPorTecla(e.key, false)
-                          if (v) { e.preventDefault(); setNqaVisual(v); setTimeout(() => nqaFuncionalRef.current?.focus(), 0) }
-                        }}
-                        placeholder="Aperte A ou R"
-                        className={`h-12 text-lg ${nqaVisual === 'Aprovado' ? 'text-green-700' : nqaVisual === 'Reprovado' ? 'text-red-600' : ''}`}
-                      />
+                      <Label>Inspeção Visual</Label>
+                      <Select value={nqaVisual} onValueChange={(v) => setNqaVisual(v ?? '')}>
+                        <SelectTrigger ref={nqaVisualRef} className="h-12 text-base"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectContent>{OPCOES_STATUS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                      </Select>
                     </div>
                     <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="nqaFuncional" className="whitespace-nowrap">Inspeção Funcional</Label>
-                      <Input
-                        id="nqaFuncional"
-                        ref={nqaFuncionalRef}
-                        readOnly
-                        value={nqaFuncional}
-                        onKeyDown={(e) => {
-                          const v = statusPorTecla(e.key, true)
-                          if (v) { e.preventDefault(); setNqaFuncional(v); setTimeout(() => nqaObservacaoRef.current?.focus(), 0) }
-                        }}
-                        placeholder="Aperte A, R ou N"
-                        className={`h-12 text-lg ${nqaFuncional === 'Aprovado' ? 'text-green-700' : nqaFuncional === 'Reprovado' ? 'text-red-600' : ''}`}
-                      />
+                      <Label>Inspeção Funcional</Label>
+                      <Select value={nqaFuncional} onValueChange={(v) => setNqaFuncional(v ?? '')}>
+                        <SelectTrigger className="h-12 text-base"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectContent>{OPCOES_NQA_FUNCIONAL.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                      </Select>
                     </div>
                     <div className="flex flex-col gap-1.5 sm:col-span-2">
                       <Label htmlFor="nqaObservacao">Comentário</Label>
                       <Input
                         id="nqaObservacao"
-                        ref={nqaObservacaoRef}
                         value={observacao}
                         onChange={(e) => setObservacao(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); snRef.current?.focus() } }}
-                        placeholder="Comentário livre (opcional) — Enter/Tab vai para o Nº de Série"
+                        placeholder="Comentário livre (opcional)"
                         autoComplete="off"
                       />
                     </div>
@@ -630,23 +654,71 @@ export function LancamentoForm({
                 )}
 
                 <div className="flex shrink-0 flex-col gap-1.5">
-                  <Label htmlFor="sn">{ehScanner ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
-                  {ehScanner && (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="sn">{ehScanner && !usaAcordeao ? 'Bipe a peça ou o código do defeito' : 'Nº de Série'}</Label>
+                    {(enviando || processando) && (
+                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-600" aria-live="polite">
+                        <span className="size-3 animate-spin rounded-full border-2 border-amber-600 border-t-transparent" /> Gravando…
+                      </span>
+                    )}
+                  </div>
+                  {ehScanner && !usaAcordeao && (
                     <datalist id="acao-defeitos-list">
                       {defeitosPosto.map((d) => <option key={d.codigo} value={d.codigo} />)}
                     </datalist>
                   )}
-                  <Input
-                    id="sn"
-                    ref={snRef}
-                    value={numeroSerie}
-                    onChange={(e) => setNumeroSerie(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (usaAcao) { onAcao() } else { onEnviar() } } }}
-                    autoComplete="off"
-                    list={ehScanner ? 'acao-defeitos-list' : undefined}
-                    className="h-12 text-lg"
-                    placeholder={ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série'}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="sn"
+                      ref={snRef}
+                      value={numeroSerie}
+                      onChange={(e) => setNumeroSerie(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return
+                        e.preventDefault()
+                        if (usaAcordeao && listaAberta) { const d0 = defeitosFiltrados[0]; if (d0) escolherDefeito(d0.codigo) }
+                        else if (usaAcao) onAcao()
+                        else onEnviar()
+                      }}
+                      autoComplete="off"
+                      disabled={enviando || processando}
+                      list={ehScanner && !usaAcordeao ? 'acao-defeitos-list' : undefined}
+                      className={`h-12 text-lg disabled:opacity-60 ${usaAcordeao ? 'pr-12' : ''}`}
+                      placeholder={usaAcordeao ? (listaAberta ? 'Filtre o defeito…' : 'Bipe o Nº de Série') : (ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série')}
+                    />
+                    {usaAcordeao && (
+                      <button
+                        type="button"
+                        aria-label={listaAberta ? 'Fechar lista de defeitos' : 'Abrir lista de defeitos'}
+                        aria-expanded={listaAberta}
+                        onClick={alternarLista}
+                        disabled={enviando || processando}
+                        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-enterplak disabled:opacity-40"
+                      >
+                        {listaAberta ? <ChevronUp className="size-5" /> : <ChevronDown className="size-5" />}
+                      </button>
+                    )}
+                  </div>
+                  {usaAcordeao && !listaAberta && (
+                    <p className="text-xs text-muted-foreground">Em caso de defeito, toque na seta ▾ para escolher.</p>
+                  )}
+                  {usaAcordeao && listaAberta && (
+                    <div className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-border">
+                      {defeitosFiltrados.length === 0 && (
+                        <p className="px-3 py-3 text-sm text-muted-foreground">Nenhum defeito com “{numeroSerie.trim()}”.</p>
+                      )}
+                      {defeitosFiltrados.map((d) => (
+                        <button
+                          key={d.codigo}
+                          type="button"
+                          onClick={() => escolherDefeito(d.codigo)}
+                          className="block w-full border-b border-border px-3 py-2.5 text-left text-base last:border-b-0 hover:bg-muted"
+                        >
+                          {d.codigo}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {mostraStatus && !ehScanner && (

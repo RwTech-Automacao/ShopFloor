@@ -36,8 +36,8 @@ export function ReprovarModal({
   const [erro, setErro] = useState('')
   const snRef = useRef<HTMLInputElement>(null)
 
+  // Reseta SEMPRE (abrir/fechar ou trocar o defeito inicial) — evita SN/defeito em cache do bipe anterior.
   useEffect(() => {
-    if (!aberto) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDefeitosSel([{ codigo: codigoInicial, posicao: '' }])
     setSn('')
@@ -57,7 +57,8 @@ export function ReprovarModal({
     }
     if (snEsperado !== '' && norm(sn) !== norm(snEsperado)) {
       setErro('SN diferente — bipe a mesma peça')
-      snRef.current?.select()
+      setSn('') // bipe errado → limpa o campo pra bipar de novo
+      setTimeout(() => snRef.current?.focus(), 0)
       return
     }
     onConfirmar({ defeitos: preenchidos, sn })
