@@ -44,6 +44,7 @@ import { sair } from '@/modules/auth/application/actions'
 import { podeNoModulo, type Modulo, type Perfil, type Permissao } from '@/modules/auth/domain/perfil'
 import { cn } from '@/lib/utils'
 import { useKiosk } from './kiosk/kiosk-context'
+import { KioskTabs } from './kiosk/kiosk-tabs'
 import { KioskGuard } from './kiosk/kiosk-guard'
 import { KioskExitDialog } from './kiosk/kiosk-exit-dialog'
 import { KioskSetupDialog } from './kiosk/kiosk-setup-dialog'
@@ -442,6 +443,8 @@ export function AppShell({
             </button>
           )}
         </header>
+
+        <KioskTabs />
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
       </div>

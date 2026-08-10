@@ -24,6 +24,9 @@ export const ABAS_KIOSK: { secao: string; abas: AbaFluxo[] }[] = [
   { secao: 'Análise', abas: ABAS_ANALISE },
 ]
 
+/** Lista achatada (todas as abas) — usada pela barra única do kiosk (navega entre seções). */
+export const TODAS_ABAS: AbaFluxo[] = [...ABAS_OPERAR, ...ABAS_ANALISE]
+
 /** A rota atual está entre as abas permitidas? (casa exata ou sub-rota). */
 export function abaPermitida(pathname: string, abas: string[]): boolean {
   return abas.some((a) => pathname === a || pathname.startsWith(a + '/'))

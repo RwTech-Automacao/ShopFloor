@@ -5,15 +5,14 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useKiosk } from '@/shared/ui/kiosk/kiosk-context'
 
-/** Barra de abas por rota do Fluxo (Operação/Análise). Aba ativa por pathname. No kiosk, só mostra as abas liberadas. */
+/** Barra de abas por seção do Fluxo (Operação/Análise). No kiosk some — a barra única (KioskTabs) cobre a navegação. */
 export function AbasFluxo({ tabs }: { tabs: { rotulo: string; href: string }[] }) {
   const pathname = usePathname()
-  const { ligado, abas } = useKiosk()
-  const visiveis = ligado ? tabs.filter((t) => abas.includes(t.href)) : tabs
-  if (visiveis.length === 0) return null
+  const { ligado } = useKiosk()
+  if (ligado) return null
   return (
     <nav className="mb-4 flex gap-1 border-b border-border">
-      {visiveis.map((t) => {
+      {tabs.map((t) => {
         const ativa = pathname === t.href || pathname.startsWith(t.href + '/')
         return (
           <Link
