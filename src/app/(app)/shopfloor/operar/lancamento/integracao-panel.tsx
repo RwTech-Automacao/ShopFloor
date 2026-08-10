@@ -77,6 +77,15 @@ export function IntegracaoPanel({
     return () => clearTimeout(id)
   }, [etapa])
 
+  // Erro ao registrar: o campo fica disabled durante a transição; refoca quando ela termina.
+  const refocarProdutoApos = useRef(false)
+  useEffect(() => {
+    if (registrando) return
+    if (!refocarProdutoApos.current) return
+    refocarProdutoApos.current = false
+    produtoRef.current?.focus()
+  }, [registrando])
+
   /** PMO cuja placa já usa este SN (normalizado), ou null — evita o mesmo SN em duas PMOs. */
   function pmoComSn(sn: string): string | null {
     const alvo = normalizarSerie(sn)
@@ -168,7 +177,7 @@ export function IntegracaoPanel({
         setResultado({ tipo: 'aviso', titulo: r.erro }) // mantém na tela de trás
         setErroProduto(r.erro)                            // e também sobre o modal
         setProdutoSN('')                                  // bipe errado → limpa pra bipar outro
-        setTimeout(() => produtoRef.current?.focus(), 0)
+        refocarProdutoApos.current = true                 // refoca quando destravar (fim da transição)
       }
     })
   }
