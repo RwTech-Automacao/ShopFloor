@@ -11,10 +11,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { buscarHistoricoSN, carregarGrade } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { RegistroHistorico, OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
-import type { LinhaGrade } from '@/modules/shopfloor/domain/grade'
+import type { LinhaGrade, ResumoPosto } from '@/modules/shopfloor/domain/grade'
 import { pareaBurnin, formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 
 const TODAS = '__todas__'
+
+/** Linhas de resumo do topo da grade (Visão Geral da OP), como o legado. */
+const RESUMO_LINHAS: { rotulo: string; get: (r: ResumoPosto) => number; soProduzido?: boolean; cls: string }[] = [
+  { rotulo: 'Produzido', get: (r) => r.produzido, cls: 'bg-cyan-50 text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200' },
+  { rotulo: 'Pendentes', get: (r) => r.pendentes, soProduzido: true, cls: 'bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200' },
+  { rotulo: 'Aprovados', get: (r) => r.aprovados, soProduzido: true, cls: 'bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-200' },
+  { rotulo: 'Reprovados', get: (r) => r.reprovados, soProduzido: true, cls: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200' },
+]
 
 function corCelula(v: string): string {
   if (v === 'Aprovado' || v === 'Concluído') return 'text-green-700 font-medium'
@@ -36,8 +44,14 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   const [op, setOp] = useState('')
   const [colunas, setColunas] = useState<string[]>([])
   const [linhas, setLinhas] = useState<LinhaGrade[] | null>(null)
+  const [resumo, setResumo] = useState<ResumoPosto[] | null>(null)
+  const [pagina, setPagina] = useState(1)
+  const [totalPaginas, setTotalPaginas] = useState(1)
+  const [total, setTotal] = useState(0)
   const [caixa, setCaixa] = useState('')
   const [carregando, startGrade] = useTransition()
+
+  const resumoPorPosto = useMemo(() => new Map((resumo ?? []).map((r) => [r.posto, r])), [resumo])
 
   const clientes = useMemo(() => [...new Set(ordens.map((o) => o.cliente))], [ordens])
   const pmos = useMemo(
@@ -74,16 +88,20 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
     })
   }
 
-  function abrirGrade(opSel: string) {
+  function abrirGrade(opSel: string, pag = 1) {
     setOp(opSel)
     setCaixa('')
     startGrade(async () => {
-      const r = await carregarGrade(pmo, opSel)
+      const r = await carregarGrade(pmo, opSel, pag)
       if (r.ok) {
         setColunas(r.colunas)
+        setResumo(r.resumo)
         setLinhas(r.linhas)
+        setPagina(r.pagina)
+        setTotalPaginas(r.totalPaginas)
+        setTotal(r.total)
       } else {
-        setLinhas(null)
+        setLinhas(null); setResumo(null)
         toast.error(r.erro)
       }
     })
@@ -186,14 +204,14 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="flex flex-col gap-1.5">
               <Label>Cliente</Label>
-              <Select value={cliente} onValueChange={(v) => { setCliente(v ?? ''); setPmo(''); setOp(''); setLinhas(null) }}>
+              <Select value={cliente} onValueChange={(v) => { setCliente(v ?? ''); setPmo(''); setOp(''); setLinhas(null); setResumo(null) }}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{clientes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>PMO</Label>
-              <Select value={pmo} onValueChange={(v) => { setPmo(v ?? ''); setOp(''); setLinhas(null) }} disabled={cliente === ''}>
+              <Select value={pmo} onValueChange={(v) => { setPmo(v ?? ''); setOp(''); setLinhas(null); setResumo(null) }} disabled={cliente === ''}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{pmos.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
               </Select>
@@ -220,7 +238,8 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
           {carregando && <p className="text-sm text-muted-foreground">Carregando grade…</p>}
 
           {linhasFiltradas && (
-            <Table containerClassName="max-h-[70vh] overflow-auto rounded-lg border border-border">
+            <>
+              <Table containerClassName="max-h-[70vh] overflow-auto rounded-lg border border-border">
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead>Nº de Série</TableHead>
@@ -228,6 +247,22 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {/* Resumo por posto (Visão Geral da OP) — sempre a OP inteira, qualquer tamanho */}
+                  {resumo && RESUMO_LINHAS.map((lr) => (
+                    <TableRow key={lr.rotulo} className={lr.cls}>
+                      <TableCell className="font-semibold">{lr.rotulo}</TableCell>
+                      {colunas.map((p) => {
+                        const rp = resumoPorPosto.get(p)
+                        const oculto = p === 'Manutenção' && lr.soProduzido // Manutenção só tem "Produzido"
+                        return (
+                          <TableCell key={p} className="text-center font-semibold tabular-nums">
+                            {rp && !oculto ? lr.get(rp) : '—'}
+                          </TableCell>
+                        )
+                      })}
+                    </TableRow>
+                  ))}
+                  {/* Detalhe por peça (página atual) */}
                   {linhasFiltradas.map((l) => (
                     <TableRow key={l.sn}>
                       <TableCell className="font-medium">{l.sn}</TableCell>
@@ -238,6 +273,19 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                   ))}
                 </TableBody>
               </Table>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="text-muted-foreground">
+                  {total} peça(s){caixa !== '' ? ` · caixa ${caixa} (só nesta página)` : ''} · página {pagina} de {totalPaginas}
+                </span>
+                {totalPaginas > 1 && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={pagina <= 1 || carregando} onClick={() => abrirGrade(op, pagina - 1)}>Anterior</Button>
+                    <Button variant="outline" size="sm" disabled={pagina >= totalPaginas || carregando} onClick={() => abrirGrade(op, pagina + 1)}>Próxima</Button>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

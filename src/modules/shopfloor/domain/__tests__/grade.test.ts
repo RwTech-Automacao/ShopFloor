@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gerarFaixaSNs, montarGrade, burninEmAndamento } from '../grade'
+import { gerarFaixaSNs, gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, burninEmAndamento } from '../grade'
 
 const temStatus = (p: string) =>
   ['Inspeção SPI', 'Inspeção SMD', 'Inspeção PTH', 'Teste', 'Burn-in', 'Teste Final', 'Inspeção Final', 'Inspeção NQA'].some(
@@ -108,5 +108,55 @@ describe('burninEmAndamento', () => {
       e('2026-07-24T10:00:00Z', 'Reprovado'),
       e('2026-07-24T12:00:00Z', ''),
     ])).toBe(true)
+  })
+})
+
+describe('totalFaixaSNs / gerarFaixaSNsPagina (sem limite de 2000)', () => {
+  it('conta a faixa sem gerar a lista, mesmo acima de 2000', () => {
+    const r = totalFaixaSNs('1', '5000')
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.total).toBe(5000)
+  })
+  it('gera só a página pedida + total', () => {
+    const r = gerarFaixaSNsPagina('AB001C', 'AB010C', 2, 3) // offset 2, tamanho 3 → 003,004,005
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.sns).toEqual(['AB003C', 'AB004C', 'AB005C'])
+      expect(r.total).toBe(10)
+    }
+  })
+  it('última página parcial não estoura', () => {
+    const r = gerarFaixaSNsPagina('1', '5', 4, 3) // offset 4 → só o 5
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.sns).toEqual(['5'])
+  })
+})
+
+describe('montarResumoPorPosto', () => {
+  const postos = ['Inicial', 'Teste']
+  const reg = (over: Partial<{ snNorm: string; posto: string; status: string; numeroCaixa: string; dataHora: string }>) => ({
+    snNorm: '100', posto: 'Inicial', status: '', numeroCaixa: '', dataHora: '2026-01-01T00:00:00Z', ...over,
+  })
+  it('conta produzido/pendentes/aprovados/reprovados por posto', () => {
+    // total 10; 2 peças passaram no Inicial (registrado), 1 aprovada e 1 reprovada no Teste
+    const registros = [
+      reg({ snNorm: '100', posto: 'Inicial' }),
+      reg({ snNorm: '101', posto: 'Inicial' }),
+      reg({ snNorm: '100', posto: 'Teste', status: 'Aprovado' }),
+      reg({ snNorm: '101', posto: 'Teste', status: 'Reprovado' }),
+    ]
+    const resumo = montarResumoPorPosto(10, postos, registros, temStatus)
+    const inicial = resumo.find((r) => r.posto === 'Inicial')!
+    const teste = resumo.find((r) => r.posto === 'Teste')!
+    expect(inicial).toMatchObject({ produzido: 2, pendentes: 8, aprovados: 0, reprovados: 0 })
+    expect(teste).toMatchObject({ produzido: 2, pendentes: 8, aprovados: 1, reprovados: 1 })
+  })
+  it('aprovado tem precedência sobre reprovado (re-teste)', () => {
+    const registros = [
+      reg({ snNorm: '100', posto: 'Teste', status: 'Reprovado' }),
+      reg({ snNorm: '100', posto: 'Teste', status: 'Aprovado' }),
+    ]
+    const teste = montarResumoPorPosto(5, ['Teste'], registros, temStatus).find((r) => r.posto === 'Teste')!
+    expect(teste).toMatchObject({ produzido: 1, aprovados: 1, reprovados: 0 })
   })
 })
