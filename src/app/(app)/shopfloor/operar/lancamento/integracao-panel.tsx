@@ -103,18 +103,18 @@ export function IntegracaoPanel({
           return
         }
         setResultado({ tipo: 'aviso', titulo: r.erro })
-        acaoAposResolver.current = 'select'
+        setBipe(''); acaoAposResolver.current = 'focus' // bipe errado → limpa o campo pra bipar outro
         return
       }
       if (linhas[r.pmo] !== undefined) {
         setResultado({ tipo: 'aviso', titulo: 'PMO já tem placa' })
-        acaoAposResolver.current = 'select'
+        setBipe(''); acaoAposResolver.current = 'focus' // bipe errado → limpa o campo pra bipar outro
         return
       }
       const pmoRepetido = pmoComSn(snBipado)
       if (pmoRepetido) {
         setResultado({ tipo: 'aviso', titulo: `Esse Nº de Série já foi encaixado em ${pmoRepetido}.` })
-        acaoAposResolver.current = 'select'
+        setBipe(''); acaoAposResolver.current = 'focus' // bipe errado → limpa o campo pra bipar outro
         return
       }
       setLinhas((prev) => ({ ...prev, [r.pmo]: { sn: snBipado.trim(), op: r.op } }))
