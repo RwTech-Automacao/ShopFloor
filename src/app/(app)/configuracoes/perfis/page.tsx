@@ -1,4 +1,3 @@
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { listarPerfisComGrants } from '@/modules/perfis/infra/perfil-repository'
 import { MODULOS } from '@/modules/auth/domain/modulos'
@@ -56,7 +55,6 @@ export default async function PerfisPage() {
           >
             <div className="flex items-center gap-2 sm:w-56 sm:shrink-0">
               <span className="font-semibold">{perfil.nome}</span>
-              {perfil.sistema && <Badge variant="outline">Sistema</Badge>}
             </div>
             <div className="min-w-0 flex-1">
               <ModulosDoPerfil grants={perfil.perfil_permissao ?? []} />
