@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { normalizarSerie } from '../domain/serie'
-import { gerarFaixaSNs, montarGrade, type LinhaGrade } from '../domain/grade'
+import { gerarFaixaSNsPagina, montarGrade, montarResumoPorPosto, type LinhaGrade, type ResumoPosto } from '../domain/grade'
 import { PERFIL_PADRAO, perfilTemStatus } from '../domain/perfil-posto'
 import { carregarOrdem } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
@@ -33,7 +33,12 @@ export async function buscarHistoricoSN(
 export async function carregarGrade(
   pmo: string,
   op: string,
-): Promise<{ ok: true; colunas: string[]; linhas: LinhaGrade[] } | { ok: false; erro: string }> {
+  pagina = 1,
+  tamanho = 100,
+): Promise<
+  | { ok: true; colunas: string[]; resumo: ResumoPosto[]; linhas: LinhaGrade[]; total: number; pagina: number; totalPaginas: number }
+  | { ok: false; erro: string }
+> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
 
@@ -42,7 +47,9 @@ export async function carregarGrade(
   if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
     return { ok: false, erro: 'Esta OP não tem faixa de Nº de Série cadastrada.' }
   }
-  const faixa = gerarFaixaSNs(ordem.sn_ini, ordem.sn_fim)
+  const tam = Math.max(1, Math.floor(tamanho))
+  const pag = Math.max(1, Math.floor(pagina))
+  const faixa = gerarFaixaSNsPagina(ordem.sn_ini, ordem.sn_fim, (pag - 1) * tam, tam)
   if (!faixa.ok) return faixa
 
   try {
@@ -54,7 +61,11 @@ export async function carregarGrade(
     return {
       ok: true,
       colunas: [...ordem.postos, 'Manutenção'],
-      linhas: montarGrade(faixa.sns, ordem.postos, registros, temStatus),
+      resumo: montarResumoPorPosto(faixa.total, ordem.postos, registros, temStatus), // OP inteira (qualquer tamanho)
+      linhas: montarGrade(faixa.sns, ordem.postos, registros, temStatus),            // só a página
+      total: faixa.total,
+      pagina: pag,
+      totalPaginas: Math.max(1, Math.ceil(faixa.total / tam)),
     }
   } catch {
     return { ok: false, erro: ERRO_INTERNO }
