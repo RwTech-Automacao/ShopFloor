@@ -30,9 +30,10 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
-        {/* top-center: os toasts no canto inferior direito ficavam por cima das setas
-            de navegação e do botão Finalizar, que moram no rodapé à direita. */}
-        <Toaster position="top-center" richColors closeButton />
+        {/* bottom-center: avisos dos cadastros (Config/Recebimento) aparecem embaixo, perto da ação.
+            Centralizado (não bottom-right) pra não bater nas setas de navegação e no Finalizar,
+            que moram no rodapé à direita. Telas de bipe usam o painel fixo, não toast. */}
+        <Toaster position="bottom-center" richColors closeButton />
       </body>
     </html>
   );

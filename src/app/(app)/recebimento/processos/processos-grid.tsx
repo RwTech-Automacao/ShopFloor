@@ -73,8 +73,8 @@ export function ProcessosGrid({ colunas, linhas, total, estado }: ProcessosGridP
     <div className="flex flex-col gap-3">
       <div className="hidden lg:block">
         <ScrollHorizontalTopo>
-          <Table className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
-            <TableHeader>
+          <Table containerClassName="max-h-[70vh] overflow-auto rounded-lg border border-border" className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
+            <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
                 {colunas.map((coluna) => (
                   <TableHead key={coluna.campo}>
