@@ -92,7 +92,7 @@ export async function criarOrdemAction(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const dados = lerDados(formData)
-  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
+  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd })
   if (!v.ok) return v
   // OP única global: o número da OP não pode existir em nenhum outro PMO.
   const emUso = await buscarOpEmUso(dados.op)
@@ -125,7 +125,7 @@ export async function editarOrdemAction(
   const id = String(formData.get('id') ?? '').trim()
   if (id === '') return { ok: false, erro: 'OP inválida.' }
   const dados = lerDados(formData)
-  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim })
+  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd })
   if (!v.ok) return v
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).
   const emUso = await buscarOpEmUso(dados.op, id)
