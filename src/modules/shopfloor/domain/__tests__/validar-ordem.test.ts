@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { validarOrdem } from '../validar-ordem'
 
-const base = { pmo: 'PMOF1', op: '100', cliente: 'Empresa 1', snIni: 'SN0001', snFim: 'SN0500' }
+const base = { pmo: 'PMOF1', op: '100', cliente: 'Empresa 1', snIni: 'SN0001', snFim: 'SN0500', qtd: null }
 
 describe('validarOrdem', () => {
   it('aceita OP válida (pmo, op, cliente, faixa)', () => {
@@ -23,5 +23,11 @@ describe('validarOrdem', () => {
   })
   it('faixa de 1 peça (início == fim) → ok', () => {
     expect(validarOrdem({ ...base, snIni: 'SN0001', snFim: 'SN0001' }).ok).toBe(true)
+  })
+  it('quantidade × faixa: bate → ok; diverge → erro; qtd nula → não checa', () => {
+    expect(validarOrdem({ ...base, qtd: 500 }).ok).toBe(true) // SN0001..SN0500 = 500
+    expect(validarOrdem({ ...base, qtd: 499 }).ok).toBe(false) // diverge
+    expect(validarOrdem({ ...base, snIni: 'SN0001', snFim: 'SN0001', qtd: 5 }).ok).toBe(false) // faixa 1 ≠ 5
+    expect(validarOrdem({ ...base, qtd: null }).ok).toBe(true) // sem qtd, não checa
   })
 })
