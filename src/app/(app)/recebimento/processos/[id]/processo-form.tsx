@@ -68,9 +68,15 @@ export function ProcessoForm({
   responsavelRecebimento,
   responsavelQualidade,
 }: ProcessoFormProps) {
-  const [valores, setValores] = useState<Record<string, string>>(() =>
-    valoresIniciaisComoTexto(campos, valoresIniciais),
-  )
+  const [valores, setValores] = useState<Record<string, string>>(() => {
+    const inicial = valoresIniciaisComoTexto(campos, valoresIniciais)
+    // Quantidade Recebida vazia → já vem com a Quantidade no Pedido (a importada).
+    // Fica "a salvar" pra confirmarem; só apagam/corrigem em caso de divergência.
+    if (!somenteLeitura && (inicial['quantidade_recebida'] ?? '') === '' && (inicial['quantidade_pedido'] ?? '') !== '') {
+      inicial['quantidade_recebida'] = inicial['quantidade_pedido']!
+    }
+    return inicial
+  })
   const [salvando, startTransition] = useTransition()
 
   const valoresIniciaisTexto = useMemo(
