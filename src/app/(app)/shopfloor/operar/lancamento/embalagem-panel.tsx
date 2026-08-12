@@ -183,8 +183,8 @@ export function EmbalagemPanel({
           </div>
           <div className="flex flex-col rounded-lg border border-border p-2">
             <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Nesta caixa ({snsNaCaixa.length})</p>
-            {/* Mostra ~8 SNs; o resto rola dentro do card. */}
-            <ul className="flex max-h-[11.5rem] flex-col gap-0.5 overflow-y-auto text-sm">
+            {/* Rola cedo (~5 SNs), no mesmo padrão dos históricos das outras telas (max-h-[8rem]). */}
+            <ul className="flex max-h-[8rem] flex-col gap-0.5 overflow-y-auto text-sm">
               {snsNaCaixa.length === 0 && <li className="text-muted-foreground">—</li>}
               {snsNaCaixa.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
             </ul>
