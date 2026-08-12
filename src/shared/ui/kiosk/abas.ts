@@ -16,6 +16,7 @@ export const ABAS_ANALISE: AbaFluxo[] = [
   { rotulo: 'Burn-in', href: '/shopfloor/analisar/burn-in' },
   { rotulo: 'Caixas', href: '/shopfloor/analisar/caixas' },
   { rotulo: 'Fluxo', href: '/shopfloor/analisar/fluxo' },
+  { rotulo: 'Repinmetro', href: '/shopfloor/analisar/repinmetro' },
 ]
 
 /** Todas as abas selecionáveis no setup do kiosk, agrupadas por seção. */
