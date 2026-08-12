@@ -41,6 +41,27 @@ describe('construirFluxo', () => {
     expect(edges.some((e) => e.id === 'r:Solda')).toBe(false)
   })
 
+  it('só liga na Manutenção os postos que exigem Manutenção (conserto no próprio posto não liga)', () => {
+    // SPI e Inspeção reprovam mas fazem conserto no próprio posto (exigeManutencao=false);
+    // Teste roteia pra Manutenção (exigeManutencao=true). Todos com reprovadas>0.
+    const agg: FluxoAgregado[] = [
+      { ...zero('SPI'), reprovadas: 2 },
+      { ...zero('Inspeção'), reprovadas: 5 },
+      { ...zero('Teste'), reprovadas: 3 },
+    ]
+    const { edges } = construirFluxo(
+      ['SPI', 'Inspeção', 'Teste'],
+      agg,
+      () => true,
+      () => 'nenhum',
+      null,
+      (p) => p === 'Teste', // só Teste exige Manutenção
+    )
+    expect(edges).toContainEqual({ id: 'r:Teste', source: 'Teste', target: MANUTENCAO, tipo: 'reprova' })
+    expect(edges.some((e) => e.id === 'r:SPI')).toBe(false)
+    expect(edges.some((e) => e.id === 'r:Inspeção')).toBe(false)
+  })
+
   it('marca concluído quando passou ≥ qtd da OP (aprovadas p/ com status; registros p/ sem)', () => {
     const agg: FluxoAgregado[] = [
       { ...zero('Teste'), aprovadas: 100, registros: 130 }, // com status: usa aprovadas

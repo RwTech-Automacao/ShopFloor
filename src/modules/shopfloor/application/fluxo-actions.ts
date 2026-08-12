@@ -14,13 +14,14 @@ export async function carregarFluxo(
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
-    const { postos, agregados, temStatus, recurso, qtd } = await carregarFluxoOp(pmo.trim(), op.trim())
+    const { postos, agregados, temStatus, recurso, exigeManutencao, qtd } = await carregarFluxoOp(pmo.trim(), op.trim())
     const { nodes, edges } = construirFluxo(
       postos,
       agregados,
       (p) => temStatus[p] ?? false,
       (p) => recurso[p] ?? 'nenhum',
       qtd,
+      (p) => exigeManutencao[p] ?? false,
     )
     return { ok: true, nodes, edges }
   } catch {

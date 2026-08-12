@@ -28,6 +28,7 @@ export async function carregarFluxoOp(
   agregados: FluxoAgregado[]
   temStatus: Record<string, boolean>
   recurso: Record<string, string>
+  exigeManutencao: Record<string, boolean>
   qtd: number | null
 }> {
   const supabase = await createServerSupabase()
@@ -50,12 +51,14 @@ export async function carregarFluxoOp(
   const perfis = await mapaPostoPerfil()
   const temStatus: Record<string, boolean> = {}
   const recurso: Record<string, string> = {}
+  const exigeManutencao: Record<string, boolean> = {}
   for (const p of postos) {
     temStatus[p] = perfis[p]?.temStatus ?? false
     recurso[p] = perfis[p]?.recurso ?? 'nenhum'
+    exigeManutencao[p] = perfis[p]?.exigeManutencao ?? false
   }
 
-  return { postos, agregados, temStatus, recurso, qtd }
+  return { postos, agregados, temStatus, recurso, exigeManutencao, qtd }
 }
 
 /**

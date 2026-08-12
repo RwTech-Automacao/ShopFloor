@@ -75,6 +75,10 @@ export function construirFluxo(
   temStatus: (posto: string) => boolean,
   recursoDe: (posto: string) => string = () => 'nenhum',
   qtd: number | null = null,
+  // Só liga na Manutenção o posto que ROTEIA pra lá (exigeManutencao). Postos que reprovam mas
+  // fazem conserto no próprio posto (SPI/Inspeção: reprova≠nenhum && !exigeManutencao) não ligam.
+  // Default `true` preserva o comportamento antigo p/ chamadas que não informam.
+  exigeManutencaoDe: (posto: string) => boolean = () => true,
 ): { nodes: FluxoNodePos[]; edges: FluxoEdge[] } {
   const nodes: FluxoNodePos[] = postosOrdenados.map((posto, i) => ({
     id: posto,
@@ -98,7 +102,7 @@ export function construirFluxo(
     edges.push({ id: `f:${source}->${target}`, source, target, tipo: 'fluxo' })
   }
   for (const posto of postosOrdenados) {
-    if ((acharAgg(agregados, posto)?.reprovadas ?? 0) > 0) {
+    if ((acharAgg(agregados, posto)?.reprovadas ?? 0) > 0 && exigeManutencaoDe(posto)) {
       edges.push({ id: `r:${posto}`, source: posto, target: MANUTENCAO, tipo: 'reprova' })
     }
   }
