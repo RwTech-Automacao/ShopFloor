@@ -10,7 +10,7 @@ const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 export async function carregarFluxo(
   pmo: string,
   op: string,
-): Promise<{ ok: true; nodes: FluxoNodePos[]; edges: FluxoEdge[] } | { ok: false; erro: string }> {
+): Promise<{ ok: true; nodes: FluxoNodePos[]; edges: FluxoEdge[]; qtd: number | null } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
@@ -23,7 +23,7 @@ export async function carregarFluxo(
       qtd,
       (p) => exigeManutencao[p] ?? false,
     )
-    return { ok: true, nodes, edges }
+    return { ok: true, nodes, edges, qtd }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o fluxo da OP.' }
   }
