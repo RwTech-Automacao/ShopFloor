@@ -39,6 +39,54 @@ function acharAgg(agregados: FluxoAgregado[], posto: string): FluxoAgregado | un
   return agregados.find((a) => a.posto.toLowerCase() === alvo)
 }
 
+/** Um registro cru de passagem de uma peça por um posto (entrada de `numerarPassagens`). */
+export interface RegistroPassagem {
+  chave: string // SN normalizado (agrupa a mesma peça)
+  sn: string // SN pra exibir
+  status: string
+  dataHora: string // ISO — ordem cronológica
+  ordem: number // desempate estável quando a dataHora empata (ex.: id do registro)
+}
+
+/** Uma passagem numerada de uma peça por um posto (saída de `numerarPassagens`). */
+export interface PassagemPosto {
+  sn: string
+  status: string
+  ordinal: number // 1 = 1ª vez, 2 = 2ª vez…
+  total: number // quantas vezes a peça passou no posto (1 = passou só uma vez)
+}
+
+/**
+ * Expande as passagens de UM posto por peça, numeradas em ordem cronológica (1x, 2x…). Puro.
+ * Dentro de cada peça as passagens ficam em ordem cronológica; as PEÇAS são ordenadas pela
+ * passagem MAIS RECENTE primeiro (peça que bipou por último aparece no topo). Quem passou 1
+ * vez tem total=1.
+ */
+export function numerarPassagens(registros: RegistroPassagem[]): PassagemPosto[] {
+  const porPeca = new Map<string, RegistroPassagem[]>()
+  for (const r of registros) {
+    const arr = porPeca.get(r.chave)
+    if (arr) arr.push(r)
+    else porPeca.set(r.chave, [r])
+  }
+  const grupos = [...porPeca.values()].map((arr) =>
+    [...arr].sort((a, b) => a.dataHora.localeCompare(b.dataHora) || a.ordem - b.ordem),
+  )
+  // peças ordenadas pela última passagem (mais recente primeiro).
+  grupos.sort((g1, g2) => {
+    const u1 = g1[g1.length - 1]
+    const u2 = g2[g2.length - 1]
+    if (!u1 || !u2) return 0
+    return u2.dataHora.localeCompare(u1.dataHora) || u2.ordem - u1.ordem
+  })
+  const res: PassagemPosto[] = []
+  for (const asc of grupos) {
+    const total = asc.length
+    asc.forEach((r, i) => res.push({ sn: r.sn, status: r.status, ordinal: i + 1, total }))
+  }
+  return res
+}
+
 function dados(
   posto: string,
   agregados: FluxoAgregado[],
@@ -75,6 +123,10 @@ export function construirFluxo(
   temStatus: (posto: string) => boolean,
   recursoDe: (posto: string) => string = () => 'nenhum',
   qtd: number | null = null,
+  // Só liga na Manutenção o posto que ROTEIA pra lá (exigeManutencao). Postos que reprovam mas
+  // fazem conserto no próprio posto (SPI/Inspeção: reprova≠nenhum && !exigeManutencao) não ligam.
+  // Default `true` preserva o comportamento antigo p/ chamadas que não informam.
+  exigeManutencaoDe: (posto: string) => boolean = () => true,
 ): { nodes: FluxoNodePos[]; edges: FluxoEdge[] } {
   const nodes: FluxoNodePos[] = postosOrdenados.map((posto, i) => ({
     id: posto,
@@ -98,7 +150,7 @@ export function construirFluxo(
     edges.push({ id: `f:${source}->${target}`, source, target, tipo: 'fluxo' })
   }
   for (const posto of postosOrdenados) {
-    if ((acharAgg(agregados, posto)?.reprovadas ?? 0) > 0) {
+    if ((acharAgg(agregados, posto)?.reprovadas ?? 0) > 0 && exigeManutencaoDe(posto)) {
       edges.push({ id: `r:${posto}`, source: posto, target: MANUTENCAO, tipo: 'reprova' })
     }
   }

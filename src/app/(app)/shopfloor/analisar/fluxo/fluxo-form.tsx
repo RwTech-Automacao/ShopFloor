@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, type Node, type Edge, type NodeTypes, type NodeMouseHandler } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { X } from 'lucide-react'
@@ -8,12 +8,13 @@ import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { carregarFluxo, detalhePosto, snsManutencao } from '@/modules/shopfloor/application/fluxo-actions'
-import type { OpItem, SnDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
-import { MANUTENCAO, type FluxoNodePos, type FluxoEdge } from '@/modules/shopfloor/domain/fluxo-op'
+import { carregarFluxo, detalhePosto, snsManutencao, burninEmAndamento } from '@/modules/shopfloor/application/fluxo-actions'
+import type { OpItem, SnDoPosto, BurninEmAndamento } from '@/modules/shopfloor/infra/fluxo-repository'
+import { MANUTENCAO, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
+import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 
-interface Listas { agora: SnDoPosto[]; historico: SnDoPosto[] }
+interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
 
 function paraEdges(es: FluxoEdge[]): Edge[] {
@@ -47,6 +48,54 @@ function ListaSns({ titulo, itens, carregando }: { titulo: string; itens: SnDoPo
   )
 }
 
+/** Histórico do posto: uma linha por PASSAGEM. Quem passou >1 vez mostra "Nx status" em cada
+ *  passagem (1x = 1ª vez); quem passou 1 vez mostra só o SN. */
+function ListaPassagens({ titulo, itens, carregando }: { titulo: string; itens: PassagemPosto[]; carregando: boolean }) {
+  return (
+    <div className="mb-3">
+      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo} ({itens.length})</p>
+      {carregando ? (
+        <p className="text-muted-foreground">Carregando…</p>
+      ) : (
+        <ul className="flex flex-col gap-0.5">
+          {itens.length === 0 && <li className="text-muted-foreground">—</li>}
+          {itens.map((p, i) => (
+            <li key={`${p.sn}-${p.ordinal}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
+              <span>{p.sn}</span>
+              {p.total > 1 && <span className="text-muted-foreground">{p.ordinal}x {p.status || '—'}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Burn-in "No posto agora": peças com ciclo aberto (cozinhando) + há quanto tempo (relógio ao vivo). */
+function ListaBurnin({ itens, agoraMs, carregando }: { itens: BurninEmAndamento[]; agoraMs: number; carregando: boolean }) {
+  return (
+    <div className="mb-3">
+      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">No posto agora ({itens.length})</p>
+      {carregando ? (
+        <p className="text-muted-foreground">Carregando…</p>
+      ) : (
+        <ul className="flex flex-col gap-0.5">
+          {itens.length === 0 && <li className="text-muted-foreground">—</li>}
+          {itens.map((b, i) => {
+            const min = Math.max(0, Math.round((agoraMs - Date.parse(b.desde)) / 60000))
+            return (
+              <li key={`${b.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
+                <span>{b.sn}</span>
+                <span className="text-muted-foreground">há {formatarDuracao(min)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [sel, setSel] = useState('')
   const [dom, setDom] = useState<FluxoNodePos[]>([])
@@ -54,17 +103,27 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [aberto, setAberto] = useState<string | null>(null)
   const [listas, setListas] = useState<Listas>(LISTAS_VAZIAS)
   const [buscou, setBuscou] = useState(false)
+  const [burnin, setBurnin] = useState<BurninEmAndamento[]>([])
   const [carregando, startCarregar] = useTransition()
   const [carregandoSns, startSns] = useTransition()
   const ctx = useRef<{ pmo: string; op: string }>({ pmo: '', op: '' })
+
+  // Relógio ao vivo pro "há X" do Burn-in (atualiza a cada minuto).
+  const [agoraMs, setAgoraMs] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setAgoraMs(Date.now()), 60_000)
+    return () => clearInterval(t)
+  }, [])
 
   const nodeTypes = useMemo<NodeTypes>(() => ({ fluxo: FluxoNode }), [])
 
   const abrir = useCallback((id: string) => {
     setListas(LISTAS_VAZIAS)
+    setBurnin([])
     setAberto((a) => (a === id ? null : id))
     if (aberto === id) return
     const { pmo, op } = ctx.current
+    const recurso = dom.find((n) => n.id === id)?.data.recurso
     startSns(async () => {
       if (id === MANUTENCAO) {
         // Manutenção é ramo: só "agora" = peças travadas (último bipe reprovado), coerente com o badge.
@@ -73,16 +132,21 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
         else toast.error(r.erro)
       } else {
         const r = await detalhePosto(pmo, op, id)
-        if (r.ok) setListas({ agora: r.agora, historico: r.historico })
-        else toast.error(r.erro)
+        if (!r.ok) { toast.error(r.erro); return }
+        setListas({ agora: r.agora, historico: r.historico })
+        // Burn-in: "No posto agora" vira as peças cozinhando + há quanto tempo (ciclo aberto).
+        if (recurso === 'burnin') {
+          const b = await burninEmAndamento(pmo, op, id)
+          if (b.ok) setBurnin(b.itens)
+        }
       }
     })
-  }, [aberto])
+  }, [aberto, dom])
 
   const onNodeClick = useCallback<NodeMouseHandler>((_, node) => abrir(node.id), [abrir])
 
   const escolher = useCallback((v: string) => {
-    setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS)
+    setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin([])
     const [pmo, op] = v.split('||')
     if (!pmo || !op) return
     ctx.current = { pmo, op }
@@ -174,8 +238,12 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                         <span className="text-muted-foreground">Registradas: {detalhe.registros}</span>
                       )}
                     </div>
-                    <ListaSns titulo="No posto agora" itens={listas.agora} carregando={carregandoSns} />
-                    <ListaSns titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} />
+                    {detalhe.recurso === 'burnin' ? (
+                      <ListaBurnin itens={burnin} agoraMs={agoraMs} carregando={carregandoSns} />
+                    ) : (
+                      <ListaSns titulo="No posto agora" itens={listas.agora} carregando={carregandoSns} />
+                    )}
+                    <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} />
                   </>
                 )}
               </div>

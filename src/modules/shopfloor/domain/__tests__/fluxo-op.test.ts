@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, MANUTENCAO, type FluxoAgregado } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, MANUTENCAO, type FluxoAgregado, type RegistroPassagem } from '../fluxo-op'
 
 const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0 })
 
@@ -41,6 +41,27 @@ describe('construirFluxo', () => {
     expect(edges.some((e) => e.id === 'r:Solda')).toBe(false)
   })
 
+  it('só liga na Manutenção os postos que exigem Manutenção (conserto no próprio posto não liga)', () => {
+    // SPI e Inspeção reprovam mas fazem conserto no próprio posto (exigeManutencao=false);
+    // Teste roteia pra Manutenção (exigeManutencao=true). Todos com reprovadas>0.
+    const agg: FluxoAgregado[] = [
+      { ...zero('SPI'), reprovadas: 2 },
+      { ...zero('Inspeção'), reprovadas: 5 },
+      { ...zero('Teste'), reprovadas: 3 },
+    ]
+    const { edges } = construirFluxo(
+      ['SPI', 'Inspeção', 'Teste'],
+      agg,
+      () => true,
+      () => 'nenhum',
+      null,
+      (p) => p === 'Teste', // só Teste exige Manutenção
+    )
+    expect(edges).toContainEqual({ id: 'r:Teste', source: 'Teste', target: MANUTENCAO, tipo: 'reprova' })
+    expect(edges.some((e) => e.id === 'r:SPI')).toBe(false)
+    expect(edges.some((e) => e.id === 'r:Inspeção')).toBe(false)
+  })
+
   it('marca concluído quando passou ≥ qtd da OP (aprovadas p/ com status; registros p/ sem)', () => {
     const agg: FluxoAgregado[] = [
       { ...zero('Teste'), aprovadas: 100, registros: 130 }, // com status: usa aprovadas
@@ -62,5 +83,41 @@ describe('construirFluxo', () => {
     const { nodes } = construirFluxo(['Burn-in'], [], () => false, (p) => (p === 'Burn-in' ? 'burnin' : 'nenhum'))
     expect(nodes.find((n) => n.id === 'Burn-in')!.data.recurso).toBe('burnin')
     expect(nodes.find((n) => n.id === MANUTENCAO)!.data.recurso).toBe('manutencao')
+  })
+})
+
+describe('numerarPassagens', () => {
+  it('numera as passagens de cada peça em ordem cronológica (1x, 2x…) com total; 1 passagem = total 1', () => {
+    const regs: RegistroPassagem[] = [
+      { chave: 'A', sn: 'A', status: 'Aprovado', dataHora: '2026-01-02T10:00:00Z', ordem: 5 }, // 2ª da A
+      { chave: 'A', sn: 'A', status: 'Reprovado', dataHora: '2026-01-01T10:00:00Z', ordem: 3 }, // 1ª da A
+      { chave: 'B', sn: 'B', status: 'Aprovado', dataHora: '2026-01-01T09:00:00Z', ordem: 1 }, // única da B
+    ]
+    expect(numerarPassagens(regs)).toEqual([
+      { sn: 'A', status: 'Reprovado', ordinal: 1, total: 2 },
+      { sn: 'A', status: 'Aprovado', ordinal: 2, total: 2 },
+      { sn: 'B', status: 'Aprovado', ordinal: 1, total: 1 },
+    ])
+  })
+
+  it('desempata pela ordem quando a dataHora é igual', () => {
+    const regs: RegistroPassagem[] = [
+      { chave: 'A', sn: 'A', status: 'segundo', dataHora: 'T', ordem: 2 },
+      { chave: 'A', sn: 'A', status: 'primeiro', dataHora: 'T', ordem: 1 },
+    ]
+    expect(numerarPassagens(regs).map((p) => p.status)).toEqual(['primeiro', 'segundo'])
+  })
+
+  it('ordena as peças pela passagem mais recente primeiro (não alfabético)', () => {
+    const regs: RegistroPassagem[] = [
+      { chave: 'AAA', sn: 'AAA', status: 'x', dataHora: '2026-01-01T00:00:00Z', ordem: 1 }, // antiga
+      { chave: 'ZZZ', sn: 'ZZZ', status: 'y', dataHora: '2026-02-01T00:00:00Z', ordem: 2 }, // recente
+    ]
+    // recente primeiro → ZZZ antes de AAA (apesar de alfabético ser AAA primeiro)
+    expect(numerarPassagens(regs).map((p) => p.sn)).toEqual(['ZZZ', 'AAA'])
+  })
+
+  it('lista vazia → vazio', () => {
+    expect(numerarPassagens([])).toEqual([])
   })
 })
