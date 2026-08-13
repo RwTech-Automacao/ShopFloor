@@ -1,8 +1,8 @@
 import { BaseEdge, getBezierPath, type EdgeProps } from '@xyflow/react'
 
 /**
- * Aresta ATIVA (peça se movendo, tempo real): linha CONTÍNUA + uma bolinha "andando" ao longo
- * do caminho (estilo n8n). Substitui o tracejado animado do React Flow.
+ * Aresta ATIVA (peça se movendo, tempo real): linha-base "vazia" (esmaecida) que vai sendo
+ * PREENCHIDA de cor da origem ao destino e recomeça — o fluxo enchendo a linha (estilo n8n).
  */
 export function EdgeAtivo({
   id,
@@ -18,10 +18,20 @@ export function EdgeAtivo({
   const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
   return (
     <>
-      {/* linha-base contínua, esmaecida */}
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, stroke: '#8D2033', strokeWidth: 2, opacity: 0.3 }} />
-      {/* streak "passando" por cima (fluxo n8n) — anima o stroke-dashoffset (ver globals.css) */}
-      <path d={path} fill="none" stroke="#8D2033" strokeWidth={3} strokeLinecap="round" strokeDasharray="26 150" className="fluxo-streak" />
+      {/* linha-base "vazia" (esmaecida) */}
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, stroke: '#8D2033', strokeWidth: 2, opacity: 0.2 }} />
+      {/* fluxo n8n: a cor PREENCHE a linha da origem ao destino e recomeça (stroke-dashoffset animado;
+          pathLength=1 normaliza o comprimento). Ver keyframe fluxo-preenchendo no globals.css. */}
+      <path
+        d={path}
+        fill="none"
+        stroke="#8D2033"
+        strokeWidth={3}
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray="1 1"
+        className="fluxo-preenche"
+      />
     </>
   )
 }

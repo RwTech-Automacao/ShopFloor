@@ -142,17 +142,28 @@
   }
 }
 
-/* Fluxo (tempo real): streak "passando" ao longo da aresta ativa (estilo n8n). */
-@keyframes fluxo-andando {
-  to {
-    stroke-dashoffset: -176;
+/* Fluxo (tempo real): a cor PREENCHE a aresta ativa da origem ao destino e recomeça (estilo n8n).
+   pathLength=1 + dasharray "1 1": offset 1 = linha vazia, offset 0 = linha cheia. */
+@keyframes fluxo-preenchendo {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 0.9;
+  }
+  70% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
   }
 }
-.fluxo-streak {
-  animation: fluxo-andando 1.3s linear infinite;
+.fluxo-preenche {
+  animation: fluxo-preenchendo 1.8s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .fluxo-streak {
+  .fluxo-preenche {
     animation: none;
+    stroke-dashoffset: 0;
   }
 }
