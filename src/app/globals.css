@@ -50,6 +50,10 @@
 }
 
 :root {
+  /* Altura do teclado virtual (Windows/touch). Atualizada em runtime pelo TecladoProvider
+     (VirtualKeyboard API / visualViewport). 0 quando não há teclado na tela. Usada pelos
+     modais e áreas de digitação pra ficarem acima do teclado. */
+  --kb-inset: 0px;
   /* Paleta Enterplak — vinho #8D2033 sobre névoa clara, cards brancos. */
   --background: #f5f6f8;         /* névoa (fundo da aplicação) */
   --foreground: #171a1f;         /* tinta (texto) */

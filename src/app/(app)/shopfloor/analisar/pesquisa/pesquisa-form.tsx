@@ -25,8 +25,10 @@ const RESUMO_LINHAS: { rotulo: string; get: (r: ResumoPosto) => number; soProduz
 ]
 
 function corCelula(v: string): string {
-  if (v === 'Aprovado' || v === 'Concluído') return 'text-green-700 font-medium'
-  if (v === 'Reprovado') return 'text-red-600 font-medium'
+  // Aprovado/Reprovado também ganham FUNDO (verde/vermelho), não só o texto — pedido da reunião.
+  if (v === 'Aprovado' || v === 'Concluído')
+    return 'bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-200 font-medium'
+  if (v === 'Reprovado') return 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-200 font-medium'
   if (v === 'Em andamento') return 'text-amber-600 font-medium'
   if (v === 'Pendente' || v === '—') return 'text-muted-foreground'
   return 'text-tinta'
