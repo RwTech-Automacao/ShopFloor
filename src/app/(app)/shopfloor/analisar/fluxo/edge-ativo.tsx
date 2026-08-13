@@ -18,10 +18,10 @@ export function EdgeAtivo({
   const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
   return (
     <>
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />
-      <circle r="4" fill="#8D2033">
-        <animateMotion dur="1.6s" repeatCount="indefinite" path={path} />
-      </circle>
+      {/* linha-base contínua, esmaecida */}
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, stroke: '#8D2033', strokeWidth: 2, opacity: 0.3 }} />
+      {/* streak "passando" por cima (fluxo n8n) — anima o stroke-dashoffset (ver globals.css) */}
+      <path d={path} fill="none" stroke="#8D2033" strokeWidth={3} strokeLinecap="round" strokeDasharray="26 150" className="fluxo-streak" />
     </>
   )
 }
