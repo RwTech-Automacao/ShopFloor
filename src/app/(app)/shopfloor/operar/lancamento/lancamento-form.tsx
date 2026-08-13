@@ -251,7 +251,7 @@ export function LancamentoForm({
           descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
           rotuloConfirmar: 'Sim, foi consertado',
         })
-        if (!ok) return
+        if (!ok) { limparPeca(); return } // cancelou o conserto → limpa o SN (peça fica de lado)
         conservoConfirmado = defeitos
       }
     }
@@ -414,7 +414,7 @@ export function LancamentoForm({
           descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
           rotuloConfirmar: 'Sim, foi consertado',
         })
-        if (!ok) { setProcessando(false); setTimeout(() => snRef.current?.focus(), 0); return } // aborta a aprovação
+        if (!ok) { setProcessando(false); limparPeca(); return } // cancelou o conserto → aborta e limpa o SN
         conservoConfirmado = defeitos
       }
     }
