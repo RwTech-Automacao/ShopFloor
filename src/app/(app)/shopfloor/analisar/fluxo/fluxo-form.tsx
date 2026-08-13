@@ -14,6 +14,7 @@ import { MANUTENCAO, type FluxoNodePos, type FluxoEdge, type PassagemPosto } fro
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { HistoricoSnDialog } from './historico-sn-dialog'
+import { EdgeAtivo } from './edge-ativo'
 
 interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
@@ -32,15 +33,19 @@ function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[]): Edge[] {
   return es.map((e) => {
     // "Andando" só onde há peça se movendo: cadeia = pendentes no destino; reprova = peça em Manutenção.
     const ativo = e.tipo === 'reprova' ? wipDe(MANUTENCAO) > 0 : wipDe(e.target) > 0
+    if (ativo) {
+      // linha CONTÍNUA em vinho + bolinha andando (custom edge)
+      return { id: e.id, source: e.source, target: e.target, type: 'ativo', style: { stroke: '#8D2033', strokeWidth: 2 } }
+    }
+    // parada: cadeia cinza fina; reprova tracejada esmaecida (marcador de rota)
     return {
       id: e.id,
       source: e.source,
       target: e.target,
-      animated: ativo, // linha andando (tempo real) só nas ativas
       style:
         e.tipo === 'reprova'
-          ? { strokeDasharray: '4 4', stroke: '#8D2033', opacity: ativo ? 1 : 0.35 }
-          : { stroke: ativo ? '#8D2033' : '#94a3b8', strokeWidth: ativo ? 2 : 1 },
+          ? { strokeDasharray: '4 4', stroke: '#8D2033', opacity: 0.35 }
+          : { stroke: '#94a3b8', strokeWidth: 1 },
     }
   })
 }
@@ -167,6 +172,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   }, [])
 
   const nodeTypes = useMemo<NodeTypes>(() => ({ fluxo: FluxoNode }), [])
+  const edgeTypes = useMemo(() => ({ ativo: EdgeAtivo }), [])
 
   const abrir = useCallback((id: string) => {
     setListas(LISTAS_VAZIAS)
@@ -284,6 +290,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView
             nodesDraggable
             nodesConnectable={false}
