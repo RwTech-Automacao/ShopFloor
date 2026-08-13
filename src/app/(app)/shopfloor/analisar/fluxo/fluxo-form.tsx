@@ -10,10 +10,10 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { carregarFluxo, detalhePosto, snsManutencao } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
-import { MANUTENCAO, type FluxoNodePos, type FluxoEdge } from '@/modules/shopfloor/domain/fluxo-op'
+import { MANUTENCAO, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 
-interface Listas { agora: SnDoPosto[]; historico: SnDoPosto[] }
+interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
 
 function paraEdges(es: FluxoEdge[]): Edge[] {
@@ -39,6 +39,29 @@ function ListaSns({ titulo, itens, carregando }: { titulo: string; itens: SnDoPo
             <li key={`${s.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
               <span>{s.sn}</span>
               <span className="text-muted-foreground">{s.status || '—'}{s.vezes > 1 ? ` ×${s.vezes}` : ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Histórico do posto: uma linha por PASSAGEM. Quem passou >1 vez mostra "Nx status" em cada
+ *  passagem (1x = 1ª vez); quem passou 1 vez mostra só o SN. */
+function ListaPassagens({ titulo, itens, carregando }: { titulo: string; itens: PassagemPosto[]; carregando: boolean }) {
+  return (
+    <div className="mb-3">
+      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo} ({itens.length})</p>
+      {carregando ? (
+        <p className="text-muted-foreground">Carregando…</p>
+      ) : (
+        <ul className="flex flex-col gap-0.5">
+          {itens.length === 0 && <li className="text-muted-foreground">—</li>}
+          {itens.map((p, i) => (
+            <li key={`${p.sn}-${p.ordinal}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
+              <span>{p.sn}</span>
+              {p.total > 1 && <span className="text-muted-foreground">{p.ordinal}x {p.status || '—'}</span>}
             </li>
           ))}
         </ul>
@@ -175,7 +198,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                       )}
                     </div>
                     <ListaSns titulo="No posto agora" itens={listas.agora} carregando={carregandoSns} />
-                    <ListaSns titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} />
+                    <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} />
                   </>
                 )}
               </div>

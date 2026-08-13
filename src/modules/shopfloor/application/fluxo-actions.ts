@@ -2,7 +2,7 @@
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
-import { construirFluxo, type FluxoNodePos, type FluxoEdge } from '@/modules/shopfloor/domain/fluxo-op'
+import { construirFluxo, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, type SnDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
@@ -33,7 +33,7 @@ export async function detalhePosto(
   pmo: string,
   op: string,
   posto: string,
-): Promise<{ ok: true; agora: SnDoPosto[]; historico: SnDoPosto[] } | { ok: false; erro: string }> {
+): Promise<{ ok: true; agora: SnDoPosto[]; historico: PassagemPosto[] } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {

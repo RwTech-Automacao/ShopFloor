@@ -1,11 +1,11 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { mapaPostoPerfil } from './postos-repository'
-import type { FluxoAgregado } from '../domain/fluxo-op'
+import { numerarPassagens, type FluxoAgregado, type PassagemPosto, type RegistroPassagem } from '../domain/fluxo-op'
 
 export interface OpItem { pmo: string; op: string; cliente: string; descricao: string }
 export interface SnDoPosto { sn: string; status: string; vezes: number }
-export interface DetalhePosto { agora: SnDoPosto[]; historico: SnDoPosto[] }
+export interface DetalhePosto { agora: SnDoPosto[]; historico: PassagemPosto[] }
 
 /** Todas as OPs (pra escolher no seletor do Fluxo). */
 export async function listarOrdens(): Promise<OpItem[]> {
@@ -70,7 +70,7 @@ export async function carregarFluxoOp(
 export async function carregarDetalhePosto(pmo: string, op: string, posto: string): Promise<DetalhePosto> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string }[] = []
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
@@ -87,15 +87,13 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
     if (lote.length < PAGINA) break
   }
   const alvo = posto.toLowerCase()
-  const hist = new Map<string, SnDoPosto>() // histórico NO posto
+  const passagens: RegistroPassagem[] = [] // cada bipe da peça NO posto (pra numerar 1x/2x…)
   const atual = new Map<string, { posto: string; status: string; sn: string }>() // posição atual (1º visto = mais recente)
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
     if (!atual.has(chave)) atual.set(chave, { posto: l.posto, status: l.status, sn: l.numero_serie })
     if (l.posto.toLowerCase() === alvo) {
-      const a = hist.get(chave)
-      if (a) a.vezes += 1
-      else hist.set(chave, { sn: l.numero_serie, status: l.status, vezes: 1 })
+      passagens.push({ chave, sn: l.numero_serie, status: l.status, dataHora: l.data_hora, ordem: l.id })
     }
   }
   const agora: SnDoPosto[] = []
@@ -104,8 +102,10 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
       agora.push({ sn: v.sn, status: v.status, vezes: 1 })
     }
   }
-  const ordena = (a: SnDoPosto, b: SnDoPosto) => a.sn.localeCompare(b.sn)
-  return { agora: agora.sort(ordena), historico: [...hist.values()].sort(ordena) }
+  return {
+    agora: agora.sort((a, b) => a.sn.localeCompare(b.sn)),
+    historico: numerarPassagens(passagens),
+  }
 }
 
 /**
@@ -116,7 +116,7 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
 export async function carregarSnsEmManutencao(pmo: string, op: string): Promise<SnDoPosto[]> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string }[] = []
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, MANUTENCAO, type FluxoAgregado } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, MANUTENCAO, type FluxoAgregado, type RegistroPassagem } from '../fluxo-op'
 
 const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0 })
 
@@ -83,5 +83,32 @@ describe('construirFluxo', () => {
     const { nodes } = construirFluxo(['Burn-in'], [], () => false, (p) => (p === 'Burn-in' ? 'burnin' : 'nenhum'))
     expect(nodes.find((n) => n.id === 'Burn-in')!.data.recurso).toBe('burnin')
     expect(nodes.find((n) => n.id === MANUTENCAO)!.data.recurso).toBe('manutencao')
+  })
+})
+
+describe('numerarPassagens', () => {
+  it('numera as passagens de cada peça em ordem cronológica (1x, 2x…) com total; 1 passagem = total 1', () => {
+    const regs: RegistroPassagem[] = [
+      { chave: 'A', sn: 'A', status: 'Aprovado', dataHora: '2026-01-02T10:00:00Z', ordem: 5 }, // 2ª da A
+      { chave: 'A', sn: 'A', status: 'Reprovado', dataHora: '2026-01-01T10:00:00Z', ordem: 3 }, // 1ª da A
+      { chave: 'B', sn: 'B', status: 'Aprovado', dataHora: '2026-01-01T09:00:00Z', ordem: 1 }, // única da B
+    ]
+    expect(numerarPassagens(regs)).toEqual([
+      { sn: 'A', status: 'Reprovado', ordinal: 1, total: 2 },
+      { sn: 'A', status: 'Aprovado', ordinal: 2, total: 2 },
+      { sn: 'B', status: 'Aprovado', ordinal: 1, total: 1 },
+    ])
+  })
+
+  it('desempata pela ordem quando a dataHora é igual', () => {
+    const regs: RegistroPassagem[] = [
+      { chave: 'A', sn: 'A', status: 'segundo', dataHora: 'T', ordem: 2 },
+      { chave: 'A', sn: 'A', status: 'primeiro', dataHora: 'T', ordem: 1 },
+    ]
+    expect(numerarPassagens(regs).map((p) => p.status)).toEqual(['primeiro', 'segundo'])
+  })
+
+  it('lista vazia → vazio', () => {
+    expect(numerarPassagens([])).toEqual([])
   })
 })

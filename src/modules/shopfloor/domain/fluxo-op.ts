@@ -39,6 +39,44 @@ function acharAgg(agregados: FluxoAgregado[], posto: string): FluxoAgregado | un
   return agregados.find((a) => a.posto.toLowerCase() === alvo)
 }
 
+/** Um registro cru de passagem de uma peça por um posto (entrada de `numerarPassagens`). */
+export interface RegistroPassagem {
+  chave: string // SN normalizado (agrupa a mesma peça)
+  sn: string // SN pra exibir
+  status: string
+  dataHora: string // ISO — ordem cronológica
+  ordem: number // desempate estável quando a dataHora empata (ex.: id do registro)
+}
+
+/** Uma passagem numerada de uma peça por um posto (saída de `numerarPassagens`). */
+export interface PassagemPosto {
+  sn: string
+  status: string
+  ordinal: number // 1 = 1ª vez, 2 = 2ª vez…
+  total: number // quantas vezes a peça passou no posto (1 = passou só uma vez)
+}
+
+/**
+ * Expande as passagens de UM posto por peça, numeradas em ordem cronológica (1x, 2x…). Puro.
+ * Agrupa por `chave`, ordena por (dataHora, ordem) dentro da peça e numera; devolve a lista
+ * achatada ordenada por SN e depois pela ordem cronológica. Quem passou 1 vez tem total=1.
+ */
+export function numerarPassagens(registros: RegistroPassagem[]): PassagemPosto[] {
+  const porPeca = new Map<string, RegistroPassagem[]>()
+  for (const r of registros) {
+    const arr = porPeca.get(r.chave)
+    if (arr) arr.push(r)
+    else porPeca.set(r.chave, [r])
+  }
+  const res: PassagemPosto[] = []
+  for (const arr of porPeca.values()) {
+    const asc = [...arr].sort((a, b) => a.dataHora.localeCompare(b.dataHora) || a.ordem - b.ordem)
+    const total = asc.length
+    asc.forEach((r, i) => res.push({ sn: r.sn, status: r.status, ordinal: i + 1, total }))
+  }
+  return res.sort((a, b) => a.sn.localeCompare(b.sn) || a.ordinal - b.ordinal)
+}
+
 function dados(
   posto: string,
   agregados: FluxoAgregado[],
