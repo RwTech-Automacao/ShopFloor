@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { buscarHistoricoSN } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { RegistroHistorico } from '@/modules/shopfloor/infra/pesquisa-repository'
@@ -25,15 +25,6 @@ function rotuloEvento(r: RegistroHistorico): string {
   return 'Registrado'
 }
 
-/** Posto concluído com sucesso? (aprovado, ou passagem registrada) — pinta a bolinha/linha de vinho.
- *  Reprovado, entrada de Burn-in (cozinhando) e pendente ficam cinza. */
-function concluido(r: RegistroHistorico): boolean {
-  const s = r.status.trim().toLowerCase()
-  if (s === 'aprovado') return true
-  if (s === 'reprovado') return false
-  return !r.posto.toLowerCase().includes('burn') // status vazio: passagem = concluído; entrada burn-in = não
-}
-
 /** Linhas de detalhe do evento (defeito, caixa, NQA, reparo, integração) — só as preenchidas. */
 function detalhes(r: RegistroHistorico): string[] {
   const bits: string[] = []
@@ -48,8 +39,24 @@ function detalhes(r: RegistroHistorico): string[] {
   return bits
 }
 
-/** Linha do tempo (história) de um produto pelo Nº de Série — reusa o histórico da Pesquisa. */
-export function HistoricoSnDialog({ sn, onFechar }: { sn: string | null; onFechar: () => void }) {
+/** Um passo da trilha: um evento real do produto OU um posto futuro (ainda não alcançado). */
+interface Passo {
+  posto: string
+  rotulo: string
+  status: string
+  quando: string
+  colaborador: string
+  detalhes: string[]
+  feito: boolean // pinta bolinha/linha de vinho (concluído/entrada burn-in — tudo menos reprovado)
+  futuro: boolean // posto que a peça ainda não alcançou (cinza esmaecido)
+}
+
+/**
+ * Linha do tempo (trilha) de um produto pelo Nº de Série. Mostra os eventos reais (inclui Manutenção
+ * e Burn-in entrada/saída) MAIS os postos que a peça ainda não passou (futuros, em cinza). Vinho nos
+ * concluídos com sucesso (aprovado/passagem/entrada de burn-in); cinza no reprovado e nos futuros.
+ */
+export function HistoricoSnDialog({ sn, postosOP, onFechar }: { sn: string | null; postosOP: string[]; onFechar: () => void }) {
   const [registros, setRegistros] = useState<RegistroHistorico[] | null>(null)
   const [carregando, startBusca] = useTransition()
 
@@ -60,6 +67,25 @@ export function HistoricoSnDialog({ sn, onFechar }: { sn: string | null; onFecha
       setRegistros(r.ok ? r.registros : [])
     })
   }, [sn])
+
+  const passos = useMemo<Passo[]>(() => {
+    if (!registros) return []
+    const eventos: Passo[] = registros.map((r) => ({
+      posto: r.posto || '—',
+      rotulo: rotuloEvento(r),
+      status: r.status,
+      quando: fmtData(r.dataHora),
+      colaborador: r.colaborador,
+      detalhes: detalhes(r),
+      feito: r.status.trim().toLowerCase() !== 'reprovado', // vinho, exceto reprovado
+      futuro: false,
+    }))
+    const alcancados = new Set(registros.map((r) => r.posto.toLowerCase()))
+    const futuros: Passo[] = postosOP
+      .filter((p) => !alcancados.has(p.toLowerCase()))
+      .map((p) => ({ posto: p, rotulo: 'Pendente', status: '', quando: '', colaborador: '', detalhes: [], feito: false, futuro: true }))
+    return [...eventos, ...futuros]
+  }, [registros, postosOP])
 
   return (
     <Dialog open={sn !== null} onOpenChange={(aberto) => { if (!aberto) onFechar() }}>
@@ -74,16 +100,16 @@ export function HistoricoSnDialog({ sn, onFechar }: { sn: string | null; onFecha
         {!carregando && registros !== null && registros.length === 0 && (
           <p className="text-sm text-muted-foreground">Sem registros para este Nº de Série.</p>
         )}
-        {!carregando && registros !== null && registros.length > 0 && (
+        {!carregando && passos.length > 0 && (
           <div className="overflow-x-auto pb-2">
-            {/* Horizontal: bolinha + linha em vinho nos postos concluídos (aprovados); cinza nos demais. */}
+            {/* Horizontal: trilha completa. Vinho nos concluídos (inclui entrada de burn-in); cinza nos
+                reprovados e nos postos futuros (ainda não alcançados). */}
             <ol className="flex min-w-max items-start pt-1">
-              {registros.map((r, i) => {
-                const ok = concluido(r)
-                const proximo = registros[i + 1]
-                const okProx = proximo !== undefined && concluido(proximo)
+              {passos.map((p, i) => {
+                const ok = p.feito
+                const okProx = passos[i + 1]?.feito ?? false
                 return (
-                  <li key={i} className="flex w-36 shrink-0 flex-col items-center">
+                  <li key={i} className={cn('flex w-36 shrink-0 flex-col items-center', p.futuro && 'opacity-60')}>
                     <div className="flex w-full items-center">
                       <span className={cn('h-0.5 flex-1', ok ? 'bg-enterplak' : 'bg-border', i === 0 && 'opacity-0')} />
                       <span
@@ -96,16 +122,16 @@ export function HistoricoSnDialog({ sn, onFechar }: { sn: string | null; onFecha
                         className={cn(
                           'h-0.5 flex-1',
                           okProx ? 'bg-enterplak' : 'bg-border',
-                          i === registros.length - 1 && 'opacity-0',
+                          i === passos.length - 1 && 'opacity-0',
                         )}
                       />
                     </div>
                     <div className="mt-2 px-1.5 text-center">
-                      <p className="text-xs font-medium leading-tight">{r.posto || '—'}</p>
-                      <p className={cn('text-xs font-medium', corStatus(r.status))}>{rotuloEvento(r)}</p>
-                      <p className="text-[10px] text-muted-foreground">{fmtData(r.dataHora)}</p>
-                      {r.colaborador && <p className="text-[10px] text-muted-foreground">{r.colaborador}</p>}
-                      {detalhes(r).map((d, j) => (
+                      <p className="text-xs font-medium leading-tight">{p.posto}</p>
+                      <p className={cn('text-xs font-medium', p.futuro ? 'text-muted-foreground' : corStatus(p.status))}>{p.rotulo}</p>
+                      {p.quando && <p className="text-[10px] text-muted-foreground">{p.quando}</p>}
+                      {p.colaborador && <p className="text-[10px] text-muted-foreground">{p.colaborador}</p>}
+                      {p.detalhes.map((d, j) => (
                         <p key={j} className="text-[10px] text-muted-foreground">{d}</p>
                       ))}
                     </div>
