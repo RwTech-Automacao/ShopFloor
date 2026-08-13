@@ -8,14 +8,23 @@ import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { carregarFluxo, detalhePosto, snsManutencao, burninEmAndamento } from '@/modules/shopfloor/application/fluxo-actions'
-import type { OpItem, SnDoPosto, BurninEmAndamento } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas } from '@/modules/shopfloor/application/fluxo-actions'
+import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
 import { MANUTENCAO, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 
 interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
+const BURNIN_VAZIO: BurninDetalhe = { emAndamento: [], entradas: [], saidas: [] }
+
+/** hh:mm dd/mm — data/hora compacta pros eventos de Burn-in. */
+function fmtHora(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
 
 function paraEdges(es: FluxoEdge[]): Edge[] {
   return es.map((e) => ({
@@ -61,8 +70,8 @@ function ListaPassagens({ titulo, itens, carregando }: { titulo: string; itens: 
           {itens.length === 0 && <li className="text-muted-foreground">—</li>}
           {itens.map((p, i) => (
             <li key={`${p.sn}-${p.ordinal}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
-              <span>{p.sn}</span>
-              {p.total > 1 && <span className="text-muted-foreground">{p.ordinal}x {p.status || '—'}</span>}
+              <span>{p.sn}{p.total > 1 ? ` ${p.ordinal}x` : ''}</span>
+              <span className="text-muted-foreground">{p.status || '—'}</span>
             </li>
           ))}
         </ul>
@@ -96,6 +105,24 @@ function ListaBurnin({ itens, agoraMs, carregando }: { itens: BurninEmAndamento[
   )
 }
 
+/** Lista simples SN + texto à direita (usada pras listas de Entrada/Saída do Burn-in). */
+function ListaSimples({ titulo, itens }: { titulo: string; itens: { sn: string; dir: string }[] }) {
+  return (
+    <div className="mb-3">
+      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo} ({itens.length})</p>
+      <ul className="flex flex-col gap-0.5">
+        {itens.length === 0 && <li className="text-muted-foreground">—</li>}
+        {itens.map((e, i) => (
+          <li key={`${e.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
+            <span>{e.sn}</span>
+            <span className="text-muted-foreground">{e.dir}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [sel, setSel] = useState('')
   const [dom, setDom] = useState<FluxoNodePos[]>([])
@@ -103,7 +130,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [aberto, setAberto] = useState<string | null>(null)
   const [listas, setListas] = useState<Listas>(LISTAS_VAZIAS)
   const [buscou, setBuscou] = useState(false)
-  const [burnin, setBurnin] = useState<BurninEmAndamento[]>([])
+  const [burnin, setBurnin] = useState<BurninDetalhe>(BURNIN_VAZIO)
+  const [caixas, setCaixas] = useState<EmbalagemCaixa[]>([])
   const [carregando, startCarregar] = useTransition()
   const [carregandoSns, startSns] = useTransition()
   const ctx = useRef<{ pmo: string; op: string }>({ pmo: '', op: '' })
@@ -119,7 +147,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
 
   const abrir = useCallback((id: string) => {
     setListas(LISTAS_VAZIAS)
-    setBurnin([])
+    setBurnin(BURNIN_VAZIO)
+    setCaixas([])
     setAberto((a) => (a === id ? null : id))
     if (aberto === id) return
     const { pmo, op } = ctx.current
@@ -134,10 +163,14 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
         const r = await detalhePosto(pmo, op, id)
         if (!r.ok) { toast.error(r.erro); return }
         setListas({ agora: r.agora, historico: r.historico })
-        // Burn-in: "No posto agora" vira as peças cozinhando + há quanto tempo (ciclo aberto).
+        // Burn-in: cozinhando (ciclo aberto) + eventos de entrada e saída separados.
         if (recurso === 'burnin') {
-          const b = await burninEmAndamento(pmo, op, id)
-          if (b.ok) setBurnin(b.itens)
+          const b = await burninDetalhe(pmo, op, id)
+          if (b.ok) setBurnin(b.detalhe)
+        } else if (recurso === 'caixa') {
+          // Embalagem: cada peça + em qual caixa está.
+          const c = await embalagemCaixas(pmo, op, id)
+          if (c.ok) setCaixas(c.itens)
         }
       }
     })
@@ -146,7 +179,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const onNodeClick = useCallback<NodeMouseHandler>((_, node) => abrir(node.id), [abrir])
 
   const escolher = useCallback((v: string) => {
-    setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin([])
+    setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
     const [pmo, op] = v.split('||')
     if (!pmo || !op) return
     ctx.current = { pmo, op }
@@ -239,11 +272,19 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                       )}
                     </div>
                     {detalhe.recurso === 'burnin' ? (
-                      <ListaBurnin itens={burnin} agoraMs={agoraMs} carregando={carregandoSns} />
+                      <>
+                        <ListaBurnin itens={burnin.emAndamento} agoraMs={agoraMs} carregando={carregandoSns} />
+                        <ListaSimples titulo="Entrada" itens={burnin.entradas.map((e) => ({ sn: e.sn, dir: fmtHora(e.dataHora) }))} />
+                        <ListaSimples titulo="Saída" itens={burnin.saidas.map((s) => ({ sn: s.sn, dir: s.status }))} />
+                      </>
+                    ) : detalhe.recurso === 'caixa' ? (
+                      <ListaSimples titulo="Embaladas (peça · caixa)" itens={caixas.map((c) => ({ sn: c.sn, dir: c.caixa }))} />
                     ) : (
-                      <ListaSns titulo="No posto agora" itens={listas.agora} carregando={carregandoSns} />
+                      <>
+                        <ListaSns titulo="No posto agora" itens={listas.agora} carregando={carregandoSns} />
+                        <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} />
+                      </>
                     )}
-                    <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} />
                   </>
                 )}
               </div>

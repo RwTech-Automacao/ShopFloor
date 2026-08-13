@@ -9,6 +9,14 @@ export interface SnDoPosto { sn: string; status: string; vezes: number }
 export interface DetalhePosto { agora: SnDoPosto[]; historico: PassagemPosto[] }
 /** Peça com Burn-in em andamento: SN + hora de entrada (ISO) do ciclo aberto. */
 export interface BurninEmAndamento { sn: string; desde: string }
+/** Detalhe do nó Burn-in: cozinhando agora (ciclo aberto) + eventos de entrada e de saída. */
+export interface BurninDetalhe {
+  emAndamento: BurninEmAndamento[]
+  entradas: { sn: string; dataHora: string }[]
+  saidas: { sn: string; dataHora: string; status: string }[]
+}
+/** Peça embalada + a caixa em que está (nó Embalagem). */
+export interface EmbalagemCaixa { sn: string; caixa: string }
 
 /** Todas as OPs (pra escolher no seletor do Fluxo). */
 export async function listarOrdens(): Promise<OpItem[]> {
@@ -150,10 +158,11 @@ export async function carregarSnsEmManutencao(pmo: string, op: string): Promise<
 }
 
 /**
- * Peças com Burn-in EM ANDAMENTO no posto = ciclo aberto (entrada sem saída = "cozinhando"),
- * com a hora de entrada do ciclo aberto. Entrada mais antiga (mais tempo) primeiro.
+ * Detalhe do nó Burn-in: separa ENTRADA e SAÍDA (o Burn-in tem os dois eventos por peça — antes
+ * eram contados como passagens 1x/2x) e lista as peças com ciclo ABERTO (cozinhando) + a hora de
+ * entrada. Entradas/saídas: mais recente primeiro; cozinhando: entrada mais antiga (mais tempo) primeiro.
  */
-export async function carregarBurninEmAndamento(pmo: string, op: string, posto: string): Promise<BurninEmAndamento[]> {
+export async function carregarBurninDetalhe(pmo: string, op: string, posto: string): Promise<BurninDetalhe> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
   const linhas: { numero_serie: string; numero_serie_norm: string; status: string; data_hora: string }[] = []
@@ -172,18 +181,58 @@ export async function carregarBurninEmAndamento(pmo: string, op: string, posto: 
     linhas.push(...lote)
     if (lote.length < PAGINA) break
   }
+  const entradas: { sn: string; dataHora: string }[] = []
+  const saidas: { sn: string; dataHora: string; status: string }[] = []
   const porPeca = new Map<string, { sn: string; regs: RegistroBurnin[] }>()
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
+    if (l.status.trim() === '') entradas.push({ sn: l.numero_serie, dataHora: l.data_hora })
+    else saidas.push({ sn: l.numero_serie, dataHora: l.data_hora, status: l.status })
     const e = porPeca.get(chave)
     if (e) e.regs.push({ dataHora: l.data_hora, status: l.status })
     else porPeca.set(chave, { sn: l.numero_serie, regs: [{ dataHora: l.data_hora, status: l.status }] })
   }
-  const res: BurninEmAndamento[] = []
+  const emAndamento: BurninEmAndamento[] = []
   for (const { sn, regs } of porPeca.values()) {
     const ciclos = pareaBurnin(regs)
     const ultimo = ciclos[ciclos.length - 1]
-    if (estaAberto(ciclos) && ultimo) res.push({ sn, desde: ultimo.entrada })
+    if (estaAberto(ciclos) && ultimo) emAndamento.push({ sn, desde: ultimo.entrada })
   }
-  return res.sort((a, b) => a.desde.localeCompare(b.desde))
+  return {
+    emAndamento: emAndamento.sort((a, b) => a.desde.localeCompare(b.desde)),
+    entradas: entradas.sort((a, b) => b.dataHora.localeCompare(a.dataHora)),
+    saidas: saidas.sort((a, b) => b.dataHora.localeCompare(a.dataHora)),
+  }
+}
+
+/** Peça embalada + a caixa em que está (registro mais recente por SN; recente primeiro). Nó Embalagem. */
+export async function carregarEmbalagemCaixas(pmo: string, op: string, posto: string): Promise<EmbalagemCaixa[]> {
+  const supabase = await createServerSupabase()
+  const PAGINA = 1000
+  const linhas: { numero_serie: string; numero_serie_norm: string; numero_caixa: string; data_hora: string; id: number }[] = []
+  for (let i = 0; ; i++) {
+    const { data, error } = await supabase
+      .from('sf_registros')
+      .select('numero_serie,numero_serie_norm,numero_caixa,data_hora,id')
+      .eq('pmo', pmo)
+      .eq('op', op)
+      .eq('posto', posto)
+      .neq('numero_serie_norm', '')
+      .order('data_hora', { ascending: false })
+      .order('id', { ascending: false })
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (error) throw error
+    const lote = (data ?? []) as typeof linhas
+    linhas.push(...lote)
+    if (lote.length < PAGINA) break
+  }
+  const visto = new Set<string>()
+  const res: EmbalagemCaixa[] = []
+  for (const l of linhas) {
+    const chave = l.numero_serie_norm || l.numero_serie
+    if (visto.has(chave)) continue // 1ª (mais recente) = a caixa atual
+    visto.add(chave)
+    res.push({ sn: l.numero_serie, caixa: l.numero_caixa || '—' })
+  }
+  return res
 }

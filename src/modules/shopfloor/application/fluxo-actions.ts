@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { construirFluxo, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
-import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninEmAndamento, type SnDoPosto, type BurninEmAndamento } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 
@@ -44,18 +44,33 @@ export async function detalhePosto(
   }
 }
 
-/** Peças com Burn-in em andamento (ciclo aberto) no posto + hora de entrada — detalhe do nó Burn-in. */
-export async function burninEmAndamento(
+/** Detalhe do nó Burn-in: cozinhando agora (ciclo aberto) + eventos de entrada e de saída. */
+export async function burninDetalhe(
   pmo: string,
   op: string,
   posto: string,
-): Promise<{ ok: true; itens: BurninEmAndamento[] } | { ok: false; erro: string }> {
+): Promise<{ ok: true; detalhe: BurninDetalhe } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
-    return { ok: true, itens: await carregarBurninEmAndamento(pmo.trim(), op.trim(), posto.trim()) }
+    return { ok: true, detalhe: await carregarBurninDetalhe(pmo.trim(), op.trim(), posto.trim()) }
   } catch {
-    return { ok: false, erro: 'Não foi possível carregar o Burn-in em andamento.' }
+    return { ok: false, erro: 'Não foi possível carregar o detalhe do Burn-in.' }
+  }
+}
+
+/** Peças embaladas + a caixa de cada uma — detalhe do nó Embalagem. */
+export async function embalagemCaixas(
+  pmo: string,
+  op: string,
+  posto: string,
+): Promise<{ ok: true; itens: EmbalagemCaixa[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    return { ok: true, itens: await carregarEmbalagemCaixas(pmo.trim(), op.trim(), posto.trim()) }
+  } catch {
+    return { ok: false, erro: 'Não foi possível carregar as caixas da Embalagem.' }
   }
 }
 
