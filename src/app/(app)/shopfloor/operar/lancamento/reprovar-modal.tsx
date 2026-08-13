@@ -71,7 +71,7 @@ export function ReprovarModal({
         if (!open) onCancelar()
       }}
     >
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[calc(90dvh-var(--kb-inset,0px))] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Registrar reprova</DialogTitle>
         </DialogHeader>
