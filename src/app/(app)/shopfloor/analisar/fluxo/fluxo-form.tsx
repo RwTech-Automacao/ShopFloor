@@ -251,6 +251,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   }, [buscou, sel])
 
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
+  // Postos da OP em ordem (sem Manutenção) — pra timeline mostrar até os postos ainda não alcançados.
+  const postosOP = useMemo(() => dom.filter((n) => n.id !== MANUTENCAO).map((n) => n.id), [dom])
 
   return (
     <Card>
@@ -359,7 +361,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           )}
         </div>
 
-        <HistoricoSnDialog sn={snAberto} onFechar={() => setSnAberto(null)} />
+        <HistoricoSnDialog sn={snAberto} postosOP={postosOP} onFechar={() => setSnAberto(null)} />
       </CardContent>
     </Card>
   )
