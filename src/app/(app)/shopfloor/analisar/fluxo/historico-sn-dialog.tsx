@@ -25,6 +25,15 @@ function rotuloEvento(r: RegistroHistorico): string {
   return 'Registrado'
 }
 
+/** Posto concluído com sucesso? (aprovado, ou passagem registrada) — pinta a bolinha/linha de vinho.
+ *  Reprovado, entrada de Burn-in (cozinhando) e pendente ficam cinza. */
+function concluido(r: RegistroHistorico): boolean {
+  const s = r.status.trim().toLowerCase()
+  if (s === 'aprovado') return true
+  if (s === 'reprovado') return false
+  return !r.posto.toLowerCase().includes('burn') // status vazio: passagem = concluído; entrada burn-in = não
+}
+
 /** Linhas de detalhe do evento (defeito, caixa, NQA, reparo, integração) — só as preenchidas. */
 function detalhes(r: RegistroHistorico): string[] {
   const bits: string[] = []
@@ -54,7 +63,7 @@ export function HistoricoSnDialog({ sn, onFechar }: { sn: string | null; onFecha
 
   return (
     <Dialog open={sn !== null} onOpenChange={(aberto) => { if (!aberto) onFechar() }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
             Linha do tempo · <span className="font-mono text-base">{sn}</span>
@@ -66,24 +75,45 @@ export function HistoricoSnDialog({ sn, onFechar }: { sn: string | null; onFecha
           <p className="text-sm text-muted-foreground">Sem registros para este Nº de Série.</p>
         )}
         {!carregando && registros !== null && registros.length > 0 && (
-          <ol className="relative ml-1 flex flex-col gap-4 border-l border-border py-1 pl-5">
-            {registros.map((r, i) => (
-              <li key={i} className="relative">
-                <span className="absolute -left-[1.6rem] top-1 size-3 rounded-full border-2 border-card bg-enterplak" />
-                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                  <span className="font-medium">{r.posto || '—'}</span>
-                  <span className={cn('text-xs font-medium', corStatus(r.status))}>{rotuloEvento(r)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {fmtData(r.dataHora)}
-                  {r.colaborador ? ` · ${r.colaborador}` : ''}
-                </p>
-                {detalhes(r).map((d, j) => (
-                  <p key={j} className="text-xs text-muted-foreground">{d}</p>
-                ))}
-              </li>
-            ))}
-          </ol>
+          <div className="overflow-x-auto pb-2">
+            {/* Horizontal: bolinha + linha em vinho nos postos concluídos (aprovados); cinza nos demais. */}
+            <ol className="flex min-w-max items-start pt-1">
+              {registros.map((r, i) => {
+                const ok = concluido(r)
+                const proximo = registros[i + 1]
+                const okProx = proximo !== undefined && concluido(proximo)
+                return (
+                  <li key={i} className="flex w-36 shrink-0 flex-col items-center">
+                    <div className="flex w-full items-center">
+                      <span className={cn('h-0.5 flex-1', ok ? 'bg-enterplak' : 'bg-border', i === 0 && 'opacity-0')} />
+                      <span
+                        className={cn(
+                          'size-3.5 shrink-0 rounded-full border-2 border-card',
+                          ok ? 'bg-enterplak' : 'bg-muted-foreground/40',
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'h-0.5 flex-1',
+                          okProx ? 'bg-enterplak' : 'bg-border',
+                          i === registros.length - 1 && 'opacity-0',
+                        )}
+                      />
+                    </div>
+                    <div className="mt-2 px-1.5 text-center">
+                      <p className="text-xs font-medium leading-tight">{r.posto || '—'}</p>
+                      <p className={cn('text-xs font-medium', corStatus(r.status))}>{rotuloEvento(r)}</p>
+                      <p className="text-[10px] text-muted-foreground">{fmtData(r.dataHora)}</p>
+                      {r.colaborador && <p className="text-[10px] text-muted-foreground">{r.colaborador}</p>}
+                      {detalhes(r).map((d, j) => (
+                        <p key={j} className="text-[10px] text-muted-foreground">{d}</p>
+                      ))}
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
         )}
       </DialogContent>
     </Dialog>
