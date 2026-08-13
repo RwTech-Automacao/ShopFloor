@@ -141,3 +141,18 @@
     @apply font-sans;
   }
 }
+
+/* Fluxo (tempo real): streak "passando" ao longo da aresta ativa (estilo n8n). */
+@keyframes fluxo-andando {
+  to {
+    stroke-dashoffset: -176;
+  }
+}
+.fluxo-streak {
+  animation: fluxo-andando 1.3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluxo-streak {
+    animation: none;
+  }
+}

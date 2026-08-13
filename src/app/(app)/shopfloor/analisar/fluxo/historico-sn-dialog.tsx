@@ -47,7 +47,7 @@ interface Passo {
   quando: string
   colaborador: string
   detalhes: string[]
-  feito: boolean // pinta bolinha/linha de vinho (concluído/entrada burn-in — tudo menos reprovado)
+  feito: boolean // pinta bolinha/linha de vinho: todo posto por onde a peça PASSOU (inclui reprovado)
   futuro: boolean // posto que a peça ainda não alcançou (cinza esmaecido)
 }
 
@@ -77,7 +77,7 @@ export function HistoricoSnDialog({ sn, postosOP, onFechar }: { sn: string | nul
       quando: fmtData(r.dataHora),
       colaborador: r.colaborador,
       detalhes: detalhes(r),
-      feito: r.status.trim().toLowerCase() !== 'reprovado', // vinho, exceto reprovado
+      feito: true, // todo posto por onde a peça PASSOU fica vinho (inclui reprovado); só o futuro é cinza
       futuro: false,
     }))
     const alcancados = new Set(registros.map((r) => r.posto.toLowerCase()))
