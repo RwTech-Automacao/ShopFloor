@@ -29,13 +29,17 @@ function fmtHora(iso: string): string {
 }
 
 function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[]): Edge[] {
-  const wipDe = (id: string) => nodesData.find((n) => n.id === id)?.data.wip ?? 0
+  const dataDe = (id: string) => nodesData.find((n) => n.id === id)?.data
   return es.map((e) => {
-    // "Andando" só onde há peça se movendo: cadeia = pendentes no destino; reprova = peça em Manutenção.
-    const ativo = e.tipo === 'reprova' ? wipDe(MANUTENCAO) > 0 : wipDe(e.target) > 0
+    // "Andando" (preenchendo) só onde há peça se movendo: cadeia = pendentes no destino; reprova = peça em Manutenção.
+    const ativo = e.tipo === 'reprova' ? (dataDe(MANUTENCAO)?.wip ?? 0) > 0 : (dataDe(e.target)?.wip ?? 0) > 0
     if (ativo) {
-      // linha CONTÍNUA em vinho + bolinha andando (custom edge)
+      // aresta ativa: preenchimento animado (fluxo n8n)
       return { id: e.id, source: e.source, target: e.target, type: 'ativo', style: { stroke: '#8D2033', strokeWidth: 2 } }
+    }
+    // destino já CONCLUÍDO (posto com o check) → trilha percorrida = linha vinho sólida.
+    if (e.tipo !== 'reprova' && dataDe(e.target)?.concluido) {
+      return { id: e.id, source: e.source, target: e.target, style: { stroke: '#8D2033', strokeWidth: 2 } }
     }
     // parada: cadeia cinza fina; reprova tracejada esmaecida (marcador de rota)
     return {
