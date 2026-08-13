@@ -168,6 +168,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   // Nós gerenciados pelo React Flow (arrastáveis). A posição do usuário é preservada entre atualizações.
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
+  const [qtd, setQtd] = useState<number | null>(null) // qtd da OP (pro % de prontas no Modo TV)
 
   // Relógio ao vivo pro "há X" do Burn-in (atualiza a cada minuto).
   const [agoraMs, setAgoraMs] = useState(() => Date.now())
@@ -222,6 +223,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       if (!r.ok) { toast.error(r.erro); return }
       setDom(r.nodes)
       setEdges(paraEdges(r.edges, r.nodes))
+      setQtd(r.qtd)
       setAtualizadoMs(Date.now())
       setBuscou(true)
     })
@@ -249,6 +251,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       if (r.ok) {
         setDom(r.nodes)
         setEdges(paraEdges(r.edges, r.nodes))
+        setQtd(r.qtd)
         setAtualizadoMs(Date.now())
       }
     }, 15_000)
@@ -258,6 +261,19 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
   // Postos da OP em ordem (sem Manutenção) — pra timeline mostrar até os postos ainda não alcançados.
   const postosOP = useMemo(() => dom.filter((n) => n.id !== MANUTENCAO).map((n) => n.id), [dom])
+
+  // Cabeçalho do Modo TV: PMO/OP · Cliente + % de prontas (passaram pelo último posto ÷ qtd da OP).
+  const opInfo = useMemo(() => {
+    const [pmo, op] = sel.split('||')
+    return { pmo: pmo ?? '', op: op ?? '', cliente: ops.find((o) => o.pmo === pmo && o.op === op)?.cliente ?? '' }
+  }, [sel, ops])
+  const prontas = useMemo(() => {
+    const ultimoId = postosOP[postosOP.length - 1]
+    const d = ultimoId ? dom.find((n) => n.id === ultimoId)?.data : undefined
+    if (!d) return 0
+    return d.temStatus ? d.aprovadas : d.registros // "prontas" = peças que passaram pelo último posto
+  }, [dom, postosOP])
+  const pctProntas = qtd && qtd > 0 ? Math.round((prontas / qtd) * 100) : null
 
   // Modo TV: tela cheia do canvas (Fullscreen API) + re-encaixa o fluxo ao entrar/sair.
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -334,13 +350,25 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           </ReactFlow>
 
           {telaCheia && (
-            <button
-              type="button"
-              onClick={alternarTv}
-              className="absolute right-4 top-4 z-20 flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-3 py-1.5 text-sm font-medium shadow backdrop-blur hover:bg-accent"
-            >
-              <Minimize2 className="size-4" /> Sair (Esc)
-            </button>
+            <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
+              <div className="min-w-0">
+                <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
+                {opInfo.cliente && <p className="truncate text-sm text-muted-foreground">{opInfo.cliente}</p>}
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="text-right">
+                  <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProntas !== null ? `${pctProntas}%` : '—'}</p>
+                  <p className="text-xs text-muted-foreground">prontas{qtd ? ` · ${prontas}/${qtd}` : ''}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={alternarTv}
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
+                >
+                  <Minimize2 className="size-4" /> Sair (Esc)
+                </button>
+              </div>
+            </div>
           )}
 
           {detalhe && (
