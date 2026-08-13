@@ -89,7 +89,6 @@ export function ReprovarModal({
                   list="reprova-defeitos-list"
                   value={d.codigo}
                   placeholder="Código"
-                  autoFocus={i === 0}
                   onChange={(e) => {
                     setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, codigo: e.target.value } : x)))
                     if (erro) setErro('')
@@ -98,6 +97,7 @@ export function ReprovarModal({
                 <Input
                   value={d.posicao}
                   placeholder="Posição"
+                  autoFocus={i === 0}
                   onChange={(e) => {
                     setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, posicao: e.target.value } : x)))
                     if (erro) setErro('')
