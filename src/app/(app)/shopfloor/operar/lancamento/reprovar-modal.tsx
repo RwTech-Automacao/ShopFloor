@@ -102,6 +102,10 @@ export function ReprovarModal({
                     setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, posicao: e.target.value } : x)))
                     if (erro) setErro('')
                   }}
+                  onKeyDown={(e) => {
+                    // Enter na Posição → vai pro campo do Nº de Série (fluxo sem mouse).
+                    if (e.key === 'Enter') { e.preventDefault(); snRef.current?.focus() }
+                  }}
                 />
                 <button
                   type="button"
