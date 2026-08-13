@@ -108,6 +108,15 @@ describe('numerarPassagens', () => {
     expect(numerarPassagens(regs).map((p) => p.status)).toEqual(['primeiro', 'segundo'])
   })
 
+  it('ordena as peças pela passagem mais recente primeiro (não alfabético)', () => {
+    const regs: RegistroPassagem[] = [
+      { chave: 'AAA', sn: 'AAA', status: 'x', dataHora: '2026-01-01T00:00:00Z', ordem: 1 }, // antiga
+      { chave: 'ZZZ', sn: 'ZZZ', status: 'y', dataHora: '2026-02-01T00:00:00Z', ordem: 2 }, // recente
+    ]
+    // recente primeiro → ZZZ antes de AAA (apesar de alfabético ser AAA primeiro)
+    expect(numerarPassagens(regs).map((p) => p.sn)).toEqual(['ZZZ', 'AAA'])
+  })
+
   it('lista vazia → vazio', () => {
     expect(numerarPassagens([])).toEqual([])
   })

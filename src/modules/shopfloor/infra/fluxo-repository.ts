@@ -2,10 +2,13 @@ import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { mapaPostoPerfil } from './postos-repository'
 import { numerarPassagens, type FluxoAgregado, type PassagemPosto, type RegistroPassagem } from '../domain/fluxo-op'
+import { pareaBurnin, estaAberto, type RegistroBurnin } from '../domain/burnin'
 
 export interface OpItem { pmo: string; op: string; cliente: string; descricao: string }
 export interface SnDoPosto { sn: string; status: string; vezes: number }
 export interface DetalhePosto { agora: SnDoPosto[]; historico: PassagemPosto[] }
+/** Peça com Burn-in em andamento: SN + hora de entrada (ISO) do ciclo aberto. */
+export interface BurninEmAndamento { sn: string; desde: string }
 
 /** Todas as OPs (pra escolher no seletor do Fluxo). */
 export async function listarOrdens(): Promise<OpItem[]> {
@@ -144,4 +147,43 @@ export async function carregarSnsEmManutencao(pmo: string, op: string): Promise<
     }
   }
   return res.sort((a, b) => a.sn.localeCompare(b.sn))
+}
+
+/**
+ * Peças com Burn-in EM ANDAMENTO no posto = ciclo aberto (entrada sem saída = "cozinhando"),
+ * com a hora de entrada do ciclo aberto. Entrada mais antiga (mais tempo) primeiro.
+ */
+export async function carregarBurninEmAndamento(pmo: string, op: string, posto: string): Promise<BurninEmAndamento[]> {
+  const supabase = await createServerSupabase()
+  const PAGINA = 1000
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; data_hora: string }[] = []
+  for (let i = 0; ; i++) {
+    const { data, error } = await supabase
+      .from('sf_registros')
+      .select('numero_serie,numero_serie_norm,status,data_hora')
+      .eq('pmo', pmo)
+      .eq('op', op)
+      .eq('posto', posto)
+      .neq('numero_serie_norm', '')
+      .order('data_hora', { ascending: true })
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (error) throw error
+    const lote = (data ?? []) as typeof linhas
+    linhas.push(...lote)
+    if (lote.length < PAGINA) break
+  }
+  const porPeca = new Map<string, { sn: string; regs: RegistroBurnin[] }>()
+  for (const l of linhas) {
+    const chave = l.numero_serie_norm || l.numero_serie
+    const e = porPeca.get(chave)
+    if (e) e.regs.push({ dataHora: l.data_hora, status: l.status })
+    else porPeca.set(chave, { sn: l.numero_serie, regs: [{ dataHora: l.data_hora, status: l.status }] })
+  }
+  const res: BurninEmAndamento[] = []
+  for (const { sn, regs } of porPeca.values()) {
+    const ciclos = pareaBurnin(regs)
+    const ultimo = ciclos[ciclos.length - 1]
+    if (estaAberto(ciclos) && ultimo) res.push({ sn, desde: ultimo.entrada })
+  }
+  return res.sort((a, b) => a.desde.localeCompare(b.desde))
 }

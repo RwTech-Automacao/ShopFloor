@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { construirFluxo, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
-import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, type SnDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninEmAndamento, type SnDoPosto, type BurninEmAndamento } from '@/modules/shopfloor/infra/fluxo-repository'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 
@@ -41,6 +41,21 @@ export async function detalhePosto(
     return { ok: true, agora: d.agora, historico: d.historico }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o detalhe do posto.' }
+  }
+}
+
+/** Peças com Burn-in em andamento (ciclo aberto) no posto + hora de entrada — detalhe do nó Burn-in. */
+export async function burninEmAndamento(
+  pmo: string,
+  op: string,
+  posto: string,
+): Promise<{ ok: true; itens: BurninEmAndamento[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    return { ok: true, itens: await carregarBurninEmAndamento(pmo.trim(), op.trim(), posto.trim()) }
+  } catch {
+    return { ok: false, erro: 'Não foi possível carregar o Burn-in em andamento.' }
   }
 }
 

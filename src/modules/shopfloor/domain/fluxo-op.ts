@@ -58,8 +58,9 @@ export interface PassagemPosto {
 
 /**
  * Expande as passagens de UM posto por peça, numeradas em ordem cronológica (1x, 2x…). Puro.
- * Agrupa por `chave`, ordena por (dataHora, ordem) dentro da peça e numera; devolve a lista
- * achatada ordenada por SN e depois pela ordem cronológica. Quem passou 1 vez tem total=1.
+ * Dentro de cada peça as passagens ficam em ordem cronológica; as PEÇAS são ordenadas pela
+ * passagem MAIS RECENTE primeiro (peça que bipou por último aparece no topo). Quem passou 1
+ * vez tem total=1.
  */
 export function numerarPassagens(registros: RegistroPassagem[]): PassagemPosto[] {
   const porPeca = new Map<string, RegistroPassagem[]>()
@@ -68,13 +69,22 @@ export function numerarPassagens(registros: RegistroPassagem[]): PassagemPosto[]
     if (arr) arr.push(r)
     else porPeca.set(r.chave, [r])
   }
+  const grupos = [...porPeca.values()].map((arr) =>
+    [...arr].sort((a, b) => a.dataHora.localeCompare(b.dataHora) || a.ordem - b.ordem),
+  )
+  // peças ordenadas pela última passagem (mais recente primeiro).
+  grupos.sort((g1, g2) => {
+    const u1 = g1[g1.length - 1]
+    const u2 = g2[g2.length - 1]
+    if (!u1 || !u2) return 0
+    return u2.dataHora.localeCompare(u1.dataHora) || u2.ordem - u1.ordem
+  })
   const res: PassagemPosto[] = []
-  for (const arr of porPeca.values()) {
-    const asc = [...arr].sort((a, b) => a.dataHora.localeCompare(b.dataHora) || a.ordem - b.ordem)
+  for (const asc of grupos) {
     const total = asc.length
     asc.forEach((r, i) => res.push({ sn: r.sn, status: r.status, ordinal: i + 1, total }))
   }
-  return res.sort((a, b) => a.sn.localeCompare(b.sn) || a.ordinal - b.ordinal)
+  return res
 }
 
 function dados(
