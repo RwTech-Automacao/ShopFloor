@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, numerarPassagens, MANUTENCAO, type FluxoAgregado, type RegistroPassagem } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, type RegistroPassagem, type BipePeca } from '../fluxo-op'
 
 const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0 })
 
@@ -119,5 +119,39 @@ describe('numerarPassagens', () => {
 
   it('lista vazia → vazio', () => {
     expect(numerarPassagens([])).toEqual([])
+  })
+})
+
+describe('postoPendenteDePeca', () => {
+  const postos = ['SPI', 'Teste', 'Burn-in', 'NQA', 'Embalagem']
+  const exige = (p: string) => p === 'Teste'
+  const recurso = (p: string) => (p === 'Burn-in' ? 'burnin' : 'nenhum')
+  const pp = (regs: BipePeca[]) => postoPendenteDePeca(regs, postos, exige, recurso)
+
+  it('aprovada num posto → pendente no PRÓXIMO', () => {
+    expect(pp([{ posto: 'SPI', status: 'Aprovado' }])).toBe('Teste')
+    expect(pp([{ posto: 'NQA', status: 'Aprovado' }])).toBe('Embalagem') // resolve "NQA pendente E aprovado"
+  })
+
+  it('passagem/aprovada no último posto → concluída (null)', () => {
+    expect(pp([{ posto: 'Embalagem', status: '' }])).toBeNull()
+  })
+
+  it('reprovada → Manutenção se o posto exige; senão o próprio posto (conserto no lugar)', () => {
+    expect(pp([{ posto: 'Teste', status: 'Reprovado' }])).toBe(MANUTENCAO)
+    expect(pp([{ posto: 'SPI', status: 'Reprovado' }])).toBe('SPI')
+  })
+
+  it('Burn-in: entrada (status vazio) → cozinhando no próprio Burn-in; saída aprovada → próximo', () => {
+    expect(pp([{ posto: 'Burn-in', status: '' }])).toBe('Burn-in')
+    expect(pp([{ posto: 'Burn-in', status: 'Aprovado' }])).toBe('NQA')
+  })
+
+  it('usa o ÚLTIMO bipe do histórico', () => {
+    expect(pp([{ posto: 'SPI', status: 'Aprovado' }, { posto: 'Teste', status: 'Aprovado' }])).toBe('Burn-in')
+  })
+
+  it('sem bipe → primeiro posto', () => {
+    expect(pp([])).toBe('SPI')
   })
 })

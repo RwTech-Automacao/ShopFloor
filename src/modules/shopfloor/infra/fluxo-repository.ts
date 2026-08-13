@@ -1,7 +1,7 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { mapaPostoPerfil } from './postos-repository'
-import { numerarPassagens, type FluxoAgregado, type PassagemPosto, type RegistroPassagem } from '../domain/fluxo-op'
+import { numerarPassagens, postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, type PassagemPosto, type RegistroPassagem, type BipePeca } from '../domain/fluxo-op'
 import { pareaBurnin, estaAberto, type RegistroBurnin } from '../domain/burnin'
 
 export interface OpItem { pmo: string; op: string; cliente: string; descricao: string }
@@ -69,16 +69,37 @@ export async function carregarFluxoOp(
     exigeManutencao[p] = perfis[p]?.exigeManutencao ?? false
   }
 
-  return { postos, agregados, temStatus, recurso, exigeManutencao, qtd }
+  // WIP de cada nó = "pendentes no posto" (a fila): peça aprovada avança pro próximo posto.
+  const pendentes = await contarPendentesPorPosto(
+    pmo,
+    op,
+    postos,
+    (p) => exigeManutencao[p] ?? false,
+    (p) => recurso[p] ?? 'nenhum',
+  )
+  const agregadosComPendentes: FluxoAgregado[] = [...postos, MANUTENCAO].map((posto) => {
+    const a = agregados.find((x) => x.posto.toLowerCase() === posto.toLowerCase())
+    return {
+      posto,
+      wip: pendentes[posto.toLowerCase()] ?? 0, // override: a fila (era último-bipe-aqui, da RPC)
+      registros: a?.registros ?? 0,
+      aprovadas: a?.aprovadas ?? 0,
+      reprovadas: a?.reprovadas ?? 0,
+      retestes: a?.retestes ?? 0,
+    }
+  })
+
+  return { postos, agregados: agregadosComPendentes, temStatus, recurso, exigeManutencao, qtd }
 }
 
-/**
- * Detalhe de um posto (lazy, ao abrir o nó). Um único scan da OP devolve:
- *  - `agora`: peças que estão NO posto neste momento (posição atual = último bipe no posto, não reprovado
- *     — reprovado está em Manutenção), coerente com o WIP/badge;
- *  - `historico`: todas as peças que já passaram pelo posto (último status ali + nº de bipes).
- */
-export async function carregarDetalhePosto(pmo: string, op: string, posto: string): Promise<DetalhePosto> {
+/** Conta as peças pendentes (aguardando) em cada posto da OP — a "fila". Chave = posto em minúsculo. */
+async function contarPendentesPorPosto(
+  pmo: string,
+  op: string,
+  postos: string[],
+  exige: (p: string) => boolean,
+  recurso: (p: string) => string,
+): Promise<Record<string, number>> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
   const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
@@ -89,8 +110,63 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
       .eq('pmo', pmo)
       .eq('op', op)
       .neq('numero_serie_norm', '')
-      .order('data_hora', { ascending: false })
-      .order('id', { ascending: false }) // desempate estável (data_hora empatado embaralharia as páginas)
+      .order('data_hora', { ascending: true })
+      .order('id', { ascending: true })
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (error) throw error
+    const lote = (data ?? []) as typeof linhas
+    linhas.push(...lote)
+    if (lote.length < PAGINA) break
+  }
+  const porPeca = new Map<string, BipePeca[]>()
+  for (const l of linhas) {
+    const chave = l.numero_serie_norm || l.numero_serie
+    const e = porPeca.get(chave)
+    if (e) e.push({ posto: l.posto, status: l.status })
+    else porPeca.set(chave, [{ posto: l.posto, status: l.status }])
+  }
+  const cont: Record<string, number> = {}
+  for (const regs of porPeca.values()) {
+    const pend = postoPendenteDePeca(regs, postos, exige, recurso)
+    if (pend) cont[pend.toLowerCase()] = (cont[pend.toLowerCase()] ?? 0) + 1
+  }
+  return cont
+}
+
+/**
+ * Detalhe de um posto (lazy, ao abrir o nó). Um único scan da OP devolve:
+ *  - `agora`: peças PENDENTES no posto (a fila — aguardando ser processadas aqui; ver
+ *     postoPendenteDePeca: aprovada avança pro próximo posto, reprovada vai pra Manutenção etc.);
+ *  - `historico`: todas as passagens da peça pelo posto, numeradas (1x/2x…).
+ */
+export async function carregarDetalhePosto(pmo: string, op: string, posto: string): Promise<DetalhePosto> {
+  const supabase = await createServerSupabase()
+  // ordem dos postos + flags do perfil (pra decidir a fila de cada peça)
+  const { data: ordemRow, error: eo } = await supabase
+    .from('sf_ordens')
+    .select('sf_ordem_postos(posto,ordem)')
+    .eq('pmo', pmo)
+    .eq('op', op)
+    .maybeSingle()
+  if (eo) throw eo
+  const postos = [...((ordemRow?.sf_ordem_postos ?? []) as { posto: string; ordem: number }[])]
+    .sort((a, b) => a.ordem - b.ordem)
+    .map((p) => p.posto)
+  const perfis = await mapaPostoPerfil()
+  const exige = (p: string) => perfis[p]?.exigeManutencao ?? false
+  const recursoDe = (p: string) => perfis[p]?.recurso ?? 'nenhum'
+
+  const PAGINA = 1000
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
+  for (let i = 0; ; i++) {
+    const { data, error } = await supabase
+      .from('sf_registros')
+      .select('numero_serie,numero_serie_norm,status,posto,data_hora,id')
+      .eq('pmo', pmo)
+      .eq('op', op)
+      .neq('numero_serie_norm', '')
+      .order('data_hora', { ascending: true })
+      .order('id', { ascending: true }) // cronológico: o último da peça = bipe mais recente
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (error) throw error
     const lote = (data ?? []) as typeof linhas
@@ -98,20 +174,21 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
     if (lote.length < PAGINA) break
   }
   const alvo = posto.toLowerCase()
+  const porPeca = new Map<string, { sn: string; regs: BipePeca[] }>()
   const passagens: RegistroPassagem[] = [] // cada bipe da peça NO posto (pra numerar 1x/2x…)
-  const atual = new Map<string, { posto: string; status: string; sn: string }>() // posição atual (1º visto = mais recente)
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
-    if (!atual.has(chave)) atual.set(chave, { posto: l.posto, status: l.status, sn: l.numero_serie })
+    const e = porPeca.get(chave)
+    if (e) e.regs.push({ posto: l.posto, status: l.status })
+    else porPeca.set(chave, { sn: l.numero_serie, regs: [{ posto: l.posto, status: l.status }] })
     if (l.posto.toLowerCase() === alvo) {
       passagens.push({ chave, sn: l.numero_serie, status: l.status, dataHora: l.data_hora, ordem: l.id })
     }
   }
   const agora: SnDoPosto[] = []
-  for (const v of atual.values()) {
-    if (v.posto.toLowerCase() === alvo && v.status.toLowerCase() !== 'reprovado') {
-      agora.push({ sn: v.sn, status: v.status, vezes: 1 })
-    }
+  for (const { sn, regs } of porPeca.values()) {
+    const pend = postoPendenteDePeca(regs, postos, exige, recursoDe)
+    if (pend && pend.toLowerCase() === alvo) agora.push({ sn, status: '', vezes: 1 }) // pendente: sem resultado aqui ainda
   }
   return {
     agora: agora.sort((a, b) => a.sn.localeCompare(b.sn)),
@@ -143,14 +220,17 @@ export async function carregarSnsEmManutencao(pmo: string, op: string): Promise<
     linhas.push(...lote)
     if (lote.length < PAGINA) break
   }
-  // linhas desc por (data_hora,id): a PRIMEIRA de cada SN é o último bipe. Em manutenção = último = reprovado.
+  // linhas desc por (data_hora,id): a PRIMEIRA de cada SN é o último bipe. Em Manutenção = último bipe
+  // reprovado NUM POSTO QUE EXIGE MANUTENÇÃO (reprova de posto com conserto no lugar fica no próprio
+  // posto, coerente com postoPendenteDePeca e com o WIP do nó).
+  const perfis = await mapaPostoPerfil()
   const visto = new Set<string>()
   const res: SnDoPosto[] = []
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
     if (visto.has(chave)) continue
     visto.add(chave)
-    if (l.status.toLowerCase() === 'reprovado') {
+    if (l.status.toLowerCase() === 'reprovado' && (perfis[l.posto]?.exigeManutencao ?? false)) {
       res.push({ sn: l.numero_serie, status: `Reprovado · ${l.posto}`, vezes: 1 })
     }
   }

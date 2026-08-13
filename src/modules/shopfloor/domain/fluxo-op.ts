@@ -116,6 +116,36 @@ function dados(
   }
 }
 
+/** Um bipe cru de uma peça, em ordem cronológica (pra decidir onde ela está pendente). */
+export interface BipePeca {
+  posto: string
+  status: string // '' = passagem OU entrada de Burn-in; 'Aprovado'/'Reprovado' = status/saída
+}
+
+/**
+ * Onde a peça está AGUARDANDO (a fila), a partir do histórico cronológico + a ordem dos postos. Puro.
+ * - aprovada/passagem/saída-de-burn-in-aprovada → PRÓXIMO posto (ou null = concluída, se era o último)
+ * - reprovada → MANUTENCAO (se o posto exige) ou o PRÓPRIO posto (conserto no lugar)
+ * - Burn-in entrada (status vazio num posto de recurso 'burnin') → o próprio Burn-in (cozinhando)
+ * - sem bipe → o 1º posto
+ * Devolve o nome do posto, MANUTENCAO, ou null (concluída).
+ */
+export function postoPendenteDePeca(
+  registrosCrono: BipePeca[],
+  postosOrdenados: string[],
+  exigeManutencaoDe: (posto: string) => boolean,
+  recursoDe: (posto: string) => string,
+): string | null {
+  const ultimo = registrosCrono[registrosCrono.length - 1]
+  if (!ultimo) return postosOrdenados[0] ?? null
+  const st = ultimo.status.trim().toLowerCase()
+  if (st === 'reprovado') return exigeManutencaoDe(ultimo.posto) ? MANUTENCAO : ultimo.posto
+  if (st === '' && recursoDe(ultimo.posto) === 'burnin') return ultimo.posto // entrada = cozinhando aqui
+  const idx = postosOrdenados.findIndex((p) => p.toLowerCase() === ultimo.posto.toLowerCase())
+  if (idx < 0 || idx >= postosOrdenados.length - 1) return null // posto desconhecido ou último → concluída
+  return postosOrdenados[idx + 1] ?? null
+}
+
 /** Monta nós/arestas do canvas a partir da ordem do fluxo + agregados da RPC. Puro. */
 export function construirFluxo(
   postosOrdenados: string[],

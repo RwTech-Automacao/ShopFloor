@@ -84,7 +84,7 @@ function ListaPassagens({ titulo, itens, carregando }: { titulo: string; itens: 
 function ListaBurnin({ itens, agoraMs, carregando }: { itens: BurninEmAndamento[]; agoraMs: number; carregando: boolean }) {
   return (
     <div className="mb-3">
-      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">No posto agora ({itens.length})</p>
+      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Pendentes no posto ({itens.length})</p>
       {carregando ? (
         <p className="text-muted-foreground">Carregando…</p>
       ) : (
@@ -260,12 +260,15 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                 ) : (
                   <>
                     <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1">
-                      <span>No posto agora: <span className="font-bold">{detalhe.wip}</span></span>
+                      <span>Pendentes: <span className="font-bold">{detalhe.wip}</span></span>
                       {detalhe.temStatus ? (
                         <>
                           <span className="text-green-700">Aprov.: {detalhe.aprovadas}</span>
                           <span className="text-red-600">Reprov.: {detalhe.reprovadas}</span>
-                          <span className="text-muted-foreground">Retestes: {detalhe.retestes}</span>
+                          {/* Burn-in tem entrada+saída → "retestes" da RPC não faz sentido lá. */}
+                          {detalhe.recurso !== 'burnin' && (
+                            <span className="text-muted-foreground">Retestes: {detalhe.retestes}</span>
+                          )}
                         </>
                       ) : (
                         <span className="text-muted-foreground">Registradas: {detalhe.registros}</span>
@@ -281,7 +284,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                       <ListaSimples titulo="Embaladas (peça · caixa)" itens={caixas.map((c) => ({ sn: c.sn, dir: c.caixa }))} />
                     ) : (
                       <>
-                        <ListaSns titulo="No posto agora" itens={listas.agora} carregando={carregandoSns} />
+                        <ListaSns titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} />
                         <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} />
                       </>
                     )}
