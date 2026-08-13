@@ -13,6 +13,7 @@ import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaix
 import { MANUTENCAO, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
+import { HistoricoSnDialog } from './historico-sn-dialog'
 
 interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
@@ -35,8 +36,17 @@ function paraEdges(es: FluxoEdge[]): Edge[] {
   }))
 }
 
+/** Nº de Série clicável → abre a linha do tempo do produto. */
+function SnBotao({ sn, sufixo, onSn }: { sn: string; sufixo?: string; onSn: (sn: string) => void }) {
+  return (
+    <button type="button" onClick={() => onSn(sn)} className="text-left hover:text-enterplak hover:underline">
+      {sn}{sufixo ?? ''}
+    </button>
+  )
+}
+
 /** Lista de SNs com título + contagem (reusada nas seções do painel). */
-function ListaSns({ titulo, itens, carregando }: { titulo: string; itens: SnDoPosto[]; carregando: boolean }) {
+function ListaSns({ titulo, itens, carregando, onSn }: { titulo: string; itens: SnDoPosto[]; carregando: boolean; onSn: (sn: string) => void }) {
   return (
     <div className="mb-3">
       <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo} ({itens.length})</p>
@@ -47,7 +57,7 @@ function ListaSns({ titulo, itens, carregando }: { titulo: string; itens: SnDoPo
           {itens.length === 0 && <li className="text-muted-foreground">—</li>}
           {itens.map((s, i) => (
             <li key={`${s.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
-              <span>{s.sn}</span>
+              <SnBotao sn={s.sn} onSn={onSn} />
               <span className="text-muted-foreground">{s.status || '—'}{s.vezes > 1 ? ` ×${s.vezes}` : ''}</span>
             </li>
           ))}
@@ -59,7 +69,7 @@ function ListaSns({ titulo, itens, carregando }: { titulo: string; itens: SnDoPo
 
 /** Histórico do posto: uma linha por PASSAGEM. Quem passou >1 vez mostra "Nx status" em cada
  *  passagem (1x = 1ª vez); quem passou 1 vez mostra só o SN. */
-function ListaPassagens({ titulo, itens, carregando }: { titulo: string; itens: PassagemPosto[]; carregando: boolean }) {
+function ListaPassagens({ titulo, itens, carregando, onSn }: { titulo: string; itens: PassagemPosto[]; carregando: boolean; onSn: (sn: string) => void }) {
   return (
     <div className="mb-3">
       <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo} ({itens.length})</p>
@@ -70,7 +80,7 @@ function ListaPassagens({ titulo, itens, carregando }: { titulo: string; itens: 
           {itens.length === 0 && <li className="text-muted-foreground">—</li>}
           {itens.map((p, i) => (
             <li key={`${p.sn}-${p.ordinal}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
-              <span>{p.sn}{p.total > 1 ? ` ${p.ordinal}x` : ''}</span>
+              <SnBotao sn={p.sn} sufixo={p.total > 1 ? ` ${p.ordinal}x` : ''} onSn={onSn} />
               <span className="text-muted-foreground">{p.status || '—'}</span>
             </li>
           ))}
@@ -81,7 +91,7 @@ function ListaPassagens({ titulo, itens, carregando }: { titulo: string; itens: 
 }
 
 /** Burn-in "No posto agora": peças com ciclo aberto (cozinhando) + há quanto tempo (relógio ao vivo). */
-function ListaBurnin({ itens, agoraMs, carregando }: { itens: BurninEmAndamento[]; agoraMs: number; carregando: boolean }) {
+function ListaBurnin({ itens, agoraMs, carregando, onSn }: { itens: BurninEmAndamento[]; agoraMs: number; carregando: boolean; onSn: (sn: string) => void }) {
   return (
     <div className="mb-3">
       <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Pendentes no posto ({itens.length})</p>
@@ -94,7 +104,7 @@ function ListaBurnin({ itens, agoraMs, carregando }: { itens: BurninEmAndamento[
             const min = Math.max(0, Math.round((agoraMs - Date.parse(b.desde)) / 60000))
             return (
               <li key={`${b.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
-                <span>{b.sn}</span>
+                <SnBotao sn={b.sn} onSn={onSn} />
                 <span className="text-muted-foreground">há {formatarDuracao(min)}</span>
               </li>
             )
@@ -105,8 +115,8 @@ function ListaBurnin({ itens, agoraMs, carregando }: { itens: BurninEmAndamento[
   )
 }
 
-/** Lista simples SN + texto à direita (usada pras listas de Entrada/Saída do Burn-in). */
-function ListaSimples({ titulo, itens }: { titulo: string; itens: { sn: string; dir: string }[] }) {
+/** Lista simples SN + texto à direita (usada pras listas de Entrada/Saída do Burn-in e Embalagem). */
+function ListaSimples({ titulo, itens, onSn }: { titulo: string; itens: { sn: string; dir: string }[]; onSn: (sn: string) => void }) {
   return (
     <div className="mb-3">
       <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo} ({itens.length})</p>
@@ -114,7 +124,7 @@ function ListaSimples({ titulo, itens }: { titulo: string; itens: { sn: string; 
         {itens.length === 0 && <li className="text-muted-foreground">—</li>}
         {itens.map((e, i) => (
           <li key={`${e.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
-            <span>{e.sn}</span>
+            <SnBotao sn={e.sn} onSn={onSn} />
             <span className="text-muted-foreground">{e.dir}</span>
           </li>
         ))}
@@ -132,6 +142,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [buscou, setBuscou] = useState(false)
   const [burnin, setBurnin] = useState<BurninDetalhe>(BURNIN_VAZIO)
   const [caixas, setCaixas] = useState<EmbalagemCaixa[]>([])
+  const [snAberto, setSnAberto] = useState<string | null>(null) // linha do tempo do produto
   const [carregando, startCarregar] = useTransition()
   const [carregandoSns, startSns] = useTransition()
   const ctx = useRef<{ pmo: string; op: string }>({ pmo: '', op: '' })
@@ -255,7 +266,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                 {detalhe.ehManutencao ? (
                   <>
                     <p className="mb-3 text-enterplak">Em manutenção agora: <span className="font-bold">{detalhe.wip}</span></p>
-                    <ListaSns titulo="Peças travadas" itens={listas.agora} carregando={carregandoSns} />
+                    <ListaSns titulo="Peças travadas" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} />
                   </>
                 ) : (
                   <>
@@ -276,16 +287,16 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                     </div>
                     {detalhe.recurso === 'burnin' ? (
                       <>
-                        <ListaBurnin itens={burnin.emAndamento} agoraMs={agoraMs} carregando={carregandoSns} />
-                        <ListaSimples titulo="Entrada" itens={burnin.entradas.map((e) => ({ sn: e.sn, dir: fmtHora(e.dataHora) }))} />
-                        <ListaSimples titulo="Saída" itens={burnin.saidas.map((s) => ({ sn: s.sn, dir: s.status }))} />
+                        <ListaBurnin itens={burnin.emAndamento} agoraMs={agoraMs} carregando={carregandoSns} onSn={setSnAberto} />
+                        <ListaSimples titulo="Entrada" itens={burnin.entradas.map((e) => ({ sn: e.sn, dir: fmtHora(e.dataHora) }))} onSn={setSnAberto} />
+                        <ListaSimples titulo="Saída" itens={burnin.saidas.map((s) => ({ sn: s.sn, dir: s.status }))} onSn={setSnAberto} />
                       </>
                     ) : detalhe.recurso === 'caixa' ? (
-                      <ListaSimples titulo="Embaladas (peça · caixa)" itens={caixas.map((c) => ({ sn: c.sn, dir: c.caixa }))} />
+                      <ListaSimples titulo="Embaladas (peça · caixa)" itens={caixas.map((c) => ({ sn: c.sn, dir: c.caixa }))} onSn={setSnAberto} />
                     ) : (
                       <>
-                        <ListaSns titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} />
-                        <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} />
+                        <ListaSns titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} />
+                        <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} onSn={setSnAberto} />
                       </>
                     )}
                   </>
@@ -294,6 +305,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             </aside>
           )}
         </div>
+
+        <HistoricoSnDialog sn={snAberto} onFechar={() => setSnAberto(null)} />
       </CardContent>
     </Card>
   )
