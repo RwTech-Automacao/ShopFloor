@@ -38,6 +38,7 @@ export interface OrdemView {
   status: string
   sn_ini: string
   sn_fim: string
+  embalagem_individual: boolean
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
@@ -321,6 +322,10 @@ export function OrdemForm({
               <p className="text-xs text-muted-foreground sm:col-span-2">
                 Faixa de SN obrigatória — mesmo formato nos dois limites (ex.: <code>SN0001</code> a <code>SN0500</code>).
               </p>
+              <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                <input type="checkbox" name="embalagem_individual" defaultChecked={ordem?.embalagem_individual} className="mt-0.5 size-4" />
+                <span>Embalagem <b>individual</b> — 1 produto por caixa; o posto Embalagem confere o Nº de Série da caixa com o do produto (deixe desmarcado para caixa coletiva).</span>
+              </label>
             </div>
 
             {/* Fluxo de postos (ordenado) */}
