@@ -19,7 +19,7 @@ export function EmbalagemIndividualPanel({
   const [total, setTotal] = useState(0)
   const [recentes, setRecentes] = useState<string[]>([])
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
-  const [carregando, startCarregar] = useTransition()
+  const [, startCarregar] = useTransition()
   const [enviando, startEnviar] = useTransition()
   const produtoRef = useRef<HTMLInputElement>(null)
   const caixaRef = useRef<HTMLInputElement>(null)
@@ -99,7 +99,7 @@ export function EmbalagemIndividualPanel({
             <Input
               id="snProduto" ref={produtoRef} value={snProduto} onChange={(e) => setSnProduto(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); caixaRef.current?.focus() } }}
-              placeholder="Bipe o produto" autoComplete="off" autoFocus className="h-12 text-lg" disabled={enviando || carregando}
+              placeholder="Bipe o produto" autoComplete="off" autoFocus className="h-12 text-lg" disabled={enviando}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -107,7 +107,7 @@ export function EmbalagemIndividualPanel({
             <Input
               id="snCaixa" ref={caixaRef} value={snCaixa} onChange={(e) => setSnCaixa(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onConferir() } }}
-              placeholder="Bipe a caixa" autoComplete="off" className="h-12 text-lg" disabled={enviando || carregando}
+              placeholder="Bipe a caixa" autoComplete="off" className="h-12 text-lg" disabled={enviando}
             />
           </div>
         </div>
