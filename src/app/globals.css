@@ -161,6 +161,11 @@
 .fluxo-preenche {
   animation: fluxo-preenchendo 1.8s linear infinite;
 }
+/* Modo TV: o canvas do Fluxo em tela cheia ocupa a tela toda, sem cantos arredondados. */
+.fluxo-canvas:fullscreen {
+  height: 100vh;
+  border-radius: 0;
+}
 @media (prefers-reduced-motion: reduce) {
   .fluxo-preenche {
     animation: none;

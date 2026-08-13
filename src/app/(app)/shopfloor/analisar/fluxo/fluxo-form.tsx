@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeTypes, type NodeMouseHandler } from '@xyflow/react'
+import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X } from 'lucide-react'
+import { X, Maximize2, Minimize2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -258,6 +259,23 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   // Postos da OP em ordem (sem Manutenção) — pra timeline mostrar até os postos ainda não alcançados.
   const postosOP = useMemo(() => dom.filter((n) => n.id !== MANUTENCAO).map((n) => n.id), [dom])
 
+  // Modo TV: tela cheia do canvas (Fullscreen API) + re-encaixa o fluxo ao entrar/sair.
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const rfRef = useRef<ReactFlowInstance | null>(null)
+  const [telaCheia, setTelaCheia] = useState(false)
+  const alternarTv = () => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    else void canvasRef.current?.requestFullscreen?.()
+  }
+  useEffect(() => {
+    const onFs = () => {
+      setTelaCheia(document.fullscreenElement === canvasRef.current)
+      setTimeout(() => rfRef.current?.fitView(), 120)
+    }
+    document.addEventListener('fullscreenchange', onFs)
+    return () => document.removeEventListener('fullscreenchange', onFs)
+  }, [])
+
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
@@ -275,15 +293,22 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
               </SelectContent>
             </Select>
           </div>
-          {buscou && atualizadoMs !== null && (
-            <span className="flex items-center gap-1.5 pb-1 text-xs text-muted-foreground" title="Atualiza automaticamente a cada 15s">
-              <span className="relative flex size-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
-                <span className="relative inline-flex size-2 rounded-full bg-green-500" />
+          <div className="flex items-center gap-3 pb-1">
+            {buscou && atualizadoMs !== null && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Atualiza automaticamente a cada 15s">
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-green-500" />
+                </span>
+                Ao vivo · atualiza a cada 15s
               </span>
-              Ao vivo · atualiza a cada 15s
-            </span>
-          )}
+            )}
+            {buscou && (
+              <Button variant="outline" size="sm" onClick={alternarTv}>
+                <Maximize2 className="mr-1 size-4" /> Modo TV
+              </Button>
+            )}
+          </div>
         </div>
 
         {carregando && <p className="text-sm text-muted-foreground">Carregando…</p>}
@@ -291,7 +316,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
         )}
 
-        <div className="relative h-[70vh] w-full overflow-hidden rounded-lg border border-border bg-neutral-100">
+        <div ref={canvasRef} className="fluxo-canvas relative h-[70vh] w-full overflow-hidden rounded-lg border border-border bg-neutral-100">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -300,12 +325,23 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             fitView
             nodesDraggable
             nodesConnectable={false}
+            onInit={(inst) => { rfRef.current = inst }}
             onNodesChange={onNodesChange}
             onNodeClick={onNodeClick}
           >
             <Background />
             <Controls showInteractive={false} />
           </ReactFlow>
+
+          {telaCheia && (
+            <button
+              type="button"
+              onClick={alternarTv}
+              className="absolute right-4 top-4 z-20 flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-3 py-1.5 text-sm font-medium shadow backdrop-blur hover:bg-accent"
+            >
+              <Minimize2 className="size-4" /> Sair (Esc)
+            </button>
+          )}
 
           {detalhe && (
             <aside className="absolute right-0 top-0 flex h-full w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur">
