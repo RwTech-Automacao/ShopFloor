@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { ReactFlow, Background, Controls, type Node, type Edge, type NodeTypes, type NodeMouseHandler } from '@xyflow/react'
+import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeTypes, type NodeMouseHandler } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -27,13 +27,22 @@ function fmtHora(iso: string): string {
     : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function paraEdges(es: FluxoEdge[]): Edge[] {
-  return es.map((e) => ({
-    id: e.id, source: e.source, target: e.target,
-    animated: e.tipo === 'reprova',
-    // reprova → Manutenção em vermelho do sistema (tracejada); cadeia em cinza.
-    style: e.tipo === 'reprova' ? { strokeDasharray: '4 4', stroke: '#8D2033' } : { stroke: '#94a3b8' },
-  }))
+function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[]): Edge[] {
+  const wipDe = (id: string) => nodesData.find((n) => n.id === id)?.data.wip ?? 0
+  return es.map((e) => {
+    // "Andando" só onde há peça se movendo: cadeia = pendentes no destino; reprova = peça em Manutenção.
+    const ativo = e.tipo === 'reprova' ? wipDe(MANUTENCAO) > 0 : wipDe(e.target) > 0
+    return {
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      animated: ativo, // linha andando (tempo real) só nas ativas
+      style:
+        e.tipo === 'reprova'
+          ? { strokeDasharray: '4 4', stroke: '#8D2033', opacity: ativo ? 1 : 0.35 }
+          : { stroke: ativo ? '#8D2033' : '#94a3b8', strokeWidth: ativo ? 2 : 1 },
+    }
+  })
 }
 
 /** Nº de Série clicável → abre a linha do tempo do produto. */
@@ -146,6 +155,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [carregando, startCarregar] = useTransition()
   const [carregandoSns, startSns] = useTransition()
   const ctx = useRef<{ pmo: string; op: string }>({ pmo: '', op: '' })
+  // Nós gerenciados pelo React Flow (arrastáveis). A posição do usuário é preservada entre atualizações.
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+  const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
 
   // Relógio ao vivo pro "há X" do Burn-in (atualiza a cada minuto).
   const [agoraMs, setAgoraMs] = useState(() => Date.now())
@@ -198,35 +210,68 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       const r = await carregarFluxo(pmo, op)
       if (!r.ok) { toast.error(r.erro); return }
       setDom(r.nodes)
-      setEdges(paraEdges(r.edges))
+      setEdges(paraEdges(r.edges, r.nodes))
+      setAtualizadoMs(Date.now())
       setBuscou(true)
     })
   }, [])
 
-  const nodes = useMemo<Node[]>(() => dom.map((n) => ({
-    id: n.id,
-    type: 'fluxo',
-    position: { x: n.x, y: n.y },
-    data: { ...n.data, selecionado: aberto === n.id } satisfies FluxoNodePayload,
-  })), [dom, aberto])
+  // Sincroniza os nós com o domínio (badges/estado) preservando a posição arrastada pelo usuário.
+  useEffect(() => {
+    setNodes((prev) => {
+      const posById = new Map(prev.map((n) => [n.id, n.position]))
+      return dom.map((n) => ({
+        id: n.id,
+        type: 'fluxo',
+        position: posById.get(n.id) ?? { x: n.x, y: n.y },
+        data: { ...n.data, selecionado: aberto === n.id } satisfies FluxoNodePayload,
+      }))
+    })
+  }, [dom, aberto, setNodes])
+
+  // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 15s.
+  useEffect(() => {
+    if (!buscou) return
+    const { pmo, op } = ctx.current
+    const t = setInterval(async () => {
+      const r = await carregarFluxo(pmo, op)
+      if (r.ok) {
+        setDom(r.nodes)
+        setEdges(paraEdges(r.edges, r.nodes))
+        setAtualizadoMs(Date.now())
+      }
+    }, 15_000)
+    return () => clearInterval(t)
+  }, [buscou, sel])
 
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
 
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5 sm:max-w-md">
-          <Label>OP</Label>
-          <Select value={sel} onValueChange={(v) => escolher(v ?? '')}>
-            <SelectTrigger><SelectValue placeholder="Selecione a OP" /></SelectTrigger>
-            <SelectContent>
-              {ops.map((o) => (
-                <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>
-                  {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-1 flex-col gap-1.5 sm:max-w-md sm:min-w-64">
+            <Label>OP</Label>
+            <Select value={sel} onValueChange={(v) => escolher(v ?? '')}>
+              <SelectTrigger><SelectValue placeholder="Selecione a OP" /></SelectTrigger>
+              <SelectContent>
+                {ops.map((o) => (
+                  <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>
+                    {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {buscou && atualizadoMs !== null && (
+            <span className="flex items-center gap-1.5 pb-1 text-xs text-muted-foreground" title="Atualiza automaticamente a cada 15s">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full bg-green-500" />
+              </span>
+              Ao vivo · atualiza a cada 15s
+            </span>
+          )}
         </div>
 
         {carregando && <p className="text-sm text-muted-foreground">Carregando…</p>}
@@ -240,8 +285,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             edges={edges}
             nodeTypes={nodeTypes}
             fitView
-            nodesDraggable={false}
+            nodesDraggable
             nodesConnectable={false}
+            onNodesChange={onNodesChange}
             onNodeClick={onNodeClick}
           >
             <Background />
