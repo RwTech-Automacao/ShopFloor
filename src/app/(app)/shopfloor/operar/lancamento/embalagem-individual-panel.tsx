@@ -93,32 +93,35 @@ export function EmbalagemIndividualPanel({
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr]">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="snProduto">Nº de Série do Produto</Label>
-            <Input
-              id="snProduto" ref={produtoRef} value={snProduto} onChange={(e) => setSnProduto(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); caixaRef.current?.focus() } }}
-              placeholder="Bipe o produto" autoComplete="off" autoFocus className="h-12 text-lg" disabled={enviando}
-            />
+        {/* Campos empilhados à esquerda, histórico numa caixa à direita — mesmo padrão do Lançamento. */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_16rem]">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="snProduto">Nº de Série do Produto</Label>
+              <Input
+                id="snProduto" ref={produtoRef} value={snProduto} onChange={(e) => setSnProduto(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); caixaRef.current?.focus() } }}
+                placeholder="Bipe o produto" autoComplete="off" autoFocus className="h-12 text-lg" disabled={enviando}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="snCaixa">Nº de Série da Caixa</Label>
+              <Input
+                id="snCaixa" ref={caixaRef} value={snCaixa} onChange={(e) => setSnCaixa(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onConferir() } }}
+                placeholder="Bipe a caixa" autoComplete="off" className="h-12 text-lg" disabled={enviando}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">Bipe o produto, depois a caixa. Se os dois Nº de Série baterem, a peça é registrada.</p>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="snCaixa">Nº de Série da Caixa</Label>
-            <Input
-              id="snCaixa" ref={caixaRef} value={snCaixa} onChange={(e) => setSnCaixa(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onConferir() } }}
-              placeholder="Bipe a caixa" autoComplete="off" className="h-12 text-lg" disabled={enviando}
-            />
-          </div>
-        </div>
-        <p className="shrink-0 text-xs text-muted-foreground">Bipe o produto, depois a caixa. Se os dois Nº de Série baterem, a peça é registrada.</p>
 
-        <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border p-2">
-          <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Embaladas nesta sessão ({recentes.length})</p>
-          <ul className="flex max-h-[3rem] flex-col gap-0.5 overflow-y-auto text-sm">
-            {recentes.length === 0 && <li className="text-muted-foreground">—</li>}
-            {recentes.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
-          </ul>
+          <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
+            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Embaladas nesta sessão ({recentes.length})</p>
+            <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto text-sm">
+              {recentes.length === 0 && <li className="text-muted-foreground">—</li>}
+              {recentes.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
+            </ul>
+          </div>
         </div>
       </CardContent>
     </Card>
