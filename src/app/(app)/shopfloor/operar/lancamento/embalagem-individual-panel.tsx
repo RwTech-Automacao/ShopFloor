@@ -117,7 +117,7 @@ export function EmbalagemIndividualPanel({
 
           <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
             <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Embaladas nesta sessão ({recentes.length})</p>
-            <ul className="flex max-h-[8rem] flex-col gap-0.5 overflow-y-auto text-sm">
+            <ul className="flex max-h-[7rem] flex-col gap-0.5 overflow-y-auto text-sm">
               {recentes.length === 0 && <li className="text-muted-foreground">—</li>}
               {recentes.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
             </ul>
