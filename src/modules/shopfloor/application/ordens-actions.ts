@@ -36,6 +36,7 @@ function lerDados(fd: FormData): DadosOrdem {
     status: String(fd.get('status') ?? '').trim() || 'ATIVA',
     sn_ini: String(fd.get('sn_ini') ?? '').trim(),
     sn_fim: String(fd.get('sn_fim') ?? '').trim(),
+    embalagem_individual: fd.get('embalagem_individual') === 'on', // checkbox: 1 produto por caixa
   }
 }
 

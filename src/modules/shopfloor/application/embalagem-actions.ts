@@ -3,6 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
+import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { carregarEstadoEmbalagem, garantirCaixa, chamarFecharCaixa, carregarCaixasDaOp, type EstadoEmbalagem, type CaixaConsulta } from '@/modules/shopfloor/infra/caixa-repository'
 import { lancar } from './lancar-action'
 
@@ -52,6 +53,29 @@ export async function embalarPeca(entrada: {
   })
   if (!r.ok) return r
   return { ok: true, caixaCount: r.caixaCount }
+}
+
+/** Embalagem INDIVIDUAL (1 produto por caixa): confere se o SN da caixa == SN do produto e, se
+ *  bater, registra a peça com numero_caixa = o próprio SN (qtd_por_caixa = 1, sem CX coletiva). */
+export async function embalarIndividual(entrada: {
+  colaborador: string; pmo: string; op: string; posto: string; numeroSerie: string; numeroSerieCaixa: string
+}): Promise<{ ok: true } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
+  if (normalizarSerie(entrada.numeroSerie) !== normalizarSerie(entrada.numeroSerieCaixa)) {
+    return { ok: false, erro: 'O Nº de Série da caixa não confere com o do produto.' }
+  }
+  const r = await lancar({
+    colaborador: entrada.colaborador,
+    posto: entrada.posto.trim(),
+    pmo: entrada.pmo.trim(),
+    op: entrada.op.trim(),
+    numeroSerie: entrada.numeroSerie,
+    numeroCaixa: entrada.numeroSerieCaixa.trim(), // a caixa individual = o próprio SN
+    qtdPorCaixa: '1',
+  })
+  if (!r.ok) return { ok: false, erro: r.erro }
+  return { ok: true }
 }
 
 export async function fecharCaixa(

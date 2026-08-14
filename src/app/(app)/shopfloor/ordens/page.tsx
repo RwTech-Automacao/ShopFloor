@@ -28,6 +28,7 @@ export default async function OrdensPage() {
     status: o.status,
     sn_ini: o.sn_ini,
     sn_fim: o.sn_fim,
+    embalagem_individual: o.embalagem_individual,
     postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
     receitaPorPosto: agruparReceitaPorPosto(o.sf_ordem_componentes),
     tempoBurninPorPosto: agruparTempoBurninPorPosto(o.sf_ordem_burnin),

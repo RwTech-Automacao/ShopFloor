@@ -20,6 +20,7 @@ import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
 import { EmbalagemPanel } from './embalagem-panel'
+import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { AprovarModal } from './aprovar-modal'
 import { ReprovarModal } from './reprovar-modal'
 
@@ -598,7 +599,11 @@ export function LancamentoForm({
 
         {ehEmbalagem && (
           <div className="flex min-h-0 flex-col lg:col-span-2">
-            <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+            {ordemSel?.embalagem_individual ? (
+              <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+            ) : (
+              <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+            )}
           </div>
         )}
 
