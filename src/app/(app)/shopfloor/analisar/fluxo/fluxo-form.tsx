@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
+import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { X, Maximize2, Minimize2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -11,11 +11,24 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
-import { MANUTENCAO, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
+import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { HistoricoSnDialog } from './historico-sn-dialog'
 import { EdgeAtivo } from './edge-ativo'
+import { HelperLines, getHelperLines } from './helper-lines'
+
+/** Posições salvas por OP (layout do usuário) — nesta máquina. */
+const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
+function lerLayout(pmo: string, op: string): Map<string, { x: number; y: number }> {
+  try {
+    const raw = localStorage.getItem(chaveLayout(pmo, op))
+    if (!raw) return new Map()
+    return new Map(Object.entries(JSON.parse(raw) as Record<string, { x: number; y: number }>))
+  } catch {
+    return new Map()
+  }
+}
 
 interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
@@ -167,6 +180,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const ctx = useRef<{ pmo: string; op: string }>({ pmo: '', op: '' })
   // Nós gerenciados pelo React Flow (arrastáveis). A posição do usuário é preservada entre atualizações.
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+  const layoutRef = useRef<Map<string, { x: number; y: number }>>(new Map()) // posições salvas da OP (localStorage)
+  const [guiaH, setGuiaH] = useState<number | undefined>(undefined) // linha-guia horizontal ao arrastar
+  const [guiaV, setGuiaV] = useState<number | undefined>(undefined) // linha-guia vertical ao arrastar
   const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
   const [qtd, setQtd] = useState<number | null>(null) // qtd da OP (pro % de prontas no Modo TV)
 
@@ -181,6 +197,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const edgeTypes = useMemo(() => ({ ativo: EdgeAtivo }), [])
 
   const abrir = useCallback((id: string) => {
+    // Caixas de Entrada/Saída não têm detalhe (só a contagem) — clique é inerte.
+    const dataDo = dom.find((n) => n.id === id)?.data
+    if (dataDo?.ehEntrada || dataDo?.ehSaida) return
     setListas(LISTAS_VAZIAS)
     setBurnin(BURNIN_VAZIO)
     setCaixas([])
@@ -213,11 +232,42 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
 
   const onNodeClick = useCallback<NodeMouseHandler>((_, node) => abrir(node.id), [abrir])
 
+  // Arrastar: aplica snap de alinhamento + mostra a linha-guia (só quando arrastando 1 nó).
+  const onNodesChangeGuia = useCallback((changes: NodeChange[]) => {
+    setGuiaH(undefined)
+    setGuiaV(undefined)
+    const c = changes[0]
+    if (changes.length === 1 && c && c.type === 'position' && c.dragging && c.position) {
+      const helper = getHelperLines(c, nodes)
+      c.position.x = helper.snapPosition.x ?? c.position.x
+      c.position.y = helper.snapPosition.y ?? c.position.y
+      setGuiaH(helper.horizontal)
+      setGuiaV(helper.vertical)
+    }
+    onNodesChange(changes)
+  }, [nodes, onNodesChange])
+
+  // Salva o layout (posição de cada nó) da OP no localStorage desta máquina.
+  const salvarLayout = useCallback(() => {
+    const { pmo, op } = ctx.current
+    if (!pmo || !op) return
+    setNodes((cur) => {
+      const mapa: Record<string, { x: number; y: number }> = {}
+      for (const n of cur) mapa[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) }
+      layoutRef.current = new Map(Object.entries(mapa))
+      try { localStorage.setItem(chaveLayout(pmo, op), JSON.stringify(mapa)) } catch { /* storage cheio/off */ }
+      return cur
+    })
+  }, [setNodes])
+
+  const onNodeDragStop = useCallback(() => { setGuiaH(undefined); setGuiaV(undefined); salvarLayout() }, [salvarLayout])
+
   const escolher = useCallback((v: string) => {
     setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
     const [pmo, op] = v.split('||')
     if (!pmo || !op) return
     ctx.current = { pmo, op }
+    layoutRef.current = lerLayout(pmo, op) // recupera o arranjo salvo desta OP nesta máquina
     startCarregar(async () => {
       const r = await carregarFluxo(pmo, op)
       if (!r.ok) { toast.error(r.erro); return }
@@ -236,7 +286,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       return dom.map((n) => ({
         id: n.id,
         type: 'fluxo',
-        position: posById.get(n.id) ?? { x: n.x, y: n.y },
+        // prioridade: posição arrastada na sessão → layout salvo da OP → posição padrão do domínio.
+        position: posById.get(n.id) ?? layoutRef.current.get(n.id) ?? { x: n.x, y: n.y },
         data: { ...n.data, selecionado: aberto === n.id } satisfies FluxoNodePayload,
       }))
     })
@@ -259,8 +310,11 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   }, [buscou, sel])
 
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
-  // Postos da OP em ordem (sem Manutenção) — pra timeline mostrar até os postos ainda não alcançados.
-  const postosOP = useMemo(() => dom.filter((n) => n.id !== MANUTENCAO).map((n) => n.id), [dom])
+  // Postos da OP em ordem (sem Manutenção nem as caixas Entrada/Saída) — pra timeline e % de prontas.
+  const postosOP = useMemo(
+    () => dom.filter((n) => n.id !== MANUTENCAO && n.id !== ENTRADA && n.id !== SAIDA).map((n) => n.id),
+    [dom],
+  )
 
   // Cabeçalho do Modo TV: PMO/OP · Cliente + % de prontas (passaram pelo último posto ÷ qtd da OP).
   const opInfo = useMemo(() => {
@@ -342,11 +396,13 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             nodesDraggable
             nodesConnectable={false}
             onInit={(inst) => { rfRef.current = inst }}
-            onNodesChange={onNodesChange}
+            onNodesChange={onNodesChangeGuia}
+            onNodeDragStop={onNodeDragStop}
             onNodeClick={onNodeClick}
           >
             <Background />
             <Controls showInteractive={false} />
+            <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
           {telaCheia && (

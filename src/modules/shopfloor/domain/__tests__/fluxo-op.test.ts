@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, numerarPassagens, postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, type RegistroPassagem, type BipePeca } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, postoPendenteDePeca, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca } from '../fluxo-op'
 
 const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0 })
 
@@ -8,8 +8,8 @@ describe('construirFluxo', () => {
     const { nodes } = construirFluxo(['Solda', 'Teste'], [], () => false)
     const ids = nodes.map((n) => n.id)
     expect(ids).toEqual(['Solda', 'Teste', MANUTENCAO])
-    expect(nodes[0].x).toBe(0)
-    expect(nodes[1].x).toBe(260)
+    expect(nodes[0]!.x).toBe(0)
+    expect(nodes[1]!.x).toBe(260)
     const manut = nodes.find((n) => n.id === MANUTENCAO)!
     expect(manut.data.ehManutencao).toBe(true)
     expect(manut.y).toBe(220)
@@ -60,6 +60,28 @@ describe('construirFluxo', () => {
     expect(edges).toContainEqual({ id: 'r:Teste', source: 'Teste', target: MANUTENCAO, tipo: 'reprova' })
     expect(edges.some((e) => e.id === 'r:SPI')).toBe(false)
     expect(edges.some((e) => e.id === 'r:Inspeção')).toBe(false)
+  })
+
+  it('cria as caixas de Entrada/Saída (vinho) com contagem e as liga nas pontas', () => {
+    const { nodes, edges } = construirFluxo(
+      ['Solda', 'Teste'], [], () => false, () => 'nenhum', 10, () => true, 3, 5,
+    )
+    const entrada = nodes.find((n) => n.id === ENTRADA)!
+    const saida = nodes.find((n) => n.id === SAIDA)!
+    expect(entrada.data.ehEntrada).toBe(true)
+    expect(entrada.data.wip).toBe(3) // não iniciadas
+    expect(entrada.x).toBe(-260) // antes do 1º posto
+    expect(saida.data.ehSaida).toBe(true)
+    expect(saida.data.wip).toBe(5) // finalizadas
+    expect(saida.x).toBe(520) // depois do último (2 postos × 260)
+    expect(edges).toContainEqual({ id: `f:${ENTRADA}->Solda`, source: ENTRADA, target: 'Solda', tipo: 'fluxo' })
+    expect(edges).toContainEqual({ id: `f:Teste->${SAIDA}`, source: 'Teste', target: SAIDA, tipo: 'fluxo' })
+  })
+
+  it('não cria caixas quando as contagens não são informadas (null)', () => {
+    const { nodes } = construirFluxo(['Solda', 'Teste'], [], () => false)
+    expect(nodes.some((n) => n.id === ENTRADA)).toBe(false)
+    expect(nodes.some((n) => n.id === SAIDA)).toBe(false)
   })
 
   it('marca concluído quando passou ≥ qtd da OP (aprovadas p/ com status; registros p/ sem)', () => {

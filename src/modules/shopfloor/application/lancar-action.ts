@@ -15,7 +15,8 @@ import {
 } from '../domain/perfil-posto'
 import {
   carregarOrdem, chamarSfLancar, chamarSfBurnin, buscarEntradaBurninAberta,
-  buscarUltimaReprovaDoPosto, inserirConservoConfirmado, type DefeitoConfirmavel,
+  buscarUltimaReprovaDoPosto, inserirConservoConfirmado, contarLancadosNoPosto,
+  type DefeitoConfirmavel,
 } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 
@@ -257,5 +258,17 @@ export async function buscarEntradaBurnin(pmo: string, op: string, numeroSerie: 
     return await buscarEntradaBurninAberta(pmo, op, snNorm, posto)
   } catch {
     return null // fail-open: erro no lookup não bloqueia o operador (é só aviso)
+  }
+}
+
+/** Total de peças distintas (SN único) já lançadas nesse posto da OP. Fail-open (0 se erro). */
+export async function contarLancadosPosto(pmo: string, op: string, posto: string): Promise<number> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return 0
+  if (!pmo.trim() || !op.trim() || !posto.trim()) return 0
+  try {
+    return await contarLancadosNoPosto(pmo, op, posto)
+  } catch {
+    return 0
   }
 }

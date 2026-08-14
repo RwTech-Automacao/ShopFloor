@@ -1,4 +1,6 @@
 export const MANUTENCAO = 'Manutenção'
+export const ENTRADA = 'Entrada'
+export const SAIDA = 'Saída'
 const ESPACO_X = 260
 const Y_MANUTENCAO = 220
 
@@ -18,6 +20,10 @@ export interface FluxoNodeData extends FluxoAgregado {
   recurso: string
   /** Todas as peças da OP já passaram por este posto (passou ≥ qtd da OP). Manutenção nunca conclui. */
   concluido: boolean
+  /** Caixa de Entrada (peças que ainda não começaram). Renderiza em vinho, sem detalhe ao clicar. */
+  ehEntrada?: boolean
+  /** Caixa de Saída (peças que concluíram todo o fluxo). Renderiza em vinho, sem detalhe ao clicar. */
+  ehSaida?: boolean
 }
 
 export interface FluxoNodePos {
@@ -116,6 +122,24 @@ function dados(
   }
 }
 
+/** Dados de uma caixa de Entrada/Saída (nó sintético, vinho, só com a contagem). */
+function dadosCaixa(id: string, contagem: number, tipo: 'entrada' | 'saida'): FluxoNodeData {
+  return {
+    posto: id,
+    wip: contagem,
+    registros: 0,
+    aprovadas: 0,
+    reprovadas: 0,
+    retestes: 0,
+    temStatus: false,
+    ehManutencao: false,
+    recurso: tipo,
+    concluido: false,
+    ehEntrada: tipo === 'entrada',
+    ehSaida: tipo === 'saida',
+  }
+}
+
 /** Um bipe cru de uma peça, em ordem cronológica (pra decidir onde ela está pendente). */
 export interface BipePeca {
   posto: string
@@ -157,6 +181,9 @@ export function construirFluxo(
   // fazem conserto no próprio posto (SPI/Inspeção: reprova≠nenhum && !exigeManutencao) não ligam.
   // Default `true` preserva o comportamento antigo p/ chamadas que não informam.
   exigeManutencaoDe: (posto: string) => boolean = () => true,
+  // Caixas de Entrada (peças que não começaram) e Saída (peças que concluíram o fluxo). null = não mostra.
+  naoIniciadas: number | null = null,
+  finalizadas: number | null = null,
 ): { nodes: FluxoNodePos[]; edges: FluxoEdge[] } {
   const nodes: FluxoNodePos[] = postosOrdenados.map((posto, i) => ({
     id: posto,
@@ -173,11 +200,27 @@ export function construirFluxo(
     data: dados(MANUTENCAO, agregados, false, true, 'manutencao', qtd),
   })
 
+  // Caixas de Entrada/Saída (só quando há postos e a contagem foi informada).
+  const temCaixas = postosOrdenados.length > 0
+  if (temCaixas && naoIniciadas != null) {
+    nodes.push({ id: ENTRADA, x: -ESPACO_X, y: 0, data: dadosCaixa(ENTRADA, naoIniciadas, 'entrada') })
+  }
+  if (temCaixas && finalizadas != null) {
+    nodes.push({ id: SAIDA, x: postosOrdenados.length * ESPACO_X, y: 0, data: dadosCaixa(SAIDA, finalizadas, 'saida') })
+  }
+
   const edges: FluxoEdge[] = []
+  if (temCaixas && naoIniciadas != null) {
+    edges.push({ id: `f:${ENTRADA}->${postosOrdenados[0]!}`, source: ENTRADA, target: postosOrdenados[0]!, tipo: 'fluxo' })
+  }
   for (let i = 0; i < postosOrdenados.length - 1; i++) {
     const source = postosOrdenados[i]!
     const target = postosOrdenados[i + 1]!
     edges.push({ id: `f:${source}->${target}`, source, target, tipo: 'fluxo' })
+  }
+  if (temCaixas && finalizadas != null) {
+    const ultimo = postosOrdenados[postosOrdenados.length - 1]!
+    edges.push({ id: `f:${ultimo}->${SAIDA}`, source: ultimo, target: SAIDA, tipo: 'fluxo' })
   }
   for (const posto of postosOrdenados) {
     if ((acharAgg(agregados, posto)?.reprovadas ?? 0) > 0 && exigeManutencaoDe(posto)) {
