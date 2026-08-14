@@ -5,7 +5,6 @@
 // Config por variáveis de ambiente (.env) — nunca comitar segredos. Ver README.md.
 
 import pg from 'pg'
-import { createClient } from '@supabase/supabase-js'
 
 const env = process.env
 function obrigatorio(nome) {
@@ -20,6 +19,12 @@ function obrigatorio(nome) {
 const SUPABASE_URL = obrigatorio('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE = obrigatorio('SUPABASE_SERVICE_ROLE')
 const LOTE = Number(env.REPINMETRO_LOTE ?? '1000')
+// Teto de registros por rodada (teste). Vazio = sem limite (espelha tudo).
+const MAX = env.REPINMETRO_MAX ? Number(env.REPINMETRO_MAX) : Infinity
+// Só espelhar linhas COM número de série (descarta testes sem SN, que não casam com o ShopFloor).
+// Liga com REPINMETRO_SO_COM_SN=1.
+const SO_COM_SN = env.REPINMETRO_SO_COM_SN === '1' || env.REPINMETRO_SO_COM_SN === 'true'
+const FILTRO_SN = SO_COM_SN ? "AND t.numeroserierep IS NOT NULL AND btrim(t.numeroserierep) <> ''" : ''
 
 // Colunas dos 15 itens de teste (nomes de origem = chaves do jsonb `resultados`).
 const RESULTADO_COLS = [
@@ -40,7 +45,15 @@ const RESULTADO_COLS = [
   'statustesteproducao',
 ]
 
-const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, { auth: { persistSession: false } })
+// Fala direto com a API REST (PostgREST) do Supabase via fetch nativo — sem a lib
+// @supabase/supabase-js (que exige WebSocket/realtime e quebra no Node < 22).
+const REST = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/repinmetro_logs`
+const HEADERS = {
+  apikey: SUPABASE_SERVICE_ROLE,
+  Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+  'Content-Type': 'application/json',
+}
+
 const pool = new pg.Pool({
   host: env.REPINMETRO_HOST ?? 'localhost',
   port: Number(env.REPINMETRO_PORT ?? '5432'),
@@ -56,7 +69,7 @@ function mapear(row, espelhadoEm) {
   const resultados = {}
   for (const c of RESULTADO_COLS) resultados[c] = row[c] ?? null
   return {
-    origem_id: row.id,
+    origem_id: row.origem_id,
     numero_serie: String(row.numeroserierep ?? '').trim(),
     modelo: txt(row.serialmodelorep),
     data_inicio: row.datahorainicio ?? null,
@@ -75,36 +88,59 @@ function mapear(row, espelhadoEm) {
 
 /** Maior origem_id já espelhado. Se vazio: REPINMETRO_SINCE (teste) ou MAX(teste.id) (sem backfill). */
 async function watermark() {
-  const { data, error } = await sb
-    .from('repinmetro_logs')
-    .select('origem_id')
-    .order('origem_id', { ascending: false })
-    .limit(1)
-  if (error) throw error
-  if (data && data.length > 0) return Number(data[0].origem_id)
+  const res = await fetch(`${REST}?select=origem_id&order=origem_id.desc&limit=1`, { headers: HEADERS })
+  if (!res.ok) throw new Error(`Supabase GET ${res.status}: ${await res.text()}`)
+  const data = await res.json()
+  if (Array.isArray(data) && data.length > 0) return Number(data[0].origem_id)
   if (env.REPINMETRO_SINCE != null && env.REPINMETRO_SINCE !== '') return Number(env.REPINMETRO_SINCE)
   const r = await pool.query('SELECT COALESCE(MAX(id), 0) AS m FROM teste')
   return Number(r.rows[0].m)
 }
 
+async function upsert(registros) {
+  const res = await fetch(`${REST}?on_conflict=origem_id`, {
+    method: 'POST',
+    headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(registros),
+  })
+  if (!res.ok) throw new Error(`Supabase upsert ${res.status}: ${await res.text()}`)
+}
+
 async function main() {
+  // Modo teste: espelha só os N registros MAIS RECENTES (id desc). Ignora watermark.
+  const ULTIMOS = env.REPINMETRO_ULTIMOS ? Number(env.REPINMETRO_ULTIMOS) : 0
+  if (ULTIMOS > 0) {
+    const { rows } = await pool.query(
+      `SELECT t.*, tq.*, t.id AS origem_id FROM teste t LEFT JOIN testequalidade tq ON t.id = tq.id WHERE 1=1 ${FILTRO_SN} ORDER BY t.id DESC LIMIT $1`,
+      [ULTIMOS],
+    )
+    const espelhadoEm = new Date().toISOString()
+    await upsert(rows.map((r) => mapear(r, espelhadoEm)))
+    console.log(`Espelhados os ${rows.length} registro(s) mais recentes.`)
+    await pool.end()
+    return
+  }
+
   let since = await watermark()
   console.log(`Iniciando a partir do id ${since}.`)
   let total = 0
   for (;;) {
+    const limite = Math.min(LOTE, MAX - total) // respeita o teto REPINMETRO_MAX
+    if (limite <= 0) break
     const { rows } = await pool.query(
-      'SELECT * FROM teste t LEFT JOIN testequalidade tq ON t.id = tq.id WHERE t.id > $1 ORDER BY t.id ASC LIMIT $2',
-      [since, LOTE],
+      // `t.id AS origem_id` por último: teste e testequalidade têm `id`; no LEFT JOIN o tq.id (null)
+      // sobrescreveria o t.id. O alias garante origem_id = t.id sempre.
+      `SELECT t.*, tq.*, t.id AS origem_id FROM teste t LEFT JOIN testequalidade tq ON t.id = tq.id WHERE t.id > $1 ${FILTRO_SN} ORDER BY t.id ASC LIMIT $2`,
+      [since, limite],
     )
     if (rows.length === 0) break
     const espelhadoEm = new Date().toISOString()
     const registros = rows.map((r) => mapear(r, espelhadoEm))
-    const { error } = await sb.from('repinmetro_logs').upsert(registros, { onConflict: 'origem_id' })
-    if (error) throw error
+    await upsert(registros)
     total += registros.length
-    since = rows[rows.length - 1].id
+    since = rows[rows.length - 1].origem_id
     console.log(`Espelhados ${total} (até id ${since}).`)
-    if (rows.length < LOTE) break
+    if (rows.length < limite) break
   }
   console.log(`Concluído: ${total} registro(s) novo(s).`)
   await pool.end()
