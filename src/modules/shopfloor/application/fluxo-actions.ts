@@ -14,7 +14,7 @@ export async function carregarFluxo(
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
-    const { postos, agregados, temStatus, recurso, exigeManutencao, qtd } = await carregarFluxoOp(pmo.trim(), op.trim())
+    const { postos, agregados, temStatus, recurso, exigeManutencao, qtd, naoIniciadas, finalizadas } = await carregarFluxoOp(pmo.trim(), op.trim())
     const { nodes, edges } = construirFluxo(
       postos,
       agregados,
@@ -22,6 +22,8 @@ export async function carregarFluxo(
       (p) => recurso[p] ?? 'nenhum',
       qtd,
       (p) => exigeManutencao[p] ?? false,
+      naoIniciadas,
+      finalizadas,
     )
     return { ok: true, nodes, edges, qtd }
   } catch {

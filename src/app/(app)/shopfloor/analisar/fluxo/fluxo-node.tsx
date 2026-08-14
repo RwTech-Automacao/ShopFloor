@@ -3,7 +3,7 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
-  Wrench, Package, GitMerge, Flame, ShieldCheck, ClipboardCheck, CircleDot, Check,
+  Wrench, Package, GitMerge, Flame, ShieldCheck, ClipboardCheck, CircleDot, Check, Inbox, PackageCheck,
 } from 'lucide-react'
 import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
 
@@ -26,6 +26,29 @@ function iconeDo(d: FluxoNodePayload) {
 
 function FluxoNodeBase({ data }: NodeProps) {
   const d = data as unknown as FluxoNodePayload
+
+  // Caixas de Entrada/Saída: bloco em vinho predominante, só com a contagem (sem detalhe ao clicar).
+  if (d.ehEntrada || d.ehSaida) {
+    const rotulo = d.ehEntrada ? 'Entrada' : 'Saída'
+    const sub = d.ehEntrada ? 'não iniciadas' : 'finalizadas'
+    return (
+      <div className={`w-[200px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
+        {d.ehSaida && <Handle type="target" position={Position.Left} />}
+        <div className="flex items-center gap-2.5 px-3 py-2.5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
+            {d.ehEntrada ? <Inbox className="size-5" /> : <PackageCheck className="size-5" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{rotulo}</p>
+            <p className="text-xs text-white/75">{sub}</p>
+          </div>
+          <span className="shrink-0 rounded-md bg-white/20 px-2 py-0.5 text-sm font-bold">{d.wip}</span>
+        </div>
+        {d.ehEntrada && <Handle type="source" position={Position.Right} />}
+      </div>
+    )
+  }
+
   const borda = d.selecionado
     ? 'border-enterplak ring-2 ring-enterplak/40'
     : d.concluido || d.ehManutencao

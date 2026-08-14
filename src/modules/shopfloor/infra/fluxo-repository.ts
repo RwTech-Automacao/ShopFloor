@@ -41,6 +41,8 @@ export async function carregarFluxoOp(
   recurso: Record<string, string>
   exigeManutencao: Record<string, boolean>
   qtd: number | null
+  naoIniciadas: number | null
+  finalizadas: number | null
 }> {
   const supabase = await createServerSupabase()
 
@@ -70,7 +72,7 @@ export async function carregarFluxoOp(
   }
 
   // WIP de cada nó = "pendentes no posto" (a fila): peça aprovada avança pro próximo posto.
-  const pendentes = await contarPendentesPorPosto(
+  const { pendentes, iniciadas, finalizadas } = await contarPendentesPorPosto(
     pmo,
     op,
     postos,
@@ -89,17 +91,23 @@ export async function carregarFluxoOp(
     }
   })
 
-  return { postos, agregados: agregadosComPendentes, temStatus, recurso, exigeManutencao, qtd }
+  // Caixa de Entrada = peças que ainda não começaram (qtd − peças com algum registro). Só se a OP tem qtd.
+  const naoIniciadas = qtd != null ? Math.max(0, qtd - iniciadas) : null
+
+  return { postos, agregados: agregadosComPendentes, temStatus, recurso, exigeManutencao, qtd, naoIniciadas, finalizadas }
 }
 
-/** Conta as peças pendentes (aguardando) em cada posto da OP — a "fila". Chave = posto em minúsculo. */
+/**
+ * Conta as peças pendentes (aguardando) em cada posto da OP — a "fila" (chave = posto minúsculo) —
+ * mais `iniciadas` (peças com ≥1 registro) e `finalizadas` (concluíram todo o fluxo).
+ */
 async function contarPendentesPorPosto(
   pmo: string,
   op: string,
   postos: string[],
   exige: (p: string) => boolean,
   recurso: (p: string) => string,
-): Promise<Record<string, number>> {
+): Promise<{ pendentes: Record<string, number>; iniciadas: number; finalizadas: number }> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
   const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
@@ -126,11 +134,14 @@ async function contarPendentesPorPosto(
     else porPeca.set(chave, [{ posto: l.posto, status: l.status }])
   }
   const cont: Record<string, number> = {}
+  let finalizadas = 0
   for (const regs of porPeca.values()) {
     const pend = postoPendenteDePeca(regs, postos, exige, recurso)
     if (pend) cont[pend.toLowerCase()] = (cont[pend.toLowerCase()] ?? 0) + 1
+    else finalizadas += 1 // pend === null → peça concluiu todo o fluxo
   }
-  return cont
+  // iniciadas = peças com ≥1 registro (as sem registro nenhum nem aparecem em sf_registros).
+  return { pendentes: cont, iniciadas: porPeca.size, finalizadas }
 }
 
 /**
