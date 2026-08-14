@@ -53,7 +53,7 @@ export default function LoginPage() {
             Acesse sua conta para continuar.
           </p>
           <LoginForm />
-          <p className="mt-10 text-center text-xs text-muted-foreground">Versão 1.0.0</p>
+          <p className="mt-10 text-center text-xs text-muted-foreground">Versão 1.1.0</p>
         </div>
       </div>
     </div>
