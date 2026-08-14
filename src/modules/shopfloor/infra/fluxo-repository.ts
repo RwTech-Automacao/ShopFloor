@@ -79,6 +79,14 @@ export async function carregarFluxoOp(
     (p) => exigeManutencao[p] ?? false,
     (p) => recurso[p] ?? 'nenhum',
   )
+  // Caixa de Entrada = peças que ainda não começaram (qtd − peças com algum registro). Só se a OP tem qtd.
+  const naoIniciadas = qtd != null ? Math.max(0, qtd - iniciadas) : null
+  // As não iniciadas também AGUARDAM no 1º posto → entram na fila (pendentes) dele.
+  if (naoIniciadas && postos[0]) {
+    const k = postos[0].toLowerCase()
+    pendentes[k] = (pendentes[k] ?? 0) + naoIniciadas
+  }
+
   const agregadosComPendentes: FluxoAgregado[] = [...postos, MANUTENCAO].map((posto) => {
     const a = agregados.find((x) => x.posto.toLowerCase() === posto.toLowerCase())
     return {
@@ -90,9 +98,6 @@ export async function carregarFluxoOp(
       retestes: a?.retestes ?? 0,
     }
   })
-
-  // Caixa de Entrada = peças que ainda não começaram (qtd − peças com algum registro). Só se a OP tem qtd.
-  const naoIniciadas = qtd != null ? Math.max(0, qtd - iniciadas) : null
 
   return { postos, agregados: agregadosComPendentes, temStatus, recurso, exigeManutencao, qtd, naoIniciadas, finalizadas }
 }

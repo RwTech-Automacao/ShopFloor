@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2 } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -315,6 +315,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     () => dom.filter((n) => n.id !== MANUTENCAO && n.id !== ENTRADA && n.id !== SAIDA).map((n) => n.id),
     [dom],
   )
+  // Não iniciadas (fila do 1º posto): vêm do nó Entrada; mostradas no detalhe do 1º posto pra explicar o badge
+  // (essas peças ainda não têm SN bipado, então não aparecem na lista "Pendentes no posto").
+  const naoIniciadasPrimeiro = aberto && aberto === postosOP[0] ? (dom.find((n) => n.id === ENTRADA)?.data.wip ?? 0) : 0
 
   // Cabeçalho do Modo TV: PMO/OP · Cliente + % de prontas (passaram pelo último posto ÷ qtd da OP).
   const opInfo = useMemo(() => {
@@ -337,6 +340,20 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     if (document.fullscreenElement) void document.exitFullscreen()
     else void canvasRef.current?.requestFullscreen?.()
   }
+
+  // Redefinir: descarta o layout salvo desta OP e volta os cards pra posição padrão do domínio.
+  const redefinirLayout = useCallback(() => {
+    const { pmo, op } = ctx.current
+    if (pmo && op) { try { localStorage.removeItem(chaveLayout(pmo, op)) } catch { /* storage off */ } }
+    layoutRef.current = new Map()
+    setGuiaH(undefined)
+    setGuiaV(undefined)
+    setNodes((prev) => prev.map((n) => {
+      const d = dom.find((x) => x.id === n.id)
+      return d ? { ...n, position: { x: d.x, y: d.y } } : n
+    }))
+    setTimeout(() => rfRef.current?.fitView(), 0)
+  }, [dom, setNodes])
   useEffect(() => {
     const onFs = () => {
       setTelaCheia(document.fullscreenElement === canvasRef.current)
@@ -372,6 +389,11 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                 </span>
                 Ao vivo · atualiza a cada 15s
               </span>
+            )}
+            {buscou && (
+              <Button variant="outline" size="sm" onClick={redefinirLayout} title="Volta os cards à posição padrão">
+                <RotateCcw className="mr-1 size-4" /> Redefinir
+              </Button>
             )}
             {buscou && (
               <Button variant="outline" size="sm" onClick={alternarTv}>
@@ -474,6 +496,11 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                       <ListaSimples titulo="Embaladas (peça · caixa)" itens={caixas.map((c) => ({ sn: c.sn, dir: c.caixa }))} onSn={setSnAberto} />
                     ) : (
                       <>
+                        {naoIniciadasPrimeiro > 0 && (
+                          <p className="mb-2 text-xs text-muted-foreground">
+                            + <span className="font-semibold text-foreground">{naoIniciadasPrimeiro}</span> não iniciadas (ainda sem bipe) aguardando aqui.
+                          </p>
+                        )}
                         <ListaSns titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} />
                         <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} onSn={setSnAberto} />
                       </>
