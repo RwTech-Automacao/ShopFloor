@@ -116,7 +116,7 @@ async function main() {
   const ULTIMOS = env.REPINMETRO_ULTIMOS ? Number(env.REPINMETRO_ULTIMOS) : 0
   if (ULTIMOS > 0) {
     const { rows } = await pool.query(
-      `SELECT t.*, tq.*, t.id AS origem_id FROM teste t LEFT JOIN testequalidade tq ON t.id = tq.id WHERE 1=1 ${FILTRO_SN} ORDER BY t.id DESC LIMIT $1`,
+      `SELECT t.*, tq.*, t.id AS origem_id FROM teste t INNER JOIN testequalidade tq ON t.id = tq.id WHERE 1=1 ${FILTRO_SN} ORDER BY t.id DESC LIMIT $1`,
       [ULTIMOS],
     )
     const espelhadoEm = new Date().toISOString()
@@ -133,9 +133,10 @@ async function main() {
     const limite = Math.min(LOTE, MAX - total) // respeita o teto REPINMETRO_MAX
     if (limite <= 0) break
     const { rows } = await pool.query(
-      // `t.id AS origem_id` por último: teste e testequalidade têm `id`; no LEFT JOIN o tq.id (null)
-      // sobrescreveria o t.id. O alias garante origem_id = t.id sempre.
-      `SELECT t.*, tq.*, t.id AS origem_id FROM teste t LEFT JOIN testequalidade tq ON t.id = tq.id WHERE t.id > $1 ${FILTRO_SN} ORDER BY t.id ASC LIMIT $2`,
+      // INNER JOIN: só espelha teste que TEM resultado em testequalidade (igual à busca do legado;
+      // 66% das linhas de teste não têm par e apareciam vazias). `t.id AS origem_id` por último
+      // (as duas tabelas têm `id`) garante origem_id = t.id.
+      `SELECT t.*, tq.*, t.id AS origem_id FROM teste t INNER JOIN testequalidade tq ON t.id = tq.id WHERE t.id > $1 ${FILTRO_SN} ORDER BY t.id ASC LIMIT $2`,
       [since, limite],
     )
     if (rows.length === 0) break
