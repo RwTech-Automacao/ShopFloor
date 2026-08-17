@@ -103,7 +103,11 @@ export function RepinmetroForm({ modelos }: { modelos: string[] }) {
               value={modelo === '' ? TODOS : modelo}
               onValueChange={(v) => setModelo(v === TODOS ? '' : (v ?? ''))}
             >
-              <SelectTrigger><SelectValue placeholder="Todos os modelos" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Todos os modelos">
+                  {(v) => (v && v !== TODOS ? String(v) : 'Todos os modelos')}
+                </SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value={TODOS}>Todos os modelos</SelectItem>
                 {modelos.map((m) => (
