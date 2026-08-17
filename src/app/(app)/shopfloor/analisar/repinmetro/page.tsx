@@ -4,6 +4,9 @@ import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarModelosRepinmetro } from '@/modules/shopfloor/application/repinmetro-actions'
 import { RepinmetroForm } from './repinmetro-form'
 
+// Dado ao vivo (modelos vêm do banco) — não cachear o render no servidor.
+export const dynamic = 'force-dynamic'
+
 export default async function RepinmetroPage() {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) {
