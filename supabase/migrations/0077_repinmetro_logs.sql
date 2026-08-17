@@ -7,6 +7,7 @@
 create table public.repinmetro_logs (
   origem_id      bigint primary key,          -- teste.id na origem (watermark; upsert por aqui)
   numero_serie   text not null,               -- numeroserierep (produto final) — chave de consulta
+  numero_serie_norm text not null default '', -- SN normalizado (sem zeros à esquerda etc.) — busca "13976" acha "0013976"
   modelo         text,                        -- serialmodelorep
   data_inicio    timestamptz,                 -- datahorainicio
   data_fim       timestamptz,                 -- datahorafim
@@ -22,6 +23,7 @@ create table public.repinmetro_logs (
 );
 
 create index repinmetro_logs_numero_serie on public.repinmetro_logs (numero_serie);
+create index repinmetro_logs_numero_serie_norm on public.repinmetro_logs (numero_serie_norm);
 
 alter table public.repinmetro_logs enable row level security;
 -- Leitura: quem pode visualizar. Escrita: só o conector (service_role bypassa RLS);

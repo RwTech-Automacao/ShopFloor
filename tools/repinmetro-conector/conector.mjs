@@ -65,12 +65,17 @@ const pool = new pg.Pool({
 
 const txt = (v) => (v === null || v === undefined ? null : String(v))
 
+// Mesma regra do app (domain/serie.ts normalizarSerie): sem separadores, sem zeros à esquerda, minúsculo.
+// Assim a busca "13976" acha o SN espelhado "0013976".
+const norm = (v) => String(v ?? '').replace(/[^A-Za-z0-9]/g, '').replace(/^0+/, '').trim().toLowerCase()
+
 function mapear(row, espelhadoEm) {
   const resultados = {}
   for (const c of RESULTADO_COLS) resultados[c] = row[c] ?? null
   return {
     origem_id: row.origem_id,
     numero_serie: String(row.numeroserierep ?? '').trim(),
+    numero_serie_norm: norm(row.numeroserierep),
     modelo: txt(row.serialmodelorep),
     data_inicio: row.datahorainicio ?? null,
     data_fim: row.datahorafim ?? null,

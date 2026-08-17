@@ -1,5 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
+import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 /** Um teste do repinmetro espelhado (linha de `repinmetro_logs`). */
 export interface LogRepinmetro {
@@ -22,17 +23,9 @@ export interface LogRepinmetro {
 const COLUNAS =
   'origem_id,numero_serie,modelo,data_inicio,data_fim,status,observacao,remanufaturado,lacre,op_codigo,op_ano,placa_op,resultados'
 
-/** Testes do repinmetro de um Nº de Série (mais recente primeiro). Match exato pelo SN espelhado. */
-export async function buscarLogsPorSn(sn: string): Promise<LogRepinmetro[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('repinmetro_logs')
-    .select(COLUNAS)
-    .eq('numero_serie', sn.trim())
-    .order('data_inicio', { ascending: false })
-    .order('origem_id', { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((r) => ({
+type LinhaRaw = Record<string, unknown>
+function mapear(r: LinhaRaw): LogRepinmetro {
+  return {
     origemId: r.origem_id as number,
     numeroSerie: r.numero_serie as string,
     modelo: r.modelo as string | null,
@@ -46,5 +39,34 @@ export async function buscarLogsPorSn(sn: string): Promise<LogRepinmetro[]> {
     opAno: r.op_ano as string | null,
     placaOp: r.placa_op as string | null,
     resultados: (r.resultados ?? {}) as Record<string, string | null>,
-  }))
+  }
+}
+
+/**
+ * Testes do repinmetro de um Nº de Série (mais recente primeiro). Casa pelo SN NORMALIZADO
+ * (sem zeros à esquerda etc.) → buscar "13976" acha o espelhado "0013976".
+ */
+export async function buscarLogsPorSn(sn: string): Promise<LogRepinmetro[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('repinmetro_logs')
+    .select(COLUNAS)
+    .eq('numero_serie_norm', normalizarSerie(sn))
+    .order('data_inicio', { ascending: false })
+    .order('origem_id', { ascending: false })
+  if (error) throw error
+  return (data ?? []).map(mapear)
+}
+
+/** Todos os testes (mais recente primeiro), até `limite`. Só p/ estudo/teste da tela (busca vazia). */
+export async function buscarTodosLogs(limite = 500): Promise<LogRepinmetro[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('repinmetro_logs')
+    .select(COLUNAS)
+    .order('data_inicio', { ascending: false })
+    .order('origem_id', { ascending: false })
+    .limit(limite)
+  if (error) throw error
+  return (data ?? []).map(mapear)
 }

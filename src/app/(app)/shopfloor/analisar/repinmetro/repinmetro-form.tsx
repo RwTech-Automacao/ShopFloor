@@ -62,7 +62,7 @@ export function RepinmetroForm() {
   const [buscando, startBusca] = useTransition()
 
   function onBuscar() {
-    if (sn.trim() === '' || buscando) return
+    if (buscando) return // busca vazia é permitida (traz todos — modo estudo/teste)
     startBusca(async () => {
       const r = await buscarLogsRepinmetro(sn)
       if (r.ok) setLogs(r.logs)
@@ -90,7 +90,7 @@ export function RepinmetroForm() {
                 }
               }}
               autoComplete="off"
-              placeholder="Bipe ou digite o SN"
+              placeholder="Bipe/digite o SN (vazio = todos · estudo)"
             />
           </div>
           <Button variant="outline" onClick={onBuscar} disabled={buscando}>
@@ -104,7 +104,7 @@ export function RepinmetroForm() {
         {logs !== null && logs.length > 0 && (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-muted-foreground">
-              {logs.length} teste(s){logs[0]?.numeroSerie ? ` · SN ${logs[0].numeroSerie}` : ''}
+              {logs.length} teste(s){sn.trim() ? ` · SN ${sn.trim()}` : ' · todos (máx. 500, estudo)'}
             </p>
             {logs.map((log) => (
               <LogCard key={log.origemId} log={log} />
