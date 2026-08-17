@@ -42,3 +42,4 @@ language sql stable as $$
   where modelo is not null and btrim(modelo) <> ''
   order by modelo
 $$;
+grant execute on function public.repinmetro_modelos() to anon, authenticated;
