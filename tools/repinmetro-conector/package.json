@@ -1,0 +1,13 @@
+{
+  "name": "repinmetro-conector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Espelha os logs de teste do repinmetro (Postgres intranet) para o Supabase do ShopFloor.",
+  "scripts": {
+    "start": "node conector.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  }
+}
