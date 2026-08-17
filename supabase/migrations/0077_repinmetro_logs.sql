@@ -33,10 +33,11 @@ create policy repinmetro_logs_select on public.repinmetro_logs
 create policy repinmetro_logs_admin on public.repinmetro_logs
   for all using (tem_permissao('administrar')) with check (tem_permissao('administrar'));
 
--- Modelos distintos (pro filtro suspenso da tela). SECURITY INVOKER → respeita a RLS de select acima.
+-- Modelos distintos (pro filtro suspenso da tela). SECURITY DEFINER: só devolve nomes de modelo
+-- (não sensível) e a action checa 'visualizar' antes de chamar; evita entraves de RLS dentro do RPC.
 create or replace function public.repinmetro_modelos()
 returns table (modelo text)
-language sql stable as $$
+language sql stable security definer set search_path = public as $$
   select distinct modelo
   from public.repinmetro_logs
   where modelo is not null and btrim(modelo) <> ''
