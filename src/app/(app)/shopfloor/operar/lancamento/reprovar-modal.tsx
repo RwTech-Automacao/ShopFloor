@@ -71,7 +71,7 @@ export function ReprovarModal({
         if (!open) onCancelar()
       }}
     >
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[calc(90dvh-var(--kb-inset,0px))] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Registrar reprova</DialogTitle>
         </DialogHeader>
@@ -89,7 +89,6 @@ export function ReprovarModal({
                   list="reprova-defeitos-list"
                   value={d.codigo}
                   placeholder="Código"
-                  autoFocus={i === 0}
                   onChange={(e) => {
                     setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, codigo: e.target.value } : x)))
                     if (erro) setErro('')
@@ -98,9 +97,14 @@ export function ReprovarModal({
                 <Input
                   value={d.posicao}
                   placeholder="Posição"
+                  autoFocus={i === 0}
                   onChange={(e) => {
                     setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, posicao: e.target.value } : x)))
                     if (erro) setErro('')
+                  }}
+                  onKeyDown={(e) => {
+                    // Enter na Posição → vai pro campo do Nº de Série (fluxo sem mouse).
+                    if (e.key === 'Enter') { e.preventDefault(); snRef.current?.focus() }
                   }}
                 />
                 <button

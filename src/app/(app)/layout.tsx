@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { AppShell } from '@/shared/ui/app-shell'
 import { KioskProvider } from '@/shared/ui/kiosk/kiosk-context'
+import { TecladoProvider } from '@/shared/ui/teclado-provider'
 import { modoStorageFotos } from '@/modules/recebimento/infra/armazenamento'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -10,6 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <KioskProvider>
+      <TecladoProvider />
       <AppShell
         nome={sessao.nome}
         email={sessao.email}

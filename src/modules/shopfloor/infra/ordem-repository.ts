@@ -18,6 +18,7 @@ export interface OrdemRow {
   status: string
   sn_ini: string
   sn_fim: string
+  embalagem_individual: boolean
   created_at: string
   sf_ordem_postos: { posto: string; ordem: number }[]
   sf_ordem_componentes: { posto: string; pmo_componente: string }[]
@@ -34,6 +35,7 @@ export interface DadosOrdem {
   status: string
   sn_ini: string
   sn_fim: string
+  embalagem_individual: boolean
 }
 
 export async function listarPostos(): Promise<PostoRow[]> {
@@ -47,7 +49,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)')
     .order('pmo')
     .order('op')
   if (error) throw error

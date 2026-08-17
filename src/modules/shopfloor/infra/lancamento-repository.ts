@@ -45,6 +45,28 @@ export async function listarClientes(): Promise<string[]> {
   return [...new Set((data as { cliente: string }[]).map((r) => r.cliente).filter(Boolean))]
 }
 
+/** Nº de peças DISTINTAS (SN único) já lançadas nesse posto pra essa OP. Rebipe/reteste não soma. */
+export async function contarLancadosNoPosto(pmo: string, op: string, posto: string): Promise<number> {
+  const supabase = await createServerSupabase()
+  const PAGINA = 1000
+  const vistos = new Set<string>()
+  for (let i = 0; ; i++) {
+    const { data, error } = await supabase
+      .from('sf_registros')
+      .select('numero_serie_norm')
+      .eq('pmo', pmo)
+      .eq('op', op)
+      .eq('posto', posto)
+      .neq('numero_serie_norm', '')
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (error) throw error
+    const lote = (data ?? []) as { numero_serie_norm: string }[]
+    for (const r of lote) vistos.add(r.numero_serie_norm)
+    if (lote.length < PAGINA) break
+  }
+  return vistos.size
+}
+
 export async function listarPmos(cliente: string): Promise<string[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
@@ -124,6 +146,7 @@ export interface OrdemLancamentoLista {
   qtd: number | null
   sn_ini: string
   sn_fim: string
+  embalagem_individual: boolean
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
@@ -135,7 +158,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
   const { data, error } = await supabase
     .from('sf_ordens')
     .select(
-      'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
+      'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
     )
     .neq('status', 'FINALIZADA')
     .order('cliente')
@@ -150,6 +173,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     qtd: number | null
     sn_ini: string
     sn_fim: string
+    embalagem_individual: boolean
     sf_ordem_postos: { posto: string; ordem: number }[]
     sf_ordem_componentes: { posto: string; pmo_componente: string }[]
     sf_ordem_burnin: { posto: string; tempo_min: number }[]
@@ -162,6 +186,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     qtd: r.qtd,
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
+    embalagem_individual: r.embalagem_individual,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
     receitaPorPosto: agruparReceitaPorPosto(r.sf_ordem_componentes),
     tempoBurninPorPosto: agruparTempoBurninPorPosto(r.sf_ordem_burnin),

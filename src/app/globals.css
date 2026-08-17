@@ -50,6 +50,10 @@
 }
 
 :root {
+  /* Altura do teclado virtual (Windows/touch). Atualizada em runtime pelo TecladoProvider
+     (VirtualKeyboard API / visualViewport). 0 quando não há teclado na tela. Usada pelos
+     modais e áreas de digitação pra ficarem acima do teclado. */
+  --kb-inset: 0px;
   /* Paleta Enterplak — vinho #8D2033 sobre névoa clara, cards brancos. */
   --background: #f5f6f8;         /* névoa (fundo da aplicação) */
   --foreground: #171a1f;         /* tinta (texto) */
@@ -135,5 +139,36 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* Fluxo (tempo real): a cor PREENCHE a aresta ativa da origem ao destino e recomeça (estilo n8n).
+   pathLength=1 + dasharray "1 1": offset 1 = linha vazia, offset 0 = linha cheia. */
+@keyframes fluxo-preenchendo {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 0.9;
+  }
+  70% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+.fluxo-preenche {
+  animation: fluxo-preenchendo 1.8s linear infinite;
+}
+/* Modo TV: o canvas do Fluxo em tela cheia ocupa a tela toda, sem cantos arredondados. */
+.fluxo-canvas:fullscreen {
+  height: 100vh;
+  border-radius: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluxo-preenche {
+    animation: none;
+    stroke-dashoffset: 0;
   }
 }

@@ -10,16 +10,17 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
-import { serieDentroDaFaixa } from '@/modules/shopfloor/domain/serie'
+import { serieDentroDaFaixa, normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
-import { lancar, buscarEntradaBurnin, verificarConserto } from '@/modules/shopfloor/application/lancar-action'
+import { lancar, buscarEntradaBurnin, verificarConserto, contarLancadosPosto } from '@/modules/shopfloor/application/lancar-action'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
 import { EmbalagemPanel } from './embalagem-panel'
+import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { AprovarModal } from './aprovar-modal'
 import { ReprovarModal } from './reprovar-modal'
 
@@ -70,6 +71,7 @@ export function LancamentoForm({
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [historico, setHistorico] = useState<LinhaHistorico[]>([])
   const [ultimoEhLancamento, setUltimoEhLancamento] = useState(false)
+  const [totalPosto, setTotalPosto] = useState<number | null>(null) // SNs distintos já lançados nesse posto da OP
   const [aprovarSn, setAprovarSn] = useState<string | null>(null)
   const [reprovarCodigo, setReprovarCodigo] = useState<string | null>(null)
   const [enviando, startTransition] = useTransition()
@@ -89,6 +91,26 @@ export function LancamentoForm({
     [ordens, cliente, pmo, op],
   )
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
+
+  // Lançados nesta sessão = SNs distintos com lançamento OK desde a última troca de contexto (rebipe não soma).
+  const lancadosSessao = useMemo(() => {
+    const s = new Set<string>()
+    for (const l of historico) if (l.lancamento) s.add(normalizarSerie(l.sn))
+    return s.size
+  }, [historico])
+
+  // Total de SNs distintos já lançados nesse posto da OP — busca ao entrar no contexto e após cada lançamento.
+  // (o reset ao trocar de contexto fica nos handlers mudarPosto/…/atualizarCabecalho, não aqui.)
+  useEffect(() => {
+    if (!pmo || !op || !posto) return
+    let vivo = true
+    contarLancadosPosto(pmo, op, posto).then((n) => { if (vivo) setTotalPosto(n) }).catch(() => {})
+    return () => { vivo = false }
+  }, [pmo, op, posto])
+  function refreshTotalPosto() {
+    if (!pmo || !op || !posto) return
+    contarLancadosPosto(pmo, op, posto).then(setTotalPosto).catch(() => {})
+  }
 
   const postosDaOp = ordemSel?.postos ?? []
 
@@ -123,6 +145,7 @@ export function LancamentoForm({
     if (linha) {
       setHistorico((h) => [linha, ...h].slice(0, 30))
       setUltimoEhLancamento(true)
+      if (linha.lancamento) refreshTotalPosto() // atualiza o total da OP/posto no lançamento efetivo
       // Lançamento recusado (duplicado, sequência, fora da faixa…) também limpa o campo pra próxima bipagem.
       if (!linha.lancamento) limparPeca()
     } else {
@@ -143,7 +166,7 @@ export function LancamentoForm({
     setTimeout(() => snRef.current?.focus(), 0) // escolhido o evento, foco vai pro campo de ação
   }
   function mudarPosto(v: string) {
-    setPosto(v); resetCamposDinamicos(); setHistorico([]) // novo posto → histórico da sessão zera
+    setPosto(v); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // novo posto → histórico da sessão + total zeram
     const perfilV = postosPerfil[v] ?? PERFIL_PADRAO
     // Burn-in → seletor de Evento; NQA → Inspeção Visual (A/R); demais → campo de ação (SN).
     setTimeout(() => {
@@ -164,14 +187,14 @@ export function LancamentoForm({
     setPmo(r.ordem.pmo)
     setOp(r.ordem.op)
     if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
-    resetCamposDinamicos(); setHistorico([]) // nova OP → histórico zera
+    resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // nova OP → histórico + total zeram
     setBipeCab('')
     setTimeout(() => colaboradorRef.current?.focus(), 0)
   }
   function atualizarCabecalho() {
     setCliente(''); setPmo(''); setOp('')
     setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
-    setNumeroSerie(''); resetCamposDinamicos(); setHistorico([]) // reset total → histórico zera
+    setNumeroSerie(''); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // reset total → histórico + total zeram
     setBipeCab('')
     setTimeout(() => bipeCabRef.current?.focus(), 0)
   }
@@ -251,7 +274,7 @@ export function LancamentoForm({
           descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
           rotuloConfirmar: 'Sim, foi consertado',
         })
-        if (!ok) return
+        if (!ok) { limparPeca(); return } // cancelou o conserto → limpa o SN (peça fica de lado)
         conservoConfirmado = defeitos
       }
     }
@@ -414,7 +437,7 @@ export function LancamentoForm({
           descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
           rotuloConfirmar: 'Sim, foi consertado',
         })
-        if (!ok) { setProcessando(false); setTimeout(() => snRef.current?.focus(), 0); return } // aborta a aprovação
+        if (!ok) { setProcessando(false); limparPeca(); return } // cancelou o conserto → aborta e limpa o SN
         conservoConfirmado = defeitos
       }
     }
@@ -598,7 +621,11 @@ export function LancamentoForm({
 
         {ehEmbalagem && (
           <div className="flex min-h-0 flex-col lg:col-span-2">
-            <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+            {ordemSel?.embalagem_individual ? (
+              <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+            ) : (
+              <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+            )}
           </div>
         )}
 
@@ -769,6 +796,14 @@ export function LancamentoForm({
 
             <div className="flex min-h-0 flex-1 flex-col">
               <PainelResultado resultado={resultado} />
+              {posto && (
+                <p className="mt-2 shrink-0 text-xs text-muted-foreground">
+                  Lançados — <span className="font-semibold text-foreground">sessão {lancadosSessao}</span>
+                  {totalPosto !== null && (
+                    <> · <span className="font-semibold text-foreground">nesta OP/posto {totalPosto}</span></>
+                  )}
+                </p>
+              )}
               <HistoricoLancamentos linhas={ultimoEhLancamento ? historico.slice(1) : historico} />
             </div>
           </>
