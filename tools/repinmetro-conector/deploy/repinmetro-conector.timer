@@ -1,0 +1,10 @@
+[Unit]
+Description=Roda o conector repinmetro de 6 em 6 horas (00h, 06h, 12h, 18h)
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00
+# Se a máquina estava desligada na hora marcada, roda a rodada perdida ao ligar (recupera).
+Persistent=true
+
+[Install]
+WantedBy=timers.target

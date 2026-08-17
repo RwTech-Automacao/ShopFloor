@@ -1,0 +1,13 @@
+[Unit]
+Description=Conector repinmetro -> Supabase (sync incremental dos logs de teste)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# AJUSTE estes 3 conforme a máquina:
+User=SEU_USUARIO
+WorkingDirectory=/CAMINHO/tools/repinmetro-conector
+ExecStart=/CAMINHO/tools/repinmetro-conector/run.sh
+# Se o `node` não estiver no PATH abaixo (ex.: instalado via nvm), acrescente o caminho dele.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
