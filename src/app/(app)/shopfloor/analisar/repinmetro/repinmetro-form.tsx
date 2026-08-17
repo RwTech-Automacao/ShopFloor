@@ -80,23 +80,7 @@ export function RepinmetroForm({ modelos }: { modelos: string[] }) {
         <CardTitle>Buscar por Nº de Série</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-[1fr_14rem_auto]">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="snRepinmetro">Nº de Série do produto final</Label>
-            <Input
-              id="snRepinmetro"
-              value={sn}
-              onChange={(e) => setSn(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  onBuscar()
-                }
-              }}
-              autoComplete="off"
-              placeholder="Bipe/digite o SN (vazio = todos · estudo)"
-            />
-          </div>
+        <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-[14rem_1fr_auto]">
           <div className="flex flex-col gap-1.5">
             <Label>Modelo</Label>
             <Select
@@ -115,6 +99,22 @@ export function RepinmetroForm({ modelos }: { modelos: string[] }) {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="snRepinmetro">Nº de Série do produto final</Label>
+            <Input
+              id="snRepinmetro"
+              value={sn}
+              onChange={(e) => setSn(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  onBuscar()
+                }
+              }}
+              autoComplete="off"
+              placeholder="Bipe/digite o SN (vazio = todos · estudo)"
+            />
           </div>
           <Button variant="outline" onClick={onBuscar} disabled={buscando}>
             <Search className="mr-1 size-4" /> {buscando ? 'Buscando…' : 'Buscar'}
