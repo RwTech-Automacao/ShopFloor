@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { buscarLogsRepinmetro } from '@/modules/shopfloor/application/repinmetro-actions'
 import type { LogRepinmetro } from '@/modules/shopfloor/infra/repinmetro-repository'
@@ -56,15 +57,18 @@ function LogCard({ log }: { log: LogRepinmetro }) {
   )
 }
 
-export function RepinmetroForm() {
+const TODOS = '__todos__' // sentinela do Select (value vazio não é permitido)
+
+export function RepinmetroForm({ modelos }: { modelos: string[] }) {
   const [sn, setSn] = useState('')
+  const [modelo, setModelo] = useState('') // '' = todos os modelos
   const [logs, setLogs] = useState<LogRepinmetro[] | null>(null)
   const [buscando, startBusca] = useTransition()
 
   function onBuscar() {
     if (buscando) return // busca vazia é permitida (traz todos — modo estudo/teste)
     startBusca(async () => {
-      const r = await buscarLogsRepinmetro(sn)
+      const r = await buscarLogsRepinmetro(sn, modelo)
       if (r.ok) setLogs(r.logs)
       else toast.error(r.erro)
     })
@@ -76,7 +80,7 @@ export function RepinmetroForm() {
         <CardTitle>Buscar por Nº de Série</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-[1fr_auto]">
+        <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-[1fr_14rem_auto]">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="snRepinmetro">Nº de Série do produto final</Label>
             <Input
@@ -93,6 +97,21 @@ export function RepinmetroForm() {
               placeholder="Bipe/digite o SN (vazio = todos · estudo)"
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Modelo</Label>
+            <Select
+              value={modelo === '' ? TODOS : modelo}
+              onValueChange={(v) => setModelo(v === TODOS ? '' : (v ?? ''))}
+            >
+              <SelectTrigger><SelectValue placeholder="Todos os modelos" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TODOS}>Todos os modelos</SelectItem>
+                {modelos.map((m) => (
+                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Button variant="outline" onClick={onBuscar} disabled={buscando}>
             <Search className="mr-1 size-4" /> {buscando ? 'Buscando…' : 'Buscar'}
           </Button>
@@ -104,7 +123,9 @@ export function RepinmetroForm() {
         {logs !== null && logs.length > 0 && (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-muted-foreground">
-              {logs.length} teste(s){sn.trim() ? ` · SN ${sn.trim()}` : ' · todos (máx. 500, estudo)'}
+              {logs.length} teste(s)
+              {sn.trim() ? ` · SN ${sn.trim()}` : ' · todos (máx. 500, estudo)'}
+              {modelo ? ` · modelo ${modelo}` : ''}
             </p>
             {logs.map((log) => (
               <LogCard key={log.origemId} log={log} />

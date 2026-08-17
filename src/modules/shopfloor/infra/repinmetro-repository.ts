@@ -43,30 +43,30 @@ function mapear(r: LinhaRaw): LogRepinmetro {
 }
 
 /**
- * Testes do repinmetro de um Nº de Série (mais recente primeiro). Casa pelo SN NORMALIZADO
- * (sem zeros à esquerda etc.) → buscar "13976" acha o espelhado "0013976".
+ * Testes do repinmetro filtrados por Nº de Série e/ou Modelo (mais recente primeiro).
+ * - SN casa pelo NORMALIZADO (sem zeros à esquerda) → "13976" acha "0013976".
+ * - `modelo` vazio = todos os modelos; SN vazio = todos os SNs (limitado a `limite`, modo estudo).
  */
-export async function buscarLogsPorSn(sn: string): Promise<LogRepinmetro[]> {
+export async function buscarLogs(
+  { sn, modelo, limite = 500 }: { sn: string; modelo: string; limite?: number },
+): Promise<LogRepinmetro[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('repinmetro_logs')
-    .select(COLUNAS)
-    .eq('numero_serie_norm', normalizarSerie(sn))
-    .order('data_inicio', { ascending: false })
-    .order('origem_id', { ascending: false })
+  const snTrim = sn.trim()
+  const modeloTrim = modelo.trim()
+  let query = supabase.from('repinmetro_logs').select(COLUNAS)
+  if (snTrim !== '') query = query.eq('numero_serie_norm', normalizarSerie(snTrim))
+  if (modeloTrim !== '') query = query.eq('modelo', modeloTrim)
+  query = query.order('data_inicio', { ascending: false }).order('origem_id', { ascending: false })
+  if (snTrim === '') query = query.limit(limite) // sem SN = muitos → limita (estudo)
+  const { data, error } = await query
   if (error) throw error
   return (data ?? []).map(mapear)
 }
 
-/** Todos os testes (mais recente primeiro), até `limite`. Só p/ estudo/teste da tela (busca vazia). */
-export async function buscarTodosLogs(limite = 500): Promise<LogRepinmetro[]> {
+/** Modelos distintos (pro filtro suspenso). Via RPC (DISTINCT no servidor). */
+export async function listarModelos(): Promise<string[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('repinmetro_logs')
-    .select(COLUNAS)
-    .order('data_inicio', { ascending: false })
-    .order('origem_id', { ascending: false })
-    .limit(limite)
+  const { data, error } = await supabase.rpc('repinmetro_modelos')
   if (error) throw error
-  return (data ?? []).map(mapear)
+  return ((data ?? []) as { modelo: string }[]).map((r) => r.modelo).filter(Boolean)
 }

@@ -32,3 +32,13 @@ create policy repinmetro_logs_select on public.repinmetro_logs
   for select using (tem_permissao('visualizar'));
 create policy repinmetro_logs_admin on public.repinmetro_logs
   for all using (tem_permissao('administrar')) with check (tem_permissao('administrar'));
+
+-- Modelos distintos (pro filtro suspenso da tela). SECURITY INVOKER → respeita a RLS de select acima.
+create or replace function public.repinmetro_modelos()
+returns table (modelo text)
+language sql stable as $$
+  select distinct modelo
+  from public.repinmetro_logs
+  where modelo is not null and btrim(modelo) <> ''
+  order by modelo
+$$;

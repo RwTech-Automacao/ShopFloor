@@ -1,6 +1,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
+import { listarModelosRepinmetro } from '@/modules/shopfloor/application/repinmetro-actions'
 import { RepinmetroForm } from './repinmetro-form'
 
 export default async function RepinmetroPage() {
@@ -8,6 +9,7 @@ export default async function RepinmetroPage() {
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) {
     return <SemPermissao descricao="Você não tem permissão para acessar os logs do repinmetro." />
   }
+  const modelos = await listarModelosRepinmetro()
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -16,7 +18,7 @@ export default async function RepinmetroPage() {
           Testes de qualidade do repinmetro por Nº de Série do produto final.
         </p>
       </div>
-      <RepinmetroForm />
+      <RepinmetroForm modelos={modelos} />
     </div>
   )
 }
