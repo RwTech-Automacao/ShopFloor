@@ -45,6 +45,13 @@ const RESULTADO_COLS = [
   'statustesteproducao',
 ]
 
+// Colunas lidas da origem — SÓ as necessárias (NÃO lê `foto` nem outras colunas não usadas).
+// `t.id AS origem_id` evita ambiguidade com testequalidade.id. Os 15 resultados vêm de testequalidade.
+const COLS_TESTE =
+  't.id AS origem_id, t.numeroserierep, t.serialmodelorep, t.datahorainicio, t.datahorafim, ' +
+  't.status, t.observacao, t.remanufaturado, t.lacre, t.codigoop, t.anoop, t.numeroplacaop'
+const SELECT_COLS = `${COLS_TESTE}, ${RESULTADO_COLS.map((c) => 'tq.' + c).join(', ')}`
+
 // Fala direto com a API REST (PostgREST) do Supabase via fetch nativo — sem a lib
 // @supabase/supabase-js (que exige WebSocket/realtime e quebra no Node < 22).
 const REST = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/repinmetro_logs`
@@ -116,7 +123,7 @@ async function main() {
   const ULTIMOS = env.REPINMETRO_ULTIMOS ? Number(env.REPINMETRO_ULTIMOS) : 0
   if (ULTIMOS > 0) {
     const { rows } = await pool.query(
-      `SELECT t.*, tq.*, t.id AS origem_id FROM teste t INNER JOIN testequalidade tq ON t.id = tq.id WHERE 1=1 ${FILTRO_SN} ORDER BY t.id DESC LIMIT $1`,
+      `SELECT ${SELECT_COLS} FROM teste t INNER JOIN testequalidade tq ON t.id = tq.id WHERE 1=1 ${FILTRO_SN} ORDER BY t.id DESC LIMIT $1`,
       [ULTIMOS],
     )
     const espelhadoEm = new Date().toISOString()
@@ -134,9 +141,8 @@ async function main() {
     if (limite <= 0) break
     const { rows } = await pool.query(
       // INNER JOIN: só espelha teste que TEM resultado em testequalidade (igual à busca do legado;
-      // 66% das linhas de teste não têm par e apareciam vazias). `t.id AS origem_id` por último
-      // (as duas tabelas têm `id`) garante origem_id = t.id.
-      `SELECT t.*, tq.*, t.id AS origem_id FROM teste t INNER JOIN testequalidade tq ON t.id = tq.id WHERE t.id > $1 ${FILTRO_SN} ORDER BY t.id ASC LIMIT $2`,
+      // 66% das linhas de teste não têm par e apareciam vazias). Lê só as colunas necessárias (SELECT_COLS).
+      `SELECT ${SELECT_COLS} FROM teste t INNER JOIN testequalidade tq ON t.id = tq.id WHERE t.id > $1 ${FILTRO_SN} ORDER BY t.id ASC LIMIT $2`,
       [since, limite],
     )
     if (rows.length === 0) break
