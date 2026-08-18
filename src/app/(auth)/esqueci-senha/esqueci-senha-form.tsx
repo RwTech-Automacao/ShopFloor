@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { AlertCircle, MailCheck } from 'lucide-react'
-import { solicitarReset } from '@/modules/auth/application/actions'
+import { createBrowserSupabase } from '@/shared/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,9 +17,19 @@ export function EsqueciSenhaForm() {
     e.preventDefault()
     setErro(null)
     startTransition(async () => {
-      const r = await solicitarReset(email)
-      if ('erro' in r) setErro(r.erro)
-      else setEnviado(true)
+      const supabase = createBrowserSupabase()
+      // Client-side: guarda a chave (PKCE) no navegador; a volta em /redefinir-senha estabelece a
+      // sessão de recuperação sozinha (o Supabase detecta o token na URL). redirectTo precisa estar
+      // nas Redirect URLs do Supabase.
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/redefinir-senha`,
+      })
+      // Erro genérico só se for evidente (rate-limit) — não revela se o e-mail existe.
+      if (error && error.status === 429) {
+        setErro('Muitas tentativas. Aguarde alguns minutos e tente de novo.')
+        return
+      }
+      setEnviado(true)
     })
   }
 

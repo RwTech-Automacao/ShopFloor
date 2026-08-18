@@ -48,11 +48,10 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login')
   const isDefinirSenha = request.nextUrl.pathname.startsWith('/definir-senha')
-  // Fluxo público de "esqueci minha senha" (deslogado): solicitar, callback do link e definir a nova.
+  // Fluxo público de "esqueci minha senha" (deslogado): solicitar o link e definir a nova senha.
   const isReset =
     request.nextUrl.pathname.startsWith('/esqueci-senha') ||
-    request.nextUrl.pathname.startsWith('/redefinir-senha') ||
-    request.nextUrl.pathname.startsWith('/auth/redefinir')
+    request.nextUrl.pathname.startsWith('/redefinir-senha')
 
   const redirectTo = (pathname: string) => {
     const url = request.nextUrl.clone()
