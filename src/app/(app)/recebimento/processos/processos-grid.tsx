@@ -38,7 +38,8 @@ interface ProcessosGridProps {
   estado: EstadoGrid
 }
 
-/** Texto de uma célula. Status vira Badge; data vira dd/mm/aaaa; o resto é o valor cru. */
+/** Texto de uma célula. Status vira Badge; data vira dd/mm/aaaa; número ganha separador de
+ *  milhar (negativo em vermelho); o resto é o valor cru. */
 function celula(coluna: ColunaGrid, valor: unknown): React.ReactNode {
   if (valor === null || valor === undefined || valor === '') return '—'
   if (coluna.campo === 'status') {
@@ -50,6 +51,15 @@ function celula(coluna: ColunaGrid, valor: unknown): React.ReactNode {
   if (coluna.tipo === 'data') {
     const partes = String(valor).slice(0, 10).split('-')
     return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : String(valor)
+  }
+  // Números (exceto o Nº do processo, que é identificador): separador de milhar (8000 → 8.000).
+  // Valor negativo (típico da Divergência quando recebeu menos que o pedido) em vermelho.
+  if (coluna.tipo === 'numero' && coluna.campo !== 'numero') {
+    const n = Number(valor)
+    if (Number.isFinite(n)) {
+      const texto = n.toLocaleString('pt-BR')
+      return n < 0 ? <span className="font-medium text-red-600">{texto}</span> : texto
+    }
   }
   return String(valor)
 }
