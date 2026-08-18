@@ -38,8 +38,19 @@ apenas reflete. Toda mutação relevante gera um **log imutável** (auditoria).
 - **Configurações & Logs** — Usuários, Perfis, Listas, Campos, Logs, Sobre.
 - **Recebimento** — importação de planilhas → processos; formulário dinâmico; ciclo de vida
   (Aberto → Em Conferência → Finalizado/Cancelado); campos calculados (atraso, divergência,
-  crítico, amostral/NQA, responsável).
-- **Etiquetas** — geração de CSV de Part Number *(planejado)*.
+  crítico, amostral/NQA, responsável); grade tipo Excel (ordenação/filtro por coluna, colunas
+  configuráveis).
+- **Etiquetas** — geração de etiquetas/Part Number por recebimento.
+- **ShopFloor Processo** — rastreabilidade da montagem de PCB. Cadastro de OP (faixa de SN,
+  postos ordenados, receita/BOM), **Lançamento por bipe** por posto (inspeção, teste, SPI, NQA,
+  Burn-in, integração, embalagem — comportamento por **perfil de posto**), Manutenção/reparo,
+  Pesquisa/Grade, Dashboard e **Fluxo de Processos** (acompanhamento em tempo real do caminho de
+  cada peça, com linha do tempo por Nº de Série e **Modo TV**). **Modo Kiosk** para o chão de
+  fábrica (trava o operador na tela, saída por login do supervisor).
+- **Repinmetro** — integração que espelha os logs de teste de qualidade do sistema legado
+  (Repinmetro) para consulta por Nº de Série/Modelo dentro do ShopFloor. Conector *outbound* em
+  `tools/repinmetro-conector/` (lê o Postgres da intranet como read-only, sync incremental por
+  marca d'água, roda agendado na máquina do banco). Ver o `README.md` da pasta do conector.
 
 ## Desenvolvimento
 
