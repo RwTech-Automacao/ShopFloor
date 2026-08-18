@@ -48,6 +48,11 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login')
   const isDefinirSenha = request.nextUrl.pathname.startsWith('/definir-senha')
+  // Fluxo público de "esqueci minha senha" (deslogado): solicitar, callback do link e definir a nova.
+  const isReset =
+    request.nextUrl.pathname.startsWith('/esqueci-senha') ||
+    request.nextUrl.pathname.startsWith('/redefinir-senha') ||
+    request.nextUrl.pathname.startsWith('/auth/redefinir')
 
   const redirectTo = (pathname: string) => {
     const url = request.nextUrl.clone()
@@ -58,7 +63,7 @@ export async function updateSession(request: NextRequest) {
     return redirect
   }
 
-  if (!appUserValido && !isAuthRoute) return redirectTo('/login')
+  if (!appUserValido && !isAuthRoute && !isReset) return redirectTo('/login')
   if (appUserValido && isAuthRoute) return redirectTo('/home')
   // Conta com senha provisória fica presa em /definir-senha até trocar.
   if (appUserValido && senhaProvisoria && !isDefinirSenha) return redirectTo('/definir-senha')
