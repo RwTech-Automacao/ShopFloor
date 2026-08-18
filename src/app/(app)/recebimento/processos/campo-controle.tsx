@@ -65,7 +65,10 @@ export function CampoControle({
           disabled={somenteLeitura}
         >
           <SelectTrigger id={inputId} className="w-full">
-            <SelectValue placeholder="Selecione" />
+            {/* Sem a função de rótulo, o base-ui vaza o sentinela `__sem_valor__` no trigger. */}
+            <SelectValue placeholder="Selecione">
+              {(v) => (v && v !== SEM_VALOR ? String(v) : '—')}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={SEM_VALOR}>—</SelectItem>
@@ -107,6 +110,9 @@ function CampoCalculadoControle({ campo, valor }: CampoCalculadoControleProps) {
   const inputId = `campo-${campo.campo}`
   const vazio = valor === null || valor === undefined || String(valor).trim() === ''
   const textoExibido = vazio ? '—' : String(valor)
+  // Divergência negativa (recebeu menos que o pedido) em vermelho — igual à grid.
+  const n = Number(valor)
+  const negativo = campo.campo === 'divergencia' && !vazio && Number.isFinite(n) && n < 0
 
   return (
     <div className="flex flex-col gap-2">
@@ -121,7 +127,7 @@ function CampoCalculadoControle({ campo, valor }: CampoCalculadoControleProps) {
         )}
       >
         <LockIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="truncate">{textoExibido}</span>
+        <span className={cn('truncate', negativo && 'font-medium text-red-600')}>{textoExibido}</span>
       </div>
     </div>
   )
