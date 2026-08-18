@@ -517,7 +517,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           sn={snAberto}
           postosOP={postosOP}
           onFechar={() => setSnAberto(null)}
-          container={telaCheia ? canvasRef.current : null}
+          container={telaCheia ? canvasRef.current : undefined}
         />
       </CardContent>
     </Card>
