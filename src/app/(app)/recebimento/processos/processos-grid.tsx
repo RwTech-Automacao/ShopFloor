@@ -52,9 +52,11 @@ function celula(coluna: ColunaGrid, valor: unknown): React.ReactNode {
     const partes = String(valor).slice(0, 10).split('-')
     return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : String(valor)
   }
-  // Números (exceto o Nº do processo, que é identificador): separador de milhar (8000 → 8.000).
-  // Valor negativo (típico da Divergência quando recebeu menos que o pedido) em vermelho.
-  if (coluna.tipo === 'numero' && coluna.campo !== 'numero') {
+  // Separador de milhar (8000 → 8.000) + negativo em vermelho. Cobre as colunas tipadas como
+  // 'numero' (quantidades, exceto o Nº do processo, que é identificador) E a Divergência —
+  // campo calculado que a config tipa como 'lista', mas cujo valor é numérico.
+  const ehNumerico = coluna.campo === 'divergencia' || (coluna.tipo === 'numero' && coluna.campo !== 'numero')
+  if (ehNumerico) {
     const n = Number(valor)
     if (Number.isFinite(n)) {
       const texto = n.toLocaleString('pt-BR')
