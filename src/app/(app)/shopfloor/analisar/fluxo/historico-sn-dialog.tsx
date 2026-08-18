@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { createPortal } from 'react-dom'
+import { X } from 'lucide-react'
 import { buscarHistoricoSN } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { RegistroHistorico } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { cn } from '@/lib/utils'
@@ -52,9 +53,10 @@ interface Passo {
 }
 
 /**
- * Linha do tempo (trilha) de um produto pelo Nº de Série. Mostra os eventos reais (inclui Manutenção
- * e Burn-in entrada/saída) MAIS os postos que a peça ainda não passou (futuros, em cinza). Vinho nos
- * concluídos com sucesso (aprovado/passagem/entrada de burn-in); cinza no reprovado e nos futuros.
+ * Linha do tempo (trilha) de um produto pelo Nº de Série. Overlay próprio (portal via React) — não
+ * usa o Dialog base-ui porque, dentro do Modo TV (fullscreen), o portal/dismiss dele fica instável.
+ * `container` = destino do portal: em Modo TV passa o canvas (`absolute`, dentro da tela cheia); fora
+ * do TV fica no `body` (`fixed`, cobre a viewport). Fecha no X e no clique fora — `onClick` direto.
  */
 export function HistoricoSnDialog({
   sn,
@@ -65,7 +67,6 @@ export function HistoricoSnDialog({
   sn: string | null
   postosOP: string[]
   onFechar: () => void
-  /** Destino do portal — em Modo TV (tela cheia) passa o elemento do canvas, senão o dialog some. */
   container?: HTMLElement | null
 }) {
   const [registros, setRegistros] = useState<RegistroHistorico[] | null>(null)
@@ -98,14 +99,32 @@ export function HistoricoSnDialog({
     return [...eventos, ...futuros]
   }, [registros, postosOP])
 
-  return (
-    <Dialog open={sn !== null} onOpenChange={(aberto) => { if (!aberto) onFechar() }}>
-      <DialogContent className="sm:max-w-3xl" container={container}>
-        <DialogHeader>
-          <DialogTitle>
+  if (sn === null) return null
+  const alvo = container ?? (typeof document !== 'undefined' ? document.body : null)
+  if (!alvo) return null
+  // TV: portal no canvas → `absolute` (o canvas é relative e preenche a tela cheia).
+  // Normal: portal no body → `fixed` (cobre a viewport).
+  const posicao = container ? 'absolute' : 'fixed'
+
+  return createPortal(
+    <div className={cn(posicao, 'inset-0 z-50 flex items-center justify-center bg-black/20 p-4')} onClick={onFechar}>
+      <div
+        className="max-h-[calc(100%-2rem)] w-full max-w-3xl overflow-y-auto rounded-xl bg-popover p-4 text-popover-foreground shadow-lg ring-1 ring-foreground/10"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start justify-between gap-4">
+          <h2 className="font-heading text-base font-medium leading-none">
             Linha do tempo · <span className="font-mono text-base">{sn}</span>
-          </DialogTitle>
-        </DialogHeader>
+          </h2>
+          <button
+            type="button"
+            onClick={onFechar}
+            aria-label="Fechar"
+            className="-mt-1 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
 
         {carregando && <p className="text-sm text-muted-foreground">Carregando…</p>}
         {!carregando && registros !== null && registros.length === 0 && (
@@ -152,7 +171,8 @@ export function HistoricoSnDialog({
             </ol>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>,
+    alvo,
   )
 }
