@@ -6,11 +6,14 @@ e Google Apps Script. Uso em produção, multi-setor, com arquitetura preparada 
 
 ## Stack
 
-- **Next.js 16** (App Router) + **TypeScript** (strict)
-- **Tailwind CSS v4** + **shadcn/ui** (Base UI)
+- **Next.js 16** (App Router) + **React 19** + **TypeScript** (strict)
+- **Tailwind CSS v4** + **shadcn/ui** (Base UI) — ícones `lucide-react`, toasts `sonner`, temas `next-themes`
 - **Supabase** (Postgres + Auth + RLS)
-- **Vitest** (testes de domínio/aplicação)
-- **SheetJS** (`xlsx`) para importação de planilhas no cliente
+- **React Flow** (`@xyflow/react`) — canvas do Fluxo de Processos
+- **SheetJS** (`xlsx`) — importação de planilhas no cliente
+- **Google Drive / S3** (`googleapis`, `@aws-sdk/client-s3`) — armazenamento de fotos
+- **Vitest** — testes de domínio/aplicação
+- Conector Repinmetro (`tools/repinmetro-conector/`): **Node.js** + `pg` (node-postgres) + `fetch` nativo
 
 ## Arquitetura
 
