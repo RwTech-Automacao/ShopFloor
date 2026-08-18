@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import {
   Table,
   TableBody,
@@ -6,7 +7,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { listarImportacoes } from '@/modules/recebimento/infra/importacao-repository'
+import { Button } from '@/components/ui/button'
+import { getSessao } from '@/modules/auth/application/get-sessao'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
+import {
+  listarImportacoes,
+  bloqueiosPorImportacao,
+} from '@/modules/recebimento/infra/importacao-repository'
 
 const formatadorData = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short',
@@ -16,7 +23,13 @@ const formatadorData = new Intl.DateTimeFormat('pt-BR', {
 })
 
 export default async function ImportacoesPage() {
-  const importacoes = await listarImportacoes()
+  const sessao = await getSessao()
+  const podeCorrigir = !!sessao && podeNoModulo(sessao.perfil, 'recebimento', 'importar')
+
+  const [importacoes, bloqueios] = await Promise.all([
+    listarImportacoes(),
+    podeCorrigir ? bloqueiosPorImportacao() : Promise.resolve<Record<string, number>>({}),
+  ])
 
   return (
     <div className="flex flex-col gap-4">
@@ -30,12 +43,13 @@ export default async function ImportacoesPage() {
               <TableHead>Nº de processos</TableHead>
               <TableHead>Data/hora</TableHead>
               <TableHead>Usuário</TableHead>
+              {podeCorrigir && <TableHead className="text-right">Ações</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {importacoes.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={podeCorrigir ? 6 : 5} className="text-center text-muted-foreground">
                   Nenhuma importação encontrada.
                 </TableCell>
               </TableRow>
@@ -49,6 +63,11 @@ export default async function ImportacoesPage() {
                   {formatadorData.format(new Date(importacao.created_at))}
                 </TableCell>
                 <TableCell>{importacao.usuario_nome || '—'}</TableCell>
+                {podeCorrigir && (
+                  <TableCell className="text-right">
+                    <AcaoCorrigir id={importacao.id} bloqueados={bloqueios[importacao.id] ?? 0} />
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -84,9 +103,37 @@ export default async function ImportacoesPage() {
                 <dd className="min-w-0 flex-1">{importacao.usuario_nome || '—'}</dd>
               </div>
             </dl>
+            {podeCorrigir && (
+              <div className="mt-3">
+                <AcaoCorrigir id={importacao.id} bloqueados={bloqueios[importacao.id] ?? 0} />
+              </div>
+            )}
           </div>
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * Botão "Corrigir" da importação. Habilitado só quando NENHUM processo saiu de
+ * 'aberto' — do contrário mostra o motivo (a correção apaga e reimporta, então
+ * não pode rodar depois que a conferência começou).
+ */
+function AcaoCorrigir({ id, bloqueados }: { id: string; bloqueados: number }) {
+  if (bloqueados > 0) {
+    return (
+      <span
+        className="text-xs text-muted-foreground"
+        title={`${bloqueados} item(ns) já em conferência/finalizados`}
+      >
+        Em conferência
+      </span>
+    )
+  }
+  return (
+    <Button variant="outline" size="sm" render={<Link href={`/recebimento/importar?corrigir=${id}`} />}>
+      Corrigir
+    </Button>
   )
 }

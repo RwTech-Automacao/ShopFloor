@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { importarPlanilha } from '@/modules/recebimento/application/importar-planilha'
+import { corrigirImportacao, importarPlanilha } from '@/modules/recebimento/application/importar-planilha'
 import { lerPlanilha } from '@/modules/recebimento/domain/ler-planilha'
 import {
   sugerirMapeamento,
@@ -62,13 +62,26 @@ type ResultadoImportacao =
   | { ok: true; importacaoId: string; total: number }
   | { ok: false; erro: string }
 
+/** Presente = wizard em modo correção (substitui os processos de uma EMB). */
+export interface CorrecaoImportacao {
+  importacaoId: string
+  emb: string
+  totalAtual: number
+}
+
 interface WizardImportacaoProps {
   campos: CampoImportavel[]
   itensPorLista: Record<string, string[]>
   padroes: PadraoImportacao[]
+  correcao?: CorrecaoImportacao
 }
 
-export function WizardImportacao({ campos, itensPorLista, padroes: padroesIniciais }: WizardImportacaoProps) {
+export function WizardImportacao({
+  campos,
+  itensPorLista,
+  padroes: padroesIniciais,
+  correcao,
+}: WizardImportacaoProps) {
   const { confirmar, dialog } = useConfirmacao()
   const [passo, setPasso] = useState<NumeroPasso>(1)
 
@@ -96,7 +109,8 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
   // de uma planilha chegam juntos). Chaves = nome da coluna no banco.
   const [valoresDigitados, setValoresDigitados] = useState<Record<string, string>>({
     data_chegada: '',
-    numero_emb: '',
+    // Em correção, a EMB é fixa (da importação-alvo) — não vem do nome do arquivo.
+    numero_emb: correcao?.emb ?? '',
   })
 
   /** Campos que o usuário mapeia de coluna (os digitados saem da tabela). */
@@ -153,8 +167,11 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
       setLinhasBrutas(linhas)
       // Só os mapeáveis: não faz sentido sugerir coluna para campo digitado.
       setMapeamento(sugerirMapeamento(colunasLidas, camposMapeaveis))
-      // Nº EMB vem do nome do arquivo (editável no passo 2).
-      setValoresDigitados((atual) => ({ ...atual, numero_emb: numeroEmbDoArquivo(file.name) }))
+      // Nº EMB vem do nome do arquivo (editável no passo 2). Em correção, a EMB é
+      // fixa da importação-alvo — não deixa o novo arquivo trocá-la.
+      if (!correcao) {
+        setValoresDigitados((atual) => ({ ...atual, numero_emb: numeroEmbDoArquivo(file.name) }))
+      }
       // Nova planilha: o mapeamento foi resugerido do zero, então zera o padrão
       // aplicado — senão o Select apontaria um padrão que não corresponde mais e
       // "Atualizar" sobrescreveria o padrão salvo com o mapeamento da planilha errada.
@@ -209,12 +226,34 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
   const totalComErro = linhasValidadas.filter((linha) => linha.erros.length > 0).length
   const podeImportar = linhasValidadas.length > 0 && totalComErro === 0
 
-  function onImportar() {
+  async function onEnviar() {
+    if (correcao) {
+      const ok = await confirmar({
+        titulo: `Substituir os ${correcao.totalAtual} processo${correcao.totalAtual === 1 ? '' : 's'} da EMB ${correcao.emb}?`,
+        descricao:
+          'Os processos atuais desta EMB serão apagados e substituídos pelos da nova planilha. Esta ação é irreversível.',
+        rotuloConfirmar: 'Substituir',
+      })
+      if (!ok) return
+    }
     setResultado(null)
     startImportacao(async () => {
       const linhas = linhasValidadas.map((linha) => linha.valores)
-      const r = await importarPlanilha({ arquivoNome, formato, mapeamento, linhas })
-      setResultado(r)
+      if (correcao) {
+        const r = await corrigirImportacao({
+          importacaoId: correcao.importacaoId,
+          arquivoNome,
+          formato,
+          mapeamento,
+          linhas,
+        })
+        setResultado(
+          r.ok ? { ok: true, importacaoId: correcao.importacaoId, total: r.total } : r,
+        )
+      } else {
+        const r = await importarPlanilha({ arquivoNome, formato, mapeamento, linhas })
+        setResultado(r)
+      }
     })
   }
 
@@ -323,6 +362,7 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
             camposDigitados={camposDigitados}
             valoresDigitados={valoresDigitados}
             onMudarValorFixo={onMudarValorFixo}
+            embTravada={correcao ? correcao.emb : null}
             colunas={colunas}
             mapeamento={mapeamento}
             camposFaltando={camposFaltando}
@@ -356,8 +396,9 @@ export function WizardImportacao({ campos, itensPorLista, padroes: padroesInicia
           valoresDigitados={valoresDigitados}
           importando={importando}
           resultado={resultado}
+          correcao={correcao}
           onVoltar={() => setPasso(3)}
-          onImportar={onImportar}
+          onEnviar={onEnviar}
         />
       )}
       {dialog}
@@ -458,6 +499,8 @@ interface PassoMapearProps {
   camposDigitados: CampoImportavel[]
   valoresDigitados: Record<string, string>
   onMudarValorFixo: (campo: string, valor: string) => void
+  /** Em correção, a EMB é fixa desta importação — o campo fica travado. */
+  embTravada: string | null
   colunas: string[]
   mapeamento: Record<string, string>
   camposFaltando: CampoImportavel[]
@@ -471,6 +514,7 @@ function PassoMapear({
   camposDigitados,
   valoresDigitados,
   onMudarValorFixo,
+  embTravada,
   colunas,
   mapeamento,
   camposFaltando,
@@ -492,21 +536,28 @@ function PassoMapear({
             Aplicados a todos os processos da planilha (os itens chegam juntos).
           </p>
           <div className="flex flex-wrap gap-4">
-            {camposDigitados.map((campo) => (
-              <div key={campo.campo} className="flex flex-col gap-1">
-                <Label htmlFor={`fixo-${campo.campo}`}>
-                  {campo.rotulo}
-                  {campo.obrigatorioImportacao && <span className="text-red-600"> *</span>}
-                </Label>
-                <Input
-                  id={`fixo-${campo.campo}`}
-                  type={campo.tipo === 'data' ? 'date' : 'text'}
-                  value={valoresDigitados[campo.campo] ?? ''}
-                  onChange={(e) => onMudarValorFixo(campo.campo, e.target.value)}
-                  className="w-56"
-                />
-              </div>
-            ))}
+            {camposDigitados.map((campo) => {
+              const travado = campo.campo === 'numero_emb' && embTravada !== null
+              return (
+                <div key={campo.campo} className="flex flex-col gap-1">
+                  <Label htmlFor={`fixo-${campo.campo}`}>
+                    {campo.rotulo}
+                    {campo.obrigatorioImportacao && <span className="text-red-600"> *</span>}
+                  </Label>
+                  <Input
+                    id={`fixo-${campo.campo}`}
+                    type={campo.tipo === 'data' ? 'date' : 'text'}
+                    value={valoresDigitados[campo.campo] ?? ''}
+                    onChange={(e) => onMudarValorFixo(campo.campo, e.target.value)}
+                    disabled={travado}
+                    className="w-56"
+                  />
+                  {travado && (
+                    <span className="text-xs text-muted-foreground">EMB fixa desta correção.</span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -689,8 +740,9 @@ interface PassoImportarProps {
   valoresDigitados: Record<string, string>
   importando: boolean
   resultado: ResultadoImportacao | null
+  correcao?: CorrecaoImportacao
   onVoltar: () => void
-  onImportar: () => void
+  onEnviar: () => void
 }
 
 function PassoImportar({
@@ -700,15 +752,17 @@ function PassoImportar({
   valoresDigitados,
   importando,
   resultado,
+  correcao,
   onVoltar,
-  onImportar,
+  onEnviar,
 }: PassoImportarProps) {
   if (resultado?.ok) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-10 text-center">
         <CheckIcon className="size-10 text-green-600" />
         <p className="text-lg font-medium text-green-800">
-          {resultado.total} processo{resultado.total === 1 ? '' : 's'} criado
+          {resultado.total} processo{resultado.total === 1 ? '' : 's'}{' '}
+          {correcao ? 'substituído' : 'criado'}
           {resultado.total === 1 ? '' : 's'}.
         </p>
         <Button
@@ -742,15 +796,26 @@ function PassoImportar({
         </p>
       )}
 
+      {correcao && (
+        <p className="flex items-center gap-1.5 text-sm text-amber-700">
+          <AlertTriangleIcon className="size-4 shrink-0" />
+          Isto vai substituir os {correcao.totalAtual} processo
+          {correcao.totalAtual === 1 ? '' : 's'} atuais da EMB {correcao.emb}.
+        </p>
+      )}
+
       <div className="flex justify-between">
         <Button variant="outline" onClick={onVoltar} disabled={importando}>
           Voltar
         </Button>
-        <Button className="bg-enterplak hover:bg-enterplak-700" disabled={importando} onClick={onImportar}>
+        <Button className="bg-enterplak hover:bg-enterplak-700" disabled={importando} onClick={onEnviar}>
           {importando ? (
             <>
-              <Loader2Icon className="size-4 animate-spin" /> Importando...
+              <Loader2Icon className="size-4 animate-spin" />{' '}
+              {correcao ? 'Substituindo...' : 'Importando...'}
             </>
+          ) : correcao ? (
+            'Substituir processos da EMB'
           ) : (
             'Importar'
           )}
