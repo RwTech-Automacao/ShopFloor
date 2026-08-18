@@ -57,8 +57,37 @@ sudo systemctl start repinmetro-conector.service
 journalctl -u repinmetro-conector.service -n 30
 ```
 
-## Mudar a frequência
+## Mudar a frequência (systemd)
 Edite `OnCalendar` no `.timer` e `daemon-reload` + `restart` do timer. Exemplos:
 - 6/6h (atual): `OnCalendar=*-*-* 00,06,12,18:00:00`
 - 2x/dia (12h e 18h): `OnCalendar=*-*-* 12,18:00:00`
 - 1x/hora: `OnCalendar=hourly`
+
+---
+
+## Alternativa: cron (usado em produção, 2026-08-18)
+
+Em vez do systemd timer, foi usado **cron** na máquina do banco. Duas coisas foram ajustadas:
+
+1. **`run.sh` com o caminho ABSOLUTO do node** (o cron tem PATH mínimo e não acha o node do nvm).
+   No servidor, a última linha do `run.sh` ficou:
+   ```bash
+   exec /root/.nvm/versions/node/v20.20.2/bin/node --env-file=.env.prod conector.mjs
+   ```
+   (o caminho do node vem de `which node`; aqui é o node do nvm do **root**.)
+
+2. **Linha no crontab** (root — `sudo crontab -e`), de 6 em 6 horas, com log:
+   ```
+   0 */6 * * * /home/enterplak/Documentos/tools/repinmetro-conector/run.sh >> /var/log/repinmetro-conector.log 2>&1
+   ```
+   - `0 */6 * * *` = minuto 0, a cada 6 horas (00/06/12/18h). **São 5 campos** (min hora dia mês diadasemana) — `*/6` (não `/6`).
+   - `>> ...log 2>&1` = grava a saída (stdout+erros) no log.
+
+**Conferir:**
+```bash
+sudo crontab -l                              # confere a linha do cron
+cat /var/log/repinmetro-conector.log         # vê os "Concluído: N novos" de cada rodada
+sudo run-parts --test /etc/cron.d 2>/dev/null # (opcional)
+```
+
+⚠️ **Consistência (rodando como root):** o node é `/root/.nvm/...`, o log é `/var/log/...` e o crontab é do root → tudo como root, coerente. Se algum dia mudar pra rodar como outro usuário, o caminho do node (`/root/.nvm`) e a escrita em `/var/log` precisam ser revistos.
