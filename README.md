@@ -11,7 +11,7 @@ e Google Apps Script. Uso em produção, multi-setor, com arquitetura preparada 
 - **Supabase** (Postgres + Auth + RLS)
 - **React Flow** (`@xyflow/react`) — canvas do Fluxo de Processos
 - **SheetJS** (`xlsx`) — importação de planilhas no cliente
-- **Google Drive / S3** (`googleapis`, `@aws-sdk/client-s3`) — armazenamento de fotos
+- **Supabase Storage / Cloudflare R2 / Google Drive** (`@aws-sdk/client-s3`, `googleapis`) — armazenamento de fotos (configurável via `FOTOS_STORAGE`)
 - **Vitest** — testes de domínio/aplicação
 - Conector Repinmetro (`tools/repinmetro-conector/`): **Node.js** + `pg` (node-postgres) + `fetch` nativo
 
@@ -29,6 +29,7 @@ src/
     infra/                   # repositórios (Supabase)
   shared/                    # design system, clients Supabase, utilidades
 supabase/migrations/         # schema versionado (SQL)
+tools/                       # utilitários fora da app (ex.: conector Repinmetro)
 docs/                        # specs, planos e histórico
 ```
 
@@ -70,10 +71,27 @@ npm run build                # build de produção
 ### Variáveis de ambiente (`.env.local`)
 
 ```
+# Supabase
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+
+# Armazenamento de fotos: supabase (default) | r2 | drive
+FOTOS_STORAGE=supabase
+# Cloudflare R2 (quando FOTOS_STORAGE=r2) — API compatível com S3
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=
+# Google Drive (quando FOTOS_STORAGE=drive)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REFRESH_TOKEN=
+GOOGLE_DRIVE_FOLDER_ID=
 ```
+
+> Lista completa em `.env.example`. O conector Repinmetro tem o **próprio** `.env` em
+> `tools/repinmetro-conector/` (não é o `.env.local` da app).
 
 ### Banco de dados
 
