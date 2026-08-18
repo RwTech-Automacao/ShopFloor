@@ -64,7 +64,7 @@ function FluxoNodeBase({ data }: NodeProps) {
           {iconeDo(d)}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{d.posto}</p>
+          <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{d.posto}</p>
           <p className="text-xs text-muted-foreground">
             {d.ehManutencao ? 'em manutenção' : d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
           </p>

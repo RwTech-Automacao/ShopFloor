@@ -56,7 +56,18 @@ interface Passo {
  * e Burn-in entrada/saída) MAIS os postos que a peça ainda não passou (futuros, em cinza). Vinho nos
  * concluídos com sucesso (aprovado/passagem/entrada de burn-in); cinza no reprovado e nos futuros.
  */
-export function HistoricoSnDialog({ sn, postosOP, onFechar }: { sn: string | null; postosOP: string[]; onFechar: () => void }) {
+export function HistoricoSnDialog({
+  sn,
+  postosOP,
+  onFechar,
+  container,
+}: {
+  sn: string | null
+  postosOP: string[]
+  onFechar: () => void
+  /** Destino do portal — em Modo TV (tela cheia) passa o elemento do canvas, senão o dialog some. */
+  container?: HTMLElement | null
+}) {
   const [registros, setRegistros] = useState<RegistroHistorico[] | null>(null)
   const [carregando, startBusca] = useTransition()
 
@@ -89,7 +100,7 @@ export function HistoricoSnDialog({ sn, postosOP, onFechar }: { sn: string | nul
 
   return (
     <Dialog open={sn !== null} onOpenChange={(aberto) => { if (!aberto) onFechar() }}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl" container={container}>
         <DialogHeader>
           <DialogTitle>
             Linha do tempo · <span className="font-mono text-base">{sn}</span>
