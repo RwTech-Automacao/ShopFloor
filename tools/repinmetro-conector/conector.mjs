@@ -45,12 +45,13 @@ const RESULTADO_COLS = [
   'statustesteproducao',
 ]
 
-// Colunas lidas da origem — SÓ as necessárias (NÃO lê `foto` nem outras colunas não usadas).
-// `t.id AS origem_id` evita ambiguidade com testequalidade.id. Os 15 resultados vêm de testequalidade.
+// Colunas lidas da origem — SÓ as necessárias (NÃO lê `foto` nem outras não usadas).
+// Sem qualificar t./tq. (os nomes são distintos entre as 2 tabelas; o Postgres resolve cada uma);
+// só o `id` é ambíguo → `t.id AS origem_id`. Os 15 resultados (RESULTADO_COLS) ficam em testequalidade.
 const COLS_TESTE =
-  't.id AS origem_id, t.numeroserierep, t.serialmodelorep, t.datahorainicio, t.datahorafim, ' +
-  't.status, t.observacao, t.remanufaturado, t.lacre, t.codigoop, t.anoop, t.numeroplacaop'
-const SELECT_COLS = `${COLS_TESTE}, ${RESULTADO_COLS.map((c) => 'tq.' + c).join(', ')}`
+  't.id AS origem_id, numeroserierep, serialmodelorep, datahorainicio, datahorafim, ' +
+  'status, observacao, remanufaturado, lacre, codigoop, anoop, numeroplacaop'
+const SELECT_COLS = `${COLS_TESTE}, ${RESULTADO_COLS.join(', ')}`
 
 // Fala direto com a API REST (PostgREST) do Supabase via fetch nativo — sem a lib
 // @supabase/supabase-js (que exige WebSocket/realtime e quebra no Node < 22).
