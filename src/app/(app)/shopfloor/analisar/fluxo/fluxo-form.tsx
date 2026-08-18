@@ -450,7 +450,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           )}
 
           {detalhe && (
-            <aside className="absolute right-0 top-0 flex h-full w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur">
+            // Em Modo TV o cabeçalho (z-20) ocupa o topo; o aside desce pra baixo dele (senão o X fica coberto e não fecha).
+            <aside className={`absolute right-0 z-30 flex w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur ${telaCheia ? 'top-16 h-[calc(100%-4rem)]' : 'top-0 h-full'}`}>
               <header className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{detalhe.posto}</p>
@@ -512,7 +513,12 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           )}
         </div>
 
-        <HistoricoSnDialog sn={snAberto} postosOP={postosOP} onFechar={() => setSnAberto(null)} />
+        <HistoricoSnDialog
+          sn={snAberto}
+          postosOP={postosOP}
+          onFechar={() => setSnAberto(null)}
+          container={telaCheia ? canvasRef.current : null}
+        />
       </CardContent>
     </Card>
   )
