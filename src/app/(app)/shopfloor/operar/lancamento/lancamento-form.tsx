@@ -21,6 +21,7 @@ import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
 import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
+import { NqaCaixaPanel } from './nqa-caixa-panel'
 import { AprovarModal } from './aprovar-modal'
 import { ReprovarModal } from './reprovar-modal'
 
@@ -116,6 +117,9 @@ export function LancamentoForm({
 
   const comStatus = posto !== '' && perfilTemStatus(perfilDo(posto))
   const ehNqa = perfilDo(posto).recurso === 'nqa'
+  // NQA por caixa: posto NQA numa OP de embalagem COLETIVA → painel de amostragem por caixa.
+  // (NQA individual / sem OP selecionada continua nos Selects inline de Visual/Funcional abaixo.)
+  const ehNqaCaixa = ehNqa && ordemSel !== null && !ordemSel.embalagem_individual
   const ehSpi = perfilDo(posto).reprova === 'posicoes'
   const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
@@ -629,8 +633,14 @@ export function LancamentoForm({
           </div>
         )}
 
+        {ehNqaCaixa && (
+          <div className="flex min-h-0 flex-col lg:col-span-2">
+            <NqaCaixaPanel pmo={pmo} op={op} posto={posto} colaborador={colaborador} postos={postosDaOp} />
+          </div>
+        )}
+
         {/* Bipagem */}
-        {!ehIntegracao && !ehEmbalagem && (
+        {!ehIntegracao && !ehEmbalagem && !ehNqaCaixa && (
           <>
             <Card className="flex min-h-0 flex-col">
               <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">

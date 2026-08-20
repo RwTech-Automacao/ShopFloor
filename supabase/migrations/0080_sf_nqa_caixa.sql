@@ -16,7 +16,6 @@ create or replace function public.sf_nqa_caixa(
   p_op            text,
   p_posto         text,   -- posto NQA (onde grava)
   p_colaborador   text,
-  p_cliente       text,
   p_numero_caixa  text,
   p_resultado     text,   -- 'Aprovado' | 'Reprovado'
   p_posto_retorno text,   -- posto de retorno (só quando reprovado); '' quando aprovado
@@ -30,14 +29,15 @@ declare
   v_sn record;
   v_amostra jsonb;
   v_total int;
+  v_cliente text;
 begin
   if not tem_permissao('lancar') then
     raise exception 'SEM_PERMISSAO';
   end if;
   perform pg_advisory_xact_lock(hashtext(p_pmo || '/' || p_op)::bigint);
 
-  -- SNs da caixa = registros (da embalagem) com este numero_caixa.
-  select count(distinct numero_serie_norm) into v_total
+  -- SNs da caixa = registros (da embalagem) com este numero_caixa. Cliente derivado deles.
+  select count(distinct numero_serie_norm), max(cliente) into v_total, v_cliente
   from sf_registros
   where pmo = p_pmo and op = p_op and numero_caixa = p_numero_caixa and numero_serie_norm <> '';
   if v_total = 0 then
@@ -68,7 +68,7 @@ begin
 
     insert into sf_registros (colaborador, posto, pmo, op, cliente, status,
       numero_serie, numero_serie_norm, nqa_visual, nqa_funcional, observacao, posto_retorno)
-    values (p_colaborador, p_posto, p_pmo, p_op, p_cliente, p_resultado,
+    values (p_colaborador, p_posto, p_pmo, p_op, coalesce(v_cliente, ''), p_resultado,
       v_sn.numero_serie, v_sn.numero_serie_norm,
       coalesce(v_amostra->>'visual', ''), coalesce(v_amostra->>'funcional', ''),
       case when v_amostra is not null then coalesce(v_amostra->>'observacao', '')
@@ -80,7 +80,7 @@ begin
 end;
 $$;
 
-grant execute on function public.sf_nqa_caixa(text,text,text,text,text,text,text,text,jsonb) to authenticated;
+grant execute on function public.sf_nqa_caixa(text,text,text,text,text,text,text,jsonb) to authenticated;
 
 -- ---------- Recria sf_fluxo_op: WIP considera posto_retorno na reprova ----------
 create or replace function public.sf_fluxo_op(p_pmo text, p_op text)
