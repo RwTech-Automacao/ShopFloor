@@ -190,20 +190,28 @@ export async function resolverCaixaPorSn(
   if (eCx) throw eCx
   const fechada = (cx as { fechada: boolean } | null)?.fechada === true
 
-  // já inspecionada no NQA? algum SN da caixa com registro no posto NQA.
-  const { data: nqa, error: e3 } = await supabase
+  // "no NQA agora" = o ÚLTIMO registro de alguma peça da caixa está no posto NQA (aguardando reteste
+  // ou já finalizada). Depois do reteste, o último registro é outro posto → LIBERA a reinspeção.
+  // (mesma regra do backstop na RPC sf_nqa_caixa.)
+  const { data: hist, error: e3 } = await supabase
     .from('sf_registros')
-    .select('numero_serie_norm')
-    .eq('pmo', pmo).eq('op', op).eq('posto', postoNqa)
+    .select('numero_serie_norm,posto,data_hora,id')
+    .eq('pmo', pmo).eq('op', op)
     .in('numero_serie_norm', [...snsNorm])
-    .limit(1)
+    .order('data_hora', { ascending: false })
+    .order('id', { ascending: false })
   if (e3) throw e3
+  const ultimoPostoDaPeca = new Map<string, string>()
+  for (const r of (hist ?? []) as { numero_serie_norm: string; posto: string }[]) {
+    if (!ultimoPostoDaPeca.has(r.numero_serie_norm)) ultimoPostoDaPeca.set(r.numero_serie_norm, r.posto)
+  }
+  const jaInspecionadaNqa = [...ultimoPostoDaPeca.values()].some((p) => p === postoNqa)
 
   return {
     posto,
     numeroCaixa: numero_caixa,
     qtd: snsNorm.size,
     fechada,
-    jaInspecionadaNqa: (nqa ?? []).length > 0,
+    jaInspecionadaNqa,
   }
 }
