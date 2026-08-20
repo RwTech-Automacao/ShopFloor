@@ -1,6 +1,7 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
+import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 export interface EstadoEmbalagem {
   seq: number            // caixa atual (aberta ou próxima a abrir)
@@ -137,4 +138,82 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
       sns,
     }
   })
+}
+
+export interface CaixaDoSn {
+  posto: string        // posto de embalagem onde a caixa foi formada
+  numeroCaixa: string  // código/marcador da caixa (numero_caixa)
+  qtd: number          // total de peças (SNs distintos) da caixa
+  snsNorm: string[]    // SNs (normalizados) da caixa — p/ validar que a amostra é DESTA caixa
+  fechada: boolean     // a caixa já foi FECHADA na embalagem (NQA só inspeciona caixa fechada)
+  jaInspecionadaNqa: boolean // último registro de alguma peça está no posto NQA (aguardando reteste/finalizada)
+}
+
+/**
+ * Dado 1 SN, acha a CAIXA a que ele pertence (via `numero_caixa` da embalagem) + a quantidade e
+ * se já foi inspecionada no posto NQA (`postoNqa`). Base do painel NQA por caixa. Null se o SN não
+ * está em nenhuma caixa.
+ */
+export async function resolverCaixaPorSn(
+  pmo: string,
+  op: string,
+  sn: string,
+  postoNqa: string,
+): Promise<CaixaDoSn | null> {
+  const supabase = await createServerSupabase()
+  const norm = normalizarSerie(sn)
+
+  const { data: r1, error: e1 } = await supabase
+    .from('sf_registros')
+    .select('numero_caixa,posto')
+    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', norm)
+    .like('numero_caixa', 'CX%')
+    .order('data_hora', { ascending: false })
+    .limit(1).maybeSingle()
+  if (e1) throw e1
+  if (!r1) return null
+  const { numero_caixa, posto } = r1 as { numero_caixa: string; posto: string }
+
+  const { data: regs, error: e2 } = await supabase
+    .from('sf_registros')
+    .select('numero_serie_norm')
+    .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', numero_caixa)
+  if (e2) throw e2
+  const snsNorm = new Set((regs ?? []).map((x) => (x as { numero_serie_norm: string }).numero_serie_norm))
+
+  // Fechada? Ao fechar, a embalagem reescreve o numero_caixa dos registros para o CÓDIGO final e
+  // grava sf_caixas.codigo+fechada. Caixa ABERTA carrega o marcador CX[seq] (sem código em sf_caixas).
+  const { data: cx, error: eCx } = await supabase
+    .from('sf_caixas')
+    .select('fechada')
+    .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('codigo', numero_caixa)
+    .maybeSingle()
+  if (eCx) throw eCx
+  const fechada = (cx as { fechada: boolean } | null)?.fechada === true
+
+  // "no NQA agora" = o ÚLTIMO registro de alguma peça da caixa está no posto NQA (aguardando reteste
+  // ou já finalizada). Depois do reteste, o último registro é outro posto → LIBERA a reinspeção.
+  // (mesma regra do backstop na RPC sf_nqa_caixa.)
+  const { data: hist, error: e3 } = await supabase
+    .from('sf_registros')
+    .select('numero_serie_norm,posto,data_hora,id')
+    .eq('pmo', pmo).eq('op', op)
+    .in('numero_serie_norm', [...snsNorm])
+    .order('data_hora', { ascending: false })
+    .order('id', { ascending: false })
+  if (e3) throw e3
+  const ultimoPostoDaPeca = new Map<string, string>()
+  for (const r of (hist ?? []) as { numero_serie_norm: string; posto: string }[]) {
+    if (!ultimoPostoDaPeca.has(r.numero_serie_norm)) ultimoPostoDaPeca.set(r.numero_serie_norm, r.posto)
+  }
+  const jaInspecionadaNqa = [...ultimoPostoDaPeca.values()].some((p) => p === postoNqa)
+
+  return {
+    posto,
+    numeroCaixa: numero_caixa,
+    qtd: snsNorm.size,
+    snsNorm: [...snsNorm],
+    fechada,
+    jaInspecionadaNqa,
+  }
 }
