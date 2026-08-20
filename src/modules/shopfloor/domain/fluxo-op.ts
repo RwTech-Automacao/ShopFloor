@@ -144,6 +144,7 @@ function dadosCaixa(id: string, contagem: number, tipo: 'entrada' | 'saida'): Fl
 export interface BipePeca {
   posto: string
   status: string // '' = passagem OU entrada de Burn-in; 'Aprovado'/'Reprovado' = status/saída
+  postoRetorno?: string // NQA: caixa reprovada → posto escolhido p/ voltar (roteia a reprova)
 }
 
 /**
@@ -163,7 +164,11 @@ export function postoPendenteDePeca(
   const ultimo = registrosCrono[registrosCrono.length - 1]
   if (!ultimo) return postosOrdenados[0] ?? null
   const st = ultimo.status.trim().toLowerCase()
-  if (st === 'reprovado') return exigeManutencaoDe(ultimo.posto) ? MANUTENCAO : ultimo.posto
+  if (st === 'reprovado') {
+    // NQA: caixa reprovada roteia pro posto escolhido (posto_retorno) — antes de Manutenção/mesmo posto.
+    if (ultimo.postoRetorno && ultimo.postoRetorno.trim() !== '') return ultimo.postoRetorno
+    return exigeManutencaoDe(ultimo.posto) ? MANUTENCAO : ultimo.posto
+  }
   if (st === '' && recursoDe(ultimo.posto) === 'burnin') return ultimo.posto // entrada = cozinhando aqui
   const idx = postosOrdenados.findIndex((p) => p.toLowerCase() === ultimo.posto.toLowerCase())
   if (idx < 0 || idx >= postosOrdenados.length - 1) return null // posto desconhecido ou último → concluída

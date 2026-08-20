@@ -164,6 +164,12 @@ describe('postoPendenteDePeca', () => {
     expect(pp([{ posto: 'SPI', status: 'Reprovado' }])).toBe('SPI')
   })
 
+  it('NQA caixa reprovada com postoRetorno → pendente no posto escolhido (antes de Manutenção/mesmo posto)', () => {
+    expect(pp([{ posto: 'NQA', status: 'Reprovado', postoRetorno: 'Teste' }])).toBe('Teste')
+    // postoRetorno vazio → cai na regra padrão (NQA não exige manutenção → próprio posto)
+    expect(pp([{ posto: 'NQA', status: 'Reprovado', postoRetorno: '' }])).toBe('NQA')
+  })
+
   it('Burn-in: entrada (status vazio) → cozinhando no próprio Burn-in; saída aprovada → próximo', () => {
     expect(pp([{ posto: 'Burn-in', status: '' }])).toBe('Burn-in')
     expect(pp([{ posto: 'Burn-in', status: 'Aprovado' }])).toBe('NQA')
