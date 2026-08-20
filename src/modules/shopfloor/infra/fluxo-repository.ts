@@ -116,11 +116,11 @@ async function contarPendentesPorPosto(
 ): Promise<{ pendentes: Record<string, number>; iniciadas: number; finalizadas: number }> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,posto,data_hora,id')
+      .select('numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id')
       .eq('pmo', pmo)
       .eq('op', op)
       .neq('numero_serie_norm', '')
@@ -174,11 +174,11 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
   const recursoDe = (p: string) => perfis[p]?.recurso ?? 'nenhum'
 
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,posto,data_hora,id')
+      .select('numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id')
       .eq('pmo', pmo)
       .eq('op', op)
       .neq('numero_serie_norm', '')
@@ -196,8 +196,9 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
     const e = porPeca.get(chave)
-    if (e) e.regs.push({ posto: l.posto, status: l.status })
-    else porPeca.set(chave, { sn: l.numero_serie, regs: [{ posto: l.posto, status: l.status }] })
+    const reg = { posto: l.posto, status: l.status, postoRetorno: l.posto_retorno ?? undefined }
+    if (e) e.regs.push(reg)
+    else porPeca.set(chave, { sn: l.numero_serie, regs: [reg] })
     if (l.posto.toLowerCase() === alvo) {
       passagens.push({ chave, sn: l.numero_serie, status: l.status, dataHora: l.data_hora, ordem: l.id })
     }
@@ -232,11 +233,11 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
 export async function carregarSnsEmManutencao(pmo: string, op: string): Promise<SnDoPosto[]> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,posto,data_hora,id')
+      .select('numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id')
       .eq('pmo', pmo)
       .eq('op', op)
       .neq('numero_serie_norm', '')
