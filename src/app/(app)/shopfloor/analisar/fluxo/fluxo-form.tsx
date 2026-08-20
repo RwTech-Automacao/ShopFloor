@@ -499,7 +499,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                       <>
                         {naoIniciadasPrimeiro > 0 && (
                           <p className="mb-2 text-xs text-muted-foreground">
-                            + <span className="font-semibold text-foreground">{naoIniciadasPrimeiro}</span> não iniciadas (ainda sem bipe) aguardando aqui.
+                            Inclui <span className="font-semibold text-foreground">{naoIniciadasPrimeiro}</span> não iniciada{naoIniciadasPrimeiro > 1 ? 's' : ''} (ainda sem bipe), na lista abaixo.
                           </p>
                         )}
                         <ListaSns titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} />
