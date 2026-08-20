@@ -194,17 +194,25 @@ export async function resolverCaixaPorSn(
   // "no NQA agora" = o ÚLTIMO registro de alguma peça da caixa está no posto NQA (aguardando reteste
   // ou já finalizada). Depois do reteste, o último registro é outro posto → LIBERA a reinspeção.
   // (mesma regra do backstop na RPC sf_nqa_caixa.)
-  const { data: hist, error: e3 } = await supabase
-    .from('sf_registros')
-    .select('numero_serie_norm,posto,data_hora,id')
-    .eq('pmo', pmo).eq('op', op)
-    .in('numero_serie_norm', [...snsNorm])
-    .order('data_hora', { ascending: false })
-    .order('id', { ascending: false })
-  if (e3) throw e3
+  // Pagina (PostgREST trunca em 1000): caixa grande (SNs × registros > 1000) truncaria e erraria
+  // o último posto de algumas peças. Ordenado desc → a 1ª ocorrência de cada SN é o último registro.
   const ultimoPostoDaPeca = new Map<string, string>()
-  for (const r of (hist ?? []) as { numero_serie_norm: string; posto: string }[]) {
-    if (!ultimoPostoDaPeca.has(r.numero_serie_norm)) ultimoPostoDaPeca.set(r.numero_serie_norm, r.posto)
+  const PAGINA = 1000
+  for (let i = 0; ; i++) {
+    const { data: hist, error: e3 } = await supabase
+      .from('sf_registros')
+      .select('numero_serie_norm,posto')
+      .eq('pmo', pmo).eq('op', op)
+      .in('numero_serie_norm', [...snsNorm])
+      .order('data_hora', { ascending: false })
+      .order('id', { ascending: false })
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (e3) throw e3
+    const lote = (hist ?? []) as { numero_serie_norm: string; posto: string }[]
+    for (const r of lote) {
+      if (!ultimoPostoDaPeca.has(r.numero_serie_norm)) ultimoPostoDaPeca.set(r.numero_serie_norm, r.posto)
+    }
+    if (lote.length < PAGINA) break
   }
   const jaInspecionadaNqa = [...ultimoPostoDaPeca.values()].some((p) => p === postoNqa)
 
