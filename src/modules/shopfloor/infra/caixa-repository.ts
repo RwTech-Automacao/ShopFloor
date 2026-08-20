@@ -144,8 +144,9 @@ export interface CaixaDoSn {
   posto: string        // posto de embalagem onde a caixa foi formada
   numeroCaixa: string  // código/marcador da caixa (numero_caixa)
   qtd: number          // total de peças (SNs distintos) da caixa
+  snsNorm: string[]    // SNs (normalizados) da caixa — p/ validar que a amostra é DESTA caixa
   fechada: boolean     // a caixa já foi FECHADA na embalagem (NQA só inspeciona caixa fechada)
-  jaInspecionadaNqa: boolean // algum SN da caixa já tem registro no posto NQA informado
+  jaInspecionadaNqa: boolean // último registro de alguma peça está no posto NQA (aguardando reteste/finalizada)
 }
 
 /**
@@ -211,6 +212,7 @@ export async function resolverCaixaPorSn(
     posto,
     numeroCaixa: numero_caixa,
     qtd: snsNorm.size,
+    snsNorm: [...snsNorm],
     fechada,
     jaInspecionadaNqa,
   }

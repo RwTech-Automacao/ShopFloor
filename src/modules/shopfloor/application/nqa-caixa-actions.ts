@@ -15,6 +15,7 @@ export interface CaixaNqa {
   postoEmbalagem: string
   qtd: number
   amostra: number
+  snsNorm: string[] // SNs (normalizados) da caixa — p/ o painel validar a amostra
   jaInspecionada: boolean
 }
 
@@ -42,6 +43,7 @@ export async function carregarNqaCaixa(
         postoEmbalagem: caixa.posto,
         qtd: caixa.qtd,
         amostra,
+        snsNorm: caixa.snsNorm,
         jaInspecionada: caixa.jaInspecionadaNqa,
       },
     }

@@ -111,6 +111,12 @@ export function NqaCaixaPanel({
     if (snAmostra.trim() === '') { setResultado({ tipo: 'aviso', titulo: 'Bipe o Nº de Série da amostra.' }); return }
     if (visual === '' || funcional === '') { setResultado({ tipo: 'aviso', titulo: 'Selecione a Inspeção Visual e a Funcional da amostra.' }); return }
     const snNorm = normalizarSerie(snAmostra)
+    if (!caixa.snsNorm.includes(snNorm)) {
+      setResultado({ tipo: 'aviso', titulo: 'Este Nº de Série NÃO é desta caixa.', chips: [{ rotulo: 'Nº Série', valor: snAmostra.trim(), mono: true }, { rotulo: 'Caixa', valor: caixa.numeroCaixa, mono: true }] })
+      setSnAmostra('')
+      setTimeout(() => amostraRef.current?.focus(), 0)
+      return
+    }
     if (amostras.some((a) => a.snNorm === snNorm)) {
       setResultado({ tipo: 'aviso', titulo: 'Este Nº de Série já foi inspecionado nesta caixa.', chips: [{ rotulo: 'Nº Série', valor: snAmostra.trim(), mono: true }] })
       setSnAmostra('')
