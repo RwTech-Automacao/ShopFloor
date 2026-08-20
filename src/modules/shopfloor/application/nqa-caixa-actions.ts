@@ -68,14 +68,19 @@ export async function finalizarNqaCaixa(entrada: {
   posto: string
   numeroCaixa: string
   resultado: 'Aprovado' | 'Reprovado'
-  postoRetorno?: string
+  postosRetorno?: string[] // postos a repassar, EM ORDEM DA OP (só na reprova)
   amostras: AmostraNqa[]
 }): Promise<{ ok: true; total: number } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
-  if (entrada.resultado === 'Reprovado' && !entrada.postoRetorno?.trim()) {
-    return { ok: false, erro: 'Escolha o posto de retorno da caixa reprovada.' }
+  if (entrada.resultado === 'Reprovado' && (entrada.postosRetorno ?? []).length === 0) {
+    return { ok: false, erro: 'Escolha ao menos um posto que a caixa deve repassar.' }
   }
+  // Lista de reteste = postos escolhidos (ordem da OP) + o próprio NQA no fim (pra reinspeção).
+  const postoRetorno =
+    entrada.resultado === 'Reprovado'
+      ? [...(entrada.postosRetorno ?? []), entrada.posto.trim()].join(',')
+      : ''
   try {
     const supabase = await createServerSupabase()
     const { data, error } = await supabase.rpc('sf_nqa_caixa', {
@@ -85,7 +90,7 @@ export async function finalizarNqaCaixa(entrada: {
       p_colaborador: entrada.colaborador,
       p_numero_caixa: entrada.numeroCaixa,
       p_resultado: entrada.resultado,
-      p_posto_retorno: entrada.postoRetorno?.trim() ?? '',
+      p_posto_retorno: postoRetorno,
       p_amostras: entrada.amostras.map((a) => ({
         sn_norm: a.snNorm,
         visual: a.visual,

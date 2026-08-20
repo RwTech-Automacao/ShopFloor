@@ -35,7 +35,8 @@ export function NqaCaixaPanel({
   const [visual, setVisual] = useState('')
   const [funcional, setFuncional] = useState('')
   const [observacao, setObservacao] = useState('')
-  const [postoRetorno, setPostoRetorno] = useState('')
+  // Postos que a caixa reprovada deve REPASSAR (multi-seleção). Ordenados pela OP na hora de enviar.
+  const [selecionados, setSelecionados] = useState<string[]>([])
 
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [carregando, startCarregar] = useTransition()
@@ -76,7 +77,7 @@ export function NqaCaixaPanel({
     setVisual('')
     setFuncional('')
     setObservacao('')
-    setPostoRetorno('')
+    setSelecionados([])
   }
 
   /** Estado A: bipe de "puxar caixa" → resolve a caixa e o tamanho da amostra. */
@@ -149,11 +150,13 @@ export function NqaCaixaPanel({
 
   function onReprovarCaixa() {
     if (caixa === null || finalizando) return
-    if (postoRetorno === '') { setResultado({ tipo: 'aviso', titulo: 'Escolha o posto de retorno da caixa reprovada.' }); return }
+    // Ordena os escolhidos pela ordem da OP (postosRetorno já vem em ordem da OP).
+    const postosOrdenados = postosRetorno.filter((p) => selecionados.includes(p))
+    if (postosOrdenados.length === 0) { setResultado({ tipo: 'aviso', titulo: 'Escolha ao menos um posto que a caixa deve repassar.' }); return }
     startFinalizar(async () => {
-      const r = await finalizarNqaCaixa({ colaborador, pmo, op, posto, numeroCaixa: caixa.numeroCaixa, resultado: 'Reprovado', postoRetorno, amostras })
+      const r = await finalizarNqaCaixa({ colaborador, pmo, op, posto, numeroCaixa: caixa.numeroCaixa, resultado: 'Reprovado', postosRetorno: postosOrdenados, amostras })
       if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
-      setResultado({ tipo: 'reprova', titulo: `Caixa ${caixa.numeroCaixa} reprovada — ${r.total} peças`, chips: [{ rotulo: 'Caixa', valor: caixa.numeroCaixa, mono: true }, { rotulo: 'Volta pro', valor: postoRetorno }] })
+      setResultado({ tipo: 'reprova', titulo: `Caixa ${caixa.numeroCaixa} reprovada — ${r.total} peças`, chips: [{ rotulo: 'Caixa', valor: caixa.numeroCaixa, mono: true }, { rotulo: 'Repassar', valor: postosOrdenados.join(' → ') }] })
       resetInspecao()
       focarCaixaApos.current = true
     })
@@ -269,19 +272,44 @@ export function NqaCaixaPanel({
         {algumReprovado && (
           <div className="flex shrink-0 flex-col gap-3 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40">
             <p className="text-sm font-medium">Uma amostra reprovou — a caixa inteira volta para retrabalho.</p>
-            <div className="flex flex-col gap-1.5 sm:max-w-xs">
-              <Label>Posto de retorno</Label>
-              <Select value={postoRetorno} onValueChange={(v) => setPostoRetorno((v as string) ?? '')}>
-                <SelectTrigger className="h-11"><SelectValue placeholder="Selecione o posto" /></SelectTrigger>
-                <SelectContent>{postosRetorno.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-              </Select>
+            <div className="flex flex-col gap-1.5">
+              <Label>Postos que a caixa deve repassar (repassa na ordem da OP, depois volta pro NQA)</Label>
+              <div className="flex flex-wrap gap-2">
+                {postosRetorno.map((p) => {
+                  const marcado = selecionados.includes(p)
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() =>
+                        setSelecionados((atual) =>
+                          marcado ? atual.filter((x) => x !== p) : [...atual, p],
+                        )
+                      }
+                      className={
+                        'rounded-md border px-3 py-1.5 text-sm transition-colors ' +
+                        (marcado
+                          ? 'border-enterplak bg-enterplak text-white'
+                          : 'border-border bg-card hover:bg-muted')
+                      }
+                    >
+                      {p}
+                    </button>
+                  )
+                })}
+              </div>
+              {selecionados.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Vai repassar: {postosRetorno.filter((p) => selecionados.includes(p)).join(' → ')} → NQA
+                </p>
+              )}
             </div>
             <Button
               onClick={onReprovarCaixa}
-              disabled={finalizando || postoRetorno === ''}
+              disabled={finalizando || selecionados.length === 0}
               className="h-11 self-start bg-red-600 px-6 text-white hover:bg-red-700"
             >
-              {finalizando ? 'Reprovando…' : `Reprovar caixa${postoRetorno ? ` (volta pro ${postoRetorno})` : ''}`}
+              {finalizando ? 'Reprovando…' : 'Reprovar caixa'}
             </Button>
           </div>
         )}

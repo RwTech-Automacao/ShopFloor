@@ -44,14 +44,21 @@ begin
     raise exception 'CAIXA_VAZIA';
   end if;
 
-  -- Bloqueia reinspeção: algum SN da caixa já tem registro no posto NQA.
+  -- Bloqueia se a caixa está NO NQA agora (último registro da peça = posto NQA): ou acabou de ser
+  -- inspecionada (aprovado=fim / reprovado=aguardando reteste). Depois do reteste, o último registro
+  -- é outro posto → libera a REINSPEÇÃO. (1ª inspeção: último registro é a Embalagem → libera.)
   if exists (
-    select 1 from sf_registros r
-    where r.pmo = p_pmo and r.op = p_op and r.posto = p_posto
-      and r.numero_serie_norm in (
-        select numero_serie_norm from sf_registros
-        where pmo = p_pmo and op = p_op and numero_caixa = p_numero_caixa and numero_serie_norm <> ''
-      )
+    select 1 from (
+      select distinct on (r.numero_serie_norm) r.numero_serie_norm, r.posto
+      from sf_registros r
+      where r.pmo = p_pmo and r.op = p_op
+        and r.numero_serie_norm in (
+          select numero_serie_norm from sf_registros
+          where pmo = p_pmo and op = p_op and numero_caixa = p_numero_caixa and numero_serie_norm <> ''
+        )
+      order by r.numero_serie_norm, r.data_hora desc, r.created_at desc
+    ) ult
+    where ult.posto = p_posto
   ) then
     raise exception 'CAIXA_JA_INSPECIONADA';
   end if;
@@ -114,9 +121,9 @@ begin
     from regs
     order by numero_serie_norm, data_hora desc, created_at desc
   ),
-  wip_t as ( -- reprovado c/ posto_retorno → posto escolhido; reprovado → Manutenção; senão → posto do último
+  wip_t as ( -- em reteste (posto_retorno propagado) → 1º da lista restante; reprovado → Manutenção; senão → posto do último
     select case
-             when lower(status) = 'reprovado' and coalesce(posto_retorno, '') <> '' then posto_retorno
+             when coalesce(posto_retorno, '') <> '' then split_part(posto_retorno, ',', 1)
              when lower(status) = 'reprovado' then 'Manutenção'
              else posto
            end as posto,
@@ -157,6 +164,161 @@ begin
   left join wip_t w on w.posto = p.posto
   left join agg   a on a.posto = p.posto
   left join ret  rt on rt.posto = p.posto;
+end;
+$$;
+
+-- ---------- Recria sf_lancar: RETESTE no retorno do NQA (posto_retorno propagado) ----------
+-- Quando a peça está RETORNANDO (o último registro traz `posto_retorno` e o 1º posto da lista é
+-- ESTE posto), o lançamento é permitido mesmo já tendo passado aqui (reteste), pula a trava de
+-- sequência, e PROPAGA a lista restante no novo registro (aprovado/passagem). Se reprovar no
+-- reteste, NÃO propaga → segue a regra normal do posto (Manutenção/próprio posto).
+create or replace function public.sf_lancar(
+  p_pmo                  text,
+  p_op                   text,
+  p_cliente              text,
+  p_posto                text,
+  p_colaborador          text,
+  p_numero_serie         text,
+  p_numero_serie_norm    text,
+  p_status               text,
+  p_posto_tem_status     boolean,
+  p_numero_caixa         text,
+  p_qtd_por_caixa        int,
+  p_nqa_visual           text,
+  p_nqa_funcional        text,
+  p_prev_posto           text,
+  p_prev_precisa_aprovado boolean,
+  p_linhas               jsonb,
+  p_exige_manutencao     boolean default false,
+  p_observacao           text default ''
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_ultimo_status text;
+  v_ultima_data   timestamptz;
+  v_tem_reparo    boolean;
+  v_existe        boolean;
+  v_prev_ok       boolean;
+  v_count         int;
+  v_linha         jsonb;
+  v_last_retorno  text;
+  v_em_reteste    boolean;
+  v_novo_retorno  text;
+begin
+  if not tem_permissao('lancar') then
+    return jsonb_build_object('ok', false, 'erro', 'SEM_PERMISSAO');
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(p_pmo || '/' || p_op)::bigint);
+
+  -- 0) Reteste no retorno: último registro da peça traz posto_retorno e o 1º da lista = este posto.
+  select posto_retorno into v_last_retorno
+  from sf_registros
+  where pmo = p_pmo and op = p_op and numero_serie_norm = p_numero_serie_norm
+  order by data_hora desc, created_at desc
+  limit 1;
+  v_em_reteste := coalesce(v_last_retorno, '') <> '' and split_part(v_last_retorno, ',', 1) = p_posto;
+  if v_em_reteste and lower(p_status) <> 'reprovado' then
+    -- consome o 1º da lista → propaga o resto (vazio vira null = fim do reteste / pendente no NQA já foi consumido)
+    v_novo_retorno := nullif(
+      case when position(',' in v_last_retorno) > 0
+           then substring(v_last_retorno from position(',' in v_last_retorno) + 1)
+           else '' end, '');
+  end if;
+
+  -- 1) Anti-duplicidade + 2) Sequência: só quando NÃO é reteste (o retorno reabre o posto).
+  if not v_em_reteste then
+    if p_posto_tem_status then
+      select status, data_hora into v_ultimo_status, v_ultima_data
+      from sf_registros
+      where pmo = p_pmo and op = p_op and numero_serie_norm = p_numero_serie_norm and posto = p_posto
+      order by data_hora desc
+      limit 1;
+      if v_ultimo_status is not null and lower(v_ultimo_status) = 'aprovado' then
+        return jsonb_build_object('ok', false, 'erro', 'DUPLICADO_APROVADO');
+      end if;
+      if v_ultimo_status is not null and lower(v_ultimo_status) = 'reprovado' and p_exige_manutencao then
+        select exists(
+          select 1 from sf_registros m
+          where m.pmo = p_pmo and m.op = p_op and m.numero_serie_norm = p_numero_serie_norm
+            and m.posto = 'Manutenção'
+            and m.posto_origem = p_posto
+            and m.data_hora > v_ultima_data
+        ) into v_tem_reparo;
+        if not v_tem_reparo then
+          return jsonb_build_object('ok', false, 'erro', 'SEM_MANUTENCAO');
+        end if;
+      end if;
+    else
+      select exists(
+        select 1 from sf_registros
+        where pmo = p_pmo and op = p_op and numero_serie_norm = p_numero_serie_norm and posto = p_posto
+      ) into v_existe;
+      if v_existe then
+        return jsonb_build_object('ok', false, 'erro', 'DUPLICADO');
+      end if;
+    end if;
+
+    if p_prev_posto <> '' then
+      if p_prev_precisa_aprovado then
+        select exists(
+          select 1 from sf_registros
+          where pmo = p_pmo and op = p_op and numero_serie_norm = p_numero_serie_norm
+            and posto = p_prev_posto and lower(status) = 'aprovado'
+        ) into v_prev_ok;
+      else
+        select exists(
+          select 1 from sf_registros
+          where pmo = p_pmo and op = p_op and numero_serie_norm = p_numero_serie_norm
+            and posto = p_prev_posto
+        ) into v_prev_ok;
+      end if;
+      if not v_prev_ok then
+        return jsonb_build_object('ok', false, 'erro', 'SEQUENCIA');
+      end if;
+    end if;
+  end if;
+
+  -- 3) Embalagem: valida limite ANTES de inserir.
+  if p_qtd_por_caixa is not null then
+    select count(*) into v_count
+    from sf_registros
+    where pmo = p_pmo and op = p_op and posto = p_posto and numero_caixa = p_numero_caixa;
+    if v_count >= p_qtd_por_caixa then
+      return jsonb_build_object('ok', false, 'erro', 'CAIXA_CHEIA');
+    end if;
+  end if;
+
+  -- 4) Gravação (posto_retorno = v_novo_retorno propaga o reteste; null no fluxo normal).
+  if jsonb_array_length(p_linhas) = 0 then
+    insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, qtd_por_caixa,
+      status, numero_serie, numero_serie_norm, nqa_visual, nqa_funcional, observacao, posto_retorno)
+    values (p_colaborador, p_posto, p_pmo, p_op, p_cliente, p_numero_caixa, p_qtd_por_caixa,
+      p_status, p_numero_serie, p_numero_serie_norm, p_nqa_visual, p_nqa_funcional, p_observacao, v_novo_retorno);
+  else
+    for v_linha in select * from jsonb_array_elements(p_linhas)
+    loop
+      insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, qtd_por_caixa,
+        status, numero_serie, numero_serie_norm, codigo_defeito, posicao, tipo_defeito,
+        nqa_visual, nqa_funcional, observacao, posto_retorno)
+      values (p_colaborador, p_posto, p_pmo, p_op, p_cliente, p_numero_caixa, p_qtd_por_caixa,
+        p_status, p_numero_serie, p_numero_serie_norm,
+        coalesce(v_linha->>'codigo_defeito', ''), coalesce(v_linha->>'posicao', ''),
+        coalesce(v_linha->>'tipo_defeito', ''), p_nqa_visual, p_nqa_funcional, p_observacao, v_novo_retorno);
+    end loop;
+  end if;
+
+  if p_qtd_por_caixa is not null then
+    select count(*) into v_count
+    from sf_registros
+    where pmo = p_pmo and op = p_op and posto = p_posto and numero_caixa = p_numero_caixa;
+    return jsonb_build_object('ok', true, 'caixa_count', v_count);
+  end if;
+
+  return jsonb_build_object('ok', true);
 end;
 $$;
 

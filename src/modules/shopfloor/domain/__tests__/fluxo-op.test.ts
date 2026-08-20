@@ -170,6 +170,15 @@ describe('postoPendenteDePeca', () => {
     expect(pp([{ posto: 'NQA', status: 'Reprovado', postoRetorno: '' }])).toBe('NQA')
   })
 
+  it('reteste NQA por lista: pendente no 1º da lista; a propagação avança pelos postos até o NQA', () => {
+    // reprova com lista de reteste (postos + NQA no fim) → pendente no 1º
+    expect(pp([{ posto: 'NQA', status: 'Reprovado', postoRetorno: 'SPI,Teste,NQA' }])).toBe('SPI')
+    // repasse do SPI (aprovado) já traz a lista restante propagada → pendente no Teste
+    expect(pp([{ posto: 'SPI', status: 'Aprovado', postoRetorno: 'Teste,NQA' }])).toBe('Teste')
+    // repasse do Teste com só o NQA restante → pendente no NQA (reinspeção)
+    expect(pp([{ posto: 'Teste', status: 'Aprovado', postoRetorno: 'NQA' }])).toBe('NQA')
+  })
+
   it('Burn-in: entrada (status vazio) → cozinhando no próprio Burn-in; saída aprovada → próximo', () => {
     expect(pp([{ posto: 'Burn-in', status: '' }])).toBe('Burn-in')
     expect(pp([{ posto: 'Burn-in', status: 'Aprovado' }])).toBe('NQA')
