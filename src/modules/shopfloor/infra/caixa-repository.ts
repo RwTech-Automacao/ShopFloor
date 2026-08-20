@@ -144,6 +144,7 @@ export interface CaixaDoSn {
   posto: string        // posto de embalagem onde a caixa foi formada
   numeroCaixa: string  // código/marcador da caixa (numero_caixa)
   qtd: number          // total de peças (SNs distintos) da caixa
+  fechada: boolean     // a caixa já foi FECHADA na embalagem (NQA só inspeciona caixa fechada)
   jaInspecionadaNqa: boolean // algum SN da caixa já tem registro no posto NQA informado
 }
 
@@ -179,6 +180,16 @@ export async function resolverCaixaPorSn(
   if (e2) throw e2
   const snsNorm = new Set((regs ?? []).map((x) => (x as { numero_serie_norm: string }).numero_serie_norm))
 
+  // Fechada? Ao fechar, a embalagem reescreve o numero_caixa dos registros para o CÓDIGO final e
+  // grava sf_caixas.codigo+fechada. Caixa ABERTA carrega o marcador CX[seq] (sem código em sf_caixas).
+  const { data: cx, error: eCx } = await supabase
+    .from('sf_caixas')
+    .select('fechada')
+    .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('codigo', numero_caixa)
+    .maybeSingle()
+  if (eCx) throw eCx
+  const fechada = (cx as { fechada: boolean } | null)?.fechada === true
+
   // já inspecionada no NQA? algum SN da caixa com registro no posto NQA.
   const { data: nqa, error: e3 } = await supabase
     .from('sf_registros')
@@ -192,6 +203,7 @@ export async function resolverCaixaPorSn(
     posto,
     numeroCaixa: numero_caixa,
     qtd: snsNorm.size,
+    fechada,
     jaInspecionadaNqa: (nqa ?? []).length > 0,
   }
 }

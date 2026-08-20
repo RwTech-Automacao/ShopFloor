@@ -30,6 +30,7 @@ export async function carregarNqaCaixa(
   try {
     const caixa = await resolverCaixaPorSn(pmo.trim(), op.trim(), sn, posto.trim())
     if (!caixa) return { ok: false, erro: 'SN não está em nenhuma caixa. Embale/feche a caixa primeiro.' }
+    if (!caixa.fechada) return { ok: false, erro: 'A caixa desta peça ainda não foi fechada. Feche a caixa na Embalagem antes do NQA.' }
     const amostra = buscarNqa(caixa.qtd, await carregarTabelaNqa())
     if (amostra === null) {
       return { ok: false, erro: `Sem tamanho de amostra na Tabela NQA para ${caixa.qtd} peça(s). Configure em Config → Tabela NQA.` }
