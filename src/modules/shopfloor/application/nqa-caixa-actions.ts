@@ -33,8 +33,9 @@ export async function carregarNqaCaixa(
     if (!caixa) return { ok: false, erro: 'SN não está em nenhuma caixa. Embale/feche a caixa primeiro.' }
     if (!caixa.fechada) return { ok: false, erro: 'A caixa desta peça ainda não foi fechada. Feche a caixa na Embalagem antes do NQA.' }
     const amostra = buscarNqa(caixa.qtd, await carregarTabelaNqa())
-    if (amostra === null) {
-      return { ok: false, erro: `Sem tamanho de amostra na Tabela NQA para ${caixa.qtd} peça(s). Configure em Config → Tabela NQA.` }
+    // amostra 0 (ou null) da Tabela NQA aprovaria a caixa sem inspecionar nada → bloqueia.
+    if (amostra === null || amostra <= 0) {
+      return { ok: false, erro: `Tamanho de amostra inválido na Tabela NQA para ${caixa.qtd} peça(s). Configure em Config → Tabela NQA.` }
     }
     return {
       ok: true,
@@ -104,6 +105,10 @@ export async function finalizarNqaCaixa(entrada: {
       const msg = error.message || ''
       if (msg.includes('CAIXA_JA_INSPECIONADA')) return { ok: false, erro: 'Esta caixa já foi inspecionada no NQA.' }
       if (msg.includes('CAIXA_VAZIA')) return { ok: false, erro: 'Caixa sem peças.' }
+      if (msg.includes('AMOSTRA_FORA_DA_CAIXA')) return { ok: false, erro: 'Há amostra que não pertence a esta caixa. Recarregue e inspecione de novo.' }
+      if (msg.includes('AMOSTRAS_INSUFICIENTES')) return { ok: false, erro: 'Quantidade de amostras menor que a exigida pela Tabela NQA.' }
+      if (msg.includes('APROVADO_COM_REPROVA')) return { ok: false, erro: 'Não é possível aprovar: há amostra reprovada.' }
+      if (msg.includes('AMOSTRA_NQA_INVALIDA')) return { ok: false, erro: 'Tamanho de amostra inválido na Tabela NQA para esta caixa.' }
       return { ok: false, erro: 'Não foi possível registrar o NQA da caixa.' }
     }
     const r = data as unknown as { ok: boolean; total: number }
