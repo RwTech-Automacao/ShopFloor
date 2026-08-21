@@ -338,6 +338,26 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     ? Math.round((totalPassagens / (qtd * postosOP.length)) * 100)
     : null
 
+  // Resumo p/ a banda de status do Modo TV (só dados que já temos: WIP dos nós Entrada/Saída/
+  // Manutenção + soma dos postos normais; gargalo = posto normal com maior fila).
+  const resumo = useMemo(() => {
+    const wipDe = (id: string) => dom.find((n) => n.id === id)?.data.wip ?? 0
+    let emAndamento = 0
+    let gargalo: { posto: string; wip: number } = { posto: '', wip: 0 }
+    for (const id of postosOP) {
+      const w = wipDe(id)
+      emAndamento += w
+      if (w > gargalo.wip) gargalo = { posto: id, wip: w }
+    }
+    return {
+      naoIniciadas: wipDe(ENTRADA),
+      finalizadas: wipDe(SAIDA),
+      emManutencao: wipDe(MANUTENCAO),
+      emAndamento,
+      gargalo,
+    }
+  }, [dom, postosOP])
+
   // Modo TV: tela cheia do canvas (Fullscreen API) + re-encaixa o fluxo ao entrar/sair.
   const canvasRef = useRef<HTMLDivElement>(null)
   const rfRef = useRef<ReactFlowInstance | null>(null)
@@ -434,29 +454,62 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           </ReactFlow>
 
           {telaCheia && (
-            <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
-              <div className="min-w-0">
-                <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
-              </div>
-              <div className="flex items-center gap-6">
-                <div className="text-right">
-                  <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
-                  <p className="text-xs text-muted-foreground">progresso</p>
+            <div className="absolute inset-x-0 top-0 z-20 flex flex-col gap-2 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
+              <div className="flex items-center justify-between gap-6">
+                <div className="min-w-0">
+                  <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={alternarTv}
-                  className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
-                >
-                  <Minimize2 className="size-4" /> Sair (Esc)
-                </button>
+                <div className="flex items-center gap-6">
+                  <div className="text-right">
+                    <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
+                    <p className="text-xs text-muted-foreground">progresso</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={alternarTv}
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
+                  >
+                    <Minimize2 className="size-4" /> Sair (Esc)
+                  </button>
+                </div>
+              </div>
+              {/* Banda de status: números que já temos + gargalo (posto normal com maior fila). */}
+              <div className="flex flex-wrap items-stretch gap-2">
+                <div className="flex min-w-[6.5rem] flex-col justify-center rounded-lg border border-border bg-card px-3 py-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Qtd da OP</span>
+                  <span className="text-xl font-bold leading-tight tabular-nums">{qtd ?? '—'}</span>
+                </div>
+                <div className="flex min-w-[6.5rem] flex-col justify-center rounded-lg border border-border bg-card px-3 py-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Não iniciadas</span>
+                  <span className="text-xl font-bold leading-tight tabular-nums">{resumo.naoIniciadas}</span>
+                </div>
+                <div className="flex min-w-[6.5rem] flex-col justify-center rounded-lg border border-border bg-card px-3 py-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Em andamento</span>
+                  <span className="text-xl font-bold leading-tight tabular-nums text-enterplak">{resumo.emAndamento}</span>
+                </div>
+                <div className="flex min-w-[6.5rem] flex-col justify-center rounded-lg border border-border bg-card px-3 py-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Finalizadas</span>
+                  <span className="text-xl font-bold leading-tight tabular-nums text-green-600">{resumo.finalizadas}</span>
+                </div>
+                <div className="flex min-w-[9rem] flex-col justify-center rounded-lg border border-enterplak bg-accent px-3 py-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-enterplak">Gargalo</span>
+                  {resumo.gargalo.wip > 0 ? (
+                    <span className="truncate text-sm font-bold leading-tight">{resumo.gargalo.posto}<span className="font-medium text-muted-foreground"> · {resumo.gargalo.wip}</span></span>
+                  ) : (
+                    <span className="text-sm font-medium leading-tight text-muted-foreground">—</span>
+                  )}
+                </div>
+                <div className="flex min-w-[6.5rem] flex-col justify-center rounded-lg border border-border bg-card px-3 py-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Em manutenção</span>
+                  <span className="text-xl font-bold leading-tight tabular-nums">{resumo.emManutencao}</span>
+                </div>
               </div>
             </div>
           )}
 
           {detalhe && (
-            // Em Modo TV o cabeçalho (z-20) ocupa o topo; o aside desce pra baixo dele (senão o X fica coberto e não fecha).
-            <aside className={`absolute right-0 z-30 flex w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur ${telaCheia ? 'top-16 h-[calc(100%-4rem)]' : 'top-0 h-full'}`}>
+            // Em Modo TV o cabeçalho (z-20, agora com a banda de status) ocupa o topo; o aside desce pra baixo dele.
+            <aside className={`absolute right-0 z-30 flex w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur ${telaCheia ? 'top-28 h-[calc(100%-7rem)]' : 'top-0 h-full'}`}>
               <header className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{detalhe.posto}</p>
