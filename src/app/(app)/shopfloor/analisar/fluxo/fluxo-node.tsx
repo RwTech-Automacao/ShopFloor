@@ -60,6 +60,8 @@ function FluxoNodeBase({ data }: NodeProps) {
   // "já passaram / devem passar" ACIMA e barra ABAIXO ficam FORA do card, absolutamente posicionados
   // (não alteram a altura de layout do nó, senão os Handle/arestas deslocariam do meio do card).
   const pct = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((d.passou / d.devemPassar) * 100)) : 0
+  // Perto de 100% não cabe a % à direita do preenchimento → ela entra pra DENTRO da barra (fica clara no verde).
+  const pctDentro = pct >= 85
 
   return (
     <div className={`relative w-[200px] rounded-xl border-2 bg-card shadow-sm transition-colors ${borda}`}>
@@ -99,12 +101,15 @@ function FluxoNodeBase({ data }: NodeProps) {
         </div>
       </div>
 
-      {/* Barra de progressão: mais grossa, mais separada do card, com contorno e a % dentro.
-          Só postos normais (Manutenção é ramo, sem "devem passar"). */}
+      {/* Barra de progressão: fill VERDE; a % segue o preenchimento pela DIREITA (preta, no trilho) e,
+          perto de 100%, entra pra dentro da barra (clara, pra ler no verde). Só postos normais. */}
       {!d.ehManutencao && d.devemPassar != null && (
-        <div className="absolute inset-x-3 -bottom-4 flex h-4 items-center justify-center overflow-hidden rounded-full border border-border bg-muted shadow-sm">
-          <div className="absolute inset-y-0 left-0 rounded-full bg-enterplak" style={{ width: `${pct}%` }} />
-          <span className="relative text-[10px] font-semibold leading-none text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,.55)' }}>
+        <div className="absolute inset-x-3 -bottom-4 h-4 overflow-hidden rounded-full border border-border bg-muted shadow-sm">
+          <div className="absolute inset-y-0 left-0 rounded-full bg-green-600" style={{ width: `${pct}%` }} />
+          <span
+            className={`absolute top-1/2 -translate-y-1/2 text-[10px] font-bold leading-none tabular-nums ${pctDentro ? 'text-white' : 'text-foreground'}`}
+            style={pctDentro ? { right: `calc(${100 - pct}% + 5px)` } : { left: `calc(${pct}% + 5px)` }}
+          >
             {pct}%
           </span>
         </div>
