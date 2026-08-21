@@ -24,6 +24,10 @@ export interface FluxoNodeData extends FluxoAgregado {
   ehEntrada?: boolean
   /** Caixa de Saída (peças que concluíram todo o fluxo). Renderiza em vinho, sem detalhe ao clicar. */
   ehSaida?: boolean
+  /** Já passaram por este posto (aprovadas p/ posto com status; registros p/ sem). Mesmo valor que deriva `concluido`. */
+  passou: number
+  /** Quantas devem passar (qtd da OP). null = OP sem quantidade (card não mostra "/ devem passar" nem a barra). */
+  devemPassar: number | null
 }
 
 export interface FluxoNodePos {
@@ -119,6 +123,8 @@ function dados(
     ehManutencao,
     recurso,
     concluido,
+    passou,
+    devemPassar: qtd,
   }
 }
 
@@ -137,6 +143,8 @@ function dadosCaixa(id: string, contagem: number, tipo: 'entrada' | 'saida'): Fl
     concluido: false,
     ehEntrada: tipo === 'entrada',
     ehSaida: tipo === 'saida',
+    passou: 0,
+    devemPassar: null,
   }
 }
 

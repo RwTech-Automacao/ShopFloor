@@ -184,7 +184,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [guiaH, setGuiaH] = useState<number | undefined>(undefined) // linha-guia horizontal ao arrastar
   const [guiaV, setGuiaV] = useState<number | undefined>(undefined) // linha-guia vertical ao arrastar
   const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
-  const [qtd, setQtd] = useState<number | null>(null) // qtd da OP (pro % de prontas no Modo TV)
+  const [qtd, setQtd] = useState<number | null>(null) // qtd da OP (pro % de progresso no Modo TV)
 
   // Relógio ao vivo pro "há X" do Burn-in (atualiza a cada minuto).
   const [agoraMs, setAgoraMs] = useState(() => Date.now())
@@ -310,7 +310,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   }, [buscou, sel])
 
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
-  // Postos da OP em ordem (sem Manutenção nem as caixas Entrada/Saída) — pra timeline e % de prontas.
+  // Postos da OP em ordem (sem Manutenção nem as caixas Entrada/Saída) — pra timeline e % de progresso.
   const postosOP = useMemo(
     () => dom.filter((n) => n.id !== MANUTENCAO && n.id !== ENTRADA && n.id !== SAIDA).map((n) => n.id),
     [dom],
@@ -319,18 +319,24 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   // (essas peças ainda não têm SN bipado, então não aparecem na lista "Pendentes no posto").
   const naoIniciadasPrimeiro = aberto && aberto === postosOP[0] ? (dom.find((n) => n.id === ENTRADA)?.data.wip ?? 0) : 0
 
-  // Cabeçalho do Modo TV: PMO/OP · Cliente + % de prontas (passaram pelo último posto ÷ qtd da OP).
+  // Cabeçalho do Modo TV: PMO/OP + % de progresso do processo inteiro (sem o cliente).
   const opInfo = useMemo(() => {
     const [pmo, op] = sel.split('||')
-    return { pmo: pmo ?? '', op: op ?? '', cliente: ops.find((o) => o.pmo === pmo && o.op === op)?.cliente ?? '' }
-  }, [sel, ops])
-  const prontas = useMemo(() => {
-    const ultimoId = postosOP[postosOP.length - 1]
-    const d = ultimoId ? dom.find((n) => n.id === ultimoId)?.data : undefined
-    if (!d) return 0
-    return d.temStatus ? d.aprovadas : d.registros // "prontas" = peças que passaram pelo último posto
-  }, [dom, postosOP])
-  const pctProntas = qtd && qtd > 0 ? Math.round((prontas / qtd) * 100) : null
+    return { pmo: pmo ?? '', op: op ?? '' }
+  }, [sel])
+  // % "macro": soma das passagens (aprovadas p/ posto com status; registros p/ sem) de TODOS os postos
+  // normais ÷ (qtd × nº de postos) — equivale à média do % de cada posto; exclui reprovados.
+  const totalPassagens = useMemo(
+    () => postosOP.reduce((acc, id) => {
+      const d = dom.find((n) => n.id === id)?.data
+      if (!d) return acc
+      return acc + (d.temStatus ? d.aprovadas : d.registros)
+    }, 0),
+    [dom, postosOP],
+  )
+  const pctProcesso = qtd && qtd > 0 && postosOP.length > 0
+    ? Math.round((totalPassagens / (qtd * postosOP.length)) * 100)
+    : null
 
   // Modo TV: tela cheia do canvas (Fullscreen API) + re-encaixa o fluxo ao entrar/sair.
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -431,12 +437,11 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
               <div className="min-w-0">
                 <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
-                {opInfo.cliente && <p className="truncate text-sm text-muted-foreground">{opInfo.cliente}</p>}
               </div>
               <div className="flex items-center gap-6">
                 <div className="text-right">
-                  <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProntas !== null ? `${pctProntas}%` : '—'}</p>
-                  <p className="text-xs text-muted-foreground">prontas{qtd ? ` · ${prontas}/${qtd}` : ''}</p>
+                  <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
+                  <p className="text-xs text-muted-foreground">progresso</p>
                 </div>
                 <button
                   type="button"

@@ -55,29 +55,75 @@ function FluxoNodeBase({ data }: NodeProps) {
       ? 'border-enterplak'
       : 'border-border'
 
+  // Manutenção é ramo (não tem "devem passar"): mantém o card antigo — ícone à esquerda,
+  // WIP como badge no canto direito, sem número/barra fora do card.
+  if (d.ehManutencao) {
+    return (
+      <div className={`w-[200px] rounded-xl border-2 bg-card shadow-sm transition-colors ${borda}`}>
+        <Handle type="target" position={Position.Left} />
+        <div className="flex items-center gap-2.5 px-3 py-2.5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
+            {iconeDo(d)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{d.posto}</p>
+            <p className="text-xs text-muted-foreground">em manutenção</p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end">
+            <span className={`rounded-md px-2 py-0.5 text-sm font-bold ${d.wip > 0 ? 'bg-enterplak text-white' : 'bg-muted text-muted-foreground'}`}>
+              {d.wip}
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Postos normais: "já passaram / devem passar" ACIMA e barra de progressão ABAIXO, ambos FORA
+  // do card e absolutamente posicionados (não alteram a altura de layout do nó, senão os
+  // Handle/arestas deslocariam do meio do card). Sem qtd (devemPassar null): só o número, sem "/qtd" e sem barra.
+  const pct = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((d.passou / d.devemPassar) * 100)) : 0
+
   return (
-    <div className={`w-[200px] rounded-xl border-2 bg-card shadow-sm transition-colors ${borda}`}>
+    <div className={`relative w-[200px] rounded-xl border-2 bg-card shadow-sm transition-colors ${borda}`}>
+      <div className="absolute inset-x-0 -top-5 flex items-baseline justify-center gap-1 text-xs">
+        <span className="font-bold text-enterplak tabular-nums">{d.passou}</span>
+        {d.devemPassar != null && <span className="text-muted-foreground">/ {d.devemPassar}</span>}
+      </div>
+
       <Handle type="target" position={Position.Left} />
 
+      {/* WIP: mini-card (miniatura do card) ancorado na entrada, metade fora, sobre o Handle esquerdo. */}
+      <div
+        className={`pointer-events-none absolute left-0 top-1/2 z-10 flex h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[10px] border-2 bg-white px-1.5 text-sm font-bold shadow-sm ${
+          d.wip > 0 ? 'border-enterplak text-enterplak' : 'border-border text-muted-foreground'
+        }`}
+      >
+        {d.wip}
+      </div>
+
       <div className="flex items-center gap-2.5 px-3 py-2.5">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
-          {iconeDo(d)}
-        </div>
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{d.posto}</p>
           <p className="text-xs text-muted-foreground">
-            {d.ehManutencao ? 'em manutenção' : d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
+            {d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
           </p>
         </div>
-        <div className="flex shrink-0 flex-col items-end">
-          <span className={`rounded-md px-2 py-0.5 text-sm font-bold ${d.wip > 0 ? 'bg-enterplak text-white' : 'bg-muted text-muted-foreground'}`}>
-            {d.wip}
-          </span>
-          {d.concluido && <Check className="mt-0.5 size-3.5 text-enterplak" />}
+        <div className="flex shrink-0 flex-col items-center gap-0.5">
+          <div className="flex size-9 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
+            {iconeDo(d)}
+          </div>
+          {d.concluido && <Check className="size-3.5 text-enterplak" />}
         </div>
       </div>
 
-      {!d.ehManutencao && <Handle type="source" position={Position.Right} />}
+      {d.devemPassar != null && (
+        <div className="absolute inset-x-3 -bottom-2 h-1 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-enterplak" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+
+      <Handle type="source" position={Position.Right} />
     </div>
   )
 }

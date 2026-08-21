@@ -101,6 +101,34 @@ describe('construirFluxo', () => {
     expect(semQtd.concluido).toBe(false)
   })
 
+  it('preenche passou/devemPassar (D1): passou = aprovadas p/ posto com status, registros p/ sem; devemPassar = qtd', () => {
+    const agg: FluxoAgregado[] = [
+      { ...zero('Teste'), aprovadas: 7, registros: 10 }, // com status: usa aprovadas
+      { ...zero('Embalagem'), aprovadas: 0, registros: 4 }, // sem status: usa registros
+    ]
+    const { nodes } = construirFluxo(['Teste', 'Embalagem'], agg, (p) => p === 'Teste', () => 'nenhum', 100)
+    const de = (id: string) => nodes.find((n) => n.id === id)!.data
+    expect(de('Teste').passou).toBe(7)
+    expect(de('Teste').devemPassar).toBe(100)
+    expect(de('Embalagem').passou).toBe(4)
+    expect(de('Embalagem').devemPassar).toBe(100)
+  })
+
+  it('devemPassar é null quando a OP não tem qtd', () => {
+    const { nodes } = construirFluxo(['Teste'], [], () => true)
+    expect(nodes.find((n) => n.id === 'Teste')!.data.devemPassar).toBeNull()
+  })
+
+  it('caixas de Entrada/Saída (nós sintéticos) recebem defaults que não disparam o visual novo (passou=0, devemPassar=null)', () => {
+    const { nodes } = construirFluxo(['Solda'], [], () => false, () => 'nenhum', 10, () => true, 3, 5)
+    const entrada = nodes.find((n) => n.id === ENTRADA)!
+    const saida = nodes.find((n) => n.id === SAIDA)!
+    expect(entrada.data.passou).toBe(0)
+    expect(entrada.data.devemPassar).toBeNull()
+    expect(saida.data.passou).toBe(0)
+    expect(saida.data.devemPassar).toBeNull()
+  })
+
   it('passa o recurso pro nó (define o ícone); Manutenção recebe recurso manutencao', () => {
     const { nodes } = construirFluxo(['Burn-in'], [], () => false, (p) => (p === 'Burn-in' ? 'burnin' : 'nenhum'))
     expect(nodes.find((n) => n.id === 'Burn-in')!.data.recurso).toBe('burnin')
