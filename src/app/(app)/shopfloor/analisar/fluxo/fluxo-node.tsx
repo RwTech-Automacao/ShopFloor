@@ -103,25 +103,26 @@ function FluxoNodeBase({ data }: NodeProps) {
         {d.wip}
       </div>
 
-      {/* Corpo: texto centralizado no card; ícone ancorado à direita (não empurra o texto do centro). */}
-      <div className="relative flex min-h-[3.5rem] items-center py-2.5">
-        <div className="w-full px-12 text-center">
+      {/* Corpo: texto centralizado ENTRE o mini-card (esq, via pl) e o ícone (dir, em fluxo). */}
+      <div className="flex min-h-[3.5rem] items-center gap-2 py-2.5 pl-6 pr-3">
+        <div className="min-w-0 flex-1 text-center">
           <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{d.posto}</p>
           <p className="text-xs text-muted-foreground">
             {d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
           </p>
         </div>
-        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-0.5">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
+        <div className="flex shrink-0 flex-col items-center gap-0.5">
+          {/* Concluído: contorno vinho em volta do ícone também. */}
+          <div className={`flex size-9 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak ${d.concluido ? 'ring-2 ring-enterplak' : ''}`}>
             {iconeDo(d)}
           </div>
           {d.concluido && <Check className="size-3.5 text-enterplak" />}
         </div>
       </div>
 
-      {/* Barra de progressão: mais grossa, descida um pouco, com a % dentro. */}
+      {/* Barra de progressão: mais grossa, mais separada do card, com contorno e a % dentro. */}
       {d.devemPassar != null && (
-        <div className="absolute inset-x-3 -bottom-3 flex h-4 items-center justify-center overflow-hidden rounded-full bg-muted">
+        <div className="absolute inset-x-3 -bottom-4 flex h-4 items-center justify-center overflow-hidden rounded-full border border-border bg-muted shadow-sm">
           <div className="absolute inset-y-0 left-0 rounded-full bg-enterplak" style={{ width: `${pct}%` }} />
           <span className="relative text-[10px] font-semibold leading-none text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,.55)' }}>
             {pct}%
