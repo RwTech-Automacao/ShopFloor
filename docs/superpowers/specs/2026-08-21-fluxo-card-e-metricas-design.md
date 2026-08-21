@@ -52,13 +52,19 @@ Layout novo (o card branco continua igual; muda o entorno):
       ▓▓░░░░░░░░░░░░░░    ← barra de progressão, ABAIXO e FORA do card
 ```
 
-1. **WIP → entrada (esquerda, metade fora).** O número que hoje é o badge do canto direito
-   passa a um **círculo** ancorado na borda ESQUERDA do card, centralizado na vertical,
-   metade fora/metade dentro ("a peça chegando"). Vinho com texto branco quando `wip > 0`;
-   cinza (`muted`) quando `wip = 0`. Remove o badge do canto direito.
-2. **"Já passaram / devem passar" ACIMA, fora do card.** Ex.: `10 / 100`. `passou` em
+1. **WIP → entrada (esquerda, metade fora) como MINI-CARD.** O número que hoje é o badge do
+   canto direito passa a um **retângulo de bordas arredondadas** (uma "miniatura" do card:
+   fundo branco, borda vinho de 2px, cantos ~10px, sombra leve) ancorado na borda ESQUERDA do
+   card, centralizado na vertical, metade fora/metade dentro ("a peça chegando"). Número em
+   vinho quando `wip > 0`; quando `wip = 0`, borda/texto em cinza (`border`/`muted`). Remove o
+   badge antigo do canto direito.
+2. **Ícone do posto → LADO DIREITO do card.** O ícone (que hoje fica à esquerda, ao lado do
+   nome) passa pro **canto direito** do card — ocupando o espaço que antes era do número. O
+   nome + subtítulo passam a ocupar a esquerda. (Mantém o mesmo quadradinho `bg-enterplak/10`
+   + ícone; só muda o lado.)
+3. **"Já passaram / devem passar" ACIMA, fora do card.** Ex.: `10 / 100`. `passou` em
    destaque, `/ qtd` suave.
-3. **Barra de progressão ABAIXO, fora do card.** Largura = `passou / qtd` (clamp 100%),
+4. **Barra de progressão ABAIXO, fora do card.** Largura = `passou / qtd` (clamp 100%),
    preenchida em vinho sobre trilho `border`/`muted`.
 
 **Regras de borda:**
@@ -108,9 +114,8 @@ pctProcesso    = qtd > 0 && postosOP.length > 0
 - `postosOP` já existe (postos normais em ordem, sem Manutenção/Entrada/Saída).
 - Equivale à **média das % de cada posto** (mesma conta) e **exclui reprovados** (pois
   `passou` usa `aprovadas`).
-- **Rótulo:** trocar "prontas" por algo que reflita progresso do processo (proposta:
-  **"progresso"** ou **"% do processo"** — confirmar no review do spec). O número grande em
-  vinho permanece.
+- **Rótulo:** trocar "prontas" por **"progresso"** (decidido). O número grande em vinho
+  permanece.
 
 ## Fora de escopo
 
@@ -132,8 +137,9 @@ Nenhuma.
 
 ## Como saber que deu certo
 
-- Postos normais mostram: WIP na entrada (metade fora), "passou / qtd" acima, barra abaixo;
-  as arestas continuam chegando no meio do card (não deslocaram).
+- Postos normais mostram: WIP como mini-card na entrada (metade fora), ícone do posto à
+  direita, "passou / qtd" acima, barra abaixo; as arestas continuam chegando no meio do card
+  (não deslocaram).
 - OP sem qtd: card sem "/ qtd" e sem barra, WIP normal.
 - Manutenção e caixas Entrada/Saída: idênticas a hoje.
 - Modo TV: sem o nome do cliente; o % reflete o progresso do processo inteiro
