@@ -55,41 +55,20 @@ function FluxoNodeBase({ data }: NodeProps) {
       ? 'border-enterplak'
       : 'border-border'
 
-  // Manutenção é ramo (não tem "devem passar"): mantém o card antigo — ícone à esquerda,
-  // WIP como badge no canto direito, sem número/barra fora do card.
-  if (d.ehManutencao) {
-    return (
-      <div className={`w-[200px] rounded-xl border-2 bg-card shadow-sm transition-colors ${borda}`}>
-        <Handle type="target" position={Position.Left} />
-        <div className="flex items-center gap-2.5 px-3 py-2.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
-            {iconeDo(d)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{d.posto}</p>
-            <p className="text-xs text-muted-foreground">em manutenção</p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end">
-            <span className={`rounded-md px-2 py-0.5 text-sm font-bold ${d.wip > 0 ? 'bg-enterplak text-white' : 'bg-muted text-muted-foreground'}`}>
-              {d.wip}
-            </span>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Postos normais: "já passaram / devem passar" ACIMA e barra de progressão ABAIXO, ambos FORA
-  // do card e absolutamente posicionados (não alteram a altura de layout do nó, senão os
-  // Handle/arestas deslocariam do meio do card). Sem qtd (devemPassar null): só o número, sem "/qtd" e sem barra.
+  // Card único p/ postos normais E Manutenção (mesmo visual). Manutenção é RAMO: não tem
+  // "devem passar" nem barra de progresso (mostrar % ali seria enganoso) e não tem saída (source).
+  // "já passaram / devem passar" ACIMA e barra ABAIXO ficam FORA do card, absolutamente posicionados
+  // (não alteram a altura de layout do nó, senão os Handle/arestas deslocariam do meio do card).
   const pct = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((d.passou / d.devemPassar) * 100)) : 0
 
   return (
     <div className={`relative w-[200px] rounded-xl border-2 bg-card shadow-sm transition-colors ${borda}`}>
-      <div className="absolute inset-x-0 -top-5 flex items-baseline justify-center gap-1 text-xs">
-        <span className="font-bold text-enterplak tabular-nums">{d.passou}</span>
-        {d.devemPassar != null && <span className="text-muted-foreground">/ {d.devemPassar}</span>}
-      </div>
+      {!d.ehManutencao && (
+        <div className="absolute inset-x-0 -top-5 flex items-baseline justify-center gap-1 text-xs">
+          <span className="font-bold text-enterplak tabular-nums">{d.passou}</span>
+          {d.devemPassar != null && <span className="text-muted-foreground">/ {d.devemPassar}</span>}
+        </div>
+      )}
 
       <Handle type="target" position={Position.Left} />
 
@@ -108,7 +87,7 @@ function FluxoNodeBase({ data }: NodeProps) {
         <div className="min-w-0 flex-1 text-center">
           <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{d.posto}</p>
           <p className="text-xs text-muted-foreground">
-            {d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
+            {d.ehManutencao ? 'em manutenção' : d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-center gap-0.5">
@@ -120,8 +99,9 @@ function FluxoNodeBase({ data }: NodeProps) {
         </div>
       </div>
 
-      {/* Barra de progressão: mais grossa, mais separada do card, com contorno e a % dentro. */}
-      {d.devemPassar != null && (
+      {/* Barra de progressão: mais grossa, mais separada do card, com contorno e a % dentro.
+          Só postos normais (Manutenção é ramo, sem "devem passar"). */}
+      {!d.ehManutencao && d.devemPassar != null && (
         <div className="absolute inset-x-3 -bottom-4 flex h-4 items-center justify-center overflow-hidden rounded-full border border-border bg-muted shadow-sm">
           <div className="absolute inset-y-0 left-0 rounded-full bg-enterplak" style={{ width: `${pct}%` }} />
           <span className="relative text-[10px] font-semibold leading-none text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,.55)' }}>
@@ -130,7 +110,7 @@ function FluxoNodeBase({ data }: NodeProps) {
         </div>
       )}
 
-      <Handle type="source" position={Position.Right} />
+      {!d.ehManutencao && <Handle type="source" position={Position.Right} />}
     </div>
   )
 }
