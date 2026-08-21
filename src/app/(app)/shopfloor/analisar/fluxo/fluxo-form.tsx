@@ -15,7 +15,7 @@ import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type Pas
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { HistoricoSnDialog } from './historico-sn-dialog'
-import { EdgeAtivo } from './edge-ativo'
+import { FloatingEdge } from './floating-edge'
 import { HelperLines, getHelperLines } from './helper-lines'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
@@ -44,27 +44,14 @@ function fmtHora(iso: string): string {
 
 function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[]): Edge[] {
   const dataDe = (id: string) => nodesData.find((n) => n.id === id)?.data
+  // Todas as arestas são FLUTUANTES (o traçado se ajusta a qualquer arranjo dos cards). A aparência
+  // vem do `data`: ativo = peça andando (preenchimento animado); concluido = trilha vinho sólida;
+  // reprova = tracejado esmaecido; senão cinza fino. "Andando" = pendentes no destino (reprova = em Manutenção).
   return es.map((e) => {
-    // "Andando" (preenchendo) só onde há peça se movendo: cadeia = pendentes no destino; reprova = peça em Manutenção.
-    const ativo = e.tipo === 'reprova' ? (dataDe(MANUTENCAO)?.wip ?? 0) > 0 : (dataDe(e.target)?.wip ?? 0) > 0
-    if (ativo) {
-      // aresta ativa: preenchimento animado (fluxo n8n)
-      return { id: e.id, source: e.source, target: e.target, type: 'ativo', style: { stroke: '#8D2033', strokeWidth: 2 } }
-    }
-    // destino já CONCLUÍDO (posto com o check) → trilha percorrida = linha vinho sólida.
-    if (e.tipo !== 'reprova' && dataDe(e.target)?.concluido) {
-      return { id: e.id, source: e.source, target: e.target, style: { stroke: '#8D2033', strokeWidth: 2 } }
-    }
-    // parada: cadeia cinza fina; reprova tracejada esmaecida (marcador de rota)
-    return {
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      style:
-        e.tipo === 'reprova'
-          ? { strokeDasharray: '4 4', stroke: '#8D2033', opacity: 0.35 }
-          : { stroke: '#94a3b8', strokeWidth: 1 },
-    }
+    const reprova = e.tipo === 'reprova'
+    const ativo = reprova ? (dataDe(MANUTENCAO)?.wip ?? 0) > 0 : (dataDe(e.target)?.wip ?? 0) > 0
+    const concluido = !reprova && (dataDe(e.target)?.concluido ?? false)
+    return { id: e.id, source: e.source, target: e.target, type: 'floating', data: { ativo, concluido, reprova } }
   })
 }
 
@@ -195,7 +182,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   }, [])
 
   const nodeTypes = useMemo<NodeTypes>(() => ({ fluxo: FluxoNode }), [])
-  const edgeTypes = useMemo(() => ({ ativo: EdgeAtivo }), [])
+  const edgeTypes = useMemo(() => ({ floating: FloatingEdge }), [])
 
   const abrir = useCallback((id: string) => {
     // Caixas de Entrada/Saída não têm detalhe (só a contagem) — clique é inerte.
