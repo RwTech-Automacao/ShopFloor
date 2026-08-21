@@ -185,6 +185,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [guiaV, setGuiaV] = useState<number | undefined>(undefined) // linha-guia vertical ao arrastar
   const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
   const [qtd, setQtd] = useState<number | null>(null) // qtd da OP (pro % de progresso no Modo TV)
+  const [filtroOp, setFiltroOp] = useState('') // busca do dropdown de OP
 
   // Relógio ao vivo pro "há X" do Burn-in (atualiza a cada minuto).
   const [agoraMs, setAgoraMs] = useState(() => Date.now())
@@ -369,20 +370,41 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     return () => document.removeEventListener('fullscreenchange', onFs)
   }, [])
 
+  // Dropdown de OP: filtro por PMO/OP/cliente (a lista de OPs pode ser longa).
+  const opsFiltradas = useMemo(() => {
+    const f = filtroOp.trim().toLowerCase()
+    if (!f) return ops
+    return ops.filter((o) => `${o.pmo}/${o.op} ${o.cliente ?? ''}`.toLowerCase().includes(f))
+  }, [ops, filtroOp])
+
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-1 flex-col gap-1.5 sm:max-w-md sm:min-w-64">
             <Label>OP</Label>
-            <Select value={sel} onValueChange={(v) => escolher(v ?? '')}>
+            <Select value={sel} onValueChange={(v) => escolher(v ?? '')} onOpenChange={(open) => { if (!open) setFiltroOp('') }}>
               <SelectTrigger><SelectValue placeholder="Selecione a OP" /></SelectTrigger>
-              <SelectContent>
-                {ops.map((o) => (
-                  <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>
-                    {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
-                  </SelectItem>
-                ))}
+              <SelectContent className="w-auto min-w-[22rem] max-w-[calc(100vw-2rem)]">
+                {/* Filtro dentro do dropdown; não deixa o Select "sequestrar" as teclas (typeahead). */}
+                <div className="sticky top-0 z-10 border-b border-border bg-popover p-1.5" onPointerDown={(e) => e.stopPropagation()}>
+                  <input
+                    value={filtroOp}
+                    onChange={(e) => setFiltroOp(e.target.value)}
+                    onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }}
+                    placeholder="Filtrar por PMO / OP / cliente…"
+                    className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                  />
+                </div>
+                {opsFiltradas.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">Nenhuma OP encontrada.</p>
+                ) : (
+                  opsFiltradas.map((o) => (
+                    <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>
+                      {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
