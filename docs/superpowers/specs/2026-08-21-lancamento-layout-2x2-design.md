@@ -32,6 +32,16 @@ Mapeamento a partir de hoje:
 - **Histórico** → base-esquerda (hoje: parte de baixo da coluna direita)
 - **Último** = `PainelResultado` + contador "Lançados" → base-direita (hoje: topo da coluna direita)
 
+## Restrição central (não negociável)
+
+**É SÓ rearranjo de layout.** Nada de lógica, fluxo, handlers, estado, RPCs ou estética
+muda. Cada região mantém **markup, classes, componentes e aparência idênticos aos de hoje**
+— só muda **onde** ela é renderizada (o quadrante). Nenhum componente novo, nenhum estilo
+novo, nenhum texto novo. O mockup de aprovação (`docs/... canvas`) confirmou apenas o
+**arranjo dos quadrantes**; detalhes estéticos ilustrativos dele (badges, breadcrumb,
+indicadores) **não** entram — vale o que já existe na tela. Regra do reviewer: qualquer
+diff que não seja reposicionamento de container/grid é fora de escopo.
+
 ## Escopo
 
 **Só o bipe normal de peça.** São os postos que renderizam o card **"Peça"**, ou seja o
