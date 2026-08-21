@@ -93,23 +93,25 @@ function FluxoNodeBase({ data }: NodeProps) {
 
       <Handle type="target" position={Position.Left} />
 
-      {/* WIP: mini-card (miniatura do card) ancorado na entrada, metade fora, sobre o Handle esquerdo. */}
+      {/* WIP: mini-card (miniatura do card) ancorado na entrada, metade fora, sobre o Handle esquerdo.
+          Cores invertidas: fundo vinho + número branco quando há fila. */}
       <div
-        className={`pointer-events-none absolute left-0 top-1/2 z-10 flex h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[10px] border-2 bg-white px-1.5 text-sm font-bold shadow-sm ${
-          d.wip > 0 ? 'border-enterplak text-enterplak' : 'border-border text-muted-foreground'
+        className={`pointer-events-none absolute left-0 top-1/2 z-10 flex h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[10px] border-2 px-1.5 text-sm font-bold shadow-sm ${
+          d.wip > 0 ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-muted text-muted-foreground'
         }`}
       >
         {d.wip}
       </div>
 
-      <div className="flex items-center gap-2.5 px-3 py-2.5">
-        <div className="min-w-0 flex-1">
+      {/* Corpo: texto centralizado no card; ícone ancorado à direita (não empurra o texto do centro). */}
+      <div className="relative flex min-h-[3.5rem] items-center py-2.5">
+        <div className="w-full px-12 text-center">
           <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{d.posto}</p>
           <p className="text-xs text-muted-foreground">
             {d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
           </p>
         </div>
-        <div className="flex shrink-0 flex-col items-center gap-0.5">
+        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-0.5">
           <div className="flex size-9 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
             {iconeDo(d)}
           </div>
@@ -117,9 +119,13 @@ function FluxoNodeBase({ data }: NodeProps) {
         </div>
       </div>
 
+      {/* Barra de progressão: mais grossa, descida um pouco, com a % dentro. */}
       {d.devemPassar != null && (
-        <div className="absolute inset-x-3 -bottom-2 h-1 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-enterplak" style={{ width: `${pct}%` }} />
+        <div className="absolute inset-x-3 -bottom-3 flex h-4 items-center justify-center overflow-hidden rounded-full bg-muted">
+          <div className="absolute inset-y-0 left-0 rounded-full bg-enterplak" style={{ width: `${pct}%` }} />
+          <span className="relative text-[10px] font-semibold leading-none text-white" style={{ textShadow: '0 0 2px rgba(0,0,0,.55)' }}>
+            {pct}%
+          </span>
         </div>
       )}
 
