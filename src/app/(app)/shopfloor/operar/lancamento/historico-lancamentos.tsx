@@ -21,11 +21,11 @@ function SimboloStatus({ status }: { status: 'aprovado' | 'reprovado' | null }) 
 export function HistoricoLancamentos({ linhas, titulo }: { linhas: LinhaHistorico[]; titulo?: string }) {
   if (linhas.length === 0 && !titulo) return null
   return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col">
+    <div className="mt-3 flex flex-col">
       {titulo && (
         <p className="mb-1 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</p>
       )}
-      <div className={`min-h-0 flex-1 overflow-y-auto rounded-lg border border-border ${titulo ? '' : 'max-h-[8rem] flex-none'}`}>
+      <div className={`overflow-y-auto rounded-lg border border-border ${titulo ? 'max-h-[16rem]' : 'max-h-[8rem]'}`}>
         {linhas.length === 0 ? (
           <p className="px-3 py-4 text-center text-sm text-muted-foreground">Nenhum ainda.</p>
         ) : (

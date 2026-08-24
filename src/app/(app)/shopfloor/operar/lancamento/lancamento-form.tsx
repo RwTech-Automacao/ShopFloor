@@ -632,14 +632,14 @@ export function LancamentoForm({
     <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
       {ehNormal ? (
         <>
-          {/* Topo: Peça/bipe (esq) + Contexto compacto na MESMA linha (dir). */}
-          <div className="grid shrink-0 items-start gap-3 lg:grid-cols-[2fr_3fr]">
-            {/* Peça (esquerda) */}
-            <Card className="flex min-h-0 flex-col">
+          {/* Topo: Peça/bipe (esq) + Contexto compacto na MESMA linha e MESMA altura (dir; stretch). */}
+          <div className="grid shrink-0 gap-3 lg:grid-cols-[2fr_3fr]">
+            {/* Peça (esquerda) — compacta (fonte/campo/botão menores), stretch p/ acompanhar o Contexto. */}
+            <Card size="sm" className="flex min-h-0 flex-col">
               <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
                 <CardTitle>Peça</CardTitle>
               </CardHeader>
-              <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+              <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
                 {/* Burn-in: Evento vem ANTES do campo de ação (define entrada=neutra / saída=scanner). */}
                 {ehBurnin && (
                   <div className="flex shrink-0 flex-col gap-1.5 sm:max-w-xs">
@@ -659,14 +659,14 @@ export function LancamentoForm({
                     <div className="flex flex-col gap-1.5">
                       <Label>Inspeção Visual</Label>
                       <Select value={nqaVisual} onValueChange={(v) => setNqaVisual(v ?? '')}>
-                        <SelectTrigger ref={nqaVisualRef} className="h-12 text-base"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectTrigger ref={nqaVisualRef} className="h-9 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
                         <SelectContent>{OPCOES_STATUS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label>Inspeção Funcional</Label>
                       <Select value={nqaFuncional} onValueChange={(v) => setNqaFuncional(v ?? '')}>
-                        <SelectTrigger className="h-12 text-base"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
                         <SelectContent>{OPCOES_NQA_FUNCIONAL.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
@@ -713,7 +713,7 @@ export function LancamentoForm({
                       autoComplete="off"
                       disabled={enviando || processando}
                       list={ehScanner && !usaAcordeao ? 'acao-defeitos-list' : undefined}
-                      className={`h-12 text-lg disabled:opacity-60 ${usaAcordeao ? 'pr-12' : ''}`}
+                      className={`h-10 text-base disabled:opacity-60 ${usaAcordeao ? 'pr-12' : ''}`}
                       placeholder={usaAcordeao ? (listaAberta ? 'Filtre o defeito…' : 'Bipe o Nº de Série') : (ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série')}
                     />
                     {usaAcordeao && (
@@ -789,7 +789,7 @@ export function LancamentoForm({
 
                 {!usaAcao && (
                   <div className="shrink-0">
-                    <Button onClick={onEnviar} disabled={!valido || enviando} className="h-11 bg-enterplak px-8 hover:bg-enterplak-700">
+                    <Button onClick={onEnviar} disabled={!valido || enviando} className="h-9 bg-enterplak px-6 text-sm hover:bg-enterplak-700">
                       {enviando ? 'Enviando…' : 'Enviar'}
                     </Button>
                   </div>
@@ -799,21 +799,20 @@ export function LancamentoForm({
             {renderContexto(true)}
           </div>
 
-          {/* Fundo: esquerda = última peça bipada + histórico POSITIVO; direita = histórico NEGATIVO. */}
-          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
-            <div className="flex min-h-0 flex-col">
-              <PainelResultado resultado={resultado} />
-              {posto && (
-                <p className="mt-2 shrink-0 text-xs text-muted-foreground">
-                  Lançados — <span className="font-semibold text-foreground">sessão {lancadosSessao}</span>
-                  {totalPosto !== null && (
-                    <> · <span className="font-semibold text-foreground">nesta OP/posto {totalPosto}</span></>
-                  )}
-                </p>
-              )}
+          {/* Fundo: última peça bipada em faixa HORIZONTAL (largura cheia) em cima; abaixo os históricos
+              ✓ (esq) e ✗ (dir), cada um com seu scroll. */}
+          <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <PainelResultado resultado={resultado} />
+            {posto && (
+              <p className="shrink-0 text-xs text-muted-foreground">
+                Lançados — <span className="font-semibold text-foreground">sessão {lancadosSessao}</span>
+                {totalPosto !== null && (
+                  <> · <span className="font-semibold text-foreground">nesta OP/posto {totalPosto}</span></>
+                )}
+              </p>
+            )}
+            <div className="grid gap-4 lg:grid-cols-2">
               <HistoricoLancamentos linhas={historicoPositivo} titulo="✓ Aprovados" />
-            </div>
-            <div className="flex min-h-0 flex-col">
               <HistoricoLancamentos linhas={historicoNegativo} titulo="✗ Reprovados" />
             </div>
           </div>
