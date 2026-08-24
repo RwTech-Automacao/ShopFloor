@@ -60,7 +60,9 @@ export async function carregarFluxoOp(
 
   const { data: agg, error: e2 } = await supabase.rpc('sf_fluxo_op', { p_pmo: pmo, p_op: op })
   if (e2) throw e2
-  const agregados = (agg ?? []) as FluxoAgregado[]
+  // A RPC devolve as colunas em snake_case (aprovados_primeira/reprovados_sem_reteste) → mapeadas pra camelCase abaixo.
+  type AggRpc = { posto: string; wip: number; registros: number; aprovadas: number; reprovadas: number; retestes: number; aprovados_primeira: number; reprovados_sem_reteste: number }
+  const agregados = (agg ?? []) as AggRpc[]
 
   const perfis = await mapaPostoPerfil()
   const temStatus: Record<string, boolean> = {}
@@ -97,10 +99,25 @@ export async function carregarFluxoOp(
       aprovadas: a?.aprovadas ?? 0,
       reprovadas: a?.reprovadas ?? 0,
       retestes: a?.retestes ?? 0,
+      aprovadosPrimeira: a?.aprovados_primeira ?? 0,
+      reprovadosSemReteste: a?.reprovados_sem_reteste ?? 0,
     }
   })
 
   return { postos, agregados: agregadosComPendentes, temStatus, recurso, exigeManutencao, qtd, naoIniciadas, finalizadas }
+}
+
+/** Mediana do tempo (segundos) entre postos consecutivos (RPC sf_fluxo_tempos). Chave `origem||destino`.
+ *  Acessório: se a RPC falhar, devolve {} e o fluxo carrega sem os rótulos de tempo. */
+export async function carregarTemposFluxo(pmo: string, op: string): Promise<Record<string, number>> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_fluxo_tempos', { p_pmo: pmo, p_op: op })
+  if (error) return {}
+  const out: Record<string, number> = {}
+  for (const r of (data ?? []) as { origem: string; destino: string; segundos: number }[]) {
+    out[`${r.origem}||${r.destino}`] = r.segundos
+  }
+  return out
 }
 
 /**
@@ -233,11 +250,11 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
 export async function carregarSnsEmManutencao(pmo: string, op: string): Promise<SnDoPosto[]> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; data_hora: string; id: number }[] = []
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id')
+      .select('numero_serie,numero_serie_norm,status,posto,data_hora,id')
       .eq('pmo', pmo)
       .eq('op', op)
       .neq('numero_serie_norm', '')

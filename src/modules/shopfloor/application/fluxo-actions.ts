@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { construirFluxo, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
-import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxoOp, carregarTemposFluxo, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 
@@ -14,7 +14,11 @@ export async function carregarFluxo(
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
-    const { postos, agregados, temStatus, recurso, exigeManutencao, qtd, naoIniciadas, finalizadas } = await carregarFluxoOp(pmo.trim(), op.trim())
+    const [fluxo, tempos] = await Promise.all([
+      carregarFluxoOp(pmo.trim(), op.trim()),
+      carregarTemposFluxo(pmo.trim(), op.trim()),
+    ])
+    const { postos, agregados, temStatus, recurso, exigeManutencao, qtd, naoIniciadas, finalizadas } = fluxo
     const { nodes, edges } = construirFluxo(
       postos,
       agregados,
@@ -25,7 +29,11 @@ export async function carregarFluxo(
       naoIniciadas,
       finalizadas,
     )
-    return { ok: true, nodes, edges, qtd }
+    // Anexa o tempo típico (mediana, segundos) nas arestas de CADEIA (origem→destino).
+    const edgesComTempo = edges.map((e) =>
+      e.tipo === 'fluxo' ? { ...e, segundos: tempos[`${e.source}||${e.target}`] } : e,
+    )
+    return { ok: true, nodes, edges: edgesComTempo, qtd }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o fluxo da OP.' }
   }
