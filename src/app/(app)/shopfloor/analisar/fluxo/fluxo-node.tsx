@@ -70,8 +70,7 @@ function FluxoNodeBase({ data }: NodeProps) {
     const tipFp = `Aprovados de primeira: ${d.aprovadosPrimeira} de ${basePassou} que passaram = ${fpPct}%`
     const tipRep = `Reprovados sem reteste: ${d.reprovadosSemReteste} peça(s) com o último registro reprovado`
     return (
-      // Wrapper SEM borda: o contorno (vinho ao concluir) fica só na PARTE PRINCIPAL (cabeçalho);
-      // a subdivisão é um painel mais claro ABAIXO, sem borda — igual ao card de exemplo.
+      // Wrapper (sem borda própria): a borda única fica no card interno, envolvendo tudo.
       <div className="relative w-[220px]">
         <Handle type="target" position={Position.Left} />
 
