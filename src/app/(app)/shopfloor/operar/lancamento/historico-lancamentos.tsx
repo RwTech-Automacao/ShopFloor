@@ -15,29 +15,40 @@ function SimboloStatus({ status }: { status: 'aprovado' | 'reprovado' | null }) 
   return <SimboloBool ok={status === 'aprovado'} />
 }
 
-/** Log da sessão (mais recente no topo). Cada linha = um lançamento efetivo. */
-export function HistoricoLancamentos({ linhas }: { linhas: LinhaHistorico[] }) {
-  if (linhas.length === 0) return null
+/** Log da sessão (mais recente no topo). Cada linha = um lançamento efetivo.
+ *  Com `titulo`, vira uma coluna de altura flexível (positivo/negativo) e mostra o cabeçalho
+ *  mesmo vazio; sem `titulo`, mantém o comportamento antigo (some quando não há linhas). */
+export function HistoricoLancamentos({ linhas, titulo }: { linhas: LinhaHistorico[]; titulo?: string }) {
+  if (linhas.length === 0 && !titulo) return null
   return (
-    <div className="mt-3 max-h-[8rem] overflow-y-auto rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground shadow-[0_1px_0_var(--color-border,#e5e7eb)]">
-          <tr>
-            <th className="px-3 py-2 text-center font-medium">Lançamento</th>
-            <th className="px-3 py-2 text-center font-medium">Status</th>
-            <th className="px-3 py-2 text-left font-medium">Nº de Série</th>
-          </tr>
-        </thead>
-        <tbody>
-          {linhas.map((l, i) => (
-            <tr key={i} className="border-t border-border">
-              <td className="px-3 py-1.5 text-center"><SimboloBool ok={l.lancamento} /></td>
-              <td className="px-3 py-1.5 text-center"><SimboloStatus status={l.status} /></td>
-              <td className="px-3 py-1.5 font-mono">{l.sn}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="mt-3 flex min-h-0 flex-1 flex-col">
+      {titulo && (
+        <p className="mb-1 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</p>
+      )}
+      <div className={`min-h-0 flex-1 overflow-y-auto rounded-lg border border-border ${titulo ? '' : 'max-h-[8rem] flex-none'}`}>
+        {linhas.length === 0 ? (
+          <p className="px-3 py-4 text-center text-sm text-muted-foreground">Nenhum ainda.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground shadow-[0_1px_0_var(--color-border,#e5e7eb)]">
+              <tr>
+                <th className="px-3 py-2 text-center font-medium">Lançamento</th>
+                <th className="px-3 py-2 text-center font-medium">Status</th>
+                <th className="px-3 py-2 text-left font-medium">Nº de Série</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((l, i) => (
+                <tr key={i} className="border-t border-border">
+                  <td className="px-3 py-1.5 text-center"><SimboloBool ok={l.lancamento} /></td>
+                  <td className="px-3 py-1.5 text-center"><SimboloStatus status={l.status} /></td>
+                  <td className="px-3 py-1.5 font-mono">{l.sn}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   )
 }

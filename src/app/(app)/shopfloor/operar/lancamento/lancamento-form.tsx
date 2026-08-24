@@ -544,111 +544,97 @@ export function LancamentoForm({
     })
   }
 
+  const ehNormal = !ehIntegracao && !ehEmbalagem && !ehNqaCaixa
+  // Histórico da sessão dividido: positivo (lançou OK e não reprovou) à esquerda; negativo (falhou OU
+  // reprovado — qualquer "x" em Lançamento ou Status) à direita. O último lançamento já sai da lista
+  // (ele aparece no balão de resultado, como hoje).
+  const linhasHistorico = ultimoEhLancamento ? historico.slice(1) : historico
+  const historicoPositivo = linhasHistorico.filter((l) => l.lancamento && l.status !== 'reprovado')
+  const historicoNegativo = linhasHistorico.filter((l) => !l.lancamento || l.status === 'reprovado')
+
+  // Contexto: full-width nos painéis especiais; compacto (fonte/altura menores) no fluxo normal, pra
+  // caber lado a lado com a Peça na mesma linha do topo — sem crescer em altura.
+  const renderContexto = (compacto: boolean) => (
+    <Card size="sm" className="shrink-0">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardTitle>Contexto</CardTitle>
+        {op !== '' && (
+          <Button variant="outline" size="sm" onClick={atualizarCabecalho}>Atualizar cabeçalho</Button>
+        )}
+      </CardHeader>
+      {op === '' ? (
+        <CardContent className="flex flex-col gap-2">
+          <Label htmlFor="bipeCab">Bipe o Nº de Série para carregar a OP</Label>
+          <Input
+            id="bipeCab"
+            ref={bipeCabRef}
+            value={bipeCab}
+            onChange={(e) => setBipeCab(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBiparCabecalho() } }}
+            placeholder="Bipe ou digite o SN e Enter"
+            autoComplete="off"
+            autoFocus
+            className="h-12 text-lg"
+          />
+          <p className="text-xs text-muted-foreground">Digitar + Enter também funciona (sem scanner).</p>
+        </CardContent>
+      ) : (
+        <CardContent
+          className={
+            compacto
+              ? 'grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3 [&_label]:text-xs [&_input]:h-8 [&_input]:text-sm [&_button]:h-8 [&_button]:text-sm'
+              : 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
+          }
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="colaborador">Colaborador</Label>
+            <Input
+              id="colaborador"
+              ref={colaboradorRef}
+              value={colaborador}
+              onChange={(e) => setColaborador(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); postoTriggerRef.current?.focus() } }}
+              autoComplete="off"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Cliente</Label>
+            <Input value={cliente} readOnly disabled />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>PMO</Label>
+            <Input value={pmo} readOnly disabled />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>OP</Label>
+            <Input value={op} readOnly disabled />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Posto</Label>
+            <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')}>
+              <SelectTrigger ref={postoTriggerRef} disabled={enviando || processando}><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Descrição</Label>
+            <Input value={ordemSel?.descricao ?? ''} readOnly disabled />
+          </div>
+          {semFaixa && (
+            <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">Esta OP não tem faixa de Nº de Série cadastrada — não é possível lançar.</p>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  )
+
   return (
     <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
-      {/* Contexto */}
-      <Card size="sm" className="shrink-0">
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
-          <CardTitle>Contexto</CardTitle>
-          {op !== '' && (
-            <Button variant="outline" size="sm" onClick={atualizarCabecalho}>Atualizar cabeçalho</Button>
-          )}
-        </CardHeader>
-        {op === '' ? (
-          <CardContent className="flex flex-col gap-2">
-            <Label htmlFor="bipeCab">Bipe o Nº de Série para carregar a OP</Label>
-            <Input
-              id="bipeCab"
-              ref={bipeCabRef}
-              value={bipeCab}
-              onChange={(e) => setBipeCab(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBiparCabecalho() } }}
-              placeholder="Bipe ou digite o SN e Enter"
-              autoComplete="off"
-              autoFocus
-              className="h-12 text-lg"
-            />
-            <p className="text-xs text-muted-foreground">Digitar + Enter também funciona (sem scanner).</p>
-          </CardContent>
-        ) : (
-          <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="colaborador">Colaborador</Label>
-              <Input
-                id="colaborador"
-                ref={colaboradorRef}
-                value={colaborador}
-                onChange={(e) => setColaborador(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); postoTriggerRef.current?.focus() } }}
-                autoComplete="off"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Cliente</Label>
-              <Input value={cliente} readOnly disabled />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>PMO</Label>
-              <Input value={pmo} readOnly disabled />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>OP</Label>
-              <Input value={op} readOnly disabled />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Posto</Label>
-              <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')}>
-                <SelectTrigger ref={postoTriggerRef} disabled={enviando || processando}><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Descrição</Label>
-              <Input value={ordemSel?.descricao ?? ''} readOnly disabled />
-            </div>
-            {semFaixa && (
-              <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">Esta OP não tem faixa de Nº de Série cadastrada — não é possível lançar.</p>
-            )}
-          </CardContent>
-        )}
-      </Card>
-
-      {/* Área de ação: empilha no estreito, 2 colunas no lg (bipe/ação à esquerda, resultado à direita).
-          grid-rows minmax(0,1fr) trava a linha → a coluna direita (histórico) rola por dentro, não empurra a página. */}
-      <div className={`flex flex-col ${ehIntegracao ? '' : 'min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)] lg:gap-4'}`}>
-        {ehIntegracao && (
-          <div className="flex flex-col">
-            <IntegracaoPanel
-              colaborador={colaborador}
-              cliente={cliente}
-              pmo={pmo}
-              op={op}
-              posto={posto}
-              descricao={ordemSel?.descricao ?? ''}
-              componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
-            />
-          </div>
-        )}
-
-        {ehEmbalagem && (
-          <div className="flex min-h-0 flex-col lg:col-span-2">
-            {ordemSel?.embalagem_individual ? (
-              <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
-            ) : (
-              <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
-            )}
-          </div>
-        )}
-
-        {ehNqaCaixa && (
-          <div className="flex min-h-0 flex-col lg:col-span-2">
-            <NqaCaixaPanel pmo={pmo} op={op} posto={posto} colaborador={colaborador} postos={postosDaOp} />
-          </div>
-        )}
-
-        {/* Bipagem */}
-        {!ehIntegracao && !ehEmbalagem && !ehNqaCaixa && (
-          <>
+      {ehNormal ? (
+        <>
+          {/* Topo: Peça/bipe (esq) + Contexto compacto na MESMA linha (dir). */}
+          <div className="grid shrink-0 items-start gap-3 lg:grid-cols-[2fr_3fr]">
+            {/* Peça (esquerda) */}
             <Card className="flex min-h-0 flex-col">
               <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
                 <CardTitle>Peça</CardTitle>
@@ -810,8 +796,12 @@ export function LancamentoForm({
                 )}
               </CardContent>
             </Card>
+            {renderContexto(true)}
+          </div>
 
-            <div className="flex min-h-0 flex-1 flex-col">
+          {/* Fundo: esquerda = última peça bipada + histórico POSITIVO; direita = histórico NEGATIVO. */}
+          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+            <div className="flex min-h-0 flex-col">
               <PainelResultado resultado={resultado} />
               {posto && (
                 <p className="mt-2 shrink-0 text-xs text-muted-foreground">
@@ -821,11 +811,50 @@ export function LancamentoForm({
                   )}
                 </p>
               )}
-              <HistoricoLancamentos linhas={ultimoEhLancamento ? historico.slice(1) : historico} />
+              <HistoricoLancamentos linhas={historicoPositivo} titulo="✓ Aprovados" />
             </div>
-          </>
-        )}
-      </div>
+            <div className="flex min-h-0 flex-col">
+              <HistoricoLancamentos linhas={historicoNegativo} titulo="✗ Reprovados" />
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {renderContexto(false)}
+          {/* Painéis especiais ocupam a largura toda abaixo do Contexto. */}
+          <div className={`flex flex-col ${ehIntegracao ? '' : 'min-h-0 flex-1'}`}>
+            {ehIntegracao && (
+              <div className="flex flex-col">
+                <IntegracaoPanel
+                  colaborador={colaborador}
+                  cliente={cliente}
+                  pmo={pmo}
+                  op={op}
+                  posto={posto}
+                  descricao={ordemSel?.descricao ?? ''}
+                  componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
+                />
+              </div>
+            )}
+
+            {ehEmbalagem && (
+              <div className="flex min-h-0 flex-col">
+                {ordemSel?.embalagem_individual ? (
+                  <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+                ) : (
+                  <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+                )}
+              </div>
+            )}
+
+            {ehNqaCaixa && (
+              <div className="flex min-h-0 flex-col">
+                <NqaCaixaPanel pmo={pmo} op={op} posto={posto} colaborador={colaborador} postos={postosDaOp} />
+              </div>
+            )}
+          </div>
+        </>
+      )}
       {/* Trava TOTAL durante a gravação (tela de load): cobre a tela e o input-sumidouro engole o bipe
           pra ele NÃO cair em outro campo (ex.: Posto). Só no `enviando` — não cobre o modal do burn-in. */}
       {enviando && (
