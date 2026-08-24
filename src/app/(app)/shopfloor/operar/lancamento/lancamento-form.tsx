@@ -812,8 +812,8 @@ export function LancamentoForm({
               </p>
             )}
             <div className="grid gap-4 lg:grid-cols-2">
-              <HistoricoLancamentos linhas={historicoPositivo} titulo="✓ Aprovados" />
-              <HistoricoLancamentos linhas={historicoNegativo} titulo="✗ Reprovados" />
+              <HistoricoLancamentos linhas={historicoPositivo} titulo="✓ Positivos" />
+              <HistoricoLancamentos linhas={historicoNegativo} titulo="✗ Negativos" />
             </div>
           </div>
         </>

@@ -25,7 +25,7 @@ export function HistoricoLancamentos({ linhas, titulo }: { linhas: LinhaHistoric
       {titulo && (
         <p className="mb-1 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</p>
       )}
-      <div className={`overflow-y-auto rounded-lg border border-border ${titulo ? 'max-h-[16rem]' : 'max-h-[8rem]'}`}>
+      <div className={`overflow-y-auto rounded-lg border border-border ${titulo ? 'max-h-[10rem]' : 'max-h-[8rem]'}`}>
         {linhas.length === 0 ? (
           <p className="px-3 py-4 text-center text-sm text-muted-foreground">Nenhum ainda.</p>
         ) : (
