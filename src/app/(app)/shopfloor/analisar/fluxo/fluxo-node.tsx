@@ -88,9 +88,9 @@ function FluxoNodeBase({ data }: NodeProps) {
 
         {/* overflow-hidden + anel dão o clip dos cantos e o realce de seleção do card inteiro. */}
         <div className={`overflow-hidden rounded-xl shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
-          {/* Cabeçalho (parte branca): recebe a borda de destaque — vinho quando concluído. Sem borda
-              de baixo quando há subdivisão, pra não duplicar a linha divisória. */}
-          <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo} ${temSub ? 'rounded-t-xl border-b-0' : 'rounded-xl'}`}>
+          {/* Cabeçalho (parte branca): borda de destaque (vinho quando concluído) no topo, laterais E na
+              base — essa base vira a linha divisória, então o vinho também "cruza o meio". */}
+          <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo} ${temSub ? 'rounded-t-xl' : 'rounded-xl'}`}>
             <div className="min-w-0 flex-1 text-left">
               <p className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">{d.posto}</p>
               <p className="text-xs text-muted-foreground">
@@ -102,9 +102,9 @@ function FluxoNodeBase({ data }: NodeProps) {
             </div>
           </div>
 
-          {/* Subdivisão — borda SEMPRE cinza (o vinho fica só no cabeçalho); linha fina (border-t) divide do topo. */}
+          {/* Subdivisão — laterais e base SEMPRE cinza; o topo é a borda de baixo do cabeçalho (a divisória vinho). */}
           {temSub && (
-            <div className="flex flex-col gap-1.5 rounded-b-xl border-x-2 border-b-2 border-t border-border bg-muted px-2.5 py-2">
+            <div className="flex flex-col gap-1.5 rounded-b-xl border-x-2 border-b-2 border-border bg-muted px-2.5 py-2">
               <div className="relative h-5 overflow-hidden rounded-full bg-black/5 dark:bg-white/10" title={tipAprov}>
                 <div className="absolute inset-y-0 left-0 rounded-full bg-green-600" style={{ width: `${pctB}%` }} />
                 <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold leading-none tabular-nums text-white">{pctB}%</span>
