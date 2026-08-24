@@ -168,12 +168,8 @@ function FluxoNodeBase({ data }: NodeProps) {
             {d.ehManutencao ? 'em manutenção' : d.concluido ? 'concluído' : d.temStatus ? 'teste/inspeção' : 'passagem'}
           </p>
         </div>
-        <div className="flex shrink-0 flex-col items-center gap-0.5">
-          {/* Concluído: contorno vinho em volta do ícone também. */}
-          <div className={`flex size-9 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak ${d.concluido ? 'ring-2 ring-enterplak' : ''}`}>
-            {iconeDo(d)}
-          </div>
-          {d.concluido && <Check className="size-3.5 text-enterplak" />}
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
+          {iconeDo(d)}
         </div>
       </div>
 
