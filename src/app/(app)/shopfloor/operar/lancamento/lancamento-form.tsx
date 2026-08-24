@@ -552,9 +552,9 @@ export function LancamentoForm({
   const historicoPositivo = linhasHistorico.filter((l) => l.lancamento && l.status !== 'reprovado')
   const historicoNegativo = linhasHistorico.filter((l) => !l.lancamento || l.status === 'reprovado')
 
-  // Contexto: full-width nos painéis especiais; compacto (fonte/altura menores) no fluxo normal, pra
-  // caber lado a lado com a Peça na mesma linha do topo — sem crescer em altura.
-  const renderContexto = (compacto: boolean) => (
+  // Contexto compacto (fonte/altura menores) em TODAS as telas de Lançamento: no fluxo normal cabe ao
+  // lado da Peça; nos painéis especiais fica full-width em cima, mas com o mesmo visual compacto.
+  const renderContexto = () => (
     <Card size="sm" className="shrink-0">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle>Contexto</CardTitle>
@@ -579,13 +579,7 @@ export function LancamentoForm({
           <p className="text-xs text-muted-foreground">Digitar + Enter também funciona (sem scanner).</p>
         </CardContent>
       ) : (
-        <CardContent
-          className={
-            compacto
-              ? 'grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3 [&_label]:text-xs [&_input]:h-8 [&_input]:text-sm [&_button]:h-8 [&_button]:text-sm'
-              : 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
-          }
-        >
+        <CardContent className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3 [&_label]:text-xs [&_input]:h-8 [&_input]:text-sm [&_button]:h-8 [&_button]:text-sm">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="colaborador">Colaborador</Label>
             <Input
@@ -796,7 +790,7 @@ export function LancamentoForm({
                 )}
               </CardContent>
             </Card>
-            {renderContexto(true)}
+            {renderContexto()}
           </div>
 
           {/* Fundo: última peça bipada em faixa HORIZONTAL (largura cheia) em cima; abaixo os históricos
@@ -819,8 +813,8 @@ export function LancamentoForm({
         </>
       ) : (
         <>
-          {renderContexto(false)}
-          {/* Painéis especiais ocupam a largura toda abaixo do Contexto. */}
+          {renderContexto()}
+          {/* Painéis especiais ocupam a largura toda abaixo do Contexto (compacto). */}
           <div className={`flex flex-col ${ehIntegracao ? '' : 'min-h-0 flex-1'}`}>
             {ehIntegracao && (
               <div className="flex flex-col">
