@@ -39,7 +39,7 @@ export default async function HomePage() {
   return (
     <div className="mx-auto max-w-5xl">
       <h1 className="text-2xl font-bold tracking-tight text-foreground">
-        Bem vindo, {primeiroNome} <span className="align-middle">👋</span>
+        Bem-vindo, {primeiroNome} <span className="align-middle">👋</span>
       </h1>
       <p className="mt-1 text-muted-foreground">Selecione uma área para começar.</p>
 
