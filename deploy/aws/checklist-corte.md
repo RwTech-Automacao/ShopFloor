@@ -26,6 +26,8 @@
 ## 1) Pré-corte (dias antes — sem downtime)
 - [ ] Staging 100% aprovado (smoke completo: login, bipe, foto/câmera, fluxo, análise).
 - [ ] `deploy.sh` testado (um deploy de teste rodou limpo).
+- [ ] **`pg_dump` ≥ 17 na instância** — ⚠️ o cloud é **PG 17.6** e o pg16 (default do Ubuntu 24.04) RECUSA o dump ("server version mismatch"). Já instalado (`postgresql-client-17`), mas conferir `pg_dump --version`. Se recriar a instância: `sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt install -y postgresql-client-17`.
+- [ ] **Ensaio de dados feito** (dump fresco → restore no RDS → app com dado real) — ✅ validado 2026-08-27 (public restaurou, 11 usuários, ~19.9k registros reais, login+bipe ok).
 - [ ] **Opção B:** criar subdomínios `shopfloor` (se ainda não) e `api.shopfloor` no Locaweb —
       **ainda apontando pro Vercel/atual**; só troca o A na hora do corte.
 - [ ] Avisar o time: data/hora da janela + "vão precisar re-logar" (JWT secret novo).
@@ -89,5 +91,8 @@
 - **Hairpin:** os domínios de prod TÊM que estar no `/etc/hosts` da instância → 127.0.0.1.
 - `NEXT_PUBLIC_*` é **baked no build** → trocar domínio da api = **rebuild**.
 - Login cai pra todos (JWT secret do self-host ≠ do cloud) → avisar.
+- **Versões de PG:** cloud = **17.6**, RDS = **15.18**. Restaurar 17→15 funciona (só avisos inofensivos de `transaction_timeout`, que é GUC do PG17). Mas o `pg_dump` que TIRA o dump precisa ser **≥17** (ver pré-corte).
+- **Ordem que se auto-corrige:** se embolar a Fase 2, refazer do 2.1 conserta — o `drop schema public cascade` + `truncate auth` zeram tudo antes de restaurar, então não sobra dado duplicado.
+- **Console web do Lightsail embola scrollback/paste** — não confie no que aparece; confirme o estado re-rodando a query de contagem (public_tables/auth_users/registros).
 - **Server Action "x" not found:** depois de um rebuild, abas velhas dão esse erro até dar F5. No corte (rebuild da URL nova), avisar "atualizem a página (F5)". Some sozinho.
 - **Reboot da instância:** há `*** System restart required ***` pendente (kernel). Reiniciar ANTES do corte, numa janela, e conferir que **pm2** (`pm2 list` → shopfloor online; startup já configurado) e **docker/Supabase** (`cd ~/supabase/docker && docker compose ps` → tudo up; restart policy) voltam sozinhos. Não deixar pro dia do corte.
