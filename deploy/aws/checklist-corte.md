@@ -1,0 +1,82 @@
+# Checklist do CORTE (Fase 7) — produção Vercel → AWS
+
+> **Objetivo:** virar a produção do ShopFloor do Vercel (+ Supabase cloud) para a AWS
+> (Lightsail + Supabase self-hosted + RDS), numa janela fora de expediente, com dado
+> fresco e **plano de rollback**.
+
+## Decisão de domínio (definir ANTES)
+- **Opção A (simples):** manter `awsshopfloor.enterplak.com.br` como a URL de produção.
+  Sem trocar DNS de `shopfloor.enterplak.com.br`; só avisa o time da URL nova. Menos passos.
+- **Opção B (domínio limpo):** produção em `shopfloor.enterplak.com.br` (app) +
+  `api.shopfloor.enterplak.com.br` (api). Exige trocar DNS + rebuild + certbot nos domínios reais.
+
+Este checklist cobre a **Opção B** (a completa); pra Opção A, pule os passos de DNS/rebuild de domínio.
+
+---
+
+## 1) Pré-corte (dias antes — sem downtime)
+- [ ] Staging 100% aprovado (smoke completo: login, bipe, foto/câmera, fluxo, análise).
+- [ ] `deploy.sh` testado (um deploy de teste rodou limpo).
+- [ ] **Opção B:** criar subdomínios `shopfloor` (se ainda não) e `api.shopfloor` no Locaweb —
+      **ainda apontando pro Vercel/atual**; só troca o A na hora do corte.
+- [ ] Avisar o time: data/hora da janela + "vão precisar re-logar" (JWT secret novo).
+- [ ] Confirmar acesso ao painel do Locaweb (DNS) e à instância (SSH).
+- [ ] Ter à mão a senha master do RDS e a senha do cloud Prod (pro dump).
+
+## 2) Na janela (fora de expediente)
+1. [ ] Avisar/colocar aviso de manutenção.
+2. [ ] **Congelar o Prod:** pausar o uso (idealmente ninguém bipando) — evita perder registros
+       entre o dump e a virada.
+3. [ ] **Dump FRESCO do cloud** (⚠️ ordem: auth ANTES de public por causa da FK do usuarios):
+   ```bash
+   cd ~/backups
+   pg_dump "postgresql://postgres.ykwkacfviarhfmxeisqk@aws-1-sa-east-1.pooler.supabase.com:5432/postgres" --data-only --no-owner -t auth.users -t auth.identities -f corte-auth.sql
+   pg_dump "postgresql://postgres.ykwkacfviarhfmxeisqk@aws-1-sa-east-1.pooler.supabase.com:5432/postgres" --no-owner --no-privileges -n public -f corte-public.sql
+   ```
+4. [ ] **Limpar o dado do ensaio no RDS** e restaurar o fresco:
+   ```bash
+   # zera o public do ensaio (mantém roles/schemas/extensões e o auth/storage do GoTrue)
+   psql "host=<rds> user=postgres sslmode=require" -c "drop schema public cascade; create schema public; grant usage on schema public to anon, authenticated, service_role;"
+   psql "host=<rds> user=supabase_auth_admin sslmode=require" -c "truncate auth.identities, auth.users cascade;"
+   # restaura auth PRIMEIRO, depois public
+   psql "host=<rds> user=supabase_auth_admin sslmode=require" -v ON_ERROR_STOP=0 -f corte-auth.sql
+   psql "host=<rds> user=postgres sslmode=require" -v ON_ERROR_STOP=0 -f corte-public.sql
+   # re-grants no public (novas tabelas) + recarrega o PostgREST
+   psql "host=<rds> user=postgres sslmode=require" -c "grant usage on schema public to anon, authenticated, service_role; grant all on all tables in schema public to anon, authenticated, service_role; grant all on all routines in schema public to anon, authenticated, service_role; grant all on all sequences in schema public to anon, authenticated, service_role;"
+   cd ~/supabase/docker && docker compose restart rest
+   ```
+   *(fotos NÃO precisam migrar — ficam no Google Drive.)*
+5. [ ] **Opção B — domínios reais:**
+   - [ ] Locaweb: mudar o **A** de `shopfloor` e `api.shopfloor` → **35.168.119.35**.
+   - [ ] `/etc/hosts` da instância: adicionar `127.0.0.1 shopfloor.enterplak.com.br api.shopfloor.enterplak.com.br` (hairpin).
+   - [ ] nginx: trocar `server_name` pros domínios reais (`sudo nano /etc/nginx/sites-available/shopfloor-aws`) → `sudo nginx -t && sudo systemctl reload nginx`.
+   - [ ] certbot: `sudo certbot --nginx -d shopfloor.enterplak.com.br -d api.shopfloor.enterplak.com.br`.
+   - [ ] `.env.production`: `NEXT_PUBLIC_SUPABASE_URL=https://api.shopfloor.enterplak.com.br` (e SITE_URL se o app usar).
+   - [ ] **Rebuild** (URL é baked): `cd ~/ShopFloor && ./deploy.sh` (ou build+restart manual).
+6. [ ] **Opção A:** nada de DNS/rebuild — já está no ar em `awsshopfloor`.
+
+## 3) Verificação (smoke pós-corte, pelo domínio de produção)
+- [ ] Login com usuário real.
+- [ ] Ver ordens/processos (dado fresco).
+- [ ] Um bipe (grava no RDS).
+- [ ] Uma foto (Drive).
+- [ ] Fluxo / Análise abrindo.
+
+## 4) Plano de ROLLBACK (se quebrar)
+- [ ] **DNS de volta pro Vercel:** reverter o A de `shopfloor`/`api.shopfloor` pro valor antigo.
+      O Vercel + Supabase cloud continuam de pé → volta em minutos.
+- [ ] Não desligar nada do Vercel/cloud até a AWS estar validada.
+
+## 5) Pós-corte
+- [ ] Só depois de validado: desligar/pausar Vercel e Supabase cloud (guardar o dump final).
+- [ ] Fechar a porta **8000** do firewall do Lightsail (era só teste).
+- [ ] Trocar o PAT no `.git/config` da instância por credential helper.
+- [ ] Considerar Automatic Snapshots do Lightsail + backup do RDS (já ligado).
+- [ ] Atualizar a versão em "Sobre" se aplicável.
+
+## Gotchas (não esquecer)
+- Ordem do restore: **auth ANTES de public** (FK usuarios_id_fkey → auth.users).
+- Depois de restaurar/alterar tabela: **`docker compose restart rest`** (cache do PostgREST).
+- **Hairpin:** os domínios de prod TÊM que estar no `/etc/hosts` da instância → 127.0.0.1.
+- `NEXT_PUBLIC_*` é **baked no build** → trocar domínio da api = **rebuild**.
+- Login cai pra todos (JWT secret do self-host ≠ do cloud) → avisar.

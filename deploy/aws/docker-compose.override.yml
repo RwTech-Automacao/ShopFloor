@@ -1,0 +1,38 @@
+# docker-compose.override.yml — ShopFloor self-host na AWS
+# - Banco no RDS externo (não usa o `db` embutido) → POSTGRES_HOST no .env aponta pro RDS.
+# - Storage no S3 REAL da AWS (não MinIO).
+# - Sem realtime / supavisor(pooler) / functions / db (não sobem — não listados no `up`).
+# - RDS exige SSL (rds.force_ssl): os serviços Node (storage, meta) recebem SSL explícito.
+#
+# SUBIR (só os serviços necessários):
+#   cd ~/supabase/docker
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d \
+#     studio api-gw auth rest storage imgproxy meta
+
+services:
+  auth:
+    depends_on: !reset null
+  rest:
+    depends_on: !reset null
+
+  # postgres-meta é Node → precisa de SSL explícito pro RDS (rds.force_ssl).
+  meta:
+    depends_on: !reset null
+    environment:
+      PG_META_DB_SSL_MODE: require
+
+  storage:
+    depends_on: !override
+      rest:
+        condition: service_started
+      imgproxy:
+        condition: service_started
+    environment:
+      STORAGE_BACKEND: s3
+      GLOBAL_S3_BUCKET: ${GLOBAL_S3_BUCKET}
+      GLOBAL_S3_FORCE_PATH_STYLE: "false"
+      REGION: ${REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      # storage é Node → força SSL na conexão com o RDS (sem verificar o CA).
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=no-verify
