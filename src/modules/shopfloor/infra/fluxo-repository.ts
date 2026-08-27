@@ -233,11 +233,11 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
 export async function carregarSnsEmManutencao(pmo: string, op: string): Promise<SnDoPosto[]> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; data_hora: string; id: number }[] = []
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id')
+      .select('numero_serie,numero_serie_norm,status,posto,data_hora,id')
       .eq('pmo', pmo)
       .eq('op', op)
       .neq('numero_serie_norm', '')

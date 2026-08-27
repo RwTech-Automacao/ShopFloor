@@ -139,9 +139,10 @@ export function NqaCaixaPanel({
       setTimeout(() => amostraRef.current?.focus(), 0)
       return
     }
-    const nova: AmostraNqa = { snNorm, visual, funcional, observacao: observacao.trim() }
+    const reprovou = amostraReprovada({ visual, funcional })
+    // Observação só faz sentido em amostra reprovada — não carrega nota "fantasma" numa aprovada.
+    const nova: AmostraNqa = { snNorm, visual, funcional, observacao: reprovou ? observacao.trim() : '' }
     setAmostras((prev) => [...prev, nova])
-    const reprovou = amostraReprovada(nova)
     setResultado({
       tipo: reprovou ? 'reprova' : 'ok',
       titulo: reprovou ? 'Amostra reprovada' : 'Amostra aprovada',
