@@ -6,7 +6,7 @@
 
 ## ✅ DECISÃO TRAVADA (2026-08-27): Opção B — domínio real
 - **App:** `shopfloor.enterplak.com.br` → Lightsail (Next.js, 127.0.0.1:3000)
-- **API:** `api.shopfloor.enterplak.com.br` → Supabase self-host (Envoy, 127.0.0.1:8000)
+- **API:** `apishopfloor.enterplak.com.br` → Supabase self-host (Envoy, 127.0.0.1:8000)
 - Exige: trocar DNS no Locaweb + `/etc/hosts` (hairpin) + nginx `server_name` + certbot + **rebuild** (a URL da API é baked) + rollback = DNS de volta pro Vercel.
 
 ## Valores concretos (preencher/conferir)
@@ -14,7 +14,7 @@
 - **RDS host:** `shopfloor-prod-db.c4dc8qyyckst.us-east-1.rds.amazonaws.com` (porta 5432, user `postgres`, `sslmode=require`)
 - **Cloud Prod (pooler, pro dump fresco):** `postgresql://postgres.ykwkacfviarhfmxeisqk@aws-1-sa-east-1.pooler.supabase.com:5432/postgres`
 - **Repo na instância:** `~/ShopFloor` · **Supabase docker:** `~/supabase/docker`
-- **A ÚNICA env de app que muda:** `NEXT_PUBLIC_SUPABASE_URL=https://api.shopfloor.enterplak.com.br` (o app só lê essa + `NEXT_PUBLIC_SUPABASE_ANON_KEY` + `FOTOS_STORAGE` + `GOOGLE_*`). Sem SITE_URL/redirect.
+- **A ÚNICA env de app que muda:** `NEXT_PUBLIC_SUPABASE_URL=https://apishopfloor.enterplak.com.br` (o app só lê essa + `NEXT_PUBLIC_SUPABASE_ANON_KEY` + `FOTOS_STORAGE` + `GOOGLE_*`). Sem SITE_URL/redirect.
 
 ## Fatos que já valem a favor (não refazer no corte)
 - **Grant do schema `auth` JÁ aplicado no RDS** (fix `b1f32f2`) e **sobrevive** ao `drop schema public` (é no schema `auth`, não no `public`). Não precisa reaplicar. Mas o `bootstrap-rds.sql` corrigido é a fonte se algum dia recriar o RDS.
@@ -28,11 +28,13 @@
 - [ ] `deploy.sh` testado (um deploy de teste rodou limpo).
 - [ ] **`pg_dump` ≥ 17 na instância** — ⚠️ o cloud é **PG 17.6** e o pg16 (default do Ubuntu 24.04) RECUSA o dump ("server version mismatch"). Já instalado (`postgresql-client-17`), mas conferir `pg_dump --version`. Se recriar a instância: `sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && sudo apt install -y postgresql-client-17`.
 - [ ] **Ensaio de dados feito** (dump fresco → restore no RDS → app com dado real) — ✅ validado 2026-08-27 (public restaurou, 11 usuários, ~19.9k registros reais, login+bipe ok).
-- [ ] **Opção B:** criar subdomínios `shopfloor` (se ainda não) e `api.shopfloor` no Locaweb —
+- [ ] **Opção B:** criar subdomínios `shopfloor` (se ainda não) e `apishopfloor` no Locaweb —
       **ainda apontando pro Vercel/atual**; só troca o A na hora do corte.
 - [ ] Avisar o time: data/hora da janela + "vão precisar re-logar" (JWT secret novo).
 - [ ] Confirmar acesso ao painel do Locaweb (DNS) e à instância (SSH).
 - [ ] Ter à mão a senha master do RDS e a senha do cloud Prod (pro dump).
+- [ ] **Esqueci-senha (ESTÁ NO AR em Prod)** — o GoTrue self-host precisa de **SMTP** configurado, senão o e-mail de reset não sai. Pegar as credenciais SMTP do dashboard do cloud (Authentication → SMTP Settings) → pôr no `.env` do docker (`SMTP_HOST/PORT/USER/PASS/SENDER_NAME/ADMIN_EMAIL`) + `GOTRUE_SITE_URL=https://shopfloor.enterplak.com.br` + allow-list de redirect → `docker compose restart auth`. **Testar no staging ANTES do corte** (mandar um reset e ver o e-mail chegar). Fluxo: `resetPasswordForEmail(..., {redirectTo: `${origin}/auth/redefinir`})` — o `${origin}` já resolve o domínio certo sozinho.
+- [ ] **repinmetro** — a tela (consulta) só LÊ do banco → migra com o dump, ok. O ROBÔ que empurra (intranet `10.0.0.210`) está **pausado** → não bloqueia o corte; ao religar, apontar pra `https://apishopfloor…` + service key nova.
 
 ## 2) Na janela (fora de expediente)
 1. [ ] Avisar/colocar aviso de manutenção.
@@ -58,11 +60,11 @@
    ```
    *(fotos NÃO precisam migrar — ficam no Google Drive.)*
 5. [ ] **Opção B — domínios reais:**
-   - [ ] Locaweb: mudar o **A** de `shopfloor` e `api.shopfloor` → **35.168.119.35**.
-   - [ ] `/etc/hosts` da instância: adicionar `127.0.0.1 shopfloor.enterplak.com.br api.shopfloor.enterplak.com.br` (hairpin).
+   - [ ] Locaweb: mudar o **A** de `shopfloor` e `apishopfloor` → **35.168.119.35**.
+   - [ ] `/etc/hosts` da instância: adicionar `127.0.0.1 shopfloor.enterplak.com.br apishopfloor.enterplak.com.br` (hairpin).
    - [ ] nginx: trocar `server_name` pros domínios reais (`sudo nano /etc/nginx/sites-available/shopfloor-aws`) → `sudo nginx -t && sudo systemctl reload nginx`.
-   - [ ] certbot: `sudo certbot --nginx -d shopfloor.enterplak.com.br -d api.shopfloor.enterplak.com.br`.
-   - [ ] `.env.production`: `NEXT_PUBLIC_SUPABASE_URL=https://api.shopfloor.enterplak.com.br` (e SITE_URL se o app usar).
+   - [ ] certbot: `sudo certbot --nginx -d shopfloor.enterplak.com.br -d apishopfloor.enterplak.com.br`.
+   - [ ] `.env.production`: `NEXT_PUBLIC_SUPABASE_URL=https://apishopfloor.enterplak.com.br` (e SITE_URL se o app usar).
    - [ ] **Rebuild** (URL é baked): `cd ~/ShopFloor && ./deploy.sh` (ou build+restart manual).
 6. [ ] **Opção A:** nada de DNS/rebuild — já está no ar em `awsshopfloor`.
 
@@ -74,7 +76,7 @@
 - [ ] Fluxo / Análise abrindo.
 
 ## 4) Plano de ROLLBACK (se quebrar)
-- [ ] **DNS de volta pro Vercel:** reverter o A de `shopfloor`/`api.shopfloor` pro valor antigo.
+- [ ] **DNS de volta pro Vercel:** reverter o A de `shopfloor`/`apishopfloor` pro valor antigo.
       O Vercel + Supabase cloud continuam de pé → volta em minutos.
 - [ ] Não desligar nada do Vercel/cloud até a AWS estar validada.
 
