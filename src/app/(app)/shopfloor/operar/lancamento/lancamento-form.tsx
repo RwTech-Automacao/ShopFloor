@@ -22,6 +22,7 @@ import { IntegracaoPanel } from './integracao-panel'
 import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { NqaCaixaPanel } from './nqa-caixa-panel'
+import { lerNqaProgresso, limparNqaProgresso, type NqaProgresso } from './nqa-progresso-local'
 import { AprovarModal } from './aprovar-modal'
 import { ReprovarModal } from './reprovar-modal'
 
@@ -78,6 +79,7 @@ export function LancamentoForm({
   const [enviando, startTransition] = useTransition()
   const [processando, setProcessando] = useState(false) // trava a UI do confirm até o resultado (não deixa bipar em cima)
   const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
+  const [nqaRetomavel, setNqaRetomavel] = useState<NqaProgresso | null>(null) // inspeção NQA salva (localStorage) p/ retomar após refresh
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
   const colaboradorRef = useRef<HTMLInputElement>(null)
@@ -111,6 +113,32 @@ export function LancamentoForm({
   function refreshTotalPosto() {
     if (!pmo || !op || !posto) return
     contarLancadosPosto(pmo, op, posto).then(setTotalPosto).catch(() => {})
+  }
+
+  // Ao montar, verifica se há inspeção NQA salva (localStorage) de um refresh/fechamento —
+  // oferece retomar. Precisa ser em effect (não lazy-init): localStorage só existe no cliente,
+  // após a hidratação — ler no render causaria mismatch de SSR. Sincronização com sistema externo.
+  useEffect(() => {
+    const p = lerNqaProgresso()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync único do localStorage no mount
+    if (p) setNqaRetomavel(p)
+  }, [])
+
+  /** Retoma a inspeção NQA salva: restaura o contexto → o painel do NQA reaparece e hidrata. */
+  function retomarNqa() {
+    if (!nqaRetomavel) return
+    setColaborador(nqaRetomavel.colaborador)
+    setCliente(nqaRetomavel.cliente)
+    setPmo(nqaRetomavel.pmo)
+    setOp(nqaRetomavel.op)
+    setPosto(nqaRetomavel.posto)
+    setNqaRetomavel(null)
+  }
+
+  /** Descarta a inspeção NQA salva (some o banner e apaga o localStorage). */
+  function descartarNqa() {
+    limparNqaProgresso()
+    setNqaRetomavel(null)
   }
 
   const postosDaOp = ordemSel?.postos ?? []
@@ -539,6 +567,20 @@ export function LancamentoForm({
 
   return (
     <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
+      {/* Retomar inspeção NQA salva (localStorage) após refresh — só quando ainda não há contexto na tela. */}
+      {nqaRetomavel && !colaborador && !op && (
+        <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm">
+            Inspeção NQA em andamento — <strong>Caixa {nqaRetomavel.caixa.numeroCaixa}</strong> de{' '}
+            <strong>{nqaRetomavel.colaborador || '—'}</strong> · {nqaRetomavel.amostras.length} amostra(s) já inspecionada(s).
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" onClick={retomarNqa} className="bg-enterplak hover:bg-enterplak-700">Retomar</Button>
+            <Button size="sm" variant="ghost" onClick={descartarNqa}>Descartar</Button>
+          </div>
+        </div>
+      )}
+
       {/* Contexto */}
       <Card size="sm" className="shrink-0">
         <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -635,7 +677,7 @@ export function LancamentoForm({
 
         {ehNqaCaixa && (
           <div className="flex min-h-0 flex-col lg:col-span-2">
-            <NqaCaixaPanel pmo={pmo} op={op} posto={posto} colaborador={colaborador} postos={postosDaOp} />
+            <NqaCaixaPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
           </div>
         )}
 
