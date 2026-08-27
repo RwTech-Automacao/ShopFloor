@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { carregarNqaCaixa, finalizarNqaCaixa, type AmostraNqa, type CaixaNqa } from '@/modules/shopfloor/application/nqa-caixa-actions'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
+import { salvarNqaProgresso, limparNqaProgresso, lerNqaProgresso } from './nqa-progresso-local'
 
 const OPCOES_INSPECAO = ['Aprovado', 'Reprovado', 'Não aplicável']
 
@@ -23,20 +24,27 @@ function amostraReprovada(a: { visual: string; funcional: string }): boolean {
  * → "Aprovar caixa" libera a caixa; qualquer reprovada → caixa reprovada volta a um posto de retorno.
  */
 export function NqaCaixaPanel({
-  pmo, op, posto, colaborador, postos,
-}: { pmo: string; op: string; posto: string; colaborador: string; postos: string[] }) {
+  pmo, op, posto, cliente, colaborador, postos,
+}: { pmo: string; op: string; posto: string; cliente: string; colaborador: string; postos: string[] }) {
+  // Hidratação: se há uma inspeção salva (localStorage) do MESMO contexto (pmo/op/posto),
+  // restaura caixa/amostras/postos de retorno — sobrevive a refresh/fechar aba no mesmo navegador.
+  const [hidratado] = useState(() => {
+    const p = lerNqaProgresso()
+    return p && p.pmo === pmo && p.op === op && p.posto === posto ? p : null
+  })
+
   // Estado A: caixa === null (bipe pra puxar a caixa). Estado B: caixa preenchida (inspecionando).
-  const [caixa, setCaixa] = useState<CaixaNqa | null>(null)
+  const [caixa, setCaixa] = useState<CaixaNqa | null>(hidratado?.caixa ?? null)
   const [snCaixa, setSnCaixa] = useState('')
 
   // Estado B: acúmulo das amostras + campos da amostra atual.
-  const [amostras, setAmostras] = useState<AmostraNqa[]>([])
+  const [amostras, setAmostras] = useState<AmostraNqa[]>(hidratado?.amostras ?? [])
   const [snAmostra, setSnAmostra] = useState('')
   const [visual, setVisual] = useState('')
   const [funcional, setFuncional] = useState('')
   const [observacao, setObservacao] = useState('')
   // Postos que a caixa reprovada deve REPASSAR (multi-seleção). Ordenados pela OP na hora de enviar.
-  const [selecionados, setSelecionados] = useState<string[]>([])
+  const [selecionados, setSelecionados] = useState<string[]>(hidratado?.selecionados ?? [])
 
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [carregando, startCarregar] = useTransition()
@@ -69,6 +77,13 @@ export function NqaCaixaPanel({
     caixaRef.current?.focus()
   }, [finalizando])
 
+  // Persiste a inspeção em andamento (localStorage) a cada mudança — some no refresh sem isto.
+  // Só grava com caixa resolvida (estado B); estado A e finalização limpam explicitamente.
+  useEffect(() => {
+    if (caixa === null) return
+    salvarNqaProgresso({ colaborador, cliente, pmo, op, posto, caixa, amostras, selecionados, salvoEm: Date.now() })
+  }, [caixa, amostras, selecionados, colaborador, cliente, pmo, op, posto])
+
   function resetInspecao() {
     setCaixa(null)
     setAmostras([])
@@ -78,6 +93,7 @@ export function NqaCaixaPanel({
     setFuncional('')
     setObservacao('')
     setSelecionados([])
+    limparNqaProgresso()
   }
 
   /** Estado A: bipe de "puxar caixa" → resolve a caixa e o tamanho da amostra. */
