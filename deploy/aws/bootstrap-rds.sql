@@ -91,7 +91,12 @@ grant all on schema storage to supabase_storage_admin;
 -- Uso dos schemas pelos papéis de aplicação.
 grant usage on schema public     to anon, authenticated, service_role;
 grant usage on schema extensions to anon, authenticated, service_role;
-grant usage on schema auth        to authenticator, service_role;
+-- IMPORTANTE: 'authenticated' e 'anon' PRECISAM de usage no schema auth — é o papel
+-- efetivo quando o PostgREST faz SET ROLE authenticated. Sem isso, qualquer RPC
+-- SECURITY INVOKER que chama auth.uid() direto (ex.: importar_processos) estoura
+-- "permission denied for schema auth". (No Supabase real esse grant vem por padrão.)
+grant usage on schema auth        to anon, authenticated, service_role, authenticator;
+grant execute on all functions in schema auth to anon, authenticated, service_role;
 
 -- Permissões no schema public (as tabelas do app protegem por RLS).
 grant all on all tables    in schema public to anon, authenticated, service_role;
