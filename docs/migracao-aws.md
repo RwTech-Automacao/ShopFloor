@@ -144,13 +144,15 @@ Depende de terminar Fase 2+4+5 (Supabase self-host + migração de dados). Depoi
 
 ---
 
-## RETOMAR (pausa 2026-08-26 — usuário foi pra reunião)
+## RETOMAR (pausa 2026-08-27)
 
-**Estado:** Supabase self-hosted **de pé no RDS** + **ensaio de dados migrado** (public 34 tbl / sf_ordens 4 / sf_registros 14124 / usuarios 11 + auth.users 11). **✅✅ APP VALIDADO NA AWS END-TO-END:** app local apontado pro self-host (`.env.local` → `http://35.168.119.35:8000` + chaves novas), **login com usuário real OK + Recebimento/processos com dados migrados**. Deploy do Vercel voltou (câmera do Recebimento na main).
+**Estado: APP NO AR NA AWS (staging).** `https://awsshopfloor.enterplak.com.br` funcionando — login OK, dados migrados, https. Deploy completo: pm2 (`shopfloor`) + nginx (app→:3000, api→:8000) + certbot TLS + `/etc/hosts` (hairpin) + firewall 443. Supabase self-hosted no RDS; ensaio de dados migrado (public 34 tbl / sf_registros 14124 / auth.users 11). Fotos = **Google Drive** (não migra pro S3).
 
-**FALTA TESTAR (retomar aqui):** um **WRITE** (bipe no Lançamento = RPC `sf_lancar`) + **upload de foto NOVA** (valida storage→S3; fotos antigas ainda não migradas). Se ambos funcionarem, o ensaio está 100% fechado.
+**Deploy daqui pra frente:** `deploy/aws/deploy.sh` (na instância: `cd ~/ShopFloor && ./deploy/aws/deploy.sh`). Migração de banco é manual (psql no RDS + `docker compose restart rest`). Vercel = preview; AWS = prod real (deploy manual da main).
 
-**Lembretes pós-teste:** restaurar o Dev local (`cp .env.local.bak .env.local`) e **fechar a porta 8000** no firewall do Lightsail.
+**PRÓXIMO (escolher):** (1) smoke completo no staging (bipe/foto/fluxo, vários aparelhos); (2) **CORTE** → seguir `deploy/aws/checklist-corte.md`; (3) voltar pras features.
+
+**LIMPEZA:** restaurar `.env.local` do PC (`cp .env.local.bak .env.local` — hoje aponta pra AWS), fechar 8000 do firewall, trocar o PAT do `.git/config` da instância.
 
 **Comando do smoke da API (caso precise repetir):**
 ```bash
