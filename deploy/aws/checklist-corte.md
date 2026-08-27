@@ -4,13 +4,22 @@
 > (Lightsail + Supabase self-hosted + RDS), numa janela fora de expediente, com dado
 > fresco e **plano de rollback**.
 
-## Decisão de domínio (definir ANTES)
-- **Opção A (simples):** manter `awsshopfloor.enterplak.com.br` como a URL de produção.
-  Sem trocar DNS de `shopfloor.enterplak.com.br`; só avisa o time da URL nova. Menos passos.
-- **Opção B (domínio limpo):** produção em `shopfloor.enterplak.com.br` (app) +
-  `api.shopfloor.enterplak.com.br` (api). Exige trocar DNS + rebuild + certbot nos domínios reais.
+## ✅ DECISÃO TRAVADA (2026-08-27): Opção B — domínio real
+- **App:** `shopfloor.enterplak.com.br` → Lightsail (Next.js, 127.0.0.1:3000)
+- **API:** `api.shopfloor.enterplak.com.br` → Supabase self-host (Envoy, 127.0.0.1:8000)
+- Exige: trocar DNS no Locaweb + `/etc/hosts` (hairpin) + nginx `server_name` + certbot + **rebuild** (a URL da API é baked) + rollback = DNS de volta pro Vercel.
 
-Este checklist cobre a **Opção B** (a completa); pra Opção A, pule os passos de DNS/rebuild de domínio.
+## Valores concretos (preencher/conferir)
+- **IP do Lightsail:** `35.168.119.35`
+- **RDS host:** `shopfloor-prod-db.c4dc8qyyckst.us-east-1.rds.amazonaws.com` (porta 5432, user `postgres`, `sslmode=require`)
+- **Cloud Prod (pooler, pro dump fresco):** `postgresql://postgres.ykwkacfviarhfmxeisqk@aws-1-sa-east-1.pooler.supabase.com:5432/postgres`
+- **Repo na instância:** `~/ShopFloor` · **Supabase docker:** `~/supabase/docker`
+- **A ÚNICA env de app que muda:** `NEXT_PUBLIC_SUPABASE_URL=https://api.shopfloor.enterplak.com.br` (o app só lê essa + `NEXT_PUBLIC_SUPABASE_ANON_KEY` + `FOTOS_STORAGE` + `GOOGLE_*`). Sem SITE_URL/redirect.
+
+## Fatos que já valem a favor (não refazer no corte)
+- **Grant do schema `auth` JÁ aplicado no RDS** (fix `b1f32f2`) e **sobrevive** ao `drop schema public` (é no schema `auth`, não no `public`). Não precisa reaplicar. Mas o `bootstrap-rds.sql` corrigido é a fonte se algum dia recriar o RDS.
+- **Chaves NÃO mudam** staging→corte: o stack self-host já usa as chaves definitivas (anon/service/JWT). O login do pessoal cai só porque saem do **cloud** (JWT do cloud ≠ self-host) → todos re-logam uma vez. Avisar.
+- **Bootstrap de roles/schemas/extensões já feito** no RDS. O corte é só **dado fresco + domínio**.
 
 ---
 
@@ -80,3 +89,5 @@ Este checklist cobre a **Opção B** (a completa); pra Opção A, pule os passos
 - **Hairpin:** os domínios de prod TÊM que estar no `/etc/hosts` da instância → 127.0.0.1.
 - `NEXT_PUBLIC_*` é **baked no build** → trocar domínio da api = **rebuild**.
 - Login cai pra todos (JWT secret do self-host ≠ do cloud) → avisar.
+- **Server Action "x" not found:** depois de um rebuild, abas velhas dão esse erro até dar F5. No corte (rebuild da URL nova), avisar "atualizem a página (F5)". Some sozinho.
+- **Reboot da instância:** há `*** System restart required ***` pendente (kernel). Reiniciar ANTES do corte, numa janela, e conferir que **pm2** (`pm2 list` → shopfloor online; startup já configurado) e **docker/Supabase** (`cd ~/supabase/docker && docker compose ps` → tudo up; restart policy) voltam sozinhos. Não deixar pro dia do corte.
