@@ -3,8 +3,9 @@
 -- Antes ela confiava 100% no cliente. Agora valida no servidor (defesa contra cliente
 -- bugado/estado velho/replay):
 --   (a) toda amostra tem que pertencer à caixa;
---   (b) qtd de amostras >= tamanho da amostra da Tabela NQA (pela qtd da caixa);
---   (c) resultado 'Aprovado' não pode conter amostra reprovada.
+--   (b) SÓ p/ APROVAR: qtd de amostras >= tamanho da amostra da Tabela NQA (reprovar não exige);
+--   (c) resultado 'Aprovado' não pode conter amostra reprovada;
+--   (d) resultado 'Reprovado' exige ao menos uma amostra reprovada.
 -- Recria a função (create or replace); resto do corpo idêntico à 0080.
 -- =============================================================
 create or replace function public.sf_nqa_caixa(
@@ -51,17 +52,20 @@ begin
     raise exception 'AMOSTRA_FORA_DA_CAIXA';
   end if;
 
-  -- (b) qtd de amostras >= tamanho da amostra da Tabela NQA (pela qtd da caixa).
-  select tamanho_amostra into v_amostra_req
-  from tabela_nqa
-  where quantidade_min <= v_total and (quantidade_max is null or v_total <= quantidade_max)
-  order by ordem
-  limit 1;
-  if v_amostra_req is null or v_amostra_req <= 0 then
-    raise exception 'AMOSTRA_NQA_INVALIDA';
-  end if;
-  if coalesce(jsonb_array_length(p_amostras), 0) < v_amostra_req then
-    raise exception 'AMOSTRAS_INSUFICIENTES';
+  -- (b) SÓ p/ APROVAR: qtd de amostras >= tamanho da amostra da Tabela NQA (pela qtd da caixa).
+  -- Reprovar NÃO exige a amostra completa — 1 amostra reprovada já basta pra reprovar a caixa.
+  if lower(p_resultado) = 'aprovado' then
+    select tamanho_amostra into v_amostra_req
+    from tabela_nqa
+    where quantidade_min <= v_total and (quantidade_max is null or v_total <= quantidade_max)
+    order by ordem
+    limit 1;
+    if v_amostra_req is null or v_amostra_req <= 0 then
+      raise exception 'AMOSTRA_NQA_INVALIDA';
+    end if;
+    if coalesce(jsonb_array_length(p_amostras), 0) < v_amostra_req then
+      raise exception 'AMOSTRAS_INSUFICIENTES';
+    end if;
   end if;
 
   -- (c) 'Aprovado' não pode ter amostra reprovada.
@@ -71,6 +75,15 @@ begin
        or lower(coalesce(el.v->>'funcional', '')) = 'reprovado'
   ) then
     raise exception 'APROVADO_COM_REPROVA';
+  end if;
+
+  -- (d) 'Reprovado' exige ao menos uma amostra reprovada (Visual ou Funcional).
+  if lower(p_resultado) = 'reprovado' and not exists (
+    select 1 from jsonb_array_elements(coalesce(p_amostras, '[]'::jsonb)) as el(v)
+    where lower(coalesce(el.v->>'visual', '')) = 'reprovado'
+       or lower(coalesce(el.v->>'funcional', '')) = 'reprovado'
+  ) then
+    raise exception 'REPROVADO_SEM_REPROVA';
   end if;
 
   -- Bloqueia se a caixa está NO NQA agora (último registro da peça = posto NQA).

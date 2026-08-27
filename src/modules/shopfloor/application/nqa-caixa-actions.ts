@@ -109,6 +109,7 @@ export async function finalizarNqaCaixa(entrada: {
       if (msg.includes('AMOSTRAS_INSUFICIENTES')) return { ok: false, erro: 'Quantidade de amostras menor que a exigida pela Tabela NQA.' }
       if (msg.includes('APROVADO_COM_REPROVA')) return { ok: false, erro: 'Não é possível aprovar: há amostra reprovada.' }
       if (msg.includes('AMOSTRA_NQA_INVALIDA')) return { ok: false, erro: 'Tamanho de amostra inválido na Tabela NQA para esta caixa.' }
+      if (msg.includes('REPROVADO_SEM_REPROVA')) return { ok: false, erro: 'Para reprovar a caixa, ao menos uma amostra precisa estar reprovada.' }
       return { ok: false, erro: 'Não foi possível registrar o NQA da caixa.' }
     }
     const r = data as unknown as { ok: boolean; total: number }
