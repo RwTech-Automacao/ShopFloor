@@ -29,6 +29,9 @@ export interface EntradaLancamento {
   status?: string
   numeroCaixa?: string
   qtdPorCaixa?: string
+  /** Embalagem "última caixa": aceita passar do limite. A validação de qtd_por_caixa continua
+   *  valendo (qtd presente), mas o RPC recebe qtd=null → não dispara CAIXA_CHEIA. */
+  permitirExtraCaixa?: boolean
   nqaVisual?: string
   nqaFuncional?: string
   defeitos?: { codigo: string; posicao: string; tipo: string }[]
@@ -198,7 +201,9 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     p_status: statusFinal,
     p_posto_tem_status: perfilTemStatus(perfil),
     p_numero_caixa: entrada.numeroCaixa ?? '',
-    p_qtd_por_caixa: qtdPorCaixa,
+    // Última caixa (permitirExtraCaixa) → manda qtd=null pro RPC, que então pula a checagem de
+    // CAIXA_CHEIA. A validação de qtd_por_caixa acima já rodou com o valor real, então continua exigida.
+    p_qtd_por_caixa: entrada.permitirExtraCaixa ? null : qtdPorCaixa,
     p_nqa_visual: entrada.nqaVisual ?? '',
     p_nqa_funcional: entrada.nqaFuncional ?? '',
     p_prev_posto: prevPosto ?? '',
