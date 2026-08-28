@@ -96,6 +96,7 @@ export function LancamentoForm({
   const burninEventoTriggerRef = useRef<HTMLButtonElement>(null)
   const nqaVisualRef = useRef<HTMLButtonElement>(null) // trigger do Select de Inspeção Visual
   const focarAposLancar = useRef(false) // pedir foco no início do ciclo quando o campo destravar (fim da gravação)
+  const bloqueioRef = useRef<HTMLInputElement>(null) // sumidouro: engole o bipe durante a gravação (não cai em outro campo)
   const { confirmar, dialog } = useConfirmacao()
 
   const ordemSel = useMemo(
@@ -297,6 +298,12 @@ export function LancamentoForm({
     focarAposLancar.current = false
     campoInicioCiclo()?.focus()
   }, [enviando, processando])
+
+  // Enquanto GRAVA (avulso ou lote), a tela é travada por um overlay e o foco vai pro campo-sumidouro —
+  // assim um bipe disparado por cima da gravação não cai em nenhum campo (ex.: trocar o Posto). Bug de produção.
+  useEffect(() => {
+    if (enviando || enviandoLote) setTimeout(() => bloqueioRef.current?.focus(), 0)
+  }, [enviando, enviandoLote])
 
   /** Modo coletivo: em vez de gravar, empilha o bipe na lista do lote. Retorna true se empilhou. */
   function empilharNoLote(entrada: EntradaLancamento, outcome: 'aprovado' | 'reprovado' | null): boolean {
@@ -715,7 +722,7 @@ export function LancamentoForm({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Posto</Label>
-              <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviandoLote}>
+              <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviando || processando || enviandoLote}>
                 <SelectTrigger ref={postoTriggerRef}><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
               </Select>
@@ -986,6 +993,24 @@ export function LancamentoForm({
           </>
         )}
       </div>
+      {/* Trava TOTAL durante a gravação (tela de load): cobre a tela e o input-sumidouro engole o bipe
+          pra ele NÃO cair em outro campo (ex.: Posto). No avulso (`enviando`) e no envio do lote
+          (`enviandoLote`) — não cobre o modal do burn-in (que roda antes, fora dessas transições). */}
+      {(enviando || enviandoLote) && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-background/55 backdrop-blur-sm"
+          role="alertdialog"
+          aria-busy="true"
+          aria-label="Gravando"
+          onPointerDown={(e) => e.preventDefault()}
+        >
+          <input ref={bloqueioRef} className="sr-only" readOnly aria-hidden="true" onKeyDown={(e) => e.preventDefault()} />
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-6 py-4 shadow-lg">
+            <span className="size-5 animate-spin rounded-full border-2 border-enterplak border-t-transparent" />
+            <span className="text-base font-medium">{enviandoLote ? 'Enviando o lote… aguarde' : 'Gravando… aguarde'}</span>
+          </div>
+        </div>
+      )}
       <AprovarModal
         aberto={aprovarSn !== null}
         sn={aprovarSn ?? ''}
