@@ -43,6 +43,13 @@ begin
     return null;
   end if;
 
+  if array_length(p_sns, 1) is distinct from array_length(p_sns_norm, 1) then
+    raise exception 'SNS_DESALINHADOS';
+  end if;
+
+  -- Serializa a criação do lote da MESMA OP (evita 2 "Enviar" simultâneos mintarem lotes diferentes).
+  perform pg_advisory_xact_lock(hashtext(p_pmo || '/' || p_op)::bigint);
+
   -- Reaproveita um lote já existente entre esses SNs (nesta OP), se houver.
   select lote_id into v_lote
     from public.sf_lotes
