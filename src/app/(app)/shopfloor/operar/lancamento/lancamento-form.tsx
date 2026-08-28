@@ -15,7 +15,8 @@ import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
-import { lancar, buscarEntradaBurnin, verificarConserto, contarLancadosPosto } from '@/modules/shopfloor/application/lancar-action'
+import { lancar, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
+import { MAX_LOTE } from '@/modules/shopfloor/domain/lote'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
@@ -36,6 +37,10 @@ interface DefeitoLinha {
   posicao: string
   tipo: string
 }
+
+/** Item empilhado no lote (Lançamento Coletivo): a mesma entrada que iria pro `lancar`, mais o
+ * resultado (aprovado/reprovado/null) já resolvido pra exibição — a gravação em si é adiada. */
+type ItemLote = { entrada: EntradaLancamento; outcome: 'aprovado' | 'reprovado' | null; erro?: string }
 
 /** Texto curto de um defeito para o diálogo de confirmação de conserto. */
 function descreverDefeito(d: { codigo: string; posicao: string; tipo: string }): string {
@@ -82,6 +87,7 @@ export function LancamentoForm({
   const [processando, setProcessando] = useState(false) // trava a UI do confirm até o resultado (não deixa bipar em cima)
   const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
   const [nqaRetomavel, setNqaRetomavel] = useState<NqaProgresso | null>(null) // inspeção NQA salva (localStorage) p/ retomar após refresh
+  const [lote, setLote] = useState<ItemLote[]>([]) // Lançamento coletivo: bipes empilhados aqui em vez de gravados na hora
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
   const colaboradorRef = useRef<HTMLInputElement>(null)
@@ -276,6 +282,26 @@ export function LancamentoForm({
     campoInicioCiclo()?.focus()
   }, [enviando, processando])
 
+  /** Modo coletivo: em vez de gravar, empilha o bipe na lista do lote. Retorna true se empilhou. */
+  function empilharNoLote(entrada: EntradaLancamento, outcome: 'aprovado' | 'reprovado' | null): boolean {
+    const sn = entrada.numeroSerie.trim()
+    if (lote.some((i) => normalizarSerie(i.entrada.numeroSerie) === normalizarSerie(sn))) {
+      mostrar({ tipo: 'aviso', titulo: 'Este SN já está no lote.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
+      limparPeca(); return false
+    }
+    if (lote.length >= MAX_LOTE) {
+      mostrar({ tipo: 'aviso', titulo: `Máximo de ${MAX_LOTE} SNs por lote — envie os atuais antes de continuar.` })
+      return false
+    }
+    setLote((prev) => [...prev, { entrada, outcome }])
+    mostrar({
+      tipo: outcome === 'reprovado' ? 'reprova' : 'ok',
+      titulo: 'Adicionado ao lote',
+      chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Lote', valor: `${lote.length + 1}/${MAX_LOTE}` }],
+    })
+    limparPeca(); return true
+  }
+
   async function onEnviar() {
     if (enviando) return
     if (numeroSerie.trim() === '') { setTimeout(() => (ehNqa ? nqaVisualRef.current : snRef.current)?.focus(), 0); return }
@@ -316,29 +342,32 @@ export function LancamentoForm({
       }
     }
 
+    const entrada: EntradaLancamento = {
+      colaborador,
+      posto,
+      pmo,
+      op,
+      numeroSerie,
+      status: mostraStatus ? status : undefined,
+      burninEvento: ehBurnin ? burninEvento : undefined,
+      nqaVisual: ehNqa ? nqaVisual : undefined,
+      nqaFuncional: ehNqa ? nqaFuncional : undefined,
+      observacao: ehNqa ? observacao : undefined,
+      defeitos:
+        reprovado && !ehSpi
+          ? defeitosSel.filter((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
+          : undefined,
+      posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
+      conservoConfirmado,
+    }
+    // Resultado (aprovado/reprovado) do posto: NQA é derivado de Visual/Funcional; demais, do Status.
+    const outcome: 'aprovado' | 'reprovado' | null = ehNqa
+      ? (nqaVisual === 'Reprovado' || nqaFuncional === 'Reprovado' ? 'reprovado' : 'aprovado')
+      : (mostraStatus && status ? (status === 'Reprovado' ? 'reprovado' : 'aprovado') : null)
+    if (ehColetivo) { setProcessando(false); empilharNoLote(entrada, outcome); return }
+
     startTransition(async () => {
-      const r = await lancar({
-        colaborador,
-        posto,
-        pmo,
-        op,
-        numeroSerie,
-        status: mostraStatus ? status : undefined,
-        burninEvento: ehBurnin ? burninEvento : undefined,
-        nqaVisual: ehNqa ? nqaVisual : undefined,
-        nqaFuncional: ehNqa ? nqaFuncional : undefined,
-        observacao: ehNqa ? observacao : undefined,
-        defeitos:
-          reprovado && !ehSpi
-            ? defeitosSel.filter((d) => d.codigo.trim() !== '' && d.posicao.trim() !== '' && d.tipo.trim() !== '')
-            : undefined,
-        posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
-        conservoConfirmado,
-      })
-      // Resultado (aprovado/reprovado) do posto: NQA é derivado de Visual/Funcional; demais, do Status.
-      const outcome: 'aprovado' | 'reprovado' | null = ehNqa
-        ? (nqaVisual === 'Reprovado' || nqaFuncional === 'Reprovado' ? 'reprovado' : 'aprovado')
-        : (mostraStatus && status ? (status === 'Reprovado' ? 'reprovado' : 'aprovado') : null)
+      const r = await lancar(entrada)
       const sn = numeroSerie.trim()
       setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
@@ -479,11 +508,14 @@ export function LancamentoForm({
       }
     }
     setTimeout(() => snRef.current?.focus(), 0)
+    const entrada: EntradaLancamento = {
+      colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado,
+      burninEvento: ehBurnin ? 'saida' : undefined,
+    }
+    if (ehColetivo) { setProcessando(false); empilharNoLote(entrada, 'aprovado'); return }
+
     startTransition(async () => {
-      const r = await lancar({
-        colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado,
-        burninEvento: ehBurnin ? 'saida' : undefined,
-      })
+      const r = await lancar(entrada)
       setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
         mostrar({
@@ -533,17 +565,20 @@ export function LancamentoForm({
       }
     }
 
+    const entrada: EntradaLancamento = {
+      colaborador,
+      posto,
+      pmo,
+      op,
+      numeroSerie: dados.sn,
+      status: 'Reprovado',
+      defeitos: dados.defeitos.map((x) => ({ codigo: x.codigo, posicao: x.posicao, tipo: tipoTextoDoCodigo(x.codigo) })),
+      burninEvento: ehBurnin ? 'saida' : undefined,
+    }
+    if (ehColetivo) { setProcessando(false); empilharNoLote(entrada, 'reprovado'); return }
+
     startTransition(async () => {
-      const r = await lancar({
-        colaborador,
-        posto,
-        pmo,
-        op,
-        numeroSerie: dados.sn,
-        status: 'Reprovado',
-        defeitos: dados.defeitos.map((x) => ({ codigo: x.codigo, posicao: x.posicao, tipo: tipoTextoDoCodigo(x.codigo) })),
-        burninEvento: ehBurnin ? 'saida' : undefined,
-      })
+      const r = await lancar(entrada)
       setReprovarCodigo(null)
       setProcessando(false) // resultado chegou → destrava
       if (r.ok) {
