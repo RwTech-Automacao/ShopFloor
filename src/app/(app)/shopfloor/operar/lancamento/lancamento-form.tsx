@@ -15,8 +15,8 @@ import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
-import { lancar, lancarLote, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
-import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes, type EstadoItemLote } from '@/modules/shopfloor/domain/lote'
+import { lancar, lancarLote, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, carregarLotePendente, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
+import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes } from '@/modules/shopfloor/domain/lote'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
@@ -90,6 +90,7 @@ export function LancamentoForm({
   const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
   const [nqaRetomavel, setNqaRetomavel] = useState<NqaProgresso | null>(null) // inspeção NQA salva (localStorage) p/ retomar após refresh
   const [lote, setLote] = useState<ItemLote[]>([]) // Lançamento coletivo: bipes empilhados aqui em vez de gravados na hora
+  const [loteAncorado, setLoteAncorado] = useState(false) // já puxou o painel do lote nesta sessão/contexto?
   const [enviandoLote, startEnviarLote] = useTransition() // envio em lote (best-effort) do coletivo
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
@@ -221,12 +222,13 @@ export function LancamentoForm({
       descricao: `Há ${lote.length} peça(s) no lote que ainda não foram enviadas. Trocar de contexto agora vai descartá-las.`,
       rotuloConfirmar: 'Descartar e trocar',
     })
-    if (ok) setLote([])
+    if (ok) { setLote([]); setLoteAncorado(false) }
     return ok
   }
   async function mudarPosto(v: string) {
     if (!(await podeTrocarContexto())) return
     setPosto(v); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // novo posto → histórico da sessão + total zeram
+    setLoteAncorado(false)
     const perfilV = postosPerfil[v] ?? PERFIL_PADRAO
     // Burn-in → seletor de Evento; NQA → Inspeção Visual (A/R); demais → campo de ação (SN).
     setTimeout(() => {
@@ -333,14 +335,42 @@ export function LancamentoForm({
       titulo: 'Adicionado ao lote',
       chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Lote', valor: `${contarResolvidos(lote) + 1}/${MAX_LOTE}` }],
     })
+    void puxarPainel(sn) // pré-lista os irmãos do lote (se houver) — não bloqueia
     limparPeca(); return true
+  }
+
+  /** Depois de resolver o 1º item de um lote, puxa os irmãos ainda pendentes neste posto e os
+   * adiciona como placeholders "pendente" (checklist). Idempotente por SN; respeita o teto. */
+  async function puxarPainel(snAncora: string) {
+    if (loteAncorado) return
+    const { snsPendentes } = await carregarLotePendente(pmo, op, posto, snAncora)
+    if (snsPendentes.length === 0) return
+    setLoteAncorado(true)
+    setLote((prev) => {
+      const existentes = new Set(prev.map((i) => i.snNorm))
+      const espaco = Math.max(0, MAX_LOTE - prev.length)
+      const novos: ItemLote[] = snsPendentes
+        .map((s) => ({ estado: 'pendente' as const, sn: s, snNorm: normalizarSerie(s) }))
+        .filter((p) => !existentes.has(p.snNorm))
+        .slice(0, espaco)
+      return novos.length ? [...prev, ...novos] : prev
+    })
   }
 
   /** Envia o lote acumulado (best-effort, 1 lançar() por SN no servidor). Quem falhar continua na
    * lista com o motivo; quem for gravado sai da lista e entra no histórico da sessão, como um bipe normal. */
-  function enviarLote() {
+  async function enviarLote() {
     const resolvidos = lote.filter((i) => i.estado === 'resolvido')
     if (resolvidos.length === 0 || enviandoLote) return
+    if (temPendentes(lote)) {
+      const nPend = lote.length - resolvidos.length
+      const ok = await confirmar({
+        titulo: `${nPend} ainda pendente(s) — enviar assim mesmo?`,
+        descricao: 'As pendentes (não bipadas) continuam na lista; só as resolvidas serão gravadas.',
+        rotuloConfirmar: 'Enviar',
+      })
+      if (!ok) return
+    }
     startEnviarLote(async () => {
       const itens = resolvidos
       const { resultados } = await lancarLote(itens.map((i) => (i as Extract<ItemLote, { estado: 'resolvido' }>).entrada))
