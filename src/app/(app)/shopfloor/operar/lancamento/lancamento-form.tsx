@@ -16,7 +16,7 @@ import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, lancarLote, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
-import { MAX_LOTE } from '@/modules/shopfloor/domain/lote'
+import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes, type EstadoItemLote } from '@/modules/shopfloor/domain/lote'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
@@ -40,7 +40,9 @@ interface DefeitoLinha {
 
 /** Item empilhado no lote (Lançamento Coletivo): a mesma entrada que iria pro `lancar`, mais o
  * resultado (aprovado/reprovado/null) já resolvido pra exibição — a gravação em si é adiada. */
-type ItemLote = { entrada: EntradaLancamento; outcome: 'aprovado' | 'reprovado' | null; erro?: string }
+type ItemLote =
+  | { estado: 'pendente'; sn: string; snNorm: string }
+  | { estado: 'resolvido'; sn: string; snNorm: string; entrada: EntradaLancamento; outcome: 'aprovado' | 'reprovado' | null; erro?: string }
 
 /** Texto curto de um defeito para o diálogo de confirmação de conserto. */
 function descreverDefeito(d: { codigo: string; posicao: string; tipo: string }): string {
@@ -305,22 +307,31 @@ export function LancamentoForm({
     if (enviando || enviandoLote) setTimeout(() => bloqueioRef.current?.focus(), 0)
   }, [enviando, enviandoLote])
 
-  /** Modo coletivo: em vez de gravar, empilha o bipe na lista do lote. Retorna true se empilhou. */
+  /** Modo coletivo: empilha o bipe resolvido no lote. Se houver um placeholder PENDENTE com o
+   * mesmo SN, SUBSTITUI (não duplica). Retorna true se empilhou/substituiu. */
   function empilharNoLote(entrada: EntradaLancamento, outcome: 'aprovado' | 'reprovado' | null): boolean {
     const sn = entrada.numeroSerie.trim()
-    if (lote.some((i) => normalizarSerie(i.entrada.numeroSerie) === normalizarSerie(sn))) {
+    const snNorm = normalizarSerie(sn)
+    if (jaResolvido(lote, snNorm)) {
       mostrar({ tipo: 'aviso', titulo: 'Este SN já está no lote.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
       limparPeca(); return false
     }
-    if (lote.length >= MAX_LOTE) {
+    const idxPend = acharPendente(lote, snNorm)
+    // Só bloqueia por teto quando é item NOVO (não quando substitui um pendente que já ocupa lugar).
+    if (idxPend < 0 && lote.length >= MAX_LOTE) {
       mostrar({ tipo: 'aviso', titulo: `Máximo de ${MAX_LOTE} SNs por lote — envie os atuais antes de continuar.` })
       return false
     }
-    setLote((prev) => [...prev, { entrada, outcome }])
+    const resolvido: ItemLote = { estado: 'resolvido', sn, snNorm, entrada, outcome }
+    setLote((prev) => {
+      const i = acharPendente(prev, snNorm)
+      if (i >= 0) { const c = [...prev]; c[i] = resolvido; return c }
+      return [...prev, resolvido]
+    })
     mostrar({
       tipo: outcome === 'reprovado' ? 'reprova' : 'ok',
       titulo: 'Adicionado ao lote',
-      chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Lote', valor: `${lote.length + 1}/${MAX_LOTE}` }],
+      chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Lote', valor: `${contarResolvidos(lote) + 1}/${MAX_LOTE}` }],
     })
     limparPeca(); return true
   }
@@ -328,20 +339,28 @@ export function LancamentoForm({
   /** Envia o lote acumulado (best-effort, 1 lançar() por SN no servidor). Quem falhar continua na
    * lista com o motivo; quem for gravado sai da lista e entra no histórico da sessão, como um bipe normal. */
   function enviarLote() {
-    if (lote.length === 0 || enviandoLote) return
+    const resolvidos = lote.filter((i) => i.estado === 'resolvido')
+    if (resolvidos.length === 0 || enviandoLote) return
     startEnviarLote(async () => {
-      const itens = lote
-      const { resultados } = await lancarLote(itens.map((i) => i.entrada))
+      const itens = resolvidos
+      const { resultados } = await lancarLote(itens.map((i) => (i as Extract<ItemLote, { estado: 'resolvido' }>).entrada))
       const falhas: ItemLote[] = []
       const linhasOk: LinhaHistorico[] = []
       itens.forEach((item, idx) => {
-        const r = resultados[idx] // lancarLote preserva a ordem 1:1 com os itens enviados
-        if (r?.ok) linhasOk.push({ lancamento: true, status: item.outcome, sn: item.entrada.numeroSerie.trim() })
-        else falhas.push({ ...item, erro: r?.erro ?? 'Erro ao enviar.' })
+        const it = item as Extract<ItemLote, { estado: 'resolvido' }>
+        const r = resultados[idx]
+        if (r?.ok) linhasOk.push({ lancamento: true, status: it.outcome, sn: it.sn })
+        else falhas.push({ ...it, erro: r?.erro ?? 'Erro ao enviar.' })
       })
-      // best-effort: só quem falhou continua no lote, com o motivo anexado — preserva (com update
-      // funcional) qualquer item bipado DURANTE o envio, que não estava na foto `itens` enviada.
-      setLote((prev) => [...falhas, ...prev.filter((p) => !itens.includes(p))])
+      // best-effort: quem falhou volta pro lote com o motivo; PENDENTES e itens bipados durante o
+      // envio são preservados (update funcional filtra só os enviados que deram OK).
+      const enviadosOk = new Set(itens.filter((_, idx) => resultados[idx]?.ok).map((i) => i.snNorm))
+      setLote((prev) => {
+        const restantes = prev.filter((p) => !enviadosOk.has(p.snNorm))
+        // anexa as falhas atualizadas (com erro) que não estejam já em restantes
+        const normRestantes = new Set(restantes.map((p) => p.snNorm))
+        return [...falhas.filter((f) => !normRestantes.has(f.snNorm)), ...restantes]
+      })
       if (linhasOk.length > 0) setHistorico((h) => [...[...linhasOk].reverse(), ...h].slice(0, 30))
       mostrar({
         tipo: falhas.length ? 'aviso' : 'ok',
@@ -940,14 +959,14 @@ export function LancamentoForm({
             {ehColetivo && (
               <Card className="flex min-h-0 flex-col">
                 <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
-                  <CardTitle>Lote ({lote.length}/{MAX_LOTE})</CardTitle>
+                  <CardTitle>Lote — {contarResolvidos(lote)}/{lote.length}</CardTitle>
                   <Button
                     size="sm"
                     onClick={enviarLote}
-                    disabled={lote.length === 0 || enviandoLote}
+                    disabled={contarResolvidos(lote) === 0 || enviandoLote}
                     className="bg-enterplak hover:bg-enterplak-700"
                   >
-                    {enviandoLote ? 'Enviando…' : `Enviar (${lote.length})`}
+                    {enviandoLote ? 'Enviando…' : `Enviar (${contarResolvidos(lote)})`}
                   </Button>
                 </CardHeader>
                 <CardContent className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
@@ -955,17 +974,21 @@ export function LancamentoForm({
                     <p className="text-sm text-muted-foreground">Nenhuma peça no lote ainda — bipe ao lado para acumular.</p>
                   )}
                   {lote.map((item, i) => (
-                    <div key={item.entrada.numeroSerie.trim()} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+                    <div key={item.snNorm} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
                       <div className="min-w-0">
-                        <p className="truncate font-mono text-sm">{item.entrada.numeroSerie.trim()}</p>
-                        <p className={`text-xs ${item.outcome === 'reprovado' ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
-                          {item.outcome === 'reprovado' ? 'Reprovado' : item.outcome === 'aprovado' ? 'Aprovado' : '—'}
-                        </p>
-                        {item.erro && <p className="text-xs font-medium text-red-600">{item.erro}</p>}
+                        <p className="truncate font-mono text-sm">{item.sn}</p>
+                        {item.estado === 'pendente' ? (
+                          <p className="text-xs text-muted-foreground">Pendente</p>
+                        ) : (
+                          <p className={`text-xs ${item.outcome === 'reprovado' ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                            {item.outcome === 'reprovado' ? 'Reprovado' : item.outcome === 'aprovado' ? 'Aprovado' : '—'}
+                          </p>
+                        )}
+                        {item.estado === 'resolvido' && item.erro && <p className="text-xs font-medium text-red-600">{item.erro}</p>}
                       </div>
                       <button
                         type="button"
-                        aria-label={`Remover ${item.entrada.numeroSerie.trim()} do lote`}
+                        aria-label={`Remover ${item.sn} do lote`}
                         onClick={() => setLote((prev) => prev.filter((_, idx) => idx !== i))}
                         disabled={enviandoLote}
                         className="shrink-0 text-muted-foreground hover:text-red-600 disabled:opacity-40"
