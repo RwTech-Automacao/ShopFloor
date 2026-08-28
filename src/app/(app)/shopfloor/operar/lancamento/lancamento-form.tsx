@@ -13,7 +13,7 @@ import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancament
 import { serieDentroDaFaixa, normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
-import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
+import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, buscarEntradaBurnin, verificarConserto, contarLancadosPosto } from '@/modules/shopfloor/application/lancar-action'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
@@ -51,10 +51,12 @@ export function LancamentoForm({
   ordens,
   defeitos,
   postosPerfil,
+  postosColetivo,
 }: {
   ordens: OrdemLancamentoLista[]
   defeitos: { codigo: string; tipo: number }[]
   postosPerfil: Record<string, PerfilPosto>
+  postosColetivo: Record<string, boolean>
 }) {
   const [colaborador, setColaborador] = useState('')
   const [cliente, setCliente] = useState('')
@@ -148,6 +150,9 @@ export function LancamentoForm({
   // NQA por caixa: posto NQA numa OP de embalagem COLETIVA → painel de amostragem por caixa.
   // (NQA individual / sem OP selecionada continua nos Selects inline de Visual/Funcional abaixo.)
   const ehNqaCaixa = ehNqa && ordemSel !== null && !ordemSel.embalagem_individual
+  // Lançamento coletivo (fundação — consumido a partir da Task 5/6): posto marcado coletivo
+  // E perfil suporta (defesa contra dado antigo/perfil trocado após a flag ser ligada).
+  const ehColetivo = posto !== '' && postosColetivo[posto] === true && perfilSuportaColetivo(perfilDo(posto).chave)
   const ehSpi = perfilDo(posto).reprova === 'posicoes'
   const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
   const ehBurnin = perfilDo(posto).recurso === 'burnin'

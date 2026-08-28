@@ -33,6 +33,18 @@ export async function mapaPostoPerfil(): Promise<Record<string, PerfilPosto>> {
   return mapa
 }
 
+/** Mapa chave-do-posto → coletivo (true = permite lançamento coletivo neste posto). */
+export async function mapaPostoColetivo(): Promise<Record<string, boolean>> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.from('sf_postos').select('chave,coletivo')
+  if (error) throw error
+  const mapa: Record<string, boolean> = {}
+  for (const row of (data as { chave: string; coletivo: boolean }[]) ?? []) {
+    mapa[row.chave] = row.coletivo
+  }
+  return mapa
+}
+
 export async function postoEmUsoEmOrdem(chave: string): Promise<boolean> {
   const supabase = await createServerSupabase()
   const { count, error } = await supabase.from('sf_ordem_postos').select('*', { count: 'exact', head: true }).eq('posto', chave)
