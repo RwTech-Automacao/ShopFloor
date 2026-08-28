@@ -995,10 +995,12 @@ export function LancamentoForm({
       </div>
       {/* Trava TOTAL durante a gravação (tela de load): cobre a tela e o input-sumidouro engole o bipe
           pra ele NÃO cair em outro campo (ex.: Posto). No avulso (`enviando`) e no envio do lote
-          (`enviandoLote`) — não cobre o modal do burn-in (que roda antes, fora dessas transições). */}
+          (`enviandoLote`). z-40 fica ABAIXO da camada de diálogos base-ui (z-50) de propósito: assim
+          um modal aberto na transição (confirmar saída de Burn-in antes do tempo, conserto, Aprovar/
+          Reprovar) NUNCA é coberto pelo overlay — senão a tela trava com o diálogo por baixo. */}
       {(enviando || enviandoLote) && (
         <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-background/55 backdrop-blur-sm"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-background/55 backdrop-blur-sm"
           role="alertdialog"
           aria-busy="true"
           aria-label="Gravando"
