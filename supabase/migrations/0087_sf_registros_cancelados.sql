@@ -32,7 +32,9 @@ declare
   v_pmo text; v_op text; v_snnorm text; v_posto text;
   v_recurso text; v_ultimo uuid;
 begin
-  if not tem_permissao('administrar') then
+  -- Gate por MÓDULO (2-arg), igual ao podeNoModulo('shopfloor','administrar') da UI/action —
+  -- assim quem vê o botão passa na RPC (o 1-arg global divergia do gate da tela).
+  if not tem_permissao('shopfloor', 'administrar') then
     raise exception 'SEM_PERMISSAO';
   end if;
   if coalesce(trim(p_motivo), '') = '' then
@@ -57,6 +59,14 @@ begin
   where po.chave = v_posto;
   if v_recurso in ('caixa', 'nqa', 'integracao') then
     raise exception 'POSTO_NAO_CANCELAVEL';
+  end if;
+
+  -- Burn-in usa lock POR POSTO (sf_burnin, 0069); o lock por-OP acima não serializa com ele.
+  -- Quando o alvo é burn-in, pega também o lock por-posto pra o cancelar não correr com um bipe
+  -- de entrada/saída simultâneo (senão o ciclo do burn-in ficaria órfão). Ordem OP→posto sempre
+  -- (nenhuma função pega posto→OP), então não há deadlock.
+  if v_recurso = 'burnin' then
+    perform pg_advisory_xact_lock(hashtext(v_pmo || '/' || v_op || '/' || v_posto)::bigint);
   end if;
 
   -- LIFO: só o bipe mais recente do SN nesta OP.
