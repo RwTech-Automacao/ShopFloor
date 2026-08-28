@@ -490,15 +490,15 @@ Trocar a função `empilharNoLote` inteira por:
     mostrar({
       tipo: outcome === 'reprovado' ? 'reprova' : 'ok',
       titulo: 'Adicionado ao lote',
-      chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Lote', valor: `${contarResolvidos(lote) + (idxPend < 0 ? 1 : 1)}/${MAX_LOTE}` }],
+      chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Lote', valor: `${contarResolvidos(lote) + 1}/${MAX_LOTE}` }],
     })
     limparPeca(); return true
   }
 ```
 
 > Nota: o chip "Lote" mostra resolvidas+1 (a que acabou de resolver). `contarResolvidos(lote)` usa o
-> estado ANTES do setLote (fecho), então soma 1. O `(idxPend < 0 ? 1 : 1)` é sempre +1 (resolver
-> sempre aumenta o nº de resolvidas em 1, substituindo pendente ou não) — mantido explícito p/ clareza.
+> estado ANTES do setLote (fecho), então soma 1 (resolver sempre aumenta as resolvidas em 1, seja
+> substituindo um pendente ou anexando um novo).
 
 - [ ] **Step 4: Ajustar `enviarLote` (envia só resolvidos; preserva pendentes)**
 
