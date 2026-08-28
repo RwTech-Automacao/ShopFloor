@@ -668,7 +668,7 @@ export function LancamentoForm({
         <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle>Contexto</CardTitle>
           {op !== '' && (
-            <Button variant="outline" size="sm" onClick={atualizarCabecalho}>Atualizar cabeçalho</Button>
+            <Button variant="outline" size="sm" onClick={atualizarCabecalho} disabled={enviandoLote}>Atualizar cabeçalho</Button>
           )}
         </CardHeader>
         {op === '' ? (
@@ -698,6 +698,7 @@ export function LancamentoForm({
                 onChange={(e) => setColaborador(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); postoTriggerRef.current?.focus() } }}
                 autoComplete="off"
+                disabled={enviandoLote}
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -714,7 +715,7 @@ export function LancamentoForm({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Posto</Label>
-              <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')}>
+              <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviandoLote}>
                 <SelectTrigger ref={postoTriggerRef}><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
               </Select>
@@ -947,7 +948,7 @@ export function LancamentoForm({
                     <p className="text-sm text-muted-foreground">Nenhuma peça no lote ainda — bipe ao lado para acumular.</p>
                   )}
                   {lote.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+                    <div key={item.entrada.numeroSerie.trim()} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
                       <div className="min-w-0">
                         <p className="truncate font-mono text-sm">{item.entrada.numeroSerie.trim()}</p>
                         <p className={`text-xs ${item.outcome === 'reprovado' ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
