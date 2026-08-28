@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   perfilTemStatus, perfilPrecisaAprovado, perfilExigeManutencao, perfilPedeConfirmacaoConserto,
-  montarLinhasPerfil, obrigatoriosPorPerfil, PERFIL_PADRAO, type PerfilPosto,
+  montarLinhasPerfil, obrigatoriosPorPerfil, PERFIL_PADRAO, perfilSuportaColetivo, type PerfilPosto,
 } from '../perfil-posto'
 
 const P = (o: Partial<PerfilPosto>): PerfilPosto => ({
@@ -24,6 +24,19 @@ describe('flags por perfil', () => {
     expect(perfilPedeConfirmacaoConserto(P({ reprova: 'defeitos', exigeManutencao: true }))).toBe(false)
     // não coleta defeito → NÃO pede
     expect(perfilPedeConfirmacaoConserto(P({ reprova: 'nenhum', exigeManutencao: false }))).toBe(false)
+  })
+})
+
+describe('perfilSuportaColetivo', () => {
+  it('true p/ passagem, spi e inspecao', () => {
+    expect(perfilSuportaColetivo('passagem')).toBe(true)
+    expect(perfilSuportaColetivo('spi')).toBe(true)
+    expect(perfilSuportaColetivo('inspecao')).toBe(true)
+  })
+  it('false p/ perfis não elegíveis', () => {
+    expect(perfilSuportaColetivo('teste')).toBe(false)
+    expect(perfilSuportaColetivo('burnin')).toBe(false)
+    expect(perfilSuportaColetivo('nqa')).toBe(false)
   })
 })
 

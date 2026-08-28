@@ -46,6 +46,10 @@ export function perfilAtribuivel(p: PerfilPosto): boolean {
   return !RECURSOS_NAO_ATRIBUIVEIS.includes(p.recurso)
 }
 
+/** Perfis que suportam lançamento coletivo (chaveado por chave; renomear o nome não quebra). */
+export const PERFIS_COLETIVO_OK: readonly string[] = ['passagem', 'spi', 'inspecao']
+export const perfilSuportaColetivo = (chave: string) => PERFIS_COLETIVO_OK.includes(chave)
+
 /** Expande a reprova em linhas conforme o perfil. Não reprovado → []. */
 export function montarLinhasPerfil(p: PerfilPosto, dados: DadosLinhas): LinhaDefeito[] {
   const reprovado = (dados.status ?? '').toLowerCase() === 'reprovado'
