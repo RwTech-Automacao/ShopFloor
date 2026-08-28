@@ -332,9 +332,10 @@ export function LancamentoForm({
         if (r?.ok) linhasOk.push({ lancamento: true, status: item.outcome, sn: item.entrada.numeroSerie.trim() })
         else falhas.push({ ...item, erro: r?.erro ?? 'Erro ao enviar.' })
       })
-      setLote(falhas) // best-effort: só quem falhou continua no lote, com o motivo anexado
-      if (linhasOk.length > 0) setHistorico((h) => [...linhasOk, ...h].slice(0, 30))
-      setUltimoEhLancamento(false) // o resumo abaixo não é uma linha própria — o histórico mostra tudo
+      // best-effort: só quem falhou continua no lote, com o motivo anexado — preserva (com update
+      // funcional) qualquer item bipado DURANTE o envio, que não estava na foto `itens` enviada.
+      setLote((prev) => [...falhas, ...prev.filter((p) => !itens.includes(p))])
+      if (linhasOk.length > 0) setHistorico((h) => [...[...linhasOk].reverse(), ...h].slice(0, 30))
       mostrar({
         tipo: falhas.length ? 'aviso' : 'ok',
         titulo: falhas.length ? `${linhasOk.length} enviado(s), ${falhas.length} com erro` : `${linhasOk.length} enviado(s)`,
