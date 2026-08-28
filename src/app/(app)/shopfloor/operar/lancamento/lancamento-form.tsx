@@ -90,7 +90,7 @@ export function LancamentoForm({
   const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
   const [nqaRetomavel, setNqaRetomavel] = useState<NqaProgresso | null>(null) // inspeção NQA salva (localStorage) p/ retomar após refresh
   const [lote, setLote] = useState<ItemLote[]>([]) // Lançamento coletivo: bipes empilhados aqui em vez de gravados na hora
-  const [loteAncorado, setLoteAncorado] = useState(false) // já puxou o painel do lote nesta sessão/contexto?
+  const [lotesPuxados, setLotesPuxados] = useState<Set<string>>(new Set()) // SNs-norm cujo painel já foi puxado (por-lote, não global)
   const [enviandoLote, startEnviarLote] = useTransition() // envio em lote (best-effort) do coletivo
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
@@ -222,13 +222,13 @@ export function LancamentoForm({
       descricao: `Há ${lote.length} peça(s) no lote que ainda não foram enviadas. Trocar de contexto agora vai descartá-las.`,
       rotuloConfirmar: 'Descartar e trocar',
     })
-    if (ok) { setLote([]); setLoteAncorado(false) }
+    if (ok) { setLote([]); setLotesPuxados(new Set()) }
     return ok
   }
   async function mudarPosto(v: string) {
     if (!(await podeTrocarContexto())) return
     setPosto(v); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // novo posto → histórico da sessão + total zeram
-    setLoteAncorado(false)
+    setLotesPuxados(new Set())
     const perfilV = postosPerfil[v] ?? PERFIL_PADRAO
     // Burn-in → seletor de Evento; NQA → Inspeção Visual (A/R); demais → campo de ação (SN).
     setTimeout(() => {
@@ -246,6 +246,7 @@ export function LancamentoForm({
       return
     }
     if (!(await podeTrocarContexto())) return
+    setLotesPuxados(new Set())
     setCliente(r.ordem.cliente)
     setPmo(r.ordem.pmo)
     setOp(r.ordem.op)
@@ -256,6 +257,7 @@ export function LancamentoForm({
   }
   async function atualizarCabecalho() {
     if (!(await podeTrocarContexto())) return
+    setLotesPuxados(new Set())
     setCliente(''); setPmo(''); setOp('')
     setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
     setNumeroSerie(''); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // reset total → histórico + total zeram
@@ -339,13 +341,16 @@ export function LancamentoForm({
     limparPeca(); return true
   }
 
-  /** Depois de resolver o 1º item de um lote, puxa os irmãos ainda pendentes neste posto e os
-   * adiciona como placeholders "pendente" (checklist). Idempotente por SN; respeita o teto. */
+  /** Depois de resolver um item de um lote ainda NÃO puxado, puxa os irmãos ainda pendentes neste
+   * posto e os adiciona como placeholders "pendente" (checklist). Por-lote: cada painel novo (âncora
+   * com SN ainda não puxado) dispara sua própria pré-lista. Idempotente por SN; respeita o teto. */
   async function puxarPainel(snAncora: string) {
-    if (loteAncorado) return
+    const ancoraNorm = normalizarSerie(snAncora)
+    if (lotesPuxados.has(ancoraNorm)) return
+    setLotesPuxados((prev) => new Set(prev).add(ancoraNorm)) // marca a âncora como já checada (evita re-query do mesmo SN)
     const { snsPendentes } = await carregarLotePendente(pmo, op, posto, snAncora)
     if (snsPendentes.length === 0) return
-    setLoteAncorado(true)
+    setLotesPuxados((prev) => new Set([...prev, ...snsPendentes.map((s) => normalizarSerie(s))])) // irmãos puxados não re-consultam
     setLote((prev) => {
       const existentes = new Set(prev.map((i) => i.snNorm))
       const espaco = Math.max(0, MAX_LOTE - prev.length)
