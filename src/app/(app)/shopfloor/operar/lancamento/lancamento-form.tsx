@@ -352,15 +352,12 @@ export function LancamentoForm({
         if (r?.ok) linhasOk.push({ lancamento: true, status: it.outcome, sn: it.sn })
         else falhas.push({ ...it, erro: r?.erro ?? 'Erro ao enviar.' })
       })
-      // best-effort: quem falhou volta pro lote com o motivo; PENDENTES e itens bipados durante o
-      // envio são preservados (update funcional filtra só os enviados que deram OK).
+      // best-effort: quem falhou volta pro lote COM o motivo; PENDENTES e itens bipados durante o
+      // envio são preservados. Remove os enviados-OK E as cópias ANTIGAS dos que falharam, e
+      // prepende as falhas ATUALIZADAS (com erro) — senão a cópia velha "ganharia" no snNorm.
       const enviadosOk = new Set(itens.filter((_, idx) => resultados[idx]?.ok).map((i) => i.snNorm))
-      setLote((prev) => {
-        const restantes = prev.filter((p) => !enviadosOk.has(p.snNorm))
-        // anexa as falhas atualizadas (com erro) que não estejam já em restantes
-        const normRestantes = new Set(restantes.map((p) => p.snNorm))
-        return [...falhas.filter((f) => !normRestantes.has(f.snNorm)), ...restantes]
-      })
+      const falhasNorm = new Set(falhas.map((f) => f.snNorm))
+      setLote((prev) => [...falhas, ...prev.filter((p) => !enviadosOk.has(p.snNorm) && !falhasNorm.has(p.snNorm))])
       if (linhasOk.length > 0) setHistorico((h) => [...[...linhasOk].reverse(), ...h].slice(0, 30))
       mostrar({
         tipo: falhas.length ? 'aviso' : 'ok',
