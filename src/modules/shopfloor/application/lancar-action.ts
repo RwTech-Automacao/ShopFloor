@@ -4,6 +4,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
 import { postoAnteriorNaSequencia } from '../domain/postos'
+import { MAX_LOTE } from '../domain/lote'
 import {
   PERFIL_PADRAO,
   perfilTemStatus,
@@ -271,4 +272,31 @@ export async function contarLancadosPosto(pmo: string, op: string, posto: string
   } catch {
     return 0
   }
+}
+
+export interface ResultadoItemLote { numeroSerie: string; ok: boolean; erro?: string }
+
+/**
+ * Lançamento coletivo (best-effort): reusa `lancar()` por item, sequencialmente.
+ * Mesmo posto, itens independentes — 1 falha não derruba o lote.
+ */
+export async function lancarLote(itens: EntradaLancamento[]): Promise<{ resultados: ResultadoItemLote[] }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
+    return { resultados: itens.map((i) => ({ numeroSerie: i.numeroSerie, ok: false, erro: MENSAGENS.SEM_PERMISSAO })) }
+  }
+  if (itens.length === 0) return { resultados: [] }
+  if (itens.length > MAX_LOTE) {
+    return { resultados: itens.map((i) => ({ numeroSerie: i.numeroSerie, ok: false, erro: `Máximo ${MAX_LOTE} por lote.` })) }
+  }
+  const resultados: ResultadoItemLote[] = []
+  for (const item of itens) {          // sequencial: mesmo posto, itens independentes; best-effort
+    try {
+      const r = await lancar(item)     // reusa TODA a lógica/validação por SN
+      resultados.push({ numeroSerie: item.numeroSerie, ok: r.ok, erro: r.ok ? undefined : r.erro })
+    } catch {
+      resultados.push({ numeroSerie: item.numeroSerie, ok: false, erro: MENSAGENS.ERRO_INTERNO })
+    }
+  }
+  return { resultados }
 }
