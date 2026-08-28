@@ -15,7 +15,7 @@ import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
-import { lancar, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
+import { lancar, lancarLote, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
 import { MAX_LOTE } from '@/modules/shopfloor/domain/lote'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
@@ -88,6 +88,7 @@ export function LancamentoForm({
   const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
   const [nqaRetomavel, setNqaRetomavel] = useState<NqaProgresso | null>(null) // inspeção NQA salva (localStorage) p/ retomar após refresh
   const [lote, setLote] = useState<ItemLote[]>([]) // Lançamento coletivo: bipes empilhados aqui em vez de gravados na hora
+  const [enviandoLote, startEnviarLote] = useTransition() // envio em lote (best-effort) do coletivo
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
   const colaboradorRef = useRef<HTMLInputElement>(null)
@@ -208,7 +209,20 @@ export function LancamentoForm({
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
     setTimeout(() => snRef.current?.focus(), 0) // escolhido o evento, foco vai pro campo de ação
   }
-  function mudarPosto(v: string) {
+  /** Lote coletivo pendente atrapalha a troca de contexto (posto/OP/cabeçalho): confirma antes de descartar.
+   * Retorna true se pode seguir (sem lote, ou usuário confirmou o descarte). */
+  async function podeTrocarContexto(): Promise<boolean> {
+    if (lote.length === 0) return true
+    const ok = await confirmar({
+      titulo: 'Descartar o lote pendente?',
+      descricao: `Há ${lote.length} peça(s) no lote que ainda não foram enviadas. Trocar de contexto agora vai descartá-las.`,
+      rotuloConfirmar: 'Descartar e trocar',
+    })
+    if (ok) setLote([])
+    return ok
+  }
+  async function mudarPosto(v: string) {
+    if (!(await podeTrocarContexto())) return
     setPosto(v); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // novo posto → histórico da sessão + total zeram
     const perfilV = postosPerfil[v] ?? PERFIL_PADRAO
     // Burn-in → seletor de Evento; NQA → Inspeção Visual (A/R); demais → campo de ação (SN).
@@ -218,7 +232,7 @@ export function LancamentoForm({
       else snRef.current?.focus()
     }, 0)
   }
-  function onBiparCabecalho() {
+  async function onBiparCabecalho() {
     if (bipeCab.trim() === '') return
     const r = resolverOpPorSn(ordens, bipeCab)
     if (!r.ok) {
@@ -226,6 +240,7 @@ export function LancamentoForm({
       bipeCabRef.current?.select()
       return
     }
+    if (!(await podeTrocarContexto())) return
     setCliente(r.ordem.cliente)
     setPmo(r.ordem.pmo)
     setOp(r.ordem.op)
@@ -234,7 +249,8 @@ export function LancamentoForm({
     setBipeCab('')
     setTimeout(() => colaboradorRef.current?.focus(), 0)
   }
-  function atualizarCabecalho() {
+  async function atualizarCabecalho() {
+    if (!(await podeTrocarContexto())) return
     setCliente(''); setPmo(''); setOp('')
     setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
     setNumeroSerie(''); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // reset total → histórico + total zeram
@@ -300,6 +316,31 @@ export function LancamentoForm({
       chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Lote', valor: `${lote.length + 1}/${MAX_LOTE}` }],
     })
     limparPeca(); return true
+  }
+
+  /** Envia o lote acumulado (best-effort, 1 lançar() por SN no servidor). Quem falhar continua na
+   * lista com o motivo; quem for gravado sai da lista e entra no histórico da sessão, como um bipe normal. */
+  function enviarLote() {
+    if (lote.length === 0 || enviandoLote) return
+    startEnviarLote(async () => {
+      const itens = lote
+      const { resultados } = await lancarLote(itens.map((i) => i.entrada))
+      const falhas: ItemLote[] = []
+      const linhasOk: LinhaHistorico[] = []
+      itens.forEach((item, idx) => {
+        const r = resultados[idx] // lancarLote preserva a ordem 1:1 com os itens enviados
+        if (r?.ok) linhasOk.push({ lancamento: true, status: item.outcome, sn: item.entrada.numeroSerie.trim() })
+        else falhas.push({ ...item, erro: r?.erro ?? 'Erro ao enviar.' })
+      })
+      setLote(falhas) // best-effort: só quem falhou continua no lote, com o motivo anexado
+      if (linhasOk.length > 0) setHistorico((h) => [...linhasOk, ...h].slice(0, 30))
+      setUltimoEhLancamento(false) // o resumo abaixo não é uma linha própria — o histórico mostra tudo
+      mostrar({
+        tipo: falhas.length ? 'aviso' : 'ok',
+        titulo: falhas.length ? `${linhasOk.length} enviado(s), ${falhas.length} com erro` : `${linhasOk.length} enviado(s)`,
+      })
+      refreshTotalPosto()
+    })
   }
 
   async function onEnviar() {
@@ -690,7 +731,7 @@ export function LancamentoForm({
 
       {/* Área de ação: empilha no estreito, 2 colunas no lg (bipe/ação à esquerda, resultado à direita).
           grid-rows minmax(0,1fr) trava a linha → a coluna direita (histórico) rola por dentro, não empurra a página. */}
-      <div className={`flex flex-col ${ehIntegracao ? '' : 'min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)] lg:gap-4'}`}>
+      <div className={`flex flex-col ${ehIntegracao ? '' : `min-h-0 flex-1 lg:grid lg:grid-rows-[minmax(0,1fr)] lg:gap-4 ${ehColetivo ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}`}>
         {ehIntegracao && (
           <div className="flex flex-col">
             <IntegracaoPanel
@@ -885,6 +926,48 @@ export function LancamentoForm({
                 )}
               </CardContent>
             </Card>
+
+            {/* Lançamento coletivo: lote acumulado localmente — Enviar grava tudo de uma vez (best-effort). */}
+            {ehColetivo && (
+              <Card className="flex min-h-0 flex-col">
+                <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
+                  <CardTitle>Lote ({lote.length}/{MAX_LOTE})</CardTitle>
+                  <Button
+                    size="sm"
+                    onClick={enviarLote}
+                    disabled={lote.length === 0 || enviandoLote}
+                    className="bg-enterplak hover:bg-enterplak-700"
+                  >
+                    {enviandoLote ? 'Enviando…' : `Enviar (${lote.length})`}
+                  </Button>
+                </CardHeader>
+                <CardContent className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+                  {lote.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Nenhuma peça no lote ainda — bipe ao lado para acumular.</p>
+                  )}
+                  {lote.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-sm">{item.entrada.numeroSerie.trim()}</p>
+                        <p className={`text-xs ${item.outcome === 'reprovado' ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                          {item.outcome === 'reprovado' ? 'Reprovado' : item.outcome === 'aprovado' ? 'Aprovado' : '—'}
+                        </p>
+                        {item.erro && <p className="text-xs font-medium text-red-600">{item.erro}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={`Remover ${item.entrada.numeroSerie.trim()} do lote`}
+                        onClick={() => setLote((prev) => prev.filter((_, idx) => idx !== i))}
+                        disabled={enviandoLote}
+                        className="shrink-0 text-muted-foreground hover:text-red-600 disabled:opacity-40"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             <div className="flex min-h-0 flex-1 flex-col">
               <PainelResultado resultado={resultado} />
