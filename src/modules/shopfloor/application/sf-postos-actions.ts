@@ -12,18 +12,15 @@ import {
   listarPerfis,
 } from '@/modules/shopfloor/infra/postos-repository'
 import { listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
-import { perfilAtribuivel } from '@/modules/shopfloor/domain/perfil-posto'
+import { perfilAtribuivel, perfilSuportaColetivo } from '@/modules/shopfloor/domain/perfil-posto'
 
 export type ResultadoAcaoPosto = { ok: true; nome?: string } | { erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar postos.'
 
-/** Perfis em que o lançamento coletivo faz sentido (bipar vários SNs e enviar junto). */
-const PERFIS_COLETIVO = ['passagem', 'spi', 'inspecao']
-
 /** Só marca coletivo=true se o perfil escolhido permitir (gate server-side). */
 function coletivoPermitido(perfilChave: string, coletivo: boolean): boolean {
-  return coletivo && PERFIS_COLETIVO.includes(perfilChave)
+  return coletivo && perfilSuportaColetivo(perfilChave)
 }
 
 export async function cadastrarPostoAction(
@@ -86,7 +83,9 @@ export async function atualizarPostoAction(
   const perfis = await listarPerfis()
   if (!perfis.some((p) => p.chave === dados.perfil)) return { erro: 'Selecione um perfil válido.' }
 
-  const coletivo = dados.coletivo === undefined ? undefined : coletivoPermitido(dados.perfil, dados.coletivo)
+  // Invariante amarrada ao PERFIL, sempre recalculada (nunca fica coletivo=true obsoleto
+  // depois de trocar pra um perfil que não suporta lançamento coletivo).
+  const coletivo = perfilSuportaColetivo(dados.perfil) ? (dados.coletivo ?? false) : false
 
   try {
     await atualizarPosto(chave, { perfil: dados.perfil, coletivo })
