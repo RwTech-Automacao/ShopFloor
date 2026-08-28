@@ -68,7 +68,7 @@ export function EmbalagemPanel({
     if (sn.trim() === '' || embalando || limite === null) return
     const alvo = sn
     startEmbalar(async () => {
-      const r = await embalarPeca({ colaborador, pmo, op, posto, seq, limite, numeroSerie: alvo })
+      const r = await embalarPeca({ colaborador, pmo, op, posto, seq, limite, numeroSerie: alvo, ultima: ehUltima })
       if (!r.ok) {
         setResultado({
           tipo: 'aviso',
@@ -152,7 +152,7 @@ export function EmbalagemPanel({
       <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Caixa CX{seq} <span className="text-sm font-normal text-muted-foreground">· limite {limite}</span></CardTitle>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm">
+          <label className="flex items-center gap-1.5 text-sm" title="A última caixa pode passar do limite — bipe as peças que sobram aqui em vez de abrir caixa nova.">
             <input type="checkbox" checked={ehUltima} onChange={(e) => setEhUltima(e.target.checked)} /> Última caixa
           </label>
           <Button variant="outline" size="sm" onClick={onFechar} disabled={fechando || qtdNaCaixa === 0}>
@@ -166,7 +166,7 @@ export function EmbalagemPanel({
         </div>
         <div className="shrink-0">
           <div className="mb-1 flex justify-between text-sm">
-            <span className="font-medium">{qtdNaCaixa} / {limite} nesta caixa</span>
+            <span className="font-medium">{ehUltima ? `${qtdNaCaixa} nesta caixa · última (sem limite)` : `${qtdNaCaixa} / ${limite} nesta caixa`}</span>
             <span className="text-muted-foreground">Total: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">

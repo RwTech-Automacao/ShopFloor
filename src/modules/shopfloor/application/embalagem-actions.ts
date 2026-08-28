@@ -21,9 +21,12 @@ export async function carregarEmbalagem(
   }
 }
 
-/** Garante a caixa (seq,limite) e lança a peça nela (reusa sf_lancar via lancar). */
+/** Garante a caixa (seq,limite) e lança a peça nela (reusa sf_lancar via lancar).
+ *  `ultima`: a caixa foi marcada como ÚLTIMA → aceita passar do limite (as peças que sobram
+ *  vão nela em vez de abrir caixa nova). Nesse caso NÃO manda o qtd_por_caixa, então o sf_lancar
+ *  pula a checagem de CAIXA_CHEIA. (O limite canônico da caixa continua em sf_caixas.limite.) */
 export async function embalarPeca(entrada: {
-  colaborador: string; pmo: string; op: string; posto: string; seq: number; limite: number; numeroSerie: string
+  colaborador: string; pmo: string; op: string; posto: string; seq: number; limite: number; numeroSerie: string; ultima?: boolean
 }): Promise<{ ok: true; caixaCount?: number } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
@@ -49,7 +52,8 @@ export async function embalarPeca(entrada: {
     op,
     numeroSerie: entrada.numeroSerie,
     numeroCaixa: marcadorCaixaAberta(entrada.seq),
-    qtdPorCaixa: String(entrada.limite),
+    // Última caixa → sem qtd_por_caixa → sf_lancar não bloqueia por CAIXA_CHEIA (aceita extras).
+    qtdPorCaixa: entrada.ultima ? undefined : String(entrada.limite),
   })
   if (!r.ok) return r
   return { ok: true, caixaCount: r.caixaCount }
