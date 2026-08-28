@@ -97,9 +97,16 @@ raiz: flex h-full min-h-0 flex-col gap-3
   campo de bipe; com OP = grade Colaborador/Cliente/PMO/OP/Posto/Descrição em `text-xs`/`h-8`).
 - **Peça compacta** = mesma altura do Contexto (campo/labels/botão menores, como na `ajustes`).
 - **Estado sem OP:** só o Contexto (campo de bipe), como hoje.
-- **Postos especiais** (Integração/Embalagem/NQA-caixa): mantêm o painel próprio; só recebem o
-  **Contexto compacto** em cima (imitar a `ajustes`, commit "Contexto compacto também nas telas
-  especiais"). O novo grid de 3 faixas é só do ramo normal.
+- **Postos especiais** (Integração/Embalagem/NQA-caixa): **também** têm o topo **[Painel especial
+  (esq) | Contexto compacto (dir)]** na mesma linha (o painel da vez ocupa o slot da "Peça"). Ou seja,
+  o topo `[conteúdo | Contexto compacto]` vale pra TODAS as telas de Lançamento — não só o ramo normal.
+  O restante do painel especial (o conteúdo próprio dele: lista de componentes da Integração, estado
+  da caixa da Embalagem, amostragem do NQA) segue abaixo/dentro do slot esquerdo.
+  - **Ressalva (Integração):** a lista de componentes é larga; se não couber bem ao lado do Contexto,
+    mantém-se o Contexto compacto mas o painel de Integração em **largura cheia** (decidir no
+    smoke/impl por painel). Embalagem e NQA-caixa entram no side-by-side normalmente.
+  - As faixas 2 (Lote|Última) e 3 (Hist|Hist) continuam **só no ramo normal** — os painéis especiais
+    têm o fluxo próprio deles abaixo do topo.
 - Disabled durante `enviando/processando/enviandoLote` e a **tela de load** (overlay z-40) continuam
   como estão.
 
