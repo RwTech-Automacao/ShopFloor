@@ -33,6 +33,8 @@ export default async function RegistrosPage({ searchParams }: RegistrosPageProps
     return <SemPermissao descricao="Você não tem permissão para ver os registros." />
   }
 
+  const podeAdministrar = podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')
+
   const sp = await searchParams
   const paginaSolicitada = Number.parseInt(sp.pagina ?? '0', 10)
   const pagina = Number.isFinite(paginaSolicitada) && paginaSolicitada > 0 ? paginaSolicitada : 0
@@ -72,7 +74,7 @@ export default async function RegistrosPage({ searchParams }: RegistrosPageProps
 
       <RegistrosFiltros clientes={clientes} postos={postos.map((p) => p.chave)} />
 
-      <RegistrosTabela linhas={linhas} />
+      <RegistrosTabela linhas={linhas} podeAdministrar={podeAdministrar} />
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
