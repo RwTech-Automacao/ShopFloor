@@ -20,6 +20,7 @@ import {
   type DefeitoConfirmavel,
 } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { criarLote, snsPendentesDoLote } from '../infra/lote-repository'
 
 export interface EntradaLancamento {
   colaborador: string
@@ -298,5 +299,37 @@ export async function lancarLote(itens: EntradaLancamento[]): Promise<{ resultad
       resultados.push({ numeroSerie: item.numeroSerie, ok: false, erro: MENSAGENS.ERRO_INTERNO })
     }
   }
+  // Lote entre postos: carimba o lote (interno) dos SNs que gravaram OK. Best-effort:
+  // falha aqui NÃO afeta o lançamento já feito no chão de fábrica.
+  const okSns = itens.filter((_, idx) => resultados[idx]?.ok).map((i) => i.numeroSerie)
+  if (okSns.length > 0) {
+    try {
+      const base = itens[0]!
+      await criarLote(
+        base.pmo, base.op,
+        okSns.map((s) => s.trim()),
+        okSns.map((s) => normalizarSerie(s)),
+      )
+    } catch {
+      // ignora: rastreio de lote é secundário
+    }
+  }
   return { resultados }
+}
+
+/**
+ * Lote entre postos: dado um SN-âncora bipado, devolve os SNs do MESMO lote que ainda estão
+ * pendentes neste posto (pra pré-listar como checklist). Fail-open ([] em erro/sem permissão/sem lote).
+ */
+export async function carregarLotePendente(
+  pmo: string, op: string, posto: string, sn: string,
+): Promise<{ snsPendentes: string[] }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { snsPendentes: [] }
+  if (!pmo.trim() || !op.trim() || !posto.trim() || !sn.trim()) return { snsPendentes: [] }
+  try {
+    return { snsPendentes: await snsPendentesDoLote(pmo, op, posto, normalizarSerie(sn)) }
+  } catch {
+    return { snsPendentes: [] }
+  }
 }
