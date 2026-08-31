@@ -401,24 +401,24 @@ export function LancamentoForm({
     startEnviarLote(async () => {
       const itens = resolvidos
       const { resultados } = await lancarLote(itens.map((i) => (i as Extract<ItemLote, { estado: 'resolvido' }>).entrada))
-      const falhas: ItemLote[] = []
       const linhasOk: LinhaHistorico[] = []
+      const linhasErro: LinhaHistorico[] = []
+      const agora = new Date().toISOString()
       itens.forEach((item, idx) => {
         const it = item as Extract<ItemLote, { estado: 'resolvido' }>
         const r = resultados[idx]
-        if (r?.ok) linhasOk.push({ lancamento: true, status: it.outcome, sn: it.sn, dataHora: new Date().toISOString() })
-        else falhas.push({ ...it, erro: r?.erro ?? 'Erro ao enviar.' })
+        if (r?.ok) linhasOk.push({ lancamento: true, status: it.outcome, sn: it.sn, dataHora: agora })
+        else linhasErro.push({ lancamento: false, status: null, sn: it.sn, dataHora: agora, erro: r?.erro ?? 'Erro ao enviar.' })
       })
-      // best-effort: quem falhou volta pro lote COM o motivo; PENDENTES e itens bipados durante o
-      // envio são preservados. Remove os enviados-OK E as cópias ANTIGAS dos que falharam, e
-      // prepende as falhas ATUALIZADAS (com erro) — senão a cópia velha "ganharia" no snNorm.
-      const enviadosOk = new Set(itens.filter((_, idx) => resultados[idx]?.ok).map((i) => i.snNorm))
-      const falhasNorm = new Set(falhas.map((f) => f.snNorm))
-      setLote((prev) => [...falhas, ...prev.filter((p) => !enviadosOk.has(p.snNorm) && !falhasNorm.has(p.snNorm))])
-      if (linhasOk.length > 0) setHistorico((h) => [...[...linhasOk].reverse(), ...h].slice(0, 30))
+      // Tudo que foi enviado (OK ou erro) SAI do lote e vai pro histórico: OK→Lançado, erro→Não-lançado
+      // (com o motivo). Pendentes e itens bipados durante o envio ficam no lote.
+      const enviadosNorm = new Set(itens.map((i) => i.snNorm))
+      setLote((prev) => prev.filter((p) => !enviadosNorm.has(p.snNorm)))
+      const novas = [...linhasOk, ...linhasErro]
+      if (novas.length > 0) setHistorico((h) => [...[...novas].reverse(), ...h].slice(0, 60))
       mostrar({
-        tipo: falhas.length ? 'aviso' : 'ok',
-        titulo: falhas.length ? `${linhasOk.length} enviado(s), ${falhas.length} com erro` : `${linhasOk.length} enviado(s)`,
+        tipo: linhasErro.length ? 'aviso' : 'ok',
+        titulo: linhasErro.length ? `${linhasOk.length} enviado(s), ${linhasErro.length} com erro (ver Não-lançado)` : `${linhasOk.length} enviado(s)`,
       })
       refreshTotalPosto()
     })
@@ -511,7 +511,7 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: false, status: null, sn, dataHora: new Date().toISOString() })
+        }, { lancamento: false, status: null, sn, dataHora: new Date().toISOString(), erro: r.erro })
       }
     })
   }
@@ -582,7 +582,7 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: false, status: null, sn, dataHora: new Date().toISOString() })
+        }, { lancamento: false, status: null, sn, dataHora: new Date().toISOString(), erro: r.erro })
       }
     })
   }
@@ -658,7 +658,7 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: false, status: null, sn: sn.trim(), dataHora: new Date().toISOString() })
+        }, { lancamento: false, status: null, sn: sn.trim(), dataHora: new Date().toISOString(), erro: r.erro })
       }
     })
   }
@@ -722,7 +722,7 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: dados.sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: false, status: null, sn: dados.sn.trim(), dataHora: new Date().toISOString() })
+        }, { lancamento: false, status: null, sn: dados.sn.trim(), dataHora: new Date().toISOString(), erro: r.erro })
       }
     })
   }
@@ -1095,7 +1095,7 @@ export function LancamentoForm({
           {/* Base: dois históricos com scroll próprio — Lançado (esq) | Não-lançado (dir). */}
           <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
             <HistoricoLancamentos titulo="Lançado" linhas={linhasHistorico.filter((l) => l.lancamento)} mostrarStatus={mostraStatus} />
-            <HistoricoLancamentos titulo="Não-lançado" linhas={linhasHistorico.filter((l) => !l.lancamento)} mostrarStatus={mostraStatus} />
+            <HistoricoLancamentos titulo="Não-lançado" linhas={linhasHistorico.filter((l) => !l.lancamento)} mostrarStatus={false} mostrarMotivo />
           </div>
         </>
       )}
