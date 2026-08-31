@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acharPendente, jaResolvido, contarResolvidos, temPendentes } from '../lote'
+import { acharPendente, jaResolvido, contarResolvidos, temPendentes, emojiItemLote } from '../lote'
 
 const P = (snNorm: string) => ({ estado: 'pendente' as const, snNorm })
 const R = (snNorm: string) => ({ estado: 'resolvido' as const, snNorm })
@@ -22,5 +22,14 @@ describe('helpers do lote', () => {
   it('temPendentes é true se houver ao menos um pendente', () => {
     expect(temPendentes([R('A'), P('B')])).toBe(true)
     expect(temPendentes([R('A'), R('C')])).toBe(false)
+  })
+})
+
+describe('emojiItemLote', () => {
+  it('pendente ⏳, aprovado ✔️, reprovado ❌, erro ⚠️', () => {
+    expect(emojiItemLote({ estado: 'pendente' })).toBe('⏳')
+    expect(emojiItemLote({ estado: 'resolvido', outcome: 'aprovado' })).toBe('✔️')
+    expect(emojiItemLote({ estado: 'resolvido', outcome: 'reprovado' })).toBe('❌')
+    expect(emojiItemLote({ estado: 'resolvido', outcome: 'aprovado', erro: 'x' })).toBe('⚠️')
   })
 })

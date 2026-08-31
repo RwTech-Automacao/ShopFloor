@@ -27,3 +27,11 @@ export function contarResolvidos<T extends { estado: EstadoItemLote }>(itens: re
 export function temPendentes<T extends { estado: EstadoItemLote }>(itens: readonly T[]): boolean {
   return itens.some((i) => i.estado === 'pendente')
 }
+
+/** Emoji do item do lote na UI: ⏳ pendente · ✔️ aprovado · ❌ reprovado · ⚠️ falhou no envio. */
+export function emojiItemLote(i: { estado: EstadoItemLote; outcome?: 'aprovado' | 'reprovado' | null; erro?: string }): string {
+  if (i.estado === 'pendente') return '⏳'
+  if (i.erro) return '⚠️'
+  if (i.outcome === 'reprovado') return '❌'
+  return '✔️'
+}
