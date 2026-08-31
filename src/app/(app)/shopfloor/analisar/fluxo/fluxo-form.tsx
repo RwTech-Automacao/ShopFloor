@@ -15,7 +15,7 @@ import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type Pas
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { HistoricoSnDialog } from './historico-sn-dialog'
-import { EdgeAtivo } from './edge-ativo'
+import { FloatingEdge } from './floating-edge'
 import { HelperLines, getHelperLines } from './helper-lines'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
@@ -44,27 +44,14 @@ function fmtHora(iso: string): string {
 
 function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[]): Edge[] {
   const dataDe = (id: string) => nodesData.find((n) => n.id === id)?.data
+  // Todas as arestas são FLUTUANTES (o traçado se ajusta a qualquer arranjo dos cards). A aparência
+  // vem do `data`: ativo = peça andando (preenchimento animado); concluido = trilha vinho sólida;
+  // reprova = tracejado esmaecido; senão cinza fino. "Andando" = pendentes no destino (reprova = em Manutenção).
   return es.map((e) => {
-    // "Andando" (preenchendo) só onde há peça se movendo: cadeia = pendentes no destino; reprova = peça em Manutenção.
-    const ativo = e.tipo === 'reprova' ? (dataDe(MANUTENCAO)?.wip ?? 0) > 0 : (dataDe(e.target)?.wip ?? 0) > 0
-    if (ativo) {
-      // aresta ativa: preenchimento animado (fluxo n8n)
-      return { id: e.id, source: e.source, target: e.target, type: 'ativo', style: { stroke: '#8D2033', strokeWidth: 2 } }
-    }
-    // destino já CONCLUÍDO (posto com o check) → trilha percorrida = linha vinho sólida.
-    if (e.tipo !== 'reprova' && dataDe(e.target)?.concluido) {
-      return { id: e.id, source: e.source, target: e.target, style: { stroke: '#8D2033', strokeWidth: 2 } }
-    }
-    // parada: cadeia cinza fina; reprova tracejada esmaecida (marcador de rota)
-    return {
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      style:
-        e.tipo === 'reprova'
-          ? { strokeDasharray: '4 4', stroke: '#8D2033', opacity: 0.35 }
-          : { stroke: '#94a3b8', strokeWidth: 1 },
-    }
+    const reprova = e.tipo === 'reprova'
+    const ativo = reprova ? (dataDe(MANUTENCAO)?.wip ?? 0) > 0 : (dataDe(e.target)?.wip ?? 0) > 0
+    const concluido = !reprova && (dataDe(e.target)?.concluido ?? false)
+    return { id: e.id, source: e.source, target: e.target, type: 'floating', data: { ativo, concluido, reprova, segundos: e.segundos } }
   })
 }
 
@@ -184,7 +171,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [guiaH, setGuiaH] = useState<number | undefined>(undefined) // linha-guia horizontal ao arrastar
   const [guiaV, setGuiaV] = useState<number | undefined>(undefined) // linha-guia vertical ao arrastar
   const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
-  const [qtd, setQtd] = useState<number | null>(null) // qtd da OP (pro % de prontas no Modo TV)
+  const [qtd, setQtd] = useState<number | null>(null) // qtd da OP (pro % de progresso no Modo TV)
+  const [filtroOp, setFiltroOp] = useState('') // busca do dropdown de OP
 
   // Relógio ao vivo pro "há X" do Burn-in (atualiza a cada minuto).
   const [agoraMs, setAgoraMs] = useState(() => Date.now())
@@ -194,7 +182,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   }, [])
 
   const nodeTypes = useMemo<NodeTypes>(() => ({ fluxo: FluxoNode }), [])
-  const edgeTypes = useMemo(() => ({ ativo: EdgeAtivo }), [])
+  const edgeTypes = useMemo(() => ({ floating: FloatingEdge }), [])
 
   const abrir = useCallback((id: string) => {
     // Caixas de Entrada/Saída não têm detalhe (só a contagem) — clique é inerte.
@@ -310,7 +298,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   }, [buscou, sel])
 
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
-  // Postos da OP em ordem (sem Manutenção nem as caixas Entrada/Saída) — pra timeline e % de prontas.
+  // Postos da OP em ordem (sem Manutenção nem as caixas Entrada/Saída) — pra timeline e % de progresso.
   const postosOP = useMemo(
     () => dom.filter((n) => n.id !== MANUTENCAO && n.id !== ENTRADA && n.id !== SAIDA).map((n) => n.id),
     [dom],
@@ -319,23 +307,30 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   // (essas peças ainda não têm SN bipado, então não aparecem na lista "Pendentes no posto").
   const naoIniciadasPrimeiro = aberto && aberto === postosOP[0] ? (dom.find((n) => n.id === ENTRADA)?.data.wip ?? 0) : 0
 
-  // Cabeçalho do Modo TV: PMO/OP · Cliente + % de prontas (passaram pelo último posto ÷ qtd da OP).
+  // Cabeçalho do Modo TV: PMO/OP + % de progresso do processo inteiro (sem o cliente).
   const opInfo = useMemo(() => {
     const [pmo, op] = sel.split('||')
-    return { pmo: pmo ?? '', op: op ?? '', cliente: ops.find((o) => o.pmo === pmo && o.op === op)?.cliente ?? '' }
-  }, [sel, ops])
-  const prontas = useMemo(() => {
-    const ultimoId = postosOP[postosOP.length - 1]
-    const d = ultimoId ? dom.find((n) => n.id === ultimoId)?.data : undefined
-    if (!d) return 0
-    return d.temStatus ? d.aprovadas : d.registros // "prontas" = peças que passaram pelo último posto
-  }, [dom, postosOP])
-  const pctProntas = qtd && qtd > 0 ? Math.round((prontas / qtd) * 100) : null
+    return { pmo: pmo ?? '', op: op ?? '' }
+  }, [sel])
+  // % "macro": soma das passagens (aprovadas p/ posto com status; registros p/ sem) de TODOS os postos
+  // normais ÷ (qtd × nº de postos) — equivale à média do % de cada posto; exclui reprovados.
+  const totalPassagens = useMemo(
+    () => postosOP.reduce((acc, id) => {
+      const d = dom.find((n) => n.id === id)?.data
+      if (!d) return acc
+      return acc + (d.temStatus ? d.aprovadas : d.registros)
+    }, 0),
+    [dom, postosOP],
+  )
+  const pctProcesso = qtd && qtd > 0 && postosOP.length > 0
+    ? Math.round((totalPassagens / (qtd * postosOP.length)) * 100)
+    : null
 
   // Modo TV: tela cheia do canvas (Fullscreen API) + re-encaixa o fluxo ao entrar/sair.
   const canvasRef = useRef<HTMLDivElement>(null)
   const rfRef = useRef<ReactFlowInstance | null>(null)
   const [telaCheia, setTelaCheia] = useState(false)
+  const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
     if (document.fullscreenElement) void document.exitFullscreen()
     else void canvasRef.current?.requestFullscreen?.()
@@ -356,12 +351,21 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   }, [dom, setNodes])
   useEffect(() => {
     const onFs = () => {
-      setTelaCheia(document.fullscreenElement === canvasRef.current)
+      const emTv = document.fullscreenElement === canvasRef.current
+      setTelaCheia(emTv)
+      setContainerTv(emTv ? canvasRef.current : null) // captura o alvo do portal fora do render (regra dos refs)
       setTimeout(() => rfRef.current?.fitView(), 120)
     }
     document.addEventListener('fullscreenchange', onFs)
     return () => document.removeEventListener('fullscreenchange', onFs)
   }, [])
+
+  // Dropdown de OP: filtro por PMO/OP/cliente (a lista de OPs pode ser longa).
+  const opsFiltradas = useMemo(() => {
+    const f = filtroOp.trim().toLowerCase()
+    if (!f) return ops
+    return ops.filter((o) => `${o.pmo}/${o.op} ${o.cliente ?? ''}`.toLowerCase().includes(f))
+  }, [ops, filtroOp])
 
   return (
     <Card>
@@ -369,14 +373,28 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-1 flex-col gap-1.5 sm:max-w-md sm:min-w-64">
             <Label>OP</Label>
-            <Select value={sel} onValueChange={(v) => escolher(v ?? '')}>
+            <Select value={sel} onValueChange={(v) => escolher(v ?? '')} onOpenChange={(open) => { if (!open) setFiltroOp('') }}>
               <SelectTrigger><SelectValue placeholder="Selecione a OP" /></SelectTrigger>
-              <SelectContent>
-                {ops.map((o) => (
-                  <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>
-                    {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
-                  </SelectItem>
-                ))}
+              <SelectContent className="w-auto min-w-[22rem] max-w-[calc(100vw-2rem)]">
+                {/* Filtro dentro do dropdown; não deixa o Select "sequestrar" as teclas (typeahead). */}
+                <div className="sticky top-0 z-10 border-b border-border bg-popover p-1.5" onPointerDown={(e) => e.stopPropagation()}>
+                  <input
+                    value={filtroOp}
+                    onChange={(e) => setFiltroOp(e.target.value)}
+                    onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }}
+                    placeholder="Filtrar por PMO / OP / cliente…"
+                    className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                  />
+                </div>
+                {opsFiltradas.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">Nenhuma OP encontrada.</p>
+                ) : (
+                  opsFiltradas.map((o) => (
+                    <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>
+                      {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -431,12 +449,11 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
               <div className="min-w-0">
                 <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
-                {opInfo.cliente && <p className="truncate text-sm text-muted-foreground">{opInfo.cliente}</p>}
               </div>
               <div className="flex items-center gap-6">
                 <div className="text-right">
-                  <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProntas !== null ? `${pctProntas}%` : '—'}</p>
-                  <p className="text-xs text-muted-foreground">prontas{qtd ? ` · ${prontas}/${qtd}` : ''}</p>
+                  <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
+                  <p className="text-xs text-muted-foreground">progresso</p>
                 </div>
                 <button
                   type="button"
@@ -517,7 +534,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           sn={snAberto}
           postosOP={postosOP}
           onFechar={() => setSnAberto(null)}
-          container={telaCheia ? canvasRef.current : undefined}
+          container={containerTv ?? undefined}
         />
       </CardContent>
     </Card>

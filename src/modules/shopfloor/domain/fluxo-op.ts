@@ -1,7 +1,7 @@
 export const MANUTENCAO = 'Manutenção'
 export const ENTRADA = 'Entrada'
 export const SAIDA = 'Saída'
-const ESPACO_X = 260
+const ESPACO_X = 300 // folga entre postos pra o rótulo de tempo na aresta não ficar coberto pelo card
 const Y_MANUTENCAO = 220
 
 export interface FluxoAgregado {
@@ -11,6 +11,10 @@ export interface FluxoAgregado {
   aprovadas: number
   reprovadas: number
   retestes: number
+  /** Peças cuja 1ª passagem no posto foi aprovada (first-pass yield). Só faz sentido em posto com status. */
+  aprovadosPrimeira: number
+  /** Peças cujo último registro no posto é reprovado (reprovou e ainda não re-aprovou). Saldo pendente. */
+  reprovadosSemReteste: number
 }
 
 export interface FluxoNodeData extends FluxoAgregado {
@@ -24,6 +28,10 @@ export interface FluxoNodeData extends FluxoAgregado {
   ehEntrada?: boolean
   /** Caixa de Saída (peças que concluíram todo o fluxo). Renderiza em vinho, sem detalhe ao clicar. */
   ehSaida?: boolean
+  /** Já passaram por este posto (aprovadas p/ posto com status; registros p/ sem). Mesmo valor que deriva `concluido`. */
+  passou: number
+  /** Quantas devem passar (qtd da OP). null = OP sem quantidade (card não mostra "/ devem passar" nem a barra). */
+  devemPassar: number | null
 }
 
 export interface FluxoNodePos {
@@ -38,6 +46,8 @@ export interface FluxoEdge {
   source: string
   target: string
   tipo: 'fluxo' | 'reprova'
+  /** Tempo típico (mediana, segundos) que a peça leva no trajeto origem→destino. Só arestas de cadeia. */
+  segundos?: number
 }
 
 function acharAgg(agregados: FluxoAgregado[], posto: string): FluxoAgregado | undefined {
@@ -115,10 +125,14 @@ function dados(
     aprovadas,
     reprovadas: a?.reprovadas ?? 0,
     retestes: a?.retestes ?? 0,
+    aprovadosPrimeira: a?.aprovadosPrimeira ?? 0,
+    reprovadosSemReteste: a?.reprovadosSemReteste ?? 0,
     temStatus,
     ehManutencao,
     recurso,
     concluido,
+    passou,
+    devemPassar: qtd,
   }
 }
 
@@ -131,12 +145,16 @@ function dadosCaixa(id: string, contagem: number, tipo: 'entrada' | 'saida'): Fl
     aprovadas: 0,
     reprovadas: 0,
     retestes: 0,
+    aprovadosPrimeira: 0,
+    reprovadosSemReteste: 0,
     temStatus: false,
     ehManutencao: false,
     recurso: tipo,
     concluido: false,
     ehEntrada: tipo === 'entrada',
     ehSaida: tipo === 'saida',
+    passou: 0,
+    devemPassar: null,
   }
 }
 
@@ -235,4 +253,18 @@ export function construirFluxo(
     }
   }
   return { nodes, edges }
+}
+
+/**
+ * Formata uma duração (em segundos) como relógio:
+ *   ≥ 1h  → HH:MM:SS (ex.: 02:03:04)
+ *   < 1h  → MM:SS    (ex.: 05:30, e 45s vira 00:45)
+ */
+export function formatarRelogio(segundos: number): string {
+  const s = Math.max(0, Math.round(segundos))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`
 }

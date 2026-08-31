@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, numerarPassagens, postoPendenteDePeca, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca } from '../fluxo-op'
 
-const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0 })
+const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0, reprovadosSemReteste: 0 })
 
 describe('construirFluxo', () => {
   it('cria um nó por posto na ordem + nó de Manutenção sempre', () => {
@@ -9,14 +9,14 @@ describe('construirFluxo', () => {
     const ids = nodes.map((n) => n.id)
     expect(ids).toEqual(['Solda', 'Teste', MANUTENCAO])
     expect(nodes[0]!.x).toBe(0)
-    expect(nodes[1]!.x).toBe(260)
+    expect(nodes[1]!.x).toBe(300)
     const manut = nodes.find((n) => n.id === MANUTENCAO)!
     expect(manut.data.ehManutencao).toBe(true)
     expect(manut.y).toBe(220)
   })
 
   it('encaixa os agregados no nó certo (case-insensitive) e aplica temStatus', () => {
-    const agg: FluxoAgregado[] = [{ posto: 'teste', wip: 3, registros: 10, aprovadas: 7, reprovadas: 3, retestes: 2 }]
+    const agg: FluxoAgregado[] = [{ posto: 'teste', wip: 3, registros: 10, aprovadas: 7, reprovadas: 3, retestes: 2, aprovadosPrimeira: 6, reprovadosSemReteste: 1 }]
     const { nodes } = construirFluxo(['Solda', 'Teste'], agg, (p) => p === 'Teste')
     const teste = nodes.find((n) => n.id === 'Teste')!
     expect(teste.data.wip).toBe(3)
@@ -70,10 +70,10 @@ describe('construirFluxo', () => {
     const saida = nodes.find((n) => n.id === SAIDA)!
     expect(entrada.data.ehEntrada).toBe(true)
     expect(entrada.data.wip).toBe(3) // não iniciadas
-    expect(entrada.x).toBe(-260) // antes do 1º posto
+    expect(entrada.x).toBe(-300) // antes do 1º posto
     expect(saida.data.ehSaida).toBe(true)
     expect(saida.data.wip).toBe(5) // finalizadas
-    expect(saida.x).toBe(520) // depois do último (2 postos × 260)
+    expect(saida.x).toBe(600) // depois do último (2 postos × 300)
     expect(edges).toContainEqual({ id: `f:${ENTRADA}->Solda`, source: ENTRADA, target: 'Solda', tipo: 'fluxo' })
     expect(edges).toContainEqual({ id: `f:Teste->${SAIDA}`, source: 'Teste', target: SAIDA, tipo: 'fluxo' })
   })
@@ -99,6 +99,34 @@ describe('construirFluxo', () => {
     expect(de(MANUTENCAO).concluido).toBe(false)
     const semQtd = construirFluxo(['Teste'], agg, () => true).nodes.find((n) => n.id === 'Teste')!.data
     expect(semQtd.concluido).toBe(false)
+  })
+
+  it('preenche passou/devemPassar (D1): passou = aprovadas p/ posto com status, registros p/ sem; devemPassar = qtd', () => {
+    const agg: FluxoAgregado[] = [
+      { ...zero('Teste'), aprovadas: 7, registros: 10 }, // com status: usa aprovadas
+      { ...zero('Embalagem'), aprovadas: 0, registros: 4 }, // sem status: usa registros
+    ]
+    const { nodes } = construirFluxo(['Teste', 'Embalagem'], agg, (p) => p === 'Teste', () => 'nenhum', 100)
+    const de = (id: string) => nodes.find((n) => n.id === id)!.data
+    expect(de('Teste').passou).toBe(7)
+    expect(de('Teste').devemPassar).toBe(100)
+    expect(de('Embalagem').passou).toBe(4)
+    expect(de('Embalagem').devemPassar).toBe(100)
+  })
+
+  it('devemPassar é null quando a OP não tem qtd', () => {
+    const { nodes } = construirFluxo(['Teste'], [], () => true)
+    expect(nodes.find((n) => n.id === 'Teste')!.data.devemPassar).toBeNull()
+  })
+
+  it('caixas de Entrada/Saída (nós sintéticos) recebem defaults que não disparam o visual novo (passou=0, devemPassar=null)', () => {
+    const { nodes } = construirFluxo(['Solda'], [], () => false, () => 'nenhum', 10, () => true, 3, 5)
+    const entrada = nodes.find((n) => n.id === ENTRADA)!
+    const saida = nodes.find((n) => n.id === SAIDA)!
+    expect(entrada.data.passou).toBe(0)
+    expect(entrada.data.devemPassar).toBeNull()
+    expect(saida.data.passou).toBe(0)
+    expect(saida.data.devemPassar).toBeNull()
   })
 
   it('passa o recurso pro nó (define o ícone); Manutenção recebe recurso manutencao', () => {
@@ -190,5 +218,26 @@ describe('postoPendenteDePeca', () => {
 
   it('sem bipe → primeiro posto', () => {
     expect(pp([])).toBe('SPI')
+  })
+})
+
+describe('formatarRelogio', () => {
+  it('segundos < 1min → MM:SS com minuto zerado', () => {
+    expect(formatarRelogio(45)).toBe('00:45')
+    expect(formatarRelogio(0)).toBe('00:00')
+    expect(formatarRelogio(9)).toBe('00:09')
+  })
+  it('minutos (< 1h) → MM:SS', () => {
+    expect(formatarRelogio(90)).toBe('01:30')
+    expect(formatarRelogio(5 * 60 + 30)).toBe('05:30')
+    expect(formatarRelogio(59 * 60 + 59)).toBe('59:59')
+  })
+  it('≥ 1h → HH:MM:SS', () => {
+    expect(formatarRelogio(3600)).toBe('01:00:00')
+    expect(formatarRelogio(2 * 3600 + 3 * 60 + 4)).toBe('02:03:04')
+  })
+  it('arredonda e nunca fica negativo', () => {
+    expect(formatarRelogio(89.6)).toBe('01:30')
+    expect(formatarRelogio(-10)).toBe('00:00')
   })
 })
