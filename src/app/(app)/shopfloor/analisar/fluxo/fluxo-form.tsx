@@ -382,7 +382,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     const total = rota.ordem.length * 2 - 1
     if (total <= 1) return
     let i = 1
-    const id = setInterval(() => { i++; setRotaPasso(i); if (i >= total) clearInterval(id) }, 450)
+    // 950ms ≈ duração da animação (0,9s) → cada card/aresta COMPLETA antes do próximo começar.
+    const id = setInterval(() => { i++; setRotaPasso(i); if (i >= total) clearInterval(id) }, 950)
     return () => clearInterval(id)
   }, [rota])
 
