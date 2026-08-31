@@ -267,6 +267,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     })
   }, [])
 
+  // OP selecionada (pra levar PMO + descrição à caixa de Entrada). `sel` = "pmo||op".
+  const opSel = useMemo(() => ops.find((o) => `${o.pmo}||${o.op}` === sel) ?? null, [ops, sel])
+
   // Sincroniza os nós com o domínio (badges/estado) preservando a posição arrastada pelo usuário.
   useEffect(() => {
     setNodes((prev) => {
@@ -276,10 +279,15 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
         type: 'fluxo',
         // prioridade: posição arrastada na sessão → layout salvo da OP → posição padrão do domínio.
         position: posById.get(n.id) ?? layoutRef.current.get(n.id) ?? { x: n.x, y: n.y },
-        data: { ...n.data, selecionado: aberto === n.id } satisfies FluxoNodePayload,
+        data: {
+          ...n.data,
+          selecionado: aberto === n.id,
+          // Só a Entrada carrega PMO + descrição da OP (o card mostra; o domínio não tem esse dado).
+          ...(n.id === ENTRADA ? { pmo: opSel?.pmo, descricao: opSel?.descricao } : {}),
+        } satisfies FluxoNodePayload,
       }))
     })
-  }, [dom, aberto, setNodes])
+  }, [dom, aberto, opSel, setNodes])
 
   // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 15s.
   useEffect(() => {

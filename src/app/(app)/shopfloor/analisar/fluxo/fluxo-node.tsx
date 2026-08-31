@@ -3,7 +3,7 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
-  Wrench, Package, GitMerge, Flame, ShieldCheck, ClipboardCheck, CircleDot, Check, Inbox, PackageCheck, AlertTriangle,
+  Wrench, Package, GitMerge, Thermometer, ShieldCheck, ClipboardCheck, CircleDot, Check, Inbox, PackageCheck, AlertTriangle,
 } from 'lucide-react'
 import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
 
@@ -18,7 +18,7 @@ function iconeDo(d: FluxoNodePayload) {
     case 'manutencao': return <Wrench className={cls} />
     case 'caixa': return <Package className={cls} />
     case 'integracao': return <GitMerge className={cls} />
-    case 'burnin': return <Flame className={cls} />
+    case 'burnin': return <Thermometer className={cls} />
     case 'nqa': return <ShieldCheck className={cls} />
     default: return d.temStatus ? <ClipboardCheck className={cls} /> : <CircleDot className={cls} />
   }
@@ -29,8 +29,10 @@ function FluxoNodeBase({ data }: NodeProps) {
 
   // Caixas de Entrada/Saída: bloco em vinho predominante, só com a contagem (sem detalhe ao clicar).
   if (d.ehEntrada || d.ehSaida) {
-    const rotulo = d.ehEntrada ? 'Entrada' : 'Saída'
+    const rotulo = d.ehEntrada ? 'Entrada' : 'Concluído'
     const sub = d.ehEntrada ? 'não iniciadas' : 'finalizadas'
+    const descCurta = d.descricao ? (d.descricao.length > 20 ? d.descricao.slice(0, 20) + '…' : d.descricao) : ''
+    const infoOp = d.ehEntrada ? [d.pmo, descCurta].filter(Boolean).join(' · ') : ''
     return (
       <div className={`w-[200px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
         {d.ehSaida && <Handle type="target" position={Position.Left} />}
@@ -40,9 +42,15 @@ function FluxoNodeBase({ data }: NodeProps) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{rotulo}</p>
+            {infoOp && <p className="truncate text-xs text-white/85" title={[d.pmo, d.descricao].filter(Boolean).join(' · ')}>{infoOp}</p>}
             <p className="text-xs text-white/75">{sub}</p>
           </div>
-          <span className="shrink-0 rounded-md bg-white/20 px-2 py-0.5 text-sm font-bold">{d.wip}</span>
+          <span
+            className="shrink-0 rounded-md bg-white/20 px-2 py-0.5 text-sm font-bold"
+            title={d.ehEntrada ? `Peças não iniciadas: ${d.wip}` : `Peças finalizadas: ${d.wip}`}
+          >
+            {d.wip}
+          </span>
         </div>
         {d.ehEntrada && <Handle type="source" position={Position.Right} />}
       </div>
@@ -54,6 +62,9 @@ function FluxoNodeBase({ data }: NodeProps) {
   // "aprovados de primeira" vira % (aprovadosPrimeira ÷ o-que-passou) com CHECK; reprovados = número com
   // "!"; sem anel ao concluir. Tooltips (title) explicam o significado E a conta.
   const pctB = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((d.aprovadas / d.devemPassar) * 100)) : 0
+  // A % acompanha a borda direita do verde (preta, no trilho) enquanto há espaço; perto de 100% entra pra
+  // dentro do verde (branca, pra ler). Mesmo comportamento do card antigo.
+  const pctDentroB = pctB >= 85
   const basePassou = d.aprovadas + d.reprovadosSemReteste // o-que-passou (aprovadas + reprovadas pendentes)
   const fpPct = basePassou > 0 ? Math.round((d.aprovadosPrimeira / basePassou) * 100) : 0
   const tipAprov = `Aprovadas ÷ devem passar: ${d.aprovadas} de ${d.devemPassar ?? '—'} (reprovadas não entram na conta)`
@@ -69,7 +80,8 @@ function FluxoNodeBase({ data }: NodeProps) {
 
       {/* WIP mini-card — centrado no CABEÇALHO (top 28px = metade do h-14). */}
       <div
-        className={`pointer-events-none absolute left-0 top-7 z-10 flex h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[10px] border-2 px-1.5 text-sm font-bold shadow-sm ${
+        title={`Em processo neste posto (WIP): ${d.wip}`}
+        className={`absolute left-0 top-7 z-10 flex h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 cursor-help items-center justify-center rounded-[10px] border-2 px-1.5 text-sm font-bold shadow-sm ${
           d.wip > 0 ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-muted text-muted-foreground'
         }`}
       >
@@ -80,7 +92,7 @@ function FluxoNodeBase({ data }: NodeProps) {
       <div className={`overflow-hidden rounded-xl shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
         {/* Cabeçalho (parte branca): borda de destaque (vinho quando concluído) no topo, laterais E na
             base — essa base vira a linha divisória, então o vinho também "cruza o meio". */}
-        <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo} ${temSub ? 'rounded-t-xl' : 'rounded-xl'}`}>
+        <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo} ${temSub ? (d.concluido || d.ehManutencao ? 'rounded-xl' : 'rounded-t-xl') : 'rounded-xl'}`}>
           <div className="min-w-0 flex-1 text-left">
             <p className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">{d.posto}</p>
             <p className="text-xs text-muted-foreground">
@@ -97,7 +109,12 @@ function FluxoNodeBase({ data }: NodeProps) {
           <div className="flex flex-col gap-1.5 rounded-b-xl border-x-2 border-b-2 border-border bg-muted px-2.5 py-2">
             <div className="relative h-5 overflow-hidden rounded-full bg-black/5 dark:bg-white/10" title={tipAprov}>
               <div className="absolute inset-y-0 left-0 rounded-full bg-green-600" style={{ width: `${pctB}%` }} />
-              <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold leading-none tabular-nums text-white">{pctB}%</span>
+              <span
+                className={`absolute top-1/2 -translate-y-1/2 text-[11px] font-bold leading-none tabular-nums ${pctDentroB ? 'text-white' : 'text-foreground'}`}
+                style={pctDentroB ? { right: `calc(${100 - pctB}% + 6px)` } : { left: `calc(${pctB}% + 6px)` }}
+              >
+                {pctB}%
+              </span>
             </div>
             <div className="flex items-center justify-center gap-3 text-[11px] font-semibold leading-none tabular-nums">
               <span title={tipAprov}><span className="text-green-700">{d.aprovadas}</span> <span className="text-muted-foreground">/ {d.devemPassar}</span></span>

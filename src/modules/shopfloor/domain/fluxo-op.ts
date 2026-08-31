@@ -32,6 +32,10 @@ export interface FluxoNodeData extends FluxoAgregado {
   passou: number
   /** Quantas devem passar (qtd da OP). null = OP sem quantidade (card não mostra "/ devem passar" nem a barra). */
   devemPassar: number | null
+  /** Só na caixa de Entrada: PMO da OP (injetado pela tela, não pelo domínio). */
+  pmo?: string
+  /** Só na caixa de Entrada: descrição da OP (a tela corta em ≤20 chars ao exibir). */
+  descricao?: string
 }
 
 export interface FluxoNodePos {

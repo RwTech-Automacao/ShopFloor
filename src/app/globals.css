@@ -166,6 +166,11 @@
   height: 100vh;
   border-radius: 0;
 }
+/* Esconde os pontos pretos de conexão dos nós (as arestas continuam conectando neles). */
+.fluxo-canvas .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .fluxo-preenche {
     animation: none;
