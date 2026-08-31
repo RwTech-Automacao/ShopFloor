@@ -405,3 +405,12 @@ export async function rotaDoSn(pmo: string, op: string, snNorm: string): Promise
   const atual = postoPendenteDePeca(bipes, postosOrd, exige, recursoDe)
   return { postos, atual }
 }
+
+/** Contagens por posto numa janela de tempo [ini, fim) (RPC sf_fluxo_periodo). */
+export interface PeriodoPosto { posto: string; registros: number; aprovadas: number; reprovadas: number }
+export async function carregarFluxoPeriodo(pmo: string, op: string, ini: string, fim: string): Promise<PeriodoPosto[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_fluxo_periodo', { p_pmo: pmo, p_op: op, p_ini: ini, p_fim: fim })
+  if (error) throw error
+  return (data ?? []) as PeriodoPosto[]
+}

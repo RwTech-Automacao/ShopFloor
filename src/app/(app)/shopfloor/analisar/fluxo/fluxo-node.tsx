@@ -12,6 +12,9 @@ export interface FluxoNodePayload extends FluxoNodeData {
   emRota?: boolean // busca de SN: este posto está na rota da peça (realce verde)
   atualRota?: boolean // busca de SN: posição ATUAL da peça (realce verde forte)
   foraRota?: boolean // busca de SN ativa e este posto NÃO está na rota (esmaece)
+  mostrarPeriodo?: boolean // Onda 3: contagens do card vêm do período (não do total)
+  periodoAprovadas?: number // aprovadas na janela do filtro
+  periodoReprovadas?: number // reprovadas na janela do filtro
 }
 
 /** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus). */
@@ -69,15 +72,23 @@ function FluxoNodeBase({ data }: NodeProps) {
   // por border-t): contagem/barra por APROVADAS (reprovados fora); nome à esquerda (alinhado ao mini-card);
   // "aprovados de primeira" vira % (aprovadosPrimeira ÷ o-que-passou) com CHECK; reprovados = número com
   // "!"; sem anel ao concluir. Tooltips (title) explicam o significado E a conta.
-  const pctB = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((d.aprovadas / d.devemPassar) * 100)) : 0
+  // Onda 3: com filtro de período, aprovadas/reprovadas do card viram as da JANELA (não do total).
+  const mostrarP = d.mostrarPeriodo === true
+  const aprovDisp = mostrarP ? (d.periodoAprovadas ?? 0) : d.aprovadas
+  const reprovDisp = mostrarP ? (d.periodoReprovadas ?? 0) : d.reprovadosSemReteste
+  const pctB = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((aprovDisp / d.devemPassar) * 100)) : 0
   // A % acompanha a borda direita do verde (preta, no trilho) enquanto há espaço; perto de 100% entra pra
   // dentro do verde (branca, pra ler). Mesmo comportamento do card antigo.
   const pctDentroB = pctB >= 85
   const basePassou = d.aprovadas + d.reprovadosSemReteste // o-que-passou (aprovadas + reprovadas pendentes)
   const fpPct = basePassou > 0 ? Math.round((d.aprovadosPrimeira / basePassou) * 100) : 0
-  const tipAprov = `Aprovadas ÷ devem passar: ${d.aprovadas} de ${d.devemPassar ?? '—'} (reprovadas não entram na conta)`
-  const tipFp = `Aprovados de primeira: ${d.aprovadosPrimeira} de ${basePassou} que passaram = ${fpPct}%`
-  const tipRep = `Reprovados sem reteste: ${d.reprovadosSemReteste} peça(s) com o último registro reprovado`
+  const tipAprov = mostrarP
+    ? `Aprovadas no período: ${aprovDisp} (de ${d.devemPassar ?? '—'} da OP)`
+    : `Aprovadas ÷ devem passar: ${aprovDisp} de ${d.devemPassar ?? '—'} (reprovadas não entram na conta)`
+  const tipFp = `Aprovados de primeira: ${d.aprovadosPrimeira} de ${basePassou} que passaram = ${fpPct}% (total)`
+  const tipRep = mostrarP
+    ? `Reprovadas no período: ${reprovDisp}`
+    : `Reprovados sem reteste: ${reprovDisp} peça(s) com o último registro reprovado`
   const temSub = !d.ehManutencao && d.devemPassar != null
   // Concluído/Manutenção realçam SÓ o cabeçalho (parte branca): a borda vinho fica no topo e
   // a subdivisão de baixo mantém a borda cinza. Selecionado realça o card inteiro (anel).
@@ -125,14 +136,16 @@ function FluxoNodeBase({ data }: NodeProps) {
               </span>
             </div>
             <div className="flex items-center justify-center gap-3 text-[11px] font-semibold leading-none tabular-nums">
-              <span title={tipAprov}><span className="text-green-700">{d.aprovadas}</span> <span className="text-muted-foreground">/ {d.devemPassar}</span></span>
+              <span title={tipAprov}><span className="text-green-700">{aprovDisp}</span> <span className="text-muted-foreground">/ {d.devemPassar}</span></span>
               {d.temStatus && (
                 <>
-                  <span className="inline-flex cursor-help items-center gap-1 text-green-700" title={tipFp}>
-                    <Check className="size-3.5" />{fpPct}%
-                  </span>
+                  {!mostrarP && (
+                    <span className="inline-flex cursor-help items-center gap-1 text-green-700" title={tipFp}>
+                      <Check className="size-3.5" />{fpPct}%
+                    </span>
+                  )}
                   <span className="inline-flex cursor-help items-center gap-1 text-amber-600" title={tipRep}>
-                    <AlertTriangle className="size-3.5" />{d.reprovadosSemReteste}
+                    <AlertTriangle className="size-3.5" />{reprovDisp}
                   </span>
                 </>
               )}

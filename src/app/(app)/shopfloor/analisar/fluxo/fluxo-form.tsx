@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, rotaSn } from '@/modules/shopfloor/application/fluxo-actions'
+import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
@@ -32,6 +32,24 @@ function lerLayout(pmo: string, op: string): Map<string, { x: number; y: number 
 
 interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
+
+// Turnos (definidos pelo usuário). "Dia" = matutino + vespertino somados (exclui o almoço).
+const MATUTINO = { ini: '07:00', fim: '12:00' }
+const VESPERTINO = { ini: '13:30', fim: '17:20' }
+type Janela = 'dia' | 'matutino' | 'vespertino' | 'custom'
+/** YYYY-MM-DD de um instante (ms) no fuso local (o navegador dos operadores é America/Sao_Paulo). */
+function ymd(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+/** Rótulo curto do filtro ativo pro botão (ex.: "Hoje · Matutino"). */
+function rotuloJanela(j: Janela, c: { ini: string; fim: string }): string {
+  if (j === 'matutino') return 'Matutino'
+  if (j === 'vespertino') return 'Vespertino'
+  if (j === 'custom') return `${c.ini}–${c.fim}`
+  return 'Dia'
+}
 const BURNIN_VAZIO: BurninDetalhe = { emAndamento: [], entradas: [], saidas: [] }
 
 /** hh:mm dd/mm — data/hora compacta pros eventos de Burn-in. */
@@ -191,6 +209,14 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [rota, setRota] = useState<{ ordem: string[]; realce: Set<string>; atual: string | null } | null>(null)
   const [rotaPasso, setRotaPasso] = useState(0) // quantos cards da rota já foram revelados (preenche 1 a cada 0,30s)
   const [, startRota] = useTransition()
+  // Onda 3 — filtro de período + cadência (modal).
+  const [filtroAberto, setFiltroAberto] = useState(false)
+  const [dataFiltro, setDataFiltro] = useState('') // YYYY-MM-DD; vazio = hoje (derivado de agoraMs)
+  const [janela, setJanela] = useState<Janela>('dia')
+  const [custom, setCustom] = useState({ ini: '07:00', fim: '12:00' })
+  const [producaoTotal, setProducaoTotal] = useState(false) // contagens do card: total (on) vs período (off)
+  const [periodo, setPeriodo] = useState<Record<string, PeriodoContagem> | null>(null)
+  const faixasRef = useRef<{ ini: string; fim: string }[]>([]) // faixas atuais (pro refresh de 15s)
   const [limite, setLimite] = useState(100) // lazy load do painel de detalhe: quantos itens mostrar por lista
 
   // Relógio ao vivo pro "há X" do Burn-in (atualiza a cada minuto).
@@ -291,6 +317,44 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   // OP selecionada (pra levar PMO + descrição à caixa de Entrada). `sel` = "pmo||op".
   const opSel = useMemo(() => ops.find((o) => `${o.pmo}||${o.op}` === sel) ?? null, [ops, sel])
 
+  // ===== Onda 3: período + cadência =====
+  const dataEfetiva = dataFiltro || ymd(agoraMs) // vazio → hoje (derivado de agoraMs = render-puro)
+  // Faixas [ini,fim) da janela escolhida, como ISO (instante local do navegador = America/Sao_Paulo).
+  const faixas = useMemo<{ ini: string; fim: string }[]>(() => {
+    const mk = (t: string) => new Date(`${dataEfetiva}T${t}:00`).toISOString()
+    const range = (r: { ini: string; fim: string }) => ({ ini: mk(r.ini), fim: mk(r.fim) })
+    if (janela === 'matutino') return [range(MATUTINO)]
+    if (janela === 'vespertino') return [range(VESPERTINO)]
+    if (janela === 'custom') return [range(custom)]
+    return [range(MATUTINO), range(VESPERTINO)] // dia = matutino + vespertino
+  }, [dataEfetiva, janela, custom])
+  useEffect(() => { faixasRef.current = faixas }, [faixas]) // pro refresh de 15s ler as faixas atuais
+  // Minutos efetivos da janela (soma das faixas), capando o fim em "agora" (turno em andamento hoje).
+  const minutosEfetivos = useMemo(() => {
+    let tot = 0
+    for (const f of faixas) tot += Math.max(0, Math.min(Date.parse(f.fim), agoraMs) - Date.parse(f.ini))
+    return Math.round(tot / 60000)
+  }, [faixas, agoraMs])
+  // Cadência (segundos/peça) por posto = minutos_efetivos × 60 ÷ registros no período.
+  const cadenciaSeg = useMemo(() => {
+    const out: Record<string, number> = {}
+    if (!periodo || minutosEfetivos <= 0) return out
+    for (const [posto, c] of Object.entries(periodo)) {
+      if (c.registros > 0) out[posto] = Math.round((minutosEfetivos * 60) / c.registros)
+    }
+    return out
+  }, [periodo, minutosEfetivos])
+  // Busca a produção do período (soma das faixas) ao trocar OP/filtro.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- limpa/busca a produção do período (sync externo)
+    if (!buscou) { setPeriodo(null); return }
+    const { pmo, op } = ctx.current
+    if (!pmo || !op) return
+    let vivo = true
+    fluxoPeriodo(pmo, op, faixas).then((r) => { if (vivo && r.ok) setPeriodo(r.postos) }).catch(() => {})
+    return () => { vivo = false }
+  }, [buscou, sel, faixas])
+
   // Busca de SN: realça a rota da peça no canvas (estilo n8n). `realce` = nós a acender; `atual` = posição.
   const buscarRota = () => {
     const sn = buscaSn.trim()
@@ -319,16 +383,17 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     return () => clearInterval(id)
   }, [rota])
 
-  // Arestas do canvas com o overlay da rota do SN: entre cards JÁ revelados → vinho animado; fora → esmaecidas.
-  const edges = useMemo(() => {
-    if (!rota) return edgesBase
-    const revelado = (id: string) => { const i = rota.ordem.indexOf(id); return i >= 0 && i < rotaPasso }
+  // Arestas do canvas: rótulo = CADÊNCIA do posto de ORIGEM (segundos/peça); + overlay da rota do SN.
+  const edges = useMemo<Edge[]>(() => {
+    const revelado = (id: string) => rota ? (() => { const i = rota.ordem.indexOf(id); return i >= 0 && i < rotaPasso })() : false
     return edgesBase.map((e) => {
+      const base = { ...((e.data ?? {}) as object), segundos: cadenciaSeg[e.source] }
+      if (!rota) return { ...e, data: base }
       const naRota = revelado(e.source) && revelado(e.target)
       const foraDaRota = !(rota.realce.has(e.source) && rota.realce.has(e.target))
-      return { ...e, data: { ...((e.data ?? {}) as object), emRota: naRota, atenuado: foraDaRota } }
+      return { ...e, data: { ...base, emRota: naRota, atenuado: foraDaRota } }
     })
-  }, [edgesBase, rota, rotaPasso])
+  }, [edgesBase, rota, rotaPasso, cadenciaSeg])
 
   // Sincroniza os nós com o domínio (badges/estado) preservando a posição arrastada pelo usuário.
   useEffect(() => {
@@ -350,10 +415,12 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             const revelado = idx >= 0 && idx < rotaPasso
             return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !rota.realce.has(n.id) }
           })() : {}),
+          // Onda 3: contagens do período no card (a menos que "Produção total" esteja ligado).
+          ...(periodo && !producaoTotal ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0 } : {}),
         } satisfies FluxoNodePayload,
       }))
     })
-  }, [dom, aberto, opSel, rota, rotaPasso, setNodes])
+  }, [dom, aberto, opSel, rota, rotaPasso, periodo, producaoTotal, setNodes])
 
   // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 15s.
   useEffect(() => {
@@ -367,6 +434,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
         setQtd(r.qtd)
         setAtualizadoMs(Date.now())
       }
+      const rp = await fluxoPeriodo(pmo, op, faixasRef.current) // atualiza produção do período + cadência
+      if (rp.ok) setPeriodo(rp.postos)
     }, 15_000)
     return () => clearInterval(t)
   }, [buscou, sel])
@@ -495,23 +564,11 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             </Select>
           </div>
           <div className="flex flex-wrap items-center gap-3 pb-1">
-            {/* Busca de SN: realça a rota da peça no canvas (estilo n8n). */}
+            {/* Filtro/Busca: abre o modal (período + busca de SN). Resumo do filtro ativo no botão. */}
             {buscou && (
-              <div className="relative flex items-center">
-                <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
-                <input
-                  value={buscaSn}
-                  onChange={(e) => setBuscaSn(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarRota() } }}
-                  placeholder="Buscar SN no fluxo…"
-                  className="h-9 w-52 rounded-md border border-input bg-transparent pl-8 pr-8 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                />
-                {rota && (
-                  <button type="button" onClick={limparRota} aria-label="Limpar realce" className="absolute right-2 text-muted-foreground hover:text-red-600">
-                    <X className="size-4" />
-                  </button>
-                )}
-              </div>
+              <Button variant="outline" size="sm" onClick={() => setFiltroAberto(true)} title="Período e busca de SN">
+                <SlidersHorizontal className="mr-1 size-4" /> Filtro · {rotuloJanela(janela, custom)}{periodo && producaoTotal ? ' · total' : ''}
+              </Button>
             )}
             {buscou && atualizadoMs !== null && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Atualiza automaticamente a cada 15s">
@@ -567,6 +624,75 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
+          {/* Modal de Filtro + Busca de SN — dentro do canvas → aparece também no Modo TV (tela cheia). */}
+          {filtroAberto && (
+            <div className="absolute inset-0 z-50 flex items-start justify-center bg-background/50 p-4 backdrop-blur-sm" onClick={() => setFiltroAberto(false)}>
+              <div className="mt-10 w-[min(92%,26rem)] rounded-xl border border-border bg-card p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-base font-semibold">Filtro & busca</p>
+                  <button type="button" onClick={() => setFiltroAberto(false)} aria-label="Fechar" className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
+                </div>
+
+                {/* Busca de SN */}
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Buscar SN no fluxo</label>
+                <div className="relative mb-4 flex items-center">
+                  <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
+                  <input
+                    value={buscaSn}
+                    onChange={(e) => setBuscaSn(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarRota() } }}
+                    placeholder="Digite o SN e Enter"
+                    className="h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-16 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                  />
+                  <button type="button" onClick={buscarRota} className="absolute right-1.5 rounded px-2 py-0.5 text-sm font-medium text-enterplak hover:underline">Ver</button>
+                </div>
+                {rota && <button type="button" onClick={limparRota} className="mb-4 -mt-2 text-xs text-muted-foreground hover:text-red-600">Limpar realce da rota</button>}
+
+                {/* Período */}
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Data</label>
+                <input
+                  type="date"
+                  value={dataEfetiva}
+                  onChange={(e) => setDataFiltro(e.target.value)}
+                  className="mb-3 h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                />
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Janela</label>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {([['dia', 'Dia'], ['matutino', 'Matutino'], ['vespertino', 'Vespertino'], ['custom', 'Personalizado']] as const).map(([val, rot]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setJanela(val)}
+                      className={`rounded-md border px-2.5 py-1 text-sm font-medium ${janela === val ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}
+                    >
+                      {rot}
+                    </button>
+                  ))}
+                </div>
+                {janela === 'custom' && (
+                  <div className="mb-3 flex items-center gap-2">
+                    <input type="time" value={custom.ini} onChange={(e) => setCustom((c) => ({ ...c, ini: e.target.value }))} className="h-9 flex-1 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring" />
+                    <span className="text-muted-foreground">até</span>
+                    <input type="time" value={custom.fim} onChange={(e) => setCustom((c) => ({ ...c, fim: e.target.value }))} className="h-9 flex-1 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring" />
+                  </div>
+                )}
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Janela: <span className="font-medium text-foreground">{minutosEfetivos}</span> min · a cadência (min/peça) e a produção do card usam essa janela.
+                </p>
+
+                {/* Toggle produção total */}
+                <button
+                  type="button"
+                  onClick={() => setProducaoTotal((v) => !v)}
+                  className={`w-full rounded-md border px-3 py-2 text-sm font-medium ${producaoTotal ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}
+                >
+                  {producaoTotal ? '✓ Mostrando produção TOTAL (peças)' : 'Mostrar produção total (peças)'}
+                </button>
+                <p className="mt-1 text-[11px] text-muted-foreground">O tempo/cadência sempre segue a janela do filtro.</p>
+              </div>
+            </div>
+          )}
+
           {telaCheia && (
             <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
               <div className="min-w-0">
@@ -577,6 +703,13 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                   <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
                   <p className="text-xs text-muted-foreground">progresso</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setFiltroAberto(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
+                >
+                  <SlidersHorizontal className="size-4" /> Filtro · {rotuloJanela(janela, custom)}
+                </button>
                 <button
                   type="button"
                   onClick={alternarTv}
