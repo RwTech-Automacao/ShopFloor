@@ -120,10 +120,13 @@ function dados(
   const a = acharAgg(agregados, posto)
   const aprovadas = a?.aprovadas ?? 0
   const registros = a?.registros ?? 0
-  // "Concluído" = todas as peças da OP já passaram por aqui (aprovadas p/ posto com status; registros p/ sem).
-  // Manutenção é ramo, não conclui.
+  const wip = a?.wip ?? 0
+  // "Concluído" = todas as peças da OP já passaram por aqui (aprovadas p/ posto com status; registros p/ sem)
+  // E NENHUMA está pendente aqui (wip === 0). O gate `wip === 0` corrige o bug de produção em que o posto
+  // aparecia "concluído" com peças ainda pendentes: `aprovadas`/`registros` contam BIPES (retestes inflam),
+  // então `passou >= qtd` sozinho podia disparar cedo. Manutenção é ramo, não conclui.
   const passou = temStatus ? aprovadas : registros
-  const concluido = !ehManutencao && qtd != null && qtd > 0 && passou >= qtd
+  const concluido = !ehManutencao && wip === 0 && qtd != null && qtd > 0 && passou >= qtd
   return {
     posto,
     wip: a?.wip ?? 0,

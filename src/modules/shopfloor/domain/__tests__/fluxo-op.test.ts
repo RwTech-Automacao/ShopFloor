@@ -101,6 +101,13 @@ describe('construirFluxo', () => {
     expect(semQtd.concluido).toBe(false)
   })
 
+  it('NÃO marca concluído quando ainda há peças pendentes no posto (wip > 0), mesmo com passou ≥ qtd (bug de produção)', () => {
+    // aprovadas conta BIPES (retestes inflam) → 105 ≥ qtd 100, mas 8 peças ainda pendentes aqui.
+    const agg: FluxoAgregado[] = [{ ...zero('Teste'), wip: 8, aprovadas: 105, registros: 130 }]
+    const { nodes } = construirFluxo(['Teste'], agg, () => true, () => 'nenhum', 100)
+    expect(nodes.find((n) => n.id === 'Teste')!.data.concluido).toBe(false)
+  })
+
   it('preenche passou/devemPassar (D1): passou = aprovadas p/ posto com status, registros p/ sem; devemPassar = qtd', () => {
     const agg: FluxoAgregado[] = [
       { ...zero('Teste'), aprovadas: 7, registros: 10 }, // com status: usa aprovadas
