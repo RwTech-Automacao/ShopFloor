@@ -58,7 +58,12 @@ com `data_hora` em `[p_ini, p_fim)`, agrupados por posto. `security definer`, ga
   (aprovadas/devem-passar, reprovados) vêm de `periodo`; ligado → vêm do total (`dom`). O **WIP** e o
   **aprovados de 1ª (%)** seguem do total sempre (WIP é "agora"; 1ª-passagem é histórico). Um selo
   discreto no card/barra indica "período" vs "total".
-- **Toolbar**: date input + botões de janela + inputs do personalizado + toggle "Produção total".
+- **Botão "Filtro" + MODAL** (não inline): um botão "Filtro" fica acima/ao lado do canvas (na barra de
+  ações, junto de Redefinir/Modo TV) e **também dentro do Modo TV** (no cabeçalho do TV). Clicar abre um
+  **modal** com todos os controles do período (data + botões de janela + inputs do personalizado + toggle
+  "Produção total"). O modal usa portal com `container={containerTv}` (igual ao HistoricoSnDialog) pra
+  aparecer por cima do canvas **em tela cheia** no Modo TV. Um resumo curto do filtro ativo (ex.: "Hoje ·
+  Matutino") fica visível no botão/etiqueta pra saber o que está aplicado sem abrir o modal.
 - Atualização ao vivo (15s): revalida também o período (a janela de hoje muda com o tempo).
 
 ## Fora de escopo / notas
