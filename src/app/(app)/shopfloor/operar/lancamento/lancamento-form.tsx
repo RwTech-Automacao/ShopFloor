@@ -1075,7 +1075,7 @@ export function LancamentoForm({
                         <span
                           key={item.snNorm}
                           title={item.estado === 'resolvido' ? (item.erro ?? '') : 'Pendente'}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-lg"
+                          className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-sm"
                         >
                           <span>{emojiItemLote(item)}</span>
                           <span className="font-mono">{item.sn}</span>
