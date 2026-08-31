@@ -9,6 +9,9 @@ import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
 
 export interface FluxoNodePayload extends FluxoNodeData {
   selecionado: boolean
+  emRota?: boolean // busca de SN: este posto está na rota da peça (realce verde)
+  atualRota?: boolean // busca de SN: posição ATUAL da peça (realce verde forte)
+  foraRota?: boolean // busca de SN ativa e este posto NÃO está na rota (esmaece)
 }
 
 /** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus). */
@@ -27,6 +30,10 @@ function iconeDo(d: FluxoNodePayload) {
 function FluxoNodeBase({ data }: NodeProps) {
   const d = data as unknown as FluxoNodePayload
 
+  // Realce da busca de SN (estilo n8n): rota em verde; posição atual em verde forte; fora da rota esmaece.
+  const realceRota = d.atualRota ? 'ring-4 ring-green-500' : d.emRota ? 'ring-2 ring-green-500' : ''
+  const atenuaRota = d.foraRota ? 'opacity-40' : ''
+
   // Caixas de Entrada/Saída: bloco em vinho predominante, só com a contagem (sem detalhe ao clicar).
   if (d.ehEntrada || d.ehSaida) {
     const descCurta = d.descricao ? (d.descricao.length > 20 ? d.descricao.slice(0, 20) + '…' : d.descricao) : ''
@@ -34,7 +41,7 @@ function FluxoNodeBase({ data }: NodeProps) {
     const principal = d.ehEntrada ? ([d.pmo, d.op].filter(Boolean).join(' · ') || 'Entrada') : 'Concluído'
     const sub = d.ehEntrada ? descCurta : 'finalizadas'
     return (
-      <div className={`w-[240px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
+      <div className={`w-[240px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${realceRota || (d.selecionado ? 'ring-2 ring-enterplak/40' : '')} ${atenuaRota}`}>
         {d.ehSaida && <Handle type="target" position={Position.Left} />}
         <div className="flex items-center gap-2.5 px-3 py-2.5">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
@@ -74,7 +81,7 @@ function FluxoNodeBase({ data }: NodeProps) {
   // a subdivisão de baixo mantém a borda cinza. Selecionado realça o card inteiro (anel).
   const bordaTopo = d.concluido || d.ehManutencao ? 'border-enterplak' : 'border-border'
   return (
-    <div className="relative w-[220px]">
+    <div className={`relative w-[220px] ${atenuaRota}`}>
       <Handle type="target" position={Position.Left} />
 
       {/* WIP mini-card — centrado no CABEÇALHO (top 28px = metade do h-14). */}
@@ -88,7 +95,7 @@ function FluxoNodeBase({ data }: NodeProps) {
       </div>
 
       {/* overflow-hidden + anel dão o clip dos cantos e o realce de seleção do card inteiro. */}
-      <div className={`overflow-hidden rounded-xl shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
+      <div className={`overflow-hidden rounded-xl shadow-sm ${realceRota || (d.selecionado ? 'ring-2 ring-enterplak/40' : '')}`}>
         {/* Cabeçalho (parte branca): borda de destaque (vinho quando concluído) no topo, laterais E na
             base — essa base vira a linha divisória, então o vinho também "cruza o meio". */}
         <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo} ${temSub ? (d.concluido || d.ehManutencao ? 'rounded-xl' : 'rounded-t-xl') : 'rounded-xl'}`}>

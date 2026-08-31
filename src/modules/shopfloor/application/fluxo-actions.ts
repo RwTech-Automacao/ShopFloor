@@ -3,7 +3,8 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { construirFluxo, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
-import { carregarFluxoOp, carregarTemposFluxo, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxoOp, carregarTemposFluxo, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, rotaDoSn, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
+import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 
@@ -36,6 +37,23 @@ export async function carregarFluxo(
     return { ok: true, nodes, edges: edgesComTempo, qtd }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o fluxo da OP.' }
+  }
+}
+
+export async function rotaSn(
+  pmo: string,
+  op: string,
+  sn: string,
+): Promise<{ ok: true; postos: string[]; atual: string | null } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  const alvo = normalizarSerie(sn)
+  if (alvo === '') return { ok: true, postos: [], atual: null }
+  try {
+    const r = await rotaDoSn(pmo.trim(), op.trim(), alvo)
+    return { ok: true, postos: r.postos, atual: r.atual }
+  } catch {
+    return { ok: false, erro: 'Não foi possível buscar a rota do SN.' }
   }
 }
 

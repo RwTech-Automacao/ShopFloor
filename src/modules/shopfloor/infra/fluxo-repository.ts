@@ -5,7 +5,7 @@ import { numerarPassagens, postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, 
 import { pareaBurnin, estaAberto, type RegistroBurnin } from '../domain/burnin'
 import { snsNaoIniciados } from '../domain/grade'
 
-export interface OpItem { pmo: string; op: string; cliente: string; descricao: string }
+export interface OpItem { pmo: string; op: string; cliente: string; descricao: string; criadoEm: string }
 export interface SnDoPosto { sn: string; status: string; vezes: number }
 export interface DetalhePosto { agora: SnDoPosto[]; historico: PassagemPosto[] }
 /** Peça com Burn-in em andamento: SN + hora de entrada (ISO) do ciclo aberto. */
@@ -24,11 +24,12 @@ export async function listarOrdens(): Promise<OpItem[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('pmo,op,cliente,descricao')
+    .select('pmo,op,cliente,descricao,created_at')
     .order('pmo')
     .order('op')
   if (error) throw error
-  return (data ?? []) as OpItem[]
+  const rows = (data ?? []) as { pmo: string; op: string; cliente: string; descricao: string; created_at: string }[]
+  return rows.map((r) => ({ pmo: r.pmo, op: r.op, cliente: r.cliente, descricao: r.descricao, criadoEm: r.created_at }))
 }
 
 /** Postos ordenados do fluxo + agregados (RPC) + mapa temStatus/recurso por posto + qtd da OP. */
@@ -361,4 +362,46 @@ export async function carregarEmbalagemCaixas(pmo: string, op: string, posto: st
     res.push({ sn: l.numero_serie, caixa: l.numero_caixa || '—' })
   }
   return res
+}
+
+/**
+ * Rota de um SN NESTA OP (pra realçar o percurso no canvas): postos por onde passou (ordem
+ * cronológica, sem repetir) + a posição ATUAL (onde aguarda, via postoPendenteDePeca; null = concluiu).
+ */
+export async function rotaDoSn(pmo: string, op: string, snNorm: string): Promise<{ postos: string[]; atual: string | null }> {
+  const supabase = await createServerSupabase()
+  // ordem dos postos + flags do perfil (mesma base do detalhe do posto)
+  const { data: ordemRow, error: eo } = await supabase
+    .from('sf_ordens')
+    .select('sf_ordem_postos(posto,ordem)')
+    .eq('pmo', pmo).eq('op', op)
+    .maybeSingle()
+  if (eo) throw eo
+  const postosOrd = [...((ordemRow?.sf_ordem_postos ?? []) as { posto: string; ordem: number }[])]
+    .sort((a, b) => a.ordem - b.ordem)
+    .map((p) => p.posto)
+  const perfis = await mapaPostoPerfil()
+  const exige = (p: string) => perfis[p]?.exigeManutencao ?? false
+  const recursoDe = (p: string) => perfis[p]?.recurso ?? 'nenhum'
+
+  const { data: regs, error: er } = await supabase
+    .from('sf_registros')
+    .select('posto,status,posto_retorno,data_hora,id')
+    .eq('pmo', pmo).eq('op', op)
+    .eq('numero_serie_norm', snNorm)
+    .order('data_hora', { ascending: true })
+    .order('id', { ascending: true })
+  if (er) throw er
+  const linhas = (regs ?? []) as { posto: string; status: string; posto_retorno: string | null }[]
+  if (linhas.length === 0) return { postos: [], atual: null }
+  const bipes: BipePeca[] = linhas.map((l) => ({ posto: l.posto, status: l.status, postoRetorno: l.posto_retorno ?? undefined }))
+  // postos visitados, em ordem cronológica, sem repetir
+  const vistos = new Set<string>()
+  const postos: string[] = []
+  for (const l of linhas) {
+    const k = l.posto.toLowerCase()
+    if (!vistos.has(k)) { vistos.add(k); postos.push(l.posto) }
+  }
+  const atual = postoPendenteDePeca(bipes, postosOrd, exige, recursoDe)
+  return { postos, atual }
 }

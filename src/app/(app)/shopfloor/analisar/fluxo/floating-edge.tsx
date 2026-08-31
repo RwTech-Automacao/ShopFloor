@@ -43,7 +43,7 @@ function params(source: InternalNode<Node>, target: InternalNode<Node>) {
   return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y, sourcePos: lado(source, sp), targetPos: lado(target, tp) }
 }
 
-interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; segundos?: number }
+interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; segundos?: number; emRota?: boolean; atenuado?: boolean }
 
 export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps) {
   const sourceNode = useInternalNode(source)
@@ -71,8 +71,28 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
     </EdgeLabelRenderer>
   ) : null
 
+  // Busca de SN: aresta NA ROTA da peça → preenchimento animado VERDE (estilo n8n executando).
+  if (d.emRota) {
+    return (
+      <>
+        <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ stroke: '#16a34a', strokeWidth: 2, opacity: 0.25 }} />
+        <path
+          d={path}
+          fill="none"
+          stroke="#16a34a"
+          strokeWidth={3.5}
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray="1 1"
+          className="fluxo-preenche"
+        />
+        {rotulo}
+      </>
+    )
+  }
+
   // Aresta ATIVA (peça se movendo): linha-base esmaecida + preenchimento animado (fluxo n8n).
-  if (d.ativo) {
+  if (d.ativo && !d.atenuado) {
     return (
       <>
         <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ stroke: '#8D2033', strokeWidth: 2, opacity: 0.2 }} />
@@ -96,11 +116,12 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
     : d.concluido
       ? { stroke: '#8D2033', strokeWidth: 2 }
       : { stroke: '#94a3b8', strokeWidth: 1 }
+  if (d.atenuado) style.opacity = 0.1 // busca de SN ativa e esta aresta está FORA da rota → esmaece
 
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />
-      {rotulo}
+      {d.atenuado ? null : rotulo}
     </>
   )
 }
