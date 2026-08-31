@@ -71,15 +71,15 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
     </EdgeLabelRenderer>
   ) : null
 
-  // Busca de SN: aresta NA ROTA da peça → preenchimento animado VERDE (estilo n8n executando).
+  // Busca de SN: aresta NA ROTA da peça → preenchimento animado VINHO (estilo n8n executando).
   if (d.emRota) {
     return (
       <>
-        <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ stroke: '#16a34a', strokeWidth: 2, opacity: 0.25 }} />
+        <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ stroke: '#8D2033', strokeWidth: 2, opacity: 0.25 }} />
         <path
           d={path}
           fill="none"
-          stroke="#16a34a"
+          stroke="#8D2033"
           strokeWidth={3.5}
           strokeLinecap="round"
           pathLength={1}

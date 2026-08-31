@@ -187,7 +187,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [filtroOp, setFiltroOp] = useState('') // busca do dropdown de OP
   const [filtroData, setFiltroData] = useState<'tudo' | 'hoje' | '7' | '30'>('tudo') // filtro por data de criação da OP
   const [buscaSn, setBuscaSn] = useState('') // busca de SN pra realçar a rota no canvas
-  const [rota, setRota] = useState<{ realce: Set<string>; atual: string | null } | null>(null) // rota do SN buscado (nós a realçar)
+  // rota do SN buscado: `ordem` = postos na ordem cronológica (+ atual no fim) pra revelar UM A UM.
+  const [rota, setRota] = useState<{ ordem: string[]; realce: Set<string>; atual: string | null } | null>(null)
+  const [rotaPasso, setRotaPasso] = useState(0) // quantos cards da rota já foram revelados (preenche 1 a cada 0,30s)
   const [, startRota] = useTransition()
   const [limite, setLimite] = useState(100) // lazy load do painel de detalhe: quantos itens mostrar por lista
 
@@ -299,19 +301,34 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       if (!r.ok) { toast.error(r.erro); return }
       if (r.postos.length === 0) { toast.error('Este SN não passou por esta OP.'); setRota(null); return }
       const atual = r.atual ?? SAIDA // concluiu → destaca a caixa Concluído
-      setRota({ realce: new Set<string>([...r.postos, atual]), atual })
+      const ordem = [...r.postos]
+      if (!ordem.includes(atual)) ordem.push(atual) // posição atual entra no fim da ordem de revelação
+      setRota({ ordem, realce: new Set<string>(ordem), atual })
     })
   }
   const limparRota = () => { setRota(null); setBuscaSn('') }
 
-  // Arestas do canvas com o overlay da rota do SN: na rota → verde animado; fora da rota → esmaecidas.
+  // Revela a rota do SN card a card, na ordem, 1 a cada 0,30s (preenchimento estilo n8n).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza a animação da rota (limpa/inicia)
+    if (!rota) { setRotaPasso(0); return }
+    setRotaPasso(1)
+    if (rota.ordem.length <= 1) return
+    let i = 1
+    const id = setInterval(() => { i++; setRotaPasso(i); if (i >= rota.ordem.length) clearInterval(id) }, 300)
+    return () => clearInterval(id)
+  }, [rota])
+
+  // Arestas do canvas com o overlay da rota do SN: entre cards JÁ revelados → vinho animado; fora → esmaecidas.
   const edges = useMemo(() => {
     if (!rota) return edgesBase
+    const revelado = (id: string) => { const i = rota.ordem.indexOf(id); return i >= 0 && i < rotaPasso }
     return edgesBase.map((e) => {
-      const naRota = rota.realce.has(e.source) && rota.realce.has(e.target)
-      return { ...e, data: { ...((e.data ?? {}) as object), emRota: naRota, atenuado: !naRota } }
+      const naRota = revelado(e.source) && revelado(e.target)
+      const foraDaRota = !(rota.realce.has(e.source) && rota.realce.has(e.target))
+      return { ...e, data: { ...((e.data ?? {}) as object), emRota: naRota, atenuado: foraDaRota } }
     })
-  }, [edgesBase, rota])
+  }, [edgesBase, rota, rotaPasso])
 
   // Sincroniza os nós com o domínio (badges/estado) preservando a posição arrastada pelo usuário.
   useEffect(() => {
@@ -327,12 +344,16 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           selecionado: aberto === n.id,
           // Só a Entrada carrega PMO/OP + descrição da OP (o card mostra; o domínio não tem esse dado).
           ...(n.id === ENTRADA ? { pmo: opSel?.pmo, op: opSel?.op, descricao: opSel?.descricao } : {}),
-          // Busca de SN: realce da rota (verde estilo n8n). Sem rota → campos ficam undefined.
-          ...(rota ? { emRota: rota.realce.has(n.id) && n.id !== rota.atual, atualRota: n.id === rota.atual, foraRota: !rota.realce.has(n.id) } : {}),
+          // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
+          ...(rota ? (() => {
+            const idx = rota.ordem.indexOf(n.id)
+            const revelado = idx >= 0 && idx < rotaPasso
+            return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !rota.realce.has(n.id) }
+          })() : {}),
         } satisfies FluxoNodePayload,
       }))
     })
-  }, [dom, aberto, opSel, rota, setNodes])
+  }, [dom, aberto, opSel, rota, rotaPasso, setNodes])
 
   // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 15s.
   useEffect(() => {
