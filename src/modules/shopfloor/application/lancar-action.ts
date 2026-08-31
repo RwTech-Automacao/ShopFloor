@@ -46,8 +46,8 @@ export type ResultadoLancamento = { ok: true; caixaCount?: number } | { ok: fals
 
 const MENSAGENS: Record<string, string> = {
   SEM_PERMISSAO: 'Você não tem permissão para lançar.',
-  DUPLICADO: 'Esta peça já foi registrada neste posto.',
-  DUPLICADO_APROVADO: 'Esta peça já foi aprovada neste posto e não pode ser lançada de novo.',
+  DUPLICADO: 'Peça já lançada neste posto.',
+  DUPLICADO_APROVADO: 'Peça já aprovada neste posto.',
   SEQUENCIA: 'O posto anterior ainda não foi concluído para esta peça.',
   CAIXA_CHEIA: 'A caixa já atingiu o limite de peças.',
   SEM_MANUTENCAO: 'A peça reprovou e precisa passar pela Manutenção antes de ser lançada de novo.',

@@ -801,6 +801,11 @@ export function LancamentoForm({
 
   const linhasHistorico = ultimoEhLancamento ? historico.slice(1) : historico
 
+  // Lote cheio = coletivo com MAX_LOTE itens E todos resolvidos (sem pendentes a bipar). Aí o campo de
+  // Nº de Série é travado e um aviso pede o envio; destrava sozinho quando o operador remove um do lote.
+  // (Com pendentes ainda no lote o campo continua livre — bipá-los RESOLVE placeholders, não estoura o teto.)
+  const loteCheio = ehColetivo && lote.length >= MAX_LOTE && !temPendentes(lote)
+
   return (
     <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
       {/* Retomar inspeção NQA salva (localStorage) após refresh — só quando ainda não há contexto na tela. */}
@@ -857,7 +862,7 @@ export function LancamentoForm({
       ) : (
         // Ramo normal: topo Peça|Contexto · meio Lote|Última (ou só Última) · base Hist. Lançado|Não-lançado.
         <>
-          <div className="grid shrink-0 gap-3 lg:grid-cols-[2fr_3fr]">
+          <div className="grid shrink-0 gap-3 lg:grid-cols-2">
             <Card size="sm" className="flex min-h-0 flex-col">
               <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
                 <CardTitle>Peça</CardTitle>
@@ -934,10 +939,10 @@ export function LancamentoForm({
                         else onEnviar()
                       }}
                       autoComplete="off"
-                      disabled={enviando || processando}
+                      disabled={enviando || processando || loteCheio}
                       list={ehScanner && !usaAcordeao ? 'acao-defeitos-list' : undefined}
                       className={`h-10 text-base disabled:opacity-60 ${usaAcordeao ? 'pr-12' : ''}`}
-                      placeholder={usaAcordeao ? (listaAberta ? 'Filtre o defeito…' : 'Bipe o Nº de Série') : (ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série')}
+                      placeholder={loteCheio ? `Lote cheio (${MAX_LOTE}/${MAX_LOTE}) — envie antes de continuar` : usaAcordeao ? (listaAberta ? 'Filtre o defeito…' : 'Bipe o Nº de Série') : (ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série')}
                     />
                     {usaAcordeao && (
                       <button
@@ -945,14 +950,19 @@ export function LancamentoForm({
                         aria-label={listaAberta ? 'Fechar lista de defeitos' : 'Abrir lista de defeitos'}
                         aria-expanded={listaAberta}
                         onClick={alternarLista}
-                        disabled={enviando || processando}
+                        disabled={enviando || processando || loteCheio}
                         className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-enterplak disabled:opacity-40"
                       >
                         {listaAberta ? <ChevronUp className="size-5" /> : <ChevronDown className="size-5" />}
                       </button>
                     )}
                   </div>
-                  {usaAcordeao && !listaAberta && (
+                  {loteCheio && (
+                    <p className="text-sm font-medium text-amber-600">
+                      Lote cheio ({MAX_LOTE}/{MAX_LOTE}) — envie o lote antes de bipar mais. Remova um item para liberar o campo.
+                    </p>
+                  )}
+                  {usaAcordeao && !listaAberta && !loteCheio && (
                     <p className="text-xs text-muted-foreground">Em caso de defeito, toque na seta ▾ para escolher.</p>
                   )}
                   {usaAcordeao && listaAberta && (
@@ -1055,7 +1065,7 @@ export function LancamentoForm({
                             type="button"
                             aria-label={`Remover ${item.sn}`}
                             disabled={enviandoLote}
-                            onClick={() => setLote((prev) => prev.filter((_, idx) => idx !== i))}
+                            onClick={() => { setLote((prev) => prev.filter((_, idx) => idx !== i)); setTimeout(() => snRef.current?.focus(), 0) }}
                             className="text-muted-foreground hover:text-red-600 disabled:opacity-40"
                           >
                             ×
