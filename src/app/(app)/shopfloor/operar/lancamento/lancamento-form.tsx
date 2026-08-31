@@ -95,6 +95,7 @@ export function LancamentoForm({
   const burninEventoTriggerRef = useRef<HTMLButtonElement>(null)
   const nqaVisualRef = useRef<HTMLButtonElement>(null) // trigger do Select de Inspeção Visual
   const focarAposLancar = useRef(false) // pedir foco no início do ciclo quando o campo destravar (fim da gravação)
+  const grupoSeqRef = useRef(0) // contador de envios em lote → pente (peças lançadas juntas) no histórico
   const bloqueioRef = useRef<HTMLInputElement>(null) // sumidouro: engole o bipe durante a gravação (não cai em outro campo)
   const { confirmar, dialog } = useConfirmacao()
 
@@ -404,10 +405,11 @@ export function LancamentoForm({
       const linhasOk: LinhaHistorico[] = []
       const linhasErro: LinhaHistorico[] = []
       const agora = new Date().toISOString()
+      const grupo = ++grupoSeqRef.current // id do envio → pente (peças lançadas juntas) no histórico Lançado
       itens.forEach((item, idx) => {
         const it = item as Extract<ItemLote, { estado: 'resolvido' }>
         const r = resultados[idx]
-        if (r?.ok) linhasOk.push({ lancamento: true, status: it.outcome, sn: it.sn, dataHora: agora })
+        if (r?.ok) linhasOk.push({ lancamento: true, status: it.outcome, sn: it.sn, dataHora: agora, grupo })
         else linhasErro.push({ lancamento: false, status: null, sn: it.sn, dataHora: agora, erro: r?.erro ?? 'Erro ao enviar.' })
       })
       // Tudo que foi enviado (OK ou erro) SAI do lote e vai pro histórico: OK→Lançado, erro→Não-lançado
@@ -1057,7 +1059,7 @@ export function LancamentoForm({
                         <span
                           key={item.snNorm}
                           title={item.estado === 'resolvido' ? (item.erro ?? '') : 'Pendente'}
-                          className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-sm"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-lg"
                         >
                           <span>{emojiItemLote(item)}</span>
                           <span className="font-mono">{item.sn}</span>
@@ -1104,7 +1106,7 @@ export function LancamentoForm({
 
           {/* Base: dois históricos com scroll próprio — Lançado (esq) | Não-lançado (dir). */}
           <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
-            <HistoricoLancamentos titulo="Lançado" linhas={linhasHistorico.filter((l) => l.lancamento)} mostrarStatus={mostraStatus} />
+            <HistoricoLancamentos titulo="Lançado" linhas={linhasHistorico.filter((l) => l.lancamento)} mostrarStatus={mostraStatus} mostrarGrupo />
             <HistoricoLancamentos titulo="Não-lançado" linhas={linhasHistorico.filter((l) => !l.lancamento)} mostrarStatus={false} mostrarMotivo />
           </div>
         </>

@@ -30,20 +30,20 @@ export function PainelResultado({ resultado }: { resultado: ResultadoAcao | null
         {ic.simbolo}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-base font-semibold text-foreground">{resultado.titulo}</p>
+        <p className="text-lg font-semibold text-foreground">{resultado.titulo}</p>
         {resultado.detalhe && <p className="mt-0.5 text-sm text-muted-foreground">{resultado.detalhe}</p>}
         {resultado.chips && resultado.chips.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {resultado.chips.map((c, i) => (
               <span
                 key={i}
-                className={`inline-flex items-baseline gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                className={`inline-flex items-baseline gap-1.5 rounded-full border px-2.5 py-1 text-sm ${
                   c.destaque
                     ? 'border-green-600 bg-green-100 font-semibold text-green-800 dark:bg-green-900/40 dark:text-green-300'
                     : 'border-border bg-card'
                 }`}
               >
-                {c.rotulo && <span className="text-[0.68rem] uppercase tracking-wide text-muted-foreground">{c.rotulo}</span>}
+                {c.rotulo && <span className="text-xs uppercase tracking-wide text-muted-foreground">{c.rotulo}</span>}
                 <span className={`font-medium ${c.mono ? 'font-mono' : ''}`}>{c.valor}</span>
               </span>
             ))}
