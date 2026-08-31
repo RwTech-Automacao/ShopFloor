@@ -34,14 +34,14 @@ function FluxoNodeBase({ data }: NodeProps) {
     const principal = d.ehEntrada ? ([d.pmo, d.op].filter(Boolean).join(' · ') || 'Entrada') : 'Concluído'
     const sub = d.ehEntrada ? descCurta : 'finalizadas'
     return (
-      <div className={`w-[200px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
+      <div className={`w-[240px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
         {d.ehSaida && <Handle type="target" position={Position.Left} />}
         <div className="flex items-center gap-2.5 px-3 py-2.5">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
             {d.ehEntrada ? <Inbox className="size-5" /> : <PackageCheck className="size-5" />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold" title={d.ehEntrada ? `PMO ${d.pmo ?? '—'} · OP ${d.op ?? '—'}` : undefined}>{principal}</p>
+            <p className="whitespace-nowrap text-sm font-semibold" title={d.ehEntrada ? `PMO ${d.pmo ?? '—'} · OP ${d.op ?? '—'}` : undefined}>{principal}</p>
             {sub && <p className="truncate text-xs text-white/80" title={d.ehEntrada ? d.descricao : undefined}>{sub}</p>}
           </div>
           <span
