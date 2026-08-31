@@ -71,11 +71,11 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
     </EdgeLabelRenderer>
   ) : null
 
-  // Busca de SN: aresta NA ROTA da peça → preenchimento animado VINHO (estilo n8n executando).
+  // Busca de SN: aresta NA ROTA → preenche UMA vez (origem→destino) e FICA vinho fixo (estilo n8n).
   if (d.emRota) {
     return (
       <>
-        <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ stroke: '#8D2033', strokeWidth: 2, opacity: 0.25 }} />
+        <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ stroke: '#8D2033', strokeWidth: 2, opacity: 0.2 }} />
         <path
           d={path}
           fill="none"
@@ -83,8 +83,8 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
           strokeWidth={3.5}
           strokeLinecap="round"
           pathLength={1}
-          strokeDasharray="1 1"
-          className="fluxo-preenche"
+          strokeDasharray="1"
+          className="fluxo-preenche-rota"
         />
         {rotulo}
       </>

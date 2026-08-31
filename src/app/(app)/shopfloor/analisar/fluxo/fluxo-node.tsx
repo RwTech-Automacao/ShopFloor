@@ -36,9 +36,10 @@ function FluxoNodeBase({ data }: NodeProps) {
   // Realce da busca de SN (estilo n8n): contorno VINHO GIRANDO em volta do card (overlay .fluxo-borda-rota);
   // posição atual ganha um anel extra; fora da rota esmaece.
   const naRota = d.emRota === true || d.atualRota === true
-  const realceRota = d.atualRota ? 'ring-4 ring-enterplak/50' : ''
+  // Contorno FIXO (ring) do card na rota; o giro (bordaRota) passa 1× por cima e some. Atual = anel mais grosso.
+  const realceRota = naRota ? (d.atualRota ? 'ring-[3px] ring-enterplak' : 'ring-2 ring-enterplak') : ''
   const transRota = (d.emRota || d.atualRota || d.foraRota) ? 'transition-opacity duration-300' : ''
-  const atenuaRota = d.foraRota ? 'opacity-40' : ''
+  const atenuaRota = d.foraRota ? 'opacity-30' : ''
   // Contorno animado (girando) sobreposto ao card quando ele está na rota do SN.
   const bordaRota = naRota ? <span aria-hidden className="fluxo-borda-rota pointer-events-none absolute inset-0 z-10 rounded-xl" /> : null
 

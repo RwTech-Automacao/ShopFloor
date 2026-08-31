@@ -649,6 +649,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                     <button type="button" onClick={buscarRota} className="absolute right-1.5 rounded px-2 py-0.5 text-sm font-medium text-enterplak hover:underline">Ver</button>
                   </div>
                 </div>
+                {buscaSn.trim() !== '' && <button type="button" onClick={() => setSnAberto(buscaSn.trim())} className="h-9 self-end text-xs font-medium text-enterplak hover:underline">Linha do tempo</button>}
                 {rota && <button type="button" onClick={limparRota} className="h-9 self-end text-xs text-muted-foreground hover:text-red-600">Limpar rota</button>}
 
                 {/* Data */}
