@@ -564,12 +564,6 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             </Select>
           </div>
           <div className="flex flex-wrap items-center gap-3 pb-1">
-            {/* Filtro/Busca: abre o modal (período + busca de SN). Resumo do filtro ativo no botão. */}
-            {buscou && (
-              <Button variant="outline" size="sm" onClick={() => setFiltroAberto(true)} title="Período e busca de SN">
-                <SlidersHorizontal className="mr-1 size-4" /> Filtro · {rotuloJanela(janela, custom)}{periodo && producaoTotal ? ' · total' : ''}
-              </Button>
-            )}
             {buscou && atualizadoMs !== null && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Atualiza automaticamente a cada 15s">
                 <span className="relative flex size-2">
@@ -624,10 +618,20 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
-          {/* Modal de Filtro + Busca de SN — dentro do canvas → aparece também no Modo TV (tela cheia). */}
+          {/* Botão flutuante de Filtro (vinho) — dentro do canvas; aparece também no Modo TV. */}
+          {buscou && !filtroAberto && (
+            <button
+              type="button"
+              onClick={() => setFiltroAberto(true)}
+              title="Filtro & busca de SN"
+              className="absolute bottom-4 right-4 z-40 flex items-center gap-1.5 rounded-full bg-enterplak px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-enterplak-700"
+            >
+              <SlidersHorizontal className="size-4" /> Filtro · {rotuloJanela(janela, custom)}
+            </button>
+          )}
+          {/* Painel de Filtro + Busca — flutua no canto, NÃO cobre o fluxo (dá pra ver o resultado ao filtrar). */}
           {filtroAberto && (
-            <div className="absolute inset-0 z-50 flex items-start justify-center bg-background/50 p-4 backdrop-blur-sm" onClick={() => setFiltroAberto(false)}>
-              <div className="mt-10 w-[min(92%,26rem)] rounded-xl border border-border bg-card p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute bottom-4 right-4 z-40 max-h-[calc(100%-2rem)] w-[min(92%,22rem)] overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-xl">
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-base font-semibold">Filtro & busca</p>
                   <button type="button" onClick={() => setFiltroAberto(false)} aria-label="Fechar" className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
@@ -689,7 +693,6 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                   {producaoTotal ? '✓ Mostrando produção TOTAL (peças)' : 'Mostrar produção total (peças)'}
                 </button>
                 <p className="mt-1 text-[11px] text-muted-foreground">O tempo/cadência sempre segue a janela do filtro.</p>
-              </div>
             </div>
           )}
 
@@ -703,13 +706,6 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                   <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
                   <p className="text-xs text-muted-foreground">progresso</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setFiltroAberto(true)}
-                  className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
-                >
-                  <SlidersHorizontal className="size-4" /> Filtro · {rotuloJanela(janela, custom)}
-                </button>
                 <button
                   type="button"
                   onClick={alternarTv}
