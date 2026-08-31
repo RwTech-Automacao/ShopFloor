@@ -424,7 +424,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !revelado, animarRota: animando }
           })() : {}),
           // Onda 3: contagens do período no card (a menos que "Produção total" esteja ligado).
-          ...(periodo && !producaoTotal ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0 } : {}),
+          ...(periodo && !producaoTotal ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0, periodoRegistros: periodo[n.id]?.registros ?? 0 } : {}),
         } satisfies FluxoNodePayload,
       }))
     })

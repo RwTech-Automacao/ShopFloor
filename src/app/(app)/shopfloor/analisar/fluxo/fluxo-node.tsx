@@ -14,8 +14,9 @@ export interface FluxoNodePayload extends FluxoNodeData {
   animarRota?: boolean // este card acabou de ser revelado → faz o giro 1× (senão fica só o contorno fixo)
   foraRota?: boolean // busca de SN ativa e este posto NÃO está na rota (esmaece)
   mostrarPeriodo?: boolean // Onda 3: contagens do card vêm do período (não do total)
-  periodoAprovadas?: number // aprovadas na janela do filtro
-  periodoReprovadas?: number // reprovadas na janela do filtro
+  periodoAprovadas?: number // aprovadas na janela do filtro (posto com status)
+  periodoReprovadas?: number // reprovadas na janela do filtro (posto com status)
+  periodoRegistros?: number // bipes na janela do filtro (posto de passagem usa isto)
 }
 
 /** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus). */
@@ -79,9 +80,12 @@ function FluxoNodeBase({ data }: NodeProps) {
   // por border-t): contagem/barra por APROVADAS (reprovados fora); nome à esquerda (alinhado ao mini-card);
   // "aprovados de primeira" vira % (aprovadosPrimeira ÷ o-que-passou) com CHECK; reprovados = número com
   // "!"; sem anel ao concluir. Tooltips (title) explicam o significado E a conta.
-  // Onda 3: com filtro de período, aprovadas/reprovadas do card viram as da JANELA (não do total).
+  // Onda 3: com filtro de período, as contagens do card viram as da JANELA (não do total).
+  // Posto de passagem (sem status) usa REGISTROS (bipes); posto com status usa APROVADAS.
   const mostrarP = d.mostrarPeriodo === true
-  const aprovDisp = mostrarP ? (d.periodoAprovadas ?? 0) : d.aprovadas
+  const aprovDisp = mostrarP
+    ? (d.temStatus ? (d.periodoAprovadas ?? 0) : (d.periodoRegistros ?? 0))
+    : d.passou // d.passou = aprovadas (com status) ou registros (passagem) — corrige passagem mostrando 0
   const reprovDisp = mostrarP ? (d.periodoReprovadas ?? 0) : d.reprovadosSemReteste
   const pctB = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((aprovDisp / d.devemPassar) * 100)) : 0
   // A % acompanha a borda direita do verde (preta, no trilho) enquanto há espaço; perto de 100% entra pra
@@ -89,9 +93,10 @@ function FluxoNodeBase({ data }: NodeProps) {
   const pctDentroB = pctB >= 85
   const basePassou = d.aprovadas + d.reprovadosSemReteste // o-que-passou (aprovadas + reprovadas pendentes)
   const fpPct = basePassou > 0 ? Math.round((d.aprovadosPrimeira / basePassou) * 100) : 0
+  const rotuloQtd = d.temStatus ? 'Aprovadas' : 'Passaram'
   const tipAprov = mostrarP
-    ? `Aprovadas no período: ${aprovDisp} (de ${d.devemPassar ?? '—'} da OP)`
-    : `Aprovadas ÷ devem passar: ${aprovDisp} de ${d.devemPassar ?? '—'} (reprovadas não entram na conta)`
+    ? `${rotuloQtd} no período: ${aprovDisp} (de ${d.devemPassar ?? '—'} da OP)`
+    : `${rotuloQtd} ÷ devem passar: ${aprovDisp} de ${d.devemPassar ?? '—'}`
   const tipFp = `Aprovados de primeira: ${d.aprovadosPrimeira} de ${basePassou} que passaram = ${fpPct}% (total)`
   const tipRep = mostrarP
     ? `Reprovadas no período: ${reprovDisp}`
