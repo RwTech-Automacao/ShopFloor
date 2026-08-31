@@ -43,7 +43,7 @@ function params(source: InternalNode<Node>, target: InternalNode<Node>) {
   return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y, sourcePos: lado(source, sp), targetPos: lado(target, tp) }
 }
 
-interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; segundos?: number; emRota?: boolean; animarRota?: boolean; atenuado?: boolean }
+interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; cadencia?: number; emRota?: boolean; animarRota?: boolean; atenuado?: boolean }
 
 export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps) {
   const sourceNode = useInternalNode(source)
@@ -58,15 +58,16 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
 
   const d = (data ?? {}) as DadosAresta
 
-  // Rótulo do tempo típico (mediana) no meio da aresta — só arestas de CADEIA (não reprova) com tempo.
+  // Rótulo da CADÊNCIA do posto de ORIGEM (min/peça = minutos da janela ÷ peças bipadas), no meio da
+  // aresta que SAI do posto — só arestas de CADEIA (não reprova) e quando há cadência (posto com bipe na janela).
   // Formato relógio: HH:MM:SS quando ≥ 1h, senão MM:SS.
-  const rotulo = !d.reprova && d.segundos != null ? (
+  const rotulo = !d.reprova && d.cadencia != null ? (
     <EdgeLabelRenderer>
       <div
         className="nodrag nopan pointer-events-none absolute whitespace-nowrap rounded-full border border-border bg-card px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground shadow-sm"
         style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
       >
-        {formatarRelogio(d.segundos)}
+        {formatarRelogio(d.cadencia)}
       </div>
     </EdgeLabelRenderer>
   ) : null

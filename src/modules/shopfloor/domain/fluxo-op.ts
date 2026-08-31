@@ -52,8 +52,6 @@ export interface FluxoEdge {
   source: string
   target: string
   tipo: 'fluxo' | 'reprova'
-  /** Tempo típico (mediana, segundos) que a peça leva no trajeto origem→destino. Só arestas de cadeia. */
-  segundos?: number
 }
 
 function acharAgg(agregados: FluxoAgregado[], posto: string): FluxoAgregado | undefined {

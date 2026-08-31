@@ -108,19 +108,6 @@ export async function carregarFluxoOp(
   return { postos, agregados: agregadosComPendentes, temStatus, recurso, exigeManutencao, qtd, naoIniciadas, finalizadas }
 }
 
-/** Mediana do tempo (segundos) entre postos consecutivos (RPC sf_fluxo_tempos). Chave `origem||destino`.
- *  Acessório: se a RPC falhar, devolve {} e o fluxo carrega sem os rótulos de tempo. */
-export async function carregarTemposFluxo(pmo: string, op: string): Promise<Record<string, number>> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase.rpc('sf_fluxo_tempos', { p_pmo: pmo, p_op: op })
-  if (error) return {}
-  const out: Record<string, number> = {}
-  for (const r of (data ?? []) as { origem: string; destino: string; segundos: number }[]) {
-    out[`${r.origem}||${r.destino}`] = r.segundos
-  }
-  return out
-}
-
 /**
  * Conta as peças pendentes (aguardando) em cada posto da OP — a "fila" (chave = posto minúsculo) —
  * mais `iniciadas` (peças com ≥1 registro) e `finalizadas` (concluíram todo o fluxo).
@@ -395,14 +382,19 @@ export async function rotaDoSn(pmo: string, op: string, snNorm: string): Promise
   const linhas = (regs ?? []) as { posto: string; status: string; posto_retorno: string | null }[]
   if (linhas.length === 0) return { postos: [], atual: null }
   const bipes: BipePeca[] = linhas.map((l) => ({ posto: l.posto, status: l.status, postoRetorno: l.posto_retorno ?? undefined }))
+  // Canoniza o nome do posto pela ORDEM da OP (os nós do canvas usam a grafia de sf_ordem_postos).
+  // O registro pode ter grafia diferente ('teste' vs 'Teste') → sem isso o realce da rota casaria errado.
+  const canon = new Map(postosOrd.map((p) => [p.toLowerCase(), p]))
+  const canonizar = (p: string) => canon.get(p.toLowerCase()) ?? p
   // postos visitados, em ordem cronológica, sem repetir
   const vistos = new Set<string>()
   const postos: string[] = []
   for (const l of linhas) {
     const k = l.posto.toLowerCase()
-    if (!vistos.has(k)) { vistos.add(k); postos.push(l.posto) }
+    if (!vistos.has(k)) { vistos.add(k); postos.push(canonizar(l.posto)) }
   }
-  const atual = postoPendenteDePeca(bipes, postosOrd, exige, recursoDe)
+  const atualBruto = postoPendenteDePeca(bipes, postosOrd, exige, recursoDe)
+  const atual = atualBruto ? canonizar(atualBruto) : null // MANUTENCAO/postos → grafia canônica do canvas
   return { postos, atual }
 }
 

@@ -69,7 +69,7 @@ function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[]): Edge[] {
     const reprova = e.tipo === 'reprova'
     const ativo = reprova ? (dataDe(MANUTENCAO)?.wip ?? 0) > 0 : (dataDe(e.target)?.wip ?? 0) > 0
     const concluido = !reprova && (dataDe(e.target)?.concluido ?? false)
-    return { id: e.id, source: e.source, target: e.target, type: 'floating', data: { ativo, concluido, reprova, segundos: e.segundos } }
+    return { id: e.id, source: e.source, target: e.target, type: 'floating', data: { ativo, concluido, reprova } }
   })
 }
 
@@ -365,9 +365,12 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       const r = await rotaSn(pmo, op, sn)
       if (!r.ok) { toast.error(r.erro); return }
       if (r.postos.length === 0) { toast.error('Este SN não passou por esta OP.'); setRota(null); return }
-      const atual = r.atual ?? SAIDA // concluiu → destaca a caixa Concluído
+      // Concluiu (r.atual null) → destaca a caixa "Concluído" (SAÍDA) SE ela existe (OP com qtd);
+      // OP sem qtd não tem esse nó → posição atual = último posto visitado (senão o realce cairia no vácuo).
+      const temSaida = dom.some((n) => n.id === SAIDA)
+      const atual = r.atual ?? (temSaida ? SAIDA : (r.postos[r.postos.length - 1] ?? null))
       const ordem = [...r.postos]
-      if (!ordem.includes(atual)) ordem.push(atual) // posição atual entra no fim da ordem de revelação
+      if (atual && !ordem.includes(atual)) ordem.push(atual) // posição atual entra no fim da ordem de revelação
       setRota({ ordem, atual })
     })
   }
@@ -391,7 +394,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   // Rota revela intercalado (card, aresta, card…): aresta ordem[i]→ordem[i+1] = elemento 2i+1.
   const edges = useMemo<Edge[]>(() => {
     return edgesBase.map((e) => {
-      const base = { ...((e.data ?? {}) as object), segundos: cadenciaSeg[e.source] }
+      const base = { ...((e.data ?? {}) as object), cadencia: cadenciaSeg[e.source] }
       if (!rota) return { ...e, data: base }
       const i = rota.ordem.indexOf(e.source)
       const trechoDaRota = i >= 0 && rota.ordem[i + 1] === e.target // aresta é um trecho consecutivo da rota?
