@@ -379,7 +379,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     setRotaPasso(1)
     if (rota.ordem.length <= 1) return
     let i = 1
-    const id = setInterval(() => { i++; setRotaPasso(i); if (i >= rota.ordem.length) clearInterval(id) }, 300)
+    const id = setInterval(() => { i++; setRotaPasso(i); if (i >= rota.ordem.length) clearInterval(id) }, 500)
     return () => clearInterval(id)
   }, [rota])
 
@@ -618,81 +618,78 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
-          {/* Botão flutuante de Filtro (vinho) — dentro do canvas; aparece também no Modo TV. */}
+          {/* Botão de Filtro (vinho, só ícone) — no topo do canvas; aparece também no Modo TV. */}
           {buscou && !filtroAberto && (
             <button
               type="button"
               onClick={() => setFiltroAberto(true)}
-              title="Filtro & busca de SN"
-              className="absolute bottom-4 right-4 z-40 flex items-center gap-1.5 rounded-full bg-enterplak px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-enterplak-700"
+              title={`Filtro & busca de SN — ${rotuloJanela(janela, custom)}`}
+              aria-label="Filtro e busca de SN"
+              className={`absolute right-3 z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? 'top-[4.5rem]' : 'top-3'}`}
             >
-              <SlidersHorizontal className="size-4" /> Filtro · {rotuloJanela(janela, custom)}
+              <SlidersHorizontal className="size-4" />
             </button>
           )}
-          {/* Painel de Filtro + Busca — flutua no canto, NÃO cobre o fluxo (dá pra ver o resultado ao filtrar). */}
+          {/* Painel de Filtro + Busca — barra HORIZONTAL no topo, NÃO cobre o fluxo (dá pra ver o resultado). */}
           {filtroAberto && (
-            <div className="absolute bottom-4 right-4 z-40 max-h-[calc(100%-2rem)] w-[min(92%,22rem)] overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-xl">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-base font-semibold">Filtro & busca</p>
-                  <button type="button" onClick={() => setFiltroAberto(false)} aria-label="Fechar" className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
-                </div>
-
+            <div className={`absolute inset-x-3 z-40 rounded-xl border border-border bg-card p-3 shadow-xl ${telaCheia ? 'top-[4.5rem]' : 'top-3'}`}>
+              <div className="flex flex-wrap items-end gap-x-4 gap-y-2 pr-8">
                 {/* Busca de SN */}
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Buscar SN no fluxo</label>
-                <div className="relative mb-4 flex items-center">
-                  <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
-                  <input
-                    value={buscaSn}
-                    onChange={(e) => setBuscaSn(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarRota() } }}
-                    placeholder="Digite o SN e Enter"
-                    className="h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-16 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                  />
-                  <button type="button" onClick={buscarRota} className="absolute right-1.5 rounded px-2 py-0.5 text-sm font-medium text-enterplak hover:underline">Ver</button>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Buscar SN</label>
+                  <div className="relative flex items-center">
+                    <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
+                    <input
+                      value={buscaSn}
+                      onChange={(e) => setBuscaSn(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarRota() } }}
+                      placeholder="SN + Enter"
+                      className="h-9 w-44 rounded-md border border-input bg-transparent pl-8 pr-12 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                    />
+                    <button type="button" onClick={buscarRota} className="absolute right-1.5 rounded px-2 py-0.5 text-sm font-medium text-enterplak hover:underline">Ver</button>
+                  </div>
                 </div>
-                {rota && <button type="button" onClick={limparRota} className="mb-4 -mt-2 text-xs text-muted-foreground hover:text-red-600">Limpar realce da rota</button>}
+                {rota && <button type="button" onClick={limparRota} className="h-9 self-end text-xs text-muted-foreground hover:text-red-600">Limpar rota</button>}
 
-                {/* Período */}
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Data</label>
-                <input
-                  type="date"
-                  value={dataEfetiva}
-                  onChange={(e) => setDataFiltro(e.target.value)}
-                  className="mb-3 h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                />
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Janela</label>
-                <div className="mb-3 flex flex-wrap gap-1.5">
-                  {([['dia', 'Dia'], ['matutino', 'Matutino'], ['vespertino', 'Vespertino'], ['custom', 'Personalizado']] as const).map(([val, rot]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setJanela(val)}
-                      className={`rounded-md border px-2.5 py-1 text-sm font-medium ${janela === val ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}
-                    >
-                      {rot}
-                    </button>
-                  ))}
+                {/* Data */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Data</label>
+                  <input type="date" value={dataEfetiva} onChange={(e) => setDataFiltro(e.target.value)} className="h-9 w-36 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
                 </div>
+
+                {/* Janela */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Janela</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {([['dia', 'Dia'], ['matutino', 'Matutino'], ['vespertino', 'Vespertino'], ['custom', 'Personalizado']] as const).map(([val, rot]) => (
+                      <button key={val} type="button" onClick={() => setJanela(val)} className={`h-9 rounded-md border px-2.5 text-sm font-medium ${janela === val ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}>{rot}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Personalizado */}
                 {janela === 'custom' && (
-                  <div className="mb-3 flex items-center gap-2">
-                    <input type="time" value={custom.ini} onChange={(e) => setCustom((c) => ({ ...c, ini: e.target.value }))} className="h-9 flex-1 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring" />
-                    <span className="text-muted-foreground">até</span>
-                    <input type="time" value={custom.fim} onChange={(e) => setCustom((c) => ({ ...c, fim: e.target.value }))} className="h-9 flex-1 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring" />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">De / até</label>
+                    <div className="flex items-center gap-1.5">
+                      <input type="time" value={custom.ini} onChange={(e) => setCustom((c) => ({ ...c, ini: e.target.value }))} className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
+                      <span className="text-muted-foreground">–</span>
+                      <input type="time" value={custom.fim} onChange={(e) => setCustom((c) => ({ ...c, fim: e.target.value }))} className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
+                    </div>
                   </div>
                 )}
-                <p className="mb-3 text-xs text-muted-foreground">
-                  Janela: <span className="font-medium text-foreground">{minutosEfetivos}</span> min · a cadência (min/peça) e a produção do card usam essa janela.
-                </p>
 
-                {/* Toggle produção total */}
-                <button
-                  type="button"
-                  onClick={() => setProducaoTotal((v) => !v)}
-                  className={`w-full rounded-md border px-3 py-2 text-sm font-medium ${producaoTotal ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}
-                >
-                  {producaoTotal ? '✓ Mostrando produção TOTAL (peças)' : 'Mostrar produção total (peças)'}
-                </button>
-                <p className="mt-1 text-[11px] text-muted-foreground">O tempo/cadência sempre segue a janela do filtro.</p>
+                {/* Produção total */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Peças</label>
+                  <button type="button" onClick={() => setProducaoTotal((v) => !v)} title="O tempo/cadência sempre segue a janela do filtro" className={`h-9 rounded-md border px-3 text-sm font-medium ${producaoTotal ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}>
+                    {producaoTotal ? '✓ Total' : 'Do período'}
+                  </button>
+                </div>
+
+                <p className="self-end pb-2 text-xs text-muted-foreground">Janela: <span className="font-medium text-foreground">{minutosEfetivos}</span> min</p>
+              </div>
+              <button type="button" onClick={() => setFiltroAberto(false)} aria-label="Fechar" className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
             </div>
           )}
 

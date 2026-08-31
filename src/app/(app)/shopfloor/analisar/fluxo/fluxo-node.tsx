@@ -33,11 +33,14 @@ function iconeDo(d: FluxoNodePayload) {
 function FluxoNodeBase({ data }: NodeProps) {
   const d = data as unknown as FluxoNodePayload
 
-  // Realce da busca de SN (estilo n8n): contorno VINHO preenchendo card a card (transição 0,30s);
-  // posição atual em vinho mais forte; fora da rota esmaece.
-  const realceRota = d.atualRota ? 'ring-4 ring-enterplak' : d.emRota ? 'ring-2 ring-enterplak' : ''
-  const transRota = (d.emRota || d.atualRota || d.foraRota) ? 'transition-[box-shadow,opacity] duration-300' : ''
+  // Realce da busca de SN (estilo n8n): contorno VINHO GIRANDO em volta do card (overlay .fluxo-borda-rota);
+  // posição atual ganha um anel extra; fora da rota esmaece.
+  const naRota = d.emRota === true || d.atualRota === true
+  const realceRota = d.atualRota ? 'ring-4 ring-enterplak/50' : ''
+  const transRota = (d.emRota || d.atualRota || d.foraRota) ? 'transition-opacity duration-300' : ''
   const atenuaRota = d.foraRota ? 'opacity-40' : ''
+  // Contorno animado (girando) sobreposto ao card quando ele está na rota do SN.
+  const bordaRota = naRota ? <span aria-hidden className="fluxo-borda-rota pointer-events-none absolute inset-0 z-10 rounded-xl" /> : null
 
   // Caixas de Entrada/Saída: bloco em vinho predominante, só com a contagem (sem detalhe ao clicar).
   if (d.ehEntrada || d.ehSaida) {
@@ -46,7 +49,8 @@ function FluxoNodeBase({ data }: NodeProps) {
     const principal = d.ehEntrada ? ([d.pmo, d.op].filter(Boolean).join(' · ') || 'Entrada') : 'Concluído'
     const sub = d.ehEntrada ? descCurta : 'finalizadas'
     return (
-      <div className={`w-[240px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${realceRota || (d.selecionado ? 'ring-2 ring-enterplak/40' : '')} ${atenuaRota} ${transRota}`}>
+      <div className={`relative w-[240px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${realceRota || (d.selecionado ? 'ring-2 ring-enterplak/40' : '')} ${atenuaRota} ${transRota}`}>
+        {bordaRota}
         {d.ehSaida && <Handle type="target" position={Position.Left} />}
         <div className="flex items-center gap-2.5 px-3 py-2.5">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
@@ -95,6 +99,7 @@ function FluxoNodeBase({ data }: NodeProps) {
   const bordaTopo = d.concluido || d.ehManutencao ? 'border-enterplak' : 'border-border'
   return (
     <div className={`relative w-[220px] ${atenuaRota} ${transRota}`}>
+      {bordaRota}
       <Handle type="target" position={Position.Left} />
 
       {/* WIP mini-card — centrado no CABEÇALHO (top 28px = metade do h-14). */}

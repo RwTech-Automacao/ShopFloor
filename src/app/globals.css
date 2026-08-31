@@ -159,7 +159,40 @@
   }
 }
 .fluxo-preenche {
-  animation: fluxo-preenchendo 1.8s linear infinite;
+  animation: fluxo-preenchendo 2.6s linear infinite;
+}
+/* Fluxo — busca de SN: contorno VINHO girando EM VOLTA do card (estilo n8n executando). */
+@property --fluxo-ang {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes fluxo-borda-gira {
+  to {
+    --fluxo-ang: 360deg;
+  }
+}
+.fluxo-borda-rota {
+  padding: 2.5px; /* espessura do contorno */
+  background: conic-gradient(
+    from var(--fluxo-ang),
+    rgba(141, 32, 51, 0.18) 0deg,
+    rgba(141, 32, 51, 0.18) 250deg,
+    #8d2033 305deg,
+    #8d2033 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: fluxo-borda-gira 3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluxo-borda-rota {
+    animation: none;
+    background: #8d2033;
+  }
 }
 /* Modo TV: o canvas do Fluxo em tela cheia ocupa a tela toda, sem cantos arredondados. */
 .fluxo-canvas:fullscreen {
