@@ -206,7 +206,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [filtroData, setFiltroData] = useState<'tudo' | 'hoje' | '7' | '30'>('tudo') // filtro por data de criação da OP
   const [buscaSn, setBuscaSn] = useState('') // busca de SN pra realçar a rota no canvas
   // rota do SN buscado: `ordem` = postos na ordem cronológica (+ atual no fim) pra revelar UM A UM.
-  const [rota, setRota] = useState<{ ordem: string[]; realce: Set<string>; atual: string | null } | null>(null)
+  const [rota, setRota] = useState<{ ordem: string[]; atual: string | null } | null>(null)
   const [rotaPasso, setRotaPasso] = useState(0) // quantos cards da rota já foram revelados (preenche 1 a cada 0,30s)
   const [, startRota] = useTransition()
   // Onda 3 — filtro de período + cadência (modal).
@@ -359,7 +359,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const buscarRota = () => {
     const sn = buscaSn.trim()
     const { pmo, op } = ctx.current
-    if (!sn || !pmo || !op) return
+    if (!sn) { setRota(null); return } // Ver sem SN → volta o fluxo normal/total
+    if (!pmo || !op) return
     startRota(async () => {
       const r = await rotaSn(pmo, op, sn)
       if (!r.ok) { toast.error(r.erro); return }
@@ -367,7 +368,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       const atual = r.atual ?? SAIDA // concluiu → destaca a caixa Concluído
       const ordem = [...r.postos]
       if (!ordem.includes(atual)) ordem.push(atual) // posição atual entra no fim da ordem de revelação
-      setRota({ ordem, realce: new Set<string>(ordem), atual })
+      setRota({ ordem, atual })
     })
   }
   const limparRota = () => { setRota(null); setBuscaSn('') }
@@ -377,21 +378,24 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza a animação da rota (limpa/inicia)
     if (!rota) { setRotaPasso(0); return }
     setRotaPasso(1)
-    if (rota.ordem.length <= 1) return
+    // Elementos intercalados: nó0, aresta0, nó1, aresta1, … → 2N−1 passos (card, aresta, card, aresta…).
+    const total = rota.ordem.length * 2 - 1
+    if (total <= 1) return
     let i = 1
-    const id = setInterval(() => { i++; setRotaPasso(i); if (i >= rota.ordem.length) clearInterval(id) }, 500)
+    const id = setInterval(() => { i++; setRotaPasso(i); if (i >= total) clearInterval(id) }, 450)
     return () => clearInterval(id)
   }, [rota])
 
   // Arestas do canvas: rótulo = CADÊNCIA do posto de ORIGEM (segundos/peça); + overlay da rota do SN.
+  // Rota revela intercalado (card, aresta, card…): aresta ordem[i]→ordem[i+1] = elemento 2i+1.
   const edges = useMemo<Edge[]>(() => {
-    const revelado = (id: string) => rota ? (() => { const i = rota.ordem.indexOf(id); return i >= 0 && i < rotaPasso })() : false
     return edgesBase.map((e) => {
       const base = { ...((e.data ?? {}) as object), segundos: cadenciaSeg[e.source] }
       if (!rota) return { ...e, data: base }
-      const naRota = revelado(e.source) && revelado(e.target)
-      const foraDaRota = !(rota.realce.has(e.source) && rota.realce.has(e.target))
-      return { ...e, data: { ...base, emRota: naRota, atenuado: foraDaRota } }
+      const i = rota.ordem.indexOf(e.source)
+      const trechoDaRota = i >= 0 && rota.ordem[i + 1] === e.target // aresta é um trecho consecutivo da rota?
+      const revelado = trechoDaRota && (2 * i + 1) < rotaPasso
+      return { ...e, data: { ...base, emRota: revelado, atenuado: !revelado } }
     })
   }, [edgesBase, rota, rotaPasso, cadenciaSeg])
 
@@ -412,8 +416,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
           ...(rota ? (() => {
             const idx = rota.ordem.indexOf(n.id)
-            const revelado = idx >= 0 && idx < rotaPasso
-            return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !rota.realce.has(n.id) }
+            const revelado = idx >= 0 && (2 * idx) < rotaPasso // nó = elemento 2*idx (intercalado com as arestas)
+            return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !revelado }
           })() : {}),
           // Onda 3: contagens do período no card (a menos que "Produção total" esteja ligado).
           ...(periodo && !producaoTotal ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0 } : {}),
