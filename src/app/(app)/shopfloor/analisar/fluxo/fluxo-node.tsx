@@ -3,7 +3,7 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
-  Wrench, Package, GitMerge, Thermometer, ShieldCheck, ClipboardCheck, CircleDot, Check, Inbox, PackageCheck, AlertTriangle,
+  Wrench, Package, GitMerge, ThermometerSun, ShieldCheck, ClipboardCheck, CircleDot, Check, Inbox, PackageCheck, AlertTriangle,
 } from 'lucide-react'
 import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
 
@@ -18,7 +18,7 @@ function iconeDo(d: FluxoNodePayload) {
     case 'manutencao': return <Wrench className={cls} />
     case 'caixa': return <Package className={cls} />
     case 'integracao': return <GitMerge className={cls} />
-    case 'burnin': return <Thermometer className={cls} />
+    case 'burnin': return <ThermometerSun className={cls} strokeWidth={2.25} />
     case 'nqa': return <ShieldCheck className={cls} />
     default: return d.temStatus ? <ClipboardCheck className={cls} /> : <CircleDot className={cls} />
   }
@@ -29,10 +29,10 @@ function FluxoNodeBase({ data }: NodeProps) {
 
   // Caixas de Entrada/Saída: bloco em vinho predominante, só com a contagem (sem detalhe ao clicar).
   if (d.ehEntrada || d.ehSaida) {
-    const rotulo = d.ehEntrada ? 'Entrada' : 'Concluído'
-    const sub = d.ehEntrada ? 'não iniciadas' : 'finalizadas'
     const descCurta = d.descricao ? (d.descricao.length > 20 ? d.descricao.slice(0, 20) + '…' : d.descricao) : ''
-    const infoOp = d.ehEntrada ? [d.pmo, descCurta].filter(Boolean).join(' · ') : ''
+    // Entrada: principal = PMO · OP, subtítulo = descrição. Saída: "Concluído" · "finalizadas".
+    const principal = d.ehEntrada ? ([d.pmo, d.op].filter(Boolean).join(' · ') || 'Entrada') : 'Concluído'
+    const sub = d.ehEntrada ? descCurta : 'finalizadas'
     return (
       <div className={`w-[200px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
         {d.ehSaida && <Handle type="target" position={Position.Left} />}
@@ -41,9 +41,8 @@ function FluxoNodeBase({ data }: NodeProps) {
             {d.ehEntrada ? <Inbox className="size-5" /> : <PackageCheck className="size-5" />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{rotulo}</p>
-            {infoOp && <p className="truncate text-xs text-white/85" title={[d.pmo, d.descricao].filter(Boolean).join(' · ')}>{infoOp}</p>}
-            <p className="text-xs text-white/75">{sub}</p>
+            <p className="truncate text-sm font-semibold" title={d.ehEntrada ? `PMO ${d.pmo ?? '—'} · OP ${d.op ?? '—'}` : undefined}>{principal}</p>
+            {sub && <p className="truncate text-xs text-white/80" title={d.ehEntrada ? d.descricao : undefined}>{sub}</p>}
           </div>
           <span
             className="shrink-0 rounded-md bg-white/20 px-2 py-0.5 text-sm font-bold"

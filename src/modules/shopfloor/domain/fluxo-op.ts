@@ -34,6 +34,8 @@ export interface FluxoNodeData extends FluxoAgregado {
   devemPassar: number | null
   /** Só na caixa de Entrada: PMO da OP (injetado pela tela, não pelo domínio). */
   pmo?: string
+  /** Só na caixa de Entrada: OP (injetado pela tela). */
+  op?: string
   /** Só na caixa de Entrada: descrição da OP (a tela corta em ≤20 chars ao exibir). */
   descricao?: string
 }

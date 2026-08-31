@@ -282,8 +282,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
         data: {
           ...n.data,
           selecionado: aberto === n.id,
-          // Só a Entrada carrega PMO + descrição da OP (o card mostra; o domínio não tem esse dado).
-          ...(n.id === ENTRADA ? { pmo: opSel?.pmo, descricao: opSel?.descricao } : {}),
+          // Só a Entrada carrega PMO/OP + descrição da OP (o card mostra; o domínio não tem esse dado).
+          ...(n.id === ENTRADA ? { pmo: opSel?.pmo, op: opSel?.op, descricao: opSel?.descricao } : {}),
         } satisfies FluxoNodePayload,
       }))
     })
