@@ -1,10 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -17,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { RegistroRow } from '@/modules/shopfloor/infra/registros-repository'
+import { cancelavelInfo, cancelarLancamento } from '@/modules/shopfloor/application/cancelamento-actions'
 
 const formatadorData = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short',
@@ -74,10 +80,51 @@ function linha(rotulo: string, valor: string | number | null | undefined) {
 
 interface RegistrosTabelaProps {
   linhas: RegistroRow[]
+  podeAdministrar: boolean
 }
 
-export function RegistrosTabela({ linhas }: RegistrosTabelaProps) {
+export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProps) {
   const [sel, setSel] = useState<RegistroRow | null>(null)
+  const [checando, setChecando] = useState(false)
+  const [cancelavel, setCancelavel] = useState<{ podeCancelar: boolean; motivo?: string } | null>(null)
+  const [confirmAberto, setConfirmAberto] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const [cancelando, setCancelando] = useState(false)
+  const [erroCancel, setErroCancel] = useState('')
+  const router = useRouter()
+
+  // Ao abrir o detalhe de um registro (e sendo gestor), checa no servidor se dá pra cancelar.
+  useEffect(() => {
+    if (!sel || !podeAdministrar) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCancelavel(null)
+      return
+    }
+    let vivo = true
+    setChecando(true)
+    setCancelavel(null)
+    cancelavelInfo(sel.id)
+      .then((r) => { if (vivo) setCancelavel(r) })
+      .catch(() => { if (vivo) setCancelavel({ podeCancelar: false, motivo: 'Não foi possível verificar.' }) })
+      .finally(() => { if (vivo) setChecando(false) })
+    return () => { vivo = false }
+  }, [sel, podeAdministrar])
+
+  function abrirConfirm() {
+    setMotivo(''); setErroCancel(''); setConfirmAberto(true)
+  }
+  async function confirmarCancelamento() {
+    if (!sel || motivo.trim() === '' || cancelando) return
+    setCancelando(true); setErroCancel('')
+    const r = await cancelarLancamento(sel.id, motivo)
+    setCancelando(false)
+    if (r.ok) {
+      setConfirmAberto(false); setSel(null)
+      router.refresh() // re-busca a lista (o bipe some)
+    } else {
+      setErroCancel(r.erro)
+    }
+  }
 
   return (
     <>
@@ -169,8 +216,55 @@ export function RegistrosTabela({ linhas }: RegistrosTabelaProps) {
                   sel.data_hora_origem ? formatarDataHora(sel.data_hora_origem) : null,
                 )}
               </dl>
+              {podeAdministrar && (
+                <div className="mt-4 border-t border-border pt-3">
+                  <Button
+                    variant="outline"
+                    className="text-red-600 hover:text-red-700"
+                    disabled={checando || !cancelavel?.podeCancelar}
+                    onClick={abrirConfirm}
+                  >
+                    {checando ? 'Verificando…' : 'Cancelar lançamento'}
+                  </Button>
+                  {!checando && cancelavel && !cancelavel.podeCancelar && cancelavel.motivo && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">{cancelavel.motivo}</p>
+                  )}
+                </div>
+              )}
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmAberto} onOpenChange={(o) => { if (!o && !cancelando) setConfirmAberto(false) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar lançamento</DialogTitle>
+          </DialogHeader>
+          {sel && (
+            <div className="flex flex-col gap-3 text-sm">
+              <p className="text-muted-foreground">
+                Vai cancelar o bipe <strong>{sel.numero_serie}</strong> em <strong>{sel.posto}</strong>{' '}
+                (<strong>{rotuloStatus(sel.status)}</strong>) de {formatarDataHora(sel.data_hora)}. O bipe
+                é removido e a peça volta ao posto anterior. Esta ação fica registrada na auditoria.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="motivo-cancel">Motivo (obrigatório)</Label>
+                <Input id="motivo-cancel" value={motivo} autoFocus
+                  onChange={(e) => { setMotivo(e.target.value); if (erroCancel) setErroCancel('') }}
+                  placeholder="Ex.: aprovado por engano" />
+              </div>
+              {erroCancel && <p className="text-sm text-red-600">{erroCancel}</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={cancelando} onClick={() => setConfirmAberto(false)}>Voltar</Button>
+            <Button className="bg-red-600 text-white hover:bg-red-700"
+              disabled={cancelando || motivo.trim() === ''}
+              onClick={confirmarCancelamento}>
+              {cancelando ? 'Cancelando…' : 'Confirmar cancelamento'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
