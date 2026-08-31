@@ -64,6 +64,9 @@ com `data_hora` em `[p_ini, p_fim)`, agrupados por posto. `security definer`, ga
   "Produção total"). O modal usa portal com `container={containerTv}` (igual ao HistoricoSnDialog) pra
   aparecer por cima do canvas **em tela cheia** no Modo TV. Um resumo curto do filtro ativo (ex.: "Hoje ·
   Matutino") fica visível no botão/etiqueta pra saber o que está aplicado sem abrir o modal.
+- **Busca de SN entra no MESMO modal** (mover da barra, da Onda 2): o input "Buscar SN no fluxo" + limpar
+  ficam dentro deste modal, junto do filtro de período. Assim a busca de SN passa a funcionar **também no
+  Modo TV** (hoje só aparece fora do TV). O botão "Filtro" (ou "Filtro/Busca") abre tudo num lugar só.
 - Atualização ao vivo (15s): revalida também o período (a janela de hoje muda com o tempo).
 
 ## Fora de escopo / notas
