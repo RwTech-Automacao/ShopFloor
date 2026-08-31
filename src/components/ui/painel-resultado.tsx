@@ -24,7 +24,7 @@ export function PainelResultado({ resultado }: { resultado: ResultadoAcao | null
     <div
       role={alerta ? 'alert' : 'status'}
       aria-live={alerta ? 'assertive' : 'polite'}
-      className="flex gap-3 rounded-lg border border-border bg-muted/40 p-4"
+      className="flex gap-3 rounded-lg border border-border bg-card p-4"
     >
       <div className={`flex size-9 flex-none items-center justify-center rounded-lg text-lg font-bold text-white ${ic.cor}`}>
         {ic.simbolo}

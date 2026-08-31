@@ -87,6 +87,7 @@ export function LancamentoForm({
   const [nqaRetomavel, setNqaRetomavel] = useState<NqaProgresso | null>(null) // inspeção NQA salva (localStorage) p/ retomar após refresh
   const [lote, setLote] = useState<ItemLote[]>([]) // Lançamento coletivo: bipes empilhados aqui em vez de gravados na hora
   const [lotesPuxados, setLotesPuxados] = useState<Set<string>>(new Set()) // SNs-norm cujo painel já foi puxado (por-lote, não global)
+  const [painelAncorado, setPainelAncorado] = useState<{ loteId: string; membros: Set<string> } | null>(null) // lote coletivo travado num painel: SN de outro painel é barrado
   const [enviandoLote, startEnviarLote] = useTransition() // envio em lote (best-effort) do coletivo
   const snRef = useRef<HTMLInputElement>(null)
   const bipeCabRef = useRef<HTMLInputElement>(null)
@@ -148,6 +149,12 @@ export function LancamentoForm({
     if (hidratouLoteRef.current !== `${pmo}|${op}|${posto}`) return // não salva antes de hidratar
     salvarLoteLocal(pmo, op, posto, lote)
   }, [lote, pmo, op, posto])
+  // Painel ancorado só vale enquanto há lote; ao esvaziar (envio, descarte, troca de contexto), libera
+  // a âncora pra o próximo painel poder ser bipado.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync: âncora derivada do lote vazio
+    if (lote.length === 0 && painelAncorado) setPainelAncorado(null)
+  }, [lote.length, painelAncorado])
 
   // Ao montar, verifica se há inspeção NQA salva (localStorage) de um refresh/fechamento —
   // oferece retomar. Precisa ser em effect (não lazy-init): localStorage só existe no cliente,
@@ -339,6 +346,11 @@ export function LancamentoForm({
   function empilharNoLote(entrada: EntradaLancamento, outcome: 'aprovado' | 'reprovado' | null): boolean {
     const sn = entrada.numeroSerie.trim()
     const snNorm = normalizarSerie(sn)
+    // Lote travado num painel: SN de OUTRO painel é barrado (envie o painel atual antes).
+    if (painelAncorado && !painelAncorado.membros.has(snNorm)) {
+      mostrar({ tipo: 'aviso', titulo: 'Esta peça não faz parte deste painel — envie o painel atual antes.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
+      limparPeca(); return false
+    }
     if (jaResolvido(lote, snNorm)) {
       mostrar({ tipo: 'aviso', titulo: 'Este SN já está no lote.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
       limparPeca(); return false
@@ -371,7 +383,11 @@ export function LancamentoForm({
     const ancoraNorm = normalizarSerie(snAncora)
     if (lotesPuxados.has(ancoraNorm)) return
     setLotesPuxados((prev) => new Set(prev).add(ancoraNorm)) // marca a âncora como já checada (evita re-query do mesmo SN)
-    const { snsPendentes } = await carregarLotePendente(pmo, op, posto, snAncora)
+    const { snsPendentes, membrosNorm, loteId } = await carregarLotePendente(pmo, op, posto, snAncora)
+    // Ancora o lote ao painel do 1º SN bipado (com lote_id) → daí em diante, SN de outro painel é barrado.
+    if (loteId && membrosNorm.length > 0) {
+      setPainelAncorado((prev) => prev ?? { loteId, membros: new Set(membrosNorm) })
+    }
     if (snsPendentes.length === 0) return
     setLotesPuxados((prev) => new Set([...prev, ...snsPendentes.map((s) => normalizarSerie(s))])) // irmãos puxados não re-consultam
     setLote((prev) => {

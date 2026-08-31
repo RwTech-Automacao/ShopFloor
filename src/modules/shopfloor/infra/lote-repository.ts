@@ -13,13 +13,21 @@ export async function criarLote(pmo: string, op: string, sns: string[], snsNorm:
   if (error) throw error
 }
 
+/** Resultado do puxar-painel: pendentes NESTE posto + TODOS os membros do lote (norm) + o lote_id.
+ *  `membrosNorm`/`loteId` servem pra tela ANCORAR o lote a um painel e barrar SN de outro painel. */
+export interface LotePendente {
+  pendentes: string[]
+  membrosNorm: string[]
+  loteId: string | null
+}
+
 /**
- * SNs do MESMO lote de `snNorm` que estão AGUARDANDO neste `posto`.
+ * SNs do MESMO lote de `snNorm` que estão AGUARDANDO neste `posto` + os membros do painel.
  * Reusa a derivação de fila da tela de Fluxo (postoPendenteDePeca), escopada aos SNs do lote.
  */
 export async function snsPendentesDoLote(
   pmo: string, op: string, posto: string, snNorm: string,
-): Promise<string[]> {
+): Promise<LotePendente> {
   const supabase = await createServerSupabase()
 
   // 1) lote_id do SN-âncora
@@ -29,7 +37,7 @@ export async function snsPendentesDoLote(
     .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', snNorm)
     .maybeSingle()
   if (ea) throw ea
-  if (!ancora?.lote_id) return [] // SN sem lote → nada a puxar (fallback v1)
+  if (!ancora?.lote_id) return { pendentes: [], membrosNorm: [], loteId: null } // SN sem lote → nada a puxar (fallback v1)
 
   // 2) todos os SNs do lote
   const { data: irmaos, error: ei } = await supabase
@@ -38,8 +46,8 @@ export async function snsPendentesDoLote(
     .eq('pmo', pmo).eq('op', op).eq('lote_id', ancora.lote_id)
   if (ei) throw ei
   const membros = (irmaos ?? []) as { numero_serie: string; numero_serie_norm: string }[]
-  if (membros.length === 0) return []
   const normSet = membros.map((m) => m.numero_serie_norm)
+  if (membros.length === 0) return { pendentes: [], membrosNorm: [], loteId: ancora.lote_id }
 
   // 3) ordem dos postos da OP + flags do perfil (mesma base do Fluxo)
   const { data: ordemRow, error: eo } = await supabase
@@ -86,5 +94,5 @@ export async function snsPendentesDoLote(
       pendentes.push(peca?.sn ?? displayPorNorm.get(norm) ?? norm)
     }
   }
-  return pendentes.sort((a, b) => a.localeCompare(b))
+  return { pendentes: pendentes.sort((a, b) => a.localeCompare(b)), membrosNorm: normSet, loteId: ancora.lote_id }
 }

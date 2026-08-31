@@ -328,13 +328,15 @@ export async function lancarLote(itens: EntradaLancamento[]): Promise<{ resultad
  */
 export async function carregarLotePendente(
   pmo: string, op: string, posto: string, sn: string,
-): Promise<{ snsPendentes: string[] }> {
+): Promise<{ snsPendentes: string[]; membrosNorm: string[]; loteId: string | null }> {
+  const vazio = { snsPendentes: [], membrosNorm: [], loteId: null }
   const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { snsPendentes: [] }
-  if (!pmo.trim() || !op.trim() || !posto.trim() || !sn.trim()) return { snsPendentes: [] }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return vazio
+  if (!pmo.trim() || !op.trim() || !posto.trim() || !sn.trim()) return vazio
   try {
-    return { snsPendentes: await snsPendentesDoLote(pmo, op, posto, normalizarSerie(sn)) }
+    const r = await snsPendentesDoLote(pmo, op, posto, normalizarSerie(sn))
+    return { snsPendentes: r.pendentes, membrosNorm: r.membrosNorm, loteId: r.loteId }
   } catch {
-    return { snsPendentes: [] }
+    return vazio
   }
 }
