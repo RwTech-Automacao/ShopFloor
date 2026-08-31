@@ -395,8 +395,10 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       if (!rota) return { ...e, data: base }
       const i = rota.ordem.indexOf(e.source)
       const trechoDaRota = i >= 0 && rota.ordem[i + 1] === e.target // aresta é um trecho consecutivo da rota?
-      const revelado = trechoDaRota && (2 * i + 1) < rotaPasso
-      return { ...e, data: { ...base, emRota: revelado, atenuado: !revelado } }
+      const elem = 2 * i + 1 // aresta = elemento ímpar na sequência intercalada
+      const revelado = trechoDaRota && elem < rotaPasso
+      const animando = trechoDaRota && elem === rotaPasso - 1 // só a recém-revelada anima; as demais ficam fixas
+      return { ...e, data: { ...base, emRota: revelado, animarRota: animando, atenuado: !revelado } }
     })
   }, [edgesBase, rota, rotaPasso, cadenciaSeg])
 
@@ -418,7 +420,8 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
           ...(rota ? (() => {
             const idx = rota.ordem.indexOf(n.id)
             const revelado = idx >= 0 && (2 * idx) < rotaPasso // nó = elemento 2*idx (intercalado com as arestas)
-            return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !revelado }
+            const animando = idx >= 0 && (2 * idx) === rotaPasso - 1 // só o card recém-revelado faz o giro
+            return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !revelado, animarRota: animando }
           })() : {}),
           // Onda 3: contagens do período no card (a menos que "Produção total" esteja ligado).
           ...(periodo && !producaoTotal ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0 } : {}),

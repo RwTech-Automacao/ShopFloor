@@ -43,7 +43,7 @@ function params(source: InternalNode<Node>, target: InternalNode<Node>) {
   return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y, sourcePos: lado(source, sp), targetPos: lado(target, tp) }
 }
 
-interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; segundos?: number; emRota?: boolean; atenuado?: boolean }
+interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; segundos?: number; emRota?: boolean; animarRota?: boolean; atenuado?: boolean }
 
 export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps) {
   const sourceNode = useInternalNode(source)
@@ -71,7 +71,8 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
     </EdgeLabelRenderer>
   ) : null
 
-  // Busca de SN: aresta NA ROTA → preenche UMA vez (origem→destino) e FICA vinho fixo (estilo n8n).
+  // Busca de SN: aresta NA ROTA → vinho. Só a que está preenchendo AGORA (animarRota) tem a animação
+  // (preenche 1×); as já preenchidas viram linha VINHO FIXA (sem classe de animação → nada reinicia).
   if (d.emRota) {
     return (
       <>
@@ -83,8 +84,7 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
           strokeWidth={3.5}
           strokeLinecap="round"
           pathLength={1}
-          strokeDasharray="1"
-          className="fluxo-preenche-rota"
+          {...(d.animarRota ? { strokeDasharray: '1', className: 'fluxo-preenche-rota' } : {})}
         />
         {rotulo}
       </>

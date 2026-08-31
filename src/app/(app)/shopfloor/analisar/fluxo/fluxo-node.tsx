@@ -9,8 +9,9 @@ import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
 
 export interface FluxoNodePayload extends FluxoNodeData {
   selecionado: boolean
-  emRota?: boolean // busca de SN: este posto está na rota da peça (realce verde)
-  atualRota?: boolean // busca de SN: posição ATUAL da peça (realce verde forte)
+  emRota?: boolean // busca de SN: este posto está na rota da peça (contorno vinho fixo)
+  atualRota?: boolean // busca de SN: posição ATUAL da peça (anel mais forte)
+  animarRota?: boolean // este card acabou de ser revelado → faz o giro 1× (senão fica só o contorno fixo)
   foraRota?: boolean // busca de SN ativa e este posto NÃO está na rota (esmaece)
   mostrarPeriodo?: boolean // Onda 3: contagens do card vêm do período (não do total)
   periodoAprovadas?: number // aprovadas na janela do filtro
@@ -40,8 +41,9 @@ function FluxoNodeBase({ data }: NodeProps) {
   const realceRota = naRota ? (d.atualRota ? 'ring-[3px] ring-enterplak' : 'ring-2 ring-enterplak') : ''
   const transRota = (d.emRota || d.atualRota || d.foraRota) ? 'transition-opacity duration-300' : ''
   const atenuaRota = d.foraRota ? 'opacity-30' : ''
-  // Contorno animado (girando) sobreposto ao card quando ele está na rota do SN.
-  const bordaRota = naRota ? <span aria-hidden className="fluxo-borda-rota pointer-events-none absolute inset-0 z-10 rounded-xl" /> : null
+  // Giro do contorno: SÓ no card recém-revelado (passa 1× e some). Já revelados ficam só com o anel fixo
+  // (realceRota) → nada reinicia em re-render.
+  const bordaRota = d.animarRota ? <span aria-hidden className="fluxo-borda-rota pointer-events-none absolute inset-0 z-10 rounded-xl" /> : null
 
   // Caixas de Entrada/Saída: bloco em vinho predominante, só com a contagem (sem detalhe ao clicar).
   if (d.ehEntrada || d.ehSaida) {
