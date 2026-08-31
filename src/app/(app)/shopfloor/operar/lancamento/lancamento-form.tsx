@@ -16,7 +16,7 @@ import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, lancarLote, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, carregarLotePendente, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
-import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes } from '@/modules/shopfloor/domain/lote'
+import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes, emojiItemLote } from '@/modules/shopfloor/domain/lote'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
@@ -24,6 +24,8 @@ import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { NqaCaixaPanel } from './nqa-caixa-panel'
 import { lerNqaProgresso, limparNqaProgresso, type NqaProgresso } from './nqa-progresso-local'
+import { lerLoteLocal, salvarLoteLocal, limparLoteLocal } from './lote-local'
+import type { ItemLote } from './tipos-lote'
 import { AprovarModal } from './aprovar-modal'
 import { ReprovarModal } from './reprovar-modal'
 
@@ -37,12 +39,6 @@ interface DefeitoLinha {
   posicao: string
   tipo: string
 }
-
-/** Item empilhado no lote (Lançamento Coletivo): a mesma entrada que iria pro `lancar`, mais o
- * resultado (aprovado/reprovado/null) já resolvido pra exibição — a gravação em si é adiada. */
-type ItemLote =
-  | { estado: 'pendente'; sn: string; snNorm: string }
-  | { estado: 'resolvido'; sn: string; snNorm: string; entrada: EntradaLancamento; outcome: 'aprovado' | 'reprovado' | null; erro?: string }
 
 /** Texto curto de um defeito para o diálogo de confirmação de conserto. */
 function descreverDefeito(d: { codigo: string; posicao: string; tipo: string }): string {
@@ -127,6 +123,30 @@ export function LancamentoForm({
     if (!pmo || !op || !posto) return
     contarLancadosPosto(pmo, op, posto).then(setTotalPosto).catch(() => {})
   }
+
+  // Lote coletivo persistido em localStorage por (pmo,op,posto) — sobrevive refresh (padrão do
+  // nqa-progresso-local.ts). `hidratouLoteRef` guarda a chave já hidratada nesta sessão pra o
+  // efeito de salvar não sobrescrever com [] ANTES da hidratação rodar (ordem: hidrata → salva).
+  const hidratouLoteRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!pmo || !op || !posto) return
+    const chaveAtual = `${pmo}|${op}|${posto}`
+    if (hidratouLoteRef.current === chaveAtual) return
+    hidratouLoteRef.current = chaveAtual
+    if (lote.length === 0) {
+      const salvo = lerLoteLocal(pmo, op, posto)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync único do localStorage ao casar o contexto
+      if (salvo && salvo.length > 0) setLote(salvo)
+    }
+    // roda só na troca de (pmo,op,posto); `lote.length` é lido só pra decidir SE hidrata, não deve
+    // disparar o efeito de novo a cada bipe (senão a hidratação rodaria a cada mudança do lote).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pmo, op, posto])
+  useEffect(() => {
+    if (!pmo || !op || !posto) return
+    if (hidratouLoteRef.current !== `${pmo}|${op}|${posto}`) return // não salva antes de hidratar
+    salvarLoteLocal(pmo, op, posto, lote)
+  }, [lote, pmo, op, posto])
 
   // Ao montar, verifica se há inspeção NQA salva (localStorage) de um refresh/fechamento —
   // oferece retomar. Precisa ser em effect (não lazy-init): localStorage só existe no cliente,
@@ -222,11 +242,12 @@ export function LancamentoForm({
       descricao: `Há ${lote.length} peça(s) no lote que ainda não foram enviadas. Trocar de contexto agora vai descartá-las.`,
       rotuloConfirmar: 'Descartar e trocar',
     })
-    if (ok) { setLote([]); setLotesPuxados(new Set()) }
+    if (ok) { setLote([]); setLotesPuxados(new Set()); limparLoteLocal(pmo, op, posto) }
     return ok
   }
   async function mudarPosto(v: string) {
     if (!(await podeTrocarContexto())) return
+    limparLoteLocal(pmo, op, posto) // defensivo: garante que não sobra lote salvo do posto anterior
     setPosto(v); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // novo posto → histórico da sessão + total zeram
     setLotesPuxados(new Set())
     const perfilV = postosPerfil[v] ?? PERFIL_PADRAO
@@ -257,6 +278,7 @@ export function LancamentoForm({
   }
   async function atualizarCabecalho() {
     if (!(await podeTrocarContexto())) return
+    limparLoteLocal(pmo, op, posto) // defensivo: garante que não sobra lote salvo do contexto anterior
     setLotesPuxados(new Set())
     setCliente(''); setPmo(''); setOp('')
     setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
@@ -384,7 +406,7 @@ export function LancamentoForm({
       itens.forEach((item, idx) => {
         const it = item as Extract<ItemLote, { estado: 'resolvido' }>
         const r = resultados[idx]
-        if (r?.ok) linhasOk.push({ lancamento: true, status: it.outcome, sn: it.sn })
+        if (r?.ok) linhasOk.push({ lancamento: true, status: it.outcome, sn: it.sn, dataHora: new Date().toISOString() })
         else falhas.push({ ...it, erro: r?.erro ?? 'Erro ao enviar.' })
       })
       // best-effort: quem falhou volta pro lote COM o motivo; PENDENTES e itens bipados durante o
@@ -479,7 +501,7 @@ export function LancamentoForm({
             { rotulo: 'Posto', valor: posto },
             ...(mostraStatus && status ? [{ valor: status, destaque: status === 'Aprovado' }] : []),
           ],
-        }, { lancamento: true, status: outcome, sn })
+        }, { lancamento: true, status: outcome, sn, dataHora: new Date().toISOString() })
         limparPeca()
       } else {
         mostrar({
@@ -489,7 +511,7 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: false, status: null, sn })
+        }, { lancamento: false, status: null, sn, dataHora: new Date().toISOString() })
       }
     })
   }
@@ -550,7 +572,7 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: true, status: null, sn })
+        }, { lancamento: true, status: null, sn, dataHora: new Date().toISOString() })
         limparPeca()
       } else {
         mostrar({
@@ -560,7 +582,7 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: sn, mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: false, status: null, sn })
+        }, { lancamento: false, status: null, sn, dataHora: new Date().toISOString() })
       }
     })
   }
@@ -626,7 +648,7 @@ export function LancamentoForm({
             { rotulo: 'Posto', valor: posto },
             { valor: 'Aprovado', destaque: true },
           ],
-        }, { lancamento: true, status: 'aprovado', sn: sn.trim() })
+        }, { lancamento: true, status: 'aprovado', sn: sn.trim(), dataHora: new Date().toISOString() })
         limparPeca()
       } else {
         mostrar({
@@ -636,7 +658,7 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: false, status: null, sn: sn.trim() })
+        }, { lancamento: false, status: null, sn: sn.trim(), dataHora: new Date().toISOString() })
       }
     })
   }
@@ -690,7 +712,7 @@ export function LancamentoForm({
             { rotulo: 'Posto', valor: posto },
             { valor: 'Reprovado', destaque: false },
           ],
-        }, { lancamento: true, status: 'reprovado', sn: dados.sn.trim() })
+        }, { lancamento: true, status: 'reprovado', sn: dados.sn.trim(), dataHora: new Date().toISOString() })
         limparPeca()
       } else {
         mostrar({
@@ -700,10 +722,84 @@ export function LancamentoForm({
             { rotulo: 'Nº Série', valor: dados.sn.trim(), mono: true },
             { rotulo: 'Posto', valor: posto },
           ],
-        }, { lancamento: false, status: null, sn: dados.sn.trim() })
+        }, { lancamento: false, status: null, sn: dados.sn.trim(), dataHora: new Date().toISOString() })
       }
     })
   }
+
+  // Contexto compacto (fonte/altura menores) em TODAS as telas de Lançamento: no fluxo normal cabe ao
+  // lado da Peça; nos painéis especiais fica ao lado do painel (Embalagem/NQA-caixa) ou acima dele
+  // (Integração — lista de componentes é larga, fica em largura cheia embaixo).
+  const renderContexto = () => (
+    <Card size="sm" className="shrink-0">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardTitle>Contexto</CardTitle>
+        {op !== '' && (
+          <Button variant="outline" size="sm" onClick={atualizarCabecalho} disabled={enviandoLote}>Atualizar cabeçalho</Button>
+        )}
+      </CardHeader>
+      {op === '' ? (
+        <CardContent className="flex flex-col gap-2">
+          <Label htmlFor="bipeCab">Bipe o Nº de Série para carregar a OP</Label>
+          <Input
+            id="bipeCab"
+            ref={bipeCabRef}
+            value={bipeCab}
+            onChange={(e) => setBipeCab(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBiparCabecalho() } }}
+            placeholder="Bipe ou digite o SN e Enter"
+            autoComplete="off"
+            autoFocus
+            className="h-12 text-lg"
+          />
+          <p className="text-xs text-muted-foreground">Digitar + Enter também funciona (sem scanner).</p>
+        </CardContent>
+      ) : (
+        <CardContent className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3 [&_label]:text-xs [&_input]:h-8 [&_input]:text-sm [&_button]:h-8 [&_button]:text-sm">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="colaborador">Colaborador</Label>
+            <Input
+              id="colaborador"
+              ref={colaboradorRef}
+              value={colaborador}
+              onChange={(e) => setColaborador(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); postoTriggerRef.current?.focus() } }}
+              autoComplete="off"
+              disabled={enviandoLote}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Cliente</Label>
+            <Input value={cliente} readOnly disabled />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>PMO</Label>
+            <Input value={pmo} readOnly disabled />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>OP</Label>
+            <Input value={op} readOnly disabled />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Posto</Label>
+            <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviando || processando || enviandoLote}>
+              <SelectTrigger ref={postoTriggerRef}><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Descrição</Label>
+            <Input value={ordemSel?.descricao ?? ''} readOnly disabled />
+          </div>
+          {semFaixa && (
+            <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">Esta OP não tem faixa de Nº de Série cadastrada — não é possível lançar.</p>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  )
+
+  const linhasHistorico = ultimoEhLancamento ? historico.slice(1) : historico
 
   return (
     <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
@@ -721,78 +817,14 @@ export function LancamentoForm({
         </div>
       )}
 
-      {/* Contexto */}
-      <Card size="sm" className="shrink-0">
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
-          <CardTitle>Contexto</CardTitle>
-          {op !== '' && (
-            <Button variant="outline" size="sm" onClick={atualizarCabecalho} disabled={enviandoLote}>Atualizar cabeçalho</Button>
-          )}
-        </CardHeader>
-        {op === '' ? (
-          <CardContent className="flex flex-col gap-2">
-            <Label htmlFor="bipeCab">Bipe o Nº de Série para carregar a OP</Label>
-            <Input
-              id="bipeCab"
-              ref={bipeCabRef}
-              value={bipeCab}
-              onChange={(e) => setBipeCab(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBiparCabecalho() } }}
-              placeholder="Bipe ou digite o SN e Enter"
-              autoComplete="off"
-              autoFocus
-              className="h-12 text-lg"
-            />
-            <p className="text-xs text-muted-foreground">Digitar + Enter também funciona (sem scanner).</p>
-          </CardContent>
-        ) : (
-          <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="colaborador">Colaborador</Label>
-              <Input
-                id="colaborador"
-                ref={colaboradorRef}
-                value={colaborador}
-                onChange={(e) => setColaborador(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); postoTriggerRef.current?.focus() } }}
-                autoComplete="off"
-                disabled={enviandoLote}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Cliente</Label>
-              <Input value={cliente} readOnly disabled />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>PMO</Label>
-              <Input value={pmo} readOnly disabled />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>OP</Label>
-              <Input value={op} readOnly disabled />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Posto</Label>
-              <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviando || processando || enviandoLote}>
-                <SelectTrigger ref={postoTriggerRef}><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Descrição</Label>
-              <Input value={ordemSel?.descricao ?? ''} readOnly disabled />
-            </div>
-            {semFaixa && (
-              <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">Esta OP não tem faixa de Nº de Série cadastrada — não é possível lançar.</p>
-            )}
-          </CardContent>
-        )}
-      </Card>
-
-      {/* Área de ação: empilha no estreito, 2 colunas no lg (bipe/ação à esquerda, resultado à direita).
-          grid-rows minmax(0,1fr) trava a linha → a coluna direita (histórico) rola por dentro, não empurra a página. */}
-      <div className={`flex flex-col ${ehIntegracao ? '' : `min-h-0 flex-1 lg:grid lg:grid-rows-[minmax(0,1fr)] lg:gap-4 ${ehColetivo ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}`}>
-        {ehIntegracao && (
+      {op === '' ? (
+        // Sem OP: só o Contexto (campo de bipe do cabeçalho).
+        renderContexto()
+      ) : ehIntegracao ? (
+        // Integração: Contexto compacto em cima; a receita (lista de componentes) é larga e fica em
+        // largura cheia embaixo (não side-by-side — apertaria demais).
+        <>
+          {renderContexto()}
           <div className="flex flex-col">
             <IntegracaoPanel
               colaborador={colaborador}
@@ -804,32 +836,33 @@ export function LancamentoForm({
               componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
             />
           </div>
-        )}
-
-        {ehEmbalagem && (
-          <div className="flex min-h-0 flex-col lg:col-span-2">
-            {ordemSel?.embalagem_individual ? (
-              <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
-            ) : (
-              <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+        </>
+      ) : ehEmbalagem || ehNqaCaixa ? (
+        // Embalagem / NQA-caixa: painel (esq) | Contexto compacto (dir), mesma linha.
+        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[2fr_3fr]">
+          <div className="flex min-h-0 flex-col">
+            {ehEmbalagem && (
+              ordemSel?.embalagem_individual ? (
+                <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+              ) : (
+                <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
+              )
+            )}
+            {ehNqaCaixa && (
+              <NqaCaixaPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
             )}
           </div>
-        )}
-
-        {ehNqaCaixa && (
-          <div className="flex min-h-0 flex-col lg:col-span-2">
-            <NqaCaixaPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
-          </div>
-        )}
-
-        {/* Bipagem */}
-        {!ehIntegracao && !ehEmbalagem && !ehNqaCaixa && (
-          <>
-            <Card className="flex min-h-0 flex-col">
+          <div className="lg:self-start">{renderContexto()}</div>
+        </div>
+      ) : (
+        // Ramo normal: topo Peça|Contexto · meio Lote|Última (ou só Última) · base Hist. Lançado|Não-lançado.
+        <>
+          <div className="grid shrink-0 gap-3 lg:grid-cols-[2fr_3fr]">
+            <Card size="sm" className="flex min-h-0 flex-col">
               <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
                 <CardTitle>Peça</CardTitle>
               </CardHeader>
-              <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+              <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
                 {/* Burn-in: Evento vem ANTES do campo de ação (define entrada=neutra / saída=scanner). */}
                 {ehBurnin && (
                   <div className="flex shrink-0 flex-col gap-1.5 sm:max-w-xs">
@@ -849,14 +882,14 @@ export function LancamentoForm({
                     <div className="flex flex-col gap-1.5">
                       <Label>Inspeção Visual</Label>
                       <Select value={nqaVisual} onValueChange={(v) => setNqaVisual(v ?? '')}>
-                        <SelectTrigger ref={nqaVisualRef} className="h-12 text-base"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectTrigger ref={nqaVisualRef} className="h-9 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
                         <SelectContent>{OPCOES_STATUS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label>Inspeção Funcional</Label>
                       <Select value={nqaFuncional} onValueChange={(v) => setNqaFuncional(v ?? '')}>
-                        <SelectTrigger className="h-12 text-base"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
                         <SelectContent>{OPCOES_NQA_FUNCIONAL.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
@@ -903,7 +936,7 @@ export function LancamentoForm({
                       autoComplete="off"
                       disabled={enviando || processando}
                       list={ehScanner && !usaAcordeao ? 'acao-defeitos-list' : undefined}
-                      className={`h-12 text-lg disabled:opacity-60 ${usaAcordeao ? 'pr-12' : ''}`}
+                      className={`h-10 text-base disabled:opacity-60 ${usaAcordeao ? 'pr-12' : ''}`}
                       placeholder={usaAcordeao ? (listaAberta ? 'Filtre o defeito…' : 'Bipe o Nº de Série') : (ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série')}
                     />
                     {usaAcordeao && (
@@ -979,16 +1012,20 @@ export function LancamentoForm({
 
                 {!usaAcao && (
                   <div className="shrink-0">
-                    <Button onClick={onEnviar} disabled={!valido || enviando} className="h-11 bg-enterplak px-8 hover:bg-enterplak-700">
+                    <Button onClick={onEnviar} disabled={!valido || enviando} className="h-9 bg-enterplak px-6 text-sm hover:bg-enterplak-700">
                       {enviando ? 'Enviando…' : 'Enviar'}
                     </Button>
                   </div>
                 )}
               </CardContent>
             </Card>
+            {renderContexto()}
+          </div>
 
-            {/* Lançamento coletivo: lote acumulado localmente — Enviar grava tudo de uma vez (best-effort). */}
-            {ehColetivo && (
+          {/* Meio: com lote → Lote (esq) | Última bipada+contador (dir); sem lote → Última bipada cheia. */}
+          {ehColetivo ? (
+            <div className="grid shrink-0 gap-3 lg:grid-cols-2">
+              {/* Lançamento coletivo: lote acumulado localmente — Enviar grava tudo de uma vez (best-effort). */}
               <Card className="flex min-h-0 flex-col">
                 <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
                   <CardTitle>Lote — {contarResolvidos(lote)}/{lote.length}</CardTitle>
@@ -1002,52 +1039,66 @@ export function LancamentoForm({
                   </Button>
                 </CardHeader>
                 <CardContent className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-                  {lote.length === 0 && (
+                  {lote.length === 0 ? (
                     <p className="text-sm text-muted-foreground">Nenhuma peça no lote ainda — bipe ao lado para acumular.</p>
-                  )}
-                  {lote.map((item, i) => (
-                    <div key={item.snNorm} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate font-mono text-sm">{item.sn}</p>
-                        {item.estado === 'pendente' ? (
-                          <p className="text-xs text-muted-foreground">Pendente</p>
-                        ) : (
-                          <p className={`text-xs ${item.outcome === 'reprovado' ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
-                            {item.outcome === 'reprovado' ? 'Reprovado' : item.outcome === 'aprovado' ? 'Aprovado' : '—'}
-                          </p>
-                        )}
-                        {item.estado === 'resolvido' && item.erro && <p className="text-xs font-medium text-red-600">{item.erro}</p>}
-                      </div>
-                      <button
-                        type="button"
-                        aria-label={`Remover ${item.sn} do lote`}
-                        onClick={() => setLote((prev) => prev.filter((_, idx) => idx !== i))}
-                        disabled={enviandoLote}
-                        className="shrink-0 text-muted-foreground hover:text-red-600 disabled:opacity-40"
-                      >
-                        <X className="size-4" />
-                      </button>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {lote.map((item, i) => (
+                        <span
+                          key={item.snNorm}
+                          title={item.estado === 'resolvido' ? (item.erro ?? '') : 'Pendente'}
+                          className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-sm"
+                        >
+                          <span>{emojiItemLote(item)}</span>
+                          <span className="font-mono">{item.sn}</span>
+                          <button
+                            type="button"
+                            aria-label={`Remover ${item.sn}`}
+                            disabled={enviandoLote}
+                            onClick={() => setLote((prev) => prev.filter((_, idx) => idx !== i))}
+                            className="text-muted-foreground hover:text-red-600 disabled:opacity-40"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </CardContent>
               </Card>
-            )}
-
-            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex flex-col gap-2">
+                <PainelResultado resultado={resultado} />
+                {posto && (
+                  <p className="shrink-0 text-xs text-muted-foreground">
+                    Lançados — <span className="font-semibold text-foreground">sessão {lancadosSessao}</span>
+                    {totalPosto !== null && (
+                      <> · <span className="font-semibold text-foreground">nesta OP/posto {totalPosto}</span></>
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex shrink-0 flex-col gap-2">
               <PainelResultado resultado={resultado} />
               {posto && (
-                <p className="mt-2 shrink-0 text-xs text-muted-foreground">
+                <p className="shrink-0 text-xs text-muted-foreground">
                   Lançados — <span className="font-semibold text-foreground">sessão {lancadosSessao}</span>
                   {totalPosto !== null && (
                     <> · <span className="font-semibold text-foreground">nesta OP/posto {totalPosto}</span></>
                   )}
                 </p>
               )}
-              <HistoricoLancamentos linhas={ultimoEhLancamento ? historico.slice(1) : historico} />
             </div>
-          </>
-        )}
-      </div>
+          )}
+
+          {/* Base: dois históricos com scroll próprio — Lançado (esq) | Não-lançado (dir). */}
+          <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
+            <HistoricoLancamentos titulo="Lançado" linhas={linhasHistorico.filter((l) => l.lancamento)} mostrarStatus={mostraStatus} />
+            <HistoricoLancamentos titulo="Não-lançado" linhas={linhasHistorico.filter((l) => !l.lancamento)} mostrarStatus={mostraStatus} />
+          </div>
+        </>
+      )}
       {/* Trava TOTAL durante a gravação (tela de load): cobre a tela e o input-sumidouro engole o bipe
           pra ele NÃO cair em outro campo (ex.: Posto). No avulso (`enviando`) e no envio do lote
           (`enviandoLote`). z-40 fica ABAIXO da camada de diálogos base-ui (z-50) de propósito: assim
