@@ -251,12 +251,23 @@ function PendentesPosto({ titulo, itens, carregando, onSn, defaultOpen }: { titu
   )
 }
 
-/** Gráfico de produção do posto por período (peças × dia/hora), barras verticais. Carrega ao abrir o
- *  posto; segue o filtro (janela por hora) ou o macro (por dia, desde o início da produção no posto). */
+/** Arredonda pra cima pra um "topo" bonito de eixo (1/2/5 × 10^n). */
+function niceCeil(v: number): number {
+  if (v <= 0) return 1
+  const p = Math.pow(10, Math.floor(Math.log10(v)))
+  const n = v / p
+  const passo = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10
+  return passo * p
+}
+
+/** Gráfico de produção do posto por período (peças × dia/hora) — LINHA + área, com grade e eixos.
+ *  Carrega ao abrir o posto; segue o filtro (janela por hora) ou o macro (por dia, desde o início ali). */
 function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op: string; posto: string; ini: string | null; fim: string | null; bucket: 'dia' | 'hora' }) {
   const [dados, setDados] = useState<ProducaoBucket[]>([])
   const [carregou, setCarregou] = useState(false)
   const [carregando, start] = useTransition()
+  const boxRef = useRef<HTMLDivElement>(null)
+  const [larg, setLarg] = useState(600) // largura medida (pra o SVG 1:1 não distorcer texto/linha)
   useEffect(() => {
     if (!pmo || !op || !posto) return
     let vivo = true
@@ -268,27 +279,58 @@ function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op
     })
     return () => { vivo = false }
   }, [pmo, op, posto, ini, fim, bucket])
-  const max = dados.reduce((m, d) => Math.max(m, d.qtd), 1)
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) return
+    const ro = new ResizeObserver((es) => { for (const e of es) setLarg(Math.max(240, Math.round(e.contentRect.width))) })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const total = dados.reduce((s, d) => s + d.qtd, 0)
+  // Geometria do chart (coords 1:1 = pixels reais → texto/linha sem distorção).
+  const H = 168, padL = 40, padR = 10, padT = 12, padB = 24
+  const W = larg
+  const plotW = Math.max(1, W - padL - padR)
+  const plotH = H - padT - padB
+  const maxV = niceCeil(dados.reduce((m, d) => Math.max(m, d.qtd), 0))
+  const n = dados.length
+  const px = (i: number) => (n <= 1 ? padL + plotW / 2 : padL + (i / (n - 1)) * plotW)
+  const py = (v: number) => padT + plotH * (1 - v / maxV)
+  const linePts = dados.map((d, i) => `${px(i)},${py(d.qtd)}`).join(' ')
+  const areaPath = n > 1
+    ? `M ${px(0)},${padT + plotH} ` + dados.map((d, i) => `L ${px(i)},${py(d.qtd)}`).join(' ') + ` L ${px(n - 1)},${padT + plotH} Z`
+    : ''
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxV * f))
+  const labelStep = Math.max(1, Math.ceil(n / 6))
+
   return (
-    <div className="mb-3">
-      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="mb-1" ref={boxRef}>
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Produção por {bucket === 'hora' ? 'hora' : 'dia'}{carregou ? ` · ${total} total` : ''}
       </p>
       {carregando && !carregou ? (
-        <p className="text-xs text-muted-foreground">Carregando…</p>
+        <p className="text-xs text-muted-foreground" style={{ height: H }}>Carregando…</p>
       ) : dados.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Sem produção no período.</p>
+        <p className="text-xs text-muted-foreground" style={{ height: H }}>Sem produção no período.</p>
       ) : (
-        <div className="flex h-32 items-end gap-1 overflow-x-auto rounded-md border border-border bg-muted/30 p-2">
-          {dados.map((d, i) => (
-            <div key={i} className="flex min-w-[1.75rem] flex-1 flex-col items-center justify-end gap-1" title={`${d.rotulo}: ${d.qtd}`}>
-              <span className="text-[10px] font-medium text-foreground">{d.qtd}</span>
-              <div className="w-full rounded-t bg-enterplak" style={{ height: `${Math.max(4, (d.qtd / max) * 100)}%` }} />
-              <span className="w-full truncate text-center text-[9px] text-muted-foreground">{d.rotulo}</span>
-            </div>
-          ))}
-        </div>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block">
+          {ticks.map((t, i) => {
+            const y = py(t)
+            return (
+              <g key={i}>
+                <line x1={padL} y1={y} x2={W - padR} y2={y} className="stroke-border" strokeWidth={1} />
+                <text x={padL - 6} y={y} textAnchor="end" dominantBaseline="middle" className="fill-muted-foreground" style={{ fontSize: 11 }}>{t}</text>
+              </g>
+            )
+          })}
+          {areaPath && <path d={areaPath} className="fill-enterplak/10" />}
+          {n > 1 && <polyline points={linePts} fill="none" className="stroke-enterplak" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
+          {n === 1 && <circle cx={px(0)} cy={py(dados[0]!.qtd)} r={3.5} className="fill-enterplak" />}
+          {dados.map((d, i) => ((i % labelStep === 0 || i === n - 1) ? (
+            <text key={i} x={px(i)} y={H - 7} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>{d.rotulo}</text>
+          ) : null))}
+        </svg>
       )}
     </div>
   )
