@@ -135,15 +135,17 @@ export interface DefeitoDaOp {
  * Paginado por `range` (offset/limite) pra lazy load — escopado à OP (índice pmo,op), volume pequeno.
  */
 export async function listarDefeitosDaOp(
-  pmo: string, op: string, offset: number, limite: number,
+  pmo: string, op: string, offset: number, limite: number, posto?: string,
 ): Promise<DefeitoDaOp[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase
+  let query = supabase
     .from('sf_registros')
     .select('data_hora,posto,numero_serie,colaborador,codigo_defeito,posicao,tipo_defeito')
     .eq('pmo', pmo)
     .eq('op', op)
     .neq('codigo_defeito', '') // só linhas COM defeito (reprova)
+  if (posto && posto.trim() !== '') query = query.eq('posto', posto.trim())
+  const { data, error } = await query
     .order('data_hora', { ascending: false })
     .order('id', { ascending: false })
     .range(offset, offset + limite - 1)

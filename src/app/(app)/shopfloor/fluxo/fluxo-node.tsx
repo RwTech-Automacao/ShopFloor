@@ -19,17 +19,21 @@ export interface FluxoNodePayload extends FluxoNodeData {
   periodoRegistros?: number // bipes na janela do filtro (posto de passagem usa isto)
 }
 
-/** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus). */
-function iconeDo(d: FluxoNodePayload) {
-  const cls = 'size-5'
-  switch (d.recurso) {
-    case 'manutencao': return <Wrench className={cls} />
-    case 'caixa': return <Package className={cls} />
-    case 'integracao': return <GitMerge className={cls} />
-    case 'burnin': return <ThermometerSun className={cls} strokeWidth={2.25} />
-    case 'nqa': return <ShieldCheck className={cls} />
-    default: return d.temStatus ? <ClipboardCheck className={cls} /> : <CircleDot className={cls} />
+/** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus).
+ *  Exportado pra reuso (ex.: tela de Defeitos usa o ícone do posto onde o defeito foi registrado). */
+export function iconePorRecurso(recurso: string, temStatus: boolean, className = 'size-5') {
+  switch (recurso) {
+    case 'manutencao': return <Wrench className={className} />
+    case 'caixa': return <Package className={className} />
+    case 'integracao': return <GitMerge className={className} />
+    case 'burnin': return <ThermometerSun className={className} strokeWidth={2.25} />
+    case 'nqa': return <ShieldCheck className={className} />
+    default: return temStatus ? <ClipboardCheck className={className} /> : <CircleDot className={className} />
   }
+}
+
+function iconeDo(d: FluxoNodePayload) {
+  return iconePorRecurso(d.recurso, d.temStatus, 'size-5')
 }
 
 function FluxoNodeBase({ data }: NodeProps) {

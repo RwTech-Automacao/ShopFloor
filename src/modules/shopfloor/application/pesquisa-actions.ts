@@ -40,11 +40,12 @@ export async function carregarDefeitosDaOp(
   pmo: string,
   op: string,
   offset = 0,
+  posto = '',
 ): Promise<{ ok: true; linhas: DefeitoDaOp[]; temMais: boolean } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
-    const linhas = await listarDefeitosDaOp(pmo.trim(), op.trim(), Math.max(0, offset), DEFEITOS_PAGINA)
+    const linhas = await listarDefeitosDaOp(pmo.trim(), op.trim(), Math.max(0, offset), DEFEITOS_PAGINA, posto)
     return { ok: true, linhas, temMais: linhas.length === DEFEITOS_PAGINA }
   } catch {
     return { ok: false, erro: ERRO_INTERNO }

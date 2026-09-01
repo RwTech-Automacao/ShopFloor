@@ -557,6 +557,27 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     () => dom.filter((n) => n.id !== MANUTENCAO && n.id !== ENTRADA && n.id !== SAIDA).map((n) => n.id),
     [dom],
   )
+  // posto → recurso/temStatus (pro ícone do posto na tela de Defeitos).
+  const postoInfoMap = useMemo(() => {
+    const m: Record<string, { recurso: string; temStatus: boolean }> = {}
+    for (const n of dom) m[n.id] = { recurso: n.data.recurso, temStatus: n.data.temStatus }
+    return m
+  }, [dom])
+
+  // Navegação por setas Fluxo ↔ Defeitos (→ abre Defeitos, ← volta pro Fluxo). Fora da apresentação
+  // (que usa as setas pros slides) e ignorando quando o foco está num campo de texto ou num diálogo.
+  useEffect(() => {
+    if (apresentando) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      if (!buscou || opAberto || snAberto) return
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
+      setDefeitosAberto(e.key === 'ArrowRight')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [apresentando, buscou, opAberto, snAberto])
   // Não iniciadas (fila do 1º posto): vêm do nó Entrada; mostradas no detalhe do 1º posto pra explicar o badge
   // (essas peças ainda não têm SN bipado, então não aparecem na lista "Pendentes no posto").
   const naoIniciadasPrimeiro = aberto && aberto === postosOP[0] ? (dom.find((n) => n.id === ENTRADA)?.data.wip ?? 0) : 0
@@ -866,20 +887,23 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             <button
               type="button"
               onClick={() => setDefeitosAberto(true)}
-              title="Defeitos desta OP"
+              title="Defeitos desta OP (→)"
               className="absolute bottom-3 right-3 z-40 flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-sm font-medium shadow-lg hover:bg-accent"
             >
-              <Bug className="size-4" /> Defeitos
+              <Bug className="size-4" /> Defeitos <ChevronRight className="size-4 opacity-60" />
             </button>
           )}
           {/* Painel de Defeitos da OP — dentro do Fluxo (cobre o canvas); funciona no Modo TV/apresentação. */}
           {defeitosAberto && (
             <div className="absolute inset-0 z-50 flex flex-col gap-2 bg-card p-3">
               <div className="flex shrink-0 items-center justify-between">
-                <p className="text-sm font-semibold">Defeitos · {opInfo.pmo}/{opInfo.op}</p>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setDefeitosAberto(false)} title="Voltar ao Fluxo (←)" className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-accent"><ChevronLeft className="size-4" /> Fluxo</button>
+                  <p className="text-sm font-semibold">Defeitos · {opInfo.pmo}/{opInfo.op}</p>
+                </div>
                 <button type="button" onClick={() => setDefeitosAberto(false)} aria-label="Fechar" className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
               </div>
-              <DefeitosLista pmo={opInfo.pmo} op={opInfo.op} />
+              <DefeitosLista pmo={opInfo.pmo} op={opInfo.op} postos={postosOP} postoInfo={postoInfoMap} />
             </div>
           )}
           {/* Botão de Filtro (vinho, só ícone) — no topo do canvas; aparece também no Modo TV. */}
