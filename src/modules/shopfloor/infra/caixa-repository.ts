@@ -146,7 +146,9 @@ export interface CaixaDoSn {
   qtd: number          // total de peças (SNs distintos) da caixa
   snsNorm: string[]    // SNs (normalizados) da caixa — p/ validar que a amostra é DESTA caixa
   fechada: boolean     // a caixa já foi FECHADA na embalagem (NQA só inspeciona caixa fechada)
-  jaInspecionadaNqa: boolean // último registro de alguma peça está no posto NQA (aguardando reteste/finalizada)
+  jaInspecionadaNqa: boolean // caixa FINALIZADA no NQA (alguma peça no NQA e NENHUMA pendente de reteste)
+  pendentesReteste: string[] // SNs (exibição) que ainda precisam RETESTAR antes de re-inspecionar a caixa
+  postoReteste: string       // posto onde essas peças devem retestar (1º da rota; vazio se não uniforme)
 }
 
 /**
@@ -191,30 +193,44 @@ export async function resolverCaixaPorSn(
   if (eCx) throw eCx
   const fechada = (cx as { fechada: boolean } | null)?.fechada === true
 
-  // "no NQA agora" = o ÚLTIMO registro de alguma peça da caixa está no posto NQA (aguardando reteste
-  // ou já finalizada). Depois do reteste, o último registro é outro posto → LIBERA a reinspeção.
-  // (mesma regra do backstop na RPC sf_nqa_caixa.)
-  // Pagina (PostgREST trunca em 1000): caixa grande (SNs × registros > 1000) truncaria e erraria
-  // o último posto de algumas peças. Ordenado desc → a 1ª ocorrência de cada SN é o último registro.
-  const ultimoPostoDaPeca = new Map<string, string>()
+  // Último registro (posto/status/rota/SN) de cada peça da caixa — pra decidir o bloqueio do NQA.
+  // Uma peça cujo último registro ainda está no NQA está: REPROVADA (falta retestar) ou APROVADA
+  // (caixa já finalizada). Depois do reteste, o último registro vira outro posto → LIBERA a reinspeção.
+  // Pagina (PostgREST trunca em 1000): caixa grande (SNs × registros > 1000) truncaria. Ordenado desc
+  // → a 1ª ocorrência de cada SN é o último registro.
+  interface UltReg { numeroSerie: string; posto: string; status: string; retorno: string }
+  const ultimoDaPeca = new Map<string, UltReg>()
   const PAGINA = 1000
   for (let i = 0; ; i++) {
     const { data: hist, error: e3 } = await supabase
       .from('sf_registros')
-      .select('numero_serie_norm,posto')
+      .select('numero_serie,numero_serie_norm,posto,status,posto_retorno')
       .eq('pmo', pmo).eq('op', op)
       .in('numero_serie_norm', [...snsNorm])
       .order('data_hora', { ascending: false })
       .order('id', { ascending: false })
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (e3) throw e3
-    const lote = (hist ?? []) as { numero_serie_norm: string; posto: string }[]
+    const lote = (hist ?? []) as { numero_serie: string; numero_serie_norm: string; posto: string; status: string; posto_retorno: string | null }[]
     for (const r of lote) {
-      if (!ultimoPostoDaPeca.has(r.numero_serie_norm)) ultimoPostoDaPeca.set(r.numero_serie_norm, r.posto)
+      if (!ultimoDaPeca.has(r.numero_serie_norm)) {
+        ultimoDaPeca.set(r.numero_serie_norm, { numeroSerie: r.numero_serie, posto: r.posto, status: r.status, retorno: r.posto_retorno ?? '' })
+      }
     }
     if (lote.length < PAGINA) break
   }
-  const jaInspecionadaNqa = [...ultimoPostoDaPeca.values()].some((p) => p === postoNqa)
+
+  const noNqaAgora = [...ultimoDaPeca.values()].filter((u) => u.posto === postoNqa)
+  // Reprovadas no NQA = ainda precisam RETESTAR (voltar pelo posto_retorno) antes de re-inspecionar.
+  const pendentesRegs = noNqaAgora.filter((u) => u.status.trim().toLowerCase() === 'reprovado')
+  const pendentesReteste = pendentesRegs.map((u) => u.numeroSerie)
+  // Posto onde essas peças devem retestar = 1º da rota (quando único p/ todas).
+  const postosDeReteste = new Set(
+    pendentesRegs.map((u) => (u.retorno.split(',')[0] ?? '').trim()).filter((p) => p !== '' && p !== postoNqa),
+  )
+  const postoReteste = postosDeReteste.size === 1 ? [...postosDeReteste][0]! : ''
+  // Finalizada = alguma peça no NQA e NENHUMA pendente de reteste (todas já inspecionadas/aprovadas).
+  const jaInspecionadaNqa = noNqaAgora.length > 0 && pendentesReteste.length === 0
 
   return {
     posto,
@@ -223,5 +239,7 @@ export async function resolverCaixaPorSn(
     snsNorm: [...snsNorm],
     fechada,
     jaInspecionadaNqa,
+    pendentesReteste,
+    postoReteste,
   }
 }
