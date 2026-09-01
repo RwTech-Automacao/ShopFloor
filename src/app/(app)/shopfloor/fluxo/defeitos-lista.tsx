@@ -128,13 +128,13 @@ export function DefeitosLista({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">
                       <span className="truncate text-2xl font-bold text-foreground">{l.codigo || 'Defeito'}</span>
-                      <span className="shrink-0 text-base text-muted-foreground" title={dt ? fmtLongo.format(dt) : ''}>
+                      <span className="shrink-0 text-lg text-muted-foreground" title={dt ? fmtLongo.format(dt) : ''}>
                         {dt ? fmtCurto.format(dt) : '—'}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-lg font-medium text-foreground/80">{postoReprova}</p>
-                    <p className="truncate text-base text-muted-foreground">{detalhe}</p>
-                    {l.colaborador && <p className="truncate text-sm text-muted-foreground">por {l.colaborador}</p>}
+                    <p className="mt-1 truncate text-xl font-medium text-foreground/80">{postoReprova}</p>
+                    <p className="truncate text-lg text-muted-foreground">{detalhe}</p>
+                    {l.colaborador && <p className="truncate text-base text-muted-foreground">por {l.colaborador}</p>}
                   </div>
                 </li>
               )

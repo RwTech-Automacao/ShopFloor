@@ -229,6 +229,24 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
   }
 }
 
+/** Barra do gráfico de produção por período (rótulo do bucket + qtd de registros). */
+export interface ProducaoBucket { rotulo: string; qtd: number }
+
+/**
+ * Produção do posto por período (RPC sf_producao_periodo): peças (registros) por DIA ou HORA, no fuso
+ * de produção. ini/fim null = desde a 1ª passagem do posto. Bucket 'dia' (macro) ou 'hora' (um dia).
+ */
+export async function carregarProducaoPeriodo(
+  pmo: string, op: string, posto: string, ini: string | null, fim: string | null, bucket: 'dia' | 'hora',
+): Promise<ProducaoBucket[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_producao_periodo', {
+    p_pmo: pmo, p_op: op, p_posto: posto, p_ini: ini, p_fim: fim, p_bucket: bucket,
+  })
+  if (error) throw error
+  return (data ?? []) as ProducaoBucket[]
+}
+
 /** Passagem crua de uma peça por um posto (pro histórico paginado do detalhe). */
 export interface PassagemDoPosto { sn: string; status: string; dataHora: string }
 

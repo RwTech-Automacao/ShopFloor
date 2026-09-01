@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { construirFluxo, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
-import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, listarPassagensDoPosto, rotaDoSn, carregarFluxoPeriodo, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa, type PassagemDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, listarPassagensDoPosto, carregarProducaoPeriodo, rotaDoSn, carregarFluxoPeriodo, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa, type PassagemDoPosto, type ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
@@ -108,6 +108,24 @@ export async function historicoPosto(
     return { ok: true, linhas, temMais: linhas.length === HISTORICO_PAGINA }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o histórico do posto.' }
+  }
+}
+
+/** Gráfico de produção do posto por período (dia macro / hora com filtro). */
+export async function producaoPeriodo(
+  pmo: string,
+  op: string,
+  posto: string,
+  ini: string | null,
+  fim: string | null,
+  bucket: 'dia' | 'hora',
+): Promise<{ ok: true; linhas: ProducaoBucket[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    return { ok: true, linhas: await carregarProducaoPeriodo(pmo.trim(), op.trim(), posto.trim(), ini, fim, bucket) }
+  } catch {
+    return { ok: false, erro: 'Não foi possível carregar a produção por período.' }
   }
 }
 

@@ -10,8 +10,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
-import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
+import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
@@ -187,6 +187,92 @@ function HistoricoPosto({ pmo, op, posto, onSn }: { pmo: string; op: string; pos
   )
 }
 
+/** Pendentes no posto (acordeon): mostra os primeiros 100 e revela +100 conforme rola. A fila já vem
+ *  pronta do servidor (limitada), então a paginação aqui é no cliente — mesma UX do Histórico. */
+function PendentesPosto({ titulo, itens, carregando, onSn, defaultOpen }: { titulo: string; itens: SnDoPosto[]; carregando: boolean; onSn: (sn: string) => void; defaultOpen?: boolean }) {
+  const [aberto, setAberto] = useState(defaultOpen ?? true)
+  const [limite, setLimite] = useState(100)
+  const visiveis = itens.slice(0, limite)
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        onClick={() => setAberto((a) => !a)}
+        className="flex w-full items-center justify-between gap-2 rounded-md py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+      >
+        <span>{titulo} ({itens.length})</span>
+        <ChevronDown className={`size-4 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+      </button>
+      {aberto && (
+        <div
+          className="mt-1 max-h-72 overflow-y-auto"
+          onScroll={(e) => { const el = e.currentTarget; if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) setLimite((l) => l + 100) }}
+        >
+          {carregando ? (
+            <p className="text-muted-foreground">Carregando…</p>
+          ) : (
+            <ul className="flex flex-col gap-0.5">
+              {itens.length === 0 && <li className="text-muted-foreground">—</li>}
+              {visiveis.map((s, i) => (
+                <li key={`${s.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
+                  <SnBotao sn={s.sn} onSn={onSn} />
+                  <span className="text-muted-foreground">{s.status || '—'}{s.vezes > 1 ? ` ×${s.vezes}` : ''}</span>
+                </li>
+              ))}
+              {itens.length > visiveis.length && (
+                <li className="pt-1 text-center text-[11px] text-muted-foreground">+{itens.length - visiveis.length} — role para carregar</li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Gráfico de produção do posto por período (peças × dia/hora), barras verticais. Carrega ao abrir o
+ *  posto; segue o filtro (janela por hora) ou o macro (por dia, desde o início da produção no posto). */
+function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op: string; posto: string; ini: string | null; fim: string | null; bucket: 'dia' | 'hora' }) {
+  const [dados, setDados] = useState<ProducaoBucket[]>([])
+  const [carregou, setCarregou] = useState(false)
+  const [carregando, start] = useTransition()
+  useEffect(() => {
+    if (!pmo || !op || !posto) return
+    let vivo = true
+    setCarregou(false) // eslint-disable-line react-hooks/set-state-in-effect
+    start(async () => {
+      const r = await producaoPeriodo(pmo, op, posto, ini, fim, bucket)
+      if (!vivo) return
+      if (r.ok) { setDados(r.linhas); setCarregou(true) }
+    })
+    return () => { vivo = false }
+  }, [pmo, op, posto, ini, fim, bucket])
+  const max = dados.reduce((m, d) => Math.max(m, d.qtd), 1)
+  const total = dados.reduce((s, d) => s + d.qtd, 0)
+  return (
+    <div className="mb-3">
+      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Produção por {bucket === 'hora' ? 'hora' : 'dia'}{carregou ? ` · ${total} total` : ''}
+      </p>
+      {carregando && !carregou ? (
+        <p className="text-xs text-muted-foreground">Carregando…</p>
+      ) : dados.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Sem produção no período.</p>
+      ) : (
+        <div className="flex h-32 items-end gap-1 overflow-x-auto rounded-md border border-border bg-muted/30 p-2">
+          {dados.map((d, i) => (
+            <div key={i} className="flex min-w-[1.75rem] flex-1 flex-col items-center justify-end gap-1" title={`${d.rotulo}: ${d.qtd}`}>
+              <span className="text-[10px] font-medium text-foreground">{d.qtd}</span>
+              <div className="w-full rounded-t bg-enterplak" style={{ height: `${Math.max(4, (d.qtd / max) * 100)}%` }} />
+              <span className="w-full truncate text-center text-[9px] text-muted-foreground">{d.rotulo}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Burn-in "No posto agora": peças com ciclo aberto (cozinhando) + há quanto tempo (relógio ao vivo). */
 function ListaBurnin({ itens, agoraMs, carregando, onSn }: { itens: BurninEmAndamento[]; agoraMs: number; carregando: boolean; onSn: (sn: string) => void }) {
   return (
@@ -284,7 +370,11 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [producaoTotal, setProducaoTotal] = useState(false) // contagens do card: total (on) vs período (off)
   const [periodo, setPeriodo] = useState<Record<string, PeriodoContagem> | null>(null)
   const [periodoChave, setPeriodoChave] = useState('') // chave da janela a que o `periodo` carregado pertence
+  // Filtro EXPLÍCITO aplicado? Não = visão MACRO (produção total + gráfico por dia desde o início do posto).
+  // Sim = janela/dia escolhidos (produção do período + gráfico por hora). "Limpar filtro" volta pro macro.
+  const [filtroAplicado, setFiltroAplicado] = useState(false)
   const faixasRef = useRef<{ ini: string; fim: string }[]>([]) // faixas atuais (pro refresh de 15s)
+  const filtroAplicadoRef = useRef(false) // pro refresh saber se recarrega o período (ou fica no macro)
   const [limite, setLimite] = useState(100) // lazy load do painel de detalhe: quantos itens mostrar por lista
 
   // Relógio ao vivo pro "há X" do Burn-in (atualiza a cada minuto).
@@ -456,6 +546,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     return [range(MATUTINO), range(VESPERTINO)] // dia = matutino + vespertino
   }, [dataEfetiva, janela, custom])
   useEffect(() => { faixasRef.current = faixas }, [faixas]) // pro refresh de 15s ler as faixas atuais
+  useEffect(() => { filtroAplicadoRef.current = filtroAplicado }, [filtroAplicado])
   // Minutos efetivos da janela (soma das faixas), capando o fim em "agora" (turno em andamento hoje).
   const minutosEfetivos = useMemo(() => {
     let tot = 0
@@ -474,14 +565,14 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   }, [periodo, periodoChave, chaveJanela, minutosEfetivos])
   // Busca a produção do período (soma das faixas) ao trocar OP/filtro.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- limpa/busca a produção do período (sync externo)
-    if (!buscou) { setPeriodo(null); return }
+    // Só carrega o período quando o filtro está APLICADO; senão é visão macro (produção total).
+    if (!buscou || !filtroAplicado) { setPeriodo(null); return } // eslint-disable-line react-hooks/set-state-in-effect
     const { pmo, op } = ctx.current
     if (!pmo || !op) return
     let vivo = true
     fluxoPeriodo(pmo, op, faixas).then((r) => { if (vivo && r.ok) { setPeriodo(r.postos); setPeriodoChave(chaveJanela) } }).catch(() => {})
     return () => { vivo = false }
-  }, [buscou, sel, faixas, chaveJanela])
+  }, [buscou, filtroAplicado, sel, faixas, chaveJanela])
 
   // Busca de SN: realça a rota da peça no canvas (estilo n8n). `realce` = nós a acender; `atual` = posição.
   const buscarRota = () => {
@@ -581,8 +672,10 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
         setQtd(r.qtd)
         setAtualizadoMs(Date.now())
       }
-      const rp = await fluxoPeriodo(pmo, op, faixasRef.current) // produção do período + cadência
-      if (vivo && rp.ok) setPeriodo(rp.postos)
+      if (filtroAplicadoRef.current) { // só recarrega o período quando o filtro está aplicado (senão macro)
+        const rp = await fluxoPeriodo(pmo, op, faixasRef.current) // produção do período + cadência
+        if (vivo && rp.ok) setPeriodo(rp.postos)
+      }
     }
     const t = setInterval(() => { if (!document.hidden) void atualizar() }, 20_000)
     const onVis = () => { if (!document.hidden) void atualizar() } // voltou pra aba → atualiza já
@@ -596,6 +689,14 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     () => dom.filter((n) => n.id !== MANUTENCAO && n.id !== ENTRADA && n.id !== SAIDA).map((n) => n.id),
     [dom],
   )
+  // Range do gráfico de produção: filtro aplicado → a janela do filtro (por hora); senão macro (por dia).
+  const graficoRange = useMemo<{ ini: string | null; fim: string | null; bucket: 'dia' | 'hora' }>(() => {
+    if (filtroAplicado && faixas.length > 0) {
+      return { ini: faixas[0]!.ini, fim: faixas[faixas.length - 1]!.fim, bucket: 'hora' }
+    }
+    return { ini: null, fim: null, bucket: 'dia' }
+  }, [filtroAplicado, faixas])
+
   // posto → recurso/temStatus (pro ícone do posto na tela de Defeitos).
   const postoInfoMap = useMemo(() => {
     const m: Record<string, { recurso: string; temStatus: boolean }> = {}
@@ -983,7 +1084,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                 {/* Data */}
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Data</label>
-                  <input type="date" value={dataEfetiva} onChange={(e) => setDataFiltro(e.target.value)} className="h-9 w-36 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
+                  <input type="date" value={dataEfetiva} onChange={(e) => { setDataFiltro(e.target.value); setFiltroAplicado(true) }} className="h-9 w-36 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
                 </div>
 
                 {/* Janela */}
@@ -991,7 +1092,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                   <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Janela</label>
                   <div className="flex flex-wrap gap-1.5">
                     {([['dia', 'Dia'], ['matutino', 'Matutino'], ['vespertino', 'Vespertino'], ['custom', 'Personalizado']] as const).map(([val, rot]) => (
-                      <button key={val} type="button" onClick={() => setJanela(val)} className={`h-9 rounded-md border px-2.5 text-sm font-medium ${janela === val ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}>{rot}</button>
+                      <button key={val} type="button" onClick={() => { setJanela(val); setFiltroAplicado(true) }} className={`h-9 rounded-md border px-2.5 text-sm font-medium ${filtroAplicado && janela === val ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}>{rot}</button>
                     ))}
                   </div>
                 </div>
@@ -1001,9 +1102,9 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">De / até</label>
                     <div className="flex items-center gap-1.5">
-                      <input type="time" value={custom.ini} onChange={(e) => setCustom((c) => ({ ...c, ini: e.target.value }))} className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
+                      <input type="time" value={custom.ini} onChange={(e) => { setCustom((c) => ({ ...c, ini: e.target.value })); setFiltroAplicado(true) }} className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
                       <span className="text-muted-foreground">–</span>
-                      <input type="time" value={custom.fim} onChange={(e) => setCustom((c) => ({ ...c, fim: e.target.value }))} className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
+                      <input type="time" value={custom.fim} onChange={(e) => { setCustom((c) => ({ ...c, fim: e.target.value })); setFiltroAplicado(true) }} className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
                     </div>
                   </div>
                 )}
@@ -1016,7 +1117,18 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                   </button>
                 </div>
 
-                <p className="self-end pb-2 text-xs text-muted-foreground">Janela: <span className="font-medium text-foreground">{minutosEfetivos}</span> min</p>
+                {filtroAplicado && (
+                  <button
+                    type="button"
+                    onClick={() => { setFiltroAplicado(false); setJanela('dia'); setDataFiltro(''); setCustom({ ini: MATUTINO.ini, fim: MATUTINO.fim }); setProducaoTotal(false) }}
+                    className="h-9 self-end rounded-md border border-border px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-red-600"
+                  >
+                    Limpar filtro
+                  </button>
+                )}
+                <p className="self-end pb-2 text-xs text-muted-foreground">
+                  {filtroAplicado ? <>Janela: <span className="font-medium text-foreground">{minutosEfetivos}</span> min</> : 'Sem filtro · visão macro (por dia)'}
+                </p>
               </div>
               <button type="button" onClick={() => setFiltroAberto(false)} aria-label="Fechar" className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
             </div>
@@ -1115,6 +1227,8 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                         <span className="text-muted-foreground">Registradas: {detalhe.registros}</span>
                       )}
                     </div>
+                    {/* Gráfico de produção por período (dia macro / hora com filtro) — abre junto com o posto. */}
+                    <GraficoProducao key={aberto} pmo={opInfo.pmo} op={opInfo.op} posto={aberto ?? ''} ini={graficoRange.ini} fim={graficoRange.fim} bucket={graficoRange.bucket} />
                     {detalhe.recurso === 'burnin' ? (
                       <>
                         <ListaBurnin itens={burnin.emAndamento} agoraMs={agoraMs} carregando={carregandoSns} onSn={setSnAberto} />
@@ -1130,7 +1244,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                             Inclui <span className="font-semibold text-foreground">{naoIniciadasPrimeiro}</span> não iniciada{naoIniciadasPrimeiro > 1 ? 's' : ''} (ainda sem bipe), na lista abaixo.
                           </p>
                         )}
-                        <ListaSns titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} limite={limite} />
+                        <PendentesPosto titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} defaultOpen />
                         <HistoricoPosto key={aberto} pmo={opInfo.pmo} op={opInfo.op} posto={aberto ?? ''} onSn={setSnAberto} />
                       </>
                     )}
