@@ -438,22 +438,28 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     })
   }, [dom, aberto, opSel, rota, rotaPasso, periodo, producaoTotal, setNodes])
 
-  // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 15s.
+  // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 20s.
+  // PERF: pula o tick quando a aba não está visível (Page Visibility) — evita que abas de Fluxo em 2º
+  // plano fiquem martelando o RDS. Ao voltar pra aba, atualiza na hora (evento visibilitychange).
   useEffect(() => {
     if (!buscou) return
     const { pmo, op } = ctx.current
-    const t = setInterval(async () => {
+    let vivo = true
+    const atualizar = async () => {
       const r = await carregarFluxo(pmo, op)
-      if (r.ok) {
+      if (vivo && r.ok) {
         setDom(r.nodes)
         setEdgesBase(paraEdges(r.edges, r.nodes))
         setQtd(r.qtd)
         setAtualizadoMs(Date.now())
       }
-      const rp = await fluxoPeriodo(pmo, op, faixasRef.current) // atualiza produção do período + cadência
-      if (rp.ok) setPeriodo(rp.postos)
-    }, 15_000)
-    return () => clearInterval(t)
+      const rp = await fluxoPeriodo(pmo, op, faixasRef.current) // produção do período + cadência
+      if (vivo && rp.ok) setPeriodo(rp.postos)
+    }
+    const t = setInterval(() => { if (!document.hidden) void atualizar() }, 20_000)
+    const onVis = () => { if (!document.hidden) void atualizar() } // voltou pra aba → atualiza já
+    document.addEventListener('visibilitychange', onVis)
+    return () => { vivo = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [buscou, sel])
 
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
