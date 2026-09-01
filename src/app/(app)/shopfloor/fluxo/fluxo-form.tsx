@@ -268,6 +268,7 @@ function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op
   const [carregando, start] = useTransition()
   const boxRef = useRef<HTMLDivElement>(null)
   const [larg, setLarg] = useState(600) // largura medida (pra o SVG 1:1 não distorcer texto/linha)
+  const [hover, setHover] = useState<number | null>(null) // índice do ponto sob o mouse (tooltip)
   useEffect(() => {
     if (!pmo || !op || !posto) return
     let vivo = true
@@ -314,23 +315,52 @@ function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op
       ) : dados.length === 0 ? (
         <p className="text-xs text-muted-foreground" style={{ height: H }}>Sem produção no período.</p>
       ) : (
-        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block">
-          {ticks.map((t, i) => {
-            const y = py(t)
-            return (
-              <g key={i}>
-                <line x1={padL} y1={y} x2={W - padR} y2={y} className="stroke-border" strokeWidth={1} />
-                <text x={padL - 6} y={y} textAnchor="end" dominantBaseline="middle" className="fill-muted-foreground" style={{ fontSize: 11 }}>{t}</text>
+        <div className="relative">
+          <svg
+            width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block"
+            onMouseMove={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              const mx = e.clientX - rect.left
+              if (n <= 1) { setHover(0); return }
+              const i = Math.max(0, Math.min(n - 1, Math.round(((mx - padL) / plotW) * (n - 1))))
+              setHover(i)
+            }}
+            onMouseLeave={() => setHover(null)}
+          >
+            {ticks.map((t, i) => {
+              const y = py(t)
+              return (
+                <g key={i}>
+                  <line x1={padL} y1={y} x2={W - padR} y2={y} className="stroke-border" strokeWidth={1} />
+                  <text x={padL - 6} y={y} textAnchor="end" dominantBaseline="middle" className="fill-muted-foreground" style={{ fontSize: 11 }}>{t}</text>
+                </g>
+              )
+            })}
+            {areaPath && <path d={areaPath} className="fill-enterplak/10" />}
+            {n > 1 && <polyline points={linePts} fill="none" className="stroke-enterplak" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
+            {n === 1 && <circle cx={px(0)} cy={py(dados[0]!.qtd)} r={3.5} className="fill-enterplak" />}
+            {dados.map((d, i) => ((i % labelStep === 0 || i === n - 1) ? (
+              <text key={i} x={px(i)} y={H - 7} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>{d.rotulo}</text>
+            ) : null))}
+            {/* Guia + ponto sob o mouse */}
+            {hover !== null && dados[hover] && (
+              <g>
+                <line x1={px(hover)} y1={padT} x2={px(hover)} y2={padT + plotH} className="stroke-muted-foreground/50" strokeWidth={1} strokeDasharray="3 3" />
+                <circle cx={px(hover)} cy={py(dados[hover]!.qtd)} r={4} className="fill-enterplak stroke-card" strokeWidth={2} />
               </g>
-            )
-          })}
-          {areaPath && <path d={areaPath} className="fill-enterplak/10" />}
-          {n > 1 && <polyline points={linePts} fill="none" className="stroke-enterplak" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
-          {n === 1 && <circle cx={px(0)} cy={py(dados[0]!.qtd)} r={3.5} className="fill-enterplak" />}
-          {dados.map((d, i) => ((i % labelStep === 0 || i === n - 1) ? (
-            <text key={i} x={px(i)} y={H - 7} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>{d.rotulo}</text>
-          ) : null))}
-        </svg>
+            )}
+          </svg>
+          {/* Tooltip "mais informações" */}
+          {hover !== null && dados[hover] && (
+            <div
+              className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs shadow-md"
+              style={{ left: Math.min(Math.max(px(hover), 56), W - 56), top: 2 }}
+            >
+              <div className="font-semibold text-foreground">{dados[hover]!.rotulo}</div>
+              <div className="text-muted-foreground">{dados[hover]!.qtd} peças</div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
