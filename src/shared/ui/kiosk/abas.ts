@@ -15,7 +15,6 @@ export const ABAS_ANALISE: AbaFluxo[] = [
   { rotulo: 'Pesquisa', href: '/shopfloor/analisar/pesquisa' },
   { rotulo: 'Burn-in', href: '/shopfloor/analisar/burn-in' },
   { rotulo: 'Caixas', href: '/shopfloor/analisar/caixas' },
-  { rotulo: 'Fluxo', href: '/shopfloor/analisar/fluxo' },
   { rotulo: 'Cancelamentos', href: '/shopfloor/analisar/cancelamentos' },
   { rotulo: 'Repinmetro', href: '/shopfloor/analisar/repinmetro' },
 ]

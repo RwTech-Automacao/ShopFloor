@@ -15,7 +15,7 @@ import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type Pas
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { DefeitosLista } from './defeitos-lista'
-import { DashboardForm } from '../dashboard/dashboard-form'
+import { DashboardForm } from '../analisar/dashboard/dashboard-form'
 import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { HistoricoSnDialog } from './historico-sn-dialog'
 import { FloatingEdge } from './floating-edge'
