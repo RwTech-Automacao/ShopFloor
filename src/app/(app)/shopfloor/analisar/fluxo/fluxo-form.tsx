@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,6 +14,7 @@ import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaix
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
+import { DefeitosLista } from './defeitos-lista'
 import { HistoricoSnDialog } from './historico-sn-dialog'
 import { FloatingEdge } from './floating-edge'
 import { HelperLines, getHelperLines } from './helper-lines'
@@ -209,6 +210,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [rota, setRota] = useState<{ ordem: string[]; atual: string | null } | null>(null)
   const [rotaPasso, setRotaPasso] = useState(0) // quantos cards da rota já foram revelados (preenche 1 a cada 0,30s)
   const [, startRota] = useTransition()
+  const [defeitosAberto, setDefeitosAberto] = useState(false) // painel de Defeitos da OP (dentro do Fluxo)
   // Onda 3 — filtro de período + cadência (modal).
   const [filtroAberto, setFiltroAberto] = useState(false)
   const [dataFiltro, setDataFiltro] = useState('') // YYYY-MM-DD; vazio = hoje (derivado de agoraMs)
@@ -640,6 +642,27 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
+          {/* Botão de canto "Defeitos" — no canvas (canto inferior-direito); alcança no Modo TV também. */}
+          {buscou && !defeitosAberto && (
+            <button
+              type="button"
+              onClick={() => setDefeitosAberto(true)}
+              title="Defeitos desta OP"
+              className="absolute bottom-3 right-3 z-40 flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-sm font-medium shadow-lg hover:bg-accent"
+            >
+              <Bug className="size-4" /> Defeitos
+            </button>
+          )}
+          {/* Painel de Defeitos da OP — dentro do Fluxo (cobre o canvas); funciona no Modo TV/apresentação. */}
+          {defeitosAberto && (
+            <div className="absolute inset-0 z-50 flex flex-col gap-2 bg-card p-3">
+              <div className="flex shrink-0 items-center justify-between">
+                <p className="text-sm font-semibold">Defeitos · {opInfo.pmo}/{opInfo.op}</p>
+                <button type="button" onClick={() => setDefeitosAberto(false)} aria-label="Fechar" className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
+              </div>
+              <DefeitosLista pmo={opInfo.pmo} op={opInfo.op} />
+            </div>
+          )}
           {/* Botão de Filtro (vinho, só ícone) — no topo do canvas; aparece também no Modo TV. */}
           {buscou && !filtroAberto && (
             <button
