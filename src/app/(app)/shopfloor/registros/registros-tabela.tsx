@@ -53,6 +53,13 @@ function valorOuTraco(valor: string | number | null | undefined): string {
   return String(valor)
 }
 
+/** Rota de reteste do NQA (posto_retorno "Teste,Inspeção NQA") → "Teste → Inspeção NQA". */
+function formatarRota(retorno: string | null | undefined): string | null {
+  if (!retorno) return null
+  const postos = retorno.split(',').map((p) => p.trim()).filter((p) => p !== '')
+  return postos.length > 0 ? postos.join(' → ') : null
+}
+
 interface CampoDetalheProps {
   rotulo: string
   valor: string | number | null | undefined
@@ -207,6 +214,7 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
                 {linha('Tipo defeito', sel.tipo_defeito)}
                 {linha('NQA visual', sel.nqa_visual)}
                 {linha('NQA funcional', sel.nqa_funcional)}
+                {linha('Rota de reteste', formatarRota(sel.posto_retorno))}
                 {linha('ID Integração', sel.id_integracao)}
                 {linha('Reparo (conserto)', sel.reparo_conserto)}
                 {linha('Reparo (posição)', sel.reparo_posicao)}

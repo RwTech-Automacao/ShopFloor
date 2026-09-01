@@ -23,6 +23,7 @@ export interface RegistroRow {
   reparo_posicao: string
   posto_origem: string
   data_hora_origem: string | null
+  posto_retorno: string | null // reteste do NQA: rota de postos que a peça repassa (+ NQA no fim)
 }
 
 export interface ResultadoRegistros {
@@ -31,7 +32,7 @@ export interface ResultadoRegistros {
 }
 
 const COLUNAS =
-  'id,data_hora,colaborador,posto,pmo,op,cliente,numero_caixa,qtd_por_caixa,status,numero_serie,codigo_defeito,posicao,tipo_defeito,nqa_visual,nqa_funcional,id_integracao,reparo_conserto,reparo_posicao,posto_origem,data_hora_origem'
+  'id,data_hora,colaborador,posto,pmo,op,cliente,numero_caixa,qtd_por_caixa,status,numero_serie,codigo_defeito,posicao,tipo_defeito,nqa_visual,nqa_funcional,id_integracao,reparo_conserto,reparo_posicao,posto_origem,data_hora_origem,posto_retorno'
 
 export async function consultarRegistros(
   filtros: FiltrosRegistros,
