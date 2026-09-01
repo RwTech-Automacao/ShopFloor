@@ -1,7 +1,7 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { mapaPostoPerfil } from './postos-repository'
-import { numerarPassagens, postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, type PassagemPosto, type RegistroPassagem, type BipePeca } from '../domain/fluxo-op'
+import { postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, type PassagemPosto, type BipePeca } from '../domain/fluxo-op'
 import { pareaBurnin, estaAberto, type RegistroBurnin } from '../domain/burnin'
 import { snsNaoIniciados } from '../domain/grade'
 
@@ -198,16 +198,12 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
   }
   const alvo = posto.toLowerCase()
   const porPeca = new Map<string, { sn: string; regs: BipePeca[] }>()
-  const passagens: RegistroPassagem[] = [] // cada bipe da peça NO posto (pra numerar 1x/2x…)
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
     const e = porPeca.get(chave)
     const reg = { posto: l.posto, status: l.status, postoRetorno: l.posto_retorno ?? undefined }
     if (e) e.regs.push(reg)
     else porPeca.set(chave, { sn: l.numero_serie, regs: [reg] })
-    if (l.posto.toLowerCase() === alvo) {
-      passagens.push({ chave, sn: l.numero_serie, status: l.status, dataHora: l.data_hora, ordem: l.id })
-    }
   }
   const agora: SnDoPosto[] = []
   for (const { sn, regs } of porPeca.values()) {
@@ -225,10 +221,40 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
     }
   }
 
+  // `historico` (todas as passagens no posto) agora é LAZY/paginado: carregado sob demanda via
+  // listarPassagensDoPosto quando o usuário expande o acordeon (evita mandar milhares de linhas aqui).
   return {
     agora: agora.sort((a, b) => a.sn.localeCompare(b.sn)),
-    historico: numerarPassagens(passagens),
+    historico: [],
   }
+}
+
+/** Passagem crua de uma peça por um posto (pro histórico paginado do detalhe). */
+export interface PassagemDoPosto { sn: string; status: string; dataHora: string }
+
+/**
+ * Histórico do posto paginado (server-side): cada bipe no posto, mais recente primeiro.
+ * Escopado a (pmo,op,posto) → índice serve; `range` pra lazy load (100 + scroll → +100).
+ */
+export async function listarPassagensDoPosto(
+  pmo: string, op: string, posto: string, offset: number, limite: number,
+): Promise<PassagemDoPosto[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_registros')
+    .select('numero_serie,status,data_hora')
+    .eq('pmo', pmo)
+    .eq('op', op)
+    .eq('posto', posto)
+    .neq('numero_serie_norm', '')
+    .order('data_hora', { ascending: false })
+    .order('id', { ascending: false })
+    .range(offset, offset + limite - 1)
+  if (error) throw error
+  return (data ?? []).map((r) => {
+    const row = r as { numero_serie: string; status: string; data_hora: string }
+    return { sn: row.numero_serie ?? '', status: row.status ?? '', dataHora: row.data_hora ?? '' }
+  })
 }
 
 /**

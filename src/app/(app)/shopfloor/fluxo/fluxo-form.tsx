@@ -3,15 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, Trash2, Plus, Play, ChevronsUpDown } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
-import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
+import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
@@ -121,28 +121,67 @@ function ListaSns({ titulo, itens, carregando, onSn, limite = Infinity }: { titu
   )
 }
 
-/** Histórico do posto: uma linha por PASSAGEM. Quem passou >1 vez mostra "Nx status" em cada
- *  passagem (1x = 1ª vez); quem passou 1 vez mostra só o SN. */
-function ListaPassagens({ titulo, itens, carregando, onSn, limite = Infinity }: { titulo: string; itens: PassagemPosto[]; carregando: boolean; onSn: (sn: string) => void; limite?: number }) {
-  const visiveis = itens.slice(0, limite)
+/** Histórico do posto (acordeon): fecha por padrão; ao abrir, carrega 100 do banco e vai buscando
+ *  +100 conforme rola (server-side, não puxa tudo). Uma linha por passagem, mais recente primeiro. */
+function HistoricoPosto({ pmo, op, posto, onSn }: { pmo: string; op: string; posto: string; onSn: (sn: string) => void }) {
+  const [aberto, setAberto] = useState(false)
+  const [linhas, setLinhas] = useState<PassagemDoPosto[]>([])
+  const [temMais, setTemMais] = useState(false)
+  const [carregou, setCarregou] = useState(false)
+  const [carregando, start] = useTransition()
+
+  function alternar() {
+    const novo = !aberto
+    setAberto(novo)
+    if (novo && !carregou) {
+      start(async () => {
+        const r = await historicoPosto(pmo, op, posto, 0)
+        if (!r.ok) { toast.error(r.erro); return }
+        setLinhas(r.linhas); setTemMais(r.temMais); setCarregou(true)
+      })
+    }
+  }
+  function mais() {
+    if (carregando || !temMais) return
+    start(async () => {
+      const r = await historicoPosto(pmo, op, posto, linhas.length)
+      if (!r.ok) { toast.error(r.erro); return }
+      setLinhas((p) => [...p, ...r.linhas]); setTemMais(r.temMais)
+    })
+  }
+
   return (
     <div className="mb-3">
-      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo} ({itens.length})</p>
-      {carregando ? (
-        <p className="text-muted-foreground">Carregando…</p>
-      ) : (
-        <ul className="flex flex-col gap-0.5">
-          {itens.length === 0 && <li className="text-muted-foreground">—</li>}
-          {visiveis.map((p, i) => (
-            <li key={`${p.sn}-${p.ordinal}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
-              <SnBotao sn={p.sn} sufixo={p.total > 1 ? ` ${p.ordinal}x` : ''} onSn={onSn} />
-              <span className="text-muted-foreground">{p.status || '—'}</span>
-            </li>
-          ))}
-          {itens.length > visiveis.length && (
-            <li className="pt-1 text-center text-[11px] text-muted-foreground">+{itens.length - visiveis.length} — role para carregar</li>
+      <button
+        type="button"
+        onClick={alternar}
+        className="flex w-full items-center justify-between gap-2 rounded-md py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+      >
+        <span>Histórico do posto{carregou ? ` (${linhas.length}${temMais ? '+' : ''})` : ''}</span>
+        <ChevronDown className={`size-4 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+      </button>
+      {aberto && (
+        <div
+          className="mt-1 max-h-72 overflow-y-auto"
+          onScroll={(e) => { const el = e.currentTarget; if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) mais() }}
+        >
+          {carregando && linhas.length === 0 ? (
+            <p className="text-muted-foreground">Carregando…</p>
+          ) : (
+            <ul className="flex flex-col gap-0.5">
+              {linhas.length === 0 && <li className="text-muted-foreground">—</li>}
+              {linhas.map((p, i) => (
+                <li key={`${p.sn}-${i}`} className="flex justify-between gap-2 font-mono text-xs">
+                  <SnBotao sn={p.sn} onSn={onSn} />
+                  <span className="text-muted-foreground">{p.status || '—'} · {fmtHora(p.dataHora)}</span>
+                </li>
+              ))}
+              {temMais && (
+                <li className="pt-1 text-center text-[11px] text-muted-foreground">{carregando ? 'Carregando…' : 'Role para carregar mais'}</li>
+              )}
+            </ul>
           )}
-        </ul>
+        </div>
       )}
     </div>
   )
@@ -1092,7 +1131,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                           </p>
                         )}
                         <ListaSns titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} limite={limite} />
-                        <ListaPassagens titulo="Histórico do posto" itens={listas.historico} carregando={carregandoSns} onSn={setSnAberto} limite={limite} />
+                        <HistoricoPosto key={aberto} pmo={opInfo.pmo} op={opInfo.op} posto={aberto ?? ''} onSn={setSnAberto} />
                       </>
                     )}
                   </>

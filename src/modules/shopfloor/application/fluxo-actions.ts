@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { construirFluxo, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
-import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, rotaDoSn, carregarFluxoPeriodo, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, listarPassagensDoPosto, rotaDoSn, carregarFluxoPeriodo, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa, type PassagemDoPosto } from '@/modules/shopfloor/infra/fluxo-repository'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
@@ -89,6 +89,25 @@ export async function detalhePosto(
     return { ok: true, agora: d.agora, historico: d.historico }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o detalhe do posto.' }
+  }
+}
+
+const HISTORICO_PAGINA = 100
+
+/** Histórico do posto paginado (lazy: 100 + scroll → +100), mais recente primeiro. */
+export async function historicoPosto(
+  pmo: string,
+  op: string,
+  posto: string,
+  offset = 0,
+): Promise<{ ok: true; linhas: PassagemDoPosto[]; temMais: boolean } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    const linhas = await listarPassagensDoPosto(pmo.trim(), op.trim(), posto.trim(), Math.max(0, offset), HISTORICO_PAGINA)
+    return { ok: true, linhas, temMais: linhas.length === HISTORICO_PAGINA }
+  } catch {
+    return { ok: false, erro: 'Não foi possível carregar o histórico do posto.' }
   }
 }
 
