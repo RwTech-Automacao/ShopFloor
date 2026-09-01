@@ -210,6 +210,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   // Nós gerenciados pelo React Flow (arrastáveis). A posição do usuário é preservada entre atualizações.
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const layoutRef = useRef<Map<string, { x: number; y: number }>>(new Map()) // posições salvas da OP (localStorage)
+  const nodesOpRef = useRef('') // a que OP (sel) os `nodes` atuais pertencem — evita vazar posição entre OPs
   const [guiaH, setGuiaH] = useState<number | undefined>(undefined) // linha-guia horizontal ao arrastar
   const [guiaV, setGuiaV] = useState<number | undefined>(undefined) // linha-guia vertical ao arrastar
   const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
@@ -490,8 +491,13 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
 
   // Sincroniza os nós com o domínio (badges/estado) preservando a posição arrastada pelo usuário.
   useEffect(() => {
+    // O id do nó é o NOME do posto (compartilhado entre OPs). Só preserva a posição de `prev`
+    // quando os nós são da MESMA OP; ao trocar de OP, ignora `prev` (senão a posição arrastada de
+    // uma OP "vaza" pra outra) e usa o layout salvo daquela OP / posição padrão do domínio.
+    const mesmaOp = nodesOpRef.current === sel
+    nodesOpRef.current = sel
     setNodes((prev) => {
-      const posById = new Map(prev.map((n) => [n.id, n.position]))
+      const posById = mesmaOp ? new Map(prev.map((n) => [n.id, n.position])) : new Map<string, { x: number; y: number }>()
       return dom.map((n) => ({
         id: n.id,
         type: 'fluxo',
@@ -514,7 +520,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
         } satisfies FluxoNodePayload,
       }))
     })
-  }, [dom, aberto, opSel, rota, rotaPasso, periodo, producaoTotal, setNodes])
+  }, [dom, aberto, opSel, sel, rota, rotaPasso, periodo, producaoTotal, setNodes])
 
   // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 20s.
   // PERF: pula o tick quando a aba não está visível (Page Visibility) — evita que abas de Fluxo em 2º
