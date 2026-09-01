@@ -953,14 +953,14 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
               title={`Filtro & busca de SN — ${rotuloJanela(janela, custom)}`}
               aria-label="Filtro e busca de SN"
               // Com a aba lateral do posto aberta (w-80 = 20rem), desloca pra fora dela pra não cobrir o X de fechar.
-              className={`absolute z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? 'top-[4.5rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'}`}
+              className={`absolute z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? 'top-[4.75rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'}`}
             >
               <SlidersHorizontal className="size-4" />
             </button>
           )}
           {/* Painel de Filtro + Busca — barra HORIZONTAL no topo, NÃO cobre o fluxo (dá pra ver o resultado). */}
           {filtroAberto && (
-            <div className={`absolute left-3 z-40 rounded-xl border border-border bg-card p-3 shadow-xl ${telaCheia ? 'top-[4.5rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'}`}>
+            <div className={`absolute left-3 z-40 rounded-xl border border-border bg-card p-3 shadow-xl ${telaCheia ? 'top-[4.75rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'}`}>
               <div className="flex flex-wrap items-end gap-x-4 gap-y-2 pr-8">
                 {/* Busca de SN */}
                 <div className="flex flex-col gap-1">

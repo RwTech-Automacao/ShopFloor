@@ -107,9 +107,11 @@ export function DefeitosLista({
           }}
         >
           {/* Pilha de "notificações" GRANDES — poucos cards ocupam a tela inteira, letra grande. */}
-          <ul className="mx-auto flex w-full max-w-4xl flex-col gap-3 p-1">
+          <ul className="mx-auto flex w-full max-w-6xl flex-col gap-3 p-1">
             {linhas.map((l, i) => {
               const dt = l.dataHora ? new Date(l.dataHora) : null
+              // Posto onde foi REPROVADO: usa posto_origem (ex.: reparo na Manutenção guarda o posto do teste).
+              const postoReprova = l.postoOrigem || l.posto
               const detalhe = [
                 `SN ${l.sn}`,
                 l.posicao ? `pos. ${l.posicao}` : '',
@@ -121,7 +123,7 @@ export function DefeitosLista({
                   className="flex min-h-[7.5rem] items-center gap-5 rounded-3xl border border-border bg-card/95 px-6 py-5 shadow-sm backdrop-blur"
                 >
                   <div className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
-                    {iconeDoPosto(l.posto, 'size-9')}
+                    {iconeDoPosto(postoReprova, 'size-9')}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">
@@ -130,7 +132,7 @@ export function DefeitosLista({
                         {dt ? fmtCurto.format(dt) : '—'}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-lg font-medium text-foreground/80">{l.posto}</p>
+                    <p className="mt-1 truncate text-lg font-medium text-foreground/80">{postoReprova}</p>
                     <p className="truncate text-base text-muted-foreground">{detalhe}</p>
                     {l.colaborador && <p className="truncate text-sm text-muted-foreground">por {l.colaborador}</p>}
                   </div>

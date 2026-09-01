@@ -123,6 +123,7 @@ export async function listarTodasOrdens(): Promise<OrdemPesquisa[]> {
 export interface DefeitoDaOp {
   dataHora: string
   posto: string
+  postoOrigem: string // posto de ONDE veio (reprovado); em registro de Manutenção é o posto do teste
   sn: string
   colaborador: string
   codigo: string
@@ -140,11 +141,15 @@ export async function listarDefeitosDaOp(
   const supabase = await createServerSupabase()
   let query = supabase
     .from('sf_registros')
-    .select('data_hora,posto,numero_serie,colaborador,codigo_defeito,posicao,tipo_defeito')
+    .select('data_hora,posto,posto_origem,numero_serie,colaborador,codigo_defeito,posicao,tipo_defeito')
     .eq('pmo', pmo)
     .eq('op', op)
     .neq('codigo_defeito', '') // só linhas COM defeito (reprova)
-  if (posto && posto.trim() !== '') query = query.eq('posto', posto.trim())
+  // Filtro por posto casa o posto do registro OU o posto_origem (reprova que virou reparo na Manutenção).
+  if (posto && posto.trim() !== '') {
+    const p = posto.trim()
+    query = query.or(`posto.eq.${p},posto_origem.eq.${p}`)
+  }
   const { data, error } = await query
     .order('data_hora', { ascending: false })
     .order('id', { ascending: false })
@@ -153,6 +158,7 @@ export async function listarDefeitosDaOp(
   return (data as Record<string, string>[]).map((r) => ({
     dataHora: r.data_hora ?? '',
     posto: r.posto ?? '',
+    postoOrigem: r.posto_origem ?? '',
     sn: r.numero_serie ?? '',
     colaborador: r.colaborador ?? '',
     codigo: r.codigo_defeito ?? '',
