@@ -42,6 +42,27 @@ const MATUTINO = { ini: '07:00', fim: '11:57' }
 const VESPERTINO = { ini: '13:27', fim: '17:18' }
 type Janela = 'dia' | 'matutino' | 'vespertino' | 'custom'
 
+function hmParaMin(hm: string): number { const [h, m] = hm.split(':').map(Number); return (h ?? 0) * 60 + (m ?? 0) }
+/** Minutos úteis (matutino + vespertino de cada dia) entre dois instantes — base da cadência MACRO.
+ *  Soma a interseção de [ini,fim] com as janelas de trabalho de cada dia (1º/último dia parciais). */
+function minutosUteisEntre(iniMs: number, fimMs: number): number {
+  if (!(fimMs > iniMs)) return 0
+  const janelas = [[hmParaMin(MATUTINO.ini), hmParaMin(MATUTINO.fim)], [hmParaMin(VESPERTINO.ini), hmParaMin(VESPERTINO.fim)]]
+  let total = 0
+  const d = new Date(iniMs); d.setHours(0, 0, 0, 0)
+  const ultimo = new Date(fimMs); ultimo.setHours(0, 0, 0, 0)
+  for (let guard = 0; d.getTime() <= ultimo.getTime() && guard < 800; guard++) {
+    const base = d.getTime()
+    for (const [a, b] of janelas) {
+      const s = Math.max(base + a! * 60000, iniMs)
+      const e = Math.min(base + b! * 60000, fimMs)
+      if (e > s) total += e - s
+    }
+    d.setDate(d.getDate() + 1)
+  }
+  return Math.round(total / 60000)
+}
+
 // Modo Apresentação: playlist de slides (OP + view), salva por máquina no localStorage.
 type ViewSlide = 'fluxo' | 'defeitos' | 'dashboard'
 interface Slide { pmo: string; op: string; cliente: string; view: ViewSlide }
@@ -556,13 +577,23 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   // Cadência (segundos/peça) por posto = minutos_efetivos × 60 ÷ registros no período.
   const cadenciaSeg = useMemo(() => {
     const out: Record<string, number> = {}
-    // Só calcula se a produção carregada é DESTA janela (evita minutos-novos ÷ registros-velhos na transição).
-    if (!periodo || periodoChave !== chaveJanela || minutosEfetivos <= 0) return out
-    for (const [posto, c] of Object.entries(periodo)) {
-      if (c.registros > 0) out[posto] = Math.round((minutosEfetivos * 60) / c.registros)
+    if (filtroAplicado) {
+      // Cadência da JANELA — só quando a produção carregada é DESTA janela (evita minutos-novos ÷ registros-velhos).
+      if (!periodo || periodoChave !== chaveJanela || minutosEfetivos <= 0) return out
+      for (const [posto, c] of Object.entries(periodo)) {
+        if (c.registros > 0) out[posto] = Math.round((minutosEfetivos * 60) / c.registros)
+      }
+      return out
+    }
+    // Cadência MACRO (sem filtro): minutos úteis do 1º ao último registro do posto ÷ registros (todas as peças).
+    for (const n of dom) {
+      const d = n.data
+      if (d.ehManutencao || d.ehEntrada || d.ehSaida || !d.primeiroEm || !d.ultimoEm || d.registros <= 0) continue
+      const min = minutosUteisEntre(Date.parse(d.primeiroEm), Math.min(Date.parse(d.ultimoEm), agoraMs))
+      if (min > 0) out[n.id] = Math.round((min * 60) / d.registros)
     }
     return out
-  }, [periodo, periodoChave, chaveJanela, minutosEfetivos])
+  }, [filtroAplicado, periodo, periodoChave, chaveJanela, minutosEfetivos, dom, agoraMs])
   // Busca a produção do período (soma das faixas) ao trocar OP/filtro.
   useEffect(() => {
     // Só carrega o período quando o filtro está APLICADO; senão é visão macro (produção total).
@@ -1182,6 +1213,13 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             </div>
           )}
 
+          {/* Gráfico de produção — painel INFERIOR, fora da aba lateral do posto (à esquerda dela). */}
+          {detalhe && !detalhe.ehManutencao && (
+            <div className="absolute bottom-3 left-3 right-[20.75rem] z-30 rounded-xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur">
+              <GraficoProducao key={aberto} pmo={opInfo.pmo} op={opInfo.op} posto={aberto ?? ''} ini={graficoRange.ini} fim={graficoRange.fim} bucket={graficoRange.bucket} />
+            </div>
+          )}
+
           {detalhe && (
             // Em Modo TV o cabeçalho (z-20) ocupa o topo; o aside desce pra baixo dele (senão o X fica coberto e não fecha).
             <aside className={`absolute right-0 z-30 flex w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur ${telaCheia ? 'top-16 h-[calc(100%-4rem)]' : 'top-0 h-full'}`}>
@@ -1227,8 +1265,6 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                         <span className="text-muted-foreground">Registradas: {detalhe.registros}</span>
                       )}
                     </div>
-                    {/* Gráfico de produção por período (dia macro / hora com filtro) — abre junto com o posto. */}
-                    <GraficoProducao key={aberto} pmo={opInfo.pmo} op={opInfo.op} posto={aberto ?? ''} ini={graficoRange.ini} fim={graficoRange.fim} bucket={graficoRange.bucket} />
                     {detalhe.recurso === 'burnin' ? (
                       <>
                         <ListaBurnin itens={burnin.emAndamento} agoraMs={agoraMs} carregando={carregandoSns} onSn={setSnAberto} />

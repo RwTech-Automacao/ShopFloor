@@ -18,6 +18,10 @@ export interface FluxoAgregado {
   /** PEÇAS DISTINTAS que passaram (SN cujo último registro no posto ≠ reprovado). Base do card/concluído.
    *  Opcional: quando ausente (dados antigos/testes), cai no bipe-count (temStatus?aprovadas:registros). */
   passouDistinto?: number
+  /** 1º registro no posto (ISO) — pra a cadência MACRO (minutos úteis desde o início da produção ali). */
+  primeiroEm?: string | null
+  /** Último registro no posto (ISO) — fim da janela macro. */
+  ultimoEm?: string | null
 }
 
 export interface FluxoNodeData extends FluxoAgregado {
@@ -142,6 +146,8 @@ function dados(
     concluido,
     passou,
     devemPassar: qtd,
+    primeiroEm: a?.primeiroEm ?? null,
+    ultimoEm: a?.ultimoEm ?? null,
   }
 }
 

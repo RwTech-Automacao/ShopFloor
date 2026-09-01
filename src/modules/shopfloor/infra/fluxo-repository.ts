@@ -62,7 +62,7 @@ export async function carregarFluxoOp(
   const { data: agg, error: e2 } = await supabase.rpc('sf_fluxo_op', { p_pmo: pmo, p_op: op })
   if (e2) throw e2
   // A RPC devolve as colunas em snake_case (aprovados_primeira/reprovados_sem_reteste) → mapeadas pra camelCase abaixo.
-  type AggRpc = { posto: string; wip: number; registros: number; aprovadas: number; reprovadas: number; retestes: number; aprovados_primeira: number; reprovados_sem_reteste: number; passou_distinto: number }
+  type AggRpc = { posto: string; wip: number; registros: number; aprovadas: number; reprovadas: number; retestes: number; aprovados_primeira: number; reprovados_sem_reteste: number; passou_distinto: number; primeiro_em: string | null; ultimo_em: string | null }
   const agregados = (agg ?? []) as AggRpc[]
 
   const perfis = await mapaPostoPerfil()
@@ -103,6 +103,8 @@ export async function carregarFluxoOp(
       aprovadosPrimeira: a?.aprovados_primeira ?? 0,
       reprovadosSemReteste: a?.reprovados_sem_reteste ?? 0,
       passouDistinto: a?.passou_distinto ?? 0,
+      primeiroEm: a?.primeiro_em ?? null,
+      ultimoEm: a?.ultimo_em ?? null,
     }
   })
 
