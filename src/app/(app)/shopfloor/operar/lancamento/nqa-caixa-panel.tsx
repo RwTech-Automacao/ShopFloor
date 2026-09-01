@@ -108,6 +108,23 @@ export function NqaCaixaPanel({
         setTimeout(() => caixaRef.current?.focus(), 0)
         return
       }
+      if (r.caixa.pendentesReteste.length > 0) {
+        const n = r.caixa.pendentesReteste.length
+        const mostra = r.caixa.pendentesReteste.slice(0, 5)
+        const postoTxt = r.caixa.postoReteste ? ` no ${r.caixa.postoReteste}` : ''
+        setResultado({
+          tipo: 'aviso',
+          titulo: `Faltam ${n} peça${n > 1 ? 's' : ''} retestar${postoTxt} antes de re-inspecionar a caixa`,
+          chips: [
+            { rotulo: 'Caixa', valor: r.caixa.numeroCaixa, mono: true },
+            ...mostra.map((sn) => ({ rotulo: 'Reteste', valor: sn, mono: true })),
+            ...(n > mostra.length ? [{ rotulo: '+ outras', valor: String(n - mostra.length) }] : []),
+          ],
+        })
+        setSnCaixa('')
+        setTimeout(() => caixaRef.current?.focus(), 0)
+        return
+      }
       if (r.caixa.jaInspecionada) {
         setResultado({ tipo: 'aviso', titulo: 'Esta caixa já foi inspecionada no NQA', chips: [{ rotulo: 'Caixa', valor: r.caixa.numeroCaixa, mono: true }] })
         setSnCaixa('')
