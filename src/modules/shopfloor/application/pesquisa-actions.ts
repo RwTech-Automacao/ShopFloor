@@ -10,7 +10,9 @@ import { mapaPostoPerfil } from '../infra/postos-repository'
 import {
   buscarRegistrosPorSn,
   listarRegistrosDaOp,
+  listarDefeitosDaOp,
   type RegistroHistorico,
+  type DefeitoDaOp,
 } from '../infra/pesquisa-repository'
 
 const SEM_PERMISSAO = 'Você não tem permissão para pesquisar.'
@@ -25,6 +27,25 @@ export async function buscarHistoricoSN(
   if (alvo === '') return { ok: true, registros: [] }
   try {
     return { ok: true, registros: await buscarRegistrosPorSn(alvo) }
+  } catch {
+    return { ok: false, erro: ERRO_INTERNO }
+  }
+}
+
+const DEFEITOS_PAGINA = 100
+
+/** Página de Defeitos da OP (lazy load): devolve até DEFEITOS_PAGINA linhas a partir de `offset` +
+ *  `temMais` (se veio a página cheia, provavelmente há mais). Mais recentes primeiro. */
+export async function carregarDefeitosDaOp(
+  pmo: string,
+  op: string,
+  offset = 0,
+): Promise<{ ok: true; linhas: DefeitoDaOp[]; temMais: boolean } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    const linhas = await listarDefeitosDaOp(pmo.trim(), op.trim(), Math.max(0, offset), DEFEITOS_PAGINA)
+    return { ok: true, linhas, temMais: linhas.length === DEFEITOS_PAGINA }
   } catch {
     return { ok: false, erro: ERRO_INTERNO }
   }
