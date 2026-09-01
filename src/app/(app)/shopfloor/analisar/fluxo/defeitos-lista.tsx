@@ -7,7 +7,7 @@ import { carregarDefeitosDaOp } from '@/modules/shopfloor/application/pesquisa-a
 import type { DefeitoDaOp } from '@/modules/shopfloor/infra/pesquisa-repository'
 
 // Data/hora compacta pro canto do "card de notificação" (dd/MM HH:mm); título mostra a completa.
-const fmtCurto = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+const fmtCurto = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Sao_Paulo' })
 const fmtLongo = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Sao_Paulo' })
 
 /** Lista de defeitos de UMA OP (por pmo/op), mais recente primeiro, com lazy load (role pra carregar).

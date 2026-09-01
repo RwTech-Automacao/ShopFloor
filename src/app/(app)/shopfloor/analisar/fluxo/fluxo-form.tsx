@@ -230,6 +230,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [tempoSlide, setTempoSlide] = useState(15) // segundos por slide
   const [addOp, setAddOp] = useState('') // OP escolhida no builder (pmo||op)
   const [addView, setAddView] = useState<ViewSlide>('fluxo')
+  const [filtroAddOp, setFiltroAddOp] = useState('') // filtro do dropdown de OP do builder
   // Onda 3 — filtro de período + cadência (modal).
   const [filtroAberto, setFiltroAberto] = useState(false)
   const [dataFiltro, setDataFiltro] = useState('') // YYYY-MM-DD; vazio = hoje (derivado de agoraMs)
@@ -702,10 +703,25 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
               <div className="mb-3 flex flex-wrap items-end gap-2">
                 <div className="flex min-w-48 flex-1 flex-col gap-1">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">OP</label>
-                  <Select value={addOp} onValueChange={(v) => setAddOp(v ?? '')}>
+                  <Select value={addOp} onValueChange={(v) => setAddOp(v ?? '')} onOpenChange={(open) => { if (!open) setFiltroAddOp('') }}>
                     <SelectTrigger className="h-9"><SelectValue placeholder="Escolha a OP" /></SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      {ops.map((o) => <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>{o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}</SelectItem>)}
+                    <SelectContent className="w-auto min-w-[20rem] max-w-[calc(100vw-2rem)]">
+                      <div className="sticky top-0 z-10 border-b border-border bg-popover p-1.5" onPointerDown={(e) => e.stopPropagation()}>
+                        <input
+                          value={filtroAddOp}
+                          onChange={(e) => setFiltroAddOp(e.target.value)}
+                          onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }}
+                          placeholder="Filtrar por PMO / OP / cliente…"
+                          className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                        />
+                      </div>
+                      {(() => {
+                        const f = filtroAddOp.trim().toLowerCase()
+                        const lista = f ? ops.filter((o) => `${o.pmo}/${o.op} ${o.cliente ?? ''}`.toLowerCase().includes(f)) : ops
+                        return lista.length === 0
+                          ? <p className="px-2 py-2 text-sm text-muted-foreground">Nenhuma OP encontrada.</p>
+                          : lista.map((o) => <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>{o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}</SelectItem>)
+                      })()}
                     </SelectContent>
                   </Select>
                 </div>
