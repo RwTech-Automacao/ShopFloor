@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, Trash2, Plus, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -15,6 +15,8 @@ import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type Pas
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { DefeitosLista } from './defeitos-lista'
+import { DashboardForm } from '../dashboard/dashboard-form'
+import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { HistoricoSnDialog } from './historico-sn-dialog'
 import { FloatingEdge } from './floating-edge'
 import { HelperLines, getHelperLines } from './helper-lines'
@@ -38,6 +40,15 @@ const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
 const MATUTINO = { ini: '07:00', fim: '12:00' }
 const VESPERTINO = { ini: '13:30', fim: '17:20' }
 type Janela = 'dia' | 'matutino' | 'vespertino' | 'custom'
+
+// Modo Apresentação: playlist de slides (OP + view), salva por máquina no localStorage.
+type ViewSlide = 'fluxo' | 'defeitos' | 'dashboard'
+interface Slide { pmo: string; op: string; cliente: string; view: ViewSlide }
+const CHAVE_PLAYLIST = 'sf:fluxo:playlist'
+const ROTULO_VIEW: Record<ViewSlide, string> = { fluxo: 'Fluxo', defeitos: 'Defeitos', dashboard: 'Dashboard' }
+function lerPlaylist(): Slide[] {
+  try { const raw = localStorage.getItem(CHAVE_PLAYLIST); return raw ? (JSON.parse(raw) as Slide[]) : [] } catch { return [] }
+}
 /** YYYY-MM-DD de um instante (ms) no fuso local (o navegador dos operadores é America/Sao_Paulo). */
 function ymd(ms: number): string {
   const d = new Date(ms)
@@ -183,7 +194,7 @@ function ListaSimples({ titulo, itens, onSn, limite = Infinity }: { titulo: stri
   )
 }
 
-export function FluxoForm({ ops }: { ops: OpItem[] }) {
+export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashboard: OrdemPesquisa[] }) {
   const [sel, setSel] = useState('')
   const [dom, setDom] = useState<FluxoNodePos[]>([])
   const [edgesBase, setEdgesBase] = useState<Edge[]>([])
@@ -211,6 +222,14 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [rotaPasso, setRotaPasso] = useState(0) // quantos cards da rota já foram revelados (preenche 1 a cada 0,30s)
   const [, startRota] = useTransition()
   const [defeitosAberto, setDefeitosAberto] = useState(false) // painel de Defeitos da OP (dentro do Fluxo)
+  // Modo Apresentação (playlist de slides OP+view em tela cheia).
+  const [playlist, setPlaylist] = useState<Slide[]>([])
+  const [apresPainel, setApresPainel] = useState(false) // painel pra montar a playlist
+  const [apresentando, setApresentando] = useState(false)
+  const [slideIdx, setSlideIdx] = useState(0)
+  const [tempoSlide, setTempoSlide] = useState(15) // segundos por slide
+  const [addOp, setAddOp] = useState('') // OP escolhida no builder (pmo||op)
+  const [addView, setAddView] = useState<ViewSlide>('fluxo')
   // Onda 3 — filtro de período + cadência (modal).
   const [filtroAberto, setFiltroAberto] = useState(false)
   const [dataFiltro, setDataFiltro] = useState('') // YYYY-MM-DD; vazio = hoje (derivado de agoraMs)
@@ -316,6 +335,62 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       setBuscou(true)
     })
   }, [])
+
+  // ===== Modo Apresentação (playlist) =====
+  // Carrega a playlist salva (localStorage) no mount; salva a cada mudança.
+  useEffect(() => {
+    const p = lerPlaylist()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync único do localStorage no mount
+    if (p.length) setPlaylist(p)
+  }, [])
+  useEffect(() => { try { localStorage.setItem(CHAVE_PLAYLIST, JSON.stringify(playlist)) } catch { /* storage off */ } }, [playlist])
+
+  const adicionarSlide = (view: ViewSlide) => {
+    const o = ops.find((x) => `${x.pmo}||${x.op}` === addOp)
+    if (!o) { toast.error('Escolha uma OP.'); return }
+    setPlaylist((p) => [...p, { pmo: o.pmo, op: o.op, cliente: o.cliente, view }])
+  }
+  const adicionarTodasViews = () => {
+    const o = ops.find((x) => `${x.pmo}||${x.op}` === addOp)
+    if (!o) { toast.error('Escolha uma OP.'); return }
+    setPlaylist((p) => [...p, ...(['fluxo', 'defeitos', 'dashboard'] as ViewSlide[]).map((view) => ({ pmo: o.pmo, op: o.op, cliente: o.cliente, view }))])
+  }
+  const removerSlide = (i: number) => setPlaylist((p) => p.filter((_, idx) => idx !== i))
+  const moverSlide = (i: number, delta: number) => setPlaylist((p) => {
+    const j = i + delta
+    if (j < 0 || j >= p.length) return p
+    const c = [...p]; const [s] = c.splice(i, 1); c.splice(j, 0, s!); return c
+  })
+
+  const iniciarApresentacao = () => {
+    if (playlist.length === 0) { toast.error('Monte a playlist antes de apresentar.'); return }
+    setApresPainel(false); setSlideIdx(0); setApresentando(true)
+    void canvasRef.current?.requestFullscreen?.() // tela cheia (Esc sai)
+  }
+  const sairApresentacao = () => { setApresentando(false); if (document.fullscreenElement) void document.exitFullscreen() }
+  const slideAtual = apresentando ? playlist[slideIdx] : undefined
+
+  // Slide de FLUXO → carrega a OP no canvas (defeitos/dashboard usam overlay, não precisam do canvas).
+  useEffect(() => {
+    if (!apresentando || !slideAtual || slideAtual.view !== 'fluxo') return
+    const v = `${slideAtual.pmo}||${slideAtual.op}`
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carrega a OP do slide (sync ao trocar de slide)
+    if (v !== sel) escolher(v)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- roda ao trocar de slide/entrar na apresentação
+  }, [apresentando, slideIdx])
+
+  // Auto-avança (tempo do slide) + setas ←/→ + Esc pra sair.
+  useEffect(() => {
+    if (!apresentando || playlist.length === 0) return
+    const t = setInterval(() => setSlideIdx((i) => (i + 1) % playlist.length), Math.max(3, tempoSlide) * 1000)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') setSlideIdx((i) => (i + 1) % playlist.length)
+      else if (e.key === 'ArrowLeft') setSlideIdx((i) => (i - 1 + playlist.length) % playlist.length)
+      else if (e.key === 'Escape') sairApresentacao()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => { clearInterval(t); document.removeEventListener('keydown', onKey) }
+  }, [apresentando, playlist.length, tempoSlide])
 
   // OP selecionada (pra levar PMO + descrição à caixa de Entrada). `sel` = "pmo||op".
   const opSel = useMemo(() => ops.find((o) => `${o.pmo}||${o.op}` === sel) ?? null, [ops, sel])
@@ -521,6 +596,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
       const emTv = document.fullscreenElement === canvasRef.current
       setTelaCheia(emTv)
       setContainerTv(emTv ? canvasRef.current : null) // captura o alvo do portal fora do render (regra dos refs)
+      if (!emTv) setApresentando(false) // saiu da tela cheia (Esc/botão) → encerra a apresentação
       setTimeout(() => rfRef.current?.fitView(), 120)
     }
     document.addEventListener('fullscreenchange', onFs)
@@ -607,8 +683,78 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
                 <Maximize2 className="mr-1 size-4" /> Modo TV
               </Button>
             )}
+            <Button variant="outline" size="sm" onClick={() => setApresPainel(true)} title="Montar e rodar uma apresentação (playlist de OPs/telas)">
+              <MonitorPlay className="mr-1 size-4" /> Apresentação{playlist.length > 0 ? ` (${playlist.length})` : ''}
+            </Button>
           </div>
         </div>
+
+        {/* Painel pra montar a playlist da apresentação. */}
+        {apresPainel && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/50 p-4 backdrop-blur-sm" onClick={() => setApresPainel(false)}>
+            <div className="mt-10 flex max-h-[85vh] w-[min(94%,40rem)] flex-col rounded-xl border border-border bg-card p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-base font-semibold">Apresentação · playlist</p>
+                <button type="button" onClick={() => setApresPainel(false)} aria-label="Fechar" className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
+              </div>
+
+              {/* Adicionar slide: OP + view */}
+              <div className="mb-3 flex flex-wrap items-end gap-2">
+                <div className="flex min-w-48 flex-1 flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">OP</label>
+                  <Select value={addOp} onValueChange={(v) => setAddOp(v ?? '')}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="Escolha a OP" /></SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {ops.map((o) => <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>{o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">View</label>
+                  <Select value={addView} onValueChange={(v) => setAddView((v ?? 'fluxo') as ViewSlide)}>
+                    <SelectTrigger className="h-9 w-36"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fluxo">Fluxo</SelectItem>
+                      <SelectItem value="defeitos">Defeitos</SelectItem>
+                      <SelectItem value="dashboard">Dashboard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => adicionarSlide(addView)}><Plus className="mr-1 size-4" /> Add</Button>
+                <Button size="sm" variant="ghost" onClick={adicionarTodasViews} title="Adiciona Fluxo + Defeitos + Dashboard desta OP">+ 3 views</Button>
+              </div>
+
+              {/* Lista de slides */}
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border">
+                {playlist.length === 0 ? (
+                  <p className="px-3 py-4 text-center text-sm text-muted-foreground">Nenhum slide ainda — adicione OP + view acima.</p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {playlist.map((s, i) => (
+                      <li key={i} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                        <span className="w-5 shrink-0 text-center text-xs text-muted-foreground">{i + 1}</span>
+                        <span className="flex-1 truncate">{s.pmo}/{s.op} · <span className="font-medium">{ROTULO_VIEW[s.view]}</span></span>
+                        <button type="button" onClick={() => moverSlide(i, -1)} disabled={i === 0} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Subir"><ChevronLeft className="size-4 rotate-90" /></button>
+                        <button type="button" onClick={() => moverSlide(i, 1)} disabled={i === playlist.length - 1} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Descer"><ChevronRight className="size-4 rotate-90" /></button>
+                        <button type="button" onClick={() => removerSlide(i)} className="p-1 text-muted-foreground hover:text-red-600" aria-label="Remover"><Trash2 className="size-4" /></button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-sm">
+                  Tempo por slide:
+                  <input type="number" min={3} max={120} value={tempoSlide} onChange={(e) => setTempoSlide(Math.max(3, Number(e.target.value) || 15))} className="h-8 w-16 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" /> s
+                </label>
+                <Button size="sm" onClick={iniciarApresentacao} disabled={playlist.length === 0} className="bg-enterplak hover:bg-enterplak-700">
+                  <Play className="mr-1 size-4" /> Iniciar
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {buscou && !carregando && nodes.length === 0 && (
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
@@ -739,7 +885,34 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
             </div>
           )}
 
-          {telaCheia && (
+          {/* MODO APRESENTAÇÃO: barra de controle no topo + overlay da view do slide (defeitos/dashboard). */}
+          {apresentando && slideAtual && (
+            <>
+              <div className="absolute inset-x-0 top-0 z-[60] flex items-center justify-between gap-3 border-b border-border bg-card/90 px-4 py-2 backdrop-blur">
+                <p className="min-w-0 truncate text-sm font-semibold">
+                  {slideAtual.pmo}/{slideAtual.op} · {ROTULO_VIEW[slideAtual.view]}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">{slideIdx + 1}/{playlist.length}</span>
+                </p>
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => setSlideIdx((i) => (i - 1 + playlist.length) % playlist.length)} className="rounded-md p-1.5 hover:bg-accent" aria-label="Anterior"><ChevronLeft className="size-4" /></button>
+                  <button type="button" onClick={() => setSlideIdx((i) => (i + 1) % playlist.length)} className="rounded-md p-1.5 hover:bg-accent" aria-label="Próximo"><ChevronRight className="size-4" /></button>
+                  <button type="button" onClick={sairApresentacao} className="ml-1 flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-sm font-medium hover:bg-accent"><Minimize2 className="size-4" /> Sair (Esc)</button>
+                </div>
+              </div>
+              {slideAtual.view === 'defeitos' && (
+                <div className="absolute inset-0 z-[55] flex flex-col bg-card p-3 pt-14">
+                  <DefeitosLista pmo={slideAtual.pmo} op={slideAtual.op} />
+                </div>
+              )}
+              {slideAtual.view === 'dashboard' && (
+                <div className="absolute inset-0 z-[55] overflow-auto bg-card p-3 pt-14">
+                  <DashboardForm ordens={ordensDashboard} opInicial={{ cliente: slideAtual.cliente, pmo: slideAtual.pmo, op: slideAtual.op }} />
+                </div>
+              )}
+            </>
+          )}
+
+          {telaCheia && !apresentando && (
             <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
               <div className="min-w-0">
                 <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
