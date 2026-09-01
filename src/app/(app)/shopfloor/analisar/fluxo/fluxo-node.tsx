@@ -91,7 +91,9 @@ function FluxoNodeBase({ data }: NodeProps) {
   // A % acompanha a borda direita do verde (preta, no trilho) enquanto há espaço; perto de 100% entra pra
   // dentro do verde (branca, pra ler). Mesmo comportamento do card antigo.
   const pctDentroB = pctB >= 85
-  const basePassou = d.aprovadas + d.reprovadosSemReteste // o-que-passou (aprovadas + reprovadas pendentes)
+  // Denominador do % de 1ª = TOTAL de peças distintas que tiveram veredito no posto = passou (distinto) +
+  // reprovados sem reteste (distinto). Antes usava `aprovadas` (bipe-count) → inflava e subestimava o %.
+  const basePassou = d.passou + d.reprovadosSemReteste
   const fpPct = basePassou > 0 ? Math.round((d.aprovadosPrimeira / basePassou) * 100) : 0
   const rotuloQtd = d.temStatus ? 'Aprovadas' : 'Passaram'
   const tipAprov = mostrarP

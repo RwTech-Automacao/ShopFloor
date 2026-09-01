@@ -15,6 +15,9 @@ export interface FluxoAgregado {
   aprovadosPrimeira: number
   /** Peças cujo último registro no posto é reprovado (reprovou e ainda não re-aprovou). Saldo pendente. */
   reprovadosSemReteste: number
+  /** PEÇAS DISTINTAS que passaram (SN cujo último registro no posto ≠ reprovado). Base do card/concluído.
+   *  Opcional: quando ausente (dados antigos/testes), cai no bipe-count (temStatus?aprovadas:registros). */
+  passouDistinto?: number
 }
 
 export interface FluxoNodeData extends FluxoAgregado {
@@ -119,11 +122,10 @@ function dados(
   const aprovadas = a?.aprovadas ?? 0
   const registros = a?.registros ?? 0
   const wip = a?.wip ?? 0
-  // "Concluído" = todas as peças da OP já passaram por aqui (aprovadas p/ posto com status; registros p/ sem)
-  // E NENHUMA está pendente aqui (wip === 0). O gate `wip === 0` corrige o bug de produção em que o posto
-  // aparecia "concluído" com peças ainda pendentes: `aprovadas`/`registros` contam BIPES (retestes inflam),
-  // então `passou >= qtd` sozinho podia disparar cedo. Manutenção é ramo, não conclui.
-  const passou = temStatus ? aprovadas : registros
+  // "Passou" = PEÇAS DISTINTAS que passaram (passouDistinto; ≤ qtd). Corrige o card mostrar >qtd (ex.: 1457/1410),
+  // pois aprovadas/registros contam BIPES (reteste soma). Fallback pro bipe-count quando passouDistinto ausente.
+  // "Concluído" = passou ≥ qtd E NENHUMA pendente aqui (wip === 0). Manutenção é ramo, não conclui.
+  const passou = a?.passouDistinto ?? (temStatus ? aprovadas : registros)
   const concluido = !ehManutencao && wip === 0 && qtd != null && qtd > 0 && passou >= qtd
   return {
     posto,
