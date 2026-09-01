@@ -37,8 +37,8 @@ interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
 
 // Turnos (definidos pelo usuário). "Dia" = matutino + vespertino somados (exclui o almoço).
-const MATUTINO = { ini: '07:00', fim: '12:00' }
-const VESPERTINO = { ini: '13:30', fim: '17:20' }
+const MATUTINO = { ini: '07:00', fim: '11:57' }
+const VESPERTINO = { ini: '13:27', fim: '17:18' }
 type Janela = 'dia' | 'matutino' | 'vespertino' | 'custom'
 
 // Modo Apresentação: playlist de slides (OP + view), salva por máquina no localStorage.
@@ -234,7 +234,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [filtroAberto, setFiltroAberto] = useState(false)
   const [dataFiltro, setDataFiltro] = useState('') // YYYY-MM-DD; vazio = hoje (derivado de agoraMs)
   const [janela, setJanela] = useState<Janela>('dia')
-  const [custom, setCustom] = useState({ ini: '07:00', fim: '12:00' })
+  const [custom, setCustom] = useState({ ini: '07:00', fim: '11:57' })
   const [producaoTotal, setProducaoTotal] = useState(false) // contagens do card: total (on) vs período (off)
   const [periodo, setPeriodo] = useState<Record<string, PeriodoContagem> | null>(null)
   const [periodoChave, setPeriodoChave] = useState('') // chave da janela a que o `periodo` carregado pertence
