@@ -216,6 +216,7 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   const [custom, setCustom] = useState({ ini: '07:00', fim: '12:00' })
   const [producaoTotal, setProducaoTotal] = useState(false) // contagens do card: total (on) vs período (off)
   const [periodo, setPeriodo] = useState<Record<string, PeriodoContagem> | null>(null)
+  const [periodoChave, setPeriodoChave] = useState('') // chave da janela a que o `periodo` carregado pertence
   const faixasRef = useRef<{ ini: string; fim: string }[]>([]) // faixas atuais (pro refresh de 15s)
   const [limite, setLimite] = useState(100) // lazy load do painel de detalhe: quantos itens mostrar por lista
 
@@ -319,6 +320,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
 
   // ===== Onda 3: período + cadência =====
   const dataEfetiva = dataFiltro || ymd(agoraMs) // vazio → hoje (derivado de agoraMs = render-puro)
+  // Chave da janela atual: usada pra só mostrar a cadência quando a produção carregada FOR desta janela
+  // (senão, na transição matutino→vespertino, os minutos novos dividem os registros velhos → tempo errado).
+  const chaveJanela = `${dataEfetiva}|${janela}|${custom.ini}|${custom.fim}`
   // Faixas [ini,fim) da janela escolhida, como ISO (instante local do navegador = America/Sao_Paulo).
   const faixas = useMemo<{ ini: string; fim: string }[]>(() => {
     const mk = (t: string) => new Date(`${dataEfetiva}T${t}:00`).toISOString()
@@ -338,12 +342,13 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
   // Cadência (segundos/peça) por posto = minutos_efetivos × 60 ÷ registros no período.
   const cadenciaSeg = useMemo(() => {
     const out: Record<string, number> = {}
-    if (!periodo || minutosEfetivos <= 0) return out
+    // Só calcula se a produção carregada é DESTA janela (evita minutos-novos ÷ registros-velhos na transição).
+    if (!periodo || periodoChave !== chaveJanela || minutosEfetivos <= 0) return out
     for (const [posto, c] of Object.entries(periodo)) {
       if (c.registros > 0) out[posto] = Math.round((minutosEfetivos * 60) / c.registros)
     }
     return out
-  }, [periodo, minutosEfetivos])
+  }, [periodo, periodoChave, chaveJanela, minutosEfetivos])
   // Busca a produção do período (soma das faixas) ao trocar OP/filtro.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- limpa/busca a produção do período (sync externo)
@@ -351,9 +356,9 @@ export function FluxoForm({ ops }: { ops: OpItem[] }) {
     const { pmo, op } = ctx.current
     if (!pmo || !op) return
     let vivo = true
-    fluxoPeriodo(pmo, op, faixas).then((r) => { if (vivo && r.ok) setPeriodo(r.postos) }).catch(() => {})
+    fluxoPeriodo(pmo, op, faixas).then((r) => { if (vivo && r.ok) { setPeriodo(r.postos); setPeriodoChave(chaveJanela) } }).catch(() => {})
     return () => { vivo = false }
-  }, [buscou, sel, faixas])
+  }, [buscou, sel, faixas, chaveJanela])
 
   // Busca de SN: realça a rota da peça no canvas (estilo n8n). `realce` = nós a acender; `atual` = posição.
   const buscarRota = () => {
