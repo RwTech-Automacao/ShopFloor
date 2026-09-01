@@ -159,12 +159,68 @@
   }
 }
 .fluxo-preenche {
-  animation: fluxo-preenchendo 1.8s linear infinite;
+  animation: fluxo-preenchendo 2.6s linear infinite;
+}
+/* Fluxo — busca de SN: contorno VINHO girando EM VOLTA do card (estilo n8n executando). */
+@property --fluxo-ang {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes fluxo-borda-gira {
+  to {
+    --fluxo-ang: 360deg;
+  }
+}
+/* O giro passa UMA vez em volta do card e some (fade) — fica o contorno fixo (ring) por baixo. */
+@keyframes fluxo-borda-some {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.fluxo-borda-rota {
+  padding: 2.5px; /* espessura do contorno */
+  background: conic-gradient(
+    from var(--fluxo-ang),
+    rgba(141, 32, 51, 0.12) 0deg,
+    rgba(141, 32, 51, 0.12) 250deg,
+    #8d2033 305deg,
+    #8d2033 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: fluxo-borda-gira 0.9s linear, fluxo-borda-some 0.9s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluxo-borda-rota {
+    display: none;
+  }
+}
+/* Aresta da rota do SN: preenche UMA vez (origem→destino) e FICA cheia (não repete). */
+@keyframes fluxo-preenche-uma {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.fluxo-preenche-rota {
+  animation: fluxo-preenche-uma 0.9s linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluxo-preenche-rota {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
 }
 /* Modo TV: o canvas do Fluxo em tela cheia ocupa a tela toda, sem cantos arredondados. */
 .fluxo-canvas:fullscreen {
   height: 100vh;
   border-radius: 0;
+}
+/* Esconde os pontos pretos de conexão dos nós (as arestas continuam conectando neles). */
+.fluxo-canvas .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .fluxo-preenche {
