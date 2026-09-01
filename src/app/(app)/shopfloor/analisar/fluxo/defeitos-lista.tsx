@@ -1,14 +1,17 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { carregarDefeitosDaOp } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { DefeitoDaOp } from '@/modules/shopfloor/infra/pesquisa-repository'
 
-const fmt = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Sao_Paulo' })
-function fmtData(iso: string): string { return iso ? fmt.format(new Date(iso)) : '—' }
+// Data/hora compacta pro canto do "card de notificação" (dd/MM HH:mm); título mostra a completa.
+const fmtCurto = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+const fmtLongo = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Sao_Paulo' })
 
 /** Lista de defeitos de UMA OP (por pmo/op), mais recente primeiro, com lazy load (role pra carregar).
+ *  Estilo "notificação de iPhone": cada defeito é um card com ícone, título (o defeito) e detalhe.
  *  Reusada: painel de Defeitos dentro do Fluxo e slide "defeitos" do modo apresentação. */
 export function DefeitosLista({ pmo, op }: { pmo: string; op: string }) {
   const [linhas, setLinhas] = useState<DefeitoDaOp[]>([])
@@ -51,43 +54,49 @@ export function DefeitosLista({ pmo, op }: { pmo: string; op: string }) {
       )}
       {linhas.length > 0 && (
         <div
-          className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card"
+          className="min-h-0 flex-1 overflow-y-auto"
           onScroll={(e) => {
             const el = e.currentTarget
             if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) carregarMais()
           }}
         >
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Data/hora</th>
-                <th className="px-3 py-2 text-left font-medium">Defeito</th>
-                <th className="px-3 py-2 text-left font-medium">Posição</th>
-                <th className="px-3 py-2 text-left font-medium">Tipo</th>
-                <th className="px-3 py-2 text-left font-medium">Posto</th>
-                <th className="px-3 py-2 text-left font-medium">Nº de Série</th>
-                <th className="px-3 py-2 text-left font-medium">Colaborador</th>
-              </tr>
-            </thead>
-            <tbody>
-              {linhas.map((l, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">{fmtData(l.dataHora)}</td>
-                  <td className="px-3 py-1.5 font-medium">{l.codigo || '—'}</td>
-                  <td className="px-3 py-1.5">{l.posicao || '—'}</td>
-                  <td className="px-3 py-1.5">{l.tipo || '—'}</td>
-                  <td className="px-3 py-1.5">{l.posto}</td>
-                  <td className="px-3 py-1.5 font-mono">{l.sn}</td>
-                  <td className="px-3 py-1.5">{l.colaborador || '—'}</td>
-                </tr>
-              ))}
-              {temMais && (
-                <tr><td colSpan={7} className="px-3 py-2 text-center text-xs text-muted-foreground">
-                  {carregandoMais ? 'Carregando…' : 'Role para carregar mais'}
-                </td></tr>
-              )}
-            </tbody>
-          </table>
+          {/* Pilha de "notificações" (estilo iPhone). */}
+          <ul className="mx-auto flex w-full max-w-2xl flex-col gap-2 p-1">
+            {linhas.map((l, i) => {
+              const dt = l.dataHora ? new Date(l.dataHora) : null
+              const detalhe = [
+                l.posto,
+                `SN ${l.sn}`,
+                l.posicao ? `pos. ${l.posicao}` : '',
+                l.tipo ? l.tipo : '',
+              ].filter(Boolean).join(' · ')
+              return (
+                <li
+                  key={i}
+                  className="flex items-start gap-3 rounded-2xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur"
+                >
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
+                    <AlertTriangle className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate font-semibold text-foreground">{l.codigo || 'Defeito'}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground" title={dt ? fmtLongo.format(dt) : ''}>
+                        {dt ? fmtCurto.format(dt) : '—'}
+                      </span>
+                    </div>
+                    <p className="truncate text-sm text-muted-foreground">{detalhe}</p>
+                    {l.colaborador && <p className="truncate text-xs text-muted-foreground">por {l.colaborador}</p>}
+                  </div>
+                </li>
+              )
+            })}
+            {temMais && (
+              <li className="py-2 text-center text-xs text-muted-foreground">
+                {carregandoMais ? 'Carregando…' : 'Role para carregar mais'}
+              </li>
+            )}
+          </ul>
         </div>
       )}
     </div>
