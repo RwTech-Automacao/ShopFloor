@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, Trash2, Plus, Play } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, Trash2, Plus, Play, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa } from '@/modules/shopfloor/infra/fluxo-repository'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
@@ -216,7 +217,11 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
   const [qtd, setQtd] = useState<number | null>(null) // qtd da OP (pro % de progresso no Modo TV)
   const [filtroOp, setFiltroOp] = useState('') // busca do dropdown de OP
-  const [filtroData, setFiltroData] = useState<'tudo' | 'hoje' | '7' | '30'>('tudo') // filtro por data de criação da OP
+  const [opAberto, setOpAberto] = useState(false) // combobox de OP aberto
+  const opFiltroRef = useRef<HTMLInputElement>(null) // foco no input do combobox ao abrir
+  const [filtroData, setFiltroData] = useState<'tudo' | 'hoje' | '7' | '30' | 'custom'>('tudo') // filtro por data de criação da OP
+  const [criadoDe, setCriadoDe] = useState('') // range custom (criação) — início (YYYY-MM-DD)
+  const [criadoAte, setCriadoAte] = useState('') // range custom (criação) — fim (YYYY-MM-DD)
   const [buscaSn, setBuscaSn] = useState('') // busca de SN pra realçar a rota no canvas
   // rota do SN buscado: `ordem` = postos na ordem cronológica (+ atual no fim) pra revelar UM A UM.
   const [rota, setRota] = useState<{ ordem: string[]; atual: string | null } | null>(null)
@@ -613,17 +618,33 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   // Dropdown de OP: filtro por PMO/OP/cliente (texto) + por data de CRIAÇÃO da OP (a lista pode ser longa).
   const opsFiltradas = useMemo(() => {
     const f = filtroOp.trim().toLowerCase()
-    let cutoff = 0
+    let cutoff = 0 // limite inferior (>= cutoff)
+    let ate = 0    // limite superior (< ate) — só no range custom
     // `agoraMs` é state (relógio ao vivo) → cálculo puro no render (sem Date.now/new Date() argless).
     if (filtroData === 'hoje') { const d = new Date(agoraMs); d.setHours(0, 0, 0, 0); cutoff = d.getTime() }
     else if (filtroData === '7') cutoff = agoraMs - 7 * 86400000
     else if (filtroData === '30') cutoff = agoraMs - 30 * 86400000
+    else if (filtroData === 'custom') {
+      if (criadoDe) { const t = Date.parse(`${criadoDe}T00:00:00`); if (!Number.isNaN(t)) cutoff = t }
+      if (criadoAte) { const t = Date.parse(`${criadoAte}T23:59:59`); if (!Number.isNaN(t)) ate = t }
+    }
     return ops.filter((o) => {
       if (f && !`${o.pmo}/${o.op} ${o.cliente ?? ''}`.toLowerCase().includes(f)) return false
-      if (cutoff > 0) { const t = Date.parse(o.criadoEm); if (!Number.isNaN(t) && t < cutoff) return false }
+      if (cutoff > 0 || ate > 0) {
+        const t = Date.parse(o.criadoEm)
+        if (!Number.isNaN(t)) {
+          if (cutoff > 0 && t < cutoff) return false
+          if (ate > 0 && t > ate) return false
+        }
+      }
       return true
     })
-  }, [ops, filtroOp, filtroData, agoraMs])
+  }, [ops, filtroOp, filtroData, criadoDe, criadoAte, agoraMs])
+
+  const rotuloOpSel = useMemo(() => {
+    const o = ops.find((x) => `${x.pmo}||${x.op}` === sel)
+    return o ? `${o.pmo}/${o.op}${o.cliente ? ` · ${o.cliente}` : ''}` : ''
+  }, [ops, sel])
 
   return (
     <Card>
@@ -631,22 +652,35 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-1 flex-col gap-1.5 sm:max-w-md sm:min-w-64">
             <Label>OP</Label>
-            <Select value={sel} onValueChange={(v) => escolher(v ?? '')} onOpenChange={(open) => { if (!open) setFiltroOp('') }}>
-              <SelectTrigger><SelectValue placeholder="Selecione a OP" /></SelectTrigger>
-              <SelectContent className="w-auto min-w-[22rem] max-w-[calc(100vw-2rem)]">
-                {/* Filtro dentro do dropdown; não deixa o Select "sequestrar" as teclas (typeahead). */}
-                <div className="sticky top-0 z-10 flex flex-col gap-1.5 border-b border-border bg-popover p-1.5" onPointerDown={(e) => e.stopPropagation()}>
+            {/* Combobox (Popover + input) — o Select do Radix sequestrava as teclas (typeahead) e
+                pulava a posição (item-aligned). Aqui o input mantém o foco e a lista abre SEMPRE
+                ancorada no campo (side=bottom): acima é o cabeçalho, fixar "pra cima" cliparia. */}
+            <Popover open={opAberto} onOpenChange={(o) => { setOpAberto(o); if (!o) setFiltroOp('') }}>
+              <PopoverTrigger
+                render={
+                  <button
+                    type="button"
+                    className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    <span className={rotuloOpSel ? 'truncate' : 'truncate text-muted-foreground'}>{rotuloOpSel || 'Selecione a OP'}</span>
+                    <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+                  </button>
+                }
+              />
+              <PopoverContent side="bottom" align="start" sideOffset={4} className="w-[22rem] max-w-[calc(100vw-2rem)] gap-0 p-0">
+                <div className="flex flex-col gap-1.5 border-b border-border p-1.5">
                   <input
+                    ref={opFiltroRef}
+                    autoFocus
                     value={filtroOp}
                     onChange={(e) => setFiltroOp(e.target.value)}
-                    onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }}
                     placeholder="Filtrar por PMO / OP / cliente…"
                     className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
                   />
-                  {/* Filtro por data de criação da OP (presets). */}
-                  <div className="flex items-center gap-1 text-xs">
+                  {/* Filtro por data de CRIAÇÃO da OP (presets + período custom). */}
+                  <div className="flex flex-wrap items-center gap-1 text-xs">
                     <span className="mr-0.5 text-muted-foreground">Criada:</span>
-                    {([['tudo', 'Tudo'], ['hoje', 'Hoje'], ['7', '7 dias'], ['30', '30 dias']] as const).map(([val, rot]) => (
+                    {([['tudo', 'Tudo'], ['hoje', 'Hoje'], ['7', '7 dias'], ['30', '30 dias'], ['custom', 'Período']] as const).map(([val, rot]) => (
                       <button
                         key={val}
                         type="button"
@@ -657,18 +691,35 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                       </button>
                     ))}
                   </div>
+                  {filtroData === 'custom' && (
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <input type="date" value={criadoDe} onChange={(e) => setCriadoDe(e.target.value)} aria-label="Criada de" className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
+                      <span className="text-muted-foreground">até</span>
+                      <input type="date" value={criadoAte} onChange={(e) => setCriadoAte(e.target.value)} aria-label="Criada até" className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
+                    </div>
+                  )}
                 </div>
-                {opsFiltradas.length === 0 ? (
-                  <p className="px-2 py-2 text-sm text-muted-foreground">Nenhuma OP encontrada.</p>
-                ) : (
-                  opsFiltradas.map((o) => (
-                    <SelectItem key={`${o.pmo}||${o.op}`} value={`${o.pmo}||${o.op}`}>
-                      {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+                <div className="max-h-64 overflow-y-auto p-1">
+                  {opsFiltradas.length === 0 ? (
+                    <p className="px-2 py-2 text-sm text-muted-foreground">Nenhuma OP encontrada.</p>
+                  ) : (
+                    opsFiltradas.map((o) => {
+                      const val = `${o.pmo}||${o.op}`
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => { escolher(val); setOpAberto(false); setFiltroOp('') }}
+                          className={`flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${sel === val ? 'bg-accent font-medium' : ''}`}
+                        >
+                          {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="flex flex-wrap items-center gap-3 pb-1">
             {buscou && atualizadoMs !== null && (
