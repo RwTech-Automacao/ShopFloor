@@ -48,8 +48,10 @@ const FAIXAS_RAPIDAS: { ini: string; fim: string }[] = [
 type Janela = 'dia' | 'matutino' | 'vespertino' | 'custom'
 
 function hmParaMin(hm: string): number { const [h, m] = hm.split(':').map(Number); return (h ?? 0) * 60 + (m ?? 0) }
-/** Minutos úteis (matutino + vespertino de cada dia) entre dois instantes — base da cadência MACRO.
- *  Soma a interseção de [ini,fim] com as janelas de trabalho de cada dia (1º/último dia parciais). */
+/** Minutos úteis (matutino + vespertino de cada dia ÚTIL) entre dois instantes — base da cadência MACRO.
+ *  Soma a interseção de [ini,fim] com as janelas de trabalho de cada dia (1º/último dia parciais).
+ *  PULA sábado e domingo (a fábrica não trabalha) — senão o fim de semana entrava como dia cheio e
+ *  inflava a cadência. Feriados ainda contam como dia útil (precisa de cadastro; fica pra depois). */
 function minutosUteisEntre(iniMs: number, fimMs: number): number {
   if (!(fimMs > iniMs)) return 0
   const janelas = [[hmParaMin(MATUTINO.ini), hmParaMin(MATUTINO.fim)], [hmParaMin(VESPERTINO.ini), hmParaMin(VESPERTINO.fim)]]
@@ -57,11 +59,14 @@ function minutosUteisEntre(iniMs: number, fimMs: number): number {
   const d = new Date(iniMs); d.setHours(0, 0, 0, 0)
   const ultimo = new Date(fimMs); ultimo.setHours(0, 0, 0, 0)
   for (let guard = 0; d.getTime() <= ultimo.getTime() && guard < 800; guard++) {
-    const base = d.getTime()
-    for (const [a, b] of janelas) {
-      const s = Math.max(base + a! * 60000, iniMs)
-      const e = Math.min(base + b! * 60000, fimMs)
-      if (e > s) total += e - s
+    const diaSemana = d.getDay() // 0 = domingo, 6 = sábado
+    if (diaSemana !== 0 && diaSemana !== 6) {
+      const base = d.getTime()
+      for (const [a, b] of janelas) {
+        const s = Math.max(base + a! * 60000, iniMs)
+        const e = Math.min(base + b! * 60000, fimMs)
+        if (e > s) total += e - s
+      }
     }
     d.setDate(d.getDate() + 1)
   }
