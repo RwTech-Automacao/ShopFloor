@@ -43,6 +43,52 @@ function params(source: InternalNode<Node>, target: InternalNode<Node>) {
   return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y, sourcePos: lado(source, sp), targetPos: lado(target, tp) }
 }
 
+function centro(n: InternalNode<Node>) {
+  const w = n.measured?.width ?? 0
+  const h = n.measured?.height ?? 0
+  return { x: n.internals.positionAbsolute.x + w / 2, y: n.internals.positionAbsolute.y + h / 2, w, h }
+}
+
+/** Ponto no MEIO do lado escolhido do card. */
+function pontoNoLado(c: { x: number; y: number; w: number; h: number }, p: Position) {
+  if (p === Position.Bottom) return { x: c.x, y: c.y + c.h / 2 }
+  if (p === Position.Top) return { x: c.x, y: c.y - c.h / 2 }
+  if (p === Position.Left) return { x: c.x - c.w / 2, y: c.y }
+  return { x: c.x + c.w / 2, y: c.y }
+}
+
+/**
+ * Âncoras do traçado ORTOGONAL (90°). Diferente da curva, aqui NÃO se usa a interseção da reta
+ * centro-a-centro: escolhe-se o LADO de saída/entrada e ancora-se no meio dele.
+ *  - Mudou de linha (dy relevante): sai por BAIXO (ou por cima) → a linha DESCE primeiro e só
+ *    depois vira; entra pela lateral que dá de frente (ou pelo topo, se estiver logo abaixo).
+ *  - Mesma linha: sai/entra pelas laterais, direto.
+ */
+function ortogonal(source: InternalNode<Node>, target: InternalNode<Node>) {
+  const s = centro(source)
+  const t = centro(target)
+  const dx = t.x - s.x
+  const dy = t.y - s.y
+  const mudaLinha = Math.abs(dy) > Math.max(s.h, 1) * 0.75
+
+  let sourcePos: Position
+  let targetPos: Position
+  if (mudaLinha) {
+    sourcePos = dy > 0 ? Position.Bottom : Position.Top
+    // praticamente na mesma coluna (serpentina) → entra pelo topo/base; senão, pela lateral de frente
+    targetPos = Math.abs(dx) < Math.max(s.w, 1) / 2
+      ? (dy > 0 ? Position.Top : Position.Bottom)
+      : (dx > 0 ? Position.Left : Position.Right)
+  } else {
+    sourcePos = dx > 0 ? Position.Right : Position.Left
+    targetPos = dx > 0 ? Position.Left : Position.Right
+  }
+
+  const sp = pontoNoLado(s, sourcePos)
+  const tp = pontoNoLado(t, targetPos)
+  return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y, sourcePos, targetPos }
+}
+
 interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; cadencia?: number; emRota?: boolean; animarRota?: boolean; atenuado?: boolean; reta?: boolean }
 
 export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps) {
@@ -52,13 +98,14 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
 
   const d = (data ?? {}) as DadosAresta
 
-  const { sx, sy, tx, ty, sourcePos, targetPos } = params(sourceNode, targetNode)
-  const geo = {
-    sourceX: sx, sourceY: sy, sourcePosition: sourcePos,
-    targetX: tx, targetY: ty, targetPosition: targetPos,
-  }
   // `reta` = preferência do usuário (botão na barra): traçado ORTOGONAL (90°), que fica legível
   // quando os cards são arrumados em fileiras esquerda→direita. Padrão = curva (casa com a serpentina).
+  // Cada modo tem a SUA âncora: a curva usa a interseção centro-a-centro; o 90° usa o meio do lado.
+  const p = d.reta ? ortogonal(sourceNode, targetNode) : params(sourceNode, targetNode)
+  const geo = {
+    sourceX: p.sx, sourceY: p.sy, sourcePosition: p.sourcePos,
+    targetX: p.tx, targetY: p.ty, targetPosition: p.targetPos,
+  }
   const [path, labelX, labelY] = d.reta
     ? getSmoothStepPath({ ...geo, borderRadius: 6 })
     : getBezierPath(geo)
