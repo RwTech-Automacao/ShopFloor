@@ -74,11 +74,10 @@ function ortogonal(source: InternalNode<Node>, target: InternalNode<Node>) {
   let sourcePos: Position
   let targetPos: Position
   if (mudaLinha) {
+    // Sai pela base (desce primeiro) e SEMPRE entra pelo topo do destino. Assim o trecho horizontal
+    // corre no ESPAÇO ENTRE AS FILEIRAS, e não na altura dos cards — senão a linha passa atrás deles.
     sourcePos = dy > 0 ? Position.Bottom : Position.Top
-    // praticamente na mesma coluna (serpentina) → entra pelo topo/base; senão, pela lateral de frente
-    targetPos = Math.abs(dx) < Math.max(s.w, 1) / 2
-      ? (dy > 0 ? Position.Top : Position.Bottom)
-      : (dx > 0 ? Position.Left : Position.Right)
+    targetPos = dy > 0 ? Position.Top : Position.Bottom
   } else {
     sourcePos = dx > 0 ? Position.Right : Position.Left
     targetPos = dx > 0 ? Position.Left : Position.Right
