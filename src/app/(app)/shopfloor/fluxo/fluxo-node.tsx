@@ -19,17 +19,21 @@ export interface FluxoNodePayload extends FluxoNodeData {
   periodoRegistros?: number // bipes na janela do filtro (posto de passagem usa isto)
 }
 
-/** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus). */
-function iconeDo(d: FluxoNodePayload) {
-  const cls = 'size-5'
-  switch (d.recurso) {
-    case 'manutencao': return <Wrench className={cls} />
-    case 'caixa': return <Package className={cls} />
-    case 'integracao': return <GitMerge className={cls} />
-    case 'burnin': return <ThermometerSun className={cls} strokeWidth={2.25} />
-    case 'nqa': return <ShieldCheck className={cls} />
-    default: return d.temStatus ? <ClipboardCheck className={cls} /> : <CircleDot className={cls} />
+/** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus).
+ *  Exportado pra reuso (ex.: tela de Defeitos usa o ícone do posto onde o defeito foi registrado). */
+export function iconePorRecurso(recurso: string, temStatus: boolean, className = 'size-5') {
+  switch (recurso) {
+    case 'manutencao': return <Wrench className={className} />
+    case 'caixa': return <Package className={className} />
+    case 'integracao': return <GitMerge className={className} />
+    case 'burnin': return <ThermometerSun className={className} strokeWidth={2.25} />
+    case 'nqa': return <ShieldCheck className={className} />
+    default: return temStatus ? <ClipboardCheck className={className} /> : <CircleDot className={className} />
   }
+}
+
+function iconeDo(d: FluxoNodePayload) {
+  return iconePorRecurso(d.recurso, d.temStatus, 'size-5')
 }
 
 function FluxoNodeBase({ data }: NodeProps) {
@@ -87,11 +91,18 @@ function FluxoNodeBase({ data }: NodeProps) {
     ? (d.temStatus ? (d.periodoAprovadas ?? 0) : (d.periodoRegistros ?? 0))
     : d.passou // d.passou = aprovadas (com status) ou registros (passagem) — corrige passagem mostrando 0
   const reprovDisp = mostrarP ? (d.periodoReprovadas ?? 0) : d.reprovadosSemReteste
-  const pctB = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((aprovDisp / d.devemPassar) * 100)) : 0
+  const pctRaw = d.devemPassar && d.devemPassar > 0 ? (aprovDisp / d.devemPassar) * 100 : 0
+  const pctB = Math.min(100, pctRaw) // largura da barra (aceita decimal)
   // A % acompanha a borda direita do verde (preta, no trilho) enquanto há espaço; perto de 100% entra pra
   // dentro do verde (branca, pra ler). Mesmo comportamento do card antigo.
   const pctDentroB = pctB >= 85
-  const basePassou = d.aprovadas + d.reprovadosSemReteste // o-que-passou (aprovadas + reprovadas pendentes)
+  // Rótulo da %: "100%" SÓ quando de fato completou (passou ≥ devem passar). Senão, até 2 casas decimais
+  // TRUNCADAS (floor) — pra 99,55% NÃO virar 100% (parecia concluído sem estar). Inteiros ficam sem casas.
+  const completoPct = d.devemPassar != null && d.devemPassar > 0 && aprovDisp >= d.devemPassar
+  const pctLabel = completoPct ? '100' : (Math.floor(pctRaw * 100) / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })
+  // Denominador do % de 1ª = TOTAL de peças distintas que tiveram veredito no posto = passou (distinto) +
+  // reprovados sem reteste (distinto). Antes usava `aprovadas` (bipe-count) → inflava e subestimava o %.
+  const basePassou = d.passou + d.reprovadosSemReteste
   const fpPct = basePassou > 0 ? Math.round((d.aprovadosPrimeira / basePassou) * 100) : 0
   const rotuloQtd = d.temStatus ? 'Aprovadas' : 'Passaram'
   const tipAprov = mostrarP
@@ -145,7 +156,7 @@ function FluxoNodeBase({ data }: NodeProps) {
                 className={`absolute top-1/2 -translate-y-1/2 text-[11px] font-bold leading-none tabular-nums ${pctDentroB ? 'text-white' : 'text-foreground'}`}
                 style={pctDentroB ? { right: `calc(${100 - pctB}% + 6px)` } : { left: `calc(${pctB}% + 6px)` }}
               >
-                {pctB}%
+                {pctLabel}%
               </span>
             </div>
             <div className="flex items-center justify-center gap-3 text-[11px] font-semibold leading-none tabular-nums">

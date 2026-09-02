@@ -101,6 +101,14 @@ describe('construirFluxo', () => {
     expect(semQtd.concluido).toBe(false)
   })
 
+  it('passou usa passouDistinto (peças distintas), não o bipe-count aprovadas — corrige card 1457/1410', () => {
+    // aprovadas=1457 (bipes, com reteste) mas só 1410 peças distintas passaram; qtd=1410.
+    const agg: FluxoAgregado[] = [{ ...zero('Teste'), wip: 0, aprovadas: 1457, passouDistinto: 1410 }]
+    const t = construirFluxo(['Teste'], agg, () => true, () => 'nenhum', 1410).nodes.find((n) => n.id === 'Teste')!.data
+    expect(t.passou).toBe(1410) // distinto, não 1457
+    expect(t.concluido).toBe(true) // 1410 >= 1410 e wip 0
+  })
+
   it('NÃO marca concluído quando ainda há peças pendentes no posto (wip > 0), mesmo com passou ≥ qtd (bug de produção)', () => {
     // aprovadas conta BIPES (retestes inflam) → 105 ≥ qtd 100, mas 8 peças ainda pendentes aqui.
     const agg: FluxoAgregado[] = [{ ...zero('Teste'), wip: 8, aprovadas: 105, registros: 130 }]
