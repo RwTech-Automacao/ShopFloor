@@ -1,4 +1,4 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode, Position, type EdgeProps, type InternalNode, type Node } from '@xyflow/react'
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, useInternalNode, Position, type EdgeProps, type InternalNode, type Node } from '@xyflow/react'
 import { formatarRelogio } from '@/modules/shopfloor/domain/fluxo-op'
 
 /**
@@ -43,20 +43,25 @@ function params(source: InternalNode<Node>, target: InternalNode<Node>) {
   return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y, sourcePos: lado(source, sp), targetPos: lado(target, tp) }
 }
 
-interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; cadencia?: number; emRota?: boolean; animarRota?: boolean; atenuado?: boolean }
+interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; cadencia?: number; emRota?: boolean; animarRota?: boolean; atenuado?: boolean; reta?: boolean }
 
 export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps) {
   const sourceNode = useInternalNode(source)
   const targetNode = useInternalNode(target)
   if (!sourceNode || !targetNode) return null
 
+  const d = (data ?? {}) as DadosAresta
+
   const { sx, sy, tx, ty, sourcePos, targetPos } = params(sourceNode, targetNode)
-  const [path, labelX, labelY] = getBezierPath({
+  const geo = {
     sourceX: sx, sourceY: sy, sourcePosition: sourcePos,
     targetX: tx, targetY: ty, targetPosition: targetPos,
-  })
-
-  const d = (data ?? {}) as DadosAresta
+  }
+  // `reta` = preferência do usuário (botão na barra): traçado ORTOGONAL (90°), que fica legível
+  // quando os cards são arrumados em fileiras esquerda→direita. Padrão = curva (casa com a serpentina).
+  const [path, labelX, labelY] = d.reta
+    ? getSmoothStepPath({ ...geo, borderRadius: 6 })
+    : getBezierPath(geo)
 
   // Rótulo da CADÊNCIA do posto de ORIGEM (min/peça = minutos da janela ÷ peças bipadas), no meio da
   // aresta que SAI do posto — só arestas de CADEIA (não reprova) e quando há cadência (posto com bipe na janela).

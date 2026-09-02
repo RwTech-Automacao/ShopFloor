@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -24,6 +24,9 @@ import { HelperLines, getHelperLines } from './helper-lines'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
 const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
+// Estilo da linha entre os postos (por máquina): curva (padrão, casa com a serpentina) ou 90°
+// (ortogonal), que fica mais legível quando o usuário arruma os cards em fileiras esquerda→direita.
+const CHAVE_LINHA = 'sf:fluxo:linha-reta'
 function lerLayout(pmo: string, op: string): Map<string, { x: number; y: number }> {
   try {
     const raw = localStorage.getItem(chaveLayout(pmo, op))
@@ -440,6 +443,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const layoutRef = useRef<Map<string, { x: number; y: number }>>(new Map()) // posições salvas da OP (localStorage)
   const nodesOpRef = useRef('') // a que OP (sel) os `nodes` atuais pertencem — evita vazar posição entre OPs
+  const [linhaReta, setLinhaReta] = useState(false) // false = curva (padrão); true = 90° (ortogonal)
   const [guiaH, setGuiaH] = useState<number | undefined>(undefined) // linha-guia horizontal ao arrastar
   const [guiaV, setGuiaV] = useState<number | undefined>(undefined) // linha-guia vertical ao arrastar
   const [atualizadoMs, setAtualizadoMs] = useState<number | null>(null) // tempo real: quando atualizou por último
@@ -649,6 +653,14 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   }, [dataEfetiva, janela, custom])
   useEffect(() => { faixasRef.current = faixas }, [faixas]) // pro refresh de 15s ler as faixas atuais
   useEffect(() => { filtroAplicadoRef.current = filtroAplicado }, [filtroAplicado])
+  // Estilo da linha (curva/90°): lê a preferência desta máquina no mount e salva a cada troca.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync único do localStorage no mount
+    try { if (localStorage.getItem(CHAVE_LINHA) === '1') setLinhaReta(true) } catch { /* storage off */ }
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem(CHAVE_LINHA, linhaReta ? '1' : '0') } catch { /* storage off */ }
+  }, [linhaReta])
   // Minutos efetivos da janela (soma das faixas), capando o fim em "agora" (turno em andamento hoje).
   const minutosEfetivos = useMemo(() => {
     let tot = 0
@@ -725,7 +737,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   // Rota revela intercalado (card, aresta, card…): aresta ordem[i]→ordem[i+1] = elemento 2i+1.
   const edges = useMemo<Edge[]>(() => {
     return edgesBase.map((e) => {
-      const base = { ...((e.data ?? {}) as object), cadencia: cadenciaSeg[e.source] }
+      const base = { ...((e.data ?? {}) as object), cadencia: cadenciaSeg[e.source], reta: linhaReta }
       if (!rota) return { ...e, data: base }
       const i = rota.ordem.indexOf(e.source)
       const trechoDaRota = i >= 0 && rota.ordem[i + 1] === e.target // aresta é um trecho consecutivo da rota?
@@ -734,7 +746,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
       const animando = trechoDaRota && elem === rotaPasso - 1 // só a recém-revelada anima; as demais ficam fixas
       return { ...e, data: { ...base, emRota: revelado, animarRota: animando, atenuado: !revelado } }
     })
-  }, [edgesBase, rota, rotaPasso, cadenciaSeg])
+  }, [edgesBase, rota, rotaPasso, cadenciaSeg, linhaReta])
 
   // Sincroniza os nós com o domínio (badges/estado) preservando a posição arrastada pelo usuário.
   useEffect(() => {
@@ -1011,6 +1023,19 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             {buscou && (
               <Button variant="outline" size="sm" onClick={redefinirLayout} title="Reaplica o arranjo automático (serpentina) e descarta o que foi arrastado nesta OP">
                 <RotateCcw className="mr-1 size-4" /> Reorganizar
+              </Button>
+            )}
+            {buscou && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setLinhaReta((v) => !v)}
+                title={linhaReta
+                  ? 'Linhas em 90° (boas quando você arruma os cards em fileiras da esquerda pra direita). Clique para voltar à curva.'
+                  : 'Linhas curvas (padrão, casam com a serpentina). Clique para usar 90°.'}
+              >
+                {linhaReta ? <Spline className="mr-1 size-4" /> : <CornerDownRight className="mr-1 size-4" />}
+                {linhaReta ? 'Linha curva' : 'Linha 90°'}
               </Button>
             )}
             {buscou && (
