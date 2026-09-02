@@ -3,7 +3,7 @@ export const ENTRADA = 'Entrada'
 export const SAIDA = 'Saída'
 const ESPACO_X = 300 // folga entre postos pra o rótulo de tempo na aresta não ficar coberto pelo card
 const ESPACO_Y = 200 // altura entre as linhas da serpentina (card ~116px + folga pro traçado)
-const POR_LINHA = 4 // postos por linha antes de "quebrar" — evita a fileira longa que não cabe na tela
+const POR_LINHA = 3 // postos por linha antes de "quebrar" — evita a fileira longa que não cabe na tela
 
 /**
  * Posição do índice `i` no arranjo SERPENTINA: a 1ª linha vai da esquerda pra direita, a 2ª volta da

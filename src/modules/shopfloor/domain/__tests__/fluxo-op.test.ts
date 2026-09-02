@@ -16,16 +16,16 @@ describe('construirFluxo', () => {
     expect(manut.y).toBe(200)
   })
 
-  it('serpentina: quebra a cada 4 postos alternando o sentido (o 5º fica logo abaixo do 4º)', () => {
-    const postos = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6']
+  it('serpentina: quebra a cada 3 postos alternando o sentido (o 4º fica logo abaixo do 3º)', () => {
+    const postos = ['P1', 'P2', 'P3', 'P4', 'P5']
     const { nodes } = construirFluxo(postos, [], () => false)
     const pos = (id: string) => nodes.find((n) => n.id === id)!
     // 1ª linha (y=0): esquerda → direita
     expect([pos('P1').x, pos('P1').y]).toEqual([0, 0])
-    expect([pos('P4').x, pos('P4').y]).toEqual([900, 0])
-    // 2ª linha (y=200): volta da direita pra esquerda — P5 cai logo ABAIXO do P4
-    expect([pos('P5').x, pos('P5').y]).toEqual([900, 200])
-    expect([pos('P6').x, pos('P6').y]).toEqual([600, 200])
+    expect([pos('P3').x, pos('P3').y]).toEqual([600, 0])
+    // 2ª linha (y=200): volta da direita pra esquerda — P4 cai logo ABAIXO do P3
+    expect([pos('P4').x, pos('P4').y]).toEqual([600, 200])
+    expect([pos('P5').x, pos('P5').y]).toEqual([300, 200])
   })
 
   it('encaixa os agregados no nó certo (case-insensitive) e aplica temStatus', () => {
