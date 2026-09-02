@@ -1004,8 +1004,8 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
               </span>
             )}
             {buscou && (
-              <Button variant="outline" size="sm" onClick={redefinirLayout} title="Volta os cards à posição padrão">
-                <RotateCcw className="mr-1 size-4" /> Redefinir
+              <Button variant="outline" size="sm" onClick={redefinirLayout} title="Reaplica o arranjo automático (serpentina) e descarta o que foi arrastado nesta OP">
+                <RotateCcw className="mr-1 size-4" /> Reorganizar
               </Button>
             )}
             {buscou && (

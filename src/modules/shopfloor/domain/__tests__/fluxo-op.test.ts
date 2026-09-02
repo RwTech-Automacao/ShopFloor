@@ -12,7 +12,20 @@ describe('construirFluxo', () => {
     expect(nodes[1]!.x).toBe(300)
     const manut = nodes.find((n) => n.id === MANUTENCAO)!
     expect(manut.data.ehManutencao).toBe(true)
-    expect(manut.y).toBe(220)
+    // Serpentina: Manutenção fica UMA linha abaixo da última linha de postos (aqui só 1 linha → y = 200).
+    expect(manut.y).toBe(200)
+  })
+
+  it('serpentina: quebra em linhas alternando o sentido (6º posto volta pela direita)', () => {
+    const postos = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7']
+    const { nodes } = construirFluxo(postos, [], () => false)
+    const pos = (id: string) => nodes.find((n) => n.id === id)!
+    // 1ª linha (y=0): esquerda → direita
+    expect([pos('P1').x, pos('P1').y]).toEqual([0, 0])
+    expect([pos('P5').x, pos('P5').y]).toEqual([1200, 0])
+    // 2ª linha (y=200): volta da direita pra esquerda
+    expect([pos('P6').x, pos('P6').y]).toEqual([1200, 200])
+    expect([pos('P7').x, pos('P7').y]).toEqual([900, 200])
   })
 
   it('encaixa os agregados no nó certo (case-insensitive) e aplica temStatus', () => {

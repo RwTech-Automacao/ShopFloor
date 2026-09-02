@@ -2,7 +2,20 @@ export const MANUTENCAO = 'Manutenção'
 export const ENTRADA = 'Entrada'
 export const SAIDA = 'Saída'
 const ESPACO_X = 300 // folga entre postos pra o rótulo de tempo na aresta não ficar coberto pelo card
-const Y_MANUTENCAO = 220
+const ESPACO_Y = 200 // altura entre as linhas da serpentina (card ~116px + folga pro traçado)
+const POR_LINHA = 5 // postos por linha antes de "quebrar" — evita a fileira longa que não cabe na tela
+
+/**
+ * Posição do índice `i` no arranjo SERPENTINA: a 1ª linha vai da esquerda pra direita, a 2ª volta da
+ * direita pra esquerda, e assim por diante. Postos consecutivos ficam sempre vizinhos (sem linha de
+ * retorno atravessando a tela). Com ≤ POR_LINHA postos, o resultado é a fileira única de antes.
+ */
+function posSerpentina(i: number): { x: number; y: number } {
+  const linha = Math.floor(i / POR_LINHA)
+  const col = i % POR_LINHA
+  const x = (linha % 2 === 0 ? col : POR_LINHA - 1 - col) * ESPACO_X
+  return { x, y: linha * ESPACO_Y }
+}
 
 export interface FluxoAgregado {
   posto: string
@@ -227,26 +240,29 @@ export function construirFluxo(
 ): { nodes: FluxoNodePos[]; edges: FluxoEdge[] } {
   const nodes: FluxoNodePos[] = postosOrdenados.map((posto, i) => ({
     id: posto,
-    x: i * ESPACO_X,
-    y: 0,
+    ...posSerpentina(i),
     data: dados(posto, agregados, temStatus(posto), false, recursoDe(posto), qtd),
   }))
 
-  const xManut = postosOrdenados.length > 0 ? ((postosOrdenados.length - 1) * ESPACO_X) / 2 : 0
+  // Manutenção fica UMA linha abaixo da última da serpentina, centralizada na largura usada.
+  const linhas = postosOrdenados.length > 0 ? Math.ceil(postosOrdenados.length / POR_LINHA) : 0
+  const largura = Math.min(postosOrdenados.length, POR_LINHA)
+  const xManut = largura > 0 ? ((largura - 1) * ESPACO_X) / 2 : 0
   nodes.push({
     id: MANUTENCAO,
     x: xManut,
-    y: Y_MANUTENCAO,
+    y: linhas * ESPACO_Y,
     data: dados(MANUTENCAO, agregados, false, true, 'manutencao', qtd),
   })
 
   // Caixas de Entrada/Saída (só quando há postos e a contagem foi informada).
+  // Entrada fica ANTES do 1º posto; Saída continua a serpentina (posição do índice seguinte ao último).
   const temCaixas = postosOrdenados.length > 0
   if (temCaixas && naoIniciadas != null) {
     nodes.push({ id: ENTRADA, x: -ESPACO_X, y: 0, data: dadosCaixa(ENTRADA, naoIniciadas, 'entrada') })
   }
   if (temCaixas && finalizadas != null) {
-    nodes.push({ id: SAIDA, x: postosOrdenados.length * ESPACO_X, y: 0, data: dadosCaixa(SAIDA, finalizadas, 'saida') })
+    nodes.push({ id: SAIDA, ...posSerpentina(postosOrdenados.length), data: dadosCaixa(SAIDA, finalizadas, 'saida') })
   }
 
   const edges: FluxoEdge[] = []
