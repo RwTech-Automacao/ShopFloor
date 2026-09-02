@@ -1,4 +1,4 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode, Position, type EdgeProps, type InternalNode, type Node } from '@xyflow/react'
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useInternalNode, Position, type EdgeProps, type InternalNode, type Node } from '@xyflow/react'
 import { formatarRelogio } from '@/modules/shopfloor/domain/fluxo-op'
 
 /**
@@ -51,9 +51,12 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
   if (!sourceNode || !targetNode) return null
 
   const { sx, sy, tx, ty, sourcePos, targetPos } = params(sourceNode, targetNode)
-  const [path, labelX, labelY] = getBezierPath({
+  // Traçado ORTOGONAL (ângulos retos, estilo n8n) em vez de curva bezier. borderRadius pequeno só
+  // pra "quebrar" o canto sem descaracterizar o ângulo de 90°.
+  const [path, labelX, labelY] = getSmoothStepPath({
     sourceX: sx, sourceY: sy, sourcePosition: sourcePos,
     targetX: tx, targetY: ty, targetPosition: targetPos,
+    borderRadius: 6,
   })
 
   const d = (data ?? {}) as DadosAresta
