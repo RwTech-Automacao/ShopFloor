@@ -91,10 +91,15 @@ function FluxoNodeBase({ data }: NodeProps) {
     ? (d.temStatus ? (d.periodoAprovadas ?? 0) : (d.periodoRegistros ?? 0))
     : d.passou // d.passou = aprovadas (com status) ou registros (passagem) — corrige passagem mostrando 0
   const reprovDisp = mostrarP ? (d.periodoReprovadas ?? 0) : d.reprovadosSemReteste
-  const pctB = d.devemPassar && d.devemPassar > 0 ? Math.min(100, Math.round((aprovDisp / d.devemPassar) * 100)) : 0
+  const pctRaw = d.devemPassar && d.devemPassar > 0 ? (aprovDisp / d.devemPassar) * 100 : 0
+  const pctB = Math.min(100, pctRaw) // largura da barra (aceita decimal)
   // A % acompanha a borda direita do verde (preta, no trilho) enquanto há espaço; perto de 100% entra pra
   // dentro do verde (branca, pra ler). Mesmo comportamento do card antigo.
   const pctDentroB = pctB >= 85
+  // Rótulo da %: "100%" SÓ quando de fato completou (passou ≥ devem passar). Senão, até 2 casas decimais
+  // TRUNCADAS (floor) — pra 99,55% NÃO virar 100% (parecia concluído sem estar). Inteiros ficam sem casas.
+  const completoPct = d.devemPassar != null && d.devemPassar > 0 && aprovDisp >= d.devemPassar
+  const pctLabel = completoPct ? '100' : (Math.floor(pctRaw * 100) / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })
   // Denominador do % de 1ª = TOTAL de peças distintas que tiveram veredito no posto = passou (distinto) +
   // reprovados sem reteste (distinto). Antes usava `aprovadas` (bipe-count) → inflava e subestimava o %.
   const basePassou = d.passou + d.reprovadosSemReteste
@@ -151,7 +156,7 @@ function FluxoNodeBase({ data }: NodeProps) {
                 className={`absolute top-1/2 -translate-y-1/2 text-[11px] font-bold leading-none tabular-nums ${pctDentroB ? 'text-white' : 'text-foreground'}`}
                 style={pctDentroB ? { right: `calc(${100 - pctB}% + 6px)` } : { left: `calc(${pctB}% + 6px)` }}
               >
-                {pctB}%
+                {pctLabel}%
               </span>
             </div>
             <div className="flex items-center justify-center gap-3 text-[11px] font-semibold leading-none tabular-nums">

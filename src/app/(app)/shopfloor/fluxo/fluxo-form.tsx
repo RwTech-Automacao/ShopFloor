@@ -40,6 +40,11 @@ const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
 // Turnos (definidos pelo usuário). "Dia" = matutino + vespertino somados (exclui o almoço).
 const MATUTINO = { ini: '07:00', fim: '11:57' }
 const VESPERTINO = { ini: '13:27', fim: '17:18' }
+// Faixas rápidas (1h) pro filtro Personalizado: manhã 07→12 e tarde 13:30→17:20.
+const FAIXAS_RAPIDAS: { ini: string; fim: string }[] = [
+  { ini: '07:00', fim: '08:00' }, { ini: '08:00', fim: '09:00' }, { ini: '09:00', fim: '10:00' }, { ini: '10:00', fim: '11:00' }, { ini: '11:00', fim: '12:00' },
+  { ini: '13:30', fim: '14:30' }, { ini: '14:30', fim: '15:30' }, { ini: '15:30', fim: '16:30' }, { ini: '16:30', fim: '17:20' },
+]
 type Janela = 'dia' | 'matutino' | 'vespertino' | 'custom'
 
 function hmParaMin(hm: string): number { const [h, m] = hm.split(':').map(Number); return (h ?? 0) * 60 + (m ?? 0) }
@@ -839,8 +844,12 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     }, 0),
     [dom, postosOP],
   )
+  // Mesma regra da % do card: 100% só quando de fato ≥100; senão até 2 casas TRUNCADAS (não arredonda 99,xx → 100).
   const pctProcesso = qtd && qtd > 0 && postosOP.length > 0
-    ? Math.round((totalPassagens / (qtd * postosOP.length)) * 100)
+    ? (() => {
+        const raw = (totalPassagens / (qtd * postosOP.length)) * 100
+        return raw >= 100 ? '100' : (Math.floor(raw * 100) / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })
+      })()
     : null
 
   // Modo TV: tela cheia do canvas (Fullscreen API) + re-encaixa o fluxo ao entrar/sair.
@@ -1207,6 +1216,22 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                       <input type="time" value={custom.ini} onChange={(e) => { setCustom((c) => ({ ...c, ini: e.target.value })); setFiltroAplicado(true) }} className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
                       <span className="text-muted-foreground">–</span>
                       <input type="time" value={custom.fim} onChange={(e) => { setCustom((c) => ({ ...c, fim: e.target.value })); setFiltroAplicado(true) }} className="h-9 w-28 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
+                    </div>
+                    {/* Faixas rápidas de 1h (manhã e tarde) */}
+                    <div className="mt-0.5 flex max-w-[22rem] flex-wrap gap-1">
+                      {FAIXAS_RAPIDAS.map((f) => {
+                        const ativo = custom.ini === f.ini && custom.fim === f.fim
+                        return (
+                          <button
+                            key={`${f.ini}-${f.fim}`}
+                            type="button"
+                            onClick={() => { setCustom({ ini: f.ini, fim: f.fim }); setFiltroAplicado(true) }}
+                            className={`rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums ${ativo ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}
+                          >
+                            {f.ini}–{f.fim}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
