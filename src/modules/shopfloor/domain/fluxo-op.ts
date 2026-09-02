@@ -1,7 +1,7 @@
 export const MANUTENCAO = 'Manutenção'
 export const ENTRADA = 'Entrada'
 export const SAIDA = 'Saída'
-const ESPACO_X = 260
+const ESPACO_X = 300 // folga entre postos pra o rótulo de tempo na aresta não ficar coberto pelo card
 const Y_MANUTENCAO = 220
 
 export interface FluxoAgregado {
@@ -11,6 +11,17 @@ export interface FluxoAgregado {
   aprovadas: number
   reprovadas: number
   retestes: number
+  /** Peças cuja 1ª passagem no posto foi aprovada (first-pass yield). Só faz sentido em posto com status. */
+  aprovadosPrimeira: number
+  /** Peças cujo último registro no posto é reprovado (reprovou e ainda não re-aprovou). Saldo pendente. */
+  reprovadosSemReteste: number
+  /** PEÇAS DISTINTAS que passaram (SN cujo último registro no posto ≠ reprovado). Base do card/concluído.
+   *  Opcional: quando ausente (dados antigos/testes), cai no bipe-count (temStatus?aprovadas:registros). */
+  passouDistinto?: number
+  /** 1º registro no posto (ISO) — pra a cadência MACRO (minutos úteis desde o início da produção ali). */
+  primeiroEm?: string | null
+  /** Último registro no posto (ISO) — fim da janela macro. */
+  ultimoEm?: string | null
 }
 
 export interface FluxoNodeData extends FluxoAgregado {
@@ -24,6 +35,16 @@ export interface FluxoNodeData extends FluxoAgregado {
   ehEntrada?: boolean
   /** Caixa de Saída (peças que concluíram todo o fluxo). Renderiza em vinho, sem detalhe ao clicar. */
   ehSaida?: boolean
+  /** Já passaram por este posto (aprovadas p/ posto com status; registros p/ sem). Mesmo valor que deriva `concluido`. */
+  passou: number
+  /** Quantas devem passar (qtd da OP). null = OP sem quantidade (card não mostra "/ devem passar" nem a barra). */
+  devemPassar: number | null
+  /** Só na caixa de Entrada: PMO da OP (injetado pela tela, não pelo domínio). */
+  pmo?: string
+  /** Só na caixa de Entrada: OP (injetado pela tela). */
+  op?: string
+  /** Só na caixa de Entrada: descrição da OP (a tela corta em ≤20 chars ao exibir). */
+  descricao?: string
 }
 
 export interface FluxoNodePos {
@@ -104,10 +125,12 @@ function dados(
   const a = acharAgg(agregados, posto)
   const aprovadas = a?.aprovadas ?? 0
   const registros = a?.registros ?? 0
-  // "Concluído" = todas as peças da OP já passaram por aqui (aprovadas p/ posto com status; registros p/ sem).
-  // Manutenção é ramo, não conclui.
-  const passou = temStatus ? aprovadas : registros
-  const concluido = !ehManutencao && qtd != null && qtd > 0 && passou >= qtd
+  const wip = a?.wip ?? 0
+  // "Passou" = PEÇAS DISTINTAS que passaram (passouDistinto; ≤ qtd). Corrige o card mostrar >qtd (ex.: 1457/1410),
+  // pois aprovadas/registros contam BIPES (reteste soma). Fallback pro bipe-count quando passouDistinto ausente.
+  // "Concluído" = passou ≥ qtd E NENHUMA pendente aqui (wip === 0). Manutenção é ramo, não conclui.
+  const passou = a?.passouDistinto ?? (temStatus ? aprovadas : registros)
+  const concluido = !ehManutencao && wip === 0 && qtd != null && qtd > 0 && passou >= qtd
   return {
     posto,
     wip: a?.wip ?? 0,
@@ -115,10 +138,16 @@ function dados(
     aprovadas,
     reprovadas: a?.reprovadas ?? 0,
     retestes: a?.retestes ?? 0,
+    aprovadosPrimeira: a?.aprovadosPrimeira ?? 0,
+    reprovadosSemReteste: a?.reprovadosSemReteste ?? 0,
     temStatus,
     ehManutencao,
     recurso,
     concluido,
+    passou,
+    devemPassar: qtd,
+    primeiroEm: a?.primeiroEm ?? null,
+    ultimoEm: a?.ultimoEm ?? null,
   }
 }
 
@@ -131,12 +160,16 @@ function dadosCaixa(id: string, contagem: number, tipo: 'entrada' | 'saida'): Fl
     aprovadas: 0,
     reprovadas: 0,
     retestes: 0,
+    aprovadosPrimeira: 0,
+    reprovadosSemReteste: 0,
     temStatus: false,
     ehManutencao: false,
     recurso: tipo,
     concluido: false,
     ehEntrada: tipo === 'entrada',
     ehSaida: tipo === 'saida',
+    passou: 0,
+    devemPassar: null,
   }
 }
 
@@ -235,4 +268,18 @@ export function construirFluxo(
     }
   }
   return { nodes, edges }
+}
+
+/**
+ * Formata uma duração (em segundos) como relógio:
+ *   ≥ 1h  → HH:MM:SS (ex.: 02:03:04)
+ *   < 1h  → MM:SS    (ex.: 05:30, e 45s vira 00:45)
+ */
+export function formatarRelogio(segundos: number): string {
+  const s = Math.max(0, Math.round(segundos))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`
 }

@@ -29,6 +29,7 @@ import {
   TriangleAlert,
   Table2,
   History,
+  Workflow,
   ScrollText,
   Info,
   ChevronDown,
@@ -75,6 +76,7 @@ const RECEBIMENTO: FolhaModular[] = [
 const SHOPFLOOR: FolhaModular[] = [
   { chave: 'operar', rotulo: 'Operação', href: '/shopfloor/operar', icone: Cog, modulo: 'shopfloor', perm: 'lancar' },
   { chave: 'analisar', rotulo: 'Análise', href: '/shopfloor/analisar', icone: LineChart, modulo: 'shopfloor', perm: 'visualizar' },
+  { chave: 'fluxo', rotulo: 'Fluxo', href: '/shopfloor/fluxo', icone: Workflow, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'registros', rotulo: 'Registros', href: '/shopfloor/registros', icone: History, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
 ]

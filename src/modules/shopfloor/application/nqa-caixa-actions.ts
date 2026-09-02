@@ -16,7 +16,9 @@ export interface CaixaNqa {
   qtd: number
   amostra: number
   snsNorm: string[] // SNs (normalizados) da caixa — p/ o painel validar a amostra
-  jaInspecionada: boolean
+  jaInspecionada: boolean     // caixa finalizada no NQA (todas inspecionadas)
+  pendentesReteste: string[]  // SNs que ainda faltam retestar antes de re-inspecionar
+  postoReteste: string        // posto onde retestar (vazio se não uniforme)
 }
 
 /** Bipe de "puxar caixa": resolve a caixa do SN + calcula a amostra pela Tabela NQA (qtd da caixa). */
@@ -46,6 +48,8 @@ export async function carregarNqaCaixa(
         amostra,
         snsNorm: caixa.snsNorm,
         jaInspecionada: caixa.jaInspecionadaNqa,
+        pendentesReteste: caixa.pendentesReteste,
+        postoReteste: caixa.postoReteste,
       },
     }
   } catch {
