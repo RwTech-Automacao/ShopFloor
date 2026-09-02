@@ -460,7 +460,6 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [dataFiltro, setDataFiltro] = useState('') // YYYY-MM-DD; vazio = hoje (derivado de agoraMs)
   const [janela, setJanela] = useState<Janela>('dia')
   const [custom, setCustom] = useState({ ini: '07:00', fim: '11:57' })
-  const [producaoTotal, setProducaoTotal] = useState(false) // contagens do card: total (on) vs período (off)
   const [periodo, setPeriodo] = useState<Record<string, PeriodoContagem> | null>(null)
   const [periodoChave, setPeriodoChave] = useState('') // chave da janela a que o `periodo` carregado pertence
   // Filtro EXPLÍCITO aplicado? Não = visão MACRO (produção total + gráfico por dia desde o início do posto).
@@ -753,12 +752,12 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             const animando = idx >= 0 && (2 * idx) === rotaPasso - 1 // só o card recém-revelado faz o giro
             return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !revelado, animarRota: animando }
           })() : {}),
-          // Onda 3: contagens do período no card (a menos que "Produção total" esteja ligado).
-          ...(periodo && !producaoTotal ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0, periodoRegistros: periodo[n.id]?.registros ?? 0 } : {}),
+          // Contagens do período no card quando o filtro está aplicado (senão o card mostra o total/macro).
+          ...(periodo ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0, periodoRegistros: periodo[n.id]?.registros ?? 0 } : {}),
         } satisfies FluxoNodePayload,
       }))
     })
-  }, [dom, aberto, opSel, sel, rota, rotaPasso, periodo, producaoTotal, setNodes])
+  }, [dom, aberto, opSel, sel, rota, rotaPasso, periodo, setNodes])
 
   // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 20s.
   // PERF: pula o tick quando a aba não está visível (Page Visibility) — evita que abas de Fluxo em 2º
@@ -1212,18 +1211,10 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                   </div>
                 )}
 
-                {/* Produção total */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Peças</label>
-                  <button type="button" onClick={() => setProducaoTotal((v) => !v)} title="O tempo/cadência sempre segue a janela do filtro" className={`h-9 rounded-md border px-3 text-sm font-medium ${producaoTotal ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-card hover:bg-accent'}`}>
-                    {producaoTotal ? '✓ Total' : 'Do período'}
-                  </button>
-                </div>
-
                 {filtroAplicado && (
                   <button
                     type="button"
-                    onClick={() => { setFiltroAplicado(false); setJanela('dia'); setDataFiltro(''); setCustom({ ini: MATUTINO.ini, fim: MATUTINO.fim }); setProducaoTotal(false) }}
+                    onClick={() => { setFiltroAplicado(false); setJanela('dia'); setDataFiltro(''); setCustom({ ini: MATUTINO.ini, fim: MATUTINO.fim }) }}
                     className="h-9 self-end rounded-md border border-border px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-red-600"
                   >
                     Limpar filtro
