@@ -246,8 +246,8 @@ export function LancamentoForm({
   async function podeTrocarContexto(): Promise<boolean> {
     if (lote.length === 0) return true
     const ok = await confirmar({
-      titulo: 'Descartar o lote pendente?',
-      descricao: `Há ${lote.length} peça(s) no lote que ainda não foram enviadas. Trocar de contexto agora vai descartá-las.`,
+      titulo: 'Descartar o grupo pendente?',
+      descricao: `Há ${lote.length} peça(s) no grupo que ainda não foram enviadas. Trocar de contexto agora vai descartá-las.`,
       rotuloConfirmar: 'Descartar e trocar',
     })
     if (ok) { setLote([]); setLotesPuxados(new Set()); limparLoteLocal(pmo, op, posto) }
@@ -348,17 +348,17 @@ export function LancamentoForm({
     const snNorm = normalizarSerie(sn)
     // Lote travado num painel: SN de OUTRO painel é barrado (envie o painel atual antes).
     if (painelAncorado && !painelAncorado.membros.has(snNorm)) {
-      mostrar({ tipo: 'aviso', titulo: 'Esta peça não faz parte deste painel — envie o painel atual antes.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
+      mostrar({ tipo: 'aviso', titulo: 'Peça de outro painel — envie o atual antes.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
       limparPeca(); return false
     }
     if (jaResolvido(lote, snNorm)) {
-      mostrar({ tipo: 'aviso', titulo: 'Este SN já está no lote.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
+      mostrar({ tipo: 'aviso', titulo: 'Este SN já está no grupo.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
       limparPeca(); return false
     }
     const idxPend = acharPendente(lote, snNorm)
     // Só bloqueia por teto quando é item NOVO (não quando substitui um pendente que já ocupa lugar).
     if (idxPend < 0 && lote.length >= MAX_LOTE) {
-      mostrar({ tipo: 'aviso', titulo: `Máximo de ${MAX_LOTE} SNs por lote — envie os atuais antes de continuar.` })
+      mostrar({ tipo: 'aviso', titulo: `Máximo de ${MAX_LOTE} SNs por grupo — envie os atuais antes de continuar.` })
       return false
     }
     const resolvido: ItemLote = { estado: 'resolvido', sn, snNorm, entrada, outcome }
@@ -369,8 +369,8 @@ export function LancamentoForm({
     })
     mostrar({
       tipo: outcome === 'reprovado' ? 'reprova' : 'ok',
-      titulo: 'Adicionado ao lote',
-      chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Lote', valor: `${contarResolvidos(lote) + 1}/${MAX_LOTE}` }],
+      titulo: 'Adicionado ao grupo',
+      chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }, { rotulo: 'Grupo', valor: `${contarResolvidos(lote) + 1}/${MAX_LOTE}` }],
     })
     void puxarPainel(sn) // pré-lista os irmãos do lote (se houver) — não bloqueia
     limparPeca(); return true
@@ -1056,7 +1056,7 @@ export function LancamentoForm({
               {/* Lançamento coletivo: lote acumulado localmente — Enviar grava tudo de uma vez (best-effort). */}
               <Card className="flex min-h-0 flex-col">
                 <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
-                  <CardTitle>Lote — {contarResolvidos(lote)}/{lote.length}</CardTitle>
+                  <CardTitle>Grupo — {contarResolvidos(lote)}/{lote.length}</CardTitle>
                   <Button
                     size="sm"
                     onClick={enviarLote}
@@ -1068,7 +1068,7 @@ export function LancamentoForm({
                 </CardHeader>
                 <CardContent className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
                   {lote.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Nenhuma peça no lote ainda — bipe ao lado para acumular.</p>
+                    <p className="text-sm text-muted-foreground">Nenhuma peça no grupo ainda — bipe ao lado para acumular.</p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {lote.map((item, i) => (
@@ -1143,7 +1143,7 @@ export function LancamentoForm({
           <input ref={bloqueioRef} className="sr-only" readOnly aria-hidden="true" onKeyDown={(e) => e.preventDefault()} />
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-6 py-4 shadow-lg">
             <span className="size-5 animate-spin rounded-full border-2 border-enterplak border-t-transparent" />
-            <span className="text-base font-medium">{enviandoLote ? 'Enviando o lote… aguarde' : 'Gravando… aguarde'}</span>
+            <span className="text-base font-medium">{enviandoLote ? 'Enviando o grupo… aguarde' : 'Gravando… aguarde'}</span>
           </div>
         </div>
       )}

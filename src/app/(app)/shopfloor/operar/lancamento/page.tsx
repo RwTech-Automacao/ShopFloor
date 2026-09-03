@@ -19,10 +19,6 @@ export default async function LancamentoPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-lg font-semibold text-tinta">Lançamento</h2>
-        <p className="text-sm text-muted-foreground">Registro de peças por posto.</p>
-      </div>
       <LancamentoForm ordens={ordens} defeitos={defeitos} postosPerfil={postosPerfil} postosColetivo={postosColetivo} />
     </div>
   )
