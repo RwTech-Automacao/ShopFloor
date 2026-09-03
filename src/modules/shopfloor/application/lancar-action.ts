@@ -2,7 +2,7 @@
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
-import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
+import { serieDentroDaFaixa, normalizarSerie, limparSerie, MAX_SERIE } from '../domain/serie'
 import { postoAnteriorNaSequencia } from '../domain/postos'
 import {
   PERFIL_PADRAO,
@@ -112,6 +112,12 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
 
   // Config da OP (já buscada em paralelo acima).
   if (!ordem) return { ok: false, erro: 'OP não encontrada.' }
+
+  // Leitura suja do coletor: SN absurdamente longo (ex.: zeros repetidos antes do código) é recusado
+  // aqui, antes de gravar. Não trunca — pede releitura, senão gravaria um SN que não é o da peça.
+  if (limparSerie(entrada.numeroSerie).length > MAX_SERIE) {
+    return { ok: false, erro: 'Nº de Série muito longo — leia o código novamente.' }
+  }
 
   // Faixa de SN (OP sem faixa → barra).
   if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
