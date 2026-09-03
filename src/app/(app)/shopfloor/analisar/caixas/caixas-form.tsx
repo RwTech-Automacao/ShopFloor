@@ -175,7 +175,7 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
   )
 
   return (
-    <div className="hidden text-black print:block">
+    <div className="hidden text-black print:block print:p-[12mm]">
       <h1 className="mb-2 text-center text-[15px] font-semibold">Lista de Números de Série</h1>
 
       <div className="border border-black">
