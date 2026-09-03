@@ -5,35 +5,23 @@ import { parsearFiltrosRegistros } from '@/modules/shopfloor/domain/registros-fi
 
 export const dynamic = 'force-dynamic'
 
-const fmtData = new Intl.DateTimeFormat('pt-BR', {
-  dateStyle: 'short',
-  timeStyle: 'medium',
-  timeZone: 'America/Sao_Paulo', // o servidor roda em UTC; sem isto sairia 3h à frente
-})
+// Data e hora saem em COLUNAS SEPARADAS: assim dá pra ordenar/filtrar por dia sem mexer no texto,
+// e some de vez a vírgula do formato pt-BR que quebrava a célula na importação.
+const TZ = 'America/Sao_Paulo' // o servidor roda em UTC; sem isto sairia 3h à frente
+const fmtDia = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: TZ })
+const fmtHora = new Intl.DateTimeFormat('pt-BR', { timeStyle: 'medium', timeZone: TZ })
 
-/** Colunas do arquivo: [cabeçalho, como extrair da linha]. */
+/** Colunas do arquivo: [cabeçalho, como extrair da linha]. Enxutas a pedido do usuário (03/09). */
 const COLUNAS: [string, (r: Record<string, unknown>) => string][] = [
-  // `dateStyle+timeStyle` em pt-BR devolve "02/09/2026, 09:25:19" — a vírgula fazia o Excel/Calc
-  // (que costuma vir com vírgula E ponto-e-vírgula marcados) quebrar a data em duas colunas.
-  ['Data/Hora', (r) => (r.data_hora ? fmtData.format(new Date(String(r.data_hora))).replace(', ', ' ') : '')],
+  ['Data', (r) => (r.data_hora ? fmtDia.format(new Date(String(r.data_hora))) : '')],
+  ['Hora', (r) => (r.data_hora ? fmtHora.format(new Date(String(r.data_hora))) : '')],
   ['Cliente', (r) => String(r.cliente ?? '')],
   ['PMO', (r) => String(r.pmo ?? '')],
   ['OP', (r) => String(r.op ?? '')],
   ['Posto', (r) => String(r.posto ?? '')],
-  ['Nº Série', (r) => String(r.numero_serie ?? '')],
+  ['SN', (r) => String(r.numero_serie ?? '')],
   ['Status', (r) => String(r.status ?? '')],
   ['Colaborador', (r) => String(r.colaborador ?? '')],
-  ['Nº caixa', (r) => String(r.numero_caixa ?? '')],
-  ['Código defeito', (r) => String(r.codigo_defeito ?? '')],
-  ['Posição', (r) => String(r.posicao ?? '')],
-  ['Tipo defeito', (r) => String(r.tipo_defeito ?? '')],
-  ['NQA visual', (r) => String(r.nqa_visual ?? '')],
-  ['NQA funcional', (r) => String(r.nqa_funcional ?? '')],
-  ['ID Integração', (r) => String(r.id_integracao ?? '')],
-  ['Reparo (conserto)', (r) => String(r.reparo_conserto ?? '')],
-  ['Reparo (posição)', (r) => String(r.reparo_posicao ?? '')],
-  ['Posto de origem', (r) => String(r.posto_origem ?? '')],
-  ['Rota de reteste', (r) => String(r.posto_retorno ?? '')],
 ]
 
 /**

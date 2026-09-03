@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -58,6 +58,13 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
     router.push(query ? `${pathname}?${query}` : pathname)
   }
 
+  // Enter em qualquer campo do formulário filtra — é como o pessoal usa no chão de fábrica
+  // (digita a OP e aperta Enter, sem tirar a mão do teclado pra clicar em "Filtrar").
+  function aoEnviar(e: FormEvent) {
+    e.preventDefault()
+    aplicar()
+  }
+
   function limpar() {
     setCliente('')
     setBusca('')
@@ -71,7 +78,10 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border p-3">
+    <form
+      onSubmit={aoEnviar}
+      className="flex flex-wrap items-end gap-3 rounded-lg border border-border p-3"
+    >
       <div className="flex flex-col gap-1">
         <Label htmlFor="filtro-cliente">Cliente</Label>
         <Select
@@ -187,13 +197,13 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
       </div>
 
       <div className="flex gap-2">
-        <Button onClick={aplicar} className="bg-enterplak hover:bg-enterplak-700">
+        <Button type="submit" className="bg-enterplak hover:bg-enterplak-700">
           Filtrar
         </Button>
-        <Button variant="outline" onClick={limpar}>
+        <Button type="button" variant="outline" onClick={limpar}>
           Limpar
         </Button>
       </div>
-    </div>
+    </form>
   )
 }

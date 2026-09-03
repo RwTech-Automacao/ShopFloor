@@ -48,7 +48,7 @@ export function RegistrosPaginacao({
 
   return (
     // Fixo no rodapé: rolar a lista não esconde os controles.
-    <div className="sticky bottom-0 z-20 -mx-1 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background/95 px-1 py-2 backdrop-blur">
+    <div className="sticky -bottom-4 z-20 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background/95 px-4 py-2 backdrop-blur sm:-bottom-6 sm:-mx-6 sm:px-6 lg:-bottom-8 lg:-mx-8 lg:px-8">
       <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
         <span>
           {total} registro{total === 1 ? '' : 's'}

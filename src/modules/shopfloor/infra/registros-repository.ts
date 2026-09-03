@@ -59,8 +59,14 @@ export async function consultarRegistros(
         : query.ilike('status', filtros.status)
     }
     if (filtros.busca) {
-      const b = filtros.busca.replace(/[%,]/g, '') // evita quebrar o padrão do .or()
-      query = query.or(`pmo.ilike.%${b}%,op.ilike.%${b}%`)
+      const b = filtros.busca.replace(/[%,()]/g, '').trim() // evita quebrar o padrão do .or()
+      if (b) {
+        // Buscar "22" trazia a OP 8228 junto: o `%22%` casava no MEIO do número. Agora a OP casa
+        // EXATO quando o termo é só dígitos (é assim que se procura uma OP) e o PMO casa por
+        // PREFIXO (digitar "PMOM" ainda lista todos os PMOM...).
+        const alvos = [`pmo.ilike.${b}%`, /^\d+$/.test(b) ? `op.eq.${b}` : `op.ilike.${b}%`]
+        query = query.or(alvos.join(','))
+      }
     }
     if (filtros.de) query = query.gte('data_hora', filtros.de)
     if (filtros.ate) query = query.lte('data_hora', filtros.ate)
