@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,9 +50,19 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
     if (status) params.set('status', status)
     if (de) params.set('de', de)
     if (ate) params.set('ate', ate)
-    // Nova consulta de filtros reinicia a paginação.
+    // "Por página" é preferência de exibição, não filtro: sobrevive à nova consulta.
+    const tamanho = searchParams.get('tamanho')
+    if (tamanho) params.set('tamanho', tamanho)
+    // Nova consulta de filtros reinicia a paginação (o parâmetro `pagina` não é copiado).
     const query = params.toString()
     router.push(query ? `${pathname}?${query}` : pathname)
+  }
+
+  // Enter em qualquer campo do formulário filtra — é como o pessoal usa no chão de fábrica
+  // (digita a OP e aperta Enter, sem tirar a mão do teclado pra clicar em "Filtrar").
+  function aoEnviar(e: FormEvent) {
+    e.preventDefault()
+    aplicar()
   }
 
   function limpar() {
@@ -63,11 +73,15 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
     setStatus('')
     setDe('')
     setAte('')
-    router.push(pathname)
+    const tamanho = searchParams.get('tamanho')
+    router.push(tamanho ? `${pathname}?tamanho=${tamanho}` : pathname)
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border p-3">
+    <form
+      onSubmit={aoEnviar}
+      className="flex flex-wrap items-end gap-3 rounded-lg border border-border p-3"
+    >
       <div className="flex flex-col gap-1">
         <Label htmlFor="filtro-cliente">Cliente</Label>
         <Select
@@ -183,13 +197,13 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
       </div>
 
       <div className="flex gap-2">
-        <Button onClick={aplicar} className="bg-enterplak hover:bg-enterplak-700">
+        <Button type="submit" className="bg-enterplak hover:bg-enterplak-700">
           Filtrar
         </Button>
-        <Button variant="outline" onClick={limpar}>
+        <Button type="button" variant="outline" onClick={limpar}>
           Limpar
         </Button>
       </div>
-    </div>
+    </form>
   )
 }

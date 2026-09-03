@@ -2,7 +2,7 @@
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
-import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
+import { serieDentroDaFaixa, normalizarSerie, limparSerie, MAX_SERIE } from '../domain/serie'
 import { postoAnteriorNaSequencia } from '../domain/postos'
 import {
   PERFIL_PADRAO,
@@ -113,12 +113,25 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
   // Config da OP (já buscada em paralelo acima).
   if (!ordem) return { ok: false, erro: 'OP não encontrada.' }
 
+  // Leitura suja do coletor: SN absurdamente longo (ex.: zeros repetidos antes do código) é recusado
+  // aqui, antes de gravar. Não trunca — pede releitura, senão gravaria um SN que não é o da peça.
+  if (limparSerie(entrada.numeroSerie).length > MAX_SERIE) {
+    return { ok: false, erro: 'Nº de Série muito longo — leia o código novamente.' }
+  }
+
   // Faixa de SN (OP sem faixa → barra).
   if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
     return { ok: false, erro: 'Esta OP não tem faixa de Nº de Série cadastrada.' }
   }
   if (!serieDentroDaFaixa(ordem.sn_ini, ordem.sn_fim, entrada.numeroSerie)) {
     return { ok: false, erro: 'Nº de Série fora da faixa desta OP.' }
+  }
+  // A faixa da OP também define QUANTOS caracteres o SN tem. Isso pega a leitura suja que a
+  // comparação numérica deixa passar: `serieDentroDaFaixa` usa parseInt, então zeros emendados
+  // antes do código (ex.: '0000000333001213' numa faixa de 9 dígitos) entram como se fossem válidos.
+  const tamanhoDaFaixa = Math.max(limparSerie(ordem.sn_ini).length, limparSerie(ordem.sn_fim).length)
+  if (limparSerie(entrada.numeroSerie).length > tamanhoDaFaixa) {
+    return { ok: false, erro: 'Nº de Série com caracteres a mais — leia o código novamente.' }
   }
 
   // Posto aplicável.

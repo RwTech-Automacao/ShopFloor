@@ -1,18 +1,18 @@
-import Link from 'next/link'
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { consultarRegistros, listarClientesRegistros } from '@/modules/shopfloor/infra/registros-repository'
 import { listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
-import { parsearFiltrosRegistros } from '@/modules/shopfloor/domain/registros-filtros'
+import { parsearFiltrosRegistros, TAMANHOS_PAGINA } from '@/modules/shopfloor/domain/registros-filtros'
 import { RegistrosFiltros } from './registros-filtros'
 import { RegistrosTabela } from './registros-tabela'
+import { RegistrosPaginacao } from './registros-paginacao'
 
 export const dynamic = 'force-dynamic'
 
-const TAMANHO_PAGINA = 25
+const TAMANHO_PADRAO = '100'
+/** "Todos" tem teto: 27 mil linhas no DOM travam o navegador. Acima disso, use Exportar. */
+const TETO_TODOS = 5000
 
 interface RegistrosPageProps {
   searchParams: Promise<{
@@ -24,6 +24,7 @@ interface RegistrosPageProps {
     de?: string
     ate?: string
     pagina?: string
+    tamanho?: string
   }>
 }
 
@@ -39,31 +40,18 @@ export default async function RegistrosPage({ searchParams }: RegistrosPageProps
   const paginaSolicitada = Number.parseInt(sp.pagina ?? '0', 10)
   const pagina = Number.isFinite(paginaSolicitada) && paginaSolicitada > 0 ? paginaSolicitada : 0
 
+  const escolhido = (TAMANHOS_PAGINA as readonly string[]).includes(sp.tamanho ?? '') ? sp.tamanho! : TAMANHO_PADRAO
+  const tamanho = escolhido === 'todos' ? TETO_TODOS : Number.parseInt(escolhido, 10)
+
   const filtros = parsearFiltrosRegistros(sp)
 
   const [{ linhas, total }, clientes, postos] = await Promise.all([
-    consultarRegistros(filtros, pagina, TAMANHO_PAGINA),
+    consultarRegistros(filtros, pagina, tamanho),
     listarClientesRegistros(),
     listarPostos(),
   ])
 
-  const totalPaginas = Math.max(1, Math.ceil(total / TAMANHO_PAGINA))
-  const temAnterior = pagina > 0
-  const temProxima = pagina + 1 < totalPaginas
-
-  function hrefPagina(novaPagina: number): string {
-    const params = new URLSearchParams()
-    if (sp.cliente) params.set('cliente', sp.cliente)
-    if (sp.busca) params.set('busca', sp.busca)
-    if (sp.posto) params.set('posto', sp.posto)
-    if (sp.sn) params.set('sn', sp.sn)
-    if (sp.status) params.set('status', sp.status)
-    if (sp.de) params.set('de', sp.de)
-    if (sp.ate) params.set('ate', sp.ate)
-    if (novaPagina > 0) params.set('pagina', String(novaPagina))
-    const query = params.toString()
-    return query ? `/shopfloor/registros?${query}` : '/shopfloor/registros'
-  }
+  const totalPaginas = Math.max(1, Math.ceil(total / tamanho))
 
   return (
     <div className="flex flex-col gap-4">
@@ -76,31 +64,13 @@ export default async function RegistrosPage({ searchParams }: RegistrosPageProps
 
       <RegistrosTabela linhas={linhas} podeAdministrar={podeAdministrar} />
 
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Página {pagina + 1} de {totalPaginas} — {total} registro{total === 1 ? '' : 's'}
-        </span>
-        <div className="flex gap-1">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Página anterior"
-            disabled={!temAnterior}
-            render={<Link href={hrefPagina(pagina - 1)} />}
-          >
-            <ChevronLeftIcon />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Próxima página"
-            disabled={!temProxima}
-            render={<Link href={hrefPagina(pagina + 1)} />}
-          >
-            <ChevronRightIcon />
-          </Button>
-        </div>
-      </div>
+      <RegistrosPaginacao
+        pagina={pagina}
+        totalPaginas={totalPaginas}
+        total={total}
+        tamanho={escolhido}
+        truncado={escolhido === 'todos' && total > TETO_TODOS}
+      />
     </div>
   )
 }

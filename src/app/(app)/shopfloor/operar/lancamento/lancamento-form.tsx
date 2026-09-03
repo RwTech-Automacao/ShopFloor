@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
-import { serieDentroDaFaixa, normalizarSerie } from '@/modules/shopfloor/domain/serie'
+import { serieDentroDaFaixa, normalizarSerie, MAX_SERIE } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
@@ -750,6 +750,9 @@ export function LancamentoForm({
                     <Input
                       id="sn"
                       ref={snRef}
+                      // Teto do campo: barra leitura suja do coletor (ex.: tecla "0" repetindo antes
+                      // do código) já na digitação. O servidor valida de novo, com a mesma regra.
+                      maxLength={MAX_SERIE}
                       value={numeroSerie}
                       onChange={(e) => setNumeroSerie(e.target.value)}
                       onKeyDown={(e) => {
