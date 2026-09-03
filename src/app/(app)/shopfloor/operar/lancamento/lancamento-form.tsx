@@ -348,7 +348,7 @@ export function LancamentoForm({
     const snNorm = normalizarSerie(sn)
     // Lote travado num painel: SN de OUTRO painel é barrado (envie o painel atual antes).
     if (painelAncorado && !painelAncorado.membros.has(snNorm)) {
-      mostrar({ tipo: 'aviso', titulo: 'Peça de outro painel — envie o atual antes.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
+      mostrar({ tipo: 'aviso', titulo: 'Esta peça não faz parte deste painel.', chips: [{ rotulo: 'Nº Série', valor: sn, mono: true }] })
       limparPeca(); return false
     }
     if (jaResolvido(lote, snNorm)) {
