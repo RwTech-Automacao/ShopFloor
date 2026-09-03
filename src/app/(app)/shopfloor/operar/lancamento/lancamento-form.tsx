@@ -980,7 +980,7 @@ export function LancamentoForm({
                   </div>
                   {loteCheio && (
                     <p className="text-sm font-medium text-amber-600">
-                      Lote cheio ({MAX_LOTE}/{MAX_LOTE}) — envie o lote antes de bipar mais. Remova um item para liberar o campo.
+                      Grupo cheio ({MAX_LOTE}/{MAX_LOTE}) — envie o grupo antes de bipar mais. Remova um item para liberar o campo.
                     </p>
                   )}
                   {usaAcordeao && !listaAberta && !loteCheio && (
