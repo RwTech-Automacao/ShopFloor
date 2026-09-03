@@ -126,6 +126,13 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
   if (!serieDentroDaFaixa(ordem.sn_ini, ordem.sn_fim, entrada.numeroSerie)) {
     return { ok: false, erro: 'Nº de Série fora da faixa desta OP.' }
   }
+  // A faixa da OP também define QUANTOS caracteres o SN tem. Isso pega a leitura suja que a
+  // comparação numérica deixa passar: `serieDentroDaFaixa` usa parseInt, então zeros emendados
+  // antes do código (ex.: '0000000333001213' numa faixa de 9 dígitos) entram como se fossem válidos.
+  const tamanhoDaFaixa = Math.max(limparSerie(ordem.sn_ini).length, limparSerie(ordem.sn_fim).length)
+  if (limparSerie(entrada.numeroSerie).length > tamanhoDaFaixa) {
+    return { ok: false, erro: 'Nº de Série com caracteres a mais — leia o código novamente.' }
+  }
 
   // Posto aplicável.
   const aplicavel = (posto: string) => ordem.postos.includes(posto)
