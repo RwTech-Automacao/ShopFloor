@@ -180,7 +180,7 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
 
       <div className="border border-black">
         <div className="flex items-center gap-3 border-b border-black bg-[#3b3391] px-3 py-1.5 text-white [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
-          <span className="text-[11px] uppercase opacity-80">Produto</span>
+          <span className="text-[11px] uppercase text-[#c5c2e6]">Produto</span>
           <span className="text-[13px] font-bold">
             {ordem.descricao ? `${ordem.descricao} — ${ordem.pmo}` : ordem.pmo}
           </span>
@@ -230,7 +230,7 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
 function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-1.5 border-b border-r border-black px-3 py-1">
-      <dt className="text-[9px] uppercase tracking-wide opacity-70">{rotulo}</dt>
+      <dt className="text-[9px] uppercase text-neutral-600">{rotulo}</dt>
       <dd className="font-semibold">{valor}</dd>
     </div>
   )
