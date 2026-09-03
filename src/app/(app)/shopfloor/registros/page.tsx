@@ -3,10 +3,10 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { consultarRegistros, listarClientesRegistros } from '@/modules/shopfloor/infra/registros-repository'
 import { listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
-import { parsearFiltrosRegistros } from '@/modules/shopfloor/domain/registros-filtros'
+import { parsearFiltrosRegistros, TAMANHOS_PAGINA } from '@/modules/shopfloor/domain/registros-filtros'
 import { RegistrosFiltros } from './registros-filtros'
 import { RegistrosTabela } from './registros-tabela'
-import { RegistrosPaginacao, TAMANHOS } from './registros-paginacao'
+import { RegistrosPaginacao } from './registros-paginacao'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,7 +40,7 @@ export default async function RegistrosPage({ searchParams }: RegistrosPageProps
   const paginaSolicitada = Number.parseInt(sp.pagina ?? '0', 10)
   const pagina = Number.isFinite(paginaSolicitada) && paginaSolicitada > 0 ? paginaSolicitada : 0
 
-  const escolhido = (TAMANHOS as readonly string[]).includes(sp.tamanho ?? '') ? sp.tamanho! : TAMANHO_PADRAO
+  const escolhido = (TAMANHOS_PAGINA as readonly string[]).includes(sp.tamanho ?? '') ? sp.tamanho! : TAMANHO_PADRAO
   const tamanho = escolhido === 'todos' ? TETO_TODOS : Number.parseInt(escolhido, 10)
 
   const filtros = parsearFiltrosRegistros(sp)

@@ -5,9 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-
-/** Opções de "quantos por página". `todos` é limitado no servidor (ver TETO_TODOS na página). */
-export const TAMANHOS = ['100', '250', '500', '750', 'todos'] as const
+import { TAMANHOS_PAGINA } from '@/modules/shopfloor/domain/registros-filtros'
 
 const JANELA = 10 // quantos números de página mostrar de uma vez
 
@@ -61,7 +59,7 @@ export function RegistrosPaginacao({
           <Select value={tamanho} onValueChange={(v) => router.push(href(0, v ?? '100'))}>
             <SelectTrigger className="h-8 w-24" aria-label="Registros por página"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {TAMANHOS.map((t) => (
+              {TAMANHOS_PAGINA.map((t) => (
                 <SelectItem key={t} value={t}>{t === 'todos' ? 'Todos' : t}</SelectItem>
               ))}
             </SelectContent>
