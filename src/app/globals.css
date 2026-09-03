@@ -228,3 +228,23 @@
     stroke-dashoffset: 0;
   }
 }
+/* ---------- Impressão ----------
+   A folha da caixa (Consultar Caixa → Imprimir / PDF) é o único documento que o sistema manda pro
+   papel.
+
+   MARGEM ZERO É DE PROPÓSITO. O navegador desenha o cabeçalho dele (título da página + URL) DENTRO
+   da margem do papel; sem margem, não sobra onde desenhar e ele não sai. A margem visual da folha
+   vem do padding dela (`print:p-[12mm]`), não do papel — assim nada encosta na borda.
+   Se ainda aparecer, o caminho garantido é desmarcar "Cabeçalhos e rodapés" na janela de impressão
+   (algumas versões respeitam a margem escolhida no diálogo em vez desta). */
+@page {
+  margin: 0;
+}
+@media print {
+  /* fundo branco garantido: o tema escuro do usuário não deve gastar tinta nem apagar o texto */
+  html,
+  body {
+    background: #fff;
+    color: #000;
+  }
+}

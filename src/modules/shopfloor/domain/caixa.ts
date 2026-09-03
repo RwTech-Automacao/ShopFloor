@@ -11,3 +11,18 @@ export function gerarCodigoCaixa(seq: number, qtd: number, op: string, pmo: stri
 export function marcadorCaixaAberta(seq: number): string {
   return `CX[${seq}]`
 }
+
+/**
+ * Quantas peças foram embaladas ANTES desta caixa, no mesmo posto. É a base do contador "QTD" da
+ * folha impressa: a lista da caixa 6 começa em 61 porque as cinco caixas anteriores somaram 60.
+ * A contagem é só sequencial (ordem de embalagem), sem amarração com faixa de SN ou índice da OP.
+ * Escopo = o posto: dois postos de embalagem contam separado, como as caixas já são numeradas.
+ */
+export function pecasAntesDaCaixa(
+  caixas: readonly { posto: string; seq: number; qtd: number }[],
+  alvo: { posto: string; seq: number },
+): number {
+  return caixas
+    .filter((c) => c.posto === alvo.posto && c.seq < alvo.seq)
+    .reduce((soma, c) => soma + c.qtd, 0)
+}

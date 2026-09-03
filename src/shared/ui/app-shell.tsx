@@ -389,7 +389,7 @@ export function AppShell({
   )
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background">
+    <div className="flex h-dvh overflow-hidden bg-background print:block print:h-auto print:overflow-visible">
       <KioskGuard />
       <KioskExitDialog aberto={exitAberto} onFechar={() => setExitAberto(false)} />
       {podeConfig && <KioskSetupDialog aberto={setupAberto} onFechar={() => setSetupAberto(false)} />}
@@ -397,7 +397,7 @@ export function AppShell({
       {!kioskLigado && (
         <aside
           className={cn(
-            'hidden shrink-0 overflow-hidden transition-[width] duration-200 lg:block',
+            'hidden shrink-0 overflow-hidden transition-[width] duration-200 lg:block print:!hidden',
             menuRecolhido ? 'lg:w-0' : 'lg:w-64',
           )}
         >
@@ -412,8 +412,8 @@ export function AppShell({
         </div>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4 sm:px-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col print:block print:min-h-0">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4 sm:px-6 print:hidden">
           {!kioskLigado && (
             <>
               <button
@@ -450,7 +450,7 @@ export function AppShell({
 
         {/* pb inclui --kb-inset: quando o teclado virtual (Windows) abre, o conteúdo ganha espaço
             de rolagem e o campo focado (ex.: filtro de defeito do acordeão) sobe acima do teclado. */}
-        <main className="flex-1 overflow-y-auto p-4 pb-[calc(1rem+var(--kb-inset,0px))] scroll-pb-[var(--kb-inset,0px)] sm:p-6 sm:pb-[calc(1.5rem+var(--kb-inset,0px))] lg:p-8 lg:pb-[calc(2rem+var(--kb-inset,0px))]">
+        <main className="flex-1 overflow-y-auto p-4 pb-[calc(1rem+var(--kb-inset,0px))] scroll-pb-[var(--kb-inset,0px)] sm:p-6 sm:pb-[calc(1.5rem+var(--kb-inset,0px))] lg:p-8 lg:pb-[calc(2rem+var(--kb-inset,0px))] print:overflow-visible print:!p-0">
           {children}
         </main>
       </div>
