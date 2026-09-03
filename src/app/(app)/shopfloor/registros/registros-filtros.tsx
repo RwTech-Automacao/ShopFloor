@@ -50,7 +50,10 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
     if (status) params.set('status', status)
     if (de) params.set('de', de)
     if (ate) params.set('ate', ate)
-    // Nova consulta de filtros reinicia a paginação.
+    // "Por página" é preferência de exibição, não filtro: sobrevive à nova consulta.
+    const tamanho = searchParams.get('tamanho')
+    if (tamanho) params.set('tamanho', tamanho)
+    // Nova consulta de filtros reinicia a paginação (o parâmetro `pagina` não é copiado).
     const query = params.toString()
     router.push(query ? `${pathname}?${query}` : pathname)
   }
@@ -63,7 +66,8 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
     setStatus('')
     setDe('')
     setAte('')
-    router.push(pathname)
+    const tamanho = searchParams.get('tamanho')
+    router.push(tamanho ? `${pathname}?tamanho=${tamanho}` : pathname)
   }
 
   return (
