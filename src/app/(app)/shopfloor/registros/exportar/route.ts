@@ -13,7 +13,9 @@ const fmtData = new Intl.DateTimeFormat('pt-BR', {
 
 /** Colunas do arquivo: [cabeçalho, como extrair da linha]. */
 const COLUNAS: [string, (r: Record<string, unknown>) => string][] = [
-  ['Data/Hora', (r) => (r.data_hora ? fmtData.format(new Date(String(r.data_hora))) : '')],
+  // `dateStyle+timeStyle` em pt-BR devolve "02/09/2026, 09:25:19" — a vírgula fazia o Excel/Calc
+  // (que costuma vir com vírgula E ponto-e-vírgula marcados) quebrar a data em duas colunas.
+  ['Data/Hora', (r) => (r.data_hora ? fmtData.format(new Date(String(r.data_hora))).replace(', ', ' ') : '')],
   ['Cliente', (r) => String(r.cliente ?? '')],
   ['PMO', (r) => String(r.pmo ?? '')],
   ['OP', (r) => String(r.op ?? '')],
@@ -34,9 +36,13 @@ const COLUNAS: [string, (r: Record<string, unknown>) => string][] = [
   ['Rota de reteste', (r) => String(r.posto_retorno ?? '')],
 ]
 
-/** Escapa um campo de CSV: aspas duplicadas e envolve quando há separador/aspas/quebra de linha. */
+/**
+ * Escapa um campo de CSV: duplica aspas e envolve o valor quando ele tem separador, aspas ou quebra
+ * de linha. A VÍRGULA entra na lista de propósito: o separador do arquivo é `;`, mas o Excel/Calc
+ * costuma importar com vírgula marcada também — sem as aspas, um campo com vírgula vira duas colunas.
+ */
 function campo(v: string): string {
-  return /[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+  return /[;,"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
 
 /**
