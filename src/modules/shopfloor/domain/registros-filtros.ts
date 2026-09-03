@@ -1,5 +1,10 @@
 import { normalizarSerie } from './serie'
 
+/** Opções de "quantos por página" da Tela de Registros. Fica no domínio (e não no componente
+ *  cliente) porque a página é Server Component: importar um valor de módulo 'use client' devolve
+ *  uma referência, não o array — e chamar .includes() nela quebra o render no servidor. */
+export const TAMANHOS_PAGINA = ['100', '250', '500', '750', 'todos'] as const
+
 /** Filtros da Tela de Registros. Todos opcionais; `snNorm` casa `numero_serie_norm`. */
 export interface FiltrosRegistros {
   cliente?: string
