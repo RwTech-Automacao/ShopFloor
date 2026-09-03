@@ -26,6 +26,15 @@ interface Folha {
 
 const fmtEmissao = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
+/**
+ * Nome sugerido do arquivo em "Salvar como PDF" — o navegador usa o TÍTULO DO DOCUMENTO. Leva o
+ * código da caixa, que já carrega sequência, quantidade, OP e PMO (ex.: CX[1][12]8492-PMOD55).
+ * Os caracteres proibidos em nome de arquivo saem; os colchetes do código são permitidos.
+ */
+function nomeDoArquivo(codigo: string): string {
+  return codigo.replace(/[/\\:*?"<>|]/g, '-').trim() || 'caixa'
+}
+
 export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
   const [sel, setSel] = useState('')
   const [caixas, setCaixas] = useState<CaixaConsulta[]>([])
@@ -41,12 +50,15 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
   // O timeout dá um quadro pro navegador desenhar a folha antes de abrir a janela de impressão.
   useEffect(() => {
     if (!folha) return
+    const tituloOriginal = document.title
+    document.title = nomeDoArquivo(folha.caixa.codigo)
     const fim = () => setFolha(null)
     window.addEventListener('afterprint', fim, { once: true })
     const t = window.setTimeout(() => window.print(), 60)
     return () => {
       window.clearTimeout(t)
       window.removeEventListener('afterprint', fim)
+      document.title = tituloOriginal
     }
   }, [folha])
 
@@ -179,8 +191,8 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
       <h1 className="mb-2 text-center text-[15px] font-semibold">Lista de Números de Série</h1>
 
       <div className="border border-black">
-        <div className="flex items-center gap-3 border-b border-black bg-[#3b3391] px-3 py-1.5 text-white [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
-          <span className="text-[11px] uppercase text-[#c5c2e6]">Produto</span>
+        <div className="flex items-center gap-3 border-b border-black bg-enterplak px-3 py-1.5 text-white [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
+          <span className="text-[11px] uppercase text-[#e3bcc4]">Produto</span>
           <span className="text-[13px] font-bold">
             {ordem.descricao ? `${ordem.descricao} — ${ordem.pmo}` : ordem.pmo}
           </span>
