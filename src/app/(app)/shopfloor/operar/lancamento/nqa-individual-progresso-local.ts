@@ -13,6 +13,7 @@ export interface NqaIndividualProgresso {
   pmo: string
   op: string
   posto: string
+  qtdLote: string // quantidade declarada pela pessoa antes de bipar (fase de montagem)
   snsLote: string[] // fase de montagem — SNs bipados, lote ainda não fechado
   lote: LoteNqaIndividual | null // fase de inspeção — lote fechado (qtd/amostra/snsNorm)
   amostras: AmostraNqa[]

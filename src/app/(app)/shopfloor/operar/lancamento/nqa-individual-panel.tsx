@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
-import { carregarLoteNqaIndividual, finalizarNqaIndividual, buscarIrmasLoteReprovado, type LoteNqaIndividual } from '@/modules/shopfloor/application/nqa-individual-actions'
+import { useConfirmacao } from '@/components/ui/confirm-dialog'
+import { carregarLoteNqaIndividual, finalizarNqaIndividual, validarBipeLoteIndividual, type LoteNqaIndividual } from '@/modules/shopfloor/application/nqa-individual-actions'
 import { type AmostraNqa } from '@/modules/shopfloor/application/nqa-caixa-actions'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { salvarNqaIndividualProgresso, limparNqaIndividualProgresso, lerNqaIndividualProgresso } from './nqa-individual-progresso-local'
@@ -38,7 +39,8 @@ export function NqaIndividualPanel({
     return p && p.pmo === pmo && p.op === op && p.posto === posto ? p : null
   })
 
-  // Fase A: lote === null (bipando SNs pra montar o lote). Fase B: lote fechado (inspecionando).
+  // Fase A: lote === null (declara a quantidade e bipa os SNs). Fase B: lote fechado (inspecionando).
+  const [qtdLote, setQtdLote] = useState(hidratado?.qtdLote ?? '')
   const [snsLote, setSnsLote] = useState<string[]>(hidratado?.snsLote ?? [])
   const [snLote, setSnLote] = useState('')
   const [lote, setLote] = useState<LoteNqaIndividual | null>(hidratado?.lote ?? null)
@@ -55,6 +57,12 @@ export function NqaIndividualPanel({
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [fechando, startFechar] = useTransition()
   const [finalizando, startFinalizar] = useTransition()
+  const { confirmar, dialog } = useConfirmacao()
+
+  // Meta declarada pela pessoa antes de bipar. Só bipa depois de definida, e não passa dela.
+  const meta = Number.parseInt(qtdLote, 10)
+  const metaValida = Number.isInteger(meta) && meta > 0
+  const completouMeta = metaValida && snsLote.length === meta
 
   const loteRef = useRef<HTMLInputElement>(null)
   const amostraRef = useRef<HTMLInputElement>(null)
@@ -84,10 +92,11 @@ export function NqaIndividualPanel({
   // Persiste o progresso (localStorage) a cada mudança relevante — some no refresh sem isto.
   useEffect(() => {
     if (snsLote.length === 0 && lote === null) return
-    salvarNqaIndividualProgresso({ colaborador, cliente, pmo, op, posto, snsLote, lote, amostras, selecionados, salvoEm: Date.now() })
-  }, [snsLote, lote, amostras, selecionados, colaborador, cliente, pmo, op, posto])
+    salvarNqaIndividualProgresso({ colaborador, cliente, pmo, op, posto, qtdLote, snsLote, lote, amostras, selecionados, salvoEm: Date.now() })
+  }, [qtdLote, snsLote, lote, amostras, selecionados, colaborador, cliente, pmo, op, posto])
 
   function resetTudo() {
+    setQtdLote('')
     setSnsLote([])
     setSnLote('')
     setLote(null)
@@ -100,14 +109,44 @@ export function NqaIndividualPanel({
     limparNqaIndividualProgresso()
   }
 
+  /** "Descartar lote": joga fora o lote em montagem/inspeção. Nada foi gravado ainda — o banco só
+   *  recebe algo em "Aprovar lote"/"Reprovar lote" —, mas o trabalho de bipar/inspecionar se perde. */
+  async function onDescartar() {
+    const emAndamento = snsLote.length > 0 || amostras.length > 0
+    if (emAndamento) {
+      const ok = await confirmar({
+        titulo: 'Descartar este lote?',
+        descricao:
+          lote === null
+            ? `As ${snsLote.length} peça(s) já bipadas serão perdidas e você começa um lote novo. Nada foi gravado no sistema.`
+            : `O lote de ${lote.qtd} peça(s) e as ${amostras.length} amostra(s) já inspecionada(s) serão perdidos. Nada foi gravado no sistema.`,
+        rotuloConfirmar: 'Descartar',
+      })
+      if (!ok) return
+    }
+    resetTudo()
+    setResultado(null)
+    setTimeout(() => loteRef.current?.focus(), 0)
+  }
+
   /**
-   * Fase A: bipe de uma peça do lote — acumula localmente (dedupe por SN normalizado). Na peça
-   * ÂNCORA (1ª do lote), verifica se ela é irmã de um lote reprovado anteriormente — se as demais
-   * já voltaram do retrabalho, pré-lista todas automaticamente (igual a caixa reconhece pelo
-   * numero_caixa); se alguma ainda não voltou, avisa quais faltam.
+   * Fase A: bipe de uma peça do lote. Valida NO SERVIDOR antes de entrar na lista — pertence à OP,
+   * JÁ FOI EMBALADA e não está no NQA agora. Na peça ÂNCORA (1ª do lote), verifica também se ela é
+   * irmã de um lote reprovado anteriormente: se as demais já voltaram do retrabalho, pré-lista
+   * todas automaticamente (igual a caixa reconhece pelo numero_caixa); se alguma ainda não voltou,
+   * avisa quais faltam.
    */
   function onBiparLote() {
-    if (snLote.trim() === '') return
+    if (snLote.trim() === '' || fechando) return
+    if (!metaValida) {
+      setResultado({ tipo: 'aviso', titulo: 'Informe a quantidade do lote antes de bipar as peças.' })
+      return
+    }
+    if (snsLote.length >= meta) {
+      setResultado({ tipo: 'aviso', titulo: `O lote já tem as ${meta} peça(s) que você definiu. Aumente a quantidade ou remova uma peça.` })
+      setSnLote('')
+      return
+    }
     const norm = normalizarSerie(snLote)
     if (snsLote.some((s) => normalizarSerie(s) === norm)) {
       setResultado({ tipo: 'aviso', titulo: 'Este Nº de Série já está no lote.', chips: [{ rotulo: 'Nº Série', valor: snLote.trim(), mono: true }] })
@@ -115,34 +154,42 @@ export function NqaIndividualPanel({
       setTimeout(() => loteRef.current?.focus(), 0)
       return
     }
+
     const ancora = snsLote.length === 0
     const snBipado = snLote.trim()
-    setSnsLote((prev) => [...prev, snBipado])
-    setResultado(null)
     setSnLote('')
-    setTimeout(() => loteRef.current?.focus(), 0)
+    startFechar(async () => {
+      const r = await validarBipeLoteIndividual(pmo, op, posto, snBipado, ancora)
+      if (!r.ok) {
+        setResultado({ tipo: 'aviso', titulo: r.erro, chips: [{ rotulo: 'Nº Série', valor: snBipado, mono: true }] })
+        setTimeout(() => loteRef.current?.focus(), 0)
+        return
+      }
+      const { elegiveis, pendentes } = r.irmas
+      // Irmãs entram sem estourar a meta — o excedente fica de fora e é avisado.
+      const cabem = Math.max(0, meta - (snsLote.length + 1))
+      const entram = elegiveis.slice(0, cabem)
+      const sobraram = elegiveis.slice(cabem)
+      setSnsLote((prev) => [...prev, snBipado, ...entram.filter((e) => !prev.some((s) => normalizarSerie(s) === e))])
 
-    if (ancora) {
-      startFechar(async () => {
-        const r = await buscarIrmasLoteReprovado(pmo, op, posto, snBipado)
-        if (!r.ok || (r.irmas.elegiveis.length === 0 && r.irmas.pendentes.length === 0)) return
-        const { elegiveis, pendentes } = r.irmas
-        if (elegiveis.length > 0) {
-          setSnsLote((prev) => [...prev, ...elegiveis.filter((e) => !prev.some((s) => normalizarSerie(s) === e))])
-        }
+      if (elegiveis.length === 0 && pendentes.length === 0) {
+        setResultado({ tipo: 'ok', titulo: 'Peça adicionada ao lote', chips: [{ rotulo: 'Nº Série', valor: snBipado, mono: true }] })
+      } else {
         setResultado({
-          tipo: pendentes.length > 0 ? 'aviso' : 'ok',
+          tipo: pendentes.length > 0 || sobraram.length > 0 ? 'aviso' : 'ok',
           titulo:
-            elegiveis.length > 0
-              ? `Peça de um lote reprovado — ${elegiveis.length} peça(s)-irmã(s) adicionada(s) automaticamente`
-              : `Peça de um lote reprovado — as demais ainda não voltaram do retrabalho`,
+            entram.length > 0
+              ? `Peça de um lote reprovado — ${entram.length} peça(s)-irmã(s) adicionada(s) automaticamente`
+              : 'Peça de um lote reprovado — veja as peças-irmãs abaixo',
           chips: [
-            ...elegiveis.map((s) => ({ rotulo: 'Adicionada', valor: s, mono: true })),
+            ...entram.map((s) => ({ rotulo: 'Irmã adicionada', valor: s, mono: true })),
+            ...sobraram.map((s) => ({ rotulo: 'Não coube na meta', valor: s, mono: true })),
             ...pendentes.map((s) => ({ rotulo: 'Falta voltar', valor: s, mono: true })),
           ],
         })
-      })
-    }
+      }
+      setTimeout(() => loteRef.current?.focus(), 0)
+    })
   }
 
   function removerDoLote(sn: string) {
@@ -223,17 +270,39 @@ export function NqaIndividualPanel({
     })
   }
 
-  // Fase A — montando o lote.
+  // Fase A — declara a quantidade e bipa as peças do lote.
   if (lote === null) {
     return (
       <Card className="flex min-h-0 flex-col">
-        <CardHeader className="shrink-0">
+        {dialog}
+        <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>NQA individual <span className="text-sm font-normal text-muted-foreground">· inspeção por amostragem</span></CardTitle>
+          {snsLote.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={onDescartar} disabled={fechando}>Descartar lote</Button>
+          )}
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="shrink-0">
             <PainelResultado resultado={resultado} />
           </div>
+
+          <div className="flex shrink-0 flex-col gap-1.5 sm:max-w-xs">
+            <Label htmlFor="qtdLoteNqa">Quantidade do lote</Label>
+            <Input
+              id="qtdLoteNqa"
+              type="number"
+              min={1}
+              inputMode="numeric"
+              value={qtdLote}
+              onChange={(e) => setQtdLote(e.target.value)}
+              placeholder="Quantas peças este lote tem"
+              autoComplete="off"
+              autoFocus
+              className="h-12 text-lg"
+              disabled={fechando}
+            />
+          </div>
+
           <div className="flex shrink-0 flex-col gap-1.5">
             <Label htmlFor="snLoteNqa">Bipe as peças que fazem parte do lote</Label>
             <Input
@@ -242,19 +311,25 @@ export function NqaIndividualPanel({
               value={snLote}
               onChange={(e) => setSnLote(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBiparLote() } }}
-              placeholder="Bipe cada peça do lote, uma de cada vez"
+              placeholder={metaValida ? 'Bipe cada peça do lote, uma de cada vez' : 'Informe a quantidade do lote primeiro'}
               autoComplete="off"
-              autoFocus
               className="h-12 text-lg"
-              disabled={fechando}
+              disabled={fechando || !metaValida}
             />
             <p className="text-xs text-muted-foreground">
-              Sem caixa física — você define o lote bipando as peças. A quantidade bipada define a amostra pela Tabela NQA.
+              Sem caixa física — você define o lote: primeiro a quantidade, depois bipa as peças. A quantidade define a amostra pela Tabela NQA.
             </p>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-lg border border-border p-2">
-            <p className="shrink-0 text-xs font-medium text-muted-foreground">{snsLote.length} peça(s) no lote</p>
+            <div className="flex shrink-0 items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                {metaValida ? `${snsLote.length} de ${meta} peça(s) bipada(s)` : `${snsLote.length} peça(s) no lote`}
+              </p>
+              {metaValida && snsLote.length > meta && (
+                <p className="text-xs text-amber-600">Remova {snsLote.length - meta} peça(s) ou aumente a quantidade</p>
+              )}
+            </div>
             <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
               {snsLote.length === 0 && <li className="text-sm text-muted-foreground">—</li>}
               {snsLote.map((sn) => (
@@ -269,8 +344,14 @@ export function NqaIndividualPanel({
           </div>
 
           <div className="shrink-0">
-            <Button onClick={onFecharLote} disabled={fechando || snsLote.length === 0} className="h-11 bg-enterplak px-6 hover:bg-enterplak-700">
-              {fechando ? 'Calculando amostra…' : `Fechar lote (${snsLote.length}) e calcular amostra`}
+            <Button onClick={onFecharLote} disabled={fechando || !completouMeta} className="h-11 bg-enterplak px-6 hover:bg-enterplak-700">
+              {fechando
+                ? 'Calculando amostra…'
+                : completouMeta
+                  ? `Fechar lote (${meta}) e calcular amostra`
+                  : metaValida
+                    ? `Faltam ${Math.max(0, meta - snsLote.length)} peça(s) para fechar o lote`
+                    : 'Informe a quantidade do lote'}
             </Button>
           </div>
         </CardContent>
@@ -281,12 +362,13 @@ export function NqaIndividualPanel({
   // Fase B — lote fechado, inspecionando a amostra.
   return (
     <Card className="flex min-h-0 flex-col">
+      {dialog}
       <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>
           Lote — {lote.qtd} peças
           <span className="text-sm font-normal text-muted-foreground"> · amostra: {lote.amostra}</span>
         </CardTitle>
-        <Button variant="ghost" size="sm" onClick={resetTudo} disabled={finalizando}>Descartar lote</Button>
+        <Button variant="ghost" size="sm" onClick={onDescartar} disabled={finalizando}>Descartar lote</Button>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="shrink-0">

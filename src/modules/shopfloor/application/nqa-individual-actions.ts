@@ -4,6 +4,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
+import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 // Tabela NQA é referência compartilhada (cadastrada em Config → Tabela NQA); reusa o leitor do Recebimento.
 import { carregarTabelaNqa } from '@/modules/recebimento/infra/referencias-repository'
 import { buscarNqa } from '@/modules/recebimento/domain/calculos'
@@ -20,6 +21,61 @@ export interface LoteNqaIndividual {
 export interface IrmasLoteReprovado {
   elegiveis: string[]  // SNs do mesmo lote reprovado, já de volta do retrabalho — prontas pra reentrar
   pendentes: string[]  // SNs do mesmo lote, ainda não saíram do NQA (retrabalho não iniciado)
+}
+
+/**
+ * Valida UMA peça no momento do bipe, antes de entrar no lote. Confere, nesta ordem:
+ *  1. pertence a esta OP;
+ *  2. JÁ FOI EMBALADA (tem registro num posto de perfil `caixa`) — o NQA inspeciona produto
+ *     embalado; sem esta checagem entrava no lote peça que nem chegou na embalagem ainda;
+ *  3. não está no NQA agora (já inspecionada / aguardando reteste).
+ * Na peça ÂNCORA (1ª do lote) devolve também as peças-irmãs de um lote reprovado anterior.
+ */
+export async function validarBipeLoteIndividual(
+  pmo: string,
+  op: string,
+  posto: string,
+  sn: string,
+  ancora: boolean,
+): Promise<{ ok: true; snNorm: string; irmas: IrmasLoteReprovado } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
+  const snNorm = normalizarSerie(sn)
+  if (!snNorm) return { ok: false, erro: 'Nº de Série inválido.' }
+
+  const vazio: IrmasLoteReprovado = { elegiveis: [], pendentes: [] }
+  try {
+    const supabase = await createServerSupabase()
+    const { data, error } = await supabase
+      .from('sf_registros')
+      .select('posto,data_hora,created_at')
+      .eq('pmo', pmo.trim())
+      .eq('op', op.trim())
+      .eq('numero_serie_norm', snNorm)
+      .order('data_hora', { ascending: false })
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    const linhas = (data ?? []) as { posto: string }[]
+    if (linhas.length === 0) return { ok: false, erro: 'Este Nº de Série não pertence a esta OP.' }
+
+    // Embalada? Precisa ter passado por algum posto de perfil `caixa` (embalagem).
+    const perfis = await mapaPostoPerfil()
+    const passouNaEmbalagem = linhas.some((l) => perfis[l.posto]?.recurso === 'caixa')
+    if (!passouNaEmbalagem) {
+      return { ok: false, erro: 'Esta peça ainda não foi embalada — embale antes de inspecionar no NQA.' }
+    }
+
+    // A query veio ordenada desc: a primeira linha é o último registro da peça.
+    if (linhas[0]!.posto === posto.trim()) {
+      return { ok: false, erro: 'Esta peça já está no NQA — aguardando reteste ou já finalizada.' }
+    }
+
+    if (!ancora) return { ok: true, snNorm, irmas: vazio }
+    const r = await buscarIrmasLoteReprovado(pmo, op, posto, sn)
+    return { ok: true, snNorm, irmas: r.ok ? r.irmas : vazio }
+  } catch {
+    return { ok: false, erro: 'Não foi possível validar esta peça.' }
+  }
 }
 
 /**
@@ -128,6 +184,21 @@ export async function carregarLoteNqaIndividual(
       return {
         ok: false,
         erro: `Não pertence a esta OP: ${faltando.slice(0, 3).join(', ')}${faltando.length > 3 ? '…' : ''}`,
+      }
+    }
+
+    // Backstop do "já foi embalada" — o bipe já barra peça não embalada, mas o lote também pode
+    // chegar aqui vindo do localStorage. O NQA inspeciona produto embalado, então nenhuma peça
+    // sem passagem por posto de perfil `caixa` pode entrar no lote.
+    const perfis = await mapaPostoPerfil()
+    const embaladas = new Set(
+      linhas.filter((l) => perfis[l.posto]?.recurso === 'caixa').map((l) => l.numero_serie_norm),
+    )
+    const naoEmbaladas = snsNorm.filter((s) => !embaladas.has(s))
+    if (naoEmbaladas.length > 0) {
+      return {
+        ok: false,
+        erro: `Ainda não foi embalada: ${naoEmbaladas.slice(0, 3).join(', ')}${naoEmbaladas.length > 3 ? '…' : ''}`,
       }
     }
 
