@@ -5,11 +5,13 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { postoCancelavel } from '../domain/cancelamento'
 import { lerRegistroParaCancelar, ehUltimoBipe, chamarSfCancelar } from '../infra/cancelamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { estadoCaixaDoRegistro } from '../infra/caixa-repository'
 
 const SEM_PERMISSAO = 'Você não tem permissão para cancelar.'
 
-/** Checagem pro botão (UX): dá pra cancelar este bipe? Fail-closed. */
-export async function cancelavelInfo(id: string): Promise<{ podeCancelar: boolean; motivo?: string }> {
+/** Checagem pro botão (UX): dá pra cancelar este bipe? Fail-closed.
+ *  `aviso` = consequência que o gestor precisa saber ANTES de confirmar (hoje só a embalagem tem). */
+export async function cancelavelInfo(id: string): Promise<{ podeCancelar: boolean; motivo?: string; aviso?: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
     return { podeCancelar: false, motivo: 'Sem permissão para cancelar.' }
@@ -24,10 +26,27 @@ export async function cancelavelInfo(id: string): Promise<{ podeCancelar: boolea
     if (!(await ehUltimoBipe(reg.pmo, reg.op, reg.numeroSerieNorm, id))) {
       return { podeCancelar: false, motivo: 'Só o bipe mais recente deste SN pode ser cancelado — cancele o mais recente primeiro.' }
     }
-    return { podeCancelar: true }
+    return { podeCancelar: true, aviso: await avisoDaEmbalagem(reg, perfil?.recurso) }
   } catch {
     return { podeCancelar: false, motivo: 'Não foi possível verificar.' }
   }
+}
+
+/**
+ * Aviso da EMBALAGEM: a peça sai da caixa e, se a caixa já estava fechada, ela REABRE — o código
+ * muda quando fechar de novo (a quantidade mudou), então a folha impressa precisa ser reimpressa.
+ * Sem caixa em sf_caixas (embalagem individual) não há nada a avisar.
+ */
+async function avisoDaEmbalagem(
+  reg: { pmo: string; op: string; posto: string; numeroCaixa: string },
+  recurso: string | null | undefined,
+): Promise<string | undefined> {
+  if (recurso !== 'caixa') return undefined
+  // Best-effort: é só texto de UX. Falhar aqui não pode bloquear o cancelamento (a RPC decide).
+  const cx = await estadoCaixaDoRegistro(reg.pmo, reg.op, reg.posto, reg.numeroCaixa).catch(() => null)
+  if (!cx) return undefined
+  if (!cx.fechada) return `A peça sai da caixa CX${cx.seq} (ainda aberta) e a vaga fica livre pra outra peça.`
+  return `A caixa CX${cx.seq} já está FECHADA: cancelar vai REABRIR a caixa. Ela vai aparecer como reaberta na tela de Lançamento e, ao ser fechada de novo, o código muda — a folha impressa precisa ser reimpressa.`
 }
 
 /** Executa o cancelamento (gestor). Motivo obrigatório. */

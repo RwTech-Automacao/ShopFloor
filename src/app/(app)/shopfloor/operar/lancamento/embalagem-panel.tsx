@@ -8,6 +8,9 @@ import { Label } from '@/components/ui/label'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { carregarEmbalagem, embalarPeca, fecharCaixa } from '@/modules/shopfloor/application/embalagem-actions'
+import type { CaixaReaberta } from '@/modules/shopfloor/infra/caixa-repository'
+
+const AVISO_REIMPRIMIR = 'Ao fechar de novo, o código da caixa muda (a quantidade mudou) — reimprima a folha e troque a que está na caixa.'
 
 export function EmbalagemPanel({
   colaborador, pmo, op, posto, qtdOP,
@@ -19,6 +22,13 @@ export function EmbalagemPanel({
   const [totalEmbaladas, setTotalEmbaladas] = useState(0)
   const [snsNaCaixa, setSnsNaCaixa] = useState<string[]>([])
   const [concluida, setConcluida] = useState(false)
+  // Caixas que voltaram a ficar abertas porque um bipe delas foi cancelado. Ficam PENDENTES ao lado
+  // da caixa atual (não tomam o lugar dela); o operador entra numa pra completar e fechar de novo.
+  const [caixasReabertas, setCaixasReabertas] = useState<CaixaReaberta[]>([])
+  const [alvoSeq, setAlvoSeq] = useState<number | null>(null) // null = bipando na caixa atual
+  const [limiteReaberta, setLimiteReaberta] = useState(0)
+  const [qtdReaberta, setQtdReaberta] = useState(0)
+  const [snsReaberta, setSnsReaberta] = useState<string[]>([])
   const [sn, setSn] = useState('')
   const [ehUltima, setEhUltima] = useState(false)
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
@@ -27,6 +37,8 @@ export function EmbalagemPanel({
   const [fechando, startFechar] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
   const acaoAposEmbalar = useRef<null | 'focus' | 'select'>(null)
+  // Espelha o alvo pro recarregar (que roda em closure antiga do effect) reconciliar sem stale state.
+  const alvoRef = useRef<number | null>(null)
   const { confirmar, dialog } = useConfirmacao()
 
   // O input fica disabled durante a transição de embalar; refoca (ou seleciona, no erro)
@@ -42,9 +54,16 @@ export function EmbalagemPanel({
     if (a === 'select') el.select()
   }, [embalando])
 
-  function recarregar() {
+  function irParaAtual() {
+    alvoRef.current = null
+    setAlvoSeq(null)
+  }
+
+  /** `limparPainel=false` preserva o PainelResultado — usado quando o próprio recarregar é a
+   *  consequência de uma ação cujo resultado (o código da caixa fechada) o operador precisa ler. */
+  function recarregar(limparPainel = true) {
     startCarregar(async () => {
-      setResultado(null) // contexto novo (troca de OP/posto) → limpa o painel da ação anterior
+      if (limparPainel) setResultado(null) // contexto novo (troca de OP/posto) → limpa o painel anterior
       const r = await carregarEmbalagem(pmo, op, posto)
       if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
       setSeq(r.estado.seq)
@@ -53,9 +72,41 @@ export function EmbalagemPanel({
       setTotalEmbaladas(r.estado.totalEmbaladas)
       setSnsNaCaixa(r.estado.snsNaCaixa)
       setConcluida(r.estado.concluida)
+      setCaixasReabertas(r.estado.caixasReabertas)
+      // A reaberta em que eu estava pode ter sumido da lista (fechei ela, ou outro terminal fechou):
+      // aí volto pra caixa atual em vez de continuar bipando numa caixa que não existe mais.
+      const alvo = alvoRef.current === null
+        ? undefined
+        : r.estado.caixasReabertas.find((c) => c.seq === alvoRef.current)
+      if (!alvo) { irParaAtual(); return }
+      setLimiteReaberta(alvo.limite)
+      setQtdReaberta(alvo.qtd)
+      setSnsReaberta(alvo.sns)
     })
   }
-  useEffect(() => { recarregar() }, [pmo, op, posto]) // recarrega ao entrar / trocar contexto
+  // Recarrega ao entrar / trocar contexto. Só mexe no REF aqui (setState direto no effect é
+  // proibido pelo lint): quem devolve a tela pra caixa atual é o próprio recarregar, ao não achar
+  // mais a reaberta — assim não se continua bipando numa caixa reaberta da OP anterior.
+  useEffect(() => { alvoRef.current = null; recarregar() }, [pmo, op, posto])
+
+  function entrarNaReaberta(c: CaixaReaberta) {
+    alvoRef.current = c.seq
+    setAlvoSeq(c.seq)
+    setLimiteReaberta(c.limite)
+    setQtdReaberta(c.qtd)
+    setSnsReaberta(c.sns)
+    setEhUltima(false) // a reabertura zera o "última" (0098); o operador reconfere se for o caso
+    setSn('')
+    setResultado(null)
+    setTimeout(() => snRef.current?.focus(), 0)
+  }
+  function voltarParaAtual() {
+    irParaAtual()
+    setEhUltima(false)
+    setSn('')
+    setResultado(null)
+    recarregar() // a reaberta pode ter mudado de tamanho enquanto eu estava nela
+  }
 
   function definirLimite() {
     const n = Number(limiteInput)
@@ -64,11 +115,20 @@ export function EmbalagemPanel({
     setTimeout(() => snRef.current?.focus(), 0)
   }
 
+  // Alvo do bipe: a caixa reaberta escolhida ou a caixa atual. Tudo daqui pra baixo (bipar, fechar,
+  // contadores, quadro de SNs) usa o ATIVO — as ações do servidor já recebem seq/limite, então é só
+  // mandar os da caixa certa.
+  const emReaberta = alvoSeq !== null
+  const seqAtivo = emReaberta ? alvoSeq : seq
+  const limiteAtivo = emReaberta ? limiteReaberta : limite
+  const qtdAtiva = emReaberta ? qtdReaberta : qtdNaCaixa
+  const snsAtivos = emReaberta ? snsReaberta : snsNaCaixa
+
   function onBipar() {
-    if (sn.trim() === '' || embalando || limite === null) return
+    if (sn.trim() === '' || embalando || limiteAtivo === null) return
     const alvo = sn
     startEmbalar(async () => {
-      const r = await embalarPeca({ colaborador, pmo, op, posto, seq, limite, numeroSerie: alvo, ultima: ehUltima })
+      const r = await embalarPeca({ colaborador, pmo, op, posto, seq: seqAtivo, limite: limiteAtivo, numeroSerie: alvo, ultima: ehUltima })
       if (!r.ok) {
         setResultado({
           tipo: 'aviso',
@@ -83,45 +143,85 @@ export function EmbalagemPanel({
       setSn('')
       setResultado({
         tipo: 'ok',
-        titulo: 'Peça embalada',
-        chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }, { rotulo: 'Caixa', valor: `CX${seq} · ${qtdNaCaixa + 1}/${limite}` }],
+        titulo: emReaberta ? 'Peça embalada na caixa reaberta' : 'Peça embalada',
+        chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }, { rotulo: 'Caixa', valor: `CX${seqAtivo} · ${qtdAtiva + 1}/${limiteAtivo}` }],
       })
-      setQtdNaCaixa((q) => q + 1)
+      if (emReaberta) setQtdReaberta((q) => q + 1)
+      else setQtdNaCaixa((q) => q + 1)
       setTotalEmbaladas((t) => t + 1)
-      setSnsNaCaixa((prev) => [alvo.trim(), ...prev])
+      if (emReaberta) setSnsReaberta((prev) => [alvo.trim(), ...prev])
+      else setSnsNaCaixa((prev) => [alvo.trim(), ...prev])
       acaoAposEmbalar.current = 'focus' // refoca quando a transição terminar (input volta a habilitar)
     })
   }
 
   async function onFechar() {
-    if (fechando || limite === null || qtdNaCaixa === 0) return
-    if (qtdNaCaixa < limite) {
+    if (fechando || limiteAtivo === null || qtdAtiva === 0) return
+    if (qtdAtiva < limiteAtivo) {
       const ok = await confirmar({
-        titulo: `Fechar a caixa com ${qtdNaCaixa}/${limite}?`,
-        descricao: 'A caixa vai ser fechada antes de atingir o limite.',
+        titulo: `Fechar a caixa com ${qtdAtiva}/${limiteAtivo}?`,
+        descricao: emReaberta
+          ? `A caixa reaberta CX${seqAtivo} vai ser fechada antes de atingir o limite. ${AVISO_REIMPRIMIR}`
+          : 'A caixa vai ser fechada antes de atingir o limite.',
         rotuloConfirmar: 'Fechar caixa',
       })
       if (!ok) return
     }
     startFechar(async () => {
-      const r = await fecharCaixa(pmo, op, posto, seq, ehUltima)
+      const r = await fecharCaixa(pmo, op, posto, seqAtivo, ehUltima)
       if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
-      setResultado({ tipo: 'ok', titulo: 'Caixa fechada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }] })
+      const painel: ResultadoAcao = {
+        tipo: 'ok',
+        titulo: emReaberta ? 'Caixa reaberta fechada de novo' : 'Caixa fechada',
+        chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }],
+        dica: emReaberta ? AVISO_REIMPRIMIR : undefined,
+      }
+      if (emReaberta) {
+        // Volta pra caixa atual: o recarregar tira esta da lista de reabertas e devolve os
+        // contadores da caixa que estava sendo enchida.
+        irParaAtual()
+        setEhUltima(false)
+        setResultado(painel)
+        recarregar(false) // sem limpar o painel: o operador precisa ler o código novo da caixa
+        return
+      }
+      setResultado(painel)
       if (ehUltima) { setConcluida(true) }
       else { setSeq((s) => s + 1); setQtdNaCaixa(0); setSnsNaCaixa([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
     })
   }
 
+  // Painel das caixas reabertas: fica visível na caixa atual (pra escolher uma) e some quando já
+  // estou dentro de uma (aí o que aparece é a faixa de "voltar").
+  const painelReabertas = caixasReabertas.length > 0 && !emReaberta && (
+    <div className="shrink-0 rounded-lg border border-amber-500/50 bg-amber-500/10 p-2">
+      <p className="text-xs font-medium">
+        Caixa reaberta ({caixasReabertas.length}) — um lançamento foi cancelado e a caixa voltou a ficar aberta.
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-2">
+        {caixasReabertas.map((c) => (
+          <Button key={c.seq} variant="outline" size="sm" onClick={() => entrarNaReaberta(c)}>
+            CX{c.seq} · {c.qtd}/{c.limite}
+          </Button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        Escolha uma pra completar e fechar de novo. {AVISO_REIMPRIMIR}
+      </p>
+    </div>
+  )
+
   if (carregando && limite === null && !concluida) {
     return <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Carregando…</CardContent></Card>
   }
-  if (concluida) {
+  if (concluida && !emReaberta) {
     return (
       <Card>
         <CardHeader><CardTitle>Embalagem concluída</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">Total embaladas: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}.</p>
           <p className="text-xs text-muted-foreground">A última caixa desta OP foi fechada.</p>
+          {painelReabertas}
         </CardContent>
       </Card>
     )
@@ -146,16 +246,21 @@ export function EmbalagemPanel({
     )
   }
 
-  const pct = Math.min(100, Math.round((qtdNaCaixa / limite) * 100))
+  const limiteBarra = limiteAtivo ?? limite
+  const pct = Math.min(100, Math.round((qtdAtiva / limiteBarra) * 100))
   return (
     <Card className="flex min-h-0 flex-col">
       <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
-        <CardTitle>Caixa CX{seq} <span className="text-sm font-normal text-muted-foreground">· limite {limite}</span></CardTitle>
+        <CardTitle>
+          Caixa CX{seqAtivo}{' '}
+          <span className="text-sm font-normal text-muted-foreground">· limite {limiteBarra}</span>
+          {emReaberta && <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">reaberta</span>}
+        </CardTitle>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-sm" title="A última caixa pode passar do limite — bipe as peças que sobram aqui em vez de abrir caixa nova.">
             <input type="checkbox" checked={ehUltima} onChange={(e) => setEhUltima(e.target.checked)} /> Última caixa
           </label>
-          <Button variant="outline" size="sm" onClick={onFechar} disabled={fechando || qtdNaCaixa === 0}>
+          <Button variant="outline" size="sm" onClick={onFechar} disabled={fechando || qtdAtiva === 0}>
             {fechando ? 'Fechando…' : 'Fechar caixa'}
           </Button>
         </div>
@@ -164,9 +269,20 @@ export function EmbalagemPanel({
         <div className="shrink-0">
           <PainelResultado resultado={resultado} />
         </div>
+        {painelReabertas}
+        {emReaberta && (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-2">
+            <p className="text-xs">
+              Você está bipando na <strong>caixa reaberta CX{seqAtivo}</strong>, não na caixa CX{seq}. {AVISO_REIMPRIMIR}
+            </p>
+            <Button variant="outline" size="sm" onClick={voltarParaAtual} disabled={embalando || fechando}>
+              Voltar pra CX{seq}
+            </Button>
+          </div>
+        )}
         <div className="shrink-0">
           <div className="mb-1 flex justify-between text-sm">
-            <span className="font-medium">{ehUltima ? `${qtdNaCaixa} nesta caixa · última (sem limite)` : `${qtdNaCaixa} / ${limite} nesta caixa`}</span>
+            <span className="font-medium">{ehUltima ? `${qtdAtiva} nesta caixa · última (sem limite)` : `${qtdAtiva} / ${limiteBarra} nesta caixa`}</span>
             <span className="text-muted-foreground">Total: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -182,11 +298,11 @@ export function EmbalagemPanel({
               placeholder="Bipe a peça" autoComplete="off" autoFocus className="h-12 text-lg" disabled={embalando} />
           </div>
           <div className="flex flex-col rounded-lg border border-border p-2">
-            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Nesta caixa ({snsNaCaixa.length})</p>
+            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Nesta caixa ({snsAtivos.length})</p>
             {/* Rola cedo (~5 SNs), no mesmo padrão dos históricos das outras telas (max-h-[8rem]). */}
             <ul className="flex max-h-[8rem] flex-col gap-0.5 overflow-y-auto text-sm">
-              {snsNaCaixa.length === 0 && <li className="text-muted-foreground">—</li>}
-              {snsNaCaixa.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
+              {snsAtivos.length === 0 && <li className="text-muted-foreground">—</li>}
+              {snsAtivos.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
             </ul>
           </div>
         </div>

@@ -93,7 +93,7 @@ interface RegistrosTabelaProps {
 export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProps) {
   const [sel, setSel] = useState<RegistroRow | null>(null)
   const [checando, setChecando] = useState(false)
-  const [cancelavel, setCancelavel] = useState<{ podeCancelar: boolean; motivo?: string } | null>(null)
+  const [cancelavel, setCancelavel] = useState<{ podeCancelar: boolean; motivo?: string; aviso?: string } | null>(null)
   const [confirmAberto, setConfirmAberto] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [cancelando, setCancelando] = useState(false)
@@ -237,6 +237,9 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
                   {!checando && cancelavel && !cancelavel.podeCancelar && cancelavel.motivo && (
                     <p className="mt-1.5 text-xs text-muted-foreground">{cancelavel.motivo}</p>
                   )}
+                  {!checando && cancelavel?.podeCancelar && cancelavel.aviso && (
+                    <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">{cancelavel.aviso}</p>
+                  )}
                 </div>
               )}
             </>
@@ -262,6 +265,11 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
                   onChange={(e) => { setMotivo(e.target.value); if (erroCancel) setErroCancel('') }}
                   placeholder="Ex.: aprovado por engano" />
               </div>
+              {/* Consequência específica do posto (hoje: embalagem reabre a caixa). Repetida aqui
+                  porque é no diálogo que o gestor confirma — e a folha impressa depende disso. */}
+              {cancelavel?.aviso && (
+                <p className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs">{cancelavel.aviso}</p>
+              )}
               {erroCancel && <p className="text-sm text-red-600">{erroCancel}</p>}
             </div>
           )}

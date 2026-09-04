@@ -1,6 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
+import { marcadorCaixaAberta, derivarEstadoCaixas, seqDoMarcadorCaixa, type LinhaCaixa } from '@/modules/shopfloor/domain/caixa'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 export interface EstadoEmbalagem {
@@ -10,9 +10,19 @@ export interface EstadoEmbalagem {
   totalEmbaladas: number // todas as peças embaladas nesta OP+posto
   snsNaCaixa: string[]   // todos os SNs da caixa atual (mais recentes primeiro)
   concluida: boolean     // última caixa já foi fechada
+  caixasReabertas: CaixaReaberta[] // caixas abertas por cancelamento (fora da caixa atual)
 }
 
-interface CaixaRow { seq: number; limite: number; fechada: boolean; ultima: boolean }
+/** Caixa que voltou a ficar ABERTA porque um bipe dela foi cancelado (0098). Ela não toma o lugar
+ *  da caixa atual: fica pendente, o operador escolhe entrar nela pra completar e fechar de novo.
+ *  Vem com os SNs porque a tela mostra o mesmo quadro da caixa atual, e reabertas são poucas e
+ *  pequenas (no máximo o limite da caixa). */
+export interface CaixaReaberta {
+  seq: number
+  limite: number
+  qtd: number
+  sns: string[] // mais recentes primeiro
+}
 
 export async function carregarEstadoEmbalagem(pmo: string, op: string, posto: string): Promise<EstadoEmbalagem> {
   const supabase = await createServerSupabase()
@@ -20,8 +30,8 @@ export async function carregarEstadoEmbalagem(pmo: string, op: string, posto: st
     .from('sf_caixas').select('seq,limite,fechada,ultima')
     .eq('pmo', pmo).eq('op', op).eq('posto', posto).order('seq', { ascending: true })
   if (e1) throw e1
-  const caixas = (caixasData ?? []) as CaixaRow[]
-  const ultima = caixas[caixas.length - 1]
+  const caixas = (caixasData ?? []) as LinhaCaixa[]
+  const d = derivarEstadoCaixas(caixas)
 
   const { count: total, error: eTot } = await supabase
     .from('sf_registros').select('*', { count: 'exact', head: true })
@@ -29,31 +39,42 @@ export async function carregarEstadoEmbalagem(pmo: string, op: string, posto: st
   if (eTot) throw eTot
   const totalEmbaladas = total ?? 0
 
-  // concluída: a última caixa está fechada e marcada como última
-  if (ultima && ultima.fechada && ultima.ultima) {
-    return { seq: ultima.seq, limite: ultima.limite, qtdNaCaixa: 0, totalEmbaladas, snsNaCaixa: [], concluida: true }
-  }
-
-  // caixa atual: última aberta, ou a próxima (seq+1) se a última está fechada
-  const abertaExiste = ultima && !ultima.fechada
-  const seq = !ultima ? 1 : (ultima.fechada ? ultima.seq + 1 : ultima.seq)
-  const limite = ultima ? ultima.limite : null
-
-  let qtdNaCaixa = 0
-  let snsNaCaixa: string[] = []
-  if (abertaExiste) {
-    const marc = marcadorCaixaAberta(seq)
+  // SNs de TODAS as caixas abertas (atual + reabertas) numa consulta só — cada caixa aberta carrega
+  // o marcador CX[seq] nos seus registros, então dá pra buscar por `in` e agrupar aqui.
+  const marcadorAtual = d.atualAberta ? marcadorCaixaAberta(d.seq) : null
+  const marcadores = [
+    ...(marcadorAtual ? [marcadorAtual] : []),
+    ...d.reabertas.map((c) => marcadorCaixaAberta(c.seq)),
+  ]
+  const porMarcador = new Map<string, string[]>()
+  if (marcadores.length > 0) {
     const { data: regs, error: eReg } = await supabase
-      .from('sf_registros').select('numero_serie,data_hora')
-      .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', marc)
+      .from('sf_registros').select('numero_serie,numero_caixa,data_hora')
+      .eq('pmo', pmo).eq('op', op).eq('posto', posto).in('numero_caixa', marcadores)
       .order('data_hora', { ascending: false })
     if (eReg) throw eReg
-    const rows = (regs ?? []) as { numero_serie: string; data_hora: string }[]
-    qtdNaCaixa = rows.length
-    snsNaCaixa = rows.map((r) => r.numero_serie) // todos os SNs da caixa (mais recentes primeiro)
+    for (const r of (regs ?? []) as { numero_serie: string; numero_caixa: string }[]) {
+      const arr = porMarcador.get(r.numero_caixa) ?? []
+      arr.push(r.numero_serie)
+      porMarcador.set(r.numero_caixa, arr)
+    }
   }
 
-  return { seq, limite, qtdNaCaixa, totalEmbaladas, snsNaCaixa, concluida: false }
+  const caixasReabertas: CaixaReaberta[] = d.reabertas.map((c) => {
+    const sns = porMarcador.get(marcadorCaixaAberta(c.seq)) ?? []
+    return { seq: c.seq, limite: c.limite, qtd: sns.length, sns }
+  })
+  const snsNaCaixa = marcadorAtual ? (porMarcador.get(marcadorAtual) ?? []) : []
+
+  return {
+    seq: d.seq,
+    limite: d.limite,
+    qtdNaCaixa: snsNaCaixa.length,
+    totalEmbaladas,
+    snsNaCaixa,
+    concluida: d.concluida,
+    caixasReabertas,
+  }
 }
 
 /** Cria a linha da caixa (seq, limite) se ainda não existir. Idempotente. */
@@ -258,4 +279,27 @@ export async function resolverCaixaPorSn(
     pendentesReteste,
     postoReteste,
   }
+}
+
+/**
+ * Estado da caixa a que um registro de embalagem pertence — só pra AVISAR o gestor, antes de
+ * cancelar, que a caixa vai ser REABERTA (e a folha impressa vai precisar de reimpressão).
+ * Null quando não há caixa: embalagem individual (numero_caixa = o próprio SN) ou registro antigo.
+ */
+export async function estadoCaixaDoRegistro(
+  pmo: string, op: string, posto: string, numeroCaixa: string,
+): Promise<{ seq: number; fechada: boolean } | null> {
+  const alvo = numeroCaixa.trim()
+  if (alvo === '') return null // codigo='' das caixas abertas casaria com tudo
+  const supabase = await createServerSupabase()
+  const seqMarcador = seqDoMarcadorCaixa(alvo)
+  const base = supabase.from('sf_caixas').select('seq,fechada')
+    .eq('pmo', pmo).eq('op', op).eq('posto', posto)
+  // Caixa aberta → o registro carrega o marcador CX[seq]; fechada → carrega o código final.
+  const { data, error } = await (seqMarcador !== null ? base.eq('seq', seqMarcador) : base.eq('codigo', alvo))
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const r = data as { seq: number; fechada: boolean }
+  return { seq: r.seq, fechada: r.fechada }
 }
