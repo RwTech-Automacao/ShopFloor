@@ -12,6 +12,50 @@ import type { AmostraNqa } from './nqa-caixa-actions'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 
+/** Teto de linhas por requisição do PostgREST (PGRST_DB_MAX_ROWS). Acima disso ele CORTA calado. */
+const BLOCO_POSTGREST = 1000
+/** SNs por consulta. Cada peça tem vários registros (1 por posto), então buscar 200 peças de uma
+ *  vez passa fácil do teto — e o corte silencioso faria peça válida parecer inexistente. */
+const SNS_POR_CONSULTA = 25
+
+interface RegistroDoSn {
+  numero_serie_norm: string
+  posto: string
+}
+
+/**
+ * Registros das peças informadas, em blocos — a lista vem ordenada do mais recente pro mais antigo
+ * DENTRO de cada fatia de SNs, que é o suficiente: cada SN cai em uma fatia só, então o primeiro
+ * registro que aparece para um SN é sempre o último dele.
+ */
+async function registrosDosSns(
+  supabase: Awaited<ReturnType<typeof createServerSupabase>>,
+  pmo: string,
+  op: string,
+  snsNorm: string[],
+): Promise<RegistroDoSn[]> {
+  const linhas: RegistroDoSn[] = []
+  for (let i = 0; i < snsNorm.length; i += SNS_POR_CONSULTA) {
+    const fatia = snsNorm.slice(i, i + SNS_POR_CONSULTA)
+    for (let de = 0; ; de += BLOCO_POSTGREST) {
+      const { data, error } = await supabase
+        .from('sf_registros')
+        .select('numero_serie_norm,posto,data_hora,created_at')
+        .eq('pmo', pmo)
+        .eq('op', op)
+        .in('numero_serie_norm', fatia)
+        .order('data_hora', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(de, de + BLOCO_POSTGREST - 1)
+      if (error) throw error
+      const bloco = (data ?? []) as RegistroDoSn[]
+      linhas.push(...bloco)
+      if (bloco.length < BLOCO_POSTGREST) break
+    }
+  }
+  return linhas
+}
+
 export interface LoteNqaIndividual {
   qtd: number
   amostra: number
@@ -126,16 +170,9 @@ export async function buscarIrmasLoteReprovado(
     if (candidatos.length === 0) return { ok: true, irmas: { elegiveis: [], pendentes: [] } }
 
     // Último registro (qualquer posto) de cada irmã — só está pronta se já SAIU do NQA.
-    const { data: hist, error: e3 } = await supabase
-      .from('sf_registros')
-      .select('numero_serie_norm,posto,data_hora,created_at')
-      .eq('pmo', pmo.trim()).eq('op', op.trim())
-      .in('numero_serie_norm', candidatos)
-      .order('data_hora', { ascending: false })
-      .order('created_at', { ascending: false })
-    if (e3) throw e3
+    const hist = await registrosDosSns(supabase, pmo.trim(), op.trim(), candidatos)
     const ultimoPosto = new Map<string, string>()
-    for (const l of (hist ?? []) as { numero_serie_norm: string; posto: string }[]) {
+    for (const l of hist) {
       if (!ultimoPosto.has(l.numero_serie_norm)) ultimoPosto.set(l.numero_serie_norm, l.posto)
     }
 
@@ -167,16 +204,7 @@ export async function carregarLoteNqaIndividual(
 
   try {
     const supabase = await createServerSupabase()
-    const { data, error } = await supabase
-      .from('sf_registros')
-      .select('numero_serie_norm,posto,data_hora,created_at')
-      .eq('pmo', pmo.trim())
-      .eq('op', op.trim())
-      .in('numero_serie_norm', snsNorm)
-      .order('data_hora', { ascending: false })
-      .order('created_at', { ascending: false })
-    if (error) throw error
-    const linhas = (data ?? []) as { numero_serie_norm: string; posto: string }[]
+    const linhas = await registrosDosSns(supabase, pmo.trim(), op.trim(), snsNorm)
 
     const encontrados = new Set(linhas.map((l) => l.numero_serie_norm))
     const faltando = snsNorm.filter((s) => !encontrados.has(s))
