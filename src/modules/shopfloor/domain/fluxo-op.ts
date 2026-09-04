@@ -219,7 +219,12 @@ export function postoPendenteDePeca(
   if (st === 'reprovado') return exigeManutencaoDe(ultimo.posto) ? MANUTENCAO : ultimo.posto
   if (st === '' && recursoDe(ultimo.posto) === 'burnin') return ultimo.posto // entrada = cozinhando aqui
   const idx = postosOrdenados.findIndex((p) => p.toLowerCase() === ultimo.posto.toLowerCase())
-  if (idx < 0 || idx >= postosOrdenados.length - 1) return null // posto desconhecido ou último → concluída
+  // Posto FORA do fluxo da OP — na prática, MANUTENÇÃO: a peça reprovou, foi pra lá e o reparo já
+  // foi registrado; ela ainda precisa VOLTAR. Isto estava junto com o "último posto" no mesmo
+  // `return null`, então a peça contava como FINALIZADA e ainda sumia da fila da Manutenção
+  // (o WIP de cada nó é justamente esta contagem). Aguardando onde está é a leitura honesta.
+  if (idx < 0) return ultimo.posto
+  if (idx >= postosOrdenados.length - 1) return null // último posto do fluxo → concluída
   return postosOrdenados[idx + 1] ?? null
 }
 
