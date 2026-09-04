@@ -295,6 +295,10 @@ export function NqaIndividualPanel({
               inputMode="numeric"
               value={qtdLote}
               onChange={(e) => setQtdLote(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter na quantidade pula pro bipe — o fluxo é teclado/coletor, sem mouse.
+                if (e.key === 'Enter') { e.preventDefault(); loteRef.current?.focus() }
+              }}
               placeholder="Quantas peças este lote tem"
               autoComplete="off"
               autoFocus
