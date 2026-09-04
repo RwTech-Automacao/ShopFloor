@@ -22,6 +22,7 @@ import { IntegracaoPanel } from './integracao-panel'
 import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { NqaCaixaPanel } from './nqa-caixa-panel'
+import { NqaIndividualPanel } from './nqa-individual-panel'
 import { lerNqaProgresso, limparNqaProgresso, type NqaProgresso } from './nqa-progresso-local'
 import { AprovarModal } from './aprovar-modal'
 import { ReprovarModal } from './reprovar-modal'
@@ -148,6 +149,7 @@ export function LancamentoForm({
   // NQA por caixa: posto NQA numa OP de embalagem COLETIVA → painel de amostragem por caixa.
   // (NQA individual / sem OP selecionada continua nos Selects inline de Visual/Funcional abaixo.)
   const ehNqaCaixa = ehNqa && ordemSel !== null && !ordemSel.embalagem_individual
+  const ehNqaIndividual = ehNqa && ordemSel !== null && ordemSel.embalagem_individual
   const ehSpi = perfilDo(posto).reprova === 'posicoes'
   const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
@@ -681,8 +683,14 @@ export function LancamentoForm({
           </div>
         )}
 
+        {ehNqaIndividual && (
+          <div className="flex min-h-0 flex-col lg:col-span-2">
+            <NqaIndividualPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
+          </div>
+        )}
+
         {/* Bipagem */}
-        {!ehIntegracao && !ehEmbalagem && !ehNqaCaixa && (
+        {!ehIntegracao && !ehEmbalagem && !ehNqaCaixa && !ehNqaIndividual && (
           <>
             <Card className="flex min-h-0 flex-col">
               <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
