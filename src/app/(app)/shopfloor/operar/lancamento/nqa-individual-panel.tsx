@@ -288,7 +288,7 @@ export function NqaIndividualPanel({
             <PainelResultado resultado={resultado} />
           </div>
 
-          <div className="flex shrink-0 flex-col gap-1.5 sm:max-w-xs">
+          <div className="flex w-28 shrink-0 flex-col gap-1.5">
             <Label htmlFor="qtdLoteNqa">Quantidade do lote</Label>
             <Input
               id="qtdLoteNqa"
