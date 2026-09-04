@@ -75,6 +75,23 @@ begin
     raise exception 'LOTE_JA_INSPECIONADO';
   end if;
 
+  -- Reteste INCOMPLETO: peça reprovada leva em `posto_retorno` os postos que ainda deve repassar,
+  -- em ordem, com o NQA no fim; cada passagem consome o primeiro da lista. Se o que sobra na frente
+  -- não é o próprio NQA, ela ainda não terminou a rota e não pode entrar num lote novo — o lote
+  -- inteiro precisa passar por TODOS os postos escolhidos na reprova antes de voltar.
+  if exists (
+    select 1 from (
+      select distinct on (r.numero_serie_norm) r.numero_serie_norm, r.posto_retorno
+      from sf_registros r
+      where r.pmo = p_pmo and r.op = p_op and r.numero_serie_norm = any(p_sns_norm)
+      order by r.numero_serie_norm, r.data_hora desc, r.created_at desc
+    ) ult
+    where coalesce(ult.posto_retorno, '') <> ''
+      and split_part(ult.posto_retorno, ',', 1) <> p_posto
+  ) then
+    raise exception 'RETESTE_INCOMPLETO';
+  end if;
+
   -- toda amostra tem que ser DESTE lote.
   if exists (
     select 1 from jsonb_array_elements(coalesce(p_amostras, '[]'::jsonb)) as el(v)

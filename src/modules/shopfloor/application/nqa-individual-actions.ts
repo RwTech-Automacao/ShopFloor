@@ -21,6 +21,20 @@ const SNS_POR_CONSULTA = 25
 interface RegistroDoSn {
   numero_serie_norm: string
   posto: string
+  posto_retorno: string | null
+}
+
+/**
+ * A peça terminou a rota de reteste? Depois de uma reprova, `posto_retorno` guarda os postos que
+ * ela ainda deve repassar, EM ORDEM, com o NQA no fim. Cada passagem consome o primeiro da lista.
+ * Só está pronta pro NQA quando não sobra rota, ou quando o que sobra é o próprio NQA.
+ * Devolve '' quando pronta, ou o NOME do posto que ainda falta.
+ */
+function postoQueFalta(rota: string | null, postoNqa: string): string {
+  const pendente = (rota ?? '').trim()
+  if (pendente === '') return ''
+  const proximo = (pendente.split(',')[0] ?? '').trim()
+  return proximo === postoNqa ? '' : proximo
 }
 
 /**
@@ -40,7 +54,7 @@ async function registrosDosSns(
     for (let de = 0; ; de += BLOCO_POSTGREST) {
       const { data, error } = await supabase
         .from('sf_registros')
-        .select('numero_serie_norm,posto,data_hora,created_at')
+        .select('numero_serie_norm,posto,posto_retorno,data_hora,created_at')
         .eq('pmo', pmo)
         .eq('op', op)
         .in('numero_serie_norm', fatia)
@@ -92,14 +106,14 @@ export async function validarBipeLoteIndividual(
     const supabase = await createServerSupabase()
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('posto,data_hora,created_at')
+      .select('posto,posto_retorno,data_hora,created_at')
       .eq('pmo', pmo.trim())
       .eq('op', op.trim())
       .eq('numero_serie_norm', snNorm)
       .order('data_hora', { ascending: false })
       .order('created_at', { ascending: false })
     if (error) throw error
-    const linhas = (data ?? []) as { posto: string }[]
+    const linhas = (data ?? []) as { posto: string; posto_retorno: string | null }[]
     if (linhas.length === 0) return { ok: false, erro: 'Este Nº de Série não pertence a esta OP.' }
 
     // Embalada? Precisa ter passado por algum posto de perfil `caixa` (embalagem).
@@ -110,8 +124,16 @@ export async function validarBipeLoteIndividual(
     }
 
     // A query veio ordenada desc: a primeira linha é o último registro da peça.
-    if (linhas[0]!.posto === posto.trim()) {
+    const postoTrim = posto.trim()
+    const ultimo = linhas[0]!
+    if (ultimo.posto === postoTrim) {
       return { ok: false, erro: 'Esta peça já está no NQA — aguardando reteste ou já finalizada.' }
+    }
+
+    // Reteste incompleto: reprovou no NQA e ainda deve passar por posto(s) da rota escolhida.
+    const falta = postoQueFalta(ultimo.posto_retorno, postoTrim)
+    if (falta !== '') {
+      return { ok: false, erro: `Esta peça ainda precisa passar por ${falta} antes de voltar ao NQA.` }
     }
 
     if (!ancora) return { ok: true, snNorm, irmas: vazio }
@@ -171,13 +193,17 @@ export async function buscarIrmasLoteReprovado(
 
     // Último registro (qualquer posto) de cada irmã — só está pronta se já SAIU do NQA.
     const hist = await registrosDosSns(supabase, pmo.trim(), op.trim(), candidatos)
-    const ultimoPosto = new Map<string, string>()
-    for (const l of hist) {
-      if (!ultimoPosto.has(l.numero_serie_norm)) ultimoPosto.set(l.numero_serie_norm, l.posto)
-    }
+    const ultimo = new Map<string, RegistroDoSn>()
+    for (const l of hist) if (!ultimo.has(l.numero_serie_norm)) ultimo.set(l.numero_serie_norm, l)
 
-    const elegiveis = candidatos.filter((s) => ultimoPosto.get(s) !== postoTrim)
-    const pendentes = candidatos.filter((s) => ultimoPosto.get(s) === postoTrim)
+    // Pronta = saiu do NQA E terminou a rota de reteste. Quem ainda deve posto fica pendente.
+    const pronta = (sn: string) => {
+      const u = ultimo.get(sn)
+      if (!u || u.posto === postoTrim) return false
+      return postoQueFalta(u.posto_retorno, postoTrim) === ''
+    }
+    const elegiveis = candidatos.filter(pronta)
+    const pendentes = candidatos.filter((s) => !pronta(s))
     return { ok: true, irmas: { elegiveis, pendentes } }
   } catch {
     return { ok: false, erro: 'Não foi possível verificar peças-irmãs de lote reprovado.' }
@@ -231,14 +257,26 @@ export async function carregarLoteNqaIndividual(
     }
 
     // A query já veio ordenada desc (data_hora, created_at) — o primeiro que aparece por SN é o último registro.
-    const ultimoPosto = new Map<string, string>()
-    for (const l of linhas) if (!ultimoPosto.has(l.numero_serie_norm)) ultimoPosto.set(l.numero_serie_norm, l.posto)
+    const ultimo = new Map<string, RegistroDoSn>()
+    for (const l of linhas) if (!ultimo.has(l.numero_serie_norm)) ultimo.set(l.numero_serie_norm, l)
     const postoTrim = posto.trim()
-    const jaInspecionados = snsNorm.filter((s) => ultimoPosto.get(s) === postoTrim)
+    const jaInspecionados = snsNorm.filter((s) => ultimo.get(s)?.posto === postoTrim)
     if (jaInspecionados.length > 0) {
       return {
         ok: false,
         erro: `Já inspecionado no NQA: ${jaInspecionados.slice(0, 3).join(', ')}${jaInspecionados.length > 3 ? '…' : ''}`,
+      }
+    }
+
+    // Reteste incompleto: peça reprovada que ainda deve passar por posto(s) da rota escolhida.
+    const incompletas = snsNorm
+      .map((sn) => ({ sn, falta: postoQueFalta(ultimo.get(sn)?.posto_retorno ?? '', postoTrim) }))
+      .filter((x) => x.falta !== '')
+    if (incompletas.length > 0) {
+      const amostra = incompletas.slice(0, 3).map((x) => `${x.sn} (falta ${x.falta})`).join(', ')
+      return {
+        ok: false,
+        erro: `Ainda não terminou o reteste: ${amostra}${incompletas.length > 3 ? '…' : ''}`,
       }
     }
 
@@ -303,6 +341,7 @@ export async function finalizarNqaIndividual(entrada: {
       if (msg.includes('LOTE_SN_DUPLICADO')) return { ok: false, erro: 'Há Nº de Série repetido no lote.' }
       if (msg.includes('SN_FORA_DA_OP')) return { ok: false, erro: 'Há Nº de Série que não pertence a esta OP.' }
       if (msg.includes('LOTE_JA_INSPECIONADO')) return { ok: false, erro: 'Uma ou mais peças do lote já foram inspecionadas no NQA.' }
+      if (msg.includes('RETESTE_INCOMPLETO')) return { ok: false, erro: 'Há peça que ainda não passou por todos os postos da rota de reteste.' }
       if (msg.includes('AMOSTRA_FORA_DO_LOTE')) return { ok: false, erro: 'Há amostra que não pertence a este lote. Recarregue e inspecione de novo.' }
       if (msg.includes('AMOSTRAS_INSUFICIENTES')) return { ok: false, erro: 'Quantidade de amostras menor que a exigida pela Tabela NQA.' }
       if (msg.includes('APROVADO_COM_REPROVA')) return { ok: false, erro: 'Não é possível aprovar: há amostra reprovada.' }
