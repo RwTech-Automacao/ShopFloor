@@ -17,6 +17,80 @@ export interface LoteNqaIndividual {
   snsNorm: string[]
 }
 
+export interface IrmasLoteReprovado {
+  elegiveis: string[]  // SNs do mesmo lote reprovado, já de volta do retrabalho — prontas pra reentrar
+  pendentes: string[]  // SNs do mesmo lote, ainda não saíram do NQA (retrabalho não iniciado)
+}
+
+/**
+ * Ao bipar a PRIMEIRA peça de um lote novo, verifica se ela é "irmã" de um lote reprovado
+ * anteriormente (mesma `nqa_lote_id`) — e se as demais já voltaram do retrabalho. Sem caixa física
+ * ligando as peças, é assim que o painel reconhece o grupo sozinho, igual à caixa reconhece pelo
+ * `numero_caixa`. Retorna listas vazias se esta peça nunca fez parte de um lote reprovado.
+ */
+export async function buscarIrmasLoteReprovado(
+  pmo: string,
+  op: string,
+  posto: string,
+  sn: string,
+): Promise<{ ok: true; irmas: IrmasLoteReprovado } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
+  const snNorm = normalizarSerie(sn)
+  if (!snNorm) return { ok: true, irmas: { elegiveis: [], pendentes: [] } }
+
+  try {
+    const supabase = await createServerSupabase()
+    const postoTrim = posto.trim()
+
+    // Último lote REPROVADO desta peça neste posto (se houver) — define o grupo a reconstruir.
+    const { data: reprovacoes, error: e1 } = await supabase
+      .from('sf_registros')
+      .select('nqa_lote_id,data_hora,created_at')
+      .eq('pmo', pmo.trim()).eq('op', op.trim()).eq('posto', postoTrim)
+      .eq('numero_serie_norm', snNorm)
+      .ilike('status', 'reprovado')
+      .not('nqa_lote_id', 'is', null)
+      .order('data_hora', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (e1) throw e1
+    const loteId = (reprovacoes?.[0] as { nqa_lote_id: string } | undefined)?.nqa_lote_id
+    if (!loteId) return { ok: true, irmas: { elegiveis: [], pendentes: [] } }
+
+    // Demais SNs do mesmo lote (exclui a própria peça bipada).
+    const { data: irmasData, error: e2 } = await supabase
+      .from('sf_registros')
+      .select('numero_serie_norm')
+      .eq('pmo', pmo.trim()).eq('op', op.trim()).eq('posto', postoTrim)
+      .eq('nqa_lote_id', loteId)
+      .neq('numero_serie_norm', snNorm)
+    if (e2) throw e2
+    const candidatos = [...new Set((irmasData ?? []).map((r) => (r as { numero_serie_norm: string }).numero_serie_norm))]
+    if (candidatos.length === 0) return { ok: true, irmas: { elegiveis: [], pendentes: [] } }
+
+    // Último registro (qualquer posto) de cada irmã — só está pronta se já SAIU do NQA.
+    const { data: hist, error: e3 } = await supabase
+      .from('sf_registros')
+      .select('numero_serie_norm,posto,data_hora,created_at')
+      .eq('pmo', pmo.trim()).eq('op', op.trim())
+      .in('numero_serie_norm', candidatos)
+      .order('data_hora', { ascending: false })
+      .order('created_at', { ascending: false })
+    if (e3) throw e3
+    const ultimoPosto = new Map<string, string>()
+    for (const l of (hist ?? []) as { numero_serie_norm: string; posto: string }[]) {
+      if (!ultimoPosto.has(l.numero_serie_norm)) ultimoPosto.set(l.numero_serie_norm, l.posto)
+    }
+
+    const elegiveis = candidatos.filter((s) => ultimoPosto.get(s) !== postoTrim)
+    const pendentes = candidatos.filter((s) => ultimoPosto.get(s) === postoTrim)
+    return { ok: true, irmas: { elegiveis, pendentes } }
+  } catch {
+    return { ok: false, erro: 'Não foi possível verificar peças-irmãs de lote reprovado.' }
+  }
+}
+
 /**
  * Fecha o lote que o NQA definiu bipando peça a peça — embalagem individual não tem caixa física
  * pra agrupar (cada peça é seu próprio "pacote"). Valida que TODOS os SNs pertencem a esta OP e

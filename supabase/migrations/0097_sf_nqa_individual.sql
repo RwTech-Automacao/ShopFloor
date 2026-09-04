@@ -6,7 +6,15 @@
 -- aprova o lote inteiro; 1 reprovada → reprova o lote inteiro e ele volta pro(s) posto(s)
 -- ESCOLHIDO(S) (posto_retorno) — mesma semântica do NQA por caixa (sf_nqa_caixa), só que a
 -- membresia do "lote" vem de um array de SNs definido pelo cliente em vez de numero_caixa.
+--
+-- `nqa_lote_id`: como não existe numero_caixa persistindo o agrupamento (é definido na hora, só
+-- na memória do cliente), toda peça inspecionada num lote grava a MESMA marca. Quando um lote
+-- reprova e as peças voltam do retrabalho, o painel usa essa marca pra RECONHECER as peças-irmãs
+-- ao bipar qualquer uma delas de novo — sem isso, a pessoa teria que lembrar de cabeça quais SNs
+-- formavam o lote reprovado.
 -- =============================================================
+
+alter table public.sf_registros add column if not exists nqa_lote_id uuid;
 
 create or replace function public.sf_nqa_individual(
   p_pmo           text,
@@ -29,6 +37,7 @@ declare
   v_encontrados int;
   v_cliente text;
   v_amostra_req numeric;
+  v_lote_id uuid := gen_random_uuid();
 begin
   if not tem_permissao('lancar') then
     raise exception 'SEM_PERMISSAO';
@@ -120,13 +129,13 @@ begin
     limit 1;
 
     insert into sf_registros (colaborador, posto, pmo, op, cliente, status,
-      numero_serie, numero_serie_norm, nqa_visual, nqa_funcional, observacao, posto_retorno)
+      numero_serie, numero_serie_norm, nqa_visual, nqa_funcional, observacao, posto_retorno, nqa_lote_id)
     values (p_colaborador, p_posto, p_pmo, p_op, coalesce(v_cliente, ''), p_resultado,
       v_sn.numero_serie, v_sn.numero_serie_norm,
       coalesce(v_amostra->>'visual', ''), coalesce(v_amostra->>'funcional', ''),
       case when v_amostra is not null then coalesce(v_amostra->>'observacao', '')
            else 'Por amostragem' end,
-      nullif(p_posto_retorno, ''));
+      nullif(p_posto_retorno, ''), v_lote_id);
   end loop;
 
   return jsonb_build_object('ok', true, 'total', v_total);

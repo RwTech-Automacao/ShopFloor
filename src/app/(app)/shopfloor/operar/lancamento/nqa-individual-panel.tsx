@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
-import { carregarLoteNqaIndividual, finalizarNqaIndividual, type LoteNqaIndividual } from '@/modules/shopfloor/application/nqa-individual-actions'
+import { carregarLoteNqaIndividual, finalizarNqaIndividual, buscarIrmasLoteReprovado, type LoteNqaIndividual } from '@/modules/shopfloor/application/nqa-individual-actions'
 import { type AmostraNqa } from '@/modules/shopfloor/application/nqa-caixa-actions'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { salvarNqaIndividualProgresso, limparNqaIndividualProgresso, lerNqaIndividualProgresso } from './nqa-individual-progresso-local'
@@ -100,7 +100,12 @@ export function NqaIndividualPanel({
     limparNqaIndividualProgresso()
   }
 
-  /** Fase A: bipe de uma peça do lote — só acumula localmente (dedupe por SN normalizado). */
+  /**
+   * Fase A: bipe de uma peça do lote — acumula localmente (dedupe por SN normalizado). Na peça
+   * ÂNCORA (1ª do lote), verifica se ela é irmã de um lote reprovado anteriormente — se as demais
+   * já voltaram do retrabalho, pré-lista todas automaticamente (igual a caixa reconhece pelo
+   * numero_caixa); se alguma ainda não voltou, avisa quais faltam.
+   */
   function onBiparLote() {
     if (snLote.trim() === '') return
     const norm = normalizarSerie(snLote)
@@ -110,10 +115,34 @@ export function NqaIndividualPanel({
       setTimeout(() => loteRef.current?.focus(), 0)
       return
     }
-    setSnsLote((prev) => [...prev, snLote.trim()])
+    const ancora = snsLote.length === 0
+    const snBipado = snLote.trim()
+    setSnsLote((prev) => [...prev, snBipado])
     setResultado(null)
     setSnLote('')
     setTimeout(() => loteRef.current?.focus(), 0)
+
+    if (ancora) {
+      startFechar(async () => {
+        const r = await buscarIrmasLoteReprovado(pmo, op, posto, snBipado)
+        if (!r.ok || (r.irmas.elegiveis.length === 0 && r.irmas.pendentes.length === 0)) return
+        const { elegiveis, pendentes } = r.irmas
+        if (elegiveis.length > 0) {
+          setSnsLote((prev) => [...prev, ...elegiveis.filter((e) => !prev.some((s) => normalizarSerie(s) === e))])
+        }
+        setResultado({
+          tipo: pendentes.length > 0 ? 'aviso' : 'ok',
+          titulo:
+            elegiveis.length > 0
+              ? `Peça de um lote reprovado — ${elegiveis.length} peça(s)-irmã(s) adicionada(s) automaticamente`
+              : `Peça de um lote reprovado — as demais ainda não voltaram do retrabalho`,
+          chips: [
+            ...elegiveis.map((s) => ({ rotulo: 'Adicionada', valor: s, mono: true })),
+            ...pendentes.map((s) => ({ rotulo: 'Falta voltar', valor: s, mono: true })),
+          ],
+        })
+      })
+    }
   }
 
   function removerDoLote(sn: string) {
