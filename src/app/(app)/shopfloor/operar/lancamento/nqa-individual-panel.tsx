@@ -81,13 +81,15 @@ export function NqaIndividualPanel({
     return () => clearTimeout(id)
   }, [lote])
 
-  // Depois de finalizar (volta à fase A), refoca o bipe do lote.
+  // Refoca o bipe do lote quando o campo DESTRAVA. Ele fica disabled durante a validação do bipe
+  // e durante a finalização; pedir foco de dentro da transição não funciona (o campo ainda está
+  // travado e o foco se perde ao remontar). Mesmo padrão dos outros painéis do Lançamento.
   useEffect(() => {
-    if (finalizando) return
+    if (fechando || finalizando) return
     if (!focarLoteApos.current) return
     focarLoteApos.current = false
     loteRef.current?.focus()
-  }, [finalizando])
+  }, [fechando, finalizando])
 
   // Persiste o progresso (localStorage) a cada mudança relevante — some no refresh sem isto.
   useEffect(() => {
@@ -162,7 +164,7 @@ export function NqaIndividualPanel({
       const r = await validarBipeLoteIndividual(pmo, op, posto, snBipado, ancora)
       if (!r.ok) {
         setResultado({ tipo: 'aviso', titulo: r.erro, chips: [{ rotulo: 'Nº Série', valor: snBipado, mono: true }] })
-        setTimeout(() => loteRef.current?.focus(), 0)
+        focarLoteApos.current = true
         return
       }
       const { elegiveis, pendentes } = r.irmas
@@ -188,7 +190,7 @@ export function NqaIndividualPanel({
           ],
         })
       }
-      setTimeout(() => loteRef.current?.focus(), 0)
+      focarLoteApos.current = true
     })
   }
 
