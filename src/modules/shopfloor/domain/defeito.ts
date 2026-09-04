@@ -20,3 +20,90 @@ export function validarDefeito(
   }
   return { ok: true, valor: { codigo, tipo: entrada.tipo } }
 }
+
+// ---------------------------------------------------------------------------
+// Título do defeito (tela de Defeitos do Fluxo)
+// ---------------------------------------------------------------------------
+
+/** Partes do título de um defeito, já prontas pra exibir. */
+export interface TituloDefeito {
+  posicao: string
+  numero: string
+  descricao: string
+  sigla: string
+  texto: string
+}
+
+/**
+ * Separa o código do catálogo em NÚMERO + DESCRIÇÃO. `sf_defeitos.codigo` guarda os dois no mesmo
+ * texto ('2040 COMPONENTE FALTANDO') — é a chave da tabela, então não dá pra quebrar em colunas sem
+ * migrar o catálogo inteiro. Sem número na frente ('TRILHA ROMPIDA') → tudo vira descrição.
+ */
+export function separarCodigoDefeito(codigo: string): { numero: string; descricao: string } {
+  const m = /^\s*(\d+)\s*(.*)$/.exec(codigo ?? '')
+  if (!m) return { numero: '', descricao: (codigo ?? '').trim() }
+  return { numero: m[1]!, descricao: m[2]!.trim() }
+}
+
+/** 'COMPONENTE FALTANDO' → 'Componente Faltando' (o catálogo é todo MAIÚSCULO; grita na tela). */
+export function capitalizarDescricaoDefeito(texto: string): string {
+  return texto
+    .toLocaleLowerCase('pt-BR')
+    // Maiúscula na 1ª letra de cada palavra — casa letra precedida de não-letra (ou início), então
+    // 'solda fria/pth' vira 'Solda Fria/Pth' sem precisar decidir separadores na mão.
+    .replace(/(^|[^\p{L}\p{M}])(\p{L})/gu, (_, antes: string, letra: string) => antes + letra.toLocaleUpperCase('pt-BR'))
+}
+
+/** Tira acentos e caixa — comparar 'Peça' com 'PECA' sem depender de como foi digitado. */
+const semAcento = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+
+/**
+ * Sigla do tipo do defeito: P = peça, T = teste. Aceita as DUAS fontes que existem hoje:
+ *  - o tipo do CATÁLOGO (`sf_defeitos.tipo`: smallint 1 = peça, 2 = teste) — a autoridade;
+ *  - o texto gravado no registro (`sf_registros.tipo_defeito`), que é livre: o bipe grava
+ *    'Peça'/'Teste', mas o formulário de reprova manual grava 'SMD', 'PTH', 'Funcional'…
+ * Tipo que não é reconhecidamente peça nem teste → '' (o título sai sem a sigla, em vez de inventar
+ * uma letra que o operador leria como outra coisa).
+ */
+export function siglaTipoDefeito(tipo: string | number | null | undefined): string {
+  if (tipo === null || tipo === undefined) return ''
+  if (typeof tipo === 'number') return tipo === 1 ? 'P' : tipo === 2 ? 'T' : ''
+  const t = semAcento(tipo)
+  if (t === '') return ''
+  if (t === '1' || t.startsWith('pec')) return 'P'
+  if (t === '2' || t.startsWith('test')) return 'T'
+  return ''
+}
+
+/**
+ * Título de UM defeito para a tela de acompanhamento, no formato pedido pelo usuário:
+ *
+ *     H1: Componente Faltando P: Cod.: 2040
+ *     └┬┘  └───────┬────────┘ ┬  └────┬───┘
+ *   posição    descrição    tipo    número do catálogo
+ *
+ * ⚠️ FORMATO AINDA NÃO CONFIRMADO pelo usuário (foi deduzido do único exemplo dado). Esta é a
+ * ÚNICA montagem do título no sistema — se o formato mudar, muda só aqui e as duas telas seguem.
+ * Partes ausentes simplesmente somem (sem deixar ': ' solto); tudo vazio → 'Defeito'.
+ */
+export function formatarTituloDefeito(entrada: {
+  codigo: string
+  posicao?: string | null
+  tipo?: string | number | null
+}): TituloDefeito {
+  const { numero, descricao } = separarCodigoDefeito(entrada.codigo ?? '')
+  const partes = {
+    posicao: (entrada.posicao ?? '').trim(),
+    numero,
+    descricao: capitalizarDescricaoDefeito(descricao),
+    sigla: siglaTipoDefeito(entrada.tipo),
+  }
+  const pedacos: string[] = []
+  if (partes.posicao) pedacos.push(`${partes.posicao}:`)
+  if (partes.descricao) pedacos.push(partes.descricao)
+  if (partes.sigla) pedacos.push(`${partes.sigla}:`)
+  if (partes.numero) pedacos.push(`Cod.: ${partes.numero}`)
+  // O ':' pertence ao pedaço da ESQUERDA; se o da direita não existe, ele fica pendurado no fim.
+  const texto = pedacos.join(' ').replace(/:$/, '')
+  return { ...partes, texto: texto || 'Defeito' }
+}
