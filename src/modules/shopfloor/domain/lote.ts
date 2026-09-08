@@ -28,6 +28,19 @@ export function temPendentes<T extends { estado: EstadoItemLote }>(itens: readon
   return itens.some((i) => i.estado === 'pendente')
 }
 
+/**
+ * Cor do item do lote na UI. Os emojis do `emojiItemLote` NÃO garantem cor: em aparelho sem fonte
+ * de emoji colorida (caso dos tablets do chão de fábrica) o ❌ cai no glifo monocromático e sai
+ * PRETO — o operador perde o vermelho que diferencia a reprova de relance. A cor por CSS vale nos
+ * dois casos: pinta o glifo monocromático e é ignorada quando a fonte já é colorida.
+ */
+export function corItemLote(i: { estado: EstadoItemLote; outcome?: 'aprovado' | 'reprovado' | null; erro?: string }): string {
+  if (i.estado === 'pendente') return 'text-muted-foreground'
+  if (i.erro) return 'text-amber-600'
+  if (i.outcome === 'reprovado') return 'text-red-600'
+  return 'text-green-700'
+}
+
 /** Emoji do item do lote na UI: ⏳ pendente · ✔️ aprovado · ❌ reprovado · ⚠️ falhou no envio. */
 export function emojiItemLote(i: { estado: EstadoItemLote; outcome?: 'aprovado' | 'reprovado' | null; erro?: string }): string {
   if (i.estado === 'pendente') return '⏳'

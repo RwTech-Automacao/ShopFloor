@@ -16,7 +16,7 @@ import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
 import { lancar, lancarLote, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, carregarLotePendente, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
-import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes, emojiItemLote } from '@/modules/shopfloor/domain/lote'
+import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes, emojiItemLote, corItemLote } from '@/modules/shopfloor/domain/lote'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
@@ -1100,7 +1100,7 @@ export function LancamentoForm({
                           title={item.estado === 'resolvido' ? (item.erro ?? '') : 'Pendente'}
                           className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-sm"
                         >
-                          <span>{emojiItemLote(item)}</span>
+                          <span className={corItemLote(item)}>{emojiItemLote(item)}</span>
                           <span className="font-mono">{item.sn}</span>
                           <button
                             type="button"
