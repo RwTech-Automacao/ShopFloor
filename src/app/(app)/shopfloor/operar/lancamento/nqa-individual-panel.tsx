@@ -350,7 +350,9 @@ export function NqaIndividualPanel({
                 <p className="text-xs text-amber-600">Remova {snsLote.length - meta} peça(s) ou aumente a quantidade</p>
               )}
             </div>
-            <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+            {/* Rola a partir de ~5 SNs (cada item ~28px + gap): num lote de 40 peças a lista tomava
+                a tela inteira e empurrava o botão de fechar o lote pra fora. */}
+            <ul className="flex max-h-[10rem] min-h-0 flex-col gap-1 overflow-y-auto">
               {snsLote.length === 0 && <li className="text-sm text-muted-foreground">—</li>}
               {snsLote.map((sn) => (
                 <li key={sn} className="flex items-center justify-between gap-2 rounded-md bg-muted px-2 py-1 text-sm">

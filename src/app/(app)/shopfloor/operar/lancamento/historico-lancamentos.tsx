@@ -44,7 +44,9 @@ export function HistoricoLancamentos({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <p className="mb-1 shrink-0 text-sm font-medium text-muted-foreground">{titulo} ({linhas.length})</p>
-      <div className="min-h-0 flex-1 max-h-[14rem] overflow-y-auto rounded-lg border border-border bg-card">
+      {/* Sem teto de altura: o histórico ocupa o que sobrar da tela e rola por dentro. O `max-h-[14rem]`
+          que existia aqui travava a caixa em 224px e deixava uma faixa branca abaixo dela no tablet. */}
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card">
         <table className="w-full text-lg">
           <thead className="sticky top-0 bg-muted text-sm uppercase tracking-wide text-muted-foreground">
             <tr>
