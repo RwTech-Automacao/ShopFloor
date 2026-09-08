@@ -152,27 +152,28 @@ export function DefeitosLista({
                       {iconeDoPosto(postoReprova, 'size-9')}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="truncate text-2xl font-bold text-foreground">{titulo.texto}</span>
-                        <span className="shrink-0 text-lg text-muted-foreground" title={dt ? fmtLongo.format(dt) : ''}>
-                          {dt ? fmtCurto.format(dt) : '—'}
-                        </span>
-                      </div>
+                      <p className="truncate text-2xl font-bold text-foreground">{titulo.texto}</p>
                       <p className="mt-1 truncate text-xl font-medium text-foreground/80">{postoReprova}</p>
                       <p className="truncate text-lg text-muted-foreground">
                         {[`SN ${l.sn}`, l.colaborador ? `por ${l.colaborador}` : ''].filter(Boolean).join(' · ')}
                       </p>
                     </div>
-                    {/* Defeitos SEMELHANTES (mesmo código) na última hora — o campeão em vermelho. */}
-                    {naHora > 0 && (
-                      <div
-                        className={`flex shrink-0 flex-col items-center justify-center rounded-2xl border px-4 py-2 ${campeao ? 'border-red-500 bg-red-600 text-white' : 'border-border bg-muted text-foreground'}`}
-                        title={`${naHora} ocorrência(s) deste mesmo defeito na última hora`}
-                      >
-                        <span className="text-3xl font-bold leading-none tabular-nums">{naHora}</span>
-                        <span className={`text-xs font-medium ${campeao ? 'text-white' : 'text-muted-foreground'}`}>na última hora</span>
-                      </div>
-                    )}
+                    {/* Data/hora do defeito e, abaixo, quantos defeitos SEMELHANTES (mesmo código)
+                        houve na última hora — o campeão em vermelho. */}
+                    <div className="flex shrink-0 flex-col items-center gap-2">
+                      <span className="whitespace-nowrap text-lg text-muted-foreground" title={dt ? fmtLongo.format(dt) : ''}>
+                        {dt ? fmtCurto.format(dt) : '—'}
+                      </span>
+                      {naHora > 0 && (
+                        <div
+                          className={`flex flex-col items-center justify-center rounded-2xl border px-4 py-2 ${campeao ? 'border-red-500 bg-red-600 text-white' : 'border-border bg-muted text-foreground'}`}
+                          title={`${naHora} ocorrência(s) deste mesmo defeito na última hora`}
+                        >
+                          <span className="text-3xl font-bold leading-none tabular-nums">{naHora}</span>
+                          <span className={`text-xs font-medium ${campeao ? 'text-white' : 'text-muted-foreground'}`}>na última hora</span>
+                        </div>
+                      )}
+                    </div>
                   </li>
                 )
               })}
