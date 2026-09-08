@@ -33,6 +33,18 @@ export async function mapaPostoPerfil(): Promise<Record<string, PerfilPosto>> {
   return mapa
 }
 
+/** Mapa chave-do-posto → coletivo (true = permite lançamento coletivo neste posto). */
+export async function mapaPostoColetivo(): Promise<Record<string, boolean>> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.from('sf_postos').select('chave,coletivo')
+  if (error) throw error
+  const mapa: Record<string, boolean> = {}
+  for (const row of (data as { chave: string; coletivo: boolean }[]) ?? []) {
+    mapa[row.chave] = row.coletivo
+  }
+  return mapa
+}
+
 export async function postoEmUsoEmOrdem(chave: string): Promise<boolean> {
   const supabase = await createServerSupabase()
   const { count, error } = await supabase.from('sf_ordem_postos').select('*', { count: 'exact', head: true }).eq('posto', chave)
@@ -40,14 +52,18 @@ export async function postoEmUsoEmOrdem(chave: string): Promise<boolean> {
   return (count ?? 0) > 0
 }
 
-export async function criarPosto(p: { chave: string; ordem: number; perfil: string }): Promise<void> {
+export async function criarPosto(p: { chave: string; ordem: number; perfil: string; coletivo?: boolean }): Promise<void> {
   const supabase = await createServerSupabase()
-  const { error } = await supabase.from('sf_postos').insert({ chave: p.chave, ordem: p.ordem, perfil: p.perfil })
+  const { error } = await supabase
+    .from('sf_postos')
+    .insert({ chave: p.chave, ordem: p.ordem, perfil: p.perfil, coletivo: p.coletivo ?? false })
   if (error) throw error
 }
-export async function atualizarPosto(chave: string, p: { perfil: string }): Promise<void> {
+export async function atualizarPosto(chave: string, p: { perfil: string; coletivo?: boolean }): Promise<void> {
   const supabase = await createServerSupabase()
-  const { error } = await supabase.from('sf_postos').update({ perfil: p.perfil }).eq('chave', chave)
+  const dados: { perfil: string; coletivo?: boolean } = { perfil: p.perfil }
+  if (p.coletivo !== undefined) dados.coletivo = p.coletivo
+  const { error } = await supabase.from('sf_postos').update(dados).eq('chave', chave)
   if (error) throw error
 }
 export async function excluirPosto(chave: string): Promise<void> {

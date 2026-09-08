@@ -19,11 +19,11 @@ interface LinhaEncaixada {
 
 export function IntegracaoPanel({
   colaborador,
+  contexto,
   cliente: _cliente,
   pmo,
   op,
   posto,
-  descricao,
   componentes,
 }: {
   colaborador: string
@@ -31,8 +31,8 @@ export function IntegracaoPanel({
   pmo: string
   op: string
   posto: string
-  descricao: string
   componentes: string[]
+  contexto?: React.ReactNode
 }) {
   const [linhas, setLinhas] = useState<Record<string, LinhaEncaixada>>({})
   const [bipe, setBipe] = useState('')
@@ -185,26 +185,16 @@ export function IntegracaoPanel({
   const contador = useMemo(() => `${preenchidas} / ${componentes.length} placas`, [preenchidas, componentes.length])
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="shrink-0">
-        <CardTitle>Integração</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="shrink-0">
-          <PainelResultado resultado={resultado} />
-        </div>
-        <div className="flex shrink-0 flex-col gap-1.5">
-          <Label>Descrição</Label>
-          <Input value={descricao} readOnly disabled />
-        </div>
-
-        {semReceita ? (
-          <p className="text-sm text-red-600">
-            Esta OP não tem receita de Integração cadastrada — cadastre a receita no Cadastro de OP.
-          </p>
-        ) : (
-          <>
-            <div className="flex shrink-0 flex-col gap-1.5">
+    <div className="flex flex-col gap-3">
+      {/* Topo: Peça | Contexto — mesmo arranjo das demais telas de bipe. A receita é uma tabela de
+          três colunas e continua em largura cheia embaixo, que é onde ela sempre esteve. */}
+      <div className={`grid shrink-0 gap-3 ${semReceita ? '' : 'lg:grid-cols-2'}`}>
+        {!semReceita && (
+          <Card size="sm" className="flex flex-col">
+            <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
+              <CardTitle>Peça</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-1.5">
               <Label htmlFor="bipePlaca">Bipe a placa</Label>
               <Input
                 id="bipePlaca"
@@ -218,8 +208,26 @@ export function IntegracaoPanel({
                 className="h-12 text-lg"
                 disabled={resolvendo}
               />
-            </div>
+            </CardContent>
+          </Card>
+        )}
+        {contexto}
+      </div>
 
+    <Card className="flex flex-col">
+      <CardHeader className="shrink-0">
+        <CardTitle>Integração</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="shrink-0">
+          <PainelResultado resultado={resultado} />
+        </div>
+        {semReceita ? (
+          <p className="text-sm text-red-600">
+            Esta OP não tem receita de Integração cadastrada — cadastre a receita no Cadastro de OP.
+          </p>
+        ) : (
+          <>
             {ambiguo && (
               <div className="shrink-0 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40">
                 <p className="mb-2 text-sm font-medium">
@@ -356,5 +364,6 @@ export function IntegracaoPanel({
         </DialogContent>
       </Dialog>
     </Card>
+    </div>
   )
 }
