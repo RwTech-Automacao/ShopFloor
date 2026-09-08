@@ -451,7 +451,9 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [filtroOp, setFiltroOp] = useState('') // busca do dropdown de OP
   const [opAberto, setOpAberto] = useState(false) // combobox de OP aberto
   const opFiltroRef = useRef<HTMLInputElement>(null) // foco no input do combobox ao abrir
-  const [filtroData, setFiltroData] = useState<'tudo' | 'hoje' | '7' | '30' | 'custom'>('tudo') // filtro por data de criação da OP
+  // Abre nos ÚLTIMOS 7 DIAS: a lista cresce sem parar e o que se procura é quase sempre OP recente.
+  // 'Tudo' continua a um clique pra quem precisa de OP antiga.
+  const [filtroData, setFiltroData] = useState<'tudo' | 'hoje' | '7' | '30' | 'custom'>('7') // filtro por data de criação da OP
   const [criadoDe, setCriadoDe] = useState('') // range custom (criação) — início (YYYY-MM-DD)
   const [criadoAte, setCriadoAte] = useState('') // range custom (criação) — fim (YYYY-MM-DD)
   const [buscaSn, setBuscaSn] = useState('') // busca de SN pra realçar a rota no canvas
