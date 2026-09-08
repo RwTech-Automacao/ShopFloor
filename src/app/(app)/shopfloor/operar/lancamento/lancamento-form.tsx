@@ -905,17 +905,20 @@ export function LancamentoForm({
             />
           </div>
         </>
-      ) : ehEmbalagem || ehNqaCaixa || ehNqaIndividual ? (
-        // Embalagem / NQA (caixa ou individual): painel (esq) | Contexto compacto (dir), mesma linha.
+      ) : ehEmbalagem ? (
+        // Embalagem: o painel monta o PRÓPRIO topo (Peça | Contexto) e deixa o acompanhamento em
+        // largura cheia embaixo — por isso recebe o Contexto por prop em vez de dividir a linha aqui.
+        // Espremê-lo numa coluna de 2fr somava com a divisão interna de 16rem e sobravam ~75px pro
+        // campo de bipe, que é o campo mais usado do posto.
+        ordemSel?.embalagem_individual ? (
+          <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} contexto={renderContexto()} />
+        ) : (
+          <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} contexto={renderContexto()} />
+        )
+      ) : ehNqaCaixa || ehNqaIndividual ? (
+        // NQA (caixa ou individual): painel (esq) | Contexto compacto (dir), mesma linha.
         <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[2fr_3fr]">
           <div className="flex min-h-0 flex-col">
-            {ehEmbalagem && (
-              ordemSel?.embalagem_individual ? (
-                <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
-              ) : (
-                <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} />
-              )
-            )}
             {ehNqaCaixa && (
               <NqaCaixaPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
             )}
