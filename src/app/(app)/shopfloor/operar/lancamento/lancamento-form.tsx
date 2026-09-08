@@ -889,22 +889,17 @@ export function LancamentoForm({
         // Sem OP: só o Contexto (campo de bipe do cabeçalho).
         renderContexto()
       ) : ehIntegracao ? (
-        // Integração: Contexto compacto em cima; a receita (lista de componentes) é larga e fica em
-        // largura cheia embaixo (não side-by-side — apertaria demais).
-        <>
-          {renderContexto()}
-          <div className="flex flex-col">
-            <IntegracaoPanel
-              colaborador={colaborador}
-              cliente={cliente}
-              pmo={pmo}
-              op={op}
-              posto={posto}
-              descricao={ordemSel?.descricao ?? ''}
-              componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
-            />
-          </div>
-        </>
+        // Integração: igual às demais — o painel monta o próprio topo (Peça | Contexto) e deixa a
+        // receita, que é uma tabela larga, em largura cheia embaixo.
+        <IntegracaoPanel
+          colaborador={colaborador}
+          cliente={cliente}
+          pmo={pmo}
+          op={op}
+          posto={posto}
+          componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
+          contexto={renderContexto()}
+        />
       ) : ehEmbalagem ? (
         // Embalagem: o painel monta o PRÓPRIO topo (Peça | Contexto) e deixa o acompanhamento em
         // largura cheia embaixo — por isso recebe o Contexto por prop em vez de dividir a linha aqui.
