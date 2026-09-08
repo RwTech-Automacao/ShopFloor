@@ -44,9 +44,12 @@ export function HistoricoLancamentos({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <p className="mb-1 shrink-0 text-sm font-medium text-muted-foreground">{titulo} ({linhas.length})</p>
-      {/* Sem teto de altura: o histórico ocupa o que sobrar da tela e rola por dentro. O `max-h-[14rem]`
-          que existia aqui travava a caixa em 224px e deixava uma faixa branca abaixo dela no tablet. */}
-      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card">
+      {/* Rola a partir de ~8 linhas. O teto é necessário: nenhum pai desta cadeia limita a altura,
+          então só com `flex-1` a caixa cresce indefinidamente e empurra a página (era 14rem antes,
+          que travava cedo demais e deixava faixa branca). Conta: linha `text-lg` com `py-1` ≈ 37px,
+          mais o cabeçalho fixo ≈ 32px → 8 linhas ≈ 328px; 21rem deixa a 9ª aparecendo um pouco,
+          que é o que sinaliza pro operador que há mais. */}
+      <div className="max-h-[21rem] min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card">
         <table className="w-full text-lg">
           <thead className="sticky top-0 bg-muted text-sm uppercase tracking-wide text-muted-foreground">
             <tr>
