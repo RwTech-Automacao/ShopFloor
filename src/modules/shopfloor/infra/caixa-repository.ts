@@ -72,7 +72,13 @@ export async function chamarFecharCaixa(pmo: string, op: string, posto: string, 
   return data as { ok: boolean; erro?: string; codigo?: string }
 }
 
-export interface OpComCaixa { pmo: string; op: string; cliente: string }
+export interface OpComCaixa {
+  pmo: string
+  op: string
+  cliente: string
+  descricao: string // produto (vai na faixa do cabeçalho da folha impressa)
+  qtdOp: number | null // total da OP — NÃO é a quantidade da caixa
+}
 export interface CaixaConsulta {
   seq: number
   posto: string
@@ -83,7 +89,7 @@ export interface CaixaConsulta {
   sns: string[]    // SNs dentro da caixa
 }
 
-/** OPs que têm ao menos uma caixa (distinct pmo/op), com o cliente (de sf_ordens). */
+/** OPs que têm ao menos uma caixa (distinct pmo/op), com cliente/produto/qtd (de sf_ordens). */
 export async function listarOpsComCaixas(): Promise<OpComCaixa[]> {
   const supabase = await createServerSupabase()
   const { data: cxs, error } = await supabase.from('sf_caixas').select('pmo,op')
@@ -91,12 +97,22 @@ export async function listarOpsComCaixas(): Promise<OpComCaixa[]> {
   const pares = new Map<string, { pmo: string; op: string }>()
   for (const c of (cxs ?? []) as { pmo: string; op: string }[]) pares.set(`${c.pmo}||${c.op}`, { pmo: c.pmo, op: c.op })
   if (pares.size === 0) return []
-  const { data: ord, error: e2 } = await supabase.from('sf_ordens').select('pmo,op,cliente')
+  const { data: ord, error: e2 } = await supabase.from('sf_ordens').select('pmo,op,cliente,descricao,qtd')
   if (e2) throw e2
-  const cli = new Map<string, string>()
-  for (const o of (ord ?? []) as { pmo: string; op: string; cliente: string }[]) cli.set(`${o.pmo}||${o.op}`, o.cliente)
+  type Ordem = { pmo: string; op: string; cliente: string; descricao: string; qtd: number | null }
+  const porOp = new Map<string, Ordem>()
+  for (const o of (ord ?? []) as Ordem[]) porOp.set(`${o.pmo}||${o.op}`, o)
   return [...pares.values()]
-    .map((p) => ({ pmo: p.pmo, op: p.op, cliente: cli.get(`${p.pmo}||${p.op}`) ?? '' }))
+    .map((p) => {
+      const o = porOp.get(`${p.pmo}||${p.op}`)
+      return {
+        pmo: p.pmo,
+        op: p.op,
+        cliente: o?.cliente ?? '',
+        descricao: o?.descricao ?? '',
+        qtdOp: o?.qtd ?? null,
+      }
+    })
     .sort((a, b) => (a.pmo === b.pmo ? a.op.localeCompare(b.op) : a.pmo.localeCompare(b.pmo)))
 }
 

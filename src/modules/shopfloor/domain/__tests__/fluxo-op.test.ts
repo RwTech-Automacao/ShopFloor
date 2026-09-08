@@ -215,6 +215,17 @@ describe('postoPendenteDePeca', () => {
     expect(pp([{ posto: 'Embalagem', status: '' }])).toBeNull()
   })
 
+  it('peça na Manutenção NÃO conta como concluída — fica aguardando ali', () => {
+    // Caso real (OP PMOC57/8669): a peça reprovou, foi pra Manutenção e o reparo foi registrado
+    // (sem status). Como 'Manutenção' não está na lista de postos da OP, o findIndex devolve -1 —
+    // e isso caía no mesmo `return null` do último posto, contando a peça como finalizada.
+    expect(pp([{ posto: 'Teste', status: 'Reprovado' }, { posto: MANUTENCAO, status: '' }])).toBe(MANUTENCAO)
+  })
+
+  it('posto que não é do fluxo da OP → aguardando nele, nunca concluída', () => {
+    expect(pp([{ posto: 'Posto Que Saiu Do Fluxo', status: 'Aprovado' }])).toBe('Posto Que Saiu Do Fluxo')
+  })
+
   it('reprovada → Manutenção se o posto exige; senão o próprio posto (conserto no lugar)', () => {
     expect(pp([{ posto: 'Teste', status: 'Reprovado' }])).toBe(MANUTENCAO)
     expect(pp([{ posto: 'SPI', status: 'Reprovado' }])).toBe('SPI')

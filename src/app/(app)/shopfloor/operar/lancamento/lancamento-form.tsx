@@ -23,6 +23,7 @@ import { IntegracaoPanel } from './integracao-panel'
 import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { NqaCaixaPanel } from './nqa-caixa-panel'
+import { NqaIndividualPanel } from './nqa-individual-panel'
 import { lerNqaProgresso, limparNqaProgresso, type NqaProgresso } from './nqa-progresso-local'
 import { lerLoteLocal, salvarLoteLocal, limparLoteLocal } from './lote-local'
 import type { ItemLote } from './tipos-lote'
@@ -192,6 +193,7 @@ export function LancamentoForm({
   // Lançamento coletivo (fundação — consumido a partir da Task 5/6): posto marcado coletivo
   // E perfil suporta (defesa contra dado antigo/perfil trocado após a flag ser ligada).
   const ehColetivo = posto !== '' && postosColetivo[posto] === true && perfilSuportaColetivo(perfilDo(posto).chave)
+  const ehNqaIndividual = ehNqa && ordemSel !== null && ordemSel.embalagem_individual
   const ehSpi = perfilDo(posto).reprova === 'posicoes'
   const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
@@ -860,8 +862,8 @@ export function LancamentoForm({
             />
           </div>
         </>
-      ) : ehEmbalagem || ehNqaCaixa ? (
-        // Embalagem / NQA-caixa: painel (esq) | Contexto compacto (dir), mesma linha.
+      ) : ehEmbalagem || ehNqaCaixa || ehNqaIndividual ? (
+        // Embalagem / NQA (caixa ou individual): painel (esq) | Contexto compacto (dir), mesma linha.
         <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[2fr_3fr]">
           <div className="flex min-h-0 flex-col">
             {ehEmbalagem && (
@@ -873,6 +875,9 @@ export function LancamentoForm({
             )}
             {ehNqaCaixa && (
               <NqaCaixaPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
+            )}
+            {ehNqaIndividual && (
+              <NqaIndividualPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
             )}
           </div>
           <div className="lg:self-start">{renderContexto()}</div>
