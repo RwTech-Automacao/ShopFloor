@@ -331,11 +331,11 @@ export function LancamentoForm({
   // Refoca o início do ciclo assim que o campo destrava (gravação terminou) — o setTimeout do limparPeca
   // não consegue focar enquanto disabled=true (transição em voo).
   useEffect(() => {
-    if (enviando || processando) return
+    if (enviando || processando || enviandoLote) return
     if (!focarAposLancar.current) return
     focarAposLancar.current = false
     campoInicioCiclo()?.focus()
-  }, [enviando, processando])
+  }, [enviando, processando, enviandoLote])
 
   // Enquanto GRAVA (avulso ou lote), a tela é travada por um overlay e o foco vai pro campo-sumidouro —
   // assim um bipe disparado por cima da gravação não cai em nenhum campo (ex.: trocar o Posto). Bug de produção.
@@ -441,6 +441,7 @@ export function LancamentoForm({
         titulo: linhasErro.length ? `${linhasOk.length} enviado(s), ${linhasErro.length} com erro (ver Não-lançado)` : `${linhasOk.length} enviado(s)`,
       })
       refreshTotalPosto()
+      focarAposLancar.current = true // o efeito acima refoca quando o overlay do envio destravar
     })
   }
 
