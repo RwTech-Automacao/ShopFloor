@@ -30,8 +30,8 @@ function amostraReprovada(a: { visual: string; funcional: string }): boolean {
  * qualquer reprovada → lote reprovado volta a um posto de retorno.
  */
 export function NqaIndividualPanel({
-  pmo, op, posto, cliente, colaborador, postos,
-}: { pmo: string; op: string; posto: string; cliente: string; colaborador: string; postos: string[] }) {
+  pmo, op, posto, cliente, colaborador, postos, contexto,
+}: { pmo: string; op: string; posto: string; cliente: string; colaborador: string; postos: string[]; contexto?: React.ReactNode }) {
   // Hidratação: se há um lote salvo (localStorage) do MESMO contexto (pmo/op/posto), restaura
   // a fase em que estava — montando o lote (snsLote) ou já inspecionando (lote fechado).
   const [hidratado] = useState(() => {
@@ -275,18 +275,15 @@ export function NqaIndividualPanel({
   // Fase A — declara a quantidade e bipa as peças do lote.
   if (lote === null) {
     return (
-      <Card className="flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         {dialog}
-        <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
-          <CardTitle>NQA individual <span className="text-sm font-normal text-muted-foreground">· inspeção por amostragem</span></CardTitle>
-          {snsLote.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={onDescartar} disabled={fechando}>Descartar lote</Button>
-          )}
-        </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-          <div className="shrink-0">
-            <PainelResultado resultado={resultado} />
-          </div>
+        {/* Topo: Peça | Contexto — quantidade e bipe são o gesto de montar o lote. */}
+        <div className="grid shrink-0 gap-3 lg:grid-cols-2">
+          <Card size="sm" className="flex min-h-0 flex-col">
+            <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
+              <CardTitle>Peça</CardTitle>
+            </CardHeader>
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
 
           <div className="flex w-fit shrink-0 flex-col gap-1.5">
             <Label htmlFor="qtdLoteNqa" className="whitespace-nowrap">Quantidade do lote</Label>
@@ -326,6 +323,23 @@ export function NqaIndividualPanel({
               Sem caixa física — você define o lote: primeiro a quantidade, depois bipa as peças. A quantidade define a amostra pela Tabela NQA.
             </p>
           </div>
+            </CardContent>
+          </Card>
+          {contexto}
+        </div>
+
+        {/* Acompanhamento do lote em largura cheia. */}
+        <Card className="flex min-h-0 flex-1 flex-col">
+          <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
+            <CardTitle>NQA individual <span className="text-sm font-normal text-muted-foreground">· inspeção por amostragem</span></CardTitle>
+            {snsLote.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={onDescartar} disabled={fechando}>Descartar lote</Button>
+            )}
+          </CardHeader>
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="shrink-0">
+            <PainelResultado resultado={resultado} />
+          </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-lg border border-border p-2">
             <div className="flex shrink-0 items-center justify-between gap-2">
@@ -360,15 +374,47 @@ export function NqaIndividualPanel({
                     : 'Informe a quantidade do lote'}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   // Fase B — lote fechado, inspecionando a amostra.
+  // Mesma regra do NQA por caixa: sem campo pra bipar (lote reprovado ou amostra completa), o
+  // Contexto ocupa a linha inteira do topo em vez de sobrar um card vazio.
+  const mostraCampoAmostra = !algumReprovado && !completa
   return (
-    <Card className="flex min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {dialog}
+      {/* Topo: Peça | Contexto. Só o bipe aqui — Visual e Funcional ficam embaixo. */}
+      <div className={`grid shrink-0 gap-3 ${mostraCampoAmostra ? 'lg:grid-cols-2' : ''}`}>
+        {mostraCampoAmostra && (
+          <Card size="sm" className="flex min-h-0 flex-col">
+            <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
+              <CardTitle>Peça</CardTitle>
+            </CardHeader>
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-1.5">
+              <Label htmlFor="snAmostraNqaInd">Nº de Série da amostra</Label>
+              <Input
+                id="snAmostraNqaInd"
+                ref={amostraRef}
+                value={snAmostra}
+                onChange={(e) => setSnAmostra(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAdicionarAmostra() } }}
+                placeholder="Bipe a peça da amostra"
+                autoComplete="off"
+                className="h-12 text-lg"
+                disabled={finalizando}
+              />
+              <p className="text-xs text-muted-foreground">Selecione Visual e Funcional abaixo, depois bipe aqui.</p>
+            </CardContent>
+          </Card>
+        )}
+        {contexto}
+      </div>
+
+    <Card className="flex min-h-0 flex-1 flex-col">
       <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>
           Lote — {lote.qtd} peças
@@ -422,21 +468,6 @@ export function NqaIndividualPanel({
                 />
               </div>
             )}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="snAmostraNqaInd">Nº de Série da amostra</Label>
-              <Input
-                id="snAmostraNqaInd"
-                ref={amostraRef}
-                value={snAmostra}
-                onChange={(e) => setSnAmostra(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAdicionarAmostra() } }}
-                placeholder="Bipe a peça da amostra"
-                autoComplete="off"
-                className="h-12 text-lg"
-                disabled={finalizando}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">Selecione Visual e Funcional, depois bipe o Nº de Série da amostra.</p>
           </div>
         )}
 
@@ -512,5 +543,6 @@ export function NqaIndividualPanel({
         </div>
       </CardContent>
     </Card>
+    </div>
   )
 }

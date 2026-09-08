@@ -915,19 +915,12 @@ export function LancamentoForm({
         ) : (
           <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} contexto={renderContexto()} />
         )
-      ) : ehNqaCaixa || ehNqaIndividual ? (
-        // NQA (caixa ou individual): painel (esq) | Contexto compacto (dir), mesma linha.
-        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[2fr_3fr]">
-          <div className="flex min-h-0 flex-col">
-            {ehNqaCaixa && (
-              <NqaCaixaPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
-            )}
-            {ehNqaIndividual && (
-              <NqaIndividualPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} />
-            )}
-          </div>
-          <div className="lg:self-start">{renderContexto()}</div>
-        </div>
+      ) : ehNqaCaixa ? (
+        // NQA: igual à Embalagem — o painel monta o próprio topo (Peça | Contexto) e deixa o
+        // acompanhamento em largura cheia, por isso recebe o Contexto por prop.
+        <NqaCaixaPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} contexto={renderContexto()} />
+      ) : ehNqaIndividual ? (
+        <NqaIndividualPanel pmo={pmo} op={op} posto={posto} cliente={cliente} colaborador={colaborador} postos={postosDaOp} contexto={renderContexto()} />
       ) : (
         // Ramo normal: topo Peça|Contexto · meio Lote|Última (ou só Última) · base Hist. Lançado|Não-lançado.
         <>
