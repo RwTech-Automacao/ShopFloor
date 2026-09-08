@@ -328,8 +328,10 @@ export async function lancarLote(itens: EntradaLancamento[]): Promise<{ resultad
         okSns.map((s) => s.trim()),
         okSns.map((s) => normalizarSerie(s)),
       )
-    } catch {
-      // ignora: rastreio de lote é secundário
+    } catch (e) {
+      // Não derruba o lançamento já feito no chão de fábrica — mas DEIXA RASTRO. Sem o log, o lote
+      // não era carimbado e o "puxar painel" do próximo posto voltava vazio, tudo em silêncio.
+      console.error('[lote] falha ao carimbar o lote (lançamento já gravado)', e)
     }
   }
   return { resultados }
@@ -349,7 +351,10 @@ export async function carregarLotePendente(
   try {
     const r = await snsPendentesDoLote(pmo, op, posto, normalizarSerie(sn))
     return { snsPendentes: r.pendentes, membrosNorm: r.membrosNorm, loteId: r.loteId }
-  } catch {
+  } catch (e) {
+    // Fail-open de propósito (o bipe não pode parar por causa da pré-lista), mas com rastro: sem o
+    // log, uma falha aqui é indistinguível de "não há irmãs aguardando neste posto".
+    console.error('[lote] falha ao puxar as irmãs do painel', e)
     return vazio
   }
 }

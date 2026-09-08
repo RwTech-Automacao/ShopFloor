@@ -86,6 +86,7 @@ export function LancamentoForm({
   const [processando, setProcessando] = useState(false) // trava a UI do confirm até o resultado (não deixa bipar em cima)
   const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
   const [nqaRetomavel, setNqaRetomavel] = useState<NqaProgresso | null>(null) // inspeção NQA salva (localStorage) p/ retomar após refresh
+  const [grupoRetomado, setGrupoRetomado] = useState<number | null>(null) // grupo salvo que foi restaurado ao entrar no posto — avisa em vez de aparecer do nada
   const [lote, setLote] = useState<ItemLote[]>([]) // Lançamento coletivo: bipes empilhados aqui em vez de gravados na hora
   const [lotesPuxados, setLotesPuxados] = useState<Set<string>>(new Set()) // SNs-norm cujo painel já foi puxado (por-lote, não global)
   const [painelAncorado, setPainelAncorado] = useState<{ loteId: string; membros: Set<string> } | null>(null) // lote coletivo travado num painel: SN de outro painel é barrado
@@ -138,8 +139,12 @@ export function LancamentoForm({
     hidratouLoteRef.current = chaveAtual
     if (lote.length === 0) {
       const salvo = lerLoteLocal(pmo, op, posto)
+      // Restaurar CALADO já enganou no chão de fábrica: o operador chegava no posto com peças que
+      // ele não bipou (de outra sessão/turno) e não tinha como saber. Pior, o "puxar painel"
+      // parecia quebrado — as irmãs vinham e eram descartadas por já estarem no grupo herdado.
+      // Continua restaurando (não perde trabalho), mas agora DIZ que restaurou e deixa descartar.
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sync único do localStorage ao casar o contexto
-      if (salvo && salvo.length > 0) setLote(salvo)
+      if (salvo && salvo.length > 0) { setLote(salvo); setGrupoRetomado(salvo.length) }
     }
     // roda só na troca de (pmo,op,posto); `lote.length` é lido só pra decidir SE hidrata, não deve
     // disparar o efeito de novo a cada bipe (senão a hidratação rodaria a cada mudança do lote).
@@ -155,7 +160,8 @@ export function LancamentoForm({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync: âncora derivada do lote vazio
     if (lote.length === 0 && painelAncorado) setPainelAncorado(null)
-  }, [lote.length, painelAncorado])
+    if (lote.length === 0 && grupoRetomado !== null) setGrupoRetomado(null) // grupo foi embora → aviso perde o sentido
+  }, [lote.length, painelAncorado, grupoRetomado])
 
   // Ao montar, verifica se há inspeção NQA salva (localStorage) de um refresh/fechamento —
   // oferece retomar. Precisa ser em effect (não lazy-init): localStorage só existe no cliente,
@@ -255,6 +261,16 @@ export function LancamentoForm({
     if (ok) { setLote([]); setLotesPuxados(new Set()); limparLoteLocal(pmo, op, posto) }
     return ok
   }
+  /** Descarta o grupo que foi herdado de outra sessão neste posto (o aviso de retomada). */
+  function descartarGrupoRetomado() {
+    setLote([])
+    setLotesPuxados(new Set())
+    setPainelAncorado(null)
+    setGrupoRetomado(null)
+    limparLoteLocal(pmo, op, posto)
+    setTimeout(() => snRef.current?.focus(), 0)
+  }
+
   async function mudarPosto(v: string) {
     if (!(await podeTrocarContexto())) return
     limparLoteLocal(pmo, op, posto) // defensivo: garante que não sobra lote salvo do posto anterior
@@ -844,6 +860,18 @@ export function LancamentoForm({
   return (
     <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
       {/* Retomar inspeção NQA salva (localStorage) após refresh — só quando ainda não há contexto na tela. */}
+      {grupoRetomado !== null && (
+        <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm">
+            Retomando <strong>grupo de {grupoRetomado} peça(s)</strong> salvo neste posto — bipado antes, ainda não enviado.
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setGrupoRetomado(null)}>Continuar</Button>
+            <Button size="sm" variant="outline" onClick={descartarGrupoRetomado}>Descartar grupo</Button>
+          </div>
+        </div>
+      )}
+
       {nqaRetomavel && !colaborador && !op && (
         <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm">
