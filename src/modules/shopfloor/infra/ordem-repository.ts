@@ -5,6 +5,7 @@ export interface PostoRow {
   chave: string
   ordem: number
   perfil: string
+  coletivo: boolean
 }
 
 export interface OrdemRow {
@@ -40,7 +41,7 @@ export interface DadosOrdem {
 
 export async function listarPostos(): Promise<PostoRow[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('sf_postos').select('chave,ordem,perfil').order('ordem')
+  const { data, error } = await supabase.from('sf_postos').select('chave,ordem,perfil,coletivo').order('ordem')
   if (error) throw error
   return data as PostoRow[]
 }

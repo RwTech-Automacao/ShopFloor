@@ -460,6 +460,7 @@ export function OrdemForm({
                 id="nomePadrao"
                 value={nomePadrao}
                 onChange={(e) => setNomePadrao(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onConfirmarSalvarPadrao() } }}
                 autoFocus
               />
             </div>
@@ -469,6 +470,7 @@ export function OrdemForm({
                 id="pmoPadrao"
                 value={pmoPadrao}
                 onChange={(e) => setPmoPadrao(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onConfirmarSalvarPadrao() } }}
               />
             </div>
           </div>

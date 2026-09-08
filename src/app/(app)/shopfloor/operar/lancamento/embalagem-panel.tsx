@@ -12,9 +12,15 @@ import type { CaixaReaberta } from '@/modules/shopfloor/infra/caixa-repository'
 
 const AVISO_REIMPRIMIR = 'Ao fechar de novo, o código da caixa muda (a quantidade mudou) — reimprima a folha e troque a que está na caixa.'
 
+/**
+ * Embalagem por CAIXA. O layout segue o padrão das outras telas do Lançamento: topo com a Peça
+ * (campo de bipe) à esquerda e o Contexto compacto à direita, e o acompanhamento da caixa em
+ * LARGURA CHEIA embaixo. O Contexto entra por prop porque quem o monta é o formulário — assim o
+ * painel controla o próprio arranjo em vez de ser espremido numa coluna estreita pelo pai.
+ */
 export function EmbalagemPanel({
-  colaborador, pmo, op, posto, qtdOP,
-}: { colaborador: string; pmo: string; op: string; posto: string; qtdOP: number | null }) {
+  colaborador, pmo, op, posto, qtdOP, contexto,
+}: { colaborador: string; pmo: string; op: string; posto: string; qtdOP: number | null; contexto?: React.ReactNode }) {
   const [seq, setSeq] = useState(1)
   const [limite, setLimite] = useState<number | null>(null)
   const [limiteInput, setLimiteInput] = useState('')
@@ -211,11 +217,16 @@ export function EmbalagemPanel({
     </div>
   )
 
+  // Nas telas simples o Contexto fica ao lado, meio a meio — o operador não perde o cabeçalho.
+  const comContexto = (cartao: React.ReactNode) => (
+    <div className="grid shrink-0 gap-3 lg:grid-cols-2">{cartao}{contexto}</div>
+  )
+
   if (carregando && limite === null && !concluida) {
-    return <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Carregando…</CardContent></Card>
+    return comContexto(<Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Carregando…</CardContent></Card>)
   }
   if (concluida && !emReaberta) {
-    return (
+    return comContexto(
       <Card>
         <CardHeader><CardTitle>Embalagem concluída</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2">
@@ -223,11 +234,11 @@ export function EmbalagemPanel({
           <p className="text-xs text-muted-foreground">A última caixa desta OP foi fechada.</p>
           {painelReabertas}
         </CardContent>
-      </Card>
+      </Card>,
     )
   }
   if (limite === null) {
-    return (
+    return comContexto(
       <Card>
         <CardHeader><CardTitle>Embalagem</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2">
@@ -242,62 +253,75 @@ export function EmbalagemPanel({
           <p className="text-xs text-muted-foreground">Definido uma vez; vale pras próximas caixas.</p>
         </CardContent>
         {dialog}
-      </Card>
+      </Card>,
     )
   }
 
   const limiteBarra = limiteAtivo ?? limite
   const pct = Math.min(100, Math.round((qtdAtiva / limiteBarra) * 100))
   return (
-    <Card className="flex min-h-0 flex-col">
-      <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
-        <CardTitle>
-          Caixa CX{seqAtivo}{' '}
-          <span className="text-sm font-normal text-muted-foreground">· limite {limiteBarra}</span>
-          {emReaberta && <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">reaberta</span>}
-        </CardTitle>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm" title="A última caixa pode passar do limite — bipe as peças que sobram aqui em vez de abrir caixa nova.">
-            <input type="checkbox" checked={ehUltima} onChange={(e) => setEhUltima(e.target.checked)} /> Última caixa
-          </label>
-          <Button variant="outline" size="sm" onClick={onFechar} disabled={fechando || qtdAtiva === 0}>
-            {fechando ? 'Fechando…' : 'Fechar caixa'}
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-        <div className="shrink-0">
-          <PainelResultado resultado={resultado} />
-        </div>
-        {painelReabertas}
-        {emReaberta && (
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-2">
-            <p className="text-xs">
-              Você está bipando na <strong>caixa reaberta CX{seqAtivo}</strong>, não na caixa CX{seq}. {AVISO_REIMPRIMIR}
-            </p>
-            <Button variant="outline" size="sm" onClick={voltarParaAtual} disabled={embalando || fechando}>
-              Voltar pra CX{seq}
-            </Button>
-          </div>
-        )}
-        <div className="shrink-0">
-          <div className="mb-1 flex justify-between text-sm">
-            <span className="font-medium">{ehUltima ? `${qtdAtiva} nesta caixa · última (sem limite)` : `${qtdAtiva} / ${limiteBarra} nesta caixa`}</span>
-            <span className="text-muted-foreground">Total: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}</span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-enterplak" style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_16rem]">
-          <div className="flex shrink-0 flex-col gap-1.5">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Topo: Peça | Contexto — mesmo arranjo da bipagem normal, pra quem troca de posto encontrar
+          o campo no mesmo lugar. Antes o campo dividia a linha com a lista de SNs (16rem fixos) e
+          sobrava quase nada pra ele quando o painel era estreito. */}
+      <div className="grid shrink-0 gap-3 lg:grid-cols-2">
+        <Card size="sm" className="flex min-h-0 flex-col">
+          <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
+            <CardTitle>Peça</CardTitle>
+          </CardHeader>
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-1.5">
             <Label htmlFor="snCaixa">Nº de Série</Label>
             <Input id="snCaixa" ref={snRef} value={sn} onChange={(e) => setSn(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBipar() } }}
               placeholder="Bipe a peça" autoComplete="off" autoFocus className="h-12 text-lg" disabled={embalando} />
+          </CardContent>
+        </Card>
+        {contexto}
+      </div>
+
+      {/* Acompanhamento da caixa em LARGURA CHEIA: resultado, progresso e as peças já bipadas. */}
+      <Card className="flex min-h-0 flex-1 flex-col">
+        <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
+          <CardTitle>
+            Caixa CX{seqAtivo}{' '}
+            <span className="text-sm font-normal text-muted-foreground">· limite {limiteBarra}</span>
+            {emReaberta && <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">reaberta</span>}
+          </CardTitle>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-sm" title="A última caixa pode passar do limite — bipe as peças que sobram aqui em vez de abrir caixa nova.">
+              <input type="checkbox" checked={ehUltima} onChange={(e) => setEhUltima(e.target.checked)} /> Última caixa
+            </label>
+            <Button variant="outline" size="sm" onClick={onFechar} disabled={fechando || qtdAtiva === 0}>
+              {fechando ? 'Fechando…' : 'Fechar caixa'}
+            </Button>
           </div>
-          <div className="flex flex-col rounded-lg border border-border p-2">
+        </CardHeader>
+        <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="shrink-0">
+            <PainelResultado resultado={resultado} />
+          </div>
+          {painelReabertas}
+          {emReaberta && (
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-2">
+              <p className="text-xs">
+                Você está bipando na <strong>caixa reaberta CX{seqAtivo}</strong>, não na caixa CX{seq}. {AVISO_REIMPRIMIR}
+              </p>
+              <Button variant="outline" size="sm" onClick={voltarParaAtual} disabled={embalando || fechando}>
+                Voltar pra CX{seq}
+              </Button>
+            </div>
+          )}
+          <div className="shrink-0">
+            <div className="mb-1 flex justify-between text-sm">
+              <span className="font-medium">{ehUltima ? `${qtdAtiva} nesta caixa · última (sem limite)` : `${qtdAtiva} / ${limiteBarra} nesta caixa`}</span>
+              <span className="text-muted-foreground">Total: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-enterplak" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
             <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Nesta caixa ({snsAtivos.length})</p>
             {/* Rola cedo (~5 SNs), no mesmo padrão dos históricos das outras telas (max-h-[8rem]). */}
             <ul className="flex max-h-[8rem] flex-col gap-0.5 overflow-y-auto text-sm">
@@ -305,9 +329,9 @@ export function EmbalagemPanel({
               {snsAtivos.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
             </ul>
           </div>
-        </div>
-      </CardContent>
+        </CardContent>
+      </Card>
       {dialog}
-    </Card>
+    </div>
   )
 }

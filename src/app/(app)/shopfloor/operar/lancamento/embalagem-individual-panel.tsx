@@ -12,8 +12,8 @@ import { carregarEmbalagem, embalarIndividual } from '@/modules/shopfloor/applic
  * Série baterem, registra. Fluxo escolhido pela OP (flag embalagem_individual). Sem limite/CX.
  */
 export function EmbalagemIndividualPanel({
-  colaborador, pmo, op, posto, qtdOP,
-}: { colaborador: string; pmo: string; op: string; posto: string; qtdOP: number | null }) {
+  colaborador, pmo, op, posto, qtdOP, contexto,
+}: { colaborador: string; pmo: string; op: string; posto: string; qtdOP: number | null; contexto?: React.ReactNode }) {
   const [snProduto, setSnProduto] = useState('')
   const [snCaixa, setSnCaixa] = useState('')
   const [total, setTotal] = useState(0)
@@ -72,7 +72,40 @@ export function EmbalagemIndividualPanel({
   const pct = qtdOP && qtdOP > 0 ? Math.min(100, Math.round((total / qtdOP) * 100)) : null
 
   return (
-    <Card className="flex min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Topo: Peça | Contexto — mesmo arranjo da bipagem normal. Os dois campos ficam empilhados
+          no card da Peça, na ordem em que se bipa (produto → caixa), como a bipagem normal já faz
+          quando o posto pede mais de um campo. */}
+      <div className="grid shrink-0 gap-3 lg:grid-cols-2">
+        <Card size="sm" className="flex min-h-0 flex-col">
+          <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
+            <CardTitle>Peça</CardTitle>
+          </CardHeader>
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="snProduto">Nº de Série do Produto</Label>
+              <Input
+                id="snProduto" ref={produtoRef} value={snProduto} onChange={(e) => setSnProduto(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); caixaRef.current?.focus() } }}
+                placeholder="Bipe o produto" autoComplete="off" autoFocus className="h-12 text-lg" disabled={enviando}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="snCaixa">Nº de Série da Caixa</Label>
+              <Input
+                id="snCaixa" ref={caixaRef} value={snCaixa} onChange={(e) => setSnCaixa(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onConferir() } }}
+                placeholder="Bipe a caixa" autoComplete="off" className="h-12 text-lg" disabled={enviando}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">Bipe o produto, depois a caixa. Se os dois Nº de Série baterem, a peça é registrada.</p>
+          </CardContent>
+        </Card>
+        {contexto}
+      </div>
+
+      {/* Acompanhamento em LARGURA CHEIA: resultado, progresso e as peças da sessão. */}
+      <Card className="flex min-h-0 flex-1 flex-col">
       <CardHeader className="shrink-0">
         <CardTitle>Embalagem individual <span className="text-sm font-normal text-muted-foreground">· 1 produto por caixa</span></CardTitle>
       </CardHeader>
@@ -93,37 +126,15 @@ export function EmbalagemIndividualPanel({
           )}
         </div>
 
-        {/* Campos empilhados à esquerda, histórico numa caixa à direita — mesmo padrão do Lançamento. */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_16rem]">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="snProduto">Nº de Série do Produto</Label>
-              <Input
-                id="snProduto" ref={produtoRef} value={snProduto} onChange={(e) => setSnProduto(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); caixaRef.current?.focus() } }}
-                placeholder="Bipe o produto" autoComplete="off" autoFocus className="h-12 text-lg" disabled={enviando}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="snCaixa">Nº de Série da Caixa</Label>
-              <Input
-                id="snCaixa" ref={caixaRef} value={snCaixa} onChange={(e) => setSnCaixa(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onConferir() } }}
-                placeholder="Bipe a caixa" autoComplete="off" className="h-12 text-lg" disabled={enviando}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">Bipe o produto, depois a caixa. Se os dois Nº de Série baterem, a peça é registrada.</p>
-          </div>
-
-          <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
-            <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Embaladas nesta sessão ({recentes.length})</p>
-            <ul className="flex max-h-[7rem] flex-col gap-0.5 overflow-y-auto text-sm">
-              {recentes.length === 0 && <li className="text-muted-foreground">—</li>}
-              {recentes.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
-            </ul>
-          </div>
+        <div className="flex min-h-0 flex-col rounded-lg border border-border p-2">
+          <p className="mb-1 shrink-0 text-xs font-medium text-muted-foreground">Embaladas nesta sessão ({recentes.length})</p>
+          <ul className="flex max-h-[7rem] flex-col gap-0.5 overflow-y-auto text-sm">
+            {recentes.length === 0 && <li className="text-muted-foreground">—</li>}
+            {recentes.map((s, i) => <li key={`${s}-${i}`} className="font-mono">{s}</li>)}
+          </ul>
         </div>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   )
 }
