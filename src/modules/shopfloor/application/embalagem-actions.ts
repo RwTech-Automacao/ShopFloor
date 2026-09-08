@@ -4,7 +4,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
-import { carregarEstadoEmbalagem, garantirCaixa, chamarFecharCaixa, carregarCaixasDaOp, resolverCaixaDeRetorno, montagemAnterior, outrasCaixasDoSn, type EstadoEmbalagem, type CaixaConsulta } from '@/modules/shopfloor/infra/caixa-repository'
+import { carregarEstadoEmbalagem, garantirCaixa, chamarFecharCaixa, carregarCaixasDaOp, resolverAlvoDoBipe, outrasCaixasDoSn, type EstadoEmbalagem, type CaixaConsulta } from '@/modules/shopfloor/infra/caixa-repository'
 import QRCode from 'qrcode'
 import { lancar } from './lancar-action'
 
@@ -61,17 +61,17 @@ export async function embalarPeca(entrada: {
   let seq = entrada.seq
   let limite = entrada.limite
   let ultima = entrada.ultima
-  let anterior: Awaited<ReturnType<typeof montagemAnterior>> = null
+  let anterior: Awaited<ReturnType<typeof resolverAlvoDoBipe>>['anterior'] = null
   try {
-    const retorno = await resolverCaixaDeRetorno(pmo, op, posto, snNorm)
-    if (retorno) {
-      seq = retorno.seq
-      limite = retorno.limite
+    const alvo = await resolverAlvoDoBipe(pmo, op, posto, snNorm, entrada.seq)
+    seq = alvo.seq
+    anterior = alvo.anterior
+    if (alvo.limite !== null) {
+      limite = alvo.limite
       // A remontagem tem tamanho conhecido (o da montagem reprovada); "última caixa" é uma decisão
       // do fim da OP e não se aplica aqui — deixar passar liberaria o limite sem querer.
       ultima = false
     }
-    anterior = await montagemAnterior(pmo, op, posto, seq)
   } catch {
     return { ok: false, erro: 'Não foi possível verificar a caixa desta peça.' }
   }

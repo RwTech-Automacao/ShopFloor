@@ -139,14 +139,24 @@ export async function carregarEstadoEmbalagem(
   }
 }
 
+export interface AlvoDoBipe {
+  seq: number      // caixa onde a peça deve entrar
+  limite: number | null // limite da caixa alvo quando é remontagem; null = usar o que veio da tela
+  anterior: { codigo: string; snsOriginaisNorm: string[] } | null // montagem reprovada deste seq
+}
+
 /**
- * Dado o SN que acabou de ser bipado na Embalagem, acha a caixa que ele deve RETOMAR: uma montagem
- * reprovada no NQA (revisao > 0) que continha esta peça e cuja remontagem ainda não foi fechada.
- * Null no fluxo normal — a esmagadora maioria dos bipes.
+ * Onde a peça bipada deve entrar, resolvido no servidor: normalmente a caixa que está na tela, mas
+ * quando ela voltou de uma montagem reprovada no NQA, a caixa DELA.
+ *
+ * É chamada a cada bipe, então o caminho comum tem que ser barato: a PRIMEIRA consulta já decide.
+ * Se a OP/posto não tem nenhuma montagem reprovada — a esmagadora maioria —, devolve na hora, com
+ * uma única leitura de `sf_caixas` (poucas linhas, servidas pelo índice de (pmo,op,posto)). As
+ * outras duas consultas só acontecem quando existe caixa reprovada de verdade.
  */
-export async function resolverCaixaDeRetorno(
-  pmo: string, op: string, posto: string, snNorm: string,
-): Promise<{ seq: number; limite: number } | null> {
+export async function resolverAlvoDoBipe(
+  pmo: string, op: string, posto: string, snNorm: string, seqPadrao: number,
+): Promise<AlvoDoBipe> {
   const supabase = await createServerSupabase()
   const { data: caixasData, error: e1 } = await supabase
     .from('sf_caixas').select('seq,limite,fechada,ultima,revisao,codigo')
@@ -154,26 +164,37 @@ export async function resolverCaixaDeRetorno(
   if (e1) throw e1
   const todas = (caixasData ?? []) as CaixaRow[]
   const aposentadas = todas.filter((c) => c.revisao > 0)
-  if (aposentadas.length === 0) return null
+  if (aposentadas.length === 0) return { seq: seqPadrao, limite: null, anterior: null }
 
+  // A peça está numa das montagens reprovadas?
   const { data: regs, error: e2 } = await supabase
     .from('sf_registros').select('numero_caixa')
     .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_serie_norm', snNorm)
     .in('numero_caixa', aposentadas.map((c) => c.codigo))
   if (e2) throw e2
   const codigos = new Set((regs ?? []).map((r) => (r as { numero_caixa: string }).numero_caixa))
-  if (codigos.size === 0) return null
 
-  // Reprovada mais de uma vez → retoma a montagem mais recente.
-  const candidatas = aposentadas
-    .filter((c) => codigos.has(c.codigo))
-    .sort((a, b) => (b.seq - a.seq) || (b.revisao - a.revisao))
-  for (const c of candidatas) {
-    // Já remontada e fechada → a peça não volta pra lá; segue o fluxo normal.
-    const vigente = todas.find((x) => x.seq === c.seq && x.revisao === 0)
-    if (!vigente || !vigente.fechada) return { seq: c.seq, limite: c.limite }
+  let seq = seqPadrao
+  let limite: number | null = null
+  if (codigos.size > 0) {
+    // Reprovada mais de uma vez → retoma a montagem mais recente. Já remontada e fechada → a peça
+    // não volta pra lá; segue o fluxo normal.
+    const candidatas = aposentadas
+      .filter((c) => codigos.has(c.codigo))
+      .sort((a, b) => (b.seq - a.seq) || (b.revisao - a.revisao))
+    for (const c of candidatas) {
+      const vigente = todas.find((x) => x.seq === c.seq && x.revisao === 0)
+      if (!vigente || !vigente.fechada) { seq = c.seq; limite = c.limite; break }
+    }
   }
-  return null
+
+  const anterior = aposentadas
+    .filter((c) => c.seq === seq)
+    .sort((a, b) => b.revisao - a.revisao)[0]
+  if (!anterior) return { seq, limite, anterior: null }
+
+  const { norm } = await snsDaCaixa(supabase, pmo, op, posto, anterior.codigo, 'asc')
+  return { seq, limite, anterior: { codigo: anterior.codigo, snsOriginaisNorm: norm } }
 }
 
 /** Cria a linha da caixa (seq, limite) se ainda não existir. Idempotente. */
@@ -393,22 +414,6 @@ export async function resolverCaixaPorSn(
     pendentesReteste,
     postoReteste,
   }
-}
-
-/** A montagem reprovada (mais recente) deste seq, se existir — a "lista original" da remontagem. */
-export async function montagemAnterior(
-  pmo: string, op: string, posto: string, seq: number,
-): Promise<{ codigo: string; snsOriginaisNorm: string[] } | null> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_caixas').select('codigo,revisao')
-    .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('seq', seq).gt('revisao', 0)
-    .order('revisao', { ascending: false }).limit(1).maybeSingle()
-  if (error) throw error
-  const row = data as { codigo: string; revisao: number } | null
-  if (!row) return null
-  const { norm } = await snsDaCaixa(supabase, pmo, op, posto, row.codigo, 'asc')
-  return { codigo: row.codigo, snsOriginaisNorm: norm }
 }
 
 /**
