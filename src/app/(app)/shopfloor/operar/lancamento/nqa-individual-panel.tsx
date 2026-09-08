@@ -424,10 +424,6 @@ export function NqaIndividualPanel({
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="shrink-0">
-          <PainelResultado resultado={resultado} />
-        </div>
-
-        <div className="shrink-0">
           <div className="mb-1 flex justify-between text-sm">
             <span className="font-medium">{amostras.length} / {lote.amostra} amostras</span>
             <span className="text-muted-foreground">{algumReprovado ? 'Lote reprovado' : completa ? 'Amostra completa' : 'Inspecionando…'}</span>
@@ -470,6 +466,10 @@ export function NqaIndividualPanel({
             )}
           </div>
         )}
+
+        <div className="shrink-0">
+          <PainelResultado resultado={resultado} />
+        </div>
 
         {/* Modo REPROVA: escolhe o posto de retorno e reprova o lote inteiro. */}
         {algumReprovado && (

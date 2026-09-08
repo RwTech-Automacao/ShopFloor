@@ -290,10 +290,6 @@ export function NqaCaixaPanel({
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="shrink-0">
-          <PainelResultado resultado={resultado} />
-        </div>
-
-        <div className="shrink-0">
           <div className="mb-1 flex justify-between text-sm">
             <span className="font-medium">{amostras.length} / {caixa.amostra} amostras</span>
             <span className="text-muted-foreground">{algumReprovado ? 'Caixa reprovada' : completa ? 'Amostra completa' : 'Inspecionando…'}</span>
@@ -336,6 +332,10 @@ export function NqaCaixaPanel({
             )}
           </div>
         )}
+
+        <div className="shrink-0">
+          <PainelResultado resultado={resultado} />
+        </div>
 
         {/* Modo REPROVA: escolhe o posto de retorno e reprova a caixa inteira. */}
         {algumReprovado && (
