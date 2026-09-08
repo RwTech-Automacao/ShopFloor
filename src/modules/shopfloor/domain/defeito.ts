@@ -58,32 +58,33 @@ export function capitalizarDescricaoDefeito(texto: string): string {
 const semAcento = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 
 /**
- * Sigla do tipo do defeito: P = peça, T = teste. Aceita as DUAS fontes que existem hoje:
- *  - o tipo do CATÁLOGO (`sf_defeitos.tipo`: smallint 1 = peça, 2 = teste) — a autoridade;
- *  - o texto gravado no registro (`sf_registros.tipo_defeito`), que é livre: o bipe grava
- *    'Peça'/'Teste', mas o formulário de reprova manual grava 'SMD', 'PTH', 'Funcional'…
- * Tipo que não é reconhecidamente peça nem teste → '' (o título sai sem a sigla, em vez de inventar
- * uma letra que o operador leria como outra coisa).
+ * Tipo do defeito COMO FOI REGISTRADO (`sf_registros.tipo_defeito`) — decisão do usuário.
+ *
+ * O campo é texto livre e vem de duas origens: o bipe grava 'Peça'/'Teste', e o formulário de
+ * reprova manual grava onde o defeito aconteceu — 'SMD', 'PTH', 'TOP', 'BOT', 'Funcional',
+ * 'Elétrico', 'Integração'. Mostramos o valor real em vez de reduzir a P/T pelo catálogo: 'SMD'
+ * diz mais para quem acompanha a linha do que 'P'.
+ *
+ * Só normaliza a caixa (o mesmo tipo aparece como 'SMD' e 'smd' conforme quem cadastrou) e
+ * devolve '' quando não há tipo, para o título não ficar com um ':' pendurado.
  */
-export function siglaTipoDefeito(tipo: string | number | null | undefined): string {
+export function tipoDefeitoExibido(tipo: string | number | null | undefined): string {
   if (tipo === null || tipo === undefined) return ''
-  if (typeof tipo === 'number') return tipo === 1 ? 'P' : tipo === 2 ? 'T' : ''
-  const t = semAcento(tipo)
+  const t = String(tipo).trim()
   if (t === '') return ''
-  if (t === '1' || t.startsWith('pec')) return 'P'
-  if (t === '2' || t.startsWith('test')) return 'T'
-  return ''
+  // Siglas (SMD, PTH, TOP, BOT) ficam em caixa alta; palavras ficam Capitalizadas.
+  return t.length <= 3 ? t.toUpperCase() : t[0]!.toUpperCase() + t.slice(1).toLowerCase()
 }
 
 /**
  * Título de UM defeito para a tela de acompanhamento, no formato pedido pelo usuário:
  *
- *     H1: Componente Faltando P: Cod.: 2040
- *     └┬┘  └───────┬────────┘ ┬  └────┬───┘
- *   posição    descrição    tipo    número do catálogo
+ *     H1: Componente Faltando SMD: Cod.: 2040
+ *     └┬┘  └───────┬────────┘ └┬┘  └────┬───┘
+ *   posição    descrição     tipo    número do catálogo
  *
- * ⚠️ FORMATO AINDA NÃO CONFIRMADO pelo usuário (foi deduzido do único exemplo dado). Esta é a
- * ÚNICA montagem do título no sistema — se o formato mudar, muda só aqui e as duas telas seguem.
+ * O tipo é o gravado no REGISTRO (decisão do usuário em 08/09), não a classificação peça/teste do
+ * catálogo. Esta é a ÚNICA montagem do título no sistema — se o formato mudar, muda só aqui.
  * Partes ausentes simplesmente somem (sem deixar ': ' solto); tudo vazio → 'Defeito'.
  */
 export function formatarTituloDefeito(entrada: {
@@ -96,7 +97,7 @@ export function formatarTituloDefeito(entrada: {
     posicao: (entrada.posicao ?? '').trim(),
     numero,
     descricao: capitalizarDescricaoDefeito(descricao),
-    sigla: siglaTipoDefeito(entrada.tipo),
+    sigla: tipoDefeitoExibido(entrada.tipo),
   }
   const pedacos: string[] = []
   if (partes.posicao) pedacos.push(`${partes.posicao}:`)

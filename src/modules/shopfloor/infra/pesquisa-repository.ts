@@ -128,8 +128,7 @@ export interface DefeitoDaOp {
   colaborador: string
   codigo: string
   posicao: string
-  tipo: string
-  tipoCatalogo: number // sf_defeitos.tipo (1 peça / 2 teste); 0 = código fora do catálogo
+  tipo: string // tipo_defeito do registro: 'SMD', 'PTH', 'Funcional'… (texto livre)
 }
 
 /**
@@ -156,7 +155,7 @@ export async function listarDefeitosDaOp(
     .order('id', { ascending: false })
     .range(offset, offset + limite - 1)
   if (error) throw error
-  const linhas = (data as Record<string, string>[]).map((r) => ({
+  return (data as Record<string, string>[]).map((r) => ({
     dataHora: r.data_hora ?? '',
     posto: r.posto ?? '',
     postoOrigem: r.posto_origem ?? '',
@@ -165,26 +164,7 @@ export async function listarDefeitosDaOp(
     codigo: r.codigo_defeito ?? '',
     posicao: r.posicao ?? '',
     tipo: r.tipo_defeito ?? '',
-    tipoCatalogo: 0,
   }))
-  const tipos = await mapaTipoDoCatalogo(linhas.map((l) => l.codigo))
-  for (const l of linhas) l.tipoCatalogo = tipos.get(l.codigo) ?? 0
-  return linhas
-}
-
-/**
- * codigo → tipo do catálogo (sf_defeitos.tipo: 1 peça / 2 teste) SÓ dos códigos pedidos.
- * A sigla P/T do título vem daqui, não do registro: `sf_registros.tipo_defeito` é texto livre — o
- * bipe grava 'Peça'/'Teste', mas a reprova manual grava 'SMD'/'PTH'/'Funcional'. Buscamos por `in`
- * (poucos códigos por página) em vez do catálogo inteiro, que pode passar do teto do PostgREST.
- */
-async function mapaTipoDoCatalogo(codigos: string[]): Promise<Map<string, number>> {
-  const unicos = [...new Set(codigos.filter((c) => c.trim() !== ''))]
-  if (unicos.length === 0) return new Map()
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('sf_defeitos').select('codigo,tipo').in('codigo', unicos)
-  if (error) throw error
-  return new Map((data ?? []).map((d) => [(d as { codigo: string }).codigo, Number((d as { tipo: number }).tipo) || 0]))
 }
 
 /** Uma linha do ranking de defeitos da OP: total na OP + ocorrências na última hora. */

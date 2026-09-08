@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   normalizarCodigoDefeito, validarDefeito,
-  separarCodigoDefeito, capitalizarDescricaoDefeito, siglaTipoDefeito, formatarTituloDefeito,
+  separarCodigoDefeito, capitalizarDescricaoDefeito, tipoDefeitoExibido, formatarTituloDefeito,
 } from '../defeito'
 
 describe('normalizarCodigoDefeito', () => {
@@ -65,51 +65,58 @@ describe('capitalizarDescricaoDefeito', () => {
   })
 })
 
-describe('siglaTipoDefeito', () => {
-  it('tipo do catálogo (1 = peça, 2 = teste)', () => {
-    expect(siglaTipoDefeito(1)).toBe('P')
-    expect(siglaTipoDefeito(2)).toBe('T')
+describe('tipoDefeitoExibido', () => {
+  it('mostra o tipo COMO FOI REGISTRADO — a reprova manual grava onde o defeito aconteceu', () => {
+    expect(tipoDefeitoExibido('SMD')).toBe('SMD')
+    expect(tipoDefeitoExibido('PTH')).toBe('PTH')
+    expect(tipoDefeitoExibido('Funcional')).toBe('Funcional')
+    expect(tipoDefeitoExibido('Integração')).toBe('Integração')
   })
-  it('texto do registro gravado pelo bipe', () => {
-    expect(siglaTipoDefeito('Peça')).toBe('P')
-    expect(siglaTipoDefeito('PECA')).toBe('P')
-    expect(siglaTipoDefeito('Teste')).toBe('T')
+  it('normaliza a caixa — o mesmo tipo aparece gravado de jeitos diferentes', () => {
+    expect(tipoDefeitoExibido('smd')).toBe('SMD')       // sigla curta → caixa alta
+    expect(tipoDefeitoExibido('FUNCIONAL')).toBe('Funcional') // palavra → capitalizada
   })
-  it('tipo desconhecido (texto livre do formulário manual) → sem sigla', () => {
-    expect(siglaTipoDefeito('SMD')).toBe('')
-    expect(siglaTipoDefeito('Funcional')).toBe('')
-    expect(siglaTipoDefeito(9)).toBe('')
-    expect(siglaTipoDefeito('')).toBe('')
-    expect(siglaTipoDefeito(null)).toBe('')
-    expect(siglaTipoDefeito(undefined)).toBe('')
+  it('o bipe grava Peça/Teste, e eles aparecem por extenso (não viram P/T)', () => {
+    expect(tipoDefeitoExibido('Peça')).toBe('Peça')
+    expect(tipoDefeitoExibido('Teste')).toBe('Teste')
+  })
+  it('sem tipo → vazio, pra o título não ficar com um ":" pendurado', () => {
+    expect(tipoDefeitoExibido('')).toBe('')
+    expect(tipoDefeitoExibido('   ')).toBe('')
+    expect(tipoDefeitoExibido(null)).toBe('')
+    expect(tipoDefeitoExibido(undefined)).toBe('')
   })
 })
 
 describe('formatarTituloDefeito', () => {
-  it('formato pedido: posição, descrição, sigla do tipo e número', () => {
-    const t = formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', posicao: 'H1', tipo: 1 })
-    expect(t.texto).toBe('H1: Componente Faltando P: Cod.: 2040')
-    expect(t).toMatchObject({ posicao: 'H1', descricao: 'Componente Faltando', sigla: 'P', numero: '2040' })
+  it('formato pedido: posição, descrição, tipo do registro e número', () => {
+    const t = formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', posicao: 'H1', tipo: 'SMD' })
+    expect(t.texto).toBe('H1: Componente Faltando SMD: Cod.: 2040')
+    expect(t).toMatchObject({ posicao: 'H1', descricao: 'Componente Faltando', sigla: 'SMD', numero: '2040' })
   })
   it('posição vazia → título começa na descrição (sem ":" solto)', () => {
-    expect(formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', posicao: '', tipo: 2 }).texto)
-      .toBe('Componente Faltando T: Cod.: 2040')
-    expect(formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', tipo: 2 }).texto)
-      .toBe('Componente Faltando T: Cod.: 2040')
+    expect(formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', posicao: '', tipo: 'PTH' }).texto)
+      .toBe('Componente Faltando PTH: Cod.: 2040')
+    expect(formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', tipo: 'PTH' }).texto)
+      .toBe('Componente Faltando PTH: Cod.: 2040')
   })
-  it('código sem número → sai sem o "Cod.:" (e sem dois-pontos pendurado)', () => {
-    expect(formatarTituloDefeito({ codigo: 'TRILHA ROMPIDA', posicao: 'A5', tipo: 1 }).texto)
-      .toBe('A5: Trilha Rompida P')
+  it('código sem número → sai sem o "Cod.:" (e sem dois-pontos pendurado no fim)', () => {
+    expect(formatarTituloDefeito({ codigo: 'TRILHA ROMPIDA', posicao: 'A5', tipo: 'Funcional' }).texto)
+      .toBe('A5: Trilha Rompida Funcional')
   })
-  it('só a posição (registro de reprova por posição, sem catálogo) → sem dois-pontos pendurado', () => {
+  it('só a posição (reprova por posição, sem código) → sem dois-pontos pendurado', () => {
     expect(formatarTituloDefeito({ codigo: '', posicao: 'A5', tipo: '' }).texto).toBe('A5')
   })
   it('código só com número → sai sem descrição', () => {
-    expect(formatarTituloDefeito({ codigo: '1002', posicao: 'H1', tipo: 1 }).texto).toBe('H1: P: Cod.: 1002')
+    expect(formatarTituloDefeito({ codigo: '1002', posicao: 'H1', tipo: 'SMD' }).texto).toBe('H1: SMD: Cod.: 1002')
   })
-  it('tipo desconhecido → título sem a sigla', () => {
-    expect(formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', posicao: 'H1', tipo: 'SMD' }).texto)
+  it('sem tipo gravado → título sem essa parte', () => {
+    expect(formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', posicao: 'H1', tipo: '' }).texto)
       .toBe('H1: Componente Faltando Cod.: 2040')
+  })
+  it('tipo vindo do bipe aparece por extenso, não vira sigla', () => {
+    expect(formatarTituloDefeito({ codigo: '2040 COMPONENTE FALTANDO', posicao: 'H1', tipo: 'Peça' }).texto)
+      .toBe('H1: Componente Faltando Peça: Cod.: 2040')
   })
   it('nada preenchido → rótulo genérico (nunca string vazia na tela)', () => {
     expect(formatarTituloDefeito({ codigo: '', posicao: '', tipo: '' }).texto).toBe('Defeito')

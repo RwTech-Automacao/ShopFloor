@@ -138,7 +138,7 @@ export function DefeitosLista({
                 const postoReprova = l.postoOrigem || l.posto
                 // Sigla P/T vem do CATÁLOGO; o texto do registro é livre ('SMD', 'Funcional'…) e só
                 // serve de reserva quando o código saiu do catálogo.
-                const titulo = formatarTituloDefeito({ codigo: l.codigo, posicao: l.posicao, tipo: l.tipoCatalogo || l.tipo })
+                const titulo = formatarTituloDefeito({ codigo: l.codigo, posicao: l.posicao, tipo: l.tipo })
                 const cont = porCodigo.get(l.codigo)
                 const naHora = cont?.ultimaHora ?? 0
                 const campeao = naHora > 0 && naHora === maiorHora
