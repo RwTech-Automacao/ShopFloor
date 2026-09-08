@@ -337,6 +337,20 @@ export function LancamentoForm({
     campoInicioCiclo()?.focus()
   }, [enviando, processando, enviandoLote])
 
+  // O chip "Grupo N/15" é contagem VIVA, não retrato do bipe. Ele nascia dentro do `resultado`
+  // (montado no instante da bipagem), então CONGELAVA: remover uma peça do grupo não mexia no
+  // número — só um bipe novo o recalculava. Recalcular aqui conserta todos os caminhos de uma vez
+  // (remover pela lista, enviar, descartar), não só o botão de remover.
+  const resultadoExibido = useMemo(() => {
+    const chips = resultado?.chips
+    if (!chips) return resultado
+    const i = chips.findIndex((c) => c.rotulo === 'Grupo')
+    if (i < 0) return resultado
+    const novos = [...chips]
+    novos[i] = { ...novos[i]!, valor: `${contarResolvidos(lote)}/${MAX_LOTE}` }
+    return { ...resultado!, chips: novos }
+  }, [resultado, lote])
+
   // Enquanto GRAVA (avulso ou lote), a tela é travada por um overlay e o foco vai pro campo-sumidouro —
   // assim um bipe disparado por cima da gravação não cai em nenhum campo (ex.: trocar o Posto). Bug de produção.
   useEffect(() => {
@@ -1104,7 +1118,7 @@ export function LancamentoForm({
                 </CardContent>
               </Card>
               <div className="flex flex-col gap-2">
-                <PainelResultado resultado={resultado} />
+                <PainelResultado resultado={resultadoExibido} />
                 {posto && (
                   <p className="shrink-0 text-xs text-muted-foreground">
                     Lançados — <span className="font-semibold text-foreground">sessão {lancadosSessao}</span>
@@ -1117,7 +1131,7 @@ export function LancamentoForm({
             </div>
           ) : (
             <div className="flex shrink-0 flex-col gap-2">
-              <PainelResultado resultado={resultado} />
+              <PainelResultado resultado={resultadoExibido} />
               {posto && (
                 <p className="shrink-0 text-xs text-muted-foreground">
                   Lançados — <span className="font-semibold text-foreground">sessão {lancadosSessao}</span>
