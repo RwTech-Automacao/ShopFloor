@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { carregarDashboard, type ItemDashboard } from '@/modules/shopfloor/application/dashboard-actions'
 import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
 
-export function DashboardForm({ ordens }: { ordens: OrdemPesquisa[] }) {
+export function DashboardForm({ ordens, opInicial }: { ordens: OrdemPesquisa[]; opInicial?: { cliente: string; pmo: string; op: string } }) {
   const [cliente, setCliente] = useState('')
   const [pmo, setPmo] = useState('')
   const [op, setOp] = useState('')
@@ -19,6 +19,18 @@ export function DashboardForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   const [itens, setItens] = useState<ItemDashboard[] | null>(null)
   const [total, setTotal] = useState<number | null>(null)
   const [carregando, startTransition] = useTransition()
+
+  // OP inicial (usado no modo apresentação do Fluxo): pré-seleciona e carrega direto.
+  useEffect(() => {
+    if (!opInicial) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pré-seleciona a OP passada e carrega
+    setCliente(opInicial.cliente); setPmo(opInicial.pmo); setOp(opInicial.op)
+    startTransition(async () => {
+      const r = await carregarDashboard(opInicial.pmo, opInicial.op, '', '')
+      if (r.ok) { setItens(r.itens); setTotal(r.total) } else toast.error(r.erro)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reage só à OP inicial (campos primitivos)
+  }, [opInicial?.cliente, opInicial?.pmo, opInicial?.op])
 
   const clientes = useMemo(() => [...new Set(ordens.map((o) => o.cliente))], [ordens])
   const pmos = useMemo(() => [...new Set(ordens.filter((o) => o.cliente === cliente).map((o) => o.pmo))], [ordens, cliente])

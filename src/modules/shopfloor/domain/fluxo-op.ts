@@ -1,8 +1,21 @@
 export const MANUTENCAO = 'Manutenção'
 export const ENTRADA = 'Entrada'
 export const SAIDA = 'Saída'
-const ESPACO_X = 260
-const Y_MANUTENCAO = 220
+const ESPACO_X = 300 // folga entre postos pra o rótulo de tempo na aresta não ficar coberto pelo card
+const ESPACO_Y = 200 // altura entre as linhas da serpentina (card ~116px + folga pro traçado)
+const POR_LINHA = 3 // postos por linha antes de "quebrar" — evita a fileira longa que não cabe na tela
+
+/**
+ * Posição do índice `i` no arranjo SERPENTINA: a 1ª linha vai da esquerda pra direita, a 2ª volta da
+ * direita pra esquerda, e assim por diante. Postos consecutivos ficam sempre vizinhos (sem linha de
+ * retorno atravessando a tela). Com ≤ POR_LINHA postos, o resultado é a fileira única de antes.
+ */
+function posSerpentina(i: number): { x: number; y: number } {
+  const linha = Math.floor(i / POR_LINHA)
+  const col = i % POR_LINHA
+  const x = (linha % 2 === 0 ? col : POR_LINHA - 1 - col) * ESPACO_X
+  return { x, y: linha * ESPACO_Y }
+}
 
 export interface FluxoAgregado {
   posto: string
@@ -11,6 +24,17 @@ export interface FluxoAgregado {
   aprovadas: number
   reprovadas: number
   retestes: number
+  /** Peças cuja 1ª passagem no posto foi aprovada (first-pass yield). Só faz sentido em posto com status. */
+  aprovadosPrimeira: number
+  /** Peças cujo último registro no posto é reprovado (reprovou e ainda não re-aprovou). Saldo pendente. */
+  reprovadosSemReteste: number
+  /** PEÇAS DISTINTAS que passaram (SN cujo último registro no posto ≠ reprovado). Base do card/concluído.
+   *  Opcional: quando ausente (dados antigos/testes), cai no bipe-count (temStatus?aprovadas:registros). */
+  passouDistinto?: number
+  /** 1º registro no posto (ISO) — pra a cadência MACRO (minutos úteis desde o início da produção ali). */
+  primeiroEm?: string | null
+  /** Último registro no posto (ISO) — fim da janela macro. */
+  ultimoEm?: string | null
 }
 
 export interface FluxoNodeData extends FluxoAgregado {
@@ -24,6 +48,16 @@ export interface FluxoNodeData extends FluxoAgregado {
   ehEntrada?: boolean
   /** Caixa de Saída (peças que concluíram todo o fluxo). Renderiza em vinho, sem detalhe ao clicar. */
   ehSaida?: boolean
+  /** Já passaram por este posto (aprovadas p/ posto com status; registros p/ sem). Mesmo valor que deriva `concluido`. */
+  passou: number
+  /** Quantas devem passar (qtd da OP). null = OP sem quantidade (card não mostra "/ devem passar" nem a barra). */
+  devemPassar: number | null
+  /** Só na caixa de Entrada: PMO da OP (injetado pela tela, não pelo domínio). */
+  pmo?: string
+  /** Só na caixa de Entrada: OP (injetado pela tela). */
+  op?: string
+  /** Só na caixa de Entrada: descrição da OP (a tela corta em ≤20 chars ao exibir). */
+  descricao?: string
 }
 
 export interface FluxoNodePos {
@@ -104,10 +138,12 @@ function dados(
   const a = acharAgg(agregados, posto)
   const aprovadas = a?.aprovadas ?? 0
   const registros = a?.registros ?? 0
-  // "Concluído" = todas as peças da OP já passaram por aqui (aprovadas p/ posto com status; registros p/ sem).
-  // Manutenção é ramo, não conclui.
-  const passou = temStatus ? aprovadas : registros
-  const concluido = !ehManutencao && qtd != null && qtd > 0 && passou >= qtd
+  const wip = a?.wip ?? 0
+  // "Passou" = PEÇAS DISTINTAS que passaram (passouDistinto; ≤ qtd). Corrige o card mostrar >qtd (ex.: 1457/1410),
+  // pois aprovadas/registros contam BIPES (reteste soma). Fallback pro bipe-count quando passouDistinto ausente.
+  // "Concluído" = passou ≥ qtd E NENHUMA pendente aqui (wip === 0). Manutenção é ramo, não conclui.
+  const passou = a?.passouDistinto ?? (temStatus ? aprovadas : registros)
+  const concluido = !ehManutencao && wip === 0 && qtd != null && qtd > 0 && passou >= qtd
   return {
     posto,
     wip: a?.wip ?? 0,
@@ -115,10 +151,16 @@ function dados(
     aprovadas,
     reprovadas: a?.reprovadas ?? 0,
     retestes: a?.retestes ?? 0,
+    aprovadosPrimeira: a?.aprovadosPrimeira ?? 0,
+    reprovadosSemReteste: a?.reprovadosSemReteste ?? 0,
     temStatus,
     ehManutencao,
     recurso,
     concluido,
+    passou,
+    devemPassar: qtd,
+    primeiroEm: a?.primeiroEm ?? null,
+    ultimoEm: a?.ultimoEm ?? null,
   }
 }
 
@@ -131,12 +173,16 @@ function dadosCaixa(id: string, contagem: number, tipo: 'entrada' | 'saida'): Fl
     aprovadas: 0,
     reprovadas: 0,
     retestes: 0,
+    aprovadosPrimeira: 0,
+    reprovadosSemReteste: 0,
     temStatus: false,
     ehManutencao: false,
     recurso: tipo,
     concluido: false,
     ehEntrada: tipo === 'entrada',
     ehSaida: tipo === 'saida',
+    passou: 0,
+    devemPassar: null,
   }
 }
 
@@ -144,6 +190,7 @@ function dadosCaixa(id: string, contagem: number, tipo: 'entrada' | 'saida'): Fl
 export interface BipePeca {
   posto: string
   status: string // '' = passagem OU entrada de Burn-in; 'Aprovado'/'Reprovado' = status/saída
+  postoRetorno?: string // NQA: caixa reprovada → posto escolhido p/ voltar (roteia a reprova)
 }
 
 /**
@@ -163,10 +210,21 @@ export function postoPendenteDePeca(
   const ultimo = registrosCrono[registrosCrono.length - 1]
   if (!ultimo) return postosOrdenados[0] ?? null
   const st = ultimo.status.trim().toLowerCase()
+  // Reteste do NQA: `postoRetorno` traz a lista restante de postos a repassar (+ NQA no fim); o
+  // reteste PROPAGA a lista, então pendente = 1º da lista SEJA QUAL FOR o status (reprovado na
+  // reprova; aprovado/passagem nos repasses seguintes).
+  if (ultimo.postoRetorno && ultimo.postoRetorno.trim() !== '') {
+    return ultimo.postoRetorno.split(',')[0]!.trim()
+  }
   if (st === 'reprovado') return exigeManutencaoDe(ultimo.posto) ? MANUTENCAO : ultimo.posto
   if (st === '' && recursoDe(ultimo.posto) === 'burnin') return ultimo.posto // entrada = cozinhando aqui
   const idx = postosOrdenados.findIndex((p) => p.toLowerCase() === ultimo.posto.toLowerCase())
-  if (idx < 0 || idx >= postosOrdenados.length - 1) return null // posto desconhecido ou último → concluída
+  // Posto FORA do fluxo da OP — na prática, MANUTENÇÃO: a peça reprovou, foi pra lá e o reparo já
+  // foi registrado; ela ainda precisa VOLTAR. Isto estava junto com o "último posto" no mesmo
+  // `return null`, então a peça contava como FINALIZADA e ainda sumia da fila da Manutenção
+  // (o WIP de cada nó é justamente esta contagem). Aguardando onde está é a leitura honesta.
+  if (idx < 0) return ultimo.posto
+  if (idx >= postosOrdenados.length - 1) return null // último posto do fluxo → concluída
   return postosOrdenados[idx + 1] ?? null
 }
 
@@ -187,26 +245,29 @@ export function construirFluxo(
 ): { nodes: FluxoNodePos[]; edges: FluxoEdge[] } {
   const nodes: FluxoNodePos[] = postosOrdenados.map((posto, i) => ({
     id: posto,
-    x: i * ESPACO_X,
-    y: 0,
+    ...posSerpentina(i),
     data: dados(posto, agregados, temStatus(posto), false, recursoDe(posto), qtd),
   }))
 
-  const xManut = postosOrdenados.length > 0 ? ((postosOrdenados.length - 1) * ESPACO_X) / 2 : 0
+  // Manutenção fica UMA linha abaixo da última da serpentina, centralizada na largura usada.
+  const linhas = postosOrdenados.length > 0 ? Math.ceil(postosOrdenados.length / POR_LINHA) : 0
+  const largura = Math.min(postosOrdenados.length, POR_LINHA)
+  const xManut = largura > 0 ? ((largura - 1) * ESPACO_X) / 2 : 0
   nodes.push({
     id: MANUTENCAO,
     x: xManut,
-    y: Y_MANUTENCAO,
+    y: linhas * ESPACO_Y,
     data: dados(MANUTENCAO, agregados, false, true, 'manutencao', qtd),
   })
 
   // Caixas de Entrada/Saída (só quando há postos e a contagem foi informada).
+  // Entrada fica ANTES do 1º posto; Saída continua a serpentina (posição do índice seguinte ao último).
   const temCaixas = postosOrdenados.length > 0
   if (temCaixas && naoIniciadas != null) {
     nodes.push({ id: ENTRADA, x: -ESPACO_X, y: 0, data: dadosCaixa(ENTRADA, naoIniciadas, 'entrada') })
   }
   if (temCaixas && finalizadas != null) {
-    nodes.push({ id: SAIDA, x: postosOrdenados.length * ESPACO_X, y: 0, data: dadosCaixa(SAIDA, finalizadas, 'saida') })
+    nodes.push({ id: SAIDA, ...posSerpentina(postosOrdenados.length), data: dadosCaixa(SAIDA, finalizadas, 'saida') })
   }
 
   const edges: FluxoEdge[] = []
@@ -228,4 +289,18 @@ export function construirFluxo(
     }
   }
   return { nodes, edges }
+}
+
+/**
+ * Formata uma duração (em segundos) como relógio:
+ *   ≥ 1h  → HH:MM:SS (ex.: 02:03:04)
+ *   < 1h  → MM:SS    (ex.: 05:30, e 45s vira 00:45)
+ */
+export function formatarRelogio(segundos: number): string {
+  const s = Math.max(0, Math.round(segundos))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`
 }

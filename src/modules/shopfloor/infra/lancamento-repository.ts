@@ -46,25 +46,38 @@ export async function listarClientes(): Promise<string[]> {
 }
 
 /** Nº de peças DISTINTAS (SN único) já lançadas nesse posto pra essa OP. Rebipe/reteste não soma. */
+/**
+ * Peças DISTINTAS "aprovadas/passadas" no posto = SNs cujo ÚLTIMO registro no posto NÃO é 'reprovado'.
+ * Assim: reprovada não conta (ainda não está boa); ao ser retestada e aprovada, o último vira aprovado e
+ * passa a contar; posto de passagem (status vazio) sempre conta. Corrige o contador que somava qualquer bipe.
+ */
 export async function contarLancadosNoPosto(pmo: string, op: string, posto: string): Promise<number> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const vistos = new Set<string>()
+  // Último status por SN no posto (desempata por data_hora, depois id).
+  const ultimo = new Map<string, { dh: string; id: number; status: string }>()
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie_norm')
+      .select('numero_serie_norm,status,data_hora,id')
       .eq('pmo', pmo)
       .eq('op', op)
       .eq('posto', posto)
       .neq('numero_serie_norm', '')
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (error) throw error
-    const lote = (data ?? []) as { numero_serie_norm: string }[]
-    for (const r of lote) vistos.add(r.numero_serie_norm)
+    const lote = (data ?? []) as { numero_serie_norm: string; status: string; data_hora: string; id: number }[]
+    for (const r of lote) {
+      const cur = ultimo.get(r.numero_serie_norm)
+      if (!cur || r.data_hora > cur.dh || (r.data_hora === cur.dh && r.id > cur.id)) {
+        ultimo.set(r.numero_serie_norm, { dh: r.data_hora, id: r.id, status: r.status })
+      }
+    }
     if (lote.length < PAGINA) break
   }
-  return vistos.size
+  let n = 0
+  for (const v of ultimo.values()) if ((v.status ?? '').trim().toLowerCase() !== 'reprovado') n++
+  return n
 }
 
 export async function listarPmos(cliente: string): Promise<string[]> {

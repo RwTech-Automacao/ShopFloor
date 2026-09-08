@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, numerarPassagens, postoPendenteDePeca, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca } from '../fluxo-op'
 
-const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0 })
+const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0, reprovadosSemReteste: 0 })
 
 describe('construirFluxo', () => {
   it('cria um nó por posto na ordem + nó de Manutenção sempre', () => {
@@ -9,14 +9,27 @@ describe('construirFluxo', () => {
     const ids = nodes.map((n) => n.id)
     expect(ids).toEqual(['Solda', 'Teste', MANUTENCAO])
     expect(nodes[0]!.x).toBe(0)
-    expect(nodes[1]!.x).toBe(260)
+    expect(nodes[1]!.x).toBe(300)
     const manut = nodes.find((n) => n.id === MANUTENCAO)!
     expect(manut.data.ehManutencao).toBe(true)
-    expect(manut.y).toBe(220)
+    // Serpentina: Manutenção fica UMA linha abaixo da última linha de postos (aqui só 1 linha → y = 200).
+    expect(manut.y).toBe(200)
+  })
+
+  it('serpentina: quebra a cada 3 postos alternando o sentido (o 4º fica logo abaixo do 3º)', () => {
+    const postos = ['P1', 'P2', 'P3', 'P4', 'P5']
+    const { nodes } = construirFluxo(postos, [], () => false)
+    const pos = (id: string) => nodes.find((n) => n.id === id)!
+    // 1ª linha (y=0): esquerda → direita
+    expect([pos('P1').x, pos('P1').y]).toEqual([0, 0])
+    expect([pos('P3').x, pos('P3').y]).toEqual([600, 0])
+    // 2ª linha (y=200): volta da direita pra esquerda — P4 cai logo ABAIXO do P3
+    expect([pos('P4').x, pos('P4').y]).toEqual([600, 200])
+    expect([pos('P5').x, pos('P5').y]).toEqual([300, 200])
   })
 
   it('encaixa os agregados no nó certo (case-insensitive) e aplica temStatus', () => {
-    const agg: FluxoAgregado[] = [{ posto: 'teste', wip: 3, registros: 10, aprovadas: 7, reprovadas: 3, retestes: 2 }]
+    const agg: FluxoAgregado[] = [{ posto: 'teste', wip: 3, registros: 10, aprovadas: 7, reprovadas: 3, retestes: 2, aprovadosPrimeira: 6, reprovadosSemReteste: 1 }]
     const { nodes } = construirFluxo(['Solda', 'Teste'], agg, (p) => p === 'Teste')
     const teste = nodes.find((n) => n.id === 'Teste')!
     expect(teste.data.wip).toBe(3)
@@ -70,10 +83,10 @@ describe('construirFluxo', () => {
     const saida = nodes.find((n) => n.id === SAIDA)!
     expect(entrada.data.ehEntrada).toBe(true)
     expect(entrada.data.wip).toBe(3) // não iniciadas
-    expect(entrada.x).toBe(-260) // antes do 1º posto
+    expect(entrada.x).toBe(-300) // antes do 1º posto
     expect(saida.data.ehSaida).toBe(true)
     expect(saida.data.wip).toBe(5) // finalizadas
-    expect(saida.x).toBe(520) // depois do último (2 postos × 260)
+    expect(saida.x).toBe(600) // depois do último (2 postos × 300)
     expect(edges).toContainEqual({ id: `f:${ENTRADA}->Solda`, source: ENTRADA, target: 'Solda', tipo: 'fluxo' })
     expect(edges).toContainEqual({ id: `f:Teste->${SAIDA}`, source: 'Teste', target: SAIDA, tipo: 'fluxo' })
   })
@@ -99,6 +112,49 @@ describe('construirFluxo', () => {
     expect(de(MANUTENCAO).concluido).toBe(false)
     const semQtd = construirFluxo(['Teste'], agg, () => true).nodes.find((n) => n.id === 'Teste')!.data
     expect(semQtd.concluido).toBe(false)
+  })
+
+  it('passou usa passouDistinto (peças distintas), não o bipe-count aprovadas — corrige card 1457/1410', () => {
+    // aprovadas=1457 (bipes, com reteste) mas só 1410 peças distintas passaram; qtd=1410.
+    const agg: FluxoAgregado[] = [{ ...zero('Teste'), wip: 0, aprovadas: 1457, passouDistinto: 1410 }]
+    const t = construirFluxo(['Teste'], agg, () => true, () => 'nenhum', 1410).nodes.find((n) => n.id === 'Teste')!.data
+    expect(t.passou).toBe(1410) // distinto, não 1457
+    expect(t.concluido).toBe(true) // 1410 >= 1410 e wip 0
+  })
+
+  it('NÃO marca concluído quando ainda há peças pendentes no posto (wip > 0), mesmo com passou ≥ qtd (bug de produção)', () => {
+    // aprovadas conta BIPES (retestes inflam) → 105 ≥ qtd 100, mas 8 peças ainda pendentes aqui.
+    const agg: FluxoAgregado[] = [{ ...zero('Teste'), wip: 8, aprovadas: 105, registros: 130 }]
+    const { nodes } = construirFluxo(['Teste'], agg, () => true, () => 'nenhum', 100)
+    expect(nodes.find((n) => n.id === 'Teste')!.data.concluido).toBe(false)
+  })
+
+  it('preenche passou/devemPassar (D1): passou = aprovadas p/ posto com status, registros p/ sem; devemPassar = qtd', () => {
+    const agg: FluxoAgregado[] = [
+      { ...zero('Teste'), aprovadas: 7, registros: 10 }, // com status: usa aprovadas
+      { ...zero('Embalagem'), aprovadas: 0, registros: 4 }, // sem status: usa registros
+    ]
+    const { nodes } = construirFluxo(['Teste', 'Embalagem'], agg, (p) => p === 'Teste', () => 'nenhum', 100)
+    const de = (id: string) => nodes.find((n) => n.id === id)!.data
+    expect(de('Teste').passou).toBe(7)
+    expect(de('Teste').devemPassar).toBe(100)
+    expect(de('Embalagem').passou).toBe(4)
+    expect(de('Embalagem').devemPassar).toBe(100)
+  })
+
+  it('devemPassar é null quando a OP não tem qtd', () => {
+    const { nodes } = construirFluxo(['Teste'], [], () => true)
+    expect(nodes.find((n) => n.id === 'Teste')!.data.devemPassar).toBeNull()
+  })
+
+  it('caixas de Entrada/Saída (nós sintéticos) recebem defaults que não disparam o visual novo (passou=0, devemPassar=null)', () => {
+    const { nodes } = construirFluxo(['Solda'], [], () => false, () => 'nenhum', 10, () => true, 3, 5)
+    const entrada = nodes.find((n) => n.id === ENTRADA)!
+    const saida = nodes.find((n) => n.id === SAIDA)!
+    expect(entrada.data.passou).toBe(0)
+    expect(entrada.data.devemPassar).toBeNull()
+    expect(saida.data.passou).toBe(0)
+    expect(saida.data.devemPassar).toBeNull()
   })
 
   it('passa o recurso pro nó (define o ícone); Manutenção recebe recurso manutencao', () => {
@@ -159,9 +215,35 @@ describe('postoPendenteDePeca', () => {
     expect(pp([{ posto: 'Embalagem', status: '' }])).toBeNull()
   })
 
+  it('peça na Manutenção NÃO conta como concluída — fica aguardando ali', () => {
+    // Caso real (OP PMOC57/8669): a peça reprovou, foi pra Manutenção e o reparo foi registrado
+    // (sem status). Como 'Manutenção' não está na lista de postos da OP, o findIndex devolve -1 —
+    // e isso caía no mesmo `return null` do último posto, contando a peça como finalizada.
+    expect(pp([{ posto: 'Teste', status: 'Reprovado' }, { posto: MANUTENCAO, status: '' }])).toBe(MANUTENCAO)
+  })
+
+  it('posto que não é do fluxo da OP → aguardando nele, nunca concluída', () => {
+    expect(pp([{ posto: 'Posto Que Saiu Do Fluxo', status: 'Aprovado' }])).toBe('Posto Que Saiu Do Fluxo')
+  })
+
   it('reprovada → Manutenção se o posto exige; senão o próprio posto (conserto no lugar)', () => {
     expect(pp([{ posto: 'Teste', status: 'Reprovado' }])).toBe(MANUTENCAO)
     expect(pp([{ posto: 'SPI', status: 'Reprovado' }])).toBe('SPI')
+  })
+
+  it('NQA caixa reprovada com postoRetorno → pendente no posto escolhido (antes de Manutenção/mesmo posto)', () => {
+    expect(pp([{ posto: 'NQA', status: 'Reprovado', postoRetorno: 'Teste' }])).toBe('Teste')
+    // postoRetorno vazio → cai na regra padrão (NQA não exige manutenção → próprio posto)
+    expect(pp([{ posto: 'NQA', status: 'Reprovado', postoRetorno: '' }])).toBe('NQA')
+  })
+
+  it('reteste NQA por lista: pendente no 1º da lista; a propagação avança pelos postos até o NQA', () => {
+    // reprova com lista de reteste (postos + NQA no fim) → pendente no 1º
+    expect(pp([{ posto: 'NQA', status: 'Reprovado', postoRetorno: 'SPI,Teste,NQA' }])).toBe('SPI')
+    // repasse do SPI (aprovado) já traz a lista restante propagada → pendente no Teste
+    expect(pp([{ posto: 'SPI', status: 'Aprovado', postoRetorno: 'Teste,NQA' }])).toBe('Teste')
+    // repasse do Teste com só o NQA restante → pendente no NQA (reinspeção)
+    expect(pp([{ posto: 'Teste', status: 'Aprovado', postoRetorno: 'NQA' }])).toBe('NQA')
   })
 
   it('Burn-in: entrada (status vazio) → cozinhando no próprio Burn-in; saída aprovada → próximo', () => {
@@ -175,5 +257,26 @@ describe('postoPendenteDePeca', () => {
 
   it('sem bipe → primeiro posto', () => {
     expect(pp([])).toBe('SPI')
+  })
+})
+
+describe('formatarRelogio', () => {
+  it('segundos < 1min → MM:SS com minuto zerado', () => {
+    expect(formatarRelogio(45)).toBe('00:45')
+    expect(formatarRelogio(0)).toBe('00:00')
+    expect(formatarRelogio(9)).toBe('00:09')
+  })
+  it('minutos (< 1h) → MM:SS', () => {
+    expect(formatarRelogio(90)).toBe('01:30')
+    expect(formatarRelogio(5 * 60 + 30)).toBe('05:30')
+    expect(formatarRelogio(59 * 60 + 59)).toBe('59:59')
+  })
+  it('≥ 1h → HH:MM:SS', () => {
+    expect(formatarRelogio(3600)).toBe('01:00:00')
+    expect(formatarRelogio(2 * 3600 + 3 * 60 + 4)).toBe('02:03:04')
+  })
+  it('arredonda e nunca fica negativo', () => {
+    expect(formatarRelogio(89.6)).toBe('01:30')
+    expect(formatarRelogio(-10)).toBe('00:00')
   })
 })

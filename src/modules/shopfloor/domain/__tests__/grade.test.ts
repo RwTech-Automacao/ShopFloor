@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { gerarFaixaSNs, gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, burninEmAndamento } from '../grade'
+import { gerarFaixaSNs, gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, burninEmAndamento, snsNaoIniciados } from '../grade'
+import { normalizarSerie } from '../serie'
 
 const temStatus = (p: string) =>
   ['Inspeção SPI', 'Inspeção SMD', 'Inspeção PTH', 'Teste', 'Burn-in', 'Teste Final', 'Inspeção Final', 'Inspeção NQA'].some(
@@ -158,5 +159,30 @@ describe('montarResumoPorPosto', () => {
     ]
     const teste = montarResumoPorPosto(5, ['Teste'], registros, temStatus).find((r) => r.posto === 'Teste')!
     expect(teste).toMatchObject({ produzido: 1, aprovados: 1, reprovados: 0 })
+  })
+})
+
+describe('snsNaoIniciados', () => {
+  it('lista os SNs da faixa que ainda não têm registro', () => {
+    const registrados = new Set(['2685561401', '2685561402'].map(normalizarSerie))
+    expect(snsNaoIniciados('2685561401', '2685561405', registrados, 10)).toEqual([
+      '2685561403',
+      '2685561404',
+      '2685561405',
+    ])
+  })
+
+  it('respeita o cap (para de coletar ao atingir o limite)', () => {
+    const r = snsNaoIniciados('001', '010', new Set(), 3)
+    expect(r).toEqual(['001', '002', '003'])
+  })
+
+  it('faixa toda registrada → lista vazia', () => {
+    const registrados = new Set(['001', '002', '003'].map(normalizarSerie))
+    expect(snsNaoIniciados('001', '003', registrados, 10)).toEqual([])
+  })
+
+  it('faixa incoerente → null', () => {
+    expect(snsNaoIniciados('', '', new Set(), 5)).toBeNull()
   })
 })

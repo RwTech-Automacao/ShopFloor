@@ -28,17 +28,18 @@ import {
   excluirPostoAction,
 } from '@/modules/shopfloor/application/sf-postos-actions'
 import type { PostoRow } from '@/modules/shopfloor/infra/ordem-repository'
-import { perfilAtribuivel, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
+import { perfilAtribuivel, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 
 interface PerfilSelectProps {
   id: string
   perfis: PerfilPosto[]
-  defaultValue?: string
+  value: string
+  onValueChange: (value: string | null) => void
 }
 
-function PerfilSelect({ id, perfis, defaultValue }: PerfilSelectProps) {
+function PerfilSelect({ id, perfis, value, onValueChange }: PerfilSelectProps) {
   return (
-    <Select name="perfil" defaultValue={defaultValue} required>
+    <Select name="perfil" value={value} onValueChange={onValueChange} required>
       <SelectTrigger id={id} className="w-full">
         <SelectValue placeholder="Selecione um perfil">
           {(value: string | null) => (value ? (perfis.find((p) => p.chave === value)?.nome ?? '') : 'Selecione um perfil')}
@@ -57,6 +58,7 @@ function PerfilSelect({ id, perfis, defaultValue }: PerfilSelectProps) {
 
 export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
   const [open, setOpen] = useState(false)
+  const [perfilSel, setPerfilSel] = useState('')
   const [state, formAction, pending] = useActionState(cadastrarPostoAction, undefined)
 
   useEffect(() => {
@@ -65,13 +67,20 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
       toast.success('Posto criado', { description: state.nome ?? '', position: 'bottom-center' })
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpen(false)
+      setPerfilSel('')
     } else if ('erro' in state) {
       toast.error(state.erro, { position: 'bottom-center' })
     }
   }, [state])
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v)
+        if (!v) setPerfilSel('')
+      }}
+    >
       <DialogTrigger
         render={
           <Button className="bg-enterplak hover:bg-enterplak-700">
@@ -92,8 +101,20 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="perfil">Perfil</Label>
-            <PerfilSelect id="perfil" perfis={perfis.filter(perfilAtribuivel)} />
+            <PerfilSelect
+              id="perfil"
+              perfis={perfis.filter(perfilAtribuivel)}
+              value={perfilSel}
+              onValueChange={(v) => setPerfilSel(v ?? '')}
+            />
           </div>
+
+          {perfilSuportaColetivo(perfilSel) && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="coletivo" className="size-4" />
+              Lançamento coletivo (bipa vários SNs e envia junto)
+            </label>
+          )}
 
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
@@ -115,6 +136,7 @@ interface EditarPostoButtonProps {
 export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButtonProps) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
+  const [perfilSel, setPerfilSel] = useState(posto.perfil)
 
   // Só perfis atribuíveis no dropdown — mais o perfil ATUAL do posto (caso seja um bespoke,
   // p/ ele aparecer e poder ser mantido). Assim não dá pra atribuir Manutenção/Burn-in/Integração.
@@ -126,8 +148,9 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
     const perfil = String(formData.get('perfil') ?? '')
+    const coletivo = formData.get('coletivo') === 'on'
     startTransition(async () => {
-      const r = await atualizarPostoAction(posto.chave, { perfil })
+      const r = await atualizarPostoAction(posto.chave, { perfil, coletivo })
       if ('erro' in r) {
         toast.error(r.erro, { position: 'bottom-center' })
       } else {
@@ -138,7 +161,13 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v)
+        if (v) setPerfilSel(posto.perfil)
+      }}
+    >
       <DialogTrigger
         render={
           <Button
@@ -164,8 +193,20 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="perfil-editar">Perfil</Label>
-            <PerfilSelect id="perfil-editar" perfis={perfisEdicao} defaultValue={posto.perfil} />
+            <PerfilSelect
+              id="perfil-editar"
+              perfis={perfisEdicao}
+              value={perfilSel}
+              onValueChange={(v) => setPerfilSel(v ?? '')}
+            />
           </div>
+
+          {perfilSuportaColetivo(perfilSel) && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="coletivo" className="size-4" defaultChecked={posto.coletivo} />
+              Lançamento coletivo (bipa vários SNs e envia junto)
+            </label>
+          )}
 
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">

@@ -11,7 +11,7 @@ export function AbasFluxo({ tabs }: { tabs: { rotulo: string; href: string }[] }
   const { ligado } = useKiosk()
   if (ligado) return null
   return (
-    <nav className="mb-4 flex gap-1 border-b border-border">
+    <nav className="mb-4 flex gap-1 border-b border-border print:hidden">
       {tabs.map((t) => {
         const ativa = pathname === t.href || pathname.startsWith(t.href + '/')
         return (

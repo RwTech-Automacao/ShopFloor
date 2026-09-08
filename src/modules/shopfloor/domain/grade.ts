@@ -75,6 +75,28 @@ export function gerarFaixaSNsPagina(
   return { ok: true, sns, total }
 }
 
+/**
+ * SNs da faixa que ainda NÃO têm registro (não iniciados), até `cap`. `registradosNorm` = SNs já
+ * bipados na forma de `normalizarSerie`. Faixa incoerente → null. Para no `cap` ou ao esgotar a
+ * faixa (não estoura em OP grande). Usado no detalhe do 1º posto do Fluxo (peças que aguardam
+ * o primeiro bipe).
+ */
+export function snsNaoIniciados(
+  snIni: string,
+  snFim: string,
+  registradosNorm: Set<string>,
+  cap: number,
+): string[] | null {
+  const f = faixaInfo(snIni, snFim)
+  if (!f.ok) return null
+  const sns: string[] = []
+  for (let n = f.ini; n <= f.fim && sns.length < cap; n++) {
+    const sn = f.prefixo + String(n).padStart(f.largura, '0') + f.sufixo
+    if (!registradosNorm.has(normalizarSerie(sn))) sns.push(sn)
+  }
+  return sns
+}
+
 export interface RegistroGrade {
   snNorm: string
   posto: string

@@ -3,6 +3,14 @@ export function normalizarSerie(sn: string): string {
   return (sn ?? '').toString().replace(/[^A-Za-z0-9]/g, '').replace(/^0+/, '').trim().toLowerCase()
 }
 
+/**
+ * Teto de caracteres do Nº de Série (depois de limpar separadores). Os SNs daqui têm ~8–12.
+ * Um bipe de produção (01/09/2026, Printer TOP) gravou 55 caracteres: 46 zeros à esquerda antes do
+ * código correto — assinatura de tecla "0" repetindo no coletor. Acima deste teto é leitura suja:
+ * o lançamento é recusado e o operador lê de novo (melhor que truncar em silêncio).
+ */
+export const MAX_SERIE = 30
+
 /** Limpa SN para SALVAR (sem separadores, MANTÉM zeros à esquerda). */
 export function limparSerie(sn: string): string {
   return (sn ?? '').toString().replace(/[^A-Za-z0-9]/g, '').trim()

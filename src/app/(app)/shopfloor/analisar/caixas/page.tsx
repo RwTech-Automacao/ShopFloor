@@ -12,7 +12,7 @@ export default async function CaixasPage() {
   const ops = await listarOpsComCaixas()
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="print:hidden">
         <h2 className="text-lg font-semibold text-tinta">Consultar Caixa</h2>
         <p className="text-sm text-muted-foreground">Escolha a OP para ver as caixas e as peças dentro de cada uma.</p>
       </div>

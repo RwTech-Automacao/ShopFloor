@@ -1,7 +1,12 @@
 import Image from 'next/image'
 import { LoginForm } from './login-form'
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ redefinida?: string }>
+}) {
+  const { redefinida } = await searchParams
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       {/* Painel de marca (vinho) — visível a partir de lg */}
@@ -52,7 +57,7 @@ export default function LoginPage() {
           <p className="mt-1 mb-8 text-sm text-muted-foreground">
             Acesse sua conta para continuar.
           </p>
-          <LoginForm />
+          <LoginForm redefinida={redefinida === '1'} />
           <p className="mt-10 text-center text-xs text-muted-foreground">Versão 1.1.0</p>
         </div>
       </div>

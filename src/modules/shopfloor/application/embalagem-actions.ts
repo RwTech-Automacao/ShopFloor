@@ -5,6 +5,7 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { carregarEstadoEmbalagem, garantirCaixa, chamarFecharCaixa, carregarCaixasDaOp, type EstadoEmbalagem, type CaixaConsulta } from '@/modules/shopfloor/infra/caixa-repository'
+import QRCode from 'qrcode'
 import { lancar } from './lancar-action'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
@@ -21,9 +22,13 @@ export async function carregarEmbalagem(
   }
 }
 
-/** Garante a caixa (seq,limite) e lança a peça nela (reusa sf_lancar via lancar). */
+/** Garante a caixa (seq,limite) e lança a peça nela (reusa sf_lancar via lancar).
+ *  `ultima`: a caixa foi marcada como ÚLTIMA → aceita passar do limite (as peças que sobram
+ *  vão nela em vez de abrir caixa nova). Continua mandando o qtd_por_caixa (a validação exige),
+ *  mas via `permitirExtraCaixa` o lancar passa qtd=null pro RPC → pula a checagem de CAIXA_CHEIA.
+ *  (O limite canônico da caixa continua em sf_caixas.limite.) */
 export async function embalarPeca(entrada: {
-  colaborador: string; pmo: string; op: string; posto: string; seq: number; limite: number; numeroSerie: string
+  colaborador: string; pmo: string; op: string; posto: string; seq: number; limite: number; numeroSerie: string; ultima?: boolean
 }): Promise<{ ok: true; caixaCount?: number } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
@@ -50,6 +55,7 @@ export async function embalarPeca(entrada: {
     numeroSerie: entrada.numeroSerie,
     numeroCaixa: marcadorCaixaAberta(entrada.seq),
     qtdPorCaixa: String(entrada.limite),
+    permitirExtraCaixa: entrada.ultima, // última caixa aceita passar do limite
   })
   if (!r.ok) return r
   return { ok: true, caixaCount: r.caixaCount }
@@ -97,5 +103,39 @@ export async function caixasDaOp(
     return { ok: true, caixas: await carregarCaixasDaOp(pmo.trim(), op.trim()) }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar as caixas.' }
+  }
+}
+
+/**
+ * QR Code da caixa para a folha impressa. O conteúdo é a LISTA DE SNs, um por linha — é o que o
+ * leitor de celular mostra hoje na planilha que a fábrica usa. Gerado no servidor (SVG, imprime
+ * nítido em qualquer tamanho) para não carregar a biblioteca no navegador do chão de fábrica.
+ *
+ * O QR tem teto de dados: com correção de erro M cabem ~230 SNs. Caixa maior que isso não gera —
+ * devolve o erro em vez de imprimir um QR truncado, que seria pior que nenhum.
+ */
+export async function qrDaCaixa(
+  pmo: string, op: string, posto: string, seq: number,
+): Promise<{ ok: true; svg: string; conteudo: string } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    const caixas = await carregarCaixasDaOp(pmo.trim(), op.trim())
+    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq)
+    if (!caixa) return { ok: false, erro: 'Caixa não encontrada.' }
+    if (caixa.sns.length === 0) return { ok: false, erro: 'Esta caixa não tem peças.' }
+
+    const conteudo = caixa.sns.join('\n')
+    const svg = await QRCode.toString(conteudo, {
+      type: 'svg',
+      errorCorrectionLevel: 'M',
+      margin: 0,
+    })
+    return { ok: true, svg, conteudo }
+  } catch {
+    return {
+      ok: false,
+      erro: `Não foi possível gerar o QR Code — a caixa pode ter peças demais para um QR (teto ~230).`,
+    }
   }
 }

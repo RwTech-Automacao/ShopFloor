@@ -1,18 +1,26 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { AlertCircle, Eye, EyeOff } from 'lucide-react'
+import Link from 'next/link'
+import { AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import { entrar } from '@/modules/auth/application/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-export function LoginForm() {
+export function LoginForm({ redefinida = false }: { redefinida?: boolean }) {
   const [state, formAction, pending] = useActionState(entrar, undefined)
   const [mostrarSenha, setMostrarSenha] = useState(false)
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
+      {redefinida && (
+        <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span>Senha redefinida! Entre com a nova senha.</span>
+        </div>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="email">E-mail</Label>
         <Input
@@ -47,6 +55,12 @@ export function LoginForm() {
             {mostrarSenha ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
         </div>
+      </div>
+
+      <div className="-mt-2 text-right">
+        <Link href="/esqueci-senha" className="text-sm font-medium text-enterplak hover:underline">
+          Esqueci minha senha?
+        </Link>
       </div>
 
       {state?.erro && (

@@ -1,6 +1,7 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
+import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 export interface EstadoEmbalagem {
   seq: number            // caixa atual (aberta ou próxima a abrir)
@@ -71,7 +72,13 @@ export async function chamarFecharCaixa(pmo: string, op: string, posto: string, 
   return data as { ok: boolean; erro?: string; codigo?: string }
 }
 
-export interface OpComCaixa { pmo: string; op: string; cliente: string }
+export interface OpComCaixa {
+  pmo: string
+  op: string
+  cliente: string
+  descricao: string // produto (vai na faixa do cabeçalho da folha impressa)
+  qtdOp: number | null // total da OP — NÃO é a quantidade da caixa
+}
 export interface CaixaConsulta {
   seq: number
   posto: string
@@ -82,7 +89,7 @@ export interface CaixaConsulta {
   sns: string[]    // SNs dentro da caixa
 }
 
-/** OPs que têm ao menos uma caixa (distinct pmo/op), com o cliente (de sf_ordens). */
+/** OPs que têm ao menos uma caixa (distinct pmo/op), com cliente/produto/qtd (de sf_ordens). */
 export async function listarOpsComCaixas(): Promise<OpComCaixa[]> {
   const supabase = await createServerSupabase()
   const { data: cxs, error } = await supabase.from('sf_caixas').select('pmo,op')
@@ -90,12 +97,22 @@ export async function listarOpsComCaixas(): Promise<OpComCaixa[]> {
   const pares = new Map<string, { pmo: string; op: string }>()
   for (const c of (cxs ?? []) as { pmo: string; op: string }[]) pares.set(`${c.pmo}||${c.op}`, { pmo: c.pmo, op: c.op })
   if (pares.size === 0) return []
-  const { data: ord, error: e2 } = await supabase.from('sf_ordens').select('pmo,op,cliente')
+  const { data: ord, error: e2 } = await supabase.from('sf_ordens').select('pmo,op,cliente,descricao,qtd')
   if (e2) throw e2
-  const cli = new Map<string, string>()
-  for (const o of (ord ?? []) as { pmo: string; op: string; cliente: string }[]) cli.set(`${o.pmo}||${o.op}`, o.cliente)
+  type Ordem = { pmo: string; op: string; cliente: string; descricao: string; qtd: number | null }
+  const porOp = new Map<string, Ordem>()
+  for (const o of (ord ?? []) as Ordem[]) porOp.set(`${o.pmo}||${o.op}`, o)
   return [...pares.values()]
-    .map((p) => ({ pmo: p.pmo, op: p.op, cliente: cli.get(`${p.pmo}||${p.op}`) ?? '' }))
+    .map((p) => {
+      const o = porOp.get(`${p.pmo}||${p.op}`)
+      return {
+        pmo: p.pmo,
+        op: p.op,
+        cliente: o?.cliente ?? '',
+        descricao: o?.descricao ?? '',
+        qtdOp: o?.qtd ?? null,
+      }
+    })
     .sort((a, b) => (a.pmo === b.pmo ? a.op.localeCompare(b.op) : a.pmo.localeCompare(b.pmo)))
 }
 
@@ -137,4 +154,108 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
       sns,
     }
   })
+}
+
+export interface CaixaDoSn {
+  posto: string        // posto de embalagem onde a caixa foi formada
+  numeroCaixa: string  // código/marcador da caixa (numero_caixa)
+  qtd: number          // total de peças (SNs distintos) da caixa
+  snsNorm: string[]    // SNs (normalizados) da caixa — p/ validar que a amostra é DESTA caixa
+  fechada: boolean     // a caixa já foi FECHADA na embalagem (NQA só inspeciona caixa fechada)
+  jaInspecionadaNqa: boolean // caixa FINALIZADA no NQA (alguma peça no NQA e NENHUMA pendente de reteste)
+  pendentesReteste: string[] // SNs (exibição) que ainda precisam RETESTAR antes de re-inspecionar a caixa
+  postoReteste: string       // posto onde essas peças devem retestar (1º da rota; vazio se não uniforme)
+}
+
+/**
+ * Dado 1 SN, acha a CAIXA a que ele pertence (via `numero_caixa` da embalagem) + a quantidade e
+ * se já foi inspecionada no posto NQA (`postoNqa`). Base do painel NQA por caixa. Null se o SN não
+ * está em nenhuma caixa.
+ */
+export async function resolverCaixaPorSn(
+  pmo: string,
+  op: string,
+  sn: string,
+  postoNqa: string,
+): Promise<CaixaDoSn | null> {
+  const supabase = await createServerSupabase()
+  const norm = normalizarSerie(sn)
+
+  const { data: r1, error: e1 } = await supabase
+    .from('sf_registros')
+    .select('numero_caixa,posto')
+    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', norm)
+    .like('numero_caixa', 'CX%')
+    .order('data_hora', { ascending: false })
+    .limit(1).maybeSingle()
+  if (e1) throw e1
+  if (!r1) return null
+  const { numero_caixa, posto } = r1 as { numero_caixa: string; posto: string }
+
+  const { data: regs, error: e2 } = await supabase
+    .from('sf_registros')
+    .select('numero_serie_norm')
+    .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', numero_caixa)
+  if (e2) throw e2
+  const snsNorm = new Set((regs ?? []).map((x) => (x as { numero_serie_norm: string }).numero_serie_norm))
+
+  // Fechada? Ao fechar, a embalagem reescreve o numero_caixa dos registros para o CÓDIGO final e
+  // grava sf_caixas.codigo+fechada. Caixa ABERTA carrega o marcador CX[seq] (sem código em sf_caixas).
+  const { data: cx, error: eCx } = await supabase
+    .from('sf_caixas')
+    .select('fechada')
+    .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('codigo', numero_caixa)
+    .maybeSingle()
+  if (eCx) throw eCx
+  const fechada = (cx as { fechada: boolean } | null)?.fechada === true
+
+  // Último registro (posto/status/rota/SN) de cada peça da caixa — pra decidir o bloqueio do NQA.
+  // Uma peça cujo último registro ainda está no NQA está: REPROVADA (falta retestar) ou APROVADA
+  // (caixa já finalizada). Depois do reteste, o último registro vira outro posto → LIBERA a reinspeção.
+  // Pagina (PostgREST trunca em 1000): caixa grande (SNs × registros > 1000) truncaria. Ordenado desc
+  // → a 1ª ocorrência de cada SN é o último registro.
+  interface UltReg { numeroSerie: string; posto: string; status: string; retorno: string }
+  const ultimoDaPeca = new Map<string, UltReg>()
+  const PAGINA = 1000
+  for (let i = 0; ; i++) {
+    const { data: hist, error: e3 } = await supabase
+      .from('sf_registros')
+      .select('numero_serie,numero_serie_norm,posto,status,posto_retorno')
+      .eq('pmo', pmo).eq('op', op)
+      .in('numero_serie_norm', [...snsNorm])
+      .order('data_hora', { ascending: false })
+      .order('id', { ascending: false })
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (e3) throw e3
+    const lote = (hist ?? []) as { numero_serie: string; numero_serie_norm: string; posto: string; status: string; posto_retorno: string | null }[]
+    for (const r of lote) {
+      if (!ultimoDaPeca.has(r.numero_serie_norm)) {
+        ultimoDaPeca.set(r.numero_serie_norm, { numeroSerie: r.numero_serie, posto: r.posto, status: r.status, retorno: r.posto_retorno ?? '' })
+      }
+    }
+    if (lote.length < PAGINA) break
+  }
+
+  const noNqaAgora = [...ultimoDaPeca.values()].filter((u) => u.posto === postoNqa)
+  // Reprovadas no NQA = ainda precisam RETESTAR (voltar pelo posto_retorno) antes de re-inspecionar.
+  const pendentesRegs = noNqaAgora.filter((u) => u.status.trim().toLowerCase() === 'reprovado')
+  const pendentesReteste = pendentesRegs.map((u) => u.numeroSerie)
+  // Posto onde essas peças devem retestar = 1º da rota (quando único p/ todas).
+  const postosDeReteste = new Set(
+    pendentesRegs.map((u) => (u.retorno.split(',')[0] ?? '').trim()).filter((p) => p !== '' && p !== postoNqa),
+  )
+  const postoReteste = postosDeReteste.size === 1 ? [...postosDeReteste][0]! : ''
+  // Finalizada = alguma peça no NQA e NENHUMA pendente de reteste (todas já inspecionadas/aprovadas).
+  const jaInspecionadaNqa = noNqaAgora.length > 0 && pendentesReteste.length === 0
+
+  return {
+    posto,
+    numeroCaixa: numero_caixa,
+    qtd: snsNorm.size,
+    snsNorm: [...snsNorm],
+    fechada,
+    jaInspecionadaNqa,
+    pendentesReteste,
+    postoReteste,
+  }
 }

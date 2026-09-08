@@ -118,3 +118,51 @@ export async function listarTodasOrdens(): Promise<OrdemPesquisa[]> {
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
   }))
 }
+
+/** Uma linha da lista de Defeitos da OP (um registro reprovado com defeito). */
+export interface DefeitoDaOp {
+  dataHora: string
+  posto: string
+  postoOrigem: string // posto de ONDE veio (reprovado); em registro de Manutenção é o posto do teste
+  sn: string
+  colaborador: string
+  codigo: string
+  posicao: string
+  tipo: string
+}
+
+/**
+ * Defeitos de uma OP (linhas de sf_registros com codigo_defeito preenchido), mais recentes primeiro.
+ * Paginado por `range` (offset/limite) pra lazy load — escopado à OP (índice pmo,op), volume pequeno.
+ */
+export async function listarDefeitosDaOp(
+  pmo: string, op: string, offset: number, limite: number, posto?: string,
+): Promise<DefeitoDaOp[]> {
+  const supabase = await createServerSupabase()
+  let query = supabase
+    .from('sf_registros')
+    .select('data_hora,posto,posto_origem,numero_serie,colaborador,codigo_defeito,posicao,tipo_defeito')
+    .eq('pmo', pmo)
+    .eq('op', op)
+    .neq('codigo_defeito', '') // só linhas COM defeito (reprova)
+  // Filtro por posto casa o posto do registro OU o posto_origem (reprova que virou reparo na Manutenção).
+  if (posto && posto.trim() !== '') {
+    const p = posto.trim()
+    query = query.or(`posto.eq.${p},posto_origem.eq.${p}`)
+  }
+  const { data, error } = await query
+    .order('data_hora', { ascending: false })
+    .order('id', { ascending: false })
+    .range(offset, offset + limite - 1)
+  if (error) throw error
+  return (data as Record<string, string>[]).map((r) => ({
+    dataHora: r.data_hora ?? '',
+    posto: r.posto ?? '',
+    postoOrigem: r.posto_origem ?? '',
+    sn: r.numero_serie ?? '',
+    colaborador: r.colaborador ?? '',
+    codigo: r.codigo_defeito ?? '',
+    posicao: r.posicao ?? '',
+    tipo: r.tipo_defeito ?? '',
+  }))
+}

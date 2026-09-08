@@ -1,14 +1,15 @@
 'use client'
 
-import { useRef, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import imageCompression from 'browser-image-compression'
-import { ImagePlusIcon, Trash2Icon } from 'lucide-react'
+import { CameraIcon, ImagePlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { anexarFoto, removerFoto } from '@/modules/recebimento/application/anexos-actions'
 import type { AnexoComUrl } from '@/modules/recebimento/infra/anexo-repository'
+import { CameraCaptura } from './camera-captura'
 
 const LIMITE = 3
 const UM_MB = 1_048_576
@@ -30,14 +31,13 @@ export function AnexosProcesso({
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [ocupado, startTransition] = useTransition()
+  const [cameraAberta, setCameraAberta] = useState(false)
   const { confirmar, dialog } = useConfirmacao()
 
   const podeAdicionar = !somenteLeitura && anexos.length < LIMITE
 
-  async function aoSelecionar(e: React.ChangeEvent<HTMLInputElement>) {
-    const arquivo = e.target.files?.[0]
-    e.target.value = '' // permite re-selecionar o mesmo arquivo depois
-    if (!arquivo) return
+  /** Comprime (se > 1 MB) e envia a imagem — usado tanto pelo Arquivo quanto pela Câmera. */
+  async function processarEnviar(arquivo: File) {
     if (!arquivo.type.startsWith('image/')) {
       toast.error('Selecione uma imagem.')
       return
@@ -64,6 +64,13 @@ export function AnexosProcesso({
       if (r.ok) toast.success('Foto anexada.')
       else toast.error(r.erro)
     })
+  }
+
+  async function aoSelecionar(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0]
+    e.target.value = '' // permite re-selecionar o mesmo arquivo depois
+    if (!arquivo) return
+    await processarEnviar(arquivo)
   }
 
   async function aoRemover(id: string) {
@@ -118,12 +125,13 @@ export function AnexosProcesso({
         )}
 
         {podeAdicionar && (
-          <div>
+          <div className="flex flex-wrap gap-2">
+            {/* Sem `capture`: no PC abre o seletor de arquivo; no celular, o seletor
+                (que já oferece câmera/galeria). A câmera direta fica no botão ao lado. */}
             <input
               ref={inputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               hidden
               onChange={aoSelecionar}
             />
@@ -134,11 +142,25 @@ export function AnexosProcesso({
               onClick={() => inputRef.current?.click()}
             >
               <ImagePlusIcon />
-              {ocupado ? 'Enviando…' : 'Adicionar foto'}
+              {ocupado ? 'Enviando…' : 'Arquivo'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={ocupado}
+              onClick={() => setCameraAberta(true)}
+            >
+              <CameraIcon />
+              Câmera
             </Button>
           </div>
         )}
       </CardContent>
+      <CameraCaptura
+        aberto={cameraAberta}
+        onFechar={() => setCameraAberta(false)}
+        onCapturar={processarEnviar}
+      />
       {dialog}
     </Card>
   )
