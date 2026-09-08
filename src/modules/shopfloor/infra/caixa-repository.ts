@@ -7,6 +7,7 @@ export interface RemontagemCaixa {
   codigoAnterior: string    // código já aposentado, com o R: 'CX[7]R[14]8498-PMOC14'
   snsOriginais: string[]    // SNs da montagem reprovada (exibição), na ordem em que foram embalados
   snsOriginaisNorm: string[]
+  faltando: string[]        // da montagem original, ainda não bipados na remontagem
 }
 
 export interface EstadoEmbalagem {
@@ -106,9 +107,14 @@ export async function carregarEstadoEmbalagem(
   let remontagem: RemontagemCaixa | null = null
   if (anterior) {
     const orig = await snsDaCaixa(supabase, pmo, op, posto, anterior.codigo, 'asc')
-    remontagem = { codigoAnterior: anterior.codigo, snsOriginais: orig.exibicao, snsOriginaisNorm: orig.norm }
+    const jaNaCaixa = new Set(snsAtuaisNorm)
+    remontagem = {
+      codigoAnterior: anterior.codigo,
+      snsOriginais: orig.exibicao,
+      snsOriginaisNorm: orig.norm,
+      faltando: orig.exibicao.filter((_, i) => !jaNaCaixa.has(orig.norm[i]!)),
+    }
   }
-  void snsAtuaisNorm
 
   return { seq, limite, qtdNaCaixa, totalEmbaladas, snsNaCaixa, concluida: false, remontagem }
 }

@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
-import { carregarEmbalagem, embalarPeca, fecharCaixa } from '@/modules/shopfloor/application/embalagem-actions'
+import { carregarEmbalagem, embalarPeca, fecharCaixa, type ResultadoEmbalar } from '@/modules/shopfloor/application/embalagem-actions'
+import type { RemontagemCaixa } from '@/modules/shopfloor/infra/caixa-repository'
 
 /**
  * Embalagem por CAIXA. O layout segue o padrão das outras telas do Lançamento: topo com a Peça
@@ -25,6 +26,11 @@ export function EmbalagemPanel({
   const [totalEmbaladas, setTotalEmbaladas] = useState(0)
   const [snsNaCaixa, setSnsNaCaixa] = useState<string[]>([])
   const [concluida, setConcluida] = useState(false)
+  // Remontagem: a caixa da tela está refazendo uma montagem reprovada no NQA. `seqEmFoco` fixa qual
+  // caixa recarregar — sem ele o servidor devolveria de novo a caixa da vez, não a que estamos refazendo.
+  const [remontagem, setRemontagem] = useState<RemontagemCaixa | null>(null)
+  const [seqEmFoco, setSeqEmFoco] = useState<number | null>(null)
+  const [pendente, setPendente] = useState<{ sn: string; motivo: string } | null>(null)
   const [sn, setSn] = useState('')
   const [ehUltima, setEhUltima] = useState(false)
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
@@ -48,10 +54,11 @@ export function EmbalagemPanel({
     if (a === 'select') el.select()
   }, [embalando])
 
-  function recarregar() {
+  function recarregar(foco?: number | null, manterResultado = false) {
     startCarregar(async () => {
-      setResultado(null) // contexto novo (troca de OP/posto) → limpa o painel da ação anterior
-      const r = await carregarEmbalagem(pmo, op, posto)
+      if (!manterResultado) setResultado(null) // contexto novo (troca de OP/posto) → limpa o painel
+      const alvo = foco === undefined ? seqEmFoco : foco
+      const r = await carregarEmbalagem(pmo, op, posto, alvo ?? undefined)
       if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
       setSeq(r.estado.seq)
       setLimite(r.estado.limite)
@@ -59,9 +66,11 @@ export function EmbalagemPanel({
       setTotalEmbaladas(r.estado.totalEmbaladas)
       setSnsNaCaixa(r.estado.snsNaCaixa)
       setConcluida(r.estado.concluida)
+      setRemontagem(r.estado.remontagem)
     })
   }
-  useEffect(() => { recarregar() }, [pmo, op, posto]) // recarrega ao entrar / trocar contexto
+  // Troca de OP/posto zera o foco: a remontagem é de uma caixa daquele contexto, não deste.
+  useEffect(() => { setSeqEmFoco(null); setPendente(null); recarregar(null) }, [pmo, op, posto])
 
   function definirLimite() {
     const n = Number(limiteInput)
@@ -71,37 +80,87 @@ export function EmbalagemPanel({
   }
 
   function onBipar() {
-    if (sn.trim() === '' || embalando || limite === null) return
+    if (sn.trim() === '' || embalando || limite === null || pendente) return
     const alvo = sn
     startEmbalar(async () => {
       const r = await embalarPeca({ colaborador, pmo, op, posto, seq, limite, numeroSerie: alvo, ultima: ehUltima })
-      if (!r.ok) {
-        setResultado({
-          tipo: 'aviso',
-          titulo: r.erro,
-          chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
-          dica: /cheia/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
-        })
-        setSn('') // bipe errado → limpa o campo pra bipar outro
-        acaoAposEmbalar.current = 'focus'
+      aplicarBipe(r, alvo)
+    })
+  }
+
+  /** Inclui a peça que não era da caixa original — o operador já leu o motivo e decidiu. */
+  function incluirMesmoAssim() {
+    const p = pendente
+    if (!p || embalando || limite === null) return
+    setPendente(null)
+    startEmbalar(async () => {
+      const r = await embalarPeca({
+        colaborador, pmo, op, posto, seq, limite, numeroSerie: p.sn, ultima: ehUltima,
+        confirmarForaDaCaixa: true,
+      })
+      aplicarBipe(r, p.sn)
+    })
+  }
+
+  function aplicarBipe(r: ResultadoEmbalar, alvo: string) {
+    if (!r.ok) {
+      // Peça fora da caixa original: não é erro, é uma decisão do operador — guarda e pergunta.
+      if (r.confirmar) {
+        setPendente({ sn: alvo, motivo: r.confirmar.motivo })
+        setResultado(null)
+        setSn('')
         return
       }
-      setSn('')
+      setResultado({
+        tipo: 'aviso',
+        titulo: r.erro,
+        chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
+        dica: /cheia/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
+      })
+      setSn('') // bipe errado → limpa o campo pra bipar outro
+      acaoAposEmbalar.current = 'focus'
+      return
+    }
+    setSn('')
+    acaoAposEmbalar.current = 'focus' // refoca quando a transição terminar (input volta a habilitar)
+
+    // O servidor pode ter mandado a peça pra OUTRA caixa (ela voltou de uma reprovada). O contador
+    // e o limite locais são da caixa antiga, então aqui não dá pra somar 1: recarrega o estado real.
+    if (r.seq !== seq) {
+      setSeqEmFoco(r.seq)
+      setEhUltima(false) // "última caixa" é decisão do fim da OP; não vale numa remontagem
       setResultado({
         tipo: 'ok',
-        titulo: 'Peça embalada',
-        chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }, { rotulo: 'Caixa', valor: `CX${seq} · ${qtdNaCaixa + 1}/${limite}` }],
+        titulo: `Peça embalada — voltou pra CX${r.seq}`,
+        chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
       })
-      setQtdNaCaixa((q) => q + 1)
-      setTotalEmbaladas((t) => t + 1)
-      setSnsNaCaixa((prev) => [alvo.trim(), ...prev])
-      acaoAposEmbalar.current = 'focus' // refoca quando a transição terminar (input volta a habilitar)
+      recarregar(r.seq, true)
+      return
+    }
+
+    setResultado({
+      tipo: 'ok',
+      titulo: 'Peça embalada',
+      chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }, { rotulo: 'Caixa', valor: `CX${seq} · ${qtdNaCaixa + 1}/${limite}` }],
     })
+    setQtdNaCaixa((q) => q + 1)
+    setTotalEmbaladas((t) => t + 1)
+    setSnsNaCaixa((prev) => [alvo.trim(), ...prev])
+    if (remontagem) setRemontagem({ ...remontagem, faltando: remontagem.faltando.filter((s) => s !== alvo.trim()) })
   }
 
   async function onFechar() {
     if (fechando || limite === null || qtdNaCaixa === 0) return
-    if (qtdNaCaixa < limite) {
+    // Numa remontagem, o que importa não é o limite e sim quem da caixa original ainda não voltou.
+    const faltando = remontagem?.faltando ?? []
+    if (faltando.length > 0) {
+      const ok = await confirmar({
+        titulo: `Fechar a CX${seq} sem ${faltando.length} peça${faltando.length === 1 ? '' : 's'} da caixa original?`,
+        descricao: `Não voltaram: ${faltando.join(', ')}.`,
+        rotuloConfirmar: 'Fechar assim',
+      })
+      if (!ok) return
+    } else if (!remontagem && qtdNaCaixa < limite) {
       const ok = await confirmar({
         titulo: `Fechar a caixa com ${qtdNaCaixa}/${limite}?`,
         descricao: 'A caixa vai ser fechada antes de atingir o limite.',
@@ -113,6 +172,9 @@ export function EmbalagemPanel({
       const r = await fecharCaixa(pmo, op, posto, seq, ehUltima)
       if (!r.ok) { setResultado({ tipo: 'aviso', titulo: r.erro }); return }
       setResultado({ tipo: 'ok', titulo: 'Caixa fechada', chips: [{ rotulo: 'Código', valor: r.codigo, mono: true }] })
+      setPendente(null)
+      // Remontagem fechada → volta pra caixa que estava em andamento antes, com as peças dela.
+      if (seqEmFoco !== null) { setSeqEmFoco(null); recarregar(null, true); setTimeout(() => snRef.current?.focus(), 0); return }
       if (ehUltima) { setConcluida(true) }
       else { setSeq((s) => s + 1); setQtdNaCaixa(0); setSnsNaCaixa([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
     })
@@ -181,17 +243,49 @@ export function EmbalagemPanel({
       {/* Acompanhamento da caixa em LARGURA CHEIA: resultado, progresso e as peças já bipadas. */}
       <Card className="flex min-h-0 flex-1 flex-col">
         <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
-          <CardTitle>Caixa CX{seq} <span className="text-sm font-normal text-muted-foreground">· limite {limite}</span></CardTitle>
+          <CardTitle>
+            Caixa CX{seq} <span className="text-sm font-normal text-muted-foreground">· limite {limite}</span>
+            {remontagem && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">remontagem</span>}
+          </CardTitle>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-sm" title="A última caixa pode passar do limite — bipe as peças que sobram aqui em vez de abrir caixa nova.">
-              <input type="checkbox" checked={ehUltima} onChange={(e) => setEhUltima(e.target.checked)} /> Última caixa
-            </label>
+            {/* Numa remontagem a caixa tem tamanho conhecido — "última caixa" só confundiria. */}
+            {!remontagem && (
+              <label className="flex items-center gap-1.5 text-sm" title="A última caixa pode passar do limite — bipe as peças que sobram aqui em vez de abrir caixa nova.">
+                <input type="checkbox" checked={ehUltima} onChange={(e) => setEhUltima(e.target.checked)} /> Última caixa
+              </label>
+            )}
             <Button variant="outline" size="sm" onClick={onFechar} disabled={fechando || qtdNaCaixa === 0}>
               {fechando ? 'Fechando…' : 'Fechar caixa'}
             </Button>
           </div>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+          {/* Refazendo uma caixa reprovada: diz de onde ela veio e quem ainda não voltou. */}
+          {remontagem && (
+            <div className="shrink-0 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40">
+              <p className="font-medium text-amber-900 dark:text-amber-200">
+                ⟲ Refazendo a CX{seq} — reprovada no NQA · {remontagem.snsOriginais.length} peça{remontagem.snsOriginais.length === 1 ? '' : 's'} na original
+              </p>
+              <p className="mt-0.5 font-mono text-xs text-amber-800 dark:text-amber-300">{remontagem.codigoAnterior}</p>
+              {remontagem.faltando.length > 0 && (
+                <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                  Ainda não voltaram ({remontagem.faltando.length}): <span className="font-mono">{remontagem.faltando.join(', ')}</span>
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Peça que não era da caixa original: entra, mas com o operador sabendo o que está fazendo. */}
+          {pendente && (
+            <div className="shrink-0 rounded-lg border border-amber-500 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">{pendente.motivo}</p>
+              <div className="mt-2 flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setPendente(null); setTimeout(() => snRef.current?.focus(), 0) }}>Cancelar</Button>
+                <Button size="sm" onClick={incluirMesmoAssim} disabled={embalando}>Incluir mesmo assim</Button>
+              </div>
+            </div>
+          )}
+
           <div className="shrink-0">
             <PainelResultado resultado={resultado} />
           </div>
