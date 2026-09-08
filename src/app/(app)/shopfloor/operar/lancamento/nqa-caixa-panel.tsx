@@ -24,8 +24,8 @@ function amostraReprovada(a: { visual: string; funcional: string }): boolean {
  * → "Aprovar caixa" libera a caixa; qualquer reprovada → caixa reprovada volta a um posto de retorno.
  */
 export function NqaCaixaPanel({
-  pmo, op, posto, cliente, colaborador, postos,
-}: { pmo: string; op: string; posto: string; cliente: string; colaborador: string; postos: string[] }) {
+  pmo, op, posto, cliente, colaborador, postos, contexto,
+}: { pmo: string; op: string; posto: string; cliente: string; colaborador: string; postos: string[]; contexto?: React.ReactNode }) {
   // Hidratação: se há uma inspeção salva (localStorage) do MESMO contexto (pmo/op/posto),
   // restaura caixa/amostras/postos de retorno — sobrevive a refresh/fechar aba no mesmo navegador.
   const [hidratado] = useState(() => {
@@ -205,38 +205,82 @@ export function NqaCaixaPanel({
   // Estado A — sem caixa: bipe pra puxar a caixa.
   if (caixa === null) {
     return (
-      <Card className="flex min-h-0 flex-col">
-        <CardHeader className="shrink-0">
-          <CardTitle>NQA por caixa <span className="text-sm font-normal text-muted-foreground">· inspeção por amostragem</span></CardTitle>
-        </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-          <div className="shrink-0">
-            <PainelResultado resultado={resultado} />
-          </div>
-          <div className="flex shrink-0 flex-col gap-1.5">
-            <Label htmlFor="snCaixaNqa">Bipe um SN da caixa</Label>
-            <Input
-              id="snCaixaNqa"
-              ref={caixaRef}
-              value={snCaixa}
-              onChange={(e) => setSnCaixa(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onPuxarCaixa() } }}
-              placeholder="Bipe qualquer peça da caixa"
-              autoComplete="off"
-              autoFocus
-              className="h-12 text-lg"
-              disabled={carregando}
-            />
-            <p className="text-xs text-muted-foreground">O sistema localiza a caixa e o tamanho da amostra pela Tabela NQA.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        {/* Topo: Peça | Contexto — o campo de bipe fica sozinho, no mesmo lugar das demais telas. */}
+        <div className="grid shrink-0 gap-3 lg:grid-cols-2">
+          <Card size="sm" className="flex min-h-0 flex-col">
+            <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
+              <CardTitle>Peça</CardTitle>
+            </CardHeader>
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-1.5">
+              <Label htmlFor="snCaixaNqa">Bipe um SN da caixa</Label>
+              <Input
+                id="snCaixaNqa"
+                ref={caixaRef}
+                value={snCaixa}
+                onChange={(e) => setSnCaixa(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onPuxarCaixa() } }}
+                placeholder="Bipe qualquer peça da caixa"
+                autoComplete="off"
+                autoFocus
+                className="h-12 text-lg"
+                disabled={carregando}
+              />
+              <p className="text-xs text-muted-foreground">O sistema localiza a caixa e o tamanho da amostra pela Tabela NQA.</p>
+            </CardContent>
+          </Card>
+          {contexto}
+        </div>
+
+        <Card className="flex min-h-0 flex-1 flex-col">
+          <CardHeader className="shrink-0">
+            <CardTitle>NQA por caixa <span className="text-sm font-normal text-muted-foreground">· inspeção por amostragem</span></CardTitle>
+          </CardHeader>
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="shrink-0">
+              <PainelResultado resultado={resultado} />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   // Estado B — inspecionando a caixa resolvida.
+  // O campo da amostra some quando a caixa já reprovou ou a amostra fechou (condição de sempre); nesses
+  // momentos o Contexto ocupa a linha inteira do topo em vez de sobrar um card vazio ao lado.
+  const mostraCampoAmostra = !algumReprovado && !completa
   return (
-    <Card className="flex min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Topo: Peça | Contexto. Só o bipe fica aqui — Visual e Funcional descem, porque mudam pouco
+          entre uma amostra e outra, enquanto o campo é acionado a cada peça. */}
+      <div className={`grid shrink-0 gap-3 ${mostraCampoAmostra ? 'lg:grid-cols-2' : ''}`}>
+        {mostraCampoAmostra && (
+          <Card size="sm" className="flex min-h-0 flex-col">
+            <CardHeader className="shrink-0 flex flex-row items-center justify-between gap-2">
+              <CardTitle>Peça</CardTitle>
+            </CardHeader>
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-1.5">
+              <Label htmlFor="snAmostraNqa">Nº de Série da amostra</Label>
+              <Input
+                id="snAmostraNqa"
+                ref={amostraRef}
+                value={snAmostra}
+                onChange={(e) => setSnAmostra(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAdicionarAmostra() } }}
+                placeholder="Bipe a peça da amostra"
+                autoComplete="off"
+                className="h-12 text-lg"
+                disabled={finalizando}
+              />
+              <p className="text-xs text-muted-foreground">Selecione Visual e Funcional abaixo, depois bipe aqui.</p>
+            </CardContent>
+          </Card>
+        )}
+        {contexto}
+      </div>
+
+    <Card className="flex min-h-0 flex-1 flex-col">
       <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>
           Caixa {caixa.numeroCaixa}
@@ -245,10 +289,6 @@ export function NqaCaixaPanel({
         <Button variant="ghost" size="sm" onClick={resetInspecao} disabled={finalizando}>Trocar caixa</Button>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-        <div className="shrink-0">
-          <PainelResultado resultado={resultado} />
-        </div>
-
         <div className="shrink-0">
           <div className="mb-1 flex justify-between text-sm">
             <span className="font-medium">{amostras.length} / {caixa.amostra} amostras</span>
@@ -290,23 +330,12 @@ export function NqaCaixaPanel({
                 />
               </div>
             )}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="snAmostraNqa">Nº de Série da amostra</Label>
-              <Input
-                id="snAmostraNqa"
-                ref={amostraRef}
-                value={snAmostra}
-                onChange={(e) => setSnAmostra(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAdicionarAmostra() } }}
-                placeholder="Bipe a peça da amostra"
-                autoComplete="off"
-                className="h-12 text-lg"
-                disabled={finalizando}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">Selecione Visual e Funcional, depois bipe o Nº de Série da amostra.</p>
           </div>
         )}
+
+        <div className="shrink-0">
+          <PainelResultado resultado={resultado} />
+        </div>
 
         {/* Modo REPROVA: escolhe o posto de retorno e reprova a caixa inteira. */}
         {algumReprovado && (
@@ -380,5 +409,6 @@ export function NqaCaixaPanel({
         </div>
       </CardContent>
     </Card>
+    </div>
   )
 }

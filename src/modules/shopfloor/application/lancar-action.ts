@@ -4,6 +4,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { serieDentroDaFaixa, normalizarSerie, limparSerie, MAX_SERIE } from '../domain/serie'
 import { postoAnteriorNaSequencia } from '../domain/postos'
+import { MAX_LOTE } from '../domain/lote'
 import {
   PERFIL_PADRAO,
   perfilTemStatus,
@@ -19,6 +20,7 @@ import {
   type DefeitoConfirmavel,
 } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { criarLote, snsPendentesDoLote } from '../infra/lote-repository'
 
 export interface EntradaLancamento {
   colaborador: string
@@ -47,8 +49,8 @@ export type ResultadoLancamento = { ok: true; caixaCount?: number } | { ok: fals
 
 const MENSAGENS: Record<string, string> = {
   SEM_PERMISSAO: 'Você não tem permissão para lançar.',
-  DUPLICADO: 'Esta peça já foi registrada neste posto.',
-  DUPLICADO_APROVADO: 'Esta peça já foi aprovada neste posto e não pode ser lançada de novo.',
+  DUPLICADO: 'Peça já lançada neste posto.',
+  DUPLICADO_APROVADO: 'Peça já aprovada neste posto.',
   SEQUENCIA: 'O posto anterior ainda não foi concluído para esta peça.',
   CAIXA_CHEIA: 'A caixa já atingiu o limite de peças.',
   SEM_MANUTENCAO: 'A peça reprovou e precisa passar pela Manutenção antes de ser lançada de novo.',
@@ -288,5 +290,71 @@ export async function contarLancadosPosto(pmo: string, op: string, posto: string
     return await contarLancadosNoPosto(pmo, op, posto)
   } catch {
     return 0
+  }
+}
+
+export interface ResultadoItemLote { numeroSerie: string; ok: boolean; erro?: string }
+
+/**
+ * Lançamento coletivo (best-effort): reusa `lancar()` por item, sequencialmente.
+ * Mesmo posto, itens independentes — 1 falha não derruba o lote.
+ */
+export async function lancarLote(itens: EntradaLancamento[]): Promise<{ resultados: ResultadoItemLote[] }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
+    return { resultados: itens.map((i) => ({ numeroSerie: i.numeroSerie, ok: false, erro: MENSAGENS.SEM_PERMISSAO })) }
+  }
+  if (itens.length === 0) return { resultados: [] }
+  if (itens.length > MAX_LOTE) {
+    return { resultados: itens.map((i) => ({ numeroSerie: i.numeroSerie, ok: false, erro: `Máximo ${MAX_LOTE} por lote.` })) }
+  }
+  const resultados: ResultadoItemLote[] = []
+  for (const item of itens) {          // sequencial: mesmo posto, itens independentes; best-effort
+    try {
+      const r = await lancar(item)     // reusa TODA a lógica/validação por SN
+      resultados.push({ numeroSerie: item.numeroSerie, ok: r.ok, erro: r.ok ? undefined : r.erro })
+    } catch {
+      resultados.push({ numeroSerie: item.numeroSerie, ok: false, erro: MENSAGENS.ERRO_INTERNO })
+    }
+  }
+  // Lote entre postos: carimba o lote (interno) dos SNs que gravaram OK. Best-effort:
+  // falha aqui NÃO afeta o lançamento já feito no chão de fábrica.
+  const okSns = itens.filter((_, idx) => resultados[idx]?.ok).map((i) => i.numeroSerie)
+  if (okSns.length > 0) {
+    try {
+      const base = itens[0]!
+      await criarLote(
+        base.pmo, base.op,
+        okSns.map((s) => s.trim()),
+        okSns.map((s) => normalizarSerie(s)),
+      )
+    } catch (e) {
+      // Não derruba o lançamento já feito no chão de fábrica — mas DEIXA RASTRO. Sem o log, o lote
+      // não era carimbado e o "puxar painel" do próximo posto voltava vazio, tudo em silêncio.
+      console.error('[lote] falha ao carimbar o lote (lançamento já gravado)', e)
+    }
+  }
+  return { resultados }
+}
+
+/**
+ * Lote entre postos: dado um SN-âncora bipado, devolve os SNs do MESMO lote que ainda estão
+ * pendentes neste posto (pra pré-listar como checklist). Fail-open ([] em erro/sem permissão/sem lote).
+ */
+export async function carregarLotePendente(
+  pmo: string, op: string, posto: string, sn: string,
+): Promise<{ snsPendentes: string[]; membrosNorm: string[]; loteId: string | null }> {
+  const vazio = { snsPendentes: [], membrosNorm: [], loteId: null }
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return vazio
+  if (!pmo.trim() || !op.trim() || !posto.trim() || !sn.trim()) return vazio
+  try {
+    const r = await snsPendentesDoLote(pmo, op, posto, normalizarSerie(sn))
+    return { snsPendentes: r.pendentes, membrosNorm: r.membrosNorm, loteId: r.loteId }
+  } catch (e) {
+    // Fail-open de propósito (o bipe não pode parar por causa da pré-lista), mas com rastro: sem o
+    // log, uma falha aqui é indistinguível de "não há irmãs aguardando neste posto".
+    console.error('[lote] falha ao puxar as irmãs do painel', e)
+    return vazio
   }
 }
