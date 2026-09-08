@@ -18,6 +18,7 @@ export interface EstadoEmbalagem {
   snsNaCaixa: string[]   // todos os SNs da caixa atual (mais recentes primeiro)
   concluida: boolean     // última caixa já foi fechada
   remontagem: RemontagemCaixa | null // preenchido quando esta caixa está refazendo uma reprovada
+  remontagensPendentes: number[]     // caixas reprovadas esperando remontagem (seq), fora esta
 }
 
 interface CaixaRow { seq: number; limite: number; fechada: boolean; ultima: boolean; revisao: number; codigo: string }
@@ -75,24 +76,40 @@ export async function carregarEstadoEmbalagem(
 
   const foco = seqEmFoco != null ? vigentes.find((c) => c.seq === seqEmFoco && !c.fechada) : undefined
 
-  // concluída: a última caixa está fechada e marcada como última (uma remontagem em foco reabre o
+  // Caixas reprovadas ainda sem remontagem fechada. O número delas fica RESERVADO: a embalagem
+  // normal não pode reutilizá-lo, senão peças novas cairiam dentro de uma remontagem pendente.
+  const pendentes = todas
+    .filter((c) => c.revisao > 0)
+    .map((c) => c.seq)
+    .filter((sq) => {
+      const vig = vigentes.find((v) => v.seq === sq)
+      return !vig || !vig.fechada
+    })
+  const reservados = new Set(pendentes)
+
+  // concluída: a última caixa está fechada e marcada como última (uma remontagem pendente reabre o
   // trabalho — a OP não está concluída enquanto ela não fechar).
-  if (!foco && ultima && ultima.fechada && ultima.ultima) {
-    return { seq: ultima.seq, limite: ultima.limite, qtdNaCaixa: 0, totalEmbaladas, snsNaCaixa: [], concluida: true, remontagem: null }
+  if (!foco && reservados.size === 0 && ultima && ultima.fechada && ultima.ultima) {
+    return { seq: ultima.seq, limite: ultima.limite, qtdNaCaixa: 0, totalEmbaladas, snsNaCaixa: [], concluida: true, remontagem: null, remontagensPendentes: [] }
   }
 
-  // caixa atual: a em foco, ou a última aberta, ou a próxima (seq+1) se a última está fechada
+  // caixa atual: a em foco, ou a última aberta, ou a PRÓXIMA LIVRE. O próximo número sai do maior
+  // seq já usado (vigente OU reprovado) + 1 — nunca de `ultima.seq + 1`: com a caixa 7 aposentada,
+  // a última vigente vira a 6 e o 7 seria entregue de novo, por cima da remontagem que espera por ele.
+  const maiorSeqUsado = todas.reduce((m, c) => Math.max(m, c.seq), 0)
   const abertaExiste = foco ? true : !!(ultima && !ultima.fechada)
-  const seq = foco ? foco.seq : (!ultima ? 1 : (ultima.fechada ? ultima.seq + 1 : ultima.seq))
+  const seq = foco ? foco.seq : (ultima && !ultima.fechada ? ultima.seq : maiorSeqUsado + 1)
 
-  // Montagem reprovada deste mesmo seq (a mais recente, se reprovou mais de uma vez).
+  // Montagem reprovada deste mesmo seq (a mais recente, se reprovou mais de uma vez). Fora do foco
+  // isso nunca acontece — o seq da vez nunca é um reservado —, então a tela normal não é sequestrada.
   const anterior = todas
     .filter((c) => c.seq === seq && c.revisao > 0)
     .sort((a, b) => b.revisao - a.revisao)[0]
 
   // O limite vem da caixa em foco; na falta dela, da montagem que estamos refazendo (é a mesma
-  // caixa física, mesmo limite); só então do padrão de repetir o limite da caixa anterior.
-  const limite = foco ? foco.limite : (anterior ? anterior.limite : (ultima ? ultima.limite : null))
+  // caixa física, mesmo limite); só então do padrão de repetir o limite da última caixa que existiu.
+  const ultimaQualquer = todas.reduce<CaixaRow | undefined>((m, c) => (!m || c.seq >= m.seq ? c : m), undefined)
+  const limite = foco ? foco.limite : (anterior ? anterior.limite : (ultima?.limite ?? ultimaQualquer?.limite ?? null))
 
   let qtdNaCaixa = 0
   let snsNaCaixa: string[] = []
@@ -116,7 +133,10 @@ export async function carregarEstadoEmbalagem(
     }
   }
 
-  return { seq, limite, qtdNaCaixa, totalEmbaladas, snsNaCaixa, concluida: false, remontagem }
+  return {
+    seq, limite, qtdNaCaixa, totalEmbaladas, snsNaCaixa, concluida: false, remontagem,
+    remontagensPendentes: pendentes.filter((sq) => sq !== seq).sort((a, b) => a - b),
+  }
 }
 
 /**

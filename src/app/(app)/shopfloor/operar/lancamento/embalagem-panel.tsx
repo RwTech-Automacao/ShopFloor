@@ -29,6 +29,7 @@ export function EmbalagemPanel({
   // Remontagem: a caixa da tela está refazendo uma montagem reprovada no NQA. `seqEmFoco` fixa qual
   // caixa recarregar — sem ele o servidor devolveria de novo a caixa da vez, não a que estamos refazendo.
   const [remontagem, setRemontagem] = useState<RemontagemCaixa | null>(null)
+  const [pendentesRemontagem, setPendentesRemontagem] = useState<number[]>([])
   const [seqEmFoco, setSeqEmFoco] = useState<number | null>(null)
   const [pendente, setPendente] = useState<{ sn: string; motivo: string } | null>(null)
   const [sn, setSn] = useState('')
@@ -67,6 +68,7 @@ export function EmbalagemPanel({
       setSnsNaCaixa(r.estado.snsNaCaixa)
       setConcluida(r.estado.concluida)
       setRemontagem(r.estado.remontagem)
+      setPendentesRemontagem(r.estado.remontagensPendentes)
     })
   }
   // Troca de OP/posto zera o foco: a remontagem é de uma caixa daquele contexto, não deste.
@@ -260,6 +262,14 @@ export function EmbalagemPanel({
           </div>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+          {/* Caixa reprovada esperando remontagem. Fica como recado, não como interrupção: quem
+              decide quando refazer é o operador, e a caixa dela é puxada ao bipar uma peça sua. */}
+          {!remontagem && pendentesRemontagem.length > 0 && (
+            <p className="shrink-0 text-xs text-muted-foreground">
+              Aguardando remontagem: {pendentesRemontagem.map((s) => `CX${s}`).join(', ')} — bipe uma peça dela pra continuar aquela caixa.
+            </p>
+          )}
+
           {/* Refazendo uma caixa reprovada: diz de onde ela veio e quem ainda não voltou. */}
           {remontagem && (
             <div className="shrink-0 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40">
