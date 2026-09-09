@@ -135,16 +135,25 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
                       <span className="font-medium">{c.codigo}</span>
                       <span className="flex items-center gap-2 text-muted-foreground">
                         {c.posto} · {c.qtd} peça(s)
-                        <Badge variant="outline" className={c.fechada ? 'border-green-600 text-green-700' : 'border-amber-500 text-amber-700'}>
-                          {c.fechada ? 'fechada' : 'aberta'}
+                        {/* Montagem reprovada no NQA (revisao > 0): a caixa física foi desfeita e
+                            remontada com o mesmo número, então ela não é nem "fechada" nem "aberta". */}
+                        <Badge
+                          variant="outline"
+                          className={c.revisao > 0
+                            ? 'border-red-600 text-red-700'
+                            : (c.fechada ? 'border-green-600 text-green-700' : 'border-amber-500 text-amber-700')}
+                        >
+                          {c.revisao > 0 ? 'reprovada' : (c.fechada ? 'fechada' : 'aberta')}
                         </Badge>
                       </span>
                     </button>
+                    {/* Sem folha pra montagem reprovada: a caixa dela não existe mais no chão. */}
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={gerando || c.qtd === 0}
+                      disabled={gerando || c.qtd === 0 || c.revisao > 0}
+                      title={c.revisao > 0 ? 'Esta montagem foi reprovada no NQA e refeita — a folha vale para a remontagem.' : undefined}
                       onClick={() => imprimir(c)}
                     >
                       <Printer className="mr-1 size-4" /> Imprimir / PDF
