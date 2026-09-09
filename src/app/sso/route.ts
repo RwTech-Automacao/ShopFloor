@@ -14,7 +14,7 @@ import { entrarPorSso } from '@/modules/auth/application/sso-portal'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const r = await entrarPorSso(searchParams.get('token'))
 
   if (!r.ok) {
@@ -23,5 +23,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: r.erro }, { status: r.status })
   }
 
-  return NextResponse.redirect(`${origin}/home`)
+  // Location RELATIVO, de propósito. Atrás do nginx o Next enxerga a requisição chegando em
+  // 127.0.0.1:3000 — o domínio público só existe no cabeçalho `Host` —, então montar a URL a partir
+  // de `request.url` mandaria a pessoa pra localhost. Um caminho relativo o navegador resolve
+  // contra o endereço que ele já está usando, sem depender de header nenhum nem de configuração
+  // do proxy. (É válido desde a RFC 7231.)
+  return new NextResponse(null, { status: 307, headers: { Location: '/home' } })
 }
