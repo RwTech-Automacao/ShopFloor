@@ -125,6 +125,13 @@ export function EmbalagemPanel({
       })
       setSn('') // bipe errado → limpa o campo pra bipar outro
       acaoAposEmbalar.current = 'focus'
+      // A peça pertence a OUTRA caixa (remontagem já completa): mostra o aviso E leva pra lá, que
+      // é onde o operador precisa estar pra fechá-la.
+      if (r.seq !== undefined && r.seq !== seq) {
+        setSeqEmFoco(r.seq)
+        setEhUltima(false)
+        recarregar(r.seq, true)
+      }
       return
     }
     setSn('')
