@@ -33,6 +33,9 @@ export async function carregarNqaCaixa(
   try {
     const caixa = await resolverCaixaPorSn(pmo.trim(), op.trim(), sn, posto.trim())
     if (!caixa) return { ok: false, erro: 'SN não está em nenhuma caixa. Embale/feche a caixa primeiro.' }
+    // Montagem já reprovada aqui e ainda não refeita: continua fechada e com peças, mas quem vale
+    // agora é a remontagem. Sem esta mensagem o operador cairia no genérico "já foi inspecionada".
+    if (caixa.aposentada) return { ok: false, erro: 'Esta montagem foi reprovada no NQA. Ela precisa ser refeita na Embalagem antes de voltar pro NQA.' }
     if (!caixa.fechada) return { ok: false, erro: 'A caixa desta peça ainda não foi fechada. Feche a caixa na Embalagem antes do NQA.' }
     const amostra = buscarNqa(caixa.qtd, await carregarTabelaNqa())
     // amostra 0 (ou null) da Tabela NQA aprovaria a caixa sem inspecionar nada → bloqueia.

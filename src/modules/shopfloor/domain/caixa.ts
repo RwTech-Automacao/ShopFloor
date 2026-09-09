@@ -26,3 +26,19 @@ export function pecasAntesDaCaixa(
     .filter((c) => c.posto === alvo.posto && c.seq < alvo.seq)
     .reduce((soma, c) => soma + c.qtd, 0)
 }
+
+/**
+ * Código da montagem APOSENTADA — a que foi reprovada no NQA e vai ser refeita com o mesmo número.
+ * O `R` entra logo depois do `CX[seq]`, preservando o resto do código: CX[7][14]8498-PMOC14 vira
+ * CX[7]R[14]8498-PMOC14. Da 2ª reprova em diante o número da revisão entra junto (R2, R3…) pra não
+ * colidir com a anterior.
+ *
+ * ATENÇÃO: em runtime quem renomeia é o RPC `sf_aposentar_caixa` (fonte canônica) — esta função
+ * documenta/testa o formato; se mudar, mude nos DOIS lugares.
+ */
+export function codigoMontagemAposentada(codigo: string, seq: number, revisao: number): string {
+  const prefixo = marcadorCaixaAberta(seq)
+  if (!codigo.startsWith(prefixo)) return codigo
+  const marca = revisao <= 1 ? 'R' : `R${revisao}`
+  return prefixo + marca + codigo.slice(prefixo.length)
+}
