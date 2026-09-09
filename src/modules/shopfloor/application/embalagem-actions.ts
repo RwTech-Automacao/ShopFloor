@@ -4,46 +4,98 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
-import { carregarEstadoEmbalagem, garantirCaixa, chamarFecharCaixa, carregarCaixasDaOp, type EstadoEmbalagem, type CaixaConsulta } from '@/modules/shopfloor/infra/caixa-repository'
+import { carregarEstadoEmbalagem, garantirCaixa, chamarFecharCaixa, carregarCaixasDaOp, resolverAlvoDoBipe, outrasCaixasDoSn, type EstadoEmbalagem, type CaixaConsulta } from '@/modules/shopfloor/infra/caixa-repository'
 import QRCode from 'qrcode'
 import { lancar } from './lancar-action'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 
+/** Como a caixa é chamada nas mensagens pro operador. */
+function rotuloCaixa(seq: number): string {
+  return `CX[${seq}]`
+}
+
 export async function carregarEmbalagem(
-  pmo: string, op: string, posto: string,
+  pmo: string, op: string, posto: string, seqEmFoco?: number,
 ): Promise<{ ok: true; estado: EstadoEmbalagem } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
-    return { ok: true, estado: await carregarEstadoEmbalagem(pmo.trim(), op.trim(), posto.trim()) }
+    return { ok: true, estado: await carregarEstadoEmbalagem(pmo.trim(), op.trim(), posto.trim(), seqEmFoco) }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o estado da caixa.' }
   }
 }
 
+/** Resultado do bipe. `confirmar` não é erro: é a peça que não era da caixa original numa
+ *  remontagem — o painel mostra o motivo e um botão pra incluir mesmo assim. */
+export type ResultadoEmbalar =
+  | { ok: true; caixaCount?: number; seq: number }
+  | { ok: false; erro: string; confirmar?: { motivo: string; seq: number } }
+
 /** Garante a caixa (seq,limite) e lança a peça nela (reusa sf_lancar via lancar).
  *  `ultima`: a caixa foi marcada como ÚLTIMA → aceita passar do limite (as peças que sobram
  *  vão nela em vez de abrir caixa nova). Continua mandando o qtd_por_caixa (a validação exige),
  *  mas via `permitirExtraCaixa` o lancar passa qtd=null pro RPC → pula a checagem de CAIXA_CHEIA.
- *  (O limite canônico da caixa continua em sf_caixas.limite.) */
+ *  (O limite canônico da caixa continua em sf_caixas.limite.)
+ *
+ *  REMONTAGEM: se a peça bipada veio de uma caixa reprovada no NQA que ainda não foi refeita, ela
+ *  não vai pra caixa da tela — vai pra caixa DELA, e a resposta devolve o `seq` usado pro painel
+ *  se ajustar. É por isso que a decisão mora aqui e não no cliente: o painel pode estar com um
+ *  estado de segundos atrás, e a reprova do NQA acontece em outra tela, em outro posto. */
 export async function embalarPeca(entrada: {
-  colaborador: string; pmo: string; op: string; posto: string; seq: number; limite: number; numeroSerie: string; ultima?: boolean
-}): Promise<{ ok: true; caixaCount?: number } | { ok: false; erro: string }> {
+  colaborador: string; pmo: string; op: string; posto: string; seq: number; limite: number; numeroSerie: string
+  ultima?: boolean
+  /** o operador já viu o aviso e mandou incluir a peça fora da caixa original */
+  confirmarForaDaCaixa?: boolean
+}): Promise<ResultadoEmbalar> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
-  // Valida o limite ANTES de criar a caixa: como garantirCaixa é idempotente (não sobrescreve),
-  // um limite inválido gravaria a caixa com limite ruim de forma permanente.
-  if (!Number.isInteger(entrada.limite) || entrada.limite <= 0) {
-    return { ok: false, erro: 'Limite da caixa inválido.' }
-  }
   // Trim consistente: garantirCaixa (sf_caixas) e lancar (sf_registros) precisam da MESMA chave,
   // senão as contagens/fechamento (que trimam) não casam com os registros.
   const pmo = entrada.pmo.trim()
   const op = entrada.op.trim()
   const posto = entrada.posto.trim()
+  const snNorm = normalizarSerie(entrada.numeroSerie)
+
+  let seq = entrada.seq
+  let limite = entrada.limite
+  let ultima = entrada.ultima
+  let anterior: Awaited<ReturnType<typeof resolverAlvoDoBipe>>['anterior'] = null
   try {
-    await garantirCaixa(pmo, op, posto, entrada.seq, entrada.limite)
+    const alvo = await resolverAlvoDoBipe(pmo, op, posto, snNorm, entrada.seq)
+    seq = alvo.seq
+    anterior = alvo.anterior
+    if (alvo.limite !== null) {
+      limite = alvo.limite
+      // A remontagem tem tamanho conhecido (o da montagem reprovada); "última caixa" é uma decisão
+      // do fim da OP e não se aplica aqui — deixar passar liberaria o limite sem querer.
+      ultima = false
+    }
+  } catch {
+    return { ok: false, erro: 'Não foi possível verificar a caixa desta peça.' }
+  }
+
+  // Valida o limite ANTES de criar a caixa: como garantirCaixa é idempotente (não sobrescreve),
+  // um limite inválido gravaria a caixa com limite ruim de forma permanente.
+  if (!Number.isInteger(limite) || limite <= 0) {
+    return { ok: false, erro: 'Limite da caixa inválido.' }
+  }
+
+  // Remontagem: peça que não estava na caixa original entra, mas não em silêncio.
+  if (anterior && !entrada.confirmarForaDaCaixa && !anterior.snsOriginaisNorm.includes(snNorm)) {
+    let motivo = `${entrada.numeroSerie.trim()} não estava na ${rotuloCaixa(seq)} original.`
+    try {
+      const outras = await outrasCaixasDoSn(pmo, op, posto, snNorm, [anterior.codigo, marcadorCaixaAberta(seq)])
+      if (outras.length > 0) motivo += ` Já está em ${outras.join(', ')}.`
+    } catch {
+      // o motivo extra é enfeite; sem ele o aviso principal continua de pé
+    }
+    return { ok: false, erro: motivo, confirmar: { motivo, seq } }
+  }
+
+  try {
+    await garantirCaixa(pmo, op, posto, seq, limite)
   } catch {
     return { ok: false, erro: 'Não foi possível abrir a caixa.' }
   }
@@ -53,12 +105,12 @@ export async function embalarPeca(entrada: {
     pmo,
     op,
     numeroSerie: entrada.numeroSerie,
-    numeroCaixa: marcadorCaixaAberta(entrada.seq),
-    qtdPorCaixa: String(entrada.limite),
-    permitirExtraCaixa: entrada.ultima, // última caixa aceita passar do limite
+    numeroCaixa: marcadorCaixaAberta(seq),
+    qtdPorCaixa: String(limite),
+    permitirExtraCaixa: ultima, // última caixa aceita passar do limite
   })
-  if (!r.ok) return r
-  return { ok: true, caixaCount: r.caixaCount }
+  if (!r.ok) return { ok: false, erro: r.erro }
+  return { ok: true, caixaCount: r.caixaCount, seq }
 }
 
 /** Embalagem INDIVIDUAL (1 produto por caixa): confere se o SN da caixa == SN do produto e, se
