@@ -141,15 +141,17 @@ export function DefeitosLista({
       </div>
 
       {carregando && !buscou && <p className="text-sm text-muted-foreground">Carregando…</p>}
-      {buscou && grupos.length === 0 && (
-        <p className="text-sm text-muted-foreground">Nenhum defeito na última hora{postoFiltro ? ` no posto ${postoFiltro}` : ''}.</p>
-      )}
 
-      {grupos.length > 0 && (
+      {buscou && (
         // 70% lista / 30% ranking no desktop e na TV; empilhado no retrato do tablet (onde 30% de
         // largura não caberia). min-h-0 nos dois lados pra cada coluna rolar por dentro.
+        // O grid é montado mesmo com a hora sem defeito: o RANKING é o acumulado da OP e continua
+        // valendo — sumir com ele deixaria a tela sem informação nenhuma justo na hora boa.
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[7fr_3fr]">
           <div className="min-h-0 overflow-y-auto">
+            {grupos.length === 0 && (
+              <p className="p-1 text-sm text-muted-foreground">Nenhum defeito na última hora{postoFiltro ? ` no posto ${postoFiltro}` : ''}.</p>
+            )}
             {/* Um card POR DEFEITO, grande e legível de longe. As peças que deram aquele defeito
                 ficam num acordeon: o painel responde "o que está acontecendo" de relance, e quem
                 precisa do detalhe (qual peça, qual posição, quem bipou) abre. */}
