@@ -108,3 +108,58 @@ export function formatarTituloDefeito(entrada: {
   const texto = pedacos.join(' ').replace(/:$/, '')
   return { ...partes, texto: texto || 'Defeito' }
 }
+
+// ---------------------------------------------------------------------------
+// Agrupamento por defeito (painel de acompanhamento)
+// ---------------------------------------------------------------------------
+
+/** O que MUDA entre as peças que deram o mesmo defeito. */
+export interface OcorrenciaDefeito {
+  dataHora: string
+  sn: string
+  posicao: string
+  tipo: string
+  posto: string
+  colaborador: string
+}
+
+/** Um defeito com todas as peças em que ele apareceu na janela olhada. */
+export interface DefeitoAgrupado {
+  codigo: string      // chave do catálogo, como está gravada ('103 NÃO COMUNICA TCP')
+  numero: string      // '103'
+  descricao: string   // 'Não Comunica Tcp'
+  ocorrencias: OcorrenciaDefeito[] // mais recentes primeiro
+}
+
+/**
+ * Junta as linhas de defeito num card POR DEFEITO, em vez de um por peça bipada.
+ *
+ * Ordena pelo que mais aconteceu — é o que a pessoa que acompanha a linha precisa ver primeiro.
+ * Empate desempata pela ocorrência mais recente: entre dois defeitos com 2 cada, o que acabou de
+ * acontecer sobe, porque é o que ainda está acontecendo agora.
+ *
+ * A ordem de entrada (mais recentes primeiro) é preservada dentro de cada grupo.
+ */
+export function agruparDefeitos(
+  linhas: readonly (OcorrenciaDefeito & { codigo: string })[],
+): DefeitoAgrupado[] {
+  const grupos = new Map<string, DefeitoAgrupado>()
+  for (const l of linhas) {
+    const codigo = (l.codigo ?? '').trim()
+    if (codigo === '') continue
+    let g = grupos.get(codigo)
+    if (!g) {
+      const { numero, descricao } = separarCodigoDefeito(codigo)
+      g = { codigo, numero, descricao: capitalizarDescricaoDefeito(descricao), ocorrencias: [] }
+      grupos.set(codigo, g)
+    }
+    g.ocorrencias.push({
+      dataHora: l.dataHora, sn: l.sn, posicao: l.posicao,
+      tipo: l.tipo, posto: l.posto, colaborador: l.colaborador,
+    })
+  }
+  return [...grupos.values()].sort(
+    (a, b) => b.ocorrencias.length - a.ocorrencias.length
+      || (b.ocorrencias[0]?.dataHora ?? '').localeCompare(a.ocorrencias[0]?.dataHora ?? ''),
+  )
+}

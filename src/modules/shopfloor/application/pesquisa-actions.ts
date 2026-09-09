@@ -46,12 +46,14 @@ export async function carregarDefeitosDaOp(
   offset = 0,
   posto = '',
   limite = DEFEITOS_PAGINA,
+  /** ISO: só defeitos a partir deste instante (o painel usa a última hora). */
+  desde = '',
 ): Promise<{ ok: true; linhas: DefeitoDaOp[]; temMais: boolean } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   const qtd = Math.min(Math.max(1, Math.trunc(limite)), DEFEITOS_PAGINA)
   try {
-    const linhas = await listarDefeitosDaOp(pmo.trim(), op.trim(), Math.max(0, offset), qtd, posto)
+    const linhas = await listarDefeitosDaOp(pmo.trim(), op.trim(), Math.max(0, offset), qtd, posto, desde)
     return { ok: true, linhas, temMais: linhas.length === qtd }
   } catch {
     return { ok: false, erro: ERRO_INTERNO }

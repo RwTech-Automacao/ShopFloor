@@ -1,20 +1,25 @@
 'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { carregarDefeitosDaOp, carregarResumoDefeitos } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { DefeitoDaOp, ResumoDefeito } from '@/modules/shopfloor/infra/pesquisa-repository'
-import { capitalizarDescricaoDefeito, formatarTituloDefeito, separarCodigoDefeito } from '@/modules/shopfloor/domain/defeito'
+import { agruparDefeitos, capitalizarDescricaoDefeito, separarCodigoDefeito, tipoDefeitoExibido } from '@/modules/shopfloor/domain/defeito'
 import { iconePorRecurso } from './fluxo-node'
 
 // Data/hora do "card de notificação" (dd/MM HH:mm:ss); título mostra a completa.
 const fmtCurto = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Sao_Paulo' })
 const fmtLongo = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Sao_Paulo' })
 
-/** Quantos defeitos recentes a tela mostra. O histórico completo continua na Pesquisa/Registros —
- *  aqui é painel de acompanhamento: o que acabou de acontecer + o ranking ao lado. */
-const ULTIMOS = 6
+/** Quantos CARDS a tela mostra — agora um por defeito distinto, não um por peça bipada. Os que
+ *  sobram continuam contando no ranking ao lado; o histórico completo é a Pesquisa/Registros. */
+const CARDS = 6
+/** A tela é do AGORA: só defeitos da última hora, a mesma janela deslizante do ranking. Sem defeito
+ *  na última hora, a lista fica vazia de propósito — é a informação, não uma falha. */
+const JANELA_MIN = 60
+/** Teto de linhas puxadas pra montar os grupos. Uma hora de linha cheia não chega perto disso. */
+const LINHAS_MAX = 100
 /** Polling: mesmo padrão do canvas do Fluxo (intervalo curto + pausa com a aba escondida). */
 const INTERVALO_MS = 15_000
 
@@ -38,6 +43,7 @@ export function DefeitosLista({
   const [resumo, setResumo] = useState<ResumoDefeito[]>([])
   const [buscou, setBuscou] = useState(false)
   const [postoFiltro, setPostoFiltro] = useState('') // '' = todos
+  const [abertos, setAbertos] = useState<Set<string>>(new Set()) // códigos com o acordeon aberto
   const [carregando, startCarregar] = useTransition()
 
   useEffect(() => {
@@ -49,8 +55,9 @@ export function DefeitosLista({
     // Lista e ranking vêm juntos: são a mesma foto do mesmo instante (senão o "campeão da hora"
     // pisca em cima de uma lista de outro momento).
     const atualizar = async (primeira: boolean) => {
+      const desde = new Date(Date.now() - JANELA_MIN * 60_000).toISOString()
       const [rLista, rResumo] = await Promise.all([
-        carregarDefeitosDaOp(pmo, op, 0, postoFiltro, ULTIMOS),
+        carregarDefeitosDaOp(pmo, op, 0, postoFiltro, LINHAS_MAX, desde),
         carregarResumoDefeitos(pmo, op, postoFiltro),
       ])
       if (!vivo) return
@@ -68,13 +75,27 @@ export function DefeitosLista({
     return () => { vivo = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [pmo, op, postoFiltro])
 
-  // codigo → contagens (o card lê a sua); o ranking já vem ordenado por total desc do banco.
-  const porCodigo = useMemo(() => new Map(resumo.map((r) => [r.codigo, r])), [resumo])
+  // Um card por DEFEITO: as peças que deram o mesmo defeito viram ocorrências dentro dele.
+  const grupos = useMemo(
+    () => agruparDefeitos(linhas.map((l) => ({
+      codigo: l.codigo,
+      dataHora: l.dataHora,
+      sn: l.sn,
+      posicao: l.posicao,
+      tipo: l.tipo,
+      // Posto onde foi REPROVADO: reparo na Manutenção guarda o posto do teste em posto_origem.
+      posto: l.postoOrigem || l.posto,
+      colaborador: l.colaborador,
+    }))).slice(0, CARDS),
+    [linhas],
+  )
+  // Maior contagem entre os cards — é o que pinta de vermelho. Empate pinta todos os empatados.
+  const maiorNaHora = grupos[0]?.ocorrencias.length ?? 0
+
+  // O ranking (30% da direita) segue vindo agregado do banco, já ordenado por total desc.
+  // A contagem da última hora que o CARD mostra agora sai dos próprios grupos, não daqui.
   const totalGeral = useMemo(() => resumo.reduce((s, r) => s + r.total, 0), [resumo])
   const maiorTotal = resumo[0]?.total ?? 0
-  // Maior ocorrência DA ÚLTIMA HORA — é o que pinta de vermelho. Empate pinta todos os empatados
-  // (esconder um deles seria mentir sobre qual é o pior problema do momento).
-  const maiorHora = useMemo(() => resumo.reduce((m, r) => Math.max(m, r.ultimaHora), 0), [resumo])
 
   // Ícone do posto onde o defeito foi registrado (recurso do perfil); cai na exclamação se desconhecido.
   function iconeDoPosto(posto: string, cls: string) {
@@ -92,10 +113,9 @@ export function DefeitosLista({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="group flex shrink-0 flex-wrap items-center gap-2">
-        <p className="text-sm font-medium text-muted-foreground">
-          {/* Total vem do ranking (agregado); sem ele — RPC indisponível — melhor não mostrar número. */}
-          Defeitos {buscou && resumo.length > 0 && <>({totalGeral})</>}
-        </p>
+        {/* Sem título aqui: o card já diz o que é, e o cabeçalho só roubava altura da lista.
+            O espaço continua servindo de alvo pro hover que revela o filtro. */}
+        <p className="text-sm font-medium text-muted-foreground">Última hora</p>
         {/* Filtro por posto (server-side) — some até o mouse chegar perto. */}
         {postos && postos.length > 0 && (
           <div className={`flex flex-wrap items-center gap-1 text-xs ${filtroVisivel}`}>
@@ -121,59 +141,85 @@ export function DefeitosLista({
       </div>
 
       {carregando && !buscou && <p className="text-sm text-muted-foreground">Carregando…</p>}
-      {buscou && linhas.length === 0 && (
-        <p className="text-sm text-muted-foreground">Nenhum defeito {postoFiltro ? `no posto ${postoFiltro}` : 'registrado nesta OP'}.</p>
+      {buscou && grupos.length === 0 && (
+        <p className="text-sm text-muted-foreground">Nenhum defeito na última hora{postoFiltro ? ` no posto ${postoFiltro}` : ''}.</p>
       )}
 
-      {linhas.length > 0 && (
+      {grupos.length > 0 && (
         // 70% lista / 30% ranking no desktop e na TV; empilhado no retrato do tablet (onde 30% de
         // largura não caberia). min-h-0 nos dois lados pra cada coluna rolar por dentro.
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[7fr_3fr]">
           <div className="min-h-0 overflow-y-auto">
-            {/* Pilha de "notificações" GRANDES — os 6 últimos ocupam a tela, legíveis de longe. */}
+            {/* Um card POR DEFEITO, grande e legível de longe. As peças que deram aquele defeito
+                ficam num acordeon: o painel responde "o que está acontecendo" de relance, e quem
+                precisa do detalhe (qual peça, qual posição, quem bipou) abre. */}
             <ul className="flex w-full flex-col gap-3 p-1">
-              {linhas.map((l, i) => {
-                const dt = l.dataHora ? new Date(l.dataHora) : null
-                // Posto onde foi REPROVADO: usa posto_origem (ex.: reparo na Manutenção guarda o posto do teste).
-                const postoReprova = l.postoOrigem || l.posto
-                // Sigla P/T vem do CATÁLOGO; o texto do registro é livre ('SMD', 'Funcional'…) e só
-                // serve de reserva quando o código saiu do catálogo.
-                const titulo = formatarTituloDefeito({ codigo: l.codigo, posicao: l.posicao, tipo: l.tipo })
-                const cont = porCodigo.get(l.codigo)
-                const naHora = cont?.ultimaHora ?? 0
-                const campeao = naHora > 0 && naHora === maiorHora
+              {grupos.map((g) => {
+                const naHora = g.ocorrencias.length
+                const campeao = naHora === maiorNaHora
+                const aberto = abertos.has(g.codigo)
+                // O posto do card é o da ocorrência mais recente — as demais aparecem por linha.
+                const postoTopo = g.ocorrencias[0]?.posto ?? ''
                 return (
                   <li
                     // Chave estável entre os ticks do polling: mesmo defeito = mesmo card (sem piscar).
-                    key={`${l.dataHora}|${l.sn}|${l.codigo}|${l.posicao}|${i}`}
-                    className={`flex min-h-[7.5rem] items-center gap-5 rounded-3xl border px-6 py-5 shadow-sm backdrop-blur ${campeao ? 'border-red-500 bg-red-50 dark:border-red-500 dark:bg-red-950/40' : 'border-border bg-card/95'}`}
+                    key={g.codigo}
+                    className={`overflow-hidden rounded-3xl border shadow-sm backdrop-blur ${campeao ? 'border-red-500 bg-red-50 dark:border-red-500 dark:bg-red-950/40' : 'border-border bg-card/95'}`}
                   >
-                    <div className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
-                      {iconeDoPosto(postoReprova, 'size-9')}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-2xl font-bold text-foreground">{titulo.texto}</p>
-                      <p className="mt-1 truncate text-xl font-medium text-foreground/80">{postoReprova}</p>
-                      <p className="truncate text-lg text-muted-foreground">
-                        {[`SN ${l.sn}`, l.colaborador ? `por ${l.colaborador}` : ''].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                    {/* Data/hora do defeito e, abaixo, quantos defeitos SEMELHANTES (mesmo código)
-                        houve na última hora — o campeão em vermelho. */}
-                    <div className="flex shrink-0 flex-col items-center gap-2">
-                      <span className="whitespace-nowrap text-lg text-muted-foreground" title={dt ? fmtLongo.format(dt) : ''}>
-                        {dt ? fmtCurto.format(dt) : '—'}
-                      </span>
-                      {naHora > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setAbertos((prev) => {
+                        const p = new Set(prev)
+                        if (p.has(g.codigo)) p.delete(g.codigo); else p.add(g.codigo)
+                        return p
+                      })}
+                      aria-expanded={aberto}
+                      className="flex w-full items-center gap-5 px-6 py-5 text-left"
+                    >
+                      <div className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
+                        {iconeDoPosto(postoTopo, 'size-9')}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-2xl font-bold text-foreground">
+                          {g.descricao || g.codigo}
+                          {g.numero && <span className="ml-2 text-base font-normal text-muted-foreground">Cod.: {g.numero}</span>}
+                        </p>
+                        <p className="mt-1 truncate text-lg text-muted-foreground">
+                          {naHora === 1 ? '1 peça' : `${naHora} peças`}{postoTopo ? ` · ${postoTopo}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3">
                         <div
                           className={`flex flex-col items-center justify-center rounded-2xl border px-4 py-2 ${campeao ? 'border-red-500 bg-red-600 text-white' : 'border-border bg-muted text-foreground'}`}
-                          title={`${naHora} ocorrência(s) deste mesmo defeito na última hora`}
+                          title={`${naHora} ocorrência(s) deste defeito na última hora`}
                         >
                           <span className="text-3xl font-bold leading-none tabular-nums">{naHora}</span>
                           <span className={`text-xs font-medium ${campeao ? 'text-white' : 'text-muted-foreground'}`}>na última hora</span>
                         </div>
-                      )}
-                    </div>
+                        <ChevronRight className={`size-6 shrink-0 text-muted-foreground transition-transform ${aberto ? 'rotate-90' : ''}`} />
+                      </div>
+                    </button>
+
+                    {aberto && (
+                      <ul className="border-t border-border/70 px-6 py-3">
+                        {g.ocorrencias.map((o, i) => {
+                          const dt = o.dataHora ? new Date(o.dataHora) : null
+                          return (
+                            <li key={`${o.sn}|${o.dataHora}|${i}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-1.5 text-lg">
+                              <span className="flex flex-wrap items-baseline gap-x-3">
+                                <span className="font-mono font-medium text-foreground">{o.sn}</span>
+                                {o.posicao && <span className="text-foreground/80">{o.posicao}</span>}
+                                {o.tipo && <span className="text-muted-foreground">{tipoDefeitoExibido(o.tipo)}</span>}
+                                {o.colaborador && <span className="text-muted-foreground">por {o.colaborador}</span>}
+                              </span>
+                              <span className="whitespace-nowrap text-muted-foreground" title={dt ? fmtLongo.format(dt) : ''}>
+                                {dt ? fmtCurto.format(dt) : '—'}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
                   </li>
                 )
               })}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   normalizarCodigoDefeito, validarDefeito,
-  separarCodigoDefeito, capitalizarDescricaoDefeito, tipoDefeitoExibido, formatarTituloDefeito,
+  separarCodigoDefeito, capitalizarDescricaoDefeito, tipoDefeitoExibido, formatarTituloDefeito, agruparDefeitos,
 } from '../defeito'
 
 describe('normalizarCodigoDefeito', () => {
@@ -120,5 +120,49 @@ describe('formatarTituloDefeito', () => {
   })
   it('nada preenchido → rótulo genérico (nunca string vazia na tela)', () => {
     expect(formatarTituloDefeito({ codigo: '', posicao: '', tipo: '' }).texto).toBe('Defeito')
+  })
+})
+
+describe('agruparDefeitos', () => {
+  const oc = (codigo: string, sn: string, dataHora: string) => ({
+    codigo, sn, dataHora, posicao: 'H1', tipo: 'SMD', posto: 'Inspeção PTH', colaborador: 'Matheus',
+  })
+
+  it('junta as peças que deram o MESMO defeito num grupo só', () => {
+    const g = agruparDefeitos([
+      oc('103 NÃO COMUNICA TCP', '26667009', '2026-09-08T14:27:16Z'),
+      oc('101 NÃO LIGA', '26667007', '2026-09-08T14:16:17Z'),
+      oc('103 NÃO COMUNICA TCP', '26667008', '2026-09-08T14:17:23Z'),
+    ])
+    expect(g).toHaveLength(2)
+    expect(g[0]!.codigo).toBe('103 NÃO COMUNICA TCP')
+    expect(g[0]!.ocorrencias.map((o) => o.sn)).toEqual(['26667009', '26667008'])
+  })
+
+  it('separa número e descrição, e capitaliza o catálogo que vem em caixa alta', () => {
+    const g = agruparDefeitos([oc('103 NÃO COMUNICA TCP', '1', '2026-09-08T14:00:00Z')])
+    expect(g[0]!.numero).toBe('103')
+    expect(g[0]!.descricao).toBe('Não Comunica Tcp')
+  })
+
+  it('ordena pelo que mais aconteceu', () => {
+    const g = agruparDefeitos([
+      oc('101 NÃO LIGA', 'a', '2026-09-08T14:00:00Z'),
+      oc('103 NÃO COMUNICA TCP', 'b', '2026-09-08T14:01:00Z'),
+      oc('103 NÃO COMUNICA TCP', 'c', '2026-09-08T14:02:00Z'),
+    ])
+    expect(g.map((x) => x.numero)).toEqual(['103', '101'])
+  })
+
+  it('no empate, o que aconteceu mais recentemente vem primeiro', () => {
+    const g = agruparDefeitos([
+      oc('103 NÃO COMUNICA TCP', 'b', '2026-09-08T14:05:00Z'),
+      oc('101 NÃO LIGA', 'a', '2026-09-08T14:30:00Z'),
+    ])
+    expect(g.map((x) => x.numero)).toEqual(['101', '103'])
+  })
+
+  it('ignora linha sem código, que não tem card pra chamar de seu', () => {
+    expect(agruparDefeitos([oc('', 'a', '2026-09-08T14:00:00Z')])).toEqual([])
   })
 })

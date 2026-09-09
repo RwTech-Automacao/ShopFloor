@@ -136,7 +136,7 @@ export interface DefeitoDaOp {
  * Paginado por `range` (offset/limite) pra lazy load — escopado à OP (índice pmo,op), volume pequeno.
  */
 export async function listarDefeitosDaOp(
-  pmo: string, op: string, offset: number, limite: number, posto?: string,
+  pmo: string, op: string, offset: number, limite: number, posto?: string, desde?: string,
 ): Promise<DefeitoDaOp[]> {
   const supabase = await createServerSupabase()
   let query = supabase
@@ -150,6 +150,9 @@ export async function listarDefeitosDaOp(
     const p = posto.trim()
     query = query.or(`posto.eq.${p},posto_origem.eq.${p}`)
   }
+  // Janela de tempo: o painel só olha a última hora. Cortar no banco evita trazer o histórico
+  // inteiro da OP pra jogar fora no cliente — e o corte é o mesmo do ranking (sf_defeitos_resumo).
+  if (desde && desde.trim() !== '') query = query.gte('data_hora', desde)
   const { data, error } = await query
     .order('data_hora', { ascending: false })
     .order('id', { ascending: false })
