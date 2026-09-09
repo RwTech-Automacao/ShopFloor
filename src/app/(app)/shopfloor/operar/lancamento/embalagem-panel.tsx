@@ -72,7 +72,11 @@ export function EmbalagemPanel({
     })
   }
   // Troca de OP/posto zera o foco: a remontagem é de uma caixa daquele contexto, não deste.
-  useEffect(() => { setSeqEmFoco(null); setPendente(null); recarregar(null) }, [pmo, op, posto])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset ao trocar de OP/posto antes de recarregar
+    setSeqEmFoco(null); setPendente(null)
+    recarregar(null)
+  }, [pmo, op, posto])
 
   function definirLimite() {
     const n = Number(limiteInput)
@@ -264,10 +268,25 @@ export function EmbalagemPanel({
         <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
           {/* Caixa reprovada esperando remontagem. Fica como recado, não como interrupção: quem
               decide quando refazer é o operador, e a caixa dela é puxada ao bipar uma peça sua. */}
+          {/* Caixa reprovada esperando remontagem. É BOTÃO, não recado: a caixa pode já estar com
+              todas as peças de volta e faltando só fechar — e aí não existe peça pra bipar, porque
+              bipar de novo é duplicata legítima. Sem uma porta explícita, a caixa completa ficaria
+              impossível de alcançar. */}
           {!remontagem && pendentesRemontagem.length > 0 && (
-            <p className="shrink-0 text-xs text-muted-foreground">
-              Aguardando remontagem: {pendentesRemontagem.map((s) => `CX${s}`).join(', ')} — bipe uma peça dela pra continuar aquela caixa.
-            </p>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Aguardando remontagem:</span>
+              {pendentesRemontagem.map((sq) => (
+                <Button
+                  key={sq}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setSeqEmFoco(sq); setEhUltima(false); setPendente(null); recarregar(sq) }}
+                  disabled={carregando}
+                >
+                  ⟲ Continuar CX{sq}
+                </Button>
+              ))}
+            </div>
           )}
 
           {/* Refazendo uma caixa reprovada: diz de onde ela veio e quem ainda não voltou. */}
@@ -282,6 +301,17 @@ export function EmbalagemPanel({
                   Ainda não voltaram ({remontagem.faltando.length}): <span className="font-mono">{remontagem.faltando.join(', ')}</span>
                 </p>
               )}
+              {/* Porta de saída: quem entrou aqui sem querer, ou vai voltar depois, não pode ficar
+                  preso tendo que fechar a caixa pra sair dela. */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => { setSeqEmFoco(null); setPendente(null); recarregar(null) }}
+                disabled={carregando}
+              >
+                Sair da remontagem
+              </Button>
             </div>
           )}
 
