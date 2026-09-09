@@ -11,8 +11,10 @@ import {
   buscarRegistrosPorSn,
   listarRegistrosDaOp,
   listarDefeitosDaOp,
+  resumoDefeitosDaOp,
   type RegistroHistorico,
   type DefeitoDaOp,
+  type ResumoDefeito,
 } from '../infra/pesquisa-repository'
 
 const SEM_PERMISSAO = 'Você não tem permissão para pesquisar.'
@@ -34,19 +36,41 @@ export async function buscarHistoricoSN(
 
 const DEFEITOS_PAGINA = 100
 
-/** Página de Defeitos da OP (lazy load): devolve até DEFEITOS_PAGINA linhas a partir de `offset` +
- *  `temMais` (se veio a página cheia, provavelmente há mais). Mais recentes primeiro. */
+/** Página de Defeitos da OP (lazy load): devolve até `limite` linhas a partir de `offset` +
+ *  `temMais` (se veio a página cheia, provavelmente há mais). Mais recentes primeiro.
+ *  `limite` existe porque a tela do Fluxo mostra só os últimos 6 (o resto vira ranking agregado);
+ *  teto em DEFEITOS_PAGINA pra ninguém pedir a OP inteira por aqui. */
 export async function carregarDefeitosDaOp(
   pmo: string,
   op: string,
   offset = 0,
   posto = '',
+  limite = DEFEITOS_PAGINA,
+  /** ISO: só defeitos a partir deste instante (o painel usa a última hora). */
+  desde = '',
 ): Promise<{ ok: true; linhas: DefeitoDaOp[]; temMais: boolean } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  const qtd = Math.min(Math.max(1, Math.trunc(limite)), DEFEITOS_PAGINA)
   try {
-    const linhas = await listarDefeitosDaOp(pmo.trim(), op.trim(), Math.max(0, offset), DEFEITOS_PAGINA, posto)
-    return { ok: true, linhas, temMais: linhas.length === DEFEITOS_PAGINA }
+    const linhas = await listarDefeitosDaOp(pmo.trim(), op.trim(), Math.max(0, offset), qtd, posto, desde)
+    return { ok: true, linhas, temMais: linhas.length === qtd }
+  } catch {
+    return { ok: false, erro: ERRO_INTERNO }
+  }
+}
+
+/** Ranking de defeitos da OP (agregado no banco): total por código + ocorrências na última hora.
+ *  Alimenta o painel de ranking e o destaque do defeito campeão da hora na lista. */
+export async function carregarResumoDefeitos(
+  pmo: string,
+  op: string,
+  posto = '',
+): Promise<{ ok: true; resumo: ResumoDefeito[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    return { ok: true, resumo: await resumoDefeitosDaOp(pmo.trim(), op.trim(), posto) }
   } catch {
     return { ok: false, erro: ERRO_INTERNO }
   }
