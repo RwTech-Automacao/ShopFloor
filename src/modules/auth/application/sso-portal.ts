@@ -1,5 +1,5 @@
 import 'server-only'
-import { jwtVerify } from 'jose'
+import { jwtVerify, decodeJwt } from 'jose'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { createServiceSupabase } from '@/shared/lib/supabase/service'
 import { validarClaimsSso, RegistroJti } from '../domain/sso-token'
@@ -53,9 +53,13 @@ export async function entrarPorSso(token: string | null): Promise<ResultadoSso> 
       clockTolerance: TOLERANCIA_S,
     })
     bruto = payload as Record<string, unknown>
-  } catch {
-    // Assinatura, exp, iss e aud caem todos aqui. A mensagem é única de propósito: dizer QUAL
+  } catch (e) {
+    // Assinatura, exp, iss e aud caem todos aqui. A RESPOSTA é única de propósito: dizer qual
     // falhou ajuda quem está tentando forjar mais do que ajuda quem está tentando entrar.
+    // O motivo vai pro LOG DO SERVIDOR — é onde quem configura a integração precisa dele, e
+    // ninguém de fora enxerga. Sem isso, o primeiro teste vira adivinhação entre segredo errado,
+    // relógio dessincronizado e `aud` de outro sistema.
+    registrarFalha(e, token, siteId)
     return { ok: false, status: 401, erro: 'Token inválido ou expirado.' }
   }
 
@@ -100,4 +104,26 @@ export async function entrarPorSso(token: string | null): Promise<ResultadoSso> 
   if (erroSessao) return { ok: false, status: 503, erro: 'Não foi possível abrir a sessão agora.' }
 
   return { ok: true }
+}
+
+/**
+ * Log de diagnóstico da recusa. NUNCA imprime o token nem a query string — o token é credencial
+ * enquanto vive, e log de servidor costuma ser lido por mais gente do que se imagina.
+ *
+ * O `aud` recebido é lido SEM verificar assinatura (`decodeJwt`), e isso é seguro porque o valor
+ * não é usado para nada: só vai pro log. É justamente o caso em que o payload não confiável ajuda,
+ * porque a pergunta é "qual aud o portal está mandando?".
+ */
+function registrarFalha(e: unknown, token: string, siteIdEsperado: string): void {
+  const err = e as { code?: string; claim?: string; reason?: string }
+  let detalhe = err?.code ?? 'erro desconhecido'
+  if (err?.claim) detalhe += ` (claim ${err.claim}${err.reason ? `: ${err.reason}` : ''})`
+
+  // Só no caso do `aud` vale a pena mostrar os dois lados — é o erro de configuração mais provável.
+  if (err?.claim === 'aud') {
+    let recebido = '?'
+    try { recebido = String((decodeJwt(token) as { aud?: unknown }).aud ?? '?') } catch { /* token nem decodifica */ }
+    detalhe += ` esperado=${siteIdEsperado} recebido=${recebido}`
+  }
+  console.warn(`[sso] token recusado: ${detalhe}`)
 }
