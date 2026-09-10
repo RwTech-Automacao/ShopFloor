@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
+import { ReactFlow, Background, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight, Minus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
-import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
+import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { DefeitosLista } from './defeitos-lista'
@@ -369,7 +369,7 @@ function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op
               className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs shadow-md"
               style={{ left: Math.min(Math.max(px(hover), 56), W - 56), top: 2 }}
             >
-              <div className="font-semibold text-foreground">{dados[hover]!.rotulo}</div>
+              <div className="font-semibold text-foreground">{faixaDoRotulo(dados[hover]!.rotulo, bucket)}</div>
               <div className="text-muted-foreground">{dados[hover]!.qtd} peças</div>
             </div>
           )}
@@ -874,6 +874,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   // Modo TV: tela cheia do canvas (Fullscreen API) + re-encaixa o fluxo ao entrar/sair.
   const canvasRef = useRef<HTMLDivElement>(null)
   const rfRef = useRef<ReactFlowInstance | null>(null)
+  const [zoomPct, setZoomPct] = useState(100)
   const [telaCheia, setTelaCheia] = useState(false)
   const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
@@ -1153,15 +1154,30 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
+            // O padrão do React Flow (0.5 a 2) é apertado pra este canvas: OP com muitos postos não
+            // cabe inteira no mínimo, e no detalhe de um card 2× ainda é pouco pra ler de longe.
+            minZoom={0.1}
+            maxZoom={4}
             nodesDraggable
             nodesConnectable={false}
-            onInit={(inst) => { rfRef.current = inst }}
+            onInit={(inst) => { rfRef.current = inst; setZoomPct(Math.round(inst.getZoom() * 100)) }}
+            onMove={(_, vp) => setZoomPct(Math.round(vp.zoom * 100))}
             onNodesChange={onNodesChangeGuia}
             onNodeDragStop={onNodeDragStop}
             onNodeClick={onNodeClick}
           >
             <Background />
-            <Controls showInteractive={false} />
+            {/* Controles próprios no lugar do <Controls>: o React Flow só aceita filhos DEPOIS
+                dos botões dele, então não dava pra encaixar a porcentagem entre o "−" e o "+". */}
+            <Panel position="bottom-left">
+              <ControlesCanvas
+                pct={zoomPct}
+                onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })}
+                onMais={() => rfRef.current?.zoomIn({ duration: 200 })}
+                onMenos={() => rfRef.current?.zoomOut({ duration: 200 })}
+                onEnquadrar={() => rfRef.current?.fitView({ duration: 200 })}
+              />
+            </Panel>
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
@@ -1318,6 +1334,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                 <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
               </div>
               <div className="flex items-center gap-6">
+                <RelogioAoVivo />
                 <div className="text-right">
                   <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
                   <p className="text-xs text-muted-foreground">progresso</p>
@@ -1419,5 +1436,91 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
         />
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Hora atual no cabeçalho do Modo TV. Num painel que fica horas ligado numa TV, a pergunta "isto
+ * está travado ou é assim mesmo?" aparece sozinha — o relógio andando responde de longe.
+ *
+ * Tique de 1s com o texto em HH:mm de propósito: o React descarta o setState quando a string não
+ * muda, então o custo é um comparação por segundo e o minuto nunca aparece atrasado.
+ */
+function RelogioAoVivo() {
+  const [hora, setHora] = useState(() => fmtRelogio.format(new Date()))
+  useEffect(() => {
+    const t = setInterval(() => setHora(fmtRelogio.format(new Date())), 1000)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <div className="text-right">
+      <p className="text-3xl font-bold leading-none tabular-nums text-foreground">{hora}</p>
+      <p className="text-xs text-muted-foreground">agora</p>
+    </div>
+  )
+}
+
+const fmtRelogio = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
+})
+
+/**
+ * Controles do canvas numa barra só: enquadrar, afastar, o zoom em porcentagem e aproximar.
+ *
+ * Substitui o <Controls> do React Flow porque ele só aceita filhos DEPOIS dos botões dele — não
+ * havia como pôr a porcentagem entre o "−" e o "+".
+ *
+ * A porcentagem existe porque a roda do mouse é boa pra procurar e ruim pra repetir: quem monta a
+ * TV quer voltar sempre no MESMO zoom, e digitar 65 é a única forma de acertar duas vezes seguidas.
+ *
+ * Todos os alvos têm a mesma medida — a barra tem que ler como um controle só, não como peças
+ * remendadas.
+ */
+function ControlesCanvas({ pct, onAplicar, onMais, onMenos, onEnquadrar }: {
+  pct: number
+  onAplicar: (pct: number) => void
+  onMais: () => void
+  onMenos: () => void
+  onEnquadrar: () => void
+}) {
+  const [texto, setTexto] = useState('')
+  const [editando, setEditando] = useState(false)
+
+  function aplicar() {
+    const n = Number(texto.replace(/[^\d]/g, ''))
+    // Fora da faixa do canvas (10% a 400%) o React Flow ignoraria calado; melhor grudar no limite.
+    if (Number.isFinite(n) && n > 0) onAplicar(Math.min(400, Math.max(10, n)))
+    setEditando(false)
+  }
+
+  const alvo = 'flex size-8 shrink-0 items-center justify-center text-foreground transition-colors hover:bg-accent'
+
+  return (
+    <div className="flex divide-x divide-border overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <button type="button" onClick={onEnquadrar} aria-label="Enquadrar" title="Enquadrar" className={alvo}>
+        <Maximize2 className="size-4" />
+      </button>
+      <button type="button" onClick={onMenos} aria-label="Afastar" title="Afastar" className={alvo}>
+        <Minus className="size-4" />
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        aria-label="Zoom do canvas em porcentagem"
+        title="Zoom em % — digite e tecle Enter"
+        value={editando ? texto : String(pct)}
+        onFocus={(e) => { setEditando(true); setTexto(String(pct)); e.currentTarget.select() }}
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={aplicar}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+          if (e.key === 'Escape') { setEditando(false); e.currentTarget.blur() }
+        }}
+        className={`${alvo} bg-transparent text-center text-[11px] tabular-nums outline-none focus:bg-accent`}
+      />
+      <button type="button" onClick={onMais} aria-label="Aproximar" title="Aproximar" className={alvo}>
+        <Plus className="size-4" />
+      </button>
+    </div>
   )
 }

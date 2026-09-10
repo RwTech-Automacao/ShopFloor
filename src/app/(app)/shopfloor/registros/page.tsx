@@ -20,6 +20,7 @@ interface RegistrosPageProps {
     busca?: string
     posto?: string
     sn?: string
+    defeito?: string
     status?: string
     de?: string
     ate?: string
