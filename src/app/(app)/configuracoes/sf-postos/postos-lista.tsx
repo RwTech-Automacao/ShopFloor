@@ -28,7 +28,7 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">Postos</h1>
-        <PostoForm perfis={perfis} />
+        <PostoForm perfis={perfis} postos={postos} />
       </div>
 
       {/* Desktop: tabela */}

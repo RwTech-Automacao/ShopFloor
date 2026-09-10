@@ -52,11 +52,16 @@ export async function postoEmUsoEmOrdem(chave: string): Promise<boolean> {
   return (count ?? 0) > 0
 }
 
-export async function criarPosto(p: { chave: string; ordem: number; perfil: string; coletivo?: boolean }): Promise<void> {
+export async function criarPosto(p: {
+  chave: string; ordem: number; perfil: string; coletivo?: boolean; retornoPosManutencao?: string
+}): Promise<void> {
   const supabase = await createServerSupabase()
   const { error } = await supabase
     .from('sf_postos')
-    .insert({ chave: p.chave, ordem: p.ordem, perfil: p.perfil, coletivo: p.coletivo ?? false })
+    .insert({
+      chave: p.chave, ordem: p.ordem, perfil: p.perfil, coletivo: p.coletivo ?? false,
+      retorno_pos_manutencao: p.retornoPosManutencao ?? '',
+    })
   if (error) throw error
 }
 export async function atualizarPosto(
