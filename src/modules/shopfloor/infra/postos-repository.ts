@@ -59,10 +59,14 @@ export async function criarPosto(p: { chave: string; ordem: number; perfil: stri
     .insert({ chave: p.chave, ordem: p.ordem, perfil: p.perfil, coletivo: p.coletivo ?? false })
   if (error) throw error
 }
-export async function atualizarPosto(chave: string, p: { perfil: string; coletivo?: boolean }): Promise<void> {
+export async function atualizarPosto(
+  chave: string,
+  p: { perfil: string; coletivo?: boolean; retornoPosManutencao?: string },
+): Promise<void> {
   const supabase = await createServerSupabase()
-  const dados: { perfil: string; coletivo?: boolean } = { perfil: p.perfil }
+  const dados: { perfil: string; coletivo?: boolean; retorno_pos_manutencao?: string } = { perfil: p.perfil }
   if (p.coletivo !== undefined) dados.coletivo = p.coletivo
+  if (p.retornoPosManutencao !== undefined) dados.retorno_pos_manutencao = p.retornoPosManutencao
   const { error } = await supabase.from('sf_postos').update(dados).eq('chave', chave)
   if (error) throw error
 }

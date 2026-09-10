@@ -68,7 +68,7 @@ export async function cadastrarPostoAction(
 
 export async function atualizarPostoAction(
   chave: string,
-  dados: { perfil: string; coletivo?: boolean },
+  dados: { perfil: string; coletivo?: boolean; retornoPosManutencao?: string },
 ): Promise<ResultadoAcaoPosto> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
@@ -87,8 +87,16 @@ export async function atualizarPostoAction(
   // depois de trocar pra um perfil que não suporta lançamento coletivo).
   const coletivo = perfilSuportaColetivo(dados.perfil) ? (dados.coletivo ?? false) : false
 
+  // Mesma invariante do coletivo: a rota pós-manutenção só faz sentido em posto cuja reprova PASSA
+  // pela Manutenção. Trocando pra um perfil que não exige, a rota é zerada em vez de ficar guardada
+  // sem efeito — configuração que existe e não age é a que engana quem for conferir depois.
+  const perfilAlvo = perfis.find((p) => p.chave === dados.perfil)
+  const retornoPosManutencao = perfilAlvo?.exigeManutencao
+    ? (dados.retornoPosManutencao ?? '').trim()
+    : ''
+
   try {
-    await atualizarPosto(chave, { perfil: dados.perfil, coletivo })
+    await atualizarPosto(chave, { perfil: dados.perfil, coletivo, retornoPosManutencao })
   } catch {
     return { erro: 'Não foi possível editar o posto.' }
   }
@@ -97,7 +105,7 @@ export async function atualizarPostoAction(
     entidade: 'sf_posto',
     entidadeId: chave,
     acao: 'alterar_campo',
-    descricao: `Posto "${chave}" editado (perfil ${dados.perfil})`,
+    descricao: `Posto "${chave}" editado (perfil ${dados.perfil}${retornoPosManutencao ? `, retorno pós-manutenção: ${retornoPosManutencao}` : ''})`,
     dados: { ...dados, coletivo },
   })
 
