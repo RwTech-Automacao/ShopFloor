@@ -28,6 +28,8 @@ import { lerNqaProgresso, limparNqaProgresso, type NqaProgresso } from './nqa-pr
 import { lerLoteLocal, salvarLoteLocal, limparLoteLocal } from './lote-local'
 import type { ItemLote } from './tipos-lote'
 import { AprovarModal } from './aprovar-modal'
+import { tocarErro } from '@/shared/lib/som-erro'
+import { DefeitoModal } from './defeito-modal'
 import { ReprovarModal } from './reprovar-modal'
 
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
@@ -214,6 +216,8 @@ export function LancamentoForm({
   // defeito vem de uma lista em acordeão no mesmo campo (touch, sem depender do teclado ruim).
   const usaAcordeao = ehScanner
   const defeitosPosto = useMemo(() => defeitosDoPosto(perfilDo(posto).chave, defeitos), [posto, defeitos, postosPerfil])
+  // Índice da linha de defeito que o modal está editando; null = fechado.
+  const [modalDefeito, setModalDefeito] = useState<number | null>(null)
   const defeitosFiltrados = useMemo(() => {
     const f = numeroSerie.trim().toUpperCase()
     return f === '' ? defeitosPosto : defeitosPosto.filter((d) => d.codigo.toUpperCase().includes(f))
@@ -226,6 +230,11 @@ export function LancamentoForm({
   /** Mostra o resultado no balão; se `linha` vier, registra no histórico (lançamento efetivo). */
   function mostrar(res: ResultadoAcao, linha?: LinhaHistorico) {
     setResultado(res)
+    // Um só ponto pro som, em vez de espalhar por dez chamadas: nesta tela TODO aviso significa
+    // peça não gravada — seja recusa de regra (duplicado, sequência, fora da faixa) ou campo
+    // faltando antes de tentar. O operador olha a peça e o coletor, não a tela; sem o som, um
+    // lançamento recusado passa batido e a peça segue pro próximo posto sem registro.
+    if (res.tipo === 'aviso') tocarErro()
     if (linha) {
       setHistorico((h) => [linha, ...h].slice(0, 30))
       setUltimoEhLancamento(true)
@@ -1058,12 +1067,20 @@ export function LancamentoForm({
                 {mostraStatus && !ehSpi && !ehScanner && reprovado && (
                   <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
                     <Label>Defeitos</Label>
-                    <datalist id="defeitos-list">
-                      {defeitos.map((d) => <option key={d.codigo} value={d.codigo} />)}
-                    </datalist>
                     {defeitosSel.map((d, i) => (
                       <div key={i} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                        <Input list="defeitos-list" value={d.codigo} onChange={(e) => setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, codigo: e.target.value } : x)))} placeholder="Código" />
+                        {/* Botão no lugar do campo com lista suspensa: o defeito é ESCOLHIDO, nunca
+                            digitado — assim não entra código que não existe no catálogo, e quem não
+                            sabe o número de cor não precisa saber. */}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setModalDefeito(i)}
+                          className={`h-9 justify-start truncate font-normal ${d.codigo ? '' : 'text-muted-foreground'}`}
+                          title={d.codigo || undefined}
+                        >
+                          {d.codigo || 'Escolher defeito…'}
+                        </Button>
                         <Input value={d.posicao} onChange={(e) => setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, posicao: e.target.value } : x)))} placeholder="Posição" />
                         <Select value={d.tipo} onValueChange={(v) => setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, tipo: v ?? '' } : x)))}>
                           <SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger>
@@ -1194,6 +1211,18 @@ export function LancamentoForm({
         sn={aprovarSn ?? ''}
         onConfirmar={gravarAprovado}
         onCancelar={() => { setAprovarSn(null); setTimeout(() => snRef.current?.focus(), 0) }}
+      />
+      <DefeitoModal
+        aberto={modalDefeito !== null}
+        pmo={pmo}
+        op={op}
+        posto={posto}
+        catalogo={defeitosPosto}
+        onEscolher={(codigo) => {
+          setDefeitosSel(defeitosSel.map((x, idx) => (idx === modalDefeito ? { ...x, codigo } : x)))
+          setModalDefeito(null)
+        }}
+        onFechar={() => setModalDefeito(null)}
       />
       <ReprovarModal
         aberto={reprovarCodigo !== null}
