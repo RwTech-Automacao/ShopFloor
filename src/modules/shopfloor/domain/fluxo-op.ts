@@ -304,3 +304,19 @@ export function formatarRelogio(segundos: number): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`
 }
+
+/**
+ * No bucket por HORA, o rótulo `DD/MM HHh` (vindo da RPC) diz o INÍCIO do balde — as peças contadas
+ * ali foram feitas entre aquela hora e a seguinte. "08h" sozinho lê como instante e engana; o
+ * tooltip mostra a faixa inteira.
+ *
+ * Só o TOOLTIP muda: no eixo, "08h às 09h" não caberia, e ali a leitura de série temporal já é
+ * clara. Rótulo que não casa o formato esperado volta intacto — nunca inventa faixa.
+ */
+export function faixaDoRotulo(rotulo: string, bucket: 'dia' | 'hora'): string {
+  if (bucket !== 'hora') return rotulo
+  const m = /^(.*?)(\d{2})h$/.exec(rotulo.trim())
+  if (!m) return rotulo
+  const fim = (Number(m[2]) + 1) % 24
+  return `${m[1]}${m[2]}h às ${String(fim).padStart(2, '0')}h`
+}

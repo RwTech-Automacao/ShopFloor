@@ -50,6 +50,12 @@ export async function consultarRegistros(
     if (filtros.cliente) query = query.eq('cliente', filtros.cliente)
     if (filtros.posto) query = query.eq('posto', filtros.posto)
     if (filtros.snNorm) query = query.eq('numero_serie_norm', filtros.snNorm)
+    if (filtros.defeito) {
+      // Texto livre: `%` e `_` são curingas do LIKE, então escapamos — senão digitar "_" casaria
+      // qualquer caractere e o filtro traria mais do que a pessoa pediu, sem ela entender por quê.
+      const termo = filtros.defeito.replace(/[\\%_]/g, (c) => `\\${c}`)
+      query = query.ilike('codigo_defeito', `%${termo}%`)
+    }
     if (filtros.status) {
       // `status` é gravado capitalizado no banco ('Aprovado'/'Reprovado') e o filtro da tela manda
       // minúsculo. `eq` diferencia maiúsculas → não casava NADA (o filtro vinha vazio). `ilike` sem

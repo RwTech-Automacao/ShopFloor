@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
-import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
+import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { DefeitosLista } from './defeitos-lista'
@@ -369,7 +369,7 @@ function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op
               className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs shadow-md"
               style={{ left: Math.min(Math.max(px(hover), 56), W - 56), top: 2 }}
             >
-              <div className="font-semibold text-foreground">{dados[hover]!.rotulo}</div>
+              <div className="font-semibold text-foreground">{faixaDoRotulo(dados[hover]!.rotulo, bucket)}</div>
               <div className="text-muted-foreground">{dados[hover]!.qtd} peças</div>
             </div>
           )}
@@ -1153,6 +1153,10 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
+            // O padrão do React Flow (0.5 a 2) é apertado pra este canvas: OP com muitos postos não
+            // cabe inteira no mínimo, e no detalhe de um card 2× ainda é pouco pra ler de longe.
+            minZoom={0.1}
+            maxZoom={4}
             nodesDraggable
             nodesConnectable={false}
             onInit={(inst) => { rfRef.current = inst }}
@@ -1322,6 +1326,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                   <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
                   <p className="text-xs text-muted-foreground">progresso</p>
                 </div>
+                <RelogioAoVivo />
                 <button
                   type="button"
                   onClick={alternarTv}
@@ -1421,3 +1426,28 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     </Card>
   )
 }
+
+/**
+ * Hora atual no cabeçalho do Modo TV. Num painel que fica horas ligado numa TV, a pergunta "isto
+ * está travado ou é assim mesmo?" aparece sozinha — o relógio andando responde de longe.
+ *
+ * Tique de 1s com o texto em HH:mm de propósito: o React descarta o setState quando a string não
+ * muda, então o custo é um comparação por segundo e o minuto nunca aparece atrasado.
+ */
+function RelogioAoVivo() {
+  const [hora, setHora] = useState(() => fmtRelogio.format(new Date()))
+  useEffect(() => {
+    const t = setInterval(() => setHora(fmtRelogio.format(new Date())), 1000)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <div className="text-right">
+      <p className="text-3xl font-bold leading-none tabular-nums text-foreground">{hora}</p>
+      <p className="text-xs text-muted-foreground">agora</p>
+    </div>
+  )
+}
+
+const fmtRelogio = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
+})

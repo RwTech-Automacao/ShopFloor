@@ -145,13 +145,15 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
               <TableHead>Posto</TableHead>
               <TableHead>SN</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Defeito</TableHead>
+              <TableHead>Posição</TableHead>
               <TableHead>Colaborador</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {linhas.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                   Nenhum registro encontrado.
                 </TableCell>
               </TableRow>
@@ -184,6 +186,12 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
                     {rotuloStatus(l.status)}
                   </Badge>
                 </TableCell>
+                {/* Defeito e posição só existem em linha de reprova — nas demais fica o travessão,
+                    que é mais legível numa tabela larga do que célula em branco. */}
+                <TableCell className="max-w-56 truncate" title={l.codigo_defeito || undefined}>
+                  {l.codigo_defeito || '—'}
+                </TableCell>
+                <TableCell>{l.posicao || '—'}</TableCell>
                 <TableCell>{l.colaborador || '—'}</TableCell>
               </TableRow>
             ))}
