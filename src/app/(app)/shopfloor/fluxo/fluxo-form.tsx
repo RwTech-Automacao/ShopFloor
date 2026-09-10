@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { ReactFlow, Background, Controls, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
+import { ReactFlow, Background, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight, Minus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -1167,16 +1167,15 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             onNodeClick={onNodeClick}
           >
             <Background />
-            {/* Os botões de zoom saem do <Controls> pra o campo de porcentagem poder ficar ENTRE o
-                "+" e o "−" — o React Flow só aceita filhos DEPOIS dos botões dele, nunca no meio.
-                O "enquadrar" continua vindo dele. */}
-            <Controls showZoom={false} showInteractive={false} />
-            <Panel position="bottom-left" className="!bottom-[5.5rem] !left-[15px] !m-0">
-              <ZoomDigitavel
+            {/* Controles próprios no lugar do <Controls>: o React Flow só aceita filhos DEPOIS
+                dos botões dele, então não dava pra encaixar a porcentagem entre o "−" e o "+". */}
+            <Panel position="bottom-left">
+              <ControlesCanvas
                 pct={zoomPct}
                 onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })}
                 onMais={() => rfRef.current?.zoomIn({ duration: 200 })}
                 onMenos={() => rfRef.current?.zoomOut({ duration: 200 })}
+                onEnquadrar={() => rfRef.current?.fitView({ duration: 200 })}
               />
             </Panel>
             <HelperLines horizontal={guiaH} vertical={guiaV} />
@@ -1466,16 +1465,23 @@ const fmtRelogio = new Intl.DateTimeFormat('pt-BR', {
 })
 
 /**
- * Controle de zoom: "+", a porcentagem editável e "−", nessa ordem vertical.
+ * Controles do canvas numa barra só: enquadrar, afastar, o zoom em porcentagem e aproximar.
  *
- * A roda do mouse é boa pra procurar e ruim pra repetir — quem monta a TV quer voltar sempre no
- * MESMO zoom, e digitar 65 é a única forma de acertar duas vezes seguidas.
+ * Substitui o <Controls> do React Flow porque ele só aceita filhos DEPOIS dos botões dele — não
+ * havia como pôr a porcentagem entre o "−" e o "+".
  *
- * O texto só é "solto" enquanto o campo tem foco: fora dele, segue o canvas. Sem isso, arrastar a
- * roda do mouse com o campo preenchido deixaria os dois números brigando — o digitado e o real.
+ * A porcentagem existe porque a roda do mouse é boa pra procurar e ruim pra repetir: quem monta a
+ * TV quer voltar sempre no MESMO zoom, e digitar 65 é a única forma de acertar duas vezes seguidas.
+ *
+ * Todos os alvos têm a mesma medida — a barra tem que ler como um controle só, não como peças
+ * remendadas.
  */
-function ZoomDigitavel({ pct, onAplicar, onMais, onMenos }: {
-  pct: number; onAplicar: (pct: number) => void; onMais: () => void; onMenos: () => void
+function ControlesCanvas({ pct, onAplicar, onMais, onMenos, onEnquadrar }: {
+  pct: number
+  onAplicar: (pct: number) => void
+  onMais: () => void
+  onMenos: () => void
+  onEnquadrar: () => void
 }) {
   const [texto, setTexto] = useState('')
   const [editando, setEditando] = useState(false)
@@ -1487,33 +1493,33 @@ function ZoomDigitavel({ pct, onAplicar, onMais, onMenos }: {
     setEditando(false)
   }
 
-  // Mesma medida e moldura dos botões nativos do React Flow, pra o grupo parecer um só controle.
-  const botao = 'flex h-[26px] w-[26px] items-center justify-center border border-border bg-card text-foreground hover:bg-accent'
+  const alvo = 'flex size-8 shrink-0 items-center justify-center text-foreground transition-colors hover:bg-accent'
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-sm shadow-sm">
-      <button type="button" onClick={onMais} aria-label="Aproximar" className={`${botao} rounded-t-sm`}>
-        <Plus className="size-3.5" />
+    <div className="flex divide-x divide-border overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <button type="button" onClick={onEnquadrar} aria-label="Enquadrar" title="Enquadrar" className={alvo}>
+        <Maximize2 className="size-4" />
       </button>
-      <div className="flex items-center border-x border-border bg-card">
-        <input
-          type="text"
-          inputMode="numeric"
-          aria-label="Zoom do canvas em porcentagem"
-          value={editando ? texto : String(pct)}
-          onFocus={(e) => { setEditando(true); setTexto(String(pct)); e.currentTarget.select() }}
-          onChange={(e) => setTexto(e.target.value)}
-          onBlur={aplicar}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
-            if (e.key === 'Escape') { setEditando(false); e.currentTarget.blur() }
-          }}
-          className="h-[26px] w-[26px] bg-transparent text-center text-[10px] tabular-nums outline-none focus:bg-accent"
-          title="Zoom em % — digite e tecle Enter"
-        />
-      </div>
-      <button type="button" onClick={onMenos} aria-label="Afastar" className={`${botao} rounded-b-sm`}>
-        <Minus className="size-3.5" />
+      <button type="button" onClick={onMenos} aria-label="Afastar" title="Afastar" className={alvo}>
+        <Minus className="size-4" />
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        aria-label="Zoom do canvas em porcentagem"
+        title="Zoom em % — digite e tecle Enter"
+        value={editando ? texto : String(pct)}
+        onFocus={(e) => { setEditando(true); setTexto(String(pct)); e.currentTarget.select() }}
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={aplicar}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+          if (e.key === 'Escape') { setEditando(false); e.currentTarget.blur() }
+        }}
+        className={`${alvo} bg-transparent text-center text-[11px] tabular-nums outline-none focus:bg-accent`}
+      />
+      <button type="button" onClick={onMais} aria-label="Aproximar" title="Aproximar" className={alvo}>
+        <Plus className="size-4" />
       </button>
     </div>
   )
