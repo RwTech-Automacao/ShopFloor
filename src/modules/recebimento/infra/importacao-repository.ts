@@ -151,3 +151,24 @@ export async function chamarCorrigirImportacao(payload: {
   const resultado = data as unknown as RpcCorrigirImportacaoResultado
   return { antes: resultado.antes, total: resultado.total }
 }
+
+/**
+ * Quantos processos já existem com este número de EMB. Serve à trava de EMB repetida.
+ *
+ * Compara SEM diferenciar caixa nem espaços nas pontas: "emb390ca" e " EMB390CA " são a mesma EMB
+ * pra quem digita, e a trava precisa enxergar isso — senão ela protege só de quem digitou igualzinho.
+ */
+export async function contarProcessosDaEmb(emb: string): Promise<number> {
+  const alvo = emb.trim()
+  if (alvo === '') return 0
+  const supabase = await createServerSupabase()
+  // `ilike` sem curinga casa exato, ignorando a caixa. `%` e `_` escapados: uma EMB com underscore
+  // no nome viraria curinga e a trava passaria a acusar EMBs que não são a mesma.
+  const termo = alvo.replace(/[\\%_]/g, (c) => `\\${c}`)
+  const { count, error } = await supabase
+    .from('processos_recebimento')
+    .select('id', { count: 'exact', head: true })
+    .ilike('numero_emb', termo)
+  if (error) throw error
+  return count ?? 0
+}

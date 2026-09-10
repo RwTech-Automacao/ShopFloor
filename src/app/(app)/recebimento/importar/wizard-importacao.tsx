@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { AlertTriangleIcon, CheckIcon, Loader2Icon, UploadIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { corrigirImportacao, importarPlanilha } from '@/modules/recebimento/application/importar-planilha'
+import { corrigirImportacao, importarPlanilha, conferirEmbRepetida } from '@/modules/recebimento/application/importar-planilha'
 import { lerPlanilha } from '@/modules/recebimento/domain/ler-planilha'
 import {
   sugerirMapeamento,
@@ -135,6 +135,28 @@ export function WizardImportacao({
   function onMudarValorFixo(campo: string, valor: string) {
     setValoresDigitados((atual) => ({ ...atual, [campo]: valor }))
   }
+
+  const embDigitada = (valoresDigitados.numero_emb ?? '').trim()
+  // Guarda a EMB JUNTO com o resultado. Só o número seria uma resposta sem pergunta: enquanto a
+  // consulta da EMB nova não volta, o valor da anterior ainda está no estado e o aviso apontaria
+  // pra EMB errada. Comparando com o que está digitado, resultado velho simplesmente não conta.
+  const [embCheck, setEmbCheck] = useState<{ emb: string; existentes: number } | null>(null)
+
+  // Avisa ANTES de a pessoa montar o mapeamento inteiro e só descobrir no fim que a EMB repete.
+  // Em CORREÇÃO não verifica: ali repetir a EMB é o ponto — é a mesma EMB sendo reenviada.
+  // 400ms de espera pra não consultar a cada tecla enquanto ela digita "EMB390CA".
+  useEffect(() => {
+    if (correcao || embDigitada === '') return
+    let vivo = true
+    const t = setTimeout(async () => {
+      const r = await conferirEmbRepetida(embDigitada)
+      if (vivo && r.ok) setEmbCheck({ emb: embDigitada, existentes: r.existentes })
+    }, 400)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [embDigitada, correcao])
+
+  const embExistentes = embCheck?.emb === embDigitada ? embCheck.existentes : null
+  const embRepetida = !correcao && embDigitada !== '' && (embExistentes ?? 0) > 0
 
   async function processarArquivo(file: File) {
     setErroArquivo(null)
@@ -363,6 +385,7 @@ export function WizardImportacao({
             valoresDigitados={valoresDigitados}
             onMudarValorFixo={onMudarValorFixo}
             embTravada={correcao ? correcao.emb : null}
+            embExistentes={embExistentes}
             colunas={colunas}
             mapeamento={mapeamento}
             camposFaltando={camposFaltando}
@@ -395,6 +418,7 @@ export function WizardImportacao({
           camposDigitados={camposDigitados}
           valoresDigitados={valoresDigitados}
           importando={importando}
+          embRepetida={embRepetida}
           resultado={resultado}
           correcao={correcao}
           onVoltar={() => setPasso(3)}
@@ -501,6 +525,8 @@ interface PassoMapearProps {
   onMudarValorFixo: (campo: string, valor: string) => void
   /** Em correção, a EMB é fixa desta importação — o campo fica travado. */
   embTravada: string | null
+  /** Processos já existentes com a EMB digitada; 0 ou null = pode importar. */
+  embExistentes: number | null
   colunas: string[]
   mapeamento: Record<string, string>
   camposFaltando: CampoImportavel[]
@@ -515,6 +541,7 @@ function PassoMapear({
   valoresDigitados,
   onMudarValorFixo,
   embTravada,
+  embExistentes,
   colunas,
   mapeamento,
   camposFaltando,
@@ -554,6 +581,12 @@ function PassoMapear({
                   />
                   {travado && (
                     <span className="text-xs text-muted-foreground">EMB fixa desta correção.</span>
+                  )}
+                  {campo.campo === 'numero_emb' && embExistentes !== null && embExistentes > 0 && (
+                    <span className="max-w-56 text-xs font-medium text-red-600">
+                      Esta EMB já foi importada ({embExistentes} {embExistentes === 1 ? 'processo' : 'processos'}).
+                      Para reenviar a planilha corrigida, use &quot;Corrigir importação&quot;.
+                    </span>
                   )}
                 </div>
               )
@@ -738,6 +771,8 @@ interface PassoImportarProps {
   totalLinhas: number
   camposDigitados: CampoImportavel[]
   valoresDigitados: Record<string, string>
+  /** EMB já usada: o botão de importar fica travado. */
+  embRepetida: boolean
   importando: boolean
   resultado: ResultadoImportacao | null
   correcao?: CorrecaoImportacao
@@ -751,6 +786,7 @@ function PassoImportar({
   camposDigitados,
   valoresDigitados,
   importando,
+  embRepetida,
   resultado,
   correcao,
   onVoltar,
@@ -808,7 +844,12 @@ function PassoImportar({
         <Button variant="outline" onClick={onVoltar} disabled={importando}>
           Voltar
         </Button>
-        <Button className="bg-enterplak hover:bg-enterplak-700" disabled={importando} onClick={onEnviar}>
+        <Button
+          className="bg-enterplak hover:bg-enterplak-700"
+          disabled={importando || embRepetida}
+          title={embRepetida ? 'Esta EMB já foi importada — use "Corrigir importação".' : undefined}
+          onClick={onEnviar}
+        >
           {importando ? (
             <>
               <Loader2Icon className="size-4 animate-spin" />{' '}
