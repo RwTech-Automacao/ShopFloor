@@ -11,6 +11,9 @@ export interface FiltrosRegistros {
   busca?: string // casa pmo OU op
   posto?: string
   snNorm?: string
+  /** Texto livre casado contra `codigo_defeito` (contém). O código guarda número e descrição no
+   *  mesmo campo ('2040 COMPONENTE FALTANDO'), então buscar por "2040" ou por "faltando" funciona. */
+  defeito?: string
   status?: string // 'aprovado' | 'reprovado' | 'sem-status'
   de?: string // data início (aplicada em data_hora)
   ate?: string // data fim
@@ -32,6 +35,8 @@ export function parsearFiltrosRegistros(
     const norm = normalizarSerie(sn)
     if (norm) f.snNorm = norm
   }
+  const defeito = input.defeito?.trim()
+  if (defeito) f.defeito = defeito
   const status = input.status?.trim()
   if (status) f.status = status
   const de = input.de?.trim()
