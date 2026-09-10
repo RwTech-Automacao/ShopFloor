@@ -164,8 +164,8 @@ export async function caixasDaOp(
 }
 
 /**
- * QR Code da caixa para a folha impressa. O conteúdo é a LISTA DE SNs, um por linha — é o que o
- * leitor de celular mostra hoje na planilha que a fábrica usa. Gerado no servidor (SVG, imprime
+ * QR Code da caixa para a folha impressa. O conteúdo é o CÓDIGO DA CAIXA seguido da lista de SNs,
+ * um por linha — o que o leitor de celular mostra. Gerado no servidor (SVG, imprime
  * nítido em qualquer tamanho) para não carregar a biblioteca no navegador do chão de fábrica.
  *
  * O QR tem teto de dados: com correção de erro M cabem ~230 SNs. Caixa maior que isso não gera —
@@ -182,7 +182,17 @@ export async function qrDaCaixa(
     if (!caixa) return { ok: false, erro: 'Caixa não encontrada.' }
     if (caixa.sns.length === 0) return { ok: false, erro: 'Esta caixa não tem peças.' }
 
-    const conteudo = caixa.sns.join('\n')
+    // O código da caixa vai na PRIMEIRA linha, e isso é a correção de um comportamento do iOS:
+    // a câmera do iPhone passa um detector de dados no que leu, e um conteúdo formado só por
+    // dígitos e quebras de linha casa com o padrão de telefone. Ela então decide que aquilo É um
+    // telefone, oferece "Ligar" e mostra só o trecho que casou — daí o relato de "só aparece o
+    // primeiro número de série". Não é limite de tamanho: o Leitor de Código do iPhone, que não
+    // faz essa inferência, sempre mostrou a lista inteira.
+    //
+    // Com letras e colchetes na frente, nenhuma leitura como telefone é possível e o texto todo
+    // aparece. E o cabeçalho ganha utilidade própria: quem escaneia passa a saber DE QUAL CAIXA
+    // é a lista — antes não sabia.
+    const conteudo = [caixa.codigo, ...caixa.sns].join('\n')
     const svg = await QRCode.toString(conteudo, {
       type: 'svg',
       errorCorrectionLevel: 'M',
