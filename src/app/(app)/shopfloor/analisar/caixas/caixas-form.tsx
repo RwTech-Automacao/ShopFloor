@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { Printer } from 'lucide-react'
+import { Printer, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -78,6 +78,30 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
 
   function toggle(key: string) {
     setAbertos((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
+  }
+
+  /**
+   * Baixa os SNs da caixa em CSV. Gerado no NAVEGADOR: os números já estão em memória (a lista veio
+   * junto com as caixas), então uma volta ao servidor só adicionaria espera.
+   *
+   * `;` como separador e BOM no começo — mesma convenção da exportação de Registros, que é o que o
+   * Excel em pt-BR abre direto, sem passar pelo assistente de importação.
+   */
+  function exportarCsv(caixa: CaixaConsulta) {
+    const base = pecasAntesDaCaixa(caixas, caixa)
+    const linhas = [
+      ['#', 'Número de Série', 'Caixa'].join(';'),
+      ...caixa.sns.map((sn, i) => [base + i + 1, sn, caixa.codigo].join(';')),
+    ]
+    const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${nomeDoArquivo(caixa.codigo)}.csv`
+    a.click()
+    // Sem o revoke o blob fica na memória da aba até ela fechar — numa TV que passa o dia aberta,
+    // uma exportação por caixa vira vazamento.
+    URL.revokeObjectURL(url)
   }
 
   function imprimir(caixa: CaixaConsulta) {
@@ -158,6 +182,16 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
                     >
                       <Printer className="mr-1 size-4" /> Imprimir / PDF
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={c.qtd === 0}
+                      onClick={() => exportarCsv(c)}
+                      title="Baixar os números de série desta caixa em CSV"
+                    >
+                      <Download className="mr-1 size-4" /> CSV
+                    </Button>
                   </div>
                   {abertos.has(key) && (
                     <ul className="flex flex-col gap-0.5 border-t border-border px-3 py-2 text-sm">
@@ -197,7 +231,15 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
 
   return (
     <div className="hidden text-black print:block print:p-[12mm]">
-      <h1 className="mb-2 text-center text-[15px] font-semibold">Lista de Números de Série</h1>
+      {/* Logo à esquerda e título centralizado na folha: o <h1> ocupa o espaço todo e o logo fica
+          por cima, no canto — assim o título não desloca por causa da largura da marca.
+          `<img>` cru em vez de next/image: isto é impressão, não precisa de otimização nem lazy,
+          e o loader do next/image atrapalharia o carregamento antes do window.print(). */}
+      <div className="relative mb-2 flex items-center">
+        {/* eslint-disable-next-line @next/next/no-img-element -- folha de impressão */}
+        <img src="/Logo_Docs.png" alt="Enterplak" className="absolute left-0 h-[10mm] w-auto" />
+        <h1 className="w-full text-center text-[15px] font-semibold">Lista de Números de Série</h1>
+      </div>
 
       <div className="border border-black">
         <div className="flex items-center gap-3 border-b border-black bg-enterplak px-3 py-1.5 text-white [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
@@ -261,7 +303,7 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
 function ColunaCabecalho() {
   return (
     <>
-      <th className="w-[8%] border border-black px-1 py-0.5 text-center font-semibold">QTD</th>
+      <th className="w-[8%] border border-black px-1 py-0.5 text-center font-semibold">#</th>
       <th className="w-[25%] border border-black px-1 py-0.5 text-center font-semibold">NS</th>
     </>
   )
