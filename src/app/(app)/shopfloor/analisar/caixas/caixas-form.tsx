@@ -90,8 +90,8 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
   function exportarCsv(caixa: CaixaConsulta) {
     const base = pecasAntesDaCaixa(caixas, caixa)
     const linhas = [
-      ['#', 'Número de Série', 'Caixa', 'Posto'].join(';'),
-      ...caixa.sns.map((sn, i) => [base + i + 1, sn, caixa.codigo, caixa.posto].join(';')),
+      ['#', 'Número de Série', 'Caixa'].join(';'),
+      ...caixa.sns.map((sn, i) => [base + i + 1, sn, caixa.codigo].join(';')),
     ]
     const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)

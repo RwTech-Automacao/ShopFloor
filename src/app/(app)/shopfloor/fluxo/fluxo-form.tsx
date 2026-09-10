@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { ReactFlow, Background, Controls, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
+import { ReactFlow, Background, Controls, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight } from 'lucide-react'
 import { toast } from 'sonner'
@@ -874,6 +874,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   // Modo TV: tela cheia do canvas (Fullscreen API) + re-encaixa o fluxo ao entrar/sair.
   const canvasRef = useRef<HTMLDivElement>(null)
   const rfRef = useRef<ReactFlowInstance | null>(null)
+  const [zoomPct, setZoomPct] = useState(100)
   const [telaCheia, setTelaCheia] = useState(false)
   const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
@@ -1159,13 +1160,20 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             maxZoom={4}
             nodesDraggable
             nodesConnectable={false}
-            onInit={(inst) => { rfRef.current = inst }}
+            onInit={(inst) => { rfRef.current = inst; setZoomPct(Math.round(inst.getZoom() * 100)) }}
+            onMove={(_, vp) => setZoomPct(Math.round(vp.zoom * 100))}
             onNodesChange={onNodesChangeGuia}
             onNodeDragStop={onNodeDragStop}
             onNodeClick={onNodeClick}
           >
             <Background />
             <Controls showInteractive={false} />
+            {/* Campo de zoom colado nos controles (canto inferior esquerdo): a roda do mouse é boa
+                pra procurar, ruim pra repetir. Quem monta a TV quer voltar sempre no MESMO zoom,
+                e digitar 65 é a única forma de acertar duas vezes seguidas. */}
+            <Panel position="bottom-left" className="!bottom-2 !left-[3.25rem] !m-0">
+              <ZoomDigitavel pct={zoomPct} onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })} />
+            </Panel>
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
@@ -1322,11 +1330,11 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                 <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
               </div>
               <div className="flex items-center gap-6">
+                <RelogioAoVivo />
                 <div className="text-right">
                   <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
                   <p className="text-xs text-muted-foreground">progresso</p>
                 </div>
-                <RelogioAoVivo />
                 <button
                   type="button"
                   onClick={alternarTv}
@@ -1451,3 +1459,41 @@ function RelogioAoVivo() {
 const fmtRelogio = new Intl.DateTimeFormat('pt-BR', {
   hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
 })
+
+/**
+ * Zoom em porcentagem, editável. Mostra o valor atual do canvas e aceita um número digitado.
+ *
+ * O texto só é "solto" enquanto o campo tem foco: fora dele, segue o canvas. Sem isso, arrastar a
+ * roda do mouse com o campo preenchido deixaria os dois números brigando — o digitado e o real.
+ */
+function ZoomDigitavel({ pct, onAplicar }: { pct: number; onAplicar: (pct: number) => void }) {
+  const [texto, setTexto] = useState('')
+  const [editando, setEditando] = useState(false)
+
+  function aplicar() {
+    const n = Number(texto.replace(/[^\d]/g, ''))
+    // Fora da faixa do canvas (10% a 400%) o React Flow ignoraria calado; melhor grudar no limite.
+    if (Number.isFinite(n) && n > 0) onAplicar(Math.min(400, Math.max(10, n)))
+    setEditando(false)
+  }
+
+  return (
+    <div className="flex items-center rounded-md border border-border bg-card shadow-sm">
+      <input
+        type="text"
+        inputMode="numeric"
+        aria-label="Zoom do canvas em porcentagem"
+        value={editando ? texto : String(pct)}
+        onFocus={(e) => { setEditando(true); setTexto(String(pct)); e.currentTarget.select() }}
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={aplicar}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+          if (e.key === 'Escape') { setEditando(false); e.currentTarget.blur() }
+        }}
+        className="h-7 w-11 bg-transparent px-1 text-right text-xs tabular-nums outline-none"
+      />
+      <span className="pr-1.5 text-xs text-muted-foreground">%</span>
+    </div>
+  )
+}

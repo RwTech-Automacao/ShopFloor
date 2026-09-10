@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -136,7 +136,10 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
   return (
     <>
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <Table>
+        <RolagemDupla>
+        {/* `overflow-visible` desliga o scroller próprio do Table: quem rola agora é o container da
+            RolagemDupla, e ter dois scrollers aninhados deixaria a barra de cima sem o que espelhar. */}
+        <Table containerClassName="overflow-visible">
           <TableHeader>
             <TableRow>
               <TableHead>Data/Hora</TableHead>
@@ -197,6 +200,7 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
             ))}
           </TableBody>
         </Table>
+        </RolagemDupla>
       </div>
 
       <Dialog open={sel !== null} onOpenChange={(o) => !o && setSel(null)}>
@@ -283,6 +287,63 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  )
+}
+
+/**
+ * Tabela larga com barra de rolagem horizontal TAMBÉM em cima.
+ *
+ * A tabela de Registros passou a ter treze colunas: pra rolar de lado, a pessoa precisava descer
+ * até o fim da página, achar a barra, rolar, e subir de novo pra ler o cabeçalho. A barra de cima
+ * resolve sem tirar a de baixo — as duas espelham a mesma posição.
+ *
+ * A de cima é um container vazio com um espaçador da mesma largura do conteúdo; é o navegador que
+ * desenha a barra. `sincronizando` evita o pingue-pongue: sem ela, mover uma dispara o onScroll da
+ * outra, que dispara o da primeira, e a rolagem trava engasgada.
+ */
+function RolagemDupla({ children }: { children: React.ReactNode }) {
+  const topoRef = useRef<HTMLDivElement>(null)
+  const conteudoRef = useRef<HTMLDivElement>(null)
+  const sincronizando = useRef(false)
+  const [largura, setLargura] = useState(0)
+
+  useEffect(() => {
+    const el = conteudoRef.current
+    if (!el) return
+    // A largura muda com o filtro (mais/menos linhas mudam a largura das colunas) e com a janela.
+    const medir = () => setLargura(el.scrollWidth)
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const espelhar = (de: HTMLDivElement | null, para: HTMLDivElement | null) => {
+    if (!de || !para || sincronizando.current) return
+    sincronizando.current = true
+    para.scrollLeft = de.scrollLeft
+    // Solta no próximo quadro: o onScroll do outro container já terá disparado e sido ignorado.
+    requestAnimationFrame(() => { sincronizando.current = false })
+  }
+
+  return (
+    <>
+      <div
+        ref={topoRef}
+        onScroll={() => espelhar(topoRef.current, conteudoRef.current)}
+        className="overflow-x-auto"
+        aria-hidden
+      >
+        <div style={{ width: largura, height: 1 }} />
+      </div>
+      <div
+        ref={conteudoRef}
+        onScroll={() => espelhar(conteudoRef.current, topoRef.current)}
+        className="overflow-x-auto"
+      >
+        {children}
+      </div>
     </>
   )
 }
