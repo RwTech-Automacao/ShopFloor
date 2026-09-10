@@ -15,6 +15,7 @@ import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repositor
 
 const TODOS = '__todos__'
 const fmt = new Intl.NumberFormat('pt-BR')
+const ROTULO_STATUS: Record<string, string> = { aberta: 'Em aberto', finalizada: 'Finalizadas', [TODOS]: 'Todas' }
 
 /**
  * Dashboard geral — a visão que substitui o relatório do Looker Studio, que lia da planilha do
@@ -27,6 +28,7 @@ export function DashboardGeral({ ordens, postos }: { ordens: OrdemPesquisa[]; po
   const [filtro, setFiltro] = useState<FiltroDashboard>(FILTRO_PADRAO)
   const [pagina, setPagina] = useState(0)
   const [dados, setDados] = useState<DadosDashboard | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
   const [carregando, start] = useTransition()
 
   // Recarrega a cada mudança de filtro ou de página. O filtro inteiro entra na dependência como
@@ -35,8 +37,8 @@ export function DashboardGeral({ ordens, postos }: { ordens: OrdemPesquisa[]; po
   useEffect(() => {
     start(async () => {
       const r = await carregarDashboardGeral(filtro, pagina)
-      if (r.ok) setDados(r.dados)
-      else { setDados(null); toast.error(r.erro) }
+      if (r.ok) { setDados(r.dados); setErro(null) }
+      else { setDados(null); setErro(r.erro); toast.error(r.erro) }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `chave` já representa o filtro inteiro
   }, [chave, pagina])
@@ -77,7 +79,11 @@ export function DashboardGeral({ ordens, postos }: { ordens: OrdemPesquisa[]; po
             <Label>Status da OP</Label>
             <Select value={filtro.statusOp === '' ? TODOS : filtro.statusOp}
               onValueChange={(v) => mudar({ statusOp: !v || v === TODOS ? '' : (v as 'aberta' | 'finalizada') })}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9">
+                <SelectValue>
+                  {(v: string | null) => ROTULO_STATUS[String(v ?? TODOS)] ?? 'Todas'}
+                </SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="aberta">Em aberto</SelectItem>
                 <SelectItem value="finalizada">Finalizadas</SelectItem>
@@ -120,7 +126,17 @@ export function DashboardGeral({ ordens, postos }: { ordens: OrdemPesquisa[]; po
       {/* ---------- Grade OP × posto ---------- */}
       <Card>
         <CardContent className="py-4">
-          {carregando && !dados && <p className="text-sm text-muted-foreground">Carregando…</p>}
+          {carregando && !dados && !erro && <p className="text-sm text-muted-foreground">Carregando…</p>}
+          {/* Sem isto o card ficava BRANCO quando a consulta falhava: `dados` nulo e nada a
+              renderizar. Tela vazia sem explicação é pior que erro na cara. */}
+          {erro && !carregando && (
+            <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40">
+              <p className="font-medium text-amber-900 dark:text-amber-200">{erro}</p>
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                Se este ambiente é novo, confira se a migração <span className="font-mono">0101</span> foi aplicada.
+              </p>
+            </div>
+          )}
           {dados && dados.grade.ops.length === 0 && (
             <p className="text-sm text-muted-foreground">Nenhuma OP com movimento neste filtro.</p>
           )}
@@ -230,7 +246,13 @@ function CampoSelect({ rotulo, valor, opcoes, onChange }: {
     <div className="flex flex-col gap-1.5">
       <Label>{rotulo}</Label>
       <Select value={valor === '' ? TODOS : valor} onValueChange={(v) => onChange(!v || v === TODOS ? '' : v)}>
-        <SelectTrigger className="h-9"><SelectValue placeholder="Todos" /></SelectTrigger>
+        <SelectTrigger className="h-9">
+          {/* O Select do projeto (Base UI) mostra o VALOR cru sem uma função de renderização —
+              apareceria "__todos__" na tela. Mesmo padrão dos filtros de Registros. */}
+          <SelectValue placeholder="Todos">
+            {(v: string | null) => (!v || v === TODOS ? 'Todos' : String(v))}
+          </SelectValue>
+        </SelectTrigger>
         <SelectContent>
           <SelectItem value={TODOS}>Todos</SelectItem>
           {opcoes.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
