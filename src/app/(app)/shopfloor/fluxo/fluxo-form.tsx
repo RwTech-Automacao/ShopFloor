@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Controls, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight, Minus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -1167,12 +1167,17 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
             onNodeClick={onNodeClick}
           >
             <Background />
-            <Controls showInteractive={false} />
-            {/* Campo de zoom colado nos controles (canto inferior esquerdo): a roda do mouse é boa
-                pra procurar, ruim pra repetir. Quem monta a TV quer voltar sempre no MESMO zoom,
-                e digitar 65 é a única forma de acertar duas vezes seguidas. */}
-            <Panel position="bottom-left" className="!bottom-2 !left-[3.25rem] !m-0">
-              <ZoomDigitavel pct={zoomPct} onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })} />
+            {/* Os botões de zoom saem do <Controls> pra o campo de porcentagem poder ficar ENTRE o
+                "+" e o "−" — o React Flow só aceita filhos DEPOIS dos botões dele, nunca no meio.
+                O "enquadrar" continua vindo dele. */}
+            <Controls showZoom={false} showInteractive={false} />
+            <Panel position="bottom-left" className="!bottom-[5.5rem] !left-[15px] !m-0">
+              <ZoomDigitavel
+                pct={zoomPct}
+                onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })}
+                onMais={() => rfRef.current?.zoomIn({ duration: 200 })}
+                onMenos={() => rfRef.current?.zoomOut({ duration: 200 })}
+              />
             </Panel>
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
@@ -1461,12 +1466,17 @@ const fmtRelogio = new Intl.DateTimeFormat('pt-BR', {
 })
 
 /**
- * Zoom em porcentagem, editável. Mostra o valor atual do canvas e aceita um número digitado.
+ * Controle de zoom: "+", a porcentagem editável e "−", nessa ordem vertical.
+ *
+ * A roda do mouse é boa pra procurar e ruim pra repetir — quem monta a TV quer voltar sempre no
+ * MESMO zoom, e digitar 65 é a única forma de acertar duas vezes seguidas.
  *
  * O texto só é "solto" enquanto o campo tem foco: fora dele, segue o canvas. Sem isso, arrastar a
  * roda do mouse com o campo preenchido deixaria os dois números brigando — o digitado e o real.
  */
-function ZoomDigitavel({ pct, onAplicar }: { pct: number; onAplicar: (pct: number) => void }) {
+function ZoomDigitavel({ pct, onAplicar, onMais, onMenos }: {
+  pct: number; onAplicar: (pct: number) => void; onMais: () => void; onMenos: () => void
+}) {
   const [texto, setTexto] = useState('')
   const [editando, setEditando] = useState(false)
 
@@ -1477,23 +1487,34 @@ function ZoomDigitavel({ pct, onAplicar }: { pct: number; onAplicar: (pct: numbe
     setEditando(false)
   }
 
+  // Mesma medida e moldura dos botões nativos do React Flow, pra o grupo parecer um só controle.
+  const botao = 'flex h-[26px] w-[26px] items-center justify-center border border-border bg-card text-foreground hover:bg-accent'
+
   return (
-    <div className="flex items-center rounded-md border border-border bg-card shadow-sm">
-      <input
-        type="text"
-        inputMode="numeric"
-        aria-label="Zoom do canvas em porcentagem"
-        value={editando ? texto : String(pct)}
-        onFocus={(e) => { setEditando(true); setTexto(String(pct)); e.currentTarget.select() }}
-        onChange={(e) => setTexto(e.target.value)}
-        onBlur={aplicar}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
-          if (e.key === 'Escape') { setEditando(false); e.currentTarget.blur() }
-        }}
-        className="h-7 w-11 bg-transparent px-1 text-right text-xs tabular-nums outline-none"
-      />
-      <span className="pr-1.5 text-xs text-muted-foreground">%</span>
+    <div className="flex flex-col overflow-hidden rounded-sm shadow-sm">
+      <button type="button" onClick={onMais} aria-label="Aproximar" className={`${botao} rounded-t-sm`}>
+        <Plus className="size-3.5" />
+      </button>
+      <div className="flex items-center border-x border-border bg-card">
+        <input
+          type="text"
+          inputMode="numeric"
+          aria-label="Zoom do canvas em porcentagem"
+          value={editando ? texto : String(pct)}
+          onFocus={(e) => { setEditando(true); setTexto(String(pct)); e.currentTarget.select() }}
+          onChange={(e) => setTexto(e.target.value)}
+          onBlur={aplicar}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+            if (e.key === 'Escape') { setEditando(false); e.currentTarget.blur() }
+          }}
+          className="h-[26px] w-[26px] bg-transparent text-center text-[10px] tabular-nums outline-none focus:bg-accent"
+          title="Zoom em % — digite e tecle Enter"
+        />
+      </div>
+      <button type="button" onClick={onMenos} aria-label="Afastar" className={`${botao} rounded-b-sm`}>
+        <Minus className="size-3.5" />
+      </button>
     </div>
   )
 }

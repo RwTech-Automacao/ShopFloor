@@ -329,10 +329,13 @@ function RolagemDupla({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      {/* Altura própria: o container precisa ser mais alto que o espaçador, senão a barra não tem
+          onde ser desenhada e some. E o estilo explícito garante que ela apareça mesmo nos
+          navegadores que escondem a barra até alguém rolar (overlay scrollbars). */}
       <div
         ref={topoRef}
         onScroll={() => espelhar(topoRef.current, conteudoRef.current)}
-        className="overflow-x-auto"
+        className="h-3 overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:h-2"
         aria-hidden
       >
         <div style={{ width: largura, height: 1 }} />
