@@ -31,7 +31,9 @@ export async function carregarEmbalagem(
  *  remontagem — o painel mostra o motivo e um botão pra incluir mesmo assim. */
 export type ResultadoEmbalar =
   | { ok: true; caixaCount?: number; seq: number }
-  | { ok: false; erro: string; confirmar?: { motivo: string; seq: number } }
+  /** `seq` também vai na FALHA: a peça pode ter sido recusada (duplicata, caixa cheia) e mesmo
+   *  assim pertencer a outra caixa — a tela precisa ir pra lá pro operador ver o estado real. */
+  | { ok: false; erro: string; seq?: number; confirmar?: { motivo: string; seq: number } }
 
 /** Garante a caixa (seq,limite) e lança a peça nela (reusa sf_lancar via lancar).
  *  `ultima`: a caixa foi marcada como ÚLTIMA → aceita passar do limite (as peças que sobram
@@ -109,7 +111,10 @@ export async function embalarPeca(entrada: {
     qtdPorCaixa: String(limite),
     permitirExtraCaixa: ultima, // última caixa aceita passar do limite
   })
-  if (!r.ok) return { ok: false, erro: r.erro }
+  // Recusa carrega o `seq` resolvido: bipar uma peça de uma remontagem que já está completa dá
+  // duplicata (correto — ela já está lá), mas o operador quer justamente CHEGAR naquela caixa pra
+  // fechá-la. Sem devolver o seq, o gesto natural dele não levaria a lugar nenhum.
+  if (!r.ok) return { ok: false, erro: r.erro, seq }
   return { ok: true, caixaCount: r.caixaCount, seq }
 }
 
