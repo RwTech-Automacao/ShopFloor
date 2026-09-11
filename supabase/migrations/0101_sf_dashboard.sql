@@ -169,8 +169,11 @@ grant execute on function public.sf_dashboard_grade(text,text,text,text,timestam
 -- ---------------------------------------------------------------------------
 -- Principais defeitos do recorte
 -- ---------------------------------------------------------------------------
--- Irmã da `sf_defeitos_resumo` (0099), que é de UMA OP. Esta cruza o mesmo filtro do dashboard.
+-- Irmã da `sf_defeitos_resumo` (0099/0104), que é de UMA OP. Esta cruza o mesmo filtro do dashboard.
 -- Devolve o top N; a tela soma o resto num "Outros", como o relatório antigo fazia.
+--
+-- Conta só a REPROVA (mesma regra da 0104): a Manutenção grava o código de novo em cada conserto e
+-- em cada defeito constatado, e contar essas linhas multiplicava a mesma falha.
 create or replace function public.sf_dashboard_defeitos(
   p_cliente   text default '',
   p_pmo       text default '',
@@ -199,6 +202,7 @@ begin
     from sf_registros r
     join sf_ordens o on o.pmo = r.pmo and o.op = r.op
     where r.codigo_defeito <> ''
+      and lower(r.status) = 'reprovado'
       and (p_cliente = '' or o.cliente = p_cliente)
       and (p_pmo = '' or r.pmo = p_pmo)
       and (p_op = '' or r.op = p_op)
