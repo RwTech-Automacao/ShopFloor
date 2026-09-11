@@ -1,10 +1,15 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import type { RegistroContagem } from '../domain/dashboard'
+import { normalizarSerie } from '../domain/serie'
+import {
+  RANKING_VAZIO,
+  type RegistroContagem, type FiltroDashboard, type LinhaGrade, type TotaisDashboard,
+  type GraficosDashboard, type Ranking, type OpPorStatus,
+} from '../domain/dashboard'
 
 const PAGINA = 1000
 
-/** Registros (posto,status) da OP, com período opcional (datas YYYY-MM-DD, fuso -03:00). Paginado. */
+/** Registros (posto,status,SN) da OP, com período opcional (datas YYYY-MM-DD, fuso -03:00). Paginado. */
 export async function listarContagemDaOp(
   pmo: string,
   op: string,
@@ -16,7 +21,7 @@ export async function listarContagemDaOp(
   for (let ini = 0; ; ini += PAGINA) {
     let q = supabase
       .from('sf_registros')
-      .select('posto,status')
+      .select('posto,status,numero_serie_norm')
       .eq('pmo', pmo)
       .eq('op', op)
       .order('id', { ascending: true })
@@ -25,8 +30,8 @@ export async function listarContagemDaOp(
     if (ate) q = q.lte('data_hora', `${ate}T23:59:59-03:00`)
     const { data, error } = await q
     if (error) throw error
-    const rows = data as { posto: string; status: string }[]
-    out.push(...rows.map((r) => ({ posto: r.posto, status: r.status })))
+    const rows = data as { posto: string; status: string; numero_serie_norm: string }[]
+    out.push(...rows.map((r) => ({ posto: r.posto, status: r.status, sn: r.numero_serie_norm ?? '' })))
     if (rows.length < PAGINA) break
   }
   return out
@@ -36,13 +41,11 @@ export async function listarContagemDaOp(
 // Dashboard geral (várias OPs) — tudo agregado no banco (migração 0101)
 // ---------------------------------------------------------------------------
 
-import type { FiltroDashboard, LinhaGrade, TotaisDashboard, DefeitoDashboard } from '../domain/dashboard'
-
 /**
- * Converte o filtro da tela nos parâmetros da RPC.
+ * Converte o filtro da tela nos parâmetros das RPCs.
  *
  * As datas vêm dos inputs como YYYY-MM-DD e viram o DIA INTEIRO no fuso de produção — quem escolhe
- * "até 10/09" espera o dia 10 inteiro, não até a meia-noite dele.
+ * "até 10/09" espera o dia 10 inteiro. O SN é normalizado aqui, igual ao que o bipe grava.
  */
 function paramsDoFiltro(f: FiltroDashboard) {
   return {
@@ -53,6 +56,8 @@ function paramsDoFiltro(f: FiltroDashboard) {
     p_de: f.de ? `${f.de}T00:00:00-03:00` : null,
     p_ate: f.ate ? `${f.ate}T23:59:59-03:00` : null,
     p_posto: f.posto.trim(),
+    p_colaborador: f.colaborador.trim(),
+    p_sn: f.sn.trim() ? normalizarSerie(f.sn) : '',
   }
 }
 
@@ -78,31 +83,54 @@ export async function carregarGradeDashboard(
   if (error) throw error
   type Row = {
     pmo: string; op: string; cliente: string; descricao: string; qtd_op: number | null
-    finalizada: boolean; posto: string; aprovados: number; reprovados: number
-    pecas: number; ops_total: number
+    finalizada: boolean; posto: string; aprovados: number; reprovados: number; sem_status: number
+    pecas_op: number; ops_total: number
   }
   const rows = (data ?? []) as Row[]
   return {
     linhas: rows.map((r) => ({
-      pmo: r.pmo, op: r.op, cliente: r.cliente, descricao: r.descricao ?? '',
+      pmo: r.pmo, op: r.op, cliente: r.cliente ?? '', descricao: r.descricao ?? '',
       qtdOp: r.qtd_op, finalizada: r.finalizada === true, posto: r.posto ?? '',
-      aprovados: r.aprovados ?? 0, reprovados: r.reprovados ?? 0, pecas: r.pecas ?? 0,
+      aprovados: r.aprovados ?? 0, reprovados: r.reprovados ?? 0, semStatus: r.sem_status ?? 0,
+      pecasOp: r.pecas_op ?? 0,
     })),
     // `ops_total` viaja repetido em toda linha (result set único do PostgREST); 0 quando não há linha.
     opsTotal: rows[0]?.ops_total ?? 0,
   }
 }
 
-/** Top N defeitos do recorte + quanto ficou de fora ("Outros"). */
-export async function carregarDefeitosDashboard(
-  f: FiltroDashboard, limite: number,
-): Promise<{ topo: DefeitoDashboard[]; outros: number }> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase.rpc('sf_dashboard_defeitos', { ...paramsDoFiltro(f), p_limite: limite })
-  if (error) throw error
-  const rows = (data ?? []) as { codigo: string; total: number; resto: number }[]
+function lerRanking(v: unknown): Ranking {
+  const r = v as Partial<Ranking> | null | undefined
+  if (!r) return RANKING_VAZIO
   return {
-    topo: rows.map((r) => ({ codigo: r.codigo, total: r.total })),
-    outros: rows[0]?.resto ?? 0,
+    topo: (r.topo ?? []).map((i) => ({ rotulo: String(i.rotulo ?? ''), valor: Number(i.valor) || 0 })),
+    outros: Number(r.outros) || 0,
   }
+}
+
+/** Status, tipo, OPs por status, defeitos e posições — a mesma foto do filtro, num jsonb só. */
+export async function carregarGraficosDashboard(f: FiltroDashboard): Promise<GraficosDashboard> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_dashboard_graficos', paramsDoFiltro(f))
+  if (error) throw error
+  const v = (data ?? {}) as Record<string, unknown>
+  const ops = ((v.ops ?? []) as Partial<OpPorStatus>[]).map((o) => ({
+    pmo: String(o.pmo ?? ''), op: String(o.op ?? ''), total: Number(o.total) || 0,
+    porStatus: Object.fromEntries(Object.entries(o.porStatus ?? {}).map(([k, n]) => [k, Number(n) || 0])),
+  }))
+  return {
+    status: lerRanking(v.status),
+    tipo: lerRanking(v.tipo),
+    defeitos: lerRanking(v.defeitos),
+    posicoes: lerRanking(v.posicoes),
+    ops,
+  }
+}
+
+/** Opções do filtro de Colaborador: uma por pessoa, sem diferenciar maiúsculas (grafia mais usada). */
+export async function listarColaboradoresDashboard(): Promise<string[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_dashboard_colaboradores')
+  if (error) throw error
+  return ((data ?? []) as { nome: string }[]).map((r) => r.nome).filter(Boolean)
 }

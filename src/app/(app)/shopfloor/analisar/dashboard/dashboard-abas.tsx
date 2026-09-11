@@ -13,7 +13,9 @@ import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repositor
  * Abre na Geral: é a pergunta do dia a dia ("como está a produção?"). A Por OP continua sendo o
  * caminho pra quem já sabe qual OP quer olhar, e é a que o modo apresentação do Fluxo usa.
  */
-export function DashboardAbas({ ordens, postos }: { ordens: OrdemPesquisa[]; postos: string[] }) {
+export function DashboardAbas({ ordens, postos, colaboradores }: {
+  ordens: OrdemPesquisa[]; postos: string[]; colaboradores: string[]
+}) {
   const [aba, setAba] = useState<'geral' | 'op'>('geral')
 
   return (
@@ -22,7 +24,7 @@ export function DashboardAbas({ ordens, postos }: { ordens: OrdemPesquisa[]; pos
         <Aba ativa={aba === 'geral'} onClick={() => setAba('geral')}>Geral</Aba>
         <Aba ativa={aba === 'op'} onClick={() => setAba('op')}>Por OP</Aba>
       </div>
-      {aba === 'geral' ? <DashboardGeral ordens={ordens} postos={postos} /> : <DashboardForm ordens={ordens} />}
+      {aba === 'geral' ? <DashboardGeral ordens={ordens} postos={postos} colaboradores={colaboradores} /> : <DashboardForm ordens={ordens} />}
     </div>
   )
 }

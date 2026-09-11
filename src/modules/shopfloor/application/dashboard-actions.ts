@@ -47,17 +47,15 @@ export async function carregarDashboard(
 // quebra o build (o Next transforma cada export num endpoint). Por isso `OPS_POR_PAGINA` e os
 // tipos vivem no domínio, que cliente e servidor importam à vontade.
 import { pivotarGrade, OPS_POR_PAGINA, type FiltroDashboard, type DadosDashboard } from '../domain/dashboard'
-import { carregarTotaisDashboard, carregarGradeDashboard, carregarDefeitosDashboard } from '../infra/dashboard-repository'
+import { carregarTotaisDashboard, carregarGradeDashboard, carregarGraficosDashboard } from '../infra/dashboard-repository'
 import { listarPostos } from '../infra/postos-repository'
-
-const TOP_DEFEITOS = 5
 
 /**
  * Carrega o dashboard inteiro numa chamada só.
  *
- * As quatro consultas saem em PARALELO: são independentes e a tela só desenha quando tiver todas —
- * em série, a espera seria a soma em vez do maior. E vêm juntas de propósito: totais, grade e
- * defeitos precisam ser a mesma foto do mesmo filtro, senão os números se contradizem na tela.
+ * As consultas saem em PARALELO: são independentes e a tela só desenha quando tiver todas — em
+ * série, a espera seria a soma em vez do maior. E vêm juntas de propósito: totais, tabela e
+ * gráficos precisam ser a mesma foto do mesmo filtro, senão os números se contradizem na tela.
  */
 export async function carregarDashboardGeral(
   filtro: FiltroDashboard,
@@ -69,10 +67,10 @@ export async function carregarDashboardGeral(
   }
   try {
     const offset = Math.max(0, pagina) * OPS_POR_PAGINA
-    const [totais, grade, defeitos, postos] = await Promise.all([
+    const [totais, grade, graficos, postos] = await Promise.all([
       carregarTotaisDashboard(filtro),
       carregarGradeDashboard(filtro, OPS_POR_PAGINA, offset),
-      carregarDefeitosDashboard(filtro, TOP_DEFEITOS),
+      carregarGraficosDashboard(filtro),
       listarPostos(),
     ])
     return {
@@ -83,7 +81,7 @@ export async function carregarDashboardGeral(
         // sequência do fluxo mesmo quando uma OP ainda não chegou nos postos do fim.
         grade: pivotarGrade(grade.linhas, postos),
         opsTotal: grade.opsTotal,
-        defeitos,
+        graficos,
       },
     }
   } catch {
