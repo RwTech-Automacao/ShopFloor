@@ -54,6 +54,47 @@ export async function listarReprovasOrigem(): Promise<ReprovaRow[]> {
     )
     if (rows.length < PAGINA) break
   }
+
+  // Reprovas de peça que está DENTRO de uma rota de reteste — mesmo em posto cujo perfil não exige
+  // Manutenção. É o caso da Inspeção PTH: ela só entra no caminho por causa da rota, e reprovar ali
+  // significa voltar pro reparo. Sem esta segunda busca a peça sumia: reprovada numa tela, ausente
+  // na outra.
+  //
+  // O marcador é o próprio `posto_retorno` preenchido: desde a 0103, reprovar no meio da rota NÃO a
+  // consome, então a linha carrega a dívida.
+  const postosOrigemSet = new Set(postosOrigem.map((x) => x.toLowerCase()))
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await supabase
+      .from('sf_registros')
+      .select('data_hora,cliente,pmo,op,numero_serie,numero_serie_norm,posto,codigo_defeito,posicao,tipo_defeito')
+      .eq('status', 'Reprovado')
+      .not('posto_retorno', 'is', null)
+      .neq('posto_retorno', '')
+      .order('data_hora', { ascending: false })
+      .order('id', { ascending: true })
+      .range(de, de + PAGINA - 1)
+    if (error) throw error
+    const rows = (data ?? []) as Record<string, string>[]
+    for (const r of rows) {
+      // Posto que já veio pela primeira busca não repete: linha duplicada infla as posições
+      // agregadas da ocorrência.
+      if (postosOrigemSet.has((r.posto ?? '').toLowerCase())) continue
+      out.push({
+        dataHora: r.data_hora ?? '',
+        cliente: r.cliente ?? '',
+        pmo: r.pmo ?? '',
+        op: r.op ?? '',
+        sn: r.numero_serie ?? '',
+        snNorm: r.numero_serie_norm ?? '',
+        posto: r.posto ?? '',
+        cod: r.codigo_defeito ?? '',
+        pos: r.posicao ?? '',
+        tipo: r.tipo_defeito ?? '',
+      })
+    }
+    if (rows.length < PAGINA) break
+  }
+
   return out
 }
 

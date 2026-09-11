@@ -186,7 +186,9 @@ export async function qrDaCaixa(
     const svg = await QRCode.toString(conteudo, {
       type: 'svg',
       errorCorrectionLevel: 'M',
-      margin: 0,
+      // Zona de silêncio de 4 módulos, a mínima da norma. Com margem 0 a borda do QR encostava no
+      // rótulo e na moldura da folha, e leitor de celular erra a detecção sem essa faixa branca.
+      margin: 4,
     })
     return { ok: true, svg, conteudo }
   } catch {

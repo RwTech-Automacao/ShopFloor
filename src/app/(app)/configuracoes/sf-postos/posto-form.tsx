@@ -56,7 +56,7 @@ function PerfilSelect({ id, perfis, value, onValueChange }: PerfilSelectProps) {
   )
 }
 
-export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
+export function PostoForm({ perfis, postos }: { perfis: PerfilPosto[]; postos: PostoRow[] }) {
   const [open, setOpen] = useState(false)
   const [perfilSel, setPerfilSel] = useState('')
   const [state, formAction, pending] = useActionState(cadastrarPostoAction, undefined)
@@ -116,6 +116,27 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
             </label>
           )}
 
+          {perfis.find((p) => p.chave === perfilSel)?.exigeManutencao && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="novo-retorno-pos-manutencao">Depois da Manutenção, passar por</Label>
+              <select
+                id="novo-retorno-pos-manutencao"
+                name="retorno_pos_manutencao"
+                defaultValue=""
+                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+              >
+                <option value="">Volta direto para este posto</option>
+                {postos
+                  .filter((o) => o.chave !== 'Manutenção')
+                  .map((o) => <option key={o.chave} value={o.chave}>{o.chave}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Peça reprovada aqui, depois de reparada, repassa por este posto antes de voltar.
+                Reprovando lá, volta pra Manutenção.
+              </p>
+            </div>
+          )}
+
           <DialogFooter>
             <Button type="submit" disabled={pending} className="bg-enterplak hover:bg-enterplak-700">
               {pending ? 'Salvando...' : 'Cadastrar'}
@@ -130,13 +151,18 @@ export function PostoForm({ perfis }: { perfis: PerfilPosto[] }) {
 interface EditarPostoButtonProps {
   posto: PostoRow
   perfis: PerfilPosto[]
+  /** Todos os postos — pra escolher por onde a peça repassa depois da Manutenção. */
+  postos: PostoRow[]
   bloqueado: boolean
 }
 
-export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButtonProps) {
+export function EditarPostoButton({ posto, perfis, postos, bloqueado }: EditarPostoButtonProps) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [perfilSel, setPerfilSel] = useState(posto.perfil)
+  const [retornoSel, setRetornoSel] = useState(posto.retorno_pos_manutencao ?? '')
+  // A rota só existe onde a reprova PASSA pela Manutenção — nos outros postos o campo nem aparece.
+  const exigeManutencao = perfis.find((p) => p.chave === perfilSel)?.exigeManutencao === true
 
   // Só perfis atribuíveis no dropdown — mais o perfil ATUAL do posto (caso seja um bespoke,
   // p/ ele aparecer e poder ser mantido). Assim não dá pra atribuir Manutenção/Burn-in/Integração.
@@ -147,10 +173,12 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    const perfil = String(formData.get('perfil') ?? '')
+    // Do ESTADO, não do FormData: com o posto em uso o campo de perfil vira um Input desabilitado,
+    // que não entra no envio — e o perfil chegaria vazio na action.
+    const perfil = perfilSel
     const coletivo = formData.get('coletivo') === 'on'
     startTransition(async () => {
-      const r = await atualizarPostoAction(posto.chave, { perfil, coletivo })
+      const r = await atualizarPostoAction(posto.chave, { perfil, coletivo, retornoPosManutencao: retornoSel })
       if ('erro' in r) {
         toast.error(r.erro, { position: 'bottom-center' })
       } else {
@@ -170,13 +198,7 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
     >
       <DialogTrigger
         render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Editar posto"
-            disabled={bloqueado}
-            title={bloqueado ? 'Em uso em uma OP' : undefined}
-          >
+          <Button variant="ghost" size="icon-sm" aria-label="Editar posto">
             <PencilIcon />
           </Button>
         }
@@ -193,12 +215,25 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="perfil-editar">Perfil</Label>
-            <PerfilSelect
-              id="perfil-editar"
-              perfis={perfisEdicao}
-              value={perfilSel}
-              onValueChange={(v) => setPerfilSel(v ?? '')}
-            />
+            {/* Posto com OP não troca de perfil: `tem_status`, `reprova` e `gate` mudam o
+                SIGNIFICADO dos registros que já existem. O resto da edição segue liberado — antes
+                o botão inteiro ficava desabilitado, e isso tornava impossível configurar a rota
+                pós-manutenção justamente nos postos que precisam dela (todos em uso). */}
+            {bloqueado ? (
+              <>
+                <Input value={perfis.find((p) => p.chave === posto.perfil)?.nome ?? posto.perfil} disabled readOnly />
+                <p className="text-xs text-muted-foreground">
+                  Posto em uso em uma OP — o perfil não pode mudar.
+                </p>
+              </>
+            ) : (
+              <PerfilSelect
+                id="perfil-editar"
+                perfis={perfisEdicao}
+                value={perfilSel}
+                onValueChange={(v) => setPerfilSel(v ?? '')}
+              />
+            )}
           </div>
 
           {perfilSuportaColetivo(perfilSel) && (
@@ -206,6 +241,27 @@ export function EditarPostoButton({ posto, perfis, bloqueado }: EditarPostoButto
               <input type="checkbox" name="coletivo" className="size-4" defaultChecked={posto.coletivo} />
               Lançamento coletivo (bipa vários SNs e envia junto)
             </label>
+          )}
+
+          {exigeManutencao && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="retorno-pos-manutencao">Depois da Manutenção, passar por</Label>
+              <select
+                id="retorno-pos-manutencao"
+                value={retornoSel}
+                onChange={(e) => setRetornoSel(e.target.value)}
+                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+              >
+                <option value="">Volta direto para {posto.chave}</option>
+                {postos
+                  .filter((o) => o.chave !== posto.chave && o.chave !== 'Manutenção')
+                  .map((o) => <option key={o.chave} value={o.chave}>{o.chave}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Peça reprovada aqui, depois de reparada, repassa por este posto antes de voltar.
+                Reprovando lá, volta pra Manutenção.
+              </p>
+            </div>
           )}
 
           <DialogFooter>
