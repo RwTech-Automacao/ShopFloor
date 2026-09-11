@@ -42,12 +42,18 @@ export async function cadastrarPostoAction(
   const perfilEscolhido = perfis.find((p) => p.chave === perfil)
   if (!perfilEscolhido || !perfilAtribuivel(perfilEscolhido)) return { erro: 'Selecione um perfil válido.' }
 
+  // Mesma invariante da edição: a rota pós-manutenção só vale em posto cuja reprova passa pela
+  // Manutenção. Nos demais é descartada em vez de gravada sem efeito.
+  const retornoPosManutencao = perfilEscolhido.exigeManutencao
+    ? String(formData.get('retorno_pos_manutencao') ?? '').trim()
+    : ''
+
   // Ordem de catálogo é automática: entra no fim da lista (não é a sequência da OP).
   const postos = await listarPostos()
   const ordem = postos.reduce((maior, p) => Math.max(maior, p.ordem), 0) + 1
 
   try {
-    await criarPosto({ chave, ordem, perfil, coletivo })
+    await criarPosto({ chave, ordem, perfil, coletivo, retornoPosManutencao })
   } catch (e) {
     const err = e as { code?: string }
     if (err.code === '23505') return { erro: 'Já existe um posto com esse nome.' }
@@ -68,27 +74,46 @@ export async function cadastrarPostoAction(
 
 export async function atualizarPostoAction(
   chave: string,
-  dados: { perfil: string; coletivo?: boolean },
+  dados: { perfil: string; coletivo?: boolean; retornoPosManutencao?: string },
 ): Promise<ResultadoAcaoPosto> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
     return { erro: SEM_PERMISSAO }
   }
 
-  if (await postoEmUsoEmOrdem(chave)) {
-    return { erro: 'Posto em uso em uma OP — não pode editar.' }
-  }
-
-  // Editar só troca o perfil (a ordem de catálogo é interna/automática, não é editável).
   const perfis = await listarPerfis()
   if (!perfis.some((p) => p.chave === dados.perfil)) return { erro: 'Selecione um perfil válido.' }
+
+  // A trava de "posto em uso" guarda a TROCA DE PERFIL, não toda edição.
+  //
+  // Trocar o perfil de um posto que já tem OPs reinterpreta o passado: `tem_status`, `reprova` e
+  // `gate` mudam o SIGNIFICADO dos registros que já existem. Por isso continua barrado.
+  //
+  // A rota pós-manutenção não faz isso. Ela é lida no instante do reparo e gravada no registro da
+  // peça — mudar depois não mexe em nada que já aconteceu; peça já roteada mantém a rota dela.
+  // Barrá-la junto tornaria a configuração impossível justamente nos postos que precisam dela:
+  // Teste, Teste Final e Burn-in estão todos em uso em OP.
+  const postosAtuais = await listarPostos()
+  const atual = postosAtuais.find((p) => p.chave === chave)
+  const trocandoPerfil = !!atual && atual.perfil !== dados.perfil
+  if (trocandoPerfil && (await postoEmUsoEmOrdem(chave))) {
+    return { erro: 'Posto em uso em uma OP — não é possível trocar o perfil.' }
+  }
 
   // Invariante amarrada ao PERFIL, sempre recalculada (nunca fica coletivo=true obsoleto
   // depois de trocar pra um perfil que não suporta lançamento coletivo).
   const coletivo = perfilSuportaColetivo(dados.perfil) ? (dados.coletivo ?? false) : false
 
+  // Mesma invariante do coletivo: a rota pós-manutenção só faz sentido em posto cuja reprova PASSA
+  // pela Manutenção. Trocando pra um perfil que não exige, a rota é zerada em vez de ficar guardada
+  // sem efeito — configuração que existe e não age é a que engana quem for conferir depois.
+  const perfilAlvo = perfis.find((p) => p.chave === dados.perfil)
+  const retornoPosManutencao = perfilAlvo?.exigeManutencao
+    ? (dados.retornoPosManutencao ?? '').trim()
+    : ''
+
   try {
-    await atualizarPosto(chave, { perfil: dados.perfil, coletivo })
+    await atualizarPosto(chave, { perfil: dados.perfil, coletivo, retornoPosManutencao })
   } catch {
     return { erro: 'Não foi possível editar o posto.' }
   }
@@ -97,7 +122,7 @@ export async function atualizarPostoAction(
     entidade: 'sf_posto',
     entidadeId: chave,
     acao: 'alterar_campo',
-    descricao: `Posto "${chave}" editado (perfil ${dados.perfil})`,
+    descricao: `Posto "${chave}" editado (perfil ${dados.perfil}${retornoPosManutencao ? `, retorno pós-manutenção: ${retornoPosManutencao}` : ''})`,
     dados: { ...dados, coletivo },
   })
 
