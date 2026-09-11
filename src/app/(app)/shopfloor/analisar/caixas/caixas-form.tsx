@@ -35,6 +35,18 @@ function nomeDoArquivo(codigo: string): string {
   return codigo.replace(/[/\\:*?"<>|]/g, '-').trim() || 'caixa'
 }
 
+/**
+ * Resolve quando as imagens terminaram de carregar — ou falharam, ou passou `limiteMs`. Logo que não
+ * carrega não pode travar a impressão: melhor a folha sem logo do que botão que não faz nada.
+ */
+function imagensCarregadas(imgs: Iterable<HTMLImageElement>, limiteMs = 3000): Promise<void> {
+  const cargas = [...imgs].map((img) =>
+    img.complete && img.naturalWidth > 0 ? Promise.resolve() : img.decode().catch(() => undefined),
+  )
+  const limite = new Promise<void>((ok) => window.setTimeout(ok, limiteMs))
+  return Promise.race([Promise.all(cargas).then(() => undefined), limite])
+}
+
 export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
   const [sel, setSel] = useState('')
   const [caixas, setCaixas] = useState<CaixaConsulta[]>([])
@@ -47,15 +59,23 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
   const ordem = ops.find((o) => `${o.pmo}||${o.op}` === sel)
 
   // A folha só entra no DOM quando `folha` existe; aí manda imprimir e, ao fim, tira do DOM.
-  // O timeout dá um quadro pro navegador desenhar a folha antes de abrir a janela de impressão.
+  // O timeout dá um quadro pro navegador desenhar a folha; depois ESPERA O LOGO carregar antes de
+  // abrir a impressão. Sem essa espera o logo saía em branco na 1ª impressão da sessão: a imagem só
+  // começa a baixar quando a folha monta, e 60ms não bastam. O menu usa o mesmo arquivo, mas pelo
+  // otimizador do next/image (outra URL), então o cache dele não ajuda aqui.
   useEffect(() => {
     if (!folha) return
     const tituloOriginal = document.title
     document.title = nomeDoArquivo(folha.caixa.codigo)
     const fim = () => setFolha(null)
     window.addEventListener('afterprint', fim, { once: true })
-    const t = window.setTimeout(() => window.print(), 60)
+    let cancelado = false
+    const t = window.setTimeout(async () => {
+      await imagensCarregadas(document.querySelectorAll<HTMLImageElement>('[data-folha-caixa] img'))
+      if (!cancelado) window.print()
+    }, 60)
     return () => {
+      cancelado = true
       window.clearTimeout(t)
       window.removeEventListener('afterprint', fim)
       document.title = tituloOriginal
@@ -230,7 +250,7 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
   )
 
   return (
-    <div className="hidden text-black print:block print:p-[12mm]">
+    <div data-folha-caixa className="hidden text-black print:block print:p-[12mm]">
       {/* Logo à esquerda e título centralizado na folha: o <h1> ocupa o espaço todo e o logo fica
           por cima, no canto — assim o título não desloca por causa da largura da marca.
           `<img>` cru em vez de next/image: isto é impressão, não precisa de otimização nem lazy,
@@ -280,7 +300,9 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
       <div className="mt-3 flex items-start gap-3 break-inside-avoid border border-black p-3">
         <span className="text-[11px] font-semibold">QR Code:</span>
         {qrSvg ? (
-          <div className="size-[120px] [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+          // 90mm: com 120 SNs cada módulo do QR saía com 0,25mm no quadro antigo de 120px (~32mm) —
+          // denso demais pra câmera. Aqui, já contando a zona de silêncio, fica ~0,65mm com 120 SNs e ~0,5mm no limite de 192.
+          <div className="size-[90mm] [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: qrSvg }} />
         ) : (
           <span className="text-[11px]">{aviso ?? 'não gerado'}</span>
         )}

@@ -28,7 +28,7 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">Postos</h1>
-        <PostoForm perfis={perfis} />
+        <PostoForm perfis={perfis} postos={postos} />
       </div>
 
       {/* Desktop: tabela */}
@@ -57,7 +57,7 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
                   <TableCell>{nomePerfil(p.perfil)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <EditarPostoButton posto={p} perfis={perfis} bloqueado={bloqueado} />
+                      <EditarPostoButton posto={p} perfis={perfis} postos={postos} bloqueado={bloqueado} />
                       <ExcluirPostoButton chave={p.chave} bloqueado={bloqueado} />
                     </div>
                   </TableCell>
@@ -90,7 +90,7 @@ export function PostosLista({ postos, perfis, emUso }: PostosListaProps) {
                   )}
                 </div>
                 <div className="flex gap-1">
-                  <EditarPostoButton posto={p} perfis={perfis} bloqueado={bloqueado} />
+                  <EditarPostoButton posto={p} perfis={perfis} postos={postos} bloqueado={bloqueado} />
                   <ExcluirPostoButton chave={p.chave} bloqueado={bloqueado} />
                 </div>
               </div>
