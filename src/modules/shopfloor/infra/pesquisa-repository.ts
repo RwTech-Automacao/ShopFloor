@@ -132,7 +132,7 @@ export interface DefeitoDaOp {
 }
 
 /**
- * Defeitos de uma OP (linhas de sf_registros com codigo_defeito preenchido), mais recentes primeiro.
+ * Defeitos de uma OP (as REPROVAS com codigo_defeito — ver 0104), mais recentes primeiro.
  * Paginado por `range` (offset/limite) pra lazy load — escopado à OP (índice pmo,op), volume pequeno.
  */
 export async function listarDefeitosDaOp(
@@ -144,12 +144,13 @@ export async function listarDefeitosDaOp(
     .select('data_hora,posto,posto_origem,numero_serie,colaborador,codigo_defeito,posicao,tipo_defeito')
     .eq('pmo', pmo)
     .eq('op', op)
-    .neq('codigo_defeito', '') // só linhas COM defeito (reprova)
-  // Filtro por posto casa o posto do registro OU o posto_origem (reprova que virou reparo na Manutenção).
-  if (posto && posto.trim() !== '') {
-    const p = posto.trim()
-    query = query.or(`posto.eq.${p},posto_origem.eq.${p}`)
-  }
+    .neq('codigo_defeito', '')
+    // Só a REPROVA (0104). A Manutenção grava o mesmo código de novo em cada conserto e em cada
+    // defeito constatado; sem este filtro uma falha virava várias ocorrências no card.
+    .ilike('status', 'reprovado')
+  // A reprova traz o posto que reprovou em `posto` — o `posto_origem` só existe nas linhas da
+  // Manutenção, que não entram mais.
+  if (posto && posto.trim() !== '') query = query.eq('posto', posto.trim())
   // Janela de tempo: o painel só olha a última hora. Cortar no banco evita trazer o histórico
   // inteiro da OP pra jogar fora no cliente — e o corte é o mesmo do ranking (sf_defeitos_resumo).
   if (desde && desde.trim() !== '') query = query.gte('data_hora', desde)
