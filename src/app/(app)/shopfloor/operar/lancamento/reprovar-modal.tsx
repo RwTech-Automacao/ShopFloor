@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { DefeitoModal } from './defeito-modal'
 
 function norm(s: string) {
   return s.trim().replace(/\s+/g, ' ').toUpperCase()
@@ -19,14 +20,21 @@ interface DefeitoLinha {
 export function ReprovarModal({
   aberto,
   codigoInicial,
-  defeitosCatalogo,
+  catalogo,
+  pmo,
+  op,
+  posto,
   snEsperado,
   onConfirmar,
   onCancelar,
 }: {
   aberto: boolean
   codigoInicial: string
-  defeitosCatalogo: string[]
+  /** Catálogo de defeitos do posto — o defeito é sempre ESCOLHIDO dele, nunca digitado. */
+  catalogo: { codigo: string; tipo: number }[]
+  pmo: string
+  op: string
+  posto: string
   snEsperado: string
   onConfirmar: (dados: { defeitos: { codigo: string; posicao: string }[]; sn: string }) => void
   onCancelar: () => void
@@ -35,6 +43,8 @@ export function ReprovarModal({
   const [sn, setSn] = useState('')
   const [erro, setErro] = useState('')
   const snRef = useRef<HTMLInputElement>(null)
+  // Linha cujo defeito está sendo escolhido no modal; null = fechado.
+  const [escolhendo, setEscolhendo] = useState<number | null>(null)
 
   // Reseta SEMPRE (abrir/fechar ou trocar o defeito inicial) — evita SN/defeito em cache do bipe anterior.
   useEffect(() => {
@@ -76,24 +86,21 @@ export function ReprovarModal({
           <DialogTitle>Registrar reprova</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          <datalist id="reprova-defeitos-list">
-            {defeitosCatalogo.map((codigo) => (
-              <option key={codigo} value={codigo} />
-            ))}
-          </datalist>
           <div className="flex flex-col gap-2">
             <Label>Defeitos</Label>
             {defeitosSel.map((d, i) => (
               <div key={i} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                <Input
-                  list="reprova-defeitos-list"
-                  value={d.codigo}
-                  placeholder="Código"
-                  onChange={(e) => {
-                    setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, codigo: e.target.value } : x)))
-                    if (erro) setErro('')
-                  }}
-                />
+                {/* Botão em vez de campo com lista: o defeito vem do catálogo, pelo mesmo modal da escolha
+                    inicial (busca, mais usados, cards) — não entra código digitado que não existe. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEscolhendo(i)}
+                  title={d.codigo || undefined}
+                  className={`h-9 justify-start truncate font-normal ${d.codigo ? '' : 'text-muted-foreground'}`}
+                >
+                  {d.codigo || 'Escolher defeito…'}
+                </Button>
                 <Input
                   value={d.posicao}
                   placeholder="Posição"
@@ -147,6 +154,21 @@ export function ReprovarModal({
             {erro && <p className="text-sm text-red-600">{erro}</p>}
           </div>
         </div>
+        {/* Dentro do Popup de propósito: o diálogo aninhado fica "por cima" deste, e tocar nele não conta
+            como clique fora (que fecharia a reprova no meio). */}
+        <DefeitoModal
+          aberto={escolhendo !== null}
+          pmo={pmo}
+          op={op}
+          posto={posto}
+          catalogo={catalogo}
+          onEscolher={(codigo) => {
+            setDefeitosSel(defeitosSel.map((x, idx) => (idx === escolhendo ? { ...x, codigo } : x)))
+            setEscolhendo(null)
+            if (erro) setErro('')
+          }}
+          onFechar={() => setEscolhendo(null)}
+        />
         <DialogFooter>
           <Button onClick={confirmar} className="bg-enterplak hover:bg-enterplak-700">
             Confirmar
