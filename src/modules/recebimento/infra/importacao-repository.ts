@@ -56,3 +56,131 @@ export async function listarImportacoes(): Promise<ImportacaoRow[]> {
 
   return (data ?? []) as unknown as ImportacaoRow[]
 }
+
+/**
+ * Para cada importação com pelo menos um processo FORA de 'aberto' (já em
+ * conferência/finalizado/cancelado), retorna quantos. A tela de Importações usa
+ * isso para desabilitar o botão "Corrigir" — correção só vale enquanto tudo
+ * está 'aberto'. Importações totalmente 'aberto' não aparecem no mapa.
+ */
+export async function bloqueiosPorImportacao(): Promise<Record<string, number>> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('processos_recebimento')
+    .select('importacao_id')
+    .neq('status', 'aberto')
+
+  if (error) throw error
+
+  const contagem: Record<string, number> = {}
+  for (const linha of (data ?? []) as { importacao_id: string | null }[]) {
+    if (linha.importacao_id) contagem[linha.importacao_id] = (contagem[linha.importacao_id] ?? 0) + 1
+  }
+  return contagem
+}
+
+export interface ImportacaoCorrecao {
+  arquivoNome: string
+  numeroEmb: string | null
+  totalProcessos: number
+  totalNaoAbertos: number
+  /** Fotos/anexos já enviados nos processos desta importação. >0 bloqueia: a correção os apagaria. */
+  totalAnexos: number
+}
+
+/**
+ * Carrega o resumo de uma importação para o modo correção: a EMB alvo, o total
+ * de processos, quantos já saíram de 'aberto' e quantas fotos já foram anexadas
+ * (qualquer um dos dois >0 bloqueia a correção).
+ * Retorna null se a importação não existir.
+ */
+export async function carregarImportacaoCorrecao(id: string): Promise<ImportacaoCorrecao | null> {
+  const supabase = await createServerSupabase()
+  const { data: importacao, error: erroImp } = await supabase
+    .from('importacoes')
+    .select('arquivo_nome')
+    .eq('id', id)
+    .maybeSingle()
+  if (erroImp) throw erroImp
+  if (!importacao) return null
+
+  const { data: processos, error: erroProc } = await supabase
+    .from('processos_recebimento')
+    .select('numero_emb, status')
+    .eq('importacao_id', id)
+  if (erroProc) throw erroProc
+
+  const linhas = (processos ?? []) as { numero_emb: string | null; status: string }[]
+  const numeroEmb = linhas.find((p) => p.numero_emb)?.numero_emb ?? null
+  const totalNaoAbertos = linhas.filter((p) => p.status !== 'aberto').length
+
+  // Conta as fotos pelo vínculo com a importação (join no banco): filtrar por uma lista de ids de
+  // processo estouraria a URL numa EMB grande.
+  const { count: totalAnexos, error: erroAnexos } = await supabase
+    .from('anexos_processo')
+    .select('id, processos_recebimento!inner(importacao_id)', { count: 'exact', head: true })
+    .eq('processos_recebimento.importacao_id', id)
+  if (erroAnexos) throw erroAnexos
+
+  return {
+    arquivoNome: (importacao as { arquivo_nome: string }).arquivo_nome,
+    numeroEmb,
+    totalProcessos: linhas.length,
+    totalNaoAbertos,
+    totalAnexos: totalAnexos ?? 0,
+  }
+}
+
+interface RpcCorrigirImportacaoResultado {
+  importacao_id: string
+  antes: number
+  total: number
+}
+
+/**
+ * Chama a RPC `corrigir_importacao` (SECURITY DEFINER): apaga os processos da
+ * importação e insere os novos, atomicamente. A RPC valida a permissão e o
+ * bloqueio (nada fora de 'aberto') e lança em caso de erro (nada é gravado).
+ */
+export async function chamarCorrigirImportacao(payload: {
+  importacaoId: string
+  arquivoNome: string
+  formato: 'xlsx' | 'csv'
+  mapeamento: Record<string, string>
+  linhas: Record<string, string | number | null>[]
+}): Promise<{ antes: number; total: number }> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('corrigir_importacao', {
+    p_importacao_id: payload.importacaoId,
+    p_arquivo_nome: payload.arquivoNome,
+    p_formato: payload.formato,
+    p_mapeamento: payload.mapeamento,
+    p_linhas: payload.linhas,
+  })
+
+  if (error) throw error
+
+  const resultado = data as unknown as RpcCorrigirImportacaoResultado
+  return { antes: resultado.antes, total: resultado.total }
+}
+
+/**
+ * Quantos processos já existem com este número de EMB. Serve à trava de EMB repetida.
+ *
+ * Compara SEM diferenciar caixa nem espaços nas pontas: "emb390ca" e " EMB390CA " são a mesma EMB
+ * pra quem digita, e a trava precisa enxergar isso — senão ela protege só de quem digitou igualzinho.
+ */
+export async function contarProcessosDaEmb(emb: string): Promise<number> {
+  const alvo = emb.trim()
+  if (alvo === '') return 0
+  const supabase = await createServerSupabase()
+  // `ilike` sem curinga casa exato, ignorando a caixa. `%` e `_` escapados: uma EMB com underscore
+  // no nome viraria curinga e a trava passaria a acusar EMBs que não são a mesma.
+  const termo = alvo.replace(/[\\%_]/g, (c) => `\\${c}`)
+  const { count, error } = await supabase
+    .from('processos_recebimento')
+    .select('id', { count: 'exact', head: true })
+    .ilike('numero_emb', termo)
+  if (error) throw error
+  return count ?? 0
+}
