@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { Plus, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, X, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,6 +28,8 @@ import { lerNqaProgresso, limparNqaProgresso, type NqaProgresso } from './nqa-pr
 import { lerLoteLocal, salvarLoteLocal, limparLoteLocal } from './lote-local'
 import type { ItemLote } from './tipos-lote'
 import { AprovarModal } from './aprovar-modal'
+import { tocarErro } from '@/shared/lib/som-erro'
+import { DefeitoModal } from './defeito-modal'
 import { ReprovarModal } from './reprovar-modal'
 
 const TIPOS_DEFEITO = ['SMD', 'PTH', 'Integração', 'TOP', 'BOT', 'Funcional', 'Elétrico']
@@ -84,7 +86,6 @@ export function LancamentoForm({
   const [reprovarCodigo, setReprovarCodigo] = useState<string | null>(null)
   const [enviando, startTransition] = useTransition()
   const [processando, setProcessando] = useState(false) // trava a UI do confirm até o resultado (não deixa bipar em cima)
-  const [listaAberta, setListaAberta] = useState(false) // acordeão de defeitos (SPI/Inspeção/Teste) aberto?
   const [nqaRetomavel, setNqaRetomavel] = useState<NqaProgresso | null>(null) // inspeção NQA salva (localStorage) p/ retomar após refresh
   const [grupoRetomado, setGrupoRetomado] = useState<number | null>(null) // grupo salvo que foi restaurado ao entrar no posto — avisa em vez de aparecer do nada
   const [lote, setLote] = useState<ItemLote[]>([]) // Lançamento coletivo: bipes empilhados aqui em vez de gravados na hora
@@ -214,10 +215,9 @@ export function LancamentoForm({
   // defeito vem de uma lista em acordeão no mesmo campo (touch, sem depender do teclado ruim).
   const usaAcordeao = ehScanner
   const defeitosPosto = useMemo(() => defeitosDoPosto(perfilDo(posto).chave, defeitos), [posto, defeitos, postosPerfil])
-  const defeitosFiltrados = useMemo(() => {
-    const f = numeroSerie.trim().toUpperCase()
-    return f === '' ? defeitosPosto : defeitosPosto.filter((d) => d.codigo.toUpperCase().includes(f))
-  }, [numeroSerie, defeitosPosto])
+  // Quem abriu o modal de defeitos: 'reprova' = o botão Reprovar do bipe (escolher abre o "Registrar
+  // reprova"); número = a linha de defeito do formulário manual; null = fechado.
+  const [modalDefeito, setModalDefeito] = useState<number | 'reprova' | null>(null)
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
@@ -226,6 +226,11 @@ export function LancamentoForm({
   /** Mostra o resultado no balão; se `linha` vier, registra no histórico (lançamento efetivo). */
   function mostrar(res: ResultadoAcao, linha?: LinhaHistorico) {
     setResultado(res)
+    // Um só ponto pro som, em vez de espalhar por dez chamadas: nesta tela TODO aviso significa
+    // peça não gravada — seja recusa de regra (duplicado, sequência, fora da faixa) ou campo
+    // faltando antes de tentar. O operador olha a peça e o coletor, não a tela; sem o som, um
+    // lançamento recusado passa batido e a peça segue pro próximo posto sem registro.
+    if (res.tipo === 'aviso') tocarErro()
     if (linha) {
       setHistorico((h) => [linha, ...h].slice(0, 30))
       setUltimoEhLancamento(true)
@@ -241,7 +246,7 @@ export function LancamentoForm({
   function resetCamposDinamicos() {
     setStatus(''); setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
     setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setBurninEvento('entrada')
-    setResultado(null); setUltimoEhLancamento(false); setListaAberta(false) // balão some → tabela volta a mostrar o histórico completo
+    setResultado(null); setUltimoEhLancamento(false) // balão some → tabela volta a mostrar o histórico completo
   }
   /** Trocar entrada/saída limpa o status/defeitos (evita defeito velho da saída ao voltar p/ entrada). */
   function mudarBurninEvento(v: 'entrada' | 'saida') {
@@ -335,7 +340,7 @@ export function LancamentoForm({
     return ehNqa ? nqaVisualRef.current : snRef.current
   }
   function limparPeca() {
-    setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao(''); setListaAberta(false)
+    setNumeroSerie(''); setStatus(''); setNqaVisual(''); setNqaFuncional(''); setObservacao('')
     setDefeitosSel([{ codigo: '', posicao: '', tipo: '' }]); setPosicoesSPI([''])
     // Volta pro início do ciclo. Se o campo estiver travado (gravando), o efeito refoca quando destravar.
     focarAposLancar.current = true
@@ -588,21 +593,14 @@ export function LancamentoForm({
     if (serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) {
       setAprovarSn(numeroSerie.trim())
     } else {
-      mostrar({ tipo: 'aviso', titulo: 'Nº de Série fora da faixa desta OP. Para reprovar, abra a lista de defeitos (seta).' })
+      mostrar({ tipo: 'aviso', titulo: 'Nº de Série fora da faixa desta OP. Para reprovar, toque em Reprovar.' })
       limparPeca()
     }
   }
 
-  /** Abre/fecha o acordeão de defeitos e limpa o campo (SN ↔ filtro não se misturam). */
-  function alternarLista() {
-    setListaAberta((a) => !a)
-    setNumeroSerie('')
-    setTimeout(() => snRef.current?.focus(), 0)
-  }
-  /** Escolher um defeito da lista abre o modal de reprova (SN é bipado lá dentro). */
+  /** Escolher o defeito no modal abre o "Registrar reprova" (o SN é bipado lá dentro). */
   function escolherDefeito(codigo: string) {
     setReprovarCodigo(codigo)
-    setListaAberta(false)
     setNumeroSerie('')
   }
 
@@ -982,7 +980,7 @@ export function LancamentoForm({
                       {defeitosPosto.map((d) => <option key={d.codigo} value={d.codigo} />)}
                     </datalist>
                   )}
-                  <div className="relative">
+                  <div className="flex items-center gap-2">
                     <Input
                       id="sn"
                       ref={snRef}
@@ -994,27 +992,27 @@ export function LancamentoForm({
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter') return
                         e.preventDefault()
-                        if (usaAcordeao && listaAberta) { const d0 = defeitosFiltrados[0]; if (d0) escolherDefeito(d0.codigo) }
-                        else if (usaAcao) onAcao()
+                        if (usaAcao) onAcao()
                         else onEnviar()
                       }}
                       autoComplete="off"
                       disabled={enviando || processando || loteCheio}
                       list={ehScanner && !usaAcordeao ? 'acao-defeitos-list' : undefined}
-                      className={`h-10 text-base disabled:opacity-60 ${usaAcordeao ? 'pr-12' : ''}`}
-                      placeholder={loteCheio ? `Lote cheio (${MAX_LOTE}/${MAX_LOTE}) — envie antes de continuar` : usaAcordeao ? (listaAberta ? 'Filtre o defeito…' : 'Bipe o Nº de Série') : (ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série')}
+                      className="h-10 flex-1 text-base disabled:opacity-60"
+                      placeholder={loteCheio ? `Lote cheio (${MAX_LOTE}/${MAX_LOTE}) — envie antes de continuar` : usaAcordeao ? 'Bipe o Nº de Série' : (ehScanner ? 'Bipe a peça ou o código do defeito' : 'Bipe o Nº de Série')}
                     />
+                    {/* Reprovar: abre o modal de defeitos (busca, mais usados da OP, cards). Antes era uma seta
+                        dentro do campo que abria uma lista corrida; o fluxo depois da escolha é o mesmo. */}
                     {usaAcordeao && (
-                      <button
+                      <Button
                         type="button"
-                        aria-label={listaAberta ? 'Fechar lista de defeitos' : 'Abrir lista de defeitos'}
-                        aria-expanded={listaAberta}
-                        onClick={alternarLista}
+                        variant="outline"
+                        onClick={() => { setNumeroSerie(''); setModalDefeito('reprova') }}
                         disabled={enviando || processando || loteCheio}
-                        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-enterplak disabled:opacity-40"
+                        className="h-10 shrink-0 gap-1.5 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
                       >
-                        {listaAberta ? <ChevronUp className="size-5" /> : <ChevronDown className="size-5" />}
-                      </button>
+                        <ListChecks className="size-4" /> Reprovar
+                      </Button>
                     )}
                   </div>
                   {loteCheio && (
@@ -1022,25 +1020,8 @@ export function LancamentoForm({
                       Grupo cheio ({MAX_LOTE}/{MAX_LOTE}) — envie o grupo antes de bipar mais. Remova um item para liberar o campo.
                     </p>
                   )}
-                  {usaAcordeao && !listaAberta && !loteCheio && (
-                    <p className="text-xs text-muted-foreground">Em caso de defeito, toque na seta ▾ para escolher.</p>
-                  )}
-                  {usaAcordeao && listaAberta && (
-                    <div className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-border">
-                      {defeitosFiltrados.length === 0 && (
-                        <p className="px-3 py-3 text-sm text-muted-foreground">Nenhum defeito com “{numeroSerie.trim()}”.</p>
-                      )}
-                      {defeitosFiltrados.map((d) => (
-                        <button
-                          key={d.codigo}
-                          type="button"
-                          onClick={() => escolherDefeito(d.codigo)}
-                          className="block w-full border-b border-border px-3 py-2.5 text-left text-base last:border-b-0 hover:bg-muted"
-                        >
-                          {d.codigo}
-                        </button>
-                      ))}
-                    </div>
+                  {usaAcordeao && !loteCheio && (
+                    <p className="text-xs text-muted-foreground">Em caso de defeito, toque em Reprovar para escolher.</p>
                   )}
                 </div>
 
@@ -1058,12 +1039,20 @@ export function LancamentoForm({
                 {mostraStatus && !ehSpi && !ehScanner && reprovado && (
                   <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
                     <Label>Defeitos</Label>
-                    <datalist id="defeitos-list">
-                      {defeitos.map((d) => <option key={d.codigo} value={d.codigo} />)}
-                    </datalist>
                     {defeitosSel.map((d, i) => (
                       <div key={i} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                        <Input list="defeitos-list" value={d.codigo} onChange={(e) => setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, codigo: e.target.value } : x)))} placeholder="Código" />
+                        {/* Botão no lugar do campo com lista suspensa: o defeito é ESCOLHIDO, nunca
+                            digitado — assim não entra código que não existe no catálogo, e quem não
+                            sabe o número de cor não precisa saber. */}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setModalDefeito(i)}
+                          className={`h-9 justify-start truncate font-normal ${d.codigo ? '' : 'text-muted-foreground'}`}
+                          title={d.codigo || undefined}
+                        >
+                          {d.codigo || 'Escolher defeito…'}
+                        </Button>
                         <Input value={d.posicao} onChange={(e) => setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, posicao: e.target.value } : x)))} placeholder="Posição" />
                         <Select value={d.tipo} onValueChange={(v) => setDefeitosSel(defeitosSel.map((x, idx) => (idx === i ? { ...x, tipo: v ?? '' } : x)))}>
                           <SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger>
@@ -1195,10 +1184,26 @@ export function LancamentoForm({
         onConfirmar={gravarAprovado}
         onCancelar={() => { setAprovarSn(null); setTimeout(() => snRef.current?.focus(), 0) }}
       />
+      <DefeitoModal
+        aberto={modalDefeito !== null && !(modalDefeito === 'reprova' && reprovarCodigo !== null)}
+        pmo={pmo}
+        op={op}
+        posto={posto}
+        catalogo={defeitosPosto}
+        onEscolher={(codigo) => {
+          if (modalDefeito === 'reprova') escolherDefeito(codigo)
+          else setDefeitosSel(defeitosSel.map((x, idx) => (idx === modalDefeito ? { ...x, codigo } : x)))
+          setModalDefeito(null)
+        }}
+        onFechar={() => { const eraReprova = modalDefeito === 'reprova'; setModalDefeito(null); if (eraReprova) setTimeout(() => snRef.current?.focus(), 0) }}
+      />
       <ReprovarModal
         aberto={reprovarCodigo !== null}
         codigoInicial={reprovarCodigo ?? ''}
-        defeitosCatalogo={defeitosPosto.map((d) => d.codigo)}
+        catalogo={defeitosPosto}
+        pmo={pmo}
+        op={op}
+        posto={posto}
         snEsperado=""
         onConfirmar={gravarReprovado}
         onCancelar={() => { setReprovarCodigo(null); setTimeout(() => snRef.current?.focus(), 0) }}
