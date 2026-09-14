@@ -27,6 +27,22 @@ export function pecasAntesDaCaixa(
     .reduce((soma, c) => soma + c.qtd, 0)
 }
 
+/**
+ * Código da montagem APOSENTADA — a que foi reprovada no NQA e vai ser refeita com o mesmo número.
+ * O `R` entra logo depois do `CX[seq]`, preservando o resto do código: CX[7][14]8498-PMOC14 vira
+ * CX[7]R[14]8498-PMOC14. Da 2ª reprova em diante o número da revisão entra junto (R2, R3…) pra não
+ * colidir com a anterior.
+ *
+ * ATENÇÃO: em runtime quem renomeia é o RPC `sf_aposentar_caixa` (fonte canônica) — esta função
+ * documenta/testa o formato; se mudar, mude nos DOIS lugares.
+ */
+export function codigoMontagemAposentada(codigo: string, seq: number, revisao: number): string {
+  const prefixo = marcadorCaixaAberta(seq)
+  if (!codigo.startsWith(prefixo)) return codigo
+  const marca = revisao <= 1 ? 'R' : `R${revisao}`
+  return prefixo + marca + codigo.slice(prefixo.length)
+}
+
 /** Inverso do `marcadorCaixaAberta`: 'CX[3]' → 3. Null quando não é um marcador de caixa aberta
  *  (código final de caixa fechada, SN da embalagem individual, vazio). */
 export function seqDoMarcadorCaixa(numeroCaixa: string): number | null {
@@ -34,47 +50,26 @@ export function seqDoMarcadorCaixa(numeroCaixa: string): number | null {
   return m ? Number(m[1]) : null
 }
 
-/** Uma linha de sf_caixas, só o que a derivação do estado precisa. */
-export interface LinhaCaixa {
-  seq: number
-  limite: number
-  fechada: boolean
-  ultima: boolean
-}
-
-export interface DerivacaoCaixas {
-  seq: number           // caixa atual (aberta ou a próxima a abrir)
-  limite: number | null // null = nenhuma caixa ainda (o operador digita o limite)
-  atualAberta: boolean  // a caixa atual já existe em sf_caixas (tem peças a contar)
-  concluida: boolean    // a última caixa da OP já foi fechada
-  reabertas: LinhaCaixa[] // caixas abertas que NÃO são a atual (reabertas por cancelamento)
-}
-
 /**
- * Decide qual é a caixa ATUAL (a que está sendo enchida) e quais são as REABERTAS.
+ * Caixas REABERTAS por cancelamento: vigentes (revisao 0), abertas, que não são a caixa da vez.
  *
- * Até o cancelamento de embalagem existir, valia "uma caixa aberta por vez" e bastava olhar a
- * última linha. Cancelar um bipe de uma caixa já fechada REABRE aquela caixa (0098), então podem
- * existir DUAS ou mais abertas ao mesmo tempo: a que o operador está enchendo (sempre a de maior
- * seq) e as reabertas lá atrás, que não podem tomar o lugar dela.
+ * Reaberta e REMONTAGEM são coisas diferentes (decisão de 14/09/2026), e esta função existe pra não
+ * misturar as duas:
+ *  • remontagem = o seq tem uma montagem APOSENTADA (revisao > 0): a caixa foi reprovada no NQA e
+ *    está sendo refeita. Tem painel próprio ("Aguardando remontagem") e não entra aqui;
+ *  • reaberta   = um bipe de uma caixa já FECHADA foi cancelado (0106) e ela voltou a ficar aberta,
+ *    lá atrás, enquanto a embalagem segue na caixa da vez.
  *
- * `caixas` precisa vir ordenada por seq crescente.
+ * Uma remontagem que depois teve um bipe cancelado continua sendo remontagem: o que define é a
+ * montagem aposentada, que continua existindo.
  */
-export function derivarEstadoCaixas(caixas: readonly LinhaCaixa[]): DerivacaoCaixas {
-  const ultima = caixas[caixas.length - 1]
-  if (!ultima) return { seq: 1, limite: null, atualAberta: false, concluida: false, reabertas: [] }
-
-  const atualAberta = !ultima.fechada
-  // A caixa reaberta de maior seq VIRA a caixa atual (não havia outra sendo enchida depois dela).
-  const seq = atualAberta ? ultima.seq : ultima.seq + 1
-  const reabertas = caixas.filter((c) => !c.fechada && c.seq !== ultima.seq)
-  return {
-    seq,
-    limite: ultima.limite, // limite é digitado uma vez e vale pras próximas caixas
-    atualAberta,
-    // Concluída = a última caixa foi fechada E marcada como última. Reabertas não desfazem isso
-    // (a OP terminou); a tela só oferece o painel delas por cima do aviso de concluída.
-    concluida: ultima.fechada && ultima.ultima,
-    reabertas,
-  }
+export function seqsReabertas(
+  caixas: readonly { seq: number; fechada: boolean; revisao: number }[],
+  seqDaVez: number,
+): number[] {
+  const comMontagemAposentada = new Set(caixas.filter((c) => c.revisao > 0).map((c) => c.seq))
+  return caixas
+    .filter((c) => c.revisao === 0 && !c.fechada && c.seq !== seqDaVez && !comMontagemAposentada.has(c.seq))
+    .map((c) => c.seq)
+    .sort((a, b) => a - b)
 }

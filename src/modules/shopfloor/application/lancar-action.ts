@@ -54,6 +54,7 @@ const MENSAGENS: Record<string, string> = {
   SEQUENCIA: 'O posto anterior ainda não foi concluído para esta peça.',
   CAIXA_CHEIA: 'A caixa já atingiu o limite de peças.',
   SEM_MANUTENCAO: 'A peça reprovou e precisa passar pela Manutenção antes de ser lançada de novo.',
+  RETESTE_PENDENTE: 'A peça ainda precisa passar por outro posto antes de voltar aqui.',
   JA_DENTRO: 'Esta peça já está no Burn-in (entrada aberta).',
   JA_APROVADO: 'Esta peça já concluiu o Burn-in aprovada.',
   SEM_ENTRADA: 'Não há entrada de Burn-in aberta para esta peça — registre a entrada primeiro.',
@@ -228,7 +229,13 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     p_observacao: entrada.observacao ?? '',
   })
 
-  if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
+  if (!r.ok) {
+    // Dizer QUAL posto falta é a diferença entre o operador resolver sozinho e chamar o supervisor.
+    if (r.erro === 'RETESTE_PENDENTE' && r.postoPendente) {
+      return { ok: false, erro: `A peça precisa passar por ${r.postoPendente} antes de voltar aqui.` }
+    }
+    return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
+  }
 
   // Auditoria de conserto confirmado (só quando o operador confirmou no diálogo, ao aprovar).
   // Secundária: se falhar, o lançamento já ocorreu — não bloqueia o chão de fábrica.

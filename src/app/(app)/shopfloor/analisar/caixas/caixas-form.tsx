@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { Printer } from 'lucide-react'
+import { Printer, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,18 @@ function nomeDoArquivo(codigo: string): string {
   return codigo.replace(/[/\\:*?"<>|]/g, '-').trim() || 'caixa'
 }
 
+/**
+ * Resolve quando as imagens terminaram de carregar — ou falharam, ou passou `limiteMs`. Logo que não
+ * carrega não pode travar a impressão: melhor a folha sem logo do que botão que não faz nada.
+ */
+function imagensCarregadas(imgs: Iterable<HTMLImageElement>, limiteMs = 3000): Promise<void> {
+  const cargas = [...imgs].map((img) =>
+    img.complete && img.naturalWidth > 0 ? Promise.resolve() : img.decode().catch(() => undefined),
+  )
+  const limite = new Promise<void>((ok) => window.setTimeout(ok, limiteMs))
+  return Promise.race([Promise.all(cargas).then(() => undefined), limite])
+}
+
 export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
   const [sel, setSel] = useState('')
   const [caixas, setCaixas] = useState<CaixaConsulta[]>([])
@@ -47,15 +59,23 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
   const ordem = ops.find((o) => `${o.pmo}||${o.op}` === sel)
 
   // A folha só entra no DOM quando `folha` existe; aí manda imprimir e, ao fim, tira do DOM.
-  // O timeout dá um quadro pro navegador desenhar a folha antes de abrir a janela de impressão.
+  // O timeout dá um quadro pro navegador desenhar a folha; depois ESPERA O LOGO carregar antes de
+  // abrir a impressão. Sem essa espera o logo saía em branco na 1ª impressão da sessão: a imagem só
+  // começa a baixar quando a folha monta, e 60ms não bastam. O menu usa o mesmo arquivo, mas pelo
+  // otimizador do next/image (outra URL), então o cache dele não ajuda aqui.
   useEffect(() => {
     if (!folha) return
     const tituloOriginal = document.title
     document.title = nomeDoArquivo(folha.caixa.codigo)
     const fim = () => setFolha(null)
     window.addEventListener('afterprint', fim, { once: true })
-    const t = window.setTimeout(() => window.print(), 60)
+    let cancelado = false
+    const t = window.setTimeout(async () => {
+      await imagensCarregadas(document.querySelectorAll<HTMLImageElement>('[data-folha-caixa] img'))
+      if (!cancelado) window.print()
+    }, 60)
     return () => {
+      cancelado = true
       window.clearTimeout(t)
       window.removeEventListener('afterprint', fim)
       document.title = tituloOriginal
@@ -78,6 +98,30 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
 
   function toggle(key: string) {
     setAbertos((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
+  }
+
+  /**
+   * Baixa os SNs da caixa em CSV. Gerado no NAVEGADOR: os números já estão em memória (a lista veio
+   * junto com as caixas), então uma volta ao servidor só adicionaria espera.
+   *
+   * `;` como separador e BOM no começo — mesma convenção da exportação de Registros, que é o que o
+   * Excel em pt-BR abre direto, sem passar pelo assistente de importação.
+   */
+  function exportarCsv(caixa: CaixaConsulta) {
+    const base = pecasAntesDaCaixa(caixas, caixa)
+    const linhas = [
+      ['#', 'Número de Série', 'Caixa'].join(';'),
+      ...caixa.sns.map((sn, i) => [base + i + 1, sn, caixa.codigo].join(';')),
+    ]
+    const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${nomeDoArquivo(caixa.codigo)}.csv`
+    a.click()
+    // Sem o revoke o blob fica na memória da aba até ela fechar — numa TV que passa o dia aberta,
+    // uma exportação por caixa vira vazamento.
+    URL.revokeObjectURL(url)
   }
 
   function imprimir(caixa: CaixaConsulta) {
@@ -135,19 +179,38 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
                       <span className="font-medium">{c.codigo}</span>
                       <span className="flex items-center gap-2 text-muted-foreground">
                         {c.posto} · {c.qtd} peça(s)
-                        <Badge variant="outline" className={c.fechada ? 'border-green-600 text-green-700' : 'border-amber-500 text-amber-700'}>
-                          {c.fechada ? 'fechada' : 'aberta'}
+                        {/* Montagem reprovada no NQA (revisao > 0): a caixa física foi desfeita e
+                            remontada com o mesmo número, então ela não é nem "fechada" nem "aberta". */}
+                        <Badge
+                          variant="outline"
+                          className={c.revisao > 0
+                            ? 'border-red-600 text-red-700'
+                            : (c.fechada ? 'border-green-600 text-green-700' : 'border-amber-500 text-amber-700')}
+                        >
+                          {c.revisao > 0 ? 'reprovada' : (c.fechada ? 'fechada' : 'aberta')}
                         </Badge>
                       </span>
                     </button>
+                    {/* Sem folha pra montagem reprovada: a caixa dela não existe mais no chão. */}
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={gerando || c.qtd === 0}
+                      disabled={gerando || c.qtd === 0 || c.revisao > 0}
+                      title={c.revisao > 0 ? 'Esta montagem foi reprovada no NQA e refeita — a folha vale para a remontagem.' : undefined}
                       onClick={() => imprimir(c)}
                     >
                       <Printer className="mr-1 size-4" /> Imprimir / PDF
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={c.qtd === 0}
+                      onClick={() => exportarCsv(c)}
+                      title="Baixar os números de série desta caixa em CSV"
+                    >
+                      <Download className="mr-1 size-4" /> CSV
                     </Button>
                   </div>
                   {abertos.has(key) && (
@@ -187,8 +250,16 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
   )
 
   return (
-    <div className="hidden text-black print:block print:p-[12mm]">
-      <h1 className="mb-2 text-center text-[15px] font-semibold">Lista de Números de Série</h1>
+    <div data-folha-caixa className="hidden text-black print:block print:p-[12mm]">
+      {/* Logo à esquerda e título centralizado na folha: o <h1> ocupa o espaço todo e o logo fica
+          por cima, no canto — assim o título não desloca por causa da largura da marca.
+          `<img>` cru em vez de next/image: isto é impressão, não precisa de otimização nem lazy,
+          e o loader do next/image atrapalharia o carregamento antes do window.print(). */}
+      <div className="relative mb-2 flex items-center">
+        {/* eslint-disable-next-line @next/next/no-img-element -- folha de impressão */}
+        <img src="/Logo_Docs.png" alt="Enterplak" className="absolute left-0 h-[10mm] w-auto" />
+        <h1 className="w-full text-center text-[15px] font-semibold">Lista de Números de Série</h1>
+      </div>
 
       <div className="border border-black">
         <div className="flex items-center gap-3 border-b border-black bg-enterplak px-3 py-1.5 text-white [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
@@ -229,7 +300,9 @@ function FolhaCaixa({ folha, ordem }: { folha: Folha; ordem: OpComCaixa }) {
       <div className="mt-3 flex items-start gap-3 break-inside-avoid border border-black p-3">
         <span className="text-[11px] font-semibold">QR Code:</span>
         {qrSvg ? (
-          <div className="size-[120px] [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+          // 90mm: com 120 SNs cada módulo do QR saía com 0,25mm no quadro antigo de 120px (~32mm) —
+          // denso demais pra câmera. Aqui, já contando a zona de silêncio, fica ~0,65mm com 120 SNs e ~0,5mm no limite de 192.
+          <div className="size-[90mm] [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: qrSvg }} />
         ) : (
           <span className="text-[11px]">{aviso ?? 'não gerado'}</span>
         )}
@@ -252,7 +325,7 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
 function ColunaCabecalho() {
   return (
     <>
-      <th className="w-[8%] border border-black px-1 py-0.5 text-center font-semibold">QTD</th>
+      <th className="w-[8%] border border-black px-1 py-0.5 text-center font-semibold">#</th>
       <th className="w-[25%] border border-black px-1 py-0.5 text-center font-semibold">NS</th>
     </>
   )

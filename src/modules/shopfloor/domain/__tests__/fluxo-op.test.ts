@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca, faixaDoRotulo } from '../fluxo-op'
 
 const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0, reprovadosSemReteste: 0 })
 
@@ -278,5 +278,23 @@ describe('formatarRelogio', () => {
   it('arredonda e nunca fica negativo', () => {
     expect(formatarRelogio(89.6)).toBe('01:30')
     expect(formatarRelogio(-10)).toBe('00:00')
+  })
+})
+
+describe('faixaDoRotulo', () => {
+  it('mostra a faixa da hora — o rótulo do banco é o INÍCIO do balde', () => {
+    expect(faixaDoRotulo('10/09 08h', 'hora')).toBe('10/09 08h às 09h')
+  })
+
+  it('vira o dia na última hora, em vez de inventar 24h', () => {
+    expect(faixaDoRotulo('10/09 23h', 'hora')).toBe('10/09 23h às 00h')
+  })
+
+  it('no bucket por dia não mexe — ali o rótulo já é o período inteiro', () => {
+    expect(faixaDoRotulo('10/09', 'dia')).toBe('10/09')
+  })
+
+  it('rótulo fora do formato volta intacto, sem inventar faixa', () => {
+    expect(faixaDoRotulo('sem hora', 'hora')).toBe('sem hora')
   })
 })

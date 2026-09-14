@@ -128,7 +128,7 @@ export interface DefeitoDaOp {
   colaborador: string
   codigo: string
   posicao: string
-  tipo: string
+  tipo: string // tipo_defeito do registro: 'SMD', 'PTH', 'Funcional'… (texto livre)
 }
 
 /**
@@ -136,7 +136,7 @@ export interface DefeitoDaOp {
  * Paginado por `range` (offset/limite) pra lazy load — escopado à OP (índice pmo,op), volume pequeno.
  */
 export async function listarDefeitosDaOp(
-  pmo: string, op: string, offset: number, limite: number, posto?: string,
+  pmo: string, op: string, offset: number, limite: number, posto?: string, desde?: string,
 ): Promise<DefeitoDaOp[]> {
   const supabase = await createServerSupabase()
   let query = supabase
@@ -150,6 +150,9 @@ export async function listarDefeitosDaOp(
     const p = posto.trim()
     query = query.or(`posto.eq.${p},posto_origem.eq.${p}`)
   }
+  // Janela de tempo: o painel só olha a última hora. Cortar no banco evita trazer o histórico
+  // inteiro da OP pra jogar fora no cliente — e o corte é o mesmo do ranking (sf_defeitos_resumo).
+  if (desde && desde.trim() !== '') query = query.gte('data_hora', desde)
   const { data, error } = await query
     .order('data_hora', { ascending: false })
     .order('id', { ascending: false })
@@ -164,5 +167,31 @@ export async function listarDefeitosDaOp(
     codigo: r.codigo_defeito ?? '',
     posicao: r.posicao ?? '',
     tipo: r.tipo_defeito ?? '',
+  }))
+}
+
+/** Uma linha do ranking de defeitos da OP: total na OP + ocorrências na última hora. */
+export interface ResumoDefeito {
+  codigo: string
+  total: number
+  ultimaHora: number
+}
+
+/**
+ * Ranking de defeitos da OP (RPC sf_defeitos_resumo): agrega POR CÓDIGO no banco — total da OP e
+ * quantos na última hora. Agregar no cliente exigiria baixar todas as linhas de defeito da OP.
+ * Já vem ordenado por total desc. Sem o tipo do catálogo de propósito: o ranking pode ter dezenas de
+ * códigos, e um `in` com todos eles estoura a URL do PostgREST — o ranking mostra número + descrição.
+ */
+export async function resumoDefeitosDaOp(pmo: string, op: string, posto = ''): Promise<ResumoDefeito[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_defeitos_resumo', {
+    p_pmo: pmo, p_op: op, p_posto: posto.trim(),
+  })
+  if (error) throw error
+  return ((data ?? []) as { codigo: string; total: number; ultima_hora: number }[]).map((r) => ({
+    codigo: r.codigo ?? '',
+    total: Number(r.total) || 0,
+    ultimaHora: Number(r.ultima_hora) || 0,
   }))
 }

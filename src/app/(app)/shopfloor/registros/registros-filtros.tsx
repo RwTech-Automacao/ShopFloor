@@ -37,6 +37,7 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
   const [busca, setBusca] = useState(searchParams.get('busca') ?? '')
   const [posto, setPosto] = useState(searchParams.get('posto') ?? '')
   const [sn, setSn] = useState(searchParams.get('sn') ?? '')
+  const [defeito, setDefeito] = useState(searchParams.get('defeito') ?? '')
   const [status, setStatus] = useState(searchParams.get('status') ?? '')
   const [de, setDe] = useState(searchParams.get('de') ?? '')
   const [ate, setAte] = useState(searchParams.get('ate') ?? '')
@@ -47,6 +48,7 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
     if (busca) params.set('busca', busca)
     if (posto) params.set('posto', posto)
     if (sn) params.set('sn', sn)
+    if (defeito) params.set('defeito', defeito)
     if (status) params.set('status', status)
     if (de) params.set('de', de)
     if (ate) params.set('ate', ate)
@@ -145,6 +147,17 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
           onChange={(e) => setSn(e.target.value)}
           className="w-36"
           placeholder="Número de série"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Label htmlFor="filtro-defeito">Defeito</Label>
+        <Input
+          id="filtro-defeito"
+          value={defeito}
+          onChange={(e) => setDefeito(e.target.value)}
+          className="w-44"
+          placeholder="Código ou descrição"
         />
       </div>
 

@@ -1,5 +1,8 @@
--- 0098_cancelar_embalagem_reabre_caixa.sql
+-- 0106_cancelar_embalagem_reabre_caixa.sql
 -- Cancelar lançamento passa a aceitar postos de EMBALAGEM (recurso 'caixa').
+--
+-- Escrita como 0098 e renumerada para 0106 em 14/09/2026: ela PRECISA rodar depois da 0100, que
+-- criou as montagens aposentadas (`sf_caixas.revisao`). Ver "CAIXA REABERTA × REMONTAGEM" abaixo.
 --
 -- Caixa ABERTA: nada de especial — a contagem da caixa é DERIVADA (conta os registros com o
 -- marcador 'CX[seq]'), então apagar o registro já tira a peça da caixa e libera a vaga.
@@ -16,6 +19,13 @@
 -- O sf_nqa_caixa (0080) grava um registro de NQA para TODAS as peças da caixa de uma vez; se a
 -- caixa passou pelo NQA, nenhuma peça tem a Embalagem como último bipe e o LIFO barra o cancelamento
 -- com NAO_E_ULTIMO. Não "conserte" isso com uma checagem extra — ela seria redundante.
+--
+-- CAIXA REABERTA × REMONTAGEM (decisão de 14/09/2026: são coisas DIFERENTES):
+--   • remontagem (0100): a caixa foi reprovada no NQA; a montagem vira histórico (revisao > 0, código
+--     com R) e nasce uma caixa nova com o mesmo número;
+--   • reaberta (esta): um bipe de uma caixa FECHADA foi cancelado e a mesma caixa volta a ficar aberta.
+-- A reabertura só mexe na caixa VIGENTE (revisao = 0). A montagem aposentada tem o MESMO seq, e o
+-- marcador 'CX[seq]' casaria com as duas: sem o filtro, o cancelamento poderia reabrir o histórico.
 --
 -- Embalagem INDIVIDUAL (0078): numero_caixa = o próprio SN e NÃO existe linha em sf_caixas —
 -- cai no caminho "sem caixa pra reabrir" e o cancelamento é o mesmo dos postos comuns.
@@ -97,6 +107,7 @@ begin
     select c.id, c.seq, c.codigo, c.fechada into v_cx
     from public.sf_caixas c
     where c.pmo = v_pmo and c.op = v_op and c.posto = v_posto
+      and c.revisao = 0
       and (c.codigo = v_numero_caixa or 'CX[' || c.seq || ']' = v_numero_caixa)
     limit 1;
 
@@ -111,6 +122,9 @@ begin
          set fechada = false, codigo = '', qtd = 0, ultima = false, fechada_em = null
        where id = v_cx.id;
     end if;
+    -- Peça de uma montagem APOSENTADA (código com R) não chega aqui: depois da reprova o último bipe
+    -- dela é o do NQA, e o LIFO já barrou com NAO_E_ULTIMO. Se chegasse, o filtro de revisao acima não
+    -- acharia caixa e nada seria reaberto — o histórico fica como está.
   end if;
 end
 $$;

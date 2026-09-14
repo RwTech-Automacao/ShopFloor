@@ -33,6 +33,14 @@ export async function mapaPostoPerfil(): Promise<Record<string, PerfilPosto>> {
   return mapa
 }
 
+/** Chaves dos postos na ORDEM do fluxo — é a ordem em que eles viram coluna no dashboard. */
+export async function listarPostos(): Promise<string[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.from('sf_postos').select('chave,ordem').order('ordem', { ascending: true })
+  if (error) throw error
+  return ((data ?? []) as { chave: string }[]).map((r) => r.chave)
+}
+
 /** Mapa chave-do-posto → coletivo (true = permite lançamento coletivo neste posto). */
 export async function mapaPostoColetivo(): Promise<Record<string, boolean>> {
   const supabase = await createServerSupabase()
@@ -52,17 +60,26 @@ export async function postoEmUsoEmOrdem(chave: string): Promise<boolean> {
   return (count ?? 0) > 0
 }
 
-export async function criarPosto(p: { chave: string; ordem: number; perfil: string; coletivo?: boolean }): Promise<void> {
+export async function criarPosto(p: {
+  chave: string; ordem: number; perfil: string; coletivo?: boolean; retornoPosManutencao?: string
+}): Promise<void> {
   const supabase = await createServerSupabase()
   const { error } = await supabase
     .from('sf_postos')
-    .insert({ chave: p.chave, ordem: p.ordem, perfil: p.perfil, coletivo: p.coletivo ?? false })
+    .insert({
+      chave: p.chave, ordem: p.ordem, perfil: p.perfil, coletivo: p.coletivo ?? false,
+      retorno_pos_manutencao: p.retornoPosManutencao ?? '',
+    })
   if (error) throw error
 }
-export async function atualizarPosto(chave: string, p: { perfil: string; coletivo?: boolean }): Promise<void> {
+export async function atualizarPosto(
+  chave: string,
+  p: { perfil: string; coletivo?: boolean; retornoPosManutencao?: string },
+): Promise<void> {
   const supabase = await createServerSupabase()
-  const dados: { perfil: string; coletivo?: boolean } = { perfil: p.perfil }
+  const dados: { perfil: string; coletivo?: boolean; retorno_pos_manutencao?: string } = { perfil: p.perfil }
   if (p.coletivo !== undefined) dados.coletivo = p.coletivo
+  if (p.retornoPosManutencao !== undefined) dados.retorno_pos_manutencao = p.retornoPosManutencao
   const { error } = await supabase.from('sf_postos').update(dados).eq('chave', chave)
   if (error) throw error
 }

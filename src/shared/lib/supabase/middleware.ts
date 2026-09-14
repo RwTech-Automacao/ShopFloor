@@ -53,6 +53,9 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/esqueci-senha') ||
     request.nextUrl.pathname.startsWith('/redefinir-senha') ||
     request.nextUrl.pathname.startsWith('/auth/redefinir')
+  // SSO do Portal RwTech: a pessoa chega aqui JUSTAMENTE sem sessão — é o endpoint que vai criá-la.
+  // Sem esta exceção o middleware a mandaria pro /login antes de o token sequer ser lido.
+  const isSso = request.nextUrl.pathname.startsWith('/sso')
 
   const redirectTo = (pathname: string) => {
     const url = request.nextUrl.clone()
@@ -63,7 +66,7 @@ export async function updateSession(request: NextRequest) {
     return redirect
   }
 
-  if (!appUserValido && !isAuthRoute && !isReset) return redirectTo('/login')
+  if (!appUserValido && !isAuthRoute && !isReset && !isSso) return redirectTo('/login')
   if (appUserValido && isAuthRoute) return redirectTo('/home')
   // Conta com senha provisória fica presa em /definir-senha até trocar.
   if (appUserValido && senhaProvisoria && !isDefinirSenha) return redirectTo('/definir-senha')

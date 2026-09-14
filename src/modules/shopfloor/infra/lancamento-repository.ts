@@ -144,11 +144,12 @@ export async function listarDefeitos(): Promise<{ codigo: string; tipo: number }
 /** Chama a função atômica sf_lancar. Erros de infra viram { ok:false, erro:'ERRO_INTERNO' }. */
 export async function chamarSfLancar(
   args: SfLancarArgs,
-): Promise<{ ok: boolean; erro?: string; caixa_count?: number }> {
+): Promise<{ ok: boolean; erro?: string; caixa_count?: number; postoPendente?: string }> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_lancar', args)
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
-  return data as { ok: boolean; erro?: string; caixa_count?: number }
+  const r = data as { ok: boolean; erro?: string; caixa_count?: number; posto_pendente?: string }
+  return { ok: r.ok, erro: r.erro, caixa_count: r.caixa_count, postoPendente: r.posto_pendente }
 }
 
 export interface OrdemLancamentoLista {

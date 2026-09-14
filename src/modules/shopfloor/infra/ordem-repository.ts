@@ -6,6 +6,8 @@ export interface PostoRow {
   ordem: number
   perfil: string
   coletivo: boolean
+  /** Postos que a peça repassa depois da Manutenção antes de voltar a ESTE posto. '' = volta direto. */
+  retorno_pos_manutencao: string
 }
 
 export interface OrdemRow {
@@ -41,7 +43,7 @@ export interface DadosOrdem {
 
 export async function listarPostos(): Promise<PostoRow[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('sf_postos').select('chave,ordem,perfil,coletivo').order('ordem')
+  const { data, error } = await supabase.from('sf_postos').select('chave,ordem,perfil,coletivo,retorno_pos_manutencao').order('ordem')
   if (error) throw error
   return data as PostoRow[]
 }

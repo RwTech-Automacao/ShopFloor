@@ -10,7 +10,7 @@ describe('postoCancelavel', () => {
     expect(postoCancelavel('nenhum')).toBe(true)
     expect(postoCancelavel('burnin')).toBe(true)
   })
-  it('permite embalagem: a RPC (0098) tira a peça da caixa e reabre a caixa fechada', () => {
+  it('permite embalagem: a RPC (0106) tira a peça da caixa e reabre a caixa fechada', () => {
     expect(postoCancelavel('caixa')).toBe(true)
   })
   it('permite quando o recurso é desconhecido/nulo', () => {

@@ -1,6 +1,6 @@
 /**
  * Postos com efeito colateral em OUTRA tabela que o cancelamento não sabe desfazer.
- * 'caixa' SAIU da lista: a RPC (0098) desfaz o efeito em sf_caixas — apaga o bipe e, se a caixa
+ * 'caixa' SAIU da lista: a RPC (0106) desfaz o efeito em sf_caixas — apaga o bipe e, se a caixa
  * já estava fechada, reabre ela. 'nqa' e 'integracao' continuam bloqueados.
  */
 const RECURSOS_BLOQUEADOS: readonly string[] = ['nqa', 'integracao']
