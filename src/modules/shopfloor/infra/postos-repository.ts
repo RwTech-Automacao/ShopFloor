@@ -33,6 +33,14 @@ export async function mapaPostoPerfil(): Promise<Record<string, PerfilPosto>> {
   return mapa
 }
 
+/** Chaves dos postos na ORDEM do fluxo — é a ordem em que eles viram coluna no dashboard. */
+export async function listarPostos(): Promise<string[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.from('sf_postos').select('chave,ordem').order('ordem', { ascending: true })
+  if (error) throw error
+  return ((data ?? []) as { chave: string }[]).map((r) => r.chave)
+}
+
 /** Mapa chave-do-posto → coletivo (true = permite lançamento coletivo neste posto). */
 export async function mapaPostoColetivo(): Promise<Record<string, boolean>> {
   const supabase = await createServerSupabase()
