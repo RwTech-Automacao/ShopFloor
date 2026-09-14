@@ -136,7 +136,7 @@ export function PainelDashboard({ dados, carregando, pagina, onPagina }: {
         <CardGrafico titulo="Bipes por status" regua="registros" explica={COMO_CALCULA.status}>
           <BarraProporcao ranking={dados.graficos.status} vazio="Nenhum bipe com status neste filtro." />
         </CardGrafico>
-        <CardGrafico titulo="Reprovas por tipo de componente" regua="registros" explica={COMO_CALCULA.tipo}>
+        <CardGrafico titulo="Reprovas por tipo do defeito" regua="registros" explica={COMO_CALCULA.tipo}>
           <BarrasRanking ranking={dados.graficos.tipo} vazio="Nenhuma reprova com tipo neste filtro." />
         </CardGrafico>
       </div>

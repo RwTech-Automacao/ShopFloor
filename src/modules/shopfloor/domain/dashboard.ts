@@ -198,13 +198,13 @@ export const COMO_CALCULA = {
   grade:
     'Peças diferentes da OP em cada posto, separadas pelo status do bipe: aprovadas, reprovadas e sem status (postos de passagem e Manutenção). A mesma peça pode aparecer em mais de um status. OPs com mais peças primeiro.',
   status:
-    'Registros: cada bipe com status conta uma vez, então a mesma peça bipada em três postos conta três. Bipes sem status ficam de fora. Por isso difere dos cartões, que contam peças.',
+    'Registros: cada bipe com status conta uma vez, então a mesma peça bipada em três postos conta três, e uma peça que reprovou duas vezes conta duas. Bipes sem status ficam de fora. Por isso difere dos cartões, que contam peças.',
   tipo:
-    'Registros de reprova por tipo de componente (SMD, PTH…). Só a reprova conta: os consertos e defeitos constatados na Manutenção repetem o tipo e ficariam contados em dobro. Os 10 maiores; o resto soma em Outros.',
+    'Registros de reprova por tipo do defeito: Peça ou Teste (do catálogo, no bipe) ou onde aconteceu (SMD, PTH…, na reprova manual). Só a reprova conta: os consertos e defeitos constatados na Manutenção repetem o tipo e ficariam contados em dobro. Por bipe: uma peça que reprovou duas vezes conta duas, por isso pode passar do cartão Reprovado. Os 10 maiores; o resto soma em Outros.',
   ops:
     'Registros com status por OP (cada bipe Aprovado ou Reprovado conta uma vez). As 10 OPs com mais registros.',
   defeitos:
-    'Reprovas por código de defeito. Só a reprova conta: os consertos e defeitos constatados na Manutenção repetem o código e ficariam contados em dobro. Os 6 maiores; o resto soma em Outros.',
+    'Reprovas por código de defeito. Só a reprova conta: os consertos e defeitos constatados na Manutenção repetem o código e ficariam contados em dobro. Por bipe: uma peça que reprovou duas vezes conta duas, por isso pode passar do cartão Reprovado. Os 6 maiores; o resto soma em Outros.',
   posicoes:
-    'Reprovas por posição do defeito (H1, R5…), só as que têm tipo de componente. Os consertos da Manutenção não contam. As 15 maiores; o resto soma em Outros.',
+    'Reprovas por posição do defeito (H1, R5…), só as que têm tipo do defeito. Os consertos da Manutenção não contam. Por bipe: uma peça que reprovou duas vezes conta duas. A posição é digitada, então grafias diferentes aparecem separadas. As 15 maiores; o resto soma em Outros.',
 } as const
