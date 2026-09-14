@@ -80,7 +80,9 @@ export function DefeitoModal({
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => { if (!o) onFechar() }}>
-      <DialogContent className="max-w-3xl">
+      {/* `sm:` é obrigatório: o DialogContent do projeto traz `sm:max-w-sm` de padrão, que vence um
+          `max-w-*` sem prefixo a partir de 640px — o modal ficava com ~24rem por mais largo que se pedisse. */}
+      <DialogContent className="sm:max-w-[min(72rem,calc(100%-2rem))]">
         <DialogHeader>
           <DialogTitle>Escolher defeito</DialogTitle>
         </DialogHeader>
@@ -141,7 +143,9 @@ function Grade({ codigos, destaque = false, onEscolher }: {
   codigos: string[]; destaque?: boolean; onEscolher: (codigo: string) => void
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+    // Mais colunas conforme a tela cresce: o modal ficou largo, e com 4 colunas os cards quadrados
+    // ficariam enormes e a página de 12 não caberia sem rolar.
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
       {codigos.map((codigo) => {
         const { numero, descricao } = separarCodigoDefeito(codigo)
         return (
