@@ -7,7 +7,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
-  COMO_CALCULA, OPS_POR_PAGINA, type DadosDashboard, type OpPorStatus, type Ranking,
+  COMO_CALCULA, OPS_POR_PAGINA,
+  type CliqueDashboard, type DadosDashboard, type FiltroDashboard, type OpPorStatus, type Ranking,
 } from '@/modules/shopfloor/domain/dashboard'
 import { capitalizarDescricaoDefeito, separarCodigoDefeito } from '@/modules/shopfloor/domain/defeito'
 
@@ -42,8 +43,12 @@ function ordenarStatus(statuses: Iterable<string>): string[] {
  * Separado de quem busca (dashboard-geral) pra a mesma tela poder ser exibida com qualquer foto —
  * e sem servidor no meio — sem duplicar marcação.
  */
-export function PainelDashboard({ dados, carregando, pagina, onPagina }: {
+export function PainelDashboard({ dados, carregando, pagina, onPagina, filtro, onClique }: {
   dados: DadosDashboard; carregando: boolean; pagina: number; onPagina: (pagina: number) => void
+  /** Filtro atual — marca o item clicado como ativo. */
+  filtro: FiltroDashboard
+  /** Clique numa OP, posto, status, tipo, defeito ou posição: filtra a tela inteira (ou desfaz). */
+  onClique: (clique: CliqueDashboard) => void
 }) {
   const totalPaginas = Math.max(1, Math.ceil(dados.opsTotal / OPS_POR_PAGINA))
   return (
@@ -83,7 +88,10 @@ export function PainelDashboard({ dados, carregando, pagina, onPagina }: {
                       <TableHead>Cliente</TableHead>
                       <TableHead className="text-right">Peças</TableHead>
                       {dados.grade.postos.map((p) => (
-                        <TableHead key={p} className="whitespace-nowrap text-center">{p}</TableHead>
+                        <TableHead key={p} className="whitespace-nowrap text-center">
+                          <BotaoFiltro ativo={filtro.posto === p} titulo={`Filtrar pelo posto ${p}`}
+                            onClick={() => onClique({ posto: p })}>{p}</BotaoFiltro>
+                        </TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
@@ -91,7 +99,8 @@ export function PainelDashboard({ dados, carregando, pagina, onPagina }: {
                     {dados.grade.ops.map((o) => (
                       <TableRow key={`${o.pmo}|${o.op}`}>
                         <TableCell className="sticky left-0 z-10 whitespace-nowrap bg-card font-medium">
-                          {o.pmo}·{o.op}
+                          <BotaoFiltro ativo={filtro.pmo === o.pmo && filtro.op === o.op} titulo={`Filtrar pela OP ${o.pmo}·${o.op}`}
+                            onClick={() => onClique({ pmo: o.pmo, op: o.op })}>{o.pmo}·{o.op}</BotaoFiltro>
                           {o.finalizada && <span className="ml-2 text-xs font-normal text-muted-foreground">finalizada</span>}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-muted-foreground">{o.cliente}</TableCell>
@@ -134,21 +143,25 @@ export function PainelDashboard({ dados, carregando, pagina, onPagina }: {
       {/* ---------- Gráficos (registros) ---------- */}
       <div className="grid gap-4 lg:grid-cols-2">
         <CardGrafico titulo="Bipes por status" regua="registros" explica={COMO_CALCULA.status}>
-          <BarraProporcao ranking={dados.graficos.status} vazio="Nenhum bipe com status neste filtro." />
+          <BarraProporcao ranking={dados.graficos.status} vazio="Nenhum bipe com status neste filtro."
+            ativo={filtro.status} onClique={(status) => onClique({ status })} />
         </CardGrafico>
         <CardGrafico titulo="Reprovas por tipo do defeito" regua="registros" explica={COMO_CALCULA.tipo}>
-          <BarrasRanking ranking={dados.graficos.tipo} vazio="Nenhuma reprova com tipo neste filtro." />
+          <BarrasRanking ranking={dados.graficos.tipo} vazio="Nenhuma reprova com tipo neste filtro."
+            ativo={filtro.tipo} onClique={(tipo) => onClique({ tipo })} />
         </CardGrafico>
       </div>
 
       <CardGrafico titulo="Bipes por OP e status" regua="registros" explica={COMO_CALCULA.ops}
         acao={<Legenda itens={ordenarStatus(dados.graficos.ops.flatMap((o) => Object.keys(o.porStatus))).map((s) => [s, corDoStatus(s)])} />}>
-        <BarrasPorOp ops={dados.graficos.ops} />
+        <BarrasPorOp ops={dados.graficos.ops} ativo={filtro.pmo && filtro.op ? `${filtro.pmo}|${filtro.op}` : ''}
+          onClique={(pmo, op) => onClique({ pmo, op })} />
       </CardGrafico>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <CardGrafico titulo="Principais defeitos" regua="registros" explica={COMO_CALCULA.defeitos}>
           <BarrasRanking ranking={dados.graficos.defeitos} vazio="Nenhuma reprova com defeito neste filtro."
+            ativo={filtro.defeito} onClique={(defeito) => onClique({ defeito })}
             rotulo={(codigo) => {
               const { numero, descricao } = separarCodigoDefeito(codigo)
               const texto = capitalizarDescricaoDefeito(descricao) || codigo
@@ -157,7 +170,8 @@ export function PainelDashboard({ dados, carregando, pagina, onPagina }: {
             }} />
         </CardGrafico>
         <CardGrafico titulo="Principais posições" regua="registros" explica={COMO_CALCULA.posicoes}>
-          <BarrasRanking ranking={dados.graficos.posicoes} vazio="Nenhuma reprova com posição neste filtro." />
+          <BarrasRanking ranking={dados.graficos.posicoes} vazio="Nenhuma reprova com posição neste filtro."
+            ativo={filtro.posicao} onClique={(posicao) => onClique({ posicao })} />
         </CardGrafico>
       </div>
     </div>
@@ -249,9 +263,30 @@ function Numero({ cor, valor }: { cor: string; valor: number }) {
   )
 }
 
-/** Ranking em barras horizontais, uma série só: os N maiores + "Outros" em cinza, valor na ponta. */
-function BarrasRanking({ ranking, vazio, rotulo = (r) => r }: {
+/** Botão de texto que filtra a tela ao clicar. Ativo = é o filtro aplicado agora (clicar de novo desfaz). */
+function BotaoFiltro({ ativo, titulo, onClick, children }: {
+  ativo: boolean; titulo: string; onClick: () => void; children: ReactNode
+}) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={ativo} title={ativo ? `${titulo} (clique de novo para tirar)` : titulo}
+      className={`-mx-1 rounded px-1 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring ${
+        ativo ? 'bg-enterplak/10 font-semibold text-enterplak dark:bg-enterplak/25 dark:text-foreground' : ''
+      }`}>
+      {children}
+    </button>
+  )
+}
+
+/** Linha clicável de um gráfico de barras: a linha inteira é o alvo (maior que a barra, fácil de acertar). */
+const LINHA_BARRA = 'grid w-full grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] items-center gap-3 rounded px-1 text-left text-sm'
+const LINHA_CLICAVEL = 'hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring'
+const LINHA_ATIVA = 'bg-enterplak/10 dark:bg-enterplak/25'
+
+/** Ranking em barras horizontais, uma série só: os N maiores + "Outros" em cinza, valor na ponta.
+ *  Cada barra filtra a tela pelo seu rótulo; "Outros" é soma de vários, então não filtra. */
+function BarrasRanking({ ranking, vazio, rotulo = (r) => r, ativo, onClique }: {
   ranking: Ranking; vazio: string; rotulo?: (r: string) => string
+  ativo: string; onClique: (valor: string) => void
 }) {
   const itens = [
     ...ranking.topo.map((i) => ({ chave: i.rotulo, texto: rotulo(i.rotulo), valor: i.valor, outros: false })),
@@ -260,77 +295,122 @@ function BarrasRanking({ ranking, vazio, rotulo = (r) => r }: {
   if (itens.length === 0) return <p className="text-sm text-muted-foreground">{vazio}</p>
   const maior = Math.max(...itens.map((i) => i.valor))
   return (
-    <ul className="flex flex-col gap-1.5">
-      {itens.map((i) => (
-        <li key={i.chave} title={`${i.texto}: ${fmt.format(i.valor)}`}
-          className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] items-center gap-3 text-sm">
-          <span className={`truncate ${i.outros ? 'text-muted-foreground' : 'text-foreground'}`}>{i.texto}</span>
-          <div className="h-3.5">
-            <div className={`h-full rounded-r-[4px] ${i.outros ? COR_NEUTRA : COR_MARCA}`}
-              style={{ width: `max(2px, ${(i.valor / maior) * 100}%)` }} />
-          </div>
-          <span className="text-right tabular-nums font-medium text-foreground">{fmt.format(i.valor)}</span>
-        </li>
-      ))}
+    <ul className="flex flex-col gap-0.5">
+      {itens.map((i) => {
+        const conteudo = (
+          <>
+            <span className={`truncate ${i.outros ? 'text-muted-foreground' : 'text-foreground'}`}>{i.texto}</span>
+            <div className="h-3.5">
+              <div className={`h-full rounded-r-[4px] ${i.outros ? COR_NEUTRA : COR_MARCA}`}
+                style={{ width: `max(2px, ${(i.valor / maior) * 100}%)` }} />
+            </div>
+            <span className="text-right tabular-nums font-medium text-foreground">{fmt.format(i.valor)}</span>
+          </>
+        )
+        const estaAtivo = !i.outros && ativo === i.chave
+        return (
+          <li key={i.chave}>
+            {i.outros ? (
+              <div className={`${LINHA_BARRA} py-0.5`} title={`Outros: ${fmt.format(i.valor)} (soma dos que ficaram fora da lista)`}>{conteudo}</div>
+            ) : (
+              <button type="button" onClick={() => onClique(i.chave)} aria-pressed={estaAtivo}
+                title={`${i.texto}: ${fmt.format(i.valor)} — ${estaAtivo ? 'clique para tirar o filtro' : 'clique para filtrar'}`}
+                className={`${LINHA_BARRA} py-0.5 ${LINHA_CLICAVEL} ${estaAtivo ? LINHA_ATIVA : ''}`}>
+                {conteudo}
+              </button>
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }
 
-/** Parte-do-todo com poucos itens: uma barra 100% dividida + os números. Mais legível que pizza de 2 fatias. */
-function BarraProporcao({ ranking, vazio }: { ranking: Ranking; vazio: string }) {
+/** Parte-do-todo com poucos itens: uma barra 100% dividida + os números. Mais legível que pizza de 2 fatias.
+ *  Cada parte (e o item da legenda) filtra a tela por aquele status; "Outros" não filtra. */
+function BarraProporcao({ ranking, vazio, ativo, onClique }: {
+  ranking: Ranking; vazio: string; ativo: string; onClique: (status: string) => void
+}) {
   const itens = [
-    ...ranking.topo.map((i) => ({ rotulo: i.rotulo, valor: i.valor, cor: corDoStatus(i.rotulo) })),
-    ...(ranking.outros > 0 ? [{ rotulo: 'Outros', valor: ranking.outros, cor: COR_NEUTRA }] : []),
+    ...ranking.topo.map((i) => ({ rotulo: i.rotulo, valor: i.valor, cor: corDoStatus(i.rotulo), outros: false })),
+    ...(ranking.outros > 0 ? [{ rotulo: 'Outros', valor: ranking.outros, cor: COR_NEUTRA, outros: true }] : []),
   ]
   const total = itens.reduce((s, i) => s + i.valor, 0)
   if (total === 0) return <p className="text-sm text-muted-foreground">{vazio}</p>
   const ordenados = ordenarStatus(itens.map((i) => i.rotulo)).map((r) => itens.find((i) => i.rotulo === r)!)
+  const dica = (i: { rotulo: string; valor: number }) =>
+    `${i.rotulo}: ${fmt.format(i.valor)} (${pct.format(i.valor / total)}) — ${ativo === i.rotulo ? 'clique para tirar o filtro' : 'clique para filtrar'}`
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex h-5 w-full gap-0.5" role="img"
-        aria-label={ordenados.map((i) => `${i.rotulo}: ${fmt.format(i.valor)}`).join(', ')}>
-        {ordenados.map((i) => (
-          <div key={i.rotulo} title={`${i.rotulo}: ${fmt.format(i.valor)} (${pct.format(i.valor / total)})`}
-            className={`h-full min-w-[2px] first:rounded-l-[4px] last:rounded-r-[4px] ${i.cor}`}
+      <div className="flex h-5 w-full gap-0.5">
+        {ordenados.map((i) => i.outros ? (
+          <div key={i.rotulo} title={`Outros: ${fmt.format(i.valor)}`}
+            className={`h-full min-w-[2px] first:rounded-l-[4px] last:rounded-r-[4px] ${i.cor}`} style={{ flex: `${i.valor} 1 0%` }} />
+        ) : (
+          <button key={i.rotulo} type="button" onClick={() => onClique(i.rotulo)} aria-pressed={ativo === i.rotulo}
+            aria-label={dica(i)} title={dica(i)}
+            className={`h-full min-w-[2px] first:rounded-l-[4px] last:rounded-r-[4px] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${i.cor}`}
             style={{ flex: `${i.valor} 1 0%` }} />
         ))}
       </div>
-      <ul className="flex flex-wrap gap-x-6 gap-y-2">
-        {ordenados.map((i) => (
-          <li key={i.rotulo} className="flex items-center gap-2 text-sm">
-            <span className={`size-2.5 rounded-sm ${i.cor}`} aria-hidden />
-            <span className="text-muted-foreground">{i.rotulo}</span>
-            <span className="tabular-nums font-semibold text-foreground">{fmt.format(i.valor)}</span>
-            <span className="tabular-nums text-xs text-muted-foreground">{pct.format(i.valor / total)}</span>
-          </li>
-        ))}
+      <ul className="flex flex-wrap gap-x-4 gap-y-1">
+        {ordenados.map((i) => {
+          const conteudo = (
+            <>
+              <span className={`size-2.5 rounded-sm ${i.cor}`} aria-hidden />
+              <span className="text-muted-foreground">{i.rotulo}</span>
+              <span className="tabular-nums font-semibold text-foreground">{fmt.format(i.valor)}</span>
+              <span className="tabular-nums text-xs text-muted-foreground">{pct.format(i.valor / total)}</span>
+            </>
+          )
+          return (
+            <li key={i.rotulo}>
+              {i.outros ? (
+                <div className="flex items-center gap-2 px-1 text-sm">{conteudo}</div>
+              ) : (
+                <button type="button" onClick={() => onClique(i.rotulo)} aria-pressed={ativo === i.rotulo} title={dica(i)}
+                  className={`flex items-center gap-2 rounded px-1 text-sm ${LINHA_CLICAVEL} ${ativo === i.rotulo ? LINHA_ATIVA : ''}`}>
+                  {conteudo}
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
 }
 
-/** Barras empilhadas por OP (status), escala comum: o comprimento compara OPs, os segmentos o status. */
-function BarrasPorOp({ ops }: { ops: OpPorStatus[] }) {
+/** Barras empilhadas por OP (status), escala comum: o comprimento compara OPs, os segmentos o status.
+ *  A linha inteira filtra a tela pela OP. */
+function BarrasPorOp({ ops, ativo, onClique }: {
+  ops: OpPorStatus[]; ativo: string; onClique: (pmo: string, op: string) => void
+}) {
   if (ops.length === 0) return <p className="text-sm text-muted-foreground">Nenhum bipe com status neste filtro.</p>
   const maior = Math.max(...ops.map((o) => o.total))
   return (
-    <ul className="flex flex-col gap-1.5">
+    <ul className="flex flex-col gap-0.5">
       {ops.map((o) => {
         const statuses = ordenarStatus(Object.keys(o.porStatus))
         const detalhe = statuses.map((s) => `${fmt.format(o.porStatus[s] ?? 0)} ${s.toLowerCase()}`).join(', ')
+        const chave = `${o.pmo}|${o.op}`
+        const estaAtivo = ativo === chave
         return (
-          <li key={`${o.pmo}|${o.op}`} title={`${o.pmo}·${o.op}: ${fmt.format(o.total)} bipes (${detalhe})`}
-            className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] items-center gap-3 text-sm">
-            <span className="truncate text-foreground">{o.pmo}·{o.op}</span>
-            <div className="h-3.5">
-              <div className="flex h-full gap-0.5" style={{ width: `max(2px, ${(o.total / maior) * 100}%)` }}>
-                {statuses.map((s) => (
-                  <div key={s} className={`h-full min-w-[2px] last:rounded-r-[4px] ${corDoStatus(s)}`}
-                    style={{ flex: `${o.porStatus[s] ?? 0} 1 0%` }} />
-                ))}
+          <li key={chave}>
+            <button type="button" onClick={() => onClique(o.pmo, o.op)} aria-pressed={estaAtivo}
+              title={`${o.pmo}·${o.op}: ${fmt.format(o.total)} bipes (${detalhe}) — ${estaAtivo ? 'clique para tirar o filtro' : 'clique para filtrar'}`}
+              className={`${LINHA_BARRA} py-0.5 ${LINHA_CLICAVEL} ${estaAtivo ? LINHA_ATIVA : ''}`}>
+              <span className="truncate text-foreground">{o.pmo}·{o.op}</span>
+              <div className="h-3.5">
+                <div className="flex h-full gap-0.5" style={{ width: `max(2px, ${(o.total / maior) * 100}%)` }}>
+                  {statuses.map((s) => (
+                    <div key={s} className={`h-full min-w-[2px] last:rounded-r-[4px] ${corDoStatus(s)}`}
+                      style={{ flex: `${o.porStatus[s] ?? 0} 1 0%` }} />
+                  ))}
+                </div>
               </div>
-            </div>
-            <span className="text-right tabular-nums font-medium text-foreground">{fmt.format(o.total)}</span>
+              <span className="text-right tabular-nums font-medium text-foreground">{fmt.format(o.total)}</span>
+            </button>
           </li>
         )
       })}

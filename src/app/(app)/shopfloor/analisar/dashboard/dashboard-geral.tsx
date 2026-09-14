@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
+import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -8,7 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { carregarDashboardGeral } from '@/modules/shopfloor/application/dashboard-actions'
-import { FILTRO_PADRAO, type DadosDashboard, type FiltroDashboard } from '@/modules/shopfloor/domain/dashboard'
+import {
+  FILTRO_PADRAO, alternarFiltro, type CliqueDashboard, type DadosDashboard, type FiltroDashboard,
+} from '@/modules/shopfloor/domain/dashboard'
+import { capitalizarDescricaoDefeito, separarCodigoDefeito } from '@/modules/shopfloor/domain/defeito'
 import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { PainelDashboard } from './dashboard-painel'
 
@@ -64,6 +68,11 @@ export function DashboardGeral({ ordens, postos, colaboradores }: {
   }
   function aplicarSn() {
     if (snDigitado.trim() !== filtro.sn) mudar({ sn: snDigitado.trim() })
+  }
+  // Clique num gráfico: filtra a tela inteira, ou desfaz se o item já é o filtro ativo (como no legado).
+  function clicar(clique: CliqueDashboard) {
+    setPagina(0)
+    setFiltro((f) => alternarFiltro(f, clique))
   }
   function limpar() {
     setSnDigitado('')
@@ -124,6 +133,10 @@ export function DashboardGeral({ ordens, postos, colaboradores }: {
         </CardContent>
       </Card>
 
+      {/* Filtros que só existem pelo clique não têm campo na faixa de cima: sem estas etiquetas a tela
+          ficaria filtrada sem dizer por quê. OP e posto aparecem nos próprios campos. */}
+      <FiltrosDoClique filtro={filtro} onTirar={(campo) => mudar({ [campo]: '' })} />
+
       {erro && !carregando && (
         <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40">
           <p className="font-medium text-amber-900 dark:text-amber-200">{erro}</p>
@@ -136,10 +149,49 @@ export function DashboardGeral({ ordens, postos, colaboradores }: {
 
       {dados && (
         <PainelDashboard dados={dados} carregando={carregando} pagina={pagina}
-          onPagina={(p) => setPagina(p)} />
+          onPagina={(p) => setPagina(p)} filtro={filtro} onClique={clicar} />
       )}
     </div>
   )
+}
+
+const ROTULO_CLIQUE = { status: 'Status', tipo: 'Tipo do defeito', defeito: 'Defeito', posicao: 'Posição' } as const
+type CampoClique = keyof typeof ROTULO_CLIQUE
+
+/** Etiquetas dos filtros aplicados pelo clique, cada uma com ✕ pra tirar. Some quando não há nenhum. */
+function FiltrosDoClique({ filtro, onTirar }: { filtro: FiltroDashboard; onTirar: (campo: CampoClique) => void }) {
+  const ativos = (Object.keys(ROTULO_CLIQUE) as CampoClique[]).filter((c) => filtro[c] !== '')
+  if (ativos.length === 0) {
+    return (
+      <p className="-mt-1 text-xs text-muted-foreground">
+        Dica: clique numa OP, num posto, em Aprovado/Reprovado, num tipo, defeito ou posição pra filtrar a tela inteira.
+      </p>
+    )
+  }
+  return (
+    <div className="-mt-1 flex flex-wrap items-center gap-2 text-sm">
+      <span className="text-xs text-muted-foreground">Filtrado por clique:</span>
+      {ativos.map((c) => {
+        const valor = c === 'defeito' ? rotuloDefeito(filtro.defeito) : filtro[c]
+        return (
+          <span key={c} className="inline-flex items-center gap-1 rounded-full bg-enterplak/10 py-0.5 pl-3 pr-1 text-foreground dark:bg-enterplak/25">
+            <span className="text-muted-foreground">{ROTULO_CLIQUE[c]}:</span>
+            <span className="font-medium">{valor}</span>
+            <button type="button" onClick={() => onTirar(c)} aria-label={`Tirar o filtro ${ROTULO_CLIQUE[c]}`}
+              className="ml-0.5 inline-flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+              <X className="size-3.5" />
+            </button>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+function rotuloDefeito(codigo: string): string {
+  const { numero, descricao } = separarCodigoDefeito(codigo)
+  const texto = capitalizarDescricaoDefeito(descricao) || codigo
+  return numero ? `${numero} · ${texto}` : texto
 }
 
 /** Select de filtro com a opção "todos" — repetido em Cliente/PMO/OP/Posto/Colaborador. */
