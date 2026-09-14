@@ -49,6 +49,18 @@ export default async function ImportarPage({
         </div>
       )
     }
+    if (alvo.totalAnexos > 0) {
+      return (
+        <div className="flex flex-col gap-4">
+          <h1 className="text-2xl font-semibold">Corrigir importação</h1>
+          <AvisoCorrecao>
+            Não é possível corrigir: esta EMB já tem {alvo.totalAnexos} foto
+            {alvo.totalAnexos === 1 ? '' : 's'} anexada{alvo.totalAnexos === 1 ? '' : 's'}. A correção substitui
+            os itens, e as fotos seriam apagadas junto.
+          </AvisoCorrecao>
+        </div>
+      )
+    }
     correcao = {
       importacaoId: corrigir,
       emb: alvo.numeroEmb ?? '',

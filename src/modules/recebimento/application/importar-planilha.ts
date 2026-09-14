@@ -89,6 +89,12 @@ export async function corrigirImportacao(payload: {
   } catch (e) {
     // A RPC bloqueia quando alguém já começou a conferir (corrida) — mensagem útil.
     const bruto = e instanceof Error ? e.message : ''
+    if (bruto.includes('bloquead') && bruto.includes('foto')) {
+      return {
+        ok: false,
+        erro: 'Correção bloqueada: alguém anexou foto num item desta EMB. A correção apagaria as fotos. Recarregue a página.',
+      }
+    }
     if (bruto.includes('bloquead')) {
       return {
         ok: false,

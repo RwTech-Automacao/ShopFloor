@@ -7,8 +7,10 @@
 -- sistema SUBSTITUI todos os processos daquela importação.
 --
 -- Regra de segurança: só é permitido se NENHUM processo da importação já saiu
--- de 'aberto' (ninguém começou a conferir/finalizar) — assim nunca se perde
--- trabalho de conferência. O bloqueio é checado aqui (backstop à prova de
+-- de 'aberto' (ninguém começou a conferir/finalizar) E se NENHUM tem foto/anexo —
+-- assim nunca se perde trabalho de conferência. A foto precisa de trava própria:
+-- dá pra anexar num processo ainda 'aberto', e `anexos_processo` aponta pro
+-- processo com ON DELETE CASCADE — apagar o processo levaria as fotos junto, calado. O bloqueio é checado aqui (backstop à prova de
 -- corrida); a UI também pré-checa pra avisar antes.
 --
 -- Por que SECURITY DEFINER: a operação é DELETE + INSERT + UPDATE atômicos. As
@@ -38,6 +40,7 @@ declare
   v_nome text;
   v_emb text;
   v_bloqueados int;
+  v_anexos int;
   v_antes int;
   v_total int;
 begin
@@ -60,6 +63,16 @@ begin
       using errcode = 'P0001';
   end if;
 
+  -- 3b. Bloqueio: nenhum processo pode ter foto/anexo (o delete abaixo apagaria em cascata).
+  select count(*) into v_anexos
+  from public.anexos_processo a
+  join public.processos_recebimento p on p.id = a.processo_id
+  where p.importacao_id = p_importacao_id;
+  if v_anexos > 0 then
+    raise exception 'Correção bloqueada: % foto(s) já anexada(s) nesta EMB', v_anexos
+      using errcode = 'P0001';
+  end if;
+
   -- 4. Não substituir por planilha vazia.
   if coalesce(jsonb_array_length(p_linhas), 0) = 0 then
     raise exception 'A planilha de correção está vazia' using errcode = 'P0001';
@@ -74,7 +87,7 @@ begin
 
   select nome into v_nome from public.usuarios where id = auth.uid();
 
-  -- 5. Apaga os antigos (todos 'aberto', garantido pelo passo 3).
+  -- 5. Apaga os antigos (todos 'aberto' e sem anexo, garantido pelos passos 3 e 3b).
   delete from public.processos_recebimento where importacao_id = p_importacao_id;
 
   -- 6. Insere os novos (força a EMB alvo; só entram Comercial + Material, igual
@@ -106,12 +119,14 @@ begin
       corrigida_por = auth.uid()
   where id = p_importacao_id;
 
-  -- 8. Log da correção.
+  -- 8. Log da correção. Ação 'importar' (a correção é uma reimportação): a tabela `logs` só aceita as
+  -- ações da 0005, e 'corrigir' fazia o insert falhar — e com ele a transação inteira, sempre. A marca
+  -- `correcao: true` nos dados separa a correção da importação original.
   insert into public.logs (entidade, entidade_id, acao, descricao, dados, usuario_id, usuario_nome)
   values (
-    'importacao', p_importacao_id, 'corrigir',
+    'importacao', p_importacao_id, 'importar',
     format('Correção da importação (EMB %s): %s → %s processo(s)', coalesce(v_emb, '—'), v_antes, v_total),
-    jsonb_build_object('arquivo', p_arquivo_nome, 'emb', v_emb, 'antes', v_antes, 'depois', v_total, 'mapeamento', p_mapeamento),
+    jsonb_build_object('correcao', true, 'arquivo', p_arquivo_nome, 'emb', v_emb, 'antes', v_antes, 'depois', v_total, 'mapeamento', p_mapeamento),
     auth.uid(), coalesce(v_nome, '')
   );
 

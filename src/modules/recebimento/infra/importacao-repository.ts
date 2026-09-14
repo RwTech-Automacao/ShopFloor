@@ -84,11 +84,14 @@ export interface ImportacaoCorrecao {
   numeroEmb: string | null
   totalProcessos: number
   totalNaoAbertos: number
+  /** Fotos/anexos já enviados nos processos desta importação. >0 bloqueia: a correção os apagaria. */
+  totalAnexos: number
 }
 
 /**
  * Carrega o resumo de uma importação para o modo correção: a EMB alvo, o total
- * de processos e quantos já saíram de 'aberto' (se >0, a correção é bloqueada).
+ * de processos, quantos já saíram de 'aberto' e quantas fotos já foram anexadas
+ * (qualquer um dos dois >0 bloqueia a correção).
  * Retorna null se a importação não existir.
  */
 export async function carregarImportacaoCorrecao(id: string): Promise<ImportacaoCorrecao | null> {
@@ -111,11 +114,20 @@ export async function carregarImportacaoCorrecao(id: string): Promise<Importacao
   const numeroEmb = linhas.find((p) => p.numero_emb)?.numero_emb ?? null
   const totalNaoAbertos = linhas.filter((p) => p.status !== 'aberto').length
 
+  // Conta as fotos pelo vínculo com a importação (join no banco): filtrar por uma lista de ids de
+  // processo estouraria a URL numa EMB grande.
+  const { count: totalAnexos, error: erroAnexos } = await supabase
+    .from('anexos_processo')
+    .select('id, processos_recebimento!inner(importacao_id)', { count: 'exact', head: true })
+    .eq('processos_recebimento.importacao_id', id)
+  if (erroAnexos) throw erroAnexos
+
   return {
     arquivoNome: (importacao as { arquivo_nome: string }).arquivo_nome,
     numeroEmb,
     totalProcessos: linhas.length,
     totalNaoAbertos,
+    totalAnexos: totalAnexos ?? 0,
   }
 }
 
