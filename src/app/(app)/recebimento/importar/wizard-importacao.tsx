@@ -134,6 +134,7 @@ export function WizardImportacao({
 
   function onMudarValorFixo(campo: string, valor: string) {
     setValoresDigitados((atual) => ({ ...atual, [campo]: valor }))
+    if (campo === 'numero_emb') setEmbDestacada(false)
   }
 
   const embDigitada = (valoresDigitados.numero_emb ?? '').trim()
@@ -157,6 +158,35 @@ export function WizardImportacao({
 
   const embExistentes = embCheck?.emb === embDigitada ? embCheck.existentes : null
   const embRepetida = !correcao && embDigitada !== '' && (embExistentes ?? 0) > 0
+
+  // EMB repetida trava JÁ no passo do mapeamento: montar o preview inteiro de uma importação que não
+  // pode acontecer é trabalho jogado fora. Tentar avançar destaca o campo em vez de só não fazer nada.
+  const [embDestacada, setEmbDestacada] = useState(false)
+  const [conferindoEmb, setConferindoEmb] = useState(false)
+
+  async function avancarDoMapeamento() {
+    if (!correcao && embDigitada !== '') {
+      let existentes = embExistentes
+      // A conferência automática espera a pessoa parar de digitar; quem clica antes dela voltar não
+      // pode passar por uma EMB que ainda não foi checada.
+      if (existentes === null) {
+        setConferindoEmb(true)
+        const r = await conferirEmbRepetida(embDigitada)
+        setConferindoEmb(false)
+        // Se a consulta falhar não trava aqui: a importação confere de novo no servidor e recusa.
+        existentes = r.ok ? r.existentes : 0
+        if (r.ok) setEmbCheck({ emb: embDigitada, existentes: r.existentes })
+      }
+      if (existentes > 0) {
+        setEmbDestacada(true)
+        const campo = document.getElementById('fixo-numero_emb')
+        campo?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        campo?.focus()
+        return
+      }
+    }
+    setPasso(3)
+  }
 
   async function processarArquivo(file: File) {
     setErroArquivo(null)
@@ -386,6 +416,8 @@ export function WizardImportacao({
             onMudarValorFixo={onMudarValorFixo}
             embTravada={correcao ? correcao.emb : null}
             embExistentes={embExistentes}
+            embDestacada={embDestacada}
+            conferindoEmb={conferindoEmb}
             colunas={colunas}
             mapeamento={mapeamento}
             camposFaltando={camposFaltando}
@@ -393,7 +425,7 @@ export function WizardImportacao({
               setMapeamento((atual) => ({ ...atual, [campo]: coluna }))
             }
             onVoltar={() => setPasso(1)}
-            onProximo={() => setPasso(3)}
+            onProximo={avancarDoMapeamento}
           />
         </>
       )}
@@ -527,12 +559,16 @@ interface PassoMapearProps {
   embTravada: string | null
   /** Processos já existentes com a EMB digitada; 0 ou null = pode importar. */
   embExistentes: number | null
+  /** Tentou avançar com EMB repetida: o campo fica em destaque até a EMB mudar. */
+  embDestacada: boolean
+  /** Conferindo a EMB no servidor antes de deixar avançar. */
+  conferindoEmb: boolean
   colunas: string[]
   mapeamento: Record<string, string>
   camposFaltando: CampoImportavel[]
   onMudarMapeamento: (campo: string, coluna: string) => void
   onVoltar: () => void
-  onProximo: () => void
+  onProximo: () => void | Promise<void>
 }
 
 function PassoMapear({
@@ -542,6 +578,8 @@ function PassoMapear({
   onMudarValorFixo,
   embTravada,
   embExistentes,
+  embDestacada,
+  conferindoEmb,
   colunas,
   mapeamento,
   camposFaltando,
@@ -565,6 +603,7 @@ function PassoMapear({
           <div className="flex flex-wrap gap-4">
             {camposDigitados.map((campo) => {
               const travado = campo.campo === 'numero_emb' && embTravada !== null
+              const embComErro = campo.campo === 'numero_emb' && embExistentes !== null && embExistentes > 0
               return (
                 <div key={campo.campo} className="flex flex-col gap-1">
                   <Label htmlFor={`fixo-${campo.campo}`}>
@@ -577,13 +616,18 @@ function PassoMapear({
                     value={valoresDigitados[campo.campo] ?? ''}
                     onChange={(e) => onMudarValorFixo(campo.campo, e.target.value)}
                     disabled={travado}
-                    className="w-56"
+                    aria-invalid={embComErro || undefined}
+                    aria-describedby={embComErro ? 'erro-emb-repetida' : undefined}
+                    className={`w-56 ${embComErro ? 'border-red-600' : ''} ${
+                      embComErro && embDestacada ? 'ring-2 ring-red-600/40' : ''
+                    }`}
                   />
                   {travado && (
                     <span className="text-xs text-muted-foreground">EMB fixa desta correção.</span>
                   )}
-                  {campo.campo === 'numero_emb' && embExistentes !== null && embExistentes > 0 && (
-                    <span className="max-w-56 text-xs font-medium text-red-600">
+                  {embComErro && (
+                    <span id="erro-emb-repetida" role={embDestacada ? 'alert' : undefined}
+                      className={`max-w-56 text-xs text-red-600 ${embDestacada ? 'font-semibold' : 'font-medium'}`}>
                       Esta EMB já foi importada ({embExistentes} {embExistentes === 1 ? 'processo' : 'processos'}).
                       Para reenviar a planilha corrigida, use &quot;Corrigir importação&quot;.
                     </span>
@@ -648,12 +692,14 @@ function PassoMapear({
         <Button variant="outline" onClick={onVoltar}>
           Voltar
         </Button>
+        {/* Com EMB repetida o botão CONTINUA clicável de propósito: o clique é o que leva a pessoa até
+            o erro (destaca e rola até o campo). Botão cinza sem explicação só confunde. */}
         <Button
           className="bg-enterplak hover:bg-enterplak-700"
-          disabled={camposFaltando.length > 0}
+          disabled={camposFaltando.length > 0 || conferindoEmb}
           onClick={onProximo}
         >
-          Próximo
+          {conferindoEmb ? 'Conferindo a EMB…' : 'Próximo'}
         </Button>
       </div>
     </div>
