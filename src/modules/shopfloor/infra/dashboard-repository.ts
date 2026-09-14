@@ -58,6 +58,11 @@ function paramsDoFiltro(f: FiltroDashboard) {
     p_posto: f.posto.trim(),
     p_colaborador: f.colaborador.trim(),
     p_sn: f.sn.trim() ? normalizarSerie(f.sn) : '',
+    // Os do clique vão exatamente como vieram do gráfico: é o valor que o banco agrupou.
+    p_status: f.status,
+    p_tipo: f.tipo,
+    p_defeito: f.defeito,
+    p_posicao: f.posicao,
   }
 }
 

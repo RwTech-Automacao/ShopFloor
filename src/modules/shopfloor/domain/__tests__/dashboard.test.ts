@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { contarPorPosto, pivotarGrade } from '../dashboard'
+import { FILTRO_PADRAO, alternarFiltro, contarPorPosto, pivotarGrade } from '../dashboard'
 
 const temStatus = (p: string) =>
   ['Inspeção SPI', 'Inspeção SMD', 'Inspeção PTH', 'Teste', 'Burn-in', 'Teste Final', 'Inspeção Final', 'Inspeção NQA'].some(
@@ -77,5 +77,36 @@ describe('pivotarGrade', () => {
     const g = pivotarGrade([linha('A', '1', '')], ['Teste'])
     expect(g.ops).toHaveLength(1)
     expect(g.postos).toEqual([])
+  })
+})
+
+describe('alternarFiltro', () => {
+  it('clicar num item aplica o filtro sem mexer nos outros', () => {
+    const f = alternarFiltro({ ...FILTRO_PADRAO, cliente: 'VMI' }, { defeito: '4000 OUTROS' })
+    expect(f.defeito).toBe('4000 OUTROS')
+    expect(f.cliente).toBe('VMI')
+    expect(f.statusOp).toBe('aberta')
+  })
+
+  it('clicar de novo no mesmo item desfaz o filtro', () => {
+    const ativo = { ...FILTRO_PADRAO, status: 'Reprovado' }
+    expect(alternarFiltro(ativo, { status: 'Reprovado' }).status).toBe('')
+  })
+
+  it('OP clicada leva o PMO junto e desfaz os dois ao clicar de novo', () => {
+    const f = alternarFiltro(FILTRO_PADRAO, { pmo: 'PMOG15', op: '8556' })
+    expect([f.pmo, f.op]).toEqual(['PMOG15', '8556'])
+    const volta = alternarFiltro(f, { pmo: 'PMOG15', op: '8556' })
+    expect([volta.pmo, volta.op]).toEqual(['', ''])
+  })
+
+  it('outra OP do mesmo PMO troca a OP em vez de limpar', () => {
+    const f = alternarFiltro({ ...FILTRO_PADRAO, pmo: 'PMOG15', op: '8556' }, { pmo: 'PMOG15', op: '8560' })
+    expect([f.pmo, f.op]).toEqual(['PMOG15', '8560'])
+  })
+
+  it('clique vazio não muda nada', () => {
+    const f = { ...FILTRO_PADRAO, posto: 'Teste' }
+    expect(alternarFiltro(f, {})).toBe(f)
   })
 })

@@ -44,11 +44,36 @@ export interface FiltroDashboard {
   colaborador: string
   /** Nº de série como digitado — a aplicação normaliza antes de mandar pro banco. */
   sn: string
+  /** Filtros que só existem pelo CLIQUE nos gráficos (0105). Status é o do bipe; tipo, defeito e
+   *  posição olham só a reprova. Valor exato como veio do gráfico (ex.: 'Reprovado', '4000 OUTROS'). */
+  status: string
+  tipo: string
+  defeito: string
+  posicao: string
 }
 
 /** O padrão da tela: só as OPs ativas, sem data e sem nenhum outro recorte. */
 export const FILTRO_PADRAO: FiltroDashboard = {
   cliente: '', pmo: '', op: '', statusOp: 'aberta', de: '', ate: '', posto: '', colaborador: '', sn: '',
+  status: '', tipo: '', defeito: '', posicao: '',
+}
+
+/** O que um clique num gráfico pode filtrar. OP vem com o PMO junto: o número da OP sozinho repete. */
+export type CliqueDashboard = Partial<Pick<FiltroDashboard, 'pmo' | 'op' | 'posto' | 'status' | 'tipo' | 'defeito' | 'posicao'>>
+
+/**
+ * Aplica o clique num gráfico ao filtro — ou DESFAZ, se o item clicado já é o filtro ativo.
+ *
+ * É o comportamento do legado: clicar filtra a tela inteira, clicar de novo no mesmo item volta.
+ * "Já ativo" é TODOS os campos do clique iguais ao filtro atual: clicar noutra OP do mesmo PMO troca
+ * a OP em vez de limpar.
+ */
+export function alternarFiltro(filtro: FiltroDashboard, clique: CliqueDashboard): FiltroDashboard {
+  const campos = Object.keys(clique) as (keyof CliqueDashboard)[]
+  if (campos.length === 0) return filtro
+  const jaAtivo = campos.every((c) => filtro[c] === clique[c])
+  const patch = Object.fromEntries(campos.map((c) => [c, jaAtivo ? '' : clique[c] ?? ''])) as CliqueDashboard
+  return { ...filtro, ...patch }
 }
 
 /** Uma linha crua da tabela: um par (OP, posto) com as peças daquele posto por status. */
