@@ -47,7 +47,7 @@ export function PainelDashboard({ dados, carregando, pagina, onPagina, filtro, o
   dados: DadosDashboard; carregando: boolean; pagina: number; onPagina: (pagina: number) => void
   /** Filtro atual — marca o item clicado como ativo. */
   filtro: FiltroDashboard
-  /** Clique numa OP, posto, status, tipo, defeito ou posição: filtra a tela inteira (ou desfaz). */
+  /** Clique numa OP, posto, status, defeito ou posição: filtra a tela inteira (ou desfaz). */
   onClique: (clique: CliqueDashboard) => void
 }) {
   const totalPaginas = Math.max(1, Math.ceil(dados.opsTotal / OPS_POR_PAGINA))
@@ -141,16 +141,10 @@ export function PainelDashboard({ dados, carregando, pagina, onPagina, filtro, o
       </Card>
 
       {/* ---------- Gráficos (registros) ---------- */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <CardGrafico titulo="Bipes por status" regua="registros" explica={COMO_CALCULA.status}>
-          <BarraProporcao ranking={dados.graficos.status} vazio="Nenhum bipe com status neste filtro."
-            ativo={filtro.status} onClique={(status) => onClique({ status })} />
-        </CardGrafico>
-        <CardGrafico titulo="Reprovas por tipo do defeito" regua="registros" explica={COMO_CALCULA.tipo}>
-          <BarrasRanking ranking={dados.graficos.tipo} vazio="Nenhuma reprova com tipo neste filtro."
-            ativo={filtro.tipo} onClique={(tipo) => onClique({ tipo })} />
-        </CardGrafico>
-      </div>
+      <CardGrafico titulo="Bipes por status" regua="registros" explica={COMO_CALCULA.status}>
+        <BarraProporcao ranking={dados.graficos.status} vazio="Nenhum bipe com status neste filtro."
+          ativo={filtro.status} onClique={(status) => onClique({ status })} />
+      </CardGrafico>
 
       <CardGrafico titulo="Bipes por OP e status" regua="registros" explica={COMO_CALCULA.ops}
         acao={<Legenda itens={ordenarStatus(dados.graficos.ops.flatMap((o) => Object.keys(o.porStatus))).map((s) => [s, corDoStatus(s)])} />}>

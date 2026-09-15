@@ -60,7 +60,6 @@ function paramsDoFiltro(f: FiltroDashboard) {
     p_sn: f.sn.trim() ? normalizarSerie(f.sn) : '',
     // Os do clique vão exatamente como vieram do gráfico: é o valor que o banco agrupou.
     p_status: f.status,
-    p_tipo: f.tipo,
     p_defeito: f.defeito,
     p_posicao: f.posicao,
   }
@@ -113,7 +112,7 @@ function lerRanking(v: unknown): Ranking {
   }
 }
 
-/** Status, tipo, OPs por status, defeitos e posições — a mesma foto do filtro, num jsonb só. */
+/** Status, OPs por status, defeitos e posições — a mesma foto do filtro, num jsonb só. */
 export async function carregarGraficosDashboard(f: FiltroDashboard): Promise<GraficosDashboard> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_dashboard_graficos', paramsDoFiltro(f))
@@ -125,7 +124,6 @@ export async function carregarGraficosDashboard(f: FiltroDashboard): Promise<Gra
   }))
   return {
     status: lerRanking(v.status),
-    tipo: lerRanking(v.tipo),
     defeitos: lerRanking(v.defeitos),
     posicoes: lerRanking(v.posicoes),
     ops,
