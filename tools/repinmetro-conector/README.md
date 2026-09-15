@@ -58,14 +58,13 @@ Pra conferir se a chave foi copiada inteira, compare o tamanho dela com o da Lig
 Com `REPINMETRO_REVENDA=1`, cada rodada também recarrega a **revenda** de todos os REPs na tabela
 `repinmetro_revendas` (migração 0107). A tela Análise → Repinmetro mostra a revenda no card do teste.
 
-- **Origem:** view no banco do repinmetro, só com o necessário. A chave criptográfica **não** entra:
+- **Origem:** `chavecriptografica` × `revenda`, lendo só `numeroserierep`, `datahora`, `datahorasaidaexpedicao` e
+  `razaosocial`. A chave criptográfica **nunca** é lida. O ideal é o usuário do conector ter leitura só dessas colunas:
   ```sql
-  CREATE VIEW vw_shopfloor_rep_revenda AS
-  SELECT c.numeroserierep, c.datahora, c.datahorasaidaexpedicao, r.razaosocial
-  FROM chavecriptografica c
-  LEFT JOIN revenda r ON r.id = c.revenda_id;
-  GRANT SELECT ON vw_shopfloor_rep_revenda TO <usuário do conector>;
+  GRANT SELECT (id, numeroserierep, revenda_id, datahora, datahorasaidaexpedicao) ON chavecriptografica TO <usuário>;
+  GRANT SELECT (id, razaosocial) ON revenda TO <usuário>;
   ```
+  Alternativa: uma view com essas 4 colunas, informada em `REPINMETRO_REVENDA_VIEW`.
 - **Casamento com o teste:** o serial completo é `00043` + modelo (5 dígitos) + nº de série (7 dígitos). O conector
   separa modelo e nº de série, e a tela casa por modelo + nº de série normalizado. Serial fora desse padrão é
   espelhado, mas não casa com nenhum teste (a rodada informa quantos).

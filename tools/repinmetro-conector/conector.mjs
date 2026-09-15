@@ -27,14 +27,19 @@ const SO_COM_SN = env.REPINMETRO_SO_COM_SN === '1' || env.REPINMETRO_SO_COM_SN =
 const FILTRO_SN = SO_COM_SN ? "AND t.numeroserierep IS NOT NULL AND btrim(t.numeroserierep) <> ''" : ''
 
 // Revenda de cada REP (tela REPs/Revendas do sistema de chaves). Liga com REPINMETRO_REVENDA=1 depois
-// que o usuário do conector tiver leitura na view — antes disso, ligado, só essa parte falha.
+// que o usuário do conector tiver leitura — antes disso, ligado, só essa parte falha.
 const REVENDA = env.REPINMETRO_REVENDA === '1' || env.REPINMETRO_REVENDA === 'true'
-// View criada no banco do repinmetro só com serial, datas e razão social (SEM a chave criptográfica).
-const REVENDA_VIEW = env.REPINMETRO_REVENDA_VIEW || 'vw_shopfloor_rep_revenda'
-if (!/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/i.test(REVENDA_VIEW)) {
+// Origem: por padrão, chavecriptografica × revenda lendo SÓ serial, datas e razão social (nunca a chave).
+// Se o banco tiver uma view com essas 4 colunas, informe o nome em REPINMETRO_REVENDA_VIEW.
+const REVENDA_VIEW = env.REPINMETRO_REVENDA_VIEW || ''
+if (REVENDA_VIEW && !/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/i.test(REVENDA_VIEW)) {
   console.error(`REPINMETRO_REVENDA_VIEW inválida: ${REVENDA_VIEW}`)
   process.exit(1)
 }
+const SQL_REVENDAS = REVENDA_VIEW
+  ? `SELECT numeroserierep, datahora, datahorasaidaexpedicao, razaosocial FROM ${REVENDA_VIEW}`
+  : 'SELECT c.numeroserierep, c.datahora, c.datahorasaidaexpedicao, r.razaosocial ' +
+    'FROM chavecriptografica c LEFT JOIN revenda r ON r.id = c.revenda_id'
 // Serial completo do REP: prefixo fixo 00043 + modelo (5 dígitos) + nº de série (7 dígitos).
 const PREFIXO_SERIAL = '00043'
 
@@ -145,9 +150,7 @@ function separarSerial(serial) {
  * que não veio nesta rodada (excluído na origem) é apagado no fim.
  */
 async function sincronizarRevendas() {
-  const { rows } = await pool.query(
-    `SELECT numeroserierep, datahora, datahorasaidaexpedicao, razaosocial FROM ${REVENDA_VIEW}`,
-  )
+  const { rows } = await pool.query(SQL_REVENDAS)
   if (rows.length === 0) {
     // Nunca apaga tudo por causa de uma leitura vazia: melhor manter a última foto.
     console.log('Revendas: a origem não devolveu nenhuma linha; nada foi alterado.')
