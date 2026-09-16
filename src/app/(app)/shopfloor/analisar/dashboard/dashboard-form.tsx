@@ -100,10 +100,20 @@ export function DashboardForm({ ordens, opInicial }: { ordens: OrdemPesquisa[]; 
                 <div key={posto} className="rounded-lg border border-border p-3">
                   <div className="flex items-baseline justify-between gap-2">
                     <p className="text-sm font-medium text-tinta">{posto}</p>
-                    <p className="text-sm text-muted-foreground">
-                      <span className="text-lg font-semibold text-tinta">{contagem}</span>
-                      {total ? ` / ${total}` : ''}
-                    </p>
+                    {posto === 'Manutenção' ? (
+                      // Manutenção mostra só a porcentagem: peças que passaram por ela ÷ quantidade da OP.
+                      // Uma casa decimal, truncada (não arredonda), pra 0,4% não virar 0% nem 99,6% virar 100%.
+                      <p className="text-lg font-semibold text-tinta" title={`${contagem} peça(s) passaram pela Manutenção`}>
+                        {total && total > 0
+                          ? `${(Math.floor((contagem / total) * 1000) / 10).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+                          : '—'}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        <span className="text-lg font-semibold text-tinta">{contagem}</span>
+                        {total ? ` / ${total}` : ''}
+                      </p>
+                    )}
                   </div>
                   {pct !== null && (
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
