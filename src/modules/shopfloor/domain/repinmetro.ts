@@ -45,3 +45,31 @@ export function chaveRevenda(modelo: string | null | undefined, numeroSerie: str
   const sn = normalizarSerie(numeroSerie ?? '')
   return m && sn ? `${m}|${sn}` : null
 }
+
+/** Peças montadas no REP (teste de produção do repinmetro). `chave` = coluna do espelho `repinmetro_producao`. */
+export interface PecaRep {
+  chave: 'serial_impressora' | 'serial_mrp' | 'serial_modulo_bio' | 'serial_rfid' | 'serial_fonte' | 'serial_barras'
+  rotulo: string
+}
+
+export const PECAS_REP: PecaRep[] = [
+  { chave: 'serial_impressora', rotulo: 'Impressora' },
+  { chave: 'serial_mrp', rotulo: 'MRP' },
+  { chave: 'serial_modulo_bio', rotulo: 'Módulo biométrico' },
+  { chave: 'serial_rfid', rotulo: 'RFID' },
+  { chave: 'serial_fonte', rotulo: 'Fonte' },
+  { chave: 'serial_barras', rotulo: 'Leitor de barras' },
+]
+
+/**
+ * Quais peças têm o serial buscado. Compara normalizado (sem traços nem zeros à esquerda), do mesmo jeito
+ * que o conector grava `seriais_norm`: "123-4567-8901" acha "0123-4567-8901".
+ */
+export function pecasComSerial(
+  seriais: Partial<Record<PecaRep['chave'], string | null>>,
+  busca: string,
+): PecaRep['chave'][] {
+  const alvo = normalizarSerie(busca)
+  if (!alvo) return []
+  return PECAS_REP.filter((p) => normalizarSerie(seriais[p.chave] ?? '') === alvo).map((p) => p.chave)
+}

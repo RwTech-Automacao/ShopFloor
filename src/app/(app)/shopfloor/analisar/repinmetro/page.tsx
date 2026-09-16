@@ -2,7 +2,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarModelosRepinmetro } from '@/modules/shopfloor/application/repinmetro-actions'
-import { RepinmetroForm } from './repinmetro-form'
+import { RepinmetroAbas } from './repinmetro-abas'
 
 // Dado ao vivo (modelos vêm do banco) — não cachear o render no servidor.
 export const dynamic = 'force-dynamic'
@@ -18,10 +18,10 @@ export default async function RepinmetroPage() {
       <div>
         <h2 className="text-lg font-semibold text-tinta">Repinmetro</h2>
         <p className="text-sm text-muted-foreground">
-          Testes de qualidade do repinmetro por Nº de Série do produto final.
+          Testes de qualidade e integração (peças montadas) do REP.
         </p>
       </div>
-      <RepinmetroForm modelos={modelos} />
+      <RepinmetroAbas modelos={modelos} />
     </div>
   )
 }
