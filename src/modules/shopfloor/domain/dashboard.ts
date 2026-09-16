@@ -44,10 +44,10 @@ export interface FiltroDashboard {
   colaborador: string
   /** Nº de série como digitado — a aplicação normaliza antes de mandar pro banco. */
   sn: string
-  /** Filtros que só existem pelo CLIQUE nos gráficos (0105). Status é o do bipe; tipo, defeito e
-   *  posição olham só a reprova. Valor exato como veio do gráfico (ex.: 'Reprovado', '4000 OUTROS'). */
+  /** Filtros que só existem pelo CLIQUE nos gráficos (0105). Status é o do bipe; defeito e posição
+   *  olham só a reprova. Valor exato como veio do gráfico (ex.: 'Reprovado', '4000 OUTROS').
+   *  O gráfico de tipo do defeito saiu da tela; o banco ainda aceita `p_tipo` (padrão vazio). */
   status: string
-  tipo: string
   defeito: string
   posicao: string
 }
@@ -55,11 +55,11 @@ export interface FiltroDashboard {
 /** O padrão da tela: só as OPs ativas, sem data e sem nenhum outro recorte. */
 export const FILTRO_PADRAO: FiltroDashboard = {
   cliente: '', pmo: '', op: '', statusOp: 'aberta', de: '', ate: '', posto: '', colaborador: '', sn: '',
-  status: '', tipo: '', defeito: '', posicao: '',
+  status: '', defeito: '', posicao: '',
 }
 
 /** O que um clique num gráfico pode filtrar. OP vem com o PMO junto: o número da OP sozinho repete. */
-export type CliqueDashboard = Partial<Pick<FiltroDashboard, 'pmo' | 'op' | 'posto' | 'status' | 'tipo' | 'defeito' | 'posicao'>>
+export type CliqueDashboard = Partial<Pick<FiltroDashboard, 'pmo' | 'op' | 'posto' | 'status' | 'defeito' | 'posicao'>>
 
 /**
  * Aplica o clique num gráfico ao filtro — ou DESFAZ, se o item clicado já é o filtro ativo.
@@ -191,7 +191,6 @@ export interface OpPorStatus {
 
 export interface GraficosDashboard {
   status: Ranking
-  tipo: Ranking
   defeitos: Ranking
   posicoes: Ranking
   ops: OpPorStatus[]
@@ -224,8 +223,6 @@ export const COMO_CALCULA = {
     'Peças diferentes da OP em cada posto, separadas pelo status do bipe: aprovadas, reprovadas e sem status (postos de passagem e Manutenção). A mesma peça pode aparecer em mais de um status. OPs com mais peças primeiro.',
   status:
     'Registros: cada bipe com status conta uma vez, então a mesma peça bipada em três postos conta três, e uma peça que reprovou duas vezes conta duas. Bipes sem status ficam de fora. Por isso difere dos cartões, que contam peças.',
-  tipo:
-    'Registros de reprova por tipo do defeito: Peça ou Teste (do catálogo, no bipe) ou onde aconteceu (SMD, PTH…, na reprova manual). Só a reprova conta: os consertos e defeitos constatados na Manutenção repetem o tipo e ficariam contados em dobro. Por bipe: uma peça que reprovou duas vezes conta duas, por isso pode passar do cartão Reprovado. Os 10 maiores; o resto soma em Outros.',
   ops:
     'Registros com status por OP (cada bipe Aprovado ou Reprovado conta uma vez). As 10 OPs com mais registros.',
   defeitos:
