@@ -71,6 +71,18 @@ Com `REPINMETRO_REVENDA=1`, cada rodada também recarrega a **revenda** de todos
 - **Recarga completa:** a origem não tem data de alteração e a revenda pode ser associada depois do teste. Então
   tudo é regravado a cada rodada e o que foi excluído na origem é apagado. Se a view vier vazia, nada é apagado.
 
+## Integração do REP (opcional)
+Com `REPINMETRO_PRODUCAO=1`, cada rodada também espelha os **testes de produção** (`teste` × `testeproducao`)
+na tabela `repinmetro_producao` (migração 0108): o REP, o status e os seriais das peças montadas (impressora,
+MRP, módulo biométrico, RFID, fonte, leitor de barras). A tela Análise → Repinmetro → **Integração** busca pelo
+nº de série do REP ou pelo serial de uma peça.
+
+- **1ª vez:** com a tabela vazia, traz o histórico inteiro (~55 mil testes, poucos segundos).
+- **Depois:** só os ids novos, e relê os testes dos últimos `REPINMETRO_PRODUCAO_RELER_DIAS` dias (default 3),
+  porque um teste gravado como INICIADO é concluído na mesma linha.
+- **Busca por peça:** os seriais são normalizados (sem traços, zeros à esquerda e maiúsculas) em `seriais_norm`,
+  então `123-4567-8901` acha `0123-4567-8901`.
+
 ## Segurança
 - `.env` fica **só nesta máquina** (o `service_role` bypassa RLS; nunca no repo/Vercel).
 - Usuário do repinmetro é **read-only** (`SELECT`), de preferência restrito a `localhost`.

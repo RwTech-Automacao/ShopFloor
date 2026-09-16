@@ -40,6 +40,31 @@ const SQL_REVENDAS = REVENDA_VIEW
   ? `SELECT numeroserierep, datahora, datahorasaidaexpedicao, razaosocial FROM ${REVENDA_VIEW}`
   : 'SELECT c.numeroserierep, c.datahora, c.datahorasaidaexpedicao, r.razaosocial ' +
     'FROM chavecriptografica c LEFT JOIN revenda r ON r.id = c.revenda_id'
+// Testes de produção (integração do REP: seriais das peças montadas). Liga com REPINMETRO_PRODUCAO=1.
+const PRODUCAO = env.REPINMETRO_PRODUCAO === '1' || env.REPINMETRO_PRODUCAO === 'true'
+// Teste de produção pode ser gravado como INICIADO e concluído depois na mesma linha: a cada rodada,
+// além dos ids novos, relê os iniciados nos últimos N dias (default 3) pra pegar o status final.
+const PRODUCAO_RELER_DIAS = Number(env.REPINMETRO_PRODUCAO_RELER_DIAS ?? '3')
+const PRODUCAO_RESULTADOS = [
+  'statustestebuzzer', 'statustestechavepublica', 'statustestecomunicacao', 'statustesteimpressaorim',
+  'statustestepapelenroscado', 'statustesteregistrobarras', 'statustesteregistrocartao',
+  'statustesteregistrodigital', 'statustestesempapel', 'statustestetecladomatricial',
+  'statustesteusbfiscal', 'statustesteusbnaofiscal',
+]
+// Seriais das peças: coluna na origem → coluna no espelho.
+const PRODUCAO_SERIAIS = {
+  serialimpressora: 'serial_impressora',
+  serialmrp: 'serial_mrp',
+  serialmodulobio: 'serial_modulo_bio',
+  serialrfid: 'serial_rfid',
+  serialfonte: 'serial_fonte',
+  serialbarras: 'serial_barras',
+}
+const SQL_PRODUCAO =
+  'SELECT t.id AS origem_id, t.numeroserierep, t.serialmodelorep, t.datahorainicio, t.datahorafim, t.status, t.observacao, ' +
+  [...Object.keys(PRODUCAO_SERIAIS), ...PRODUCAO_RESULTADOS].map((c) => `tp.${c}`).join(', ') +
+  ' FROM teste t INNER JOIN testeproducao tp ON tp.id = t.id'
+
 // Serial completo do REP: prefixo fixo 00043 + modelo (5 dígitos) + nº de série (7 dígitos).
 const PREFIXO_SERIAL = '00043'
 
@@ -73,6 +98,7 @@ const SELECT_COLS = `${COLS_TESTE}, ${RESULTADO_COLS.join(', ')}`
 // Fala direto com a API REST (PostgREST) do Supabase via fetch nativo — sem a lib
 // @supabase/supabase-js (que exige WebSocket/realtime e quebra no Node < 22).
 const REST = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/repinmetro_logs`
+const REST_PRODUCAO = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/repinmetro_producao`
 const REST_REVENDAS = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/repinmetro_revendas`
 const HEADERS = {
   apikey: SUPABASE_SERVICE_ROLE,
@@ -198,8 +224,80 @@ async function sincronizarRevendas() {
   )
 }
 
+function mapearProducao(row, espelhadoEm) {
+  const registro = {
+    origem_id: row.origem_id,
+    numero_serie: String(row.numeroserierep ?? '').trim(),
+    numero_serie_norm: norm(row.numeroserierep),
+    modelo: txt(row.serialmodelorep),
+    data_inicio: row.datahorainicio ?? null,
+    data_fim: row.datahorafim ?? null,
+    status: txt(row.status),
+    observacao: txt(row.observacao),
+    resultados: Object.fromEntries(PRODUCAO_RESULTADOS.map((c) => [c, row[c] ?? null])),
+    espelhado_em: espelhadoEm,
+  }
+  const normalizados = new Set()
+  for (const [origem, destino] of Object.entries(PRODUCAO_SERIAIS)) {
+    const serial = String(row[origem] ?? '').trim()
+    registro[destino] = serial || null
+    const n = norm(serial)
+    if (n) normalizados.add(n)
+  }
+  registro.seriais_norm = [...normalizados]
+  return registro
+}
+
+async function upsertProducao(registros) {
+  for (let i = 0; i < registros.length; i += LOTE) {
+    const res = await fetch(`${REST_PRODUCAO}?on_conflict=origem_id`, {
+      method: 'POST',
+      headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(registros.slice(i, i + LOTE)),
+    })
+    if (!res.ok) throw new Error(`Supabase upsert produção ${res.status}: ${await res.text()}`)
+  }
+}
+
+/**
+ * Testes de produção. Na 1ª vez (espelho vazio) traz o histórico inteiro; depois, só os ids novos.
+ * Em toda rodada relê os testes dos últimos dias, porque um teste INICIADO é concluído na mesma linha.
+ */
+async function sincronizarProducao() {
+  const res = await fetch(`${REST_PRODUCAO}?select=origem_id&order=origem_id.desc&limit=1`, { headers: HEADERS })
+  if (!res.ok) throw new Error(`Supabase GET produção ${res.status}: ${await res.text()}`)
+  const ultimo = await res.json()
+  let since = Array.isArray(ultimo) && ultimo.length > 0 ? Number(ultimo[0].origem_id) : 0
+
+  let novos = 0
+  for (;;) {
+    const { rows } = await pool.query(`${SQL_PRODUCAO} WHERE t.id > $1 ORDER BY t.id ASC LIMIT $2`, [since, LOTE])
+    if (rows.length === 0) break
+    const espelhadoEm = new Date().toISOString()
+    await upsertProducao(rows.map((r) => mapearProducao(r, espelhadoEm)))
+    novos += rows.length
+    since = rows[rows.length - 1].origem_id
+    if (rows.length < LOTE) break
+  }
+
+  let relidos = 0
+  if (PRODUCAO_RELER_DIAS > 0) {
+    const { rows } = await pool.query(
+      `${SQL_PRODUCAO} WHERE t.datahorainicio >= now() - make_interval(days => $1::int) AND t.id <= $2::bigint ORDER BY t.id ASC`,
+      [PRODUCAO_RELER_DIAS, since],
+    )
+    if (rows.length > 0) {
+      const espelhadoEm = new Date().toISOString()
+      await upsertProducao(rows.map((r) => mapearProducao(r, espelhadoEm)))
+      relidos = rows.length
+    }
+  }
+  console.log(`Produção: ${novos} teste(s) novo(s), ${relidos} relido(s) dos últimos ${PRODUCAO_RELER_DIAS} dia(s).`)
+}
+
 async function main() {
   await sincronizarTestes()
+  if (PRODUCAO) await sincronizarProducao()
   if (REVENDA) await sincronizarRevendas()
   await pool.end()
 }

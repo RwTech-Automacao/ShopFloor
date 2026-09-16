@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ITENS_REPINMETRO, chaveRevenda, classeResultado } from '../repinmetro'
+import { ITENS_REPINMETRO, PECAS_REP, chaveRevenda, classeResultado, pecasComSerial } from '../repinmetro'
 
 describe('repinmetro', () => {
   it('tem os 15 itens de teste, com chaves únicas', () => {
@@ -33,5 +33,21 @@ describe('chaveRevenda', () => {
 
   it('o mesmo SN em modelos diferentes gera chaves diferentes', () => {
     expect(chaveRevenda('00401', '0016176')).not.toBe(chaveRevenda('00562', '0016176'))
+  })
+})
+
+describe('integração do REP', () => {
+  it('lista as 6 peças na ordem da tela, com chaves únicas', () => {
+    expect(PECAS_REP.map((p) => p.rotulo)).toEqual(['Impressora', 'MRP', 'Módulo biométrico', 'RFID', 'Fonte', 'Leitor de barras'])
+    expect(new Set(PECAS_REP.map((p) => p.chave)).size).toBe(6)
+  })
+
+  it('acha qual peça tem o serial buscado, ignorando traços e zeros à esquerda', () => {
+    const seriais = { serial_impressora: '0123-4567-8901', serial_rfid: '9999-0000-1111', serial_fonte: null }
+    expect(pecasComSerial(seriais, '123-4567-8901')).toEqual(['serial_impressora'])
+    expect(pecasComSerial(seriais, '012345678901')).toEqual(['serial_impressora'])
+    expect(pecasComSerial(seriais, '999900001111')).toEqual(['serial_rfid'])
+    expect(pecasComSerial(seriais, '5555')).toEqual([])
+    expect(pecasComSerial(seriais, '')).toEqual([])
   })
 })
