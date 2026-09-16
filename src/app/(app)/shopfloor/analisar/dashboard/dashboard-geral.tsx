@@ -155,7 +155,7 @@ export function DashboardGeral({ ordens, postos, colaboradores }: {
   )
 }
 
-const ROTULO_CLIQUE = { status: 'Status', tipo: 'Tipo do defeito', defeito: 'Defeito', posicao: 'Posição' } as const
+const ROTULO_CLIQUE = { status: 'Status', defeito: 'Defeito', posicao: 'Posição' } as const
 type CampoClique = keyof typeof ROTULO_CLIQUE
 
 /** Etiquetas dos filtros aplicados pelo clique, cada uma com ✕ pra tirar. Some quando não há nenhum. */
@@ -164,7 +164,7 @@ function FiltrosDoClique({ filtro, onTirar }: { filtro: FiltroDashboard; onTirar
   if (ativos.length === 0) {
     return (
       <p className="-mt-1 text-xs text-muted-foreground">
-        Dica: clique numa OP, num posto, em Aprovado/Reprovado, num tipo, defeito ou posição pra filtrar a tela inteira.
+        Dica: clique numa OP, num posto, em Aprovado/Reprovado, num defeito ou numa posição pra filtrar a tela inteira.
       </p>
     )
   }

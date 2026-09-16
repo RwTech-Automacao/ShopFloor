@@ -19,13 +19,18 @@ function fmtData(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('pt-BR')
 }
 
+function fmtDia(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('pt-BR')
+}
+
 const CLASSE_COR: Record<string, string> = {
   aprovado: 'text-green-700',
   reprovado: 'text-red-600 font-medium',
   na: 'text-muted-foreground',
 }
 
-/** Um teste do repinmetro: cabeçalho + os 15 itens coloridos. */
+/** Um teste do repinmetro: cabeçalho + os 15 itens coloridos + revenda, lacre e observação. */
 function LogCard({ log }: { log: LogRepinmetro }) {
   return (
     <div className="rounded-lg border border-border">
@@ -47,8 +52,14 @@ function LogCard({ log }: { log: LogRepinmetro }) {
           )
         })}
       </dl>
-      {(log.observacao || log.lacre) && (
+      {(log.observacao || log.lacre || log.revenda) && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          {log.revenda && (
+            <span>
+              Revenda: <span className="font-medium text-foreground">{log.revenda.nome || 'sem revenda associada'}</span>
+              {log.revenda.saidaEm && <> · Saída: {fmtDia(log.revenda.saidaEm)}</>}
+            </span>
+          )}
           {log.lacre && <span>Lacre: {log.lacre}</span>}
           {log.observacao && <span>Obs.: {log.observacao}</span>}
         </div>
