@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { construirFluxo, type FluxoNodePos, type FluxoEdge, type PassagemPosto } from '@/modules/shopfloor/domain/fluxo-op'
-import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, listarPassagensDoPosto, carregarProducaoPeriodo, rotaDoSn, carregarFluxoPeriodo, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa, type PassagemDoPosto, type ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
+import { carregarFluxoOp, carregarDetalhePosto, carregarSnsEmManutencao, carregarBurninDetalhe, carregarEmbalagemCaixas, listarPassagensDoPosto, carregarProducaoPeriodo, rotaDoSn, carregarFluxoPeriodo, listarOpsComBipes, type SnDoPosto, type BurninDetalhe, type EmbalagemCaixa, type PassagemDoPosto, type ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
@@ -170,5 +170,19 @@ export async function snsManutencao(
     return { ok: true, sns: await carregarSnsEmManutencao(pmo.trim(), op.trim()) }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar as peças em manutenção.' }
+  }
+}
+
+/**
+ * Chaves `pmo||op` das OPs que tiveram bipe em [ini, fim) — filtro da lista de OPs do Fluxo.
+ * `null` = erro (a tela avisa e não esconde as OPs).
+ */
+export async function opsComBipes(ini: string | null, fim: string | null): Promise<string[] | null> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return null
+  try {
+    return (await listarOpsComBipes(ini, fim)).map((o) => `${o.pmo}||${o.op}`)
+  } catch {
+    return null
   }
 }

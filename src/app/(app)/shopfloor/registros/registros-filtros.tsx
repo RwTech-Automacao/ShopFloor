@@ -26,9 +26,11 @@ const TODOS = '__todos__'
 interface RegistrosFiltrosProps {
   clientes: string[]
   postos: string[]
+  /** Catálogo de defeitos (código completo, ex.: "2040 FALTANDO COMPONENTE") pro autocompletar do filtro. */
+  defeitos: string[]
 }
 
-export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
+export function RegistrosFiltros({ clientes, postos, defeitos }: RegistrosFiltrosProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -72,6 +74,7 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
     setBusca('')
     setPosto('')
     setSn('')
+    setDefeito('')
     setStatus('')
     setDe('')
     setAte('')
@@ -156,9 +159,18 @@ export function RegistrosFiltros({ clientes, postos }: RegistrosFiltrosProps) {
           id="filtro-defeito"
           value={defeito}
           onChange={(e) => setDefeito(e.target.value)}
-          className="w-44"
+          className="w-56"
           placeholder="Código ou descrição"
+          // Lista nativa: vai sugerindo os defeitos do catálogo que contêm o que foi digitado.
+          // Enter continua filtrando (o campo segue dentro do formulário).
+          list="filtro-defeito-opcoes"
+          autoComplete="off"
         />
+        <datalist id="filtro-defeito-opcoes">
+          {defeitos.map((codigo) => (
+            <option key={codigo} value={codigo} />
+          ))}
+        </datalist>
       </div>
 
       <div className="flex flex-col gap-1">
