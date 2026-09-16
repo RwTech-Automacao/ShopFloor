@@ -154,16 +154,24 @@ function Grade({ codigos, destaque = false, onEscolher }: {
             type="button"
             onClick={() => onEscolher(codigo)}
             title={codigo}
-            className={`flex aspect-square flex-col justify-between rounded-xl border p-3 text-left transition-colors ${
+            // Código em cima e grande (é por ele que o operador reconhece o defeito), descrição
+            // abaixo, tudo centralizado. O card continua do mesmo tamanho (aspect-square).
+            className={`flex aspect-square flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl border p-2.5 text-center transition-colors ${
               destaque
                 ? 'border-enterplak/40 bg-enterplak/5 hover:bg-enterplak/10'
                 : 'border-border bg-card hover:bg-accent'
             }`}
           >
-            <span className="line-clamp-4 text-sm font-medium leading-snug text-foreground">
+            {numero && (
+              <span className="text-3xl font-bold leading-none tabular-nums text-foreground">{numero}</span>
+            )}
+            <span
+              className={`font-medium leading-tight ${
+                numero ? 'line-clamp-3 text-base text-foreground/80' : 'line-clamp-4 text-lg text-foreground'
+              }`}
+            >
               {capitalizarDescricaoDefeito(descricao) || codigo}
             </span>
-            {numero && <span className="text-xs text-muted-foreground">Cod.: {numero}</span>}
           </button>
         )
       })}
