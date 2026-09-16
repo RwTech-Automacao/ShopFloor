@@ -453,3 +453,11 @@ export async function carregarFluxoPeriodo(pmo: string, op: string, ini: string,
   if (error) throw error
   return (data ?? []) as PeriodoPosto[]
 }
+
+/** OPs (pmo, op) que tiveram algum bipe em [ini, fim). Filtro da lista de OPs do Fluxo (migração 0109). */
+export async function listarOpsComBipes(ini: string | null, fim: string | null): Promise<{ pmo: string; op: string }[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_ops_com_bipes', { p_ini: ini, p_fim: fim })
+  if (error) throw error
+  return ((data ?? []) as { pmo: string; op: string }[]).map((r) => ({ pmo: r.pmo, op: r.op }))
+}

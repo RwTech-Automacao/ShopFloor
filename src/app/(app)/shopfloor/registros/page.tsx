@@ -3,6 +3,7 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { consultarRegistros, listarClientesRegistros } from '@/modules/shopfloor/infra/registros-repository'
 import { listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
+import { listarDefeitos } from '@/modules/shopfloor/infra/defeitos-repository'
 import { parsearFiltrosRegistros, TAMANHOS_PAGINA } from '@/modules/shopfloor/domain/registros-filtros'
 import { RegistrosFiltros } from './registros-filtros'
 import { RegistrosTabela } from './registros-tabela'
@@ -46,10 +47,12 @@ export default async function RegistrosPage({ searchParams }: RegistrosPageProps
 
   const filtros = parsearFiltrosRegistros(sp)
 
-  const [{ linhas, total }, clientes, postos] = await Promise.all([
+  const [{ linhas, total }, clientes, postos, defeitos] = await Promise.all([
     consultarRegistros(filtros, pagina, tamanho),
     listarClientesRegistros(),
     listarPostos(),
+    // Só alimenta o autocompletar: se falhar, o filtro continua funcionando como texto livre.
+    listarDefeitos().catch(() => []),
   ])
 
   const totalPaginas = Math.max(1, Math.ceil(total / tamanho))
@@ -61,7 +64,7 @@ export default async function RegistrosPage({ searchParams }: RegistrosPageProps
         <p className="text-sm text-muted-foreground">{total} registro{total === 1 ? '' : 's'}</p>
       </div>
 
-      <RegistrosFiltros clientes={clientes} postos={postos.map((p) => p.chave)} />
+      <RegistrosFiltros clientes={clientes} postos={postos.map((p) => p.chave)} defeitos={defeitos.map((d) => d.codigo)} />
 
       <RegistrosTabela linhas={linhas} podeAdministrar={podeAdministrar} />
 
