@@ -32,4 +32,9 @@ create policy repinmetro_revendas_select on public.repinmetro_revendas
 create policy repinmetro_revendas_admin on public.repinmetro_revendas
   for all using ((select tem_permissao('administrar'))) with check ((select tem_permissao('administrar')));
 
+-- Permissões explícitas: no RDS da AWS o schema public foi recriado no corte e os privilégios padrão
+-- do Supabase podem não valer pra tabela nova. Sem isso o conector (service_role) não grava.
+grant select on public.repinmetro_revendas to authenticated;
+grant select, insert, update, delete on public.repinmetro_revendas to service_role;
+
 notify pgrst, 'reload schema';
