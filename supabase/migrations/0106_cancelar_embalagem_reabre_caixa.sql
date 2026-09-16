@@ -34,7 +34,7 @@ returns void
 language plpgsql
 security definer
 set search_path = public
-as $$
+as $func$
 declare
   v_pmo text; v_op text; v_snnorm text; v_posto text; v_numero_caixa text;
   v_recurso text; v_ultimo uuid;
@@ -127,4 +127,4 @@ begin
     -- acharia caixa e nada seria reaberto — o histórico fica como está.
   end if;
 end
-$$;
+$func$;
