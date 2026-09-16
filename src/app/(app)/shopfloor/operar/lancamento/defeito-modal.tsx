@@ -163,11 +163,14 @@ function Grade({ codigos, destaque = false, onEscolher }: {
             }`}
           >
             {numero && (
-              <span className="text-3xl font-bold leading-none tabular-nums text-foreground">{numero}</span>
+              <span className="flex items-baseline gap-1 leading-none">
+                <span className="text-sm font-medium text-muted-foreground">Cod.:</span>
+                <span className="text-3xl font-bold tabular-nums text-foreground">{numero}</span>
+              </span>
             )}
             <span
               className={`font-medium leading-tight ${
-                numero ? 'line-clamp-3 text-base text-foreground/80' : 'line-clamp-4 text-lg text-foreground'
+                numero ? 'line-clamp-3 text-lg text-foreground/80' : 'line-clamp-4 text-xl text-foreground'
               }`}
             >
               {capitalizarDescricaoDefeito(descricao) || codigo}
