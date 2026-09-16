@@ -10,7 +10,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
+import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, opsComBipes, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
@@ -453,9 +453,11 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const opFiltroRef = useRef<HTMLInputElement>(null) // foco no input do combobox ao abrir
   // Abre nos ÚLTIMOS 7 DIAS: a lista cresce sem parar e o que se procura é quase sempre OP recente.
   // 'Tudo' continua a um clique pra quem precisa de OP antiga.
-  const [filtroData, setFiltroData] = useState<'tudo' | 'hoje' | '7' | '30' | 'custom'>('7') // filtro por data de criação da OP
-  const [criadoDe, setCriadoDe] = useState('') // range custom (criação) — início (YYYY-MM-DD)
-  const [criadoAte, setCriadoAte] = useState('') // range custom (criação) — fim (YYYY-MM-DD)
+  const [filtroData, setFiltroData] = useState<'tudo' | 'hoje' | '7' | '30' | 'custom'>('7') // OPs com bipe no período
+  const [criadoDe, setCriadoDe] = useState('') // range custom — início (YYYY-MM-DD)
+  const [criadoAte, setCriadoAte] = useState('') // range custom — fim (YYYY-MM-DD)
+  // OPs com bipe no período, com a chave do período a que pertencem (`ops` null = a busca falhou).
+  const [bipesPeriodo, setBipesPeriodo] = useState<{ chave: string; ops: Set<string> | null } | null>(null)
   const [buscaSn, setBuscaSn] = useState('') // busca de SN pra realçar a rota no canvas
   // rota do SN buscado: `ordem` = postos na ordem cronológica (+ atual no fim) pra revelar UM A UM.
   const [rota, setRota] = useState<{ ordem: string[]; atual: string | null } | null>(null)
@@ -907,31 +909,45 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     return () => document.removeEventListener('fullscreenchange', onFs)
   }, [])
 
-  // Dropdown de OP: filtro por PMO/OP/cliente (texto) + por data de CRIAÇÃO da OP (a lista pode ser longa).
+  // Filtro de período da lista de OPs: busca no banco quais OPs tiveram BIPE no período (0109).
+  // Antes era a data de criação da OP. A chave muda só quando o período muda (não a cada minuto).
+  const chavePeriodoOps =
+    filtroData === 'tudo' || (filtroData === 'custom' && !criadoDe && !criadoAte)
+      ? ''
+      : `${filtroData}|${criadoDe}|${criadoAte}`
+  useEffect(() => {
+    if (!chavePeriodoOps) return
+    let ini: string | null = null
+    let fim: string | null = null
+    const agora = Date.now()
+    if (filtroData === 'hoje') { const d = new Date(agora); d.setHours(0, 0, 0, 0); ini = d.toISOString() }
+    else if (filtroData === '7') ini = new Date(agora - 7 * 86400000).toISOString()
+    else if (filtroData === '30') ini = new Date(agora - 30 * 86400000).toISOString()
+    else {
+      if (criadoDe) { const t = Date.parse(`${criadoDe}T00:00:00`); if (!Number.isNaN(t)) ini = new Date(t).toISOString() }
+      // Até o fim do dia escolhido: limite superior exclusivo = 00:00 do dia seguinte.
+      if (criadoAte) { const t = Date.parse(`${criadoAte}T00:00:00`); if (!Number.isNaN(t)) fim = new Date(t + 86400000).toISOString() }
+    }
+    let cancelado = false
+    opsComBipes(ini, fim).then((chaves) => {
+      if (cancelado) return
+      if (chaves === null) toast.error('Não foi possível filtrar as OPs por período. Mostrando todas.')
+      setBipesPeriodo({ chave: chavePeriodoOps, ops: chaves === null ? null : new Set(chaves) })
+    })
+    return () => { cancelado = true }
+  }, [chavePeriodoOps, filtroData, criadoDe, criadoAte])
+  const carregandoOps = chavePeriodoOps !== '' && bipesPeriodo?.chave !== chavePeriodoOps
+  const opsComBipe = chavePeriodoOps !== '' && !carregandoOps ? (bipesPeriodo?.ops ?? null) : null
+
+  // Dropdown de OP: filtro por PMO/OP/cliente (texto) + OPs com bipe no período (a lista pode ser longa).
   const opsFiltradas = useMemo(() => {
     const f = filtroOp.trim().toLowerCase()
-    let cutoff = 0 // limite inferior (>= cutoff)
-    let ate = 0    // limite superior (< ate) — só no range custom
-    // `agoraMs` é state (relógio ao vivo) → cálculo puro no render (sem Date.now/new Date() argless).
-    if (filtroData === 'hoje') { const d = new Date(agoraMs); d.setHours(0, 0, 0, 0); cutoff = d.getTime() }
-    else if (filtroData === '7') cutoff = agoraMs - 7 * 86400000
-    else if (filtroData === '30') cutoff = agoraMs - 30 * 86400000
-    else if (filtroData === 'custom') {
-      if (criadoDe) { const t = Date.parse(`${criadoDe}T00:00:00`); if (!Number.isNaN(t)) cutoff = t }
-      if (criadoAte) { const t = Date.parse(`${criadoAte}T23:59:59`); if (!Number.isNaN(t)) ate = t }
-    }
     return ops.filter((o) => {
       if (f && !`${o.pmo}/${o.op} ${o.cliente ?? ''}`.toLowerCase().includes(f)) return false
-      if (cutoff > 0 || ate > 0) {
-        const t = Date.parse(o.criadoEm)
-        if (!Number.isNaN(t)) {
-          if (cutoff > 0 && t < cutoff) return false
-          if (ate > 0 && t > ate) return false
-        }
-      }
+      if (opsComBipe && !opsComBipe.has(`${o.pmo}||${o.op}`)) return false
       return true
     })
-  }, [ops, filtroOp, filtroData, criadoDe, criadoAte, agoraMs])
+  }, [ops, filtroOp, opsComBipe])
 
   const rotuloOpSel = useMemo(() => {
     const o = ops.find((x) => `${x.pmo}||${x.op}` === sel)
@@ -969,9 +985,9 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                     placeholder="Filtrar por PMO / OP / cliente…"
                     className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
                   />
-                  {/* Filtro por data de CRIAÇÃO da OP (presets + período custom). */}
+                  {/* OPs que tiveram bipe no período (presets + período custom). */}
                   <div className="flex flex-wrap items-center gap-1 text-xs">
-                    <span className="mr-0.5 text-muted-foreground">Criada:</span>
+                    <span className="mr-0.5 text-muted-foreground">Com bipe:</span>
                     {([['tudo', 'Tudo'], ['hoje', 'Hoje'], ['7', '7 dias'], ['30', '30 dias'], ['custom', 'Período']] as const).map(([val, rot]) => (
                       <button
                         key={val}
@@ -985,15 +1001,19 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                   </div>
                   {filtroData === 'custom' && (
                     <div className="flex items-center gap-1.5 text-xs">
-                      <input type="date" value={criadoDe} onChange={(e) => setCriadoDe(e.target.value)} aria-label="Criada de" className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
+                      <input type="date" value={criadoDe} onChange={(e) => setCriadoDe(e.target.value)} aria-label="Com bipe de" className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
                       <span className="text-muted-foreground">até</span>
-                      <input type="date" value={criadoAte} onChange={(e) => setCriadoAte(e.target.value)} aria-label="Criada até" className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
+                      <input type="date" value={criadoAte} onChange={(e) => setCriadoAte(e.target.value)} aria-label="Com bipe até" className="h-8 flex-1 rounded-md border border-input bg-transparent px-2 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40" />
                     </div>
                   )}
                 </div>
                 <div className="max-h-64 overflow-y-auto p-1">
-                  {opsFiltradas.length === 0 ? (
-                    <p className="px-2 py-2 text-sm text-muted-foreground">Nenhuma OP encontrada.</p>
+                  {carregandoOps ? (
+                    <p className="px-2 py-2 text-sm text-muted-foreground">Buscando OPs com bipe no período…</p>
+                  ) : opsFiltradas.length === 0 ? (
+                    <p className="px-2 py-2 text-sm text-muted-foreground">
+                      {opsComBipe ? 'Nenhuma OP teve bipe nesse período.' : 'Nenhuma OP encontrada.'}
+                    </p>
                   ) : (
                     opsFiltradas.map((o) => {
                       const val = `${o.pmo}||${o.op}`
