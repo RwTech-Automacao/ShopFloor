@@ -157,7 +157,6 @@ APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa g
 
 ## 7. Fora do escopo desta versão
 - Relatório "qual rolo estava na máquina quando a placa X foi feita" (os dados já ficam gravados).
-- Renomear campos do PTH (aguardando a produção).
 - Migração da planilha.
 - Descrição/quantidade do componente.
 
