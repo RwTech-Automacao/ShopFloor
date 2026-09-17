@@ -13,9 +13,7 @@ import { FACES } from '@/modules/setup/domain/face'
 import { rotulosPosicao, type Processo } from '@/modules/setup/domain/tipos'
 import type { Alteracao, Equipamento, FiltroSetups, ItemSetup, SetupResumo } from '@/modules/setup/infra/setup-repository'
 import { rotuloEquipamento } from '../../selecao-setup'
-
-// Sentinela: o Select não aceita item com value="" (usado internamente para "nenhuma seleção").
-const TODOS = '__todos__'
+import { fmtData, SelectMaquina, TODOS, useLinhasOrdenadas } from '../filtros-comuns'
 
 const ROTULO_TIPO: Record<string, string> = {
   troca_feeder: 'Troca de feeder',
@@ -26,12 +24,6 @@ const ROTULO_TIPO: Record<string, string> = {
 }
 
 const ROTULO_ESTADO: Record<SetupResumo['estado'], string> = { montagem: 'Em montagem', liberado: 'Liberado' }
-
-function fmtData(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
 
 function BadgeEstado({ estado }: { estado: SetupResumo['estado'] }) {
   return estado === 'liberado' ? (
@@ -60,6 +52,7 @@ function ladoAlteracao(o: Record<string, unknown> | null): string {
   if (!o) return '—'
   const pos = o.posicao != null ? String(o.posicao) : ''
   const fee = o.feeder != null ? String(o.feeder) : ''
+  if (!pos && !fee) return '—'
   return `${pos}/${fee}`
 }
 
@@ -81,6 +74,8 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
   const [dialogSetup, setDialogSetup] = useState<SetupResumo | null>(null)
   const [itensDialog, setItensDialog] = useState<ItemSetup[]>([])
   const [alteracoes, setAlteracoes] = useState<Alteracao[]>([])
+  const [erroItens, setErroItens] = useState<string | null>(null)
+  const [erroAlteracoes, setErroAlteracoes] = useState<string | null>(null)
   const [carregandoDialog, setCarregandoDialog] = useState(false)
   const [buscaLocal, setBuscaLocal] = useState('')
   const dialogSeqRef = useRef(0)
@@ -89,10 +84,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
     () => (processo ? equipamentos.filter((e) => e.processo === processo) : equipamentos),
     [equipamentos, processo],
   )
-  const linhas = useMemo(
-    () => [...new Set(equipamentosDoProcesso.map((e) => e.linha))].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })),
-    [equipamentosDoProcesso],
-  )
+  const linhas = useLinhasOrdenadas(equipamentosDoProcesso)
   const maquinas = useMemo(
     () => (linha ? equipamentosDoProcesso.filter((e) => e.linha === linha) : equipamentosDoProcesso),
     [equipamentosDoProcesso, linha],
@@ -149,18 +141,25 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
     setBuscaLocal('')
     setItensDialog([])
     setAlteracoes([])
+    setErroItens(null)
+    setErroAlteracoes(null)
     const seq = ++dialogSeqRef.current
     setCarregandoDialog(true)
     void (async () => {
       try {
         const [ri, ra] = await Promise.all([carregarSetupAction(s.id), consultarAlteracoes(s.id)])
         if (seq !== dialogSeqRef.current) return
-        if (!ri.ok) toast.error(ri.erro)
+        if (!ri.ok) { toast.error(ri.erro); setErroItens(ri.erro) }
         else setItensDialog(ri.itens)
-        if (!ra.ok) toast.error(ra.erro)
+        if (!ra.ok) { toast.error(ra.erro); setErroAlteracoes(ra.erro) }
         else setAlteracoes(ra.alteracoes)
       } catch {
-        if (seq === dialogSeqRef.current) toast.error('Não foi possível carregar o setup. Verifique a conexão.')
+        if (seq === dialogSeqRef.current) {
+          const msg = 'Não foi possível carregar o setup. Verifique a conexão.'
+          toast.error(msg)
+          setErroItens(msg)
+          setErroAlteracoes(msg)
+        }
       } finally {
         if (seq === dialogSeqRef.current) setCarregandoDialog(false)
       }
@@ -223,24 +222,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="f-equipamento">{rotuloCampoMaquina}</Label>
-          <Select value={equipamento || TODOS} onValueChange={(v) => setEquipamento(v === TODOS ? '' : String(v))}>
-            <SelectTrigger id="f-equipamento" className="w-40">
-              <SelectValue placeholder="Todos">
-                {(v: string | null) => {
-                  if (!v || v === TODOS) return 'Todos'
-                  const e = maquinas.find((m) => m.equipamento === v)
-                  return e ? rotuloEquipamento(e.processo, e.equipamento) : v
-                }}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TODOS}>Todos</SelectItem>
-              {maquinas.map((m) => <SelectItem key={m.id} value={m.equipamento}>{rotuloEquipamento(m.processo, m.equipamento)}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        <SelectMaquina id="f-equipamento" label={rotuloCampoMaquina} equipamentos={maquinas} valor={equipamento} onChange={setEquipamento} />
         <div className="flex flex-col gap-1">
           <Label htmlFor="f-face">Face</Label>
           <Select value={face || TODOS} onValueChange={(v) => setFace(v === TODOS ? '' : String(v))}>
@@ -355,10 +337,13 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
                     {carregandoDialog && (
                       <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Carregando…</TableCell></TableRow>
                     )}
-                    {!carregandoDialog && itensFiltrados.length === 0 && (
+                    {!carregandoDialog && erroItens && (
+                      <TableRow><TableCell colSpan={4} className="py-6 text-center text-red-600">{erroItens}</TableCell></TableRow>
+                    )}
+                    {!carregandoDialog && !erroItens && itensFiltrados.length === 0 && (
                       <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Nenhum item encontrado.</TableCell></TableRow>
                     )}
-                    {!carregandoDialog && itensFiltrados.map((i) => (
+                    {!carregandoDialog && !erroItens && itensFiltrados.map((i) => (
                       <TableRow key={i.id}>
                         <TableCell className="font-medium">{destacar(i.posicao, termo)}</TableCell>
                         <TableCell>{destacar(i.feeder, termo)}</TableCell>
@@ -372,7 +357,9 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
 
               <div className="flex flex-col gap-2">
                 <h3 className="text-sm font-semibold">Histórico de alterações</h3>
-                {!carregandoDialog && alteracoes.length === 0 ? (
+                {!carregandoDialog && erroAlteracoes ? (
+                  <p className="text-sm text-red-600">{erroAlteracoes}</p>
+                ) : !carregandoDialog && alteracoes.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nenhuma alteração.</p>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-border">

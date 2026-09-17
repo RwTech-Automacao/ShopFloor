@@ -25,15 +25,7 @@ import {
 } from '@/components/ui/dialog'
 import { cadastrarEquipamentoAction, alternarEquipamentoAction } from '@/modules/setup/application/cadastros-actions'
 import type { Equipamento } from '@/modules/setup/infra/setup-repository'
-import type { Processo } from '@/modules/setup/domain/tipos'
-import { rotulosPosicao } from '@/modules/setup/domain/tipos'
-
-/** Rótulo exibido para a máquina/bloco: no PTH o valor cadastrado é só a identificação do bloco
- * (ex.: "1"), então prefixamos o rótulo pra ficar claro. No SMD o nome da máquina já é autoexplicativo. */
-function rotuloEquipamento(e: Pick<Equipamento, 'processo' | 'equipamento'>): string {
-  const rotulo = rotulosPosicao(e.processo).equipamento
-  return e.processo === 'PTH' ? `${rotulo} ${e.equipamento}` : e.equipamento
-}
+import { rotuloEquipamento, rotulosPosicao, type Processo } from '@/modules/setup/domain/tipos'
 
 function AtivoSwitch({ id, ativo }: { id: string; ativo: boolean }) {
   const [pending, startTransition] = useTransition()
@@ -185,7 +177,7 @@ export function EquipamentosLista({ equipamentos }: { equipamentos: Equipamento[
               <TableRow key={e.id}>
                 <TableCell className="font-medium">{e.processo}</TableCell>
                 <TableCell>{e.linha}</TableCell>
-                <TableCell>{rotuloEquipamento(e)}</TableCell>
+                <TableCell>{rotuloEquipamento(e.processo, e.equipamento)}</TableCell>
                 <TableCell>{e.posicoes ?? '—'}</TableCell>
                 <TableCell className="text-right">
                   <AtivoSwitch id={e.id} ativo={e.ativo} />
@@ -207,7 +199,7 @@ export function EquipamentosLista({ equipamentos }: { equipamentos: Equipamento[
           <div key={e.id} className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="flex flex-col gap-1">
-                <span className="font-semibold">{rotuloEquipamento(e)}</span>
+                <span className="font-semibold">{rotuloEquipamento(e.processo, e.equipamento)}</span>
                 <span className="text-xs text-muted-foreground">
                   {e.processo} · Linha {e.linha}
                   {e.posicoes !== null ? ` · ${e.posicoes} posições` : ''}

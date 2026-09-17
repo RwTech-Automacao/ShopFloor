@@ -6,8 +6,11 @@ import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { FACES, type Face } from '@/modules/setup/domain/face'
-import { rotulosPosicao, type Processo } from '@/modules/setup/domain/tipos'
+import { rotuloEquipamento, rotulosPosicao, type Processo } from '@/modules/setup/domain/tipos'
 import type { Equipamento, OrdemSetup } from '@/modules/setup/infra/setup-repository'
+
+// Reexportado por conveniência: os telas de consulta/operação importam daqui há mais tempo.
+export { rotuloEquipamento }
 
 export interface ValorSelecao {
   pmo: string
@@ -23,11 +26,6 @@ export const SELECAO_VAZIA: ValorSelecao = { pmo: '', op: '', processo: '', linh
 /** Os 6 campos preenchidos: dá pra localizar/abrir o setup. */
 export function selecaoCompleta(v: ValorSelecao): v is ValorSelecao & { processo: Processo; face: Face } {
   return v.pmo !== '' && v.op !== '' && v.processo !== '' && v.linha !== '' && v.equipamento !== '' && v.face !== ''
-}
-
-/** No PTH o valor cadastrado é só a identificação do bloco ("A"), então prefixa o rótulo ("Bloco A"). */
-export function rotuloEquipamento(processo: Processo, equipamento: string): string {
-  return processo === 'PTH' ? `${rotulosPosicao(processo).equipamento} ${equipamento}` : equipamento
 }
 
 // Campos grandes: a tela é usada em tablet no chão de fábrica.
