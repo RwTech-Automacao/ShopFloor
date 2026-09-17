@@ -126,13 +126,18 @@ export async function listarSetups(f: FiltroSetups): Promise<SetupResumo[]> {
   // st_setups não guarda cliente (fica em sf_ordens, por pmo+op): busca antes os pares que batem
   // e filtra por eles depois. Sem par nenhum, nem vale a pena consultar st_setups.
   let paresCliente: Set<string> | null = null
+  let pmosCliente: string[] = []
   if (f.cliente?.trim()) {
     const { data, error } = await supabase.from('sf_ordens').select('pmo,op').ilike('cliente', `%${f.cliente.trim()}%`)
     if (error) throw error
-    paresCliente = new Set(((data ?? []) as Row[]).map((r) => `${r.pmo as string}|${r.op as string}`))
+    const ordens = (data ?? []) as Row[]
+    paresCliente = new Set(ordens.map((r) => `${r.pmo as string}|${r.op as string}`))
     if (paresCliente.size === 0) return []
+    pmosCliente = [...new Set(ordens.map((r) => r.pmo as string))]
   }
   let q = supabase.from('st_setups').select(SETUP_COLS).order('criado_em', { ascending: false }).limit(500)
+  // Restringe pelas PMOs do cliente ANTES do limit, senão setups do cliente fora dos 500 mais recentes sumiriam.
+  if (pmosCliente.length > 0) q = q.in('pmo', pmosCliente)
   if (f.pmo) q = q.ilike('pmo', `%${f.pmo.trim()}%`)
   if (f.op) q = q.ilike('op', `%${f.op.trim()}%`)
   if (f.processo) q = q.eq('processo', f.processo)
