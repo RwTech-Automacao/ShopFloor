@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gerarCodigoCaixa, marcadorCaixaAberta, codigoMontagemAposentada, seqDoMarcadorCaixa, seqsReabertas } from '../caixa'
+import { gerarCodigoCaixa, marcadorCaixaAberta, codigoMontagemAposentada, seqDoMarcadorCaixa, seqsReabertas, caixaDaVez, seqsEmRemontagem } from '../caixa'
 
 describe('caixa', () => {
   it('gerarCodigoCaixa monta CX[seq][qtd]OP-PMO com colchetes literais', () => {
@@ -60,5 +60,52 @@ describe('seqsReabertas', () => {
   })
   it('OP concluída (a da vez é a última, fechada): a reaberta lá atrás continua aparecendo', () => {
     expect(seqsReabertas([cx(1, false), cx(2, true)], 2)).toEqual([1])
+  })
+})
+
+describe('caixaDaVez', () => {
+  const cx = (seq: number, fechada: boolean, revisao = 0, ultima = false) => ({ seq, fechada, revisao, ultima })
+
+  it('sem caixa nenhuma: a CX1, ainda por abrir', () => {
+    expect(caixaDaVez([])).toEqual({ seq: 1, aberta: false })
+  })
+  it('a caixa aberta de maior número é a da vez', () => {
+    expect(caixaDaVez([cx(1, true), cx(2, false)])).toEqual({ seq: 2, aberta: true })
+  })
+  it('última fechada (sem ser a última da OP): a da vez é a próxima', () => {
+    expect(caixaDaVez([cx(1, true), cx(2, true)])).toEqual({ seq: 3, aberta: false })
+  })
+  it('CX1 fechada e REABERTA por cancelamento com a CX2 aberta: a da vez continua a CX2', () => {
+    const caixas = [cx(1, false), cx(2, false)]
+    expect(caixaDaVez(caixas)).toEqual({ seq: 2, aberta: true })
+    expect(seqsReabertas(caixas, 2)).toEqual([1])
+    expect(seqsEmRemontagem(caixas)).toEqual([])
+  })
+  it('smoke 17/09: CX1 reaberta e CX2 reprovada no NQA (sem remontagem começada) → da vez é a CX3, não a CX1', () => {
+    const caixas = [cx(1, false), cx(2, true, 1)]
+    expect(caixaDaVez(caixas)).toEqual({ seq: 3, aberta: false })
+    expect(seqsReabertas(caixas, 3)).toEqual([1])
+    expect(seqsEmRemontagem(caixas)).toEqual([2])
+  })
+  it('remontagem da última caixa já começada não vira a caixa da vez (o número está reservado)', () => {
+    const caixas = [cx(1, false), cx(2, true, 1), cx(2, false)]
+    expect(caixaDaVez(caixas)).toEqual({ seq: 3, aberta: false })
+    expect(seqsReabertas(caixas, 3)).toEqual([1])
+    expect(seqsEmRemontagem(caixas)).toEqual([2])
+  })
+  it('remontagem de caixa antiga com a da vez aberta: nada muda', () => {
+    const caixas = [cx(7, true, 1), cx(7, false), cx(8, false)]
+    expect(caixaDaVez(caixas)).toEqual({ seq: 8, aberta: true })
+    expect(seqsEmRemontagem(caixas)).toEqual([7])
+    expect(seqsReabertas(caixas, 8)).toEqual([])
+  })
+  it('remontagem já fechada sai da lista de remontagens', () => {
+    expect(seqsEmRemontagem([cx(7, true, 1), cx(7, true), cx(8, false)])).toEqual([])
+  })
+  it('última caixa da OP fechada e nenhuma remontagem pendente: concluída (null), mesmo com reaberta lá atrás', () => {
+    expect(caixaDaVez([cx(1, false), cx(2, true, 0, true)])).toBeNull()
+  })
+  it('remontagem pendente reabre o trabalho: não está concluída', () => {
+    expect(caixaDaVez([cx(1, true), cx(2, true, 0, true), cx(3, true, 1)])).toEqual({ seq: 4, aberta: false })
   })
 })

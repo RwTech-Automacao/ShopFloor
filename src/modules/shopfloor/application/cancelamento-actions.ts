@@ -46,7 +46,7 @@ async function avisoDaEmbalagem(
   const cx = await estadoCaixaDoRegistro(reg.pmo, reg.op, reg.posto, reg.numeroCaixa).catch(() => null)
   if (!cx) return undefined
   if (!cx.fechada) return `A peça sai da caixa CX${cx.seq} (ainda aberta) e a vaga fica livre pra outra peça.`
-  return `A caixa CX${cx.seq} já está FECHADA: cancelar vai REABRIR a caixa. Ela vai aparecer como reaberta na tela de Lançamento e, ao ser fechada de novo, o código muda — a folha impressa precisa ser reimpressa.`
+  return `A caixa CX${cx.seq} já está FECHADA: cancelar vai REABRIR a caixa. Ela vai aparecer como reaberta na tela de Lançamento. O código da caixa leva a quantidade: se ela fechar de novo com outra quantidade, o código muda — reimprima a folha.`
 }
 
 /** Executa o cancelamento (gestor). Motivo obrigatório. */

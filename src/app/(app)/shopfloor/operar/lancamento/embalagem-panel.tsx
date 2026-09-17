@@ -8,9 +8,9 @@ import { Label } from '@/components/ui/label'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { carregarEmbalagem, embalarPeca, fecharCaixa, type ResultadoEmbalar } from '@/modules/shopfloor/application/embalagem-actions'
-import type { CaixaReaberta, RemontagemCaixa } from '@/modules/shopfloor/infra/caixa-repository'
+import type { CaixaAberta, RemontagemCaixa } from '@/modules/shopfloor/infra/caixa-repository'
 
-const AVISO_REIMPRIMIR = 'Ao fechar de novo, o código da caixa muda (a quantidade mudou) — reimprima a folha e troque a que está na caixa.'
+const AVISO_REIMPRIMIR = 'O código da caixa leva a quantidade: se ela fechar de novo com outra quantidade, o código muda — reimprima a folha.'
 
 /**
  * Embalagem por CAIXA. O layout segue o padrão das outras telas do Lançamento: topo com a Peça
@@ -31,12 +31,12 @@ export function EmbalagemPanel({
   // Remontagem: a caixa da tela está refazendo uma montagem reprovada no NQA. `seqEmFoco` fixa qual
   // caixa recarregar — sem ele o servidor devolveria de novo a caixa da vez, não a que estamos refazendo.
   const [remontagem, setRemontagem] = useState<RemontagemCaixa | null>(null)
-  const [pendentesRemontagem, setPendentesRemontagem] = useState<number[]>([])
   const [seqEmFoco, setSeqEmFoco] = useState<number | null>(null)
   // Caixa REABERTA por cancelamento (0106) — outra coisa, não é remontagem: um bipe de uma caixa já
   // fechada foi cancelado e ela voltou a ficar aberta lá atrás. Usa o mesmo foco pra o painel
   // trabalhar nela; `emReaberta` diz qual dos dois é, pra tela não chamar uma de outra.
-  const [caixasReabertas, setCaixasReabertas] = useState<CaixaReaberta[]>([])
+  // `caixasAbertas`: todas as caixas abertas da OP+posto (da vez, reabertas, remontagens), pra trocar.
+  const [caixasAbertas, setCaixasAbertas] = useState<CaixaAberta[]>([])
   const [emReaberta, setEmReaberta] = useState(false)
   const [pendente, setPendente] = useState<{ sn: string; motivo: string } | null>(null)
   const [sn, setSn] = useState('')
@@ -75,8 +75,7 @@ export function EmbalagemPanel({
       setSnsNaCaixa(r.estado.snsNaCaixa)
       setConcluida(r.estado.concluida)
       setRemontagem(r.estado.remontagem)
-      setPendentesRemontagem(r.estado.remontagensPendentes)
-      setCaixasReabertas(r.estado.caixasReabertas)
+      setCaixasAbertas(r.estado.caixasAbertas)
       // A caixa em foco não está mais aberta (fechou aqui ou em outro terminal): o servidor devolveu
       // a caixa da vez. Solta o foco pra tela não continuar dizendo que está numa caixa que já fechou.
       if (alvo != null && r.estado.seq !== alvo) { setSeqEmFoco(null); setEmReaberta(false) }
@@ -89,7 +88,7 @@ export function EmbalagemPanel({
     recarregar(null)
   }, [pmo, op, posto])
 
-  function entrarNaReaberta(c: CaixaReaberta) {
+  function entrarNaReaberta(c: CaixaAberta) {
     setSeqEmFoco(c.seq)
     setEmReaberta(true)
     setEhUltima(false) // a reabertura zera o "última" (0106); o operador reconfere se for o caso
@@ -97,6 +96,20 @@ export function EmbalagemPanel({
     setSn('')
     recarregar(c.seq)
     setTimeout(() => snRef.current?.focus(), 0)
+  }
+  function entrarNaRemontagem(c: CaixaAberta) {
+    setSeqEmFoco(c.seq)
+    setEmReaberta(false)
+    setEhUltima(false) // "última caixa" é decisão do fim da OP; não vale numa remontagem
+    setPendente(null)
+    setSn('')
+    recarregar(c.seq)
+    setTimeout(() => snRef.current?.focus(), 0)
+  }
+  function irParaCaixa(c: CaixaAberta) {
+    if (c.tipo === 'daVez') voltarParaDaVez()
+    else if (c.tipo === 'reaberta') entrarNaReaberta(c)
+    else entrarNaRemontagem(c)
   }
   function voltarParaDaVez() {
     setSeqEmFoco(null)
@@ -224,31 +237,56 @@ export function EmbalagemPanel({
         dica: emReaberta ? AVISO_REIMPRIMIR : undefined,
       })
       setPendente(null)
-      // Remontagem ou reaberta fechada → volta pra caixa que estava em andamento antes, com as peças
-      // dela. Sem limpar o painel: o operador precisa ler o código novo da caixa.
-      if (seqEmFoco !== null) { setSeqEmFoco(null); setEmReaberta(false); recarregar(null, true); setTimeout(() => snRef.current?.focus(), 0); return }
-      if (ehUltima) { setConcluida(true) }
-      else { setSeq((s) => s + 1); setQtdNaCaixa(0); setSnsNaCaixa([]); setEhUltima(false); setTimeout(() => snRef.current?.focus(), 0) }
+      // Recarrega do servidor em vez de só somar 1 no seq: a caixa da vez e a lista de caixas abertas
+      // dependem das outras (reabertas, remontagens). Remontagem ou reaberta fechada → volta pra caixa
+      // da vez. Sem limpar o painel: o operador precisa ler o código novo da caixa.
+      setSeqEmFoco(null); setEmReaberta(false); setEhUltima(false)
+      recarregar(null, true)
+      setTimeout(() => snRef.current?.focus(), 0)
     })
   }
 
-  // Caixas reabertas por cancelamento esperando fechar de novo. Âmbar como a remontagem, mas com
-  // outro rótulo e o aviso da folha: são coisas diferentes e o operador precisa distinguir.
-  const botoesReabertas = !emReaberta && !remontagem && caixasReabertas.length > 0 && (
+  // TODAS as caixas abertas da OP+posto numa linha só, sempre visível quando há mais de uma: a da vez,
+  // as reabertas por cancelamento e as remontagens (reprovadas no NQA). A da tela fica destacada e
+  // desabilitada; clicar noutra troca pra ela. É também a porta de saída de uma reaberta/remontagem
+  // (clicar na "Caixa da vez") — ninguém fica preso tendo que fechar a caixa pra sair dela.
+  const ROTULO_TIPO: Record<CaixaAberta['tipo'], string> = { daVez: 'Caixa da vez', reaberta: 'Reaberta', remontagem: 'Remontagem' }
+  const seqNaTela = concluida ? null : seq
+  // Embalagem concluída e o operador entrou numa reaberta: não existe caixa da vez — a saída volta pra
+  // tela de concluída.
+  const semCaixaDaVez = !concluida && seqEmFoco !== null && !caixasAbertas.some((c) => c.tipo === 'daVez')
+  const linhaCaixasAbertas = caixasAbertas.length > 1 || seqEmFoco !== null || (concluida && caixasAbertas.length > 0) ? (
     <div className="shrink-0 rounded-lg border border-amber-500/50 bg-amber-500/10 p-2">
-      <p className="text-xs font-medium">
-        Caixa reaberta ({caixasReabertas.length}) — um lançamento foi cancelado e a caixa voltou a ficar aberta.
-      </p>
+      <p className="text-xs font-medium">Caixas abertas ({caixasAbertas.length})</p>
       <div className="mt-1.5 flex flex-wrap gap-2">
-        {caixasReabertas.map((c) => (
-          <Button key={c.seq} variant="outline" size="sm" onClick={() => entrarNaReaberta(c)} disabled={carregando}>
-            Completar CX{c.seq} · {c.qtd}/{c.limite}
+        {semCaixaDaVez && (
+          <Button variant="outline" size="sm" onClick={voltarParaDaVez} disabled={carregando || embalando || fechando}>
+            Embalagem concluída
           </Button>
-        ))}
+        )}
+        {caixasAbertas.map((c) => {
+          const naTela = c.seq === seqNaTela
+          const qtd = naTela ? qtdNaCaixa : c.qtd
+          return (
+            <Button
+              key={`${c.tipo}-${c.seq}`}
+              variant={naTela ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => irParaCaixa(c)}
+              disabled={naTela || carregando || embalando || fechando}
+              aria-current={naTela ? 'true' : undefined}
+              className={naTela ? 'disabled:opacity-100' : undefined}
+            >
+              {c.tipo === 'remontagem' ? '⟲ ' : ''}{ROTULO_TIPO[c.tipo]} · CX{c.seq} ({qtd}{c.limite ? `/${c.limite}` : ''})
+            </Button>
+          )
+        })}
       </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">Escolha uma pra completar e fechar de novo. {AVISO_REIMPRIMIR}</p>
+      {caixasAbertas.some((c) => c.tipo === 'reaberta') && (
+        <p className="mt-1.5 text-xs text-muted-foreground">Reaberta = um lançamento foi cancelado e a caixa voltou a ficar aberta. {AVISO_REIMPRIMIR}</p>
+      )}
     </div>
-  )
+  ) : null
 
   // Nas telas simples o Contexto fica ao lado, meio a meio — o operador não perde o cabeçalho.
   const comContexto = (cartao: React.ReactNode) => (
@@ -265,7 +303,7 @@ export function EmbalagemPanel({
         <CardContent className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">Total embaladas: {totalEmbaladas}{qtdOP ? ` / ${qtdOP} do contrato` : ''}.</p>
           <p className="text-xs text-muted-foreground">A última caixa desta OP foi fechada.</p>
-          {botoesReabertas}
+          {linhaCaixasAbertas}
         </CardContent>
       </Card>,
     )
@@ -332,41 +370,14 @@ export function EmbalagemPanel({
           </div>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-          {/* Caixa reprovada esperando remontagem. Fica como recado, não como interrupção: quem
-              decide quando refazer é o operador, e a caixa dela é puxada ao bipar uma peça sua. */}
-          {/* Caixa reprovada esperando remontagem. É BOTÃO, não recado: a caixa pode já estar com
-              todas as peças de volta e faltando só fechar — e aí não existe peça pra bipar, porque
-              bipar de novo é duplicata legítima. Sem uma porta explícita, a caixa completa ficaria
-              impossível de alcançar. */}
-          {!remontagem && pendentesRemontagem.length > 0 && (
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">Aguardando remontagem:</span>
-              {pendentesRemontagem.map((sq) => (
-                <Button
-                  key={sq}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setSeqEmFoco(sq); setEmReaberta(false); setEhUltima(false); setPendente(null); recarregar(sq) }}
-                  disabled={carregando}
-                >
-                  ⟲ Continuar CX{sq}
-                </Button>
-              ))}
-            </div>
-          )}
+          {linhaCaixasAbertas}
 
-          {botoesReabertas}
-
-          {/* Completando uma caixa reaberta por cancelamento. Porta de saída explícita, igual à da
-              remontagem: ninguém pode ficar preso tendo que fechar a caixa pra sair dela. */}
+          {/* Completando uma caixa reaberta por cancelamento. A saída é a "Caixa da vez" na linha acima. */}
           {emReaberta && (
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-2">
+            <div className="shrink-0 rounded-lg border border-amber-500/50 bg-amber-500/10 p-2">
               <p className="text-xs">
                 Você está bipando na <strong>caixa reaberta CX{seq}</strong>, não na caixa da vez. {AVISO_REIMPRIMIR}
               </p>
-              <Button variant="outline" size="sm" onClick={voltarParaDaVez} disabled={embalando || fechando || carregando}>
-                Voltar pra caixa da vez
-              </Button>
             </div>
           )}
 
@@ -382,17 +393,6 @@ export function EmbalagemPanel({
                   Ainda não voltaram ({remontagem.faltando.length}): <span className="font-mono">{remontagem.faltando.join(', ')}</span>
                 </p>
               )}
-              {/* Porta de saída: quem entrou aqui sem querer, ou vai voltar depois, não pode ficar
-                  preso tendo que fechar a caixa pra sair dela. */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                onClick={() => { setSeqEmFoco(null); setEmReaberta(false); setPendente(null); recarregar(null) }}
-                disabled={carregando}
-              >
-                Sair da remontagem
-              </Button>
             </div>
           )}
 
