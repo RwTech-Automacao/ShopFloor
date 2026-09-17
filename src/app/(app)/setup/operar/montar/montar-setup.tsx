@@ -428,7 +428,7 @@ export function MontarSetup({
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="bipeRolo">Rolo</Label>
+                <Label htmlFor="bipeRolo">Código Componente</Label>
                 <Input
                   id="bipeRolo"
                   ref={roloRef}
