@@ -26,11 +26,13 @@ import {
 import { cadastrarEquipamentoAction, alternarEquipamentoAction } from '@/modules/setup/application/cadastros-actions'
 import type { Equipamento } from '@/modules/setup/infra/setup-repository'
 import type { Processo } from '@/modules/setup/domain/tipos'
+import { rotulosPosicao } from '@/modules/setup/domain/tipos'
 
 /** Rótulo exibido para a máquina/bloco: no PTH o valor cadastrado é só a identificação do bloco
- * (ex.: "1"), então prefixamos "Bloco" pra ficar claro. No SMD o nome da máquina já é autoexplicativo. */
+ * (ex.: "1"), então prefixamos o rótulo pra ficar claro. No SMD o nome da máquina já é autoexplicativo. */
 function rotuloEquipamento(e: Pick<Equipamento, 'processo' | 'equipamento'>): string {
-  return e.processo === 'PTH' ? `Bloco ${e.equipamento}` : e.equipamento
+  const rotulo = rotulosPosicao(e.processo).equipamento
+  return e.processo === 'PTH' ? `${rotulo} ${e.equipamento}` : e.equipamento
 }
 
 function AtivoSwitch({ id, ativo }: { id: string; ativo: boolean }) {
@@ -121,11 +123,11 @@ function NovoEquipamentoForm() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="equipamento">{processo === 'PTH' ? 'Bloco' : 'Máquina'}</Label>
+            <Label htmlFor="equipamento">{rotulosPosicao(processo).equipamento}</Label>
             <Input
               id="equipamento"
               name="equipamento"
-              placeholder={processo === 'PTH' ? 'Bloco' : 'Máquina'}
+              placeholder={rotulosPosicao(processo).equipamento}
               autoComplete="off"
               required
             />

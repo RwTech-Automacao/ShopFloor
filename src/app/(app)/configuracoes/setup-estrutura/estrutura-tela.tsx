@@ -301,6 +301,11 @@ export function EstruturaTela({
     else { toast.error(r.erro, { position: 'bottom-center' }); setItens([]) }
   }, [])
 
+  const aoMudarEstrutura = useCallback(() => {
+    void recarregarItens(pmoSel)
+    router.refresh()
+  }, [pmoSel, recarregarItens, router])
+
   // Carrega a estrutura sempre que a PMO escolhida muda (inclusive quando a importação troca a
   // seleção sozinha).
   useEffect(() => {
@@ -413,7 +418,7 @@ export function EstruturaTela({
             <p className="mb-3 text-sm font-medium">Adicionar componente à mão</p>
             <AdicionarManualForm
               pmo={pmoSel}
-              onAdicionado={() => { void recarregarItens(pmoSel); router.refresh() }}
+              onAdicionado={aoMudarEstrutura}
             />
           </div>
 
@@ -458,7 +463,7 @@ export function EstruturaTela({
                       <RemoverComponenteButton
                         pmo={pmoSel}
                         componente={i.componente}
-                        onRemovido={() => { void recarregarItens(pmoSel); router.refresh() }}
+                        onRemovido={aoMudarEstrutura}
                       />
                     </TableCell>
                   </TableRow>
@@ -486,7 +491,7 @@ export function EstruturaTela({
                   <RemoverComponenteButton
                     pmo={pmoSel}
                     componente={i.componente}
-                    onRemovido={() => { void recarregarItens(pmoSel); router.refresh() }}
+                    onRemovido={aoMudarEstrutura}
                   />
                 </div>
               </div>
