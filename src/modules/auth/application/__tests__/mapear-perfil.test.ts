@@ -29,7 +29,7 @@ describe('mapearPerfil', () => {
     expect(perfil.permissoes.administrar).toBe(false)
   })
 
-  it('sem perfil_permissao, porModulo fica vazio para os 3 módulos', () => {
+  it('sem perfil_permissao, porModulo fica vazio para os 4 módulos', () => {
     const perfil = mapearPerfil({
       id: 'p1',
       nome: 'Recebimento',
@@ -44,8 +44,27 @@ describe('mapearPerfil', () => {
       pode_lancar: false,
       sistema: true,
     })
-    expect(perfil.porModulo).toEqual({ recebimento: {}, shopfloor: {}, sistema: {} })
+    expect(perfil.porModulo).toEqual({ recebimento: {}, shopfloor: {}, setup: {}, sistema: {} })
     expect(podeNoModulo(perfil, 'recebimento', 'visualizar')).toBe(false)
+  })
+
+  it('lê grants do módulo setup', () => {
+    const perfil = mapearPerfil({
+      id: 'p1',
+      nome: 'Recebimento',
+      pode_visualizar: true,
+      pode_importar: true,
+      pode_editar: true,
+      pode_finalizar: true,
+      pode_editar_finalizado: false,
+      pode_excluir: false,
+      pode_gerar_etiqueta: true,
+      pode_administrar: false,
+      pode_lancar: false,
+      sistema: true,
+      perfil_permissao: [{ modulo: 'setup', permissao: 'lancar' }],
+    })
+    expect(perfil.porModulo.setup).toEqual({ lancar: true })
   })
 
   it('grants de perfil_permissao alimentam porModulo por módulo', () => {

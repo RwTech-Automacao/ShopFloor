@@ -18,7 +18,7 @@ export interface PerfilRow {
 }
 
 export function mapearPerfil(row: PerfilRow): Perfil {
-  const porModulo: Perfil['porModulo'] = { recebimento: {}, shopfloor: {}, sistema: {} }
+  const porModulo: Perfil['porModulo'] = { recebimento: {}, shopfloor: {}, setup: {}, sistema: {} }
   for (const g of row.perfil_permissao ?? []) {
     const m = g.modulo as Modulo
     if (porModulo[m]) porModulo[m][g.permissao as Permissao] = true
