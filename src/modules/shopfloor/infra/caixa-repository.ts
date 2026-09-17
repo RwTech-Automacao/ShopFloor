@@ -1,6 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { marcadorCaixaAberta } from '@/modules/shopfloor/domain/caixa'
+import { caixaDaVez, marcadorCaixaAberta, seqDoMarcadorCaixa, seqsEmRemontagem, seqsReabertas } from '@/modules/shopfloor/domain/caixa'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 export interface RemontagemCaixa {
@@ -8,6 +8,21 @@ export interface RemontagemCaixa {
   snsOriginais: string[]    // SNs da montagem reprovada (exibição), na ordem em que foram embalados
   snsOriginaisNorm: string[]
   faltando: string[]        // da montagem original, ainda não bipados na remontagem
+}
+
+/**
+ * Uma caixa ABERTA desta OP+posto, oferecida como opção na tela da Embalagem:
+ *  • daVez      — a que a embalagem normal está enchendo (ou a próxima a abrir, com 0 peças);
+ *  • reaberta   — voltou a ficar aberta porque um bipe dela foi cancelado (0106);
+ *  • remontagem — reprovada no NQA e sendo refeita com o mesmo número (0100).
+ * Reaberta e remontagem são coisas diferentes e nenhuma das duas toma o lugar da caixa da vez.
+ */
+export type TipoCaixaAberta = 'daVez' | 'reaberta' | 'remontagem'
+export interface CaixaAberta {
+  seq: number
+  tipo: TipoCaixaAberta
+  limite: number | null
+  qtd: number // peças nela agora
 }
 
 export interface EstadoEmbalagem {
@@ -18,7 +33,9 @@ export interface EstadoEmbalagem {
   snsNaCaixa: string[]   // todos os SNs da caixa atual (mais recentes primeiro)
   concluida: boolean     // última caixa já foi fechada
   remontagem: RemontagemCaixa | null // preenchido quando esta caixa está refazendo uma reprovada
-  remontagensPendentes: number[]     // caixas reprovadas esperando remontagem (seq), fora esta
+  /** TODAS as caixas abertas (inclusive a da tela): a da vez primeiro, depois as outras por número.
+   *  Sem a da vez quando a embalagem está concluída. */
+  caixasAbertas: CaixaAberta[]
 }
 
 interface CaixaRow { seq: number; limite: number; fechada: boolean; ultima: boolean; revisao: number; codigo: string }
@@ -48,12 +65,52 @@ async function snsDaCaixa(
   return { exibicao, norm }
 }
 
+/** Montagem aposentada mais recente de um seq (a que está sendo refeita). */
+function montagemAnterior(todas: CaixaRow[], seq: number): CaixaRow | undefined {
+  return todas.filter((c) => c.seq === seq && c.revisao > 0).sort((a, b) => b.revisao - a.revisao)[0]
+}
+
+/** As caixas abertas (ver `CaixaAberta`) com quantas peças há em cada — uma consulta só, pelo marcador. */
+async function carregarCaixasAbertas(
+  supabase: Awaited<ReturnType<typeof createServerSupabase>>,
+  pmo: string, op: string, posto: string, todas: CaixaRow[],
+  daVez: { seq: number; aberta: boolean } | null, limiteDaVez: number | null,
+): Promise<CaixaAberta[]> {
+  const opcoes: CaixaAberta[] = []
+  const limiteVigente = (seq: number) => todas.find((c) => c.seq === seq && c.revisao === 0)?.limite
+  if (daVez) opcoes.push({ seq: daVez.seq, tipo: 'daVez', limite: daVez.aberta ? (limiteVigente(daVez.seq) ?? limiteDaVez) : limiteDaVez, qtd: 0 })
+  const outras: CaixaAberta[] = [
+    ...seqsEmRemontagem(todas).map((seq): CaixaAberta => ({
+      seq, tipo: 'remontagem', limite: limiteVigente(seq) ?? montagemAnterior(todas, seq)?.limite ?? null, qtd: 0,
+    })),
+    ...seqsReabertas(todas, daVez?.seq ?? Number.NaN).map((seq): CaixaAberta => ({
+      seq, tipo: 'reaberta', limite: limiteVigente(seq) ?? null, qtd: 0,
+    })),
+  ].sort((x, y) => x.seq - y.seq)
+  opcoes.push(...outras)
+
+  const comPecas = opcoes.filter((o) => o.tipo !== 'daVez' || daVez?.aberta)
+  if (comPecas.length === 0) return opcoes
+  const { data, error } = await supabase
+    .from('sf_registros').select('numero_caixa,numero_serie_norm')
+    .eq('pmo', pmo).eq('op', op).eq('posto', posto).in('numero_caixa', comPecas.map((o) => marcadorCaixaAberta(o.seq)))
+  if (error) throw error
+  const pecas = new Map<string, Set<string>>()
+  for (const r of (data ?? []) as { numero_caixa: string; numero_serie_norm: string }[]) {
+    const set = pecas.get(r.numero_caixa) ?? new Set<string>()
+    set.add(r.numero_serie_norm)
+    pecas.set(r.numero_caixa, set)
+  }
+  return opcoes.map((o) => ({ ...o, qtd: pecas.get(marcadorCaixaAberta(o.seq))?.size ?? 0 }))
+}
+
 /**
  * Estado da caixa em que a Embalagem está trabalhando.
  *
  * `seqEmFoco` existe por causa da REMONTAGEM: quando o operador bipa uma peça que voltou de uma
  * caixa reprovada no NQA, o painel passa a trabalhar naquela caixa (que não é a da vez), e precisa
- * pedir o estado DELA. Sem o parâmetro, vale a regra normal — a caixa vigente de maior seq.
+ * pedir o estado DELA. Sem o parâmetro, vale a caixa da vez (`caixaDaVez`).
+ * Serve igual pra CAIXA REABERTA por cancelamento: o operador escolhe entrar nela, e o foco é o seq dela.
  */
 export async function carregarEstadoEmbalagem(
   pmo: string, op: string, posto: string, seqEmFoco?: number,
@@ -74,42 +131,38 @@ export async function carregarEstadoEmbalagem(
   if (eTot) throw eTot
   const totalEmbaladas = total ?? 0
 
-  const foco = seqEmFoco != null ? vigentes.find((c) => c.seq === seqEmFoco && !c.fechada) : undefined
-
   // Caixas reprovadas ainda sem remontagem fechada. O número delas fica RESERVADO: a embalagem
   // normal não pode reutilizá-lo, senão peças novas cairiam dentro de uma remontagem pendente.
-  const pendentes = todas
-    .filter((c) => c.revisao > 0)
-    .map((c) => c.seq)
-    .filter((sq) => {
-      const vig = vigentes.find((v) => v.seq === sq)
-      return !vig || !vig.fechada
-    })
-  const reservados = new Set(pendentes)
+  const remontagens = seqsEmRemontagem(todas)
+  const daVez = caixaDaVez(todas)
 
-  // concluída: a última caixa está fechada e marcada como última (uma remontagem pendente reabre o
-  // trabalho — a OP não está concluída enquanto ela não fechar).
-  if (!foco && reservados.size === 0 && ultima && ultima.fechada && ultima.ultima) {
-    return { seq: ultima.seq, limite: ultima.limite, qtdNaCaixa: 0, totalEmbaladas, snsNaCaixa: [], concluida: true, remontagem: null, remontagensPendentes: [] }
+  // Foco válido: uma caixa vigente ainda aberta, ou uma remontagem pendente (mesmo antes da primeira
+  // peça voltar — sem linha vigente ainda —, pra o operador poder entrar nela pela lista).
+  const focoVigente = seqEmFoco != null ? vigentes.find((c) => c.seq === seqEmFoco && !c.fechada) : undefined
+  const foco = focoVigente ? focoVigente.seq : (seqEmFoco != null && remontagens.includes(seqEmFoco) ? seqEmFoco : undefined)
+
+  // O limite da caixa da vez que ainda não abriu repete o da última caixa que existiu.
+  const ultimaQualquer = todas.reduce<CaixaRow | undefined>((m, c) => (!m || c.seq >= m.seq ? c : m), undefined)
+  const limitePadrao = ultima?.limite ?? ultimaQualquer?.limite ?? null
+
+  // concluída: a última caixa está fechada e marcada como última, sem remontagem pendente.
+  // Reaberta não desfaz a conclusão (a OP terminou); a tela oferece a reaberta por cima do aviso.
+  if (foco === undefined && daVez === null) {
+    const caixasAbertas = await carregarCaixasAbertas(supabase, pmo, op, posto, todas, null, null)
+    return { seq: ultima?.seq ?? 1, limite: ultima?.limite ?? null, qtdNaCaixa: 0, totalEmbaladas, snsNaCaixa: [], concluida: true, remontagem: null, caixasAbertas }
   }
 
-  // caixa atual: a em foco, ou a última aberta, ou a PRÓXIMA LIVRE. O próximo número sai do maior
-  // seq já usado (vigente OU reprovado) + 1 — nunca de `ultima.seq + 1`: com a caixa 7 aposentada,
-  // a última vigente vira a 6 e o 7 seria entregue de novo, por cima da remontagem que espera por ele.
-  const maiorSeqUsado = todas.reduce((m, c) => Math.max(m, c.seq), 0)
-  const abertaExiste = foco ? true : !!(ultima && !ultima.fechada)
-  const seq = foco ? foco.seq : (ultima && !ultima.fechada ? ultima.seq : maiorSeqUsado + 1)
+  const seq = foco ?? daVez!.seq
+  const vigenteAtual = vigentes.find((c) => c.seq === seq && !c.fechada)
+  const abertaExiste = !!vigenteAtual
 
   // Montagem reprovada deste mesmo seq (a mais recente, se reprovou mais de uma vez). Fora do foco
-  // isso nunca acontece — o seq da vez nunca é um reservado —, então a tela normal não é sequestrada.
-  const anterior = todas
-    .filter((c) => c.seq === seq && c.revisao > 0)
-    .sort((a, b) => b.revisao - a.revisao)[0]
+  // isso nunca acontece — a caixa da vez nunca é um número reservado —, então a tela normal não é sequestrada.
+  const anterior = montagemAnterior(todas, seq)
 
-  // O limite vem da caixa em foco; na falta dela, da montagem que estamos refazendo (é a mesma
+  // O limite vem da caixa aberta; na falta dela, da montagem que estamos refazendo (é a mesma
   // caixa física, mesmo limite); só então do padrão de repetir o limite da última caixa que existiu.
-  const ultimaQualquer = todas.reduce<CaixaRow | undefined>((m, c) => (!m || c.seq >= m.seq ? c : m), undefined)
-  const limite = foco ? foco.limite : (anterior ? anterior.limite : (ultima?.limite ?? ultimaQualquer?.limite ?? null))
+  const limite = vigenteAtual ? vigenteAtual.limite : (anterior ? anterior.limite : limitePadrao)
 
   let qtdNaCaixa = 0
   let snsNaCaixa: string[] = []
@@ -135,7 +188,7 @@ export async function carregarEstadoEmbalagem(
 
   return {
     seq, limite, qtdNaCaixa, totalEmbaladas, snsNaCaixa, concluida: false, remontagem,
-    remontagensPendentes: pendentes.filter((sq) => sq !== seq).sort((a, b) => a - b),
+    caixasAbertas: await carregarCaixasAbertas(supabase, pmo, op, posto, todas, daVez, limitePadrao),
   }
 }
 
@@ -436,4 +489,30 @@ export async function outrasCaixasDoSn(
       .filter((c) => c !== '' && !fora.has(c)),
   )
   return [...codigos]
+}
+
+/**
+ * Estado da caixa a que um registro de embalagem pertence — só pra AVISAR o gestor, antes de
+ * cancelar, que a caixa vai ser REABERTA (e a folha impressa vai precisar de reimpressão).
+ * Null quando não há caixa: embalagem individual (numero_caixa = o próprio SN), registro antigo, ou
+ * montagem APOSENTADA (código com R) — essa é histórico e o cancelamento não mexe nela.
+ */
+export async function estadoCaixaDoRegistro(
+  pmo: string, op: string, posto: string, numeroCaixa: string,
+): Promise<{ seq: number; fechada: boolean } | null> {
+  const alvo = numeroCaixa.trim()
+  if (alvo === '') return null // codigo='' das caixas abertas casaria com tudo
+  const supabase = await createServerSupabase()
+  const seqMarcador = seqDoMarcadorCaixa(alvo)
+  // Só a VIGENTE (revisao 0): desde a 0100 o mesmo seq pode ter a montagem reprovada no histórico,
+  // e sem este filtro o `maybeSingle` acharia duas linhas.
+  const base = supabase.from('sf_caixas').select('seq,fechada')
+    .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('revisao', 0)
+  // Caixa aberta → o registro carrega o marcador CX[seq]; fechada → carrega o código final.
+  const { data, error } = await (seqMarcador !== null ? base.eq('seq', seqMarcador) : base.eq('codigo', alvo))
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const r = data as { seq: number; fechada: boolean }
+  return { seq: r.seq, fechada: r.fechada }
 }
