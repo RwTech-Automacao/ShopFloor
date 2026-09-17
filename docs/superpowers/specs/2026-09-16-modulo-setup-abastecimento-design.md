@@ -11,7 +11,9 @@ Hoje o processo roda num Google Apps Script sobre a planilha "Conferência Compo
 - **Abastecimento** — na troca de rolo, bipa Posição, Feeder, Código de saída, Código de entrada e SN Inicial. Aprova se o prefixo é o mesmo, o sequencial é diferente e o prefixo está cadastrado naquela posição/feeder. Grava aprovados e reprovados.
 - **Consulta** — só do mapa do setup.
 
-O código do rolo tem o formato `PREFIXO-SEQUENCIAL` (ex.: `CAP095-8521556004`). O prefixo identifica o componente e o sequencial identifica o rolo.
+O código do rolo tem o formato `CÓDIGO_ERP-LOTE_E_NÚMERO_DO_ROLO` (ex.: `CAPJ41-8521556004`).
+- **Antes do `-`:** o código do item no ERP (o mesmo da composição de produto). Identifica o componente.
+- **Depois do `-`:** lote do recebimento + número do rolo. É **único por rolo** (dois rolos do mesmo lote têm etiquetas diferentes). Não é conferido contra nada nesta versão; no futuro pode ligar ao Recebimento pra rastreabilidade.
 
 **Problemas do legado que este módulo resolve:**
 - Regra de separação do código diferente entre SMD e PTH.
@@ -31,9 +33,9 @@ O código do rolo tem o formato `PREFIXO-SEQUENCIAL` (ex.: `CAP095-8521556004`).
 |---|---|
 | 1 | **Módulo próprio**, fora do ShopFloor (como o Recebimento): seção própria no menu e permissões próprias (`Modulo` ganha `'setup'`). |
 | 2 | **OPs vêm do ShopFloor** (`sf_ordens`), só leitura: PMO, OP, cliente e faixa de SN (`sn_ini`/`sn_fim`). A OP precisa existir no ShopFloor antes do setup. Como a RLS de `sf_ordens` é do módulo ShopFloor, o Setup lê por uma função `security definer` (`st_listar_ordens`) que checa `tem_permissao('setup', 'visualizar')` e devolve só esses campos. |
-| 3 | **Estrutura de componentes da PMO**: cadastrada uma vez por PMO e reutilizada por todas as OPs. **O componente é só o código** (prefixo do rolo). |
-| 4 | A estrutura entra por **importação de Excel + ajuste manual**. O formato do Excel fica pra quando o arquivo chegar. |
-| 5 | **O setup só aceita componentes da estrutura da PMO.** Código fora dela é recusado na montagem. |
+| 3 | **Estrutura de componentes da PMO**: cadastrada uma vez por PMO e reutilizada por todas as OPs. Cada componente guarda o **código do ERP** e o **processo (SMD ou PTH)**. |
+| 4 | A estrutura entra por **importação da composição de produto do ERP (Excel) + ajuste manual**. Formato na seção 6. |
+| 5 | **O setup só aceita componentes da estrutura da PMO e do mesmo processo** (setup SMD só componentes SMD; PTH só PTH). Código fora dela é recusado na montagem. |
 | 6 | **Setup por OP**, com opção de **copiar de uma OP anterior** da mesma PMO. |
 | 7 | **Controle do rolo montado**: o sistema guarda o rolo (código completo) de cada posição. Na troca, o rolo que sai tem que ser exatamente o montado. |
 | 8 | **Reprovação só registra**: não trava a posição, e o rolo montado não muda. |
@@ -65,7 +67,7 @@ Todas as tabelas têm RLS por módulo (`tem_permissao('setup', <nível>)` envolv
 | Tabela | Colunas principais | Regras |
 |---|---|---|
 | `st_equipamentos` | `id`, `processo` (SMD/PTH), `linha`, `maquina` (SMD) ou `bloco` (PTH), `posicoes` (int, opcional), `ativo` | Único por (processo, linha, maquina/bloco). Semeada com YSM10/MG5 (L1), YSM10 (L2, 148), CP40 (L3); PTH Linhas 1–6 × Blocos A/B. |
-| `st_estrutura` | `pmo`, `componente` (código normalizado), `criado_em`, `criado_por` | PK (pmo, componente). |
+| `st_estrutura` | `pmo`, `componente` (código do ERP normalizado), `processo` (SMD/PTH), `origem` (importação/manual), `criado_em`, `criado_por` | PK (pmo, componente). |
 | `st_setups` | `id`, `pmo`, `op`, `processo`, `linha`, `maquina_bloco`, `face` (normalizada), `sn_abertura`, `estado` (`montagem`/`liberado`), `copiado_de` (setup de origem), `criado_por/em`, `liberado_por/em` | Único por (pmo, op, processo, linha, maquina_bloco, face). |
 | `st_setup_itens` | `id`, `setup_id`, `posicao` e `feeder` (SMD) ou `posto` e `locacao` (PTH), `componente`, `rolo` (código completo, nulo = falta bipar), `atualizado_por/em` | Únicos por setup: (posição, feeder) / (posto, locação); feeder único no setup; rolo único no setup. |
 | `st_trocas` | `id`, `setup_id`, `item_id`, `posicao/feeder` ou `posto/locacao` bipados, `rolo_saida`, `rolo_entrada`, `sn_inicial`, `resultado` (APROVADO/REPROVADO), `motivos` (text[]), `operador` (usuário), `data_hora` | Grava toda tentativa. |
@@ -87,7 +89,7 @@ Todas as tabelas têm RLS por módulo (`tem_permissao('setup', <nível>)` envolv
 
 **Montagem (inclusão de item), recusa com motivo quando:**
 1. O setup está **liberado** (só admin mexe, pela edição).
-2. O **componente** do rolo não está na estrutura da PMO.
+2. O **componente** do rolo (código antes do `-`) não está na estrutura da PMO, ou é de **outro processo** (SMD × PTH).
 3. **Posição + feeder** (ou posto + locação) já existe no setup.
 4. O **feeder já está em outra posição**, ou a **posição já está com outro feeder**.
 5. O **rolo** já está montado em outra posição do setup.
@@ -140,13 +142,20 @@ APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa g
 **Cadastros**
 - **Linhas, Máquinas e Blocos:** CRUD simples.
 - **Estrutura da PMO:**
-  - escolher a PMO → lista de componentes → adicionar ou remover código;
-  - **Importar Excel** com prévia (novos, já existentes, duplicados) → confirmar. O formato do arquivo fica pendente.
+  - escolher a PMO → lista de componentes (código e processo) → adicionar ou remover código (informando SMD/PTH);
+  - **Importar a composição de produto do ERP** com prévia → confirmar.
+
+  **Formato do arquivo** (exemplo: `composicao_produto_com_preco_PMOG13.xlsx`):
+  - Aba "COMPOSIÇÃO DE PRODUTO"; linha 1 = empresa; **linha 3 = cabeçalho**; itens a partir da linha 4. Colunas localizadas pelo **nome do cabeçalho**: `NÍVEL`, `CÓDIGO ITEM`, `DESCRIÇÃO ITEM`, `LOCALIZAÇÃO`.
+  - **PMO** = `CÓDIGO ITEM` da linha de **nível 1**. A PMO precisa existir no ShopFloor; se não existir, a importação é recusada.
+  - **Entram só as linhas com `LOCALIZAÇÃO` preenchida** (componentes de montagem). Embalagem, subconjuntos e a placa nua ficam de fora e aparecem na prévia como ignorados, com o motivo.
+  - **Processo** = pelo subconjunto pai: itens abaixo de uma linha cuja descrição começa com "PARTES PTH" são PTH; abaixo de "PARTES SMD", SMD (o pai é a linha mais próxima acima com nível menor). Componente sem subconjunto reconhecível aparece na prévia como "processo indefinido" e não entra.
+  - **Prévia:** novos, já existentes (sem mudança), processo diferente do cadastrado (atualiza), ignorados, duplicados no arquivo.
+  - Importar **não remove** componentes que já estavam na estrutura e não vieram no arquivo; a prévia os lista pra remoção manual.
 - **Remoção de componente em uso:** não altera setups existentes; só impede novos usos.
 - **Edição no meio da OP (admin, setup liberado):** trocar o feeder de uma posição, trocar a posição de um feeder, corrigir um item, incluir ou remover. Mesmas regras de unicidade, tudo registrado em `st_alteracoes`.
 
 ## 7. Fora do escopo desta versão
-- Formato da importação do Excel (aguardando arquivo; o cadastro manual cobre).
 - Relatório "qual rolo estava na máquina quando a placa X foi feita" (os dados já ficam gravados).
 - Renomear campos do PTH (aguardando a produção).
 - Migração da planilha.
@@ -164,5 +173,4 @@ APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa g
 - **Smoke do usuário no preview**, com as migrações no Dev.
 
 ## 9. Pendências com a produção
-- Formato do Excel da estrutura da PMO.
 - Significado de Bloco, Posto e Locação no PTH, e se as Linhas 1–6 e os Blocos A/B são reais.
