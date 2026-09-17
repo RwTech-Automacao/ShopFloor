@@ -39,6 +39,10 @@ import {
   PanelLeftOpen,
   Lock,
   MonitorCog,
+  Cpu,
+  PackageSearch,
+  Boxes,
+  Server,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -81,6 +85,11 @@ const SHOPFLOOR: FolhaModular[] = [
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
 ]
 
+const SETUP: FolhaModular[] = [
+  { chave: 'setup-operar', rotulo: 'Operação', href: '/setup/operar', icone: Cog, modulo: 'setup', perm: 'lancar' },
+  { chave: 'setup-consultas', rotulo: 'Consultas', href: '/setup/consultas', icone: PackageSearch, modulo: 'setup', perm: 'visualizar' },
+]
+
 // Itens de Configurações que ficam "soltos" acima do accordion.
 const CONFIG_TOPO: FolhaModular[] = [
   { chave: 'usuarios', rotulo: 'Usuários', href: '/configuracoes/usuarios', icone: Users, modulo: 'sistema', perm: 'administrar' },
@@ -103,13 +112,19 @@ const CONFIG_SHOPFLOOR: FolhaModular[] = [
   { chave: 'sf-consertos', rotulo: 'Consertos', href: '/configuracoes/sf-consertos', icone: Wrench, modulo: 'shopfloor', perm: 'administrar' },
 ]
 
+// Configurações específicas do módulo Setup, agrupadas num accordion.
+const CONFIG_SETUP: FolhaModular[] = [
+  { chave: 'setup-estrutura', rotulo: 'Estrutura da PMO', href: '/configuracoes/setup-estrutura', icone: Boxes, modulo: 'setup', perm: 'administrar' },
+  { chave: 'setup-equipamentos', rotulo: 'Linhas e Máquinas', href: '/configuracoes/setup-equipamentos', icone: Server, modulo: 'setup', perm: 'administrar' },
+]
+
 // Itens de Configurações que ficam "soltos" abaixo do accordion. Logs do
 // sistema não é específico de um módulo de negócio — trata-se como 'sistema'.
 const CONFIG_BASE: FolhaModular[] = [
   { chave: 'logs', rotulo: 'Logs do Sistema', href: '/configuracoes/logs', icone: ScrollText, modulo: 'sistema', perm: 'administrar' },
 ]
 
-const CONFIG_TODOS: FolhaModular[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...CONFIG_SHOPFLOOR, ...CONFIG_BASE]
+const CONFIG_TODOS: FolhaModular[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...CONFIG_SHOPFLOOR, ...CONFIG_SETUP, ...CONFIG_BASE]
 
 const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/sobre', icone: Info, perm: 'visualizar' }
 
@@ -163,22 +178,30 @@ export function AppShell({
   const configTopo = podeConfig ? CONFIG_TOPO.filter(pode) : []
   const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter(pode) : []
   const configSf = podeConfig ? CONFIG_SHOPFLOOR.filter(pode) : []
+  const configSetup = podeConfig ? CONFIG_SETUP.filter(pode) : []
   const configBase = podeConfig ? CONFIG_BASE.filter(pode) : []
-  const temConfig = configTopo.length + configRec.length + configSf.length + configBase.length > 0
+  const temConfig = configTopo.length + configRec.length + configSf.length + configSetup.length + configBase.length > 0
   const recebimentoAtivo = pathname.startsWith('/recebimento')
   const [recAberto, setRecAberto] = useState(recebimentoAtivo)
   const shopfloorVisivel = SHOPFLOOR.filter(pode)
   const shopfloorAtivo = pathname.startsWith('/shopfloor')
   const [shopfloorAberto, setShopfloorAberto] = useState(shopfloorAtivo)
+  const setupVisivel = SETUP.filter(pode)
+  const setupAtivo = pathname.startsWith('/setup')
+  // Nome diferente do `setupAberto`/`setSetupAberto` do modo quiosque (mais abaixo)
+  // para não colidir com esse estado já existente.
+  const [setupModuloAberto, setSetupModuloAberto] = useState(setupAtivo)
   const configAtivo = CONFIG_TODOS.some((i) => ehAtivo(pathname, i.href))
   const [configAberto, setConfigAberto] = useState(configAtivo)
   const configRecAtivo = CONFIG_RECEBIMENTO.some((i) => ehAtivo(pathname, i.href))
   const [configRecAberto, setConfigRecAberto] = useState(configRecAtivo)
   const configSfAtivo = CONFIG_SHOPFLOOR.some((i) => ehAtivo(pathname, i.href))
   const [configSfAberto, setConfigSfAberto] = useState(configSfAtivo)
+  const configSetupAtivo = pathname.startsWith('/configuracoes/setup-')
+  const [configSetupAberto, setConfigSetupAberto] = useState(configSetupAtivo)
 
   const tituloPagina =
-    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...CONFIG_TODOS, AJUDA]
+    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...CONFIG_TODOS, AJUDA]
       .filter((i) => ehAtivo(pathname, i.href))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
@@ -262,6 +285,33 @@ export function AppShell({
           </>
         )}
 
+        {setupVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('Setup')}
+            <button
+              type="button"
+              onClick={() => setSetupModuloAberto((v) => !v)}
+              className={cn(linkClasse(false), 'w-full justify-between')}
+            >
+              <span className="flex items-center gap-3">
+                <Cpu className="size-[18px] shrink-0" />
+                Setup
+              </span>
+              <ChevronDown className={cn('size-4 transition-transform', setupModuloAberto && 'rotate-180')} />
+            </button>
+            {setupModuloAberto && (
+              <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
+                {setupVisivel.map((i) => (
+                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                    <i.icone className="size-[18px] shrink-0" />
+                    {i.rotulo}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
         {temConfig && (
           <div className="mt-3">
             <button
@@ -326,6 +376,32 @@ export function AppShell({
                     {configSfAberto && (
                       <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
                         {configSf.map((i) => (
+                          <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                            <i.icone className="size-[18px] shrink-0" />
+                            {i.rotulo}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {configSetup.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setConfigSetupAberto((v) => !v)}
+                      className={cn(linkClasse(false), 'w-full justify-between')}
+                    >
+                      <span className="flex items-center gap-3">
+                        <Settings2 className="size-[18px] shrink-0" />
+                        Ajustes Setup
+                      </span>
+                      <ChevronDown className={cn('size-4 transition-transform', configSetupAberto && 'rotate-180')} />
+                    </button>
+                    {configSetupAberto && (
+                      <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
+                        {configSetup.map((i) => (
                           <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                             <i.icone className="size-[18px] shrink-0" />
                             {i.rotulo}
