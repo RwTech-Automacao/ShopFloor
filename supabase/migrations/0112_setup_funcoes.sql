@@ -28,6 +28,14 @@ language sql immutable as $func$ select coalesce(substring(public.st_norm(p) fro
 create or replace function public.st_rolo_sequencial(p text) returns text
 language sql immutable as $func$ select btrim(coalesce(substring(public.st_norm(p) from '^[^-–—_:/ ]+[-–—_:/ ](.*)$'), '')) $func$;
 
+-- Chave canônica do rolo: prefixo + '-' + sequencial sem zeros à esquerda (CAPJ41-1 = CAPJ41-0001 = CAPJ41 1).
+-- null quando o código é vazio ou inválido. É o que identifica o rolo em unicidade e comparações.
+create or replace function public.st_rolo_chave(p text) returns text
+language sql immutable as $func$
+  select case when public.st_rolo_prefixo(p) = '' or public.st_rolo_sequencial(p) = '' then null
+              else public.st_rolo_prefixo(p) || '-' || ltrim(public.st_rolo_sequencial(p), '0') end
+$func$;
+
 create or replace function public.st_limpar_sn(p text) returns text
 language sql immutable as $func$ select regexp_replace(coalesce(p, ''), '[^A-Za-z0-9]', '', 'g') $func$;
 
@@ -48,8 +56,9 @@ begin
     if lower(mx[1]) <> lower(ma[1]) or lower(mx[3]) <> lower(ma[3]) then return false; end if;
     return mx[2]::numeric between least(ma[2]::numeric, mb[2]::numeric) and greatest(ma[2]::numeric, mb[2]::numeric);
   end if;
-  lo := least(a, b); hi := greatest(a, b);
-  return x >= lo and x <= hi;
+  -- collate "C": mesma ordem por unidade de código do TS, independente da collation do banco.
+  lo := least(a collate "C", b collate "C"); hi := greatest(a collate "C", b collate "C");
+  return x collate "C" >= lo collate "C" and x collate "C" <= hi collate "C";
 end $func$;
 
 create or replace function public.st_nome_usuario() returns text
@@ -102,11 +111,12 @@ begin
   perform pg_advisory_xact_lock(hashtext('st/' || v_ordem.pmo || '/' || v_ordem.op)::bigint);
 
   -- Já existe setup dessa OP nessa máquina e face: reabre (a cópia é ignorada).
-  select id into v_id from public.st_setups
+  select id, sn_abertura into v_origem from public.st_setups
    where pmo = v_ordem.pmo and op = v_ordem.op and processo = v_processo
      and linha = v_linha and equipamento = v_equip and face = v_face;
   if found then
-    return jsonb_build_object('setup_id', v_id, 'criado', false, 'sem_faixa', false);
+    return jsonb_build_object('setup_id', v_origem.id, 'criado', false,
+      'sem_faixa', public.st_sn_na_faixa(v_ordem.sn_ini, v_ordem.sn_fim, v_origem.sn_abertura) is null);
   end if;
 
   if exists (select 1 from public.st_setups
@@ -132,8 +142,8 @@ begin
   returning id into v_id;
 
   if p_copiar_de is not null then
-    insert into public.st_setup_itens (setup_id, processo, posicao, feeder, componente, rolo, atualizado_por)
-    select v_id, i.processo, i.posicao, i.feeder, i.componente, null, auth.uid()
+    insert into public.st_setup_itens (setup_id, processo, posicao, feeder, componente, rolo, rolo_chave, atualizado_por)
+    select v_id, i.processo, i.posicao, i.feeder, i.componente, null, null, auth.uid()
     from public.st_setup_itens i where i.setup_id = p_copiar_de;
   end if;
 
@@ -150,10 +160,13 @@ declare
   v_fee text := public.st_norm(p_feeder);
   v_rolo text := public.st_norm(p_rolo);
   v_prefixo text := public.st_rolo_prefixo(p_rolo);
+  v_chave text := public.st_rolo_chave(p_rolo);
   v_proc_estrutura text;
   v_item record;
   v_id uuid;
 begin
+  -- Trava ANTES de ler o estado: quem decide (montagem × liberado) enxerga o que já foi confirmado.
+  perform pg_advisory_xact_lock(hashtext('st-setup/' || p_setup_id::text)::bigint);
   select * into v_setup from public.st_setups where id = p_setup_id;
   if not found then raise exception 'SETUP_INEXISTENTE'; end if;
   if v_setup.estado = 'liberado' then
@@ -161,16 +174,15 @@ begin
   elsif not tem_permissao('setup', 'lancar') then
     raise exception 'SEM_PERMISSAO';
   end if;
-  perform pg_advisory_xact_lock(hashtext('st-setup/' || p_setup_id::text)::bigint);
 
   if v_pos = '' or v_fee = '' or v_rolo = '' then raise exception 'CAMPOS_OBRIGATORIOS'; end if;
-  if v_prefixo = '' or public.st_rolo_sequencial(p_rolo) = '' then raise exception 'ROLO_INVALIDO'; end if;
+  if v_chave is null then raise exception 'ROLO_INVALIDO'; end if;
 
   select processo into v_proc_estrutura from public.st_estrutura where pmo = v_setup.pmo and componente = v_prefixo;
   if not found then raise exception 'COMPONENTE_FORA_DA_ESTRUTURA'; end if;
   if v_proc_estrutura <> v_setup.processo then raise exception 'COMPONENTE_OUTRO_PROCESSO'; end if;
 
-  if exists (select 1 from public.st_setup_itens where setup_id = p_setup_id and rolo = v_rolo) then
+  if exists (select 1 from public.st_setup_itens where setup_id = p_setup_id and rolo_chave = v_chave) then
     raise exception 'ROLO_JA_MONTADO';
   end if;
 
@@ -179,7 +191,7 @@ begin
   if found then
     if v_item.rolo is not null then raise exception 'POSICAO_JA_CADASTRADA'; end if;
     if v_item.componente <> v_prefixo then raise exception 'COMPONENTE_DIFERENTE_DA_POSICAO'; end if;
-    update public.st_setup_itens set rolo = v_rolo, atualizado_por = auth.uid(), atualizado_em = now()
+    update public.st_setup_itens set rolo = v_rolo, rolo_chave = v_chave, atualizado_por = auth.uid(), atualizado_em = now()
      where id = v_item.id;
     return jsonb_build_object('item_id', v_item.id, 'componente', v_prefixo, 'atualizou', true);
   end if;
@@ -193,8 +205,8 @@ begin
     end if;
   end if;
 
-  insert into public.st_setup_itens (setup_id, processo, posicao, feeder, componente, rolo, atualizado_por)
-  values (p_setup_id, v_setup.processo, v_pos, v_fee, v_prefixo, v_rolo, auth.uid())
+  insert into public.st_setup_itens (setup_id, processo, posicao, feeder, componente, rolo, rolo_chave, atualizado_por)
+  values (p_setup_id, v_setup.processo, v_pos, v_fee, v_prefixo, v_rolo, v_chave, auth.uid())
   returning id into v_id;
 
   if v_setup.estado = 'liberado' then
@@ -209,8 +221,13 @@ end $func$;
 -- ---------- remover item ----------
 create or replace function public.st_remover_item(p_item_id uuid) returns void
 language plpgsql security definer set search_path = public as $func$
-declare v_item record; v_setup record;
+declare v_setup_id uuid; v_item record; v_setup record;
 begin
+  -- Só descobre o setup; nada é decidido antes da trava.
+  select setup_id into v_setup_id from public.st_setup_itens where id = p_item_id;
+  if not found then raise exception 'ITEM_INEXISTENTE'; end if;
+  perform pg_advisory_xact_lock(hashtext('st-setup/' || v_setup_id::text)::bigint);
+  -- Relê depois da trava: se outro envio já removeu, não grava histórico duas vezes.
   select * into v_item from public.st_setup_itens where id = p_item_id;
   if not found then raise exception 'ITEM_INEXISTENTE'; end if;
   select * into v_setup from public.st_setups where id = v_item.setup_id;
@@ -219,7 +236,6 @@ begin
   elsif not tem_permissao('setup', 'lancar') then
     raise exception 'SEM_PERMISSAO';
   end if;
-  perform pg_advisory_xact_lock(hashtext('st-setup/' || v_item.setup_id::text)::bigint);
   delete from public.st_setup_itens where id = p_item_id;
   if v_setup.estado = 'liberado' then
     insert into public.st_alteracoes (setup_id, item_id, tipo, antes, depois, usuario, usuario_nome)
@@ -231,15 +247,18 @@ end $func$;
 create or replace function public.st_editar_item(p_item_id uuid, p_posicao text, p_feeder text) returns void
 language plpgsql security definer set search_path = public as $func$
 declare
-  v_item record; v_setup record;
+  v_setup_id uuid; v_item record; v_setup record;
   v_pos text := public.st_norm(p_posicao); v_fee text := public.st_norm(p_feeder);
   v_tipo text;
 begin
   if not tem_permissao('setup', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
+  select setup_id into v_setup_id from public.st_setup_itens where id = p_item_id;
+  if not found then raise exception 'ITEM_INEXISTENTE'; end if;
+  perform pg_advisory_xact_lock(hashtext('st-setup/' || v_setup_id::text)::bigint);
+  -- Relê depois da trava: antes/tipo saem da linha atual.
   select * into v_item from public.st_setup_itens where id = p_item_id;
   if not found then raise exception 'ITEM_INEXISTENTE'; end if;
   select * into v_setup from public.st_setups where id = v_item.setup_id;
-  perform pg_advisory_xact_lock(hashtext('st-setup/' || v_item.setup_id::text)::bigint);
   if v_pos = '' or v_fee = '' then raise exception 'CAMPOS_OBRIGATORIOS'; end if;
   if v_pos = v_item.posicao and v_fee = v_item.feeder then return; end if;
 
@@ -293,56 +312,63 @@ declare
   v_setup record; v_ordem record; v_item record;
   v_pos text := public.st_norm(p_posicao); v_fee text := public.st_norm(p_feeder);
   v_saida text := public.st_norm(p_rolo_saida); v_entrada text := public.st_norm(p_rolo_entrada);
+  v_chave_saida text := public.st_rolo_chave(p_rolo_saida); v_chave_entrada text := public.st_rolo_chave(p_rolo_entrada);
+  v_pth boolean;
   v_sn text := public.st_limpar_sn(p_sn_inicial);
   v_motivos text[] := '{}';
   v_faixa boolean;
   v_outra text;
   v_resultado text;
   v_troca uuid;
-  rotulo_pos text; rotulo_fee text;
 begin
   if not tem_permissao('setup', 'lancar') then raise exception 'SEM_PERMISSAO'; end if;
+  if v_pos = '' or v_fee = '' or v_saida = '' or v_entrada = '' or v_sn = '' then raise exception 'CAMPOS_OBRIGATORIOS'; end if;
+  -- Trava ANTES de ler o setup e os itens.
+  perform pg_advisory_xact_lock(hashtext('st-setup/' || p_setup_id::text)::bigint);
   select * into v_setup from public.st_setups where id = p_setup_id;
   if not found then raise exception 'SETUP_INEXISTENTE'; end if;
   if v_setup.estado <> 'liberado' then raise exception 'SETUP_NAO_LIBERADO'; end if;
-  if v_pos = '' or v_fee = '' or v_saida = '' or v_entrada = '' or v_sn = '' then raise exception 'CAMPOS_OBRIGATORIOS'; end if;
-  perform pg_advisory_xact_lock(hashtext('st-setup/' || p_setup_id::text)::bigint);
+  v_pth := v_setup.processo = 'PTH';
 
-  rotulo_pos := case when v_setup.processo = 'PTH' then 'posto' else 'posição' end;
-  rotulo_fee := case when v_setup.processo = 'PTH' then 'locação' else 'feeder' end;
-
-  -- 1. posição e feeder
+  -- 1. posição e feeder (PTH: posto e locação — frases escritas por processo, com o gênero certo)
   select * into v_item from public.st_setup_itens where setup_id = p_setup_id and posicao = v_pos and feeder = v_fee;
   if not found then
     if not exists (select 1 from public.st_setup_itens where setup_id = p_setup_id and posicao = v_pos) then
-      v_motivos := v_motivos || format('A %s %s não existe nesse setup.', rotulo_pos, v_pos);
+      v_motivos := v_motivos || case when v_pth then format('O posto %s não existe nesse setup.', v_pos)
+                                     else format('A posição %s não existe nesse setup.', v_pos) end;
     elsif not exists (select 1 from public.st_setup_itens where setup_id = p_setup_id and feeder = v_fee) then
-      v_motivos := v_motivos || format('O %s %s não existe nesse setup.', rotulo_fee, v_fee);
+      v_motivos := v_motivos || case when v_pth then format('A locação %s não existe nesse setup.', v_fee)
+                                     else format('O feeder %s não existe nesse setup.', v_fee) end;
     else
-      v_motivos := v_motivos || format('O %s %s não está na %s %s.', rotulo_fee, v_fee, rotulo_pos, v_pos);
+      v_motivos := v_motivos || case when v_pth then format('A locação %s não está no posto %s.', v_fee, v_pos)
+                                     else format('O feeder %s não está na posição %s.', v_fee, v_pos) end;
     end if;
   else
-    -- 2. rolo que sai = rolo montado
-    if v_item.rolo is distinct from v_saida then
-      v_motivos := v_motivos || format('O rolo montado na %s %s é %s, não %s.', rotulo_pos, v_pos, coalesce(v_item.rolo, '(nenhum)'), v_saida);
+    -- 2. rolo que sai = rolo montado (pela chave: CAPJ41-1 = CAPJ41-0001)
+    if v_item.rolo_chave is null or v_item.rolo_chave is distinct from v_chave_saida then
+      v_motivos := v_motivos || case when v_pth
+        then format('O rolo montado no posto %s é %s, não %s.', v_pos, coalesce(v_item.rolo, '(nenhum)'), v_saida)
+        else format('O rolo montado na posição %s é %s, não %s.', v_pos, coalesce(v_item.rolo, '(nenhum)'), v_saida) end;
     end if;
   end if;
 
   -- 3. mesmo componente / 4. outro rolo
-  if public.st_rolo_prefixo(v_entrada) = '' or public.st_rolo_sequencial(v_entrada) = '' then
+  if v_chave_entrada is null then
     v_motivos := v_motivos || format('Código do rolo que entra inválido: %s.', v_entrada);
-  elsif public.st_rolo_prefixo(v_saida) = '' or public.st_rolo_sequencial(v_saida) = '' then
+  elsif v_chave_saida is null then
     v_motivos := v_motivos || format('Código do rolo que sai inválido: %s.', v_saida);
   else
     if public.st_rolo_prefixo(v_entrada) <> public.st_rolo_prefixo(v_saida) then
       v_motivos := v_motivos || format('Componente diferente: sai %s, entra %s.', public.st_rolo_prefixo(v_saida), public.st_rolo_prefixo(v_entrada));
-    elsif ltrim(public.st_rolo_sequencial(v_entrada), '0') = ltrim(public.st_rolo_sequencial(v_saida), '0') then
+    elsif v_chave_entrada = v_chave_saida then
       v_motivos := v_motivos || 'O rolo que entra é o mesmo que sai.'::text;
     end if;
     select posicao into v_outra from public.st_setup_itens
-     where setup_id = p_setup_id and rolo = v_entrada and (v_item.id is null or id <> v_item.id) limit 1;
+     where setup_id = p_setup_id and rolo_chave = v_chave_entrada and (v_item.id is null or id <> v_item.id) limit 1;
     if found then
-      v_motivos := v_motivos || format('O rolo %s já está montado na %s %s.', v_entrada, rotulo_pos, v_outra);
+      v_motivos := v_motivos || case when v_pth
+        then format('O rolo %s já está montado no posto %s.', v_entrada, v_outra)
+        else format('O rolo %s já está montado na posição %s.', v_entrada, v_outra) end;
     end if;
   end if;
 
@@ -362,7 +388,7 @@ begin
   returning id into v_troca;
 
   if v_resultado = 'APROVADO' then
-    update public.st_setup_itens set rolo = v_entrada, atualizado_por = auth.uid(), atualizado_em = now()
+    update public.st_setup_itens set rolo = v_entrada, rolo_chave = v_chave_entrada, atualizado_por = auth.uid(), atualizado_em = now()
      where id = v_item.id;
   end if;
 
@@ -381,10 +407,19 @@ begin
   if not tem_permissao('setup', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
   if not exists (select 1 from public.sf_ordens where pmo = v_pmo) then raise exception 'PMO_INEXISTENTE'; end if;
   perform pg_advisory_xact_lock(hashtext('st-estrutura/' || v_pmo)::bigint);
-  for r in select public.st_norm(e->>'componente') as componente, public.st_norm(e->>'processo') as processo
-           from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) e loop
-    if r.componente = '' then raise exception 'COMPONENTE_INVALIDO'; end if;
-    if r.processo not in ('SMD', 'PTH') then raise exception 'PROCESSO_INVALIDO'; end if;
+  -- Valida todas as linhas; depois deduplica por componente (a última ocorrência vale) antes de contar.
+  if exists (select 1 from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) e
+              where public.st_norm(e->>'componente') = '') then
+    raise exception 'COMPONENTE_INVALIDO';
+  end if;
+  if exists (select 1 from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) e
+              where public.st_norm(e->>'processo') not in ('SMD', 'PTH')) then
+    raise exception 'PROCESSO_INVALIDO';
+  end if;
+  for r in select distinct on (x.componente) x.componente, x.processo
+           from (select public.st_norm(e->>'componente') as componente, public.st_norm(e->>'processo') as processo, n
+                   from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) with ordinality as t(e, n)) x
+           order by x.componente, x.n desc loop
     select processo into v_existente from public.st_estrutura where pmo = v_pmo and componente = r.componente;
     if not found then
       insert into public.st_estrutura (pmo, componente, processo, origem, criado_por)

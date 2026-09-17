@@ -52,14 +52,15 @@ create table public.st_setup_itens (
   posicao        text not null,              -- posição (SMD) ou posto (PTH)
   feeder         text not null,              -- feeder (SMD) ou locação (PTH)
   componente     text not null,
-  rolo           text,                       -- rolo montado agora (código completo); null = falta bipar
+  rolo           text,                       -- rolo montado agora (código como bipado, normalizado); null = falta bipar
+  rolo_chave     text,                       -- chave canônica do rolo: prefixo || '-' || sequencial sem zeros à esquerda (st_rolo_chave)
   atualizado_por uuid references public.usuarios(id),
   atualizado_em  timestamptz not null default now(),
   unique (setup_id, posicao, feeder)
 );
 create unique index st_itens_posicao_smd on public.st_setup_itens (setup_id, posicao) where processo = 'SMD';
 create unique index st_itens_feeder_smd  on public.st_setup_itens (setup_id, feeder)  where processo = 'SMD';
-create unique index st_itens_rolo        on public.st_setup_itens (setup_id, rolo)    where rolo is not null;
+create unique index st_itens_rolo        on public.st_setup_itens (setup_id, rolo_chave) where rolo_chave is not null;
 
 create table public.st_trocas (
   id            uuid primary key default gen_random_uuid(),
