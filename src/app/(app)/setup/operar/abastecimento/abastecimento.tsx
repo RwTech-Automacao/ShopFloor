@@ -13,7 +13,7 @@ import type { Equipamento, OrdemSetup, SetupResumo, Troca } from '@/modules/setu
 import { rotuloEquipamento, SELECAO_VAZIA, SelecaoSetup, selecaoCompleta, type ValorSelecao } from '../../selecao-setup'
 
 const INPUT_BIPE = 'h-11 text-lg uppercase'
-const FALHA_CONEXAO = 'Falha de conexão. Verifique a rede e tente de novo.'
+const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar.'
 
 function fmtHora(iso: string): string {
   const d = new Date(iso)
@@ -55,7 +55,12 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
     tocarErro()
   }
 
-  const focar = (c: Campo) => refs[c].current?.focus()
+  // Sempre seleciona o conteúdo ao focar: o leitor de bipe digita em cima e substitui, em vez de concatenar.
+  const focar = (c: Campo) => {
+    const el = refs[c].current
+    el?.focus()
+    el?.select()
+  }
 
   async function recarregarTrocas(setupId: string, seq: number) {
     try {
@@ -122,8 +127,10 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             setupId, posicao: v.posicao, feeder: v.feeder, roloSaida: v.saida, roloEntrada: v.entrada, snInicial: v.sn,
           })
         } catch {
-          avisar(FALHA_CONEXAO, chips)
-          focar('sn')
+          avisar(FALHA_CONEXAO_TROCA, chips)
+          await recarregarTrocas(setupId, seq)
+          // Não deixa o foco no SN com tudo preenchido: um Enter reenviaria e geraria um REPROVADO enganoso.
+          focar('posicao')
           return
         }
         if (!r.ok) {
@@ -134,7 +141,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             tipo: 'ok',
             titulo: 'Troca aprovada — pode seguir',
             chips,
-            dica: r.semFaixa ? 'OP sem faixa de SN: SN aceito sem conferência.' : undefined,
+            dica: r.semFaixa ? 'Confira o SN manualmente — a OP não tem faixa de SN cadastrada.' : undefined,
           })
           setCampos(CAMPOS_VAZIOS)
           focar('posicao')
@@ -175,7 +182,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
 
       {completa && !buscando && localizado && setup === null && (
         <p className="rounded-lg border border-border bg-card p-4 text-base text-muted-foreground">
-          Não há setup dessa OP nessa máquina e face.
+          Não há setup dessa OP {rotulos.equipamento === 'Bloco' ? 'nesse bloco' : 'nessa máquina'} e face.
         </p>
       )}
 
@@ -217,6 +224,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
                       ref={refs[campo]}
                       value={campos[campo]}
                       onChange={(e) => setCampos((c) => ({ ...c, [campo]: e.target.value }))}
+                      onFocus={(e) => e.currentTarget.select()}
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter') return
                         e.preventDefault()
