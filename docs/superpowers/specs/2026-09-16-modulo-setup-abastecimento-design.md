@@ -41,7 +41,7 @@ O código do rolo tem o formato `CÓDIGO_ERP-LOTE_E_NÚMERO_DO_ROLO` (ex.: `CAPJ
 | 8 | **Reprovação só registra**: não trava a posição, e o rolo montado não muda. |
 | 9 | **Feeder e posição podem ser trocados ou editados no meio da OP só pelo admin do módulo**, com histórico. |
 | 10 | **SN de Abertura e SN Inicial conferidos contra a faixa de SN da OP.** |
-| 11 | **PTH mantém os campos do legado** (Linha, Bloco, Face, Posto, Locação). O significado deles será confirmado com a produção. |
+| 11 | **PTH mantém os campos do legado** (Linha, Bloco, Face, Posto, Locação). **Bloco** e **posto** são localizações dentro da fábrica; **locação** é a posição do componente na placa. |
 | 12 | **Começa do zero**: a planilha não é migrada. |
 | 13 | **Permissões**: montar setup e trocar rolo = `lancar`; estrutura, cadastros e edição no meio da OP = `administrar`; consultas = `visualizar`. |
 
@@ -171,6 +171,3 @@ APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa g
   - pré-condições de liberação.
 - **Banco (Postgres descartável):** migrações, RLS por nível, funções atômicas (incluir, copiar, liberar, trocar, editar) e dois bipes concorrentes no mesmo feeder ou rolo.
 - **Smoke do usuário no preview**, com as migrações no Dev.
-
-## 9. Pendências com a produção
-- Significado de Bloco, Posto e Locação no PTH, e se as Linhas 1–6 e os Blocos A/B são reais.
