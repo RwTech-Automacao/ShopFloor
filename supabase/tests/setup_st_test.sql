@@ -298,4 +298,45 @@ do $t$ declare s uuid; begin
   exception when others then if sqlerrm not like '%SEM_PERMISSAO%' then raise; end if; end;
 end $t$;
 select set_config('teste.perms', 'setup.visualizar,setup.lancar,setup.administrar', false);
+-- 10. Colaborador: crachá livre (sem conferência, pode ficar vazio) na abertura, no item e na troca
+insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values
+  ('PMOG13', '9005', '2690050001', '2690050100'),
+  ('PMOG13', '9006', '2690050001', '2690050100');
+do $t$ declare s uuid; n uuid; r jsonb; i uuid; begin
+  -- abertura: grava quem abriu, com btrim (mesma normalização do colaborador no ShopFloor)
+  r := st_abrir_setup('PMOG13', '9005', eqid('SMD', '1', 'A', 'MG5'), 'TOP', '2690050001', null, '  Ana Lima  ');
+  s := (r->>'setup_id')::uuid;
+  if (select colaborador from st_setups where id = s) <> 'Ana Lima' then raise exception 'FALHOU: colaborador da abertura'; end if;
+  -- item: grava quem bipou
+  i := (st_incluir_item(s, '1', 'F1', 'CAPJ41-9001', ' Bia Souza ')->>'item_id')::uuid;
+  if (select colaborador from st_setup_itens where id = i) <> 'Bia Souza' then raise exception 'FALHOU: colaborador do item'; end if;
+  -- vazio é aceito: o campo não bloqueia nada
+  i := (st_incluir_item(s, '2', 'F2', 'RESR85-9001')->>'item_id')::uuid;
+  if (select colaborador from st_setup_itens where id = i) <> '' then raise exception 'FALHOU: item sem colaborador'; end if;
+
+  -- cópia: os itens copiados nascem sem colaborador e o bipe do rolo grava quem bipou
+  r := st_abrir_setup('PMOG13', '9006', eqid('SMD', '1', 'A', 'MG5'), 'TOP', '2690050001', s, 'Caio');
+  n := (r->>'setup_id')::uuid;
+  if (select colaborador from st_setups where id = n) <> 'Caio' then raise exception 'FALHOU: colaborador da cópia'; end if;
+  if (select count(*) from st_setup_itens where setup_id = n and colaborador <> '') <> 0 then raise exception 'FALHOU: cópia já veio com colaborador'; end if;
+  if (st_incluir_item(n, '1', 'F1', 'CAPJ41-9002', 'Dora')->>'atualizou')::boolean is not true then raise exception 'FALHOU: preencher rolo da cópia'; end if;
+  if (select colaborador from st_setup_itens where setup_id = n and posicao = '1') <> 'Dora' then raise exception 'FALHOU: colaborador do item copiado'; end if;
+
+  -- troca: grava quem trocou, sem mexer no colaborador do item (que é quem montou)
+  perform st_liberar_setup(s);
+  r := st_trocar_rolo(s, '1', 'F1', 'CAPJ41-9001', 'CAPJ41-9003', '2690050010', ' Eva ');
+  if r->>'resultado' <> 'APROVADO' then raise exception 'FALHOU: troca do colaborador %', r; end if;
+  if (select colaborador from st_trocas where id = (r->>'troca_id')::uuid) <> 'Eva' then raise exception 'FALHOU: colaborador da troca'; end if;
+  if (select colaborador from st_setup_itens where setup_id = s and posicao = '1') <> 'Bia Souza' then raise exception 'FALHOU: troca sobrescreveu o colaborador do item'; end if;
+  -- troca sem colaborador: aceita e grava vazio
+  r := st_trocar_rolo(s, '1', 'F1', 'CAPJ41-9003', 'CAPJ41-9004', '2690050010');
+  if r->>'resultado' <> 'APROVADO' then raise exception 'FALHOU: troca sem colaborador %', r; end if;
+  if (select colaborador from st_trocas where id = (r->>'troca_id')::uuid) <> '' then raise exception 'FALHOU: troca sem colaborador gravou algo'; end if;
+
+  -- histórico do admin em setup liberado: autor continua sendo o usuário logado, com o colaborador no "depois"
+  i := (st_incluir_item(s, '3', 'F3', 'RESR85-9002', 'Fabio')->>'item_id')::uuid;
+  if (select depois->>'colaborador' from st_alteracoes where item_id = i and tipo = 'inclusao') <> 'Fabio' then raise exception 'FALHOU: colaborador no histórico'; end if;
+  if (select usuario_nome from st_alteracoes where item_id = i and tipo = 'inclusao') <> 'Operador Teste' then raise exception 'FALHOU: histórico perdeu o usuário logado'; end if;
+end $t$;
+
 select 'TODOS OS TESTES DO SETUP PASSARAM' as resultado;

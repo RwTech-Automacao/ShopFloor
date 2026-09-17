@@ -3,6 +3,8 @@
 -- Leitura: quem visualiza o módulo. Escrita de operação: só pelas funções st_* (0112, security
 -- definer). Cadastros (equipamentos, estrutura) são escritos direto pelo app, restritos a administrar.
 -- No PTH, posicao/feeder guardam posto/locação.
+-- Colaborador: crachá digitado/bipado na tela, texto livre (mesmo campo da tela de Lançamento do
+-- ShopFloor). É só registro de quem fez; o usuário logado continua em criado_por/operador/usuario.
 -- Equipamento: SMD = linha + bloco + máquina; PTH = linha + bloco (sem máquina).
 -- =============================================================
 
@@ -48,6 +50,7 @@ create table public.st_setups (
   equipamento_id uuid not null references public.st_equipamentos(id),
   face           text not null check (face in ('TOP', 'BOT', 'TOP E BOT')),
   sn_abertura    text not null,
+  colaborador    text not null default '',   -- crachá de quem abriu o setup (livre, pode ficar vazio)
   estado         text not null default 'montagem' check (estado in ('montagem', 'liberado')),
   copiado_de     uuid references public.st_setups(id) on delete set null,
   criado_por     uuid references public.usuarios(id),
@@ -70,6 +73,7 @@ create table public.st_setup_itens (
   componente     text not null,
   rolo           text,                       -- rolo montado agora (código como bipado, normalizado); null = falta bipar
   rolo_chave     text,                       -- chave canônica do rolo: prefixo || '-' || sequencial sem zeros à esquerda (st_rolo_chave)
+  colaborador    text not null default '',    -- crachá de quem bipou o item (livre, pode ficar vazio)
   atualizado_por uuid references public.usuarios(id),
   atualizado_em  timestamptz not null default now(),
   unique (setup_id, posicao, feeder)
@@ -91,6 +95,7 @@ create table public.st_trocas (
   motivos       text[] not null default '{}',
   operador      uuid references public.usuarios(id),
   operador_nome text not null default '',
+  colaborador   text not null default '',   -- crachá de quem fez a troca (livre, pode ficar vazio)
   data_hora     timestamptz not null default now()
 );
 create index st_trocas_setup_data on public.st_trocas (setup_id, data_hora desc);

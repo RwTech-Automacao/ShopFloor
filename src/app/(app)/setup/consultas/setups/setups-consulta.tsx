@@ -324,6 +324,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
               </DialogHeader>
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span>{dialogSetup.processo} · SN de Abertura <span className="font-mono text-foreground">{dialogSetup.snAbertura}</span></span>
+                <span>Colaborador <span className="text-foreground">{dialogSetup.colaborador || '—'}</span></span>
                 <BadgeEstado estado={dialogSetup.estado} />
                 <span>Criado em {fmtData(dialogSetup.criadoEm)}</span>
                 <span>Liberado em {fmtData(dialogSetup.liberadoEm)}</span>
@@ -342,17 +343,18 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
                       <TableHead>{rotulosDialog.feeder}</TableHead>
                       <TableHead>Componente</TableHead>
                       <TableHead>Rolo montado</TableHead>
+                      <TableHead>Colaborador</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {carregandoDialog && (
-                      <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Carregando…</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="py-6 text-center text-muted-foreground">Carregando…</TableCell></TableRow>
                     )}
                     {!carregandoDialog && erroItens && (
-                      <TableRow><TableCell colSpan={4} className="py-6 text-center text-red-600">{erroItens}</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="py-6 text-center text-red-600">{erroItens}</TableCell></TableRow>
                     )}
                     {!carregandoDialog && !erroItens && itensFiltrados.length === 0 && (
-                      <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Nenhum item encontrado.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="py-6 text-center text-muted-foreground">Nenhum item encontrado.</TableCell></TableRow>
                     )}
                     {!carregandoDialog && !erroItens && itensFiltrados.map((i) => (
                       <TableRow key={i.id}>
@@ -360,6 +362,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
                         <TableCell>{destacar(i.feeder, termo)}</TableCell>
                         <TableCell className="font-mono">{destacar(i.componente, termo)}</TableCell>
                         <TableCell className="font-mono">{i.rolo ? destacar(i.rolo, termo) : '—'}</TableCell>
+                        <TableCell>{i.colaborador || '—'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

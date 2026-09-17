@@ -9,14 +9,14 @@ export interface ItemEstruturaCadastro { componente: string; processo: Processo;
 export interface SetupResumo {
   id: string; pmo: string; op: string; processo: Processo; equipamentoId: string
   linha: string; bloco: string; maquina: string | null; face: Face
-  snAbertura: string; estado: EstadoSetup; criadoEm: string; liberadoEm: string | null; totalItens: number; semRolo: number
+  snAbertura: string; colaborador: string; estado: EstadoSetup; criadoEm: string; liberadoEm: string | null; totalItens: number; semRolo: number
 }
-export interface ItemSetup { id: string; posicao: string; feeder: string; componente: string; rolo: string | null; atualizadoEm: string }
+export interface ItemSetup { id: string; posicao: string; feeder: string; componente: string; rolo: string | null; colaborador: string; atualizadoEm: string }
 export interface Troca {
   id: string; setupId: string; pmo: string; op: string; processo: Processo; equipamentoId: string
   linha: string; bloco: string; maquina: string | null; face: Face
   posicao: string; feeder: string; roloSaida: string; roloEntrada: string; snInicial: string
-  resultado: 'APROVADO' | 'REPROVADO'; motivos: string[]; operadorNome: string; dataHora: string
+  resultado: 'APROVADO' | 'REPROVADO'; motivos: string[]; operadorNome: string; colaborador: string; dataHora: string
 }
 export interface Alteracao { id: string; tipo: string; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null; usuarioNome: string; dataHora: string }
 export interface ChaveSetup { pmo: string; op: string; equipamentoId: string; face: Face }
@@ -26,7 +26,7 @@ export interface FiltroTrocas { setupId?: string; de?: string; ate?: string; pmo
 type Row = Record<string, unknown>
 const EQUIP_COLS = 'id,processo,linha,bloco,maquina,ativo'
 // Linha, bloco e máquina vêm do equipamento cadastrado (embed de st_setups.equipamento_id).
-const SETUP_COLS = 'id,pmo,op,processo,equipamento_id,face,sn_abertura,estado,criado_em,liberado_em,st_equipamentos!inner(linha,bloco,maquina),st_setup_itens(rolo)'
+const SETUP_COLS = 'id,pmo,op,processo,equipamento_id,face,sn_abertura,colaborador,estado,criado_em,liberado_em,st_equipamentos!inner(linha,bloco,maquina),st_setup_itens(rolo)'
 
 function mapSetup(r: Row): SetupResumo {
   const itens = (r.st_setup_itens ?? []) as { rolo: string | null }[]
@@ -35,13 +35,13 @@ function mapSetup(r: Row): SetupResumo {
     id: r.id as string, pmo: r.pmo as string, op: r.op as string, processo: r.processo as Processo,
     equipamentoId: r.equipamento_id as string,
     linha: e.linha as string, bloco: e.bloco as string, maquina: (e.maquina as string | null) ?? null, face: r.face as Face,
-    snAbertura: r.sn_abertura as string, estado: r.estado as EstadoSetup, criadoEm: r.criado_em as string,
+    snAbertura: r.sn_abertura as string, colaborador: (r.colaborador as string) ?? '', estado: r.estado as EstadoSetup, criadoEm: r.criado_em as string,
     liberadoEm: (r.liberado_em as string | null) ?? null, totalItens: itens.length, semRolo: itens.filter((i) => i.rolo === null).length,
   }
 }
 const mapItem = (r: Row): ItemSetup => ({
   id: r.id as string, posicao: r.posicao as string, feeder: r.feeder as string, componente: r.componente as string,
-  rolo: (r.rolo as string | null) ?? null, atualizadoEm: r.atualizado_em as string,
+  rolo: (r.rolo as string | null) ?? null, colaborador: (r.colaborador as string) ?? '', atualizadoEm: r.atualizado_em as string,
 })
 const mapTroca = (r: Row): Troca => {
   const s = (r.st_setups ?? {}) as Row
@@ -53,7 +53,7 @@ const mapTroca = (r: Row): Troca => {
     face: s.face as Face, posicao: r.posicao as string, feeder: r.feeder as string,
     roloSaida: r.rolo_saida as string, roloEntrada: r.rolo_entrada as string, snInicial: r.sn_inicial as string,
     resultado: r.resultado as Troca['resultado'], motivos: (r.motivos as string[]) ?? [], operadorNome: r.operador_nome as string,
-    dataHora: r.data_hora as string,
+    colaborador: (r.colaborador as string) ?? '', dataHora: r.data_hora as string,
   }
 }
 
@@ -110,7 +110,7 @@ export async function carregarSetup(id: string): Promise<{ setup: SetupResumo; i
   const supabase = await createServerSupabase()
   const [{ data: s, error: e1 }, { data: itens, error: e2 }] = await Promise.all([
     supabase.from('st_setups').select(SETUP_COLS).eq('id', id).maybeSingle(),
-    supabase.from('st_setup_itens').select('id,posicao,feeder,componente,rolo,atualizado_em').eq('setup_id', id),
+    supabase.from('st_setup_itens').select('id,posicao,feeder,componente,rolo,colaborador,atualizado_em').eq('setup_id', id),
   ])
   if (e1) throw e1
   if (e2) throw e2
@@ -165,7 +165,7 @@ export async function listarSetups(f: FiltroSetups): Promise<SetupResumo[]> {
 export async function listarTrocas(f: FiltroTrocas, pagina: number, tamanho: number): Promise<{ linhas: Troca[]; total: number }> {
   const supabase = await createServerSupabase()
   let q = supabase.from('st_trocas')
-    .select('id,setup_id,posicao,feeder,rolo_saida,rolo_entrada,sn_inicial,resultado,motivos,operador_nome,data_hora,st_setups!inner(pmo,op,face,processo,equipamento_id,st_equipamentos!inner(linha,bloco,maquina))', { count: 'exact' })
+    .select('id,setup_id,posicao,feeder,rolo_saida,rolo_entrada,sn_inicial,resultado,motivos,operador_nome,colaborador,data_hora,st_setups!inner(pmo,op,face,processo,equipamento_id,st_equipamentos!inner(linha,bloco,maquina))', { count: 'exact' })
     .order('data_hora', { ascending: false })
     .order('id')
   if (f.setupId) q = q.eq('setup_id', f.setupId)

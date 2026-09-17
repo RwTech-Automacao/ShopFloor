@@ -18,12 +18,15 @@ async function exigir(perm: Permissao): Promise<Falha | null> {
 }
 const falha = (e: unknown): Falha => ({ ok: false, erro: mensagemErroSetup(e instanceof Error ? e.message : String(e)) })
 
-export async function abrirSetup(entrada: ChaveSetup & { snAbertura: string; copiarDe?: string }): Promise<{ ok: true; setupId: string; criado: boolean; semFaixa: boolean } | Falha> {
+// `colaborador` é o crachá digitado/bipado na tela: texto livre, sem conferência, pode vir vazio
+// (mesmo campo da tela de Lançamento do ShopFloor). Quem grava como autor continua sendo o usuário logado.
+export async function abrirSetup(entrada: ChaveSetup & { snAbertura: string; colaborador?: string; copiarDe?: string }): Promise<{ ok: true; setupId: string; criado: boolean; semFaixa: boolean } | Falha> {
   const negado = await exigir('lancar'); if (negado) return negado
   try {
     const r = await chamarRpc<{ setup_id: string; criado: boolean; sem_faixa: boolean }>('st_abrir_setup', {
       p_pmo: entrada.pmo, p_op: entrada.op, p_equipamento_id: entrada.equipamentoId,
       p_face: entrada.face, p_sn_abertura: entrada.snAbertura, p_copiar_de: entrada.copiarDe ?? null,
+      p_colaborador: entrada.colaborador ?? '',
     })
     return { ok: true, setupId: r.setup_id, criado: r.criado, semFaixa: r.sem_faixa }
   } catch (e) { return falha(e) }
@@ -48,10 +51,10 @@ export async function setupsParaCopiar(k: Omit<ChaveSetup, 'op'> & { excetoOp: s
   try { return { ok: true, setups: await listarSetupsParaCopiar(k) } } catch (e) { return falha(e) }
 }
 
-export async function incluirItem(setupId: string, posicao: string, feeder: string, rolo: string): Promise<{ ok: true; componente: string; atualizou: boolean } | Falha> {
+export async function incluirItem(setupId: string, posicao: string, feeder: string, rolo: string, colaborador = ''): Promise<{ ok: true; componente: string; atualizou: boolean } | Falha> {
   const negado = await exigir('lancar'); if (negado) return negado
   try {
-    const r = await chamarRpc<{ componente: string; atualizou: boolean }>('st_incluir_item', { p_setup_id: setupId, p_posicao: posicao, p_feeder: feeder, p_rolo: rolo })
+    const r = await chamarRpc<{ componente: string; atualizou: boolean }>('st_incluir_item', { p_setup_id: setupId, p_posicao: posicao, p_feeder: feeder, p_rolo: rolo, p_colaborador: colaborador })
     return { ok: true, componente: r.componente, atualizou: r.atualizou }
   } catch (e) { return falha(e) }
 }
@@ -79,12 +82,13 @@ export async function ultimasTrocas(setupId: string): Promise<{ ok: true; trocas
   } catch (e) { return falha(e) }
 }
 
-export async function trocarRolo(entrada: { setupId: string; posicao: string; feeder: string; roloSaida: string; roloEntrada: string; snInicial: string }): Promise<{ ok: true; resultado: 'APROVADO' | 'REPROVADO'; motivos: string[]; semFaixa: boolean } | Falha> {
+export async function trocarRolo(entrada: { setupId: string; posicao: string; feeder: string; roloSaida: string; roloEntrada: string; snInicial: string; colaborador?: string }): Promise<{ ok: true; resultado: 'APROVADO' | 'REPROVADO'; motivos: string[]; semFaixa: boolean } | Falha> {
   const negado = await exigir('lancar'); if (negado) return negado
   try {
     const r = await chamarRpc<{ resultado: 'APROVADO' | 'REPROVADO'; motivos: string[]; sem_faixa: boolean }>('st_trocar_rolo', {
       p_setup_id: entrada.setupId, p_posicao: entrada.posicao, p_feeder: entrada.feeder,
       p_rolo_saida: entrada.roloSaida, p_rolo_entrada: entrada.roloEntrada, p_sn_inicial: entrada.snInicial,
+      p_colaborador: entrada.colaborador ?? '',
     })
     return { ok: true, resultado: r.resultado, motivos: r.motivos ?? [], semFaixa: r.sem_faixa }
   } catch (e) { return falha(e) }

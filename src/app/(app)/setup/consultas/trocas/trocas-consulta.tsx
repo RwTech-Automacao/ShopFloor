@@ -281,17 +281,18 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
               <TableHead>SN</TableHead>
               <TableHead>Resultado</TableHead>
               <TableHead>Operador</TableHead>
+              <TableHead>Colaborador</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {carregando && (
-              <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">Consultando…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">Consultando…</TableCell></TableRow>
             )}
             {!carregando && buscou && linhasTab.length === 0 && (
-              <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">Nenhuma troca encontrada com esses filtros.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">Nenhuma troca encontrada com esses filtros.</TableCell></TableRow>
             )}
             {!carregando && !buscou && (
-              <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">Use os filtros e clique em Consultar.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">Use os filtros e clique em Consultar.</TableCell></TableRow>
             )}
             {!carregando && linhasTab.map((t) => (
               <TableRow key={t.id} className="align-top">
@@ -312,6 +313,7 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
                   )}
                 </TableCell>
                 <TableCell>{t.operadorNome}</TableCell>
+                <TableCell>{t.colaborador || '—'}</TableCell>
               </TableRow>
             ))}
           </TableBody>

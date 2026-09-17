@@ -30,10 +30,14 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
   const [localizado, setLocalizado] = useState(false)
   const [buscando, setBuscando] = useState(false)
   const [campos, setCampos] = useState<Record<Campo, string>>(CAMPOS_VAZIOS)
+  // Fora de `campos` de propósito: CAMPOS_VAZIOS zera os bipes a cada troca aprovada e o crachá
+  // do colaborador tem que continuar preenchido (mesmo comportamento do Lançamento do ShopFloor).
+  const [colaborador, setColaborador] = useState('')
   const [trocas, setTrocas] = useState<Troca[]>([])
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [enviando, startEnvio] = useTransition()
 
+  const colaboradorRef = useRef<HTMLInputElement>(null)
   const refs: Record<Campo, RefObject<HTMLInputElement | null>> = {
     posicao: useRef<HTMLInputElement>(null),
     feeder: useRef<HTMLInputElement>(null),
@@ -125,6 +129,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
         try {
           r = await trocarRolo({
             setupId, posicao: v.posicao, feeder: v.feeder, roloSaida: v.saida, roloEntrada: v.entrada, snInicial: v.sn,
+            colaborador: colaborador.trim(),
           })
         } catch {
           avisar(FALHA_CONEXAO_TROCA, chips)
@@ -214,6 +219,20 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             </div>
 
             <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:grid-cols-1">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="troca-colaborador">Colaborador</Label>
+                <Input
+                  id="troca-colaborador"
+                  ref={colaboradorRef}
+                  value={colaborador}
+                  onChange={(e) => setColaborador(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focar('posicao') } }}
+                  placeholder="Bipe ou digite o crachá"
+                  autoComplete="off"
+                  className={INPUT_BIPE}
+                />
+              </div>
               {ordemCampos.map(({ campo, rotulo, placeholder }, i) => {
                 const proximo = ordemCampos[i + 1]?.campo
                 return (
@@ -252,12 +271,13 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
                       <TableHead>SN</TableHead>
                       <TableHead>Resultado</TableHead>
                       <TableHead>Operador</TableHead>
+                      <TableHead>Colaborador</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {trocas.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                        <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                           Nenhuma troca registrada nesse setup.
                         </TableCell>
                       </TableRow>
@@ -280,10 +300,11 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
                               )}
                             </TableCell>
                             <TableCell className="whitespace-nowrap">{t.operadorNome}</TableCell>
+                            <TableCell className="whitespace-nowrap">{t.colaborador || '—'}</TableCell>
                           </TableRow>
                           {comMotivos && (
                             <TableRow className="hover:bg-transparent">
-                              <TableCell colSpan={6} className="whitespace-normal pt-0 text-xs text-red-700">{t.motivos.join(' ')}</TableCell>
+                              <TableCell colSpan={7} className="whitespace-normal pt-0 text-xs text-red-700">{t.motivos.join(' ')}</TableCell>
                             </TableRow>
                           )}
                         </Fragment>

@@ -57,6 +57,9 @@ export function MontarSetup({
   const [itens, setItens] = useState<ItemSetup[]>([])
   const [buscando, setBuscando] = useState(false)
   const [snAbertura, setSnAbertura] = useState('')
+  // Crachá de quem está operando: texto livre, sem conferência, igual ao campo Colaborador do
+  // Lançamento do ShopFloor. Fica preenchido entre um bipe e outro (não limpa a cada envio).
+  const [colaborador, setColaborador] = useState('')
   const [copias, setCopias] = useState<SetupResumo[] | null>(null)
   const [posicao, setPosicao] = useState('')
   const [feeder, setFeeder] = useState('')
@@ -68,6 +71,8 @@ export function MontarSetup({
   const [edFeeder, setEdFeeder] = useState('')
   const { confirmar, dialog } = useConfirmacao()
 
+  const colaboradorRef = useRef<HTMLInputElement>(null)
+  const snAberturaRef = useRef<HTMLInputElement>(null)
   const posicaoRef = useRef<HTMLInputElement>(null)
   const feederRef = useRef<HTMLInputElement>(null)
   const roloRef = useRef<HTMLInputElement>(null)
@@ -112,6 +117,7 @@ export function MontarSetup({
     setCopias(null)
     setResultado(null)
     setSnAbertura('')
+    // O colaborador não é zerado: é a mesma pessoa que segue operando em outra OP/equipamento.
     setPosicao(''); setFeeder(''); setRolo('')
     const seq = ++buscaSeq.current
     if (!selecaoCompleta(v)) { setBuscando(false); return }
@@ -142,7 +148,7 @@ export function MontarSetup({
     enviandoRef.current = true
     startEnvio(async () => {
       try {
-        const r = await abrirSetup({ ...chaveDaSelecao(selecao), snAbertura, copiarDe })
+        const r = await abrirSetup({ ...chaveDaSelecao(selecao), snAbertura, colaborador: colaborador.trim(), copiarDe })
         if (!r.ok) { avisar(r.erro); return }
         if (!(await recarregar(r.setupId))) return
         setCopias(null)
@@ -195,7 +201,7 @@ export function MontarSetup({
     const setupId = setup.id
     startEnvio(async () => {
       try {
-        const r = await incluirItem(setupId, pos, fee, rol)
+        const r = await incluirItem(setupId, pos, fee, rol, colaborador.trim())
         if (!r.ok) {
           avisar(r.erro, chips)
           setRolo('')
@@ -319,19 +325,37 @@ export function MontarSetup({
         <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
           <h2 className="text-lg font-semibold">Novo setup</h2>
           <PainelResultado resultado={resultado} />
-          <div className="flex flex-col gap-1.5 sm:max-w-sm">
-            <Label htmlFor="snAbertura">SN de Abertura</Label>
-            <Input
-              id="snAbertura"
-              value={snAbertura}
-              onChange={(e) => setSnAbertura(e.target.value)}
-              // Enter do scanner não dispara nada: o operador ainda escolhe entre montar do zero ou copiar.
-              onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-              placeholder="Bipe o Nº de Série da primeira placa"
-              autoComplete="off"
-              autoFocus
-              className={INPUT_BIPE}
-            />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="colaboradorAbertura">Colaborador</Label>
+              <Input
+                id="colaboradorAbertura"
+                ref={colaboradorRef}
+                value={colaborador}
+                onChange={(e) => setColaborador(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focarCampo(snAberturaRef) } }}
+                placeholder="Bipe ou digite o crachá"
+                autoComplete="off"
+                autoFocus
+                className={INPUT_BIPE}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="snAbertura">SN de Abertura</Label>
+              <Input
+                id="snAbertura"
+                ref={snAberturaRef}
+                value={snAbertura}
+                onChange={(e) => setSnAbertura(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                // Enter do scanner não dispara nada: o operador ainda escolhe entre montar do zero ou copiar.
+                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+                placeholder="Bipe o Nº de Série da primeira placa"
+                autoComplete="off"
+                className={INPUT_BIPE}
+              />
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button className="h-11 bg-enterplak px-4 text-base hover:bg-enterplak-700" onClick={() => abrir()} disabled={enviando}>
@@ -399,7 +423,21 @@ export function MontarSetup({
           <PainelResultado resultado={resultado} />
 
           {podeBipar && (
-            <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-3">
+            <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="bipeColaborador">Colaborador</Label>
+                <Input
+                  id="bipeColaborador"
+                  ref={colaboradorRef}
+                  value={colaborador}
+                  onChange={(e) => setColaborador(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focarCampo(posicaoRef) } }}
+                  placeholder="Bipe ou digite o crachá"
+                  autoComplete="off"
+                  className={INPUT_BIPE}
+                />
+              </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="bipePosicao">{rotulos.posicao}</Label>
                 <Input
@@ -461,13 +499,14 @@ export function MontarSetup({
                   <TableHead>{rotulos.feeder}</TableHead>
                   <TableHead>Componente</TableHead>
                   <TableHead>Rolo montado</TableHead>
+                  <TableHead>Colaborador</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {itens.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                       Nenhum item cadastrado. Bipe {rotulos.posicao.toLowerCase()}, {rotulos.feeder.toLowerCase()} e rolo.
                     </TableCell>
                   </TableRow>
@@ -492,6 +531,7 @@ export function MontarSetup({
                           </span>
                         ) : i.rolo}
                       </TableCell>
+                      <TableCell>{i.colaborador || '—'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           {mostrarEdicao && (

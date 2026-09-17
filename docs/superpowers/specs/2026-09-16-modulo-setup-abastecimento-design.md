@@ -8,7 +8,7 @@
 Hoje o processo roda num Google Apps Script sobre a planilha "Conferência Componentes SMT", com três telas:
 
 - **Set Up** — por OP, monta o mapa Linha/Máquina/Face → Posição → Feeder → Código do componente (no PTH: Bloco/Face → Posto → Locação → Código) e registra o SN de Abertura.
-- **Abastecimento** — na troca de rolo, bipa Posição, Feeder, Código de saída, Código de entrada e SN Inicial. Aprova se o prefixo é o mesmo, o sequencial é diferente e o prefixo está cadastrado naquela posição/feeder. Grava aprovados e reprovados.
+- **Abastecimento** — na troca de rolo, bipa Colaborador (crachá), Posição, Feeder, Código de saída, Código de entrada e SN Inicial. Aprova se o prefixo é o mesmo, o sequencial é diferente e o prefixo está cadastrado naquela posição/feeder. Grava aprovados e reprovados.
 - **Consulta** — só do mapa do setup.
 
 O código do rolo tem o formato `CÓDIGO_ERP-LOTE_E_NÚMERO_DO_ROLO` (ex.: `CAPJ41-8521556004`).
@@ -70,14 +70,15 @@ Todas as tabelas têm RLS por módulo (`tem_permissao('setup', <nível>)` envolv
 |---|---|---|
 | `st_equipamentos` | `id`, `processo` (SMD/PTH), `linha`, `bloco`, `maquina` (obrigatória no SMD, sempre nula no PTH), `ativo`, `criado_em` | Índice único em (processo, linha, bloco, `coalesce(maquina, '')`) — com `unique (…, maquina)` dois blocos PTH iguais passariam, porque nulos não colidem. CHECK garante máquina no SMD e máquina nula no PTH. Semeada com SMD Linha 1/Bloco A/MG5, Linha 1/Bloco A/YSM10, Linha 2/Bloco A/YSM10, Linha 3/Bloco A/CP40 (os SMD de hoje ficam todos no bloco A); PTH Linhas 1–6 × Blocos A/B. |
 | `st_estrutura` | `pmo`, `componente` (código do ERP normalizado), `processo` (SMD/PTH), `origem` (importação/manual), `criado_em`, `criado_por` | PK (pmo, componente). |
-| `st_setups` | `id`, `pmo`, `op`, `processo`, `equipamento_id` (FK `st_equipamentos`), `face` (normalizada), `sn_abertura`, `estado` (`montagem`/`liberado`), `copiado_de` (setup de origem), `criado_por/em`, `liberado_por/em` | Único por (pmo, op, equipamento_id, face). Linha, bloco e máquina saem do equipamento (join/embed). `processo` é cópia do processo do equipamento: as regras de item e os índices parciais de `st_setup_itens` leem o processo do próprio setup, sem join a cada bipe. |
-| `st_setup_itens` | `id`, `setup_id`, `posicao` e `feeder` (SMD) ou `posto` e `locacao` (PTH), `componente`, `rolo` (código completo, nulo = falta bipar), `atualizado_por/em` | Únicos por setup: (posição, feeder) / (posto, locação); feeder único no setup; rolo único no setup. |
-| `st_trocas` | `id`, `setup_id`, `item_id`, `posicao/feeder` ou `posto/locacao` bipados, `rolo_saida`, `rolo_entrada`, `sn_inicial`, `resultado` (APROVADO/REPROVADO), `motivos` (text[]), `operador` (usuário), `data_hora` | Grava toda tentativa. |
+| `st_setups` | `id`, `pmo`, `op`, `processo`, `equipamento_id` (FK `st_equipamentos`), `face` (normalizada), `sn_abertura`, `colaborador` (crachá de quem abriu), `estado` (`montagem`/`liberado`), `copiado_de` (setup de origem), `criado_por/em`, `liberado_por/em` | Único por (pmo, op, equipamento_id, face). Linha, bloco e máquina saem do equipamento (join/embed). `processo` é cópia do processo do equipamento: as regras de item e os índices parciais de `st_setup_itens` leem o processo do próprio setup, sem join a cada bipe. |
+| `st_setup_itens` | `id`, `setup_id`, `posicao` e `feeder` (SMD) ou `posto` e `locacao` (PTH), `componente`, `rolo` (código completo, nulo = falta bipar), `colaborador` (crachá de quem bipou o item), `atualizado_por/em` | Únicos por setup: (posição, feeder) / (posto, locação); feeder único no setup; rolo único no setup. |
+| `st_trocas` | `id`, `setup_id`, `item_id`, `posicao/feeder` ou `posto/locacao` bipados, `rolo_saida`, `rolo_entrada`, `sn_inicial`, `resultado` (APROVADO/REPROVADO), `motivos` (text[]), `operador` (usuário), `colaborador` (crachá de quem fez a troca), `data_hora` | Grava toda tentativa. |
 | `st_alteracoes` | `id`, `setup_id`, `item_id`, `tipo` (troca de feeder, troca de posição, correção, inclusão, remoção), `antes` (jsonb), `depois` (jsonb), `usuario`, `data_hora` | Toda mudança do admin em setup liberado. |
 
 **Textos normalizados:**
 - **Posição, feeder, posto, locação e códigos:** maiúsculas e sem espaços nas pontas, sempre como texto ("01" continua "01").
 - **SN:** usa a mesma normalização do ShopFloor.
+- **Colaborador:** crachá digitado ou bipado na tela, **texto livre, sem nenhuma conferência** e sem obrigatoriedade (vazio é aceito) — o mesmo comportamento do campo Colaborador da tela de Lançamento do ShopFloor. Só `btrim` (não vira maiúsculas). Serve apenas como registro de quem fez; quem grava como autor continua sendo o usuário logado (`criado_por`, `operador`, `st_alteracoes.usuario`).
 - **Face:** `TOP`, `BOT` ou `TOP E BOT` (a forma "BOT E TOP" vira "TOP E BOT").
 
 ## 5. Regras de negócio (domínio TS puro + reforçadas no banco)
@@ -116,6 +117,7 @@ APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa g
 
 **Operação atômica no banco:**
 - **Funções `security definer`** checam a permissão explicitamente: `st_abrir_setup` (recebe `p_equipamento_id` e exige o equipamento **ativo**), `st_incluir_item`, `st_liberar_setup`, `st_trocar_rolo` e `st_editar_item` (admin).
+- **Colaborador:** `st_abrir_setup`, `st_incluir_item` e `st_trocar_rolo` recebem `p_colaborador` (default `''`) e gravam em `st_setups`, `st_setup_itens` e `st_trocas`. No bipe que preenche o rolo de uma **posição copiada**, o colaborador do item passa a ser quem bipou. Na troca de rolo o colaborador do item **não** é sobrescrito (continua sendo quem montou; o da troca fica em `st_trocas`). O histórico (`st_alteracoes`) segue com o usuário logado e leva o colaborador dentro do `depois`.
 - **Lock por setup** (`pg_advisory_xact_lock`), pra dois tablets não gravarem o mesmo feeder ou trocarem o mesmo rolo ao mesmo tempo.
 - **Constraints únicas** como última linha de defesa.
 
@@ -124,22 +126,22 @@ APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa g
 ## 6. Telas
 
 **Montar Setup**
-1. **Cabeçalho:** OP (combobox das OPs do ShopFloor) → Processo → Linha → Bloco → Máquina (só no SMD) → Face → SN de Abertura. Cada select em cascata só mostra o que existe cadastrado e ativo. O cabeçalho do setup aberto mostra `OP … · Linha 1 · Bloco A · MG5 · TOP` (sem máquina no PTH).
+1. **Cabeçalho:** OP (combobox das OPs do ShopFloor) → Processo → Linha → Bloco → Máquina (só no SMD) → Face → Colaborador → SN de Abertura. Cada select em cascata só mostra o que existe cadastrado e ativo. O cabeçalho do setup aberto mostra `OP … · Linha 1 · Bloco A · MG5 · TOP` (sem máquina no PTH).
 2. **Setup existente:** abre pra continuar. **Não existe:** "Montar do zero" ou "Copiar de uma OP anterior".
-3. **Bipe:** Posição → Feeder → Rolo. Enter avança e o último Enter grava. Depois de gravar, limpa e volta o foco pra Posição.
+3. **Bipe:** Colaborador → Posição → Feeder → Rolo. Enter avança e o último Enter grava. Depois de gravar, limpa Posição/Feeder/Rolo e volta o foco pra Posição — o **Colaborador continua preenchido** entre bipes e ao trocar de OP/equipamento.
 4. **Resultado:** painel grande verde/vermelho (`PainelResultado`) com o motivo, e som de erro (`som-erro`) na recusa.
-5. **Lista de itens:** posições com componente, rolo e a marca "falta bipar o rolo". Enquanto está em montagem, quem lança pode **remover** um item.
+5. **Lista de itens:** posições com componente, rolo, colaborador e a marca "falta bipar o rolo". Enquanto está em montagem, quem lança pode **remover** um item.
 6. **Liberar setup:** habilitado quando não falta rolo.
 
 **Abastecimento**
 1. **Seleção:** OP → Processo → Linha → Bloco → Máquina (só no SMD) → Face (só setups liberados).
-2. **Bipe:** Posição → Feeder → Rolo que sai → Rolo que entra → SN Inicial. O último Enter grava.
+2. **Bipe:** Colaborador → Posição → Feeder → Rolo que sai → Rolo que entra → SN Inicial. O último Enter grava. O Colaborador não é limpo depois da troca.
 3. **Resultado:** painel + som; no APROVADO, limpa e volta pra Posição.
 4. **Histórico:** últimas trocas desse setup.
 
 **Consultas**
-- **Setups:** filtros (cliente, PMO, OP, processo, linha, bloco, máquina, face, estado) em cascata. O setup aberto mostra o mapa com o rolo montado, a busca rápida e o histórico de alterações.
-- **Trocas de rolo:** filtros (período, PMO, OP, processo, linha, bloco, máquina, resultado, posição, rolo, SN Inicial), tabela paginada e exportação CSV/Excel (colunas Bloco e Máquina separadas; no PTH a Máquina vem vazia).
+- **Setups:** filtros (cliente, PMO, OP, processo, linha, bloco, máquina, face, estado) em cascata. O setup aberto mostra o colaborador da abertura no cabeçalho, o mapa com o rolo montado e o colaborador de cada item, a busca rápida e o histórico de alterações.
+- **Trocas de rolo:** filtros (período, PMO, OP, processo, linha, bloco, máquina, resultado, posição, rolo, SN Inicial), tabela paginada com **Operador** (usuário logado) e **Colaborador** (crachá) lado a lado, e exportação CSV/Excel (colunas Bloco e Máquina separadas — no PTH a Máquina vem vazia — e a coluna Colaborador depois de Operador).
 
 **Cadastros**
 - **Linhas, Blocos e Máquinas:** Processo, Linha, Bloco e — só no SMD — Máquina; tabela com Processo, Linha, Bloco, Máquina (`—` no PTH) e Ativo (interruptor).

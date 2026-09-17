@@ -16,7 +16,7 @@ const DATA = (iso: string) => new Date(iso).toLocaleString('pt-BR', { timeZone: 
 export function trocasParaCsv(trocas: Troca[]): string {
   // Bloco e máquina em colunas separadas (no PTH a máquina fica vazia): a planilha filtra melhor
   // do que com o texto junto de rotuloEquipamento.
-  const cab = ['Data/hora', 'PMO', 'OP', 'Processo', 'Linha', 'Bloco', 'Máquina', 'Face', 'Posição', 'Feeder', 'Rolo que saiu', 'Rolo que entrou', 'SN Inicial', 'Resultado', 'Motivos', 'Operador']
-  const linhas = trocas.map((t) => [DATA(t.dataHora), t.pmo, t.op, t.processo, t.linha, t.bloco, t.maquina ?? '', t.face, t.posicao, t.feeder, t.roloSaida, t.roloEntrada, t.snInicial, t.resultado, t.motivos.join(' '), t.operadorNome].map(CAMPO).join(';'))
+  const cab = ['Data/hora', 'PMO', 'OP', 'Processo', 'Linha', 'Bloco', 'Máquina', 'Face', 'Posição', 'Feeder', 'Rolo que saiu', 'Rolo que entrou', 'SN Inicial', 'Resultado', 'Motivos', 'Operador', 'Colaborador']
+  const linhas = trocas.map((t) => [DATA(t.dataHora), t.pmo, t.op, t.processo, t.linha, t.bloco, t.maquina ?? '', t.face, t.posicao, t.feeder, t.roloSaida, t.roloEntrada, t.snInicial, t.resultado, t.motivos.join(' '), t.operadorNome, t.colaborador].map(CAMPO).join(';'))
   return '﻿' + [cab.join(';'), ...linhas].join('\n') + '\n'
 }

@@ -81,15 +81,18 @@ end $func$;
 -- ---------- abrir (criar ou reabrir) setup ----------
 -- O equipamento cadastrado (st_equipamentos) é a identidade do setup: processo, linha, bloco e
 -- máquina saem dele, não de texto vindo da tela.
+-- p_colaborador = crachá digitado/bipado na tela (texto livre, sem conferência, pode vir vazio):
+-- só registro de quem abriu. Normalizado com btrim, igual ao colaborador do ShopFloor.
 create or replace function public.st_abrir_setup(
   p_pmo text, p_op text, p_equipamento_id uuid, p_face text,
-  p_sn_abertura text, p_copiar_de uuid default null
+  p_sn_abertura text, p_copiar_de uuid default null, p_colaborador text default ''
 ) returns jsonb
 language plpgsql security definer set search_path = public as $func$
 declare
   v_equip record;
   v_face text;
   v_sn text := public.st_limpar_sn(p_sn_abertura);
+  v_colab text := btrim(coalesce(p_colaborador, ''));
   v_ordem record;
   v_faixa boolean;
   v_id uuid;
@@ -134,8 +137,8 @@ begin
     end if;
   end if;
 
-  insert into public.st_setups (pmo, op, processo, equipamento_id, face, sn_abertura, copiado_de, criado_por)
-  values (v_ordem.pmo, v_ordem.op, v_equip.processo, p_equipamento_id, v_face, v_sn, p_copiar_de, auth.uid())
+  insert into public.st_setups (pmo, op, processo, equipamento_id, face, sn_abertura, colaborador, copiado_de, criado_por)
+  values (v_ordem.pmo, v_ordem.op, v_equip.processo, p_equipamento_id, v_face, v_sn, v_colab, p_copiar_de, auth.uid())
   returning id into v_id;
 
   if p_copiar_de is not null then
@@ -147,8 +150,10 @@ begin
   return jsonb_build_object('setup_id', v_id, 'criado', true, 'sem_faixa', v_faixa is null);
 end $func$;
 
--- ---------- incluir item (bipe Posição → Feeder → Rolo) ----------
-create or replace function public.st_incluir_item(p_setup_id uuid, p_posicao text, p_feeder text, p_rolo text)
+-- ---------- incluir item (bipe Colaborador → Posição → Feeder → Rolo) ----------
+-- p_colaborador: crachá de quem bipou este item (livre, pode vir vazio).
+create or replace function public.st_incluir_item(p_setup_id uuid, p_posicao text, p_feeder text, p_rolo text,
+                                                 p_colaborador text default '')
 returns jsonb
 language plpgsql security definer set search_path = public as $func$
 declare
@@ -156,6 +161,7 @@ declare
   v_pos text := public.st_norm(p_posicao);
   v_fee text := public.st_norm(p_feeder);
   v_rolo text := public.st_norm(p_rolo);
+  v_colab text := btrim(coalesce(p_colaborador, ''));
   v_prefixo text := public.st_rolo_prefixo(p_rolo);
   v_chave text := public.st_rolo_chave(p_rolo);
   v_proc_estrutura text;
@@ -188,7 +194,9 @@ begin
   if found then
     if v_item.rolo is not null then raise exception 'POSICAO_JA_CADASTRADA'; end if;
     if v_item.componente <> v_prefixo then raise exception 'COMPONENTE_DIFERENTE_DA_POSICAO'; end if;
-    update public.st_setup_itens set rolo = v_rolo, rolo_chave = v_chave, atualizado_por = auth.uid(), atualizado_em = now()
+    -- Quem bipa agora é quem passa a constar no item: a posição copiada vinha sem rolo e sem colaborador.
+    update public.st_setup_itens set rolo = v_rolo, rolo_chave = v_chave, colaborador = v_colab,
+           atualizado_por = auth.uid(), atualizado_em = now()
      where id = v_item.id;
     return jsonb_build_object('item_id', v_item.id, 'componente', v_prefixo, 'atualizou', true);
   end if;
@@ -202,14 +210,15 @@ begin
     end if;
   end if;
 
-  insert into public.st_setup_itens (setup_id, processo, posicao, feeder, componente, rolo, rolo_chave, atualizado_por)
-  values (p_setup_id, v_setup.processo, v_pos, v_fee, v_prefixo, v_rolo, v_chave, auth.uid())
+  insert into public.st_setup_itens (setup_id, processo, posicao, feeder, componente, rolo, rolo_chave, colaborador, atualizado_por)
+  values (p_setup_id, v_setup.processo, v_pos, v_fee, v_prefixo, v_rolo, v_chave, v_colab, auth.uid())
   returning id into v_id;
 
   if v_setup.estado = 'liberado' then
     insert into public.st_alteracoes (setup_id, item_id, tipo, antes, depois, usuario, usuario_nome)
     values (p_setup_id, v_id, 'inclusao', null,
-            jsonb_build_object('posicao', v_pos, 'feeder', v_fee, 'componente', v_prefixo, 'rolo', v_rolo),
+            jsonb_build_object('posicao', v_pos, 'feeder', v_fee, 'componente', v_prefixo, 'rolo', v_rolo,
+                               'colaborador', v_colab),
             auth.uid(), public.st_nome_usuario());
   end if;
   return jsonb_build_object('item_id', v_id, 'componente', v_prefixo, 'atualizou', false);
@@ -301,8 +310,10 @@ begin
 end $func$;
 
 -- ---------- trocar rolo (abastecimento) ----------
+-- p_colaborador: crachá de quem fez a troca (livre, pode vir vazio) — não entra na avaliação.
 create or replace function public.st_trocar_rolo(
-  p_setup_id uuid, p_posicao text, p_feeder text, p_rolo_saida text, p_rolo_entrada text, p_sn_inicial text
+  p_setup_id uuid, p_posicao text, p_feeder text, p_rolo_saida text, p_rolo_entrada text, p_sn_inicial text,
+  p_colaborador text default ''
 ) returns jsonb
 language plpgsql security definer set search_path = public as $func$
 declare
@@ -312,6 +323,7 @@ declare
   v_chave_saida text := public.st_rolo_chave(p_rolo_saida); v_chave_entrada text := public.st_rolo_chave(p_rolo_entrada);
   v_pth boolean;
   v_sn text := public.st_limpar_sn(p_sn_inicial);
+  v_colab text := btrim(coalesce(p_colaborador, ''));
   v_motivos text[] := '{}';
   v_faixa boolean;
   v_outra text;
@@ -379,12 +391,14 @@ begin
   v_resultado := case when cardinality(v_motivos) = 0 then 'APROVADO' else 'REPROVADO' end;
 
   insert into public.st_trocas (setup_id, item_id, posicao, feeder, rolo_saida, rolo_entrada, sn_inicial,
-                                resultado, motivos, operador, operador_nome)
+                                resultado, motivos, operador, operador_nome, colaborador)
   values (p_setup_id, v_item.id, v_pos, v_fee, v_saida, v_entrada, v_sn, v_resultado, v_motivos,
-          auth.uid(), public.st_nome_usuario())
+          auth.uid(), public.st_nome_usuario(), v_colab)
   returning id into v_troca;
 
   if v_resultado = 'APROVADO' then
+    -- Só o rolo muda: o colaborador do item continua sendo quem o bipou na montagem (o colaborador
+    -- da troca fica em st_trocas). Sobrescrever aqui apagaria o da montagem quando o campo vem vazio.
     update public.st_setup_itens set rolo = v_entrada, rolo_chave = v_chave_entrada, atualizado_por = auth.uid(), atualizado_em = now()
      where id = v_item.id;
   end if;
@@ -447,12 +461,12 @@ $func$;
 
 -- ---------- permissões ----------
 grant execute on function public.st_listar_ordens() to authenticated;
-grant execute on function public.st_abrir_setup(text, text, uuid, text, text, uuid) to authenticated;
-grant execute on function public.st_incluir_item(uuid, text, text, text) to authenticated;
+grant execute on function public.st_abrir_setup(text, text, uuid, text, text, uuid, text) to authenticated;
+grant execute on function public.st_incluir_item(uuid, text, text, text, text) to authenticated;
 grant execute on function public.st_remover_item(uuid) to authenticated;
 grant execute on function public.st_editar_item(uuid, text, text) to authenticated;
 grant execute on function public.st_liberar_setup(uuid) to authenticated;
-grant execute on function public.st_trocar_rolo(uuid, text, text, text, text, text) to authenticated;
+grant execute on function public.st_trocar_rolo(uuid, text, text, text, text, text, text) to authenticated;
 grant execute on function public.st_importar_estrutura(text, jsonb) to authenticated;
 grant execute on function public.st_pmos_com_estrutura() to authenticated;
 revoke all on function public.st_nome_usuario() from public, anon, authenticated;
