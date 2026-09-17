@@ -3,18 +3,28 @@
 -- Leitura: quem visualiza o módulo. Escrita de operação: só pelas funções st_* (0112, security
 -- definer). Cadastros (equipamentos, estrutura) são escritos direto pelo app, restritos a administrar.
 -- No PTH, posicao/feeder guardam posto/locação.
+-- Equipamento: SMD = linha + bloco + máquina; PTH = linha + bloco (sem máquina).
 -- =============================================================
 
+-- Equipamento = linha + bloco (a mesma divisão de fábrica nos dois processos) + máquina.
+-- No SMD a máquina é obrigatória; no PTH não existe máquina (maquina is null).
 create table public.st_equipamentos (
-  id          uuid primary key default gen_random_uuid(),
-  processo    text not null check (processo in ('SMD', 'PTH')),
-  linha       text not null,
-  equipamento text not null,                -- máquina (SMD) ou bloco (PTH)
-  posicoes    int check (posicoes is null or posicoes > 0),
-  ativo       boolean not null default true,
-  criado_em   timestamptz not null default now(),
-  unique (processo, linha, equipamento)
+  id        uuid primary key default gen_random_uuid(),
+  processo  text not null check (processo in ('SMD', 'PTH')),
+  linha     text not null,
+  bloco     text not null,
+  maquina   text,
+  ativo     boolean not null default true,
+  criado_em timestamptz not null default now(),
+  constraint st_equipamentos_maquina_por_processo check (
+    (processo = 'SMD' and maquina is not null and btrim(maquina) <> '')
+    or (processo = 'PTH' and maquina is null)
+  )
 );
+-- coalesce(maquina, '') em vez de unique (…, maquina): num índice único comum os nulos nunca
+-- colidem entre si, então dois blocos PTH iguais passariam.
+create unique index st_equipamentos_chave
+  on public.st_equipamentos (processo, linha, bloco, coalesce(maquina, ''));
 
 create table public.st_estrutura (
   pmo        text not null,
@@ -26,24 +36,30 @@ create table public.st_estrutura (
   primary key (pmo, componente)
 );
 
+-- A identidade do setup é o equipamento CADASTRADO (st_equipamentos), não texto solto.
 create table public.st_setups (
-  id           uuid primary key default gen_random_uuid(),
-  pmo          text not null,
-  op           text not null,
-  processo     text not null check (processo in ('SMD', 'PTH')),
-  linha        text not null,
-  equipamento  text not null,
-  face         text not null check (face in ('TOP', 'BOT', 'TOP E BOT')),
-  sn_abertura  text not null,
-  estado       text not null default 'montagem' check (estado in ('montagem', 'liberado')),
-  copiado_de   uuid references public.st_setups(id) on delete set null,
-  criado_por   uuid references public.usuarios(id),
-  criado_em    timestamptz not null default now(),
-  liberado_por uuid references public.usuarios(id),
-  liberado_em  timestamptz,
-  unique (pmo, op, processo, linha, equipamento, face)
+  id             uuid primary key default gen_random_uuid(),
+  pmo            text not null,
+  op             text not null,
+  -- Cópia do processo do equipamento, feita na abertura (st_abrir_setup): as regras de item
+  -- (estrutura SMD × PTH, unicidade de feeder) e os índices parciais de st_setup_itens leem o
+  -- processo do próprio setup, sem precisar do join com st_equipamentos a cada bipe.
+  processo       text not null check (processo in ('SMD', 'PTH')),
+  equipamento_id uuid not null references public.st_equipamentos(id),
+  face           text not null check (face in ('TOP', 'BOT', 'TOP E BOT')),
+  sn_abertura    text not null,
+  estado         text not null default 'montagem' check (estado in ('montagem', 'liberado')),
+  copiado_de     uuid references public.st_setups(id) on delete set null,
+  criado_por     uuid references public.usuarios(id),
+  criado_em      timestamptz not null default now(),
+  liberado_por   uuid references public.usuarios(id),
+  liberado_em    timestamptz,
+  unique (pmo, op, equipamento_id, face)
 );
 create index st_setups_pmo_op on public.st_setups (pmo, op);
+-- Consultas filtram por linha/bloco/máquina (join com st_equipamentos) e a cópia de OP anterior
+-- busca por (pmo, equipamento_id, face); a unique acima não começa por equipamento_id.
+create index st_setups_equipamento on public.st_setups (equipamento_id);
 
 create table public.st_setup_itens (
   id             uuid primary key default gen_random_uuid(),
@@ -119,13 +135,14 @@ grant select, insert, update, delete on public.st_equipamentos, public.st_estrut
   public.st_setup_itens, public.st_trocas, public.st_alteracoes to service_role;
 
 -- ---------- Equipamentos de hoje (planilha legada) ----------
-insert into public.st_equipamentos (processo, linha, equipamento, posicoes) values
-  ('SMD', '1', 'YSM10', null),
-  ('SMD', '1', 'MG5', null),
-  ('SMD', '2', 'YSM10', 148),
-  ('SMD', '3', 'CP40', null)
+-- Os SMD de hoje ficam todos no bloco A.
+insert into public.st_equipamentos (processo, linha, bloco, maquina) values
+  ('SMD', '1', 'A', 'MG5'),
+  ('SMD', '1', 'A', 'YSM10'),
+  ('SMD', '2', 'A', 'YSM10'),
+  ('SMD', '3', 'A', 'CP40')
 on conflict do nothing;
-insert into public.st_equipamentos (processo, linha, equipamento)
+insert into public.st_equipamentos (processo, linha, bloco)
 select 'PTH', l::text, b
 from generate_series(1, 6) as l, unnest(array['A', 'B']) as b
 on conflict do nothing;

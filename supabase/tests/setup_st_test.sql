@@ -15,6 +15,45 @@ select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 \i /tmp/0111.sql
 \i /tmp/0112.sql
 
+-- Atalho dos testes: id do equipamento cadastrado (maquina null = PTH).
+create function public.eqid(p_processo text, p_linha text, p_bloco text, p_maquina text default null)
+returns uuid language sql stable as $f$
+  select id from public.st_equipamentos
+   where processo = p_processo and linha = p_linha and bloco = p_bloco
+     and maquina is not distinct from p_maquina
+$f$;
+
+-- 0. Equipamentos: seeds, unicidade e máquina por processo
+do $t$ begin
+  if (select count(*) from st_equipamentos where processo = 'SMD') <> 4 then raise exception 'FALHOU: seeds SMD'; end if;
+  if (select count(*) from st_equipamentos where processo = 'PTH') <> 12 then raise exception 'FALHOU: seeds PTH'; end if;
+  if (select count(*) from st_equipamentos where processo = 'SMD' and bloco <> 'A') <> 0 then raise exception 'FALHOU: SMD fora do bloco A'; end if;
+  if (select count(*) from st_equipamentos where processo = 'PTH' and maquina is not null) <> 0 then raise exception 'FALHOU: PTH com máquina'; end if;
+  if eqid('SMD', '1', 'A', 'MG5') is null or eqid('PTH', '6', 'B') is null then raise exception 'FALHOU: eqid dos seeds'; end if;
+  -- PTH não tem máquina
+  begin insert into st_equipamentos (processo, linha, bloco, maquina) values ('PTH', '9', 'A', 'MG5');
+    raise exception 'FALHOU: PTH com máquina passou';
+  exception when check_violation then null; end;
+  -- SMD exige máquina
+  begin insert into st_equipamentos (processo, linha, bloco) values ('SMD', '9', 'A');
+    raise exception 'FALHOU: SMD sem máquina passou';
+  exception when check_violation then null; end;
+  begin insert into st_equipamentos (processo, linha, bloco, maquina) values ('SMD', '9', 'A', '  ');
+    raise exception 'FALHOU: SMD com máquina em branco passou';
+  exception when check_violation then null; end;
+  -- unicidade com máquina
+  begin insert into st_equipamentos (processo, linha, bloco, maquina) values ('SMD', '1', 'A', 'MG5');
+    raise exception 'FALHOU: equipamento SMD repetido passou';
+  exception when unique_violation then null; end;
+  -- unicidade com máquina null (coalesce no índice: nulos não podem colidir "de graça")
+  begin insert into st_equipamentos (processo, linha, bloco) values ('PTH', '1', 'A');
+    raise exception 'FALHOU: bloco PTH repetido passou';
+  exception when unique_violation then null; end;
+  -- mesma linha/bloco em processos diferentes convivem
+  insert into st_equipamentos (processo, linha, bloco, maquina) values ('SMD', '1', 'B', 'MG5');
+  delete from st_equipamentos where processo = 'SMD' and linha = '1' and bloco = 'B';
+end $t$;
+
 -- 1. Helpers
 select set_config('teste.perms', 'setup.visualizar,setup.lancar,setup.administrar', false);
 do $t$ begin
@@ -57,15 +96,15 @@ end $t$;
 
 -- 3. Abrir setup + faixa + face sobreposta
 do $t$ declare r jsonb; begin
-  r := st_abrir_setup('PMOG13', '9001', 'SMD', '1', 'YSM10', 'TOP', '2690010001');
+  r := st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', '2690010001');
   if (r->>'criado')::boolean is not true then raise exception 'FALHOU: criar %', r; end if;
-  r := st_abrir_setup('PMOG13', '9001', 'SMD', '1', 'YSM10', 'top', '2690010001');
+  r := st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'top', '2690010001');
   if (r->>'criado')::boolean is not false or (r->>'sem_faixa')::boolean is not false then raise exception 'FALHOU: reabrir %', r; end if;
-  begin perform st_abrir_setup('PMOG13', '9001', 'SMD', '1', 'YSM10', 'TOP E BOT', '2690010001'); raise exception 'FALHOU: face sobreposta passou';
+  begin perform st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'TOP E BOT', '2690010001'); raise exception 'FALHOU: face sobreposta passou';
   exception when others then if sqlerrm not like '%FACE_SOBREPOSTA%' then raise; end if; end;
-  begin perform st_abrir_setup('PMOG13', '9001', 'SMD', '1', 'YSM10', 'BOT', '999'); raise exception 'FALHOU: sn fora passou';
+  begin perform st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'BOT', '999'); raise exception 'FALHOU: sn fora passou';
   exception when others then if sqlerrm not like '%SN_FORA_DA_FAIXA%' then raise; end if; end;
-  r := st_abrir_setup('PMOG13', '9002', 'SMD', '1', 'YSM10', 'TOP', 'QUALQUER');
+  r := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', 'QUALQUER');
   if (r->>'sem_faixa')::boolean is not true then raise exception 'FALHOU: sem faixa %', r; end if;
 end $t$;
 
@@ -113,15 +152,15 @@ end $t$;
 -- 6. Cópia e permissões
 do $t$ declare s uuid; nova jsonb; n uuid; begin
   select id into s from st_setups where op = '9001';
-  nova := st_abrir_setup('PMOG13', '9002', 'SMD', '1', 'YSM10', 'BOT', 'X');
-  begin perform st_abrir_setup('PMOG13', '9002', 'SMD', '2', 'YSM10', 'TOP', 'X', s); raise exception 'FALHOU: cópia incompatível';
+  nova := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'BOT', 'X');
+  begin perform st_abrir_setup('PMOG13', '9002', eqid('SMD', '2', 'A', 'YSM10'), 'TOP', 'X', s); raise exception 'FALHOU: cópia incompatível';
   exception when others then if sqlerrm not like '%COPIA_INCOMPATIVEL%' then raise; end if; end;
 end $t$;
 -- cópia compatível: outra OP, mesma máquina e face do 9001 (TOP)
 insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values ('PMOG13', '9003', '', '');
 do $t$ declare s uuid; nova jsonb; n uuid; begin
   select id into s from st_setups where op = '9001';
-  nova := st_abrir_setup('PMOG13', '9003', 'SMD', '1', 'YSM10', 'TOP', 'X', s);
+  nova := st_abrir_setup('PMOG13', '9003', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', 'X', s);
   n := (nova->>'setup_id')::uuid;
   if (select count(*) from st_setup_itens where setup_id = n and rolo is null) <> 2 then raise exception 'FALHOU: cópia sem rolos'; end if;
   begin perform st_incluir_item(n, '36', 'ZSY-1', 'RESR85-A'); raise exception 'FALHOU: componente diferente da posição';
@@ -149,7 +188,7 @@ end $t$;
 -- 7. Chave canônica do rolo, remoção, edição, histórico do admin, erros de abertura
 insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values ('PMOG13', '9004', '2690040001', '2690040100');
 do $t$ declare s uuid; r jsonb; i2 uuid; i3 uuid; n int; begin
-  r := st_abrir_setup('PMOG13', '9004', 'SMD', '2', 'YSM10', 'TOP', '2690040001');
+  r := st_abrir_setup('PMOG13', '9004', eqid('SMD', '2', 'A', 'YSM10'), 'TOP', '2690040001');
   s := (r->>'setup_id')::uuid;
   perform st_incluir_item(s, '1', 'F1', 'CAPJ41-1');
   if (select rolo_chave from st_setup_itens where setup_id = s and posicao = '1') <> 'CAPJ41-1' then raise exception 'FALHOU: rolo_chave gravada'; end if;
@@ -190,25 +229,28 @@ do $t$ declare s uuid; r jsonb; i2 uuid; i3 uuid; n int; begin
   if (select count(*) from st_alteracoes where setup_id = s and item_id = i3 and tipo = 'remocao') <> 1 then raise exception 'FALHOU: histórico de remoção'; end if;
 
   -- SETUP_VAZIO, EQUIPAMENTO_INVALIDO, PROCESSO_INVALIDO
-  r := st_abrir_setup('PMOG13', '9004', 'SMD', '2', 'YSM10', 'BOT', '2690040001');
+  r := st_abrir_setup('PMOG13', '9004', eqid('SMD', '2', 'A', 'YSM10'), 'BOT', '2690040001');
   begin perform st_liberar_setup((r->>'setup_id')::uuid); raise exception 'FALHOU: liberar vazio';
   exception when others then if sqlerrm not like '%SETUP_VAZIO%' then raise; end if; end;
-  begin perform st_abrir_setup('PMOG13', '9004', 'SMD', '9', 'XYZ', 'TOP', '2690040001'); raise exception 'FALHOU: equipamento inválido';
+  begin perform st_abrir_setup('PMOG13', '9004', gen_random_uuid(), 'TOP', '2690040001'); raise exception 'FALHOU: equipamento inexistente';
   exception when others then if sqlerrm not like '%EQUIPAMENTO_INVALIDO%' then raise; end if; end;
-  begin perform st_abrir_setup('PMOG13', '9004', 'ABC', '2', 'YSM10', 'TOP', '2690040001'); raise exception 'FALHOU: processo inválido';
-  exception when others then if sqlerrm not like '%PROCESSO_INVALIDO%' then raise; end if; end;
+  -- equipamento inativo não abre setup
+  update st_equipamentos set ativo = false where id = eqid('SMD', '3', 'A', 'CP40');
+  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'TOP', '2690040001'); raise exception 'FALHOU: equipamento inativo';
+  exception when others then if sqlerrm not like '%EQUIPAMENTO_INVALIDO%' then raise; end if; end;
+  update st_equipamentos set ativo = true where id = eqid('SMD', '3', 'A', 'CP40');
   -- face sobreposta ao contrário: TOP E BOT existe, abre BOT
-  perform st_abrir_setup('PMOG13', '9004', 'SMD', '3', 'CP40', 'TOP E BOT', '2690040001');
-  begin perform st_abrir_setup('PMOG13', '9004', 'SMD', '3', 'CP40', 'BOT', '2690040001'); raise exception 'FALHOU: face sobreposta reversa';
+  perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'TOP E BOT', '2690040001');
+  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'BOT', '2690040001'); raise exception 'FALHOU: face sobreposta reversa';
   exception when others then if sqlerrm not like '%FACE_SOBREPOSTA%' then raise; end if; end;
   -- reabrir OP sem faixa
-  r := st_abrir_setup('PMOG13', '9002', 'SMD', '1', 'YSM10', 'TOP', 'X');
+  r := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', 'X');
   if (r->>'criado')::boolean is not false or (r->>'sem_faixa')::boolean is not true then raise exception 'FALHOU: reabrir sem faixa %', r; end if;
 end $t$;
 
 -- 8. PTH: posto × locação, pares, processo e textos dos motivos
 do $t$ declare s uuid; r jsonb; begin
-  r := st_abrir_setup('PMOG13', '9001', 'PTH', '1', 'A', 'TOP', '2690010001');
+  r := st_abrir_setup('PMOG13', '9001', eqid('PTH', '1', 'A'), 'TOP', '2690010001');
   s := (r->>'setup_id')::uuid;
   perform st_incluir_item(s, 'P1', 'L1', 'BAR180-1');
   perform st_incluir_item(s, 'P1', 'L2', 'BAR180-2');
@@ -250,7 +292,7 @@ do $t$ declare s uuid; begin
   select id into s from st_setups where op = '9001' and processo = 'SMD';
   begin perform st_trocar_rolo(s, '36', 'ZSY-NOVO', 'CAPJ41-L1R2', 'CAPJ41-L1R9', '2690010010'); raise exception 'FALHOU: trocar sem permissão';
   exception when others then if sqlerrm not like '%SEM_PERMISSAO%' then raise; end if; end;
-  begin perform st_abrir_setup('PMOG13', '9004', 'SMD', '1', 'MG5', 'TOP', '2690040001'); raise exception 'FALHOU: abrir sem permissão';
+  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '1', 'A', 'MG5'), 'TOP', '2690040001'); raise exception 'FALHOU: abrir sem permissão';
   exception when others then if sqlerrm not like '%SEM_PERMISSAO%' then raise; end if; end;
   begin perform st_importar_estrutura('PMOG13', '[]'); raise exception 'FALHOU: importar sem permissão';
   exception when others then if sqlerrm not like '%SEM_PERMISSAO%' then raise; end if; end;

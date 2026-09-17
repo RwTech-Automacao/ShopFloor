@@ -79,15 +79,15 @@ begin
 end $func$;
 
 -- ---------- abrir (criar ou reabrir) setup ----------
+-- O equipamento cadastrado (st_equipamentos) é a identidade do setup: processo, linha, bloco e
+-- máquina saem dele, não de texto vindo da tela.
 create or replace function public.st_abrir_setup(
-  p_pmo text, p_op text, p_processo text, p_linha text, p_equipamento text, p_face text,
+  p_pmo text, p_op text, p_equipamento_id uuid, p_face text,
   p_sn_abertura text, p_copiar_de uuid default null
 ) returns jsonb
 language plpgsql security definer set search_path = public as $func$
 declare
-  v_processo text := public.st_norm(p_processo);
-  v_linha text := public.st_norm(p_linha);
-  v_equip text := public.st_norm(p_equipamento);
+  v_equip record;
   v_face text;
   v_sn text := public.st_limpar_sn(p_sn_abertura);
   v_ordem record;
@@ -96,32 +96,29 @@ declare
   v_origem record;
 begin
   if not tem_permissao('setup', 'lancar') then raise exception 'SEM_PERMISSAO'; end if;
-  if v_processo not in ('SMD', 'PTH') then raise exception 'PROCESSO_INVALIDO'; end if;
   v_face := public.st_face(p_face);
 
   select pmo, op, sn_ini, sn_fim into v_ordem from public.sf_ordens
    where pmo = btrim(p_pmo) and op = btrim(p_op);
   if not found then raise exception 'OP_INEXISTENTE'; end if;
 
-  if not exists (select 1 from public.st_equipamentos
-                  where processo = v_processo and linha = v_linha and equipamento = v_equip and ativo) then
-    raise exception 'EQUIPAMENTO_INVALIDO';
-  end if;
+  select processo, linha, bloco, maquina into v_equip from public.st_equipamentos
+   where id = p_equipamento_id and ativo;
+  if not found then raise exception 'EQUIPAMENTO_INVALIDO'; end if;
 
   perform pg_advisory_xact_lock(hashtext('st/' || v_ordem.pmo || '/' || v_ordem.op)::bigint);
 
-  -- Já existe setup dessa OP nessa máquina e face: reabre (a cópia é ignorada).
+  -- Já existe setup dessa OP nesse equipamento e face: reabre (a cópia é ignorada).
   select id, sn_abertura into v_origem from public.st_setups
-   where pmo = v_ordem.pmo and op = v_ordem.op and processo = v_processo
-     and linha = v_linha and equipamento = v_equip and face = v_face;
+   where pmo = v_ordem.pmo and op = v_ordem.op and equipamento_id = p_equipamento_id and face = v_face;
   if found then
     return jsonb_build_object('setup_id', v_origem.id, 'criado', false,
       'sem_faixa', public.st_sn_na_faixa(v_ordem.sn_ini, v_ordem.sn_fim, v_origem.sn_abertura) is null);
   end if;
 
   if exists (select 1 from public.st_setups
-              where pmo = v_ordem.pmo and op = v_ordem.op and processo = v_processo
-                and linha = v_linha and equipamento = v_equip and public.st_faces_sobrepoem(face, v_face)) then
+              where pmo = v_ordem.pmo and op = v_ordem.op and equipamento_id = p_equipamento_id
+                and public.st_faces_sobrepoem(face, v_face)) then
     raise exception 'FACE_SOBREPOSTA';
   end if;
 
@@ -131,14 +128,14 @@ begin
 
   if p_copiar_de is not null then
     select * into v_origem from public.st_setups where id = p_copiar_de;
-    if not found or v_origem.pmo <> v_ordem.pmo or v_origem.processo <> v_processo
-       or v_origem.linha <> v_linha or v_origem.equipamento <> v_equip or v_origem.face <> v_face then
+    if not found or v_origem.pmo <> v_ordem.pmo
+       or v_origem.equipamento_id <> p_equipamento_id or v_origem.face <> v_face then
       raise exception 'COPIA_INCOMPATIVEL';
     end if;
   end if;
 
-  insert into public.st_setups (pmo, op, processo, linha, equipamento, face, sn_abertura, copiado_de, criado_por)
-  values (v_ordem.pmo, v_ordem.op, v_processo, v_linha, v_equip, v_face, v_sn, p_copiar_de, auth.uid())
+  insert into public.st_setups (pmo, op, processo, equipamento_id, face, sn_abertura, copiado_de, criado_por)
+  values (v_ordem.pmo, v_ordem.op, v_equip.processo, p_equipamento_id, v_face, v_sn, p_copiar_de, auth.uid())
   returning id into v_id;
 
   if p_copiar_de is not null then
@@ -450,7 +447,7 @@ $func$;
 
 -- ---------- permissões ----------
 grant execute on function public.st_listar_ordens() to authenticated;
-grant execute on function public.st_abrir_setup(text, text, text, text, text, text, text, uuid) to authenticated;
+grant execute on function public.st_abrir_setup(text, text, uuid, text, text, uuid) to authenticated;
 grant execute on function public.st_incluir_item(uuid, text, text, text) to authenticated;
 grant execute on function public.st_remover_item(uuid) to authenticated;
 grant execute on function public.st_editar_item(uuid, text, text) to authenticated;
