@@ -33,5 +33,8 @@ export function mensagemErroSetup(textoErro: string): string {
   for (const [codigo, mensagem] of Object.entries(MENSAGENS)) {
     if (texto.includes(codigo)) return mensagem
   }
-  return 'Não foi possível concluir a operação.'
+  // Erro que não é regra de negócio (função ausente, schema desatualizado, rede): mostra o texto do
+  // servidor, senão o genérico esconde a causa e o operador não tem o que informar ao suporte.
+  const detalhe = texto.replace(/\s+/g, ' ').trim().slice(0, 160)
+  return detalhe ? `Não foi possível concluir a operação: ${detalhe}` : 'Não foi possível concluir a operação.'
 }
