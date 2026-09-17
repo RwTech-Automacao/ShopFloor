@@ -1,6 +1,7 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useRef, useState, useTransition, type RefObject } from 'react'
+import Link from 'next/link'
 import { PencilIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -75,6 +76,12 @@ export function MontarSetup({
   // Descarta respostas de uma seleção antiga (o operador trocou a máquina antes de a busca voltar).
   const buscaSeq = useRef(0)
 
+  // Sempre seleciona o conteúdo ao focar: o leitor de bipe digita em cima e substitui, em vez de concatenar.
+  function focarCampo(ref: RefObject<HTMLInputElement | null>) {
+    ref.current?.focus()
+    ref.current?.select()
+  }
+
   const completa = selecaoCompleta(selecao)
   const rotulos = rotulosPosicao(setup?.processo ?? (selecao.processo || 'SMD'))
   const semRolo = itens.filter((i) => i.rolo === null).length
@@ -86,11 +93,16 @@ export function MontarSetup({
   }
 
   async function recarregar(id: string): Promise<boolean> {
-    const r = await carregarSetupAction(id)
-    if (!r.ok) { avisar(r.erro); return false }
-    setSetup(r.setup)
-    setItens(r.itens)
-    return true
+    try {
+      const r = await carregarSetupAction(id)
+      if (!r.ok) { avisar(r.erro); return false }
+      setSetup(r.setup)
+      setItens(r.itens)
+      return true
+    } catch {
+      avisar('Falha de conexão. Não foi possível atualizar a lista.')
+      return false
+    }
   }
 
   function mudarSelecao(v: ValorSelecao) {
@@ -117,7 +129,7 @@ export function MontarSetup({
         }
       } catch {
         // Rede caiu no meio da busca: avisa em vez de deixar a tela presa em "Procurando…".
-        if (seq === buscaSeq.current) avisar('Não foi possível procurar o setup. Verifique a conexão e escolha a face de novo.')
+        if (seq === buscaSeq.current) avisar('Não foi possível procurar o setup. Verifique a conexão, troque a face ou a máquina e volte pra tentar de novo.')
       } finally {
         if (seq === buscaSeq.current) setBuscando(false)
       }
@@ -135,7 +147,9 @@ export function MontarSetup({
         if (!(await recarregar(r.setupId))) return
         setCopias(null)
         setResultado(r.semFaixa ? { tipo: 'aviso', titulo: 'OP sem faixa de SN — SN aceito sem conferência' } : null)
-        requestAnimationFrame(() => posicaoRef.current?.focus())
+        requestAnimationFrame(() => focarCampo(posicaoRef))
+      } catch {
+        avisar('Falha de conexão. Não foi possível abrir o setup. Tente de novo.')
       } finally {
         enviandoRef.current = false
       }
@@ -151,6 +165,8 @@ export function MontarSetup({
         const r = await setupsParaCopiar({ pmo, processo, linha, equipamento, face, excetoOp: op })
         if (!r.ok) { avisar(r.erro); return }
         setCopias(r.setups)
+      } catch {
+        avisar('Falha de conexão. Não foi possível buscar os setups anteriores. Tente de novo.')
       } finally {
         enviandoRef.current = false
       }
@@ -160,9 +176,9 @@ export function MontarSetup({
   function enviar() {
     if (!setup || enviandoRef.current) return
     const pos = posicao.trim(), fee = feeder.trim(), rol = rolo.trim()
-    if (pos === '') { posicaoRef.current?.focus(); return }
-    if (fee === '') { feederRef.current?.focus(); return }
-    if (rol === '') { roloRef.current?.focus(); return }
+    if (pos === '') { focarCampo(posicaoRef); return }
+    if (fee === '') { focarCampo(feederRef); return }
+    if (rol === '') { focarCampo(roloRef); return }
     const chips: ChipResultado[] = [
       { rotulo: rotulos.posicao, valor: pos },
       { rotulo: rotulos.feeder, valor: fee },
@@ -172,7 +188,7 @@ export function MontarSetup({
     if (!separarRolo(rol).valido) {
       avisar(mensagemErroSetup('ROLO_INVALIDO'), chips)
       setRolo('')
-      roloRef.current?.focus()
+      focarCampo(roloRef)
       return
     }
     enviandoRef.current = true
@@ -183,12 +199,12 @@ export function MontarSetup({
         if (!r.ok) {
           avisar(r.erro, chips)
           setRolo('')
-          roloRef.current?.focus()
+          focarCampo(roloRef)
           return
         }
         setResultado({
           tipo: 'ok',
-          titulo: r.atualizou ? 'Rolo bipado na posição copiada' : 'Posição cadastrada',
+          titulo: r.atualizou ? 'Rolo bipado no item copiado' : 'Item cadastrado',
           chips: [
             { rotulo: rotulos.posicao, valor: pos },
             { rotulo: rotulos.feeder, valor: fee },
@@ -197,7 +213,10 @@ export function MontarSetup({
           ],
         })
         setPosicao(''); setFeeder(''); setRolo('')
-        posicaoRef.current?.focus()
+        focarCampo(posicaoRef)
+        await recarregar(setupId)
+      } catch {
+        avisar('Falha de conexão. Confira a lista antes de bipar de novo.', chips)
         await recarregar(setupId)
       } finally {
         enviandoRef.current = false
@@ -215,10 +234,15 @@ export function MontarSetup({
     if (!ok) return
     const setupId = setup.id
     startEnvio(async () => {
-      const r = await removerItem(item.id)
-      if (!r.ok) { avisar(r.erro); return }
-      await recarregar(setupId)
-      toast.success(`${rotulos.posicao} ${item.posicao} removida`, { position: 'bottom-center' })
+      try {
+        const r = await removerItem(item.id)
+        if (!r.ok) { avisar(r.erro); return }
+        await recarregar(setupId)
+        toast.success(`Item ${item.posicao} removido`, { position: 'bottom-center' })
+      } catch {
+        toast.error('Falha de conexão. Não foi possível remover. Confira a lista antes de tentar de novo.', { position: 'bottom-center' })
+        await recarregar(setupId)
+      }
     })
   }
 
@@ -232,11 +256,16 @@ export function MontarSetup({
     if (!ok) return
     const setupId = setup.id
     startEnvio(async () => {
-      const r = await liberarSetup(setupId)
-      if (!r.ok) { avisar(r.erro); return }
-      await recarregar(setupId)
-      setResultado(null)
-      toast.success('Setup liberado', { position: 'bottom-center' })
+      try {
+        const r = await liberarSetup(setupId)
+        if (!r.ok) { avisar(r.erro); return }
+        await recarregar(setupId)
+        setResultado(null)
+        toast.success('Setup liberado', { position: 'bottom-center' })
+      } catch {
+        toast.error('Falha de conexão. Confira o estado do setup antes de liberar de novo.', { position: 'bottom-center' })
+        await recarregar(setupId)
+      }
     })
   }
 
@@ -245,7 +274,7 @@ export function MontarSetup({
     setPosicao(item.posicao)
     setFeeder(item.feeder)
     setRolo('')
-    roloRef.current?.focus()
+    focarCampo(roloRef)
   }
 
   function abrirEdicao(item: ItemSetup) {
@@ -258,11 +287,16 @@ export function MontarSetup({
     if (!setup || !editando) return
     const setupId = setup.id, itemId = editando.id
     startEnvio(async () => {
-      const r = await editarItem(itemId, edPosicao, edFeeder)
-      if (!r.ok) { toast.error(r.erro, { position: 'bottom-center' }); return }
-      setEditando(null)
-      await recarregar(setupId)
-      toast.success('Alteração salva', { position: 'bottom-center' })
+      try {
+        const r = await editarItem(itemId, edPosicao, edFeeder)
+        if (!r.ok) { toast.error(r.erro, { position: 'bottom-center' }); return }
+        setEditando(null)
+        await recarregar(setupId)
+        toast.success('Alteração salva', { position: 'bottom-center' })
+      } catch {
+        toast.error('Falha de conexão. Não foi possível salvar. Confira a lista antes de tentar de novo.', { position: 'bottom-center' })
+        await recarregar(setupId)
+      }
     })
   }
 
@@ -319,7 +353,7 @@ export function MontarSetup({
                   <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
                     <span className="flex flex-wrap items-center gap-2 text-base">
                       <span className="font-medium">OP {c.op}</span>
-                      <span className="text-muted-foreground">· {fmtData(c.criadoEm)} · {c.totalItens} {c.totalItens === 1 ? 'posição' : 'posições'} ·</span>
+                      <span className="text-muted-foreground">· {fmtData(c.criadoEm)} · {c.totalItens} {c.totalItens === 1 ? 'item' : 'itens'} ·</span>
                       <BadgeEstado estado={c.estado} />
                     </span>
                     <Button variant="outline" className="h-10 px-4" onClick={() => abrir(c.id)} disabled={enviando}>
@@ -347,7 +381,7 @@ export function MontarSetup({
             <div className="flex flex-wrap items-center gap-3">
               <BadgeEstado estado={setup.estado} />
               <span className="text-sm text-muted-foreground">
-                {itens.length} {itens.length === 1 ? 'posição' : 'posições'} ·{' '}
+                {itens.length} {itens.length === 1 ? 'item' : 'itens'} ·{' '}
                 <span className={semRolo > 0 ? 'font-medium text-amber-700' : ''}>{semRolo} sem rolo</span>
               </span>
               {setup.estado === 'montagem' && (
@@ -373,7 +407,8 @@ export function MontarSetup({
                   ref={posicaoRef}
                   value={posicao}
                   onChange={(e) => setPosicao(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); feederRef.current?.focus() } }}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focarCampo(feederRef) } }}
                   autoComplete="off"
                   autoFocus
                   className={INPUT_BIPE}
@@ -386,7 +421,8 @@ export function MontarSetup({
                   ref={feederRef}
                   value={feeder}
                   onChange={(e) => setFeeder(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); roloRef.current?.focus() } }}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focarCampo(roloRef) } }}
                   autoComplete="off"
                   className={INPUT_BIPE}
                 />
@@ -398,12 +434,22 @@ export function MontarSetup({
                   ref={roloRef}
                   value={rolo}
                   onChange={(e) => setRolo(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); enviar() } }}
                   placeholder="CÓDIGO-LOTE"
                   autoComplete="off"
                   className={INPUT_BIPE}
                 />
               </div>
+            </div>
+          )}
+
+          {!podeBipar && (
+            <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
+              <p className="text-base font-semibold">Setup liberado. Troca de rolo é feita em Abastecimento.</p>
+              <p className="mt-1 text-sm">
+                <Link href="/setup/operar/abastecimento" className="font-medium underline underline-offset-2">Ir para Abastecimento</Link>
+              </p>
             </div>
           )}
 
@@ -422,7 +468,7 @@ export function MontarSetup({
                 {itens.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                      Nenhuma {rotulos.posicao.toLowerCase()} cadastrada. Bipe {rotulos.posicao.toLowerCase()}, {rotulos.feeder.toLowerCase()} e rolo.
+                      Nenhum item cadastrado. Bipe {rotulos.posicao.toLowerCase()}, {rotulos.feeder.toLowerCase()} e rolo.
                     </TableCell>
                   </TableRow>
                 )}
@@ -434,7 +480,7 @@ export function MontarSetup({
                       key={i.id}
                       onClick={clicavel ? () => preencherFaltante(i) : undefined}
                       className={`text-base ${clicavel ? 'cursor-pointer bg-amber-50/60 hover:bg-amber-100/60' : ''}`}
-                      title={clicavel ? 'Toque para bipar o rolo desta posição' : undefined}
+                      title={clicavel ? 'Toque para bipar o rolo deste item' : undefined}
                     >
                       <TableCell className="font-medium">{i.posicao}</TableCell>
                       <TableCell>{i.feeder}</TableCell>

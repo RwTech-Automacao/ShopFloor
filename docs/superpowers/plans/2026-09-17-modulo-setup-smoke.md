@@ -120,5 +120,20 @@ Use o primeiro setup liberado (item 2).
 1. No tablet/notebook de teste, com o setup liberado aberto em **Abastecimento**, desligue o Wi-Fi e tente enviar uma troca.
    - **Esperado:** painel de aviso "Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar." e o foco volta pro campo Posição (evita reenviar com tudo preenchido e gerar uma reprovação por engano).
 2. Faça o mesmo em **Montar Setup**, trocando de seleção (OP/máquina/face) sem rede.
-   - **Esperado:** "Não foi possível procurar o setup. Verifique a conexão e escolha a face de novo."
+   - **Esperado:** "Não foi possível procurar o setup. Verifique a conexão, troque a face ou a máquina e volte pra tentar de novo."
 3. Religue o Wi-Fi e confirme que a tela volta a funcionar normalmente.
+4. Ainda sem rede, em **Montar Setup** com um setup em montagem aberto, bipe Posição/Feeder/Rolo completos e confirme.
+   - **Esperado:** painel de aviso "Falha de conexão. Confira a lista antes de bipar de novo." e a tela **não** quebra (sem tela de erro do Next) — a lista tenta recarregar sozinha.
+5. Confirme também que **Remover**, **Liberar setup** e **Salvar** (edição admin) sem rede mostram um toast de erro (embaixo) em vez de derrubar a tela.
+
+## 9. Detalhes desta rodada de correções
+
+1. **Bipe substitui o campo selecionado depois de uma recusa:** em **Montar Setup**, quando uma recusa devolve o foco para Posição/Feeder/Rolo (ex.: rolo inválido, componente fora da estrutura), bipe/digite um valor novo sem apagar antes — o texto anterior tem que ser **substituído**, não concatenado (o campo já vem com o conteúdo selecionado).
+2. **Filtro Cliente em Setups:** em **Setup → Consultas → Setups**, digite parte do nome do cliente de uma OP de teste (o cliente vem de `sf_ordens`) e confirme que só os setups dessa OP (e de outras OPs do mesmo cliente) aparecem. Um cliente que não bate com nenhuma OP deve devolver a tabela vazia.
+3. **Usuário só com `visualizar`:** confirme que **Setup → Consultas** funciona normalmente (lista e abre os detalhes) e que em **Setup → Operação** os campos de bipe de **Montar Setup** e **Abastecimento** ficam bloqueados/ocultos (sem `lancar`, não é possível abrir, copiar ou bipar nada).
+4. **Usuário só com o módulo Setup, sem nenhum módulo do ShopFloor:** confirme que a lista de OPs aparece normalmente no seletor (ela vem de `st_listar_ordens`, direto do ShopFloor, independente da permissão do usuário nesse módulo). Se a lista vier **vazia**, o problema é o owner/RLS de `sf_ordens` (a função é `security definer`, então não deveria depender do RLS do usuário — mas vale confirmar).
+5. **Nota:** a 0110 dá o módulo Setup só aos perfis que já têm `sistema.administrar`. Para os operadores de chão de fábrica testarem, é preciso ir em **Configurações → Perfis** e marcar `visualizar`/`lancar`/`administrar` de Setup no perfil deles.
+
+## 10. Pergunta em aberto (chão de fábrica)
+
+No **PTH**, um mesmo saquinho/rolo alimenta várias locações do mesmo posto (ou de postos diferentes)? Hoje, se o mesmo rolo for bipado numa segunda locação, o sistema recusa com "Esse rolo já está montado em outra posição do setup." — precisa confirmar com o pessoal do chão de fábrica se esse comportamento está certo ou se o PTH tem um caso legítimo de um rolo/saquinho abastecer mais de uma locação.

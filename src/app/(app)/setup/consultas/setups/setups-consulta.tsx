@@ -59,6 +59,7 @@ function ladoAlteracao(o: Record<string, unknown> | null): string {
 export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }) {
   const [pmo, setPmo] = useState('')
   const [op, setOp] = useState('')
+  const [cliente, setCliente] = useState('')
   const [processo, setProcesso] = useState('')
   const [linha, setLinha] = useState('')
   const [equipamento, setEquipamento] = useState('')
@@ -106,6 +107,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
     const filtro: FiltroSetups = {
       pmo: pmo.trim() || undefined,
       op: op.trim() || undefined,
+      cliente: cliente.trim() || undefined,
       processo: processo || undefined,
       linha: linha || undefined,
       equipamento: equipamento || undefined,
@@ -130,7 +132,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
 
   function limpar() {
     seqRef.current++ // qualquer resposta que ainda volte é descartada
-    setPmo(''); setOp(''); setProcesso(''); setLinha(''); setEquipamento(''); setFace(''); setEstado('')
+    setPmo(''); setOp(''); setCliente(''); setProcesso(''); setLinha(''); setEquipamento(''); setFace(''); setEstado('')
     setSetups([])
     setCarregando(false)
     setBuscou(false)
@@ -196,6 +198,10 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
         <div className="flex flex-col gap-1">
           <Label htmlFor="f-op">OP</Label>
           <Input id="f-op" value={op} onChange={(e) => setOp(e.target.value)} className="w-28" placeholder="OP" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="f-cliente">Cliente</Label>
+          <Input id="f-cliente" value={cliente} onChange={(e) => setCliente(e.target.value)} className="w-40" placeholder="Cliente" />
         </div>
         <div className="flex flex-col gap-1">
           <Label htmlFor="f-processo">Processo</Label>

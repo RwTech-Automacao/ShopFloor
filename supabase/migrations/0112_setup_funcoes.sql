@@ -412,6 +412,11 @@ begin
               where public.st_norm(e->>'componente') = '') then
     raise exception 'COMPONENTE_INVALIDO';
   end if;
+  -- Código com separador (- – — _ : / ou espaço) nunca casa com o prefixo do rolo: recusa na importação.
+  if exists (select 1 from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) e
+              where public.st_norm(e->>'componente') ~ '[-_:/ –—]') then
+    raise exception 'COMPONENTE_INVALIDO';
+  end if;
   if exists (select 1 from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) e
               where public.st_norm(e->>'processo') not in ('SMD', 'PTH')) then
     raise exception 'PROCESSO_INVALIDO';
@@ -435,6 +440,14 @@ begin
   return jsonb_build_object('novos', v_novos, 'atualizados', v_atual, 'iguais', v_iguais);
 end $func$;
 
+-- ---------- contagem de componentes por PMO (listarPmosComEstrutura lia st_estrutura inteira, e o
+-- PostgREST limita a 1000 linhas; agrega no banco em vez de trazer tudo pro app) ----------
+create or replace function public.st_pmos_com_estrutura()
+returns table (pmo text, total bigint)
+language sql stable security invoker set search_path = public as $func$
+  select pmo, count(*) from public.st_estrutura group by pmo order by pmo
+$func$;
+
 -- ---------- permissões ----------
 grant execute on function public.st_listar_ordens() to authenticated;
 grant execute on function public.st_abrir_setup(text, text, text, text, text, text, text, uuid) to authenticated;
@@ -444,6 +457,7 @@ grant execute on function public.st_editar_item(uuid, text, text) to authenticat
 grant execute on function public.st_liberar_setup(uuid) to authenticated;
 grant execute on function public.st_trocar_rolo(uuid, text, text, text, text, text) to authenticated;
 grant execute on function public.st_importar_estrutura(text, jsonb) to authenticated;
+grant execute on function public.st_pmos_com_estrutura() to authenticated;
 revoke all on function public.st_nome_usuario() from public, anon, authenticated;
 
 notify pgrst, 'reload schema';

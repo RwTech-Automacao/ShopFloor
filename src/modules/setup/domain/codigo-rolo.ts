@@ -5,6 +5,11 @@ export function normalizarTexto(t: string): string {
 
 const SEPARADOR = /[-–—_:/ ]/
 
+/** Código de componente com separador (- – — _ : / ou espaço) nunca casa com o prefixo do rolo (espelha st_rolo_prefixo/0112). */
+export function contemSeparador(codigo: string): boolean {
+  return SEPARADOR.test(codigo)
+}
+
 /**
  * Código do rolo = CÓDIGO_ERP + separador + LOTE_E_NÚMERO_DO_ROLO (ex.: CAPJ41-8521556004).
  * O prefixo é o componente (confere com a estrutura da PMO); o sequencial identifica o rolo

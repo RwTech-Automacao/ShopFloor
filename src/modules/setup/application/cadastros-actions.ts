@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { normalizarTexto } from '../domain/codigo-rolo'
+import { contemSeparador, normalizarTexto } from '../domain/codigo-rolo'
 import { mensagemErroSetup } from '../domain/mensagens'
 import type { Processo } from '../domain/tipos'
 import {
@@ -54,6 +54,7 @@ export async function adicionarComponenteAction(pmo: string, componente: string,
   const sessao = await admin(); if (!sessao) return { ok: false, erro: SEM }
   const codigo = normalizarTexto(componente)
   if (!pmo.trim() || !codigo || !processoValido(processo)) return { ok: false, erro: 'Informe o código e o processo.' }
+  if (contemSeparador(codigo)) return { ok: false, erro: 'O código do componente não pode ter separador (- _ : / ou espaço).' }
   const r = await inserirComponente(pmo.trim(), codigo, processo, sessao.usuarioId)
   if (!r.ok) return r
   await registrarLog({ entidade: 'st_estrutura', acao: 'criar', descricao: `Estrutura ${pmo}: + ${codigo} (${processo})` })

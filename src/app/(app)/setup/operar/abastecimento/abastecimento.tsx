@@ -94,7 +94,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
           if (seq === buscaSeq.current) requestAnimationFrame(() => focar('posicao'))
         }
       } catch {
-        if (seq === buscaSeq.current) avisar('Falha de conexão ao procurar o setup. Verifique a rede e escolha a face de novo.')
+        if (seq === buscaSeq.current) avisar('Falha de conexão ao procurar o setup. Verifique a rede, troque a face ou a máquina e volte pra tentar de novo.')
       } finally {
         if (seq === buscaSeq.current) setBuscando(false)
       }

@@ -47,6 +47,11 @@ describe('lerComposicao', () => {
     expect(r.componentes).toEqual([])
     expect(r.ignorados).toEqual([{ linha: 3, codigo: 'CAPJ41', motivo: 'Processo indefinido (fora de PARTES SMD/PTH).' }])
   })
+  it('componente com separador fica ignorado (nunca casa com o prefixo do rolo)', () => {
+    const r = lerComposicao([CAB, linha(1, 'PMOX', 'PLACA'), linha(2, 'PRT788', 'PARTES SMD'), linha(3, 'CAP-J41', '.CAP', 'C1')])
+    expect(r.componentes).toEqual([])
+    expect(r.ignorados).toContainEqual({ linha: 4, codigo: 'CAP-J41', motivo: 'código com separador' })
+  })
   it('erro quando não acha o cabeçalho ou o nível 1', () => {
     expect(lerComposicao([['A', 'B']]).erro).toBe('Cabeçalho não encontrado (colunas NÍVEL e CÓDIGO ITEM).')
     expect(lerComposicao([CAB, linha(2, 'X', 'Y', 'C1')]).erro).toBe('Não encontrei a PMO (linha de nível 1).')

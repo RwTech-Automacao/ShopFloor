@@ -83,12 +83,9 @@ export async function listarEstrutura(pmo: string): Promise<ItemEstruturaCadastr
 }
 
 export async function listarPmosComEstrutura(): Promise<{ pmo: string; total: number }[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('st_estrutura').select('pmo')
-  if (error) throw error
-  const cont = new Map<string, number>()
-  for (const r of (data ?? []) as Row[]) cont.set(r.pmo as string, (cont.get(r.pmo as string) ?? 0) + 1)
-  return [...cont.entries()].map(([pmo, total]) => ({ pmo, total })).sort((a, b) => a.pmo.localeCompare(b.pmo))
+  // Agrega no banco (st_pmos_com_estrutura, 0112): st_estrutura pode passar de 1000 linhas, limite do PostgREST.
+  const rows = await chamarRpc<Row[]>('st_pmos_com_estrutura', {})
+  return ((rows ?? []) as Row[]).map((r) => ({ pmo: r.pmo as string, total: Number(r.total) }))
 }
 
 export async function buscarSetupPorChave(k: ChaveSetup): Promise<SetupResumo | null> {
@@ -126,6 +123,15 @@ export async function listarSetupsParaCopiar(k: Omit<ChaveSetup, 'op'> & { excet
 
 export async function listarSetups(f: FiltroSetups): Promise<SetupResumo[]> {
   const supabase = await createServerSupabase()
+  // st_setups não guarda cliente (fica em sf_ordens, por pmo+op): busca antes os pares que batem
+  // e filtra por eles depois. Sem par nenhum, nem vale a pena consultar st_setups.
+  let paresCliente: Set<string> | null = null
+  if (f.cliente?.trim()) {
+    const { data, error } = await supabase.from('sf_ordens').select('pmo,op').ilike('cliente', `%${f.cliente.trim()}%`)
+    if (error) throw error
+    paresCliente = new Set(((data ?? []) as Row[]).map((r) => `${r.pmo as string}|${r.op as string}`))
+    if (paresCliente.size === 0) return []
+  }
   let q = supabase.from('st_setups').select(SETUP_COLS).order('criado_em', { ascending: false }).limit(500)
   if (f.pmo) q = q.ilike('pmo', `%${f.pmo.trim()}%`)
   if (f.op) q = q.ilike('op', `%${f.op.trim()}%`)
@@ -136,7 +142,8 @@ export async function listarSetups(f: FiltroSetups): Promise<SetupResumo[]> {
   if (f.estado) q = q.eq('estado', f.estado)
   const { data, error } = await q
   if (error) throw error
-  return ((data ?? []) as Row[]).map(mapSetup)
+  const linhas = ((data ?? []) as Row[]).map(mapSetup)
+  return paresCliente ? linhas.filter((s) => paresCliente!.has(`${s.pmo}|${s.op}`)) : linhas
 }
 
 export async function listarTrocas(f: FiltroTrocas, pagina: number, tamanho: number): Promise<{ linhas: Troca[]; total: number }> {

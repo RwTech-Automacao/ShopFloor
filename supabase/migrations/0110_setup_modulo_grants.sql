@@ -9,3 +9,5 @@ from public.perfil_permissao pp
 cross join (values ('visualizar'), ('lancar'), ('administrar')) as p(permissao)
 where pp.modulo = 'sistema' and pp.permissao = 'administrar'
 on conflict do nothing;
+
+notify pgrst, 'reload schema';

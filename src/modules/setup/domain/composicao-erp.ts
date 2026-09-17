@@ -1,4 +1,4 @@
-import { normalizarTexto } from './codigo-rolo'
+import { contemSeparador, normalizarTexto } from './codigo-rolo'
 import type { Processo } from './tipos'
 
 export interface ComponenteLido { componente: string; processo: Processo; linha: number }
@@ -56,6 +56,10 @@ export function lerComposicao(linhas: unknown[][]): ResultadoComposicao {
     }
     if (processoPai === null) {
       r.ignorados.push({ linha: numeroLinha, codigo, motivo: 'Processo indefinido (fora de PARTES SMD/PTH).' })
+      continue
+    }
+    if (contemSeparador(codigo)) {
+      r.ignorados.push({ linha: numeroLinha, codigo, motivo: 'código com separador' })
       continue
     }
     if (vistos.has(codigo)) {

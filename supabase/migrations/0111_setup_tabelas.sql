@@ -79,6 +79,8 @@ create table public.st_trocas (
 );
 create index st_trocas_setup_data on public.st_trocas (setup_id, data_hora desc);
 create index st_trocas_data on public.st_trocas (data_hora desc);
+-- item_id tem "on delete set null": sem índice, cada remoção de item varreria a tabela toda.
+create index st_trocas_item on public.st_trocas (item_id);
 
 create table public.st_alteracoes (
   id           uuid primary key default gen_random_uuid(),

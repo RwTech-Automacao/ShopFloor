@@ -42,6 +42,17 @@ do $t$ declare r jsonb; begin
   if (select processo from st_estrutura where pmo = 'PMOG13' and componente = 'DUP1') <> 'PTH' then raise exception 'FALHOU: última ocorrência vale'; end if;
   begin perform st_importar_estrutura('PMOX', '[]'); raise exception 'FALHOU: pmo inexistente passou';
   exception when others then if sqlerrm not like '%PMO_INEXISTENTE%' then raise; end if; end;
+  -- código com separador nunca casa com o prefixo do rolo: recusa na importação
+  begin perform st_importar_estrutura('PMOG13', '[{"componente":"CAP-J41","processo":"SMD"}]'); raise exception 'FALHOU: componente com separador passou';
+  exception when others then if sqlerrm not like '%COMPONENTE_INVALIDO%' then raise; end if; end;
+end $t$;
+
+-- 2b. Contagem de componentes por PMO (st_pmos_com_estrutura)
+do $t$ declare n_func bigint; n_real bigint; begin
+  select total into n_func from st_pmos_com_estrutura() where pmo = 'PMOG13';
+  select count(*) into n_real from st_estrutura where pmo = 'PMOG13';
+  if n_func is null or n_func <> n_real then raise exception 'FALHOU: contagem por pmo % vs %', n_func, n_real; end if;
+  if exists (select 1 from st_pmos_com_estrutura() where pmo = 'PMOX') then raise exception 'FALHOU: pmo sem estrutura não deveria aparecer'; end if;
 end $t$;
 
 -- 3. Abrir setup + faixa + face sobreposta
