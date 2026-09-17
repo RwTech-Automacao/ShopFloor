@@ -8,7 +8,9 @@ export function rotulosPosicao(processo: Processo): { posicao: string; feeder: s
     : { posicao: 'Posição', feeder: 'Feeder', equipamento: 'Máquina' }
 }
 
-/** No PTH o valor cadastrado é só a identificação do bloco ("A"), então prefixa o rótulo ("Bloco A"). */
-export function rotuloEquipamento(processo: Processo, equipamento: string): string {
-  return processo === 'PTH' ? `${rotulosPosicao(processo).equipamento} ${equipamento}` : equipamento
+/** Equipamento em uma linha de texto: "Bloco A · MG5" no SMD, "Bloco A" no PTH (que não tem máquina).
+ * Única cópia da regra — telas, CSV e logs chamam esta função. A linha não entra aqui: quem mostra
+ * o equipamento junto da linha já escreve "Linha 1 · Bloco A · MG5". */
+export function rotuloEquipamento(e: { processo: Processo; bloco: string; maquina: string | null }): string {
+  return e.processo === 'SMD' && e.maquina ? `Bloco ${e.bloco} · ${e.maquina}` : `Bloco ${e.bloco}`
 }

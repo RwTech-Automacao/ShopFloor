@@ -22,8 +22,8 @@ export async function abrirSetup(entrada: ChaveSetup & { snAbertura: string; cop
   const negado = await exigir('lancar'); if (negado) return negado
   try {
     const r = await chamarRpc<{ setup_id: string; criado: boolean; sem_faixa: boolean }>('st_abrir_setup', {
-      p_pmo: entrada.pmo, p_op: entrada.op, p_processo: entrada.processo, p_linha: entrada.linha,
-      p_equipamento: entrada.equipamento, p_face: entrada.face, p_sn_abertura: entrada.snAbertura, p_copiar_de: entrada.copiarDe ?? null,
+      p_pmo: entrada.pmo, p_op: entrada.op, p_equipamento_id: entrada.equipamentoId,
+      p_face: entrada.face, p_sn_abertura: entrada.snAbertura, p_copiar_de: entrada.copiarDe ?? null,
     })
     return { ok: true, setupId: r.setup_id, criado: r.criado, semFaixa: r.sem_faixa }
   } catch (e) { return falha(e) }

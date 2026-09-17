@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/dialog'
 import { cadastrarEquipamentoAction, alternarEquipamentoAction } from '@/modules/setup/application/cadastros-actions'
 import type { Equipamento } from '@/modules/setup/infra/setup-repository'
-import { rotuloEquipamento, rotulosPosicao, type Processo } from '@/modules/setup/domain/tipos'
+import { rotuloEquipamento, type Processo } from '@/modules/setup/domain/tipos'
 
 function AtivoSwitch({ id, ativo }: { id: string; ativo: boolean }) {
   const [pending, startTransition] = useTransition()
@@ -111,24 +111,19 @@ function NovoEquipamentoForm() {
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="linha">Linha</Label>
-            <Input id="linha" name="linha" placeholder="Linha" autoComplete="off" required />
+            <Input id="linha" name="linha" placeholder="Ex.: 1" autoComplete="off" required />
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="equipamento">{rotulosPosicao(processo).equipamento}</Label>
-            <Input
-              id="equipamento"
-              name="equipamento"
-              placeholder={rotulosPosicao(processo).equipamento}
-              autoComplete="off"
-              required
-            />
+            <Label htmlFor="bloco">Bloco</Label>
+            <Input id="bloco" name="bloco" placeholder="Ex.: A" autoComplete="off" required />
           </div>
 
+          {/* O PTH não tem máquina: o campo some e o servidor grava null. */}
           {processo === 'SMD' && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="posicoes">Nº de posições</Label>
-              <Input id="posicoes" name="posicoes" type="number" min={1} step={1} placeholder="Opcional" autoComplete="off" />
+              <Label htmlFor="maquina">Máquina</Label>
+              <Input id="maquina" name="maquina" placeholder="Ex.: MG5" autoComplete="off" required />
             </div>
           )}
 
@@ -149,7 +144,7 @@ export function EquipamentosLista({ equipamentos }: { equipamentos: Equipamento[
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold">Linhas e máquinas</h1>
+        <h1 className="text-lg font-semibold">Linhas, blocos e máquinas</h1>
         <NovoEquipamentoForm />
       </div>
 
@@ -160,8 +155,8 @@ export function EquipamentosLista({ equipamentos }: { equipamentos: Equipamento[
             <TableRow>
               <TableHead>Processo</TableHead>
               <TableHead>Linha</TableHead>
-              <TableHead>Máquina/Bloco</TableHead>
-              <TableHead>Posições</TableHead>
+              <TableHead>Bloco</TableHead>
+              <TableHead>Máquina</TableHead>
               <TableHead className="text-right">Ativo</TableHead>
             </TableRow>
           </TableHeader>
@@ -177,8 +172,8 @@ export function EquipamentosLista({ equipamentos }: { equipamentos: Equipamento[
               <TableRow key={e.id}>
                 <TableCell className="font-medium">{e.processo}</TableCell>
                 <TableCell>{e.linha}</TableCell>
-                <TableCell>{rotuloEquipamento(e.processo, e.equipamento)}</TableCell>
-                <TableCell>{e.posicoes ?? '—'}</TableCell>
+                <TableCell>{e.bloco}</TableCell>
+                <TableCell>{e.maquina ?? '—'}</TableCell>
                 <TableCell className="text-right">
                   <AtivoSwitch id={e.id} ativo={e.ativo} />
                 </TableCell>
@@ -199,11 +194,8 @@ export function EquipamentosLista({ equipamentos }: { equipamentos: Equipamento[
           <div key={e.id} className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="flex flex-col gap-1">
-                <span className="font-semibold">{rotuloEquipamento(e.processo, e.equipamento)}</span>
-                <span className="text-xs text-muted-foreground">
-                  {e.processo} · Linha {e.linha}
-                  {e.posicoes !== null ? ` · ${e.posicoes} posições` : ''}
-                </span>
+                <span className="font-semibold">{rotuloEquipamento(e)}</span>
+                <span className="text-xs text-muted-foreground">{e.processo} · Linha {e.linha}</span>
               </div>
               <AtivoSwitch id={e.id} ativo={e.ativo} />
             </div>

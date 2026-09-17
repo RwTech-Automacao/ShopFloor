@@ -10,10 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { carregarSetupAction, consultarAlteracoes, consultarSetups } from '@/modules/setup/application/setup-actions'
 import { FACES } from '@/modules/setup/domain/face'
-import { rotulosPosicao, type Processo } from '@/modules/setup/domain/tipos'
+import { rotuloEquipamento, rotulosPosicao } from '@/modules/setup/domain/tipos'
 import type { Alteracao, Equipamento, FiltroSetups, ItemSetup, SetupResumo } from '@/modules/setup/infra/setup-repository'
-import { rotuloEquipamento } from '../../selecao-setup'
-import { fmtData, SelectMaquina, TODOS, useLinhasOrdenadas } from '../filtros-comuns'
+import { fmtData, SelectFiltro, TODOS, useBlocosOrdenados, useLinhasOrdenadas, useMaquinasOrdenadas } from '../filtros-comuns'
 
 const ROTULO_TIPO: Record<string, string> = {
   troca_feeder: 'Troca de feeder',
@@ -62,7 +61,8 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
   const [cliente, setCliente] = useState('')
   const [processo, setProcesso] = useState('')
   const [linha, setLinha] = useState('')
-  const [equipamento, setEquipamento] = useState('')
+  const [bloco, setBloco] = useState('')
+  const [maquina, setMaquina] = useState('')
   const [face, setFace] = useState('')
   const [estado, setEstado] = useState('')
 
@@ -81,25 +81,37 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
   const [buscaLocal, setBuscaLocal] = useState('')
   const dialogSeqRef = useRef(0)
 
+  // Cascata dos filtros de equipamento: processo → linha → bloco → máquina.
   const equipamentosDoProcesso = useMemo(
     () => (processo ? equipamentos.filter((e) => e.processo === processo) : equipamentos),
     [equipamentos, processo],
   )
   const linhas = useLinhasOrdenadas(equipamentosDoProcesso)
-  const maquinas = useMemo(
+  const equipamentosDaLinha = useMemo(
     () => (linha ? equipamentosDoProcesso.filter((e) => e.linha === linha) : equipamentosDoProcesso),
     [equipamentosDoProcesso, linha],
   )
-  const rotuloCampoMaquina = processo ? rotulosPosicao(processo as Processo).equipamento : 'Máquina/Bloco'
+  const blocos = useBlocosOrdenados(equipamentosDaLinha)
+  const equipamentosDoBloco = useMemo(
+    () => (bloco ? equipamentosDaLinha.filter((e) => e.bloco === bloco) : equipamentosDaLinha),
+    [equipamentosDaLinha, bloco],
+  )
+  const maquinas = useMaquinasOrdenadas(equipamentosDoBloco)
 
   function mudarProcesso(v: string) {
     setProcesso(v)
     setLinha('')
-    setEquipamento('')
+    setBloco('')
+    setMaquina('')
   }
   function mudarLinha(v: string) {
     setLinha(v)
-    setEquipamento('')
+    setBloco('')
+    setMaquina('')
+  }
+  function mudarBloco(v: string) {
+    setBloco(v)
+    setMaquina('')
   }
 
   function consultar(e?: FormEvent) {
@@ -110,7 +122,8 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
       cliente: cliente.trim() || undefined,
       processo: processo || undefined,
       linha: linha || undefined,
-      equipamento: equipamento || undefined,
+      bloco: bloco || undefined,
+      maquina: maquina || undefined,
       face: face || undefined,
       estado: estado || undefined,
     }
@@ -132,7 +145,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
 
   function limpar() {
     seqRef.current++ // qualquer resposta que ainda volte é descartada
-    setPmo(''); setOp(''); setCliente(''); setProcesso(''); setLinha(''); setEquipamento(''); setFace(''); setEstado('')
+    setPmo(''); setOp(''); setCliente(''); setProcesso(''); setLinha(''); setBloco(''); setMaquina(''); setFace(''); setEstado('')
     setSetups([])
     setCarregando(false)
     setBuscou(false)
@@ -216,19 +229,9 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="f-linha">Linha</Label>
-          <Select value={linha || TODOS} onValueChange={(v) => mudarLinha(v === TODOS ? '' : String(v))}>
-            <SelectTrigger id="f-linha" className="w-32">
-              <SelectValue placeholder="Todas">{(v: string | null) => (!v || v === TODOS ? 'Todas' : `Linha ${v}`)}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TODOS}>Todas</SelectItem>
-              {linhas.map((l) => <SelectItem key={l} value={l}>Linha {l}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <SelectMaquina id="f-equipamento" label={rotuloCampoMaquina} equipamentos={maquinas} valor={equipamento} onChange={setEquipamento} />
+        <SelectFiltro id="f-linha" label="Linha" opcoes={linhas} valor={linha} onChange={mudarLinha} rotuloTodos="Todas" formatar={(v) => `Linha ${v}`} />
+        <SelectFiltro id="f-bloco" label="Bloco" opcoes={blocos} valor={bloco} onChange={mudarBloco} rotuloTodos="Todos" formatar={(v) => `Bloco ${v}`} />
+        <SelectFiltro id="f-maquina" label="Máquina" opcoes={maquinas} valor={maquina} onChange={setMaquina} rotuloTodos="Todas" largura="w-36" />
         <div className="flex flex-col gap-1">
           <Label htmlFor="f-face">Face</Label>
           <Select value={face || TODOS} onValueChange={(v) => setFace(v === TODOS ? '' : String(v))}>
@@ -270,7 +273,8 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
               <TableHead>PMO</TableHead>
               <TableHead>Processo</TableHead>
               <TableHead>Linha</TableHead>
-              <TableHead>Máquina/Bloco</TableHead>
+              <TableHead>Bloco</TableHead>
+              <TableHead>Máquina</TableHead>
               <TableHead>Face</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Posições (sem rolo)</TableHead>
@@ -280,13 +284,13 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
           </TableHeader>
           <TableBody>
             {carregando && (
-              <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">Consultando…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="py-8 text-center text-muted-foreground">Consultando…</TableCell></TableRow>
             )}
             {!carregando && buscou && setups.length === 0 && (
-              <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">Nenhum setup encontrado com esses filtros.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="py-8 text-center text-muted-foreground">Nenhum setup encontrado com esses filtros.</TableCell></TableRow>
             )}
             {!carregando && !buscou && (
-              <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">Use os filtros e clique em Consultar.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="py-8 text-center text-muted-foreground">Use os filtros e clique em Consultar.</TableCell></TableRow>
             )}
             {!carregando && setups.map((s) => (
               <TableRow key={s.id} onClick={() => abrirDialog(s)} className="cursor-pointer hover:bg-accent/60" title="Toque para ver os detalhes do setup">
@@ -294,7 +298,8 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
                 <TableCell>{s.pmo}</TableCell>
                 <TableCell>{s.processo}</TableCell>
                 <TableCell>{s.linha}</TableCell>
-                <TableCell>{rotuloEquipamento(s.processo, s.equipamento)}</TableCell>
+                <TableCell>{s.bloco}</TableCell>
+                <TableCell>{s.maquina ?? '—'}</TableCell>
                 <TableCell>{s.face}</TableCell>
                 <TableCell><BadgeEstado estado={s.estado} /></TableCell>
                 <TableCell>
@@ -314,7 +319,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
             <>
               <DialogHeader>
                 <DialogTitle>
-                  OP {dialogSetup.pmo}/{dialogSetup.op} · Linha {dialogSetup.linha} · {rotuloEquipamento(dialogSetup.processo, dialogSetup.equipamento)} · {dialogSetup.face}
+                  OP {dialogSetup.pmo}/{dialogSetup.op} · Linha {dialogSetup.linha} · {rotuloEquipamento(dialogSetup)} · {dialogSetup.face}
                 </DialogTitle>
               </DialogHeader>
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">

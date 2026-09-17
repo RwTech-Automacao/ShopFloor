@@ -4,31 +4,37 @@ import type { Face } from '../domain/face'
 import type { EstadoSetup, Processo } from '../domain/tipos'
 
 export interface OrdemSetup { pmo: string; op: string; cliente: string; descricao: string; status: string; snIni: string; snFim: string }
-export interface Equipamento { id: string; processo: Processo; linha: string; equipamento: string; posicoes: number | null; ativo: boolean }
+export interface Equipamento { id: string; processo: Processo; linha: string; bloco: string; maquina: string | null; ativo: boolean }
 export interface ItemEstruturaCadastro { componente: string; processo: Processo; origem: 'importacao' | 'manual'; criadoEm: string }
 export interface SetupResumo {
-  id: string; pmo: string; op: string; processo: Processo; linha: string; equipamento: string; face: Face
+  id: string; pmo: string; op: string; processo: Processo; equipamentoId: string
+  linha: string; bloco: string; maquina: string | null; face: Face
   snAbertura: string; estado: EstadoSetup; criadoEm: string; liberadoEm: string | null; totalItens: number; semRolo: number
 }
 export interface ItemSetup { id: string; posicao: string; feeder: string; componente: string; rolo: string | null; atualizadoEm: string }
 export interface Troca {
-  id: string; setupId: string; pmo: string; op: string; processo: Processo; linha: string; equipamento: string; face: Face
+  id: string; setupId: string; pmo: string; op: string; processo: Processo; equipamentoId: string
+  linha: string; bloco: string; maquina: string | null; face: Face
   posicao: string; feeder: string; roloSaida: string; roloEntrada: string; snInicial: string
   resultado: 'APROVADO' | 'REPROVADO'; motivos: string[]; operadorNome: string; dataHora: string
 }
 export interface Alteracao { id: string; tipo: string; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null; usuarioNome: string; dataHora: string }
-export interface ChaveSetup { pmo: string; op: string; processo: Processo; linha: string; equipamento: string; face: Face }
-export interface FiltroSetups { cliente?: string; pmo?: string; op?: string; processo?: string; linha?: string; equipamento?: string; face?: string; estado?: string }
-export interface FiltroTrocas { setupId?: string; de?: string; ate?: string; pmo?: string; op?: string; processo?: string; linha?: string; equipamento?: string; resultado?: string; posicao?: string; rolo?: string; sn?: string }
+export interface ChaveSetup { pmo: string; op: string; equipamentoId: string; face: Face }
+export interface FiltroSetups { cliente?: string; pmo?: string; op?: string; processo?: string; linha?: string; bloco?: string; maquina?: string; face?: string; estado?: string }
+export interface FiltroTrocas { setupId?: string; de?: string; ate?: string; pmo?: string; op?: string; processo?: string; linha?: string; bloco?: string; maquina?: string; resultado?: string; posicao?: string; rolo?: string; sn?: string }
 
 type Row = Record<string, unknown>
-const SETUP_COLS = 'id,pmo,op,processo,linha,equipamento,face,sn_abertura,estado,criado_em,liberado_em,st_setup_itens(rolo)'
+const EQUIP_COLS = 'id,processo,linha,bloco,maquina,ativo'
+// Linha, bloco e máquina vêm do equipamento cadastrado (embed de st_setups.equipamento_id).
+const SETUP_COLS = 'id,pmo,op,processo,equipamento_id,face,sn_abertura,estado,criado_em,liberado_em,st_equipamentos!inner(linha,bloco,maquina),st_setup_itens(rolo)'
 
 function mapSetup(r: Row): SetupResumo {
   const itens = (r.st_setup_itens ?? []) as { rolo: string | null }[]
+  const e = (r.st_equipamentos ?? {}) as Row
   return {
     id: r.id as string, pmo: r.pmo as string, op: r.op as string, processo: r.processo as Processo,
-    linha: r.linha as string, equipamento: r.equipamento as string, face: r.face as Face,
+    equipamentoId: r.equipamento_id as string,
+    linha: e.linha as string, bloco: e.bloco as string, maquina: (e.maquina as string | null) ?? null, face: r.face as Face,
     snAbertura: r.sn_abertura as string, estado: r.estado as EstadoSetup, criadoEm: r.criado_em as string,
     liberadoEm: (r.liberado_em as string | null) ?? null, totalItens: itens.length, semRolo: itens.filter((i) => i.rolo === null).length,
   }
@@ -39,9 +45,12 @@ const mapItem = (r: Row): ItemSetup => ({
 })
 const mapTroca = (r: Row): Troca => {
   const s = (r.st_setups ?? {}) as Row
+  const e = (s.st_equipamentos ?? {}) as Row
   return {
     id: r.id as string, setupId: r.setup_id as string, pmo: s.pmo as string, op: s.op as string, processo: s.processo as Processo,
-    linha: s.linha as string, equipamento: s.equipamento as string, face: s.face as Face, posicao: r.posicao as string, feeder: r.feeder as string,
+    equipamentoId: s.equipamento_id as string,
+    linha: e.linha as string, bloco: e.bloco as string, maquina: (e.maquina as string | null) ?? null,
+    face: s.face as Face, posicao: r.posicao as string, feeder: r.feeder as string,
     roloSaida: r.rolo_saida as string, roloEntrada: r.rolo_entrada as string, snInicial: r.sn_inicial as string,
     resultado: r.resultado as Troca['resultado'], motivos: (r.motivos as string[]) ?? [], operadorNome: r.operador_nome as string,
     dataHora: r.data_hora as string,
@@ -65,13 +74,13 @@ export async function listarOrdensSetup(): Promise<OrdemSetup[]> {
 
 export async function listarEquipamentos(apenasAtivos = false): Promise<Equipamento[]> {
   const supabase = await createServerSupabase()
-  let q = supabase.from('st_equipamentos').select('id,processo,linha,equipamento,posicoes,ativo').order('processo').order('linha').order('equipamento')
+  let q = supabase.from('st_equipamentos').select(EQUIP_COLS).order('processo').order('linha').order('bloco').order('maquina')
   if (apenasAtivos) q = q.eq('ativo', true)
   const { data, error } = await q
   if (error) throw error
   return ((data ?? []) as Row[]).map((r) => ({
-    id: r.id as string, processo: r.processo as Processo, linha: r.linha as string, equipamento: r.equipamento as string,
-    posicoes: (r.posicoes as number | null) ?? null, ativo: r.ativo as boolean,
+    id: r.id as string, processo: r.processo as Processo, linha: r.linha as string, bloco: r.bloco as string,
+    maquina: (r.maquina as string | null) ?? null, ativo: r.ativo as boolean,
   }))
 }
 
@@ -91,7 +100,7 @@ export async function listarPmosComEstrutura(): Promise<{ pmo: string; total: nu
 export async function buscarSetupPorChave(k: ChaveSetup): Promise<SetupResumo | null> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.from('st_setups').select(SETUP_COLS)
-    .eq('pmo', k.pmo).eq('op', k.op).eq('processo', k.processo).eq('linha', k.linha).eq('equipamento', k.equipamento).eq('face', k.face)
+    .eq('pmo', k.pmo).eq('op', k.op).eq('equipamento_id', k.equipamentoId).eq('face', k.face)
     .maybeSingle()
   if (error) throw error
   return data ? mapSetup(data as Row) : null
@@ -115,7 +124,7 @@ export async function carregarSetup(id: string): Promise<{ setup: SetupResumo; i
 export async function listarSetupsParaCopiar(k: Omit<ChaveSetup, 'op'> & { excetoOp: string }): Promise<SetupResumo[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.from('st_setups').select(SETUP_COLS)
-    .eq('pmo', k.pmo).eq('processo', k.processo).eq('linha', k.linha).eq('equipamento', k.equipamento).eq('face', k.face)
+    .eq('pmo', k.pmo).eq('equipamento_id', k.equipamentoId).eq('face', k.face)
     .neq('op', k.excetoOp).order('criado_em', { ascending: false }).limit(20)
   if (error) throw error
   return ((data ?? []) as Row[]).map(mapSetup)
@@ -141,8 +150,10 @@ export async function listarSetups(f: FiltroSetups): Promise<SetupResumo[]> {
   if (f.pmo) q = q.ilike('pmo', `%${f.pmo.trim()}%`)
   if (f.op) q = q.ilike('op', `%${f.op.trim()}%`)
   if (f.processo) q = q.eq('processo', f.processo)
-  if (f.linha) q = q.eq('linha', f.linha)
-  if (f.equipamento) q = q.eq('equipamento', f.equipamento)
+  // Linha, bloco e máquina moram em st_equipamentos: filtra pelo embed (por isso o !inner).
+  if (f.linha) q = q.eq('st_equipamentos.linha', f.linha)
+  if (f.bloco) q = q.eq('st_equipamentos.bloco', f.bloco)
+  if (f.maquina) q = q.eq('st_equipamentos.maquina', f.maquina)
   if (f.face) q = q.eq('face', f.face)
   if (f.estado) q = q.eq('estado', f.estado)
   const { data, error } = await q
@@ -154,7 +165,7 @@ export async function listarSetups(f: FiltroSetups): Promise<SetupResumo[]> {
 export async function listarTrocas(f: FiltroTrocas, pagina: number, tamanho: number): Promise<{ linhas: Troca[]; total: number }> {
   const supabase = await createServerSupabase()
   let q = supabase.from('st_trocas')
-    .select('id,setup_id,posicao,feeder,rolo_saida,rolo_entrada,sn_inicial,resultado,motivos,operador_nome,data_hora,st_setups!inner(pmo,op,linha,equipamento,face,processo)', { count: 'exact' })
+    .select('id,setup_id,posicao,feeder,rolo_saida,rolo_entrada,sn_inicial,resultado,motivos,operador_nome,data_hora,st_setups!inner(pmo,op,face,processo,equipamento_id,st_equipamentos!inner(linha,bloco,maquina))', { count: 'exact' })
     .order('data_hora', { ascending: false })
     .order('id')
   if (f.setupId) q = q.eq('setup_id', f.setupId)
@@ -163,8 +174,20 @@ export async function listarTrocas(f: FiltroTrocas, pagina: number, tamanho: num
   if (f.pmo) q = q.ilike('st_setups.pmo', `%${f.pmo.trim()}%`)
   if (f.op) q = q.ilike('st_setups.op', `%${f.op.trim()}%`)
   if (f.processo) q = q.eq('st_setups.processo', f.processo)
-  if (f.linha) q = q.eq('st_setups.linha', f.linha)
-  if (f.equipamento) q = q.eq('st_setups.equipamento', f.equipamento)
+  // Linha/bloco/máquina ficam a DOIS embeds de distância (st_trocas → st_setups → st_equipamentos).
+  // Em vez de filtrar por caminho aninhado, resolve antes quais equipamentos batem e filtra pelo id.
+  if (f.linha || f.bloco || f.maquina) {
+    let qe = supabase.from('st_equipamentos').select('id')
+    if (f.processo) qe = qe.eq('processo', f.processo)
+    if (f.linha) qe = qe.eq('linha', f.linha)
+    if (f.bloco) qe = qe.eq('bloco', f.bloco)
+    if (f.maquina) qe = qe.eq('maquina', f.maquina)
+    const { data: eqs, error: erroEq } = await qe
+    if (erroEq) throw erroEq
+    const ids = ((eqs ?? []) as Row[]).map((r) => r.id as string)
+    if (ids.length === 0) return { linhas: [], total: 0 }
+    q = q.in('st_setups.equipamento_id', ids)
+  }
   if (f.resultado) q = q.eq('resultado', f.resultado)
   if (f.posicao) q = q.eq('posicao', f.posicao.trim().toUpperCase())
   if (f.rolo) {
@@ -187,7 +210,7 @@ export async function listarAlteracoes(setupId: string): Promise<Alteracao[]> {
   }))
 }
 
-export async function inserirEquipamento(e: { processo: Processo; linha: string; equipamento: string; posicoes: number | null }): Promise<{ ok: true } | { ok: false; erro: string }> {
+export async function inserirEquipamento(e: { processo: Processo; linha: string; bloco: string; maquina: string | null }): Promise<{ ok: true } | { ok: false; erro: string }> {
   const supabase = await createServerSupabase()
   const { error } = await supabase.from('st_equipamentos').insert(e)
   if (error) return { ok: false, erro: error.code === '23505' ? 'Esse equipamento já está cadastrado.' : 'Não foi possível cadastrar.' }

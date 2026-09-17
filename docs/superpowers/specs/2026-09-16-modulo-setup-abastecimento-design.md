@@ -42,6 +42,8 @@ O código do rolo tem o formato `CÓDIGO_ERP-LOTE_E_NÚMERO_DO_ROLO` (ex.: `CAPJ
 | 9 | **Feeder e posição podem ser trocados ou editados no meio da OP só pelo admin do módulo**, com histórico. |
 | 10 | **SN de Abertura e SN Inicial conferidos contra a faixa de SN da OP.** |
 | 11 | **PTH mantém os campos do legado** (Linha, Bloco, Face, Posto, Locação). **Bloco** e **posto** são localizações dentro da fábrica; **locação** é a posição do componente na placa. |
+| 14 | **Equipamento = linha + bloco + máquina.** O **bloco** é a mesma divisão de fábrica nos dois processos (A, B, …): no **SMD** o equipamento é linha + bloco + **máquina**; no **PTH**, linha + bloco, **sem máquina**. Não existe mais "nº de posições". |
+| 15 | **A identidade do setup é o equipamento cadastrado** (`st_setups.equipamento_id` → `st_equipamentos`), não texto digitado na tela. O processo do setup é cópia do processo do equipamento, feita na abertura. |
 | 12 | **Começa do zero**: a planilha não é migrada. |
 | 13 | **Permissões**: montar setup e trocar rolo = `lancar`; estrutura, cadastros e edição no meio da OP = `administrar`; consultas = `visualizar`. |
 
@@ -57,7 +59,7 @@ SETUP
  │   └─ Trocas de rolo    (visualizar)
  └─ Cadastros             (administrar)
      ├─ Estrutura da PMO
-     └─ Linhas, Máquinas e Blocos
+     └─ Linhas, Blocos e Máquinas
 ```
 
 ## 4. Modelo de dados
@@ -66,9 +68,9 @@ Todas as tabelas têm RLS por módulo (`tem_permissao('setup', <nível>)` envolv
 
 | Tabela | Colunas principais | Regras |
 |---|---|---|
-| `st_equipamentos` | `id`, `processo` (SMD/PTH), `linha`, `maquina` (SMD) ou `bloco` (PTH), `posicoes` (int, opcional), `ativo` | Único por (processo, linha, maquina/bloco). Semeada com YSM10/MG5 (L1), YSM10 (L2, 148), CP40 (L3); PTH Linhas 1–6 × Blocos A/B. |
+| `st_equipamentos` | `id`, `processo` (SMD/PTH), `linha`, `bloco`, `maquina` (obrigatória no SMD, sempre nula no PTH), `ativo`, `criado_em` | Índice único em (processo, linha, bloco, `coalesce(maquina, '')`) — com `unique (…, maquina)` dois blocos PTH iguais passariam, porque nulos não colidem. CHECK garante máquina no SMD e máquina nula no PTH. Semeada com SMD Linha 1/Bloco A/MG5, Linha 1/Bloco A/YSM10, Linha 2/Bloco A/YSM10, Linha 3/Bloco A/CP40 (os SMD de hoje ficam todos no bloco A); PTH Linhas 1–6 × Blocos A/B. |
 | `st_estrutura` | `pmo`, `componente` (código do ERP normalizado), `processo` (SMD/PTH), `origem` (importação/manual), `criado_em`, `criado_por` | PK (pmo, componente). |
-| `st_setups` | `id`, `pmo`, `op`, `processo`, `linha`, `maquina_bloco`, `face` (normalizada), `sn_abertura`, `estado` (`montagem`/`liberado`), `copiado_de` (setup de origem), `criado_por/em`, `liberado_por/em` | Único por (pmo, op, processo, linha, maquina_bloco, face). |
+| `st_setups` | `id`, `pmo`, `op`, `processo`, `equipamento_id` (FK `st_equipamentos`), `face` (normalizada), `sn_abertura`, `estado` (`montagem`/`liberado`), `copiado_de` (setup de origem), `criado_por/em`, `liberado_por/em` | Único por (pmo, op, equipamento_id, face). Linha, bloco e máquina saem do equipamento (join/embed). `processo` é cópia do processo do equipamento: as regras de item e os índices parciais de `st_setup_itens` leem o processo do próprio setup, sem join a cada bipe. |
 | `st_setup_itens` | `id`, `setup_id`, `posicao` e `feeder` (SMD) ou `posto` e `locacao` (PTH), `componente`, `rolo` (código completo, nulo = falta bipar), `atualizado_por/em` | Únicos por setup: (posição, feeder) / (posto, locação); feeder único no setup; rolo único no setup. |
 | `st_trocas` | `id`, `setup_id`, `item_id`, `posicao/feeder` ou `posto/locacao` bipados, `rolo_saida`, `rolo_entrada`, `sn_inicial`, `resultado` (APROVADO/REPROVADO), `motivos` (text[]), `operador` (usuário), `data_hora` | Grava toda tentativa. |
 | `st_alteracoes` | `id`, `setup_id`, `item_id`, `tipo` (troca de feeder, troca de posição, correção, inclusão, remoção), `antes` (jsonb), `depois` (jsonb), `usuario`, `data_hora` | Toda mudança do admin em setup liberado. |
@@ -96,7 +98,7 @@ Todas as tabelas têm RLS por módulo (`tem_permissao('setup', <nível>)` envolv
 6. **Setup copiado**, posição que já existe na cópia: o rolo bipado precisa ser do **mesmo componente** da posição.
 
 **Copiar de OP anterior:**
-- Lista os setups da **mesma PMO**, mesmo processo, linha, máquina/bloco e face, do mais recente pro mais antigo.
+- Lista os setups da **mesma PMO**, **mesmo equipamento** (`equipamento_id`) e mesma face, do mais recente pro mais antigo.
 - Cria o setup novo com os itens (posição, feeder, componente) e `rolo = nulo`.
 
 **Liberar:** só quando todos os itens têm rolo e o setup tem ao menos 1 item.
@@ -113,7 +115,7 @@ Todas as tabelas têm RLS por módulo (`tem_permissao('setup', <nível>)` envolv
 APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa grava em `st_trocas`.
 
 **Operação atômica no banco:**
-- **Funções `security definer`** checam a permissão explicitamente: `st_incluir_item`, `st_liberar_setup`, `st_trocar_rolo`, `st_copiar_setup` e `st_editar_item` (admin).
+- **Funções `security definer`** checam a permissão explicitamente: `st_abrir_setup` (recebe `p_equipamento_id` e exige o equipamento **ativo**), `st_incluir_item`, `st_liberar_setup`, `st_trocar_rolo` e `st_editar_item` (admin).
 - **Lock por setup** (`pg_advisory_xact_lock`), pra dois tablets não gravarem o mesmo feeder ou trocarem o mesmo rolo ao mesmo tempo.
 - **Constraints únicas** como última linha de defesa.
 
@@ -122,7 +124,7 @@ APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa g
 ## 6. Telas
 
 **Montar Setup**
-1. **Cabeçalho:** OP (combobox das OPs do ShopFloor) → Processo → Linha → Máquina/Bloco → Face → SN de Abertura.
+1. **Cabeçalho:** OP (combobox das OPs do ShopFloor) → Processo → Linha → Bloco → Máquina (só no SMD) → Face → SN de Abertura. Cada select em cascata só mostra o que existe cadastrado e ativo. O cabeçalho do setup aberto mostra `OP … · Linha 1 · Bloco A · MG5 · TOP` (sem máquina no PTH).
 2. **Setup existente:** abre pra continuar. **Não existe:** "Montar do zero" ou "Copiar de uma OP anterior".
 3. **Bipe:** Posição → Feeder → Rolo. Enter avança e o último Enter grava. Depois de gravar, limpa e volta o foco pra Posição.
 4. **Resultado:** painel grande verde/vermelho (`PainelResultado`) com o motivo, e som de erro (`som-erro`) na recusa.
@@ -130,17 +132,17 @@ APROVADO atualiza `st_setup_itens.rolo` para o rolo que entrou. Toda tentativa g
 6. **Liberar setup:** habilitado quando não falta rolo.
 
 **Abastecimento**
-1. **Seleção:** OP → Linha → Máquina/Bloco → Face (só setups liberados).
+1. **Seleção:** OP → Processo → Linha → Bloco → Máquina (só no SMD) → Face (só setups liberados).
 2. **Bipe:** Posição → Feeder → Rolo que sai → Rolo que entra → SN Inicial. O último Enter grava.
 3. **Resultado:** painel + som; no APROVADO, limpa e volta pra Posição.
 4. **Histórico:** últimas trocas desse setup.
 
 **Consultas**
-- **Setups:** filtros (cliente, PMO, OP, processo, linha, máquina/bloco, face, estado). O setup aberto mostra o mapa com o rolo montado, a busca rápida e o histórico de alterações.
-- **Trocas de rolo:** filtros (período, OP, linha, máquina, resultado, posição, rolo, SN Inicial), tabela paginada e exportação CSV/Excel.
+- **Setups:** filtros (cliente, PMO, OP, processo, linha, bloco, máquina, face, estado) em cascata. O setup aberto mostra o mapa com o rolo montado, a busca rápida e o histórico de alterações.
+- **Trocas de rolo:** filtros (período, PMO, OP, processo, linha, bloco, máquina, resultado, posição, rolo, SN Inicial), tabela paginada e exportação CSV/Excel (colunas Bloco e Máquina separadas; no PTH a Máquina vem vazia).
 
 **Cadastros**
-- **Linhas, Máquinas e Blocos:** CRUD simples.
+- **Linhas, Blocos e Máquinas:** Processo, Linha, Bloco e — só no SMD — Máquina; tabela com Processo, Linha, Bloco, Máquina (`—` no PTH) e Ativo (interruptor).
 - **Estrutura da PMO:**
   - escolher a PMO → lista de componentes (código e processo) → adicionar ou remover código (informando SMD/PTH);
   - **Importar a composição de produto do ERP** com prévia → confirmar.

@@ -24,9 +24,9 @@ import {
 } from '@/modules/setup/application/setup-actions'
 import { separarRolo } from '@/modules/setup/domain/codigo-rolo'
 import { mensagemErroSetup } from '@/modules/setup/domain/mensagens'
-import { rotulosPosicao } from '@/modules/setup/domain/tipos'
+import { rotuloEquipamento, rotulosPosicao } from '@/modules/setup/domain/tipos'
 import type { Equipamento, ItemSetup, OrdemSetup, SetupResumo } from '@/modules/setup/infra/setup-repository'
-import { rotuloEquipamento, SELECAO_VAZIA, SelecaoSetup, selecaoCompleta, type ValorSelecao } from '../../selecao-setup'
+import { chaveDaSelecao, SELECAO_VAZIA, SelecaoSetup, selecaoCompleta, type ValorSelecao } from '../../selecao-setup'
 
 const INPUT_BIPE = 'h-11 text-lg uppercase'
 
@@ -118,7 +118,7 @@ export function MontarSetup({
     setBuscando(true)
     void (async () => {
       try {
-        const r = await localizarSetup(v)
+        const r = await localizarSetup(chaveDaSelecao(v))
         if (seq !== buscaSeq.current) return
         if (!r.ok) { avisar(r.erro); return }
         if (r.setup) {
@@ -129,7 +129,7 @@ export function MontarSetup({
         }
       } catch {
         // Rede caiu no meio da busca: avisa em vez de deixar a tela presa em "Procurando…".
-        if (seq === buscaSeq.current) avisar('Não foi possível procurar o setup. Verifique a conexão, troque a face ou a máquina e volte pra tentar de novo.')
+        if (seq === buscaSeq.current) avisar('Não foi possível procurar o setup. Verifique a conexão, troque a face ou o equipamento e volte pra tentar de novo.')
       } finally {
         if (seq === buscaSeq.current) setBuscando(false)
       }
@@ -142,7 +142,7 @@ export function MontarSetup({
     enviandoRef.current = true
     startEnvio(async () => {
       try {
-        const r = await abrirSetup({ ...selecao, snAbertura, copiarDe })
+        const r = await abrirSetup({ ...chaveDaSelecao(selecao), snAbertura, copiarDe })
         if (!r.ok) { avisar(r.erro); return }
         if (!(await recarregar(r.setupId))) return
         setCopias(null)
@@ -158,11 +158,11 @@ export function MontarSetup({
 
   function buscarCopias() {
     if (!selecaoCompleta(selecao) || enviandoRef.current) return
-    const { pmo, op, processo, linha, equipamento, face } = selecao
+    const { pmo, op, equipamentoId, face } = chaveDaSelecao(selecao)
     enviandoRef.current = true
     startEnvio(async () => {
       try {
-        const r = await setupsParaCopiar({ pmo, processo, linha, equipamento, face, excetoOp: op })
+        const r = await setupsParaCopiar({ pmo, equipamentoId, face, excetoOp: op })
         if (!r.ok) { avisar(r.erro); return }
         setCopias(r.setups)
       } catch {
@@ -310,7 +310,7 @@ export function MontarSetup({
       </div>
 
       {!completa && (
-        <p className="text-sm text-muted-foreground">Escolha a OP, o processo, a linha, a máquina e a face para abrir o setup.</p>
+        <p className="text-sm text-muted-foreground">Escolha a OP, o processo, a linha, o bloco (e a máquina, no SMD) e a face para abrir o setup.</p>
       )}
 
       {completa && buscando && <p className="text-sm text-muted-foreground">Procurando o setup…</p>}
@@ -345,7 +345,7 @@ export function MontarSetup({
           {copias !== null && (
             copias.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Nenhum setup anterior dessa PMO nessa {rotulos.equipamento.toLowerCase()} e face.
+                Nenhum setup anterior dessa PMO nesse equipamento e face.
               </p>
             ) : (
               <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
@@ -372,7 +372,7 @@ export function MontarSetup({
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
             <div className="flex flex-col gap-1">
               <p className="text-lg font-semibold">
-                OP {setup.pmo}/{setup.op} · Linha {setup.linha} · {rotuloEquipamento(setup.processo, setup.equipamento)} · {setup.face}
+                OP {setup.pmo}/{setup.op} · Linha {setup.linha} · {rotuloEquipamento(setup)} · {setup.face}
               </p>
               <p className="text-sm text-muted-foreground">
                 {setup.processo} · SN de Abertura <span className="font-mono text-foreground">{setup.snAbertura}</span>

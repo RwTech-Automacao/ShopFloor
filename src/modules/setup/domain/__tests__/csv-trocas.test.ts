@@ -3,7 +3,8 @@ import { trocasParaCsv } from '../csv-trocas'
 import type { Troca } from '../../infra/setup-repository'
 
 const BASE: Troca = {
-  id: '1', setupId: 's', pmo: 'PMOG13', op: '9001', processo: 'SMD', linha: '1', equipamento: 'YSM10', face: 'TOP',
+  id: '1', setupId: 's', pmo: 'PMOG13', op: '9001', processo: 'SMD', equipamentoId: 'e1',
+  linha: '1', bloco: 'A', maquina: 'YSM10', face: 'TOP',
   posicao: '36', feeder: 'ZSY-1', roloSaida: 'CAPJ41-A', roloEntrada: 'CAPJ41-B', snInicial: '2690010010',
   resultado: 'REPROVADO', motivos: ['Motivo 1.', 'Motivo; 2.'], operadorNome: 'Ana', dataHora: '2026-09-17T12:00:00Z',
 }
@@ -11,7 +12,7 @@ const BASE: Troca = {
 describe('trocasParaCsv', () => {
   it('gera ; com BOM, cabeçalho e motivos juntos', () => {
     const csv = trocasParaCsv([BASE])
-    expect(csv.startsWith('﻿Data/hora;PMO;OP;Linha;Máquina/Bloco;Face;Posição;Feeder;Rolo que saiu;Rolo que entrou;SN Inicial;Resultado;Motivos;Operador\n')).toBe(true)
+    expect(csv.startsWith('﻿Data/hora;PMO;OP;Processo;Linha;Bloco;Máquina;Face;Posição;Feeder;Rolo que saiu;Rolo que entrou;SN Inicial;Resultado;Motivos;Operador\n')).toBe(true)
     expect(csv).toContain(';REPROVADO;"Motivo 1. Motivo; 2.";Ana')
   })
 
@@ -36,8 +37,9 @@ describe('trocasParaCsv', () => {
     expect(csv).toContain(";'-Ana\n")
   })
 
-  it('mostra "Bloco X" pro equipamento de troca no processo PTH', () => {
-    const csv = trocasParaCsv([{ ...BASE, processo: 'PTH', equipamento: '3', posicao: '2', feeder: '1' }])
-    expect(csv).toContain(';1;Bloco 3;TOP;')
+  it('deixa a coluna Máquina vazia no PTH e preenchida no SMD', () => {
+    const pth = trocasParaCsv([{ ...BASE, processo: 'PTH', bloco: 'B', maquina: null, posicao: '2', feeder: '1' }])
+    expect(pth).toContain(';PTH;1;B;;TOP;')
+    expect(trocasParaCsv([BASE])).toContain(';SMD;1;A;YSM10;TOP;')
   })
 })

@@ -5,6 +5,7 @@ Para testar no preview da branch `feat/setup-abastecimento`, com o banco Dev.
 ## 0. Preparação no Dev
 
 1. No SQL Editor do Supabase (Dev), rode **nessa ordem**: `0110_setup_modulo_grants.sql`, `0111_setup_tabelas.sql`, `0112_setup_funcoes.sql`.
+   - **Se o Dev já tinha as `st_*` do modelo antigo** (com `equipamento`/`posicoes`), derrube as tabelas e a assinatura antiga de `st_abrir_setup` antes de rodar a 0111 de novo (o SQL está no relatório do refactor, em `.superpowers/sdd/refactor-equipamento-report.md`). Os dados de setup do Dev são de teste e podem ser descartados.
    - **Esperado:** as três rodam sem erro. Se alguma reclamar de `$$` (delimitador de função), é bug — o SQL Editor só aceita `$func$`. Todas as três já usam `$func$`.
    - Ao final da 0111 e da 0112, roda `notify pgrst, 'reload schema';` — não precisa fazer nada, é automático.
 2. Vá em **Configurações → Perfis** e confira que o perfil do seu usuário de teste tem o módulo **Setup** com `visualizar`, `lancar` e `administrar` marcados (a 0110 já dá isso de graça pra quem administra o Sistema).
@@ -13,8 +14,11 @@ Para testar no preview da branch `feat/setup-abastecimento`, com o banco Dev.
 ## 1. Cadastros (Configurações → Ajustes Setup)
 
 1. Abra **Configurações → Ajustes Setup → Linhas e Máquinas**.
-   - **Esperado:** lista com **4 linhas SMD** (Linha 1/YSM10, Linha 1/MG5, Linha 2/YSM10 com 148 posições, Linha 3/CP40) e **12 linhas PTH** (Linhas 1 a 6, cada uma com Bloco A e Bloco B — a coluna "Máquina/Bloco" mostra "Bloco A"/"Bloco B").
-   - Clique em **Novo equipamento**, cadastre um equipamento de teste (ex.: SMD, Linha 9, MAQTESTE) e confirme que ele aparece na lista. Desative-o pelo interruptor da coluna "Ativo" e confirme que o estado muda.
+   - **Esperado:** tabela com as colunas **Processo · Linha · Bloco · Máquina · Ativo**, com **4 equipamentos SMD** (Linha 1/Bloco A/MG5, Linha 1/Bloco A/YSM10, Linha 2/Bloco A/YSM10, Linha 3/Bloco A/CP40) e **12 PTH** (Linhas 1 a 6 × Blocos A e B, todos com **Máquina = "—"**).
+   - Clique em **Novo equipamento**. Com **Processo = SMD** aparecem os campos **Linha**, **Bloco** e **Máquina**; troque para **PTH** e confirme que o campo **Máquina desaparece**. Não existe mais campo "Nº de posições".
+   - Cadastre um SMD de teste (ex.: Linha 9, Bloco A, Máquina MAQTESTE) e confirme que ele aparece na lista com a máquina preenchida. Cadastre um PTH de teste (ex.: Linha 9, Bloco C) e confirme que a coluna Máquina mostra "—".
+   - Tente cadastrar de novo exatamente o mesmo equipamento (mesmo processo, linha, bloco e máquina) — e, no PTH, a mesma linha e bloco. **Esperado:** toast "Esse equipamento já está cadastrado."
+   - Desative um deles pelo interruptor da coluna "Ativo" e confirme que o estado muda. Depois volte em **Setup → Operação** e confirme que o equipamento desativado **não aparece** mais nos selects de Bloco/Máquina.
 2. Abra **Configurações → Ajustes Setup → Estrutura da PMO** e selecione a PMO da sua OP de teste (ex.: PMOG13) no campo **PMO**.
 3. Em **Importar composição do ERP**, escolha o arquivo `composicao_produto_com_preco_PMOG13.xlsx`.
    - **Esperado:** abre o diálogo **"Prévia da importação — PMO PMOG13"** com as seções **Novos** (75 componentes: 6 PTH, 69 SMD), **Processo alterado**, **Já existentes**, **Ignorados** (com o motivo de cada linha ignorada) e **Duplicados no arquivo**. O botão mostra "Importar 75 componentes" (ou o total de novos + processo-alterado).
@@ -28,12 +32,12 @@ Para testar no preview da branch `feat/setup-abastecimento`, com o banco Dev.
 ## 2. Montar Setup do zero (SMD, Linha 1, YSM10, TOP)
 
 1. Vá em **Setup → Operação** (aba **Montar Setup**, é a aba padrão).
-2. Selecione a OP de teste, **Processo = SMD**, **Linha 1**, máquina **YSM10**, **Face = TOP**.
+2. Selecione a OP de teste, **Processo = SMD**, **Linha 1**, **Bloco A**, **Máquina YSM10**, **Face = TOP**. Os selects são em cascata (trocar o processo ou a linha limpa os de baixo) e só oferecem o que existe cadastrado e ativo. Num setup **PTH**, o select de **Máquina não aparece** — o equipamento é linha + bloco.
    - **Esperado:** abaixo dos campos aparece a descrição da OP e a faixa de SN (ou o aviso "OP sem faixa de SN cadastrada" se a OP não tiver faixa). Como não existe setup ainda, aparece o card **"Novo setup"**.
 3. No campo **SN de Abertura**, bipe/digite um SN **fora** da faixa da OP e clique em **Montar do zero**.
    - **Esperado:** painel de aviso com ícone amarelo (!) e a mensagem "O número de série não pertence à faixa da OP."
 4. Agora digite um SN **dentro** da faixa e clique em **Montar do zero**.
-   - **Esperado:** o setup abre — aparece o cabeçalho "OP .../... · Linha 1 · YSM10 · TOP", o badge amarelo **"Em montagem"**, "0 posições" e a área de bipe com os campos **Posição**, **Feeder** e **Rolo**.
+   - **Esperado:** o setup abre — aparece o cabeçalho "OP .../... · Linha 1 · Bloco A · MG5 · TOP" (no formato `Linha · Bloco · Máquina · Face`; num setup PTH sai só "Linha 1 · Bloco A · TOP"), o badge amarelo **"Em montagem"**, "0 posições" e a área de bipe com os campos **Posição**, **Feeder** e **Rolo**.
 5. Bipe as 3 posições, uma de cada vez (Posição → Feeder → Rolo → Enter avança o foco; Enter no campo Rolo envia):
    - Posição `1`, Feeder `F1`, Rolo `CAPJ41-TESTE1`
    - Posição `2`, Feeder `F2`, Rolo `RESR85-TESTE1`
@@ -52,9 +56,9 @@ Para testar no preview da branch `feat/setup-abastecimento`, com o banco Dev.
 
 ## 3. Copiar de OP anterior
 
-Use outra OP de teste da **mesma PMO**, mesma máquina (Linha 1/YSM10) e mesma face (TOP) do setup liberado acima.
+Use outra OP de teste da **mesma PMO**, **mesmo equipamento** (Linha 1 / Bloco A / YSM10) e mesma face (TOP) do setup liberado acima.
 
-1. Em **Montar Setup**, selecione essa outra OP com o mesmo Processo/Linha/Máquina/Face.
+1. Em **Montar Setup**, selecione essa outra OP com o mesmo Processo/Linha/Bloco/Máquina/Face. Repare que a lista de cópias sai por **equipamento**: mudar de máquina (ou de bloco) já é outro equipamento e a lista vem vazia ("Nenhum setup anterior dessa PMO nesse equipamento e face.").
 2. No card "Novo setup", digite um SN de Abertura dentro da faixa dessa OP e clique em **Copiar de uma OP anterior**.
    - **Esperado:** lista aparece com o setup de origem, mostrando "OP ... · data · 3 posições · Liberado". Clique em **Copiar**.
 3. **Esperado:** o novo setup abre já com as 3 posições, cada uma com o badge amarelo "falta bipar o rolo" na coluna "Rolo montado". As linhas com esse badge ficam com fundo amarelo claro e são clicáveis (o clique preenche Posição/Feeder e foca o Rolo).
@@ -67,7 +71,7 @@ Use outra OP de teste da **mesma PMO**, mesma máquina (Linha 1/YSM10) e mesma f
 
 Use o primeiro setup liberado (item 2).
 
-1. Vá na aba **Abastecimento** (dentro de Setup → Operação) e selecione a mesma OP/Processo/Linha/Máquina/Face do setup liberado.
+1. Vá na aba **Abastecimento** (dentro de Setup → Operação) e selecione a mesma OP/Processo/Linha/Bloco/Máquina/Face do setup liberado.
    - **Esperado:** cabeçalho do setup e os campos de bipe: **Posição**, **Feeder**, **Rolo que sai**, **Rolo que entra**, **SN Inicial**, e a lista **Últimas trocas** (vazia: "Nenhuma troca registrada nesse setup.").
 2. **Troca certa:** Posição `1`, Feeder `F1`, Rolo que sai `CAPJ41-TESTE1` (o que está montado), Rolo que entra `CAPJ41-TESTE2`, SN Inicial dentro da faixa da OP.
    - **Esperado:** painel com ícone verde (✓) "Troca aprovada — pode seguir" com os 5 chips preenchidos; os campos limpam e o foco volta pra Posição; a tabela "Últimas trocas" ganha uma linha com badge verde "Aprovado"; toca um som de confirmação (silencioso comparado ao de erro).
@@ -97,14 +101,17 @@ Use o primeiro setup liberado (item 2).
 
 ## 6. Consultas
 
-1. Em **Setup → Consultas → Setups**: use os filtros (PMO, OP, Processo, Linha, Máquina/Bloco, Face, Estado) e clique em **Consultar**.
-   - **Esperado:** tabela filtrada; **Limpar filtros** zera tudo e volta pro estado "Use os filtros e clique em Consultar."
-   - Clique numa linha e use o campo **"Buscar posição, feeder, componente ou rolo"** dentro do diálogo — confirme que o termo aparece destacado (marca-texto amarela) nas linhas que baterem.
-2. Em **Setup → Consultas → Trocas de rolo**: filtre por data (De/Até vêm com a data de hoje), PMO, OP, Processo, Linha, Máquina/Bloco, Resultado, Posição, Rolo, SN Inicial.
+1. Em **Setup → Consultas → Setups**: use os filtros (PMO, OP, Cliente, Processo, **Linha**, **Bloco**, **Máquina**, Face, Estado) e clique em **Consultar**.
+   - **Esperado:** a tabela tem colunas **Linha · Bloco · Máquina** separadas (Máquina = "—" nos setups PTH); **Limpar filtros** zera tudo e volta pro estado "Use os filtros e clique em Consultar."
+   - **Cascata dos filtros:** escolher Processo limpa Linha/Bloco/Máquina; escolher Linha limpa Bloco/Máquina; escolher Bloco limpa Máquina. Com **Processo = PTH** o filtro **Máquina** fica só com "Todas" (nenhum PTH tem máquina).
+   - Filtre por **Bloco A** sem escolher máquina e confirme que vêm os setups de todas as máquinas daquele bloco.
+   - Clique numa linha e use o campo **"Buscar posição, feeder, componente ou rolo"** dentro do diálogo — confirme que o termo aparece destacado (marca-texto amarela) nas linhas que baterem e que o título traz `OP … · Linha 1 · Bloco A · MG5 · TOP`.
+2. Em **Setup → Consultas → Trocas de rolo**: filtre por data (De/Até vêm com a data de hoje), PMO, OP, Processo, **Linha**, **Bloco**, **Máquina**, Resultado, Posição, Rolo, SN Inicial.
+   - **Esperado:** a coluna "Linha · Equipamento · Face" mostra `Linha 1 · Bloco A · MG5 · TOP` (no PTH, `Linha 1 · Bloco A · TOP`).
    - Faça uma consulta com mais de 100 resultados (ou ajuste o filtro pra ter poucos) e confira a paginação: os botões **Anterior**/**Próxima** navegam e o rodapé mostra "N trocas · página X de Y".
    - **Paginação mantém o filtro consultado:** depois de consultar, mude um campo do filtro (ex.: o campo Rolo) **sem** clicar em Consultar de novo, e clique em **Próxima**. Esperado: a navegação usa o filtro que foi efetivamente consultado (o texto novo digitado é ignorado até você clicar em Consultar de novo).
    - Clique em **Exportar CSV** e abra o arquivo `trocas-de-rolo.csv` no Excel.
-   - **Esperado:** abre com os acentos corretos (não vira "Ã§Ã£o" etc — o arquivo tem BOM), separador `;`, e a coluna "Máquina/Bloco" mostra, para uma troca de PTH, o valor no formato **"Bloco A"** (não só "A").
+   - **Esperado:** abre com os acentos corretos (não vira "Ã§Ã£o" etc — o arquivo tem BOM), separador `;`, e as colunas **Processo · Linha · Bloco · Máquina** separadas: numa troca de **PTH** a coluna **Máquina vem vazia**; numa de SMD vem o nome da máquina (ex.: `YSM10`).
 
 ## 7. Permissões
 
@@ -119,8 +126,8 @@ Use o primeiro setup liberado (item 2).
 
 1. No tablet/notebook de teste, com o setup liberado aberto em **Abastecimento**, desligue o Wi-Fi e tente enviar uma troca.
    - **Esperado:** painel de aviso "Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar." e o foco volta pro campo Posição (evita reenviar com tudo preenchido e gerar uma reprovação por engano).
-2. Faça o mesmo em **Montar Setup**, trocando de seleção (OP/máquina/face) sem rede.
-   - **Esperado:** "Não foi possível procurar o setup. Verifique a conexão, troque a face ou a máquina e volte pra tentar de novo."
+2. Faça o mesmo em **Montar Setup**, trocando de seleção (OP/equipamento/face) sem rede.
+   - **Esperado:** "Não foi possível procurar o setup. Verifique a conexão, troque a face ou o equipamento e volte pra tentar de novo."
 3. Religue o Wi-Fi e confirme que a tela volta a funcionar normalmente.
 4. Ainda sem rede, em **Montar Setup** com um setup em montagem aberto, bipe Posição/Feeder/Rolo completos e confirme.
    - **Esperado:** painel de aviso "Falha de conexão. Confira a lista antes de bipar de novo." e a tela **não** quebra (sem tela de erro do Next) — a lista tenta recarregar sozinha.

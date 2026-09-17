@@ -6,7 +6,7 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { contemSeparador, normalizarTexto } from '../domain/codigo-rolo'
 import { mensagemErroSetup } from '../domain/mensagens'
-import type { Processo } from '../domain/tipos'
+import { rotuloEquipamento, type Processo } from '../domain/tipos'
 import {
   alternarEquipamento, chamarRpc, inserirComponente, inserirEquipamento, listarEstrutura, removerComponente,
   type ItemEstruturaCadastro,
@@ -25,14 +25,15 @@ export async function cadastrarEquipamentoAction(_prev: { ok: true } | { erro: s
   if (!(await admin())) return { erro: SEM }
   const processo = String(formData.get('processo') ?? '')
   const linha = normalizarTexto(String(formData.get('linha') ?? ''))
-  const equipamento = normalizarTexto(String(formData.get('equipamento') ?? ''))
-  const posicoesTxt = String(formData.get('posicoes') ?? '').trim()
-  const posicoes = posicoesTxt === '' ? null : Number(posicoesTxt)
-  if (!processoValido(processo) || !linha || !equipamento) return { erro: 'Preencha processo, linha e máquina/bloco.' }
-  if (posicoes !== null && (!Number.isInteger(posicoes) || posicoes <= 0)) return { erro: 'Nº de posições inválido.' }
-  const r = await inserirEquipamento({ processo, linha, equipamento, posicoes })
+  const bloco = normalizarTexto(String(formData.get('bloco') ?? ''))
+  const maquinaDigitada = normalizarTexto(String(formData.get('maquina') ?? ''))
+  if (!processoValido(processo) || !linha || !bloco) return { erro: 'Preencha processo, linha e bloco.' }
+  // No PTH não existe máquina: o que vier no campo é descartado (o banco exige null).
+  const maquina = processo === 'SMD' ? maquinaDigitada : null
+  if (processo === 'SMD' && !maquina) return { erro: 'Informe a máquina (obrigatória no SMD).' }
+  const r = await inserirEquipamento({ processo, linha, bloco, maquina })
   if (!r.ok) return { erro: r.erro }
-  await registrarLog({ entidade: 'st_equipamento', acao: 'criar', descricao: `Equipamento ${processo} · Linha ${linha} · ${equipamento}` })
+  await registrarLog({ entidade: 'st_equipamento', acao: 'criar', descricao: `Equipamento ${processo} · Linha ${linha} · ${rotuloEquipamento({ processo, bloco, maquina })}` })
   revalidatePath('/configuracoes/setup-equipamentos')
   return { ok: true }
 }

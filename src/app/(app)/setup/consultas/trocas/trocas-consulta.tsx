@@ -10,10 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { consultarTrocas } from '@/modules/setup/application/setup-actions'
 import { trocasParaCsv } from '@/modules/setup/domain/csv-trocas'
-import { rotulosPosicao, type Processo } from '@/modules/setup/domain/tipos'
+import { rotuloEquipamento, rotulosPosicao } from '@/modules/setup/domain/tipos'
 import type { Equipamento, FiltroTrocas, Troca } from '@/modules/setup/infra/setup-repository'
-import { rotuloEquipamento } from '../../selecao-setup'
-import { fmtData, SelectMaquina, TODOS, useLinhasOrdenadas } from '../filtros-comuns'
+import { fmtData, SelectFiltro, TODOS, useBlocosOrdenados, useLinhasOrdenadas, useMaquinasOrdenadas } from '../filtros-comuns'
 
 const TAMANHO = 100
 const LOTE_EXPORTACAO = 1000
@@ -41,7 +40,8 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
   const [op, setOp] = useState('')
   const [processo, setProcesso] = useState('')
   const [linha, setLinha] = useState('')
-  const [equipamento, setEquipamento] = useState('')
+  const [bloco, setBloco] = useState('')
+  const [maquina, setMaquina] = useState('')
   const [resultado, setResultado] = useState('')
   const [posicao, setPosicao] = useState('')
   const [rolo, setRolo] = useState('')
@@ -59,25 +59,37 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
   // inputs ao vivo (que podem ter mudado sem o usuário ter clicado em Consultar de novo).
   const filtroAtivoRef = useRef<FiltroTrocas | null>(null)
 
+  // Cascata dos filtros de equipamento: processo → linha → bloco → máquina.
   const equipamentosDoProcesso = useMemo(
     () => (processo ? equipamentos.filter((e) => e.processo === processo) : equipamentos),
     [equipamentos, processo],
   )
   const linhas = useLinhasOrdenadas(equipamentosDoProcesso)
-  const maquinas = useMemo(
+  const equipamentosDaLinha = useMemo(
     () => (linha ? equipamentosDoProcesso.filter((e) => e.linha === linha) : equipamentosDoProcesso),
     [equipamentosDoProcesso, linha],
   )
-  const rotuloCampoMaquina = processo ? rotulosPosicao(processo as Processo).equipamento : 'Máquina/Bloco'
+  const blocos = useBlocosOrdenados(equipamentosDaLinha)
+  const equipamentosDoBloco = useMemo(
+    () => (bloco ? equipamentosDaLinha.filter((e) => e.bloco === bloco) : equipamentosDaLinha),
+    [equipamentosDaLinha, bloco],
+  )
+  const maquinas = useMaquinasOrdenadas(equipamentosDoBloco)
 
   function mudarProcesso(v: string) {
     setProcesso(v)
     setLinha('')
-    setEquipamento('')
+    setBloco('')
+    setMaquina('')
   }
   function mudarLinha(v: string) {
     setLinha(v)
-    setEquipamento('')
+    setBloco('')
+    setMaquina('')
+  }
+  function mudarBloco(v: string) {
+    setBloco(v)
+    setMaquina('')
   }
 
   function montarFiltro(): FiltroTrocas {
@@ -88,7 +100,8 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
       op: op.trim() || undefined,
       processo: processo || undefined,
       linha: linha || undefined,
-      equipamento: equipamento || undefined,
+      bloco: bloco || undefined,
+      maquina: maquina || undefined,
       resultado: resultado || undefined,
       posicao: posicao.trim() || undefined,
       rolo: rolo.trim() || undefined,
@@ -133,7 +146,7 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
     seqRef.current++ // qualquer resposta que ainda volte é descartada
     filtroAtivoRef.current = null
     setDe(hojeISO()); setAte(hojeISO())
-    setPmo(''); setOp(''); setProcesso(''); setLinha(''); setEquipamento(''); setResultado(''); setPosicao(''); setRolo(''); setSn('')
+    setPmo(''); setOp(''); setProcesso(''); setLinha(''); setBloco(''); setMaquina(''); setResultado(''); setPosicao(''); setRolo(''); setSn('')
     setLinhasTab([]); setTotal(0); setPagina(0)
     setCarregando(false)
     setBuscou(false)
@@ -209,19 +222,9 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="t-linha">Linha</Label>
-          <Select value={linha || TODOS} onValueChange={(v) => mudarLinha(v === TODOS ? '' : String(v))}>
-            <SelectTrigger id="t-linha" className="w-32">
-              <SelectValue placeholder="Todas">{(v: string | null) => (!v || v === TODOS ? 'Todas' : `Linha ${v}`)}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TODOS}>Todas</SelectItem>
-              {linhas.map((l) => <SelectItem key={l} value={l}>Linha {l}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <SelectMaquina id="t-equipamento" label={rotuloCampoMaquina} equipamentos={maquinas} valor={equipamento} onChange={setEquipamento} />
+        <SelectFiltro id="t-linha" label="Linha" opcoes={linhas} valor={linha} onChange={mudarLinha} rotuloTodos="Todas" formatar={(v) => `Linha ${v}`} />
+        <SelectFiltro id="t-bloco" label="Bloco" opcoes={blocos} valor={bloco} onChange={mudarBloco} rotuloTodos="Todos" formatar={(v) => `Bloco ${v}`} />
+        <SelectFiltro id="t-maquina" label="Máquina" opcoes={maquinas} valor={maquina} onChange={setMaquina} rotuloTodos="Todas" largura="w-36" />
         <div className="flex flex-col gap-1">
           <Label htmlFor="t-resultado">Resultado</Label>
           <Select value={resultado || TODOS} onValueChange={(v) => setResultado(v === TODOS ? '' : String(v))}>
@@ -272,7 +275,7 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
             <TableRow>
               <TableHead>Data/hora</TableHead>
               <TableHead>OP</TableHead>
-              <TableHead>Linha · Máquina · Face</TableHead>
+              <TableHead>Linha · Equipamento · Face</TableHead>
               <TableHead>Posição/Feeder</TableHead>
               <TableHead>Saiu → Entrou</TableHead>
               <TableHead>SN</TableHead>
@@ -294,7 +297,7 @@ export function TrocasConsulta({ equipamentos }: { equipamentos: Equipamento[] }
               <TableRow key={t.id} className="align-top">
                 <TableCell>{fmtData(t.dataHora)}</TableCell>
                 <TableCell className="font-medium">{t.op}</TableCell>
-                <TableCell>{t.linha} · {rotuloEquipamento(t.processo, t.equipamento)} · {t.face}</TableCell>
+                <TableCell>Linha {t.linha} · {rotuloEquipamento(t)} · {t.face}</TableCell>
                 <TableCell className="font-mono">
                   {rotulosPosicao(t.processo).posicao} {t.posicao} / {rotulosPosicao(t.processo).feeder} {t.feeder}
                 </TableCell>

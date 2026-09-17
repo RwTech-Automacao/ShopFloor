@@ -8,9 +8,9 @@ import { PainelResultado, type ChipResultado, type ResultadoAcao } from '@/compo
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { tocarErro } from '@/shared/lib/som-erro'
 import { localizarSetup, trocarRolo, ultimasTrocas } from '@/modules/setup/application/setup-actions'
-import { rotulosPosicao } from '@/modules/setup/domain/tipos'
+import { rotuloEquipamento, rotulosPosicao } from '@/modules/setup/domain/tipos'
 import type { Equipamento, OrdemSetup, SetupResumo, Troca } from '@/modules/setup/infra/setup-repository'
-import { rotuloEquipamento, SELECAO_VAZIA, SelecaoSetup, selecaoCompleta, type ValorSelecao } from '../../selecao-setup'
+import { chaveDaSelecao, SELECAO_VAZIA, SelecaoSetup, selecaoCompleta, type ValorSelecao } from '../../selecao-setup'
 
 const INPUT_BIPE = 'h-11 text-lg uppercase'
 const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar.'
@@ -84,7 +84,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
     setBuscando(true)
     void (async () => {
       try {
-        const r = await localizarSetup(v)
+        const r = await localizarSetup(chaveDaSelecao(v))
         if (seq !== buscaSeq.current) return
         if (!r.ok) { avisar(r.erro); return }
         setSetup(r.setup)
@@ -94,7 +94,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
           if (seq === buscaSeq.current) requestAnimationFrame(() => focar('posicao'))
         }
       } catch {
-        if (seq === buscaSeq.current) avisar('Falha de conexão ao procurar o setup. Verifique a rede, troque a face ou a máquina e volte pra tentar de novo.')
+        if (seq === buscaSeq.current) avisar('Falha de conexão ao procurar o setup. Verifique a rede, troque a face ou o equipamento e volte pra tentar de novo.')
       } finally {
         if (seq === buscaSeq.current) setBuscando(false)
       }
@@ -173,7 +173,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
       </div>
 
       {!completa && (
-        <p className="text-sm text-muted-foreground">Escolha a OP, o processo, a linha, a máquina e a face para trocar rolo.</p>
+        <p className="text-sm text-muted-foreground">Escolha a OP, o processo, a linha, o bloco (e a máquina, no SMD) e a face para trocar rolo.</p>
       )}
 
       {completa && buscando && <p className="text-sm text-muted-foreground">Procurando o setup…</p>}
@@ -182,7 +182,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
 
       {completa && !buscando && localizado && setup === null && (
         <p className="rounded-lg border border-border bg-card p-4 text-base text-muted-foreground">
-          Não há setup dessa OP {rotulos.equipamento === 'Bloco' ? 'nesse bloco' : 'nessa máquina'} e face.
+          Não há setup dessa OP nesse equipamento e face.
         </p>
       )}
 
@@ -200,7 +200,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1 rounded-lg border border-border bg-card p-4">
             <p className="text-lg font-semibold">
-              OP {setup.pmo}/{setup.op} · Linha {setup.linha} · {rotuloEquipamento(setup.processo, setup.equipamento)} · {setup.face}
+              OP {setup.pmo}/{setup.op} · Linha {setup.linha} · {rotuloEquipamento(setup)} · {setup.face}
             </p>
             <p className="text-sm text-muted-foreground">
               {setup.processo} · {setup.totalItens} {setup.totalItens === 1 ? 'item' : 'itens'} no setup
