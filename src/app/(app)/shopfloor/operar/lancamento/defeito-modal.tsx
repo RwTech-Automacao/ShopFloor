@@ -154,16 +154,29 @@ function Grade({ codigos, destaque = false, onEscolher }: {
             type="button"
             onClick={() => onEscolher(codigo)}
             title={codigo}
-            className={`flex aspect-square flex-col justify-between rounded-xl border p-3 text-left transition-colors ${
+            // Layout fixo de cima pra baixo (rótulo → código → descrição): o código fica SEMPRE na mesma
+            // altura em todos os cards, com a cor da marca, e a descrição curta ou longa não o empurra.
+            // O card continua do mesmo tamanho (aspect-square).
+            className={`flex aspect-square flex-col items-center overflow-hidden rounded-xl border px-2.5 pb-2.5 pt-[14%] text-center transition-colors ${
               destaque
                 ? 'border-enterplak/40 bg-enterplak/5 hover:bg-enterplak/10'
                 : 'border-border bg-card hover:bg-accent'
             }`}
           >
-            <span className="line-clamp-4 text-sm font-medium leading-snug text-foreground">
-              {capitalizarDescricaoDefeito(descricao) || codigo}
-            </span>
-            {numero && <span className="text-xs text-muted-foreground">Cod.: {numero}</span>}
+            <span className="text-xs text-muted-foreground">Código:</span>
+            {numero ? (
+              <>
+                <span className="mt-1 text-5xl font-semibold leading-none tabular-nums text-enterplak dark:text-[#d2566c]">{numero}</span>
+                <span className="mt-2 line-clamp-2 text-sm leading-snug text-foreground/80">
+                  {capitalizarDescricaoDefeito(descricao) || codigo}
+                </span>
+              </>
+            ) : (
+              // Defeito sem número: a descrição ocupa o lugar do código, na mesma cor.
+              <span className="mt-1 line-clamp-3 text-lg font-semibold leading-tight text-enterplak dark:text-[#d2566c]">
+                {capitalizarDescricaoDefeito(descricao) || codigo}
+              </span>
+            )}
           </button>
         )
       })}
