@@ -3,17 +3,18 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 
 export async function lerRegistroParaCancelar(
   id: string,
-): Promise<{ pmo: string; op: string; numeroSerieNorm: string; posto: string } | null> {
+): Promise<{ pmo: string; op: string; numeroSerieNorm: string; posto: string; numeroCaixa: string } | null> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_registros')
-    .select('pmo,op,numero_serie_norm,posto')
+    .select('pmo,op,numero_serie_norm,posto,numero_caixa')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
   if (!data) return null
-  const r = data as { pmo: string; op: string; numero_serie_norm: string; posto: string }
-  return { pmo: r.pmo, op: r.op, numeroSerieNorm: r.numero_serie_norm, posto: r.posto }
+  const r = data as { pmo: string; op: string; numero_serie_norm: string; posto: string; numero_caixa: string | null }
+  // numero_caixa: só a embalagem preenche — é por ele que se acha a caixa a reabrir no cancelamento.
+  return { pmo: r.pmo, op: r.op, numeroSerieNorm: r.numero_serie_norm, posto: r.posto, numeroCaixa: r.numero_caixa ?? '' }
 }
 
 /** É o bipe mais recente (maior data_hora, depois id) do SN nesta OP? */
