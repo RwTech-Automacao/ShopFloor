@@ -2,7 +2,7 @@
 -- Módulo Setup — funções. Regras do spec 2026-09-16 (seção 5). Toda escrita de operação passa aqui:
 -- checa a permissão do MÓDULO setup, trava o setup (pg_advisory_xact_lock) e devolve códigos de erro
 -- que o app traduz (src/modules/setup/domain/mensagens.ts).
--- $func$ em vez de $$: o SQL Editor do Supabase não aceita $$.
+-- Corpo das funções com $func$: o SQL Editor do Supabase não aceita o delimitador de dois cifrões.
 -- =============================================================
 
 -- ---------- helpers puros ----------
