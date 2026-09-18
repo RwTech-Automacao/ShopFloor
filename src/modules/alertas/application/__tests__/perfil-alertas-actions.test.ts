@@ -1,7 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
+
+
+// Lançamento escondido: sem a variável ninguém é liberado. Aqui liberamos todos por padrão;
+// o teste de recusa troca a lista dentro do próprio caso.
+beforeEach(() => { vi.stubEnv('ALERTAS_LIBERADO_PARA', '*') })
+afterEach(() => { vi.unstubAllEnvs() })
 
 describe('actions de Meu perfil — erro ao consultar a sessão vira mensagem amigável', () => {
   it('gerarCodigoAction: getSessao lançando não estoura, vira ok:false', async () => {

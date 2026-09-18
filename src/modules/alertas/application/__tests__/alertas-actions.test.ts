@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import type { Perfil } from '@/modules/auth/domain/perfil'
 
 vi.mock('server-only', () => ({}))
@@ -16,6 +16,12 @@ vi.mock('@/modules/auth/application/get-sessao', () => ({
   getSessao: async () => ({ usuarioId: 'u1', nome: 'Gestor', email: 'gestor@x', perfil: GESTOR }),
 }))
 vi.mock('@/modules/logs/application/registrar-log', () => ({ registrarLog: async () => {} }))
+
+
+// Lançamento escondido: sem a variável ninguém é liberado. Aqui liberamos todos por padrão;
+// o teste de recusa troca a lista dentro do próprio caso.
+beforeEach(() => { vi.stubEnv('ALERTAS_LIBERADO_PARA', '*') })
+afterEach(() => { vi.unstubAllEnvs() })
 
 describe('actions de alertas — payload malformado não lança exceção', () => {
   it('salvarRegraAction: entrada nula vira erro amigável, não exceção', async () => {
