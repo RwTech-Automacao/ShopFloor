@@ -13,7 +13,7 @@ export interface ErroAuth {
 export const MSG_CREDENCIAL_INVALIDA = 'Usuário ou senha inválidos.'
 export const MSG_MUITAS_TENTATIVAS = 'Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.'
 export const MSG_SISTEMA_FORA =
-  'O sistema está fora do ar agora. Ele funciona de segunda a sábado, das 06:00 às 19:00. ' +
+  'O sistema está fora do ar agora. Ele funciona de segunda a sexta, das 06:00 às 19:00. ' +
   'Fora desse horário, ou se o problema continuar, avise o TI.'
 
 export function mensagemErroLogin(erro: ErroAuth): string {
