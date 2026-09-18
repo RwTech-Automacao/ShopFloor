@@ -8,10 +8,14 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
-import { formatarMeta } from '@/modules/alertas/domain/taxa'
 import { resumoJanela } from '@/modules/alertas/domain/janela'
-import { NOME_CANAL, type Canal } from '@/modules/alertas/domain/tipos'
-import type { DestinatarioDisponivel, RegraAlerta } from '@/modules/alertas/domain/regra'
+import { NOME_CANAL, NOME_TIPO_REGRA, type Canal } from '@/modules/alertas/domain/tipos'
+import {
+  resumoLimite,
+  resumoPmos,
+  type DestinatarioDisponivel,
+  type RegraAlerta,
+} from '@/modules/alertas/domain/regra'
 import { alternarRegraAtivaAction, excluirRegraAction } from '@/modules/alertas/application/alertas-actions'
 import { RegraDialog } from './regra-dialog'
 import { ERRO_REGRA_EXCLUIDA } from './regra-form'
@@ -21,11 +25,13 @@ const TOAST = { position: 'bottom-center' } as const
 export function RegrasLista({
   regras,
   postos,
+  pmos,
   destinatarios,
   configurados,
 }: {
   regras: RegraAlerta[]
   postos: string[]
+  pmos: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>
 }) {
@@ -79,9 +85,11 @@ export function RegrasLista({
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
+              <TableHead>Tipo</TableHead>
               <TableHead>Postos</TableHead>
-              <TableHead>Taxa mínima de aprovação</TableHead>
+              <TableHead>Limite</TableHead>
               <TableHead>Janela</TableHead>
+              <TableHead>PMOs</TableHead>
               <TableHead>Destinatários</TableHead>
               <TableHead>Canais</TableHead>
               <TableHead>Ativa</TableHead>
@@ -91,7 +99,7 @@ export function RegrasLista({
           <TableBody>
             {regras.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                   Nenhuma regra de alerta cadastrada.
                 </TableCell>
               </TableRow>
@@ -99,9 +107,11 @@ export function RegrasLista({
             {regras.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.nome}</TableCell>
+                <TableCell>{NOME_TIPO_REGRA[r.tipo]}</TableCell>
                 <TableCell>{r.postos.join(', ')}</TableCell>
-                <TableCell>{formatarMeta(r.taxaMinima)}%</TableCell>
+                <TableCell>{resumoLimite(r)}</TableCell>
                 <TableCell>{resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })}</TableCell>
+                <TableCell>{resumoPmos(r.pmos)}</TableCell>
                 <TableCell>{r.destinatarios.map((id) => nomes.get(id) ?? '—').join(', ')}</TableCell>
                 <TableCell>{r.canais.map((c) => NOME_CANAL[c]).join(', ')}</TableCell>
                 <TableCell>
@@ -148,7 +158,8 @@ export function RegrasLista({
               <Switch checked={r.ativa} disabled={pendente} onCheckedChange={(valor) => alternar(r, valor)} />
             </div>
             <span className="text-sm text-muted-foreground">
-              {r.postos.join(', ')} · mínimo {formatarMeta(r.taxaMinima)}% · {resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })}
+              {NOME_TIPO_REGRA[r.tipo]} · {resumoLimite(r)} · {r.postos.join(', ')} ·{' '}
+              {resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })} · PMOs: {resumoPmos(r.pmos)}
             </span>
             <span className="text-xs text-muted-foreground">
               {r.canais.map((c) => NOME_CANAL[c]).join(', ')} ·{' '}
@@ -177,6 +188,7 @@ export function RegrasLista({
         aberto={dialogo.aberto}
         regra={dialogo.regra}
         postos={postos}
+        pmos={pmos}
         destinatarios={destinatarios}
         configurados={configurados}
         onFechar={() => setDialogo({ aberto: false, regra: null })}
