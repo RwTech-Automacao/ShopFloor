@@ -492,8 +492,9 @@ export function MontarSetup({
           )}
 
           <div className="overflow-x-auto rounded-lg border border-border bg-card">
-            <Table>
-              <TableHeader>
+            {/* Até 5 itens aparecem inteiros; a partir daí a lista rola por dentro, com o cabeçalho fixo. */}
+            <Table containerClassName="max-h-[20.75rem] overflow-y-auto">
+              <TableHeader className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_var(--color-border)]">
                 <TableRow>
                   <TableHead>{rotulos.posicao}</TableHead>
                   <TableHead>{rotulos.feeder}</TableHead>
