@@ -190,6 +190,7 @@ begin
   -- higiene: códigos velhos de qualquer um (liberam o espaço de nomes) e os meus ainda não usados
   delete from alerta_codigos where expira_em < now() - interval '1 day';
   delete from alerta_codigos where usuario_id = v_uid and usado_em is null;
+  delete from alerta_tentativas where em < now() - interval '1 day';
 
   loop
     v_codigo := 'ALERTA-';
@@ -242,9 +243,15 @@ declare
   v_ext     text := btrim(coalesce(p_externo_id, ''));
   v_falhas  int;
 begin
-  if p_canal not in ('telegram', 'discord') or v_ext = '' then
+  -- `p_canal is null` explícito: `null not in (...)` dá NULL (não true) e o NULL seguiria até o
+  -- insert em alerta_tentativas, estourando not_null_violation em vez de CANAL_INVALIDO.
+  if p_canal is null or p_canal not in ('telegram', 'discord') or v_ext = '' then
     return jsonb_build_object('ok', false, 'erro', 'CANAL_INVALIDO');
   end if;
+
+  -- Serializa as chamadas do MESMO (canal, externo_id): sem isso, várias chamadas simultâneas
+  -- contariam as falhas ao mesmo tempo e passariam juntas do limite de 5.
+  perform pg_advisory_xact_lock(hashtextextended(p_canal || ':' || v_ext, 0));
 
   -- Proteção contra força bruta: 5+ falhas do mesmo (canal, externo_id) nos últimos 15 min
   -- travam esse par, mesmo que o código desta chamada esteja certo.
@@ -287,5 +294,381 @@ $func$;
 
 revoke all on function public.alerta_vincular(text, text, text) from public, anon, authenticated;
 grant execute on function public.alerta_vincular(text, text, text) to service_role;
+
+-- ---------- alerta_taxas(): a conta de aprovados/reprovados por posto em cada janela ----------
+-- Função INTERNA (sem grant): é chamada por alerta_avaliar e alerta_previa, que já fazem o gate.
+-- As três janelas convivem num único SELECT para o avaliar fazer uma passada só no banco.
+create or replace function public.alerta_taxas(p_postos text[], p_janela_tipo text, p_janela_valor int)
+returns table (posto text, aprovados int, reprovados int, pmo text, op text)
+language sql
+stable
+security definer
+set search_path = public
+as $func$
+  select p.posto,
+         coalesce(c.aprovados, 0)::int,
+         coalesce(c.reprovados, 0)::int,
+         u.pmo,
+         u.op
+    from unnest(p_postos) as p(posto)
+    -- janela 'op': a OP do ÚLTIMO bipe do posto, e só se esse bipe tem menos de 2 horas
+    left join lateral (
+      select r.pmo, r.op
+        from sf_registros r
+       where p_janela_tipo = 'op'
+         and r.posto = p.posto
+         and r.data_hora >= now() - interval '2 hours'
+       order by r.data_hora desc
+       limit 1
+    ) u on true
+    left join lateral (
+      select count(*) filter (where lower(x.status) = 'aprovado')  as aprovados,
+             count(*) filter (where lower(x.status) = 'reprovado') as reprovados
+        from (
+          -- janela 'tempo': todos os bipes do posto nos últimos N minutos, de todas as OPs
+          select r.status
+            from sf_registros r
+           where p_janela_tipo = 'tempo'
+             and r.posto = p.posto
+             and r.data_hora >= now() - make_interval(mins => p_janela_valor)
+             and lower(r.status) in ('aprovado', 'reprovado')
+          union all
+          -- janela 'bipes': os N últimos bipes COM status do posto, sem limite de tempo
+          (select r.status
+             from sf_registros r
+            where p_janela_tipo = 'bipes'
+              and r.posto = p.posto
+              and lower(r.status) in ('aprovado', 'reprovado')
+            order by r.data_hora desc
+            limit p_janela_valor)
+          union all
+          -- janela 'op': todos os bipes do posto naquela OP
+          select r.status
+            from sf_registros r
+           where p_janela_tipo = 'op'
+             and r.posto = p.posto
+             and r.pmo = u.pmo and r.op = u.op
+             and lower(r.status) in ('aprovado', 'reprovado')
+        ) x
+    ) c on true
+$func$;
+
+revoke all on function public.alerta_taxas(text[], text, int) from public, anon, authenticated, service_role;
+
+-- ---------- alerta_avaliar(): decide tudo e devolve a lista de envios ----------
+create or replace function public.alerta_avaliar()
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_agora     timestamptz := now();
+  v_acoes     jsonb := '[]'::jsonb;
+  v_avaliadas int := 0;
+  v_total     int;
+  v_taxa      numeric(5,2);
+  v_tipo      text;
+  v_contas    jsonb;
+  t           record;
+  o           public.alerta_ocorrencias;
+begin
+  -- Duas avaliações ao mesmo tempo (cron atrasado + "Avaliar agora") abririam a MESMA ocorrência
+  -- duas vezes. A segunda simplesmente vai embora avisando que está ocupado.
+  if not pg_try_advisory_xact_lock(hashtext('alerta_avaliar')) then
+    return jsonb_build_object('ocupado', true, 'avaliadas', 0, 'acoes', '[]'::jsonb);
+  end if;
+
+  -- Regra desativada ou posto tirado da regra: a ocorrência viva encerra SEM envio.
+  update public.alerta_ocorrencias oc
+     set estado = 'normalizada', normalizada_em = v_agora
+    from public.alerta_regras rg
+   where rg.id = oc.regra_id
+     and oc.estado in ('aberta', 'resolvida')
+     and (rg.ativa is false or not (oc.posto = any (rg.postos)));
+
+  for t in
+    select rg.id as regra_id, rg.nome, rg.taxa_minima, rg.janela_tipo, rg.janela_valor,
+           rg.minimo_bipes, rg.lembrete_min, rg.canais, rg.destinatarios,
+           tx.posto, tx.aprovados, tx.reprovados, tx.pmo, tx.op
+      from public.alerta_regras rg
+      cross join lateral public.alerta_taxas(rg.postos, rg.janela_tipo, rg.janela_valor) tx
+     where rg.ativa
+     order by rg.criado_em, tx.posto
+  loop
+    v_avaliadas := v_avaliadas + 1;
+    v_total := t.aprovados + t.reprovados;
+    -- Abaixo do mínimo de bipes a regra não decide NADA (nem abre, nem normaliza).
+    if v_total < t.minimo_bipes then
+      continue;
+    end if;
+    v_taxa := trunc((t.aprovados * 100.0) / v_total, 2);
+    v_tipo := null;
+
+    select * into o
+      from public.alerta_ocorrencias
+     where regra_id = t.regra_id and posto = t.posto and estado in ('aberta', 'resolvida')
+     for update;
+
+    if not found then
+      if v_taxa < t.taxa_minima then
+        insert into public.alerta_ocorrencias
+          (regra_id, posto, pmo, op, taxa_abertura, taxa_ultima, aprovados, reprovados,
+           aberta_em, ultimo_envio_em)
+        values (t.regra_id, t.posto,
+                case when t.janela_tipo = 'op' then t.pmo end,
+                case when t.janela_tipo = 'op' then t.op end,
+                v_taxa, v_taxa, t.aprovados, t.reprovados, v_agora, v_agora)
+        returning * into o;
+        v_tipo := 'alerta';
+      end if;
+
+    elsif v_taxa >= t.taxa_minima then
+      update public.alerta_ocorrencias
+         set estado = 'normalizada', normalizada_em = v_agora,
+             taxa_ultima = v_taxa, aprovados = t.aprovados, reprovados = t.reprovados
+       where id = o.id
+      returning * into o;
+      v_tipo := 'normalizou';
+
+    else
+      -- Continua abaixo: atualiza a foto da taxa e, se for hora, marca o lembrete.
+      update public.alerta_ocorrencias
+         set taxa_ultima = v_taxa, aprovados = t.aprovados, reprovados = t.reprovados,
+             ultimo_envio_em = case
+               when o.estado = 'aberta' and t.lembrete_min is not null
+                    and v_agora - o.ultimo_envio_em >= make_interval(mins => t.lembrete_min)
+                 then v_agora
+               else o.ultimo_envio_em
+             end
+       where id = o.id
+      returning * into o;
+      if o.estado = 'aberta' and t.lembrete_min is not null and o.ultimo_envio_em = v_agora then
+        v_tipo := 'lembrete';
+      end if;
+    end if;
+
+    if v_tipo is not null then
+      -- Um envio por destinatário x canal da regra QUE TENHA vínculo. Sem vínculo, é pulado aqui.
+      v_contas := coalesce((
+        select jsonb_agg(jsonb_build_object('usuario_id', c.usuario_id, 'canal', c.canal,
+                                            'externo_id', c.externo_id)
+                         order by c.usuario_id, c.canal)
+          from alerta_contas c
+         where c.usuario_id = any (t.destinatarios) and c.canal = any (t.canais)
+      ), '[]'::jsonb);
+
+      v_acoes := v_acoes || jsonb_build_array(jsonb_build_object(
+        'ocorrencia_id', o.id,
+        'tipo',          v_tipo,
+        'regra_id',      t.regra_id,
+        'regra_nome',    t.nome,
+        'posto',         t.posto,
+        'taxa',          v_taxa,
+        'taxa_minima',   t.taxa_minima,
+        'aprovados',     t.aprovados,
+        'reprovados',    t.reprovados,
+        'janela_tipo',   t.janela_tipo,
+        'janela_valor',  t.janela_valor,
+        'pmo',           t.pmo,
+        'op',            t.op,
+        'aberta_em',     o.aberta_em,
+        'agora',         v_agora,
+        'contas',        v_contas
+      ));
+    end if;
+  end loop;
+
+  return jsonb_build_object('ocupado', false, 'avaliadas', v_avaliadas, 'acoes', v_acoes);
+end
+$func$;
+
+revoke all on function public.alerta_avaliar() from public, anon, authenticated;
+grant execute on function public.alerta_avaliar() to service_role;
+
+-- ---------- alerta_previa(): a taxa de agora, sem gravar nada (prévia do formulário) ----------
+create or replace function public.alerta_previa(
+  p_postos text[], p_janela_tipo text, p_janela_valor int, p_minimo int
+)
+returns table (posto text, aprovados int, reprovados int, taxa numeric, avaliavel boolean,
+               pmo text, op text)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+begin
+  if not tem_permissao('shopfloor', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
+  if p_janela_tipo not in ('tempo', 'bipes', 'op') then raise exception 'JANELA_INVALIDA'; end if;
+
+  return query
+    select t.posto, t.aprovados, t.reprovados,
+           case when t.aprovados + t.reprovados > 0
+                then trunc((t.aprovados * 100.0) / (t.aprovados + t.reprovados), 2)
+           end,
+           (t.aprovados + t.reprovados) >= greatest(coalesce(p_minimo, 1), 1),
+           t.pmo, t.op
+      from public.alerta_taxas(p_postos, p_janela_tipo, p_janela_valor) t;
+end
+$func$;
+
+revoke all on function public.alerta_previa(text[], text, int, int) from public, anon;
+grant execute on function public.alerta_previa(text[], text, int, int) to authenticated, service_role;
+
+-- ---------- Resolver ----------
+-- O núcleo é interno; as duas portas mudam só QUEM pode chamar e se exige ser destinatário:
+--   alerta_resolver       -> webhook (service_role), exige ser destinatário da regra;
+--   alerta_resolver_admin -> tela (authenticated + shopfloor.administrar).
+create or replace function public.alerta_resolver_interno(
+  p_ocorrencia_id uuid, p_usuario_id uuid, p_exigir_destinatario boolean
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+declare
+  o     public.alerta_ocorrencias;
+  r     public.alerta_regras;
+  v_ja  boolean := true;
+  v_nome text;
+begin
+  select * into o from alerta_ocorrencias where id = p_ocorrencia_id for update;
+  if not found then raise exception 'OCORRENCIA_INEXISTENTE'; end if;
+  select * into r from alerta_regras where id = o.regra_id;
+  if p_exigir_destinatario and not (p_usuario_id = any (r.destinatarios)) then
+    raise exception 'NAO_DESTINATARIO';
+  end if;
+  if o.estado = 'normalizada' then raise exception 'OCORRENCIA_ENCERRADA'; end if;
+
+  if o.estado = 'aberta' then
+    update alerta_ocorrencias
+       set estado = 'resolvida', resolvida_por = p_usuario_id, resolvida_em = now()
+     where id = o.id
+    returning * into o;
+    v_ja := false;
+  end if;
+
+  select coalesce(nullif(btrim(nome), ''), email) into v_nome from usuarios where id = o.resolvida_por;
+
+  return jsonb_build_object(
+    'ocorrencia_id',      o.id,
+    'regra_id',           o.regra_id,
+    'posto',              o.posto,
+    'ja_resolvida',       v_ja,
+    'resolvida_por',      o.resolvida_por,
+    'resolvida_por_nome', coalesce(v_nome, ''),
+    'resolvida_em',       o.resolvida_em
+  );
+end
+$func$;
+
+revoke all on function public.alerta_resolver_interno(uuid, uuid, boolean)
+  from public, anon, authenticated, service_role;
+
+create or replace function public.alerta_resolver(p_ocorrencia_id uuid, p_usuario_id uuid)
+returns jsonb
+language sql
+volatile
+security definer
+set search_path = public
+as $func$
+  select public.alerta_resolver_interno(p_ocorrencia_id, p_usuario_id, true)
+$func$;
+
+revoke all on function public.alerta_resolver(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.alerta_resolver(uuid, uuid) to service_role;
+
+create or replace function public.alerta_resolver_admin(p_ocorrencia_id uuid)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+begin
+  if not tem_permissao('shopfloor', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
+  return public.alerta_resolver_interno(p_ocorrencia_id, auth.uid(), false);
+end
+$func$;
+
+revoke all on function public.alerta_resolver_admin(uuid) from public, anon;
+grant execute on function public.alerta_resolver_admin(uuid) to authenticated, service_role;
+
+-- ---------- alerta_destinatarios(): quem pode receber, e por quais canais ----------
+-- Devolve o VÍNCULO como booleano (nunca o externo_id) — a tela só precisa saber se existe.
+create or replace function public.alerta_destinatarios()
+returns table (usuario_id uuid, nome text, email text, telegram boolean, discord boolean)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+begin
+  if not tem_permissao('shopfloor', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
+  return query
+    select u.id,
+           coalesce(nullif(btrim(u.nome), ''), u.email),
+           u.email,
+           exists (select 1 from alerta_contas c where c.usuario_id = u.id and c.canal = 'telegram'),
+           exists (select 1 from alerta_contas c where c.usuario_id = u.id and c.canal = 'discord')
+      from usuarios u
+     where u.ativo
+     order by lower(coalesce(nullif(btrim(u.nome), ''), u.email));
+end
+$func$;
+
+revoke all on function public.alerta_destinatarios() from public, anon;
+grant execute on function public.alerta_destinatarios() to authenticated, service_role;
+
+-- ---------- alerta_listar_ocorrencias(): aba Ocorrências ----------
+create or replace function public.alerta_listar_ocorrencias(
+  p_de timestamptz, p_ate timestamptz, p_estado text default ''
+)
+returns table (
+  id uuid, regra_id uuid, regra_nome text, posto text, pmo text, op text, estado text,
+  taxa_abertura numeric, taxa_ultima numeric, aprovados int, reprovados int,
+  aberta_em timestamptz, resolvida_por_nome text, resolvida_em timestamptz,
+  normalizada_em timestamptz, envios_ok int, envios_falha int
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+begin
+  if not tem_permissao('shopfloor', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
+  return query
+    select oc.id, oc.regra_id, rg.nome, oc.posto, oc.pmo, oc.op, oc.estado,
+           oc.taxa_abertura, oc.taxa_ultima, oc.aprovados, oc.reprovados, oc.aberta_em,
+           coalesce(nullif(btrim(u.nome), ''), u.email, ''),
+           oc.resolvida_em, oc.normalizada_em,
+           coalesce(e.ok_qtd, 0)::int, coalesce(e.falha_qtd, 0)::int
+      from alerta_ocorrencias oc
+      join alerta_regras rg on rg.id = oc.regra_id
+      left join usuarios u on u.id = oc.resolvida_por
+      left join lateral (
+        select count(*) filter (where ev.ok)     as ok_qtd,
+               count(*) filter (where not ev.ok) as falha_qtd
+          from alerta_envios ev
+         where ev.ocorrencia_id = oc.id
+      ) e on true
+     where oc.aberta_em >= p_de
+       and oc.aberta_em <= p_ate
+       and (coalesce(p_estado, '') = '' or oc.estado = p_estado)
+     order by oc.aberta_em desc
+     limit 500;
+end
+$func$;
+
+revoke all on function public.alerta_listar_ocorrencias(timestamptz, timestamptz, text) from public, anon;
+grant execute on function public.alerta_listar_ocorrencias(timestamptz, timestamptz, text)
+  to authenticated, service_role;
 
 notify pgrst, 'reload schema';
