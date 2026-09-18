@@ -4,11 +4,14 @@ import { createServiceSupabase } from '@/shared/lib/supabase/service'
 import { ehCanal, type Canal, type ResultadoEnvio } from '../domain/tipos'
 import { lerResultadoAvaliacao, type ContaDestino } from '../domain/avaliacao'
 import { lerEnvioReservado, type EnvioReservado } from '../domain/envio'
+import { lerResolucao } from '../domain/resolucao'
+import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
 import type {
   FiltroReserva,
   MensagemComBotao,
   NovoEnvioDireto,
   RepositorioEnvios,
+  RepositorioVinculo,
 } from '../application/portas'
 
 const LIMITE_ERRO = 500
@@ -25,7 +28,7 @@ interface LinhaConta {
  */
 export function criarRepositorioServico(
   sb: SupabaseClient = createServiceSupabase(),
-): RepositorioEnvios {
+): RepositorioEnvios & RepositorioVinculo {
   async function contas(usuarioIds: string[], canais: Canal[]): Promise<ContaDestino[]> {
     if (usuarioIds.length === 0 || canais.length === 0) return []
     const { data, error } = await sb
@@ -40,6 +43,34 @@ export function criarRepositorioServico(
       saida.push({ usuarioId: linha.usuario_id, canal: linha.canal, externoId: linha.externo_id })
     }
     return saida
+  }
+
+  /**
+   * Linha reservada que este código não entende (canal/tipo novo no banco, id/externo_id vazio):
+   * em vez de só pular (e ela voltar reservada a cada 15 min sem nunca registrar nada), conclui
+   * como FALHA com o motivo. A tentativa já foi contada na reserva — na 3ª ela morre e aparece como
+   * falha na aba Ocorrências. Mesma cerca de `tentativas` do `concluirEnvio`.
+   */
+  async function concluirIlegivel(bruto: unknown): Promise<void> {
+    const l = (bruto ?? {}) as Record<string, unknown>
+    const id = typeof l.id === 'string' ? l.id : ''
+    console.error('[alertas] linha da fila ilegível (canal/tipo desconhecido)', id)
+    if (id === '') return
+    try {
+      const { error } = await sb
+        .from('alerta_envios')
+        .update({
+          ok: false,
+          erro: `Linha ilegível: canal/tipo desconhecido (${String(l.canal ?? '')}/${String(l.tipo ?? '')})`
+            .slice(0, LIMITE_ERRO),
+          reservado_em: null,
+        })
+        .eq('id', id)
+        .eq('tentativas', Number(l.tentativas ?? 0) || 0)
+      if (error) console.error(`[alertas] concluir linha ilegível ${id} falhou:`, error.message)
+    } catch (e) {
+      console.error(`[alertas] concluir linha ilegível ${id} falhou:`, e instanceof Error ? e.message : e)
+    }
   }
 
   return {
@@ -59,15 +90,14 @@ export function criarRepositorioServico(
       const saida: EnvioReservado[] = []
       for (const bruto of (data ?? []) as unknown[]) {
         const envio = lerEnvioReservado(bruto)
-        // Linha que este código não entende fica reservada; a reserva vence e ela volta depois.
         if (envio) saida.push(envio)
-        else console.error('[alertas] linha da fila ignorada (canal/tipo desconhecido)')
+        else await concluirIlegivel(bruto)
       }
       return saida
     },
 
     async concluirEnvio(envio: EnvioReservado, texto: string, resultado: ResultadoEnvio) {
-      const { error } = await sb
+      const { data, error } = await sb
         .from('alerta_envios')
         .update({
           ok: resultado.ok,
@@ -79,7 +109,14 @@ export function criarRepositorioServico(
           reservado_em: null,
         })
         .eq('id', envio.id)
+        // Cerca: se a reserva desta rodada venceu e outra rodada re-reservou a linha (tentativas
+        // subiu), esta escrita atrasada não pode sobrescrever o resultado da outra.
+        .eq('tentativas', envio.tentativas)
+        .select('id')
       if (error) throw new Error(`alerta_envios: ${error.message}`)
+      if ((data ?? []).length === 0) {
+        console.error(`[alertas] envio ${envio.id}: resultado descartado (linha re-reservada por outra rodada)`)
+      }
     },
 
     async registrarEnvioDireto(e: NovoEnvioDireto) {
@@ -127,6 +164,51 @@ export function criarRepositorioServico(
     async contaDoUsuario(usuarioId: string, canal: Canal) {
       const lista = await contas([usuarioId], [canal])
       return lista[0] ?? null
+    },
+
+    async vincular(codigo: string, canal: Canal, externoId: string) {
+      const { data, error } = await sb.rpc('alerta_vincular', {
+        p_codigo: codigo,
+        p_canal: canal,
+        p_externo_id: externoId,
+      })
+      // Revisão da Task 2: alerta_vincular NUNCA levanta exceção de regra de negócio (senão a
+      // proteção contra força bruta perderia o registro da tentativa — o raise desfaz a
+      // transação inteira da chamada). Ela sempre devolve jsonb:
+      //   sucesso: {"ok": true, "nome": "..."}
+      //   falha:   {"ok": false, "erro": "CANAL_INVALIDO" | "CODIGO_INVALIDO"
+      //                                  | "CONTA_JA_VINCULADA" | "MUITAS_TENTATIVAS"}
+      // `error` aqui só acontece em falha de sistema (conexão, etc.), não em erro de regra.
+      if (error) return { ok: false as const, erro: mensagemErroAlerta(error.message) }
+      const r = data as { ok: boolean; nome?: string; erro?: string }
+      if (!r.ok) return { ok: false as const, erro: mensagemErroAlerta(r.erro) }
+      return { ok: true as const, nome: r.nome ?? '' }
+    },
+
+    async usuarioPorConta(canal: Canal, externoId: string) {
+      const { data, error } = await sb
+        .from('alerta_contas')
+        .select('usuario_id')
+        .eq('canal', canal)
+        .eq('externo_id', externoId)
+        .maybeSingle()
+      if (error) throw new Error(`alerta_contas: ${error.message}`)
+      return (data as { usuario_id: string } | null)?.usuario_id ?? null
+    },
+
+    async resolver(ocorrenciaId: string, usuarioId: string) {
+      const { data, error } = await sb.rpc('alerta_resolver', {
+        p_ocorrencia_id: ocorrenciaId,
+        p_usuario_id: usuarioId,
+      })
+      if (error) {
+        return {
+          ok: false as const,
+          codigo: codigoErroAlerta(error.message),
+          erro: mensagemErroAlerta(error.message),
+        }
+      }
+      return { ok: true as const, resolucao: lerResolucao(data) }
     },
   }
 }

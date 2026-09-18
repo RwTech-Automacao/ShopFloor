@@ -94,7 +94,7 @@
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `src/app/api/alertas/avaliar/route.ts` | `POST` do cron: segredo → `avaliarEEnviar` → `{ avaliadas, enviados, falhas, ocupado }`; 503 se o banco cair. |
+| `src/app/api/alertas/avaliar/route.ts` | `POST` do cron: segredo → `avaliarEEnviar` → `{ avaliadas, enfileirados, enviados, falhas, ocupado }` (o `ResumoAvaliacao` do `avaliarEEnviar`); 503 se o banco cair. |
 | `src/app/api/alertas/telegram/route.ts` | Webhook do Telegram (`X-Telegram-Bot-Api-Secret-Token`), responde sempre 200 após autorizar. |
 | `src/app/api/alertas/discord/route.ts` | Webhook do Discord (assinatura Ed25519), resposta imediata + trabalho pesado em `after()`. |
 | `middleware.ts` | **Modificar**: `/api/alertas/*` passa sem sessão (autenticam por segredo/assinatura). |
@@ -2868,7 +2868,7 @@ MSG
   - `canaisConfigurados(env?: NodeJS.ProcessEnv): Record<Canal, boolean>`; `criarPortasCanais(env?: NodeJS.ProcessEnv): PortasCanais`
   - `criarRepositorioServico(sb?: SupabaseClient): RepositorioEnvios` (em `infra/repositorio-servico.ts`)
   - `criarDependenciasAlertas(): { portas: PortasCanais; repo: RepositorioEnvios }` (em `infra/fabrica.ts`)
-  - Rota `POST /api/alertas/avaliar` → `200 { avaliadas, enviados, falhas, ocupado }` | `401 { erro }` | `503 { erro }`
+  - Rota `POST /api/alertas/avaliar` → `200 { avaliadas, enfileirados, enviados, falhas, ocupado }` | `401 { erro }` | `503 { erro }`
 
 - [ ] **Step 1: Escrever o teste do parse da avaliação e da rota pública (falhando)**
 
@@ -4960,17 +4960,22 @@ Criar `src/modules/alertas/application/__tests__/rotas-webhooks.test.ts`:
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { generateKeyPairSync, sign } from 'node:crypto'
+import type { RespostaDiscord } from '@/modules/alertas/application/webhook-discord'
 
 vi.mock('server-only', () => ({}))
 
-const criarDependenciasAlertas = vi.fn(() => ({ portas: {}, repo: {} }))
+// vi.mock é içado para o topo do arquivo: os mocks precisam nascer num vi.hoisted.
+const { criarDependenciasAlertas, tratarUpdateTelegram, tratarInteracaoDiscord } = vi.hoisted(() => ({
+  criarDependenciasAlertas: vi.fn(() => ({ portas: {}, repo: {} })),
+  tratarUpdateTelegram: vi.fn(async (): Promise<void> => {}),
+  tratarInteracaoDiscord: vi.fn(
+    async (): Promise<RespostaDiscord> => ({ corpo: { type: 1 }, depois: null }),
+  ),
+}))
 vi.mock('@/modules/alertas/infra/fabrica', () => ({ criarDependenciasAlertas }))
-
-const tratarUpdateTelegram = vi.fn(async () => {})
 vi.mock('@/modules/alertas/application/webhook-telegram', () => ({ tratarUpdateTelegram }))
-
-const tratarInteracaoDiscord = vi.fn(async () => ({ corpo: { type: 1 }, depois: null }))
 vi.mock('@/modules/alertas/application/webhook-discord', () => ({ tratarInteracaoDiscord }))
+
 
 // `after` fora do ciclo de requisição do Next não roda; aqui executa na hora.
 vi.mock('next/server', () => ({ after: (fn: () => Promise<void>) => void fn() }))
@@ -5280,7 +5285,7 @@ Run:
 ```bash
 cd "/home/rwtech/Área de trabalho/ShopFloor-alertas" && npx vitest run src/modules/alertas && npx tsc --noEmit && npm run lint
 ```
-Expected: `Test Files 14 passed`; `tsc` sem saída; lint sem avisos.
+Expected: `Test Files 15 passed` (14 + `infra/__tests__/repositorio-servico.test.ts`, da cerca de `tentativas`); `tsc` sem saída; lint sem avisos.
 
 - [ ] **Step 17: Commit**
 

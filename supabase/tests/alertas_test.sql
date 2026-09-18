@@ -1293,4 +1293,27 @@ begin
 end $t$;
 reset role;
 
+-- 31. Contagem de falhas na listagem: linha morta (3 tentativas, sem erro gravado — o processo
+-- caiu depois de reservar) conta como falha; pendente com tentativa sobrando e sem erro, não.
+insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados, ok, tentativas)
+select id, '00000000-0000-0000-0000-000000000001', 'telegram', 'resolvido', '{}'::jsonb, false, 3
+  from public.alerta_ocorrencias where posto = 'Posto30';
+insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados, ok, tentativas)
+select id, '00000000-0000-0000-0000-000000000001', 'telegram', 'resolvido', '{}'::jsonb, false, 2
+  from public.alerta_ocorrencias where posto = 'Posto30';
+set role authenticated;
+do $t$
+declare l record; esperado int;
+begin
+  select count(*) filter (where not ok and erro is not null) + 1 into esperado
+    from alerta_envios ev join alerta_ocorrencias oc on oc.id = ev.ocorrencia_id
+   where oc.posto = 'Posto30';
+  select * into l from alerta_listar_ocorrencias(now() - interval '1 day', now() + interval '1 day', '')
+   where posto = 'Posto30';
+  if l.envios_falha <> esperado then
+    raise exception 'FALHOU: linha morta na contagem de falhas (esperado %, veio %)', esperado, l.envios_falha;
+  end if;
+end $t$;
+reset role;
+
 \echo 'ALERTAS: SQL OK'

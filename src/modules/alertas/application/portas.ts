@@ -1,6 +1,7 @@
 import type { Canal, ResultadoEnvio, ResultadoSimples } from '../domain/tipos'
 import type { ContaDestino, ResultadoAvaliacaoRpc } from '../domain/avaliacao'
 import type { EnvioReservado } from '../domain/envio'
+import type { ResolucaoOcorrencia } from '../domain/resolucao'
 
 /**
  * Tudo que o serviço precisa de um canal. Quem implementa é `infra/canais.ts` (Telegram/Discord);
@@ -56,4 +57,23 @@ export interface RepositorioEnvios {
   mensagensComBotao(ocorrenciaId: string): Promise<MensagemComBotao[]>
   marcarSemBotao(envioIds: string[]): Promise<void>
   contaDoUsuario(usuarioId: string, canal: Canal): Promise<ContaDestino | null>
+}
+
+export type ResultadoVinculo = { ok: true; nome: string } | { ok: false; erro: string }
+
+/** `codigo` é o código do Postgres (ex.: 'NAO_DESTINATARIO'), pra decidir o que fazer no webhook. */
+export type ResultadoResolver =
+  | { ok: true; resolucao: ResolucaoOcorrencia }
+  | { ok: false; codigo: string; erro: string }
+
+export interface RepositorioVinculo {
+  vincular(codigo: string, canal: Canal, externoId: string): Promise<ResultadoVinculo>
+  /** Dono da conta externa (chat do Telegram / usuário do Discord), ou null se não vinculada. */
+  usuarioPorConta(canal: Canal, externoId: string): Promise<string | null>
+  resolver(ocorrenciaId: string, usuarioId: string): Promise<ResultadoResolver>
+}
+
+export interface DependenciasWebhook {
+  portas: PortasCanais
+  repo: RepositorioEnvios & RepositorioVinculo
 }

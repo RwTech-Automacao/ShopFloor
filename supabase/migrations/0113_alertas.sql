@@ -799,9 +799,12 @@ begin
       join alerta_regras rg on rg.id = oc.regra_id
       left join usuarios u on u.id = oc.resolvida_por
       left join lateral (
-        -- falha = tentou e não entregou (pendente que ainda nem foi tentada não conta como falha)
-        select count(*) filter (where ev.ok)                               as ok_qtd,
-               count(*) filter (where not ev.ok and ev.erro is not null)   as falha_qtd
+        -- falha = tentou e não entregou (pendente que ainda nem foi tentada não conta como falha),
+        -- OU linha morta: gastou as 3 tentativas sem nunca gravar erro (processo caiu depois de
+        -- reservar e a reserva venceu na 3ª) — a fila não pega mais, então é falha definitiva.
+        select count(*) filter (where ev.ok)                                        as ok_qtd,
+               count(*) filter (where not ev.ok
+                                  and (ev.erro is not null or ev.tentativas >= 3)) as falha_qtd
           from alerta_envios ev
          where ev.ocorrencia_id = oc.id
       ) e on true
