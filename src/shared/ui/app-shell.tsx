@@ -27,6 +27,7 @@ import {
   Bug,
   Wrench,
   Waypoints,
+  BellRing,
   TriangleAlert,
   Table2,
   History,
@@ -102,6 +103,7 @@ const CONFIG_SHOPFLOOR: FolhaModular[] = [
   { chave: 'sf-postos', rotulo: 'Postos', href: '/configuracoes/sf-postos', icone: Waypoints, modulo: 'shopfloor', perm: 'administrar' },
   { chave: 'sf-defeitos', rotulo: 'Defeitos', href: '/configuracoes/sf-defeitos', icone: Bug, modulo: 'shopfloor', perm: 'administrar' },
   { chave: 'sf-consertos', rotulo: 'Consertos', href: '/configuracoes/sf-consertos', icone: Wrench, modulo: 'shopfloor', perm: 'administrar' },
+  { chave: 'sf-alertas', rotulo: 'Alertas', href: '/configuracoes/sf-alertas', icone: BellRing, modulo: 'shopfloor', perm: 'administrar' },
 ]
 
 // Itens de Configurações que ficam "soltos" abaixo do accordion. Logs do
