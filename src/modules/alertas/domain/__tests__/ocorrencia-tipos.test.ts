@@ -49,7 +49,7 @@ describe('textoPreviaPosto', () => {
   })
   it('tempo médio por peça', () => {
     expect(textoPreviaPosto('tempo', { ...P, mediaSeg: 68.33, intervalos: 29, pecas: 30, avaliavel: true }, null)).toBe(
-      'Teste: 1:08 por peça (29 intervalos, 30 peças)',
+      'Teste: 1:09 por peça (29 intervalos, 30 peças)',
     )
     expect(textoPreviaPosto('tempo', { ...P, intervalos: 3, pecas: 4 }, null)).toBe(
       'Teste: intervalos insuficientes na janela (3)',

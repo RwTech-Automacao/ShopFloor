@@ -171,7 +171,7 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *   aprovacao: taxa, taxa_minima, aprovados, reprovados
  *   tempo:     media_seg, limite_tempo_seg, pecas
  *   defeito:   defeito, ocorrencias, limite_ocorrencias
- *   resolvido: posto, resolvida_por_nome, resolvida_em
+ *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito)
  *   teste: nome
  * `regra_tipo` ausente = 'aprovacao' (linhas enfileiradas antes da 0115).
  */
@@ -182,6 +182,8 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
       posto: texto(dados, 'posto'),
       nome: texto(dados, 'resolvida_por_nome'),
       em: data(dados, 'resolvida_em'),
+      // Ausente nas linhas antigas da fila (de antes desta correção) e nos tipos sem defeito.
+      defeito: textoOuNulo(dados, 'defeito'),
     })
   }
 

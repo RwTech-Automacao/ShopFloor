@@ -71,6 +71,16 @@ describe('textoResolvido', () => {
       '✅ Teste: resolvido por Ana Gestora às 14:05',
     )
   })
+  it('com defeito, diz qual código foi resolvido (2 abertos no mesmo posto não ficam ambíguos)', () => {
+    expect(
+      textoResolvido({ posto: 'Teste', nome: 'Ana Gestora', em: EM, defeito: '2040 COMPONENTE FALTANDO' }),
+    ).toBe('✅ Defeito 2040 (Componente Faltando) no Teste: resolvido por Ana Gestora às 14:05')
+  })
+  it('defeito nulo ou ausente dá o mesmo texto de antes', () => {
+    expect(textoResolvido({ posto: 'Teste', nome: 'Ana Gestora', em: EM, defeito: null })).toBe(
+      '✅ Teste: resolvido por Ana Gestora às 14:05',
+    )
+  })
 })
 
 describe('textoNormalizou', () => {
@@ -88,8 +98,10 @@ describe('textoNormalizou', () => {
 })
 
 describe('textos de vínculo', () => {
-  it('teste nomeia quem pediu', () => {
+  it('teste nomeia quem pediu e não fala de um tipo específico de alerta', () => {
     expect(textoTeste('Ana Gestora')).toContain('Ana Gestora')
+    expect(textoTeste('Ana Gestora')).toBe('🔔 Teste do ShopFloor — Ana Gestora, os alertas do ShopFloor vão chegar aqui.')
+    expect(textoTeste('Ana Gestora')).not.toContain('taxa de aprovação')
   })
   it('confirmação de vínculo', () => {
     expect(textoVinculado('Ana Gestora')).toBe('✅ Conta vinculada ao ShopFloor (Ana Gestora)')

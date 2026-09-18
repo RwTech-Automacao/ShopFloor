@@ -8,9 +8,13 @@ describe('formatarMmSs', () => {
     expect(formatarMmSs(5)).toBe('0:05')
     expect(formatarMmSs(3600)).toBe('60:00')
   })
-  it('trunca a fração de segundo (mesma régua da taxa)', () => {
-    expect(formatarMmSs(68.33)).toBe('1:08')
-    expect(formatarMmSs(179.99)).toBe('2:59')
+  it('arredonda a fração de segundo pra cima (número maior é pior, aqui)', () => {
+    expect(formatarMmSs(68.33)).toBe('1:09')
+    expect(formatarMmSs(179.99)).toBe('3:00')
+  })
+  it('120 s exatos seguem "2:00"; 120,5 s já viram "2:01" (não esconde que passou do limite)', () => {
+    expect(formatarMmSs(120)).toBe('2:00')
+    expect(formatarMmSs(120.5)).toBe('2:01')
   })
   it('negativo ou inválido vira 0:00', () => {
     expect(formatarMmSs(-3)).toBe('0:00')

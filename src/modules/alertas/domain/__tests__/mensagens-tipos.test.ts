@@ -55,7 +55,7 @@ describe('tempo médio por peça', () => {
     )
   })
   it('normalizou', () => {
-    expect(textoNormalizouTempo({ posto: 'Teste', mediaSeg: 68.33 })).toBe('🟢 Teste normalizou: 1:08 por peça')
+    expect(textoNormalizouTempo({ posto: 'Teste', mediaSeg: 68.33 })).toBe('🟢 Teste normalizou: 1:09 por peça')
   })
 })
 

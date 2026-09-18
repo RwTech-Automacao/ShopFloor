@@ -262,7 +262,7 @@ describe('RegraForm — tempo médio por peça', () => {
     montar({ tipo: 'tempo' })
     fireEvent.click(screen.getByLabelText('Teste'))
     fireEvent.click(screen.getByRole('button', { name: 'Ver prévia' }))
-    expect(await screen.findByText('Teste: 1:08 por peça (29 intervalos, 30 peças)')).toBeInTheDocument()
+    expect(await screen.findByText('Teste: 1:09 por peça (29 intervalos, 30 peças)')).toBeInTheDocument()
     expect(previaRegraAction.mock.calls[0]![0]).toMatchObject({ tipo: 'tempo', pausaMaxMin: '30', minimoBipes: '10' })
   })
 })

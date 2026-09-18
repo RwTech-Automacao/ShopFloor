@@ -40,7 +40,7 @@ describe('textoDoEnvio — tempo médio por peça', () => {
     expect(textoDoEnvio('lembrete', TEMPO)).toMatch(/^⏰ Lembrete — continua há 30 min\n🔴 Teste lento: 3:00 por peça/)
   })
   it('normalizou', () => {
-    expect(textoDoEnvio('normalizou', { ...TEMPO, media_seg: 68.33 })).toBe('🟢 Teste normalizou: 1:08 por peça')
+    expect(textoDoEnvio('normalizou', { ...TEMPO, media_seg: 68.33 })).toBe('🟢 Teste normalizou: 1:09 por peça')
   })
   it('janela da OP guardada', () => {
     expect(textoDoEnvio('alerta', { ...TEMPO, janela_tipo: 'op', janela_valor: null, pmo: 'PMOX', op: '7001' })).toContain(

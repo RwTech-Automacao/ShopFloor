@@ -218,6 +218,11 @@ A `0115_alertas_tipos.sql` vai **por cima** da 0113/0114 (a 0113 não muda). Ela
 
 É idempotente: rodar duas vezes não quebra.
 
+**Rollback do app**: antes de voltar o app para uma versão anterior aos tipos de regra, desative as
+regras de tipo `tempo` e `defeito`. O app velho só sabe montar e editar mensagem de regra
+`aprovacao` — os envios dessas regras (alerta, lembrete, normalizou) falhariam depois de 3
+tentativas, e a tela de edição do app velho não abriria o formulário delas.
+
 ### Antes de aplicar (Prod): quem vai parar de receber?
 
 Destinatários de regras ativas que **não** administram o ShopFloor deixam de receber assim que a 0115

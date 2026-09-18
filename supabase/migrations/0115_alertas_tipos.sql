@@ -847,11 +847,13 @@ begin
   select coalesce(nullif(btrim(nome), ''), email) into v_nome from usuarios where id = o.resolvida_por;
 
   -- FILA: "✅ resolvido por X" para os OUTROS destinatários ativos que administram o ShopFloor, na
-  -- mesma transação da resolução. Só na primeira resolução.
+  -- mesma transação da resolução. Só na primeira resolução. `defeito` (nulo nos outros tipos) vai
+  -- junto: numa regra de defeito com 2 códigos abertos no mesmo posto, sem ele o texto não diria
+  -- QUAL dos dois foi resolvido.
   if not v_ja then
     insert into alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados, com_botao)
     select o.id, c.usuario_id, c.canal, 'resolvido',
-           jsonb_build_object('posto', o.posto, 'resolvida_por_nome', coalesce(v_nome, ''),
+           jsonb_build_object('posto', o.posto, 'defeito', o.defeito, 'resolvida_por_nome', coalesce(v_nome, ''),
                               'resolvida_em', o.resolvida_em),
            false
       from alerta_contas c

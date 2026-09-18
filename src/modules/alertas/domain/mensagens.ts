@@ -69,8 +69,14 @@ export function textoLembrete(d: DadosMensagem & { abertaEm: Date }): string {
   return `⏰ Lembrete — continua abaixo há ${min} min\n${textoAlerta(d)}`
 }
 
-export function textoResolvido(d: { posto: string; nome: string; em: Date }): string {
-  return `✅ ${d.posto}: resolvido por ${d.nome} às ${formatarHora(d.em)}`
+/**
+ * `defeito` só vem preenchido nas regras de tipo defeito. Sem ele, o texto é exatamente o de
+ * antes; com ele, entra o rótulo do defeito — senão, com 2 códigos abertos no mesmo posto, "✅
+ * Posto X: resolvido" não diria QUAL dos dois foi.
+ */
+export function textoResolvido(d: { posto: string; nome: string; em: Date; defeito?: string | null }): string {
+  const alvo = d.defeito ? `Defeito ${rotuloDefeito(d.defeito)} no ${d.posto}` : d.posto
+  return `✅ ${alvo}: resolvido por ${d.nome} às ${formatarHora(d.em)}`
 }
 
 export function textoNormalizou(d: {
@@ -85,7 +91,7 @@ export function textoNormalizou(d: {
 }
 
 export function textoTeste(nome: string): string {
-  return `🔔 Teste do ShopFloor — ${nome}, os alertas de taxa de aprovação vão chegar aqui.`
+  return `🔔 Teste do ShopFloor — ${nome}, os alertas do ShopFloor vão chegar aqui.`
 }
 
 export function textoVinculado(nome: string): string {

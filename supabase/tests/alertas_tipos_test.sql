@@ -997,6 +997,23 @@ begin
     raise exception 'FALHOU: Bruno devia receber o "resolvido"';
   end if;
 end $t$;
+
+-- D4b. Resolvido de regra de defeito leva QUAL código foi resolvido (o posto sozinho não basta
+-- quando há 2 códigos abertos ao mesmo tempo no mesmo posto — é o caso do 1002 e do 2040 acima).
+do $t$
+declare oc uuid; r jsonb;
+begin
+  select o.id into oc
+    from alerta_ocorrencias o join alerta_regras rg on rg.id = o.regra_id
+   where rg.nome = 'Defeito 3x' and o.defeito = '1002 TRILHA ROMPIDA' and o.estado = 'aberta';
+  r := alerta_resolver(oc, '00000000-0000-0000-0000-000000000001');
+  if (r->>'ja_resolvida')::boolean is not false then raise exception 'FALHOU: Ana não resolveu o defeito %', r; end if;
+  if not exists (select 1 from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido'
+                   and usuario_id = '00000000-0000-0000-0000-000000000002'
+                   and dados->>'defeito' = '1002 TRILHA ROMPIDA') then
+    raise exception 'FALHOU: "resolvido" do defeito não leva qual código foi resolvido';
+  end if;
+end $t$;
 reset role;
 
 -- D5. Administrar de OUTRO módulo não vale: a Rita administra o Recebimento (e nada do ShopFloor),

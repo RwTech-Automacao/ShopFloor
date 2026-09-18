@@ -2,11 +2,13 @@
 export const LIMITE_TEMPO_MAX_SEG = 3600
 
 /**
- * Segundos em 'm:ss' (120 → '2:00', 68,33 → '1:08'). A fração de segundo é TRUNCADA — mesma régua
- * da taxa: a tela nunca mostra o posto mais rápido do que ele foi.
+ * Segundos em 'm:ss' (120 → '2:00', 120,5 → '2:01'). A fração de segundo é ARREDONDADA PRA CIMA:
+ * aqui, diferente da taxa, número maior é PIOR — truncar mostraria o posto mais rápido do que ele
+ * foi (120,5 s viraria "2:00", igual ao limite, escondendo que a regra (média > limite) disparou).
+ * O limite configurado já chega inteiro; arredondar um inteiro pra cima não muda nada.
  */
 export function formatarMmSs(segundos: number): string {
-  const total = Number.isFinite(segundos) && segundos > 0 ? Math.floor(segundos) : 0
+  const total = Number.isFinite(segundos) && segundos > 0 ? Math.ceil(segundos) : 0
   const m = Math.floor(total / 60)
   const s = total % 60
   return `${m}:${String(s).padStart(2, '0')}`
