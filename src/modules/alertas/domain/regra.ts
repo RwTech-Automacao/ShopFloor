@@ -58,8 +58,11 @@ function inteiro(v: string | number | null | undefined): number | null {
   return Number.isInteger(n) ? n : Number.NaN
 }
 
-function unicos(lista: string[]): string[] {
-  return [...new Set(lista.map((x) => x.trim()).filter((x) => x !== ''))]
+// Payload malformado (ex.: JSON de terceiro, campo faltando) pode chegar sem ser array — trata
+// como lista vazia em vez de estourar `.map`/`.includes`, e a regra de "pelo menos 1" recusa.
+function unicos(lista: unknown): string[] {
+  if (!Array.isArray(lista)) return []
+  return [...new Set(lista.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter((x) => x !== ''))]
 }
 
 export function validarRegra(e: EntradaRegra): { ok: true; valor: RegraValida } | { ok: false; erro: string } {
@@ -106,7 +109,8 @@ export function validarRegra(e: EntradaRegra): { ok: true; valor: RegraValida } 
     return { ok: false, erro: 'O lembrete deve ser um número inteiro de minutos (ou vazio).' }
   }
 
-  const canais = CANAIS.filter((c) => e.canais.includes(c))
+  const canaisEntrada = Array.isArray(e.canais) ? e.canais : []
+  const canais = CANAIS.filter((c) => canaisEntrada.includes(c))
   if (canais.length === 0) return { ok: false, erro: 'Escolha pelo menos 1 canal.' }
 
   const destinatarios = unicos(e.destinatarios)

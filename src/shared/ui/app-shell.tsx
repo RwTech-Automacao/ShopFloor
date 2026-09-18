@@ -17,6 +17,7 @@ import {
   Tags,
   ImageDown,
   Users,
+  UserRound,
   ShieldCheck,
   List,
   SlidersHorizontal,
@@ -113,6 +114,10 @@ const CONFIG_TODOS: FolhaModular[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...
 
 const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/sobre', icone: Info, perm: 'visualizar' }
 
+// Meu perfil não entra no menu lateral: o acesso é pelo nome do usuário (cabeçalho e rodapé do
+// menu). Fica aqui só para o cabeçalho da página achar o rótulo.
+const PERFIL: Folha = { chave: 'perfil', rotulo: 'Meu perfil', href: '/perfil', icone: UserRound, perm: 'visualizar' }
+
 function iniciais(texto: string): string {
   const p = texto.trim().split(/[\s@.]+/).filter(Boolean)
   return ((p[0]?.[0] ?? '?') + (p[1]?.[0] ?? '')).toUpperCase()
@@ -178,7 +183,7 @@ export function AppShell({
   const [configSfAberto, setConfigSfAberto] = useState(configSfAtivo)
 
   const tituloPagina =
-    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...CONFIG_TODOS, AJUDA]
+    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...CONFIG_TODOS, AJUDA, PERFIL]
       .filter((i) => ehAtivo(pathname, i.href))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
@@ -367,13 +372,20 @@ export function AppShell({
           </button>
         )}
         <div className="flex items-center gap-3 px-1 py-1">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
-            {iniciais(nome || email)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-foreground">{nome || email}</p>
-            <p className="truncate text-xs text-muted-foreground">{perfilNome}</p>
-          </div>
+          <Link
+            href={PERFIL.href}
+            onClick={fechaMobile}
+            title="Meu perfil"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-md p-1 transition-colors hover:bg-accent"
+          >
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
+              {iniciais(nome || email)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">{nome || email}</p>
+              <p className="truncate text-xs text-muted-foreground">{perfilNome}</p>
+            </div>
+          </Link>
           <form action={sair}>
             <button
               type="submit"
@@ -435,6 +447,18 @@ export function AppShell({
             </>
           )}
           <h1 className="text-[15px] font-semibold text-foreground">{tituloPagina}</h1>
+          {!kioskLigado && (
+            <Link
+              href={PERFIL.href}
+              title="Meu perfil"
+              className="ml-auto flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-foreground">
+                {iniciais(nome || email)}
+              </div>
+              <span className="hidden max-w-40 truncate sm:inline">{nome || email}</span>
+            </Link>
+          )}
           {kioskLigado && (
             <button
               type="button"

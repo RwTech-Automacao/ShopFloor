@@ -32,68 +32,83 @@ export async function salvarRegraAction(
   id: string | null,
   entrada: EntradaRegra,
 ): Promise<{ ok: true; id: string } | { ok: false; erro: string }> {
-  if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
 
-  const v = validarRegra(entrada)
-  if (!v.ok) return { ok: false, erro: v.erro }
+    const v = validarRegra(entrada)
+    if (!v.ok) return { ok: false, erro: v.erro }
 
-  if (id) {
-    const r = await atualizarRegra(id, v.valor)
+    if (id) {
+      const r = await atualizarRegra(id, v.valor)
+      if (!r.ok) return { ok: false, erro: r.erro }
+      await registrarLog({
+        entidade: 'alerta_regra',
+        entidadeId: id,
+        acao: 'alterar_campo',
+        descricao: `Regra de alerta "${v.valor.nome}" alterada`,
+        dados: v.valor,
+      })
+      revalidatePath(ROTA)
+      return { ok: true, id }
+    }
+
+    const r = await inserirRegra(v.valor)
+    if (!r.ok) return { ok: false, erro: r.erro }
+    await registrarLog({
+      entidade: 'alerta_regra',
+      entidadeId: r.id,
+      acao: 'criar',
+      descricao: `Regra de alerta "${v.valor.nome}" criada (${v.valor.postos.join(', ')}, ${resumoJanela({ tipo: v.valor.janelaTipo, valor: v.valor.janelaValor })})`,
+      dados: v.valor,
+    })
+    revalidatePath(ROTA)
+    return { ok: true, id: r.id }
+  } catch (e) {
+    console.error('[alertas] salvar regra:', e instanceof Error ? e.message : e)
+    return { ok: false, erro: 'Não foi possível salvar a regra agora.' }
+  }
+}
+
+export async function excluirRegraAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
+  try {
+    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+    const r = await excluirRegra(id)
     if (!r.ok) return { ok: false, erro: r.erro }
     await registrarLog({
       entidade: 'alerta_regra',
       entidadeId: id,
-      acao: 'alterar_campo',
-      descricao: `Regra de alerta "${v.valor.nome}" alterada`,
-      dados: v.valor,
+      acao: 'excluir',
+      descricao: 'Regra de alerta excluída (exclusão lógica — o histórico de ocorrências continua)',
     })
     revalidatePath(ROTA)
-    return { ok: true, id }
+    return { ok: true }
+  } catch (e) {
+    console.error('[alertas] excluir regra:', e instanceof Error ? e.message : e)
+    return { ok: false, erro: 'Não foi possível excluir a regra agora.' }
   }
-
-  const r = await inserirRegra(v.valor)
-  if (!r.ok) return { ok: false, erro: r.erro }
-  await registrarLog({
-    entidade: 'alerta_regra',
-    entidadeId: r.id,
-    acao: 'criar',
-    descricao: `Regra de alerta "${v.valor.nome}" criada (${v.valor.postos.join(', ')}, ${resumoJanela({ tipo: v.valor.janelaTipo, valor: v.valor.janelaValor })})`,
-    dados: v.valor,
-  })
-  revalidatePath(ROTA)
-  return { ok: true, id: r.id }
-}
-
-export async function excluirRegraAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
-  if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
-  const r = await excluirRegra(id)
-  if (!r.ok) return { ok: false, erro: r.erro }
-  await registrarLog({
-    entidade: 'alerta_regra',
-    entidadeId: id,
-    acao: 'excluir',
-    descricao: 'Regra de alerta excluída (exclusão lógica — o histórico de ocorrências continua)',
-  })
-  revalidatePath(ROTA)
-  return { ok: true }
 }
 
 export async function alternarRegraAtivaAction(
   id: string,
   ativa: boolean,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
-  if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
-  const r = await definirRegraAtiva(id, ativa)
-  if (!r.ok) return { ok: false, erro: r.erro }
-  await registrarLog({
-    entidade: 'alerta_regra',
-    entidadeId: id,
-    acao: 'alterar_campo',
-    descricao: `Regra de alerta ${ativa ? 'ativada' : 'desativada'}`,
-    dados: { ativa },
-  })
-  revalidatePath(ROTA)
-  return { ok: true }
+  try {
+    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+    const r = await definirRegraAtiva(id, ativa)
+    if (!r.ok) return { ok: false, erro: r.erro }
+    await registrarLog({
+      entidade: 'alerta_regra',
+      entidadeId: id,
+      acao: 'alterar_campo',
+      descricao: `Regra de alerta ${ativa ? 'ativada' : 'desativada'}`,
+      dados: { ativa },
+    })
+    revalidatePath(ROTA)
+    return { ok: true }
+  } catch (e) {
+    console.error('[alertas] alternar regra ativa:', e instanceof Error ? e.message : e)
+    return { ok: false, erro: 'Não foi possível alterar a regra agora.' }
+  }
 }
 
 export async function previaRegraAction(entrada: {
@@ -102,10 +117,15 @@ export async function previaRegraAction(entrada: {
   janelaValor: string | number | null
   minimoBipes: string | number
 }): Promise<{ ok: true; postos: PreviaPosto[] } | { ok: false; erro: string }> {
-  if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
-  const v = validarPrevia(entrada)
-  if (!v.ok) return { ok: false, erro: v.erro }
-  return previaRegra(v.valor)
+  try {
+    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+    const v = validarPrevia(entrada)
+    if (!v.ok) return { ok: false, erro: v.erro }
+    return await previaRegra(v.valor)
+  } catch (e) {
+    console.error('[alertas] prévia da regra:', e instanceof Error ? e.message : e)
+    return { ok: false, erro: 'Não foi possível calcular a prévia agora.' }
+  }
 }
 
 export async function listarOcorrenciasAction(
@@ -120,31 +140,36 @@ export async function listarOcorrenciasAction(
 }
 
 export async function resolverOcorrenciaAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
-  if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
-
-  // alerta_resolver_admin resolve E enfileira o "✅ resolvido por" para os destinatários (menos
-  // quem resolveu), na mesma transação.
-  const r = await resolverOcorrenciaComoAdmin(id)
-  if (!r.ok) return { ok: false, erro: r.erro }
-
-  // Tira o botão das mensagens já entregues e adianta a entrega do aviso que está na fila. Falha
-  // aqui NÃO desfaz a resolução e não perde o aviso: o cron entrega na próxima rodada.
   try {
-    const { portas, repo } = criarDependenciasAlertas()
-    await removerBotoesDaOcorrencia(portas, repo, id)
-    if (!r.resolucao.jaResolvida) await entregarPendentes(portas, repo, { ocorrenciaId: id })
-  } catch (e) {
-    console.error('[alertas] avisar resolução pela tela:', e instanceof Error ? e.message : e)
-  }
+    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
 
-  await registrarLog({
-    entidade: 'alerta_ocorrencia',
-    entidadeId: id,
-    acao: 'mudar_status',
-    descricao: `Ocorrência de alerta (${r.resolucao.posto}) marcada como resolvida`,
-  })
-  revalidatePath(ROTA)
-  return { ok: true }
+    // alerta_resolver_admin resolve E enfileira o "✅ resolvido por" para os destinatários (menos
+    // quem resolveu), na mesma transação.
+    const r = await resolverOcorrenciaComoAdmin(id)
+    if (!r.ok) return { ok: false, erro: r.erro }
+
+    // Tira o botão das mensagens já entregues e adianta a entrega do aviso que está na fila. Falha
+    // aqui NÃO desfaz a resolução e não perde o aviso: o cron entrega na próxima rodada.
+    try {
+      const { portas, repo } = criarDependenciasAlertas()
+      await removerBotoesDaOcorrencia(portas, repo, id)
+      if (!r.resolucao.jaResolvida) await entregarPendentes(portas, repo, { ocorrenciaId: id })
+    } catch (e) {
+      console.error('[alertas] avisar resolução pela tela:', e instanceof Error ? e.message : e)
+    }
+
+    await registrarLog({
+      entidade: 'alerta_ocorrencia',
+      entidadeId: id,
+      acao: 'mudar_status',
+      descricao: `Ocorrência de alerta (${r.resolucao.posto}) marcada como resolvida`,
+    })
+    revalidatePath(ROTA)
+    return { ok: true }
+  } catch (e) {
+    console.error('[alertas] resolver ocorrência:', e instanceof Error ? e.message : e)
+    return { ok: false, erro: 'Não foi possível resolver a ocorrência agora.' }
+  }
 }
 
 /**

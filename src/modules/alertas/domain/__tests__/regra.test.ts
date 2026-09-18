@@ -101,6 +101,47 @@ describe('validarRegra', () => {
     })
   })
 
+  it('janela de bipes igual ao mínimo é aceita', () => {
+    const r = validarRegra({ ...BASE, janelaTipo: 'bipes', janelaValor: '20', minimoBipes: '20' })
+    expect(r.ok).toBe(true)
+    expect(r.ok && r.valor.janelaValor).toBe(20)
+  })
+
+  it('fronteiras da taxa: 0 e 100 são aceitos', () => {
+    expect(validarRegra({ ...BASE, taxaMinima: '0' }).ok).toBe(true)
+    expect(validarRegra({ ...BASE, taxaMinima: '100' }).ok).toBe(true)
+  })
+
+  it('fronteiras da taxa: acima de 100 é recusado, com vírgula ou ponto', () => {
+    expect(validarRegra({ ...BASE, taxaMinima: '100.001' })).toEqual({
+      ok: false,
+      erro: 'A taxa mínima deve ficar entre 0 e 100.',
+    })
+    expect(validarRegra({ ...BASE, taxaMinima: '100,01' })).toEqual({
+      ok: false,
+      erro: 'A taxa mínima deve ficar entre 0 e 100.',
+    })
+  })
+
+  it('fronteiras da taxa: valor negativo é recusado', () => {
+    expect(validarRegra({ ...BASE, taxaMinima: '-1' })).toEqual({
+      ok: false,
+      erro: 'A taxa mínima deve ficar entre 0 e 100.',
+    })
+  })
+
+  it('payload malformado: campo que não é array vira lista vazia (recusado pela regra)', () => {
+    expect(
+      validarRegra({ ...BASE, postos: 'Teste' as unknown as string[] }),
+    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 posto.' })
+    expect(
+      validarRegra({ ...BASE, canais: null as unknown as string[] }),
+    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
+    expect(
+      validarRegra({ ...BASE, destinatarios: undefined as unknown as string[] }),
+    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 destinatário.' })
+  })
+
   it('recusa janela desconhecida', () => {
     expect(validarRegra({ ...BASE, janelaTipo: 'lua' })).toEqual({ ok: false, erro: 'Escolha a janela da regra.' })
   })

@@ -88,11 +88,13 @@ export async function atualizarRegra(
   r: RegraValida,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sb = await createServerSupabase()
-  const { error } = await sb
+  const { data, error } = await sb
     .from('alerta_regras')
     .update({ ...paraLinha(r), atualizado_em: new Date().toISOString() })
     .eq('id', id)
+    .select('id')
   if (error) return { ok: false, erro: erroDeBanco(error) }
+  if ((data ?? []).length === 0) return { ok: false, erro: 'Essa regra foi excluída.' }
   return { ok: true }
 }
 
@@ -105,12 +107,14 @@ export async function atualizarRegra(
 export async function excluirRegra(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sb = await createServerSupabase()
   const agora = new Date().toISOString()
-  const { error } = await sb
+  const { data, error } = await sb
     .from('alerta_regras')
     .update({ excluida_em: agora, ativa: false, atualizado_em: agora })
     .eq('id', id)
     .is('excluida_em', null)
+    .select('id')
   if (error) return { ok: false, erro: erroDeBanco(error) }
+  if ((data ?? []).length === 0) return { ok: false, erro: 'Essa regra foi excluída.' }
   return { ok: true }
 }
 
@@ -119,11 +123,13 @@ export async function definirRegraAtiva(
   ativa: boolean,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sb = await createServerSupabase()
-  const { error } = await sb
+  const { data, error } = await sb
     .from('alerta_regras')
     .update({ ativa, atualizado_em: new Date().toISOString() })
     .eq('id', id)
+    .select('id')
   if (error) return { ok: false, erro: erroDeBanco(error) }
+  if ((data ?? []).length === 0) return { ok: false, erro: 'Essa regra foi excluída.' }
   return { ok: true }
 }
 

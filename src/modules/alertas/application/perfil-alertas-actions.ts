@@ -13,18 +13,23 @@ const ROTA = '/perfil'
 export async function gerarCodigoAction(): Promise<
   { ok: true; codigo: string; expiraEm: string } | { ok: false; erro: string }
 > {
-  const sessao = await getSessao()
-  if (!sessao) return { ok: false, erro: SEM_SESSAO }
-  return gerarCodigoVinculo()
+  try {
+    const sessao = await getSessao()
+    if (!sessao) return { ok: false, erro: SEM_SESSAO }
+    return await gerarCodigoVinculo()
+  } catch (e) {
+    console.error('[alertas] gerar código:', e instanceof Error ? e.message : e)
+    return { ok: false, erro: 'Não foi possível gerar o código agora.' }
+  }
 }
 
 /** A tela consulta isso a cada 3 s enquanto o código está aberto. */
 export async function minhasContasAction(): Promise<
   { ok: true; contas: ContaVinculada[] } | { ok: false; erro: string }
 > {
-  const sessao = await getSessao()
-  if (!sessao) return { ok: false, erro: SEM_SESSAO }
   try {
+    const sessao = await getSessao()
+    if (!sessao) return { ok: false, erro: SEM_SESSAO }
     return { ok: true, contas: await listarMinhasContas() }
   } catch {
     return { ok: false, erro: 'Não foi possível consultar os vínculos agora.' }
@@ -32,16 +37,16 @@ export async function minhasContasAction(): Promise<
 }
 
 export async function desvincularAction(canal: string): Promise<{ ok: true } | { ok: false; erro: string }> {
-  const sessao = await getSessao()
-  if (!sessao) return { ok: false, erro: SEM_SESSAO }
-  if (!ehCanal(canal)) return { ok: false, erro: 'Canal inválido.' }
   try {
+    const sessao = await getSessao()
+    if (!sessao) return { ok: false, erro: SEM_SESSAO }
+    if (!ehCanal(canal)) return { ok: false, erro: 'Canal inválido.' }
     await desvincularConta(canal)
+    revalidatePath(ROTA)
+    return { ok: true }
   } catch {
     return { ok: false, erro: 'Não foi possível desvincular agora.' }
   }
-  revalidatePath(ROTA)
-  return { ok: true }
 }
 
 /**
@@ -49,10 +54,10 @@ export async function desvincularAction(canal: string): Promise<{ ok: true } | {
  * reenviado. `enviarTeste` grava a linha já final em alerta_envios (tipo 'teste', tentativas 1).
  */
 export async function enviarTesteAction(canal: string): Promise<{ ok: true } | { ok: false; erro: string }> {
-  const sessao = await getSessao()
-  if (!sessao) return { ok: false, erro: SEM_SESSAO }
-  if (!ehCanal(canal)) return { ok: false, erro: 'Canal inválido.' }
   try {
+    const sessao = await getSessao()
+    if (!sessao) return { ok: false, erro: SEM_SESSAO }
+    if (!ehCanal(canal)) return { ok: false, erro: 'Canal inválido.' }
     const { portas, repo } = criarDependenciasAlertas()
     return await enviarTeste(portas, repo, {
       usuarioId: sessao.usuarioId,
