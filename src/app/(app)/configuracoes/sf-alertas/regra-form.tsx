@@ -17,6 +17,7 @@ import {
 } from '@/modules/alertas/domain/regra'
 import type { PreviaPosto } from '@/modules/alertas/domain/ocorrencia'
 import { previaRegraAction, salvarRegraAction } from '@/modules/alertas/application/alertas-actions'
+import { Explica } from './explica'
 
 const TOAST = { position: 'bottom-center' } as const
 /** Mensagem do repositório quando a regra já foi excluída (exclusão lógica) por outro gestor. */
@@ -142,7 +143,13 @@ export function RegraForm({
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium">Postos</legend>
+        <legend className="flex items-center gap-1.5 text-sm font-medium">
+          Postos
+          <Explica titulo="Postos">
+            <p>Os postos que esta regra acompanha.</p>
+            <p>A taxa é calculada <strong>separada para cada posto</strong> marcado. Cada posto que ficar abaixo da meta abre o seu próprio alerta.</p>
+          </Explica>
+        </legend>
         <div className="flex flex-wrap gap-3">
           {postos.map((p) => (
             <label key={p} className="flex items-center gap-2 text-sm">
@@ -161,17 +168,39 @@ export function RegraForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="taxa">Taxa mínima (%)</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="taxa">Taxa mínima (%)</Label>
+            <Explica titulo="Taxa mínima (%)">
+              <p>A meta de aprovação do posto. Se a taxa ficar <strong>abaixo</strong> dela, o alerta é enviado.</p>
+              <p>Taxa = aprovados ÷ (aprovados + reprovados) × 100, contando só os bipes com resultado <strong>Aprovado</strong> ou <strong>Reprovado</strong> dentro da janela. Bipes só com Registrado ficam de fora.</p>
+              <p>Ex.: 45 aprovados e 5 reprovados = 90%. Com meta 95, alerta; com meta 90, não.</p>
+              <p>A conta é refeita a cada 5 minutos.</p>
+            </Explica>
+          </div>
           <Input id="taxa" value={taxa} onChange={(e) => setTaxa(e.target.value)} inputMode="decimal" />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="minimo">Mínimo de bipes</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="minimo">Mínimo de bipes</Label>
+            <Explica titulo="Mínimo de bipes">
+              <p>Quantos bipes com resultado (aprovados + reprovados) a janela precisa ter para a regra avaliar.</p>
+              <p>Evita alarme falso com poucas peças: com 1 reprova em 2 bipes a taxa seria 50%. Abaixo do mínimo, a regra não abre nem encerra alerta.</p>
+            </Explica>
+          </div>
           <Input id="minimo" value={minimo} onChange={(e) => setMinimo(e.target.value)} inputMode="numeric" />
         </div>
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium">Janela</legend>
+        <legend className="flex items-center gap-1.5 text-sm font-medium">
+          Janela
+          <Explica titulo="Janela">
+            <p>Quais bipes entram na conta da taxa:</p>
+            <p><strong>Últimos X minutos</strong>: os bipes do posto nesse período, de todas as OPs (até 7 dias).</p>
+            <p><strong>Últimos N bipes</strong>: os N bipes com resultado mais recentes do posto, de todas as OPs, olhando no máximo 30 dias. Precisa ser maior ou igual ao mínimo de bipes.</p>
+            <p><strong>OP em andamento</strong>: todos os bipes do posto na OP do último bipe dele. Se o posto está parado há mais de 2 horas, não avalia.</p>
+          </Explica>
+        </legend>
         {/* Rádio e campo ficam FORA de um <label> comum de propósito: um label envolvendo dois
             controles deixa "Últimos minutos" ambíguo (para o leitor de tela e para o teste). */}
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -225,7 +254,13 @@ export function RegraForm({
       </fieldset>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="lembrete">Lembrar a cada (min)</Label>
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor="lembrete">Lembrar a cada (min)</Label>
+          <Explica titulo="Lembrar a cada (min)">
+            <p>Enquanto o posto continuar abaixo da meta e ninguém apertar <strong>Resolvido</strong>, o alerta é reenviado a cada X minutos.</p>
+            <p>Vazio = só um alerta quando cai e um aviso quando normaliza.</p>
+          </Explica>
+        </div>
         <Input
           id="lembrete"
           value={lembrete}
