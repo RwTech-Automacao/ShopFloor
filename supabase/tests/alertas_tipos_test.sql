@@ -112,6 +112,9 @@ begin
   perform teste_regra_recusada('tempo sem limite',              'tempo',     null, 'tempo', 60,   10,   null, null, 30);
   perform teste_regra_recusada('tempo com taxa',                'tempo',     90,   'tempo', 60,   10,   120,  null, 30);
   perform teste_regra_recusada('tempo sem mínimo',              'tempo',     null, 'tempo', 60,   null, 120,  null, 30);
+  -- limite >= pausa: todo intervalo acima do limite também passa da pausa e sai da média — nunca dispara
+  perform teste_regra_recusada('tempo com limite = pausa',      'tempo',     null, 'tempo', 60,   10,   1800, null, 30);
+  perform teste_regra_recusada('tempo com limite > pausa',      'tempo',     null, 'tempo', 60,   10,   3600, null, 1);
   perform teste_regra_recusada('defeito com janela op',         'defeito',   null, 'op',    null, null, null, 3,    null);
   perform teste_regra_recusada('defeito com limite 1',          'defeito',   null, 'tempo', 60,   null, null, 1,    null);
   perform teste_regra_recusada('defeito com mínimo de bipes',   'defeito',   null, 'tempo', 60,   20,   null, 3,    null);
@@ -146,7 +149,8 @@ do $t$
 declare v uuid;
 begin
   perform teste_regra('Válida tempo',    'tempo',   array['X'], null, 'tempo', 60,    10,   120,  null, 30,  '{}',           null, false);
-  perform teste_regra('Válida tempo OP', 'tempo',   array['X'], null, 'op',    null,  10,   3600, null, 1,   array['PMOA'],  null, false);
+  perform teste_regra('Válida tempo OP', 'tempo',   array['X'], null, 'op',    null,  10,   3600, null, 61,  array['PMOA'],  null, false);
+  perform teste_regra('Válida tempo 29:59', 'tempo', array['X'], null, 'tempo', 60,    10,   1799, null, 30,  '{}',           null, false);
   v := teste_regra('Válida defeito',     'defeito', array['X'], null, 'tempo', 10080, null, null, 2,    null, '{}',          null, false);
   begin
     update alerta_regras set tipo = 'aprovacao', taxa_minima = 90, minimo_bipes = 20, limite_ocorrencias = null
@@ -431,10 +435,14 @@ begin
 end $t$;
 reset role;
 
--- Janela de minutos + PMO: PMOX a cada 200 s e PMOY intercalada (100 s depois de cada PMOX).
--- Todas as PMOs: 100 s por peça (normal). Só PMOX: 200 s por peça (lento).
-select public.teste_ritmo('T-Mix', 'PMOX', '1', 11, 200, 2400);
-select public.teste_ritmo('T-Mix', 'PMOY', '1', 10, 200, 2300);
+-- Janela de minutos + PMO num posto MISTO: PMOX a cada 200 s e PMOY intercalada (100 s depois de
+-- cada PMOX). O intervalo é medido entre bipes seguidos do POSTO (de qualquer PMO) e só entram os
+-- que TERMINAM num bipe das PMOs da regra: a PMOX sai a 100 s por peça, igual ao posto — o tempo
+-- da PMOY feita no meio não conta como lentidão da PMOX.
+do $t$ begin   -- mesma transação = mesmo now(): os 100 s saem exatos
+  perform public.teste_ritmo('T-Mix', 'PMOX', '1', 11, 200, 2400);
+  perform public.teste_ritmo('T-Mix', 'PMOY', '1', 10, 200, 2300);
+end $t$;
 do $t$ begin
   perform teste_regra('Tempo PMOX', 'tempo', array['T-Mix'], null, 'tempo', 60, 5, 120, null, 30, array['PMOX']);
   perform teste_regra('Tempo todas as PMOs', 'tempo', array['T-Mix'], null, 'tempo', 60, 5, 120, null, 30);
@@ -445,11 +453,42 @@ declare a jsonb;
 begin
   perform alerta_avaliar();
   a := teste_fila('Tempo PMOX', 'T-Mix');
-  if a is null or a->>'tipo' <> 'alerta' or (a->>'media_seg')::numeric <> 200 or (a->>'pecas')::int <> 11 then
-    raise exception 'FALHOU: filtro de PMO no tempo %', a;
+  if a is not null then
+    raise exception 'FALHOU: filtro de PMO no tempo mediu de PMOX a PMOX (a PMOY do meio virou lentidão) %', a;
   end if;
   if teste_fila('Tempo todas as PMOs', 'T-Mix') is not null then
     raise exception 'FALHOU: sem filtro devia dar 100 s por peça (normal)';
+  end if;
+end $t$;
+reset role;
+
+-- T-Mix2: PMOY a cada 300 s e cada PMOX 30 s depois de uma PMOY. Intervalos que terminam na PMOX:
+-- 10 x 30 s (o primeiro começa numa PMOY e conta). Na PMOY: 9 x 270 s (a primeira não tem
+-- anterior). Sem filtro: os 19 intervalos, (300 + 2430) / 19 = 143,68 s — igual ao de antes.
+-- Numa transação só (mesmo now()): em comandos separados os 30 s viram 30,00x / 269,99x.
+do $t$ begin
+  perform public.teste_ritmo('T-Mix2', 'PMOY', '1', 10, 300, 3000);
+  perform public.teste_ritmo('T-Mix2', 'PMOX', '1', 10, 300, 2970);
+end $t$;
+set role authenticated;
+do $t$
+declare p record;
+begin
+  select * into p from alerta_previa('tempo', array['T-Mix2'], 'tempo', 60, 5, 30, null, array['PMOX']);
+  if not found or p.intervalos <> 10 or p.media_seg <> 30 or p.pecas <> 10 then
+    raise exception 'FALHOU: tempo da PMOX no posto misto %', p;
+  end if;
+  select * into p from alerta_previa('tempo', array['T-Mix2'], 'tempo', 60, 5, 30, null, array['PMOY']);
+  if not found or p.intervalos <> 9 or p.media_seg <> 270 or p.pecas <> 10 then
+    raise exception 'FALHOU: tempo da PMOY no posto misto %', p;
+  end if;
+  select * into p from alerta_previa('tempo', array['T-Mix2'], 'tempo', 60, 5, 30, null, '{}');
+  if not found or p.intervalos <> 19 or p.media_seg <> 143.68 or p.pecas <> 20 then
+    raise exception 'FALHOU: tempo sem filtro no posto misto %', p;
+  end if;
+  select * into p from alerta_previa('tempo', array['T-Mix'], 'tempo', 60, 5, 30, null, array['PMOX']);
+  if not found or p.intervalos <> 10 or p.media_seg <> 100 or p.pecas <> 11 then
+    raise exception 'FALHOU: prévia T-Mix PMOX %', p;
   end if;
 end $t$;
 reset role;
@@ -705,7 +744,7 @@ select public.teste_bipes('A-Trim', 'PMOU',   '1', 20, 0, 5);
 select public.teste_defeitos('D-Trim', 'PMOT ', '888 PONTE', 3, 'Reprovado', 5);
 select public.teste_defeitos('D-Trim', 'PMOU',  '888 PONTE', 3, 'Reprovado', 5);
 select public.teste_ritmo('T-Trim', ' PMOT', '1', 6, 60, 600);
-select public.teste_ritmo('T-Trim', 'PMOU',  '1', 6, 10, 590);
+select public.teste_ritmo('T-Trim', 'PMOU',  '1', 6, 10, 290);  -- depois da PMOT: nenhum intervalo termina na PMOT
 do $t$ begin
   perform teste_regra('Taxa PMOT', 'aprovacao', array['A-Trim'], 90, 'tempo', 60, 10, null, null, null, array['PMOT']);
 end $t$;
@@ -739,5 +778,168 @@ begin
   select string_agg(posto || ':' || coalesce(defeito, '-') || ':' || ocorrencias, ' | ') into v
     from alerta_previa('defeito', array['D-Trim'], 'tempo', 60, null, null, 3, array['PMOT']);
   if v is distinct from 'D-Trim:888 PONTE:3' then raise exception 'FALHOU: prévia defeito com trim %', v; end if;
+end $t$;
+reset role;
+
+-- Janela OP com PMO gravada com espaço: a comparação da OP é aparada dos DOIS lados e a ocorrência
+-- (e os dados da fila) guardam a PMO aparada.
+select public.teste_bipes('O-Trim', 'PMOW',   '9', 10, 0, 10);
+select public.teste_bipes('O-Trim', ' PMOW ', '9', 0, 10, 1);   -- o último bipe do posto tem espaço
+do $t$ begin
+  perform teste_regra('Taxa OP PMOW', 'aprovacao', array['O-Trim'], 90, 'op', null, 1, null, null, null, array['PMOW']);
+end $t$;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Taxa OP PMOW', 'O-Trim');
+  if a is null or a->>'tipo' <> 'alerta' or (a->>'aprovados')::int <> 10 or (a->>'reprovados')::int <> 10 then
+    raise exception 'FALHOU: janela OP não juntou PMOW e '' PMOW '' %', a;
+  end if;
+  if a->>'pmo' <> 'PMOW' or a->>'op' <> '9' then raise exception 'FALHOU: PMO sem trim nos dados %', a; end if;
+  if not exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+                  where rg.nome = 'Taxa OP PMOW' and oc.pmo = 'PMOW' and oc.op = '9' and oc.estado = 'aberta') then
+    raise exception 'FALHOU: ocorrência gravou a PMO sem trim';
+  end if;
+end $t$;
+reset role;
+
+-- Código de defeito com espaço nas pontas é o MESMO defeito ('2041 X' = '2041 X ' = ' 2041 X').
+select public.teste_defeitos('D-Trim2', 'PMOA', '2041 X',   2, 'Reprovado', 5);
+select public.teste_defeitos('D-Trim2', 'PMOA', '2041 X ',  2, 'Reprovado', 6);
+select public.teste_defeitos('D-Trim2', 'PMOA', ' 2041 X',  1, 'Reprovado', 7);
+do $t$ begin
+  perform teste_regra('Defeito trim', 'defeito', array['D-Trim2'], null, 'tempo', 60, null, null, 5, null);
+end $t$;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Defeito trim', 'D-Trim2', '2041 X');
+  if a is null or a->>'tipo' <> 'alerta' or (a->>'ocorrencias')::int <> 5 or a->>'defeito' <> '2041 X' then
+    raise exception 'FALHOU: código com espaço virou outro defeito %', a;
+  end if;
+  if (select count(*) from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+       where rg.nome = 'Defeito trim') <> 1 then
+    raise exception 'FALHOU: mais de uma ocorrência para o mesmo defeito com/sem espaço';
+  end if;
+end $t$;
+reset role;
+
+-- JIT desligado nas funções de cálculo (cron a cada 5 min: o JIT só somava tempo).
+do $t$
+declare v text;
+begin
+  select string_agg(p.proname, ', ' order by p.proname) into v
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace
+     and p.proname in ('alerta_taxas', 'alerta_tempos', 'alerta_defeitos', 'alerta_avaliar', 'alerta_previa')
+     and not ('jit=off' = any (coalesce(p.proconfig, '{}'::text[])));
+  if v is not null then raise exception 'FALHOU: funções sem jit=off: %', v; end if;
+end $t$;
+
+-- =====================================================================
+-- Destinatários: só quem administra o ShopFloor (0115 parte C)
+-- =====================================================================
+
+-- D1. A lista da tela: Carla (Operador) e os inativos (Zeca, Dora — mesmo com perfil Gestor) ficam fora.
+set role authenticated;
+do $t$
+declare v uuid[];
+begin
+  select array_agg(usuario_id order by usuario_id) into v from alerta_destinatarios();
+  if v is distinct from array['00000000-0000-0000-0000-000000000001',
+                              '00000000-0000-0000-0000-000000000002']::uuid[] then
+    raise exception 'FALHOU: destinatários disponíveis %', v;
+  end if;
+end $t$;
+reset role;
+
+-- D2. Fila: Carla está no array da regra e TEM Telegram, mas não administra — não entra.
+update public.alerta_envios set tentativas = 3 where not ok and tentativas < 3;
+select public.teste_bipes('P-Dest', 'PMOA', '1', 0, 20, 5);
+do $t$ begin
+  perform teste_regra('Destinos', 'aprovacao', array['P-Dest'], 90, 'tempo', 60, 10, null, null, null, '{}', null, true,
+                      array['00000000-0000-0000-0000-000000000001',
+                            '00000000-0000-0000-0000-000000000002',
+                            '00000000-0000-0000-0000-000000000003']::uuid[]);
+end $t$;
+set role service_role;
+do $t$
+declare v uuid[];
+begin
+  perform alerta_avaliar();
+  select array_agg(distinct e.usuario_id order by e.usuario_id) into v
+    from alerta_envios e
+    join alerta_ocorrencias oc on oc.id = e.ocorrencia_id
+    join alerta_regras rg on rg.id = oc.regra_id
+   where rg.nome = 'Destinos' and e.tipo = 'alerta';
+  if v is distinct from array['00000000-0000-0000-0000-000000000001',
+                              '00000000-0000-0000-0000-000000000002']::uuid[] then
+    raise exception 'FALHOU: fila com quem não administra o ShopFloor %', v;
+  end if;
+end $t$;
+reset role;
+
+-- D3. Perdeu a permissão DEPOIS de enfileirado e ANTES da entrega: a reserva não pega a linha dele.
+update public.usuarios set perfil_id = '00000000-0000-0000-0000-0000000000a2'
+ where id = '00000000-0000-0000-0000-000000000002';
+set role service_role;
+do $t$
+declare v uuid[];
+begin
+  select array_agg(distinct x.usuario_id order by x.usuario_id) into v
+    from alerta_reservar_envios(array['telegram', 'discord'], 100) x;
+  if v is distinct from array['00000000-0000-0000-0000-000000000001']::uuid[] then
+    raise exception 'FALHOU: reserva com quem perdeu a permissão %', v;
+  end if;
+  if exists (select 1 from alerta_envios e
+               join alerta_ocorrencias oc on oc.id = e.ocorrencia_id
+               join alerta_regras rg on rg.id = oc.regra_id
+              where rg.nome = 'Destinos' and e.usuario_id = '00000000-0000-0000-0000-000000000002'
+                and (e.tentativas <> 0 or e.reservado_em is not null)) then
+    raise exception 'FALHOU: a linha de quem perdeu a permissão foi mexida pela reserva';
+  end if;
+end $t$;
+reset role;
+-- Devolveu a permissão (ainda dentro das 24 h): a linha dele volta a ser entregável.
+update public.usuarios set perfil_id = '00000000-0000-0000-0000-0000000000a1'
+ where id = '00000000-0000-0000-0000-000000000002';
+set role service_role;
+do $t$
+declare v uuid[];
+begin
+  select array_agg(distinct x.usuario_id order by x.usuario_id) into v
+    from alerta_reservar_envios(array['telegram', 'discord'], 100) x;
+  if v is distinct from array['00000000-0000-0000-0000-000000000002']::uuid[] then
+    raise exception 'FALHOU: a linha do Bruno não voltou para a fila %', v;
+  end if;
+end $t$;
+
+-- D4. Botão Resolvido: quem não administra não resolve; o "resolvido por" só vai para quem administra.
+do $t$
+declare oc uuid; r jsonb;
+begin
+  select o.id into oc
+    from alerta_ocorrencias o join alerta_regras rg on rg.id = o.regra_id
+   where rg.nome = 'Destinos' and o.estado = 'aberta';
+  begin
+    perform alerta_resolver(oc, '00000000-0000-0000-0000-000000000003');
+    raise exception 'FALHOU: Carla (sem administrar) resolveu pelo botão';
+  exception when others then
+    if sqlerrm not like '%NAO_DESTINATARIO%' then raise; end if;
+  end;
+  r := alerta_resolver(oc, '00000000-0000-0000-0000-000000000001');
+  if (r->>'ja_resolvida')::boolean is not false then raise exception 'FALHOU: Ana não resolveu %', r; end if;
+  if exists (select 1 from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido'
+               and usuario_id <> '00000000-0000-0000-0000-000000000002') then
+    raise exception 'FALHOU: "resolvido" foi para quem não devia (Carla ou quem resolveu)';
+  end if;
+  if not exists (select 1 from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido'
+                   and usuario_id = '00000000-0000-0000-0000-000000000002') then
+    raise exception 'FALHOU: Bruno devia receber o "resolvido"';
+  end if;
 end $t$;
 reset role;

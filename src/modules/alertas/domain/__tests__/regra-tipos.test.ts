@@ -103,6 +103,28 @@ describe('validarRegra — tempo médio por peça', () => {
     const r = validarRegra({ ...TEMPO, pausaMaxMin: '240' })
     expect(r.ok && r.valor.pausaMaxMin).toBe(240)
   })
+  it('limite menor que a pausa ignorada (senão a regra nunca dispara)', () => {
+    const erro = {
+      ok: false,
+      erro: 'O limite de tempo precisa ser menor que a pausa ignorada (senão a regra nunca dispara).',
+    }
+    expect(validarRegra({ ...TEMPO, limiteTempo: '30:00', pausaMaxMin: '30' })).toEqual(erro)
+    expect(validarRegra({ ...TEMPO, limiteTempo: '45:00', pausaMaxMin: '30' })).toEqual(erro)
+    expect(validarRegra({ ...TEMPO, limiteTempo: '1:00', pausaMaxMin: '1' })).toEqual(erro)
+    const r = validarRegra({ ...TEMPO, limiteTempo: '29:59', pausaMaxMin: '30' })
+    expect(r.ok && r.valor.limiteTempoSeg).toBe(1799)
+  })
+  it('prévia do tempo aceita a menor pausa (1 minuto)', () => {
+    const r = validarPrevia({
+      tipo: 'tempo',
+      postos: ['Teste'],
+      janelaTipo: 'tempo',
+      janelaValor: '60',
+      minimoBipes: '10',
+      pausaMaxMin: '1',
+    })
+    expect(r.ok && r.valor.pausaMaxMin).toBe(1)
+  })
   it('mínimo de intervalos', () => {
     expect(validarRegra({ ...TEMPO, minimoBipes: '0' })).toEqual({
       ok: false,

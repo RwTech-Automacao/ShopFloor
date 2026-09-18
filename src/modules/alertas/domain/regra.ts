@@ -208,6 +208,10 @@ export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
       return erro('Ignorar pausas acima de: informe um número inteiro de 1 a 240 minutos.')
     }
     pausaMaxMin = p
+    // Intervalo maior que a pausa sai da média: com limite >= pausa, a média nunca passa do limite.
+    if (limiteTempoSeg >= pausaMaxMin * 60) {
+      return erro('O limite de tempo precisa ser menor que a pausa ignorada (senão a regra nunca dispara).')
+    }
   }
 
   let limiteOcorrencias: number | null = null
@@ -263,7 +267,9 @@ export function validarPrevia(e: EntradaPrevia): Resultado<PreviaValida> {
     janelaTipo: e.janelaTipo,
     janelaValor: e.janelaValor,
     minimoBipes: e.minimoBipes,
-    limiteTempo: '1:00',
+    // O menor limite possível: a prévia não tem limite, e com a menor pausa (1 min) o check
+    // "limite < pausa" continua passando.
+    limiteTempo: '0:01',
     pausaMaxMin: e.pausaMaxMin,
     limiteOcorrencias: e.limiteOcorrencias,
     lembreteMin: null,
