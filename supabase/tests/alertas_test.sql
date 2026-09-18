@@ -1316,4 +1316,88 @@ begin
 end $t$;
 reset role;
 
+-- 32. Usuário DESATIVADO continua no array `destinatarios` da regra, mas não recebe nada: nem
+--     pendente de alerta, nem aviso de "resolvido", nem reserva de linha enfileirada antes de ele
+--     ser desativado (essa fica pendente, sem tentativa, e vence em 24 h).
+insert into public.usuarios (id, nome, email) values
+  ('00000000-0000-0000-0000-000000000010', 'Dora Desligada', 'dora@enterplak.com.br');
+insert into public.alerta_contas (usuario_id, canal, externo_id) values
+  ('00000000-0000-0000-0000-000000000010', 'telegram', 'T10');
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  canais, destinatarios, criado_por)
+values ('Inativo', array['Posto32'], 90, 'tempo', 60, 5, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001',
+              '00000000-0000-0000-0000-000000000002',
+              '00000000-0000-0000-0000-000000000010']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+update public.usuarios set ativo = false where id = '00000000-0000-0000-0000-000000000010';
+select public.teste_bipes('Posto32', 'PMO32', '9032', 1, 9, 5);
+set role service_role;
+do $t$
+declare r jsonb; a jsonb; oc uuid;
+begin
+  a := teste_acao(alerta_avaliar(), 'Inativo', 'Posto32');
+  if a is null or a->>'tipo' <> 'alerta' then raise exception 'FALHOU: Posto32 não abriu %', a; end if;
+  oc := (a->>'ocorrencia_id')::uuid;
+  -- Ana e Bruno (ativos, com telegram) recebem; Dora (inativa, com telegram) não
+  if (a->>'n')::int <> 2 then raise exception 'FALHOU: pendentes com inativo na regra %', a; end if;
+  if exists (select 1 from alerta_envios
+              where ocorrencia_id = oc and usuario_id = '00000000-0000-0000-0000-000000000010') then
+    raise exception 'FALHOU: inativo recebeu pendente de alerta';
+  end if;
+
+  r := alerta_resolver(oc, '00000000-0000-0000-0000-000000000002');
+  if (r->>'ja_resolvida')::boolean is not false then raise exception 'FALHOU: resolver Posto32 %', r; end if;
+  if (select count(*) from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido'
+        and usuario_id = '00000000-0000-0000-0000-000000000001') <> 1 then
+    raise exception 'FALHOU: Ana devia receber o "resolvido" do Posto32';
+  end if;
+  if exists (select 1 from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido'
+               and usuario_id = '00000000-0000-0000-0000-000000000010') then
+    raise exception 'FALHOU: inativo recebeu "resolvido"';
+  end if;
+end $t$;
+reset role;
+
+-- reserva: tira da frente tudo o que está pendente e enfileira uma linha pra Dora ENQUANTO ativa
+-- e outra pra Ana; aí Dora é desativada. Só a da Ana é reservada; a da Dora fica intocada.
+update public.alerta_envios set tentativas = 3 where not ok;
+update public.usuarios set ativo = true where id = '00000000-0000-0000-0000-000000000010';
+insert into public.alerta_envios (usuario_id, canal, tipo, dados) values
+  ('00000000-0000-0000-0000-000000000010', 'telegram', 'resolvido', '{"posto": "Dora32"}'),
+  ('00000000-0000-0000-0000-000000000001', 'telegram', 'resolvido', '{"posto": "Ana32"}');
+update public.usuarios set ativo = false where id = '00000000-0000-0000-0000-000000000010';
+set role service_role;
+do $t$
+declare ids text[];
+begin
+  select array_agg(dados->>'posto') into ids
+    from alerta_reservar_envios(array['telegram', 'discord'], 100);
+  if ids is distinct from array['Ana32'] then raise exception 'FALHOU: reserva com inativo %', ids; end if;
+  if not exists (select 1 from alerta_envios where dados->>'posto' = 'Dora32'
+                   and tentativas = 0 and reservado_em is null and not ok) then
+    raise exception 'FALHOU: linha do inativo foi mexida pela reserva';
+  end if;
+end $t$;
+reset role;
+update public.alerta_regras set ativa = false where nome = 'Inativo';
+
+-- 33. Janela `tempo` tem teto de 7 dias (10080 min); a janela `bipes` não tem esse teto.
+do $t$
+begin
+  begin
+    insert into alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, canais, destinatarios)
+    values ('Longa', array['X'], 90, 'tempo', 10081, array['telegram'],
+            array['00000000-0000-0000-0000-000000000001']::uuid[]);
+    raise exception 'FALHOU: janela tempo de 10081 min aceita';
+  exception when check_violation then
+    null;
+  end;
+  insert into alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, canais, destinatarios, ativa)
+  values ('Sete dias', array['X'], 90, 'tempo', 10080, array['telegram'],
+          array['00000000-0000-0000-0000-000000000001']::uuid[], false),
+         ('Muitos bipes', array['X'], 90, 'bipes', 20000, array['telegram'],
+          array['00000000-0000-0000-0000-000000000001']::uuid[], false);
+end $t$;
+
 \echo 'ALERTAS: SQL OK'

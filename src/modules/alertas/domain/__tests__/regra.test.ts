@@ -101,6 +101,17 @@ describe('validarRegra', () => {
     })
   })
 
+  it('janela de tempo tem teto de 7 dias (10080 min); a de bipes não', () => {
+    expect(validarRegra({ ...BASE, janelaValor: '10081' })).toEqual({
+      ok: false,
+      erro: 'A janela de tempo pode ter no máximo 7 dias (10080 minutos).',
+    })
+    const r = validarRegra({ ...BASE, janelaValor: '10080' })
+    expect(r.ok && r.valor.janelaValor).toBe(10080)
+    const b = validarRegra({ ...BASE, janelaTipo: 'bipes', janelaValor: '20000' })
+    expect(b.ok && b.valor.janelaValor).toBe(20000)
+  })
+
   it('janela de bipes igual ao mínimo é aceita', () => {
     const r = validarRegra({ ...BASE, janelaTipo: 'bipes', janelaValor: '20', minimoBipes: '20' })
     expect(r.ok).toBe(true)

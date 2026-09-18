@@ -6,8 +6,15 @@ function mensagemDe(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-/** Tamanho do lote por rodada. A reserva no banco vale 15 min: 30 x até 20 s cabe com folga. */
+/** Tamanho de cada lote reservado. A reserva no banco vale 15 min: 30 x até 20 s cabe com folga. */
 export const LIMITE_LOTE = 30
+
+/**
+ * Orçamento de tempo de uma chamada de `entregarPendentes`: enquanto o lote vier cheio, reserva o
+ * próximo — mas só COMEÇA um lote novo se ainda não passou disso. O cron roda a cada 5 min; o que
+ * sobrar fica pendente para a próxima rodada.
+ */
+export const ORCAMENTO_ENTREGA_MS = 40_000
 
 export interface ResumoEnvio {
   enviados: number
@@ -24,6 +31,12 @@ export interface ResumoAvaliacao extends ResumoEnvio {
  * O ÚNICO caminho de entrega da fila: reserva um lote no banco (atômico — duas rodadas ao mesmo
  * tempo nunca pegam a mesma linha), monta o texto, envia e grava o resultado na própria linha.
  *
+ * Lotes: enquanto o lote vier CHEIO, reserva o próximo, até o orçamento de tempo
+ * (`ORCAMENTO_ENTREGA_MS`). Para antes se o lote trouxe algum REENVIO (tentativas > 1): o banco
+ * devolve as novas primeiro, então reenvio no lote quer dizer que as novas acabaram — continuar
+ * só gastaria as 3 tentativas de uma linha que acabou de falhar na mesma rodada. Para também se
+ * NADA do lote foi entregue (canal fora do ar): insistir agora só queimaria tentativas.
+ *
  * Um item que dá errado (texto que não monta, canal que lança, banco que não grava o resultado)
  * NÃO derruba a rodada: loga e segue. Se o erro foi antes/durante o envio, a linha é concluída
  * como falha e volta na próxima rodada (até 3 tentativas). Se foi só ao gravar o resultado, a
@@ -32,40 +45,54 @@ export interface ResumoAvaliacao extends ResumoEnvio {
 export async function entregarPendentes(
   portas: PortasCanais,
   repo: RepositorioEnvios,
-  opcoes: { ocorrenciaId?: string | null; limite?: number } = {},
+  opcoes: { ocorrenciaId?: string | null; limite?: number; orcamentoMs?: number; agora?: () => number } = {},
 ): Promise<ResumoEnvio> {
   const canais: Canal[] = CANAIS.filter((c) => portas[c])
   if (canais.length === 0) return { enviados: 0, falhas: 0 }
 
-  const lote = await repo.reservarPendentes({
-    canais,
-    limite: opcoes.limite ?? LIMITE_LOTE,
-    ocorrenciaId: opcoes.ocorrenciaId ?? null,
-  })
+  const limite = opcoes.limite ?? LIMITE_LOTE
+  const orcamento = opcoes.orcamentoMs ?? ORCAMENTO_ENTREGA_MS
+  const agora = opcoes.agora ?? Date.now
+  const inicio = agora()
 
   let enviados = 0
   let falhas = 0
-  for (const envio of lote) {
-    let texto = ''
-    let resultado: ResultadoEnvio
-    try {
-      const porta = portas[envio.canal]
-      if (!porta) throw new Error(`${NOME_CANAL[envio.canal]} não configurado`)
-      texto = textoDoEnvio(envio.tipo, envio.dados)
-      resultado = await porta.enviar(envio.externoId, texto, envio.comBotao ? envio.ocorrenciaId : null)
-    } catch (e) {
-      console.error(`[alertas] envio ${envio.id} falhou:`, mensagemDe(e))
-      resultado = { ok: false, erro: `Erro interno: ${mensagemDe(e)}` }
+  for (;;) {
+    let enviadosNoLote = 0
+    const lote = await repo.reservarPendentes({
+      canais,
+      limite,
+      ocorrenciaId: opcoes.ocorrenciaId ?? null,
+    })
+
+    for (const envio of lote) {
+      let texto = ''
+      let resultado: ResultadoEnvio
+      try {
+        const porta = portas[envio.canal]
+        if (!porta) throw new Error(`${NOME_CANAL[envio.canal]} não configurado`)
+        texto = textoDoEnvio(envio.tipo, envio.dados)
+        resultado = await porta.enviar(envio.externoId, texto, envio.comBotao ? envio.ocorrenciaId : null)
+      } catch (e) {
+        console.error(`[alertas] envio ${envio.id} falhou:`, mensagemDe(e))
+        resultado = { ok: false, erro: `Erro interno: ${mensagemDe(e)}` }
+      }
+
+      if (resultado.ok) {
+        enviados += 1
+        enviadosNoLote += 1
+      } else falhas += 1
+
+      try {
+        await repo.concluirEnvio(envio, texto, resultado)
+      } catch (e) {
+        console.error(`[alertas] gravar resultado do envio ${envio.id} falhou:`, mensagemDe(e))
+      }
     }
 
-    if (resultado.ok) enviados += 1
-    else falhas += 1
-
-    try {
-      await repo.concluirEnvio(envio, texto, resultado)
-    } catch (e) {
-      console.error(`[alertas] gravar resultado do envio ${envio.id} falhou:`, mensagemDe(e))
-    }
+    const cheio = lote.length >= limite
+    const soNovas = lote.every((e) => e.tentativas <= 1)
+    if (!cheio || !soNovas || enviadosNoLote === 0 || agora() - inicio >= orcamento) break
   }
   return { enviados, falhas }
 }

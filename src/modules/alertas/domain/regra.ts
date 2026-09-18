@@ -41,6 +41,9 @@ export interface DestinatarioDisponivel {
   discord: boolean
 }
 
+/** Teto da janela `tempo` (7 dias), igual ao check da 0113. */
+export const JANELA_TEMPO_MAX_MIN = 10080
+
 /** Padrões da spec (seção 2). */
 export const PADROES_REGRA = { taxaMinima: 90, janelaTempo: 60, janelaBipes: 50, minimoBipes: 20 }
 
@@ -91,6 +94,9 @@ export function validarRegra(e: EntradaRegra): { ok: true; valor: RegraValida } 
         ok: false,
         erro: janelaTipo === 'tempo' ? 'Informe quantos minutos a janela olha.' : 'Informe quantos bipes a janela olha.',
       }
+    }
+    if (janelaTipo === 'tempo' && v > JANELA_TEMPO_MAX_MIN) {
+      return { ok: false, erro: 'A janela de tempo pode ter no máximo 7 dias (10080 minutos).' }
     }
     janelaValor = v
   }

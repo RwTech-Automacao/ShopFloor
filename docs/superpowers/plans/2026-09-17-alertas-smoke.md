@@ -21,20 +21,32 @@ Siga `tools/alertas/README.md` do começo ao fim:
    `DISCORD_GUILD_ID`, `ALERTAS_CRON_SECRET`) no `.env.local` (pra testar local) ou nas
    Environment Variables do **Preview** da Vercel (pra testar num domínio público, que o Telegram e
    o Discord conseguem alcançar — local com `localhost` não funciona para os webhooks).
-4. Rode o script de configuração:
+4. Rode o script de configuração. Ele **não** carrega `.env` sozinho: passe o arquivo com
+   `--env-file` (Node ≥ 20.6):
    ```bash
-   node tools/alertas/configurar-bots.mjs
+   node --env-file=.env.local tools/alertas/configurar-bots.mjs
    ```
-   Num Preview, use `ALERTAS_BASE_URL=https://seu-preview.vercel.app node tools/alertas/configurar-bots.mjs`.
+   Num Preview, use `ALERTAS_BASE_URL=https://seu-preview.vercel.app node --env-file=.env.local tools/alertas/configurar-bots.mjs`.
+   **Antes**, desligue a **Deployment Protection** do preview na Vercel (ou use o bypass token —
+   ver README §4): com ela ligada, os webhooks do Telegram e do Discord batem na tela de login da
+   Vercel e nunca chegam no app.
    Confira que a saída diz "webhook apontado para ..." e "comando /vincular registrado" — sem
    nenhum token na tela.
 5. No Discord Developer Portal, em *General Information → Interactions Endpoint URL*, cole a URL
    do ambiente testado + `/api/alertas/discord` (ex.: `https://seu-preview.vercel.app/api/alertas/discord`)
    e salve — o Discord manda um PING assinado na hora; se aceitar, o campo fica salvo sem erro.
+6. **Depois do smoke no preview:** aponte os webhooks pro domínio de produção (rode o script sem
+   `ALERTAS_BASE_URL` e troque a *Interactions Endpoint URL* do Discord para
+   `https://shopfloor.enterplak.com.br/api/alertas/discord`) e religue a proteção do preview.
 
 ## 1. Aplicar as migrações no banco do ambiente testado
 
 - **Dev (SQL Editor do Supabase):**
+  - se o Dev já tem uma **0113 antiga** (anterior à fila de envio: `alerta_envios` sem a coluna
+    `reservado_em`), rode antes o SQL de drop do README §6 (funções `alerta_*` e depois as tabelas
+    `alerta_envios` → `alerta_ocorrencias` → `alerta_regras` → `alerta_codigos` →
+    `alerta_tentativas` → `alerta_contas`) — senão o `create table if not exists` mantém as
+    tabelas velhas;
   - cole e rode `supabase/migrations/0113_alertas.sql` inteiro;
   - abra `supabase/migrations/0114_sf_registros_posto_data_idx.sql`, **remova a palavra
     `concurrently`** da linha do `create index` e rode.
@@ -48,6 +60,8 @@ Siga `tools/alertas/README.md` do começo ao fim:
   ```
   (`PGPASSFILE=/dev/null` porque o `.pgpass` da Lightsail está com a senha antiga; `-W` força pedir
   a senha certa na hora.)
+- [ ] Depois da 0114, confira que o índice ficou válido (tem que dar `true`):
+  `select indisvalid from pg_index where indexrelid = 'sf_registros_posto_data_hora'::regclass;`
 - Depois de qualquer uma: `cd ~/supabase/docker && docker compose restart rest` (a 0113 já roda
   `notify pgrst, 'reload schema';` na última linha, mas o restart garante).
 - Reinicie o app com as variáveis novas: `pm2 restart shopfloor --update-env` (Prod) ou reinicie o
@@ -99,16 +113,17 @@ Siga `tools/alertas/README.md` do começo ao fim:
 
 ## 5. Resolvido
 
-- [ ] Apertar **✅ Resolvido** no Telegram → o botão sai da mensagem, ela ganha a linha
-      "✅ posto: resolvido por Nome às HH:MM", e o **Discord** recebe a mesma linha (mensagem sem
-      botão, enfileirada pra quem também é destinatário).
+- [ ] Apertar **✅ Resolvido** no Telegram → o botão sai da mensagem (ela ganha a linha
+      "✅ posto: resolvido por Nome às HH:MM"), e a mensagem do **Discord** perde o botão; o aviso
+      "resolvido por" só chega aos **outros** destinatários (quem apertou não recebe aviso de si
+      mesmo — pra ver o aviso, tenha um segundo destinatário vinculado).
 - [ ] A ocorrência fica **Resolvida** na tela; **Avaliar agora** não manda mais lembrete pra ela.
 - [ ] Apertar o botão de uma ocorrência já resolvida (se ainda estiver visível) → responde
       **"Já resolvido por Nome."**
 - [ ] Repetir pelo **Discord** (botão da DM) numa nova ocorrência: a mensagem é atualizada sem
       botão, mesmo texto.
-- [ ] **Marcar resolvida** pela tela numa ocorrência aberta → os destinatários recebem o aviso e os
-      botões saem das mensagens deles também.
+- [ ] **Marcar resolvida** pela tela numa ocorrência aberta → os outros destinatários (menos quem
+      marcou) recebem o aviso e os botões saem das mensagens de todos.
 
 ## 6. Normalizou
 
@@ -131,9 +146,14 @@ Siga `tools/alertas/README.md` do começo ao fim:
 
 ## 8. Fila de envio (o alerta nunca se perde)
 
-- [ ] Com o **Discord sem token** nesse ambiente (ou com um destinatário que bloqueou DM),
-      **Avaliar agora** → a aba Ocorrências mostra a falha (contador "N falha"); nas rodadas
-      seguintes a linha é tentada de novo, até **3 tentativas**.
+- [ ] Com um destinatário que **bloqueou DM** do bot (Discord: desligar "Permitir mensagens
+      diretas de membros do servidor"), **Avaliar agora** → a aba Ocorrências mostra a falha
+      (contador "N falha"); nas rodadas seguintes a linha é tentada de novo, até **3 tentativas**.
+      (Canal **sem token** no ambiente NÃO serve pra este teste: a linha daquele canal nem é
+      reservada — fica pendente e vence em 24 h sem contar como falha.)
+- [ ] **Usuário desativado:** desative um destinatário vinculado (Usuários) → **Avaliar agora**
+      numa ocorrência nova → ele não recebe nada; ao abrir a regra, aparece
+      "1 destinatário(s) inativo(s) removido(s) da regra — salve para confirmar".
 - [ ] Clicar **Avaliar agora** duas vezes seguidas (ou junto com o crontab, se já estiver rodando)
       → cada destinatário recebe a mensagem **uma vez só** (a reserva da fila é atômica — duas
       chamadas não pegam a mesma linha pendente).
@@ -150,18 +170,20 @@ Siga `tools/alertas/README.md` do começo ao fim:
       `{"avaliadas":N,"enfileirados":N,"enviados":N,"falhas":N,"ocupado":false}`.
 - [ ] `curl -i -X POST .../api/alertas/telegram` (sem o cabeçalho do Telegram) → **401**.
 - [ ] `curl -i -X POST .../api/alertas/discord -d '{}'` (sem assinatura Ed25519) → **401**.
-- [ ] Configurar o crontab (só em Prod, na Lightsail) exatamente como o README manda — **o
-      segredo nunca vai na linha do `crontab -e`**, só num arquivo com permissão 600:
+- [ ] Configurar o crontab (só em Prod, na Lightsail) exatamente como o README §5 manda — **o
+      segredo nunca vai na linha do `crontab -e` nem no argv do `curl`**, só num arquivo de
+      cabeçalho com permissão 600:
       ```bash
       umask 077
-      printf '%s\n' "$ALERTAS_CRON_SECRET" > ~/.alertas-cron-secret
-      chmod 600 ~/.alertas-cron-secret
+      printf 'Authorization: Bearer %s\n' "$ALERTAS_CRON_SECRET" > ~/.alertas-cron-header
+      chmod 600 ~/.alertas-cron-header
       crontab -e
       ```
-      Linha: `*/5 * * * * curl -fsS -m 60 -X POST -H "Authorization: Bearer $(cat ~/.alertas-cron-secret)" https://shopfloor.enterplak.com.br/api/alertas/avaliar >> ~/alertas.log 2>&1`
+      Linha (cron da Lightsail em UTC: 9-21 UTC = 06:00–18:55 BRT, seg–sáb, só com o RDS ligado):
+      `*/5 9-21 * * 1-6 curl -fsS -m 60 -X POST -H @$HOME/.alertas-cron-header http://127.0.0.1:3000/api/alertas/avaliar >> $HOME/alertas.log 2>&1`
 - [ ] Esperar o crontab rodar (até 5 min) e conferir `~/alertas.log` — deve ter uma linha JSON por
       execução.
-- [ ] **Com o RDS desligado** (19h–6h do plano de economia), a rota responde **503** e o log
+- [ ] **Com o RDS desligado** (fora do horário do cron, ou desligado por outro motivo), a rota responde **503** e o log
       registra isso; nada mais acontece. Isso é esperado, não precisa virar chamado.
 - [ ] **Permissão:** logar com um usuário **sem** `shopfloor.administrar` → não vê o item
       **Alertas** no menu de Configurações, e abrir `/configuracoes/sf-alertas` direto pela URL

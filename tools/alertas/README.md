@@ -50,36 +50,65 @@ Depois de mudar variáveis: `pm2 restart shopfloor --update-env`.
 
 ## 4. Registrar webhook e comando
 
+O script lê as variáveis de `process.env` e **não carrega `.env` sozinho**: passe o arquivo com
+`--env-file` (precisa de **Node ≥ 20.6**; confira com `node -v`).
+
 ```bash
 cd ~/ShopFloor
-node tools/alertas/configurar-bots.mjs            # Telegram + Discord
-node tools/alertas/configurar-bots.mjs --so-telegram
-node tools/alertas/configurar-bots.mjs --so-discord
+node --env-file=.env.production tools/alertas/configurar-bots.mjs                # Telegram + Discord
+node --env-file=.env.production tools/alertas/configurar-bots.mjs --so-telegram
+node --env-file=.env.production tools/alertas/configurar-bots.mjs --so-discord
 ```
 
-O script lê as variáveis do ambiente e **nunca imprime token**. Em outro domínio (preview), use
-`ALERTAS_BASE_URL=https://meu-preview.vercel.app node tools/alertas/configurar-bots.mjs`.
+O script **nunca imprime token**. Em outro domínio (preview), use
+`ALERTAS_BASE_URL=https://meu-preview.vercel.app node --env-file=.env.local tools/alertas/configurar-bots.mjs`.
+
+### Preview da Vercel: Deployment Protection
+
+O preview da Vercel vem com **Deployment Protection** ligada: toda requisição sem login da Vercel
+recebe a tela de autenticação — inclusive os webhooks do Telegram e do Discord, que então nunca
+chegam no app (e o Discord recusa salvar a *Interactions Endpoint URL*). Para o smoke:
+
+- **Desligue** a proteção só para o preview (*Project → Settings → Deployment Protection*), **ou**
+- use o **Protection Bypass for Automation**: gere o segredo e acrescente
+  `?x-vercel-protection-bypass=<segredo>` às URLs dos webhooks. O script não monta isso (ele usa
+  `ALERTAS_BASE_URL` + caminho), então nesse caso registre o `setWebhook` do Telegram e a URL do
+  Discord à mão.
+
+**Depois do smoke**, aponte os webhooks de volta pro domínio de produção: rode o script **sem**
+`ALERTAS_BASE_URL` (padrão `https://shopfloor.enterplak.com.br`) e troque a *Interactions Endpoint
+URL* do Discord para `https://shopfloor.enterplak.com.br/api/alertas/discord`. Religue a proteção
+do preview, se tiver desligado.
 
 ## 5. Crontab (avaliação a cada 5 minutos)
 
-O segredo **não** vai escrito na linha do crontab: fica num arquivo só do dono, com permissão
-**600** (nunca cole `ALERTAS_CRON_SECRET` direto no `crontab -e`).
+O segredo **não** vai na linha do crontab **nem no argv do `curl`** (`-H "Authorization: Bearer
+$(cat ...)"` expande o segredo na linha de comando, e qualquer usuário da máquina vê com `ps`).
+Ele fica num **arquivo de cabeçalho** só do dono, com permissão **600**, que o `curl` lê com
+`-H @arquivo`:
 
 ```bash
 umask 077
-printf '%s\n' "$ALERTAS_CRON_SECRET" > ~/.alertas-cron-secret
-chmod 600 ~/.alertas-cron-secret
+printf 'Authorization: Bearer %s\n' "$ALERTAS_CRON_SECRET" > ~/.alertas-cron-header
+chmod 600 ~/.alertas-cron-header
 crontab -e
 ```
 
-Linha a acrescentar:
+Linha a acrescentar (pronta):
 
 ```
-*/5 * * * * curl -fsS -m 60 -X POST -H "Authorization: Bearer $(cat ~/.alertas-cron-secret)" https://shopfloor.enterplak.com.br/api/alertas/avaliar >> ~/alertas.log 2>&1
+# Alertas do ShopFloor. O cron da Lightsail roda em UTC: 9-21 UTC = 06:00–18:55 BRT, seg–sáb —
+# só no período em que o RDS fica ligado (plano de economia). Chama o app direto na própria
+# máquina (127.0.0.1:3000), sem passar por DNS/nginx/TLS.
+*/5 9-21 * * 1-6 curl -fsS -m 60 -X POST -H @$HOME/.alertas-cron-header http://127.0.0.1:3000/api/alertas/avaliar >> $HOME/alertas.log 2>&1
 ```
 
-Com o **RDS desligado** (19:00–06:00 do plano de economia) a rota responde **503** e o log registra
-— nada mais acontece. Isso é esperado, não é um alarme.
+Confira o fuso antes (`date` e `timedatectl | grep 'Time zone'`): se a máquina **não** estiver em
+UTC, ajuste as horas. Fora desse horário (ou se o RDS estiver desligado por outro motivo) a rota
+responde **503** e o log registra — nada mais acontece. Isso é esperado, não é um alarme.
+
+Se já existia um `~/.alertas-cron-secret` de uma versão anterior deste guia, apague-o
+(`shred -u ~/.alertas-cron-secret`) depois de criar o arquivo de cabeçalho.
 
 ## 6. Migrações
 
@@ -88,7 +117,46 @@ janelas de avaliação. São aplicadas separadamente, com métodos diferentes po
 
 ### Dev (Supabase cloud)
 
-Ambas pelo **SQL Editor** do Supabase, colando o conteúdo do arquivo:
+**Se o Dev já tem uma 0113 antiga** (anterior à fila de envio — `alerta_envios` sem a coluna
+`reservado_em`), derrube tudo dos alertas antes de reaplicar: a 0113 usa `create table if not
+exists` e manteria as tabelas velhas. Confira:
+
+```sql
+select exists (select 1 from information_schema.tables
+                where table_schema = 'public' and table_name = 'alerta_envios')      as tem_0113,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'alerta_envios'
+                  and column_name = 'reservado_em')                                  as tem_fila;
+```
+
+`tem_0113 = true` e `tem_fila = false` → rode (só no **Dev**: apaga regras, ocorrências, envios e
+vínculos dos alertas):
+
+```sql
+-- 1) funções alerta_* (qualquer assinatura, inclusive as de versões antigas)
+do $func$
+declare f record;
+begin
+  for f in
+    select p.oid::regprocedure as assinatura
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname like 'alerta\_%'
+  loop
+    execute 'drop function ' || f.assinatura;
+  end loop;
+end
+$func$;
+
+-- 2) tabelas, das que dependem para as de que se depende
+drop table if exists public.alerta_envios;
+drop table if exists public.alerta_ocorrencias;
+drop table if exists public.alerta_regras;
+drop table if exists public.alerta_codigos;
+drop table if exists public.alerta_tentativas;
+drop table if exists public.alerta_contas;
+```
+
+Depois, as duas migrações pelo **SQL Editor** do Supabase, colando o conteúdo do arquivo:
 
 - `supabase/migrations/0113_alertas.sql` — cola e roda direto.
 - `supabase/migrations/0114_sf_registros_posto_data_idx.sql` — **remova a palavra `concurrently`**
@@ -118,10 +186,30 @@ cd ~/supabase/docker && docker compose restart rest   # recarrega o schema do Po
 Depois de qualquer uma das duas: `docker compose restart rest` (ou `notify pgrst, 'reload
 schema';`, que a própria 0113 já executa na última linha).
 
+### Depois da 0114 (Dev e Prod): o índice ficou válido?
+
+Um `create index concurrently` que falha no meio deixa o índice criado mas **inválido** (o
+planejador ignora). Confira:
+
+```sql
+select indisvalid from pg_index where indexrelid = 'sf_registros_posto_data_hora'::regclass;
+```
+
+Tem que dar `true`. Se der `false`: `drop index concurrently sf_registros_posto_data_hora;` e rode
+a 0114 de novo.
+
+### Depois de pôr as variáveis
+
+`pm2 restart shopfloor --update-env` (sem o `--update-env` o processo continua com o ambiente
+antigo e os canais aparecem como "não configurado").
+
 ## 7. Conferir
 
 - `curl -i -X POST https://shopfloor.enterplak.com.br/api/alertas/avaliar` → **401** (sem segredo).
-- Com o segredo → `{"avaliadas":N,"enviados":0,"falhas":0,"ocupado":false}`.
+- Com o segredo → `{"avaliadas":N,"enfileirados":N,"enviados":N,"falhas":N,"ocupado":false}`
+  (`enfileirados` = mensagens que esta avaliação pôs na fila; `enviados`/`falhas` = o que a
+  entrega desta rodada conseguiu). Na própria Lightsail:
+  `curl -fsS -X POST -H @$HOME/.alertas-cron-header http://127.0.0.1:3000/api/alertas/avaliar`.
 - `https://api.telegram.org/bot<token>/getWebhookInfo` → a URL e `has_custom_certificate:false`
   (rode no seu terminal, não em log compartilhado).
 - Tela **Meu perfil** → Vincular → o bot responde.

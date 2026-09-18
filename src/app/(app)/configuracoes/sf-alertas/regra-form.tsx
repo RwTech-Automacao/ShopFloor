@@ -22,6 +22,21 @@ const TOAST = { position: 'bottom-center' } as const
 /** Mensagem do repositório quando a regra já foi excluída (exclusão lógica) por outro gestor. */
 export const ERRO_REGRA_EXCLUIDA = 'Essa regra foi excluída.'
 
+/**
+ * Destinatários salvos que não estão mais entre os disponíveis (usuário desativado ou removido —
+ * `alerta_destinatarios` só devolve ativos). Saem da seleção ao abrir o formulário; o aviso pede
+ * para salvar e confirmar. Lista de disponíveis vazia = nada carregou: não descarta ninguém.
+ */
+export function separarDestinatarios(
+  salvos: string[],
+  disponiveis: DestinatarioDisponivel[],
+): { validos: string[]; descartados: number } {
+  if (disponiveis.length === 0) return { validos: salvos, descartados: 0 }
+  const ids = new Set(disponiveis.map((d) => d.usuarioId))
+  const validos = salvos.filter((id) => ids.has(id))
+  return { validos, descartados: salvos.length - validos.length }
+}
+
 function alterna<T>(lista: T[], item: T): T[] {
   return lista.includes(item) ? lista.filter((x) => x !== item) : [...lista, item]
 }
@@ -61,7 +76,8 @@ export function RegraForm({
   const [minimo, setMinimo] = useState(String(regra?.minimoBipes ?? PADROES_REGRA.minimoBipes))
   const [lembrete, setLembrete] = useState(regra?.lembreteMin === null || regra === null ? '' : String(regra.lembreteMin))
   const [canaisSel, setCanaisSel] = useState<Canal[]>(regra?.canais ?? [])
-  const [destSel, setDestSel] = useState<string[]>(regra?.destinatarios ?? [])
+  const [inicioDest] = useState(() => separarDestinatarios(regra?.destinatarios ?? [], destinatarios))
+  const [destSel, setDestSel] = useState<string[]>(inicioDest.validos)
   const [previa, setPrevia] = useState<PreviaPosto[] | null>(null)
   const [pendente, startTransition] = useTransition()
 
@@ -255,6 +271,11 @@ export function RegraForm({
             </label>
           ))}
         </div>
+        {inicioDest.descartados > 0 && (
+          <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
+            {inicioDest.descartados} destinatário(s) inativo(s) removido(s) da regra — salve para confirmar.
+          </p>
+        )}
         {avisos.length > 0 && (
           <ul className="flex flex-col gap-0.5 text-xs text-amber-700 dark:text-amber-400">
             {avisos.map((a) => (

@@ -130,6 +130,61 @@ function repoFalso(dados: {
 }
 
 describe('entregarPendentes', () => {
+  describe('lotes', () => {
+    const novas = (n: number) =>
+      Array.from({ length: n }, (_, i) => linha({ id: `e${i}`, externoId: `X${i}` }))
+
+    it('repete enquanto o lote vier cheio (30) e para no lote que não encheu', async () => {
+      const tg = portaFalsa()
+      const { repo, reservas, fila } = repoFalso({ fila: novas(65) })
+      const r = await entregarPendentes({ telegram: tg.porta }, repo)
+      expect(r).toEqual({ enviados: 65, falhas: 0 })
+      expect(reservas).toHaveLength(3) // 30 + 30 + 5
+      expect(fila.every((e) => e.ok)).toBe(true)
+    })
+
+    it('lote exatamente cheio faz mais uma reserva, que volta vazia', async () => {
+      const tg = portaFalsa()
+      const { repo, reservas } = repoFalso({ fila: novas(30) })
+      expect(await entregarPendentes({ telegram: tg.porta }, repo)).toEqual({ enviados: 30, falhas: 0 })
+      expect(reservas).toHaveLength(2)
+    })
+
+    it('não começa outro lote depois do orçamento de tempo', async () => {
+      const tg = portaFalsa()
+      const { repo, reservas } = repoFalso({ fila: novas(100) })
+      let t = 0
+      // cada leitura do relógio avança 25 s: início 0, fim do 1º lote 25 s (< 40), fim do 2º 50 s
+      const r = await entregarPendentes({ telegram: tg.porta }, repo, {
+        agora: () => {
+          const v = t
+          t += 25_000
+          return v
+        },
+      })
+      expect(reservas).toHaveLength(2)
+      expect(r.enviados).toBe(60)
+    })
+
+    it('para quando o lote traz reenvio (as novas acabaram): não queima tentativas na mesma rodada', async () => {
+      const bloqueados = Array.from({ length: 30 }, (_, i) => `X${i}`)
+      const tg = portaFalsa({ falharPara: bloqueados })
+      const fila = [...novas(29), linha({ id: 'reenvio', externoId: 'R', tentativas: 2 })]
+      const { repo, reservas } = repoFalso({ fila })
+      const r = await entregarPendentes({ telegram: tg.porta }, repo)
+      expect(reservas).toHaveLength(1)
+      expect(r).toEqual({ enviados: 1, falhas: 29 })
+    })
+
+    it('lote cheio em que NADA foi entregue (canal fora do ar) encerra a rodada', async () => {
+      const tg = portaFalsa({ falharPara: Array.from({ length: 60 }, (_, i) => `X${i}`) })
+      const { repo, reservas, fila } = repoFalso({ fila: novas(60) })
+      expect(await entregarPendentes({ telegram: tg.porta }, repo)).toEqual({ enviados: 0, falhas: 30 })
+      expect(reservas).toHaveLength(1)
+      expect(Math.max(...fila.map((e) => e.tentativas))).toBe(1)
+    })
+  })
+
   it('entrega só o que a reserva devolveu e atualiza a PRÓPRIA linha', async () => {
     const tg = portaFalsa()
     const { repo, concluidos } = repoFalso({ fila: [linha({ id: 'e1' }), linha({ id: 'e2', externoId: '222', usuarioId: 'u2' })] })

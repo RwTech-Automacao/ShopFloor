@@ -13,7 +13,7 @@ O gestor recebe no **Telegram** e/ou no **Discord** um aviso quando a taxa de ap
 |---|---|
 | 1 | Canais: **Telegram e Discord**, os dois bots criados do zero pela empresa. Envio **direto** (mensagem privada do bot), sem n8n. |
 | 2 | O gestor cria **várias regras**. Cada regra: nome, postos, taxa mínima (%), janela, mínimo de bipes, lembrete, canais, destinatários, ativa. |
-| 3 | **Janela configurável por regra:** `tempo` (últimos X minutos, padrão 60) · `bipes` (últimos N bipes do posto, padrão 50) · `op` (acumulado da OP em andamento no posto). |
+| 3 | **Janela configurável por regra:** `tempo` (últimos X minutos, padrão 60, no máximo 7 dias = 10080 min) · `bipes` (últimos N bipes do posto, olhando no máximo 30 dias, padrão 50) · `op` (acumulado da OP em andamento no posto). |
 | 4 | **Mínimo de bipes** na janela antes de avaliar (padrão 20). Abaixo disso a regra não decide nada. |
 | 5 | **Destinatários escolhidos na regra**, entre usuários com Telegram/Discord vinculado. |
 | 6 | **Vínculo por código:** a pessoa gera `ALERTA-XXXX` em "Meu perfil" e envia ao bot (Telegram: mensagem; Discord: `/vincular`). Vale 15 min, uso único. |
@@ -29,8 +29,8 @@ O gestor recebe no **Telegram** e/ou no **Discord** um aviso quando a taxa de ap
 
 - Conta **bipes** (registros de `sf_registros`) do posto dentro da janela.
 - `taxa = aprovados ÷ (aprovados + reprovados) × 100`, com `lower(status) = 'aprovado'` / `'reprovado'` (mesma régua de status do Dashboard, 0101). Bipes sem esses status (ex.: "Registrado") ficam fora da conta e do mínimo de bipes.
-- **Janela `tempo`:** bipes do posto com `data_hora >= now() - X min`, de todas as OPs.
-- **Janela `bipes`:** os últimos N bipes com status aprovado/reprovado do posto, de todas as OPs, sem limite de tempo.
+- **Janela `tempo`:** bipes do posto com `data_hora >= now() - X min`, de todas as OPs. Teto de **7 dias** (10080 min), no `validarRegra` e num check da 0113.
+- **Janela `bipes`:** últimos N bipes, olhando no máximo 30 dias — os N bipes mais recentes com status aprovado/reprovado do posto, de todas as OPs, dentro dos últimos 30 dias.
 - **Janela `op`:** OP do último bipe do posto; se esse bipe tem mais de 2 horas, o posto não é avaliado. Taxa = todos os bipes daquele posto nessa OP. A ocorrência continua sendo por regra × posto e guarda a PMO/OP em que abriu; se a OP em andamento mudar, a avaliação segue pela OP nova (normaliza quando a OP nova estiver dentro da meta).
 - Comparação: **abaixo** = `taxa < taxa_minima`. **Normalizou** = `taxa >= taxa_minima` com o mínimo de bipes.
 
@@ -84,7 +84,7 @@ Regra excluída (`excluida_em` preenchido) não é avaliada: não abre, não lem
 ## 6. Envio
 
 - **Fila (outbox):** o banco cria as linhas pendentes (seção 4); o app tem **um único caminho de entrega**: `alerta_reservar_envios` → monta o texto a partir de `dados` (formatação só no TS: fuso de São Paulo, taxa truncada) → envia → atualiza **a própria linha** (`ok`, `erro`, `mensagem_externa_id`, `texto`, `enviado_em`; solta a reserva). Um erro num item (inclusive montar o texto) não derruba a rodada: a linha é concluída como falha e volta na próxima. Lote de 30 por rodada.
-- Um envio por destinatário × canal da regra que tenha conta vinculada **no momento da avaliação**; na entrega usa o `externo_id` da conta de agora (quem desvinculou não recebe). Destinatário sem vínculo no canal: pulado (a tela já avisa).
+- Um envio por destinatário × canal da regra que tenha conta vinculada **no momento da avaliação**; na entrega usa o `externo_id` da conta de agora (quem desvinculou não recebe). Destinatário sem vínculo no canal: pulado (a tela já avisa). **Usuário desativado** não recebe nada (nem alerta/lembrete/normalizou, nem "resolvido"), mesmo que continue no array `destinatarios`; se ele for desativado depois de a linha ser enfileirada, a reserva não a pega — ela fica pendente e vence em 24 h sem contar como falha. No diálogo da regra, destinatário salvo que ficou inativo (ou foi removido) sai da seleção ao abrir, com o aviso "N destinatário(s) inativo(s) removido(s) da regra — salve para confirmar".
 - **"Enviar teste"** (Meu perfil) **não passa pela fila**: entrega na hora (a pessoa precisa do resultado) e grava a linha já final (`tentativas = 1`); teste que falhou não é reenviado.
 - **"Resolvido por"**: enfileirado pelo `alerta_resolver`; o webhook (ou a ação da tela) adianta a entrega só daquela ocorrência. Se falhar, o cron entrega.
 - **Telegram:** `sendMessage` com `inline_keyboard` [✅ Resolvido] (`callback_data = r:<ocorrencia_id>`), em alerta e lembrete.

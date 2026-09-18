@@ -78,11 +78,12 @@ create table if not exists public.alerta_regras (
   postos        text[] not null check (cardinality(postos) > 0),
   taxa_minima   numeric(5,2) not null check (taxa_minima >= 0 and taxa_minima <= 100),
   janela_tipo   text not null check (janela_tipo in ('tempo', 'bipes', 'op')),
-  -- minutos (tempo) ou quantidade de bipes (bipes); no tipo 'op' não existe valor
+  -- minutos (tempo) ou quantidade de bipes (bipes); no tipo 'op' não existe valor.
+  -- Janela 'tempo' tem teto de 7 dias (10080 min): mais que isso varre histórico demais a cada 5 min.
   janela_valor  int check (
                   (janela_tipo = 'op' and janela_valor is null)
                   or (janela_tipo <> 'op' and janela_valor > 0)
-                ),
+                ) check (janela_tipo <> 'tempo' or janela_valor <= 10080),
   minimo_bipes  int not null default 20 check (minimo_bipes > 0),
   lembrete_min  int check (lembrete_min is null or lembrete_min > 0),
   canais        text[] not null check (cardinality(canais) > 0 and canais <@ array['telegram', 'discord']),
@@ -503,7 +504,9 @@ begin
 
     if v_tipo is not null then
       -- FILA: uma linha pendente por destinatário x canal da regra QUE TENHA vínculo AGORA (sem
-      -- vínculo, é pulado aqui). Mesma transação da decisão: ou as duas coisas ficam, ou nenhuma.
+      -- vínculo, é pulado aqui) e que esteja ATIVO (usuário desativado continua no array
+      -- `destinatarios` da regra, mas não recebe). Mesma transação da decisão: ou as duas coisas
+      -- ficam, ou nenhuma.
       -- `dados` = o que o app precisa para montar o texto (ver domain/envio.ts).
       insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados, com_botao)
       select o.id, c.usuario_id, c.canal, v_tipo,
@@ -523,6 +526,7 @@ begin
              ),
              v_tipo in ('alerta', 'lembrete')
         from public.alerta_contas c
+        join public.usuarios u on u.id = c.usuario_id and u.ativo
        where c.usuario_id = any (t.destinatarios) and c.canal = any (t.canais)
        order by c.usuario_id, c.canal;
       get diagnostics v_n = row_count;
@@ -548,7 +552,9 @@ grant execute on function public.alerta_avaliar() to service_role;
 -- Entram no lote:
 --   - pendentes (ok = false e tentativas < 3) criadas nas últimas 24 h, só dos canais que o app
 --     tem configurados (p_canais) e só de quem AINDA tem conta vinculada no canal (externo_id vem
---     da conta de agora — quem desvinculou não recebe);
+--     da conta de agora — quem desvinculou não recebe) e só de usuário ATIVO. Quem foi desativado
+--     DEPOIS de a linha ser enfileirada não recebe: a linha fica pendente, nunca é reservada (não
+--     conta tentativa nem falha) e sai da fila sozinha quando passa das 24 h;
 --   - nunca 'teste' (entrega direta, sem reenvio);
 --   - alerta/lembrete só enquanto a ocorrência estiver 'aberta' (resolvida/normalizada = notícia
 --     velha); resolvido/normalizou sempre;
@@ -573,6 +579,7 @@ begin
       select e.id, c.externo_id
         from public.alerta_envios e
         join public.alerta_contas c on c.usuario_id = e.usuario_id and c.canal = e.canal
+        join public.usuarios u on u.id = e.usuario_id and u.ativo
         left join public.alerta_ocorrencias oc on oc.id = e.ocorrencia_id
        where e.ok = false
          and e.tentativas < 3
@@ -683,8 +690,8 @@ begin
 
   select coalesce(nullif(btrim(nome), ''), email) into v_nome from usuarios where id = o.resolvida_por;
 
-  -- FILA: "✅ resolvido por X" para os OUTROS destinatários (quem resolveu já sabe), na mesma
-  -- transação da resolução. Só na primeira resolução — apertar o botão de novo não avisa de novo.
+  -- FILA: "✅ resolvido por X" para os OUTROS destinatários ATIVOS (quem resolveu já sabe), na
+  -- mesma transação da resolução. Só na primeira resolução — apertar o botão de novo não avisa.
   if not v_ja then
     insert into alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados, com_botao)
     select o.id, c.usuario_id, c.canal, 'resolvido',
@@ -692,6 +699,7 @@ begin
                               'resolvida_em', o.resolvida_em),
            false
       from alerta_contas c
+      join usuarios u on u.id = c.usuario_id and u.ativo
      where c.usuario_id = any (r.destinatarios)
        and c.canal = any (r.canais)
        and c.usuario_id is distinct from p_usuario_id

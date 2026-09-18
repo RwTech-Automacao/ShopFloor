@@ -6,8 +6,9 @@ import { segredoConfere } from '@/modules/alertas/infra/assinatura'
 export const dynamic = 'force-dynamic'
 
 /**
- * Chamada pelo crontab da Lightsail a cada 5 minutos:
- *   curl -fsS -m 60 -X POST -H "Authorization: Bearer $ALERTAS_CRON_SECRET" .../api/alertas/avaliar
+ * Chamada pelo crontab da Lightsail a cada 5 minutos (segredo num arquivo de cabeçalho 600, nunca
+ * no argv — ver tools/alertas/README.md §5):
+ *   curl -fsS -m 60 -X POST -H @$HOME/.alertas-cron-header http://127.0.0.1:3000/api/alertas/avaliar
  * Com o RDS desligado (plano de economia), responde 503 e registra no log — nada mais.
  */
 export async function POST(request: Request): Promise<Response> {

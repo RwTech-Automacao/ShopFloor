@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Configura os bots dos alertas: webhook do Telegram + comando /vincular no servidor do Discord.
-// Uso (na máquina que tem as variáveis do ambiente):
-//   node tools/alertas/configurar-bots.mjs
-//   node tools/alertas/configurar-bots.mjs --so-telegram
-//   node tools/alertas/configurar-bots.mjs --so-discord
+// Uso: o script lê process.env e NÃO carrega .env sozinho. Passe o arquivo com --env-file
+// (Node >= 20.6):
+//   node --env-file=.env.production tools/alertas/configurar-bots.mjs
+//   node --env-file=.env.production tools/alertas/configurar-bots.mjs --so-telegram
+//   node --env-file=.env.production tools/alertas/configurar-bots.mjs --so-discord
 //
 // NUNCA imprime token nem segredo: só diz o que deu certo e o que falhou.
 

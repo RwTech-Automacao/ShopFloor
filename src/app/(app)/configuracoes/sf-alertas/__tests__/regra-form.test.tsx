@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { RegraForm } from '../regra-form'
+import { RegraForm, separarDestinatarios } from '../regra-form'
 
 const salvarRegraAction = vi.fn()
 const previaRegraAction = vi.fn()
@@ -115,5 +115,56 @@ describe('RegraForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver prévia' }))
     await waitFor(() => expect(previaRegraAction).toHaveBeenCalled())
     expect(await screen.findByText('Teste: 75,0% (15 aprovados, 5 reprovados)')).toBeInTheDocument()
+  })
+
+  it('destinatário salvo que ficou inativo sai da regra, com aviso, e o salvar manda só os ativos', async () => {
+    const onSalvo = vi.fn()
+    render(
+      <RegraForm
+        regra={{
+          id: 'r1',
+          atualizadoEm: '2026-09-17T12:00:00Z',
+          nome: 'Teste 90',
+          postos: ['Teste'],
+          taxaMinima: 90,
+          janelaTipo: 'tempo',
+          janelaValor: 60,
+          minimoBipes: 20,
+          lembreteMin: null,
+          canais: ['telegram'],
+          destinatarios: ['u1', 'u-inativo', 'u-removido'],
+          ativa: true,
+        }}
+        postos={POSTOS}
+        destinatarios={DESTINATARIOS}
+        configurados={CONFIGURADOS}
+        onSalvo={onSalvo}
+        onCancelar={vi.fn()}
+      />,
+    )
+    expect(
+      screen.getByText('2 destinatário(s) inativo(s) removido(s) da regra — salve para confirmar.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Ana Gestora')).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalledTimes(1))
+    expect(salvarRegraAction.mock.calls[0]![0]).toBe('r1')
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ destinatarios: ['u1'] })
+    await waitFor(() => expect(onSalvo).toHaveBeenCalled())
+  })
+
+  it('regra sem destinatário inativo não mostra o aviso', () => {
+    montar()
+    expect(screen.queryByText(/inativo\(s\) removido/)).not.toBeInTheDocument()
+  })
+})
+
+describe('separarDestinatarios', () => {
+  it('descarta quem não está entre os disponíveis', () => {
+    expect(separarDestinatarios(['u1', 'x', 'u3'], DESTINATARIOS)).toEqual({ validos: ['u1', 'u3'], descartados: 1 })
+  })
+
+  it('lista de disponíveis vazia (nada carregou) não descarta ninguém', () => {
+    expect(separarDestinatarios(['u1', 'x'], [])).toEqual({ validos: ['u1', 'x'], descartados: 0 })
   })
 })
