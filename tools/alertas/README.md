@@ -224,9 +224,9 @@ visível para todo mundo. Quem controla isso é a variável de ambiente **`ALERT
 
 - Lista de e-mails separados por vírgula (ex.: `fulana@enterplak.com.br,ciclano@enterplak.com.br`).
   Comparação sem diferenciar maiúsculas/minúsculas e com `trim` (espaços em volta não importam).
-- `*` libera todo mundo (útil pra testar em Preview sem listar e-mail nenhum).
-- **Vazia ou ausente = todos.** Para liberar de vez pra empresa inteira, é só **remover a
-  variável** (ou deixá-la vazia) e reiniciar o processo — não precisa mexer em código.
+- `*` libera todo mundo. **Para liberar de vez pra empresa inteira, troque o valor por `*`** e
+  reinicie o processo — não precisa mexer em código. Em Preview/Dev, use `*` ou o seu e-mail.
+- **Vazia ou ausente = ninguém.** Esquecer a variável num deploy não expõe as telas.
 
 O que a variável esconde:
 

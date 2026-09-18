@@ -2,18 +2,22 @@ import { describe, it, expect } from 'vitest'
 import { alertasLiberados } from '../liberacao'
 
 describe('alertasLiberados', () => {
-  it('libera todo mundo quando a variável está vazia', () => {
-    expect(alertasLiberados('qualquer@rwtech.com.br', '')).toBe(true)
-    expect(alertasLiberados(null, '')).toBe(true)
-    expect(alertasLiberados(undefined, '')).toBe(true)
+  it('ninguém é liberado quando a variável está vazia', () => {
+    expect(alertasLiberados('qualquer@rwtech.com.br', '')).toBe(false)
+    expect(alertasLiberados(null, '')).toBe(false)
+    expect(alertasLiberados(undefined, '')).toBe(false)
   })
 
-  it('libera todo mundo quando a variável está ausente (undefined)', () => {
-    expect(alertasLiberados('qualquer@rwtech.com.br', undefined)).toBe(true)
+  it('ninguém é liberado quando a variável está ausente (undefined)', () => {
+    expect(alertasLiberados('qualquer@rwtech.com.br', undefined)).toBe(false)
   })
 
-  it('libera todo mundo quando a variável é só espaços', () => {
-    expect(alertasLiberados('qualquer@rwtech.com.br', '   ')).toBe(true)
+  it('ninguém é liberado quando a variável é só espaços', () => {
+    expect(alertasLiberados('qualquer@rwtech.com.br', '   ')).toBe(false)
+  })
+
+  it('* libera todo mundo', () => {
+    expect(alertasLiberados('qualquer@rwtech.com.br', '*')).toBe(true)
   })
 
   it('libera só quem está na lista', () => {

@@ -199,7 +199,7 @@ Siga `tools/alertas/README.md` do começo ao fim:
 
 A feature entra no ar (código + cron + webhooks) antes de ficar visível pra empresa inteira. Quem
 esconde/mostra é a variável de servidor `ALERTAS_LIBERADO_PARA` (lista de e-mails, `*` = todos,
-**vazia/ausente = todos** — ver `tools/alertas/README.md` §8 para o passo a passo completo).
+**vazia/ausente = ninguém** — ver `tools/alertas/README.md` §8 para o passo a passo completo).
 
 - [ ] Com `ALERTAS_LIBERADO_PARA=outro@enterplak.com.br` (sem o seu e-mail de teste): logado com a
       sua conta, o item **Alertas** some do menu de Configurações e o link **Meu perfil** some do
@@ -215,5 +215,6 @@ esconde/mostra é a variável de servidor `ALERTAS_LIBERADO_PARA` (lista de e-ma
       aparecer no menu e as telas abrem normal.
 - [ ] **Não quebrou nada:** quiosque, menu retrátil e o grupo Setup continuam funcionando iguais
       com a variável ligada ou desligada.
-- [ ] **Liberação final:** remover `ALERTAS_LIBERADO_PARA` do ambiente (ou deixar vazia) e
-      reiniciar → todo mundo passa a ver Alertas, sem precisar mexer em código.
+- [ ] Sem a variável (ou vazia) → ninguém vê Alertas (padrão seguro).
+- [ ] **Liberação final:** `ALERTAS_LIBERADO_PARA=*` e reiniciar → todo mundo passa a ver Alertas,
+      sem precisar mexer em código.

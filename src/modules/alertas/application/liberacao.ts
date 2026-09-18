@@ -1,14 +1,14 @@
 /**
- * Lançamento escondido dos Alertas em produção: enquanto `ALERTAS_LIBERADO_PARA` não estiver
- * vazia, só os e-mails da lista (ou `*`, todos) veem e acessam as telas e ações de Alertas.
- * Vazia ou ausente = todos — é assim que se libera de vez, só removendo a variável.
+ * Lançamento escondido dos Alertas em produção: só os e-mails de `ALERTAS_LIBERADO_PARA` veem e
+ * acessam as telas e ações de Alertas. `*` = todos (é assim que se libera de vez).
+ * Vazia ou ausente = NINGUÉM: esquecer a variável no deploy não pode expor a feature.
  */
 export function alertasLiberados(
   email: string | null | undefined,
   listaEnv: string | undefined = process.env.ALERTAS_LIBERADO_PARA,
 ): boolean {
   const lista = (listaEnv ?? '').trim()
-  if (lista === '') return true
+  if (lista === '') return false
 
   const emails = lista
     .split(',')
