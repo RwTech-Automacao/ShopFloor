@@ -26,6 +26,6 @@ describe('mensagemErroLogin', () => {
   })
 
   it('a mensagem de fora do ar diz o horário de funcionamento', () => {
-    expect(MSG_SISTEMA_FORA).toContain('segunda a sábado, das 06:00 às 19:00')
+    expect(MSG_SISTEMA_FORA).toContain('segunda a sexta, das 06:00 às 19:00')
   })
 })
