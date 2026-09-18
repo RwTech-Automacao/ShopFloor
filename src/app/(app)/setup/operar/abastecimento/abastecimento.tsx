@@ -262,8 +262,9 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             <div className="flex flex-col gap-2 lg:col-start-2 lg:row-start-2">
               <h2 className="text-base font-semibold">Últimas trocas</h2>
               <div className="overflow-x-auto rounded-lg border border-border bg-card">
-                <Table>
-                  <TableHeader>
+                {/* A lista cresce a cada troca: rola por dentro, com o cabeçalho fixo. */}
+                <Table containerClassName="max-h-[24rem] overflow-y-auto">
+                  <TableHeader className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_var(--color-border)]">
                     <TableRow>
                       <TableHead>Hora</TableHead>
                       <TableHead>{rotulos.posicao}/{rotulos.feeder}</TableHead>
