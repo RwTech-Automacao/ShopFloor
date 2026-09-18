@@ -180,8 +180,9 @@ export function criarRepositorioServico(
       //                                  | "CONTA_JA_VINCULADA" | "MUITAS_TENTATIVAS"}
       // `error` aqui só acontece em falha de sistema (conexão, etc.), não em erro de regra.
       if (error) return { ok: false as const, erro: mensagemErroAlerta(error.message) }
-      const r = data as { ok: boolean; nome?: string; erro?: string }
-      if (!r.ok) return { ok: false as const, erro: mensagemErroAlerta(r.erro) }
+      // `data` null sem `error` não deveria acontecer, mas não pode derrubar o webhook.
+      const r = data as { ok: boolean; nome?: string; erro?: string } | null
+      if (!r?.ok) return { ok: false as const, erro: mensagemErroAlerta(r?.erro) }
       return { ok: true as const, nome: r.nome ?? '' }
     },
 

@@ -265,6 +265,43 @@ describe('tratarUpdateTelegram — botão Resolvido', () => {
     expect(enviadosPorta).toHaveLength(0)
   })
 
+  it('banco caiu ao resolver: o callback é respondido mesmo assim (o botão não fica girando)', async () => {
+    const tg = telegramFalso()
+    const { repo } = repoFalso({ usuario: 'u2' })
+    repo.resolver = async () => {
+      throw new Error('connection refused')
+    }
+    await expect(
+      tratarUpdateTelegram(callback, { telegram: tg.telegram, portas: {}, repo }),
+    ).rejects.toThrow('connection refused')
+    expect(tg.callbacks).toEqual([{ id: 'cb1', texto: 'Não foi possível concluir agora.' }])
+    expect(tg.editadas).toHaveLength(0)
+  })
+
+  it('banco caiu ao achar a conta: o callback também é respondido', async () => {
+    const tg = telegramFalso()
+    const { repo } = repoFalso({})
+    repo.usuarioPorConta = async () => {
+      throw new Error('alerta_contas: timeout')
+    }
+    await expect(
+      tratarUpdateTelegram(callback, { telegram: tg.telegram, portas: {}, repo }),
+    ).rejects.toThrow('timeout')
+    expect(tg.callbacks).toEqual([{ id: 'cb1', texto: 'Não foi possível concluir agora.' }])
+  })
+
+  it('erro DEPOIS de responder não responde de novo', async () => {
+    const tg = telegramFalso()
+    const { repo } = repoFalso({ usuario: 'u2' })
+    tg.telegram.editarTexto = async () => {
+      throw new Error('telegram fora')
+    }
+    await expect(
+      tratarUpdateTelegram(callback, { telegram: tg.telegram, portas: {}, repo }),
+    ).rejects.toThrow('telegram fora')
+    expect(tg.callbacks).toEqual([{ id: 'cb1', texto: 'Marcado como resolvido.' }])
+  })
+
   it('callback com data desconhecida avisa e para', async () => {
     const tg = telegramFalso()
     const { repo } = repoFalso({})

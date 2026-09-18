@@ -30,3 +30,9 @@ export function ehCanal(valor: unknown): valor is Canal {
 export function ehJanelaTipo(valor: unknown): valor is JanelaTipo {
   return valor === 'tempo' || valor === 'bipes' || valor === 'op'
 }
+
+/** Vínculo do usuário logado num canal (o que a tela Meu perfil mostra). */
+export interface ContaVinculada {
+  canal: Canal
+  vinculadoEm: string
+}

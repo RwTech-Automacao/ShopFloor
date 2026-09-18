@@ -50,22 +50,48 @@ async function tratarMensagem(m: MensagemTelegram, deps: Deps): Promise<void> {
 }
 
 async function tratarCallback(q: CallbackTelegram, deps: Deps): Promise<void> {
-  if (!q.id) return
+  const id = q.id
+  if (!id) return
+  // O Telegram deixa o botão "girando" até o callback ser respondido. Qualquer erro no meio do
+  // caminho (banco fora, etc.) ainda precisa de UMA resposta — por isso a flag + finally.
+  let respondido = false
+  const responder = async (texto: string) => {
+    respondido = true
+    await deps.telegram.responderCallback(id, texto)
+  }
+  try {
+    await resolverPeloBotao(q, responder, deps)
+  } finally {
+    if (!respondido) {
+      try {
+        await deps.telegram.responderCallback(id, 'Não foi possível concluir agora.')
+      } catch {
+        // o erro original é o que importa; a rota registra
+      }
+    }
+  }
+}
+
+async function resolverPeloBotao(
+  q: CallbackTelegram,
+  responder: (texto: string) => Promise<void>,
+  deps: Deps,
+): Promise<void> {
   const ocorrenciaId = lerCallbackResolver(q.data)
   if (!ocorrenciaId || q.from?.id === undefined) {
-    await deps.telegram.responderCallback(q.id, 'Ação desconhecida.')
+    await responder('Ação desconhecida.')
     return
   }
 
   const usuarioId = await deps.repo.usuarioPorConta('telegram', String(q.from.id))
   if (!usuarioId) {
-    await deps.telegram.responderCallback(q.id, 'Sua conta do Telegram não está vinculada ao ShopFloor.')
+    await responder('Sua conta do Telegram não está vinculada ao ShopFloor.')
     return
   }
 
   const r = await deps.repo.resolver(ocorrenciaId, usuarioId)
   if (!r.ok) {
-    await deps.telegram.responderCallback(q.id, r.erro)
+    await responder(r.erro)
     // Já normalizou: o botão não serve mais pra nada, então sai de todas as mensagens.
     if (r.codigo === 'OCORRENCIA_ENCERRADA') {
       await removerBotoesDaOcorrencia(deps.portas, deps.repo, ocorrenciaId)
@@ -75,10 +101,7 @@ async function tratarCallback(q: CallbackTelegram, deps: Deps): Promise<void> {
 
   const res = r.resolucao
   const linha = textoResolvido({ posto: res.posto, nome: res.resolvidaPorNome, em: res.resolvidaEm })
-  await deps.telegram.responderCallback(
-    q.id,
-    res.jaResolvida ? `Já resolvido por ${res.resolvidaPorNome}.` : 'Marcado como resolvido.',
-  )
+  await responder(res.jaResolvida ? `Já resolvido por ${res.resolvidaPorNome}.` : 'Marcado como resolvido.')
 
   if (q.message?.chat?.id !== undefined && q.message.message_id !== undefined) {
     const id = montarIdMensagemTelegram(q.message.chat.id, q.message.message_id)

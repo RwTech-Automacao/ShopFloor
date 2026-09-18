@@ -163,6 +163,12 @@ describe('vincular — contrato jsonb do alerta_vincular', () => {
     })
   })
 
+  it('resposta vazia (data null, sem erro) vira falha genérica, sem estourar', async () => {
+    const { sb } = sbFalso({ rpc: () => ({ data: null, error: null }) })
+    const r = await criarRepositorioServico(sb).vincular('ALERTA-7K3M', 'telegram', '111')
+    expect(r).toEqual({ ok: false, erro: 'Não foi possível concluir agora. Tente de novo.' })
+  })
+
   it('erro de sistema não vaza texto do Postgres', async () => {
     const { sb } = sbFalso({ rpc: () => ({ data: null, error: { message: 'connection refused 10.0.0.5' } }) })
     const r = await criarRepositorioServico(sb).vincular('ALERTA-7K3M', 'telegram', '111')
