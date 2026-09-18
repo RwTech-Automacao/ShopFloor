@@ -12,7 +12,7 @@ const linhas: LinhaGrade[] = [
 const sns = (ls: LinhaGrade[]) => ls.map((l) => l.sn)
 
 describe('valorFiltro', () => {
-  it('Pendente, — e vazio viram (vazio)', () => {
+  it('Pendente, — e vazio viram Pendente', () => {
     expect(valorFiltro('Pendente')).toBe(VAZIO)
     expect(valorFiltro('—')).toBe(VAZIO)
     expect(valorFiltro('')).toBe(VAZIO)
@@ -22,12 +22,12 @@ describe('valorFiltro', () => {
 })
 
 describe('valoresDistintos', () => {
-  it('ordena com (vazio) no fim', () => {
+  it('ordena com Pendente no fim', () => {
     expect(valoresDistintos(linhas, 'Teste')).toEqual(['Aprovado', 'Reprovado', VAZIO])
     expect(valoresDistintos(linhas, 'Embalagem')).toEqual(['CX1-10', 'CX2-10', 'Registrado', VAZIO])
     expect(valoresDistintos(linhas, 'Manutenção')).toEqual(['Concluído', VAZIO])
   })
-  it('sem vazio não inclui (vazio); ordem numérica', () => {
+  it('sem vazio não inclui Pendente; ordem numérica', () => {
     const ls: LinhaGrade[] = [
       { sn: 'a', celulas: { Embalagem: 'CX10' } },
       { sn: 'b', celulas: { Embalagem: 'CX2' } },
@@ -49,7 +49,7 @@ describe('filtrarLinhas', () => {
     const r = filtrarLinhas(linhas, { sn: '', valores: { Teste: ['Aprovado'], 'Manutenção': ['Concluído'] } })
     expect(sns(r)).toEqual(['AB011C'])
   })
-  it('(vazio) casa a peça que não passou pelo posto', () => {
+  it('Pendente casa a peça que não passou pelo posto', () => {
     const r = filtrarLinhas(linhas, { sn: '', valores: { Embalagem: [VAZIO] } })
     expect(sns(r)).toEqual(['AB002C', 'AB003C'])
   })

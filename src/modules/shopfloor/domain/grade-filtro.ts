@@ -16,11 +16,11 @@ export interface FiltrosColuna {
 export const FILTROS_VAZIOS: FiltrosColuna = { sn: '', valores: {} }
 
 /** Rótulo da célula "vazia" — a peça que ainda não passou pelo posto. */
-export const VAZIO = '(vazio)'
+export const VAZIO = 'Pendente'
 
 /**
  * Valor da célula para o filtro. A grade mostra "Pendente" (posto) ou "—" (Manutenção) quando a
- * peça ainda não passou por ali; no filtro isso é o "(vazio)" do Excel.
+ * peça ainda não passou por ali; no filtro isso aparece como "Pendente", igual à grade.
  */
 export function valorFiltro(celula: string | undefined): string {
   const v = (celula ?? '').trim()
@@ -33,7 +33,7 @@ function limparParaBusca(s: string): string {
   return s.replace(/[^A-Za-z0-9]/g, '').toLowerCase()
 }
 
-/** Valores distintos da coluna, ordenados (numérico-aware, pt-BR) com "(vazio)" no fim. */
+/** Valores distintos da coluna, ordenados (numérico-aware, pt-BR) com "Pendente" no fim. */
 export function valoresDistintos(linhas: LinhaGrade[], coluna: string): string[] {
   const set = new Set<string>()
   let temVazio = false
