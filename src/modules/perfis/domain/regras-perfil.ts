@@ -9,7 +9,7 @@ export const PERMISSOES: { chave: Permissao; rotulo: string }[] = [
   { chave: 'excluir', rotulo: 'Excluir' },
   { chave: 'gerar_etiqueta', rotulo: 'Gerar etiqueta' },
   { chave: 'administrar', rotulo: 'Administrar' },
-  { chave: 'lancar', rotulo: 'Lançar (Shopfloor)' },
+  { chave: 'lancar', rotulo: 'Lançar' },
 ]
 
 export function validarEdicaoPerfil(input: {

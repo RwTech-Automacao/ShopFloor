@@ -10,7 +10,7 @@ const consulta: Perfil = {
     editar_finalizado: false, excluir: false, gerar_etiqueta: false, administrar: false,
     lancar: false,
   },
-  porModulo: { recebimento: {}, shopfloor: {}, sistema: {} },
+  porModulo: { recebimento: {}, shopfloor: {}, setup: {}, sistema: {} },
 }
 
 describe('podeFazer', () => {

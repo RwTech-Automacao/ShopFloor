@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Inbox, Workflow, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Cpu, Inbox, Workflow, type LucideIcon } from 'lucide-react'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo, type Modulo, type Permissao } from '@/modules/auth/domain/perfil'
 
@@ -27,6 +27,14 @@ const ATALHOS: Atalho[] = [
     href: '/shopfloor/operar/lancamento',
     icone: Workflow,
     modulo: 'shopfloor',
+    permissao: 'lancar',
+  },
+  {
+    titulo: 'Setup',
+    descricao: 'Montagem de setup das máquinas e conferência da troca de rolos.',
+    href: '/setup/operar/montar',
+    icone: Cpu,
+    modulo: 'setup',
     permissao: 'lancar',
   },
 ]
