@@ -4,9 +4,14 @@
 
 **Goal:** O gestor recebe no Telegram e/ou Discord um aviso quando a taxa de aprovação de um posto cai abaixo do limite configurado, com lembrete, botão "Resolvido" na própria mensagem e aviso quando normaliza.
 
-**Architecture:** A DECISÃO fica no banco (`alerta_avaliar()`, atômica com um índice único parcial de "ocorrência viva" e uma trava `pg_try_advisory_xact_lock`), que devolve uma lista de **ações de envio**; o app só formata os textos e entrega via `fetch` (clients finos de Telegram/Discord, com `fetch` injetável) gravando cada tentativa em `alerta_envios`. Uma rota `POST /api/alertas/avaliar` protegida por segredo é chamada pelo crontab da Lightsail a cada 5 min; dois webhooks (`/api/alertas/telegram`, `/api/alertas/discord`) fazem o vínculo por código e o "Resolvido" pelo botão. Duas telas: **Meu perfil** (vincular/testar/desvincular, qualquer usuário) e **Configurações › Ajustes ShopFloor › Alertas** (regras + ocorrências, `shopfloor.administrar`).
+**Architecture:** A DECISÃO fica no banco (`alerta_avaliar()`, atômica com um índice único parcial de "ocorrência viva" e uma trava `pg_try_advisory_xact_lock`), que **na mesma transação** põe na **fila de saída** (`alerta_envios` pendentes, com os dados da mensagem em jsonb) uma linha por destinatário × canal vinculado; o app tem **um único caminho de entrega** (`entregarPendentes`): reserva um lote de forma atômica (`alerta_reservar_envios`), monta o texto a partir dos dados, entrega via `fetch` (clients finos de Telegram/Discord, com `fetch` injetável) e atualiza a própria linha. Uma rota `POST /api/alertas/avaliar` protegida por segredo é chamada pelo crontab da Lightsail a cada 5 min; dois webhooks (`/api/alertas/telegram`, `/api/alertas/discord`) fazem o vínculo por código e o "Resolvido" pelo botão. Duas telas: **Meu perfil** (vincular/testar/desvincular, qualquer usuário) e **Configurações › Ajustes ShopFloor › Alertas** (regras + ocorrências, `shopfloor.administrar`).
 
 **Tech Stack:** Next.js 16.2.10 (App Router, Server Actions, Route Handlers), React 19.2.4, TypeScript strict, Supabase (`@supabase/ssr` + `supabase-js`), Postgres com RLS/RBAC por módulo, Tailwind v4 + componentes de `src/components/ui`, vitest 4, testes SQL em Postgres descartável via Docker. `fetch` e `node:crypto` — **zero dependência npm nova**.
+
+> **Revisão de 2026-09-18 — fila de envio (outbox) + exclusão lógica de regra.** Aplicada depois das Tasks 1–5 (commits `ad3de55` e `6a6ff25`, relatório em `.superpowers/sdd/outbox-report.md`). As Tasks 1–5 abaixo ficam como registro histórico do que foi feito antes da revisão; **o código atual da branch é a referência**. O que mudou:
+> - **Banco (0113):** `alerta_avaliar()` enfileira em `alerta_envios` (colunas novas `dados jsonb`, `reservado_em`, `enviado_em`; check `ok = (enviado_em is not null)`) e devolve `{ ocupado, avaliadas, enfileirados, normalizadas }` — não devolve mais `acoes`. Função nova `alerta_reservar_envios(p_canais, p_limite, p_ocorrencia_id)` (só `service_role`; `for update skip locked` + `tentativas + 1` + reserva de 15 min; novas antes de reenvios; teto 3; 24 h; pula `teste`; alerta/lembrete só com ocorrência `aberta`). `alerta_resolver_interno` enfileira o "✅ resolvido por" para os outros destinatários na mesma transação. `alerta_regras.excluida_em` (exclusão lógica; sem policy de DELETE; regra excluída não é editável), FK `alerta_ocorrencias.regra_id` `on delete restrict`, `alerta_listar_ocorrencias` mostra "(excluída)" no nome e conta como falha só envio que tentou e errou.
+> - **App:** `entregarPendentes(portas, repo, { ocorrenciaId? })` é o único caminho de entrega; `avaliarEEnviar` = avaliar + entregar + tirar botões das `normalizadas`. Saíram `enviarItens`, `reenviarFalhas`, `avisarResolvido`, `AcaoAvaliacao`/`textoDaAcao`/`acaoTemBotao`, e do repositório `registrarEnvio`/`envioParaReenviar`/`registrarReenvio`/`contasDaOcorrencia`. Entraram `domain/envio.ts` (`EnvioReservado`, `lerEnvioReservado`, `textoDoEnvio`, `DadosEnvioInvalidos`) e, no repositório, `reservarPendentes`/`concluirEnvio`/`registrarEnvioDireto`. "Enviar teste" continua **direto** (fora da fila) e grava a linha já final.
+> - **Tasks 6, 7, 9 e 10** abaixo já estão escritas no formato novo.
 
 ## Global Constraints
 
@@ -43,7 +48,7 @@
 | `supabase/migrations/0113_alertas.sql` | Criar (Task 2) as 5 tabelas (`alerta_contas`, `alerta_codigos`, `alerta_regras`, `alerta_ocorrencias`, `alerta_envios`), RLS, grants, `alerta_gerar_codigo`, `alerta_vincular`; **acrescentar** (Task 3) `alerta_taxas`, `alerta_avaliar`, `alerta_previa`, `alerta_resolver`/`alerta_resolver_admin`, `alerta_destinatarios`, `alerta_listar_ocorrencias` e o `notify pgrst`. |
 | `supabase/migrations/0114_sf_registros_posto_data_idx.sql` | Índice `(posto, data_hora desc)` em `sf_registros` com `create index concurrently` (arquivo separado). |
 | `supabase/tests/rodar-alertas-test.sh` | Sobe Postgres descartável via Docker, aplica 0113 + 0114 sobre um stub mínimo e roda os testes SQL + o caso de concorrência da trava. |
-| `supabase/tests/alertas_test.sql` | Stub (`auth.uid`, `tem_permissao`, papéis, `usuarios`, `sf_registros`) + asserções: códigos/vínculo, RLS/grants, as 3 janelas, mínimo de bipes, transições, índice único, resolver, prévia, listagens. |
+| `supabase/tests/alertas_test.sql` | Stub (`auth.uid`, `tem_permissao`, papéis, `usuarios`, `sf_registros`) + asserções: códigos/vínculo, RLS/grants, as 3 janelas, mínimo de bipes, transições, índice único, resolver, prévia, listagens, **fila de envio** (mesma transação, reserva atômica, ordem, teto) e **exclusão lógica de regra**. O runner também testa a reserva concorrente. |
 
 **Domínio (puro, sem I/O)**
 
@@ -55,7 +60,8 @@
 | `src/modules/alertas/domain/mensagens.ts` | Textos de alerta/lembrete/resolvido/normalizou/teste/instruções + `formatarDataHoraCurta`, `formatarHora`, `formatarDuracao`. |
 | `src/modules/alertas/domain/codigos.ts` | `extrairCodigoVinculo`, `montarCallbackResolver`, `lerCallbackResolver`. |
 | `src/modules/alertas/domain/erros.ts` | `codigoErroAlerta`, `mensagemErroAlerta` (códigos do Postgres → PT-BR). |
-| `src/modules/alertas/domain/avaliacao.ts` | Tipos `ContaDestino`/`AcaoAvaliacao`/`ResultadoAvaliacaoRpc`, `lerResultadoAvaliacao`, `textoDaAcao`, `acaoTemBotao`. |
+| `src/modules/alertas/domain/avaliacao.ts` | Tipos `ContaDestino`/`ResultadoAvaliacaoRpc` (`ocupado`, `avaliadas`, `enfileirados`, `normalizadas`), `lerResultadoAvaliacao`. |
+| `src/modules/alertas/domain/envio.ts` | `EnvioReservado`, `lerEnvioReservado` (linha do `alerta_reservar_envios`), `textoDoEnvio(tipo, dados)` (texto a partir do jsonb da fila), `DadosEnvioInvalidos`. |
 | `src/modules/alertas/domain/resolucao.ts` | `ResolucaoOcorrencia`, `lerResolucao` (jsonb do `alerta_resolver` → objeto). |
 | `src/modules/alertas/domain/regra.ts` | `EntradaRegra`/`RegraValida`/`RegraAlerta`/`DestinatarioDisponivel`, `PADROES_REGRA`, `validarRegra`, `destinatariosSemCanal`. |
 | `src/modules/alertas/domain/ocorrencia.ts` | `PreviaPosto`, `FiltroOcorrencias`, `OcorrenciaLinha`, `periodoOcorrencias`. |
@@ -65,7 +71,7 @@
 | Arquivo | Responsabilidade |
 |---|---|
 | `src/modules/alertas/application/portas.ts` | Interfaces de I/O: `PortaCanal`/`PortasCanais`, `RepositorioEnvios`, `RepositorioVinculo` e seus DTOs. Nada de implementação. |
-| `src/modules/alertas/application/enviar-alertas.ts` | Orquestra: `avaliarEEnviar`, `enviarItens`, `reenviarFalhas`, `removerBotoesDaOcorrencia`, `avisarResolvido`, `enviarTeste`. |
+| `src/modules/alertas/application/enviar-alertas.ts` | Orquestra: `entregarPendentes` (único caminho de entrega da fila), `avaliarEEnviar`, `removerBotoesDaOcorrencia`, `enviarTeste` (direto). |
 | `src/modules/alertas/application/webhook-telegram.ts` | `tratarUpdateTelegram` (vincular, instruções, callback do botão). |
 | `src/modules/alertas/application/webhook-discord.ts` | `tratarInteracaoDiscord` (PING, `/vincular`, botão) devolvendo `{ corpo, depois }`. |
 | `src/modules/alertas/application/alertas-actions.ts` | `'use server'` — CRUD de regras, prévia, ocorrências, resolver pela tela, avaliar agora. |
@@ -4086,8 +4092,8 @@ MSG
 - Consumes:
   - Task 1: `extrairCodigoVinculo`, `lerCallbackResolver` (`../domain/codigos`); `textoResolvido`, `textoVinculado`, `TEXTO_INSTRUCOES_TELEGRAM` (`../domain/mensagens`); `mensagemErroAlerta`, `codigoErroAlerta` (`../domain/erros`); `Canal` (`../domain/tipos`).
   - Task 4: `TelegramClient`, `criarTelegram`; `verificarAssinaturaDiscord`, `segredoConfere`.
-  - Task 5: `PortasCanais`, `RepositorioEnvios`, `removerBotoesDaOcorrencia`, `avisarResolvido`, `criarDependenciasAlertas`.
-  - Task 3 (banco): `alerta_vincular(p_codigo, p_canal, p_externo_id)`, `alerta_resolver(p_ocorrencia_id, p_usuario_id)`.
+  - Task 5 (+ revisão da fila): `PortasCanais`, `RepositorioEnvios`, `FiltroReserva`, `removerBotoesDaOcorrencia`, `entregarPendentes`, `criarDependenciasAlertas`; `EnvioReservado` (`../domain/envio`).
+  - Task 3 (banco): `alerta_vincular(p_codigo, p_canal, p_externo_id)`, `alerta_resolver(p_ocorrencia_id, p_usuario_id)` — que **já enfileira** o "✅ resolvido por" para os outros destinatários na mesma transação da resolução. O webhook só adianta a entrega com `entregarPendentes(..., { ocorrenciaId })`; se o processo cair antes, o cron entrega na próxima rodada.
 - Produces:
   - `interface ResolucaoOcorrencia { ocorrenciaId: string; regraId: string; posto: string; jaResolvida: boolean; resolvidaPorId: string; resolvidaPorNome: string; resolvidaEm: Date }`
   - `lerResolucao(json: unknown): ResolucaoOcorrencia`
@@ -4194,8 +4200,8 @@ Criar `src/modules/alertas/application/__tests__/webhook-telegram.test.ts`:
 ```ts
 import { describe, it, expect } from 'vitest'
 import type { TelegramClient } from '../../infra/telegram'
-import type { ContaDestino } from '../../domain/avaliacao'
-import type { MensagemComBotao, NovoEnvio, RepositorioEnvios, RepositorioVinculo } from '../portas'
+import type { EnvioReservado } from '../../domain/envio'
+import type { FiltroReserva, MensagemComBotao, RepositorioEnvios, RepositorioVinculo } from '../portas'
 import { tratarUpdateTelegram } from '../webhook-telegram'
 
 function telegramFalso() {
@@ -4229,28 +4235,31 @@ function repoFalso(dados: {
   usuario?: string | null
   resolver?: Awaited<ReturnType<RepositorioVinculo['resolver']>>
   mensagens?: MensagemComBotao[]
-  contas?: ContaDestino[]
+  /** O que o banco pôs na fila (o alerta_resolver enfileira o "resolvido por" dos OUTROS). */
+  fila?: EnvioReservado[]
 }) {
-  const gravados: NovoEnvio[] = []
   const vinculos: { codigo: string; canal: string; externoId: string }[] = []
+  const reservas: FiltroReserva[] = []
+  const concluidos: { id: string; ok: boolean }[] = []
+  let fila = dados.fila ?? []
   const repo: RepositorioEnvios & RepositorioVinculo = {
     async avaliar() {
-      return { ocupado: false, avaliadas: 0, acoes: [] }
+      return { ocupado: false, avaliadas: 0, enfileirados: 0, normalizadas: [] }
     },
-    async registrarEnvio(e) {
-      gravados.push(e)
+    async reservarPendentes(f) {
+      reservas.push(f)
+      const lote = fila.filter((e) => f.ocorrenciaId === null || e.ocorrenciaId === f.ocorrenciaId)
+      fila = fila.filter((e) => !lote.includes(e))
+      return lote
     },
-    async envioParaReenviar() {
-      return []
+    async concluirEnvio(envio, _texto, resultado) {
+      concluidos.push({ id: envio.id, ok: resultado.ok })
     },
-    async registrarReenvio() {},
+    async registrarEnvioDireto() {},
     async mensagensComBotao() {
       return dados.mensagens ?? []
     },
     async marcarSemBotao() {},
-    async contasDaOcorrencia() {
-      return dados.contas ?? []
-    },
     async contaDoUsuario() {
       return null
     },
@@ -4278,10 +4287,30 @@ function repoFalso(dados: {
       )
     },
   }
-  return { repo, gravados, vinculos }
+  return { repo, vinculos, reservas, concluidos }
 }
 
 const OC = '11111111-2222-3333-4444-555555555555'
+
+/** Linha "resolvido por" que o alerta_resolver deixou na fila para outro destinatário. */
+function linhaResolvido(
+  id: string,
+  usuarioId: string,
+  externoId: string,
+  canal: 'telegram' | 'discord' = 'telegram',
+): EnvioReservado {
+  return {
+    id,
+    ocorrenciaId: OC,
+    usuarioId,
+    canal,
+    externoId,
+    tipo: 'resolvido',
+    dados: { posto: 'Teste', resolvida_por_nome: 'Bruno Líder', resolvida_em: '2026-09-17T17:05:00Z' },
+    comBotao: false,
+    tentativas: 1,
+  }
+}
 
 describe('tratarUpdateTelegram — mensagens', () => {
   it('mensagem com código vincula e confirma', async () => {
@@ -4349,13 +4378,11 @@ describe('tratarUpdateTelegram — botão Resolvido', () => {
   it('resolve, edita a mensagem, tira os botões e avisa os outros', async () => {
     const tg = telegramFalso()
     const enviadosPorta: string[] = []
-    const { repo, gravados } = repoFalso({
+    // u2 resolveu: na fila só está o aviso do u1 (quem resolveu não recebe)
+    const { repo, reservas, concluidos } = repoFalso({
       usuario: 'u2',
       mensagens: [{ envioId: 'e1', canal: 'telegram', mensagemExternaId: '111:5' }],
-      contas: [
-        { usuarioId: 'u1', canal: 'telegram', externoId: '111' },
-        { usuarioId: 'u2', canal: 'telegram', externoId: '222' },
-      ],
+      fila: [linhaResolvido('res-u1', 'u1', '111')],
     })
     const portas = {
       telegram: {
@@ -4376,9 +4403,10 @@ describe('tratarUpdateTelegram — botão Resolvido', () => {
       id: '222:9',
       texto: '🔴 Teste abaixo da meta\n\n✅ Teste: resolvido por Bruno Líder às 14:05',
     })
-    // avisa só quem NÃO resolveu
+    // entrega o aviso que o banco enfileirou, só desta ocorrência
+    expect(reservas).toEqual([{ canais: ['telegram'], limite: 30, ocorrenciaId: OC }])
     expect(enviadosPorta).toEqual(['111'])
-    expect(gravados[0]).toMatchObject({ tipo: 'resolvido' })
+    expect(concluidos).toEqual([{ id: 'res-u1', ok: true }])
   })
 
   it('conta não vinculada só responde o callback', async () => {
@@ -4417,7 +4445,7 @@ describe('tratarUpdateTelegram — botão Resolvido', () => {
           resolvidaEm: new Date('2026-09-17T17:05:00Z'),
         },
       },
-      contas: [{ usuarioId: 'u1', canal: 'telegram', externoId: '111' }],
+      fila: [linhaResolvido('res-u1', 'u1', '111')],
     })
     const portas = {
       telegram: {
@@ -4496,7 +4524,7 @@ import type { TelegramClient } from '../infra/telegram'
 import { extrairCodigoVinculo, lerCallbackResolver } from '../domain/codigos'
 import { TEXTO_INSTRUCOES_TELEGRAM, textoResolvido, textoVinculado } from '../domain/mensagens'
 import { montarIdMensagemTelegram } from '../infra/telegram'
-import { avisarResolvido, removerBotoesDaOcorrencia } from './enviar-alertas'
+import { entregarPendentes, removerBotoesDaOcorrencia } from './enviar-alertas'
 import type { DependenciasWebhook } from './portas'
 
 interface MensagemTelegram {
@@ -4581,14 +4609,11 @@ async function tratarCallback(q: CallbackTelegram, deps: Deps): Promise<void> {
 
   await removerBotoesDaOcorrencia(deps.portas, deps.repo, ocorrenciaId)
 
+  // O "resolvido por" dos outros destinatários JÁ ESTÁ NA FILA: o alerta_resolver enfileirou na
+  // mesma transação da resolução. Aqui só se adianta a entrega (só desta ocorrência — a reserva é
+  // atômica, então o cron nunca manda de novo). Se o processo cair antes, o cron entrega depois.
   if (!res.jaResolvida) {
-    await avisarResolvido(deps.portas, deps.repo, {
-      ocorrenciaId,
-      posto: res.posto,
-      resolvidoPorId: res.resolvidaPorId,
-      resolvidoPorNome: res.resolvidaPorNome,
-      resolvidaEm: res.resolvidaEm,
-    })
+    await entregarPendentes(deps.portas, deps.repo, { ocorrenciaId })
   }
 }
 ```
@@ -4607,8 +4632,8 @@ Criar `src/modules/alertas/application/__tests__/webhook-discord.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import type { ContaDestino } from '../../domain/avaliacao'
-import type { MensagemComBotao, NovoEnvio, RepositorioEnvios, RepositorioVinculo } from '../portas'
+import type { EnvioReservado } from '../../domain/envio'
+import type { FiltroReserva, MensagemComBotao, RepositorioEnvios, RepositorioVinculo } from '../portas'
 import { tratarInteracaoDiscord } from '../webhook-discord'
 
 function repoFalso(dados: {
@@ -4616,30 +4641,33 @@ function repoFalso(dados: {
   usuario?: string | null
   resolver?: Awaited<ReturnType<RepositorioVinculo['resolver']>>
   mensagens?: MensagemComBotao[]
-  contas?: ContaDestino[]
+  /** O que o banco pôs na fila (o alerta_resolver enfileira o "resolvido por" dos OUTROS). */
+  fila?: EnvioReservado[]
 }) {
-  const gravados: NovoEnvio[] = []
   const vinculos: { codigo: string; canal: string; externoId: string }[] = []
+  const reservas: FiltroReserva[] = []
+  const concluidos: { id: string; ok: boolean }[] = []
   const removidos: string[] = []
+  let fila = dados.fila ?? []
   const repo: RepositorioEnvios & RepositorioVinculo = {
     async avaliar() {
-      return { ocupado: false, avaliadas: 0, acoes: [] }
+      return { ocupado: false, avaliadas: 0, enfileirados: 0, normalizadas: [] }
     },
-    async registrarEnvio(e) {
-      gravados.push(e)
+    async reservarPendentes(f) {
+      reservas.push(f)
+      const lote = fila.filter((e) => f.ocorrenciaId === null || e.ocorrenciaId === f.ocorrenciaId)
+      fila = fila.filter((e) => !lote.includes(e))
+      return lote
     },
-    async envioParaReenviar() {
-      return []
+    async concluirEnvio(envio, _texto, resultado) {
+      concluidos.push({ id: envio.id, ok: resultado.ok })
     },
-    async registrarReenvio() {},
+    async registrarEnvioDireto() {},
     async mensagensComBotao() {
       return dados.mensagens ?? []
     },
     async marcarSemBotao(ids) {
       removidos.push(...ids)
-    },
-    async contasDaOcorrencia() {
-      return dados.contas ?? []
     },
     async contaDoUsuario() {
       return null
@@ -4668,10 +4696,30 @@ function repoFalso(dados: {
       )
     },
   }
-  return { repo, gravados, vinculos, removidos }
+  return { repo, vinculos, reservas, concluidos, removidos }
 }
 
 const OC = '11111111-2222-3333-4444-555555555555'
+
+/** Linha "resolvido por" que o alerta_resolver deixou na fila para outro destinatário. */
+function linhaResolvido(
+  id: string,
+  usuarioId: string,
+  externoId: string,
+  canal: 'telegram' | 'discord' = 'telegram',
+): EnvioReservado {
+  return {
+    id,
+    ocorrenciaId: OC,
+    usuarioId,
+    canal,
+    externoId,
+    tipo: 'resolvido',
+    dados: { posto: 'Teste', resolvida_por_nome: 'Bruno Líder', resolvida_em: '2026-09-17T17:05:00Z' },
+    comBotao: false,
+    tentativas: 1,
+  }
+}
 
 describe('tratarInteracaoDiscord', () => {
   it('PING responde PONG sem tocar no banco', async () => {
@@ -4709,12 +4757,9 @@ describe('tratarInteracaoDiscord', () => {
   })
 
   it('botão resolve: atualiza a mensagem (type 7, sem componentes) e agenda o resto', async () => {
-    const { repo, gravados } = repoFalso({
+    const { repo, concluidos } = repoFalso({
       usuario: 'u2',
-      contas: [
-        { usuarioId: 'u1', canal: 'discord', externoId: 'D1' },
-        { usuarioId: 'u2', canal: 'discord', externoId: 'D2' },
-      ],
+      fila: [linhaResolvido('res-u1', 'u1', 'D1', 'discord')],
     })
     const enviados: string[] = []
     const portas = {
@@ -4750,7 +4795,7 @@ describe('tratarInteracaoDiscord', () => {
 
     await r.depois!()
     expect(enviados).toEqual(['D1'])
-    expect(gravados[0]).toMatchObject({ tipo: 'resolvido' })
+    expect(concluidos).toEqual([{ id: 'res-u1', ok: true }])
   })
 
   it('botão de quem não vinculou responde efêmero', async () => {
@@ -4811,7 +4856,7 @@ Criar `src/modules/alertas/application/webhook-discord.ts`:
 ```ts
 import { extrairCodigoVinculo, lerCallbackResolver } from '../domain/codigos'
 import { textoResolvido, textoVinculado } from '../domain/mensagens'
-import { avisarResolvido, removerBotoesDaOcorrencia } from './enviar-alertas'
+import { entregarPendentes, removerBotoesDaOcorrencia } from './enviar-alertas'
 import type { DependenciasWebhook } from './portas'
 
 /** Tipos de interação e de resposta do Discord (API v10). */
@@ -4887,14 +4932,9 @@ export async function tratarInteracaoDiscord(
       },
       depois: async () => {
         await removerBotoesDaOcorrencia(deps.portas, deps.repo, ocorrenciaId)
+        // O aviso aos outros já está na fila (alerta_resolver): só adianta a entrega.
         if (!res.jaResolvida) {
-          await avisarResolvido(deps.portas, deps.repo, {
-            ocorrenciaId,
-            posto: res.posto,
-            resolvidoPorId: res.resolvidaPorId,
-            resolvidoPorNome: res.resolvidaPorNome,
-            resolvidaEm: res.resolvidaEm,
-          })
+          await entregarPendentes(deps.portas, deps.repo, { ocorrenciaId })
         }
       },
     }
@@ -5046,12 +5086,13 @@ Em `src/modules/alertas/infra/repositorio-servico.ts`:
 ```ts
 import { ehCanal, type Canal, type ResultadoEnvio } from '../domain/tipos'
 import { lerResultadoAvaliacao, type ContaDestino } from '../domain/avaliacao'
+import { lerEnvioReservado, type EnvioReservado } from '../domain/envio'
 import { lerResolucao } from '../domain/resolucao'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
 import type {
-  EnvioPendente,
+  FiltroReserva,
   MensagemComBotao,
-  NovoEnvio,
+  NovoEnvioDireto,
   RepositorioEnvios,
   RepositorioVinculo,
 } from '../application/portas'
@@ -5239,7 +5280,7 @@ Run:
 ```bash
 cd "/home/rwtech/Área de trabalho/ShopFloor-alertas" && npx vitest run src/modules/alertas && npx tsc --noEmit && npm run lint
 ```
-Expected: `Test Files 13 passed`; `tsc` sem saída; lint sem avisos.
+Expected: `Test Files 14 passed`; `tsc` sem saída; lint sem avisos.
 
 - [ ] **Step 17: Commit**
 
@@ -5251,8 +5292,9 @@ feat(alertas): webhooks do Telegram e do Discord
 
 Vínculo por código (mensagem no Telegram, /vincular no Discord) e botão
 Resolvido: identifica a pessoa pela conta vinculada, chama alerta_resolver,
-edita a mensagem clicada (sem botão), limpa os botões das outras e avisa os
-demais destinatários. Telegram responde sempre 200 após o secret token;
+edita a mensagem clicada (sem botão), limpa os botões das outras e adianta a
+entrega do "resolvido por" que o banco já enfileirou para os outros
+destinatários (entregarPendentes só desta ocorrência). Telegram responde sempre 200 após o secret token;
 Discord confere a assinatura Ed25519 e usa after() para o pós-resposta.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
@@ -5279,7 +5321,7 @@ MSG
 - Consumes:
   - Task 1: `Canal`, `CANAIS`, `NOME_CANAL`, `ehCanal`, `ehJanelaTipo`, `JanelaTipo`, `EstadoOcorrencia` (`../domain/tipos`); `mensagemErroAlerta`, `codigoErroAlerta` (`../domain/erros`).
   - Task 3 (banco): RPCs `alerta_previa`, `alerta_destinatarios`, `alerta_listar_ocorrencias`, `alerta_resolver_admin`, `alerta_gerar_codigo`; tabelas `alerta_regras`, `alerta_contas`.
-  - Task 5/6: `criarDependenciasAlertas` (`../infra/fabrica`), `avaliarEEnviar`, `avisarResolvido`, `removerBotoesDaOcorrencia`, `enviarTeste` (`./enviar-alertas`), `ResumoAvaliacao`, `ResultadoResolver` (`./portas`), `lerResolucao` (`../domain/resolucao`).
+  - Task 5/6 (+ revisão da fila): `criarDependenciasAlertas` (`../infra/fabrica`), `avaliarEEnviar`, `entregarPendentes`, `removerBotoesDaOcorrencia`, `enviarTeste` (`./enviar-alertas`), `ResumoAvaliacao`, `ResultadoResolver` (`./portas`), `lerResolucao` (`../domain/resolucao`).
   - Projeto: `getSessao`, `podeNoModulo`, `createServerSupabase`, `registrarLog`, `revalidatePath`.
 - Produces (consumido pelas Tasks 8 e 9):
   - `interface ContaVinculada { canal: Canal; vinculadoEm: string }` (em `domain/tipos.ts`)
@@ -5295,9 +5337,9 @@ MSG
   - `interface FiltroOcorrencias { de: string; ate: string; estado: '' | EstadoOcorrencia }`
   - `interface OcorrenciaLinha { id: string; regraId: string; regraNome: string; posto: string; pmo: string | null; op: string | null; estado: EstadoOcorrencia; taxaAbertura: number; taxaUltima: number; aprovados: number; reprovados: number; abertaEm: string; resolvidaPorNome: string; resolvidaEm: string | null; normalizadaEm: string | null; enviosOk: number; enviosFalha: number }`
   - `periodoOcorrencias(de: string, ate: string): { de: string; ate: string } | null`; `dataIsoSaoPaulo(d: Date): string`; `filtroOcorrenciasPadrao(hoje: Date): FiltroOcorrencias`
-  - Actions (`alertas-actions.ts`): `salvarRegraAction(id: string | null, entrada: EntradaRegra): Promise<{ ok: true; id: string } | { ok: false; erro: string }>`; `excluirRegraAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }>`; `alternarRegraAtivaAction(id: string, ativa: boolean): Promise<{ ok: true } | { ok: false; erro: string }>`; `previaRegraAction(entrada: { postos: string[]; janelaTipo: string; janelaValor: string | number | null; minimoBipes: string | number }): Promise<{ ok: true; postos: PreviaPosto[] } | { ok: false; erro: string }>`; `listarOcorrenciasAction(filtro: FiltroOcorrencias): Promise<{ ok: true; ocorrencias: OcorrenciaLinha[] } | { ok: false; erro: string }>`; `resolverOcorrenciaAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }>`; `avaliarAgoraAction(): Promise<{ ok: true; resumo: ResumoAvaliacao } | { ok: false; erro: string }>`
+  - Actions (`alertas-actions.ts`): `salvarRegraAction(id: string | null, entrada: EntradaRegra): Promise<{ ok: true; id: string } | { ok: false; erro: string }>`; `excluirRegraAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }>` (**exclusão lógica**: `excluida_em = now()` + `ativa = false`; o histórico continua); `alternarRegraAtivaAction(id: string, ativa: boolean): Promise<{ ok: true } | { ok: false; erro: string }>`; `previaRegraAction(entrada: { postos: string[]; janelaTipo: string; janelaValor: string | number | null; minimoBipes: string | number }): Promise<{ ok: true; postos: PreviaPosto[] } | { ok: false; erro: string }>`; `listarOcorrenciasAction(filtro: FiltroOcorrencias): Promise<{ ok: true; ocorrencias: OcorrenciaLinha[] } | { ok: false; erro: string }>`; `resolverOcorrenciaAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }>`; `avaliarAgoraAction(): Promise<{ ok: true; resumo: ResumoAvaliacao } | { ok: false; erro: string }>`
   - Actions (`perfil-alertas-actions.ts`): `gerarCodigoAction(): Promise<{ ok: true; codigo: string; expiraEm: string } | { ok: false; erro: string }>`; `minhasContasAction(): Promise<{ ok: true; contas: ContaVinculada[] } | { ok: false; erro: string }>`; `desvincularAction(canal: string): Promise<{ ok: true } | { ok: false; erro: string }>`; `enviarTesteAction(canal: string): Promise<{ ok: true } | { ok: false; erro: string }>`
-  - Repositórios: `listarRegras()`, `inserirRegra(r)`, `atualizarRegra(id, r)`, `excluirRegra(id)`, `definirRegraAtiva(id, ativa)`, `previaRegra(p)`, `listarDestinatarios()`, `listarOcorrencias(f)`, `resolverOcorrenciaComoAdmin(id)`, `gerarCodigoVinculo()`, `listarMinhasContas()`, `desvincularConta(canal)`
+  - Repositórios: `listarRegras()` (**só as não excluídas**), `inserirRegra(r)`, `atualizarRegra(id, r)`, `excluirRegra(id)` (**update** de `excluida_em`/`ativa`, nunca `delete`), `definirRegraAtiva(id, ativa)`, `previaRegra(p)`, `listarDestinatarios()`, `listarOcorrencias(f)`, `resolverOcorrenciaComoAdmin(id)`, `gerarCodigoVinculo()`, `listarMinhasContas()`, `desvincularConta(canal)`
 
 - [ ] **Step 1: Escrever o teste da validação da regra (falhando)**
 
@@ -5861,7 +5903,12 @@ function paraLinha(r: RegraValida): Record<string, unknown> {
 
 export async function listarRegras(): Promise<RegraAlerta[]> {
   const sb = await createServerSupabase()
-  const { data, error } = await sb.from('alerta_regras').select(CAMPOS_REGRA).order('nome')
+  // Regra excluída (exclusão lógica) some da lista; as ocorrências dela continuam na aba Ocorrências.
+  const { data, error } = await sb
+    .from('alerta_regras')
+    .select(CAMPOS_REGRA)
+    .is('excluida_em', null)
+    .order('nome')
   if (error) throw error
   return ((data ?? []) as unknown as LinhaRegra[]).map(paraRegra)
 }
@@ -5886,9 +5933,20 @@ export async function atualizarRegra(
   return { ok: true }
 }
 
+/**
+ * Exclusão LÓGICA: a regra some da lista e para de alertar, mas o histórico (ocorrências e envios)
+ * continua. Não existe delete físico — a 0113 nem tem policy de DELETE, e a FK das ocorrências é
+ * `restrict`. As ocorrências vivas dessa regra são encerradas SEM envio na próxima avaliação (o
+ * mesmo caminho de "desativar"), que também tira o botão "Resolvido" das mensagens delas.
+ */
 export async function excluirRegra(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sb = await createServerSupabase()
-  const { error } = await sb.from('alerta_regras').delete().eq('id', id)
+  const agora = new Date().toISOString()
+  const { error } = await sb
+    .from('alerta_regras')
+    .update({ excluida_em: agora, ativa: false, atualizado_em: agora })
+    .eq('id', id)
+    .is('excluida_em', null)
   if (error) return { ok: false, erro: erroDeBanco(error) }
   return { ok: true }
 }
@@ -6086,7 +6144,7 @@ import {
   resolverOcorrenciaComoAdmin,
 } from '../infra/regras-repository'
 import { criarDependenciasAlertas } from '../infra/fabrica'
-import { avaliarEEnviar, avisarResolvido, removerBotoesDaOcorrencia, type ResumoAvaliacao } from './enviar-alertas'
+import { avaliarEEnviar, entregarPendentes, removerBotoesDaOcorrencia, type ResumoAvaliacao } from './enviar-alertas'
 
 const SEM_PERMISSAO = 'Você não tem permissão para configurar alertas.'
 const ROTA = '/configuracoes/sf-alertas'
@@ -6141,7 +6199,7 @@ export async function excluirRegraAction(id: string): Promise<{ ok: true } | { o
     entidade: 'alerta_regra',
     entidadeId: id,
     acao: 'excluir',
-    descricao: 'Regra de alerta excluída',
+    descricao: 'Regra de alerta excluída (exclusão lógica — o histórico de ocorrências continua)',
   })
   revalidatePath(ROTA)
   return { ok: true }
@@ -6189,25 +6247,19 @@ export async function listarOcorrenciasAction(
 }
 
 export async function resolverOcorrenciaAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
-  const g = await gestor()
-  if (!g) return { ok: false, erro: SEM_PERMISSAO }
+  if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
 
+  // alerta_resolver_admin resolve E enfileira o "✅ resolvido por" para os destinatários (menos
+  // quem resolveu), na mesma transação.
   const r = await resolverOcorrenciaComoAdmin(id)
   if (!r.ok) return { ok: false, erro: r.erro }
 
-  // Mensagens já entregues: tira o botão e avisa os outros. Falha aqui NÃO desfaz a resolução.
+  // Tira o botão das mensagens já entregues e adianta a entrega do aviso que está na fila. Falha
+  // aqui NÃO desfaz a resolução e não perde o aviso: o cron entrega na próxima rodada.
   try {
     const { portas, repo } = criarDependenciasAlertas()
     await removerBotoesDaOcorrencia(portas, repo, id)
-    if (!r.resolucao.jaResolvida) {
-      await avisarResolvido(portas, repo, {
-        ocorrenciaId: id,
-        posto: r.resolucao.posto,
-        resolvidoPorId: g.usuarioId,
-        resolvidoPorNome: r.resolucao.resolvidaPorNome,
-        resolvidaEm: r.resolucao.resolvidaEm,
-      })
-    }
+    if (!r.resolucao.jaResolvida) await entregarPendentes(portas, repo, { ocorrenciaId: id })
   } catch (e) {
     console.error('[alertas] avisar resolução pela tela:', e instanceof Error ? e.message : e)
   }
@@ -6222,7 +6274,12 @@ export async function resolverOcorrenciaAction(id: string): Promise<{ ok: true }
   return { ok: true }
 }
 
-/** "Avaliar agora": a mesma lógica do cron, para testar sem esperar os 5 minutos. */
+/**
+ * "Avaliar agora": a mesma lógica do cron, para testar sem esperar os 5 minutos.
+ * Rodar junto com o cron é seguro: a avaliação tem trava (a segunda volta `ocupado`) e a ENTREGA
+ * sai da fila por reserva atômica (`alerta_reservar_envios`, `for update skip locked` + reserva de
+ * 15 min) — duas rodadas nunca pegam a mesma linha, então não há envio em dobro.
+ */
 export async function avaliarAgoraAction(): Promise<
   { ok: true; resumo: ResumoAvaliacao } | { ok: false; erro: string }
 > {
@@ -6288,6 +6345,10 @@ export async function desvincularAction(canal: string): Promise<{ ok: true } | {
   return { ok: true }
 }
 
+/**
+ * Entrega DIRETA, fora da fila: a pessoa precisa ver o resultado na hora, e teste que falhou não é
+ * reenviado. `enviarTeste` grava a linha já final em alerta_envios (tipo 'teste', tentativas 1).
+ */
 export async function enviarTesteAction(canal: string): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao) return { ok: false, erro: SEM_SESSAO }
@@ -6312,7 +6373,7 @@ Run:
 ```bash
 cd "/home/rwtech/Área de trabalho/ShopFloor-alertas" && npx vitest run src/modules/alertas && npx tsc --noEmit && npm run lint
 ```
-Expected: `Test Files 15 passed`; `tsc` sem saída; lint sem avisos.
+Expected: `Test Files 16 passed`; `tsc` sem saída; lint sem avisos.
 
 - [ ] **Step 12: Commit**
 
@@ -6324,8 +6385,9 @@ feat(alertas): validação da regra, repositórios e server actions
 
 validarRegra/validarPrevia (padrões 90% · 60 min · 50 bipes · mínimo 20),
 aviso de destinatário sem canal, filtro de ocorrências no fuso da fábrica,
-repositórios pela sessão (RLS) e actions de regras, prévia, ocorrências,
-resolver pela tela, avaliar agora, código de vínculo, desvincular e teste.
+repositórios pela sessão (RLS) e actions de regras (excluir = exclusão
+lógica), prévia, ocorrências, resolver pela tela (entrega o aviso da fila),
+avaliar agora, código de vínculo, desvincular e teste (entrega direta).
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 MSG
@@ -7389,7 +7451,7 @@ export function RegrasLista({
   async function excluir(regra: RegraAlerta) {
     const ok = await confirmar({
       titulo: `Excluir "${regra.nome}"?`,
-      descricao: 'As ocorrências dessa regra saem do histórico junto.',
+      descricao: 'A regra sai da lista e para de alertar; o histórico de ocorrências continua disponível.',
     })
     if (!ok) return
     startTransition(async () => {
@@ -8153,6 +8215,16 @@ aplicadas no banco do ambiente testado, app reiniciado (`pm2 restart shopfloor -
 - [ ] Com ocorrência aberta, desligar o interruptor **Ativa** → **Avaliar agora** → a ocorrência
       vira **Normalizada** e **nada** é enviado.
 - [ ] Tirar o posto da regra → mesmo comportamento.
+- [ ] **Excluir** uma regra com ocorrência (confirmação: "A regra sai da lista e para de alertar; o
+      histórico de ocorrências continua disponível.") → some da aba Regras; na aba **Ocorrências**
+      as linhas dela continuam, com o nome "Regra (excluída)"; **Avaliar agora** não alerta mais
+      por ela e a ocorrência viva vira **Normalizada** sem envio (os botões saem).
+
+## 6b. Fila de envio
+- [ ] Com o **Discord sem token** (ou com um destinatário que bloqueou DMs), **Avaliar agora** →
+      a aba Ocorrências mostra a falha; nas rodadas seguintes a linha é tentada de novo até 3 vezes.
+- [ ] Clicar **Avaliar agora** duas vezes seguidas (ou junto com o cron) → cada destinatário recebe
+      a mensagem **uma vez só**.
 
 ## 7. Cron e segurança
 - [ ] `curl -i -X POST .../api/alertas/avaliar` → **401**.
@@ -8241,20 +8313,22 @@ MSG
 
 **Placeholders:** nenhuma ocorrência de "TBD", "similar à Task N", teste sem código ou passo sem comando — cada step de código traz o arquivo inteiro (ou o trecho exato a trocar) e cada step de teste traz o comando e a saída esperada.
 
-**Consistência de nomes e tipos (conferida entre tasks):** `ResultadoEnvio.mensagemExternaId`, `PortaCanal.enviar/removerBotoes`, `RepositorioEnvios.envioParaReenviar/registrarReenvio/mensagensComBotao/marcarSemBotao/contasDaOcorrencia/contaDoUsuario`, `RepositorioVinculo.vincular/usuarioPorConta/resolver`, `AcaoAvaliacao` (camelCase no TS × snake_case no jsonb), `ResolucaoOcorrencia.jaResolvida/resolvidaPorId/resolvidaPorNome/resolvidaEm`, `RegraValida`/`RegraAlerta`, `DestinatarioDisponivel.usuarioId`, `FiltroOcorrencias.de/ate/estado`, `PreviaPosto.avaliavel`, `ContaVinculada.vinculadoEm`, `canaisConfigurados`/`criarPortasCanais`/`criarDependenciasAlertas`, `ehRotaPublicaDeAlertas`. Nomes do banco batem com as chamadas RPC: `alerta_gerar_codigo`, `alerta_vincular(p_codigo,p_canal,p_externo_id)`, `alerta_avaliar`, `alerta_previa(p_postos,p_janela_tipo,p_janela_valor,p_minimo)`, `alerta_resolver(p_ocorrencia_id,p_usuario_id)`, `alerta_resolver_admin(p_ocorrencia_id)`, `alerta_destinatarios`, `alerta_listar_ocorrencias(p_de,p_ate,p_estado)`.
+**Consistência de nomes e tipos (conferida entre tasks, atualizada na revisão da fila):** `ResultadoEnvio.mensagemExternaId`, `PortaCanal.enviar/removerBotoes`, `RepositorioEnvios.avaliar/reservarPendentes/concluirEnvio/registrarEnvioDireto/mensagensComBotao/marcarSemBotao/contaDoUsuario`, `FiltroReserva.canais/limite/ocorrenciaId`, `EnvioReservado` + `textoDoEnvio(tipo, dados)` (camelCase no TS × snake_case no jsonb), `ResultadoAvaliacaoRpc.ocupado/avaliadas/enfileirados/normalizadas`, `RepositorioVinculo.vincular/usuarioPorConta/resolver`, `ResolucaoOcorrencia.jaResolvida/resolvidaPorId/resolvidaPorNome/resolvidaEm`, `RegraValida`/`RegraAlerta`, `DestinatarioDisponivel.usuarioId`, `FiltroOcorrencias.de/ate/estado`, `PreviaPosto.avaliavel`, `ContaVinculada.vinculadoEm`, `canaisConfigurados`/`criarPortasCanais`/`criarDependenciasAlertas`, `ehRotaPublicaDeAlertas`. Nomes do banco batem com as chamadas RPC: `alerta_gerar_codigo`, `alerta_vincular(p_codigo,p_canal,p_externo_id)`, `alerta_avaliar`, `alerta_reservar_envios(p_canais,p_limite,p_ocorrencia_id)`, `alerta_previa(p_postos,p_janela_tipo,p_janela_valor,p_minimo)`, `alerta_resolver(p_ocorrencia_id,p_usuario_id)`, `alerta_resolver_admin(p_ocorrencia_id)`, `alerta_destinatarios`, `alerta_listar_ocorrencias(p_de,p_ate,p_estado)`.
 
 **Decisões tomadas aqui que a spec não fixava** (registradas para o revisor):
 1. **"Meu perfil"** entra pelo nome do usuário **no cabeçalho** (link novo à direita) **e** pelo bloco do nome no rodapé do menu — o cabeçalho hoje não tinha menu de usuário.
 2. **Índice do `sf_registros` em arquivo próprio** `0114_sf_registros_posto_data_idx.sql` (`create index concurrently`), com instrução de remover `concurrently` no SQL Editor do Dev e rodar no RDS com `psql -f` sem `-1`.
 3. **Funções "só service_role"** ganham `revoke all ... from public, anon, authenticated` + `grant execute ... to service_role` (é o próprio GRANT que faz o gate); `alerta_resolver_interno` é revogado de todos e chamado só pelas duas portas.
-4. **`alerta_envios.texto` e `com_botao`** (colunas além das listadas na spec) para o reenvio sair idêntico ao que falhou, e o reenvio **atualiza a mesma linha** (`tentativas + 1`) em vez de inserir outra.
+4. **`alerta_envios` é a fila de saída** (revisão de 2026-09-18): o banco cria a linha pendente com `dados jsonb` (o texto é montado no TS na hora de entregar e gravado em `texto` para auditoria), `com_botao`, `reservado_em`, `enviado_em`; a entrega **atualiza a mesma linha** (`tentativas + 1` feito pela reserva) em vez de inserir outra.
 5. **`mensagem_externa_id` no formato `"<chat|canal>:<mensagem>"`** — os dois provedores exigem o par para editar a mensagem.
 6. **`alerta_avaliar` atualiza `taxa_ultima`/contagens em toda avaliação** (inclusive em ocorrência `resolvida`), sem envio — a tela de Ocorrências mostra a foto atual.
 7. **`alerta_resolver_admin(p_ocorrencia_id)`** como função separada da versão do webhook (permissão e regra de destinatário diferentes).
 8. **`alerta_destinatarios()`** devolve só booleanos de vínculo (nunca o `externo_id`), e **`alerta_listar_ocorrencias()`** já traz nome da regra, quem resolveu e a contagem de envios — evita expor tabelas extras via RLS.
 9. **Middleware libera `/api/alertas/*`** (senão o Telegram receberia o redirect do `/login`), com o teste no helper puro `ehRotaPublicaDeAlertas`.
 10. **Validações extras** no formulário: taxa conferida no texto (até 2 casas) e janela de bipes ≥ mínimo de bipes (senão a regra nunca decidiria nada).
-11. **Reenvio** só de envios das últimas 24 h, no máximo 100 por rodada, pulando `teste` e pulando alerta/lembrete de ocorrência que já saiu de `aberta`.
+11. **Entrega da fila** só de linhas das últimas 24 h, no máximo 30 por rodada (reserva de 15 min), novas antes de reenvios, até 3 tentativas, pulando `teste` e pulando alerta/lembrete de ocorrência que já saiu de `aberta`.
+15. **Exclusão lógica de regra** (`excluida_em`), FK `restrict` e nenhuma policy de DELETE: excluir nunca apaga histórico.
+16. **"Enviar teste" fora da fila** (entrega direta + linha já final); **"resolvido por" dentro da fila** (enfileirado pelo `alerta_resolver_interno`, entregue na hora pelo webhook/tela e, se falhar, pelo cron).
 12. **Discord**: resposta imediata (`type 7`/efêmera) e o resto (`avisar os outros`, limpar botões) em `after()`; o `mensagem_externa_id` do Discord também é limpo em `normalizou`.
 13. **Tabs da tela de Alertas** são botões simples (o projeto não tem componente de Tabs) e os checkboxes/rádios do diálogo são inputs nativos (mesmo padrão do formulário de Defeitos).
 14. **Build da verificação final** roda com variáveis fictícias na linha de comando, porque o worktree não tem `.env.local` e o plano proíbe ler `.env*`.
