@@ -3,6 +3,7 @@ import type { Modulo, Permissao } from './perfil'
 export const MODULOS: { chave: Modulo; rotulo: string }[] = [
   { chave: 'recebimento', rotulo: 'Recebimento' },
   { chave: 'shopfloor', rotulo: 'Fluxo de Processos' },
+  { chave: 'setup', rotulo: 'Setup' },
   { chave: 'sistema', rotulo: 'Sistema' },
 ]
 
@@ -10,5 +11,6 @@ export const MODULOS: { chave: Modulo; rotulo: string }[] = [
 export const PERMISSOES_POR_MODULO: Record<Modulo, Permissao[]> = {
   recebimento: ['visualizar', 'importar', 'editar', 'finalizar', 'editar_finalizado', 'excluir', 'gerar_etiqueta', 'administrar'],
   shopfloor: ['visualizar', 'lancar', 'administrar'],
+  setup: ['visualizar', 'lancar', 'administrar'],
   sistema: ['administrar'],
 }

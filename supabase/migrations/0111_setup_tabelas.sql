@@ -1,0 +1,157 @@
+-- =============================================================
+-- Módulo Setup — tabelas (spec 2026-09-16-modulo-setup-abastecimento-design.md).
+-- Leitura: quem visualiza o módulo. Escrita de operação: só pelas funções st_* (0112, security
+-- definer). Cadastros (equipamentos, estrutura) são escritos direto pelo app, restritos a administrar.
+-- No PTH, posicao/feeder guardam posto/locação.
+-- Colaborador: crachá digitado/bipado na tela, texto livre (mesmo campo da tela de Lançamento do
+-- ShopFloor). É só registro de quem fez; o usuário logado continua em criado_por/operador/usuario.
+-- Equipamento: SMD = linha + bloco + máquina; PTH = linha + bloco (sem máquina).
+-- =============================================================
+
+-- Equipamento = linha + bloco (a mesma divisão de fábrica nos dois processos) + máquina.
+-- No SMD a máquina é obrigatória; no PTH não existe máquina (maquina is null).
+create table public.st_equipamentos (
+  id        uuid primary key default gen_random_uuid(),
+  processo  text not null check (processo in ('SMD', 'PTH')),
+  linha     text not null,
+  bloco     text not null,
+  maquina   text,
+  ativo     boolean not null default true,
+  criado_em timestamptz not null default now(),
+  constraint st_equipamentos_maquina_por_processo check (
+    (processo = 'SMD' and maquina is not null and btrim(maquina) <> '')
+    or (processo = 'PTH' and maquina is null)
+  )
+);
+-- coalesce(maquina, '') em vez de unique (…, maquina): num índice único comum os nulos nunca
+-- colidem entre si, então dois blocos PTH iguais passariam.
+create unique index st_equipamentos_chave
+  on public.st_equipamentos (processo, linha, bloco, coalesce(maquina, ''));
+
+create table public.st_estrutura (
+  pmo        text not null,
+  componente text not null,                 -- código do ERP (prefixo do rolo), maiúsculas
+  processo   text not null check (processo in ('SMD', 'PTH')),
+  origem     text not null default 'manual' check (origem in ('importacao', 'manual')),
+  criado_por uuid references public.usuarios(id),
+  criado_em  timestamptz not null default now(),
+  primary key (pmo, componente)
+);
+
+-- A identidade do setup é o equipamento CADASTRADO (st_equipamentos), não texto solto.
+create table public.st_setups (
+  id             uuid primary key default gen_random_uuid(),
+  pmo            text not null,
+  op             text not null,
+  -- Cópia do processo do equipamento, feita na abertura (st_abrir_setup): as regras de item
+  -- (estrutura SMD × PTH, unicidade de feeder) e os índices parciais de st_setup_itens leem o
+  -- processo do próprio setup, sem precisar do join com st_equipamentos a cada bipe.
+  processo       text not null check (processo in ('SMD', 'PTH')),
+  equipamento_id uuid not null references public.st_equipamentos(id),
+  face           text not null check (face in ('TOP', 'BOT', 'TOP E BOT')),
+  sn_abertura    text,                       -- informado na LIBERAÇÃO (st_liberar_setup); null enquanto em montagem
+  colaborador    text not null default '',   -- crachá de quem abriu o setup (livre, pode ficar vazio)
+  estado         text not null default 'montagem' check (estado in ('montagem', 'liberado')),
+  copiado_de     uuid references public.st_setups(id) on delete set null,
+  criado_por     uuid references public.usuarios(id),
+  criado_em      timestamptz not null default now(),
+  liberado_por   uuid references public.usuarios(id),
+  liberado_em    timestamptz,
+  unique (pmo, op, equipamento_id, face),
+  -- Setup liberado sempre tem SN de Abertura (é pedido e conferido na liberação).
+  constraint st_setups_liberado_com_sn check (estado = 'montagem' or coalesce(sn_abertura, '') <> '')
+);
+create index st_setups_pmo_op on public.st_setups (pmo, op);
+-- Consultas filtram por linha/bloco/máquina (join com st_equipamentos) e a cópia de OP anterior
+-- busca por (pmo, equipamento_id, face); a unique acima não começa por equipamento_id.
+create index st_setups_equipamento on public.st_setups (equipamento_id);
+
+create table public.st_setup_itens (
+  id             uuid primary key default gen_random_uuid(),
+  setup_id       uuid not null references public.st_setups(id) on delete cascade,
+  processo       text not null check (processo in ('SMD', 'PTH')),   -- cópia do setup (índices parciais)
+  posicao        text not null,              -- posição (SMD) ou posto (PTH)
+  feeder         text not null,              -- feeder (SMD) ou locação (PTH)
+  componente     text not null,
+  rolo           text,                       -- rolo montado agora (código como bipado, normalizado); null = falta bipar
+  rolo_chave     text,                       -- chave canônica do rolo: prefixo || '-' || sequencial sem zeros à esquerda (st_rolo_chave)
+  colaborador    text not null default '',    -- crachá de quem bipou o item (livre, pode ficar vazio)
+  atualizado_por uuid references public.usuarios(id),
+  atualizado_em  timestamptz not null default now(),
+  unique (setup_id, posicao, feeder)
+);
+create unique index st_itens_posicao_smd on public.st_setup_itens (setup_id, posicao) where processo = 'SMD';
+create unique index st_itens_feeder_smd  on public.st_setup_itens (setup_id, feeder)  where processo = 'SMD';
+create unique index st_itens_rolo        on public.st_setup_itens (setup_id, rolo_chave) where rolo_chave is not null;
+
+create table public.st_trocas (
+  id            uuid primary key default gen_random_uuid(),
+  setup_id      uuid not null references public.st_setups(id) on delete cascade,
+  item_id       uuid references public.st_setup_itens(id) on delete set null,
+  posicao       text not null,
+  feeder        text not null,
+  rolo_saida    text not null,
+  rolo_entrada  text not null,
+  sn_inicial    text not null,
+  resultado     text not null check (resultado in ('APROVADO', 'REPROVADO')),
+  motivos       text[] not null default '{}',
+  operador      uuid references public.usuarios(id),
+  operador_nome text not null default '',
+  colaborador   text not null default '',   -- crachá de quem fez a troca (livre, pode ficar vazio)
+  data_hora     timestamptz not null default now()
+);
+create index st_trocas_setup_data on public.st_trocas (setup_id, data_hora desc);
+create index st_trocas_data on public.st_trocas (data_hora desc);
+-- item_id tem "on delete set null": sem índice, cada remoção de item varreria a tabela toda.
+create index st_trocas_item on public.st_trocas (item_id);
+
+create table public.st_alteracoes (
+  id           uuid primary key default gen_random_uuid(),
+  setup_id     uuid not null references public.st_setups(id) on delete cascade,
+  item_id      uuid,
+  tipo         text not null check (tipo in ('troca_feeder', 'troca_posicao', 'correcao', 'inclusao', 'remocao')),
+  antes        jsonb,
+  depois       jsonb,
+  usuario      uuid references public.usuarios(id),
+  usuario_nome text not null default '',
+  data_hora    timestamptz not null default now()
+);
+create index st_alteracoes_setup on public.st_alteracoes (setup_id, data_hora desc);
+
+-- ---------- RLS ----------
+alter table public.st_equipamentos enable row level security;
+alter table public.st_estrutura    enable row level security;
+alter table public.st_setups       enable row level security;
+alter table public.st_setup_itens  enable row level security;
+alter table public.st_trocas       enable row level security;
+alter table public.st_alteracoes   enable row level security;
+
+create policy st_equipamentos_select on public.st_equipamentos for select using ((select tem_permissao('setup', 'visualizar')));
+create policy st_equipamentos_admin  on public.st_equipamentos for all using ((select tem_permissao('setup', 'administrar'))) with check ((select tem_permissao('setup', 'administrar')));
+create policy st_estrutura_select    on public.st_estrutura    for select using ((select tem_permissao('setup', 'visualizar')));
+create policy st_estrutura_admin     on public.st_estrutura    for all using ((select tem_permissao('setup', 'administrar'))) with check ((select tem_permissao('setup', 'administrar')));
+create policy st_setups_select       on public.st_setups       for select using ((select tem_permissao('setup', 'visualizar')));
+create policy st_setup_itens_select  on public.st_setup_itens  for select using ((select tem_permissao('setup', 'visualizar')));
+create policy st_trocas_select       on public.st_trocas       for select using ((select tem_permissao('setup', 'visualizar')));
+create policy st_alteracoes_select   on public.st_alteracoes   for select using ((select tem_permissao('setup', 'visualizar')));
+
+-- ---------- GRANTs (no RDS da AWS os privilégios padrão podem não valer pra tabela nova) ----------
+grant select on public.st_setups, public.st_setup_itens, public.st_trocas, public.st_alteracoes to authenticated;
+grant select, insert, update, delete on public.st_equipamentos, public.st_estrutura to authenticated;
+grant select, insert, update, delete on public.st_equipamentos, public.st_estrutura, public.st_setups,
+  public.st_setup_itens, public.st_trocas, public.st_alteracoes to service_role;
+
+-- ---------- Equipamentos de hoje (planilha legada) ----------
+-- Os SMD de hoje ficam todos no bloco A.
+insert into public.st_equipamentos (processo, linha, bloco, maquina) values
+  ('SMD', '1', 'A', 'MG5'),
+  ('SMD', '1', 'A', 'YSM10'),
+  ('SMD', '2', 'A', 'YSM10'),
+  ('SMD', '3', 'A', 'CP40')
+on conflict do nothing;
+insert into public.st_equipamentos (processo, linha, bloco)
+select 'PTH', l::text, b
+from generate_series(1, 6) as l, unnest(array['A', 'B']) as b
+on conflict do nothing;
+
+notify pgrst, 'reload schema';

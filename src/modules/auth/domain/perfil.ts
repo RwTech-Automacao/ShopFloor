@@ -9,7 +9,7 @@ export type Permissao =
   | 'administrar'
   | 'lancar'
 
-export type Modulo = 'recebimento' | 'shopfloor' | 'sistema'
+export type Modulo = 'recebimento' | 'shopfloor' | 'setup' | 'sistema'
 
 export interface Perfil {
   id: string
