@@ -1,50 +1,15 @@
 -- Testes SQL dos alertas de taxa de aprovação. Rodar com supabase/tests/rodar-alertas-test.sh
--- (Postgres descartável em Docker). Tudo que o banco real já tem é STUBADO aqui — só o mínimo.
+-- (Postgres descartável em Docker). Pré-requisito (feito pelo runner, nesta ordem, na mesma
+-- base): supabase/tests/_stubs.sql -> 0113_alertas.sql (com psql -1, como no RDS) ->
+-- 0114_sf_registros_posto_data_idx.sql -> este arquivo.
 
--- ---------- Stubs do Supabase / ShopFloor ----------
-create role anon;
-create role authenticated;
-create role service_role bypassrls;   -- no Supabase o service_role ignora RLS
-create schema auth;
-grant usage on schema auth to anon, authenticated, service_role;
-create function auth.uid() returns uuid language sql stable as $f$
-  select nullif(current_setting('teste.uid', true), '')::uuid
-$f$;
-
-create table public.usuarios (
-  id uuid primary key,
-  nome text not null default '',
-  email text not null default '',
-  ativo boolean not null default true
-);
-
-create table public.sf_registros (
-  id uuid primary key default gen_random_uuid(),
-  data_hora timestamptz not null default now(),
-  posto text not null,
-  pmo text not null default '',
-  op text not null default '',
-  status text not null default ''
-);
-
-grant select on public.usuarios, public.sf_registros to anon, authenticated, service_role;
-
--- `teste.perms` = lista 'modulo.permissao' separada por vírgula.
-create function public.tem_permissao(p_modulo text, p_perm text) returns boolean language sql stable as $f$
-  select (',' || coalesce(current_setting('teste.perms', true), '') || ',')
-         like '%,' || p_modulo || '.' || p_perm || ',%'
-$f$;
-
-insert into public.usuarios (id, nome, email) values
-  ('00000000-0000-0000-0000-000000000001', 'Ana Gestora',     'ana@enterplak.com.br'),
-  ('00000000-0000-0000-0000-000000000002', 'Bruno Líder',     'bruno@enterplak.com.br'),
-  ('00000000-0000-0000-0000-000000000003', 'Carla Operadora', 'carla@enterplak.com.br');
+-- Imita os privilégios padrão de tabela do Supabase Dev (tudo liberado pro authenticated/anon),
+-- deixando SÓ o RLS como barreira real. Se algum teste de segurança abaixo só passa por causa de
+-- um `grant` estreito, essa linha estoura ele.
+grant all on all tables in schema public to anon, authenticated;
 
 select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 select set_config('teste.perms', 'shopfloor.visualizar,shopfloor.administrar', false);
-
-\i /tmp/0113.sql
-\i /tmp/0114.sql
 
 -- Ajuda dos testes: gera bipes de um posto numa OP, N minutos atrás.
 create function public.teste_bipes(
@@ -60,9 +25,10 @@ create function public.teste_bipes(
     from generate_series(1, p_reprovados) g;
 $f$;
 
--- 1. Código de vínculo: formato, invalidação do anterior, uso único, expiração, id já usado.
+-- 1. Código de vínculo: formato, invalidação do anterior, uso único, expiração (tudo
+--    CODIGO_INVALIDO, de propósito — não dá pra saber de fora se o código chegou perto).
 do $t$
-declare r1 jsonb; r2 jsonb; n text;
+declare r1 jsonb; r2 jsonb; v jsonb;
 begin
   r1 := alerta_gerar_codigo();
   if (r1->>'codigo') !~ '^ALERTA-[A-Z2-9]{4}$' then
@@ -77,39 +43,36 @@ begin
   end if;
 
   -- caixa baixa é aceita (a pessoa digita como quiser)
-  n := alerta_vincular(lower(r2->>'codigo'), 'telegram', '111');
-  if n <> 'Ana Gestora' then raise exception 'FALHOU: nome do vínculo %', n; end if;
+  v := alerta_vincular(lower(r2->>'codigo'), 'telegram', '111');
+  if not coalesce((v->>'ok')::boolean, false) or (v->>'nome') <> 'Ana Gestora' then
+    raise exception 'FALHOU: vínculo %', v;
+  end if;
   if not exists (select 1 from alerta_contas
                   where usuario_id = '00000000-0000-0000-0000-000000000001'
                     and canal = 'telegram' and externo_id = '111') then
     raise exception 'FALHOU: conta não gravada';
   end if;
 
-  begin
-    perform alerta_vincular(r2->>'codigo', 'telegram', '111');
-    raise exception 'FALHOU: código usado duas vezes';
-  exception when others then
-    if sqlerrm not like '%CODIGO_INVALIDO%' then raise; end if;
-  end;
+  -- código já usado
+  v := alerta_vincular(r2->>'codigo', 'telegram', '111');
+  if coalesce((v->>'ok')::boolean, true) or (v->>'erro') <> 'CODIGO_INVALIDO' then
+    raise exception 'FALHOU: código usado duas vezes deu %', v;
+  end if;
 
   -- expirado
   r1 := alerta_gerar_codigo();
   update alerta_codigos set expira_em = now() - interval '1 minute' where codigo = r1->>'codigo';
-  begin
-    perform alerta_vincular(r1->>'codigo', 'telegram', '111');
-    raise exception 'FALHOU: código expirado aceito';
-  exception when others then
-    if sqlerrm not like '%CODIGO_EXPIRADO%' then raise; end if;
-  end;
+  v := alerta_vincular(r1->>'codigo', 'telegram', '113');
+  if coalesce((v->>'ok')::boolean, true) or (v->>'erro') <> 'CODIGO_INVALIDO' then
+    raise exception 'FALHOU: código expirado deu %', v;
+  end if;
 
   -- canal inválido
   r1 := alerta_gerar_codigo();
-  begin
-    perform alerta_vincular(r1->>'codigo', 'whatsapp', '999');
-    raise exception 'FALHOU: canal inválido aceito';
-  exception when others then
-    if sqlerrm not like '%CANAL_INVALIDO%' then raise; end if;
-  end;
+  v := alerta_vincular(r1->>'codigo', 'whatsapp', '999');
+  if coalesce((v->>'ok')::boolean, true) or (v->>'erro') <> 'CANAL_INVALIDO' then
+    raise exception 'FALHOU: canal inválido deu %', v;
+  end if;
 
   -- mesmo usuário troca de chat: atualiza a linha (sem duplicar)
   r1 := alerta_gerar_codigo();
@@ -131,7 +94,7 @@ end $t$;
 -- Bruno: telegram 222 + discord D2. Carla: nada (fica sem canal, de propósito).
 select set_config('teste.uid', '00000000-0000-0000-0000-000000000002', false);
 do $t$
-declare r jsonb;
+declare r jsonb; v jsonb;
 begin
   r := alerta_gerar_codigo();
   perform alerta_vincular(r->>'codigo', 'telegram', '222');
@@ -140,12 +103,10 @@ begin
 
   -- id externo de OUTRO usuário não pode ser roubado
   r := alerta_gerar_codigo();
-  begin
-    perform alerta_vincular(r->>'codigo', 'telegram', '112');
-    raise exception 'FALHOU: externo_id de outro usuário aceito';
-  exception when others then
-    if sqlerrm not like '%CONTA_JA_VINCULADA%' then raise; end if;
-  end;
+  v := alerta_vincular(r->>'codigo', 'telegram', '112');
+  if coalesce((v->>'ok')::boolean, true) or (v->>'erro') <> 'CONTA_JA_VINCULADA' then
+    raise exception 'FALHOU: externo_id de outro usuário aceito: %', v;
+  end if;
 end $t$;
 
 -- 2. Grants: alerta_vincular é só do servidor (service_role).
@@ -176,6 +137,75 @@ reset role;
 -- devolve o discord do Bruno pro resto dos testes
 insert into public.alerta_contas (usuario_id, canal, externo_id)
 values ('00000000-0000-0000-0000-000000000002', 'discord', 'D2');
+
+-- 3b. Mesmo com o `grant all` do topo do arquivo (padrão do Supabase Dev), sem policy de
+--     insert/update em alerta_contas o RLS barra tudo.
+set role authenticated;
+do $t$
+begin
+  begin
+    insert into alerta_contas (usuario_id, canal, externo_id)
+    values ('00000000-0000-0000-0000-000000000002', 'telegram', 'hack-insert');
+    raise exception 'FALHOU: authenticated conseguiu inserir em alerta_contas';
+  exception when insufficient_privilege then
+    null;
+  end;
+end $t$;
+do $t$
+declare n int;
+begin
+  -- sem policy de update, a USING implícita é `false`: não dá erro, só não afeta nenhuma linha
+  update alerta_contas set externo_id = 'hack-update' where canal = 'telegram';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FALHOU: authenticated atualizou % linha(s) de alerta_contas', n; end if;
+end $t$;
+
+-- 3c. SELECT de alerta_codigos de outro usuário (Ana) não vaza pro Bruno.
+do $t$
+declare n int;
+begin
+  select count(*) into n from alerta_codigos
+   where usuario_id = '00000000-0000-0000-0000-000000000001';
+  if n <> 0 then raise exception 'FALHOU: RLS de alerta_codigos vazou % linha(s) de outro usuário', n; end if;
+end $t$;
+reset role;
+
+-- 3d. DELETE de alerta_codigos: sem policy de delete, RLS barra tudo — a linha do outro usuário
+--     continua existindo depois do reset role.
+do $t$
+begin
+  if not exists (select 1 from alerta_codigos where usuario_id <> '00000000-0000-0000-0000-000000000002') then
+    raise exception 'FALHOU: sem código de outro usuário pra testar o delete';
+  end if;
+end $t$;
+set role authenticated;
+delete from alerta_codigos where usuario_id <> '00000000-0000-0000-0000-000000000002';
+reset role;
+do $t$
+begin
+  if not exists (select 1 from alerta_codigos where usuario_id <> '00000000-0000-0000-0000-000000000002') then
+    raise exception 'FALHOU: authenticated apagou código(s) de outro usuário';
+  end if;
+end $t$;
+
+-- 3e. authenticated consegue chamar alerta_gerar_codigo; anon não.
+set role authenticated;
+do $t$
+begin
+  perform alerta_gerar_codigo();
+end $t$;
+reset role;
+set role anon;
+do $t$
+begin
+  begin
+    perform alerta_gerar_codigo();
+    raise exception 'FALHOU: anon executou alerta_gerar_codigo';
+  exception when insufficient_privilege then
+    null;
+  end;
+end $t$;
+reset role;
 
 -- 4. RLS de alerta_regras: precisa de shopfloor.administrar.
 insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
@@ -215,5 +245,50 @@ begin
     raise exception 'FALHOU: índice (posto, data_hora desc) não existe';
   end if;
 end $t$;
+
+-- 6. Força bruta: 5 falhas seguidas do mesmo (canal, externo_id) travam por 15 min — mesmo
+--    chegando um código CERTO na 6ª tentativa. As tentativas ficam gravadas.
+select set_config('teste.uid', '00000000-0000-0000-0000-000000000003', false); -- Carla
+do $t$
+declare v jsonb; r jsonb; i int; n int;
+begin
+  for i in 1..5 loop
+    v := alerta_vincular('ALERTA-ZZZZ', 'telegram', 'BF1');
+    if coalesce((v->>'ok')::boolean, true) or (v->>'erro') <> 'CODIGO_INVALIDO' then
+      raise exception 'FALHOU: tentativa % de força bruta deu %', i, v;
+    end if;
+  end loop;
+
+  select count(*) into n from alerta_tentativas where canal = 'telegram' and externo_id = 'BF1';
+  if n <> 5 then raise exception 'FALHOU: % tentativa(s) gravada(s), esperava 5', n; end if;
+
+  r := alerta_gerar_codigo();
+  v := alerta_vincular(r->>'codigo', 'telegram', 'BF1');
+  if coalesce((v->>'ok')::boolean, true) or (v->>'erro') <> 'MUITAS_TENTATIVAS' then
+    raise exception 'FALHOU: não travou depois de 5 falhas (código certo): %', v;
+  end if;
+
+  if exists (select 1 from alerta_contas
+              where usuario_id = '00000000-0000-0000-0000-000000000003' and canal = 'telegram') then
+    raise exception 'FALHOU: vínculo travado mesmo assim gravou conta';
+  end if;
+end $t$;
+
+-- 6b. authenticated não lê nem escreve em alerta_tentativas (RLS ligado, sem policy nenhuma;
+--     o `grant all` do topo não adianta nada aqui).
+set role authenticated;
+do $t$
+begin
+  if exists (select 1 from alerta_tentativas) then
+    raise exception 'FALHOU: authenticated leu alerta_tentativas';
+  end if;
+  begin
+    insert into alerta_tentativas (canal, externo_id) values ('telegram', 'hack-tentativa');
+    raise exception 'FALHOU: authenticated escreveu em alerta_tentativas';
+  exception when insufficient_privilege then
+    null;
+  end;
+end $t$;
+reset role;
 
 \echo 'ALERTAS: TABELAS/RLS/VINCULO OK'

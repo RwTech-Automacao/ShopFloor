@@ -5074,9 +5074,17 @@ export function criarRepositorioServico(
         p_canal: canal,
         p_externo_id: externoId,
       })
-      // Erro de regra vem como 'CODIGO_EXPIRADO' etc.; o bot responde a versão em PT-BR.
+      // Revisão da Task 2: alerta_vincular NUNCA levanta exceção de regra de negócio (senão a
+      // proteção contra força bruta perderia o registro da tentativa — o raise desfaz a
+      // transação inteira da chamada). Ela sempre devolve jsonb:
+      //   sucesso: {"ok": true, "nome": "..."}
+      //   falha:   {"ok": false, "erro": "CANAL_INVALIDO" | "CODIGO_INVALIDO"
+      //                                  | "CONTA_JA_VINCULADA" | "MUITAS_TENTATIVAS"}
+      // `error` aqui só acontece em falha de sistema (conexão, etc.), não em erro de regra.
       if (error) return { ok: false as const, erro: mensagemErroAlerta(error.message) }
-      return { ok: true as const, nome: String(data ?? '') }
+      const r = data as { ok: boolean; nome?: string; erro?: string }
+      if (!r.ok) return { ok: false as const, erro: mensagemErroAlerta(r.erro) }
+      return { ok: true as const, nome: r.nome ?? '' }
     },
 
     async usuarioPorConta(canal: Canal, externoId: string) {

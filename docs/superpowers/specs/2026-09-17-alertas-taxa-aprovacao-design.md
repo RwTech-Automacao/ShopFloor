@@ -49,7 +49,16 @@ Convenções: `$func$`, `(select tem_permissao(...))` nas policies, GRANT explí
 
 **Funções:**
 - `alerta_gerar_codigo()` — `security definer`, gera código para `auth.uid()`, invalida os anteriores não usados.
-- `alerta_vincular(p_codigo, p_canal, p_externo_id)` — só `service_role`; valida código (existe, não usado, não expirado), grava/atualiza `alerta_contas`, marca o código usado; retorna o nome do usuário. Erros: `CODIGO_INVALIDO`, `CODIGO_EXPIRADO`, `CONTA_JA_VINCULADA` (o id externo já pertence a outro usuário).
+- `alerta_vincular(p_codigo, p_canal, p_externo_id)` — só `service_role`; valida código (existe,
+  não usado, não expirado — as três coisas viram o mesmo erro `CODIGO_INVALIDO`, pra não indicar
+  a quem tenta adivinhar que chegou perto), grava/atualiza `alerta_contas`, marca o código usado.
+  Tem proteção contra força bruta: 5+ falhas do mesmo `(canal, externo_id)` em 15 min bloqueiam
+  (`alerta_tentativas`, sem RLS/grant nenhum pra `authenticated`/`anon`). **Nunca levanta exceção
+  de regra de negócio** — retorna sempre `jsonb`: sucesso `{"ok": true, "nome": "<nome>"}`, falha
+  `{"ok": false, "erro": "CANAL_INVALIDO" | "CODIGO_INVALIDO" | "CONTA_JA_VINCULADA" |
+  "MUITAS_TENTATIVAS"}`. (Motivo: a proteção contra força bruta precisa gravar a tentativa falha
+  ANTES de sinalizar o erro, e um `raise exception` sem tratamento desfaz a transação inteira da
+  chamada — inclusive esse insert.)
 - `alerta_avaliar()` — só `service_role`; pega `pg_try_advisory_xact_lock`; se não conseguir retorna `{ ocupado: true }`. Calcula as taxas de todas as regras ativas × postos numa consulta, aplica as transições (abrir / lembrar / normalizar) e retorna a lista de **ações de envio** (ocorrência, tipo, posto, taxas, contagens, regra, destinatários, canais). A decisão fica no banco para ser atômica com o índice único.
 - `alerta_resolver(p_ocorrencia_id, p_usuario_id)` — só `service_role` (webhook) ou via app com `shopfloor.administrar`; só resolve se o usuário for destinatário da regra (ou admin pela tela) e a ocorrência estiver `aberta`. Idempotente (`resolvida` → retorna sem erro, com quem resolveu).
 - `alerta_previa(p_postos, p_janela_tipo, p_janela_valor, p_minimo)` — `shopfloor.administrar`; devolve a taxa atual de cada posto sem gravar nada (prévia no formulário).
