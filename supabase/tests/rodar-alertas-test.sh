@@ -95,4 +95,47 @@ else
   exit 1
 fi
 
+# ---------- Concorrência: a reserva da fila (alerta_reservar_envios) ----------
+# Três linhas pendentes. A sessão 1 reserva dentro de uma transação e segura com pg_sleep (as
+# linhas ficam travadas, sem commit). A sessão 2 reserva ~1 s depois com lock_timeout de 500 ms:
+# com `for update skip locked` ela NÃO espera e NÃO pega nada. Se esperasse, estouraria o
+# lock_timeout; se pegasse, a mesma mensagem sairia duas vezes.
+sessao >/dev/null 2>"$TMPD/f0.err" <<'SQL'
+update alerta_envios set tentativas = 3 where not ok;
+insert into alerta_envios (usuario_id, canal, tipo, dados)
+select '00000000-0000-0000-0000-000000000001', 'telegram', 'resolvido', jsonb_build_object('posto', 'Conc' || g)
+  from generate_series(1, 3) g;
+SQL
+set +e
+sessao >"$TMPD/f1.out" 2>"$TMPD/f1.err" <<'SQL' &
+set role service_role;
+begin;
+select count(*) from alerta_reservar_envios(array['telegram', 'discord'], 100);
+select pg_sleep(3);
+commit;
+SQL
+F1=$!
+sleep 1
+F2=$(sessao 2>"$TMPD/f2.err" <<'SQL'
+set role service_role;
+set lock_timeout = '500ms';
+select count(*) from alerta_reservar_envios(array['telegram', 'discord'], 100);
+SQL
+)
+wait "$F1"
+F3=$(sessao 2>>"$TMPD/f2.err" <<'SQL'
+select count(*) from alerta_envios where dados->>'posto' like 'Conc%' and tentativas = 1;
+SQL
+)
+set -e
+
+if [ "$(head -n1 "$TMPD/f1.out" | tr -d '[:space:]')" = "3" ] && [ "$(tr -d '[:space:]' <<<"$F2")" = "0" ] \
+   && [ "$(tr -d '[:space:]' <<<"$F3")" = "3" ]; then
+  echo "reserva concorrente da fila: ok"
+else
+  echo "reserva concorrente da fila FALHOU: s1='$(cat "$TMPD/f1.out")' s2='$F2' tentativas1='$F3'"
+  cat "$TMPD/f0.err" "$TMPD/f1.err" "$TMPD/f2.err"
+  exit 1
+fi
+
 echo "ALERTAS SQL OK"

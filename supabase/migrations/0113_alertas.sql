@@ -3,7 +3,10 @@
 --
 -- O gestor cria REGRAS (postos, taxa mínima, janela, mínimo de bipes, lembrete, canais,
 -- destinatários). Uma checagem a cada 5 min (crontab -> rota do app -> alerta_avaliar) decide
--- ABRIR / LEMBRAR / NORMALIZAR e devolve a lista de envios; o app só entrega as mensagens.
+-- ABRIR / LEMBRAR / NORMALIZAR e, NA MESMA TRANSAÇÃO, põe na fila (alerta_envios pendentes) uma
+-- mensagem por destinatário x canal vinculado. O app só entrega o que está na fila
+-- (alerta_reservar_envios -> envia -> atualiza a própria linha). Se o processo cair entre a
+-- decisão e a entrega, a linha pendente continua lá e a próxima rodada entrega.
 --
 -- Convenções deste repositório:
 --   - corpo de função com $func$ (o SQL Editor do Supabase não aceita dois cifrões);
@@ -85,23 +88,39 @@ create table if not exists public.alerta_regras (
   canais        text[] not null check (cardinality(canais) > 0 and canais <@ array['telegram', 'discord']),
   destinatarios uuid[] not null check (cardinality(destinatarios) > 0),
   ativa         boolean not null default true,
+  -- EXCLUSÃO LÓGICA: "Excluir" na tela grava a data e desativa. A regra some da lista e para de
+  -- alertar, mas as ocorrências (e os envios delas) continuam no histórico, com o nome da regra.
+  excluida_em   timestamptz,
   criado_por    uuid references public.usuarios(id) on delete set null default auth.uid(),
   criado_em     timestamptz not null default now(),
-  atualizado_em timestamptz not null default now()
+  atualizado_em timestamptz not null default now(),
+  check (excluida_em is null or not ativa)
 );
 alter table public.alerta_regras enable row level security;
 
+-- Sem policy de DELETE, de propósito: nenhum caminho do app apaga regra de verdade (a exclusão é
+-- lógica). Regra excluída também não pode mais ser editada nem reativada.
 drop policy if exists alerta_regras_admin on public.alerta_regras;
-create policy alerta_regras_admin on public.alerta_regras
-  for all using ((select tem_permissao('shopfloor', 'administrar')))
+drop policy if exists alerta_regras_select_admin on public.alerta_regras;
+create policy alerta_regras_select_admin on public.alerta_regras
+  for select using ((select tem_permissao('shopfloor', 'administrar')));
+drop policy if exists alerta_regras_insert_admin on public.alerta_regras;
+create policy alerta_regras_insert_admin on public.alerta_regras
+  for insert with check ((select tem_permissao('shopfloor', 'administrar')) and excluida_em is null);
+drop policy if exists alerta_regras_update_admin on public.alerta_regras;
+create policy alerta_regras_update_admin on public.alerta_regras
+  for update using ((select tem_permissao('shopfloor', 'administrar')) and excluida_em is null)
   with check ((select tem_permissao('shopfloor', 'administrar')));
 
-grant select, insert, update, delete on public.alerta_regras to authenticated, service_role;
+revoke delete on public.alerta_regras from authenticated;
+grant select, insert, update on public.alerta_regras to authenticated;
+grant select, insert, update, delete on public.alerta_regras to service_role;
 
 -- ---------- Ocorrências (uma por regra x posto enquanto viva) ----------
 create table if not exists public.alerta_ocorrencias (
   id              uuid primary key default gen_random_uuid(),
-  regra_id        uuid not null references public.alerta_regras(id) on delete cascade,
+  -- restrict: apagar uma regra com histórico é erro (a exclusão da regra é lógica, excluida_em).
+  regra_id        uuid not null references public.alerta_regras(id) on delete restrict,
   posto           text not null,
   pmo             text,
   op              text,
@@ -137,22 +156,39 @@ create policy alerta_ocorrencias_update_admin on public.alerta_ocorrencias
 grant select, update on public.alerta_ocorrencias to authenticated;
 grant select, insert, update, delete on public.alerta_ocorrencias to service_role;
 
--- ---------- Envios (auditoria + reenvio de falha) ----------
--- `texto` e `com_botao` ficam guardados para o REENVIO sair idêntico ao que falhou, sem ter que
--- remontar a mensagem a partir de um estado que já mudou.
+-- ---------- Envios: FILA DE SAÍDA (outbox) + auditoria ----------
+-- Uma linha por destinatário x canal. Quem cria a linha é o BANCO, na mesma transação da decisão
+-- (alerta_avaliar abre/lembra/normaliza; alerta_resolver_interno avisa os outros). O app só
+-- entrega: reserva um lote (alerta_reservar_envios), envia e atualiza a própria linha.
+--
+-- Estados (sem coluna de estado; tudo sai de ok/tentativas/reservado_em):
+--   PENDENTE  = ok = false e tentativas < 3 (nova: tentativas = 0; falhou antes: 1 ou 2);
+--   RESERVADA = pendente com reservado_em nos últimos 15 min (uma rodada está entregando);
+--   ENTREGUE  = ok = true (enviado_em preenchido, mensagem_externa_id guardado);
+--   DESISTIU  = ok = false e tentativas >= 3 (fica visível na aba Ocorrências como falha).
+-- Tipo 'teste' não passa pela fila: o "Enviar teste" entrega na hora e grava a linha já final.
+--
+-- `dados` guarda o que o app precisa para MONTAR o texto na hora de entregar (posto, regra, taxa,
+-- contagens, janela, datas). O texto nunca é montado no SQL: a formatação (fuso de São Paulo,
+-- taxa truncada, duração) mora só no TS. Como os dados são congelados na criação, um reenvio
+-- sai com o texto idêntico ao da primeira tentativa. `texto` é preenchido ao entregar (auditoria).
 create table if not exists public.alerta_envios (
   id                  uuid primary key default gen_random_uuid(),
   ocorrencia_id       uuid references public.alerta_ocorrencias(id) on delete cascade,
   usuario_id          uuid not null references public.usuarios(id) on delete cascade,
   canal               text not null check (canal in ('telegram', 'discord')),
   tipo                text not null check (tipo in ('alerta', 'lembrete', 'resolvido', 'normalizou', 'teste')),
+  dados               jsonb not null default '{}'::jsonb,
   texto               text not null default '',
   com_botao           boolean not null default false,
   mensagem_externa_id text,
   ok                  boolean not null default false,
   erro                text,
-  tentativas          int not null default 0,
-  criado_em           timestamptz not null default now()
+  tentativas          int not null default 0 check (tentativas >= 0),
+  reservado_em        timestamptz,
+  enviado_em          timestamptz,
+  criado_em           timestamptz not null default now(),
+  check (ok = (enviado_em is not null))
 );
 alter table public.alerta_envios enable row level security;
 
@@ -358,7 +394,11 @@ $func$;
 
 revoke all on function public.alerta_taxas(text[], text, int) from public, anon, authenticated, service_role;
 
--- ---------- alerta_avaliar(): decide tudo e devolve a lista de envios ----------
+-- ---------- alerta_avaliar(): decide tudo e põe os envios na fila ----------
+-- Retorno: {"ocupado": bool, "avaliadas": int, "enfileirados": int, "normalizadas": [uuid]}
+--   enfileirados = linhas pendentes criadas em alerta_envios nesta chamada;
+--   normalizadas = ocorrências encerradas nesta chamada (com ou sem aviso) — o app tira o botão
+--                  "Resolvido" das mensagens já entregues delas.
 create or replace function public.alerta_avaliar()
 returns jsonb
 language plpgsql
@@ -368,30 +408,36 @@ set search_path = public
 as $func$
 #variable_conflict use_column
 declare
-  v_agora     timestamptz := now();
-  v_acoes     jsonb := '[]'::jsonb;
-  v_avaliadas int := 0;
-  v_total     int;
-  v_taxa      numeric(5,2);
-  v_tipo      text;
-  v_contas    jsonb;
-  v_lembrete  boolean;
-  t           record;
-  o           public.alerta_ocorrencias;
+  v_agora        timestamptz := now();
+  v_avaliadas    int := 0;
+  v_enfileirados int := 0;
+  v_n            int;
+  v_normalizadas uuid[];
+  v_total        int;
+  v_taxa         numeric(5,2);
+  v_tipo         text;
+  v_lembrete     boolean;
+  t              record;
+  o              public.alerta_ocorrencias;
 begin
   -- Duas avaliações ao mesmo tempo (cron atrasado + "Avaliar agora") abririam a MESMA ocorrência
   -- duas vezes. A segunda simplesmente vai embora avisando que está ocupado.
   if not pg_try_advisory_xact_lock(hashtext('alerta_avaliar')) then
-    return jsonb_build_object('ocupado', true, 'avaliadas', 0, 'acoes', '[]'::jsonb);
+    return jsonb_build_object('ocupado', true, 'avaliadas', 0, 'enfileirados', 0,
+                              'normalizadas', '[]'::jsonb);
   end if;
 
-  -- Regra desativada ou posto tirado da regra: a ocorrência viva encerra SEM envio.
-  update public.alerta_ocorrencias oc
-     set estado = 'normalizada', normalizada_em = v_agora
-    from public.alerta_regras rg
-   where rg.id = oc.regra_id
-     and oc.estado in ('aberta', 'resolvida')
-     and (rg.ativa is false or not (oc.posto = any (rg.postos)));
+  -- Regra desativada, EXCLUÍDA ou posto tirado da regra: a ocorrência viva encerra SEM envio.
+  with encerradas as (
+    update public.alerta_ocorrencias oc
+       set estado = 'normalizada', normalizada_em = v_agora
+      from public.alerta_regras rg
+     where rg.id = oc.regra_id
+       and oc.estado in ('aberta', 'resolvida')
+       and (rg.ativa is false or rg.excluida_em is not null or not (oc.posto = any (rg.postos)))
+    returning oc.id
+  )
+  select coalesce(array_agg(id), '{}'::uuid[]) into v_normalizadas from encerradas;
 
   for t in
     select rg.id as regra_id, rg.nome, rg.taxa_minima, rg.janela_tipo, rg.janela_valor,
@@ -399,7 +445,7 @@ begin
            tx.posto, tx.aprovados, tx.reprovados, tx.pmo, tx.op
       from public.alerta_regras rg
       cross join lateral public.alerta_taxas(rg.postos, rg.janela_tipo, rg.janela_valor) tx
-     where rg.ativa
+     where rg.ativa and rg.excluida_em is null
      order by rg.criado_em, tx.posto
   loop
     v_avaliadas := v_avaliadas + 1;
@@ -436,6 +482,7 @@ begin
        where id = o.id
       returning * into o;
       v_tipo := 'normalizou';
+      v_normalizadas := v_normalizadas || o.id;
 
     else
       -- Decide o lembrete ANTES do update, num booleano — nunca comparando `ultimo_envio_em`
@@ -455,42 +502,107 @@ begin
     end if;
 
     if v_tipo is not null then
-      -- Um envio por destinatário x canal da regra QUE TENHA vínculo. Sem vínculo, é pulado aqui.
-      v_contas := coalesce((
-        select jsonb_agg(jsonb_build_object('usuario_id', c.usuario_id, 'canal', c.canal,
-                                            'externo_id', c.externo_id)
-                         order by c.usuario_id, c.canal)
-          from alerta_contas c
-         where c.usuario_id = any (t.destinatarios) and c.canal = any (t.canais)
-      ), '[]'::jsonb);
-
-      v_acoes := v_acoes || jsonb_build_array(jsonb_build_object(
-        'ocorrencia_id', o.id,
-        'tipo',          v_tipo,
-        'regra_id',      t.regra_id,
-        'regra_nome',    t.nome,
-        'posto',         t.posto,
-        'taxa',          v_taxa,
-        'taxa_minima',   t.taxa_minima,
-        'aprovados',     t.aprovados,
-        'reprovados',    t.reprovados,
-        'janela_tipo',   t.janela_tipo,
-        'janela_valor',  t.janela_valor,
-        'pmo',           t.pmo,
-        'op',            t.op,
-        'aberta_em',     o.aberta_em,
-        'agora',         v_agora,
-        'contas',        v_contas
-      ));
+      -- FILA: uma linha pendente por destinatário x canal da regra QUE TENHA vínculo AGORA (sem
+      -- vínculo, é pulado aqui). Mesma transação da decisão: ou as duas coisas ficam, ou nenhuma.
+      -- `dados` = o que o app precisa para montar o texto (ver domain/envio.ts).
+      insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados, com_botao)
+      select o.id, c.usuario_id, c.canal, v_tipo,
+             jsonb_build_object(
+               'regra_nome',   t.nome,
+               'posto',        t.posto,
+               'taxa',         v_taxa,
+               'taxa_minima',  t.taxa_minima,
+               'aprovados',    t.aprovados,
+               'reprovados',   t.reprovados,
+               'janela_tipo',  t.janela_tipo,
+               'janela_valor', t.janela_valor,
+               'pmo',          t.pmo,
+               'op',           t.op,
+               'aberta_em',    o.aberta_em,
+               'agora',        v_agora
+             ),
+             v_tipo in ('alerta', 'lembrete')
+        from public.alerta_contas c
+       where c.usuario_id = any (t.destinatarios) and c.canal = any (t.canais)
+       order by c.usuario_id, c.canal;
+      get diagnostics v_n = row_count;
+      v_enfileirados := v_enfileirados + v_n;
     end if;
   end loop;
 
-  return jsonb_build_object('ocupado', false, 'avaliadas', v_avaliadas, 'acoes', v_acoes);
+  return jsonb_build_object('ocupado', false, 'avaliadas', v_avaliadas,
+                            'enfileirados', v_enfileirados, 'normalizadas', to_jsonb(v_normalizadas));
 end
 $func$;
 
 revoke all on function public.alerta_avaliar() from public, anon, authenticated;
 grant execute on function public.alerta_avaliar() to service_role;
+
+-- ---------- alerta_reservar_envios(): pega um lote da fila, de forma ATÔMICA ----------
+-- Só o servidor. Numa única instrução: escolhe as pendentes, trava com `for update skip locked`
+-- (outra rodada simultânea pula as que esta pegou, sem esperar), soma 1 em `tentativas` e marca
+-- `reservado_em`. Uma rodada que pegar a mesma linha depois do commit também não a vê, porque a
+-- reserva vale 15 min. Resultado: duas rodadas (cron + "Avaliar agora", ou webhook) nunca
+-- entregam a mesma linha.
+--
+-- Entram no lote:
+--   - pendentes (ok = false e tentativas < 3) criadas nas últimas 24 h, só dos canais que o app
+--     tem configurados (p_canais) e só de quem AINDA tem conta vinculada no canal (externo_id vem
+--     da conta de agora — quem desvinculou não recebe);
+--   - nunca 'teste' (entrega direta, sem reenvio);
+--   - alerta/lembrete só enquanto a ocorrência estiver 'aberta' (resolvida/normalizada = notícia
+--     velha); resolvido/normalizou sempre;
+--   - p_ocorrencia_id (opcional) restringe a uma ocorrência (webhook do "Resolvido").
+-- Ordem: NOVAS (tentativas = 0) antes dos reenvios; dentro de cada grupo, as mais antigas antes.
+-- A reserva de 15 min cobre uma rodada inteira (lote de 30 x até 20 s por envio no pior caso). Se
+-- o processo cair no meio, a linha volta a ser elegível depois disso (entrega "pelo menos uma vez").
+create or replace function public.alerta_reservar_envios(
+  p_canais text[], p_limite int default 30, p_ocorrencia_id uuid default null
+)
+returns table (id uuid, ocorrencia_id uuid, usuario_id uuid, canal text, externo_id text,
+               tipo text, dados jsonb, com_botao boolean, tentativas int)
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+begin
+  return query
+    with alvo as (
+      select e.id, c.externo_id
+        from public.alerta_envios e
+        join public.alerta_contas c on c.usuario_id = e.usuario_id and c.canal = e.canal
+        left join public.alerta_ocorrencias oc on oc.id = e.ocorrencia_id
+       where e.ok = false
+         and e.tentativas < 3
+         and e.tipo <> 'teste'
+         and e.criado_em >= now() - interval '24 hours'
+         and e.canal = any (coalesce(p_canais, '{}'::text[]))
+         and (p_ocorrencia_id is null or e.ocorrencia_id = p_ocorrencia_id)
+         and (e.reservado_em is null or e.reservado_em < now() - interval '15 minutes')
+         and (e.tipo not in ('alerta', 'lembrete') or oc.estado = 'aberta')
+       order by (e.tentativas > 0), e.criado_em, e.id
+       limit least(greatest(coalesce(p_limite, 30), 1), 100)
+       for update of e skip locked
+    ),
+    reservadas as (
+      update public.alerta_envios e
+         set tentativas = e.tentativas + 1, reservado_em = now()
+        from alvo
+       where e.id = alvo.id
+      returning e.id, e.ocorrencia_id, e.usuario_id, e.canal, alvo.externo_id, e.tipo, e.dados,
+                e.com_botao, e.tentativas, e.criado_em
+    )
+    select r.id, r.ocorrencia_id, r.usuario_id, r.canal, r.externo_id, r.tipo, r.dados,
+           r.com_botao, r.tentativas
+      from reservadas r
+     order by (r.tentativas > 1), r.criado_em, r.id;
+end
+$func$;
+
+revoke all on function public.alerta_reservar_envios(text[], int, uuid) from public, anon, authenticated;
+grant execute on function public.alerta_reservar_envios(text[], int, uuid) to service_role;
 
 -- ---------- alerta_previa(): a taxa de agora, sem gravar nada (prévia do formulário) ----------
 create or replace function public.alerta_previa(
@@ -570,6 +682,21 @@ begin
   end if;
 
   select coalesce(nullif(btrim(nome), ''), email) into v_nome from usuarios where id = o.resolvida_por;
+
+  -- FILA: "✅ resolvido por X" para os OUTROS destinatários (quem resolveu já sabe), na mesma
+  -- transação da resolução. Só na primeira resolução — apertar o botão de novo não avisa de novo.
+  if not v_ja then
+    insert into alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados, com_botao)
+    select o.id, c.usuario_id, c.canal, 'resolvido',
+           jsonb_build_object('posto', o.posto, 'resolvida_por_nome', coalesce(v_nome, ''),
+                              'resolvida_em', o.resolvida_em),
+           false
+      from alerta_contas c
+     where c.usuario_id = any (r.destinatarios)
+       and c.canal = any (r.canais)
+       and c.usuario_id is distinct from p_usuario_id
+     order by c.usuario_id, c.canal;
+  end if;
 
   return jsonb_build_object(
     'ocorrencia_id',      o.id,
@@ -661,7 +788,9 @@ as $func$
 begin
   if not tem_permissao('shopfloor', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
   return query
-    select oc.id, oc.regra_id, rg.nome, oc.posto, oc.pmo, oc.op, oc.estado,
+    select oc.id, oc.regra_id,
+           rg.nome || case when rg.excluida_em is not null then ' (excluída)' else '' end,
+           oc.posto, oc.pmo, oc.op, oc.estado,
            oc.taxa_abertura, oc.taxa_ultima, oc.aprovados, oc.reprovados, oc.aberta_em,
            coalesce(nullif(btrim(u.nome), ''), u.email, ''),
            oc.resolvida_em, oc.normalizada_em,
@@ -670,8 +799,9 @@ begin
       join alerta_regras rg on rg.id = oc.regra_id
       left join usuarios u on u.id = oc.resolvida_por
       left join lateral (
-        select count(*) filter (where ev.ok)     as ok_qtd,
-               count(*) filter (where not ev.ok) as falha_qtd
+        -- falha = tentou e não entregou (pendente que ainda nem foi tentada não conta como falha)
+        select count(*) filter (where ev.ok)                               as ok_qtd,
+               count(*) filter (where not ev.ok and ev.erro is not null)   as falha_qtd
           from alerta_envios ev
          where ev.ocorrencia_id = oc.id
       ) e on true

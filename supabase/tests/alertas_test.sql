@@ -351,10 +351,33 @@ select public.teste_bipes('Teste', 'PMOA', '1001', 100, 0, 180);  -- fora da jan
 insert into public.sf_registros (data_hora, posto, pmo, op, status)
 select now(), 'Teste', 'PMOA', '1001', 'Registrado' from generate_series(1, 30);  -- sem status de aprovação
 
-create function public.teste_acao(p_r jsonb, p_regra text, p_posto text) returns jsonb language sql as $f$
-  select x from jsonb_array_elements(p_r->'acoes') x
-   where x->>'regra_nome' = p_regra and x->>'posto' = p_posto
-   limit 1
+-- A "ação" de uma avaliação agora é o que ela PÔS NA FILA: as linhas pendentes de alerta_envios
+-- criadas nesta transação (criado_em = now() da transação) para aquela regra x posto. Devolve os
+-- `dados` da primeira linha + tipo, ocorrência, botão e `n` = quantas linhas (destinatário x canal).
+-- plpgsql (não sql) de propósito: função SQL pode ser "inlined" e o argumento volátil
+-- (alerta_avaliar()) nunca seria executado se o corpo não usasse o parâmetro.
+create function public.teste_acao(p_r jsonb, p_regra text, p_posto text) returns jsonb
+language plpgsql as $f$
+declare v jsonb;
+begin
+  if p_r is null or coalesce((p_r->>'ocupado')::boolean, false) then return null; end if;
+  with x as (
+    select e.*
+      from public.alerta_envios e
+      join public.alerta_ocorrencias oc on oc.id = e.ocorrencia_id
+      join public.alerta_regras rg on rg.id = oc.regra_id
+     where e.criado_em = now()
+       and rg.nome = p_regra and oc.posto = p_posto
+       and e.tipo in ('alerta', 'lembrete', 'normalizou')
+  )
+  select x.dados || jsonb_build_object('tipo', x.tipo, 'ocorrencia_id', x.ocorrencia_id,
+                                       'com_botao', x.com_botao, 'n', (select count(*) from x))
+    into v
+    from x
+   order by x.usuario_id, x.canal
+   limit 1;
+  return v;
+end
 $f$;
 
 set role service_role;
@@ -370,8 +393,16 @@ begin
     raise exception 'FALHOU: contagem da janela tempo %', a;
   end if;
   if (a->>'taxa')::numeric <> 75.00 then raise exception 'FALHOU: taxa %', a; end if;
-  -- 2 destinatários x 2 canais, todos vinculados
-  if jsonb_array_length(a->'contas') <> 4 then raise exception 'FALHOU: contas %', a->'contas'; end if;
+  -- 2 destinatários x 2 canais, todos vinculados = 4 linhas pendentes na fila
+  if (a->>'n')::int <> 4 then raise exception 'FALHOU: linhas na fila %', a; end if;
+  if (a->>'com_botao')::boolean is not true then raise exception 'FALHOU: alerta sem botão %', a; end if;
+  if (r->>'enfileirados')::int < 4 then raise exception 'FALHOU: enfileirados %', r; end if;
+  if exists (select 1 from alerta_envios
+              where (a->>'ocorrencia_id')::uuid = ocorrencia_id
+                and (ok or tentativas <> 0 or enviado_em is not null or reservado_em is not null
+                     or texto <> '')) then
+    raise exception 'FALHOU: linha da fila não nasceu pendente';
+  end if;
   if (select count(*) from alerta_ocorrencias where estado = 'aberta' and posto = 'Teste') <> 1 then
     raise exception 'FALHOU: ocorrência não abriu';
   end if;
@@ -429,12 +460,23 @@ begin
 
   r := alerta_resolver(oc, '00000000-0000-0000-0000-000000000002');
   if (r->>'ja_resolvida')::boolean is not false then raise exception 'FALHOU: primeira resolução %', r; end if;
+  -- "resolvido por" vai pra FILA na mesma transação: só pra Ana (telegram + discord), nunca pro Bruno
+  if (select count(*) from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido'
+        and usuario_id = '00000000-0000-0000-0000-000000000001' and not ok and tentativas = 0
+        and not com_botao and dados->>'resolvida_por_nome' = 'Bruno Líder') <> 2
+     or exists (select 1 from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido'
+                  and usuario_id = '00000000-0000-0000-0000-000000000002') then
+    raise exception 'FALHOU: fila do resolvido';
+  end if;
   if r->>'resolvida_por_nome' <> 'Bruno Líder' then raise exception 'FALHOU: nome de quem resolveu %', r; end if;
   if r->>'posto' <> 'Teste' then raise exception 'FALHOU: posto na resolução %', r; end if;
 
   r := alerta_resolver(oc, '00000000-0000-0000-0000-000000000001');
   if (r->>'ja_resolvida')::boolean is not true then raise exception 'FALHOU: idempotência %', r; end if;
   if r->>'resolvida_por_nome' <> 'Bruno Líder' then raise exception 'FALHOU: idempotência trocou o autor %', r; end if;
+  if (select count(*) from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido') <> 2 then
+    raise exception 'FALHOU: resolver de novo enfileirou outro aviso';
+  end if;
 
   if (select estado from alerta_ocorrencias where id = oc) <> 'resolvida' then
     raise exception 'FALHOU: estado após resolver';
@@ -463,6 +505,10 @@ begin
   r := alerta_avaliar();
   a := teste_acao(r, 'Teste abaixo de 90', 'Teste');
   if a is null or a->>'tipo' <> 'normalizou' then raise exception 'FALHOU: normalizou %', r; end if;
+  if (a->>'com_botao')::boolean is not false then raise exception 'FALHOU: normalizou com botão %', a; end if;
+  if not (r->'normalizadas' ? (a->>'ocorrencia_id')) then
+    raise exception 'FALHOU: ocorrência normalizada fora de "normalizadas" %', r;
+  end if;
   if (select count(*) from alerta_ocorrencias where posto = 'Teste' and estado in ('aberta', 'resolvida')) <> 0 then
     raise exception 'FALHOU: ocorrência continuou viva';
   end if;
@@ -654,8 +700,8 @@ set role service_role;
 do $t$ begin perform alerta_avaliar(); end $t$;
 reset role;
 
-insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, texto, ok, tentativas)
-select id, '00000000-0000-0000-0000-000000000001', 'telegram', 'alerta', 'x', true, 1
+insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, texto, ok, tentativas, enviado_em)
+select id, '00000000-0000-0000-0000-000000000001', 'telegram', 'alerta', 'x', true, 1, now()
   from public.alerta_ocorrencias where posto = 'Inspeção' and estado = 'aberta';
 insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, texto, ok, erro, tentativas)
 select id, '00000000-0000-0000-0000-000000000002', 'discord', 'alerta', 'x', false, 'Discord 403', 1
@@ -952,6 +998,298 @@ begin
   end;
   -- janela 'op' não usa valor: nulo continua válido aqui.
   perform * from alerta_previa(array['Montagem'], 'op', null, 20);
+end $t$;
+reset role;
+
+
+-- =====================================================================
+-- FILA DE ENVIO (outbox) e EXCLUSÃO LÓGICA DE REGRA
+-- =====================================================================
+select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
+select set_config('teste.perms', 'shopfloor.visualizar,shopfloor.administrar', false);
+
+-- Isola as seções abaixo: tudo o que as seções anteriores deixaram pendente na fila vira
+-- "desistiu" (tentativas = 3), pra reserva só enxergar o que for criado daqui pra frente.
+update public.alerta_envios set tentativas = 3 where not ok;
+
+-- 27. A avaliação cria as linhas pendentes NA MESMA TRANSAÇÃO da ocorrência: se a transação
+--     desfaz, somem as duas; se confirma, ficam as duas.
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  lembrete_min, canais, destinatarios, criado_por)
+values ('Fila', array['Posto27'], 90, 'tempo', 60, 5, 1, array['telegram', 'discord'],
+        array['00000000-0000-0000-0000-000000000001',
+              '00000000-0000-0000-0000-000000000002',
+              '00000000-0000-0000-0000-000000000003']::uuid[],   -- Carla sem vínculo: pulada
+        '00000000-0000-0000-0000-000000000001');
+select public.teste_bipes('Posto27', 'PMO27', '9027', 1, 9, 5);
+set role service_role;
+do $t$
+begin
+  begin
+    perform alerta_avaliar();
+    if not exists (select 1 from alerta_envios where dados->>'posto' = 'Posto27') then
+      raise exception 'FALHOU: avaliação não enfileirou nada';
+    end if;
+    raise exception 'DESFAZ';
+  exception when others then
+    if sqlerrm <> 'DESFAZ' then raise; end if;
+  end;
+  if exists (select 1 from alerta_ocorrencias where posto = 'Posto27')
+     or exists (select 1 from alerta_envios where dados->>'posto' = 'Posto27') then
+    raise exception 'FALHOU: ocorrência e fila não são da mesma transação';
+  end if;
+end $t$;
+do $t$
+declare r jsonb; a jsonb; oc alerta_ocorrencias;
+begin
+  r := alerta_avaliar();
+  a := teste_acao(r, 'Fila', 'Posto27');
+  if a is null or a->>'tipo' <> 'alerta' then raise exception 'FALHOU: Posto27 não abriu %', r; end if;
+  select * into oc from alerta_ocorrencias where posto = 'Posto27';
+  -- Ana (telegram + discord) + Bruno (telegram + discord); Carla não tem vínculo
+  if (a->>'n')::int <> 4 then raise exception 'FALHOU: linhas pendentes do Posto27 %', a; end if;
+  if exists (select 1 from alerta_envios
+              where ocorrencia_id = oc.id and usuario_id = '00000000-0000-0000-0000-000000000003') then
+    raise exception 'FALHOU: destinatário sem vínculo entrou na fila';
+  end if;
+  -- mesma transação: a linha nasce com o mesmo relógio da ocorrência
+  if exists (select 1 from alerta_envios where ocorrencia_id = oc.id and criado_em <> oc.aberta_em) then
+    raise exception 'FALHOU: fila criada fora da transação da ocorrência';
+  end if;
+  -- dados suficientes pra montar o texto no app
+  if a->>'regra_nome' <> 'Fila' or (a->>'taxa')::numeric <> 10.00 or (a->>'taxa_minima')::numeric <> 90
+     or (a->>'aprovados')::int <> 1 or (a->>'reprovados')::int <> 9 or a->>'janela_tipo' <> 'tempo'
+     or (a->>'janela_valor')::int <> 60 or a->>'aberta_em' is null or a->>'agora' is null then
+    raise exception 'FALHOU: dados da linha pendente %', a;
+  end if;
+end $t$;
+
+-- 28. Reserva atômica: novas antes de reenvios, duas reservas seguidas nunca pegam a mesma linha,
+--     reserva expira, teto de 3 tentativas, e o que NÃO entra no lote.
+reset role;
+-- uma das 4 vira "reenvio" (já tentou 1 vez e falhou) — e é a MAIS ANTIGA, pra provar que a ordem
+-- é por tentativas antes de ser por data
+update public.alerta_envios
+   set tentativas = 1, erro = 'Telegram 500', criado_em = criado_em - interval '1 hour'
+ where id = (select id from public.alerta_envios
+              where dados->>'posto' = 'Posto27' and usuario_id = '00000000-0000-0000-0000-000000000002'
+                and canal = 'telegram');
+set role service_role;
+do $t$
+declare l record; a uuid[]; b uuid[]; tent int[];
+begin
+  -- limite 1: vem uma NOVA, não o reenvio mais antigo
+  select * into l from alerta_reservar_envios(array['telegram', 'discord'], 1);
+  if l.tentativas <> 1 then raise exception 'FALHOU: limite 1 pegou reenvio antes de nova %', l; end if;
+  if l.externo_id is null or l.dados->>'posto' <> 'Posto27' or l.com_botao is not true then
+    raise exception 'FALHOU: linha reservada incompleta %', l;
+  end if;
+  a := array[l.id];
+
+  -- o resto: novas primeiro (tentativas 0 -> 1), o reenvio por último (1 -> 2)
+  select array_agg(x.id order by x.ord), array_agg(x.tentativas order by x.ord) into b, tent
+    from (select r.*, row_number() over () as ord
+            from alerta_reservar_envios(array['telegram', 'discord'], 100) r) x;
+  if cardinality(b) <> 3 then raise exception 'FALHOU: resto do lote %', b; end if;
+  if tent <> array[1, 1, 2] then raise exception 'FALHOU: ordem novas -> reenvios %', tent; end if;
+  if a && b then raise exception 'FALHOU: duas reservas pegaram a mesma linha'; end if;
+
+  -- terceira reserva seguida: nada (tudo reservado)
+  if exists (select 1 from alerta_reservar_envios(array['telegram', 'discord'], 100)) then
+    raise exception 'FALHOU: reserva devolveu linha já reservada';
+  end if;
+  if exists (select 1 from alerta_envios where dados->>'posto' = 'Posto27'
+                                         and (reservado_em is null or tentativas = 0)) then
+    raise exception 'FALHOU: reserva não marcou tentativas/reservado_em';
+  end if;
+end $t$;
+
+reset role;
+-- entrega OK de uma, falha de outra (como o app faz ao concluir: libera a reserva)
+update public.alerta_envios set ok = true, enviado_em = now(), reservado_em = null,
+                                mensagem_externa_id = '111:1', texto = 't'
+ where dados->>'posto' = 'Posto27' and usuario_id = '00000000-0000-0000-0000-000000000001'
+   and canal = 'telegram';
+update public.alerta_envios set erro = 'Discord 403', reservado_em = null
+ where dados->>'posto' = 'Posto27' and usuario_id = '00000000-0000-0000-0000-000000000001'
+   and canal = 'discord';
+-- a do Bruno/telegram (tentativas 2) falhou de novo e fica sem reserva
+update public.alerta_envios set reservado_em = null
+ where dados->>'posto' = 'Posto27' and usuario_id = '00000000-0000-0000-0000-000000000002'
+   and canal = 'telegram';
+-- a do Bruno/discord: a rodada "caiu" com ela reservada há 16 min
+update public.alerta_envios set reservado_em = now() - interval '16 minutes'
+ where dados->>'posto' = 'Posto27' and usuario_id = '00000000-0000-0000-0000-000000000002'
+   and canal = 'discord';
+set role service_role;
+do $t$
+declare n int; t int;
+begin
+  -- só telegram configurado: a do discord (Ana, falhou) e a do discord (Bruno, reserva vencida)
+  -- ficam de fora; entra só a do Bruno/telegram (tentativas 2 -> 3)
+  select count(*), max(tentativas) into n, t from alerta_reservar_envios(array['telegram'], 100);
+  if n <> 1 or t <> 3 then raise exception 'FALHOU: filtro de canal / teto (n=%, t=%)', n, t; end if;
+end $t$;
+reset role;
+update public.alerta_envios set reservado_em = null
+ where dados->>'posto' = 'Posto27' and usuario_id = '00000000-0000-0000-0000-000000000002'
+   and canal = 'telegram';
+set role service_role;
+do $t$
+declare ids text[];
+begin
+  -- teto: a do Bruno/telegram chegou em 3 tentativas e não volta mais; a entregue também não.
+  -- Entram: Ana/discord (falhou, 1 -> 2) e Bruno/discord (reserva vencida, 1 -> 2).
+  select array_agg(usuario_id::text || '/' || canal || '/' || tentativas order by usuario_id, canal)
+    into ids
+    from alerta_reservar_envios(array['telegram', 'discord'], 100);
+  if ids <> array['00000000-0000-0000-0000-000000000001/discord/2',
+                          '00000000-0000-0000-0000-000000000002/discord/2'] then
+    raise exception 'FALHOU: teto de 3 / reserva vencida %', ids;
+  end if;
+end $t$;
+reset role;
+update public.alerta_envios set reservado_em = null where dados->>'posto' = 'Posto27';
+
+-- O que nunca entra no lote: teste; alerta de ocorrência que não está mais aberta; conta
+-- desvinculada; linha com mais de 24 h.
+insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados) values
+  (null, '00000000-0000-0000-0000-000000000001', 'telegram', 'teste', '{"nome": "Ana"}');
+update public.alerta_ocorrencias set estado = 'resolvida', resolvida_em = now(),
+                                     resolvida_por = '00000000-0000-0000-0000-000000000001'
+ where posto = 'Posto27';
+insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados, criado_em) values
+  (null, '00000000-0000-0000-0000-000000000001', 'telegram', 'resolvido', '{"posto": "Velho"}',
+   now() - interval '25 hours');
+insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados) values
+  (null, '00000000-0000-0000-0000-000000000003', 'telegram', 'resolvido', '{"posto": "SemConta"}');
+insert into public.alerta_envios (ocorrencia_id, usuario_id, canal, tipo, dados) values
+  (null, '00000000-0000-0000-0000-000000000001', 'telegram', 'resolvido', '{"posto": "Vale"}');
+set role service_role;
+do $t$
+declare l record; n int := 0;
+begin
+  for l in select * from alerta_reservar_envios(array['telegram', 'discord'], 100) loop
+    n := n + 1;
+    if l.dados->>'posto' <> 'Vale' then raise exception 'FALHOU: entrou no lote o que não devia %', l; end if;
+  end loop;
+  if n <> 1 then raise exception 'FALHOU: lote esperado só com "Vale" (veio %)', n; end if;
+  -- filtro por ocorrência (webhook do Resolvido): nada de outra ocorrência entra
+  if exists (select 1 from alerta_reservar_envios(array['telegram', 'discord'], 100,
+                                                  '00000000-0000-0000-0000-00000000dead'::uuid)) then
+    raise exception 'FALHOU: filtro por ocorrência';
+  end if;
+end $t$;
+reset role;
+
+-- 29. Grants: a reserva é só do servidor.
+set role authenticated;
+do $t$
+begin
+  begin
+    perform * from alerta_reservar_envios(array['telegram'], 10);
+    raise exception 'FALHOU: authenticated executou alerta_reservar_envios';
+  exception when insufficient_privilege then
+    null;
+  end;
+end $t$;
+reset role;
+
+-- 30. Excluir regra = exclusão LÓGICA: some da lista, para de alertar, histórico continua.
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  canais, destinatarios, criado_por)
+values ('Excluir', array['Posto30'], 90, 'tempo', 60, 5, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+select public.teste_bipes('Posto30', 'PMO30', '9030', 1, 9, 5);
+set role service_role;
+do $t$
+begin
+  if teste_acao(alerta_avaliar(), 'Excluir', 'Posto30') is null then
+    raise exception 'FALHOU: Posto30 não abriu ocorrência';
+  end if;
+end $t$;
+
+-- o caminho do app: update pela sessão (RLS), nunca delete
+set role authenticated;
+do $t$
+declare g uuid; n int;
+begin
+  select id into g from alerta_regras where nome = 'Excluir';
+  -- delete físico pela sessão: sem policy de DELETE, não apaga nada
+  delete from alerta_regras where id = g;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FALHOU: authenticated apagou regra fisicamente'; end if;
+
+  -- regra ativa não pode ficar marcada como excluída
+  begin
+    update alerta_regras set excluida_em = now() where id = g;
+    raise exception 'FALHOU: excluída e ativa ao mesmo tempo';
+  exception when check_violation then
+    null;
+  end;
+
+  update alerta_regras set excluida_em = now(), ativa = false, atualizado_em = now()
+   where id = g and excluida_em is null;
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FALHOU: exclusão lógica não gravou'; end if;
+
+  -- excluída não volta: nem reativar, nem editar
+  update alerta_regras set ativa = true, excluida_em = null where id = g;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FALHOU: regra excluída foi reativada'; end if;
+end $t$;
+reset role;
+
+-- delete físico (nem o dono do banco): a FK é restrict, histórico não some por cascata
+do $t$
+begin
+  begin
+    delete from public.alerta_regras where nome = 'Excluir';
+    raise exception 'FALHOU: regra com histórico apagada fisicamente';
+  exception when foreign_key_violation then
+    null;
+  end;
+end $t$;
+
+-- mais bipes ruins: regra excluída NÃO avalia (nem alerta, nem lembrete, nem abre de novo) e a
+-- ocorrência viva encerra SEM envio, entrando em "normalizadas" (o app tira o botão)
+select public.teste_bipes('Posto30', 'PMO30', '9030', 0, 30, 1);
+set role service_role;
+do $t$
+declare r jsonb; oc uuid; n_antes int;
+begin
+  select id into oc from alerta_ocorrencias where posto = 'Posto30';
+  select count(*) into n_antes from alerta_envios where ocorrencia_id = oc;
+  r := alerta_avaliar();
+  if teste_acao(r, 'Excluir', 'Posto30') is not null then
+    raise exception 'FALHOU: regra excluída avaliou %', r;
+  end if;
+  if (select estado from alerta_ocorrencias where id = oc) <> 'normalizada' then
+    raise exception 'FALHOU: ocorrência viva de regra excluída não encerrou';
+  end if;
+  if not (r->'normalizadas' ? oc::text) then
+    raise exception 'FALHOU: encerrada por exclusão fora de "normalizadas" %', r;
+  end if;
+  if (select count(*) from alerta_envios where ocorrencia_id = oc) <> n_antes or n_antes = 0 then
+    raise exception 'FALHOU: envios da regra excluída mudaram (antes %)', n_antes;
+  end if;
+  r := alerta_avaliar();
+  if (select count(*) from alerta_ocorrencias where posto = 'Posto30') <> 1 then
+    raise exception 'FALHOU: regra excluída abriu ocorrência nova';
+  end if;
+end $t$;
+reset role;
+
+-- o histórico continua listado, com o nome da regra marcado
+set role authenticated;
+do $t$
+declare l record;
+begin
+  select * into l from alerta_listar_ocorrencias(now() - interval '1 day', now() + interval '1 day', '')
+   where posto = 'Posto30';
+  if l.id is null then raise exception 'FALHOU: ocorrência da regra excluída sumiu da listagem'; end if;
+  if l.regra_nome <> 'Excluir (excluída)' then raise exception 'FALHOU: nome da regra excluída %', l.regra_nome; end if;
 end $t$;
 reset role;
 
