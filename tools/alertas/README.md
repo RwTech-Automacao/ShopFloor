@@ -100,10 +100,10 @@ crontab -e
 Linha a acrescentar (pronta):
 
 ```
-# Alertas do ShopFloor. O cron da Lightsail roda em UTC: 9-21 UTC = 06:00–18:55 BRT, seg–sáb —
+# Alertas do ShopFloor. O cron da Lightsail roda em UTC: 9-21 UTC = 06:00–18:55 BRT, seg–sex —
 # só no período em que o RDS fica ligado (plano de economia). Chama o app direto na própria
 # máquina (127.0.0.1:3000), sem passar por DNS/nginx/TLS.
-*/5 9-21 * * 1-6 curl -fsS -m 60 -X POST -H @$HOME/.alertas-cron-header http://127.0.0.1:3000/api/alertas/avaliar >> $HOME/alertas.log 2>&1
+*/5 9-21 * * 1-5 curl -fsS -m 60 -X POST -H @$HOME/.alertas-cron-header http://127.0.0.1:3000/api/alertas/avaliar >> $HOME/alertas.log 2>&1
 ```
 
 Confira o fuso antes (`date` e `timedatectl | grep 'Time zone'`): se a máquina **não** estiver em
