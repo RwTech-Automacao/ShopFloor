@@ -221,10 +221,10 @@ describe('tratarUpdateTelegram — botão Resolvido', () => {
     const tg = telegramFalso()
     const { repo } = repoFalso({
       usuario: 'u3',
-      resolver: { ok: false, codigo: 'NAO_DESTINATARIO', erro: 'Você não é destinatário desta regra.' },
+      resolver: { ok: false, codigo: 'NAO_DESTINATARIO', erro: 'Você não é destinatário desta regra ou não administra o ShopFloor.' },
     })
     await tratarUpdateTelegram(callback, { telegram: tg.telegram, portas: {}, repo })
-    expect(tg.callbacks[0]!.texto).toBe('Você não é destinatário desta regra.')
+    expect(tg.callbacks[0]!.texto).toBe('Você não é destinatário desta regra ou não administra o ShopFloor.')
     expect(tg.editadas).toHaveLength(0)
   })
 

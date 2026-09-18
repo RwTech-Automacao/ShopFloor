@@ -180,6 +180,6 @@ describe('resolver', () => {
   it('erro do Postgres vira código + mensagem', async () => {
     const { sb } = sbFalso({ rpc: () => ({ data: null, error: { message: 'NAO_DESTINATARIO' } }) })
     const r = await criarRepositorioServico(sb).resolver('oc1', 'u3')
-    expect(r).toEqual({ ok: false, codigo: 'NAO_DESTINATARIO', erro: 'Você não é destinatário desta regra.' })
+    expect(r).toEqual({ ok: false, codigo: 'NAO_DESTINATARIO', erro: 'Você não é destinatário desta regra ou não administra o ShopFloor.' })
   })
 })

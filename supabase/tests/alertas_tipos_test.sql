@@ -493,6 +493,61 @@ begin
 end $t$;
 reset role;
 
+-- T-OPMix: janela OP num posto com DUAS OPs alternadas. OP 11 a cada 200 s e OP 12 intercalada
+-- (100 s depois de cada peça da 11); o último bipe do posto é da OP 11. O intervalo é medido entre
+-- bipes seguidos do POSTO e só entram os que TERMINAM num bipe da OP: a OP 11 sai a 100 s por peça
+-- (medir de 11 a 11 dava 200 s = "lenta" à toa). Um bipe da OP 12 ANTES do primeiro da OP 11 fica
+-- fora (a leitura começa no primeiro bipe da OP): o primeiro bipe da 11 não tem anterior.
+do $t$ begin   -- mesma transação = mesmo now()
+  perform public.teste_ritmo('T-OPMix', 'PMOZ', '12', 1, 100, 2500);
+  perform public.teste_ritmo('T-OPMix', 'PMOZ', '11', 11, 200, 2400);
+  perform public.teste_ritmo('T-OPMix', 'PMOZ', '12', 10, 200, 2300);
+end $t$;
+do $t$ begin
+  perform teste_regra('Tempo OP misto', 'tempo', array['T-OPMix'], null, 'op', null, 5, 120, null, 30);
+end $t$;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Tempo OP misto', 'T-OPMix');
+  if a is not null then
+    raise exception 'FALHOU: janela OP mediu de peça a peça da OP (a outra OP do meio virou lentidão) %', a;
+  end if;
+end $t$;
+reset role;
+set role authenticated;
+do $t$
+declare p record;
+begin
+  select * into p from alerta_previa('tempo', array['T-OPMix'], 'op', null, 5, 30, null, '{}');
+  if not found or p.intervalos <> 10 or p.media_seg <> 100 or p.pecas <> 11
+     or p.pmo <> 'PMOZ' or p.op <> '11' or p.avaliavel is not true then
+    raise exception 'FALHOU: prévia tempo na janela OP com OPs alternadas %', p;
+  end if;
+end $t$;
+reset role;
+
+-- T-OPTrim: tempo na janela OP com a PMO gravada com espaço. Os PRIMEIROS bipes da OP têm ' PMOV '
+-- e os últimos 'PMOV' (60 s por peça): o primeiro bipe da OP é achado mesmo com espaço (senão os
+-- intervalos do começo sumiam) e todos contam como a mesma OP.
+do $t$ begin
+  perform public.teste_ritmo('T-OPTrim', ' PMOV ', '21', 6, 60, 900);
+  perform public.teste_ritmo('T-OPTrim', 'PMOV',   '21', 5, 60, 540);
+end $t$;
+set role authenticated;
+do $t$
+declare p record;
+begin
+  select * into p from alerta_previa('tempo', array['T-OPTrim'], 'op', null, 5, 30, null, array['PMOV']);
+  if not found or p.intervalos <> 10 or p.media_seg <> 60 or p.pecas <> 11
+     or p.pmo <> 'PMOV' or p.op <> '21' then
+    raise exception 'FALHOU: tempo na janela OP com PMO gravada com espaço %', p;
+  end if;
+end $t$;
+reset role;
+
 -- ---------- Defeito repetido ----------
 select public.teste_defeitos('D-Posto', 'PMOA', '2040 COMPONENTE FALTANDO', 3, 'Reprovado', 5);
 select public.teste_defeitos('D-Posto', 'PMOA', '1002 TRILHA ROMPIDA',      4, 'REPROVADO', 10);
@@ -940,6 +995,59 @@ begin
   if not exists (select 1 from alerta_envios where ocorrencia_id = oc and tipo = 'resolvido'
                    and usuario_id = '00000000-0000-0000-0000-000000000002') then
     raise exception 'FALHOU: Bruno devia receber o "resolvido"';
+  end if;
+end $t$;
+reset role;
+
+-- D5. Administrar de OUTRO módulo não vale: a Rita administra o Recebimento (e nada do ShopFloor),
+-- tem Telegram e está no array da regra — fica fora da lista da tela e da fila.
+insert into public.perfis (id, nome) values ('00000000-0000-0000-0000-0000000000a3', 'Admin Recebimento');
+insert into public.perfil_permissao (perfil_id, modulo, permissao) values
+  ('00000000-0000-0000-0000-0000000000a3', 'recebimento', 'visualizar'),
+  ('00000000-0000-0000-0000-0000000000a3', 'recebimento', 'administrar');
+insert into public.usuarios (id, nome, email, perfil_id) values
+  ('00000000-0000-0000-0000-000000000011', 'Rita Recebimento', 'rita@enterplak.com.br',
+   '00000000-0000-0000-0000-0000000000a3');
+insert into public.alerta_contas (usuario_id, canal, externo_id)
+values ('00000000-0000-0000-0000-000000000011', 'telegram', 'T11');
+update public.alerta_envios set tentativas = 3 where not ok and tentativas < 3;
+select public.teste_bipes('P-Dest2', 'PMOA', '1', 0, 20, 5);
+do $t$ begin
+  perform teste_regra('Destinos outro módulo', 'aprovacao', array['P-Dest2'], 90, 'tempo', 60, 10, null, null, null,
+                      '{}', null, true,
+                      array['00000000-0000-0000-0000-000000000001',
+                            '00000000-0000-0000-0000-000000000011']::uuid[]);
+end $t$;
+do $t$
+begin
+  if public.usuario_tem_permissao('00000000-0000-0000-0000-000000000011', 'shopfloor', 'administrar') then
+    raise exception 'FALHOU: administrar do Recebimento contou como do ShopFloor';
+  end if;
+  if not public.usuario_tem_permissao('00000000-0000-0000-0000-000000000011', 'recebimento', 'administrar') then
+    raise exception 'FALHOU: preparação — Rita devia administrar o Recebimento';
+  end if;
+end $t$;
+set role authenticated;
+do $t$
+begin
+  if exists (select 1 from alerta_destinatarios()
+              where usuario_id = '00000000-0000-0000-0000-000000000011') then
+    raise exception 'FALHOU: quem só administra outro módulo aparece nos destinatários';
+  end if;
+end $t$;
+reset role;
+set role service_role;
+do $t$
+declare v uuid[];
+begin
+  perform alerta_avaliar();
+  select array_agg(distinct e.usuario_id order by e.usuario_id) into v
+    from alerta_envios e
+    join alerta_ocorrencias oc on oc.id = e.ocorrencia_id
+    join alerta_regras rg on rg.id = oc.regra_id
+   where rg.nome = 'Destinos outro módulo' and e.tipo = 'alerta';
+  if v is distinct from array['00000000-0000-0000-0000-000000000001']::uuid[] then
+    raise exception 'FALHOU: fila com quem só administra outro módulo %', v;
   end if;
 end $t$;
 reset role;

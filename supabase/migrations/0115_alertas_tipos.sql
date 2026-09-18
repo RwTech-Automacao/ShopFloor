@@ -14,6 +14,7 @@
 --      pmos; a ocorrência ganha defeito e valores genéricos; usuario_tem_permissao; alerta_pmos.
 --   B. alerta_avaliar decide os 3 tipos (alerta_taxas com PMO, alerta_tempos, alerta_defeitos);
 --      filtro de PMO aparado dos dois lados (alerta_pmos_normalizar + btrim da coluna);
+--      janela OP começa no primeiro bipe da OP no posto (alerta_op_inicio);
 --      alerta_previa e alerta_listar_ocorrencias novas.
 --   C. Destinatário = usuário ativo com shopfloor.administrar no PERFIL DELE: na lista da tela, na
 --      fila, na reserva e no botão Resolvido.
@@ -202,6 +203,37 @@ $func$;
 
 revoke all on function public.alerta_ultima_op(text, text[]) from public, anon, authenticated, service_role;
 
+-- ---------- B1b. alerta_op_inicio(): o PRIMEIRO bipe daquela OP naquele posto ----------
+-- Função INTERNA (sem grant). É o limite inferior de tempo da janela 'op' (taxa e tempo): a leitura
+-- dos bipes do posto começa aqui, pelo índice (posto, data_hora desc), em vez de varrer o histórico
+-- inteiro do posto. A PMO vem APARADA (alerta_ultima_op) e o bipe pode ter gravado ' PMOX ': para
+-- achar o mínimo pelo índice (pmo, op, posto, ...) sem btrim na coluna, primeiro listam-se as PMOs
+-- distintas da tabela por "loose index scan" (um salto no índice por PMO — são poucas) e ficam as
+-- que, aparadas, são a PMO da OP. Resultado exato (o mesmo do min com btrim(pmo) = p_pmo).
+create or replace function public.alerta_op_inicio(p_posto text, p_pmo text, p_op text)
+returns timestamptz
+language sql
+stable
+security definer
+set search_path = public
+set jit = off
+as $func$
+  with recursive d(pmo) as (
+    select min(r.pmo) from sf_registros r
+    union all
+    select (select min(r.pmo) from sf_registros r where r.pmo > d.pmo)
+      from d
+     where d.pmo is not null
+  )
+  select min(r.data_hora)
+    from sf_registros r
+   where r.pmo in (select d.pmo from d where d.pmo is not null and btrim(d.pmo) = p_pmo)
+     and r.op = p_op
+     and r.posto = p_posto
+$func$;
+
+revoke all on function public.alerta_op_inicio(text, text, text) from public, anon, authenticated, service_role;
+
 -- ---------- B2. alerta_taxas(): aprovados/reprovados por posto, agora com filtro de PMO ----------
 -- Função INTERNA. Ganhou p_pmos: a assinatura antiga (3 parâmetros) sai antes.
 drop function if exists public.alerta_taxas(text[], text, int);
@@ -225,6 +257,9 @@ as $func$
     left join lateral (
       select x.pmo, x.op from public.alerta_ultima_op(p.posto, p_pmos) x where p_janela_tipo = 'op'
     ) u on true
+    left join lateral (
+      select public.alerta_op_inicio(p.posto, u.pmo, u.op) as inicio where u.op is not null
+    ) f on true
     left join lateral (
       select count(*) filter (where lower(y.status) = 'aprovado')  as aprovados,
              count(*) filter (where lower(y.status) = 'reprovado') as reprovados
@@ -250,12 +285,14 @@ as $func$
             limit p_janela_valor)
           union all
           -- janela 'op': todos os bipes do posto naquela OP (a OP já saiu das PMOs da regra); PMO
-          -- aparada dos dois lados ('PMOX' e ' PMOX ' são a mesma OP)
+          -- aparada dos dois lados ('PMOX' e ' PMOX ' são a mesma OP). O corte no primeiro bipe da
+          -- OP não muda o resultado (antes dele não há bipe dela) e evita varrer o histórico do posto.
           select r.status
             from sf_registros r
            where p_janela_tipo = 'op'
              and r.posto = p.posto
-             and btrim(r.pmo) = btrim(u.pmo) and r.op = u.op
+             and r.data_hora >= f.inicio
+             and btrim(r.pmo) = u.pmo and r.op = u.op
              and lower(r.status) in ('aprovado', 'reprovado')
         ) y
     ) c on true
@@ -271,6 +308,9 @@ revoke all on function public.alerta_taxas(text[], text, int, text[]) from publi
 -- PMO) e só entram os que TERMINAM num bipe das PMOs da regra. Filtrar antes do lag faria o
 -- intervalo entre duas peças da PMO X engolir as peças da PMO Y feitas no meio (posto "lento" à
 -- toa). Sem filtro de PMO, todo bipe é da regra e o resultado é o mesmo de antes.
+-- Janela 'op': mesma regra. Lê TODOS os bipes do posto desde o primeiro bipe daquela OP no posto
+-- (alerta_op_inicio), da_regra = o bipe é daquela OP, e só entram os intervalos que TERMINAM num bipe
+-- dela — outra OP intercalada no mesmo posto não vira lentidão da OP.
 --   intervalos = intervalos válidos que terminam num bipe da regra (o mínimo da regra olha para isto);
 --   media_seg  = média desses, truncada em 2 casas (null sem nenhum válido);
 --   pecas      = bipes distintos da regra na janela.
@@ -295,6 +335,9 @@ as $func$
       select x.pmo, x.op from public.alerta_ultima_op(p.posto, p_pmos) x where p_janela_tipo = 'op'
     ) u on true
     left join lateral (
+      select public.alerta_op_inicio(p.posto, u.pmo, u.op) as inicio where u.op is not null
+    ) f on true
+    left join lateral (
       select count(g.seg) filter (where g.da_regra and g.seg <= p_pausa_max_min * 60)         as intervalos,
              trunc(avg(g.seg) filter (where g.da_regra and g.seg <= p_pausa_max_min * 60), 2) as media_seg,
              count(*) filter (where g.da_regra)                                                 as pecas
@@ -313,12 +356,14 @@ as $func$
                  and r.data_hora >= now() - make_interval(mins => p_janela_valor)
                group by r.data_hora
               union all
-              -- janela 'op': os bipes do posto naquela OP (PMO aparada dos dois lados)
-              select r.data_hora, true
+              -- janela 'op': TODOS os bipes do posto desde o primeiro bipe daquela OP nele;
+              -- da_regra = o bipe é daquela OP (PMO aparada dos dois lados)
+              select r.data_hora,
+                     coalesce(bool_or(btrim(r.pmo) = u.pmo and r.op = u.op), false) as da_regra
                 from sf_registros r
                where p_janela_tipo = 'op'
                  and r.posto = p.posto
-                 and btrim(r.pmo) = btrim(u.pmo) and r.op = u.op
+                 and r.data_hora >= f.inicio
                group by r.data_hora
             ) b
         ) g
