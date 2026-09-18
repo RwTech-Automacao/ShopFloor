@@ -75,7 +75,20 @@ describe('CartaoAlertas', () => {
       <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[1]!)
-    expect(await screen.findByText(/\/vincular ALERTA-7K3M/)).toBeInTheDocument()
+    expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
+    expect(screen.getByText('/vincular')).toBeInTheDocument()
+    expect(screen.getByText(/Cole o código no campo/)).toBeInTheDocument()
+  })
+
+  it('Copiar põe só o código na área de transferência', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    render(
+      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[1]!)
+    fireEvent.click(await screen.findByRole('button', { name: 'Copiar' }))
+    expect(writeText).toHaveBeenCalledWith('ALERTA-7K3M')
   })
 
   it('Enviar teste avisa sucesso', async () => {

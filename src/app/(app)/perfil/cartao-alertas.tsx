@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { BellRing, RefreshCw, Send, Unlink } from 'lucide-react'
+import { BellRing, Copy, RefreshCw, Send, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -82,6 +82,13 @@ export function CartaoAlertas({
     return parar
   }, [codigo])
 
+  function copiar(texto: string) {
+    navigator.clipboard?.writeText(texto).then(
+      () => toast.success('Código copiado', TOAST),
+      () => toast.error('Não deu para copiar — selecione o código e copie à mão', TOAST),
+    )
+  }
+
   function vincular(canal: Canal) {
     startTransition(async () => {
       const r = await gerarCodigoAction()
@@ -126,7 +133,7 @@ export function CartaoAlertas({
           <BellRing className="size-[18px]" /> Alertas
         </CardTitle>
         <CardDescription>
-          Vincule seu Telegram e/ou Discord para receber os alertas de taxa de aprovação dos postos.
+          Vincule seu Telegram e/ou Discord para receber os alertas dos postos.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -174,20 +181,34 @@ export function CartaoAlertas({
 
               {aberto && (
                 <div className="flex flex-col gap-2 rounded-md bg-muted/50 p-3">
-                  <p className="text-center font-mono text-2xl font-semibold tracking-widest">{aberto.codigo}</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="font-mono text-2xl font-semibold tracking-widest">{aberto.codigo}</p>
+                    <Button variant="outline" size="sm" onClick={() => copiar(aberto.codigo)}>
+                      <Copy /> Copiar
+                    </Button>
+                  </div>
                   <p className="text-center text-xs text-muted-foreground">
                     {restante > 0 ? `Vale por ${relogio(restante)}` : 'Código expirado — gere outro'}
                   </p>
                   {canal === 'telegram' ? (
-                    <p className="text-sm text-muted-foreground">
-                      Abra <span className="font-medium">t.me/{telegramBot || 'seu_bot'}</span>, toque em Iniciar e
-                      envie o código acima.
-                    </p>
+                    <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                      <li>Copie o código.</li>
+                      <li>
+                        Abra <span className="font-medium">t.me/{telegramBot || 'seu_bot'}</span> e toque em Iniciar.
+                      </li>
+                      <li>Cole o código na conversa e envie.</li>
+                    </ol>
                   ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No servidor da Enterplak, digite{' '}
-                      <span className="font-medium">/vincular {aberto.codigo}</span>.
-                    </p>
+                    <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                      <li>Copie o código.</li>
+                      <li>
+                        No servidor da Enterplak, digite <span className="font-medium">/vincular</span> e escolha o
+                        comando na lista.
+                      </li>
+                      <li>
+                        Cole o código no campo <span className="font-medium">codigo</span> e aperte Enter.
+                      </li>
+                    </ol>
                   )}
                   <p className="text-xs text-muted-foreground">
                     {nome}, esta tela confirma sozinha quando o vínculo chegar.
