@@ -138,7 +138,12 @@ const MAX_SNS_FILTRO = 5000
 export async function carregarGradeCompleta(
   pmo: string,
   op: string,
-): Promise<{ ok: true; colunas: string[]; linhas: LinhaGrade[]; total: number } | { ok: false; erro: string }> {
+): Promise<
+  | { ok: true; colunas: string[]; linhas: LinhaGrade[]; total: number }
+  // `permanente`: só a OP grande demais pra filtrar (nunca vai caber) — o resto (OP não encontrada,
+  // erro interno, rede) é transitório e deixa tentar de novo no próximo clique.
+  | { ok: false; erro: string; permanente?: true }
+> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
 
@@ -148,7 +153,11 @@ export async function carregarGradeCompleta(
   const tot = totalFaixaSNs(ordem.sn_ini, ordem.sn_fim)
   if (!tot.ok) return tot
   if (tot.total > MAX_SNS_FILTRO) {
-    return { ok: false, erro: `OP grande demais pra filtrar por coluna (${tot.total} SNs; máximo ${MAX_SNS_FILTRO}).` }
+    return {
+      ok: false,
+      erro: `OP grande demais pra filtrar por coluna (${tot.total} SNs; máximo ${MAX_SNS_FILTRO}).`,
+      permanente: true,
+    }
   }
   const faixa = gerarFaixaSNsPagina(ordem.sn_ini, ordem.sn_fim, 0, tot.total)
   if (!faixa.ok) return faixa

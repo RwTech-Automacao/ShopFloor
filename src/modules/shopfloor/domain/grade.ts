@@ -97,6 +97,11 @@ export function snsNaoIniciados(
   return sns
 }
 
+/** Rótulo da célula do posto quando a peça ainda não passou por ali. */
+export const CELULA_PENDENTE = 'Pendente'
+/** Rótulo da célula de Manutenção quando a peça não teve manutenção. */
+export const CELULA_SEM_MANUTENCAO = '—'
+
 export interface RegistroGrade {
   snNorm: string
   posto: string
@@ -151,11 +156,11 @@ export function montarGrade(
     for (const posto of colunas) {
       const doPosto = regs.filter((r) => r.posto.toLowerCase() === posto.toLowerCase())
       if (posto === 'Manutenção') {
-        celulas[posto] = doPosto.length > 0 ? 'Concluído' : '—'
+        celulas[posto] = doPosto.length > 0 ? 'Concluído' : CELULA_SEM_MANUTENCAO
         continue
       }
       if (doPosto.length === 0) {
-        celulas[posto] = 'Pendente'
+        celulas[posto] = CELULA_PENDENTE
         continue
       }
       if (posto.toLowerCase() === 'embalagem') {

@@ -58,6 +58,9 @@ describe('filtrarLinhas', () => {
     expect(sns(filtrarLinhas(linhas, { sn: 'b01', valores: { Embalagem: ['CX2-10'] } }))).toEqual(['AB010C'])
     expect(temFiltroAtivo({ sn: ' x ', valores: {} })).toBe(true)
   })
+  it('ignora separadores dos dois lados ("AB-010" acha "AB010C")', () => {
+    expect(sns(filtrarLinhas(linhas, { sn: 'AB-010', valores: {} }))).toEqual(['AB010C'])
+  })
   it('lista vazia numa coluna = nenhuma linha', () => {
     expect(filtrarLinhas(linhas, { sn: '', valores: { Teste: [] } })).toEqual([])
   })

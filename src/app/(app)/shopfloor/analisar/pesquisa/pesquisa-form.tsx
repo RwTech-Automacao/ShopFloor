@@ -75,7 +75,10 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   const [filtros, setFiltros] = useState<FiltrosColuna>(FILTROS_VAZIOS)
   const [completa, setCompleta] = useState<{ chave: string; linhas: LinhaGrade[] } | null>(null)
   const [carregandoCompleta, setCarregandoCompleta] = useState(false)
-  const [erroCompleta, setErroCompleta] = useState<{ chave: string; erro: string } | null>(null)
+  // OP grande demais pra filtrar (>5000 SNs): fica fixo, não dá pra tentar de novo.
+  const [erroPermanente, setErroPermanente] = useState<{ chave: string; erro: string } | null>(null)
+  // Erro transitório (rede/erro interno) da última tentativa: some ao tentar de novo ou trocar de OP.
+  const [erroTentativa, setErroTentativa] = useState<{ chave: string; erro: string } | null>(null)
   const [pagCliente, setPagCliente] = useState(1)
   /** OP atual (pmo||op) — guarda contra resposta velha da carga da OP inteira. */
   const chaveAtual = useRef('')
@@ -83,32 +86,40 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
 
   const chaveOp = op !== '' ? `${pmo}||${op}` : ''
   const linhasCompletas = completa && completa.chave === chaveOp ? completa.linhas : null
-  const indisponivel = erroCompleta && erroCompleta.chave === chaveOp ? erroCompleta.erro : undefined
+  const indisponivel = erroPermanente && erroPermanente.chave === chaveOp ? erroPermanente.erro : undefined
+  const erroDaTentativa = erroTentativa && erroTentativa.chave === chaveOp ? erroTentativa.erro : undefined
   const filtroAtivo = temFiltroAtivo(filtros)
   const modoCompleto = indisponivel === undefined && (filtroAtivo || caixa !== '')
 
   function garantirCompleta() {
     const chave = chaveOp
     if (chave === '' || (completa && completa.chave === chave) || emVoo.current === chave) return
-    if (erroCompleta && erroCompleta.chave === chave) return
+    if (erroPermanente && erroPermanente.chave === chave) return
     emVoo.current = chave
     setCarregandoCompleta(true)
+    setErroTentativa(null)
     carregarGradeCompleta(pmo, op)
       .then((r) => {
         if (chaveAtual.current !== chave) return // trocou de OP no meio: descarta
-        if (r.ok) setCompleta({ chave, linhas: r.linhas })
-        else {
-          setErroCompleta({ chave, erro: r.erro })
-          setFiltros(FILTROS_VAZIOS)
-          toast.error(r.erro, { position: 'bottom-center' })
+        if (r.ok) {
+          setCompleta({ chave, linhas: r.linhas })
+          return
         }
+        if (r.permanente) {
+          setErroPermanente({ chave, erro: r.erro })
+          setFiltros(FILTROS_VAZIOS)
+          setCaixa('')
+        } else {
+          // Erro transitório (OP não encontrada, erro interno…): deixa tentar de novo no próximo clique.
+          setErroTentativa({ chave, erro: r.erro })
+        }
+        toast.error(r.erro, { position: 'bottom-center' })
       })
       .catch(() => {
         if (chaveAtual.current !== chave) return
-        // Falha de rede: volta pro modo leve (sem filtro/caixa) e deixa tentar de novo no próximo clique.
-        setFiltros(FILTROS_VAZIOS)
-        setCaixa('')
-        toast.error('Não foi possível carregar a OP inteira.', { position: 'bottom-center' })
+        const msg = 'Não foi possível carregar a OP inteira.'
+        setErroTentativa({ chave, erro: msg })
+        toast.error(msg, { position: 'bottom-center' })
       })
       .finally(() => {
         if (emVoo.current === chave) emVoo.current = ''
@@ -119,11 +130,13 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   /** Zera tudo que é da OP anterior (filtros, cache da OP inteira, página do cliente). */
   function trocarOp(chave: string) {
     chaveAtual.current = chave
+    emVoo.current = ''
     setFiltros(FILTROS_VAZIOS)
     setCaixa('')
     setPagCliente(1)
     setCompleta(null)
-    setErroCompleta(null)
+    setErroPermanente(null)
+    setErroTentativa(null)
     setCarregandoCompleta(false)
   }
 
@@ -190,11 +203,13 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   }
 
   function abrirGrade(opSel: string, pag = 1) {
-    if (opSel !== op) trocarOp(`${pmo}||${opSel}`)
+    const chave = `${pmo}||${opSel}`
+    if (opSel !== op) trocarOp(chave)
     setOp(opSel)
     setCaixa('')
     startGrade(async () => {
       const r = await carregarGrade(pmo, opSel, pag)
+      if (chaveAtual.current !== chave) return // trocou de OP no meio: descarta a resposta velha
       if (r.ok) {
         setColunas(r.colunas)
         setResumo(r.resumo)
@@ -331,12 +346,16 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                 value={caixa === '' ? TODAS : caixa}
                 onValueChange={(v) => { setCaixa(v === TODAS ? '' : (v ?? '')); setPagCliente(1) }}
                 onOpenChange={(o) => { if (o) garantirCompleta() }}
-                disabled={caixas.length === 0}
+                disabled={op === '' || indisponivel !== undefined}
               >
                 <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={TODAS}>Todas</SelectItem>
-                  {caixas.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {carregandoCompleta ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">Carregando…</div>
+                  ) : (
+                    caixas.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -369,6 +388,7 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                           onAbrir={garantirCompleta}
                           carregando={carregandoCompleta}
                           indisponivel={indisponivel}
+                          erro={erroDaTentativa}
                           texto={filtros.sn}
                           onTexto={(t) => mudarFiltros({ ...filtros, sn: t })}
                         />
@@ -383,8 +403,9 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                             coluna={p}
                             ativo={filtros.valores[p] !== undefined}
                             onAbrir={garantirCompleta}
-                            carregando={carregandoCompleta || !baseCompleta}
+                            carregando={carregandoCompleta || (!baseCompleta && erroDaTentativa === undefined)}
                             indisponivel={indisponivel}
+                            erro={erroDaTentativa}
                             valores={distintos.get(p) ?? []}
                             selecionados={filtros.valores[p]}
                             onSelecionados={(s) => mudarValoresColuna(p, s)}

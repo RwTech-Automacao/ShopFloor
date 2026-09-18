@@ -19,6 +19,9 @@ interface BaseProps {
   carregando: boolean
   /** Motivo pra não filtrar (ex.: OP grande demais). Com ele o botão fica desabilitado. */
   indisponivel?: string
+  /** Erro da última tentativa de carregar a OP inteira (transitório: rede/erro interno). Mostra a
+   *  linha de erro com "Tentar de novo" no lugar do "Carregando…"/lista. */
+  erro?: string
 }
 
 type Props =
@@ -34,7 +37,7 @@ type Props =
 
 /** Botão de funil no cabeçalho da coluna + popover de filtro (lista com checkbox ou texto). */
 export function FiltroColuna(props: Props) {
-  const { coluna, ativo, onAbrir, carregando, indisponivel } = props
+  const { coluna, ativo, onAbrir, carregando, indisponivel, erro } = props
   const [aberto, setAberto] = useState(false)
 
   return (
@@ -51,7 +54,8 @@ export function FiltroColuna(props: Props) {
             type="button"
             disabled={indisponivel !== undefined}
             title={indisponivel ?? `Filtrar ${coluna}`}
-            aria-label={`Filtrar ${coluna}`}
+            aria-pressed={ativo}
+            aria-label={ativo ? `Filtrar ${coluna} (filtro ativo)` : `Filtrar ${coluna}`}
             className={`inline-flex size-5 shrink-0 items-center justify-center rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-40 ${
               ativo ? 'bg-enterplak text-white' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             }`}
@@ -74,9 +78,14 @@ export function FiltroColuna(props: Props) {
               className={CAMPO}
             />
             {carregando && <p className="text-xs text-muted-foreground">Carregando a OP inteira…</p>}
+            {!carregando && erro !== undefined && <ErroTentarNovo erro={erro} onTentarNovo={onAbrir} />}
           </div>
         ) : carregando ? (
           <p className="px-2.5 py-2 text-sm text-muted-foreground">Carregando…</p>
+        ) : erro !== undefined ? (
+          <div className="p-2">
+            <ErroTentarNovo erro={erro} onTentarNovo={onAbrir} />
+          </div>
         ) : (
           <ListaValores
             valores={props.valores}
@@ -86,6 +95,18 @@ export function FiltroColuna(props: Props) {
         )}
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** Linha de erro (carga da OP inteira falhou) com um jeito de tentar de novo, sem fechar o popover. */
+function ErroTentarNovo({ erro, onTentarNovo }: { erro: string; onTentarNovo: () => void }) {
+  return (
+    <div className="flex flex-col items-start gap-1 px-0.5 py-1 text-sm">
+      <p className="text-destructive">{erro}</p>
+      <button type="button" onClick={onTentarNovo} className="font-medium text-enterplak underline underline-offset-2 hover:no-underline">
+        Tentar de novo
+      </button>
+    </div>
   )
 }
 
