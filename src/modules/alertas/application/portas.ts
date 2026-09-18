@@ -1,5 +1,6 @@
-import type { Canal, ResultadoEnvio, ResultadoSimples, TipoEnvio } from '../domain/tipos'
+import type { Canal, ResultadoEnvio, ResultadoSimples } from '../domain/tipos'
 import type { ContaDestino, ResultadoAvaliacaoRpc } from '../domain/avaliacao'
+import type { EnvioReservado } from '../domain/envio'
 
 /**
  * Tudo que o serviço precisa de um canal. Quem implementa é `infra/canais.ts` (Telegram/Discord);
@@ -13,25 +14,25 @@ export interface PortaCanal {
 /** Canal ausente = sem token configurado neste ambiente. */
 export type PortasCanais = Partial<Record<Canal, PortaCanal>>
 
-export interface NovoEnvio {
-  ocorrenciaId: string | null
+/**
+ * Envio que NÃO passa pela fila e já nasce final: só o "Enviar teste" do Meu perfil (a pessoa
+ * precisa do resultado na hora, e teste que falhou não é reenviado).
+ */
+export interface NovoEnvioDireto {
   usuarioId: string
   canal: Canal
-  tipo: TipoEnvio
+  tipo: 'teste'
   texto: string
-  comBotao: boolean
+  dados: Record<string, unknown>
   resultado: ResultadoEnvio
 }
 
-/** Envio que falhou e ainda vale tentar de novo (texto guardado no banco). */
-export interface EnvioPendente {
-  id: string
+export interface FiltroReserva {
+  /** Só os canais que este ambiente consegue entregar (os outros ficam pendentes). */
+  canais: Canal[]
+  limite: number
+  /** Restringe a uma ocorrência (webhook do "Resolvido"); null = a fila inteira. */
   ocorrenciaId: string | null
-  canal: Canal
-  externoId: string
-  texto: string
-  comBotao: boolean
-  tentativas: number
 }
 
 export interface MensagemComBotao {
@@ -41,13 +42,18 @@ export interface MensagemComBotao {
 }
 
 export interface RepositorioEnvios {
+  /** `alerta_avaliar()`: decide e enfileira no banco, numa transação só. */
   avaliar(): Promise<ResultadoAvaliacaoRpc>
-  registrarEnvio(e: NovoEnvio): Promise<void>
-  envioParaReenviar(): Promise<EnvioPendente[]>
-  registrarReenvio(envio: EnvioPendente, resultado: ResultadoEnvio): Promise<void>
+  /** `alerta_reservar_envios()`: pega um lote da fila de forma atômica (novas antes de reenvios). */
+  reservarPendentes(filtro: FiltroReserva): Promise<EnvioReservado[]>
+  /**
+   * Grava o resultado NA PRÓPRIA LINHA reservada (ok/erro/mensagem_externa_id/texto/enviado_em) e
+   * solta a reserva. Lança em erro de banco — quem chama trata por item.
+   */
+  concluirEnvio(envio: EnvioReservado, texto: string, resultado: ResultadoEnvio): Promise<void>
+  /** Grava um envio direto (teste). Não lança: a mensagem já saiu, o que falhou foi a auditoria. */
+  registrarEnvioDireto(e: NovoEnvioDireto): Promise<void>
   mensagensComBotao(ocorrenciaId: string): Promise<MensagemComBotao[]>
   marcarSemBotao(envioIds: string[]): Promise<void>
-  /** Destinatários x canais da regra da ocorrência que TÊM vínculo. */
-  contasDaOcorrencia(ocorrenciaId: string): Promise<ContaDestino[]>
   contaDoUsuario(usuarioId: string, canal: Canal): Promise<ContaDestino | null>
 }

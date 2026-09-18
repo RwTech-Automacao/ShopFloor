@@ -1,19 +1,13 @@
-import { NOME_CANAL, type Canal, type ResultadoSimples, type TipoEnvio } from '../domain/tipos'
-import { acaoTemBotao, textoDaAcao, type ContaDestino } from '../domain/avaliacao'
-import { textoResolvido, textoTeste } from '../domain/mensagens'
+import { CANAIS, NOME_CANAL, type Canal, type ResultadoEnvio, type ResultadoSimples } from '../domain/tipos'
+import { textoDoEnvio } from '../domain/envio'
 import type { PortasCanais, RepositorioEnvios } from './portas'
 
 function mensagemDe(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-export interface ItemEnvio {
-  conta: ContaDestino
-  tipo: TipoEnvio
-  texto: string
-  ocorrenciaId: string | null
-  comBotao: boolean
-}
+/** Tamanho do lote por rodada. A reserva no banco vale 15 min: 30 x até 20 s cabe com folga. */
+export const LIMITE_LOTE = 30
 
 export interface ResumoEnvio {
   enviados: number
@@ -22,55 +16,56 @@ export interface ResumoEnvio {
 
 export interface ResumoAvaliacao extends ResumoEnvio {
   avaliadas: number
+  enfileirados: number
   ocupado: boolean
 }
 
-/** Um envio por item. Canal sem token é PULADO: não envia e não gera linha de falha. */
-export async function enviarItens(
+/**
+ * O ÚNICO caminho de entrega da fila: reserva um lote no banco (atômico — duas rodadas ao mesmo
+ * tempo nunca pegam a mesma linha), monta o texto, envia e grava o resultado na própria linha.
+ *
+ * Um item que dá errado (texto que não monta, canal que lança, banco que não grava o resultado)
+ * NÃO derruba a rodada: loga e segue. Se o erro foi antes/durante o envio, a linha é concluída
+ * como falha e volta na próxima rodada (até 3 tentativas). Se foi só ao gravar o resultado, a
+ * reserva vence em 15 min e a linha volta — entrega "pelo menos uma vez".
+ */
+export async function entregarPendentes(
   portas: PortasCanais,
   repo: RepositorioEnvios,
-  itens: ItemEnvio[],
+  opcoes: { ocorrenciaId?: string | null; limite?: number } = {},
 ): Promise<ResumoEnvio> {
-  let enviados = 0
-  let falhas = 0
-  for (const item of itens) {
-    const porta = portas[item.conta.canal]
-    if (!porta) continue
-    const resultado = await porta.enviar(
-      item.conta.externoId,
-      item.texto,
-      item.comBotao ? item.ocorrenciaId : null,
-    )
-    await repo.registrarEnvio({
-      ocorrenciaId: item.ocorrenciaId,
-      usuarioId: item.conta.usuarioId,
-      canal: item.conta.canal,
-      tipo: item.tipo,
-      texto: item.texto,
-      comBotao: item.comBotao,
-      resultado,
-    })
-    if (resultado.ok) enviados += 1
-    else falhas += 1
-  }
-  return { enviados, falhas }
-}
+  const canais: Canal[] = CANAIS.filter((c) => portas[c])
+  if (canais.length === 0) return { enviados: 0, falhas: 0 }
 
-/** Tenta de novo o que falhou em rodadas ANTERIORES (o repositório já filtra tentativas < 3). */
-export async function reenviarFalhas(portas: PortasCanais, repo: RepositorioEnvios): Promise<ResumoEnvio> {
+  const lote = await repo.reservarPendentes({
+    canais,
+    limite: opcoes.limite ?? LIMITE_LOTE,
+    ocorrenciaId: opcoes.ocorrenciaId ?? null,
+  })
+
   let enviados = 0
   let falhas = 0
-  for (const pendente of await repo.envioParaReenviar()) {
-    const porta = portas[pendente.canal]
-    if (!porta) continue
-    const resultado = await porta.enviar(
-      pendente.externoId,
-      pendente.texto,
-      pendente.comBotao ? pendente.ocorrenciaId : null,
-    )
-    await repo.registrarReenvio(pendente, resultado)
+  for (const envio of lote) {
+    let texto = ''
+    let resultado: ResultadoEnvio
+    try {
+      const porta = portas[envio.canal]
+      if (!porta) throw new Error(`${NOME_CANAL[envio.canal]} não configurado`)
+      texto = textoDoEnvio(envio.tipo, envio.dados)
+      resultado = await porta.enviar(envio.externoId, texto, envio.comBotao ? envio.ocorrenciaId : null)
+    } catch (e) {
+      console.error(`[alertas] envio ${envio.id} falhou:`, mensagemDe(e))
+      resultado = { ok: false, erro: `Erro interno: ${mensagemDe(e)}` }
+    }
+
     if (resultado.ok) enviados += 1
     else falhas += 1
+
+    try {
+      await repo.concluirEnvio(envio, texto, resultado)
+    } catch (e) {
+      console.error(`[alertas] gravar resultado do envio ${envio.id} falhou:`, mensagemDe(e))
+    }
   }
   return { enviados, falhas }
 }
@@ -93,74 +88,48 @@ export async function removerBotoesDaOcorrencia(
 }
 
 /**
- * O ciclo do cron: avalia no banco (decisão atômica lá) e entrega o que ele mandou entregar.
- * A ORDEM importa: `avaliar` primeiro (se estiver ocupado, sai sem mexer em nada) e só depois os
- * reenvios — que são lidos ANTES de gravar os envios desta rodada, então nunca se reenvia o que
- * acabou de falhar aqui.
+ * O ciclo do cron (e do "Avaliar agora"): o banco decide E enfileira numa transação só; aqui só
+ * se entrega a fila e se tiram os botões das ocorrências que encerraram.
+ *
+ * Depois que `avaliar` volta, a decisão já está gravada junto com as linhas pendentes: qualquer
+ * tropeço daqui pra frente só atrasa a entrega para a próxima rodada — nada se perde.
  */
 export async function avaliarEEnviar(portas: PortasCanais, repo: RepositorioEnvios): Promise<ResumoAvaliacao> {
   const avaliacao = await repo.avaliar()
-  if (avaliacao.ocupado) return { avaliadas: 0, enviados: 0, falhas: 0, ocupado: true }
-
-  // Daqui pra baixo a avaliação JÁ foi gravada (ocorrência aberta, lembrete marcado): um tropeço
-  // no reenvio ou na limpeza de botões não pode fazer as ações desta rodada se perderem.
-  let enviados = 0
-  let falhas = 0
-  try {
-    const reenvio = await reenviarFalhas(portas, repo)
-    enviados += reenvio.enviados
-    falhas += reenvio.falhas
-  } catch (e) {
-    console.error('[alertas] reenvio de falhas falhou:', mensagemDe(e))
+  if (avaliacao.ocupado) {
+    return { avaliadas: 0, enfileirados: 0, enviados: 0, falhas: 0, ocupado: true }
   }
 
-  for (const acao of avaliacao.acoes) {
-    const texto = textoDaAcao(acao)
-    const comBotao = acaoTemBotao(acao)
-    const r = await enviarItens(
-      portas,
-      repo,
-      acao.contas.map((conta) => ({ conta, tipo: acao.tipo, texto, ocorrenciaId: acao.ocorrenciaId, comBotao })),
-    )
-    enviados += r.enviados
-    falhas += r.falhas
-    // Normalizou: os alertas antigos não devem mais oferecer "Resolvido".
-    if (acao.tipo === 'normalizou') {
-      try {
-        await removerBotoesDaOcorrencia(portas, repo, acao.ocorrenciaId)
-      } catch (e) {
-        console.error('[alertas] remover botões falhou:', mensagemDe(e))
-      }
+  let resumo: ResumoEnvio = { enviados: 0, falhas: 0 }
+  try {
+    resumo = await entregarPendentes(portas, repo)
+  } catch (e) {
+    console.error('[alertas] entrega da fila falhou:', mensagemDe(e))
+  }
+
+  // Normalizou (ou a regra foi desativada/excluída): os alertas antigos não oferecem mais "Resolvido".
+  for (const ocorrenciaId of avaliacao.normalizadas) {
+    try {
+      await removerBotoesDaOcorrencia(portas, repo, ocorrenciaId)
+    } catch (e) {
+      console.error('[alertas] remover botões falhou:', mensagemDe(e))
     }
   }
 
-  return { avaliadas: avaliacao.avaliadas, enviados, falhas, ocupado: false }
+  return {
+    avaliadas: avaliacao.avaliadas,
+    enfileirados: avaliacao.enfileirados,
+    enviados: resumo.enviados,
+    falhas: resumo.falhas,
+    ocupado: false,
+  }
 }
 
-/** "✅ resolvido por X" para os OUTROS destinatários (quem apertou já sabe). */
-export async function avisarResolvido(
-  portas: PortasCanais,
-  repo: RepositorioEnvios,
-  r: {
-    ocorrenciaId: string
-    posto: string
-    resolvidoPorId: string
-    resolvidoPorNome: string
-    resolvidaEm: Date
-  },
-): Promise<ResumoEnvio> {
-  const contas = (await repo.contasDaOcorrencia(r.ocorrenciaId)).filter(
-    (c) => c.usuarioId !== r.resolvidoPorId,
-  )
-  const texto = textoResolvido({ posto: r.posto, nome: r.resolvidoPorNome, em: r.resolvidaEm })
-  return enviarItens(
-    portas,
-    repo,
-    contas.map((conta) => ({ conta, tipo: 'resolvido' as TipoEnvio, texto, ocorrenciaId: r.ocorrenciaId, comBotao: false })),
-  )
-}
-
-/** Botão "Enviar teste" do Meu perfil: prova que a DM chega ANTES de existir um alerta de verdade. */
+/**
+ * Botão "Enviar teste" do Meu perfil: prova que a DM chega ANTES de existir um alerta de verdade.
+ * Entrega DIRETA (fora da fila): a pessoa precisa ver o resultado na hora, e teste que falhou não
+ * é reenviado. O resultado é gravado como linha já final em `alerta_envios`.
+ */
 export async function enviarTeste(
   portas: PortasCanais,
   repo: RepositorioEnvios,
@@ -171,15 +140,15 @@ export async function enviarTeste(
   const conta = await repo.contaDoUsuario(p.usuarioId, p.canal)
   if (!conta) return { ok: false, erro: `Vincule o ${NOME_CANAL[p.canal]} antes de enviar o teste.` }
 
-  const texto = textoTeste(p.nome)
+  const dados = { nome: p.nome }
+  const texto = textoDoEnvio('teste', dados)
   const resultado = await porta.enviar(conta.externoId, texto, null)
-  await repo.registrarEnvio({
-    ocorrenciaId: null,
+  await repo.registrarEnvioDireto({
     usuarioId: p.usuarioId,
     canal: p.canal,
     tipo: 'teste',
     texto,
-    comBotao: false,
+    dados,
     resultado,
   })
   return resultado.ok ? { ok: true } : { ok: false, erro: resultado.erro }
