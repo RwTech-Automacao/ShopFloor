@@ -694,4 +694,265 @@ begin
 end $t$;
 reset role;
 
+-- Ajustes pós-revisão (Task 3): a seção 17 deixou `teste.perms` só com 'visualizar'; várias
+-- seções abaixo (26) chamam alerta_previa, que exige 'administrar'.
+select set_config('teste.perms', 'shopfloor.visualizar,shopfloor.administrar', false);
+
+-- 18. Posto removido da regra (regra continua ATIVA, só sem esse posto): a ocorrência viva vira
+--     normalizada, sem ação.
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  canais, destinatarios, criado_por)
+values ('PostoRemovido', array['Posto18', 'Posto18b'], 90, 'tempo', 60, 5, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+select public.teste_bipes('Posto18', 'PMO18', '9010', 1, 9, 5);   -- 10%, abre alerta
+set role service_role;
+do $t$
+begin
+  if teste_acao(alerta_avaliar(), 'PostoRemovido', 'Posto18') is null then
+    raise exception 'FALHOU: Posto18 não abriu ocorrência';
+  end if;
+end $t$;
+reset role;
+update public.alerta_regras set postos = array['Posto18b'] where nome = 'PostoRemovido';
+set role service_role;
+do $t$
+begin
+  if teste_acao(alerta_avaliar(), 'PostoRemovido', 'Posto18') is not null then
+    raise exception 'FALHOU: posto removido da regra ainda gerou ação';
+  end if;
+  if exists (select 1 from alerta_ocorrencias where posto = 'Posto18' and estado in ('aberta', 'resolvida')) then
+    raise exception 'FALHOU: ocorrência de posto removido continuou viva';
+  end if;
+  if (select estado from alerta_ocorrencias where posto = 'Posto18' order by aberta_em desc limit 1) <> 'normalizada' then
+    raise exception 'FALHOU: ocorrência de posto removido não virou normalizada';
+  end if;
+end $t$;
+reset role;
+update public.alerta_regras set ativa = false where nome = 'PostoRemovido';
+
+-- 19. Ocorrência viva que cai abaixo do mínimo de bipes: continua ABERTA, sem normalizar e sem ação
+--     (a regra não decide NADA abaixo do mínimo — nem abre, nem normaliza, nem fecha).
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  canais, destinatarios, criado_por)
+values ('MinimoViva', array['Posto19'], 90, 'tempo', 60, 20, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+select public.teste_bipes('Posto19', 'PMO19', '9011', 5, 20, 10);  -- 25 bipes, 20%, abre alerta
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  a := teste_acao(alerta_avaliar(), 'MinimoViva', 'Posto19');
+  if a is null or a->>'tipo' <> 'alerta' then raise exception 'FALHOU: Posto19 não abriu %', a; end if;
+end $t$;
+reset role;
+-- os 25 bipes saem da janela de 60 min: total cai pra 0, abaixo do mínimo de 20.
+update public.sf_registros set data_hora = now() - interval '2 hours' where posto = 'Posto19';
+set role service_role;
+do $t$
+begin
+  if teste_acao(alerta_avaliar(), 'MinimoViva', 'Posto19') is not null then
+    raise exception 'FALHOU: abaixo do mínimo gerou ação';
+  end if;
+  if (select estado from alerta_ocorrencias where posto = 'Posto19') <> 'aberta' then
+    raise exception 'FALHOU: ocorrência abaixo do mínimo não continuou aberta';
+  end if;
+  if (select taxa_ultima from alerta_ocorrencias where posto = 'Posto19') <> 20.00 then
+    raise exception 'FALHOU: taxa da ocorrência mudou mesmo sem decidir nada';
+  end if;
+end $t$;
+reset role;
+update public.alerta_regras set ativa = false where nome = 'MinimoViva';
+
+-- 20. `aberta` com `lembrete_min` nulo: nunca manda lembrete, não importa quanto tempo passe.
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  lembrete_min, canais, destinatarios, criado_por)
+values ('SemLembrete', array['Posto20'], 90, 'tempo', 60, 5, null, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+select public.teste_bipes('Posto20', 'PMO20', '9012', 1, 9, 5);
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  a := teste_acao(alerta_avaliar(), 'SemLembrete', 'Posto20');
+  if a is null or a->>'tipo' <> 'alerta' then raise exception 'FALHOU: Posto20 não abriu %', a; end if;
+end $t$;
+reset role;
+update public.alerta_ocorrencias set ultimo_envio_em = now() - interval '3 hours',
+                                     aberta_em = now() - interval '3 hours'
+ where posto = 'Posto20' and estado = 'aberta';
+set role service_role;
+do $t$
+begin
+  if teste_acao(alerta_avaliar(), 'SemLembrete', 'Posto20') is not null then
+    raise exception 'FALHOU: lembrete_min nulo mandou lembrete';
+  end if;
+end $t$;
+reset role;
+update public.alerta_regras set ativa = false where nome = 'SemLembrete';
+
+-- 21. Taxa exatamente igual à meta normaliza (a comparação da regra é >=, não >).
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  canais, destinatarios, criado_por)
+values ('Igual', array['Posto21'], 90, 'tempo', 60, 5, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+select public.teste_bipes('Posto21', 'PMO21', '9013', 1, 9, 10);  -- 10%, abre alerta
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  a := teste_acao(alerta_avaliar(), 'Igual', 'Posto21');
+  if a is null or a->>'tipo' <> 'alerta' then raise exception 'FALHOU: Posto21 não abriu %', a; end if;
+end $t$;
+reset role;
+delete from public.sf_registros where posto = 'Posto21';
+select public.teste_bipes('Posto21', 'PMO21', '9013', 90, 10, 5);  -- 90/100 = 90,00%, igual à meta
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  a := teste_acao(alerta_avaliar(), 'Igual', 'Posto21');
+  if a is null or a->>'tipo' <> 'normalizou' then raise exception 'FALHOU: taxa igual à meta não normalizou %', a; end if;
+  if (a->>'taxa')::numeric <> 90.00 then raise exception 'FALHOU: taxa da normalização %', a; end if;
+end $t$;
+reset role;
+update public.alerta_regras set ativa = false where nome = 'Igual';
+
+-- 22. Janela `bipes`: linhas "Registrado" MAIS RECENTES que os bipes com status não atrapalham —
+--     prova que o filtro de status roda ANTES do `order by ... limit`, não depois. Se filtrasse
+--     depois, os 10 "Registrado" mais recentes ocupariam o limite inteiro e sobraria 0 bipe.
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  canais, destinatarios, criado_por)
+values ('BipesFiltro', array['Posto22'], 95, 'bipes', 10, 5, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+select public.teste_bipes('Posto22', 'PMO22', '9014', 8, 2, 15);  -- 10 bipes com status, ~15 min atrás
+insert into public.sf_registros (data_hora, posto, pmo, op, status)
+select now() - make_interval(mins => g), 'Posto22', 'PMO22', '9014', 'Registrado'
+  from generate_series(1, 10) g;  -- 10 bipes SEM status, mais recentes (1 a 10 min atrás)
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  a := teste_acao(alerta_avaliar(), 'BipesFiltro', 'Posto22');
+  if a is null or a->>'tipo' <> 'alerta' then raise exception 'FALHOU: filtro de status na janela bipes %', a; end if;
+  if (a->>'aprovados')::int <> 8 or (a->>'reprovados')::int <> 2 then
+    raise exception 'FALHOU: contagem com "Registrado" intercalado %', a;
+  end if;
+end $t$;
+reset role;
+update public.alerta_regras set ativa = false where nome = 'BipesFiltro';
+
+-- 23. Janela `bipes`: bipes com mais de 30 dias não entram, mesmo dentro do limite N. Sem o
+--     filtro de 30 dias, os 20 reprovados antigos completariam os 10 do limite e dariam
+--     3 aprovados / 7 reprovados (30%, abaixo da meta); com o filtro, sobram só 3 bipes — abaixo
+--     do mínimo de 5 — e a regra não decide nada.
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  canais, destinatarios, criado_por)
+values ('Bipes30d', array['Posto23'], 90, 'bipes', 10, 5, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+insert into public.sf_registros (data_hora, posto, pmo, op, status)
+select now() - interval '40 days' - make_interval(secs => g), 'Posto23', 'PMO23', '9015', 'REPROVADO'
+  from generate_series(1, 20) g;
+select public.teste_bipes('Posto23', 'PMO23', '9015', 3, 0, 5);  -- só 3 bipes dentro dos 30 dias
+set role service_role;
+do $t$
+begin
+  if teste_acao(alerta_avaliar(), 'Bipes30d', 'Posto23') is not null then
+    raise exception 'FALHOU: bipe com mais de 30 dias entrou na janela';
+  end if;
+  if exists (select 1 from alerta_ocorrencias where posto = 'Posto23') then
+    raise exception 'FALHOU: abriu ocorrência com bipe de mais de 30 dias';
+  end if;
+end $t$;
+reset role;
+update public.alerta_regras set ativa = false where nome = 'Bipes30d';
+
+-- 24. Grants: authenticated não pode chamar alerta_avaliar nem alerta_resolver.
+set role authenticated;
+do $t$
+begin
+  begin
+    perform alerta_avaliar();
+    raise exception 'FALHOU: authenticated executou alerta_avaliar';
+  exception when insufficient_privilege then
+    null;
+  end;
+  begin
+    perform alerta_resolver('00000000-0000-0000-0000-000000000000'::uuid,
+                             '00000000-0000-0000-0000-000000000001'::uuid);
+    raise exception 'FALHOU: authenticated executou alerta_resolver';
+  exception when insufficient_privilege then
+    null;
+  end;
+end $t$;
+reset role;
+
+-- 25. alerta_resolver: usuário nulo ou inativo é recusado com NAO_DESTINATARIO, mesmo que o
+--     usuário inativo esteja no array `destinatarios` da regra.
+insert into public.usuarios (id, nome, email, ativo) values
+  ('00000000-0000-0000-0000-000000000009', 'Zeca Inativo', 'zeca@enterplak.com.br', false);
+insert into public.alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                                  canais, destinatarios, criado_por)
+values ('ResolverNulo', array['Posto25'], 90, 'tempo', 60, 5, array['telegram'],
+        array['00000000-0000-0000-0000-000000000001',
+              '00000000-0000-0000-0000-000000000009']::uuid[],
+        '00000000-0000-0000-0000-000000000001');
+select public.teste_bipes('Posto25', 'PMO25', '9016', 1, 9, 5);
+set role service_role;
+do $t$
+declare oc uuid; a jsonb;
+begin
+  a := teste_acao(alerta_avaliar(), 'ResolverNulo', 'Posto25');
+  if a is null then raise exception 'FALHOU: Posto25 não abriu ocorrência'; end if;
+
+  select id into oc from alerta_ocorrencias where posto = 'Posto25' and estado = 'aberta';
+
+  begin
+    perform alerta_resolver(oc, null);
+    raise exception 'FALHOU: usuário nulo resolveu';
+  exception when others then
+    if sqlerrm not like '%NAO_DESTINATARIO%' then raise; end if;
+  end;
+
+  begin
+    perform alerta_resolver(oc, '00000000-0000-0000-0000-000000000009');
+    raise exception 'FALHOU: usuário inativo (mas destinatário) resolveu';
+  exception when others then
+    if sqlerrm not like '%NAO_DESTINATARIO%' then raise; end if;
+  end;
+
+  if (select estado from alerta_ocorrencias where id = oc) <> 'aberta' then
+    raise exception 'FALHOU: ocorrência mudou de estado sem resolver de verdade';
+  end if;
+end $t$;
+reset role;
+update public.alerta_regras set ativa = false where nome = 'ResolverNulo';
+delete from public.usuarios where id = '00000000-0000-0000-0000-000000000009';
+
+-- 26. alerta_previa: janela nula ou zero (fora do tipo 'op') dá JANELA_INVALIDA.
+set role authenticated;
+do $t$
+begin
+  begin
+    perform * from alerta_previa(array['Montagem'], 'tempo', null, 20);
+    raise exception 'FALHOU: janela nula deveria falhar';
+  exception when others then
+    if sqlerrm not like '%JANELA_INVALIDA%' then raise; end if;
+  end;
+  begin
+    perform * from alerta_previa(array['Montagem'], 'bipes', 0, 20);
+    raise exception 'FALHOU: janela zero deveria falhar';
+  exception when others then
+    if sqlerrm not like '%JANELA_INVALIDA%' then raise; end if;
+  end;
+  -- janela 'op' não usa valor: nulo continua válido aqui.
+  perform * from alerta_previa(array['Montagem'], 'op', null, 20);
+end $t$;
+reset role;
+
 \echo 'ALERTAS: SQL OK'

@@ -333,12 +333,15 @@ as $func$
              and r.data_hora >= now() - make_interval(mins => p_janela_valor)
              and lower(r.status) in ('aprovado', 'reprovado')
           union all
-          -- janela 'bipes': os N últimos bipes COM status do posto, sem limite de tempo
+          -- janela 'bipes': os N últimos bipes COM status do posto, limitados aos últimos 30 dias.
+          -- Sem esse limite, um posto que nunca grava aprovado/reprovado faz o `order by` varrer o
+          -- histórico inteiro dele a cada avaliação (a cada 5 min).
           (select r.status
              from sf_registros r
             where p_janela_tipo = 'bipes'
               and r.posto = p.posto
               and lower(r.status) in ('aprovado', 'reprovado')
+              and r.data_hora >= now() - interval '30 days'
             order by r.data_hora desc
             limit p_janela_valor)
           union all
@@ -372,6 +375,7 @@ declare
   v_taxa      numeric(5,2);
   v_tipo      text;
   v_contas    jsonb;
+  v_lembrete  boolean;
   t           record;
   o           public.alerta_ocorrencias;
 begin
@@ -434,18 +438,18 @@ begin
       v_tipo := 'normalizou';
 
     else
+      -- Decide o lembrete ANTES do update, num booleano — nunca comparando `ultimo_envio_em`
+      -- com `v_agora` depois (duas avaliações no mesmo instante teriam o mesmo `now()`).
+      v_lembrete := o.estado = 'aberta' and t.lembrete_min is not null
+                    and v_agora - o.ultimo_envio_em >= make_interval(mins => t.lembrete_min);
+
       -- Continua abaixo: atualiza a foto da taxa e, se for hora, marca o lembrete.
       update public.alerta_ocorrencias
          set taxa_ultima = v_taxa, aprovados = t.aprovados, reprovados = t.reprovados,
-             ultimo_envio_em = case
-               when o.estado = 'aberta' and t.lembrete_min is not null
-                    and v_agora - o.ultimo_envio_em >= make_interval(mins => t.lembrete_min)
-                 then v_agora
-               else o.ultimo_envio_em
-             end
+             ultimo_envio_em = case when v_lembrete then v_agora else o.ultimo_envio_em end
        where id = o.id
       returning * into o;
-      if o.estado = 'aberta' and t.lembrete_min is not null and o.ultimo_envio_em = v_agora then
+      if v_lembrete then
         v_tipo := 'lembrete';
       end if;
     end if;
@@ -503,6 +507,9 @@ as $func$
 begin
   if not tem_permissao('shopfloor', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
   if p_janela_tipo not in ('tempo', 'bipes', 'op') then raise exception 'JANELA_INVALIDA'; end if;
+  if p_janela_tipo <> 'op' and coalesce(p_janela_valor, 0) <= 0 then
+    raise exception 'JANELA_INVALIDA';
+  end if;
 
   return query
     select t.posto, t.aprovados, t.reprovados,
@@ -540,7 +547,16 @@ begin
   select * into o from alerta_ocorrencias where id = p_ocorrencia_id for update;
   if not found then raise exception 'OCORRENCIA_INEXISTENTE'; end if;
   select * into r from alerta_regras where id = o.regra_id;
-  if p_exigir_destinatario and not (p_usuario_id = any (r.destinatarios)) then
+  -- `p_usuario_id is null` explícito (mesma lógica do `p_canal is null` do alerta_vincular):
+  -- falha FECHADA — `null = any(...)` dá NULL, não false, e um `not` na frente também vira NULL,
+  -- o que deixaria o `if` como se a condição nunca fosse verdadeira.
+  if p_exigir_destinatario and (p_usuario_id is null or not (p_usuario_id = any (r.destinatarios))) then
+    raise exception 'NAO_DESTINATARIO';
+  end if;
+  -- Usuário inexistente ou desativado nunca é destinatário válido, mesmo que o uuid ainda esteja
+  -- no array `destinatarios` da regra.
+  if p_exigir_destinatario
+     and not exists (select 1 from usuarios where id = p_usuario_id and ativo) then
     raise exception 'NAO_DESTINATARIO';
   end if;
   if o.estado = 'normalizada' then raise exception 'OCORRENCIA_ENCERRADA'; end if;

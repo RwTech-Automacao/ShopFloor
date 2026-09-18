@@ -50,6 +50,7 @@ describe('erros do banco', () => {
     expect(mensagemErroAlerta('OCORRENCIA_ENCERRADA')).toBe('Esta ocorrência já normalizou.')
     expect(mensagemErroAlerta('OCORRENCIA_INEXISTENTE')).toBe('Ocorrência não encontrada.')
     expect(mensagemErroAlerta('SEM_PERMISSAO')).toBe('Você não tem permissão para configurar alertas.')
+    expect(mensagemErroAlerta('JANELA_INVALIDA')).toBe('Informe um valor de janela maior que zero.')
   })
   it('mensagem desconhecida vira texto genérico', () => {
     expect(mensagemErroAlerta('connection refused')).toBe('Não foi possível concluir agora. Tente de novo.')

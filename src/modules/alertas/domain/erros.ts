@@ -13,7 +13,7 @@ const MENSAGENS: Record<string, string> = {
   OCORRENCIA_INEXISTENTE: 'Ocorrência não encontrada.',
   SEM_PERMISSAO: 'Você não tem permissão para configurar alertas.',
   SEM_USUARIO: 'Sessão inválida. Entre de novo no sistema.',
-  JANELA_INVALIDA: 'Janela de avaliação inválida.',
+  JANELA_INVALIDA: 'Informe um valor de janela maior que zero.',
 }
 
 const GENERICA = 'Não foi possível concluir agora. Tente de novo.'
