@@ -1,10 +1,11 @@
-import { Factory, Inbox, Workflow, type LucideIcon } from 'lucide-react'
+import { Cpu, Factory, Inbox, Workflow, type LucideIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const MODULOS: { icone: LucideIcon; nome: string; descricao: string }[] = [
   { icone: Inbox, nome: 'Recebimento', descricao: 'Importação, processos e conferência' },
   { icone: Workflow, nome: 'Fluxo de Processos', descricao: 'Operação, análise e rastreio da produção' },
+  { icone: Cpu, nome: 'Setup', descricao: 'Estrutura de componentes por PMO, montagem de setup das máquinas SMT/PTH e conferência da troca de rolos.' },
 ]
 
 const INFORMACOES: { rotulo: string; valor: string }[] = [
