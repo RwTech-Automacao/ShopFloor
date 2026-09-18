@@ -36,3 +36,25 @@ export interface ContaVinculada {
   canal: Canal
   vinculadoEm: string
 }
+
+/** Tipo da regra (spec 2026-09-18). O tipo não muda depois de criado. */
+export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito'
+export const TIPOS_REGRA: readonly TipoRegra[] = ['aprovacao', 'tempo', 'defeito']
+
+export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
+  aprovacao: 'Taxa de aprovação',
+  tempo: 'Tempo médio por peça',
+  defeito: 'Defeito repetido',
+}
+
+/** A frase de cada cartão da escolha do tipo. */
+export const DESCRICAO_TIPO_REGRA: Record<TipoRegra, string> = {
+  aprovacao: 'Avisa quando a taxa de aprovação do posto cai abaixo da meta.',
+  tempo: 'Avisa quando o tempo médio entre um bipe e o próximo passa do limite.',
+  defeito: 'Avisa quando o mesmo defeito se repete várias vezes no posto em pouco tempo.',
+}
+
+/** É um tipo de regra conhecido? */
+export function ehTipoRegra(valor: unknown): valor is TipoRegra {
+  return valor === 'aprovacao' || valor === 'tempo' || valor === 'defeito'
+}

@@ -14,6 +14,10 @@ const MENSAGENS: Record<string, string> = {
   SEM_PERMISSAO: 'Você não tem permissão para configurar alertas.',
   SEM_USUARIO: 'Sessão inválida. Entre de novo no sistema.',
   JANELA_INVALIDA: 'Informe um valor de janela maior que zero.',
+  TIPO_FIXO: 'O tipo da regra não muda depois de criado.',
+  TIPO_INVALIDO: 'Escolha o tipo da regra.',
+  PAUSA_INVALIDA: 'Ignorar pausas acima de: informe um número inteiro de 1 a 240 minutos.',
+  LIMITE_INVALIDO: 'Informe quantas repetições disparam o alerta (número inteiro, 2 ou mais).',
 }
 
 const GENERICA = 'Não foi possível concluir agora. Tente de novo.'

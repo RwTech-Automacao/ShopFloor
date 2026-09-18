@@ -1,5 +1,17 @@
-import { ehCanal, ehJanelaTipo, type Canal, type TipoEnvio } from './tipos'
-import { textoAlerta, textoLembrete, textoNormalizou, textoResolvido, textoTeste } from './mensagens'
+import { ehCanal, ehJanelaTipo, ehTipoRegra, type Canal, type TipoEnvio } from './tipos'
+import type { Janela } from './janela'
+import {
+  textoAlerta,
+  textoAlertaDefeito,
+  textoAlertaTempo,
+  textoLembrete,
+  textoLembreteTipo,
+  textoNormalizou,
+  textoNormalizouDefeito,
+  textoNormalizouTempo,
+  textoResolvido,
+  textoTeste,
+} from './mensagens'
 
 /**
  * Uma linha da fila (`alerta_envios`) já RESERVADA por esta rodada (`alerta_reservar_envios`):
@@ -81,17 +93,87 @@ function data(d: Record<string, unknown>, campo: string): Date {
   return v
 }
 
+/** Envios que nascem de uma ocorrência — os únicos cujo texto depende do tipo da regra. */
+type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido'>
+
+function janelaDe(d: Record<string, unknown>): Janela {
+  const tipo = d.janela_tipo
+  if (!ehJanelaTipo(tipo)) throw new DadosEnvioInvalidos('janela_tipo')
+  const valor = d.janela_valor === null || d.janela_valor === undefined ? null : numero(d, 'janela_valor')
+  return { tipo, valor, pmo: textoOuNulo(d, 'pmo'), op: textoOuNulo(d, 'op') }
+}
+
+function textoAprovacao(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
+  const posto = texto(dados, 'posto')
+  const aprovados = numero(dados, 'aprovados')
+  const reprovados = numero(dados, 'reprovados')
+  const abertaEm = data(dados, 'aberta_em')
+  const agora = data(dados, 'agora')
+  if (tipo === 'normalizou') return textoNormalizou({ posto, aprovados, reprovados, abertaEm, em: agora })
+  const base = {
+    posto,
+    regraNome: texto(dados, 'regra_nome'),
+    taxaMinima: numero(dados, 'taxa_minima'),
+    aprovados,
+    reprovados,
+    janela: janelaDe(dados),
+    em: agora,
+  }
+  if (tipo === 'alerta') return textoAlerta(base)
+  return textoLembrete({ ...base, abertaEm })
+}
+
+function textoTempo(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
+  const posto = texto(dados, 'posto')
+  const mediaSeg = numero(dados, 'media_seg')
+  if (tipo === 'normalizou') return textoNormalizouTempo({ posto, mediaSeg })
+  const agora = data(dados, 'agora')
+  const alerta = textoAlertaTempo({
+    posto,
+    regraNome: texto(dados, 'regra_nome'),
+    mediaSeg,
+    limiteSeg: numero(dados, 'limite_tempo_seg'),
+    pecas: numero(dados, 'pecas'),
+    janela: janelaDe(dados),
+    em: agora,
+  })
+  if (tipo === 'alerta') return alerta
+  return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
+}
+
+function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
+  const posto = texto(dados, 'posto')
+  const defeito = texto(dados, 'defeito')
+  if (tipo === 'normalizou') return textoNormalizouDefeito({ posto, defeito })
+  const agora = data(dados, 'agora')
+  const alerta = textoAlertaDefeito({
+    posto,
+    regraNome: texto(dados, 'regra_nome'),
+    defeito,
+    ocorrencias: numero(dados, 'ocorrencias'),
+    limite: numero(dados, 'limite_ocorrencias'),
+    janela: janelaDe(dados),
+    em: agora,
+  })
+  if (tipo === 'alerta') return alerta
+  return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
+}
+
 /**
  * Monta o texto de uma linha da fila a partir dos `dados` gravados pelo banco. A formatação
- * (fuso de São Paulo, taxa truncada, duração) existe SÓ aqui no TS — o SQL guarda os números.
+ * (fuso de São Paulo, taxa truncada, mm:ss, duração) existe SÓ aqui no TS — o SQL guarda os números.
  * Como os dados foram congelados quando a linha nasceu, o reenvio sai idêntico à primeira vez.
  * Lança `DadosEnvioInvalidos` se faltar algo (quem chama trata por item).
  *
- * Chaves por tipo (as mesmas do jsonb_build_object da 0113):
- *   alerta/lembrete/normalizou: regra_nome, posto, taxa_minima, aprovados, reprovados,
- *                               janela_tipo, janela_valor, pmo, op, aberta_em, agora (+ taxa)
+ * Chaves (as mesmas do jsonb_build_object do alerta_avaliar da 0115):
+ *   comuns (alerta/lembrete/normalizou): regra_tipo, regra_nome, posto, janela_tipo, janela_valor,
+ *                                        pmo, op, aberta_em, agora
+ *   aprovacao: taxa, taxa_minima, aprovados, reprovados
+ *   tempo:     media_seg, limite_tempo_seg, pecas
+ *   defeito:   defeito, ocorrencias, limite_ocorrencias
  *   resolvido: posto, resolvida_por_nome, resolvida_em
  *   teste: nome
+ * `regra_tipo` ausente = 'aprovacao' (linhas enfileiradas antes da 0115).
  */
 export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): string {
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
@@ -103,29 +185,9 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
     })
   }
 
-  const posto = texto(dados, 'posto')
-  const aprovados = numero(dados, 'aprovados')
-  const reprovados = numero(dados, 'reprovados')
-  const abertaEm = data(dados, 'aberta_em')
-  const agora = data(dados, 'agora')
-  if (tipo === 'normalizou') {
-    return textoNormalizou({ posto, aprovados, reprovados, abertaEm, em: agora })
-  }
-
-  const janelaTipo = dados.janela_tipo
-  if (!ehJanelaTipo(janelaTipo)) throw new DadosEnvioInvalidos('janela_tipo')
-  const janelaValor = dados.janela_valor === null || dados.janela_valor === undefined
-    ? null
-    : numero(dados, 'janela_valor')
-  const base = {
-    posto,
-    regraNome: texto(dados, 'regra_nome'),
-    taxaMinima: numero(dados, 'taxa_minima'),
-    aprovados,
-    reprovados,
-    janela: { tipo: janelaTipo, valor: janelaValor, pmo: textoOuNulo(dados, 'pmo'), op: textoOuNulo(dados, 'op') },
-    em: agora,
-  }
-  if (tipo === 'alerta') return textoAlerta(base)
-  return textoLembrete({ ...base, abertaEm })
+  const regraTipo = dados.regra_tipo === null || dados.regra_tipo === undefined ? 'aprovacao' : dados.regra_tipo
+  if (!ehTipoRegra(regraTipo)) throw new DadosEnvioInvalidos('regra_tipo')
+  if (regraTipo === 'tempo') return textoTempo(tipo, dados)
+  if (regraTipo === 'defeito') return textoDefeito(tipo, dados)
+  return textoAprovacao(tipo, dados)
 }

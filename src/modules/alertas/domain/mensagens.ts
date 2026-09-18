@@ -1,5 +1,7 @@
+import { capitalizarDescricaoDefeito, separarCodigoDefeito } from '@/modules/shopfloor/domain/defeito'
 import { formatarMeta, formatarTaxa } from './taxa'
 import { textoJanela, type Janela } from './janela'
+import { formatarMmSs } from './tempo'
 
 /**
  * Fuso FIXO de São Paulo. O servidor da Lightsail roda em UTC; se a hora da mensagem saísse no
@@ -93,3 +95,69 @@ export function textoVinculado(nome: string): string {
 export const TEXTO_INSTRUCOES_TELEGRAM =
   'Para receber os alertas do ShopFloor, abra "Meu perfil" no sistema, clique em Vincular no ' +
   'Telegram e me envie o código aqui (ex.: ALERTA-7K3M). O código vale 15 minutos.'
+
+// ---------------------------------------------------------------------------
+// Tipos novos (spec 2026-09-18): tempo médio por peça e defeito repetido
+// ---------------------------------------------------------------------------
+
+/**
+ * '2040 COMPONENTE FALTANDO' → '2040 (Componente Faltando)'. Em `sf_defeitos` o código JÁ É
+ * "número + descrição" (o mesmo texto de `sf_registros.codigo_defeito`), então a descrição do
+ * catálogo sai daqui, sem consulta. Sem número → só a descrição; sem descrição → só o número.
+ */
+export function rotuloDefeito(codigo: string): string {
+  const { numero, descricao } = separarCodigoDefeito(codigo)
+  const desc = descricao ? capitalizarDescricaoDefeito(descricao) : ''
+  if (numero && desc) return `${numero} (${desc})`
+  return numero || desc || codigo.trim()
+}
+
+export interface DadosMensagemTempo {
+  posto: string
+  regraNome: string
+  mediaSeg: number
+  limiteSeg: number
+  pecas: number
+  janela: Janela
+  em: Date
+}
+
+export function textoAlertaTempo(d: DadosMensagemTempo): string {
+  return (
+    `🔴 ${d.posto} lento: ${formatarMmSs(d.mediaSeg)} por peça ${textoJanela(d.janela)} ` +
+    `(limite ${formatarMmSs(d.limiteSeg)}) · ${d.pecas} peças\n` +
+    `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`
+  )
+}
+
+export function textoNormalizouTempo(d: { posto: string; mediaSeg: number }): string {
+  return `🟢 ${d.posto} normalizou: ${formatarMmSs(d.mediaSeg)} por peça`
+}
+
+export interface DadosMensagemDefeito {
+  posto: string
+  regraNome: string
+  defeito: string
+  ocorrencias: number
+  limite: number
+  janela: Janela
+  em: Date
+}
+
+export function textoAlertaDefeito(d: DadosMensagemDefeito): string {
+  return (
+    `🔴 Defeito ${rotuloDefeito(d.defeito)} repetido no ${d.posto}: ${d.ocorrencias} vezes ` +
+    `${textoJanela(d.janela)} (limite ${d.limite})\n` +
+    `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`
+  )
+}
+
+export function textoNormalizouDefeito(d: { posto: string; defeito: string }): string {
+  return `🟢 Defeito ${rotuloDefeito(d.defeito)} normalizou no ${d.posto}`
+}
+
+/** Lembrete de tempo/defeito: o cabeçalho não fala em "abaixo" (um posto lento está ACIMA do limite). */
+export function textoLembreteTipo(alerta: string, abertaEm: Date, em: Date): string {
+  const min = Math.max(0, Math.floor((em.getTime() - abertaEm.getTime()) / 60_000))
+  return `⏰ Lembrete — continua há ${min} min\n${alerta}`
+}
