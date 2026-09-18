@@ -323,7 +323,7 @@ export function SetupsConsulta({ equipamentos }: { equipamentos: Equipamento[] }
                 </DialogTitle>
               </DialogHeader>
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                <span>{dialogSetup.processo} · SN de Abertura <span className="font-mono text-foreground">{dialogSetup.snAbertura}</span></span>
+                <span>{dialogSetup.processo} · SN de Abertura <span className="font-mono text-foreground">{dialogSetup.snAbertura ?? '—'}</span></span>
                 <span>Colaborador <span className="text-foreground">{dialogSetup.colaborador || '—'}</span></span>
                 <BadgeEstado estado={dialogSetup.estado} />
                 <span>Criado em {fmtData(dialogSetup.criadoEm)}</span>

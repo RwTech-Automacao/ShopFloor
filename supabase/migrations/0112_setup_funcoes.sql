@@ -83,18 +83,19 @@ end $func$;
 -- máquina saem dele, não de texto vindo da tela.
 -- p_colaborador = crachá digitado/bipado na tela (texto livre, sem conferência, pode vir vazio):
 -- só registro de quem abriu. Normalizado com btrim, igual ao colaborador do ShopFloor.
+-- O SN de Abertura NÃO é pedido aqui: é informado e conferido na liberação (st_liberar_setup).
+-- sem_faixa do retorno = a OP não tem faixa de SN cadastrada (aviso pra tela).
 create or replace function public.st_abrir_setup(
   p_pmo text, p_op text, p_equipamento_id uuid, p_face text,
-  p_sn_abertura text, p_copiar_de uuid default null, p_colaborador text default ''
+  p_copiar_de uuid default null, p_colaborador text default ''
 ) returns jsonb
 language plpgsql security definer set search_path = public as $func$
 declare
   v_equip record;
   v_face text;
-  v_sn text := public.st_limpar_sn(p_sn_abertura);
   v_colab text := btrim(coalesce(p_colaborador, ''));
   v_ordem record;
-  v_faixa boolean;
+  v_sem_faixa boolean;
   v_id uuid;
   v_origem record;
 begin
@@ -104,6 +105,7 @@ begin
   select pmo, op, sn_ini, sn_fim into v_ordem from public.sf_ordens
    where pmo = btrim(p_pmo) and op = btrim(p_op);
   if not found then raise exception 'OP_INEXISTENTE'; end if;
+  v_sem_faixa := public.st_limpar_sn(v_ordem.sn_ini) = '' or public.st_limpar_sn(v_ordem.sn_fim) = '';
 
   select processo, linha, bloco, maquina into v_equip from public.st_equipamentos
    where id = p_equipamento_id and ativo;
@@ -112,11 +114,10 @@ begin
   perform pg_advisory_xact_lock(hashtext('st/' || v_ordem.pmo || '/' || v_ordem.op)::bigint);
 
   -- Já existe setup dessa OP nesse equipamento e face: reabre (a cópia é ignorada).
-  select id, sn_abertura into v_origem from public.st_setups
+  select id into v_origem from public.st_setups
    where pmo = v_ordem.pmo and op = v_ordem.op and equipamento_id = p_equipamento_id and face = v_face;
   if found then
-    return jsonb_build_object('setup_id', v_origem.id, 'criado', false,
-      'sem_faixa', public.st_sn_na_faixa(v_ordem.sn_ini, v_ordem.sn_fim, v_origem.sn_abertura) is null);
+    return jsonb_build_object('setup_id', v_origem.id, 'criado', false, 'sem_faixa', v_sem_faixa);
   end if;
 
   if exists (select 1 from public.st_setups
@@ -124,10 +125,6 @@ begin
                 and public.st_faces_sobrepoem(face, v_face)) then
     raise exception 'FACE_SOBREPOSTA';
   end if;
-
-  if v_sn = '' then raise exception 'SN_OBRIGATORIO'; end if;
-  v_faixa := public.st_sn_na_faixa(v_ordem.sn_ini, v_ordem.sn_fim, v_sn);
-  if v_faixa = false then raise exception 'SN_FORA_DA_FAIXA'; end if;
 
   if p_copiar_de is not null then
     select * into v_origem from public.st_setups where id = p_copiar_de;
@@ -137,8 +134,8 @@ begin
     end if;
   end if;
 
-  insert into public.st_setups (pmo, op, processo, equipamento_id, face, sn_abertura, colaborador, copiado_de, criado_por)
-  values (v_ordem.pmo, v_ordem.op, v_equip.processo, p_equipamento_id, v_face, v_sn, v_colab, p_copiar_de, auth.uid())
+  insert into public.st_setups (pmo, op, processo, equipamento_id, face, colaborador, copiado_de, criado_por)
+  values (v_ordem.pmo, v_ordem.op, v_equip.processo, p_equipamento_id, v_face, v_colab, p_copiar_de, auth.uid())
   returning id into v_id;
 
   if p_copiar_de is not null then
@@ -147,7 +144,7 @@ begin
     from public.st_setup_itens i where i.setup_id = p_copiar_de;
   end if;
 
-  return jsonb_build_object('setup_id', v_id, 'criado', true, 'sem_faixa', v_faixa is null);
+  return jsonb_build_object('setup_id', v_id, 'criado', true, 'sem_faixa', v_sem_faixa);
 end $func$;
 
 -- ---------- incluir item (bipe Colaborador → Posição → Feeder → Rolo) ----------
@@ -295,18 +292,35 @@ begin
 end $func$;
 
 -- ---------- liberar ----------
-create or replace function public.st_liberar_setup(p_setup_id uuid) returns void
+-- O SN de Abertura é informado aqui (não na abertura): normalizado com st_limpar_sn, obrigatório e
+-- conferido com a faixa da OP. OP sem faixa aceita qualquer SN e devolve sem_faixa = true (aviso).
+-- Ordem: trava → estado → itens (vazio / falta rolo) → SN. Setup já liberado: não mexe no SN gravado.
+create or replace function public.st_liberar_setup(p_setup_id uuid, p_sn_abertura text) returns jsonb
 language plpgsql security definer set search_path = public as $func$
-declare v_setup record;
+declare
+  v_setup record;
+  v_ordem record;
+  v_sn text := public.st_limpar_sn(p_sn_abertura);
+  v_faixa boolean;
 begin
   if not tem_permissao('setup', 'lancar') then raise exception 'SEM_PERMISSAO'; end if;
   perform pg_advisory_xact_lock(hashtext('st-setup/' || p_setup_id::text)::bigint);
   select * into v_setup from public.st_setups where id = p_setup_id;
   if not found then raise exception 'SETUP_INEXISTENTE'; end if;
-  if v_setup.estado = 'liberado' then return; end if;
+  select sn_ini, sn_fim into v_ordem from public.sf_ordens where pmo = v_setup.pmo and op = v_setup.op;
+  if v_setup.estado = 'liberado' then
+    return jsonb_build_object('sem_faixa',
+      coalesce(public.st_limpar_sn(v_ordem.sn_ini), '') = '' or coalesce(public.st_limpar_sn(v_ordem.sn_fim), '') = '');
+  end if;
   if not exists (select 1 from public.st_setup_itens where setup_id = p_setup_id) then raise exception 'SETUP_VAZIO'; end if;
   if exists (select 1 from public.st_setup_itens where setup_id = p_setup_id and rolo is null) then raise exception 'FALTA_ROLO'; end if;
-  update public.st_setups set estado = 'liberado', liberado_por = auth.uid(), liberado_em = now() where id = p_setup_id;
+  if v_sn = '' then raise exception 'SN_OBRIGATORIO'; end if;
+  v_faixa := public.st_sn_na_faixa(v_ordem.sn_ini, v_ordem.sn_fim, v_sn);
+  if v_faixa = false then raise exception 'SN_FORA_DA_FAIXA'; end if;
+  update public.st_setups
+     set estado = 'liberado', sn_abertura = v_sn, liberado_por = auth.uid(), liberado_em = now()
+   where id = p_setup_id;
+  return jsonb_build_object('sem_faixa', v_faixa is null);
 end $func$;
 
 -- ---------- trocar rolo (abastecimento) ----------
@@ -461,11 +475,11 @@ $func$;
 
 -- ---------- permissões ----------
 grant execute on function public.st_listar_ordens() to authenticated;
-grant execute on function public.st_abrir_setup(text, text, uuid, text, text, uuid, text) to authenticated;
+grant execute on function public.st_abrir_setup(text, text, uuid, text, uuid, text) to authenticated;
 grant execute on function public.st_incluir_item(uuid, text, text, text, text) to authenticated;
 grant execute on function public.st_remover_item(uuid) to authenticated;
 grant execute on function public.st_editar_item(uuid, text, text) to authenticated;
-grant execute on function public.st_liberar_setup(uuid) to authenticated;
+grant execute on function public.st_liberar_setup(uuid, text) to authenticated;
 grant execute on function public.st_trocar_rolo(uuid, text, text, text, text, text, text) to authenticated;
 grant execute on function public.st_importar_estrutura(text, jsonb) to authenticated;
 grant execute on function public.st_pmos_com_estrutura() to authenticated;

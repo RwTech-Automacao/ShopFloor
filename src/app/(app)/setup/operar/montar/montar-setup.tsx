@@ -56,7 +56,10 @@ export function MontarSetup({
   const [setup, setSetup] = useState<SetupResumo | null>(null)
   const [itens, setItens] = useState<ItemSetup[]>([])
   const [buscando, setBuscando] = useState(false)
+  // SN de Abertura: pedido no diálogo de liberação (não na abertura do setup).
+  const [liberarAberto, setLiberarAberto] = useState(false)
   const [snAbertura, setSnAbertura] = useState('')
+  const [erroLiberacao, setErroLiberacao] = useState<string | null>(null)
   // Crachá de quem está operando: texto livre, sem conferência, igual ao campo Colaborador do
   // Lançamento do ShopFloor. Fica preenchido entre um bipe e outro (não limpa a cada envio).
   const [colaborador, setColaborador] = useState('')
@@ -116,7 +119,9 @@ export function MontarSetup({
     setItens([])
     setCopias(null)
     setResultado(null)
+    setLiberarAberto(false)
     setSnAbertura('')
+    setErroLiberacao(null)
     // O colaborador não é zerado: é a mesma pessoa que segue operando em outra OP/equipamento.
     setPosicao(''); setFeeder(''); setRolo('')
     const seq = ++buscaSeq.current
@@ -144,15 +149,14 @@ export function MontarSetup({
 
   function abrir(copiarDe?: string) {
     if (!selecaoCompleta(selecao) || enviandoRef.current) return
-    if (snAbertura.trim() === '') { avisar(mensagemErroSetup('SN_OBRIGATORIO')); return }
     enviandoRef.current = true
     startEnvio(async () => {
       try {
-        const r = await abrirSetup({ ...chaveDaSelecao(selecao), snAbertura, colaborador: colaborador.trim(), copiarDe })
+        const r = await abrirSetup({ ...chaveDaSelecao(selecao), colaborador: colaborador.trim(), copiarDe })
         if (!r.ok) { avisar(r.erro); return }
         if (!(await recarregar(r.setupId))) return
         setCopias(null)
-        setResultado(r.semFaixa ? { tipo: 'aviso', titulo: 'OP sem faixa de SN — SN aceito sem conferência' } : null)
+        setResultado(null)
         requestAnimationFrame(() => focarCampo(posicaoRef))
       } catch {
         avisar('Falha de conexão. Não foi possível abrir o setup. Tente de novo.')
@@ -252,25 +256,41 @@ export function MontarSetup({
     })
   }
 
-  async function liberar() {
+  function liberar() {
     if (!setup) return
-    const ok = await confirmar({
-      titulo: 'Liberar o setup?',
-      descricao: 'Depois de liberado, só um administrador altera posições e feeders.',
-      rotuloConfirmar: 'Liberar setup',
-    })
-    if (!ok) return
+    setSnAbertura('')
+    setErroLiberacao(null)
+    setLiberarAberto(true)
+  }
+
+  function recusarSn(erro: string) {
+    setErroLiberacao(erro)
+    tocarErro()
+    requestAnimationFrame(() => focarCampo(snAberturaRef))
+  }
+
+  // O SN de Abertura é conferido com a faixa da OP no banco. Recusado: o diálogo continua aberto com o erro.
+  function confirmarLiberacao() {
+    if (!setup || enviandoRef.current) return
+    const sn = snAbertura.trim()
+    if (sn === '') { recusarSn(mensagemErroSetup('SN_OBRIGATORIO')); return }
+    enviandoRef.current = true
+    setErroLiberacao(null)
     const setupId = setup.id
     startEnvio(async () => {
       try {
-        const r = await liberarSetup(setupId)
-        if (!r.ok) { avisar(r.erro); return }
+        const r = await liberarSetup(setupId, sn)
+        if (!r.ok) { recusarSn(r.erro); return }
+        setLiberarAberto(false)
         await recarregar(setupId)
         setResultado(null)
         toast.success('Setup liberado', { position: 'bottom-center' })
+        if (r.semFaixa) toast.warning('OP sem faixa de SN — SN de Abertura aceito sem conferência', { position: 'bottom-center' })
       } catch {
-        toast.error('Falha de conexão. Confira o estado do setup antes de liberar de novo.', { position: 'bottom-center' })
+        recusarSn('Falha de conexão. Confira o estado do setup antes de liberar de novo.')
         await recarregar(setupId)
+      } finally {
+        enviandoRef.current = false
       }
     })
   }
@@ -334,25 +354,11 @@ export function MontarSetup({
                 value={colaborador}
                 onChange={(e) => setColaborador(e.target.value)}
                 onFocus={(e) => e.currentTarget.select()}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focarCampo(snAberturaRef) } }}
+                // Enter do scanner não dispara nada: o operador ainda escolhe entre montar do zero ou copiar.
+                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
                 placeholder="Bipe ou digite o crachá"
                 autoComplete="off"
                 autoFocus
-                className={INPUT_BIPE}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="snAbertura">SN de Abertura</Label>
-              <Input
-                id="snAbertura"
-                ref={snAberturaRef}
-                value={snAbertura}
-                onChange={(e) => setSnAbertura(e.target.value)}
-                onFocus={(e) => e.currentTarget.select()}
-                // Enter do scanner não dispara nada: o operador ainda escolhe entre montar do zero ou copiar.
-                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-                placeholder="Bipe o Nº de Série da primeira placa"
-                autoComplete="off"
                 className={INPUT_BIPE}
               />
             </div>
@@ -399,7 +405,10 @@ export function MontarSetup({
                 OP {setup.pmo}/{setup.op} · Linha {setup.linha} · {rotuloEquipamento(setup)} · {setup.face}
               </p>
               <p className="text-sm text-muted-foreground">
-                {setup.processo} · SN de Abertura <span className="font-mono text-foreground">{setup.snAbertura}</span>
+                {setup.processo} · SN de Abertura{' '}
+                {setup.estado === 'liberado' && setup.snAbertura
+                  ? <span className="font-mono text-foreground">{setup.snAbertura}</span>
+                  : <span>na liberação</span>}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -567,6 +576,46 @@ export function MontarSetup({
           </div>
         </div>
       )}
+
+      <Dialog
+        open={liberarAberto && setup?.estado === 'montagem'}
+        onOpenChange={(v) => { if (!v && !enviando) setLiberarAberto(false) }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Liberar o setup?</DialogTitle>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => { e.preventDefault(); confirmarLiberacao() }}
+          >
+            <p className="text-sm text-muted-foreground">Depois de liberado, só um administrador altera posições e feeders.</p>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="snAbertura">SN de Abertura</Label>
+              <Input
+                id="snAbertura"
+                ref={snAberturaRef}
+                value={snAbertura}
+                onChange={(e) => { setSnAbertura(e.target.value); setErroLiberacao(null) }}
+                onFocus={(e) => e.currentTarget.select()}
+                placeholder="Bipe o Nº de Série da primeira placa"
+                autoComplete="off"
+                autoFocus
+                aria-invalid={erroLiberacao !== null}
+                aria-describedby={erroLiberacao ? 'erroLiberacao' : undefined}
+                className={INPUT_BIPE}
+              />
+              {erroLiberacao && (
+                <p id="erroLiberacao" role="alert" className="text-sm font-medium text-destructive">{erroLiberacao}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setLiberarAberto(false)} disabled={enviando}>Cancelar</Button>
+              <Button type="submit" className="bg-enterplak hover:bg-enterplak-700" disabled={enviando}>Liberar setup</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editando !== null} onOpenChange={(v) => { if (!v) setEditando(null) }}>
         <DialogContent>

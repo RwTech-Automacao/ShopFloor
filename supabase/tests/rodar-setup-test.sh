@@ -60,7 +60,7 @@ set +e
 sessao >/dev/null 2>"$TMPD/b1.err" <<SQL &
 select set_config('teste.uid','$USUARIO',false), set_config('teste.perms','setup.visualizar,setup.lancar',false);
 begin;
-select st_liberar_setup('$SID');
+select st_liberar_setup('$SID', 'X');
 select pg_sleep(3);
 commit;
 SQL

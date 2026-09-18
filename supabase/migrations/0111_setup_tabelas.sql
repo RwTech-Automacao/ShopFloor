@@ -49,7 +49,7 @@ create table public.st_setups (
   processo       text not null check (processo in ('SMD', 'PTH')),
   equipamento_id uuid not null references public.st_equipamentos(id),
   face           text not null check (face in ('TOP', 'BOT', 'TOP E BOT')),
-  sn_abertura    text not null,
+  sn_abertura    text,                       -- informado na LIBERAÇÃO (st_liberar_setup); null enquanto em montagem
   colaborador    text not null default '',   -- crachá de quem abriu o setup (livre, pode ficar vazio)
   estado         text not null default 'montagem' check (estado in ('montagem', 'liberado')),
   copiado_de     uuid references public.st_setups(id) on delete set null,
@@ -57,7 +57,9 @@ create table public.st_setups (
   criado_em      timestamptz not null default now(),
   liberado_por   uuid references public.usuarios(id),
   liberado_em    timestamptz,
-  unique (pmo, op, equipamento_id, face)
+  unique (pmo, op, equipamento_id, face),
+  -- Setup liberado sempre tem SN de Abertura (é pedido e conferido na liberação).
+  constraint st_setups_liberado_com_sn check (estado = 'montagem' or coalesce(sn_abertura, '') <> '')
 );
 create index st_setups_pmo_op on public.st_setups (pmo, op);
 -- Consultas filtram por linha/bloco/máquina (join com st_equipamentos) e a cópia de OP anterior

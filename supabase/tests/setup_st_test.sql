@@ -94,18 +94,20 @@ do $t$ declare n_func bigint; n_real bigint; begin
   if exists (select 1 from st_pmos_com_estrutura() where pmo = 'PMOX') then raise exception 'FALHOU: pmo sem estrutura não deveria aparecer'; end if;
 end $t$;
 
--- 3. Abrir setup + faixa + face sobreposta
+-- 3. Abrir setup (sem SN: ele é pedido na liberação) + sem_faixa pela OP + face sobreposta
 do $t$ declare r jsonb; begin
-  r := st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', '2690010001');
-  if (r->>'criado')::boolean is not true then raise exception 'FALHOU: criar %', r; end if;
-  r := st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'top', '2690010001');
+  r := st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'TOP');
+  if (r->>'criado')::boolean is not true or (r->>'sem_faixa')::boolean is not false then raise exception 'FALHOU: criar %', r; end if;
+  if (select sn_abertura from st_setups where id = (r->>'setup_id')::uuid) is not null then raise exception 'FALHOU: abertura gravou SN'; end if;
+  r := st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'top');
   if (r->>'criado')::boolean is not false or (r->>'sem_faixa')::boolean is not false then raise exception 'FALHOU: reabrir %', r; end if;
-  begin perform st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'TOP E BOT', '2690010001'); raise exception 'FALHOU: face sobreposta passou';
+  begin perform st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'TOP E BOT'); raise exception 'FALHOU: face sobreposta passou';
   exception when others then if sqlerrm not like '%FACE_SOBREPOSTA%' then raise; end if; end;
-  begin perform st_abrir_setup('PMOG13', '9001', eqid('SMD', '1', 'A', 'YSM10'), 'BOT', '999'); raise exception 'FALHOU: sn fora passou';
-  exception when others then if sqlerrm not like '%SN_FORA_DA_FAIXA%' then raise; end if; end;
-  r := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', 'QUALQUER');
+  r := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'TOP');
   if (r->>'sem_faixa')::boolean is not true then raise exception 'FALHOU: sem faixa %', r; end if;
+  -- liberado sem SN não pode existir (check)
+  begin update st_setups set estado = 'liberado' where id = (r->>'setup_id')::uuid; raise exception 'FALHOU: check liberado sem SN';
+  exception when check_violation then null; end;
 end $t$;
 
 -- 4. Montagem
@@ -133,7 +135,20 @@ do $t$ declare s uuid; r jsonb; begin
   select id into s from st_setups where op = '9001';
   begin perform st_trocar_rolo(s, '36', 'ZSY-1', 'CAPJ41-L1R1', 'CAPJ41-L1R2', '2690010010'); raise exception 'FALHOU: troca sem liberar';
   exception when others then if sqlerrm not like '%SETUP_NAO_LIBERADO%' then raise; end if; end;
-  perform st_liberar_setup(s);
+  -- SN de Abertura na liberação: obrigatório e dentro da faixa; recusado não libera
+  begin perform st_liberar_setup(s, '  -- '); raise exception 'FALHOU: liberar sem SN';
+  exception when others then if sqlerrm not like '%SN_OBRIGATORIO%' then raise; end if; end;
+  begin perform st_liberar_setup(s, null); raise exception 'FALHOU: liberar com SN null';
+  exception when others then if sqlerrm not like '%SN_OBRIGATORIO%' then raise; end if; end;
+  begin perform st_liberar_setup(s, '999'); raise exception 'FALHOU: sn fora passou';
+  exception when others then if sqlerrm not like '%SN_FORA_DA_FAIXA%' then raise; end if; end;
+  if (select estado || '|' || coalesce(sn_abertura, '-') from st_setups where id = s) <> 'montagem|-' then raise exception 'FALHOU: SN recusado liberou'; end if;
+  r := st_liberar_setup(s, ' 269-001-0001 ');
+  if (r->>'sem_faixa')::boolean is not false then raise exception 'FALHOU: liberar com faixa %', r; end if;
+  if (select estado || '|' || sn_abertura from st_setups where id = s) <> 'liberado|2690010001' then raise exception 'FALHOU: SN gravado na liberação'; end if;
+  -- liberar de novo: idempotente, não troca o SN gravado
+  perform st_liberar_setup(s, '2690010050');
+  if (select sn_abertura from st_setups where id = s) <> '2690010001' then raise exception 'FALHOU: relibera trocou SN'; end if;
   r := st_trocar_rolo(s, '36', 'ZSY-1', 'CAPJ41-L1R1', 'CAPJ41-L1R2', '2690010010');
   if r->>'resultado' <> 'APROVADO' then raise exception 'FALHOU: aprovada %', r; end if;
   if (select rolo from st_setup_itens where setup_id = s and posicao = '36') <> 'CAPJ41-L1R2' then raise exception 'FALHOU: rolo montado não atualizou'; end if;
@@ -152,21 +167,21 @@ end $t$;
 -- 6. Cópia e permissões
 do $t$ declare s uuid; nova jsonb; n uuid; begin
   select id into s from st_setups where op = '9001';
-  nova := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'BOT', 'X');
-  begin perform st_abrir_setup('PMOG13', '9002', eqid('SMD', '2', 'A', 'YSM10'), 'TOP', 'X', s); raise exception 'FALHOU: cópia incompatível';
+  nova := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'BOT');
+  begin perform st_abrir_setup('PMOG13', '9002', eqid('SMD', '2', 'A', 'YSM10'), 'TOP', s); raise exception 'FALHOU: cópia incompatível';
   exception when others then if sqlerrm not like '%COPIA_INCOMPATIVEL%' then raise; end if; end;
 end $t$;
 -- cópia compatível: outra OP, mesma máquina e face do 9001 (TOP)
 insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values ('PMOG13', '9003', '', '');
 do $t$ declare s uuid; nova jsonb; n uuid; begin
   select id into s from st_setups where op = '9001';
-  nova := st_abrir_setup('PMOG13', '9003', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', 'X', s);
+  nova := st_abrir_setup('PMOG13', '9003', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', s);
   n := (nova->>'setup_id')::uuid;
   if (select count(*) from st_setup_itens where setup_id = n and rolo is null) <> 2 then raise exception 'FALHOU: cópia sem rolos'; end if;
   begin perform st_incluir_item(n, '36', 'ZSY-1', 'RESR85-A'); raise exception 'FALHOU: componente diferente da posição';
   exception when others then if sqlerrm not like '%COMPONENTE_DIFERENTE_DA_POSICAO%' then raise; end if; end;
   if (st_incluir_item(n, '36', 'ZSY-1', 'CAPJ41-NOVO')->>'atualizou')::boolean is not true then raise exception 'FALHOU: preencher rolo da cópia'; end if;
-  begin perform st_liberar_setup(n); raise exception 'FALHOU: liberar com rolo faltando';
+  begin perform st_liberar_setup(n, 'X'); raise exception 'FALHOU: liberar com rolo faltando';
   exception when others then if sqlerrm not like '%FALTA_ROLO%' then raise; end if; end;
 end $t$;
 select set_config('teste.perms', 'setup.visualizar,setup.lancar', false);
@@ -188,7 +203,7 @@ end $t$;
 -- 7. Chave canônica do rolo, remoção, edição, histórico do admin, erros de abertura
 insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values ('PMOG13', '9004', '2690040001', '2690040100');
 do $t$ declare s uuid; r jsonb; i2 uuid; i3 uuid; n int; begin
-  r := st_abrir_setup('PMOG13', '9004', eqid('SMD', '2', 'A', 'YSM10'), 'TOP', '2690040001');
+  r := st_abrir_setup('PMOG13', '9004', eqid('SMD', '2', 'A', 'YSM10'), 'TOP');
   s := (r->>'setup_id')::uuid;
   perform st_incluir_item(s, '1', 'F1', 'CAPJ41-1');
   if (select rolo_chave from st_setup_itens where setup_id = s and posicao = '1') <> 'CAPJ41-1' then raise exception 'FALHOU: rolo_chave gravada'; end if;
@@ -211,7 +226,7 @@ do $t$ declare s uuid; r jsonb; i2 uuid; i3 uuid; n int; begin
   begin perform st_editar_item(i2, '2', 'F1'); raise exception 'FALHOU: editar p/ feeder ocupado';
   exception when others then if sqlerrm not like '%FEEDER_EM_OUTRA_POSICAO%' then raise; end if; end;
 
-  perform st_liberar_setup(s);
+  perform st_liberar_setup(s, '2690040001');
   -- troca com rolo que sai escrito com outro zero-padding: aprovada
   r := st_trocar_rolo(s, '1', 'F1', 'CAPJ41-001', 'CAPJ41-2', '2690040010');
   if r->>'resultado' <> 'APROVADO' then raise exception 'FALHOU: troca com zeros %', r; end if;
@@ -229,28 +244,28 @@ do $t$ declare s uuid; r jsonb; i2 uuid; i3 uuid; n int; begin
   if (select count(*) from st_alteracoes where setup_id = s and item_id = i3 and tipo = 'remocao') <> 1 then raise exception 'FALHOU: histórico de remoção'; end if;
 
   -- SETUP_VAZIO, EQUIPAMENTO_INVALIDO, PROCESSO_INVALIDO
-  r := st_abrir_setup('PMOG13', '9004', eqid('SMD', '2', 'A', 'YSM10'), 'BOT', '2690040001');
-  begin perform st_liberar_setup((r->>'setup_id')::uuid); raise exception 'FALHOU: liberar vazio';
+  r := st_abrir_setup('PMOG13', '9004', eqid('SMD', '2', 'A', 'YSM10'), 'BOT');
+  begin perform st_liberar_setup((r->>'setup_id')::uuid, '2690040001'); raise exception 'FALHOU: liberar vazio';
   exception when others then if sqlerrm not like '%SETUP_VAZIO%' then raise; end if; end;
-  begin perform st_abrir_setup('PMOG13', '9004', gen_random_uuid(), 'TOP', '2690040001'); raise exception 'FALHOU: equipamento inexistente';
+  begin perform st_abrir_setup('PMOG13', '9004', gen_random_uuid(), 'TOP'); raise exception 'FALHOU: equipamento inexistente';
   exception when others then if sqlerrm not like '%EQUIPAMENTO_INVALIDO%' then raise; end if; end;
   -- equipamento inativo não abre setup
   update st_equipamentos set ativo = false where id = eqid('SMD', '3', 'A', 'CP40');
-  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'TOP', '2690040001'); raise exception 'FALHOU: equipamento inativo';
+  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'TOP'); raise exception 'FALHOU: equipamento inativo';
   exception when others then if sqlerrm not like '%EQUIPAMENTO_INVALIDO%' then raise; end if; end;
   update st_equipamentos set ativo = true where id = eqid('SMD', '3', 'A', 'CP40');
   -- face sobreposta ao contrário: TOP E BOT existe, abre BOT
-  perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'TOP E BOT', '2690040001');
-  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'BOT', '2690040001'); raise exception 'FALHOU: face sobreposta reversa';
+  perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'TOP E BOT');
+  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '3', 'A', 'CP40'), 'BOT'); raise exception 'FALHOU: face sobreposta reversa';
   exception when others then if sqlerrm not like '%FACE_SOBREPOSTA%' then raise; end if; end;
   -- reabrir OP sem faixa
-  r := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'TOP', 'X');
+  r := st_abrir_setup('PMOG13', '9002', eqid('SMD', '1', 'A', 'YSM10'), 'TOP');
   if (r->>'criado')::boolean is not false or (r->>'sem_faixa')::boolean is not true then raise exception 'FALHOU: reabrir sem faixa %', r; end if;
 end $t$;
 
 -- 8. PTH: posto × locação, pares, processo e textos dos motivos
 do $t$ declare s uuid; r jsonb; begin
-  r := st_abrir_setup('PMOG13', '9001', eqid('PTH', '1', 'A'), 'TOP', '2690010001');
+  r := st_abrir_setup('PMOG13', '9001', eqid('PTH', '1', 'A'), 'TOP');
   s := (r->>'setup_id')::uuid;
   perform st_incluir_item(s, 'P1', 'L1', 'BAR180-1');
   perform st_incluir_item(s, 'P1', 'L2', 'BAR180-2');
@@ -260,7 +275,7 @@ do $t$ declare s uuid; r jsonb; begin
   exception when others then if sqlerrm not like '%POSICAO_JA_CADASTRADA%' then raise; end if; end;
   begin perform st_incluir_item(s, 'P3', 'L3', 'CAPJ41-99'); raise exception 'FALHOU: SMD no PTH';
   exception when others then if sqlerrm not like '%COMPONENTE_OUTRO_PROCESSO%' then raise; end if; end;
-  perform st_liberar_setup(s);
+  perform st_liberar_setup(s, '2690010001');
   r := st_trocar_rolo(s, 'P9', 'L1', 'BAR180-1', 'BAR180-5', '2690010010');
   if r->'motivos' <> '["O posto P9 não existe nesse setup."]'::jsonb then raise exception 'FALHOU: posto inexistente %', r; end if;
   r := st_trocar_rolo(s, 'P1', 'L9', 'BAR180-1', 'BAR180-5', '2690010010');
@@ -292,7 +307,7 @@ do $t$ declare s uuid; begin
   select id into s from st_setups where op = '9001' and processo = 'SMD';
   begin perform st_trocar_rolo(s, '36', 'ZSY-NOVO', 'CAPJ41-L1R2', 'CAPJ41-L1R9', '2690010010'); raise exception 'FALHOU: trocar sem permissão';
   exception when others then if sqlerrm not like '%SEM_PERMISSAO%' then raise; end if; end;
-  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '1', 'A', 'MG5'), 'TOP', '2690040001'); raise exception 'FALHOU: abrir sem permissão';
+  begin perform st_abrir_setup('PMOG13', '9004', eqid('SMD', '1', 'A', 'MG5'), 'TOP'); raise exception 'FALHOU: abrir sem permissão';
   exception when others then if sqlerrm not like '%SEM_PERMISSAO%' then raise; end if; end;
   begin perform st_importar_estrutura('PMOG13', '[]'); raise exception 'FALHOU: importar sem permissão';
   exception when others then if sqlerrm not like '%SEM_PERMISSAO%' then raise; end if; end;
@@ -304,7 +319,7 @@ insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values
   ('PMOG13', '9006', '2690050001', '2690050100');
 do $t$ declare s uuid; n uuid; r jsonb; i uuid; begin
   -- abertura: grava quem abriu, com btrim (mesma normalização do colaborador no ShopFloor)
-  r := st_abrir_setup('PMOG13', '9005', eqid('SMD', '1', 'A', 'MG5'), 'TOP', '2690050001', null, '  Ana Lima  ');
+  r := st_abrir_setup('PMOG13', '9005', eqid('SMD', '1', 'A', 'MG5'), 'TOP', null, '  Ana Lima  ');
   s := (r->>'setup_id')::uuid;
   if (select colaborador from st_setups where id = s) <> 'Ana Lima' then raise exception 'FALHOU: colaborador da abertura'; end if;
   -- item: grava quem bipou
@@ -315,7 +330,7 @@ do $t$ declare s uuid; n uuid; r jsonb; i uuid; begin
   if (select colaborador from st_setup_itens where id = i) <> '' then raise exception 'FALHOU: item sem colaborador'; end if;
 
   -- cópia: os itens copiados nascem sem colaborador e o bipe do rolo grava quem bipou
-  r := st_abrir_setup('PMOG13', '9006', eqid('SMD', '1', 'A', 'MG5'), 'TOP', '2690050001', s, 'Caio');
+  r := st_abrir_setup('PMOG13', '9006', eqid('SMD', '1', 'A', 'MG5'), 'TOP', s, 'Caio');
   n := (r->>'setup_id')::uuid;
   if (select colaborador from st_setups where id = n) <> 'Caio' then raise exception 'FALHOU: colaborador da cópia'; end if;
   if (select count(*) from st_setup_itens where setup_id = n and colaborador <> '') <> 0 then raise exception 'FALHOU: cópia já veio com colaborador'; end if;
@@ -323,7 +338,7 @@ do $t$ declare s uuid; n uuid; r jsonb; i uuid; begin
   if (select colaborador from st_setup_itens where setup_id = n and posicao = '1') <> 'Dora' then raise exception 'FALHOU: colaborador do item copiado'; end if;
 
   -- troca: grava quem trocou, sem mexer no colaborador do item (que é quem montou)
-  perform st_liberar_setup(s);
+  perform st_liberar_setup(s, '2690050001');
   r := st_trocar_rolo(s, '1', 'F1', 'CAPJ41-9001', 'CAPJ41-9003', '2690050010', ' Eva ');
   if r->>'resultado' <> 'APROVADO' then raise exception 'FALHOU: troca do colaborador %', r; end if;
   if (select colaborador from st_trocas where id = (r->>'troca_id')::uuid) <> 'Eva' then raise exception 'FALHOU: colaborador da troca'; end if;
@@ -337,6 +352,20 @@ do $t$ declare s uuid; n uuid; r jsonb; i uuid; begin
   i := (st_incluir_item(s, '3', 'F3', 'RESR85-9002', 'Fabio')->>'item_id')::uuid;
   if (select depois->>'colaborador' from st_alteracoes where item_id = i and tipo = 'inclusao') <> 'Fabio' then raise exception 'FALHOU: colaborador no histórico'; end if;
   if (select usuario_nome from st_alteracoes where item_id = i and tipo = 'inclusao') <> 'Operador Teste' then raise exception 'FALHOU: histórico perdeu o usuário logado'; end if;
+end $t$;
+
+-- 11. OP sem faixa: libera com qualquer SN e devolve sem_faixa = true
+insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values ('PMOG13', '9007', '', '');
+do $t$ declare s uuid; r jsonb; begin
+  r := st_abrir_setup('PMOG13', '9007', eqid('SMD', '1', 'A', 'MG5'), 'TOP');
+  if (r->>'sem_faixa')::boolean is not true then raise exception 'FALHOU: abrir sem faixa %', r; end if;
+  s := (r->>'setup_id')::uuid;
+  perform st_incluir_item(s, '1', 'F1', 'CAPJ41-9701');
+  begin perform st_liberar_setup(s, ''); raise exception 'FALHOU: sem faixa liberou sem SN';
+  exception when others then if sqlerrm not like '%SN_OBRIGATORIO%' then raise; end if; end;
+  r := st_liberar_setup(s, 'qualquer-1');
+  if (r->>'sem_faixa')::boolean is not true then raise exception 'FALHOU: liberar sem faixa %', r; end if;
+  if (select estado || '|' || sn_abertura from st_setups where id = s) <> 'liberado|qualquer1' then raise exception 'FALHOU: SN sem faixa gravado'; end if;
 end $t$;
 
 select 'TODOS OS TESTES DO SETUP PASSARAM' as resultado;

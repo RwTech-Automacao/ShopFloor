@@ -20,12 +20,13 @@ const falha = (e: unknown): Falha => ({ ok: false, erro: mensagemErroSetup(e ins
 
 // `colaborador` é o crachá digitado/bipado na tela: texto livre, sem conferência, pode vir vazio
 // (mesmo campo da tela de Lançamento do ShopFloor). Quem grava como autor continua sendo o usuário logado.
-export async function abrirSetup(entrada: ChaveSetup & { snAbertura: string; colaborador?: string; copiarDe?: string }): Promise<{ ok: true; setupId: string; criado: boolean; semFaixa: boolean } | Falha> {
+// O SN de Abertura não é pedido aqui: é informado na liberação (liberarSetup).
+export async function abrirSetup(entrada: ChaveSetup & { colaborador?: string; copiarDe?: string }): Promise<{ ok: true; setupId: string; criado: boolean; semFaixa: boolean } | Falha> {
   const negado = await exigir('lancar'); if (negado) return negado
   try {
     const r = await chamarRpc<{ setup_id: string; criado: boolean; sem_faixa: boolean }>('st_abrir_setup', {
       p_pmo: entrada.pmo, p_op: entrada.op, p_equipamento_id: entrada.equipamentoId,
-      p_face: entrada.face, p_sn_abertura: entrada.snAbertura, p_copiar_de: entrada.copiarDe ?? null,
+      p_face: entrada.face, p_copiar_de: entrada.copiarDe ?? null,
       p_colaborador: entrada.colaborador ?? '',
     })
     return { ok: true, setupId: r.setup_id, criado: r.criado, semFaixa: r.sem_faixa }
@@ -69,9 +70,14 @@ export async function editarItem(itemId: string, posicao: string, feeder: string
   try { await chamarRpc('st_editar_item', { p_item_id: itemId, p_posicao: posicao, p_feeder: feeder }); return { ok: true } } catch (e) { return falha(e) }
 }
 
-export async function liberarSetup(setupId: string): Promise<{ ok: true } | Falha> {
+// O SN de Abertura é informado na liberação e conferido com a faixa da OP no banco.
+// semFaixa = a OP não tem faixa cadastrada (SN aceito sem conferência; a tela avisa).
+export async function liberarSetup(setupId: string, snAbertura: string): Promise<{ ok: true; semFaixa: boolean } | Falha> {
   const negado = await exigir('lancar'); if (negado) return negado
-  try { await chamarRpc('st_liberar_setup', { p_setup_id: setupId }); return { ok: true } } catch (e) { return falha(e) }
+  try {
+    const r = await chamarRpc<{ sem_faixa: boolean }>('st_liberar_setup', { p_setup_id: setupId, p_sn_abertura: snAbertura })
+    return { ok: true, semFaixa: r.sem_faixa === true }
+  } catch (e) { return falha(e) }
 }
 
 export async function ultimasTrocas(setupId: string): Promise<{ ok: true; trocas: Troca[] } | Falha> {

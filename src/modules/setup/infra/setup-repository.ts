@@ -9,7 +9,7 @@ export interface ItemEstruturaCadastro { componente: string; processo: Processo;
 export interface SetupResumo {
   id: string; pmo: string; op: string; processo: Processo; equipamentoId: string
   linha: string; bloco: string; maquina: string | null; face: Face
-  snAbertura: string; colaborador: string; estado: EstadoSetup; criadoEm: string; liberadoEm: string | null; totalItens: number; semRolo: number
+  snAbertura: string | null; colaborador: string; estado: EstadoSetup; criadoEm: string; liberadoEm: string | null; totalItens: number; semRolo: number
 }
 export interface ItemSetup { id: string; posicao: string; feeder: string; componente: string; rolo: string | null; colaborador: string; atualizadoEm: string }
 export interface Troca {
@@ -35,7 +35,7 @@ function mapSetup(r: Row): SetupResumo {
     id: r.id as string, pmo: r.pmo as string, op: r.op as string, processo: r.processo as Processo,
     equipamentoId: r.equipamento_id as string,
     linha: e.linha as string, bloco: e.bloco as string, maquina: (e.maquina as string | null) ?? null, face: r.face as Face,
-    snAbertura: r.sn_abertura as string, colaborador: (r.colaborador as string) ?? '', estado: r.estado as EstadoSetup, criadoEm: r.criado_em as string,
+    snAbertura: (r.sn_abertura as string | null) ?? null, colaborador: (r.colaborador as string) ?? '', estado: r.estado as EstadoSetup, criadoEm: r.criado_em as string,
     liberadoEm: (r.liberado_em as string | null) ?? null, totalItens: itens.length, semRolo: itens.filter((i) => i.rolo === null).length,
   }
 }

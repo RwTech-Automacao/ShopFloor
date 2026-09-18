@@ -34,41 +34,43 @@ Para testar no preview da branch `feat/setup-abastecimento`, com o banco Dev.
 1. Vá em **Setup → Operação** (aba **Montar Setup**, é a aba padrão).
 2. Selecione a OP de teste, **Processo = SMD**, **Linha 1**, **Bloco A**, **Máquina YSM10**, **Face = TOP**. Os selects são em cascata (trocar o processo ou a linha limpa os de baixo) e só oferecem o que existe cadastrado e ativo. Num setup **PTH**, o select de **Máquina não aparece** — o equipamento é linha + bloco.
    - **Esperado:** abaixo dos campos aparece a descrição da OP e a faixa de SN (ou o aviso "OP sem faixa de SN cadastrada" se a OP não tiver faixa). Como não existe setup ainda, aparece o card **"Novo setup"**.
-3. No card "Novo setup", o primeiro campo é **Colaborador** (já com o foco): bipe/digite o crachá de quem está montando. É **texto livre, sem nenhuma conferência** e **pode ficar em branco** — nada trava por causa dele. Enter passa o foco pro SN de Abertura.
-4. No campo **SN de Abertura**, bipe/digite um SN **fora** da faixa da OP e clique em **Montar do zero**.
-   - **Esperado:** painel de aviso com ícone amarelo (!) e a mensagem "O número de série não pertence à faixa da OP."
-5. Agora digite um SN **dentro** da faixa e clique em **Montar do zero**.
-   - **Esperado:** o setup abre — aparece o cabeçalho "OP .../... · Linha 1 · Bloco A · MG5 · TOP" (no formato `Linha · Bloco · Máquina · Face`; num setup PTH sai só "Linha 1 · Bloco A · TOP"), o badge amarelo **"Em montagem"**, "0 posições" e a área de bipe com os campos **Colaborador**, **Posição**, **Feeder** e **Rolo** — o Colaborador já vem preenchido com o crachá digitado na abertura.
-6. Bipe as 3 posições, uma de cada vez (Colaborador → Posição → Feeder → Rolo → Enter avança o foco; Enter no campo Rolo envia):
+3. No card "Novo setup", o primeiro campo é **Colaborador** (já com o foco): bipe/digite o crachá de quem está montando. É **texto livre, sem nenhuma conferência** e **pode ficar em branco** — nada trava por causa dele. O card tem só o Colaborador e os botões: o **SN de Abertura não é pedido aqui** (ele vem na liberação, passo 7).
+4. Clique em **Montar do zero**.
+   - **Esperado:** o setup abre — aparece o cabeçalho "OP .../... · Linha 1 · Bloco A · MG5 · TOP" (no formato `Linha · Bloco · Máquina · Face`; num setup PTH sai só "Linha 1 · Bloco A · TOP"), com "SN de Abertura na liberação" na linha de baixo, o badge amarelo **"Em montagem"**, "0 posições" e a área de bipe com os campos **Colaborador**, **Posição**, **Feeder** e **Rolo** — o Colaborador já vem preenchido com o crachá digitado na abertura.
+5. Bipe as 3 posições, uma de cada vez (Colaborador → Posição → Feeder → Rolo → Enter avança o foco; Enter no campo Rolo envia):
    - Posição `1`, Feeder `F1`, Rolo `CAPJ41-TESTE1`
    - Posição `2`, Feeder `F2`, Rolo `RESR85-TESTE1`
    - Posição `3`, Feeder `F3`, Rolo `CIRB26-TESTE1`
    - **Esperado a cada bipe:** painel verde/ok "Posição cadastrada" com os chips Posição/Feeder/Componente/Rolo, o foco volta pro campo Posição e a tabela ganha uma linha, com o crachá na coluna **Colaborador** (`—` quando o campo está em branco).
    - **Colaborador persiste:** confira que ele **não** é limpo depois de gravar (nem ao trocar de OP/equipamento/face) — quem está no tablet bipa o crachá uma vez e segue bipando as posições. Troque o crachá no meio e confirme que as linhas novas saem com o nome novo e as antigas continuam com o antigo.
-   - Os componentes `CAPJ41`, `RESR85` e `CIRB26` precisam estar na estrutura da PMO (da importação ou cadastrados à mão) — senão o teste do passo 7 abaixo ("fora da estrutura") já é esse mesmo caso.
-7. Teste as recusas (todas devem mostrar o painel de aviso amarelo com som de erro, sem cadastrar nada):
+   - Os componentes `CAPJ41`, `RESR85` e `CIRB26` precisam estar na estrutura da PMO (da importação ou cadastrados à mão) — senão o teste do passo 6 abaixo ("fora da estrutura") já é esse mesmo caso.
+6. Teste as recusas (todas devem mostrar o painel de aviso amarelo com som de erro, sem cadastrar nada):
    - **Componente fora da estrutura:** bipe Posição `4`, Feeder `F4`, Rolo com um prefixo que não existe na estrutura da PMO (ex.: `ZZZZ99-1`). Esperado: "Esse componente não está na estrutura da PMO."
    - **PTH num setup SMD:** bipe um rolo cujo componente está cadastrado como PTH na estrutura. Esperado: "Esse componente é de outro processo (SMD × PTH)."
    - **Posição com outro feeder:** tente bipar de novo a Posição `1` com um Feeder diferente (ex.: `F9`) e um rolo novo válido. Esperado: "Essa posição já está com outro feeder."
    - **Feeder em outra posição:** tente bipar uma posição nova (ex.: `5`) com o Feeder `F1` (já usado na posição 1) e um rolo novo válido. Esperado: "Esse feeder já está em outra posição."
    - **Rolo repetido:** tente bipar uma posição nova com o mesmo rolo já montado (ex.: `CAPJ41-TESTE1` de novo, em outra posição). Esperado: "Esse rolo já está montado em outra posição do setup."
    - **Rolo sem hífen:** digite um código sem separador (ex.: `CAPJ41TESTE1`) em qualquer posição livre. Esperado: "Código do rolo inválido. O formato é CÓDIGO-LOTE (ex.: CAPJ41-8521556004)." — e note que essa validação acontece **antes** de ir ao servidor (é local).
-8. Clique em **Liberar setup**.
-   - **Esperado:** diálogo "Liberar o setup?" com a descrição "Depois de liberado, só um administrador altera posições e feeders." Confirme e veja o badge virar verde **"Liberado"** e o toast "Setup liberado". Repare que o botão "Liberar setup" só aparece com pelo menos 1 posição e nenhuma sem rolo.
+7. Clique em **Liberar setup**.
+   - **Esperado:** diálogo "Liberar o setup?" com a descrição "Depois de liberado, só um administrador altera posições e feeders." e o campo **SN de Abertura**, já com o foco. Repare que o botão "Liberar setup" só aparece com pelo menos 1 posição e nenhuma sem rolo.
+   - **SN vazio:** aperte Enter com o campo em branco. Esperado: "Informe o número de série." embaixo do campo, som de erro, e o diálogo continua aberto.
+   - **SN fora da faixa:** bipe/digite um SN **fora** da faixa da OP e aperte Enter. Esperado: "O número de série não pertence à faixa da OP." no próprio diálogo, que continua aberto com o SN selecionado; o setup **continua "Em montagem"**.
+   - **SN na faixa:** bipe um SN **dentro** da faixa e aperte Enter (ou clique em **Liberar setup**). Esperado: o diálogo fecha, o badge vira verde **"Liberado"**, o toast "Setup liberado" aparece e o cabeçalho passa a mostrar o SN de Abertura bipado.
+   - **OP sem faixa** (se tiver uma OP de teste sem faixa): qualquer SN libera, e aparece também o toast de aviso "OP sem faixa de SN — SN de Abertura aceito sem conferência".
 
 ## 3. Copiar de OP anterior
 
 Use outra OP de teste da **mesma PMO**, **mesmo equipamento** (Linha 1 / Bloco A / YSM10) e mesma face (TOP) do setup liberado acima.
 
 1. Em **Montar Setup**, selecione essa outra OP com o mesmo Processo/Linha/Bloco/Máquina/Face. Repare que a lista de cópias sai por **equipamento**: mudar de máquina (ou de bloco) já é outro equipamento e a lista vem vazia ("Nenhum setup anterior dessa PMO nesse equipamento e face.").
-2. No card "Novo setup", digite um SN de Abertura dentro da faixa dessa OP e clique em **Copiar de uma OP anterior**.
+2. No card "Novo setup" (só Colaborador, sem SN), clique em **Copiar de uma OP anterior**.
    - **Esperado:** lista aparece com o setup de origem, mostrando "OP ... · data · 3 posições · Liberado". Clique em **Copiar**.
 3. **Esperado:** o novo setup abre já com as 3 posições, cada uma com o badge amarelo "falta bipar o rolo" na coluna "Rolo montado" e o **Colaborador vazio** (`—`) — ninguém bipou essas posições ainda. As linhas com esse badge ficam com fundo amarelo claro e são clicáveis (o clique preenche Posição/Feeder e foca o Rolo).
 4. Clique numa dessas linhas e bipe um rolo de um **componente diferente** do cadastrado naquela posição.
    - **Esperado:** painel de aviso "O rolo é de um componente diferente do cadastrado nessa posição."
 5. Complete as 3 posições com os rolos certos (mesmo prefixo de componente da posição copiada) e clique em **Liberar setup**.
    - **Esperado:** cada posição preenchida passa a mostrar na coluna **Colaborador** o crachá de quem bipou o rolo (o campo Colaborador que está na tela naquele momento).
-   - **Esperado:** mesma confirmação do passo anterior; badge vira "Liberado".
+   - **Esperado:** mesma confirmação do passo anterior, pedindo o SN de Abertura (dentro da faixa **dessa** OP); badge vira "Liberado".
 
 ## 4. Abastecimento (troca de rolo)
 
