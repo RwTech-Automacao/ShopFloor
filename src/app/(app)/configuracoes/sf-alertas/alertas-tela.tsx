@@ -1,0 +1,94 @@
+'use client'
+
+import { useState, useTransition } from 'react'
+import { Play } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { NOME_CANAL, CANAIS, type Canal } from '@/modules/alertas/domain/tipos'
+import type { DestinatarioDisponivel, RegraAlerta } from '@/modules/alertas/domain/regra'
+import type { FiltroOcorrencias, OcorrenciaLinha } from '@/modules/alertas/domain/ocorrencia'
+import { avaliarAgoraAction } from '@/modules/alertas/application/alertas-actions'
+import { RegrasLista } from './regras-lista'
+import { OcorrenciasLista } from './ocorrencias-lista'
+
+const TOAST = { position: 'bottom-center' } as const
+
+export function AlertasTela({
+  regras,
+  postos,
+  destinatarios,
+  configurados,
+  ocorrenciasIniciais,
+  filtroInicial,
+}: {
+  regras: RegraAlerta[]
+  postos: string[]
+  destinatarios: DestinatarioDisponivel[]
+  configurados: Record<Canal, boolean>
+  ocorrenciasIniciais: OcorrenciaLinha[]
+  filtroInicial: FiltroOcorrencias
+}) {
+  const [aba, setAba] = useState<'regras' | 'ocorrencias'>('regras')
+  const [pendente, startTransition] = useTransition()
+
+  const semCanal = CANAIS.filter((c) => !configurados[c])
+
+  function avaliarAgora() {
+    startTransition(async () => {
+      const r = await avaliarAgoraAction()
+      if (!r.ok) {
+        toast.error(r.erro, TOAST)
+        return
+      }
+      const { avaliadas, enviados, falhas, ocupado } = r.resumo
+      toast.success(
+        ocupado
+          ? 'Uma avaliação já estava rodando — tente de novo em instantes.'
+          : `${avaliadas} combinações avaliadas · ${enviados} enviados${falhas > 0 ? ` · ${falhas} falhas` : ''}`,
+        TOAST,
+      )
+    })
+  }
+
+  const botaoAba = (chave: 'regras' | 'ocorrencias', rotulo: string) => (
+    <button
+      key={chave}
+      type="button"
+      onClick={() => setAba(chave)}
+      className={cn(
+        'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+        aba === chave ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
+      )}
+    >
+      {rotulo}
+    </button>
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          {botaoAba('regras', 'Regras')}
+          {botaoAba('ocorrencias', 'Ocorrências')}
+        </div>
+        <Button variant="outline" disabled={pendente} onClick={avaliarAgora}>
+          <Play /> Avaliar agora
+        </Button>
+      </div>
+
+      {semCanal.length > 0 && (
+        <p className="rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
+          {semCanal.map((c) => `${NOME_CANAL[c]} não configurado`).join(' · ')} neste ambiente — regras com esse canal
+          não enviam nada.
+        </p>
+      )}
+
+      {aba === 'regras' ? (
+        <RegrasLista regras={regras} postos={postos} destinatarios={destinatarios} configurados={configurados} />
+      ) : (
+        <OcorrenciasLista ocorrenciasIniciais={ocorrenciasIniciais} filtroInicial={filtroInicial} />
+      )}
+    </div>
+  )
+}

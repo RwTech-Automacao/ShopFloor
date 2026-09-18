@@ -17,6 +17,7 @@ import {
   Tags,
   ImageDown,
   Users,
+  UserRound,
   ShieldCheck,
   List,
   SlidersHorizontal,
@@ -26,6 +27,7 @@ import {
   Bug,
   Wrench,
   Waypoints,
+  BellRing,
   TriangleAlert,
   Table2,
   History,
@@ -110,6 +112,7 @@ const CONFIG_SHOPFLOOR: FolhaModular[] = [
   { chave: 'sf-postos', rotulo: 'Postos', href: '/configuracoes/sf-postos', icone: Waypoints, modulo: 'shopfloor', perm: 'administrar' },
   { chave: 'sf-defeitos', rotulo: 'Defeitos', href: '/configuracoes/sf-defeitos', icone: Bug, modulo: 'shopfloor', perm: 'administrar' },
   { chave: 'sf-consertos', rotulo: 'Consertos', href: '/configuracoes/sf-consertos', icone: Wrench, modulo: 'shopfloor', perm: 'administrar' },
+  { chave: 'sf-alertas', rotulo: 'Alertas', href: '/configuracoes/sf-alertas', icone: BellRing, modulo: 'shopfloor', perm: 'administrar' },
 ]
 
 // Configurações específicas do módulo Setup, agrupadas num accordion.
@@ -128,6 +131,10 @@ const CONFIG_TODOS: FolhaModular[] = [...CONFIG_TOPO, ...CONFIG_RECEBIMENTO, ...
 
 const AJUDA: Folha = { chave: 'sobre', rotulo: 'Sobre o Sistema', href: '/sobre', icone: Info, perm: 'visualizar' }
 
+// Meu perfil não entra no menu lateral: o acesso é pelo nome do usuário (cabeçalho e rodapé do
+// menu). Fica aqui só para o cabeçalho da página achar o rótulo.
+const PERFIL: Folha = { chave: 'perfil', rotulo: 'Meu perfil', href: '/perfil', icone: UserRound, perm: 'visualizar' }
+
 function iniciais(texto: string): string {
   const p = texto.trim().split(/[\s@.]+/).filter(Boolean)
   return ((p[0]?.[0] ?? '?') + (p[1]?.[0] ?? '')).toUpperCase()
@@ -143,6 +150,7 @@ export function AppShell({
   perfilNome,
   perfil,
   exportarFotosVisivel,
+  alertasLiberado,
   children,
 }: {
   nome: string
@@ -150,6 +158,10 @@ export function AppShell({
   perfilNome: string
   perfil: Perfil
   exportarFotosVisivel: boolean
+  /** Lançamento escondido dos Alertas (ALERTAS_LIBERADO_PARA): calculado no servidor, nunca a
+   *  lista de e-mails em si. Enquanto false, some o item Alertas e o link Meu perfil do menu —
+   *  hoje Meu perfil só tem o cartão de Alertas. */
+  alertasLiberado: boolean
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -177,7 +189,9 @@ export function AppShell({
   const podeConfig = perfil.permissoes.administrar === true
   const configTopo = podeConfig ? CONFIG_TOPO.filter(pode) : []
   const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter(pode) : []
-  const configSf = podeConfig ? CONFIG_SHOPFLOOR.filter(pode) : []
+  const configSf = podeConfig
+    ? CONFIG_SHOPFLOOR.filter(pode).filter((i) => i.chave !== 'sf-alertas' || alertasLiberado)
+    : []
   const configSetup = podeConfig ? CONFIG_SETUP.filter(pode) : []
   const configBase = podeConfig ? CONFIG_BASE.filter(pode) : []
   const temConfig = configTopo.length + configRec.length + configSf.length + configSetup.length + configBase.length > 0
@@ -201,7 +215,7 @@ export function AppShell({
   const [configSetupAberto, setConfigSetupAberto] = useState(configSetupAtivo)
 
   const tituloPagina =
-    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...CONFIG_TODOS, AJUDA]
+    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...CONFIG_TODOS, AJUDA, PERFIL]
       .filter((i) => ehAtivo(pathname, i.href))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
@@ -217,6 +231,55 @@ export function AppShell({
 
   const rotuloGrupo = (t: string) => (
     <p className="px-3 pt-4 pb-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{t}</p>
+  )
+
+  // Meu perfil só tem o cartão de Alertas hoje: enquanto o lançamento estiver escondido, o nome
+  // continua aparecendo (cabeçalho e rodapé), mas sem link para lá.
+  const iniciaisNome = iniciais(nome || email)
+  const perfilRodape = alertasLiberado ? (
+    <Link
+      href={PERFIL.href}
+      onClick={fechaMobile}
+      title="Meu perfil"
+      className="flex min-w-0 flex-1 items-center gap-3 rounded-md p-1 transition-colors hover:bg-accent"
+    >
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
+        {iniciaisNome}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{nome || email}</p>
+        <p className="truncate text-xs text-muted-foreground">{perfilNome}</p>
+      </div>
+    </Link>
+  ) : (
+    <div className="flex min-w-0 flex-1 items-center gap-3 p-1">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
+        {iniciaisNome}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{nome || email}</p>
+        <p className="truncate text-xs text-muted-foreground">{perfilNome}</p>
+      </div>
+    </div>
+  )
+  const perfilCabecalho = alertasLiberado ? (
+    <Link
+      href={PERFIL.href}
+      title="Meu perfil"
+      className="ml-auto flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+    >
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-foreground">
+        {iniciaisNome}
+      </div>
+      <span className="hidden max-w-40 truncate sm:inline">{nome || email}</span>
+    </Link>
+  ) : (
+    <div className="ml-auto flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-foreground">
+        {iniciaisNome}
+      </div>
+      <span className="hidden max-w-40 truncate sm:inline">{nome || email}</span>
+    </div>
   )
 
   const sidebar = (
@@ -443,13 +506,7 @@ export function AppShell({
           </button>
         )}
         <div className="flex items-center gap-3 px-1 py-1">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
-            {iniciais(nome || email)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-foreground">{nome || email}</p>
-            <p className="truncate text-xs text-muted-foreground">{perfilNome}</p>
-          </div>
+          {perfilRodape}
           <form action={sair}>
             <button
               type="submit"
@@ -511,6 +568,7 @@ export function AppShell({
             </>
           )}
           <h1 className="text-[15px] font-semibold text-foreground">{tituloPagina}</h1>
+          {!kioskLigado && perfilCabecalho}
           {kioskLigado && (
             <button
               type="button"
