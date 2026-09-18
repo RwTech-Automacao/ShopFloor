@@ -322,16 +322,27 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
   const caixas = (caixasData ?? []) as { seq: number; posto: string; limite: number; fechada: boolean; codigo: string; revisao: number }[]
   if (caixas.length === 0) return []
 
-  const { data: regsData, error: e2 } = await supabase
-    .from('sf_registros').select('numero_serie,numero_serie_norm,numero_caixa,posto,data_hora')
-    .eq('pmo', pmo).eq('op', op).like('numero_caixa', 'CX%')
-    .order('data_hora', { ascending: true })
-  if (e2) throw e2
+  // Paginado: o PostgREST devolve no máximo 1000 linhas por consulta (max_rows). Uma OP com mais de
+  // 1000 peças embaladas perdia as últimas caixas (apareciam com 0 peças e sem Imprimir/CSV).
+  // Desempate por id pra a ordem ser estável entre as páginas.
+  const PAGINA = 1000
+  const regsData: { numero_serie: string; numero_serie_norm: string; numero_caixa: string; posto: string }[] = []
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error: e2 } = await supabase
+      .from('sf_registros').select('numero_serie,numero_serie_norm,numero_caixa,posto,data_hora')
+      .eq('pmo', pmo).eq('op', op).like('numero_caixa', 'CX%')
+      .order('data_hora', { ascending: true }).order('id', { ascending: true })
+      .range(de, de + PAGINA - 1)
+    if (e2) throw e2
+    const bloco = (data ?? []) as typeof regsData
+    regsData.push(...bloco)
+    if (bloco.length < PAGINA) break
+  }
   // Agrupa por (posto, numero_caixa): o marcador/código da caixa NÃO carrega o posto, então
   // dois postos de perfil caixa poderiam ter 'CX[1]' e as peças se misturariam sem o posto na chave.
   const grupos = new Map<string, string[]>()
   const vistosPorGrupo = new Map<string, Set<string>>()
-  for (const r of (regsData ?? []) as { numero_serie: string; numero_serie_norm: string; numero_caixa: string; posto: string }[]) {
+  for (const r of regsData) {
     const k = `${r.posto}||${r.numero_caixa}`
     // Uma peça rebipada na mesma caixa tem 2 registros e continua sendo UMA peça na folha.
     const vistos = vistosPorGrupo.get(k) ?? new Set<string>()
