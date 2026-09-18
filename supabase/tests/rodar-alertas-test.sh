@@ -4,6 +4,8 @@
 # A 0113 é aplicada com `psql -1 -v ON_ERROR_STOP=1 -f`, exatamente como roda no RDS — assim o
 # teste também garante que a migração passa inteira como transação única. A 0114 usa `create index
 # concurrently`, que não roda dentro de transação nenhuma (nem com -1), então vai à parte, sem -1.
+# Depois dos testes da 0113, a 0115 (tipos de regra) é aplicada POR CIMA, com -1 e DUAS VEZES
+# (prova que é idempotente e que migra dados de verdade da 0113), e roda alertas_tipos_test.sql.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 NOME=pg-alertas-test
@@ -137,5 +139,13 @@ else
   cat "$TMPD/f0.err" "$TMPD/f1.err" "$TMPD/f2.err"
   exit 1
 fi
+
+# ---------- 0115: tipos de regra, destinatários do ShopFloor, filtro de PMO ----------
+docker cp supabase/migrations/0115_alertas_tipos.sql "$NOME":/tmp/0115.sql
+docker cp supabase/tests/alertas_tipos_test.sql "$NOME":/tmp/teste_tipos.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0115.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0115.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_tipos.sql
+echo "0115 (tipos de regra): ok"
 
 echo "ALERTAS SQL OK"
