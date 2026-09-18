@@ -3,7 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { normalizarSerie } from '../domain/serie'
-import { gerarFaixaSNsPagina, montarGrade, montarResumoPorPosto, type LinhaGrade, type ResumoPosto } from '../domain/grade'
+import { gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, type LinhaGrade, type ResumoPosto } from '../domain/grade'
 import { PERFIL_PADRAO, perfilTemStatus } from '../domain/perfil-posto'
 import { carregarOrdem } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
@@ -76,6 +76,22 @@ export async function carregarResumoDefeitos(
   }
 }
 
+/** Carrega a OP (com faixa de SN) + registros + perfis — base comum da grade paginada e da completa. */
+async function baseDaGrade(pmo: string, op: string) {
+  const ordem = await carregarOrdem(pmo, op)
+  if (!ordem) return { ok: false as const, erro: 'OP não encontrada.' }
+  if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
+    return { ok: false as const, erro: 'Esta OP não tem faixa de Nº de Série cadastrada.' }
+  }
+  return { ok: true as const, ordem }
+}
+
+async function registrosEPerfis(pmo: string, op: string) {
+  const [registros, mapa] = await Promise.all([listarRegistrosDaOp(pmo, op), mapaPostoPerfil()])
+  const temStatus = (posto: string) => perfilTemStatus(mapa[posto] ?? PERFIL_PADRAO)
+  return { registros, temStatus }
+}
+
 export async function carregarGrade(
   pmo: string,
   op: string,
@@ -88,22 +104,16 @@ export async function carregarGrade(
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
 
-  const ordem = await carregarOrdem(pmo.trim(), op.trim())
-  if (!ordem) return { ok: false, erro: 'OP não encontrada.' }
-  if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
-    return { ok: false, erro: 'Esta OP não tem faixa de Nº de Série cadastrada.' }
-  }
+  const base = await baseDaGrade(pmo.trim(), op.trim())
+  if (!base.ok) return base
+  const { ordem } = base
   const tam = Math.max(1, Math.floor(tamanho))
   const pag = Math.max(1, Math.floor(pagina))
   const faixa = gerarFaixaSNsPagina(ordem.sn_ini, ordem.sn_fim, (pag - 1) * tam, tam)
   if (!faixa.ok) return faixa
 
   try {
-    const [registros, mapa] = await Promise.all([
-      listarRegistrosDaOp(pmo.trim(), op.trim()),
-      mapaPostoPerfil(),
-    ])
-    const temStatus = (posto: string) => perfilTemStatus(mapa[posto] ?? PERFIL_PADRAO)
+    const { registros, temStatus } = await registrosEPerfis(pmo.trim(), op.trim())
     return {
       ok: true,
       colunas: [...ordem.postos, 'Manutenção'],
@@ -112,6 +122,53 @@ export async function carregarGrade(
       total: faixa.total,
       pagina: pag,
       totalPaginas: Math.max(1, Math.ceil(faixa.total / tam)),
+    }
+  } catch {
+    return { ok: false, erro: ERRO_INTERNO }
+  }
+}
+
+/** Teto de SNs pra carregar a OP inteira no cliente (filtro por coluna). */
+const MAX_SNS_FILTRO = 5000
+
+/**
+ * Grade da OP INTEIRA (todas as linhas), usada pelo filtro por coluna estilo Excel: o pendente pode
+ * estar em qualquer página, então o cliente filtra e pagina localmente. Mesma montagem da paginada.
+ */
+export async function carregarGradeCompleta(
+  pmo: string,
+  op: string,
+): Promise<
+  | { ok: true; colunas: string[]; linhas: LinhaGrade[]; total: number }
+  // `permanente`: só a OP grande demais pra filtrar (nunca vai caber) — o resto (OP não encontrada,
+  // erro interno, rede) é transitório e deixa tentar de novo no próximo clique.
+  | { ok: false; erro: string; permanente?: true }
+> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+
+  const base = await baseDaGrade(pmo.trim(), op.trim())
+  if (!base.ok) return base
+  const { ordem } = base
+  const tot = totalFaixaSNs(ordem.sn_ini, ordem.sn_fim)
+  if (!tot.ok) return tot
+  if (tot.total > MAX_SNS_FILTRO) {
+    return {
+      ok: false,
+      erro: `OP grande demais pra filtrar por coluna (${tot.total} SNs; máximo ${MAX_SNS_FILTRO}).`,
+      permanente: true,
+    }
+  }
+  const faixa = gerarFaixaSNsPagina(ordem.sn_ini, ordem.sn_fim, 0, tot.total)
+  if (!faixa.ok) return faixa
+
+  try {
+    const { registros, temStatus } = await registrosEPerfis(pmo.trim(), op.trim())
+    return {
+      ok: true,
+      colunas: [...ordem.postos, 'Manutenção'],
+      linhas: montarGrade(faixa.sns, ordem.postos, registros, temStatus),
+      total: faixa.total,
     }
   } catch {
     return { ok: false, erro: ERRO_INTERNO }
