@@ -75,15 +75,20 @@ function sbComErro(mensagem: string) {
 }
 
 const REGRA: RegraValida = {
+  tipo: 'aprovacao',
   nome: 'Teste',
   postos: ['P1'],
   taxaMinima: 90,
   janelaTipo: 'tempo',
   janelaValor: 60,
   minimoBipes: 20,
+  limiteTempoSeg: null,
+  limiteOcorrencias: null,
+  pausaMaxMin: null,
   lembreteMin: null,
   canais: ['telegram'],
   destinatarios: ['u1'],
+  pmos: [],
   ativa: true,
 }
 
