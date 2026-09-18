@@ -42,9 +42,12 @@ DISCORD_APP_ID=
 DISCORD_PUBLIC_KEY=
 DISCORD_GUILD_ID=
 ALERTAS_CRON_SECRET=
+ALERTAS_LIBERADO_PARA=
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` já existe e é usada pelas rotas de cron/webhook.
+
+`ALERTAS_LIBERADO_PARA` é o lançamento escondido em produção — ver seção 8 abaixo.
 
 Depois de mudar variáveis: `pm2 restart shopfloor --update-env`.
 
@@ -213,3 +216,32 @@ antigo e os canais aparecem como "não configurado").
 - `https://api.telegram.org/bot<token>/getWebhookInfo` → a URL e `has_custom_certificate:false`
   (rode no seu terminal, não em log compartilhado).
 - Tela **Meu perfil** → Vincular → o bot responde.
+
+## 8. Lançamento escondido em produção
+
+A feature vai pro ar (código em produção, cron rodando, webhooks funcionando) antes de ficar
+visível para todo mundo. Quem controla isso é a variável de ambiente **`ALERTAS_LIBERADO_PARA`**:
+
+- Lista de e-mails separados por vírgula (ex.: `fulana@enterplak.com.br,ciclano@enterplak.com.br`).
+  Comparação sem diferenciar maiúsculas/minúsculas e com `trim` (espaços em volta não importam).
+- `*` libera todo mundo (útil pra testar em Preview sem listar e-mail nenhum).
+- **Vazia ou ausente = todos.** Para liberar de vez pra empresa inteira, é só **remover a
+  variável** (ou deixá-la vazia) e reiniciar o processo — não precisa mexer em código.
+
+O que a variável esconde:
+
+- O item **Alertas** do menu (Configurações › Ajustes ShopFloor) e o link **Meu perfil**
+  (cabeçalho e rodapé do menu — hoje Meu perfil só tem o cartão de Alertas).
+- As páginas `/perfil` e `/configuracoes/sf-alertas`: fora da lista, mostram a tela padrão de
+  "sem permissão", mesmo digitando a URL direto.
+- As *server actions* de regras/ocorrências e de vínculo/teste: fora da lista, voltam
+  `{ ok: false, erro: 'Recurso indisponível.' }` mesmo chamadas fora do menu.
+
+O que a variável **não** esconde (de propósito): as rotas `/api/alertas/avaliar`,
+`/api/alertas/telegram` e `/api/alertas/discord` continuam no ar pra qualquer e-mail — são o cron e
+os webhooks dos bots, e sem elas rodando nada é avaliado nem entregue, mesmo pra quem já está
+liberado. A segurança delas é o próprio segredo/assinatura de cada uma (ver seção 9 do roteiro de
+smoke), não esta variável.
+
+Depois de mudar `ALERTAS_LIBERADO_PARA`: `pm2 restart shopfloor --update-env` (Prod) ou reinicie o
+`next dev`/redeploy do Preview — como qualquer outra variável de ambiente.

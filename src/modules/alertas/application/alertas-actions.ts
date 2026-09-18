@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
+import { alertasLiberados } from './liberacao'
 import { validarPrevia, validarRegra, type EntradaRegra } from '../domain/regra'
 import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/ocorrencia'
 import { resumoJanela } from '../domain/janela'
@@ -20,12 +21,21 @@ import { criarDependenciasAlertas } from '../infra/fabrica'
 import { avaliarEEnviar, entregarPendentes, removerBotoesDaOcorrencia, type ResumoAvaliacao } from './enviar-alertas'
 
 const SEM_PERMISSAO = 'Você não tem permissão para configurar alertas.'
+const RECURSO_INDISPONIVEL = 'Recurso indisponível.'
 const ROTA = '/configuracoes/sf-alertas'
 
-async function gestor(): Promise<{ usuarioId: string } | null> {
+/**
+ * Além da permissão `shopfloor.administrar`, respeita o lançamento escondido dos Alertas
+ * (ALERTAS_LIBERADO_PARA): fora da lista liberada, a ação some mesmo pra quem tem permissão —
+ * mesma mensagem genérica das rotas de API, sem entregar que a feature existe.
+ */
+async function gestor(): Promise<{ ok: true; usuarioId: string } | { ok: false; erro: string }> {
   const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return null
-  return { usuarioId: sessao.usuarioId }
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  if (!alertasLiberados(sessao.email)) return { ok: false, erro: RECURSO_INDISPONIVEL }
+  return { ok: true, usuarioId: sessao.usuarioId }
 }
 
 export async function salvarRegraAction(
@@ -33,7 +43,8 @@ export async function salvarRegraAction(
   entrada: EntradaRegra,
 ): Promise<{ ok: true; id: string } | { ok: false; erro: string }> {
   try {
-    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+    const g = await gestor()
+    if (!g.ok) return { ok: false, erro: g.erro }
 
     const v = validarRegra(entrada)
     if (!v.ok) return { ok: false, erro: v.erro }
@@ -71,7 +82,8 @@ export async function salvarRegraAction(
 
 export async function excluirRegraAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
-    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+    const g = await gestor()
+    if (!g.ok) return { ok: false, erro: g.erro }
     const r = await excluirRegra(id)
     if (!r.ok) return { ok: false, erro: r.erro }
     await registrarLog({
@@ -93,7 +105,8 @@ export async function alternarRegraAtivaAction(
   ativa: boolean,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
-    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+    const g = await gestor()
+    if (!g.ok) return { ok: false, erro: g.erro }
     const r = await definirRegraAtiva(id, ativa)
     if (!r.ok) return { ok: false, erro: r.erro }
     await registrarLog({
@@ -118,7 +131,8 @@ export async function previaRegraAction(entrada: {
   minimoBipes: string | number
 }): Promise<{ ok: true; postos: PreviaPosto[] } | { ok: false; erro: string }> {
   try {
-    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+    const g = await gestor()
+    if (!g.ok) return { ok: false, erro: g.erro }
     const v = validarPrevia(entrada)
     if (!v.ok) return { ok: false, erro: v.erro }
     return await previaRegra(v.valor)
@@ -131,7 +145,8 @@ export async function previaRegraAction(entrada: {
 export async function listarOcorrenciasAction(
   filtro: FiltroOcorrencias,
 ): Promise<{ ok: true; ocorrencias: OcorrenciaLinha[] } | { ok: false; erro: string }> {
-  if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+  const g = await gestor()
+  if (!g.ok) return { ok: false, erro: g.erro }
   try {
     return { ok: true, ocorrencias: await listarOcorrencias(filtro) }
   } catch {
@@ -141,7 +156,8 @@ export async function listarOcorrenciasAction(
 
 export async function resolverOcorrenciaAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
-    if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+    const g = await gestor()
+    if (!g.ok) return { ok: false, erro: g.erro }
 
     // alerta_resolver_admin resolve E enfileira o "✅ resolvido por" para os destinatários (menos
     // quem resolveu), na mesma transação.
@@ -181,7 +197,8 @@ export async function resolverOcorrenciaAction(id: string): Promise<{ ok: true }
 export async function avaliarAgoraAction(): Promise<
   { ok: true; resumo: ResumoAvaliacao } | { ok: false; erro: string }
 > {
-  if (!(await gestor())) return { ok: false, erro: SEM_PERMISSAO }
+  const g = await gestor()
+  if (!g.ok) return { ok: false, erro: g.erro }
   try {
     const { portas, repo } = criarDependenciasAlertas()
     const resumo = await avaliarEEnviar(portas, repo)

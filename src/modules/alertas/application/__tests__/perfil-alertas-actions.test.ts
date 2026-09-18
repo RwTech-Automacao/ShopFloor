@@ -44,4 +44,18 @@ describe('actions de Meu perfil — erro ao consultar a sessão vira mensagem am
     vi.doUnmock('../../infra/fabrica')
     vi.resetModules()
   })
+
+  it('lançamento escondido: usuário fora de ALERTAS_LIBERADO_PARA é recusado', async () => {
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: {} }),
+    }))
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', 'outra@rwtech.com.br')
+    vi.resetModules()
+    const { desvincularAction } = await import('../perfil-alertas-actions')
+    const r = await desvincularAction('telegram')
+    expect(r).toEqual({ ok: false, erro: 'Recurso indisponível.' })
+    vi.doUnmock('@/modules/auth/application/get-sessao')
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
 })

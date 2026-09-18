@@ -1,13 +1,19 @@
 import { redirect } from 'next/navigation'
 import { getSessao } from '@/modules/auth/application/get-sessao'
+import { alertasLiberados } from '@/modules/alertas/application/liberacao'
 import { canaisConfigurados } from '@/modules/alertas/infra/canais'
 import { listarMinhasContas } from '@/modules/alertas/infra/contas-repository'
+import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { CartaoAlertas } from './cartao-alertas'
 
-/** Meu perfil: qualquer usuário logado. Por enquanto só o cartão de Alertas mora aqui. */
+/** Meu perfil: qualquer usuário logado. Por enquanto só o cartão de Alertas mora aqui — por isso o
+ *  lançamento escondido dos Alertas (ALERTAS_LIBERADO_PARA) bloqueia a tela inteira. */
 export default async function PerfilPage() {
   const sessao = await getSessao()
   if (!sessao) redirect('/login')
+  if (!alertasLiberados(sessao.email)) {
+    return <SemPermissao />
+  }
 
   const contas = await listarMinhasContas()
 

@@ -194,3 +194,26 @@ Siga `tools/alertas/README.md` do começo ao fim:
 
 - [ ] **Desvincular** o Telegram em Meu perfil (com confirmação) → gerar uma ocorrência nova
       (baixe a meta de novo) → **Avaliar agora** → o alerta chega só no Discord.
+
+## 11. Lançamento escondido em produção
+
+A feature entra no ar (código + cron + webhooks) antes de ficar visível pra empresa inteira. Quem
+esconde/mostra é a variável de servidor `ALERTAS_LIBERADO_PARA` (lista de e-mails, `*` = todos,
+**vazia/ausente = todos** — ver `tools/alertas/README.md` §8 para o passo a passo completo).
+
+- [ ] Com `ALERTAS_LIBERADO_PARA=outro@enterplak.com.br` (sem o seu e-mail de teste): logado com a
+      sua conta, o item **Alertas** some do menu de Configurações e o link **Meu perfil** some do
+      cabeçalho e do rodapé do menu (o nome continua aparecendo, só sem virar link).
+- [ ] Abrir `/perfil` e `/configuracoes/sf-alertas` **direto pela URL** → tela de **sem
+      permissão** nos dois casos, mesmo sendo gestor com `shopfloor.administrar`.
+- [ ] Chamar as *server actions* fora do menu (ex.: pelo DevTools, se der, ou confiar na leitura de
+      código) → retornam `{ ok: false, erro: 'Recurso indisponível.' }`.
+- [ ] As rotas `/api/alertas/avaliar`, `/api/alertas/telegram` e `/api/alertas/discord` continuam
+      respondendo normalmente (o cron e os webhooks não podem parar por causa do lançamento
+      escondido).
+- [ ] Colocar o seu e-mail em `ALERTAS_LIBERADO_PARA` (ou usar `*`) → reiniciar → Alertas volta a
+      aparecer no menu e as telas abrem normal.
+- [ ] **Não quebrou nada:** quiosque, menu retrátil e o grupo Setup continuam funcionando iguais
+      com a variável ligada ou desligada.
+- [ ] **Liberação final:** remover `ALERTAS_LIBERADO_PARA` do ambiente (ou deixar vazia) e
+      reiniciar → todo mundo passa a ver Alertas, sem precisar mexer em código.

@@ -40,4 +40,18 @@ describe('actions de alertas — payload malformado não lança exceção', () =
     vi.doUnmock('@/modules/auth/application/get-sessao')
     vi.resetModules()
   })
+
+  it('lançamento escondido: gestor fora da lista de ALERTAS_LIBERADO_PARA é recusado', async () => {
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Gestor', email: 'gestor@x', perfil: GESTOR }),
+    }))
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', 'outra@rwtech.com.br')
+    vi.resetModules()
+    const { excluirRegraAction } = await import('../alertas-actions')
+    const r = await excluirRegraAction('id1')
+    expect(r).toEqual({ ok: false, erro: 'Recurso indisponível.' })
+    vi.doUnmock('@/modules/auth/application/get-sessao')
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
 })
