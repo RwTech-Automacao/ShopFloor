@@ -59,8 +59,18 @@ export function CartaoAlertas({
     const faltam = () => Math.max(0, Math.round((alvo - Date.now()) / 1000))
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRestante(faltam())
-    const tique = setInterval(() => setRestante(faltam()), 1000)
+    // Código vencido: para de contar e de consultar (a tela mostra "Código expirado — gere outro").
+    const parar = () => {
+      clearInterval(tique)
+      clearInterval(consulta)
+    }
+    const tique = setInterval(() => {
+      const f = faltam()
+      setRestante(f)
+      if (f === 0) parar()
+    }, 1000)
     const consulta = setInterval(async () => {
+      if (faltam() === 0) return parar()
       const r = await minhasContasAction()
       if (!r.ok) return
       setLista(r.contas)
@@ -69,10 +79,7 @@ export function CartaoAlertas({
         toast.success(`✅ ${NOME_CANAL[codigo.canal]} vinculado`, TOAST)
       }
     }, INTERVALO_CONSULTA_MS)
-    return () => {
-      clearInterval(tique)
-      clearInterval(consulta)
-    }
+    return parar
   }, [codigo])
 
   function vincular(canal: Canal) {

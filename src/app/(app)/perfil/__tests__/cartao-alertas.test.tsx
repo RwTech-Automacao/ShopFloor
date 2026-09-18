@@ -102,4 +102,24 @@ describe('CartaoAlertas', () => {
       position: 'bottom-center',
     }))
   })
+  it('para de consultar o servidor quando o código vence', async () => {
+    // Relógio falso desde o início: os intervalos do cartão nascem nele.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      gerarCodigoAction.mockResolvedValue({
+        ok: true,
+        codigo: 'ALERTA-7K3M',
+        expiraEm: new Date(Date.now() + 5_000).toISOString(),
+      })
+      render(<CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="ShopFloorBot" />)
+      fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
+      await screen.findByText('ALERTA-7K3M')
+      await vi.advanceTimersByTimeAsync(10_000) // passa do vencimento (5 s)
+      const chamadasAoVencer = minhasContasAction.mock.calls.length
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(minhasContasAction.mock.calls.length).toBe(chamadasAoVencer)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
