@@ -248,3 +248,496 @@ begin
 end $t$;
 select set_config('teste.perms', 'shopfloor.visualizar,shopfloor.administrar', false);
 reset role;
+
+-- =====================================================================
+-- Tipos de regra: cálculo, transições e filtro de PMO (0115 parte B)
+-- =====================================================================
+
+-- Helpers. teste_ritmo: N bipes aprovados a cada P segundos, começando S segundos atrás.
+create function public.teste_ritmo(
+  p_posto text, p_pmo text, p_op text, p_qtd int, p_passo_seg int, p_inicio_seg_atras int
+) returns void language sql as $f$
+  insert into public.sf_registros (data_hora, posto, pmo, op, status)
+  select now() - make_interval(secs => p_inicio_seg_atras) + make_interval(secs => p_passo_seg * (g - 1)),
+         p_posto, p_pmo, p_op, 'Aprovado'
+    from generate_series(1, p_qtd) g;
+$f$;
+
+-- teste_defeitos: N linhas com um código de defeito e um status, M minutos atrás.
+create function public.teste_defeitos(
+  p_posto text, p_pmo text, p_codigo text, p_qtd int, p_status text, p_minutos_atras int
+) returns void language sql as $f$
+  insert into public.sf_registros (data_hora, posto, pmo, op, status, codigo_defeito)
+  select now() - make_interval(mins => p_minutos_atras) - make_interval(secs => g),
+         p_posto, p_pmo, '1', p_status, p_codigo
+    from generate_series(1, p_qtd) g;
+$f$;
+
+-- teste_fila: o que a avaliação desta transação pôs na fila para regra x posto x defeito — os
+-- `dados` da primeira linha + tipo, ocorrência e n = quantas linhas (destinatário x canal).
+-- plpgsql (não sql) de propósito, como o teste_acao da 0113.
+create function public.teste_fila(p_regra text, p_posto text, p_defeito text default null) returns jsonb
+language plpgsql as $f$
+declare v jsonb;
+begin
+  with x as (
+    select e.*
+      from public.alerta_envios e
+      join public.alerta_ocorrencias oc on oc.id = e.ocorrencia_id
+      join public.alerta_regras rg on rg.id = oc.regra_id
+     where e.criado_em = now()
+       and rg.nome = p_regra and oc.posto = p_posto
+       and coalesce(oc.defeito, '') = coalesce(p_defeito, '')
+       and e.tipo in ('alerta', 'lembrete', 'normalizou')
+  )
+  select x.dados || jsonb_build_object('tipo', x.tipo, 'ocorrencia_id', x.ocorrencia_id,
+                                       'n', (select count(*) from x))
+    into v
+    from x
+   order by x.usuario_id, x.canal
+   limit 1;
+  return v;
+end
+$f$;
+
+-- Quantas linhas (destinatário x canal) a fila deve ter para Ana + Bruno.
+create function public.teste_contas_ana_bruno() returns int language sql as $f$
+  select count(*)::int from public.alerta_contas
+   where usuario_id in ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002')
+     and canal in ('telegram', 'discord')
+$f$;
+
+-- As assinaturas antigas sumiram (senão o PostgREST não sabe qual chamar).
+do $t$
+begin
+  if (select count(*) from pg_proc where proname = 'alerta_previa' and pronamespace = 'public'::regnamespace) <> 1
+     or (select count(*) from pg_proc where proname = 'alerta_taxas' and pronamespace = 'public'::regnamespace) <> 1
+     or (select count(*) from pg_proc where proname = 'alerta_listar_ocorrencias' and pronamespace = 'public'::regnamespace) <> 1 then
+    raise exception 'FALHOU: assinatura antiga convivendo com a nova';
+  end if;
+  if not exists (select 1 from pg_proc where proname = 'alerta_previa' and pronargs = 8) then
+    raise exception 'FALHOU: alerta_previa nova (8 parâmetros) não existe';
+  end if;
+end $t$;
+
+-- ---------- Tempo médio por peça ----------
+-- T-Lento: 11 bipes a cada 180 s (40 a 10 min atrás) = 10 intervalos, média 3:00.
+select public.teste_ritmo('T-Lento', 'PMOA', '1', 11, 180, 2400);
+-- Um bipe com 3 linhas de defeito grava 3 linhas com o MESMO data_hora: é UMA peça só.
+insert into public.sf_registros (data_hora, posto, pmo, op, status, codigo_defeito)
+select r.data_hora, r.posto, r.pmo, r.op, 'Reprovado', '2040 COMPONENTE FALTANDO'
+  from public.sf_registros r where r.posto = 'T-Lento' order by r.data_hora limit 3;
+-- T-Pausa: 6 bipes a cada 60 s (50 min atrás), PAUSA de 40 min, 6 bipes a cada 60 s (5 min atrás).
+select public.teste_ritmo('T-Pausa', 'PMOA', '1', 6, 60, 3000);
+select public.teste_ritmo('T-Pausa', 'PMOA', '1', 6, 60, 300);
+-- T-Poucos: só 3 intervalos (mínimo da regra = 5).
+select public.teste_ritmo('T-Poucos', 'PMOA', '1', 4, 300, 1800);
+
+do $t$ begin
+  perform teste_regra('Tempo 2:00', 'tempo', array['T-Lento', 'T-Pausa', 'T-Poucos'], null, 'tempo', 60, 5, 120, null, 30);
+end $t$;
+
+set role service_role;
+do $t$
+declare r jsonb; a jsonb;
+begin
+  r := alerta_avaliar();
+  a := teste_fila('Tempo 2:00', 'T-Lento');
+  if a is null or a->>'tipo' <> 'alerta' then raise exception 'FALHOU: tempo não alertou % %', r, a; end if;
+  if a->>'regra_tipo' <> 'tempo' or (a->>'media_seg')::numeric <> 180 or (a->>'limite_tempo_seg')::numeric <> 120
+     or (a->>'pecas')::int <> 11 or a->>'janela_tipo' <> 'tempo' or (a->>'janela_valor')::int <> 60
+     or a->>'regra_nome' <> 'Tempo 2:00' then
+    raise exception 'FALHOU: dados do alerta de tempo %', a;
+  end if;
+  if (a->>'n')::int <> teste_contas_ana_bruno() then raise exception 'FALHOU: linhas na fila %', a; end if;
+  if not exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+                  where rg.nome = 'Tempo 2:00' and oc.posto = 'T-Lento' and oc.estado = 'aberta'
+                    and oc.valor_abertura = 180 and oc.valor_ultimo = 180 and oc.amostras = 11
+                    and oc.taxa_abertura is null and oc.defeito is null) then
+    raise exception 'FALHOU: ocorrência de tempo';
+  end if;
+  -- a pausa de 40 min (> 30) sai da média: 60 s por peça, dentro do limite
+  if exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+              where rg.nome = 'Tempo 2:00' and oc.posto = 'T-Pausa') then
+    raise exception 'FALHOU: a pausa entrou na média';
+  end if;
+  -- 3 intervalos < mínimo 5: não decide
+  if exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+              where rg.nome = 'Tempo 2:00' and oc.posto = 'T-Poucos') then
+    raise exception 'FALHOU: avaliou sem o mínimo de intervalos';
+  end if;
+end $t$;
+reset role;
+
+-- Prévia do tempo: pausa descartada, mínimo, e o efeito de NÃO descartar a pausa.
+set role authenticated;
+do $t$
+declare p record;
+begin
+  select * into p from alerta_previa('tempo', array['T-Pausa', 'T-Poucos'], 'tempo', 60, 5, 30, null, '{}')
+   where posto = 'T-Pausa';
+  if not found or p.intervalos <> 10 or p.media_seg <> 60 or p.pecas <> 12 or p.avaliavel is not true then
+    raise exception 'FALHOU: prévia T-Pausa %', p;
+  end if;
+  select * into p from alerta_previa('tempo', array['T-Pausa'], 'tempo', 60, 5, 240, null, '{}');
+  if p.intervalos <> 11 or p.media_seg <= 120 then raise exception 'FALHOU: prévia sem descartar a pausa %', p; end if;
+  select * into p from alerta_previa('tempo', array['T-Poucos'], 'tempo', 60, 5, 30, null, '{}');
+  if p.intervalos <> 3 or p.avaliavel is not false then raise exception 'FALHOU: prévia T-Poucos %', p; end if;
+end $t$;
+reset role;
+
+-- Normalizou: 20 bipes rápidos (10 s) logo depois do último lento (+60 s).
+-- Média = (10 x 180 + 60 + 19 x 10) / 30 = 68,33 s.
+insert into public.sf_registros (data_hora, posto, pmo, op, status)
+select (select max(r.data_hora) from public.sf_registros r where r.posto = 'T-Lento')
+         + make_interval(secs => 60 + 10 * (g - 1)),
+       'T-Lento', 'PMOA', '1', 'Aprovado'
+  from generate_series(1, 20) g;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Tempo 2:00', 'T-Lento');
+  if a is null or a->>'tipo' <> 'normalizou' or (a->>'media_seg')::numeric <> 68.33 or (a->>'pecas')::int <> 31 then
+    raise exception 'FALHOU: tempo não normalizou %', a;
+  end if;
+end $t$;
+reset role;
+
+-- Janela OP + PMO: o "último bipe do posto" considera só as PMOs da regra.
+select public.teste_ritmo('T-OPF', 'PMOX', '7001', 11, 150, 1800);  -- 30 a 5 min atrás, 150 s/peça
+select public.teste_ritmo('T-OPF', 'PMOY', '8001', 3, 10, 120);     -- o último bipe do posto é de OUTRA PMO
+do $t$ begin
+  perform teste_regra('Tempo OP PMOX', 'tempo', array['T-OPF'], null, 'op', null, 5, 120, null, 30, array['PMOX']);
+  perform teste_regra('Tempo OP todas', 'tempo', array['T-OPF'], null, 'op', null, 5, 120, null, 30);
+end $t$;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Tempo OP PMOX', 'T-OPF');
+  if a is null or a->>'tipo' <> 'alerta' or a->>'pmo' <> 'PMOX' or a->>'op' <> '7001'
+     or (a->>'media_seg')::numeric <> 150 or a->>'janela_tipo' <> 'op' then
+    raise exception 'FALHOU: janela OP com filtro de PMO %', a;
+  end if;
+  -- sem filtro, a OP em andamento é a PMOY/8001 (só 2 intervalos): não decide
+  if teste_fila('Tempo OP todas', 'T-OPF') is not null then raise exception 'FALHOU: OP sem filtro decidiu'; end if;
+  if not exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+                  where rg.nome = 'Tempo OP PMOX' and oc.pmo = 'PMOX' and oc.op = '7001' and oc.estado = 'aberta') then
+    raise exception 'FALHOU: ocorrência da janela OP sem PMO/OP';
+  end if;
+end $t$;
+reset role;
+
+-- Janela de minutos + PMO: PMOX a cada 200 s e PMOY intercalada (100 s depois de cada PMOX).
+-- Todas as PMOs: 100 s por peça (normal). Só PMOX: 200 s por peça (lento).
+select public.teste_ritmo('T-Mix', 'PMOX', '1', 11, 200, 2400);
+select public.teste_ritmo('T-Mix', 'PMOY', '1', 10, 200, 2300);
+do $t$ begin
+  perform teste_regra('Tempo PMOX', 'tempo', array['T-Mix'], null, 'tempo', 60, 5, 120, null, 30, array['PMOX']);
+  perform teste_regra('Tempo todas as PMOs', 'tempo', array['T-Mix'], null, 'tempo', 60, 5, 120, null, 30);
+end $t$;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Tempo PMOX', 'T-Mix');
+  if a is null or a->>'tipo' <> 'alerta' or (a->>'media_seg')::numeric <> 200 or (a->>'pecas')::int <> 11 then
+    raise exception 'FALHOU: filtro de PMO no tempo %', a;
+  end if;
+  if teste_fila('Tempo todas as PMOs', 'T-Mix') is not null then
+    raise exception 'FALHOU: sem filtro devia dar 100 s por peça (normal)';
+  end if;
+end $t$;
+reset role;
+
+-- ---------- Defeito repetido ----------
+select public.teste_defeitos('D-Posto', 'PMOA', '2040 COMPONENTE FALTANDO', 3, 'Reprovado', 5);
+select public.teste_defeitos('D-Posto', 'PMOA', '1002 TRILHA ROMPIDA',      4, 'REPROVADO', 10);
+select public.teste_defeitos('D-Posto', 'PMOA', '777 SOLDA FRIA',           2, 'Reprovado', 5);
+select public.teste_defeitos('D-Posto', 'PMOA', '777 SOLDA FRIA',           2, 'Aprovado',  5);   -- aprovado não conta
+select public.teste_defeitos('D-Posto', 'PMOA', '777 SOLDA FRIA',           5, 'Reprovado', 90);  -- fora da janela
+select public.teste_defeitos('D-Posto', 'PMOA', '',                         6, 'Reprovado', 5);   -- reprova sem código
+do $t$ begin
+  perform teste_regra('Defeito 3x', 'defeito', array['D-Posto'], null, 'tempo', 60, null, null, 3, null, '{}', 10);
+end $t$;
+
+-- Prévia: uma linha por defeito que chega a N; posto sem nenhum = uma linha com defeito nulo.
+set role authenticated;
+do $t$
+declare v text;
+begin
+  select string_agg(posto || ':' || coalesce(defeito, '-') || ':' || ocorrencias, ' | '
+                    order by posto, ocorrencias desc)
+    into v
+    from alerta_previa('defeito', array['D-Posto', 'D-Vazio'], 'tempo', 60, null, null, 3, '{}');
+  if v is distinct from 'D-Posto:1002 TRILHA ROMPIDA:4 | D-Posto:2040 COMPONENTE FALTANDO:3 | D-Vazio:-:0' then
+    raise exception 'FALHOU: prévia de defeitos %', v;
+  end if;
+end $t$;
+reset role;
+
+-- Dois códigos acima de N -> duas ocorrências e dois avisos; o 777 (2 reprovas na janela) não.
+set role service_role;
+do $t$
+declare a jsonb; b jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Defeito 3x', 'D-Posto', '2040 COMPONENTE FALTANDO');
+  b := teste_fila('Defeito 3x', 'D-Posto', '1002 TRILHA ROMPIDA');
+  if a is null or a->>'tipo' <> 'alerta' or a->>'regra_tipo' <> 'defeito' or (a->>'ocorrencias')::int <> 3
+     or (a->>'limite_ocorrencias')::int <> 3 or a->>'defeito' <> '2040 COMPONENTE FALTANDO'
+     or (a->>'n')::int <> teste_contas_ana_bruno() then
+    raise exception 'FALHOU: alerta do defeito 2040 %', a;
+  end if;
+  if b is null or b->>'tipo' <> 'alerta' or (b->>'ocorrencias')::int <> 4 then
+    raise exception 'FALHOU: alerta do defeito 1002 %', b;
+  end if;
+  if teste_fila('Defeito 3x', 'D-Posto', '777 SOLDA FRIA') is not null then
+    raise exception 'FALHOU: 777 alertou (aprovado/fora da janela contaram)';
+  end if;
+  if (select count(*) from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+       where rg.nome = 'Defeito 3x' and oc.estado = 'aberta') <> 2 then
+    raise exception 'FALHOU: devia ter 2 ocorrências abertas (uma por defeito)';
+  end if;
+end $t$;
+-- Reavaliar sem mudança: nada novo na fila.
+do $t$
+begin
+  perform alerta_avaliar();
+  if teste_fila('Defeito 3x', 'D-Posto', '2040 COMPONENTE FALTANDO') is not null
+     or teste_fila('Defeito 3x', 'D-Posto', '1002 TRILHA ROMPIDA') is not null then
+    raise exception 'FALHOU: reavaliar sem mudança pôs algo na fila';
+  end if;
+end $t$;
+reset role;
+
+-- Lembrete por defeito: só o 1002 passou do intervalo.
+update public.alerta_ocorrencias
+   set ultimo_envio_em = now() - interval '11 minutes', aberta_em = now() - interval '11 minutes'
+ where defeito = '1002 TRILHA ROMPIDA' and estado = 'aberta';
+set role service_role;
+do $t$
+declare b jsonb;
+begin
+  perform alerta_avaliar();
+  b := teste_fila('Defeito 3x', 'D-Posto', '1002 TRILHA ROMPIDA');
+  if b is null or b->>'tipo' <> 'lembrete' or b->>'defeito' <> '1002 TRILHA ROMPIDA' then
+    raise exception 'FALHOU: lembrete do defeito %', b;
+  end if;
+  if teste_fila('Defeito 3x', 'D-Posto', '2040 COMPONENTE FALTANDO') is not null then
+    raise exception 'FALHOU: lembrete do 2040 antes da hora';
+  end if;
+end $t$;
+reset role;
+
+-- Normalização POR CÓDIGO: as reprovas do 2040 saem da janela; o 1002 continua aberto.
+update public.sf_registros set data_hora = data_hora - interval '2 hours'
+ where posto = 'D-Posto' and codigo_defeito = '2040 COMPONENTE FALTANDO';
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Defeito 3x', 'D-Posto', '2040 COMPONENTE FALTANDO');
+  if a is null or a->>'tipo' <> 'normalizou' or (a->>'ocorrencias')::int <> 0 then
+    raise exception 'FALHOU: 2040 não normalizou %', a;
+  end if;
+  if not exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+                  where rg.nome = 'Defeito 3x' and oc.defeito = '2040 COMPONENTE FALTANDO'
+                    and oc.estado = 'normalizada' and oc.valor_ultimo = 0) then
+    raise exception 'FALHOU: ocorrência do 2040 não ficou normalizada com valor 0';
+  end if;
+  if not exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+                  where rg.nome = 'Defeito 3x' and oc.defeito = '1002 TRILHA ROMPIDA' and oc.estado = 'aberta') then
+    raise exception 'FALHOU: o 1002 não devia normalizar junto';
+  end if;
+end $t$;
+reset role;
+
+-- Caiu de novo: ocorrência NOVA do 2040.
+select public.teste_defeitos('D-Posto', 'PMOA', '2040 COMPONENTE FALTANDO', 3, 'Reprovado', 1);
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Defeito 3x', 'D-Posto', '2040 COMPONENTE FALTANDO');
+  if a is null or a->>'tipo' <> 'alerta' then raise exception 'FALHOU: 2040 não reabriu %', a; end if;
+  if (select count(*) from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+       where rg.nome = 'Defeito 3x' and oc.defeito = '2040 COMPONENTE FALTANDO') <> 2 then
+    raise exception 'FALHOU: devia ter 2 ocorrências do 2040 (a normalizada e a nova)';
+  end if;
+end $t$;
+reset role;
+
+-- Defeito + PMO: 3 reprovas na PMOY e 2 na PMOX (limite 3).
+select public.teste_defeitos('D-Mix', 'PMOY', '555 CURTO', 3, 'Reprovado', 5);
+select public.teste_defeitos('D-Mix', 'PMOX', '555 CURTO', 2, 'Reprovado', 5);
+do $t$ begin
+  perform teste_regra('Defeito PMOX', 'defeito', array['D-Mix'], null, 'tempo', 60, null, null, 3, null, array['PMOX']);
+  perform teste_regra('Defeito todas as PMOs', 'defeito', array['D-Mix'], null, 'tempo', 60, null, null, 3, null);
+end $t$;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Defeito todas as PMOs', 'D-Mix', '555 CURTO');
+  if a is null or (a->>'ocorrencias')::int <> 5 then raise exception 'FALHOU: defeito sem filtro %', a; end if;
+  if teste_fila('Defeito PMOX', 'D-Mix', '555 CURTO') is not null then
+    raise exception 'FALHOU: filtro de PMO no defeito contou a PMOY';
+  end if;
+end $t$;
+reset role;
+
+-- ---------- Taxa de aprovação + PMO ----------
+select public.teste_bipes('A-Mix', 'PMOX', '1', 20, 0, 5);
+select public.teste_bipes('A-Mix', 'PMOY', '1', 0, 20, 5);
+do $t$ begin
+  perform teste_regra('Taxa PMOX', 'aprovacao', array['A-Mix'], 90, 'tempo', 60, 10, null, null, null, array['PMOX']);
+  perform teste_regra('Taxa todas as PMOs', 'aprovacao', array['A-Mix'], 90, 'tempo', 60, 10, null, null, null);
+end $t$;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Taxa todas as PMOs', 'A-Mix');
+  if a is null or a->>'tipo' <> 'alerta' or a->>'regra_tipo' <> 'aprovacao' or (a->>'taxa')::numeric <> 50
+     or (a->>'aprovados')::int <> 20 or (a->>'reprovados')::int <> 20 or (a->>'taxa_minima')::numeric <> 90 then
+    raise exception 'FALHOU: aprovação sem filtro %', a;
+  end if;
+  if teste_fila('Taxa PMOX', 'A-Mix') is not null then raise exception 'FALHOU: filtro de PMO na taxa'; end if;
+  if not exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
+                  where rg.nome = 'Taxa todas as PMOs' and oc.estado = 'aberta'
+                    and oc.taxa_abertura = 50 and oc.valor_abertura = 50 and oc.amostras = 40) then
+    raise exception 'FALHOU: ocorrência de aprovação sem taxa/valor/amostras';
+  end if;
+end $t$;
+reset role;
+
+-- Prévia da aprovação com PMO e janela OP: a OP é a do último bipe DA PMOX.
+set role authenticated;
+do $t$
+declare p record;
+begin
+  select * into p from alerta_previa('aprovacao', array['A-Mix'], 'op', null, 10, null, null, array['PMOX']);
+  if not found or p.pmo <> 'PMOX' or p.aprovados <> 20 or p.reprovados <> 0 or p.taxa <> 100
+     or p.avaliavel is not true then
+    raise exception 'FALHOU: prévia da aprovação com PMO %', p;
+  end if;
+end $t$;
+
+-- Prévia: validações e permissão.
+do $t$
+begin
+  begin
+    perform * from alerta_previa('xyz', array['X'], 'tempo', 60, 1, null, null, '{}');
+    raise exception 'FALHOU: tipo inválido na prévia';
+  exception when others then
+    if sqlerrm not like '%TIPO_INVALIDO%' then raise; end if;
+  end;
+  begin
+    perform * from alerta_previa('tempo', array['X'], 'bipes', 50, 5, 30, null, '{}');
+    raise exception 'FALHOU: tempo com janela por bipes na prévia';
+  exception when others then
+    if sqlerrm not like '%JANELA_INVALIDA%' then raise; end if;
+  end;
+  begin
+    perform * from alerta_previa('defeito', array['X'], 'op', null, null, null, 3, '{}');
+    raise exception 'FALHOU: defeito com janela OP na prévia';
+  exception when others then
+    if sqlerrm not like '%JANELA_INVALIDA%' then raise; end if;
+  end;
+  begin
+    perform * from alerta_previa('defeito', array['X'], 'tempo', 60, null, null, 1, '{}');
+    raise exception 'FALHOU: defeito com limite 1 na prévia';
+  exception when others then
+    if sqlerrm not like '%LIMITE_INVALIDO%' then raise; end if;
+  end;
+  begin
+    perform * from alerta_previa('tempo', array['X'], 'tempo', 60, 5, 0, null, '{}');
+    raise exception 'FALHOU: tempo com pausa 0 na prévia';
+  exception when others then
+    if sqlerrm not like '%PAUSA_INVALIDA%' then raise; end if;
+  end;
+end $t$;
+select set_config('teste.perms', 'shopfloor.visualizar', false);
+do $t$
+begin
+  begin
+    perform * from alerta_previa('tempo', array['T-Pausa'], 'tempo', 60, 5, 30, null, '{}');
+    raise exception 'FALHOU: prévia sem administrar';
+  exception when others then
+    if sqlerrm not like '%SEM_PERMISSAO%' then raise; end if;
+  end;
+end $t$;
+select set_config('teste.perms', 'shopfloor.visualizar,shopfloor.administrar', false);
+
+-- Listagem de ocorrências com tipo, defeito e valores.
+do $t$
+declare o record;
+begin
+  select * into o
+    from alerta_listar_ocorrencias(now() - interval '1 day', now() + interval '1 day', 'aberta')
+   where regra_nome = 'Defeito 3x' and defeito = '1002 TRILHA ROMPIDA';
+  if not found or o.regra_tipo <> 'defeito' or o.valor_abertura <> 4 or o.valor_ultimo <> 4
+     or o.amostras <> 4 or o.taxa_abertura is not null then
+    raise exception 'FALHOU: listagem da ocorrência de defeito %', o;
+  end if;
+  select * into o
+    from alerta_listar_ocorrencias(now() - interval '1 day', now() + interval '1 day', '')
+   where regra_nome = 'Tempo OP PMOX';
+  if not found or o.regra_tipo <> 'tempo' or o.valor_abertura <> 150 or o.amostras <> 11 or o.defeito is not null then
+    raise exception 'FALHOU: listagem da ocorrência de tempo %', o;
+  end if;
+end $t$;
+reset role;
+
+-- ---------- PMO com espaço nas pontas: compara aparado dos DOIS lados ----------
+-- O bipe gravou ' PMOT ' / 'PMOT ' / ' PMOT' (com espaço); a regra/prévia guarda 'PMOT' (ou ' PMOT').
+select public.teste_bipes('A-Trim', ' PMOT ', '1', 0, 10, 5);
+select public.teste_bipes('A-Trim', 'PMOU',   '1', 20, 0, 5);
+select public.teste_defeitos('D-Trim', 'PMOT ', '888 PONTE', 3, 'Reprovado', 5);
+select public.teste_defeitos('D-Trim', 'PMOU',  '888 PONTE', 3, 'Reprovado', 5);
+select public.teste_ritmo('T-Trim', ' PMOT', '1', 6, 60, 600);
+select public.teste_ritmo('T-Trim', 'PMOU',  '1', 6, 10, 590);
+do $t$ begin
+  perform teste_regra('Taxa PMOT', 'aprovacao', array['A-Trim'], 90, 'tempo', 60, 10, null, null, null, array['PMOT']);
+end $t$;
+set role service_role;
+do $t$
+declare a jsonb;
+begin
+  perform alerta_avaliar();
+  a := teste_fila('Taxa PMOT', 'A-Trim');
+  if a is null or a->>'tipo' <> 'alerta' or (a->>'reprovados')::int <> 10 or (a->>'aprovados')::int <> 0 then
+    raise exception 'FALHOU: PMO com espaço no bipe não casou com a regra %', a;
+  end if;
+end $t$;
+reset role;
+set role authenticated;
+do $t$
+declare p record; v text;
+begin
+  -- lista com espaço também casa (normalizada)
+  select * into p from alerta_previa('aprovacao', array['A-Trim'], 'tempo', 60, 1, null, null, array[' PMOT']);
+  if not found or p.aprovados <> 0 or p.reprovados <> 10 then raise exception 'FALHOU: prévia taxa com trim %', p; end if;
+  -- janela OP: o último bipe da PMOT (aparada) é achado
+  select * into p from alerta_previa('aprovacao', array['A-Trim'], 'op', null, 1, null, null, array['PMOT']);
+  if not found or btrim(p.pmo) <> 'PMOT' or p.reprovados <> 10 or p.aprovados <> 0 then
+    raise exception 'FALHOU: prévia OP com trim %', p;
+  end if;
+  select * into p from alerta_previa('tempo', array['T-Trim'], 'tempo', 60, 1, 30, null, array['PMOT']);
+  if not found or p.intervalos <> 5 or p.media_seg <> 60 or p.pecas <> 6 then
+    raise exception 'FALHOU: prévia tempo com trim %', p;
+  end if;
+  select string_agg(posto || ':' || coalesce(defeito, '-') || ':' || ocorrencias, ' | ') into v
+    from alerta_previa('defeito', array['D-Trim'], 'tempo', 60, null, null, 3, array['PMOT']);
+  if v is distinct from 'D-Trim:888 PONTE:3' then raise exception 'FALHOU: prévia defeito com trim %', v; end if;
+end $t$;
+reset role;
