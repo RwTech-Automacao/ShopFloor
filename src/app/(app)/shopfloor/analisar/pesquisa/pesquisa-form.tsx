@@ -445,11 +445,19 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
 
               {modoCompleto ? (
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="text-muted-foreground">
-                    {filtradasCompletas
-                      ? `${filtradasCompletas.length} de ${linhasCompletas?.length ?? total} peça(s)${caixa !== '' ? ` · caixa ${caixa}` : ''} · página ${pagClienteEf} de ${totalPagCliente}`
-                      : 'Carregando…'}
-                  </span>
+                  {!filtradasCompletas && erroDaTentativa && !carregandoCompleta ? (
+                    // Falha ao carregar a OP inteira: sem isso o rodapé ficava em "Carregando…" pra sempre.
+                    <span className="flex items-center gap-2 text-destructive">
+                      Não foi possível carregar a OP inteira.
+                      <Button variant="outline" size="sm" onClick={() => garantirCompleta()}>Tentar de novo</Button>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {filtradasCompletas
+                        ? `${filtradasCompletas.length} de ${linhasCompletas?.length ?? total} peça(s)${caixa !== '' ? ` · caixa ${caixa}` : ''} · página ${pagClienteEf} de ${totalPagCliente}`
+                        : 'Carregando…'}
+                    </span>
+                  )}
                   {totalPagCliente > 1 && (
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" disabled={pagClienteEf <= 1} onClick={() => setPagCliente(pagClienteEf - 1)}>Anterior</Button>
