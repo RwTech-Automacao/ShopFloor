@@ -80,7 +80,7 @@ export function RegrasLista({
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Postos</TableHead>
-              <TableHead>Taxa mínima</TableHead>
+              <TableHead>Taxa mínima de aprovação</TableHead>
               <TableHead>Janela</TableHead>
               <TableHead>Destinatários</TableHead>
               <TableHead>Canais</TableHead>

@@ -169,8 +169,8 @@ export function RegraForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
-            <Label htmlFor="taxa">Taxa mínima (%)</Label>
-            <Explica titulo="Taxa mínima (%)">
+            <Label htmlFor="taxa">Taxa mínima de aprovação (%)</Label>
+            <Explica titulo="Taxa mínima de aprovação (%)">
               <p>A meta de aprovação do posto. Se a taxa ficar <strong>abaixo</strong> dela, o alerta é enviado.</p>
               <p>Taxa = aprovados ÷ (aprovados + reprovados) × 100, contando só os bipes com resultado <strong>Aprovado</strong> ou <strong>Reprovado</strong> dentro da janela. Bipes só com Registrado ficam de fora.</p>
               <p>Ex.: 45 aprovados e 5 reprovados = 90%. Com meta 95, alerta; com meta 90, não.</p>

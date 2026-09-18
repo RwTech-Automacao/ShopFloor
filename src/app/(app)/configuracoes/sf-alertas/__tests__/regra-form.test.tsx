@@ -49,7 +49,7 @@ beforeEach(() => {
 describe('RegraForm', () => {
   it('começa com os padrões da spec', () => {
     montar()
-    expect(screen.getByLabelText('Taxa mínima (%)')).toHaveValue('90')
+    expect(screen.getByLabelText('Taxa mínima de aprovação (%)')).toHaveValue('90')
     expect(screen.getByLabelText('Últimos minutos')).toHaveValue('60')
     expect(screen.getByLabelText('Mínimo de bipes')).toHaveValue('20')
   })
@@ -75,7 +75,7 @@ describe('RegraForm', () => {
     const { onSalvo } = montar()
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Teste 90' } })
     fireEvent.click(screen.getByLabelText('Teste'))
-    fireEvent.change(screen.getByLabelText('Taxa mínima (%)'), { target: { value: '92,5' } })
+    fireEvent.change(screen.getByLabelText('Taxa mínima de aprovação (%)'), { target: { value: '92,5' } })
     fireEvent.change(screen.getByLabelText('Lembrar a cada (min)'), { target: { value: '10' } })
     fireEvent.click(screen.getByLabelText('Telegram'))
     fireEvent.click(screen.getByLabelText('Ana Gestora'))
