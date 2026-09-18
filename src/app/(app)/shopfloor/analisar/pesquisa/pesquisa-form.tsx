@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
-import { Search } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { FilterX, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,12 +9,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { buscarHistoricoSN, carregarGrade } from '@/modules/shopfloor/application/pesquisa-actions'
+import { buscarHistoricoSN, carregarGrade, carregarGradeCompleta } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { RegistroHistorico, OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
 import type { LinhaGrade, ResumoPosto } from '@/modules/shopfloor/domain/grade'
 import { pareaBurnin, formatarDuracao } from '@/modules/shopfloor/domain/burnin'
+import { FILTROS_VAZIOS, filtrarLinhas, temFiltroAtivo, valoresDistintos, type FiltrosColuna } from '@/modules/shopfloor/domain/grade-filtro'
+import { FiltroColuna } from './filtro-coluna'
 
 const TODAS = '__todas__'
+/** Linhas por página quando o filtro por coluna pagina no cliente. */
+const TAM_PAGINA_CLIENTE = 100
 
 /** Linhas de resumo do topo da grade (Visão Geral da OP), como o legado. */
 const RESUMO_LINHAS: { rotulo: string; get: (r: ResumoPosto) => number; soProduzido?: boolean; cls: string }[] = [
@@ -65,21 +69,129 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
     [ordens, cliente, pmo],
   )
 
+  // --- filtro por coluna (estilo Excel) ---
+  // Com filtro de coluna OU caixa selecionada, a grade passa a usar a OP INTEIRA (carregada uma vez
+  // por OP e guardada aqui) e pagina no cliente; sem filtro nenhum, segue paginada no servidor.
+  const [filtros, setFiltros] = useState<FiltrosColuna>(FILTROS_VAZIOS)
+  const [completa, setCompleta] = useState<{ chave: string; linhas: LinhaGrade[] } | null>(null)
+  const [carregandoCompleta, setCarregandoCompleta] = useState(false)
+  // OP grande demais pra filtrar (>5000 SNs): fica fixo, não dá pra tentar de novo.
+  const [erroPermanente, setErroPermanente] = useState<{ chave: string; erro: string } | null>(null)
+  // Erro transitório (rede/erro interno) da última tentativa: some ao tentar de novo ou trocar de OP.
+  const [erroTentativa, setErroTentativa] = useState<{ chave: string; erro: string } | null>(null)
+  const [pagCliente, setPagCliente] = useState(1)
+  /** OP atual (pmo||op) — guarda contra resposta velha da carga da OP inteira. */
+  const chaveAtual = useRef('')
+  const emVoo = useRef('')
+
+  const chaveOp = op !== '' ? `${pmo}||${op}` : ''
+  const linhasCompletas = completa && completa.chave === chaveOp ? completa.linhas : null
+  const indisponivel = erroPermanente && erroPermanente.chave === chaveOp ? erroPermanente.erro : undefined
+  const erroDaTentativa = erroTentativa && erroTentativa.chave === chaveOp ? erroTentativa.erro : undefined
+  const filtroAtivo = temFiltroAtivo(filtros)
+  const modoCompleto = indisponivel === undefined && (filtroAtivo || caixa !== '')
+
+  function garantirCompleta() {
+    const chave = chaveOp
+    if (chave === '' || (completa && completa.chave === chave) || emVoo.current === chave) return
+    if (erroPermanente && erroPermanente.chave === chave) return
+    emVoo.current = chave
+    setCarregandoCompleta(true)
+    setErroTentativa(null)
+    carregarGradeCompleta(pmo, op)
+      .then((r) => {
+        if (chaveAtual.current !== chave) return // trocou de OP no meio: descarta
+        if (r.ok) {
+          setCompleta({ chave, linhas: r.linhas })
+          return
+        }
+        if (r.permanente) {
+          setErroPermanente({ chave, erro: r.erro })
+          setFiltros(FILTROS_VAZIOS)
+          setCaixa('')
+        } else {
+          // Erro transitório (OP não encontrada, erro interno…): deixa tentar de novo no próximo clique.
+          setErroTentativa({ chave, erro: r.erro })
+        }
+        toast.error(r.erro, { position: 'bottom-center' })
+      })
+      .catch(() => {
+        if (chaveAtual.current !== chave) return
+        const msg = 'Não foi possível carregar a OP inteira.'
+        setErroTentativa({ chave, erro: msg })
+        toast.error(msg, { position: 'bottom-center' })
+      })
+      .finally(() => {
+        if (emVoo.current === chave) emVoo.current = ''
+        if (chaveAtual.current === chave) setCarregandoCompleta(false)
+      })
+  }
+
+  /** Zera tudo que é da OP anterior (filtros, cache da OP inteira, página do cliente). */
+  function trocarOp(chave: string) {
+    chaveAtual.current = chave
+    emVoo.current = ''
+    setFiltros(FILTROS_VAZIOS)
+    setCaixa('')
+    setPagCliente(1)
+    setCompleta(null)
+    setErroPermanente(null)
+    setErroTentativa(null)
+    setCarregandoCompleta(false)
+  }
+
+  function mudarFiltros(f: FiltrosColuna) {
+    setFiltros(f)
+    setPagCliente(1)
+  }
+  function mudarValoresColuna(coluna: string, sel: string[] | undefined) {
+    const valores = { ...filtros.valores }
+    if (sel === undefined) delete valores[coluna]
+    else valores[coluna] = sel
+    mudarFiltros({ ...filtros, valores })
+  }
+
+  /** OP inteira recortada pela caixa (base dos valores distintos e do filtro). */
+  const baseCompleta = useMemo(() => {
+    if (!linhasCompletas) return null
+    return caixa === '' ? linhasCompletas : linhasCompletas.filter((l) => l.celulas['Embalagem'] === caixa)
+  }, [linhasCompletas, caixa])
+
+  /** Valores distintos por coluna (OP inteira, respeitando a caixa) — alimenta as listas dos funis. */
+  const distintos = useMemo(() => {
+    const m = new Map<string, string[]>()
+    if (baseCompleta) for (const c of colunas) m.set(c, valoresDistintos(baseCompleta, c))
+    return m
+  }, [baseCompleta, colunas])
+
+  const filtradasCompletas = useMemo(
+    () => (baseCompleta ? filtrarLinhas(baseCompleta, filtros) : null),
+    [baseCompleta, filtros],
+  )
+  const totalPagCliente = Math.max(1, Math.ceil((filtradasCompletas?.length ?? 0) / TAM_PAGINA_CLIENTE))
+  const pagClienteEf = Math.min(pagCliente, totalPagCliente)
+
   const caixas = useMemo(() => {
-    if (!linhas) return []
+    const fonte = linhasCompletas ?? linhas
+    if (!fonte) return []
     const set = new Set<string>()
-    for (const l of linhas) {
+    for (const l of fonte) {
       const v = l.celulas['Embalagem']
       if (v && v !== 'Pendente' && v !== 'Registrado') set.add(v)
     }
     return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
-  }, [linhas])
+  }, [linhasCompletas, linhas])
 
   const linhasFiltradas = useMemo(() => {
     if (!linhas) return null
+    if (modoCompleto) {
+      if (!filtradasCompletas) return [] // OP inteira ainda carregando
+      const de = (pagClienteEf - 1) * TAM_PAGINA_CLIENTE
+      return filtradasCompletas.slice(de, de + TAM_PAGINA_CLIENTE)
+    }
     if (caixa === '') return linhas
-    return linhas.filter((l) => l.celulas['Embalagem'] === caixa)
-  }, [linhas, caixa])
+    return linhas.filter((l) => l.celulas['Embalagem'] === caixa) // fallback (OP grande demais): só a página
+  }, [linhas, caixa, modoCompleto, filtradasCompletas, pagClienteEf])
 
   function onBuscar() {
     if (sn.trim() === '' || buscando) return
@@ -91,10 +203,13 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   }
 
   function abrirGrade(opSel: string, pag = 1) {
+    const chave = `${pmo}||${opSel}`
+    if (opSel !== op) trocarOp(chave)
     setOp(opSel)
     setCaixa('')
     startGrade(async () => {
       const r = await carregarGrade(pmo, opSel, pag)
+      if (chaveAtual.current !== chave) return // trocou de OP no meio: descarta a resposta velha
       if (r.ok) {
         setColunas(r.colunas)
         setResumo(r.resumo)
@@ -206,14 +321,14 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="flex flex-col gap-1.5">
               <Label>Cliente</Label>
-              <Select value={cliente} onValueChange={(v) => { setCliente(v ?? ''); setPmo(''); setOp(''); setLinhas(null); setResumo(null) }}>
+              <Select value={cliente} onValueChange={(v) => { setCliente(v ?? ''); setPmo(''); setOp(''); setLinhas(null); setResumo(null); trocarOp('') }}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{clientes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>PMO</Label>
-              <Select value={pmo} onValueChange={(v) => { setPmo(v ?? ''); setOp(''); setLinhas(null); setResumo(null) }} disabled={cliente === ''}>
+              <Select value={pmo} onValueChange={(v) => { setPmo(v ?? ''); setOp(''); setLinhas(null); setResumo(null); trocarOp('') }} disabled={cliente === ''}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{pmos.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
               </Select>
@@ -227,25 +342,77 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Caixa</Label>
-              <Select value={caixa === '' ? TODAS : caixa} onValueChange={(v) => setCaixa(v === TODAS ? '' : (v ?? ''))} disabled={caixas.length === 0}>
+              <Select
+                value={caixa === '' ? TODAS : caixa}
+                onValueChange={(v) => { setCaixa(v === TODAS ? '' : (v ?? '')); setPagCliente(1) }}
+                onOpenChange={(o) => { if (o) garantirCompleta() }}
+                disabled={op === '' || indisponivel !== undefined}
+              >
                 <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={TODAS}>Todas</SelectItem>
-                  {caixas.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {carregandoCompleta ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">Carregando…</div>
+                  ) : (
+                    caixas.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)
+                  )}
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           {carregando && <p className="text-sm text-muted-foreground">Carregando grade…</p>}
+          {modoCompleto && carregandoCompleta && (
+            <p className="text-sm text-muted-foreground">Carregando a OP inteira pra filtrar…</p>
+          )}
+          {filtroAtivo && (
+            <div>
+              <Button variant="outline" size="sm" onClick={() => mudarFiltros(FILTROS_VAZIOS)}>
+                <FilterX className="mr-1 size-4" /> Limpar filtros de coluna
+              </Button>
+            </div>
+          )}
 
           {linhasFiltradas && (
             <>
               <Table containerClassName="max-h-[70vh] overflow-auto rounded-lg border border-border">
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
-                    <TableHead>Nº de Série</TableHead>
-                    {colunas.map((p) => <TableHead key={p}>{p}</TableHead>)}
+                    <TableHead>
+                      <div className="flex items-center gap-1 whitespace-nowrap">
+                        Nº de Série
+                        <FiltroColuna
+                          tipo="texto"
+                          coluna="Nº de Série"
+                          ativo={filtros.sn.trim() !== ''}
+                          onAbrir={garantirCompleta}
+                          carregando={carregandoCompleta}
+                          indisponivel={indisponivel}
+                          erro={erroDaTentativa}
+                          texto={filtros.sn}
+                          onTexto={(t) => mudarFiltros({ ...filtros, sn: t })}
+                        />
+                      </div>
+                    </TableHead>
+                    {colunas.map((p) => (
+                      <TableHead key={p}>
+                        <div className="flex items-center gap-1 whitespace-nowrap">
+                          {p}
+                          <FiltroColuna
+                            tipo="valores"
+                            coluna={p}
+                            ativo={filtros.valores[p] !== undefined}
+                            onAbrir={garantirCompleta}
+                            carregando={carregandoCompleta || (!baseCompleta && erroDaTentativa === undefined)}
+                            indisponivel={indisponivel}
+                            erro={erroDaTentativa}
+                            valores={distintos.get(p) ?? []}
+                            selecionados={filtros.valores[p]}
+                            onSelecionados={(s) => mudarValoresColuna(p, s)}
+                          />
+                        </div>
+                      </TableHead>
+                    ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -264,7 +431,7 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                       })}
                     </TableRow>
                   ))}
-                  {/* Detalhe por peça (página atual) */}
+                  {/* Detalhe por peça (página atual — do servidor, ou do filtro na OP inteira) */}
                   {linhasFiltradas.map((l) => (
                     <TableRow key={l.sn}>
                       <TableCell className="font-medium">{l.sn}</TableCell>
@@ -276,17 +443,41 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                 </TableBody>
               </Table>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="text-muted-foreground">
-                  {total} peça(s){caixa !== '' ? ` · caixa ${caixa} (só nesta página)` : ''} · página {pagina} de {totalPaginas}
-                </span>
-                {totalPaginas > 1 && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={pagina <= 1 || carregando} onClick={() => abrirGrade(op, pagina - 1)}>Anterior</Button>
-                    <Button variant="outline" size="sm" disabled={pagina >= totalPaginas || carregando} onClick={() => abrirGrade(op, pagina + 1)}>Próxima</Button>
-                  </div>
-                )}
-              </div>
+              {modoCompleto ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  {!filtradasCompletas && erroDaTentativa && !carregandoCompleta ? (
+                    // Falha ao carregar a OP inteira: sem isso o rodapé ficava em "Carregando…" pra sempre.
+                    <span className="flex items-center gap-2 text-destructive">
+                      Não foi possível carregar a OP inteira.
+                      <Button variant="outline" size="sm" onClick={() => garantirCompleta()}>Tentar de novo</Button>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {filtradasCompletas
+                        ? `${filtradasCompletas.length} de ${linhasCompletas?.length ?? total} peça(s)${caixa !== '' ? ` · caixa ${caixa}` : ''} · página ${pagClienteEf} de ${totalPagCliente}`
+                        : 'Carregando…'}
+                    </span>
+                  )}
+                  {totalPagCliente > 1 && (
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" disabled={pagClienteEf <= 1} onClick={() => setPagCliente(pagClienteEf - 1)}>Anterior</Button>
+                      <Button variant="outline" size="sm" disabled={pagClienteEf >= totalPagCliente} onClick={() => setPagCliente(pagClienteEf + 1)}>Próxima</Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">
+                    {total} peça(s){caixa !== '' ? ` · caixa ${caixa} (só nesta página)` : ''} · página {pagina} de {totalPaginas}
+                  </span>
+                  {totalPaginas > 1 && (
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" disabled={pagina <= 1 || carregando} onClick={() => abrirGrade(op, pagina - 1)}>Anterior</Button>
+                      <Button variant="outline" size="sm" disabled={pagina >= totalPaginas || carregando} onClick={() => abrirGrade(op, pagina + 1)}>Próxima</Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </CardContent>
