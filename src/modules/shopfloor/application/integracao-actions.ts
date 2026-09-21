@@ -10,6 +10,7 @@ import { perfilPrecisaAprovado, PERFIL_PADRAO } from '../domain/perfil-posto'
 import { resolverPlaca } from '../domain/integracao-matching'
 import { carregarOrdem, listarFaixasOrdens, listarOrdensParaLancamento } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { mensagemPecaAvancou } from '@/modules/shopfloor/domain/integracao-cancelamento'
 import {
   buscarIntegracoesPorSn,
   chamarSfIntegrar,
@@ -191,7 +192,10 @@ export async function cancelarIntegracao(
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
   const r = await chamarSfCancelarIntegracao(codigo.trim(), sessao.nome || sessao.email)
-  if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
+  if (!r.ok) {
+    if (r.erro === 'PECA_AVANCOU') return { ok: false, erro: mensagemPecaAvancou(r.postos ?? '') }
+    return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
+  }
 
   await registrarLog({
     entidade: 'sf_integracao',
