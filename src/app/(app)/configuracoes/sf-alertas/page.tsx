@@ -5,7 +5,12 @@ import { listarPostos } from '@/modules/shopfloor/infra/postos-repository'
 import { alertasLiberados } from '@/modules/alertas/application/liberacao'
 import { filtroOcorrenciasPadrao } from '@/modules/alertas/domain/ocorrencia'
 import { canaisConfigurados } from '@/modules/alertas/infra/canais'
-import { listarDestinatarios, listarOcorrencias, listarRegras } from '@/modules/alertas/infra/regras-repository'
+import {
+  listarDestinatarios,
+  listarOcorrencias,
+  listarPmosAlerta,
+  listarRegras,
+} from '@/modules/alertas/infra/regras-repository'
 import { AlertasTela } from './alertas-tela'
 
 export default async function AlertasPage() {
@@ -19,9 +24,10 @@ export default async function AlertasPage() {
   }
 
   const filtro = filtroOcorrenciasPadrao(new Date())
-  const [regras, postos, destinatarios, ocorrencias] = await Promise.all([
+  const [regras, postos, pmos, destinatarios, ocorrencias] = await Promise.all([
     listarRegras(),
     listarPostos(),
+    listarPmosAlerta(),
     listarDestinatarios(),
     listarOcorrencias(filtro),
   ])
@@ -30,6 +36,7 @@ export default async function AlertasPage() {
     <AlertasTela
       regras={regras}
       postos={postos}
+      pmos={pmos}
       destinatarios={destinatarios}
       configurados={canaisConfigurados()}
       ocorrenciasIniciais={ocorrencias}

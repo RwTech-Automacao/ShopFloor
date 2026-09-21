@@ -17,6 +17,7 @@ const TOAST = { position: 'bottom-center' } as const
 export function AlertasTela({
   regras,
   postos,
+  pmos,
   destinatarios,
   configurados,
   ocorrenciasIniciais,
@@ -24,6 +25,7 @@ export function AlertasTela({
 }: {
   regras: RegraAlerta[]
   postos: string[]
+  pmos: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>
   ocorrenciasIniciais: OcorrenciaLinha[]
@@ -85,7 +87,13 @@ export function AlertasTela({
       )}
 
       {aba === 'regras' ? (
-        <RegrasLista regras={regras} postos={postos} destinatarios={destinatarios} configurados={configurados} />
+        <RegrasLista
+          regras={regras}
+          postos={postos}
+          pmos={pmos}
+          destinatarios={destinatarios}
+          configurados={configurados}
+        />
       ) : (
         <OcorrenciasLista ocorrenciasIniciais={ocorrenciasIniciais} filtroInicial={filtroInicial} />
       )}

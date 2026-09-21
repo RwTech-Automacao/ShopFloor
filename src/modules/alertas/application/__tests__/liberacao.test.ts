@@ -48,4 +48,23 @@ describe('alertasLiberados', () => {
     expect(alertasLiberados(undefined, lista)).toBe(false)
     expect(alertasLiberados('', lista)).toBe(false)
   })
+
+  describe('fora da produção a feature aparece sempre', () => {
+    it('preview da Vercel libera mesmo sem a variável', () => {
+      expect(alertasLiberados('ana@x.com', undefined, { vercel: 'preview', node: 'production' })).toBe(true)
+    })
+
+    it('dev local (npm run dev) libera mesmo sem a variável', () => {
+      expect(alertasLiberados('ana@x.com', '', { node: 'development' })).toBe(true)
+    })
+
+    it('produção na AWS (sem VERCEL_ENV) segue a lista', () => {
+      expect(alertasLiberados('ana@x.com', undefined, { node: 'production' })).toBe(false)
+      expect(alertasLiberados('ana@x.com', 'ana@x.com', { node: 'production' })).toBe(true)
+    })
+
+    it('produção da Vercel também segue a lista', () => {
+      expect(alertasLiberados('ana@x.com', '', { vercel: 'production', node: 'production' })).toBe(false)
+    })
+  })
 })

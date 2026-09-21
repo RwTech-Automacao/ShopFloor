@@ -7,10 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatarTaxa } from '@/modules/alertas/domain/taxa'
-import { formatarDataHoraCurta } from '@/modules/alertas/domain/mensagens'
-import type { EstadoOcorrencia } from '@/modules/alertas/domain/tipos'
-import type { FiltroOcorrencias, OcorrenciaLinha } from '@/modules/alertas/domain/ocorrencia'
+import { formatarDataHoraCurta, rotuloDefeito } from '@/modules/alertas/domain/mensagens'
+import { NOME_TIPO_REGRA, type EstadoOcorrencia } from '@/modules/alertas/domain/tipos'
+import {
+  formatarValorOcorrencia,
+  type FiltroOcorrencias,
+  type OcorrenciaLinha,
+} from '@/modules/alertas/domain/ocorrencia'
 import { listarOcorrenciasAction, resolverOcorrenciaAction } from '@/modules/alertas/application/alertas-actions'
 
 const TOAST = { position: 'bottom-center' } as const
@@ -93,6 +96,7 @@ export function OcorrenciasLista({
             <TableRow>
               <TableHead>Regra</TableHead>
               <TableHead>Posto (OP)</TableHead>
+              <TableHead>Defeito</TableHead>
               <TableHead>Ao abrir</TableHead>
               <TableHead>Última</TableHead>
               <TableHead>Estado</TableHead>
@@ -106,20 +110,24 @@ export function OcorrenciasLista({
           <TableBody>
             {lista.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
                   Nenhuma ocorrência no período.
                 </TableCell>
               </TableRow>
             )}
             {lista.map((o) => (
               <TableRow key={o.id}>
-                <TableCell className="font-medium">{o.regraNome}</TableCell>
+                <TableCell className="font-medium">
+                  {o.regraNome}
+                  <span className="block text-xs font-normal text-muted-foreground">{NOME_TIPO_REGRA[o.regraTipo]}</span>
+                </TableCell>
                 <TableCell>
                   {o.posto}
                   {o.pmo && o.op ? ` (${o.pmo}/${o.op})` : ''}
                 </TableCell>
-                <TableCell>{o.taxaAbertura.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</TableCell>
-                <TableCell>{formatarTaxa(o.aprovados, o.reprovados)}%</TableCell>
+                <TableCell>{o.defeito ? rotuloDefeito(o.defeito) : '—'}</TableCell>
+                <TableCell>{formatarValorOcorrencia(o.regraTipo, o.valorAbertura)}</TableCell>
+                <TableCell>{formatarValorOcorrencia(o.regraTipo, o.valorUltimo)}</TableCell>
                 <TableCell>
                   <Estado estado={o.estado} />
                 </TableCell>

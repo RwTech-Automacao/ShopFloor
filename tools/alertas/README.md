@@ -206,6 +206,83 @@ a 0114 de novo.
 `pm2 restart shopfloor --update-env` (sem o `--update-env` o processo continua com o ambiente
 antigo e os canais aparecem como "não configurado").
 
+## 6b. Migração 0115 — tipos de regra, destinatários do ShopFloor e filtro de PMO
+
+A `0115_alertas_tipos.sql` vai **por cima** da 0113/0114 (a 0113 não muda). Ela:
+
+- dá um **tipo** a cada regra (`aprovacao`, `tempo`, `defeito`) — as regras que já existem viram
+  `aprovacao`, sem mudar nada no comportamento delas;
+- cria o **filtro de PMO** (`pmos`, vazio = todas);
+- passa a mandar alerta **só para usuário ativo com `shopfloor.administrar`** no perfil dele (na
+  lista da tela, na fila, na entrega e no botão Resolvido).
+
+É idempotente: rodar duas vezes não quebra.
+
+**Rollback do app**: antes de voltar o app para uma versão anterior aos tipos de regra, desative as
+regras de tipo `tempo` e `defeito`. O app velho só sabe montar e editar mensagem de regra
+`aprovacao` — os envios dessas regras (alerta, lembrete, normalizou) falhariam depois de 3
+tentativas, e a tela de edição do app velho não abriria o formulário delas.
+
+### Antes de aplicar (Prod): quem vai parar de receber?
+
+Destinatários de regras ativas que **não** administram o ShopFloor deixam de receber assim que a 0115
+entra. Confira antes e, se for o caso, ajuste o perfil da pessoa:
+
+```sql
+select r.nome as regra, coalesce(nullif(btrim(u.nome), ''), u.email) as destinatario
+  from alerta_regras r
+  cross join unnest(r.destinatarios) as d(id)
+  join usuarios u on u.id = d.id
+ where r.excluida_em is null and u.ativo
+   and not exists (select 1 from perfil_permissao pp
+                    where pp.perfil_id = u.perfil_id
+                      and pp.modulo = 'shopfloor' and pp.permissao = 'administrar');
+```
+
+### Ordem: banco primeiro, app logo depois
+
+O app novo chama a `alerta_previa` nova (8 parâmetros) e lê as colunas novas. O app velho, com a 0115
+aplicada, continua funcionando — **só a prévia do formulário** falha até o deploy do app novo. Então:
+aplique a 0115 e suba o app em seguida.
+
+### Dev e demo (SQL Editor do Supabase)
+
+Cole `supabase/migrations/0115_alertas_tipos.sql` inteiro e rode (não tem `concurrently`; roda
+dentro da transação do editor sem ajuste nenhum).
+
+### Prod (RDS, via `psql` na instância Lightsail)
+
+```bash
+PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W \
+  "host=shopfloor-prod-db... user=postgres sslmode=require" \
+  -1 -v ON_ERROR_STOP=1 -f supabase/migrations/0115_alertas_tipos.sql
+
+cd ~/supabase/docker && docker compose restart rest   # recarrega o schema do PostgREST
+```
+
+### Depois da 0115 (Dev, demo e Prod): conferir
+
+```sql
+-- 1) todas as regras antigas viraram 'aprovacao'
+select tipo, count(*) from alerta_regras group by tipo;
+
+-- 2) índice novo no lugar do antigo: tem que listar alerta_ocorrencias_viva_defeito e NÃO alerta_ocorrencias_viva
+select indexname from pg_indexes where tablename = 'alerta_ocorrencias' order by indexname;
+
+-- 3) uma assinatura só de cada função que mudou (tem que dar 1, 1, 1)
+select proname, count(*) from pg_proc
+ where proname in ('alerta_previa', 'alerta_taxas', 'alerta_listar_ocorrencias')
+ group by proname;
+
+-- 4) quem a tela oferece como destinatário (rode logado como gestor, ou troque por usuario_tem_permissao)
+select u.nome from usuarios u
+ where u.ativo and usuario_tem_permissao(u.id, 'shopfloor', 'administrar')
+ order by 1;
+```
+
+Depois: `pm2 restart shopfloor --update-env` (Prod) ou redeploy do Preview/`next dev`, e abra
+**Configurações › Ajustes ShopFloor › Alertas** → **Nova regra** tem que mostrar os 3 cartões.
+
 ## 7. Conferir
 
 - `curl -i -X POST https://shopfloor.enterplak.com.br/api/alertas/avaliar` → **401** (sem segredo).
@@ -225,7 +302,9 @@ visível para todo mundo. Quem controla isso é a variável de ambiente **`ALERT
 - Lista de e-mails separados por vírgula (ex.: `fulana@enterplak.com.br,ciclano@enterplak.com.br`).
   Comparação sem diferenciar maiúsculas/minúsculas e com `trim` (espaços em volta não importam).
 - `*` libera todo mundo. **Para liberar de vez pra empresa inteira, troque o valor por `*`** e
-  reinicie o processo — não precisa mexer em código. Em Preview/Dev, use `*` ou o seu e-mail.
+  reinicie o processo — não precisa mexer em código.
+- **Só vale em produção.** No Preview da Vercel (`VERCEL_ENV=preview`) e no `npm run dev` os
+  Alertas aparecem sempre, sem a variável.
 - **Vazia ou ausente = ninguém.** Esquecer a variável num deploy não expõe as telas.
 
 O que a variável esconde:

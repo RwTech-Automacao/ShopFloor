@@ -20,15 +20,20 @@ describe('validarRegra', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.valor).toEqual({
+      tipo: 'aprovacao',
       nome: 'Teste abaixo de 90',
       postos: ['Teste'],
       taxaMinima: 92.5,
       janelaTipo: 'tempo',
       janelaValor: 60,
       minimoBipes: 20,
+      limiteTempoSeg: null,
+      limiteOcorrencias: null,
+      pausaMaxMin: null,
       lembreteMin: null,
       canais: ['telegram'],
       destinatarios: ['u1', 'u2'],
+      pmos: [],
       ativa: true,
     })
   })
@@ -165,7 +170,19 @@ describe('validarRegra', () => {
 describe('validarPrevia', () => {
   it('aceita só o que a prévia precisa', () => {
     const r = validarPrevia({ postos: ['Teste'], janelaTipo: 'op', janelaValor: null, minimoBipes: '20' })
-    expect(r).toEqual({ ok: true, valor: { postos: ['Teste'], janelaTipo: 'op', janelaValor: null, minimoBipes: 20 } })
+    expect(r).toEqual({
+      ok: true,
+      valor: {
+        tipo: 'aprovacao',
+        postos: ['Teste'],
+        janelaTipo: 'op',
+        janelaValor: null,
+        minimoBipes: 20,
+        pausaMaxMin: null,
+        limiteOcorrencias: null,
+        pmos: [],
+      },
+    })
   })
   it('sem posto não há prévia', () => {
     expect(validarPrevia({ postos: [], janelaTipo: 'tempo', janelaValor: 60, minimoBipes: 20 })).toEqual({

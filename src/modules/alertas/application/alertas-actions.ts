@@ -5,9 +5,17 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { alertasLiberados } from './liberacao'
-import { validarPrevia, validarRegra, type EntradaRegra } from '../domain/regra'
+import {
+  resumoLimite,
+  resumoPmos,
+  validarPrevia,
+  validarRegra,
+  type EntradaPrevia,
+  type EntradaRegra,
+} from '../domain/regra'
 import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/ocorrencia'
 import { resumoJanela } from '../domain/janela'
+import { NOME_TIPO_REGRA } from '../domain/tipos'
 import {
   atualizarRegra,
   definirRegraAtiva,
@@ -69,7 +77,10 @@ export async function salvarRegraAction(
       entidade: 'alerta_regra',
       entidadeId: r.id,
       acao: 'criar',
-      descricao: `Regra de alerta "${v.valor.nome}" criada (${v.valor.postos.join(', ')}, ${resumoJanela({ tipo: v.valor.janelaTipo, valor: v.valor.janelaValor })})`,
+      descricao:
+        `Regra de alerta "${v.valor.nome}" criada (${NOME_TIPO_REGRA[v.valor.tipo]}; ${v.valor.postos.join(', ')}; ` +
+        `${resumoJanela({ tipo: v.valor.janelaTipo, valor: v.valor.janelaValor })}; limite ${resumoLimite(v.valor)}; ` +
+        `PMOs: ${resumoPmos(v.valor.pmos)})`,
       dados: v.valor,
     })
     revalidatePath(ROTA)
@@ -124,12 +135,9 @@ export async function alternarRegraAtivaAction(
   }
 }
 
-export async function previaRegraAction(entrada: {
-  postos: string[]
-  janelaTipo: string
-  janelaValor: string | number | null
-  minimoBipes: string | number
-}): Promise<{ ok: true; postos: PreviaPosto[] } | { ok: false; erro: string }> {
+export async function previaRegraAction(
+  entrada: EntradaPrevia,
+): Promise<{ ok: true; postos: PreviaPosto[] } | { ok: false; erro: string }> {
   try {
     const g = await gestor()
     if (!g.ok) return { ok: false, erro: g.erro }

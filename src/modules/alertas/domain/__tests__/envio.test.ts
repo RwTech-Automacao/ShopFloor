@@ -46,6 +46,25 @@ describe('textoDoEnvio', () => {
       }),
     ).toBe('✅ Teste: resolvido por Bruno Líder às 14:05')
   })
+  it('resolvido de regra de defeito diz qual código foi resolvido', () => {
+    expect(
+      textoDoEnvio('resolvido', {
+        posto: 'Teste',
+        resolvida_por_nome: 'Bruno Líder',
+        resolvida_em: '2026-09-17T17:05:00+00:00',
+        defeito: '2040 COMPONENTE FALTANDO',
+      }),
+    ).toBe('✅ Defeito 2040 (Componente Faltando) no Teste: resolvido por Bruno Líder às 14:05')
+  })
+  it('resolvido sem defeito no dados (linha antiga da fila) continua aceito, com o texto de antes', () => {
+    expect(
+      textoDoEnvio('resolvido', {
+        posto: 'Teste',
+        resolvida_por_nome: 'Bruno Líder',
+        resolvida_em: '2026-09-17T17:05:00+00:00',
+      }),
+    ).toBe('✅ Teste: resolvido por Bruno Líder às 14:05')
+  })
   it('teste', () => {
     expect(textoDoEnvio('teste', { nome: 'Ana' })).toContain('Ana')
   })
