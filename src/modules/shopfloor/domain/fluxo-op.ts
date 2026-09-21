@@ -207,7 +207,18 @@ export function postoPendenteDePeca(
   exigeManutencaoDe: (posto: string) => boolean,
   recursoDe: (posto: string) => string,
 ): string | null {
-  const ultimo = registrosCrono[registrosCrono.length - 1]
+  // Só contam os lançamentos dos postos DESTA OP (+ Manutenção, que fica fora do fluxo mas é por onde
+  // a peça reprovada passa e volta). Um lançamento de outro fluxo — ex.: a Integração, que pertence
+  // à OP do PRODUTO, gravada também no SN da placa — não pode decidir onde a placa está: antes, a
+  // placa integrada sumia (pendente num posto sem nó) e a que PULOU o Teste nunca aparecia como
+  // pendente no Teste (OP 8504, 21/09/2026).
+  const doFluxo = new Set(postosOrdenados.map((p) => p.toLowerCase()))
+  const manut = MANUTENCAO.toLowerCase()
+  const registros = registrosCrono.filter((r) => {
+    const p = r.posto.toLowerCase()
+    return doFluxo.has(p) || p === manut
+  })
+  const ultimo = registros[registros.length - 1]
   if (!ultimo) return postosOrdenados[0] ?? null
   const st = ultimo.status.trim().toLowerCase()
   // Reteste do NQA: `postoRetorno` traz a lista restante de postos a repassar (+ NQA no fim); o
