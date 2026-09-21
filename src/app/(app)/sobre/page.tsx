@@ -1,8 +1,6 @@
-import { BellRing, Cpu, Factory, FlaskConical, Inbox, Workflow, type LucideIcon } from 'lucide-react'
+import { Cpu, Factory, Inbox, Workflow, type LucideIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { getSessao } from '@/modules/auth/application/get-sessao'
-import { alertasLiberados } from '@/modules/alertas/application/liberacao'
 import { HISTORICO_VERSOES, VERSAO } from '@/shared/lib/versao'
 
 type Modulo = { icone: LucideIcon; nome: string; descricao: string }
@@ -11,15 +9,7 @@ const MODULOS: Modulo[] = [
   { icone: Inbox, nome: 'Recebimento', descricao: 'Importação, processos e conferência' },
   { icone: Workflow, nome: 'Fluxo de Processos', descricao: 'Operação, análise e rastreio da produção' },
   { icone: Cpu, nome: 'Setup', descricao: 'Estrutura de componentes por PMO, montagem de setup das máquinas SMT/PTH e conferência da troca de rolos.' },
-  { icone: FlaskConical, nome: 'Repinmetro', descricao: 'Consulta dos testes dos REPs, das peças integradas em cada um e da revenda.' },
 ]
-
-// Só aparece pra quem já enxerga os Alertas (lançamento escondido em produção).
-const MODULO_ALERTAS: Modulo = {
-  icone: BellRing,
-  nome: 'Alertas',
-  descricao: 'Avisos no Telegram e no Discord: taxa de aprovação, tempo médio por peça e defeito repetido.',
-}
 
 const INFORMACOES: { rotulo: string; valor: string }[] = [
   { rotulo: 'Sistema', valor: 'ShopFloor — Enterplak MES' },
@@ -27,9 +17,7 @@ const INFORMACOES: { rotulo: string; valor: string }[] = [
   { rotulo: 'Empresa', valor: 'Enterplak Indústria Eletrônica Ltda.' },
 ]
 
-export default async function SobrePage() {
-  const sessao = await getSessao()
-  const modulos = sessao && alertasLiberados(sessao.email) ? [...MODULOS, MODULO_ALERTAS] : MODULOS
+export default function SobrePage() {
   return (
     <div className="flex max-w-3xl flex-col gap-4">
       {/* Identidade */}
@@ -76,8 +64,8 @@ export default async function SobrePage() {
           <CardTitle>Módulos</CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {modulos.map((modulo) => (
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {MODULOS.map((modulo) => (
               <li
                 key={modulo.nome}
                 className="flex flex-col gap-2 rounded-lg border border-border p-4"
