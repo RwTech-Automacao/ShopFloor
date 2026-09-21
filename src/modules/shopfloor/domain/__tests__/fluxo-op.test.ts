@@ -215,6 +215,27 @@ describe('postoPendenteDePeca', () => {
     expect(pp([{ posto: 'Embalagem', status: '' }])).toBeNull()
   })
 
+  describe('lançamento de outro fluxo (Integração na OP da placa) não decide a posição', () => {
+    const postosPlaca = ['Inspeção PTH', 'Teste']
+    const ppPlaca = (regs: BipePeca[]) => postoPendenteDePeca(regs, postosPlaca, () => false, () => 'nenhum')
+
+    it('placa que PULOU o Teste e foi integrada → pendente no Teste', () => {
+      expect(ppPlaca([{ posto: 'Inspeção PTH', status: 'Aprovado' }, { posto: 'Integração', status: '' }])).toBe('Teste')
+    })
+
+    it('placa aprovada no Teste e integrada → concluída', () => {
+      expect(ppPlaca([
+        { posto: 'Inspeção PTH', status: 'Aprovado' },
+        { posto: 'Teste', status: 'Aprovado' },
+        { posto: 'Integração', status: '' },
+      ])).toBeNull()
+    })
+
+    it('Manutenção, que fica fora do fluxo, continua valendo (peça aguardando voltar)', () => {
+      expect(pp([{ posto: 'Teste', status: 'Reprovado' }, { posto: 'Manutenção', status: '' }])).toBe('Manutenção')
+    })
+  })
+
   it('peça na Manutenção NÃO conta como concluída — fica aguardando ali', () => {
     // Caso real (OP PMOC57/8669): a peça reprovou, foi pra Manutenção e o reparo foi registrado
     // (sem status). Como 'Manutenção' não está na lista de postos da OP, o findIndex devolve -1 —
@@ -222,8 +243,9 @@ describe('postoPendenteDePeca', () => {
     expect(pp([{ posto: 'Teste', status: 'Reprovado' }, { posto: MANUTENCAO, status: '' }])).toBe(MANUTENCAO)
   })
 
-  it('posto que não é do fluxo da OP → aguardando nele, nunca concluída', () => {
-    expect(pp([{ posto: 'Posto Que Saiu Do Fluxo', status: 'Aprovado' }])).toBe('Posto Que Saiu Do Fluxo')
+  it('lançamento em posto que não é do fluxo da OP é ignorado (conta só o fluxo desta OP)', () => {
+    expect(pp([{ posto: 'Posto De Outro Fluxo', status: 'Aprovado' }])).toBe('SPI') // nenhum bipe no fluxo → 1º posto
+    expect(pp([{ posto: 'SPI', status: 'Aprovado' }, { posto: 'Posto De Outro Fluxo', status: '' }])).toBe('Teste')
   })
 
   it('reprovada → Manutenção se o posto exige; senão o próprio posto (conserto no lugar)', () => {
