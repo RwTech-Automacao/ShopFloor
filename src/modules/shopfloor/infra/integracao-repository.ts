@@ -119,9 +119,10 @@ export async function chamarSfIntegrar(
 export async function chamarSfCancelarIntegracao(
   codigo: string,
   por: string,
+  motivo: string,
 ): Promise<{ ok: boolean; erro?: string; postos?: string }> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase.rpc('sf_cancelar_integracao', { p_codigo: codigo, p_por: por })
+  const { data, error } = await supabase.rpc('sf_cancelar_integracao', { p_codigo: codigo, p_por: por, p_motivo: motivo })
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
   return data as { ok: boolean; erro?: string; postos?: string }
 }
