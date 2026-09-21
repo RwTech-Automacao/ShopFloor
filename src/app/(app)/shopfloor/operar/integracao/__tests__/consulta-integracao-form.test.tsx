@@ -13,7 +13,7 @@ import { ConsultaIntegracaoForm } from '../consulta-integracao-form'
 
 const DETALHE = {
   codigo: 'INT-20260917-133944-6056', dataHora: '2026-09-17T13:39:44Z', colaborador: 'Andreia', cliente: 'VMI',
-  pmo: 'PMOC50_', op: '8504_', posto: 'Integração', produtoSn: '335001778', qtdPlacas: 1,
+  pmo: 'PMOC50_', op: '8504_', posto: 'Integração', produtoSn: '335001778', qtdPlacas: 1, observacao: '',
   itens: [{ tipo: 'Produto', pmo: 'PMOC50_', op: '8504_', sn: '335001778' }],
 }
 
@@ -52,5 +52,14 @@ describe('ConsultaIntegracaoForm — cancelar com motivo', () => {
     const botoes = screen.getAllByRole('button', { name: 'Cancelar integração' })
     fireEvent.click(botoes[botoes.length - 1]!)
     expect(await screen.findByText('Esta peça já passou por Embalagem depois da integração.')).toBeInTheDocument()
+  })
+
+  it('integração por hipótese mostra o asterisco e a observação', async () => {
+    buscarIntegracao.mockResolvedValue({ ok: true, detalhes: [{ ...DETALHE, observacao: '* Associada por hipótese' }] })
+    render(<ConsultaIntegracaoForm podeCancelar={false} />)
+    fireEvent.change(screen.getByLabelText('SN do produto ou da placa'), { target: { value: '335001778' } })
+    fireEvent.click(screen.getByRole('button', { name: /Buscar/ }))
+    expect(await screen.findByText('INT-20260917-133944-6056*')).toBeInTheDocument()
+    expect(screen.getByText('* Associada por hipótese')).toBeInTheDocument()
   })
 })

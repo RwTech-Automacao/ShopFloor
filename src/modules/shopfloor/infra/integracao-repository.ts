@@ -18,6 +18,7 @@ export interface IntegracaoDetalhe {
   posto: string
   produtoSn: string
   qtdPlacas: number
+  observacao: string // '* …' = associada por hipótese (ajuste)
   itens: ItemIntegracao[]
 }
 
@@ -32,6 +33,7 @@ interface IntegracaoRow {
   produto_sn: string
   qtd_placas: number
   posto: string
+  observacao: string | null
 }
 
 async function montarDetalhe(row: IntegracaoRow): Promise<IntegracaoDetalhe> {
@@ -57,11 +59,12 @@ async function montarDetalhe(row: IntegracaoRow): Promise<IntegracaoDetalhe> {
     posto: row.posto,
     produtoSn: row.produto_sn,
     qtdPlacas: row.qtd_placas,
+    observacao: row.observacao ?? '',
     itens: [{ tipo: 'Produto', pmo: row.pmo, op: row.op, sn: row.produto_sn }, ...placas],
   }
 }
 
-const CAMPOS_HDR = 'id,codigo,data_hora,colaborador,cliente,pmo,op,produto_sn,qtd_placas,posto'
+const CAMPOS_HDR = 'id,codigo,data_hora,colaborador,cliente,pmo,op,produto_sn,qtd_placas,posto,observacao'
 
 /** TODAS as integrações ATIVAS em que o SN aparece como produto OU placa (produto pode
  *  estar em várias — uma por posto). Dedup por código, ordenadas por data desc. */
@@ -79,7 +82,7 @@ export async function buscarIntegracoesPorSn(snNorm: string): Promise<Integracao
   // como PLACA
   const { data: itens, error: e2 } = await supabase
     .from('sf_integracao_itens')
-    .select('sf_integracoes!inner(id,codigo,data_hora,colaborador,cliente,pmo,op,produto_sn,qtd_placas,posto,status)')
+    .select('sf_integracoes!inner(id,codigo,data_hora,colaborador,cliente,pmo,op,produto_sn,qtd_placas,posto,status,observacao)')
     .eq('placa_sn_norm', snNorm)
     .eq('sf_integracoes.status', 'ATIVA')
   if (e2) throw e2

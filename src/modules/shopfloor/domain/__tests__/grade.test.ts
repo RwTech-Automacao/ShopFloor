@@ -25,12 +25,21 @@ describe('gerarFaixaSNs', () => {
 
 describe('montarGrade', () => {
   const postos = ['Inicial', 'Teste', 'Embalagem']
-  const reg = (over: Partial<{ snNorm: string; posto: string; status: string; numeroCaixa: string; dataHora: string }>) => ({
+  const reg = (over: Partial<{ snNorm: string; posto: string; status: string; numeroCaixa: string; dataHora: string; observacao: string }>) => ({
     snNorm: '100', posto: 'Inicial', status: '', numeroCaixa: '', dataHora: '2026-01-01T00:00:00Z', ...over,
   })
   it('sem registro → Pendente em tudo; Manutenção → —', () => {
     const [l] = montarGrade(['100'], postos, [], temStatus)
     expect(l!.celulas).toEqual({ Inicial: 'Pendente', Teste: 'Pendente', Embalagem: 'Pendente', 'Manutenção': '—' })
+  })
+  it('registro por hipótese (observação com *) ganha o asterisco na célula', () => {
+    const [l] = montarGrade(['100'], postos, [
+      reg({ observacao: '* Associada por hipótese' }),
+      reg({ posto: 'Embalagem', numeroCaixa: 'CX-01' }),
+    ], temStatus)
+    expect(l!.celulas['Inicial']).toBe('Registrado*')
+    expect(l!.celulas['Embalagem']).toBe('CX-01')
+    expect(l!.celulas['Teste']).toBe('Pendente')
   })
   it('sem status → Registrado; Embalagem mostra a caixa', () => {
     const [l] = montarGrade(['100'], postos, [reg({}), reg({ posto: 'Embalagem', numeroCaixa: 'CX-01' })], temStatus)
@@ -135,7 +144,7 @@ describe('totalFaixaSNs / gerarFaixaSNsPagina (sem limite de 2000)', () => {
 
 describe('montarResumoPorPosto', () => {
   const postos = ['Inicial', 'Teste']
-  const reg = (over: Partial<{ snNorm: string; posto: string; status: string; numeroCaixa: string; dataHora: string }>) => ({
+  const reg = (over: Partial<{ snNorm: string; posto: string; status: string; numeroCaixa: string; dataHora: string; observacao: string }>) => ({
     snNorm: '100', posto: 'Inicial', status: '', numeroCaixa: '', dataHora: '2026-01-01T00:00:00Z', ...over,
   })
   it('conta produzido/pendentes/aprovados/reprovados por posto', () => {

@@ -95,10 +95,13 @@ export function ConsultaIntegracaoForm({ podeCancelar }: { podeCancelar: boolean
             <div key={d.codigo} className="flex flex-col gap-3 rounded-lg border border-border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm">
-                  <p className="font-semibold text-tinta">{d.codigo}</p>
+                  <p className="font-semibold text-tinta">{d.codigo}{d.observacao.trim().startsWith('*') ? '*' : ''}</p>
                   <p className="text-muted-foreground">
                     {d.cliente} · {d.pmo}/{d.op} · {d.posto} · {d.qtdPlacas} placa(s) · por {d.colaborador}
                   </p>
+                  {d.observacao.trim() !== '' && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{d.observacao}</p>
+                  )}
                 </div>
                 {podeCancelar && (
                   <Button variant="destructive" size="sm" onClick={() => onCancelar(d.codigo)} disabled={cancelando}>
