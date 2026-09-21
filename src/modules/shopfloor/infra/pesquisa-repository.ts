@@ -58,13 +58,13 @@ export async function listarRegistrosDaOp(pmo: string, op: string): Promise<Regi
   for (let de = 0; ; de += PAGINA) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie_norm,posto,status,numero_caixa,data_hora')
+      .select('numero_serie_norm,posto,status,numero_caixa,data_hora,observacao')
       .eq('pmo', pmo)
       .eq('op', op)
       .order('id', { ascending: true })
       .range(de, de + PAGINA - 1)
     if (error) throw error
-    const rows = data as { numero_serie_norm: string; posto: string; status: string; numero_caixa: string; data_hora: string }[]
+    const rows = data as { numero_serie_norm: string; posto: string; status: string; numero_caixa: string; data_hora: string; observacao: string | null }[]
     out.push(
       ...rows.map((r) => ({
         snNorm: r.numero_serie_norm,
@@ -72,6 +72,7 @@ export async function listarRegistrosDaOp(pmo: string, op: string): Promise<Regi
         status: r.status,
         numeroCaixa: r.numero_caixa,
         dataHora: r.data_hora,
+        observacao: r.observacao ?? '',
       })),
     )
     if (rows.length < PAGINA) break
