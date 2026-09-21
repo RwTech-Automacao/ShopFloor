@@ -196,7 +196,7 @@ describe('RegraForm — tempo médio por peça', () => {
   it('mostra só os campos do tipo, com os padrões', () => {
     montar({ tipo: 'tempo' })
     expect(screen.getByLabelText('Tempo máximo por peça (mm:ss)')).toHaveValue('2:00')
-    expect(screen.getByLabelText('Mínimo de intervalos')).toHaveValue('10')
+    expect(screen.getByLabelText('Mínimo de bipes')).toHaveValue('10')
     expect(screen.getByLabelText('Ignorar pausas acima de (min)')).toHaveValue('30')
     expect(screen.getByLabelText('OP em andamento')).toBeInTheDocument()
     expect(screen.queryByLabelText('Taxa mínima de aprovação (%)')).not.toBeInTheDocument()
@@ -250,8 +250,33 @@ describe('RegraForm — tempo médio por peça', () => {
     })
     expect(screen.getByLabelText('Tempo máximo por peça (mm:ss)')).toHaveValue('2:30')
     expect(screen.getByLabelText('Ignorar pausas acima de (min)')).toHaveValue('45')
-    expect(screen.getByLabelText('Mínimo de intervalos')).toHaveValue('8')
+    expect(screen.getByLabelText('Mínimo de bipes')).toHaveValue('8')
     expect(screen.getByLabelText('OP em andamento')).toBeChecked()
+  })
+
+  it('editar regra de tempo sem pausa mostra o campo vazio (padrão só na regra NOVA)', () => {
+    montar({
+      tipo: 'tempo',
+      regra: regraSalva({
+        tipo: 'tempo',
+        taxaMinima: null,
+        janelaTipo: 'tempo',
+        janelaValor: 60,
+        minimoBipes: 10,
+        limiteTempoSeg: 120,
+        pausaMaxMin: null,
+      }),
+    })
+    expect(screen.getByLabelText('Ignorar pausas acima de (min)')).toHaveValue('')
+  })
+
+  it('salva com a pausa vazia (conta todas as pausas)', async () => {
+    montar({ tipo: 'tempo' })
+    preencherObrigatorios('Teste lento')
+    fireEvent.change(screen.getByLabelText('Ignorar pausas acima de (min)'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ tipo: 'tempo', pausaMaxMin: '' })
   })
 
   it('prévia mostra o tempo médio de cada posto', async () => {

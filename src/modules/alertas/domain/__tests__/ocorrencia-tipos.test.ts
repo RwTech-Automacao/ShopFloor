@@ -52,7 +52,7 @@ describe('textoPreviaPosto', () => {
       'Teste: 1:09 por peça (29 intervalos, 30 peças)',
     )
     expect(textoPreviaPosto('tempo', { ...P, intervalos: 3, pecas: 4 }, null)).toBe(
-      'Teste: intervalos insuficientes na janela (3)',
+      'Teste: peças insuficientes na janela (4)',
     )
   })
   it('defeito repetido', () => {

@@ -18,6 +18,9 @@
 --      alerta_previa e alerta_listar_ocorrencias novas.
 --   C. Destinatário = usuário ativo com shopfloor.administrar no PERFIL DELE: na lista da tela, na
 --      fila, na reserva e no botão Resolvido.
+--   D. Ajuste de smoke no tipo TEMPO: "mínimo de bipes" (ex-"mínimo de intervalos") agora compara
+--      PEÇAS (não intervalos), igual à aprovação; "ignorar pausas acima de" (pausa_max_min) virou
+--      OPCIONAL — nula = não descarta nenhum intervalo (todas as pausas entram na média).
 --
 -- Convenções (as mesmas da 0113): corpo de função com $func$ (o SQL Editor não aceita dois
 -- cifrões, nem em comentário); grants e revokes explícitos; notify pgrst na última linha.
@@ -51,9 +54,11 @@ alter table public.alerta_regras add constraint alerta_regras_campos_por_tipo ch
           janela_tipo in ('tempo', 'op')
       and limite_tempo_seg between 1 and 3600
       and minimo_bipes is not null
-      and pausa_max_min between 1 and 240
-      -- intervalo maior que a pausa sai da média: com limite >= pausa a regra nunca dispararia
-      and limite_tempo_seg < pausa_max_min * 60
+      -- pausa_max_min é OPCIONAL: nula = não descarta nenhum intervalo (todas as pausas entram na
+      -- média). Preenchida, continua de 1 a 240 e o limite tem que ficar abaixo dela (senão o
+      -- intervalo "lento" sai da média antes de disparar a regra).
+      and (pausa_max_min is null or pausa_max_min between 1 and 240)
+      and (pausa_max_min is null or limite_tempo_seg < pausa_max_min * 60)
       and taxa_minima is null and limite_ocorrencias is null
     when 'defeito' then
           janela_tipo = 'tempo'
@@ -311,9 +316,11 @@ revoke all on function public.alerta_taxas(text[], text, int, text[]) from publi
 -- Janela 'op': mesma regra. Lê TODOS os bipes do posto desde o primeiro bipe daquela OP no posto
 -- (alerta_op_inicio), da_regra = o bipe é daquela OP, e só entram os intervalos que TERMINAM num bipe
 -- dela — outra OP intercalada no mesmo posto não vira lentidão da OP.
---   intervalos = intervalos válidos que terminam num bipe da regra (o mínimo da regra olha para isto);
+-- p_pausa_max_min NULO = não descarta nenhum intervalo (todas as pausas entram na média).
+--   intervalos = intervalos válidos que terminam num bipe da regra;
 --   media_seg  = média desses, truncada em 2 casas (null sem nenhum válido);
---   pecas      = bipes distintos da regra na janela.
+--   pecas      = bipes distintos da regra na janela (o mínimo da regra olha para isto, não para
+--                intervalos — com só 1 peça não há intervalo, mas o mínimo é sobre peças).
 create or replace function public.alerta_tempos(
   p_postos text[], p_janela_tipo text, p_janela_valor int, p_pausa_max_min int, p_pmos text[]
 )
@@ -338,8 +345,12 @@ as $func$
       select public.alerta_op_inicio(p.posto, u.pmo, u.op) as inicio where u.op is not null
     ) f on true
     left join lateral (
-      select count(g.seg) filter (where g.da_regra and g.seg <= p_pausa_max_min * 60)         as intervalos,
-             trunc(avg(g.seg) filter (where g.da_regra and g.seg <= p_pausa_max_min * 60), 2) as media_seg,
+      select count(g.seg) filter (
+               where g.da_regra and (p_pausa_max_min is null or g.seg <= p_pausa_max_min * 60)
+             )                                                                                  as intervalos,
+             trunc(avg(g.seg) filter (
+               where g.da_regra and (p_pausa_max_min is null or g.seg <= p_pausa_max_min * 60)
+             ), 2)                                                                              as media_seg,
              count(*) filter (where g.da_regra)                                                 as pecas
         from (
           select b.da_regra,
@@ -401,7 +412,8 @@ revoke all on function public.alerta_defeitos(text[], int, text[]) from public, 
 -- Cada tipo vira uma MEDIÇÃO por (regra, posto, defeito) com o mesmo formato; as transições
 -- (abrir / lembrar / normalizar) são as mesmas para todos:
 --   aprovacao: valor = taxa (%),   abaixo = valor <  taxa_minima,       avaliável = bipes >= mínimo
---   tempo:     valor = média (s),  abaixo = valor >  limite_tempo_seg,  avaliável = intervalos >= mínimo
+--   tempo:     valor = média (s),  abaixo = valor >  limite_tempo_seg,  avaliável = peças >= mínimo
+--                                                                                   e >= 1 intervalo válido
 --   defeito:   valor = contagem,   abaixo = valor >= limite_ocorrencias, sempre avaliável
 -- No defeito, além dos códigos da janela, entram os códigos que têm ocorrência VIVA (com contagem 0
 -- se sumiram da janela) — é assim que cada defeito normaliza sozinho.
@@ -471,7 +483,9 @@ begin
                tp.posto, null::text, tp.pmo, tp.op,
                0, 0,
                tp.pecas,
-               tp.intervalos >= rg.minimo_bipes and tp.media_seg is not null,
+               -- Mínimo de BIPES (peças), igual ao da aprovação — não de intervalos. `media_seg is not
+               -- null` já garante pelo menos 1 intervalo válido para calcular a média.
+               tp.pecas >= rg.minimo_bipes and tp.media_seg is not null,
                tp.media_seg,
                rg.limite_tempo_seg::numeric
           from public.alerta_regras rg
@@ -621,7 +635,7 @@ grant execute on function public.alerta_avaliar() to service_role;
 -- Assinatura nova (tipo + parâmetros de cálculo + PMOs): a antiga (4 parâmetros) sai antes.
 -- Retorno largo, cada tipo preenche o seu pedaço:
 --   aprovacao: aprovados, reprovados, taxa, avaliavel (bipes >= mínimo), pmo/op (janela OP)
---   tempo:     media_seg, intervalos, pecas, avaliavel (intervalos >= mínimo), pmo/op
+--   tempo:     media_seg, intervalos, pecas, avaliavel (peças >= mínimo e média não nula), pmo/op
 --   defeito:   uma linha por (posto, defeito com contagem >= N); posto sem nenhum = uma linha com
 --              defeito nulo e ocorrencias 0
 drop function if exists public.alerta_previa(text[], text, int, int);
@@ -667,11 +681,16 @@ begin
         from public.alerta_taxas(p_postos, p_janela_tipo, p_janela_valor, v_pmos) t;
 
   elsif p_tipo = 'tempo' then
-    if coalesce(p_pausa_max_min, 0) not between 1 and 240 then raise exception 'PAUSA_INVALIDA'; end if;
+    -- p_pausa_max_min é OPCIONAL: nulo = não descarta nenhum intervalo (todas as pausas entram na
+    -- média). Preenchida, continua de 1 a 240.
+    if p_pausa_max_min is not null and p_pausa_max_min not between 1 and 240 then
+      raise exception 'PAUSA_INVALIDA';
+    end if;
     return query
       select t.posto, null::text, 0, 0, null::numeric,
              t.media_seg, t.intervalos, t.pecas, 0,
-             t.intervalos >= greatest(coalesce(p_minimo, 1), 1) and t.media_seg is not null,
+             -- Mínimo de BIPES (peças), igual à aprovação — não de intervalos.
+             t.pecas >= greatest(coalesce(p_minimo, 1), 1) and t.media_seg is not null,
              t.pmo, t.op
         from public.alerta_tempos(p_postos, p_janela_tipo, p_janela_valor, p_pausa_max_min, v_pmos) t;
 

@@ -74,7 +74,8 @@ export function textoPreviaPosto(tipo: TipoRegra, p: PreviaPosto, limiteOcorrenc
     if (p.avaliavel && p.mediaSeg !== null) {
       return `${p.posto}: ${formatarMmSs(p.mediaSeg)} por peça (${p.intervalos} intervalos, ${p.pecas} peças)`
     }
-    return `${p.posto}: intervalos insuficientes na janela (${p.intervalos})`
+    // Avaliável agora exige o mínimo de PEÇAS (bipes), não de intervalos válidos.
+    return `${p.posto}: peças insuficientes na janela (${p.pecas})`
   }
   if (tipo === 'defeito') {
     if (p.defeito === null) return `${p.posto}: nenhum defeito repetido ${limiteOcorrencias ?? '—'} vezes ou mais`

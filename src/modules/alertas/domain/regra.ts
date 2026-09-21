@@ -19,7 +19,7 @@ export interface EntradaRegra {
   taxaMinima: string | number
   janelaTipo: string
   janelaValor: string | number | null
-  /** Aprovação: mínimo de bipes. Tempo: mínimo de INTERVALOS. Defeito: ignorado. */
+  /** Aprovação e tempo: mínimo de bipes (peças). Defeito: ignorado. */
   minimoBipes: string | number
   /** Tempo médio: 'm:ss' (ex.: '2:00'). */
   limiteTempo?: string
@@ -98,11 +98,12 @@ export const PADROES_REGRA = { taxaMinima: 90, janelaTempo: 60, janelaBipes: 50,
 
 /** Padrões dos tipos novos (spec de 2026-09-18). */
 export const PADROES_TIPO = {
-  tempo: { limiteTempo: '2:00', janelaTempo: 60, minimoIntervalos: 10, pausaMaxMin: 30 },
+  tempo: { limiteTempo: '2:00', janelaTempo: 60, minimoBipes: 10, pausaMaxMin: 30 },
   defeito: { limiteOcorrencias: 5, janelaTempo: 60 },
 } as const
 
-/** "Ignorar pausas acima de" aceita de 1 a 240 minutos (check da 0115). */
+/** "Ignorar pausas acima de" é OPCIONAL: quando preenchida, aceita de 1 a 240 minutos (check da
+ * 0115); vazia = não descarta nenhum intervalo (todas as pausas entram na média). */
 export const PAUSA_MAX_MIN = { min: 1, max: 240 } as const
 
 const RE_DECIMAL = /^\d{1,3}([.,]\d{1,2})?$/
@@ -185,11 +186,7 @@ export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
   if (tipo !== 'defeito') {
     const m = inteiro(e.minimoBipes)
     if (m === null || Number.isNaN(m) || m <= 0) {
-      return erro(
-        tipo === 'tempo'
-          ? 'O mínimo de intervalos deve ser um número inteiro maior que zero.'
-          : 'O mínimo de bipes deve ser um número inteiro maior que zero.',
-      )
+      return erro('O mínimo de bipes deve ser um número inteiro maior que zero.')
     }
     minimoBipes = m
   }
@@ -203,14 +200,18 @@ export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
   if (tipo === 'tempo') {
     limiteTempoSeg = lerMmSs(textoLimpo(e.limiteTempo))
     if (limiteTempoSeg === null) return erro('Informe o tempo máximo por peça em mm:ss (de 0:01 a 60:00).')
+    // Campo OPCIONAL: vazio = não descarta nenhum intervalo (todas as pausas entram na média).
     const p = inteiro(e.pausaMaxMin)
-    if (p === null || Number.isNaN(p) || p < PAUSA_MAX_MIN.min || p > PAUSA_MAX_MIN.max) {
-      return erro('Ignorar pausas acima de: informe um número inteiro de 1 a 240 minutos.')
-    }
-    pausaMaxMin = p
-    // Intervalo maior que a pausa sai da média: com limite >= pausa, a média nunca passa do limite.
-    if (limiteTempoSeg >= pausaMaxMin * 60) {
-      return erro('O limite de tempo precisa ser menor que a pausa ignorada (senão a regra nunca dispara).')
+    if (p !== null) {
+      if (Number.isNaN(p) || p < PAUSA_MAX_MIN.min || p > PAUSA_MAX_MIN.max) {
+        return erro('Ignorar pausas acima de: informe um número inteiro de 1 a 240 minutos.')
+      }
+      pausaMaxMin = p
+      // Intervalo maior que a pausa sai da média: com limite >= pausa, a média nunca passa do limite.
+      // Só se aplica quando a pausa está preenchida (vazia = nenhum intervalo é descartado).
+      if (limiteTempoSeg >= pausaMaxMin * 60) {
+        return erro('O limite de tempo precisa ser menor que a pausa ignorada (senão a regra nunca dispara).')
+      }
     }
   }
 

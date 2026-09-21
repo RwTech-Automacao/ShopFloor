@@ -106,7 +106,8 @@ begin
   perform teste_regra_recusada('aprovação com limite de tempo', 'aprovacao', 90,   'tempo', 60,   20,   120,  null, null);
   perform teste_regra_recusada('aprovação sem mínimo',          'aprovacao', 90,   'tempo', 60,   null, null, null, null);
   perform teste_regra_recusada('tempo com janela por bipes',    'tempo',     null, 'bipes', 50,   10,   120,  null, 30);
-  perform teste_regra_recusada('tempo sem pausa',               'tempo',     null, 'tempo', 60,   10,   120,  null, null);
+  -- pausa_max_min é OPCIONAL (ajuste de smoke): nula é ACEITA (testada como válida na T3, não aqui).
+  perform teste_regra_recusada('tempo com pausa 0',             'tempo',     null, 'tempo', 60,   10,   120,  null, 0);
   perform teste_regra_recusada('tempo com pausa 241',           'tempo',     null, 'tempo', 60,   10,   120,  null, 241);
   perform teste_regra_recusada('tempo com limite 3601 s',       'tempo',     null, 'tempo', 60,   10,   3601, null, 30);
   perform teste_regra_recusada('tempo sem limite',              'tempo',     null, 'tempo', 60,   10,   null, null, 30);
@@ -151,6 +152,8 @@ begin
   perform teste_regra('Válida tempo',    'tempo',   array['X'], null, 'tempo', 60,    10,   120,  null, 30,  '{}',           null, false);
   perform teste_regra('Válida tempo OP', 'tempo',   array['X'], null, 'op',    null,  10,   3600, null, 61,  array['PMOA'],  null, false);
   perform teste_regra('Válida tempo 29:59', 'tempo', array['X'], null, 'tempo', 60,    10,   1799, null, 30,  '{}',           null, false);
+  -- pausa OPCIONAL: nula é uma regra válida (ajuste de smoke — antes era obrigatória).
+  perform teste_regra('Válida tempo sem pausa', 'tempo', array['X'], null, 'tempo', 60, 10, 3600, null, null, '{}', null, false);
   v := teste_regra('Válida defeito',     'defeito', array['X'], null, 'tempo', 10080, null, null, 2,    null, '{}',          null, false);
   begin
     update alerta_regras set tipo = 'aprovacao', taxa_minima = 90, minimo_bipes = 20, limite_ocorrencias = null
@@ -334,8 +337,14 @@ select r.data_hora, r.posto, r.pmo, r.op, 'Reprovado', '2040 COMPONENTE FALTANDO
 -- T-Pausa: 6 bipes a cada 60 s (50 min atrás), PAUSA de 40 min, 6 bipes a cada 60 s (5 min atrás).
 select public.teste_ritmo('T-Pausa', 'PMOA', '1', 6, 60, 3000);
 select public.teste_ritmo('T-Pausa', 'PMOA', '1', 6, 60, 300);
--- T-Poucos: só 3 intervalos (mínimo da regra = 5).
+-- T-Poucos: só 4 peças / 3 intervalos (mínimo da regra = 5 peças): barra a avaliação.
 select public.teste_ritmo('T-Poucos', 'PMOA', '1', 4, 300, 1800);
+-- T-GatePecas: 1 bipe isolado (45 min atrás) + 5 bipes a cada 60 s (300 a 60 s atrás) = 6 PEÇAS, mas
+-- só 4 intervalos válidos (o gap de 40 min entre os dois grupos sai da pausa de 30 min). Ajuste de
+-- smoke: o mínimo da regra (5) agora compara com PEÇAS (6 >= 5, avalia) — pelos intervalos (4 < 5)
+-- não avaliaria antes desta mudança.
+select public.teste_ritmo('T-GatePecas', 'PMOA', '1', 1, 60, 2700);
+select public.teste_ritmo('T-GatePecas', 'PMOA', '1', 5, 60, 300);
 
 do $t$ begin
   perform teste_regra('Tempo 2:00', 'tempo', array['T-Lento', 'T-Pausa', 'T-Poucos'], null, 'tempo', 60, 5, 120, null, 30);
@@ -365,10 +374,10 @@ begin
               where rg.nome = 'Tempo 2:00' and oc.posto = 'T-Pausa') then
     raise exception 'FALHOU: a pausa entrou na média';
   end if;
-  -- 3 intervalos < mínimo 5: não decide
+  -- 4 peças < mínimo de bipes (5): não decide
   if exists (select 1 from alerta_ocorrencias oc join alerta_regras rg on rg.id = oc.regra_id
               where rg.nome = 'Tempo 2:00' and oc.posto = 'T-Poucos') then
-    raise exception 'FALHOU: avaliou sem o mínimo de intervalos';
+    raise exception 'FALHOU: avaliou sem o mínimo de bipes';
   end if;
 end $t$;
 reset role;
@@ -385,8 +394,22 @@ begin
   end if;
   select * into p from alerta_previa('tempo', array['T-Pausa'], 'tempo', 60, 5, 240, null, '{}');
   if p.intervalos <> 11 or p.media_seg <= 120 then raise exception 'FALHOU: prévia sem descartar a pausa %', p; end if;
+  -- Pausa NULA (ajuste de smoke): igual a uma pausa bem alta — nenhum intervalo é descartado.
+  select * into p from alerta_previa('tempo', array['T-Pausa'], 'tempo', 60, 5, null, null, '{}');
+  if not found or p.intervalos <> 11 or p.media_seg <> 272.72 or p.pecas <> 12 or p.avaliavel is not true then
+    raise exception 'FALHOU: pausa nula devia contar todos os intervalos (almoço incluso na média) %', p;
+  end if;
+  -- Poucas PEÇAS (4 < mínimo 5): barra a avaliação, mesmo com pelo menos 1 intervalo válido.
   select * into p from alerta_previa('tempo', array['T-Poucos'], 'tempo', 60, 5, 30, null, '{}');
-  if p.intervalos <> 3 or p.avaliavel is not false then raise exception 'FALHOU: prévia T-Poucos %', p; end if;
+  if p.intervalos <> 3 or p.pecas <> 4 or p.avaliavel is not false then
+    raise exception 'FALHOU: prévia T-Poucos (mínimo de bipes deveria barrar) %', p;
+  end if;
+  -- Ajuste de smoke: o mínimo agora compara PEÇAS, não intervalos — 6 peças / 4 intervalos válidos
+  -- com mínimo 5 AVALIA (pelos intervalos, 4 < 5, não avaliaria antes desta mudança).
+  select * into p from alerta_previa('tempo', array['T-GatePecas'], 'tempo', 60, 5, 30, null, '{}');
+  if not found or p.pecas <> 6 or p.intervalos <> 4 or p.media_seg <> 60 or p.avaliavel is not true then
+    raise exception 'FALHOU: mínimo de bipes deveria comparar peças, não intervalos %', p;
+  end if;
 end $t$;
 reset role;
 
@@ -758,6 +781,12 @@ begin
     raise exception 'FALHOU: tempo com pausa 0 na prévia';
   exception when others then
     if sqlerrm not like '%PAUSA_INVALIDA%' then raise; end if;
+  end;
+  -- Ajuste de smoke: pausa NULA na prévia é aceita (campo opcional), não dá PAUSA_INVALIDA.
+  begin
+    perform * from alerta_previa('tempo', array['X'], 'tempo', 60, 5, null, null, '{}');
+  exception when others then
+    raise exception 'FALHOU: pausa nula na prévia deveria ser aceita (%)', sqlerrm;
   end;
 end $t$;
 select set_config('teste.perms', 'shopfloor.visualizar', false);

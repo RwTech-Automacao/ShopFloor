@@ -38,7 +38,10 @@ Pré-requisito: os bots e o vínculo do roteiro de 17/09 já funcionam no ambien
 ## 4. Tempo médio por peça
 
 - [ ] Nova regra de tempo num posto com movimento: limite **0:30** (baixo, para disparar), janela
-      últimos 60 min, mínimo de intervalos 5, pausas acima de 30 min.
+      últimos 60 min, mínimo de bipes 5, pausas acima de 30 min.
+- [ ] Apague o campo **Ignorar pausas acima de**: fica vazio (opcional) e salva normal — nenhuma
+      pausa é descartada da média (o almoço entra na conta). Deixe 30 preenchido de novo para o
+      resto do roteiro.
 - [ ] **Ver prévia** mostra `Posto: m:ss por peça (N intervalos, M peças)`.
 - [ ] Salve → a lista mostra **≤ 0:30/peça**.
 - [ ] **Avaliar agora** → chega `🔴 {posto} lento: m:ss por peça na última hora (limite 0:30) · N peças`

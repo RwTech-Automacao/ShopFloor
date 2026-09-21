@@ -79,7 +79,16 @@ function minutosIniciais(tipo: TipoRegra, regra: RegraAlerta | null): string {
 
 function minimoInicial(tipo: TipoRegra, regra: RegraAlerta | null): string {
   if (regra && regra.minimoBipes !== null) return String(regra.minimoBipes)
-  return String(tipo === 'tempo' ? PADROES_TIPO.tempo.minimoIntervalos : PADROES_REGRA.minimoBipes)
+  return String(tipo === 'tempo' ? PADROES_TIPO.tempo.minimoBipes : PADROES_REGRA.minimoBipes)
+}
+
+/**
+ * "Ignorar pausas acima de": vazia = não descarta nenhum intervalo. Regra NOVA de tempo abre com o
+ * padrão (30) preenchido; regra EXISTENTE mostra o que está salvo (vazio quando a pausa é nula).
+ */
+function pausaInicial(regra: RegraAlerta | null): string {
+  if (!regra) return String(PADROES_TIPO.tempo.pausaMaxMin)
+  return regra.pausaMaxMin === null ? '' : String(regra.pausaMaxMin)
 }
 
 export function RegraForm({
@@ -113,7 +122,7 @@ export function RegraForm({
   const [limiteTempo, setLimiteTempo] = useState(
     regra && regra.limiteTempoSeg !== null ? formatarMmSs(regra.limiteTempoSeg) : PADROES_TIPO.tempo.limiteTempo,
   )
-  const [pausa, setPausa] = useState(String(regra?.pausaMaxMin ?? PADROES_TIPO.tempo.pausaMaxMin))
+  const [pausa, setPausa] = useState(pausaInicial(regra))
   const [repeticoes, setRepeticoes] = useState(
     String(regra?.limiteOcorrencias ?? PADROES_TIPO.defeito.limiteOcorrencias),
   )
@@ -282,10 +291,10 @@ export function RegraForm({
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1.5">
-              <Label htmlFor="minimo">Mínimo de intervalos</Label>
-              <Explica titulo="Mínimo de intervalos">
-                <p>Quantos intervalos válidos (entre dois bipes seguidos) a janela precisa ter para a regra avaliar. 11 bipes seguidos = 10 intervalos.</p>
-                <p>Abaixo do mínimo, a regra não abre nem encerra alerta.</p>
+              <Label htmlFor="minimo">Mínimo de bipes</Label>
+              <Explica titulo="Mínimo de bipes">
+                <p>Quantas peças (bipes distintos do posto) a janela precisa ter para a regra avaliar, além de pelo menos 1 intervalo válido para calcular a média.</p>
+                <p>Evita alarme falso com poucas peças. Abaixo do mínimo, a regra não abre nem encerra alerta.</p>
               </Explica>
             </div>
             <Input id="minimo" value={minimo} onChange={(e) => setMinimo(e.target.value)} inputMode="numeric" />
@@ -295,10 +304,16 @@ export function RegraForm({
               <Label htmlFor="pausa">Ignorar pausas acima de (min)</Label>
               <Explica titulo="Ignorar pausas acima de (min)">
                 <p>Intervalos maiores que isto (almoço, troca de turno, máquina parada) ficam <strong>fora</strong> da média e não contam como intervalo válido.</p>
-                <p>Padrão 30 minutos; de 1 a 240.</p>
+                <p>Padrão 30 minutos; de 1 a 240. <strong>Vazio</strong> = não descarta nenhum intervalo: todas as pausas entram na média (ex.: o almoço entra na conta).</p>
               </Explica>
             </div>
-            <Input id="pausa" value={pausa} onChange={(e) => setPausa(e.target.value)} inputMode="numeric" />
+            <Input
+              id="pausa"
+              value={pausa}
+              onChange={(e) => setPausa(e.target.value)}
+              inputMode="numeric"
+              placeholder="vazio = conta todas as pausas"
+            />
           </div>
         </div>
       )}

@@ -95,13 +95,19 @@ describe('validarRegra — tempo médio por peça', () => {
     const r = validarRegra({ ...TEMPO, limiteTempo: '3' })
     expect(r.ok && r.valor.limiteTempoSeg).toBe(180)
   })
-  it('pausas ignoradas de 1 a 240 minutos', () => {
+  it('pausas ignoradas de 1 a 240 minutos, mas o campo é OPCIONAL', () => {
     const erro = { ok: false, erro: 'Ignorar pausas acima de: informe um número inteiro de 1 a 240 minutos.' }
     expect(validarRegra({ ...TEMPO, pausaMaxMin: '0' })).toEqual(erro)
     expect(validarRegra({ ...TEMPO, pausaMaxMin: '241' })).toEqual(erro)
-    expect(validarRegra({ ...TEMPO, pausaMaxMin: '' })).toEqual(erro)
     const r = validarRegra({ ...TEMPO, pausaMaxMin: '240' })
     expect(r.ok && r.valor.pausaMaxMin).toBe(240)
+  })
+  it('pausa vazia = nula: não descarta nenhum intervalo e não aciona o check "limite < pausa"', () => {
+    const vazio = validarRegra({ ...TEMPO, pausaMaxMin: '' })
+    expect(vazio.ok && vazio.valor.pausaMaxMin).toBeNull()
+    // Sem pausa não há "pausa x 60" para comparar: mesmo um limite bem alto (59:59) passa.
+    const limiteAlto = validarRegra({ ...TEMPO, limiteTempo: '59:59', pausaMaxMin: '' })
+    expect(limiteAlto.ok && limiteAlto.valor.pausaMaxMin).toBeNull()
   })
   it('limite menor que a pausa ignorada (senão a regra nunca dispara)', () => {
     const erro = {
@@ -125,10 +131,14 @@ describe('validarRegra — tempo médio por peça', () => {
     })
     expect(r.ok && r.valor.pausaMaxMin).toBe(1)
   })
-  it('mínimo de intervalos', () => {
+  it('mínimo de bipes: obrigatório, mesma validação e mesma mensagem da aprovação', () => {
     expect(validarRegra({ ...TEMPO, minimoBipes: '0' })).toEqual({
       ok: false,
-      erro: 'O mínimo de intervalos deve ser um número inteiro maior que zero.',
+      erro: 'O mínimo de bipes deve ser um número inteiro maior que zero.',
+    })
+    expect(validarRegra({ ...TEMPO, minimoBipes: '' })).toEqual({
+      ok: false,
+      erro: 'O mínimo de bipes deve ser um número inteiro maior que zero.',
     })
   })
 })
@@ -214,6 +224,17 @@ describe('validarPrevia por tipo', () => {
       },
     })
   })
+  it('tempo aceita a pausa vazia (conta todas as pausas)', () => {
+    const r = validarPrevia({
+      tipo: 'tempo',
+      postos: ['Teste'],
+      janelaTipo: 'tempo',
+      janelaValor: '60',
+      minimoBipes: '10',
+      pausaMaxMin: '',
+    })
+    expect(r.ok && r.valor.pausaMaxMin).toBeNull()
+  })
   it('defeito exige as repetições', () => {
     expect(
       validarPrevia({
@@ -248,7 +269,7 @@ describe('resumos da lista de regras', () => {
   })
   it('padrões dos tipos novos', () => {
     expect(PADROES_TIPO).toEqual({
-      tempo: { limiteTempo: '2:00', janelaTempo: 60, minimoIntervalos: 10, pausaMaxMin: 30 },
+      tempo: { limiteTempo: '2:00', janelaTempo: 60, minimoBipes: 10, pausaMaxMin: 30 },
       defeito: { limiteOcorrencias: 5, janelaTempo: 60 },
     })
   })
