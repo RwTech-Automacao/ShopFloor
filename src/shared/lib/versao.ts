@@ -5,10 +5,16 @@
  *  - mudança de patamar      → sobe o primeiro (3.0.0)
  * A versão nunca volta. Esconder uma função é papel do lançamento escondido, não do número.
  */
-export const VERSAO = '2.0.0'
+export const VERSAO = '2.1.0'
 
 /** Marcos principais, do mais novo pro mais antigo (tela Sobre). */
 export const HISTORICO_VERSOES: { versao: string; data: string; resumo: string }[] = [
+  {
+    versao: '2.1.0',
+    data: '22/09/2026',
+    resumo:
+      'Fluxo: lista de OPs ordenada por bipes e com % de conclusão; Alertas liberados para os administradores do ShopFloor; atualização de segurança.',
+  },
   {
     versao: '2.0.0',
     data: '21/09/2026',
