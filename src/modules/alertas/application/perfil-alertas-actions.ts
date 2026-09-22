@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { alertasLiberados } from './liberacao'
+import { alertasDisponiveis } from './liberacao'
 import { ehCanal, type ContaVinculada } from '../domain/tipos'
 import { gerarCodigoVinculo, listarMinhasContas, desvincularConta } from '../infra/contas-repository'
 import { criarDependenciasAlertas } from '../infra/fabrica'
@@ -18,7 +18,7 @@ export async function gerarCodigoAction(): Promise<
   try {
     const sessao = await getSessao()
     if (!sessao) return { ok: false, erro: SEM_SESSAO }
-    if (!alertasLiberados(sessao.email)) return { ok: false, erro: RECURSO_INDISPONIVEL }
+    if (!alertasDisponiveis(sessao)) return { ok: false, erro: RECURSO_INDISPONIVEL }
     return await gerarCodigoVinculo()
   } catch (e) {
     console.error('[alertas] gerar código:', e instanceof Error ? e.message : e)
@@ -33,7 +33,7 @@ export async function minhasContasAction(): Promise<
   try {
     const sessao = await getSessao()
     if (!sessao) return { ok: false, erro: SEM_SESSAO }
-    if (!alertasLiberados(sessao.email)) return { ok: false, erro: RECURSO_INDISPONIVEL }
+    if (!alertasDisponiveis(sessao)) return { ok: false, erro: RECURSO_INDISPONIVEL }
     return { ok: true, contas: await listarMinhasContas() }
   } catch {
     return { ok: false, erro: 'Não foi possível consultar os vínculos agora.' }
@@ -44,7 +44,7 @@ export async function desvincularAction(canal: string): Promise<{ ok: true } | {
   try {
     const sessao = await getSessao()
     if (!sessao) return { ok: false, erro: SEM_SESSAO }
-    if (!alertasLiberados(sessao.email)) return { ok: false, erro: RECURSO_INDISPONIVEL }
+    if (!alertasDisponiveis(sessao)) return { ok: false, erro: RECURSO_INDISPONIVEL }
     if (!ehCanal(canal)) return { ok: false, erro: 'Canal inválido.' }
     await desvincularConta(canal)
     revalidatePath(ROTA)
@@ -62,7 +62,7 @@ export async function enviarTesteAction(canal: string): Promise<{ ok: true } | {
   try {
     const sessao = await getSessao()
     if (!sessao) return { ok: false, erro: SEM_SESSAO }
-    if (!alertasLiberados(sessao.email)) return { ok: false, erro: RECURSO_INDISPONIVEL }
+    if (!alertasDisponiveis(sessao)) return { ok: false, erro: RECURSO_INDISPONIVEL }
     if (!ehCanal(canal)) return { ok: false, erro: 'Canal inválido.' }
     const { portas, repo } = criarDependenciasAlertas()
     return await enviarTeste(portas, repo, {
