@@ -31,6 +31,7 @@ export default async function PerfilPage() {
         contas={contas}
         configurados={canaisConfigurados()}
         telegramBot={process.env.TELEGRAM_BOT_USERNAME ?? ''}
+        discordConvite={process.env.DISCORD_CONVITE_URL ?? ''}
       />
     </div>
   )

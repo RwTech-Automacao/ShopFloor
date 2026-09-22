@@ -67,7 +67,17 @@ describe('CartaoAlertas', () => {
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
     expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
-    expect(screen.getByText(/t\.me\/shopfloor_bot/)).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 't.me/shopfloor_bot' })
+    expect(link).toHaveAttribute('href', 'https://t.me/shopfloor_bot')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('sem o nome do bot a instrução do Telegram não vira link', async () => {
+    render(<CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="" />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
+    expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
+    expect(screen.getByText('t.me/seu_bot')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('Vincular no Discord instrui o comando /vincular', async () => {
@@ -78,6 +88,34 @@ describe('CartaoAlertas', () => {
     expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
     expect(screen.getByText('/vincular')).toBeInTheDocument()
     expect(screen.getByText(/Cole o código no campo/)).toBeInTheDocument()
+  })
+
+  it('com o convite configurado o Discord ganha o link do servidor do bot', async () => {
+    render(
+      <CartaoAlertas
+        nome="Ana Gestora"
+        contas={[]}
+        configurados={TODOS_CONFIGURADOS}
+        telegramBot="shopfloor_bot"
+        discordConvite="https://discord.gg/exemplo"
+      />,
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[1]!)
+    expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Entrar no servidor do Bot ShopFloor' })).toHaveAttribute(
+      'href',
+      'https://discord.gg/exemplo',
+    )
+  })
+
+  it('sem o convite o Discord não mostra link nenhum', async () => {
+    render(
+      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[1]!)
+    expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.getByText(/No servidor do Bot ShopFloor/)).toBeInTheDocument()
   })
 
   it('Copiar põe só o código na área de transferência', async () => {

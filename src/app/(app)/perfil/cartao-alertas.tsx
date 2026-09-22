@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useState, useTransition, type ReactNode } from 'react'
 import { BellRing, Copy, RefreshCw, Send, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -35,16 +35,28 @@ interface CodigoAberto {
   expiraEm: string
 }
 
+/** Link externo das instruções (bot do Telegram, convite do Discord). */
+function LinkExterno({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="font-medium underline">
+      {children}
+    </a>
+  )
+}
+
 export function CartaoAlertas({
   nome,
   contas,
   configurados,
   telegramBot,
+  discordConvite = '',
 }: {
   nome: string
   contas: ContaVinculada[]
   configurados: Record<Canal, boolean>
   telegramBot: string
+  /** Convite do servidor do bot no Discord. Vazio = instrução sem link. */
+  discordConvite?: string
 }) {
   const [lista, setLista] = useState<ContaVinculada[]>(contas)
   const [codigo, setCodigo] = useState<CodigoAberto | null>(null)
@@ -194,15 +206,27 @@ export function CartaoAlertas({
                     <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
                       <li>Copie o código.</li>
                       <li>
-                        Abra <span className="font-medium">t.me/{telegramBot || 'seu_bot'}</span> e toque em Iniciar.
+                        Abra{' '}
+                        {telegramBot ? (
+                          <LinkExterno href={`https://t.me/${telegramBot}`}>t.me/{telegramBot}</LinkExterno>
+                        ) : (
+                          <span className="font-medium">t.me/seu_bot</span>
+                        )}{' '}
+                        e toque em Iniciar.
                       </li>
                       <li>Cole o código na conversa e envie.</li>
                     </ol>
                   ) : (
                     <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
                       <li>Copie o código.</li>
+                      {discordConvite && (
+                        <li>
+                          <LinkExterno href={discordConvite}>Entrar no servidor do Bot ShopFloor</LinkExterno> (só na
+                          primeira vez).
+                        </li>
+                      )}
                       <li>
-                        No servidor da Enterplak, digite <span className="font-medium">/vincular</span> e escolha o
+                        No servidor do Bot ShopFloor, digite <span className="font-medium">/vincular</span> e escolha o
                         comando na lista.
                       </li>
                       <li>
