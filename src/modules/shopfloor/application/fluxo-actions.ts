@@ -174,15 +174,15 @@ export async function snsManutencao(
 }
 
 /**
- * Bipes por OP (chave `pmo||op`) em [ini, fim) — filtra (com período) e ORDENA a lista de OPs do Fluxo.
+ * Bipes por OP (chave `pmo||op`) em [ini, fim) + % de conclusão da OP — filtra (com período), ORDENA e mostra a % na lista de OPs do Fluxo.
  * Período nulo = histórico todo (só ordena). `null` = erro (a tela avisa e não esconde as OPs).
  */
-export async function opsComBipes(ini: string | null, fim: string | null): Promise<Record<string, number> | null> {
+export async function opsComBipes(ini: string | null, fim: string | null): Promise<Record<string, { bipes: number; pct: number | null }> | null> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return null
   try {
-    const mapa: Record<string, number> = {}
-    for (const o of await listarOpsComBipes(ini, fim)) mapa[`${o.pmo}||${o.op}`] = o.bipes
+    const mapa: Record<string, { bipes: number; pct: number | null }> = {}
+    for (const o of await listarOpsComBipes(ini, fim)) mapa[`${o.pmo}||${o.op}`] = { bipes: o.bipes, pct: o.pct }
     return mapa
   } catch {
     return null
