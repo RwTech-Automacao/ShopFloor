@@ -457,7 +457,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [criadoDe, setCriadoDe] = useState('') // range custom — início (YYYY-MM-DD)
   const [criadoAte, setCriadoAte] = useState('') // range custom — fim (YYYY-MM-DD)
   // OPs com bipe no período, com a chave do período a que pertencem (`ops` null = a busca falhou).
-  const [bipesPeriodo, setBipesPeriodo] = useState<{ chave: string; bipes: Record<string, number> | null } | null>(null)
+  const [bipesPeriodo, setBipesPeriodo] = useState<{ chave: string; bipes: Record<string, { bipes: number; pct: number | null }> | null } | null>(null)
   const [buscaSn, setBuscaSn] = useState('') // busca de SN pra realçar a rota no canvas
   // rota do SN buscado: `ordem` = postos na ordem cronológica (+ atual no fim) pra revelar UM A UM.
   const [rota, setRota] = useState<{ ordem: string[]; atual: string | null } | null>(null)
@@ -948,7 +948,10 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
       return true
     })
     // Da OP com mais bipes pra menos (no período, ou no histórico em "Tudo"); empate mantém a ordem original.
-    return bipesDaVez ? ordenarOpsPorBipes(lista, bipesDaVez) : lista
+    if (!bipesDaVez) return lista
+    const contagem: Record<string, number> = {}
+    for (const [k, v] of Object.entries(bipesDaVez)) contagem[k] = v.bipes
+    return ordenarOpsPorBipes(lista, contagem)
   }, [ops, filtroOp, opsComBipe, bipesDaVez])
 
   const rotuloOpSel = useMemo(() => {
@@ -1024,9 +1027,15 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                           key={val}
                           type="button"
                           onClick={() => { escolher(val); setOpAberto(false); setFiltroOp('') }}
-                          className={`flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${sel === val ? 'bg-accent font-medium' : ''}`}
+                          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${sel === val ? 'bg-accent font-medium' : ''}`}
                         >
-                          {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
+                          <span className="min-w-0 flex-1 truncate">{o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}</span>
+                          {bipesDaVez?.[val]?.pct != null && (
+                            // % de conclusão da OP (último posto do fluxo ÷ quantidade), só o número.
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground" title="Conclusão da OP (peças no último posto do fluxo ÷ quantidade)">
+                              {bipesDaVez[val]!.pct!.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+                            </span>
+                          )}
                         </button>
                       )
                     })

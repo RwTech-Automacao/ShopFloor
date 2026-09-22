@@ -454,10 +454,15 @@ export async function carregarFluxoPeriodo(pmo: string, op: string, ini: string,
   return (data ?? []) as PeriodoPosto[]
 }
 
-/** OPs (pmo, op) que tiveram bipe em [ini, fim) e quantos bipes cada uma (0120). Período nulo = histórico todo. */
-export async function listarOpsComBipes(ini: string | null, fim: string | null): Promise<{ pmo: string; op: string; bipes: number }[]> {
+/** OPs (pmo, op) com bipe em [ini, fim): quantos bipes no período e a % de conclusão da OP inteira (0121). Período nulo = histórico todo. */
+export async function listarOpsComBipes(ini: string | null, fim: string | null): Promise<{ pmo: string; op: string; bipes: number; pct: number | null }[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_ops_com_bipes', { p_ini: ini, p_fim: fim })
   if (error) throw error
-  return ((data ?? []) as { pmo: string; op: string; bipes: number | string }[]).map((r) => ({ pmo: r.pmo, op: r.op, bipes: Number(r.bipes) }))
+  return ((data ?? []) as { pmo: string; op: string; bipes: number | string; pct_conclusao: number | string | null }[]).map((r) => ({
+    pmo: r.pmo,
+    op: r.op,
+    bipes: Number(r.bipes),
+    pct: r.pct_conclusao == null ? null : Number(r.pct_conclusao),
+  }))
 }
