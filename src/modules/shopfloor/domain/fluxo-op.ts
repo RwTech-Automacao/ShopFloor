@@ -331,3 +331,12 @@ export function faixaDoRotulo(rotulo: string, bucket: 'dia' | 'hora'): string {
   const fim = (Number(m[2]) + 1) % 24
   return `${m[1]}${m[2]}h às ${String(fim).padStart(2, '0')}h`
 }
+
+/**
+ * Ordena as OPs da lista do Fluxo da que teve MAIS bipes pra menos (`bipes` por chave `pmo||op`).
+ * OP sem bipe conta 0; empate mantém a ordem original (estável). Puro.
+ */
+export function ordenarOpsPorBipes<T extends { pmo: string; op: string }>(lista: T[], bipes: Record<string, number>): T[] {
+  const n = (o: T) => bipes[`${o.pmo}||${o.op}`] ?? 0
+  return lista.map((o, i) => ({ o, i })).sort((a, b) => n(b.o) - n(a.o) || a.i - b.i).map((x) => x.o)
+}
