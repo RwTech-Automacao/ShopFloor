@@ -1,3 +1,5 @@
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
+
 export interface Ambiente {
   vercel?: string // VERCEL_ENV: 'preview' | 'development' | 'production' (só existe na Vercel)
   node?: string   // NODE_ENV
@@ -34,4 +36,16 @@ export function alertasLiberados(
   const alvo = (email ?? '').trim().toLowerCase()
   if (!alvo) return false
   return emails.includes(alvo)
+}
+
+/**
+ * Pode usar os Alertas (menu, Meu perfil e vínculo Telegram/Discord)? Só quem ADMINISTRA o
+ * ShopFloor — os únicos que podem ser destinatários — e, em produção, está na liberação acima.
+ * Sem o admin, a pessoa conseguiria vincular a conta mas nunca receberia nada.
+ */
+export function alertasDisponiveis(
+  sessao: { email: string | null | undefined; perfil: Parameters<typeof podeNoModulo>[0] } | null,
+): boolean {
+  if (!sessao) return false
+  return podeNoModulo(sessao.perfil, 'shopfloor', 'administrar') && alertasLiberados(sessao.email)
 }

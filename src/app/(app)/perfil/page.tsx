@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessao } from '@/modules/auth/application/get-sessao'
-import { alertasLiberados } from '@/modules/alertas/application/liberacao'
+import { alertasDisponiveis } from '@/modules/alertas/application/liberacao'
 import { canaisConfigurados } from '@/modules/alertas/infra/canais'
 import { listarMinhasContas } from '@/modules/alertas/infra/contas-repository'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
@@ -11,7 +11,7 @@ import { CartaoAlertas } from './cartao-alertas'
 export default async function PerfilPage() {
   const sessao = await getSessao()
   if (!sessao) redirect('/login')
-  if (!alertasLiberados(sessao.email)) {
+  if (!alertasDisponiveis(sessao)) {
     return <SemPermissao />
   }
 
