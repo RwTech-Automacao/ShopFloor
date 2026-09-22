@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, opsComBipes, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
-import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo } from '@/modules/shopfloor/domain/fluxo-op'
+import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo, ordenarOpsPorBipes } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { DefeitosLista } from './defeitos-lista'
@@ -457,7 +457,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [criadoDe, setCriadoDe] = useState('') // range custom — início (YYYY-MM-DD)
   const [criadoAte, setCriadoAte] = useState('') // range custom — fim (YYYY-MM-DD)
   // OPs com bipe no período, com a chave do período a que pertencem (`ops` null = a busca falhou).
-  const [bipesPeriodo, setBipesPeriodo] = useState<{ chave: string; ops: Set<string> | null } | null>(null)
+  const [bipesPeriodo, setBipesPeriodo] = useState<{ chave: string; bipes: Record<string, number> | null } | null>(null)
   const [buscaSn, setBuscaSn] = useState('') // busca de SN pra realçar a rota no canvas
   // rota do SN buscado: `ordem` = postos na ordem cronológica (+ atual no fim) pra revelar UM A UM.
   const [rota, setRota] = useState<{ ordem: string[]; atual: string | null } | null>(null)
@@ -909,18 +909,17 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     return () => document.removeEventListener('fullscreenchange', onFs)
   }, [])
 
-  // Filtro de período da lista de OPs: busca no banco quais OPs tiveram BIPE no período (0109).
-  // Antes era a data de criação da OP. A chave muda só quando o período muda (não a cada minuto).
-  const chavePeriodoOps =
-    filtroData === 'tudo' || (filtroData === 'custom' && !criadoDe && !criadoAte)
-      ? ''
-      : `${filtroData}|${criadoDe}|${criadoAte}`
+  // Lista de OPs: busca no banco quantos BIPES cada OP teve no período (0120) — com período, só
+  // aparecem as OPs com bipe; em "Tudo" (período vazio) ninguém some, a contagem só ORDENA a lista
+  // (da OP com mais bipes pra menos). A chave muda só quando o período muda (não a cada minuto).
+  const semPeriodo = filtroData === 'tudo' || (filtroData === 'custom' && !criadoDe && !criadoAte)
+  const chavePeriodoOps = semPeriodo ? 'tudo' : `${filtroData}|${criadoDe}|${criadoAte}`
   useEffect(() => {
-    if (!chavePeriodoOps) return
     let ini: string | null = null
     let fim: string | null = null
     const agora = Date.now()
-    if (filtroData === 'hoje') { const d = new Date(agora); d.setHours(0, 0, 0, 0); ini = d.toISOString() }
+    if (chavePeriodoOps === 'tudo') { /* histórico todo: só ordena */ }
+    else if (filtroData === 'hoje') { const d = new Date(agora); d.setHours(0, 0, 0, 0); ini = d.toISOString() }
     else if (filtroData === '7') ini = new Date(agora - 7 * 86400000).toISOString()
     else if (filtroData === '30') ini = new Date(agora - 30 * 86400000).toISOString()
     else {
@@ -929,25 +928,28 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
       if (criadoAte) { const t = Date.parse(`${criadoAte}T00:00:00`); if (!Number.isNaN(t)) fim = new Date(t + 86400000).toISOString() }
     }
     let cancelado = false
-    opsComBipes(ini, fim).then((chaves) => {
+    opsComBipes(ini, fim).then((bipes) => {
       if (cancelado) return
-      if (chaves === null) toast.error('Não foi possível filtrar as OPs por período. Mostrando todas.')
-      setBipesPeriodo({ chave: chavePeriodoOps, ops: chaves === null ? null : new Set(chaves) })
+      if (bipes === null && chavePeriodoOps !== 'tudo') toast.error('Não foi possível filtrar as OPs por período. Mostrando todas.')
+      setBipesPeriodo({ chave: chavePeriodoOps, bipes })
     })
     return () => { cancelado = true }
   }, [chavePeriodoOps, filtroData, criadoDe, criadoAte])
-  const carregandoOps = chavePeriodoOps !== '' && bipesPeriodo?.chave !== chavePeriodoOps
-  const opsComBipe = chavePeriodoOps !== '' && !carregandoOps ? (bipesPeriodo?.ops ?? null) : null
+  const bipesDaVez = bipesPeriodo?.chave === chavePeriodoOps ? bipesPeriodo.bipes : null
+  const carregandoOps = !semPeriodo && bipesPeriodo?.chave !== chavePeriodoOps
+  const opsComBipe = !semPeriodo && !carregandoOps ? bipesDaVez : null
 
   // Dropdown de OP: filtro por PMO/OP/cliente (texto) + OPs com bipe no período (a lista pode ser longa).
   const opsFiltradas = useMemo(() => {
     const f = filtroOp.trim().toLowerCase()
-    return ops.filter((o) => {
+    const lista = ops.filter((o) => {
       if (f && !`${o.pmo}/${o.op} ${o.cliente ?? ''}`.toLowerCase().includes(f)) return false
-      if (opsComBipe && !opsComBipe.has(`${o.pmo}||${o.op}`)) return false
+      if (opsComBipe && !(`${o.pmo}||${o.op}` in opsComBipe)) return false
       return true
     })
-  }, [ops, filtroOp, opsComBipe])
+    // Da OP com mais bipes pra menos (no período, ou no histórico em "Tudo"); empate mantém a ordem original.
+    return bipesDaVez ? ordenarOpsPorBipes(lista, bipesDaVez) : lista
+  }, [ops, filtroOp, opsComBipe, bipesDaVez])
 
   const rotuloOpSel = useMemo(() => {
     const o = ops.find((x) => `${x.pmo}||${x.op}` === sel)

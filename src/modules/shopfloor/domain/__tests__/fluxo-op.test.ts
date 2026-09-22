@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca, faixaDoRotulo } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca, faixaDoRotulo, ordenarOpsPorBipes } from '../fluxo-op'
 
 const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0, reprovadosSemReteste: 0 })
 
@@ -318,5 +318,23 @@ describe('faixaDoRotulo', () => {
 
   it('rótulo fora do formato volta intacto, sem inventar faixa', () => {
     expect(faixaDoRotulo('sem hora', 'hora')).toBe('sem hora')
+  })
+})
+
+describe('ordenarOpsPorBipes', () => {
+  const lista = [
+    { pmo: 'P1', op: '1' },
+    { pmo: 'P2', op: '2' },
+    { pmo: 'P3', op: '3' },
+    { pmo: 'P4', op: '4' },
+  ]
+
+  it('da OP com mais bipes pra menos; sem bipe conta 0; empate mantém a ordem', () => {
+    const r = ordenarOpsPorBipes(lista, { 'P2||2': 50, 'P3||3': 900, 'P4||4': 50 })
+    expect(r.map((o) => o.op)).toEqual(['3', '2', '4', '1'])
+  })
+
+  it('sem nenhum bipe, a ordem original fica igual', () => {
+    expect(ordenarOpsPorBipes(lista, {}).map((o) => o.op)).toEqual(['1', '2', '3', '4'])
   })
 })
