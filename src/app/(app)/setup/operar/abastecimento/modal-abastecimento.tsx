@@ -59,6 +59,8 @@ export function ConteudoAbastecimento({
   // `passo` só muda por `irPara` com índice de `passos`: o passo atual existe sempre.
   const atual = passos[passo]!
   const anteriores = passos.slice(0, passo)
+  const ultimo = passo === passos.length - 1
+  const vazio = campos[atual.campo].trim() === ''
 
   function irPara(indice: number) {
     setPasso(indice)
@@ -72,10 +74,11 @@ export function ConteudoAbastecimento({
     el?.select()
   }, [passo, refoco])
 
+  /** O que o Enter faz neste passo — e também o que o botão do rodapé faz, para o tablet só de toque. */
   function avancar() {
     // O passo não passa em branco: sem valor, o Enter só mantém o operador no mesmo campo.
-    if (campos[atual.campo].trim() === '') return
-    if (passo < passos.length - 1) { irPara(passo + 1); return }
+    if (vazio) return
+    if (!ultimo) { irPara(passo + 1); return }
     enviar()
   }
 
@@ -177,17 +180,29 @@ export function ConteudoAbastecimento({
         />
       </div>
 
-      {passo > 0 && (
+      {/* O Enter do leitor continua sendo o caminho normal; o botão é para o tablet só de toque, cujo
+          teclado virtual pode não ter Enter. Ele faz exatamente o que o Enter faria neste passo. */}
+      <div className="flex flex-none gap-2">
+        {passo > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 px-4 text-base"
+            onClick={() => irPara(passo - 1)}
+            disabled={enviando}
+          >
+            Voltar
+          </Button>
+        )}
         <Button
           type="button"
-          variant="outline"
-          className="h-11 flex-none self-start px-4 text-base"
-          onClick={() => irPara(passo - 1)}
-          disabled={enviando}
+          className="h-11 flex-1 bg-enterplak px-4 text-base hover:bg-enterplak-700"
+          onClick={avancar}
+          disabled={enviando || vazio}
         >
-          Voltar
+          {ultimo ? 'Registrar troca' : 'Avançar'}
         </Button>
-      )}
+      </div>
     </div>
   )
 }

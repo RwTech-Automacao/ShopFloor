@@ -34,6 +34,11 @@ function bipar(valor: string) {
   fireEvent.keyDown(campo, { key: 'Enter' })
 }
 
+/** Digitar à mão, sem Enter: é assim que o tablet só de toque chega ao botão do rodapé. */
+function digitar(valor: string) {
+  fireEvent.change(campoAtual(), { target: { value: valor } })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -132,6 +137,46 @@ describe('ConteudoAbastecimento', () => {
     expect(campo.value).toBe('5678')
 
     select.mockRestore()
+  })
+
+  it('o botão do rodapé avança o passo, igual ao Enter', () => {
+    render(<ConteudoAbastecimento {...PROPS} />)
+    digitar('1234')
+    fireEvent.click(screen.getByRole('button', { name: 'Avançar' }))
+    expect(screen.getByText('2/6')).toBeInTheDocument()
+    expect(screen.getByLabelText('Posição')).toBeInTheDocument()
+  })
+
+  it('no 6/6 o botão registra a troca', async () => {
+    trocarRolo.mockResolvedValue(APROVADA)
+    render(<ConteudoAbastecimento {...PROPS} />)
+    for (const valor of BIPES.slice(0, 5)) bipar(valor)
+    digitar('SN-0001')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar troca' }))
+
+    await waitFor(() => expect(trocarRolo).toHaveBeenCalledTimes(1))
+    expect(trocarRolo).toHaveBeenCalledWith({
+      setupId: 's1',
+      posicao: 'L1-A-12',
+      feeder: 'FD-0034',
+      roloSaida: 'ROLO-SAI',
+      roloEntrada: 'ROLO-ENT',
+      snInicial: 'SN-0001',
+      colaborador: '1234',
+    })
+  })
+
+  it('com o campo em branco o botão não avança nem registra', () => {
+    trocarRolo.mockResolvedValue(APROVADA)
+    render(<ConteudoAbastecimento {...PROPS} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Avançar' }))
+    expect(screen.getByText('1/6')).toBeInTheDocument()
+
+    for (const valor of BIPES.slice(0, 5)) bipar(valor)
+    expect(screen.getByText('6/6')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar troca' }))
+    expect(trocarRolo).not.toHaveBeenCalled()
   })
 
   it('troca reprovada volta ao 4/6 mantendo os valores e toca o som de erro', async () => {
