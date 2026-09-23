@@ -5,8 +5,26 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+import { blindarCliqueFantasma } from "@/shared/lib/clique-fantasma"
 
-const Select = SelectPrimitive.Root
+// Em toque, o clique sintetizado que o navegador dispara ao fechar a lista pode vazar para
+// o que estiver por baixo dela (ver docs/superpowers/specs/2026-09-23-clique-fantasma-select-touch-design.md).
+// Por isso `Select` deixa de ser um repasse direto: ao fechar, arma a blindagem, sempre
+// repassando o `onOpenChange` de quem usa.
+function Select<Value, Multiple extends boolean | undefined = false>({
+  onOpenChange,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  return (
+    <SelectPrimitive.Root
+      onOpenChange={(aberto, detalhesEvento) => {
+        if (!aberto) blindarCliqueFantasma()
+        onOpenChange?.(aberto, detalhesEvento)
+      }}
+      {...props}
+    />
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
