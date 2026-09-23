@@ -29,7 +29,12 @@ export interface EntradaRegra {
   pausaMaxMin?: string | number | null
   lembreteMin: string | number | null
   canais: string[]
+  /** Os RESPONSÁVEIS: quem responde pelo alerta e pode encerrá-lo. */
   destinatarios: string[]
+  /** Ausente = true (chamadas de antes do canal). Avisa na conversa privada de cada responsável. */
+  avisarPessoas?: boolean
+  /** Ausente = false. Avisa no canal do Discord do sistema (DISCORD_CANAL_ID). */
+  avisarCanal?: boolean
   /** Vazio = todas as PMOs. */
   pmos?: string[]
   ativa: boolean
@@ -50,6 +55,8 @@ export interface RegraValida {
   lembreteMin: number | null
   canais: Canal[]
   destinatarios: string[]
+  avisarPessoas: boolean
+  avisarCanal: boolean
   pmos: string[]
   ativa: boolean
 }
@@ -234,7 +241,18 @@ export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
   if (canais.length === 0) return erro('Escolha pelo menos 1 canal.')
 
   const destinatarios = unicos(e.destinatarios)
-  if (destinatarios.length === 0) return erro('Escolha pelo menos 1 destinatário.')
+  // Continua obrigatório: são os RESPONSÁVEIS, e é deles que sai o direito de encerrar. Uma regra
+  // que avisasse só no canal sem responsável nenhum deixaria o botão "Resolvido" sem quem apertar.
+  if (destinatarios.length === 0) return erro('Escolha pelo menos 1 responsável.')
+
+  const avisarPessoas = e.avisarPessoas ?? true
+  const avisarCanal = e.avisarCanal ?? false
+  if (avisarCanal && !canais.includes('discord')) {
+    return erro('Avisar no canal exige o canal Discord marcado (o canal é do Discord).')
+  }
+  if (!avisarPessoas && !avisarCanal) {
+    return erro('Escolha avisar os responsáveis, o canal do Discord, ou os dois.')
+  }
 
   return {
     ok: true,
@@ -252,6 +270,8 @@ export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
       lembreteMin: lembrete,
       canais: [...canais],
       destinatarios,
+      avisarPessoas,
+      avisarCanal,
       pmos: unicos(e.pmos),
       ativa: e.ativa,
     },

@@ -1,4 +1,4 @@
-import type { Canal, ResultadoEnvio, ResultadoSimples } from '../domain/tipos'
+import type { Canal, DestinoEnvio, ResultadoEnvio, ResultadoSimples } from '../domain/tipos'
 import type { ContaDestino, ResultadoAvaliacaoRpc } from '../domain/avaliacao'
 import type { EnvioReservado } from '../domain/envio'
 import type { ResolucaoOcorrencia } from '../domain/resolucao'
@@ -6,9 +6,12 @@ import type { ResolucaoOcorrencia } from '../domain/resolucao'
 /**
  * Tudo que o serviço precisa de um canal. Quem implementa é `infra/canais.ts` (Telegram/Discord);
  * nos testes entra uma porta de mentira — por isso aqui não há nem `fetch`, nem token.
+ *
+ * `enviar` recebe o DESTINO já resolvido pela fila (0123): conversa privada de uma pessoa ou canal
+ * do Discord. Canal que não sabe postar em canal (o Telegram) recusa aquele destino.
  */
 export interface PortaCanal {
-  enviar(externoId: string, texto: string, ocorrenciaIdBotao: string | null): Promise<ResultadoEnvio>
+  enviar(destino: DestinoEnvio, texto: string, ocorrenciaIdBotao: string | null): Promise<ResultadoEnvio>
   removerBotoes(mensagemExternaId: string): Promise<ResultadoSimples>
 }
 

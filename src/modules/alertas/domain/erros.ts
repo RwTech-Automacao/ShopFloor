@@ -8,7 +8,7 @@ const MENSAGENS: Record<string, string> = {
   CANAL_INVALIDO: 'Canal inválido.',
   CONTA_JA_VINCULADA: 'Esta conta já está vinculada a outro usuário do ShopFloor.',
   MUITAS_TENTATIVAS: 'Muitas tentativas. Aguarde 15 minutos e gere um código novo no ShopFloor.',
-  NAO_DESTINATARIO: 'Você não é destinatário desta regra ou não administra o ShopFloor.',
+  NAO_DESTINATARIO: 'Você não é responsável por esta regra ou não administra o ShopFloor.',
   OCORRENCIA_ENCERRADA: 'Esta ocorrência já normalizou.',
   OCORRENCIA_INEXISTENTE: 'Ocorrência não encontrada.',
   SEM_PERMISSAO: 'Você não tem permissão para configurar alertas.',

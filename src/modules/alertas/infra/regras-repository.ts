@@ -10,7 +10,8 @@ import type { ResultadoResolver } from '../application/portas'
 
 const CAMPOS_REGRA =
   'id, tipo, nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes, limite_tempo_seg, ' +
-  'limite_ocorrencias, pausa_max_min, pmos, lembrete_min, canais, destinatarios, ativa, atualizado_em'
+  'limite_ocorrencias, pausa_max_min, pmos, lembrete_min, canais, destinatarios, ' +
+  'avisar_pessoas, avisar_canal, ativa, atualizado_em'
 
 interface LinhaRegra {
   id: string
@@ -28,6 +29,8 @@ interface LinhaRegra {
   lembrete_min: number | null
   canais: string[] | null
   destinatarios: string[] | null
+  avisar_pessoas: boolean | null
+  avisar_canal: boolean | null
   ativa: boolean
   atualizado_em: string
 }
@@ -62,6 +65,9 @@ function paraRegra(l: LinhaRegra): RegraAlerta {
     lembreteMin: l.lembrete_min,
     canais: (l.canais ?? []).filter(ehCanal),
     destinatarios: l.destinatarios ?? [],
+    // Banco ainda sem a 0123 (deploy antes da migração): o comportamento de hoje é avisar as pessoas.
+    avisarPessoas: l.avisar_pessoas ?? true,
+    avisarCanal: l.avisar_canal ?? false,
     pmos: l.pmos ?? [],
     ativa: l.ativa,
     atualizadoEm: l.atualizado_em,
@@ -88,6 +94,8 @@ function paraLinha(r: RegraValida, comTipo: boolean): Record<string, unknown> {
     lembrete_min: r.lembreteMin,
     canais: r.canais,
     destinatarios: r.destinatarios,
+    avisar_pessoas: r.avisarPessoas,
+    avisar_canal: r.avisarCanal,
     ativa: r.ativa,
   }
   if (comTipo) linha.tipo = r.tipo

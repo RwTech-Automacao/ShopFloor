@@ -96,6 +96,8 @@ describe('lerEnvioReservado', () => {
       id: 'e1',
       ocorrenciaId: 'oc1',
       usuarioId: 'u1',
+      // Linha sem destino_tipo (banco antes da 0123) é de pessoa.
+      destinoTipo: 'usuario',
       canal: 'telegram',
       externoId: '111',
       tipo: 'alerta',
@@ -103,6 +105,17 @@ describe('lerEnvioReservado', () => {
       comBotao: true,
       tentativas: 1,
     })
+  })
+
+  it('linha de canal: sem usuário, com destino_tipo canal', () => {
+    const r = lerEnvioReservado({ ...LINHA, usuario_id: null, destino_tipo: 'canal', externo_id: 'C9' })
+    expect(r?.destinoTipo).toBe('canal')
+    expect(r?.usuarioId).toBeNull()
+    expect(r?.externoId).toBe('C9')
+  })
+
+  it('destino_tipo desconhecido cai em pessoa (não derruba a rodada)', () => {
+    expect(lerEnvioReservado({ ...LINHA, destino_tipo: 'grupo' })?.destinoTipo).toBe('usuario')
   })
   it('canal, tipo ou destino desconhecidos voltam null', () => {
     expect(lerEnvioReservado({ ...LINHA, canal: 'whatsapp' })).toBeNull()

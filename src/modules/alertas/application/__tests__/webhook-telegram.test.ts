@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { TelegramClient } from '../../infra/telegram'
 import type { EnvioReservado } from '../../domain/envio'
+import type { DestinoEnvio } from '../../domain/tipos'
 import type { FiltroReserva, MensagemComBotao, RepositorioEnvios, RepositorioVinculo } from '../portas'
 import { tratarUpdateTelegram } from '../webhook-telegram'
 
@@ -103,6 +104,7 @@ function linhaResolvido(
     id,
     ocorrenciaId: OC,
     usuarioId,
+    destinoTipo: 'usuario',
     canal,
     externoId,
     tipo: 'resolvido',
@@ -186,9 +188,9 @@ describe('tratarUpdateTelegram — botão Resolvido', () => {
     })
     const portas = {
       telegram: {
-        async enviar(externoId: string) {
-          enviadosPorta.push(externoId)
-          return { ok: true as const, mensagemExternaId: `${externoId}:2` }
+        async enviar(destino: DestinoEnvio) {
+          enviadosPorta.push(destino.externoId)
+          return { ok: true as const, mensagemExternaId: `${destino.externoId}:2` }
         },
         async removerBotoes() {
           return { ok: true as const }
@@ -221,10 +223,10 @@ describe('tratarUpdateTelegram — botão Resolvido', () => {
     const tg = telegramFalso()
     const { repo } = repoFalso({
       usuario: 'u3',
-      resolver: { ok: false, codigo: 'NAO_DESTINATARIO', erro: 'Você não é destinatário desta regra ou não administra o ShopFloor.' },
+      resolver: { ok: false, codigo: 'NAO_DESTINATARIO', erro: 'Você não é responsável por esta regra ou não administra o ShopFloor.' },
     })
     await tratarUpdateTelegram(callback, { telegram: tg.telegram, portas: {}, repo })
-    expect(tg.callbacks[0]!.texto).toBe('Você não é destinatário desta regra ou não administra o ShopFloor.')
+    expect(tg.callbacks[0]!.texto).toBe('Você não é responsável por esta regra ou não administra o ShopFloor.')
     expect(tg.editadas).toHaveLength(0)
   })
 
@@ -249,8 +251,8 @@ describe('tratarUpdateTelegram — botão Resolvido', () => {
     })
     const portas = {
       telegram: {
-        async enviar(externoId: string) {
-          enviadosPorta.push(externoId)
+        async enviar(destino: DestinoEnvio) {
+          enviadosPorta.push(destino.externoId)
           return { ok: true as const, mensagemExternaId: 'x:1' }
         },
         async removerBotoes() {

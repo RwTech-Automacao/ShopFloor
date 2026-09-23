@@ -58,6 +58,8 @@ function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {
     pausaMaxMin: null,
     lembreteMin: null,
     canais: ['telegram'],
+    avisarPessoas: true,
+    avisarCanal: false,
     destinatarios: ['u1'],
     pmos: [],
     ativa: true,
@@ -145,7 +147,9 @@ describe('RegraForm — taxa de aprovação', () => {
       limiteOcorrencias: '',
       lembreteMin: '10',
       canais: ['telegram'],
-      destinatarios: ['u1'],
+      avisarPessoas: true,
+    avisarCanal: false,
+    destinatarios: ['u1'],
       pmos: [],
       ativa: true,
     })
@@ -170,12 +174,12 @@ describe('RegraForm — taxa de aprovação', () => {
     expect(screen.getByText('Taxa de agora')).toBeInTheDocument()
   })
 
-  it('destinatário salvo que ficou inativo ou sem permissão sai da regra, com aviso', async () => {
+  it('responsável salvo que ficou inativo ou sem permissão sai da regra, com aviso', async () => {
     const onSalvo = vi.fn()
     montar({ regra: regraSalva({ destinatarios: ['u1', 'u-inativo', 'u-sem-permissao'] }), onSalvo })
     expect(
       screen.getByText(
-        '2 destinatário(s) inativo(s) ou sem permissão de administrar o ShopFloor removido(s) da regra — salve para confirmar.',
+        '2 responsável(is) inativo(s) ou sem permissão de administrar o ShopFloor removido(s) da regra — salve para confirmar.',
       ),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Ana Gestora')).toBeChecked()
@@ -359,6 +363,78 @@ describe('RegraForm — PMOs', () => {
     montar({ regra: regraSalva({ pmos: ['PMOZ'] }) })
     expect(screen.getByLabelText('PMO PMOZ')).toBeChecked()
     expect(screen.getByLabelText('PMO PMOA')).not.toBeChecked()
+  })
+})
+
+describe('RegraForm — como avisar (canal do Discord)', () => {
+  it('regra nova nasce avisando as pessoas, sem canal', () => {
+    montar()
+    expect(screen.getByLabelText('Avisar cada responsável na conversa privada')).toBeChecked()
+    expect(screen.getByLabelText('Avisar no canal do Discord')).not.toBeChecked()
+  })
+
+  it('grava as duas opções', async () => {
+    montar()
+    preencherObrigatorios('Com canal')
+    fireEvent.click(screen.getByLabelText('Discord'))
+    fireEvent.click(screen.getByLabelText('Avisar no canal do Discord'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ avisarPessoas: true, avisarCanal: true })
+  })
+
+  it('"só no canal": desmarca as pessoas e grava avisarPessoas false', async () => {
+    montar()
+    preencherObrigatorios('So canal')
+    fireEvent.click(screen.getByLabelText('Discord'))
+    fireEvent.click(screen.getByLabelText('Avisar no canal do Discord'))
+    fireEvent.click(screen.getByLabelText('Avisar cada responsável na conversa privada'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ avisarPessoas: false, avisarCanal: true })
+  })
+
+  it('lê o que está salvo na regra', () => {
+    montar({ regra: regraSalva({ canais: ['discord'], avisarPessoas: false, avisarCanal: true }) })
+    expect(screen.getByLabelText('Avisar cada responsável na conversa privada')).not.toBeChecked()
+    expect(screen.getByLabelText('Avisar no canal do Discord')).toBeChecked()
+  })
+
+  it('avisar no canal sem o Discord marcado é recusado, com aviso na tela', async () => {
+    montar()
+    preencherObrigatorios('Sem discord')
+    fireEvent.click(screen.getByLabelText('Avisar no canal do Discord'))
+    expect(screen.getByText('(marque o canal Discord acima)')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(toastErro).toHaveBeenCalledWith(
+      'Avisar no canal exige o canal Discord marcado (o canal é do Discord).',
+      TOAST,
+    )
+    expect(salvarRegraAction).not.toHaveBeenCalled()
+  })
+
+  it('os dois desligados é recusado', () => {
+    montar()
+    preencherObrigatorios('Muda')
+    fireEvent.click(screen.getByLabelText('Avisar cada responsável na conversa privada'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(toastErro).toHaveBeenCalledWith(
+      'Escolha avisar os responsáveis, o canal do Discord, ou os dois.',
+      TOAST,
+    )
+    expect(salvarRegraAction).not.toHaveBeenCalled()
+  })
+
+  it('"Fulano sem Telegram" só aparece quando a regra avisa no privado', () => {
+    montar()
+    fireEvent.click(screen.getByLabelText('Telegram'))
+    fireEvent.click(screen.getByLabelText('Carla Operadora'))
+    expect(screen.getByText('Carla Operadora sem Telegram')).toBeInTheDocument()
+    // Só no canal: quem vê no canal não precisa de conta vinculada nenhuma.
+    fireEvent.click(screen.getByLabelText('Discord'))
+    fireEvent.click(screen.getByLabelText('Avisar no canal do Discord'))
+    fireEvent.click(screen.getByLabelText('Avisar cada responsável na conversa privada'))
+    expect(screen.queryByText('Carla Operadora sem Telegram')).not.toBeInTheDocument()
   })
 })
 

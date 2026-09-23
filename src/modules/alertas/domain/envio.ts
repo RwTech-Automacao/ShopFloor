@@ -1,4 +1,12 @@
-import { ehCanal, ehJanelaTipo, ehTipoRegra, type Canal, type TipoEnvio } from './tipos'
+import {
+  ehCanal,
+  ehDestinoTipo,
+  ehJanelaTipo,
+  ehTipoRegra,
+  type Canal,
+  type DestinoTipo,
+  type TipoEnvio,
+} from './tipos'
 import type { Janela } from './janela'
 import {
   textoAlerta,
@@ -21,8 +29,11 @@ import {
 export interface EnvioReservado {
   id: string
   ocorrenciaId: string | null
-  usuarioId: string
+  /** Null nas linhas de canal: um aviso no canal não é de ninguém. */
+  usuarioId: string | null
   canal: Canal
+  /** Destino da linha (0123). Linha sem a coluna (banco antigo) é de pessoa. */
+  destinoTipo: DestinoTipo
   externoId: string
   tipo: TipoEnvio
   /** O que o banco guardou para montar o texto (ver `textoDoEnvio`). */
@@ -53,8 +64,10 @@ export function lerEnvioReservado(bruto: unknown): EnvioReservado | null {
   return {
     id,
     ocorrenciaId: l.ocorrencia_id === null || l.ocorrencia_id === undefined ? null : String(l.ocorrencia_id),
-    usuarioId: String(l.usuario_id ?? ''),
+    usuarioId: l.usuario_id === null || l.usuario_id === undefined ? null : String(l.usuario_id),
     canal: l.canal,
+    // Banco ainda sem a 0123 (deploy antes da migração): toda linha é de pessoa.
+    destinoTipo: ehDestinoTipo(l.destino_tipo) ? l.destino_tipo : 'usuario',
     externoId,
     tipo: l.tipo,
     dados,

@@ -33,6 +33,8 @@ describe('validarRegra', () => {
       lembreteMin: null,
       canais: ['telegram'],
       destinatarios: ['u1', 'u2'],
+      avisarPessoas: true,
+      avisarCanal: false,
       pmos: [],
       ativa: true,
     })
@@ -52,12 +54,12 @@ describe('validarRegra', () => {
     expect(validarRegra({ ...BASE, nome: '   ' })).toEqual({ ok: false, erro: 'Informe o nome da regra.' })
   })
 
-  it('exige pelo menos 1 posto, 1 canal e 1 destinatário', () => {
+  it('exige pelo menos 1 posto, 1 canal e 1 responsável', () => {
     expect(validarRegra({ ...BASE, postos: [] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 posto.' })
     expect(validarRegra({ ...BASE, canais: [] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
     expect(validarRegra({ ...BASE, destinatarios: [] })).toEqual({
       ok: false,
-      erro: 'Escolha pelo menos 1 destinatário.',
+      erro: 'Escolha pelo menos 1 responsável.',
     })
   })
 
@@ -155,7 +157,7 @@ describe('validarRegra', () => {
     ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
     expect(
       validarRegra({ ...BASE, destinatarios: undefined as unknown as string[] }),
-    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 destinatário.' })
+    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 responsável.' })
   })
 
   it('recusa janela desconhecida', () => {

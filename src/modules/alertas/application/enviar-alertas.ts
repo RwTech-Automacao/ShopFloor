@@ -72,7 +72,11 @@ export async function entregarPendentes(
         const porta = portas[envio.canal]
         if (!porta) throw new Error(`${NOME_CANAL[envio.canal]} não configurado`)
         texto = textoDoEnvio(envio.tipo, envio.dados)
-        resultado = await porta.enviar(envio.externoId, texto, envio.comBotao ? envio.ocorrenciaId : null)
+        resultado = await porta.enviar(
+          { tipo: envio.destinoTipo, externoId: envio.externoId },
+          texto,
+          envio.comBotao ? envio.ocorrenciaId : null,
+        )
       } catch (e) {
         console.error(`[alertas] envio ${envio.id} falhou:`, mensagemDe(e))
         resultado = { ok: false, erro: `Erro interno: ${mensagemDe(e)}` }
@@ -169,7 +173,7 @@ export async function enviarTeste(
 
   const dados = { nome: p.nome }
   const texto = textoDoEnvio('teste', dados)
-  const resultado = await porta.enviar(conta.externoId, texto, null)
+  const resultado = await porta.enviar({ tipo: 'usuario', externoId: conta.externoId }, texto, null)
   await repo.registrarEnvioDireto({
     usuarioId: p.usuarioId,
     canal: p.canal,

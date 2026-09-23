@@ -48,7 +48,7 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
 }
 
 /**
- * Destinatários salvos que não estão mais entre os disponíveis (usuário desativado, removido ou que
+ * Responsáveis salvos que não estão mais entre os disponíveis (usuário desativado, removido ou que
  * perdeu shopfloor.administrar — `alerta_destinatarios` só devolve ativos que administram o
  * ShopFloor). Saem da seleção ao abrir o formulário; o aviso pede para salvar e confirmar. Lista de
  * disponíveis vazia = nada carregou: não descarta ninguém.
@@ -136,13 +136,18 @@ export function RegraForm({
   const [minimo, setMinimo] = useState(minimoInicial(tipo, regra))
   const [lembrete, setLembrete] = useState(regra?.lembreteMin === null || regra === null ? '' : String(regra.lembreteMin))
   const [canaisSel, setCanaisSel] = useState<Canal[]>(regra?.canais ?? [])
+  // Regra nova nasce como era antes do canal existir: avisa as pessoas, não avisa canal.
+  const [avisarPessoas, setAvisarPessoas] = useState(regra?.avisarPessoas ?? true)
+  const [avisarCanal, setAvisarCanal] = useState(regra?.avisarCanal ?? false)
   const [inicioDest] = useState(() => separarDestinatarios(regra?.destinatarios ?? [], destinatarios))
   const [destSel, setDestSel] = useState<string[]>(inicioDest.validos)
   const [pmosSel, setPmosSel] = useState<string[]>(regra?.pmos ?? [])
   const [previa, setPrevia] = useState<{ linhas: PreviaPosto[]; limite: number | null } | null>(null)
   const [pendente, startTransition] = useTransition()
 
-  const avisos = destinatariosSemCanal(destinatarios, destSel, canaisSel)
+  // "Fulano sem Telegram" só importa se a regra avisa no privado: no canal, quem vê não precisa de
+  // conta vinculada nenhuma.
+  const avisos = avisarPessoas ? destinatariosSemCanal(destinatarios, destSel, canaisSel) : []
   const janelaValor = janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : null
 
   function entrada(): EntradaRegra {
@@ -160,6 +165,8 @@ export function RegraForm({
       lembreteMin: lembrete,
       canais: canaisSel,
       destinatarios: destSel,
+      avisarPessoas,
+      avisarCanal,
       pmos: pmosSel,
       ativa: regra?.ativa ?? true,
     }
@@ -456,9 +463,45 @@ export function RegraForm({
 
       <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
-          Destinatários
-          <Explica titulo="Destinatários">
-            <p>Só aparecem usuários ativos que podem <strong>administrar o ShopFloor</strong>. Quem perder essa permissão para de receber, mesmo continuando na regra.</p>
+          Como avisar
+          <Explica titulo="Como avisar">
+            <p><strong>Cada responsável na conversa privada</strong>: é o comportamento de sempre — cada um recebe a mensagem no Telegram/Discord dele.</p>
+            <p><strong>No canal do Discord</strong>: uma mensagem só, no canal do sistema, que todo mundo do canal vê. Exige o canal <strong>Discord</strong> marcado acima.</p>
+            <p>Dá para marcar os dois. Só no canal: ninguém recebe no privado, e os responsáveis continuam podendo apertar <strong>Resolvido</strong> ali mesmo.</p>
+            <p>A mensagem no canal <strong>não marca ninguém</strong> (@here/cargo): quem não estiver com o Discord aberto pode não notar.</p>
+          </Explica>
+        </legend>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              aria-label="Avisar cada responsável na conversa privada"
+              checked={avisarPessoas}
+              onChange={() => setAvisarPessoas((a) => !a)}
+            />
+            Cada responsável na conversa privada
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              aria-label="Avisar no canal do Discord"
+              checked={avisarCanal}
+              onChange={() => setAvisarCanal((a) => !a)}
+            />
+            No canal do Discord
+            {avisarCanal && !canaisSel.includes('discord') && (
+              <span className="text-xs text-amber-700 dark:text-amber-400">(marque o canal Discord acima)</span>
+            )}
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="flex items-center gap-1.5 text-sm font-medium">
+          Responsáveis
+          <Explica titulo="Responsáveis">
+            <p>Quem responde por este alerta. São eles que podem apertar <strong>Resolvido</strong> — junto com quem administra o ShopFloor pela tela.</p>
+            <p>Só aparecem usuários ativos que podem <strong>administrar o ShopFloor</strong>. Quem perder essa permissão para de receber e de poder encerrar, mesmo continuando na regra.</p>
           </Explica>
         </legend>
         <div className="flex max-h-40 flex-col gap-2 overflow-y-auto rounded-md border border-border p-3">
@@ -479,7 +522,7 @@ export function RegraForm({
         </div>
         {inicioDest.descartados > 0 && (
           <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
-            {inicioDest.descartados} destinatário(s) inativo(s) ou sem permissão de administrar o ShopFloor removido(s)
+            {inicioDest.descartados} responsável(is) inativo(s) ou sem permissão de administrar o ShopFloor removido(s)
             da regra — salve para confirmar.
           </p>
         )}
