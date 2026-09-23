@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Play } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,9 @@ export function AlertasTela({
 }) {
   const [aba, setAba] = useState<'regras' | 'ocorrencias'>('regras')
   const [pendente, startTransition] = useTransition()
+  const router = useRouter()
+  // Incrementa a cada avaliação: é o sinal para a lista de ocorrências buscar de novo.
+  const [recarga, setRecarga] = useState(0)
 
   const semCanal = CANAIS.filter((c) => !configurados[c])
 
@@ -50,6 +54,14 @@ export function AlertasTela({
           : `${avaliadas} combinações avaliadas · ${enviados} enviados${falhas > 0 ? ` · ${falhas} falhas` : ''}`,
         TOAST,
       )
+      // A avaliação abre, REABRE, lembra e normaliza ocorrências. Sem isto, o gestor clica, lê "2
+      // combinações avaliadas" e vê a linha ainda como "Resolvida" — e conclui que o alerta não
+      // funcionou (foi o que aconteceu no smoke). Mesmo par do setup-estrutura: `router.refresh()`
+      // renova o que vem do servidor (inclusive a lista inicial de quando a aba for aberta depois)
+      // e a lista montada, que é estado do cliente, é avisada para buscar de novo.
+      // Vale também no `ocupado`: a outra rodada está mexendo nas ocorrências agora.
+      router.refresh()
+      setRecarga((v) => v + 1)
     })
   }
 
@@ -95,7 +107,11 @@ export function AlertasTela({
           configurados={configurados}
         />
       ) : (
-        <OcorrenciasLista ocorrenciasIniciais={ocorrenciasIniciais} filtroInicial={filtroInicial} />
+        <OcorrenciasLista
+          ocorrenciasIniciais={ocorrenciasIniciais}
+          filtroInicial={filtroInicial}
+          recarregar={recarga}
+        />
       )}
     </div>
   )

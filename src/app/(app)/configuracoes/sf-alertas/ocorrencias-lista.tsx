@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,22 +35,47 @@ function Estado({ o }: { o: OcorrenciaLinha }) {
 export function OcorrenciasLista({
   ocorrenciasIniciais,
   filtroInicial,
+  recarregar = 0,
 }: {
   ocorrenciasIniciais: OcorrenciaLinha[]
   filtroInicial: FiltroOcorrencias
+  /**
+   * Contador que a tela incrementa quando algo fora desta lista mexeu nas ocorrências (hoje:
+   * "Avaliar agora"). A lista é estado do CLIENTE e tem filtro próprio, então `router.refresh()`
+   * não a atualiza: ela precisa buscar de novo, com o filtro que está na tela.
+   */
+  recarregar?: number
 }) {
   const [filtro, setFiltro] = useState<FiltroOcorrencias>(filtroInicial)
   const [lista, setLista] = useState<OcorrenciaLinha[]>(ocorrenciasIniciais)
   const [pendente, startTransition] = useTransition()
+  // O filtro de agora, para a recarga de fora poder usá-lo sem entrar nas dependências do efeito
+  // (senão cada troca de filtro buscaria duas vezes).
+  const filtroAtual = useRef(filtroInicial)
 
-  function buscar(novo: FiltroOcorrencias) {
-    setFiltro(novo)
+  const carregar = useCallback((f: FiltroOcorrencias) => {
     startTransition(async () => {
-      const r = await listarOcorrenciasAction(novo)
+      const r = await listarOcorrenciasAction(f)
       if (!r.ok) toast.error(r.erro, TOAST)
       else setLista(r.ocorrencias)
     })
+  }, [])
+
+  function buscar(novo: FiltroOcorrencias) {
+    setFiltro(novo)
+    filtroAtual.current = novo
+    carregar(novo)
   }
+
+  // Primeiro render não busca nada: a lista já veio pronta do servidor.
+  const montado = useRef(false)
+  useEffect(() => {
+    if (!montado.current) {
+      montado.current = true
+      return
+    }
+    carregar(filtroAtual.current)
+  }, [recarregar, carregar])
 
   function resolver(o: OcorrenciaLinha) {
     startTransition(async () => {

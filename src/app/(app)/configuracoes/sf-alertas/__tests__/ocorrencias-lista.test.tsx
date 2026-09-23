@@ -1,13 +1,19 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { OcorrenciaLinha } from '@/modules/alertas/domain/ocorrencia'
 import { OcorrenciasLista } from '../ocorrencias-lista'
 
+const listarOcorrenciasAction = vi.fn()
 vi.mock('@/modules/alertas/application/alertas-actions', () => ({
-  listarOcorrenciasAction: vi.fn(),
+  listarOcorrenciasAction: (...a: unknown[]) => listarOcorrenciasAction(...a),
   resolverOcorrenciaAction: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  listarOcorrenciasAction.mockResolvedValue({ ok: true, ocorrencias: [] })
+})
 
 const BASE: OcorrenciaLinha = {
   id: 'o1',
@@ -88,5 +94,59 @@ describe('OcorrenciasLista', () => {
     expect(screen.getByText(/reaberta 18\/09 11:00/)).toBeInTheDocument()
     // O botão continua: reabrir devolve a ocorrência para 'aberta'.
     expect(screen.getByRole('button', { name: 'Marcar resolvida' })).toBeInTheDocument()
+  })
+})
+
+describe('OcorrenciasLista — recarga vinda de fora (depois de "Avaliar agora")', () => {
+  const FILTRO = { de: '2026-09-12', ate: '2026-09-18', estado: '' as const }
+
+  it('não busca nada no primeiro render (a lista já veio do servidor)', () => {
+    render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
+    expect(listarOcorrenciasAction).not.toHaveBeenCalled()
+  })
+
+  it('o contador mudando busca de novo e troca a lista', async () => {
+    // Era "Resolvida"; depois da avaliação a ocorrência voltou reaberta.
+    listarOcorrenciasAction.mockResolvedValue({
+      ok: true,
+      ocorrencias: [{ ...BASE, estado: 'aberta', reaberturas: 1 }],
+    })
+    const tela = render(
+      <OcorrenciasLista
+        ocorrenciasIniciais={[{ ...BASE, estado: 'resolvida' }]}
+        filtroInicial={FILTRO}
+        recarregar={0}
+      />,
+    )
+    // Pela célula: "Resolvida" também é opção do filtro e cabeçalho de coluna.
+    expect(screen.getByRole('cell', { name: 'Resolvida' })).toBeInTheDocument()
+
+    tela.rerender(
+      <OcorrenciasLista
+        ocorrenciasIniciais={[{ ...BASE, estado: 'resolvida' }]}
+        filtroInicial={FILTRO}
+        recarregar={1}
+      />,
+    )
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith(FILTRO))
+    await waitFor(() => expect(screen.getByRole('cell', { name: 'Reaberta' })).toBeInTheDocument())
+    expect(screen.queryByRole('cell', { name: 'Resolvida' })).not.toBeInTheDocument()
+  })
+
+  it('recarrega com o filtro que está na tela, não com o inicial', async () => {
+    const tela = render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
+    fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'aberta' } })
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith({ ...FILTRO, estado: 'aberta' }))
+    listarOcorrenciasAction.mockClear()
+
+    tela.rerender(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={1} />)
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledTimes(1))
+    expect(listarOcorrenciasAction).toHaveBeenCalledWith({ ...FILTRO, estado: 'aberta' })
+  })
+
+  it('trocar o filtro busca UMA vez (a recarga de fora não duplica)', async () => {
+    render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
+    fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'normalizada' } })
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledTimes(1))
   })
 })
