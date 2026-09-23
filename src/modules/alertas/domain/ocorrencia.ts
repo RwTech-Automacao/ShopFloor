@@ -56,8 +56,26 @@ export interface OcorrenciaLinha {
   resolvidaPorNome: string
   resolvidaEm: string | null
   normalizadaEm: string | null
+  /** Última reabertura (0122); null = nunca reabriu. */
+  reabertaEm: string | null
+  /** Quantas vezes voltou a `aberta` depois de um "Resolvido" que não resolveu. */
+  reaberturas: number
   enviosOk: number
   enviosFalha: number
+}
+
+/**
+ * Rótulo do estado na lista. Uma ocorrência que voltou aparece como "Reaberta", com a contagem:
+ * `resolvida_por`/`resolvida_em` são preservados na reabertura, então sem isto a linha ficaria
+ * dizendo "Aberta" e "resolvida às 10:00" ao mesmo tempo, sem explicar o que aconteceu.
+ */
+export function rotuloEstadoOcorrencia(o: Pick<OcorrenciaLinha, 'estado' | 'reaberturas'>): string {
+  if (o.estado === 'aberta') {
+    if (o.reaberturas <= 0) return 'Aberta'
+    return o.reaberturas === 1 ? 'Reaberta' : `Reaberta ${o.reaberturas}x`
+  }
+  if (o.estado === 'resolvida') return 'Resolvida'
+  return 'Normalizada'
 }
 
 /** Valor medido na régua do tipo: '88,8%', '3:00/peça', '4 vezes'. */

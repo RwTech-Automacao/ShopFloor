@@ -8,9 +8,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatarDataHoraCurta, rotuloDefeito } from '@/modules/alertas/domain/mensagens'
-import { NOME_TIPO_REGRA, type EstadoOcorrencia } from '@/modules/alertas/domain/tipos'
+import { NOME_TIPO_REGRA } from '@/modules/alertas/domain/tipos'
 import {
   formatarValorOcorrencia,
+  rotuloEstadoOcorrencia,
   type FiltroOcorrencias,
   type OcorrenciaLinha,
 } from '@/modules/alertas/domain/ocorrencia'
@@ -24,10 +25,11 @@ function quando(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? '—' : formatarDataHoraCurta(d)
 }
 
-function Estado({ estado }: { estado: EstadoOcorrencia }) {
-  if (estado === 'aberta') return <Badge variant="destructive">Aberta</Badge>
-  if (estado === 'resolvida') return <Badge variant="secondary">Resolvida</Badge>
-  return <Badge variant="outline">Normalizada</Badge>
+function Estado({ o }: { o: OcorrenciaLinha }) {
+  const rotulo = rotuloEstadoOcorrencia(o)
+  if (o.estado === 'aberta') return <Badge variant="destructive">{rotulo}</Badge>
+  if (o.estado === 'resolvida') return <Badge variant="secondary">{rotulo}</Badge>
+  return <Badge variant="outline">{rotulo}</Badge>
 }
 
 export function OcorrenciasLista({
@@ -129,10 +131,19 @@ export function OcorrenciasLista({
                 <TableCell>{formatarValorOcorrencia(o.regraTipo, o.valorAbertura)}</TableCell>
                 <TableCell>{formatarValorOcorrencia(o.regraTipo, o.valorUltimo)}</TableCell>
                 <TableCell>
-                  <Estado estado={o.estado} />
+                  <Estado o={o} />
                 </TableCell>
                 <TableCell>{quando(o.abertaEm)}</TableCell>
-                <TableCell>{o.resolvidaEm ? `${o.resolvidaPorNome} · ${quando(o.resolvidaEm)}` : '—'}</TableCell>
+                <TableCell>
+                  {o.resolvidaEm ? `${o.resolvidaPorNome} · ${quando(o.resolvidaEm)}` : '—'}
+                  {/* A reabertura preserva resolvida_por/resolvida_em: sem esta marca, a linha diria
+                      "resolvida às 10:00" numa ocorrência que já voltou. */}
+                  {o.resolvidaEm && o.estado !== 'resolvida' && o.reaberturas > 0 && (
+                    <span className="block text-xs text-muted-foreground">
+                      reaberta {quando(o.reabertaEm)}
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell>{quando(o.normalizadaEm)}</TableCell>
                 <TableCell>
                   {o.enviosOk} ok{o.enviosFalha > 0 ? ` · ${o.enviosFalha} falha` : ''}

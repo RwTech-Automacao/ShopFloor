@@ -273,6 +273,8 @@ export async function listarOcorrencias(f: FiltroOcorrencias): Promise<Ocorrenci
     valor_abertura: number | string | null
     valor_ultimo: number | string | null
     amostras: number | null
+    reaberta_em: string | null
+    reaberturas: number | null
   }[]).map((l) => ({
     id: l.id,
     regraId: l.regra_id,
@@ -294,6 +296,9 @@ export async function listarOcorrencias(f: FiltroOcorrencias): Promise<Ocorrenci
     resolvidaPorNome: l.resolvida_por_nome ?? '',
     resolvidaEm: l.resolvida_em,
     normalizadaEm: l.normalizada_em,
+    reabertaEm: l.reaberta_em,
+    // Banco ainda sem a 0122 (deploy antes da migração): sem reabertura nenhuma.
+    reaberturas: Number(l.reaberturas ?? 0) || 0,
     enviosOk: l.envios_ok,
     enviosFalha: l.envios_falha,
   }))

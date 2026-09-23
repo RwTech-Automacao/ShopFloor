@@ -6,6 +6,7 @@
 # concurrently`, que não roda dentro de transação nenhuma (nem com -1), então vai à parte, sem -1.
 # Depois dos testes da 0113, a 0115 (tipos de regra) é aplicada POR CIMA, com -1 e DUAS VEZES
 # (prova que é idempotente e que migra dados de verdade da 0113), e roda alertas_tipos_test.sql.
+# Mesma receita para a 0122 (reabertura), por cima de tudo, com alertas_reabertura_test.sql.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 NOME=pg-alertas-test
@@ -147,5 +148,13 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0115.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0115.sql   # de novo: idempotente
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_tipos.sql
 echo "0115 (tipos de regra): ok"
+
+# ---------- 0122: reabrir ocorrência resolvida que continua fora do limite ----------
+docker cp supabase/migrations/0122_alertas_reabertura.sql "$NOME":/tmp/0122.sql
+docker cp supabase/tests/alertas_reabertura_test.sql "$NOME":/tmp/teste_reabertura.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0122.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0122.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_reabertura.sql
+echo "0122 (reabertura): ok"
 
 echo "ALERTAS SQL OK"

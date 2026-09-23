@@ -30,6 +30,8 @@ const BASE: OcorrenciaLinha = {
   resolvidaPorNome: '',
   resolvidaEm: null,
   normalizadaEm: null,
+  reabertaEm: null,
+  reaberturas: 0,
   enviosOk: 2,
   enviosFalha: 0,
 }
@@ -64,5 +66,27 @@ describe('OcorrenciasLista', () => {
     expect(screen.getByText('3:20/peça')).toBeInTheDocument()
     expect(screen.getByText('75,0%')).toBeInTheDocument()
     expect(screen.getByText('88,8%')).toBeInTheDocument()
+  })
+
+  it('ocorrência que voltou aparece como "Reaberta", com o encerramento antigo marcado', () => {
+    render(
+      <OcorrenciasLista
+        ocorrenciasIniciais={[
+          {
+            ...BASE,
+            estado: 'aberta',
+            reaberturas: 2,
+            resolvidaPorNome: 'Ana Gestora',
+            resolvidaEm: '2026-09-18T13:00:00Z',
+            reabertaEm: '2026-09-18T14:00:00Z',
+          },
+        ]}
+        filtroInicial={{ de: '2026-09-12', ate: '2026-09-18', estado: '' }}
+      />,
+    )
+    expect(screen.getByText('Reaberta 2x')).toBeInTheDocument()
+    expect(screen.getByText(/reaberta 18\/09 11:00/)).toBeInTheDocument()
+    // O botão continua: reabrir devolve a ocorrência para 'aberta'.
+    expect(screen.getByRole('button', { name: 'Marcar resolvida' })).toBeInTheDocument()
   })
 })
