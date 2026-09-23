@@ -63,7 +63,7 @@ Um campo por vez, contador no topo: **1/6 … 6/6**.
 
 | Passo | Campo | Observação |
 |---|---|---|
-| 1/6 | Colaborador | **Pedido em toda troca**, sempre vazio |
+| 1/6 | Colaborador | **Confirmado em toda troca**, já preenchido com o último usado |
 | 2/6 | Posição (SMD) / Posto (PTH) | Rótulo por processo, como hoje |
 | 3/6 | Feeder (SMD) / Locação (PTH) | Rótulo por processo, como hoje |
 | 4/6 | Rolo que sai | |
@@ -71,8 +71,15 @@ Um campo por vez, contador no topo: **1/6 … 6/6**.
 | 6/6 | SN Inicial | Enter aqui envia |
 
 **Mudança de comportamento deliberada:** hoje o Colaborador é preenchido uma vez e
-**persiste** entre as trocas. Passa a ser pedido em toda troca. Custo: um bipe de crachá a
-mais por troca. Ganho: nenhuma troca fica registrada no nome de quem já saiu do turno.
+**some** das trocas seguintes. Passa a ser **confirmado em toda troca**: o passo 1/6 sempre
+aparece, já preenchido com o último crachá usado, e `Enter` confirma. Bipar o leitor
+sobrescreve (o campo dá `select()` ao ganhar foco), e dá para digitar por cima.
+
+Por que assim: o crachá é o **único** dos seis campos que pode ser digitado à mão — todos os
+outros vêm do leitor. Pedir vazio em toda troca abriria o teclado virtual uma vez por
+troca, que é justamente o atrito que este card quer eliminar. Pré-preenchido, a troca
+continua passando pelo campo (ninguém lança no nome de quem já saiu do turno) sem custo de
+digitação quando é a mesma pessoa a manhã toda.
 
 Navegação: `Enter` avança; botão **Voltar** volta um passo mantendo o que foi digitado;
 avançar exige o campo preenchido (o passo não passa em branco).
@@ -104,7 +111,8 @@ cada. Junto com o contador e o campo atual, é o conteúdo inteiro do modal.
 O resultado aparece **dentro do modal**, no mesmo padrão visual de hoje (`PainelResultado`):
 
 - **Aprovado:** chips com Posição, Feeder, Saiu, Entrou, SN Inicial. O modal volta ao
-  **passo 1/6** com todos os campos vazios, pronto para a próxima troca.
+  **passo 1/6**, com o Colaborador já preenchido com o último usado e os outros cinco
+  campos vazios, pronto para a próxima troca.
 - **Reprovado:** motivos listados, `tocarErro()`, os valores digitados são mantidos e o
   modal volta ao **passo 4/6 (Rolo que sai)**, como a tela faz hoje.
 - **Falha de rede:** mesma mensagem de hoje (`FALHA_CONEXAO_TROCA` — "Confira em Últimas
@@ -159,9 +167,11 @@ modelo (jsdom + `@testing-library/react`).
    valores bipados, na ordem certa.
 2. Contador: começa em 1/6 e chega a 6/6; Voltar volta um passo sem perder o valor.
 3. Rastro: no passo 4/6 estão visíveis os três valores já bipados, e nenhum a mais.
-4. Colaborador é pedido de novo depois de uma troca aprovada (campo vazio no passo 1/6).
-5. Aprovado volta ao passo 1/6 com tudo vazio; reprovado volta ao passo 4/6 mantendo os
-   valores e toca o som de erro.
+4. Depois de uma troca aprovada o modal volta ao passo 1/6 com o Colaborador preenchido
+   com o último usado, e os outros cinco campos vazios.
+5. No passo 1/6 pré-preenchido, `Enter` confirma e avança sem alterar o valor; bipar outro
+   crachá substitui o valor inteiro (não concatena).
+6. Reprovado volta ao passo 4/6 mantendo os valores e toca o som de erro.
 
 ## Riscos
 
@@ -170,7 +180,8 @@ modelo (jsdom + `@testing-library/react`).
   de bipado abre e fecha o teclado virtual uma vez por passo, e nesse caso o passo a passo
   pode ficar mais lento do que a tela atual. Precisa ser verificado no smoke, com o leitor
   real e no tablet real, antes do merge.
-- **Colaborador a cada troca** é uma bipada a mais. Foi decisão explícita, mas é a primeira
-  coisa que o operador vai reclamar — vale combinar com quem opera antes de subir.
+- **Colaborador a cada troca** é um Enter a mais por troca. Foi decisão explícita e o
+  pré-preenchimento reduz o custo ao mínimo, mas ainda é um passo que não existe hoje —
+  vale combinar com quem opera antes de subir.
 - **Sem rascunho:** fechar o modal no meio perde o que foi digitado. Aceitável porque a
   troca é curta, mas é diferente do NQA, que salva progresso.
