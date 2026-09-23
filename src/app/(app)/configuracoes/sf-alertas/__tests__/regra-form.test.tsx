@@ -366,60 +366,86 @@ describe('RegraForm — PMOs', () => {
   })
 })
 
-describe('RegraForm — como avisar (canal do Discord)', () => {
-  it('regra nova nasce avisando as pessoas, sem canal', () => {
+describe('RegraForm — como avisar', () => {
+  it('regra nova nasce na conversa privada, sem canal, com os canais dela à mostra', () => {
     montar()
-    expect(screen.getByLabelText('Avisar cada responsável na conversa privada')).toBeChecked()
-    expect(screen.getByLabelText('Avisar no canal do Discord')).not.toBeChecked()
+    expect(screen.getByLabelText('Conversa privada do responsável')).toBeChecked()
+    expect(screen.getByLabelText('No canal do Discord')).not.toBeChecked()
+    // Telegram/Discord são sub-opções da conversa privada, e ela começa marcada.
+    expect(screen.getByLabelText('Telegram')).toBeInTheDocument()
+    expect(screen.getByLabelText('Discord')).toBeInTheDocument()
   })
 
-  it('grava as duas opções', async () => {
+  it('não existe mais um bloco "Canais" separado', () => {
+    montar()
+    expect(screen.queryByText('Canais')).not.toBeInTheDocument()
+    expect(screen.getByText('Como avisar')).toBeInTheDocument()
+  })
+
+  it('desmarcar a conversa privada esconde Telegram e Discord', () => {
+    montar()
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    expect(screen.queryByLabelText('Telegram')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Discord')).not.toBeInTheDocument()
+    // O aviso em canal continua lá: é irmão da conversa privada, não sub-opção dela.
+    expect(screen.getByLabelText('No canal do Discord')).toBeInTheDocument()
+  })
+
+  it('grava as duas formas de avisar', async () => {
     montar()
     preencherObrigatorios('Com canal')
-    fireEvent.click(screen.getByLabelText('Discord'))
-    fireEvent.click(screen.getByLabelText('Avisar no canal do Discord'))
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ avisarPessoas: true, avisarCanal: true })
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({
+      avisarPessoas: true,
+      avisarCanal: true,
+      // Privado só no Telegram: o aviso em canal NÃO acrescenta Discord ao fan-out de pessoa.
+      canais: ['telegram'],
+    })
   })
 
-  it('"só no canal": desmarca as pessoas e grava avisarPessoas false', async () => {
+  it('"só no canal": desmarca a conversa privada e salva sem exigir canal dela', async () => {
     montar()
-    preencherObrigatorios('So canal')
-    fireEvent.click(screen.getByLabelText('Discord'))
-    fireEvent.click(screen.getByLabelText('Avisar no canal do Discord'))
-    fireEvent.click(screen.getByLabelText('Avisar cada responsável na conversa privada'))
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'So canal' } })
+    fireEvent.click(screen.getByLabelText('Teste'))
+    fireEvent.click(screen.getByLabelText('Ana Gestora'))
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
     expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ avisarPessoas: false, avisarCanal: true })
+    expect(toastErro).not.toHaveBeenCalled()
   })
 
   it('lê o que está salvo na regra', () => {
     montar({ regra: regraSalva({ canais: ['discord'], avisarPessoas: false, avisarCanal: true }) })
-    expect(screen.getByLabelText('Avisar cada responsável na conversa privada')).not.toBeChecked()
-    expect(screen.getByLabelText('Avisar no canal do Discord')).toBeChecked()
+    expect(screen.getByLabelText('Conversa privada do responsável')).not.toBeChecked()
+    expect(screen.getByLabelText('No canal do Discord')).toBeChecked()
+    expect(screen.queryByLabelText('Telegram')).not.toBeInTheDocument()
   })
 
-  it('avisar no canal sem o Discord marcado é recusado, com aviso na tela', async () => {
+  it('conversa privada marcada sem nenhum canal dela é recusada', () => {
     montar()
-    preencherObrigatorios('Sem discord')
-    fireEvent.click(screen.getByLabelText('Avisar no canal do Discord'))
-    expect(screen.getByText('(marque o canal Discord acima)')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Sem canal' } })
+    fireEvent.click(screen.getByLabelText('Teste'))
+    fireEvent.click(screen.getByLabelText('Ana Gestora'))
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(toastErro).toHaveBeenCalledWith(
-      'Avisar no canal exige o canal Discord marcado (o canal é do Discord).',
+      'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.',
       TOAST,
     )
     expect(salvarRegraAction).not.toHaveBeenCalled()
   })
 
-  it('os dois desligados é recusado', () => {
+  it('as duas formas desligadas é recusado', () => {
     montar()
     preencherObrigatorios('Muda')
-    fireEvent.click(screen.getByLabelText('Avisar cada responsável na conversa privada'))
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(toastErro).toHaveBeenCalledWith(
-      'Escolha avisar os responsáveis, o canal do Discord, ou os dois.',
+      'Escolha avisar na conversa privada, no canal do Discord, ou os dois.',
       TOAST,
     )
     expect(salvarRegraAction).not.toHaveBeenCalled()
@@ -431,9 +457,8 @@ describe('RegraForm — como avisar (canal do Discord)', () => {
     fireEvent.click(screen.getByLabelText('Carla Operadora'))
     expect(screen.getByText('Carla Operadora sem Telegram')).toBeInTheDocument()
     // Só no canal: quem vê no canal não precisa de conta vinculada nenhuma.
-    fireEvent.click(screen.getByLabelText('Discord'))
-    fireEvent.click(screen.getByLabelText('Avisar no canal do Discord'))
-    fireEvent.click(screen.getByLabelText('Avisar cada responsável na conversa privada'))
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
     expect(screen.queryByText('Carla Operadora sem Telegram')).not.toBeInTheDocument()
   })
 })

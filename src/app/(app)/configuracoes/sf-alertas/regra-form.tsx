@@ -444,29 +444,11 @@ export function RegraForm({
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium">Canais</legend>
-        <div className="flex gap-4">
-          {CANAIS.map((c) => (
-            <label key={c} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                aria-label={NOME_CANAL[c]}
-                checked={canaisSel.includes(c)}
-                onChange={() => setCanaisSel((atual) => alterna(atual, c))}
-              />
-              {NOME_CANAL[c]}
-              {!configurados[c] && <span className="text-xs text-muted-foreground">(não configurado)</span>}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Como avisar
           <Explica titulo="Como avisar">
-            <p><strong>Cada responsável na conversa privada</strong>: é o comportamento de sempre — cada um recebe a mensagem no Telegram/Discord dele.</p>
-            <p><strong>No canal do Discord</strong>: uma mensagem só, no canal do sistema, que todo mundo do canal vê. Exige o canal <strong>Discord</strong> marcado acima.</p>
+            <p><strong>Conversa privada do responsável</strong>: é o comportamento de sempre — cada um recebe a mensagem na conversa dele. Marcando, escolha por onde: <strong>Telegram</strong>, <strong>Discord</strong> ou os dois.</p>
+            <p><strong>No canal do Discord</strong>: uma mensagem só, no canal do sistema, que todo mundo do canal vê.</p>
             <p>Dá para marcar os dois. Só no canal: ninguém recebe no privado, e os responsáveis continuam podendo apertar <strong>Resolvido</strong> ali mesmo.</p>
             <p>A mensagem no canal <strong>não marca ninguém</strong> (@here/cargo): quem não estiver com o Discord aberto pode não notar.</p>
           </Explica>
@@ -475,23 +457,39 @@ export function RegraForm({
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              aria-label="Avisar cada responsável na conversa privada"
+              aria-label="Conversa privada do responsável"
               checked={avisarPessoas}
               onChange={() => setAvisarPessoas((a) => !a)}
             />
-            Cada responsável na conversa privada
+            Conversa privada do responsável
           </label>
+          {/* Telegram e Discord são sub-opções DA conversa privada: fora dela não querem dizer nada
+              (o aviso em canal é sempre do Discord). Some quando a conversa privada é desmarcada. */}
+          {avisarPessoas && (
+            <div className="ml-6 flex flex-wrap gap-4 border-l border-border pl-3">
+              {CANAIS.map((c) => (
+                <label key={c} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    aria-label={NOME_CANAL[c]}
+                    checked={canaisSel.includes(c)}
+                    onChange={() => setCanaisSel((atual) => alterna(atual, c))}
+                  />
+                  {NOME_CANAL[c]}
+                  {!configurados[c] && <span className="text-xs text-muted-foreground">(não configurado)</span>}
+                </label>
+              ))}
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              aria-label="Avisar no canal do Discord"
+              aria-label="No canal do Discord"
               checked={avisarCanal}
               onChange={() => setAvisarCanal((a) => !a)}
             />
             No canal do Discord
-            {avisarCanal && !canaisSel.includes('discord') && (
-              <span className="text-xs text-amber-700 dark:text-amber-400">(marque o canal Discord acima)</span>
-            )}
+            {!configurados.discord && <span className="text-xs text-muted-foreground">(não configurado)</span>}
           </label>
         </div>
       </fieldset>

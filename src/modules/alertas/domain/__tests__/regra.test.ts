@@ -54,9 +54,9 @@ describe('validarRegra', () => {
     expect(validarRegra({ ...BASE, nome: '   ' })).toEqual({ ok: false, erro: 'Informe o nome da regra.' })
   })
 
-  it('exige pelo menos 1 posto, 1 canal e 1 responsável', () => {
+  it('exige pelo menos 1 posto, 1 canal da conversa privada e 1 responsável', () => {
     expect(validarRegra({ ...BASE, postos: [] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 posto.' })
-    expect(validarRegra({ ...BASE, canais: [] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
+    expect(validarRegra({ ...BASE, canais: [] })).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
     expect(validarRegra({ ...BASE, destinatarios: [] })).toEqual({
       ok: false,
       erro: 'Escolha pelo menos 1 responsável.',
@@ -64,7 +64,7 @@ describe('validarRegra', () => {
   })
 
   it('recusa canal desconhecido', () => {
-    expect(validarRegra({ ...BASE, canais: ['whatsapp'] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
+    expect(validarRegra({ ...BASE, canais: ['whatsapp'] })).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
   })
 
   it('taxa mínima entre 0 e 100, com até 2 casas', () => {
@@ -154,7 +154,7 @@ describe('validarRegra', () => {
     ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 posto.' })
     expect(
       validarRegra({ ...BASE, canais: null as unknown as string[] }),
-    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
+    ).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
     expect(
       validarRegra({ ...BASE, destinatarios: undefined as unknown as string[] }),
     ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 responsável.' })

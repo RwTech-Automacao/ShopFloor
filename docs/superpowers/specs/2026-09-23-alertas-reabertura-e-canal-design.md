@@ -137,9 +137,33 @@ avisados passa a ser outra coisa:
 "Só no canal" = `avisar_pessoas = false` e `avisar_canal = true`: ninguém recebe no
 privado, todos veem no canal, e os responsáveis continuam podendo encerrar pelo botão.
 
-**Validação:** `avisar_canal` só faz sentido com `'discord'` em `canais` (o canal é do
-Discord; o Telegram continua só pessoal). E pelo menos um dos dois tem de estar ligado,
-senão a regra não avisa ninguém.
+### O bloco "Como avisar" na tela (revisão do preview, 23/09)
+
+O bloco **Canais** deixa de existir como seção própria: Telegram e Discord só querem dizer
+algo **dentro** da conversa privada (o aviso em canal é sempre do Discord, por construção).
+Então eles viram sub-opções recuadas dela, visíveis só quando ela está marcada:
+
+```
+Como avisar  ⓘ
+  [x] Conversa privada do responsável
+        [x] Telegram (não configurado)   [ ] Discord (não configurado)
+  [ ] No canal do Discord
+```
+
+Com isso, **`canais` passa a significar só "por onde a conversa privada sai"**.
+
+**Validação:** pelo menos um dos dois modos ligado (senão a regra não avisa ninguém) e, com
+a conversa privada marcada, pelo menos um canal dela.
+
+**O que NÃO existe:** amarração entre `avisar_canal` e `canais`. Um check
+`not avisar_canal or 'discord' = any(canais)` obrigaria uma regra "privado só no Telegram +
+canal" a ter `'discord'` em `canais` — e aí o fan-out de pessoa
+(`c.canal = any(rg.canais)`) passaria a mandar **DM de Discord que ninguém pediu**.
+
+O `cardinality(canais) > 0` da 0113 (já em produção) continua valendo, e quem resolve isso é
+o domínio, não o gestor: com a conversa privada desligada, `canais` é gravado como
+`{discord}` de preenchimento — inofensivo, porque `avisar_pessoas = false` já desliga o
+fan-out de pessoa. O gestor só marca "No canal do Discord" e funciona.
 
 ## Fila de envio
 
@@ -209,9 +233,12 @@ Aceitável — mas é preciso saber que vai acontecer.
 8. Regra com os dois ligados enfileira as duas coisas; com `avisar_pessoas = false`,
    nenhuma linha de pessoa.
 9. A reserva devolve linhas de canal (não são descartadas pela falta de conta vinculada).
-10. Validação: `avisar_canal` sem `'discord'` nos canais é recusado; os dois desligados
-    também.
-11. Front: a tela de regras grava e lê as duas opções.
+10. Validação: os dois modos desligados é recusado; conversa privada marcada sem nenhum
+    canal dela também. `avisar_canal` com o privado só no Telegram é **aceito**, e não
+    acrescenta DM de Discord ao fan-out de pessoa. `canais` vazio continua recusado pelo
+    `cardinality > 0` da 0113 — é por isso que "só no canal" grava `{discord}`.
+11. Front: a tela de regras grava e lê as duas opções; Telegram/Discord aparecem e
+    desaparecem com a conversa privada, e não há mais bloco "Canais".
 
 ## Riscos
 

@@ -7,7 +7,8 @@
 --   7.  avisar_canal enfileira UMA linha de canal por ocorrência, com qualquer número de responsáveis;
 --   8.  os dois ligados enfileiram as duas coisas; avisar_pessoas = false não enfileira pessoa;
 --   9.  a reserva devolve linhas de canal (não são descartadas por falta de conta vinculada);
---   10. validação: avisar_canal sem 'discord' nos canais é recusado; os dois desligados também.
+--   10. validação: os dois modos de avisar desligados é recusado; `canais` é a CONVERSA PRIVADA e
+--       NÃO amarra o aviso em canal (quem cuida do cardinality > 0 da 0113 é o domain/regra.ts).
 --
 -- Mais o que a spec chama de risco: a migração é aditiva e os envios de PESSOA continuam sendo
 -- enfileirados e reservados exatamente como antes.
@@ -51,16 +52,16 @@ update public.alerta_envios set tentativas = 3 where not ok and tentativas < 3;
 do $t$
 declare v_id uuid;
 begin
-  -- avisar_canal sem 'discord' nos canais: o canal é DO Discord.
-  begin
-    insert into alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
-                               canais, destinatarios, avisar_canal)
-    values ('Canal sem discord', array['X'], 90, 'tempo', 60, 10, array['telegram'],
-            array['00000000-0000-0000-0000-000000000001']::uuid[], true);
-    raise exception 'FALHOU: aceitou avisar_canal sem discord nos canais';
-  exception when check_violation then
-    null;
-  end;
+  -- `canais` é a CONVERSA PRIVADA: avisar no canal com o privado só no Telegram é VÁLIDO. Amarrar
+  -- obrigaria 'discord' em `canais`, e aí o fan-out de pessoa mandaria DM de Discord sem ninguém
+  -- ter pedido. O check alerta_regras_canal_exige_discord não existe mais.
+  if exists (select 1 from pg_constraint where conname = 'alerta_regras_canal_exige_discord') then
+    raise exception 'FALHOU: o check que amarrava avisar_canal aos canais continua lá';
+  end if;
+  insert into alerta_regras (nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes,
+                             canais, destinatarios, avisar_canal, ativa)
+  values ('Canal privado telegram', array['X'], 90, 'tempo', 60, 10, array['telegram'],
+          array['00000000-0000-0000-0000-000000000001']::uuid[], true, false);
 
   -- Os dois desligados: a regra não avisaria ninguém.
   begin
@@ -79,10 +80,11 @@ begin
   values ('Canal valido', array['X'], 90, 'tempo', 60, 10, array['discord'],
           array['00000000-0000-0000-0000-000000000001']::uuid[], false, true, false)
   returning id into v_id;
-  -- Tirar o discord de uma regra que avisa no canal também é recusado.
+  -- `canais` vazio continua recusado (check cardinality > 0 da 0113, em produção): é por isso que o
+  -- domínio grava {discord} de preenchimento numa regra que avisa só no canal.
   begin
-    update alerta_regras set canais = array['telegram'] where id = v_id;
-    raise exception 'FALHOU: deixou tirar o discord de uma regra que avisa no canal';
+    update alerta_regras set canais = '{}'::text[] where id = v_id;
+    raise exception 'FALHOU: aceitou regra sem canal nenhum';
   exception when check_violation then
     null;
   end;
@@ -114,6 +116,7 @@ reset role;
 select public.teste_bipes('C-Ambos', 'PMOA', '1', 15, 5, 10);
 select public.teste_bipes('C-Soh',   'PMOA', '1', 15, 5, 10);
 select public.teste_bipes('C-Sem',   'PMOA', '1', 15, 5, 10);
+select public.teste_bipes('C-Tg',    'PMOA', '1', 15, 5, 10);
 do $t$
 begin
   -- os dois ligados
@@ -122,9 +125,14 @@ begin
   perform teste_regra('Canal so',    'aprovacao', array['C-Soh'],   90, 'tempo', 60, 10, null, null, null);
   -- nenhum canal (o comportamento de hoje, para comparar)
   perform teste_regra('Canal sem',   'aprovacao', array['C-Sem'],   90, 'tempo', 60, 10, null, null, null);
+  -- privado SÓ no Telegram + canal: o aviso em canal não pode acrescentar DM de Discord
+  perform teste_regra('Canal tg',    'aprovacao', array['C-Tg'],    90, 'tempo', 60, 10, null, null, null);
 end $t$;
 update public.alerta_regras set avisar_canal = true                          where nome = 'Canal ambos';
-update public.alerta_regras set avisar_canal = true, avisar_pessoas = false   where nome = 'Canal so';
+-- "Só no canal" grava canais = {discord} de preenchimento, como o domain/regra.ts faz.
+update public.alerta_regras set avisar_canal = true, avisar_pessoas = false, canais = array['discord']
+ where nome = 'Canal so';
+update public.alerta_regras set avisar_canal = true, canais = array['telegram'] where nome = 'Canal tg';
 
 -- Quantas linhas cada regra pôs na fila, por tipo de destino.
 create or replace function public.teste_destinos(p_regra text, p_posto text)
@@ -153,7 +161,7 @@ $f$;
 
 set role service_role;
 do $t$
-declare a jsonb; b jsonb; c jsonb;
+declare a jsonb; b jsonb; c jsonb; d jsonb;
 begin
   perform alerta_avaliar('C0000000001');
   a := teste_destinos('Canal ambos', 'C-Ambos');
@@ -187,6 +195,25 @@ begin
     raise exception 'FALHOU: regra sem canal mudou o fan-out de pessoa %', c;
   end if;
   if coalesce((c->>'canais')::int, 0) <> 0 then raise exception 'FALHOU: regra sem canal enfileirou canal %', c; end if;
+
+  -- Privado só no Telegram + canal: 1 linha de canal, e o privado sai SÓ pelo Telegram.
+  d := teste_destinos('Canal tg', 'C-Tg');
+  if (d->>'canais')::int <> 1 then
+    raise exception 'FALHOU: avisar no canal depende dos canais da conversa privada %', d;
+  end if;
+  if (d->>'pessoas')::int <> (select count(*) from alerta_contas
+                               where usuario_id in ('00000000-0000-0000-0000-000000000001',
+                                                    '00000000-0000-0000-0000-000000000002')
+                                 and canal = 'telegram') then
+    raise exception 'FALHOU: o aviso em canal mexeu no fan-out de pessoa %', d;
+  end if;
+  if exists (select 1 from alerta_envios e
+              join alerta_ocorrencias oc on oc.id = e.ocorrencia_id
+              join alerta_regras rg on rg.id = oc.regra_id
+             where e.criado_em = now() and rg.nome = 'Canal tg'
+               and e.destino_tipo = 'usuario' and e.canal = 'discord') then
+    raise exception 'FALHOU: saiu DM de Discord numa regra cujo privado é só Telegram';
+  end if;
 end $t$;
 reset role;
 

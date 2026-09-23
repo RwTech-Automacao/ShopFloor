@@ -17,7 +17,13 @@
 --   destinatarios   = os RESPONSÁVEIS (quem responde pelo alerta e pode encerrá-lo). Continua
 --                     obrigatório ter pelo menos um, e continua sendo a régua do "Resolvido".
 --   avisar_pessoas  = manda na conversa privada de cada responsável (o comportamento de hoje).
---   avisar_canal    = manda no canal do Discord do sistema.
+--   canais          = por onde essa CONVERSA PRIVADA sai (Telegram e/ou Discord). Nada mais.
+--   avisar_canal    = manda no canal do Discord do sistema (DISCORD_CANAL_ID).
+--
+-- `cardinality(canais) > 0` é check da 0113 (já em produção) e continua valendo: uma regra que
+-- avisa SÓ no canal grava canais = {discord} como preenchimento — inofensivo, porque o fan-out de
+-- pessoa está desligado por avisar_pessoas = false. Quem cuida disso é o formulário/domínio
+-- (domain/regra.ts): o gestor só marca "No canal do Discord" e funciona.
 --
 -- "Só no canal" = avisar_pessoas = false e avisar_canal = true: ninguém recebe no privado, todos
 -- veem no canal, e os responsáveis continuam podendo encerrar pelo botão.
@@ -47,11 +53,13 @@ alter table public.alerta_regras drop constraint if exists alerta_regras_avisa_a
 alter table public.alerta_regras add constraint alerta_regras_avisa_alguem
   check (avisar_pessoas or avisar_canal);
 
--- O canal é DO DISCORD. O Telegram continua só na conversa privada, então avisar no canal sem
--- 'discord' marcado nos canais da regra não faria nada — é erro de cadastro, não silêncio.
+-- `canais` passa a significar os canais DA CONVERSA PRIVADA (por onde cada responsável recebe), e
+-- só isso. O aviso em canal é sempre do Discord por construção (DISCORD_CANAL_ID), então NÃO existe
+-- check amarrando avisar_canal a `canais`: amarrar obrigaria uma regra "privado só no Telegram +
+-- canal" a ter 'discord' em `canais`, e aí o fan-out de pessoa (c.canal = any(canais)) passaria a
+-- mandar DM de Discord também — mudando o que a pessoa escolheu. O `drop` fica para tirar o check
+-- de uma base que tenha rodado uma versão anterior deste arquivo.
 alter table public.alerta_regras drop constraint if exists alerta_regras_canal_exige_discord;
-alter table public.alerta_regras add constraint alerta_regras_canal_exige_discord
-  check (not avisar_canal or 'discord' = any (canais));
 
 -- ---------- B. Fila: linha de canal não tem usuário ----------
 -- `usuario_id` deixa de ser obrigatório (um envio para canal não é de ninguém) e um check garante
@@ -329,8 +337,9 @@ begin
 
       -- FILA (canal): UMA linha por ocorrência, sem usuário. O `select` sem `from` devolve 1 linha
       -- quando o `where` é verdadeiro e 0 quando não — é assim que sai uma, e não uma por
-      -- responsável (N mensagens iguais no mesmo canal).
-      if t.avisar_canal and v_canal is not null and 'discord' = any (t.canais) then
+      -- responsável (N mensagens iguais no mesmo canal). Não olha `canais`: aquilo é a conversa
+      -- privada; o canal é sempre o do Discord (DISCORD_CANAL_ID).
+      if t.avisar_canal and v_canal is not null then
         insert into public.alerta_envios
           (ocorrencia_id, usuario_id, canal, tipo, dados, com_botao, destino_tipo, destino_externo_id)
         select o.id, null, 'discord', v_tipo, v_dados, v_tipo in ('alerta', 'lembrete'), 'canal', v_canal;
