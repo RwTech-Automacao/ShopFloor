@@ -114,11 +114,13 @@ O resultado aparece **dentro do modal**, no mesmo padrão visual de hoje (`Paine
 - **Aprovado:** chips com Posição, Feeder, Saiu, Entrou, SN Inicial. O modal volta ao
   **passo 1/6**, com o Colaborador já preenchido com o último usado e os outros cinco
   campos vazios, pronto para a próxima troca.
-- **Reprovado:** motivos listados, `tocarErro()`, os valores digitados são mantidos e o
-  modal volta ao **passo 2/6 (Posição)**. A tela de hoje volta no Rolo que sai, mas o smoke
-  de 23/09 mostrou que a reprova costuma ser de posição/feeder ("o feeder F03 não está na
-  posição 01") — voltando na posição o operador passa de novo pelos quatro campos que a
-  verificação usa, e não só pelos rolos.
+- **Reprovado:** motivos listados, `tocarErro()`, e o modal volta ao **passo 2/6 (Posição)**
+  com os **cinco campos bipados vazios** — só o Colaborador continua preenchido, igual à
+  troca aprovada. Na prática reprovado e aprovado fazem a mesma coisa, mudando só o passo de
+  destino (1/6 × 2/6). Dois ajustes do smoke de 23/09: a tela antiga voltava no Rolo que sai,
+  mas a reprova costuma ser de posição/feeder ("o feeder F03 não está na posição 01"), e com
+  os valores antigos no lugar dava para sair apertando `Enter` por cima e reenviar exatamente
+  a mesma troca errada — vazio obriga a bipar de novo.
 - **Falha de rede:** mesma mensagem de hoje (`FALHA_CONEXAO_TROCA` — "Confira em Últimas
   trocas se a troca foi registrada antes de reenviar") e o modal fecha, para o operador
   conseguir olhar o quadro atrás.
@@ -175,7 +177,8 @@ modelo (jsdom + `@testing-library/react`).
    com o último usado, e os outros cinco campos vazios.
 5. No passo 1/6 pré-preenchido, `Enter` confirma e avança sem alterar o valor; bipar outro
    crachá substitui o valor inteiro (não concatena).
-6. Reprovado volta ao passo 2/6 mantendo os valores e toca o som de erro.
+6. Reprovado volta ao passo 2/6 com os cinco campos bipados vazios (o Colaborador continua
+   preenchido) e toca o som de erro.
 
 ## Riscos
 

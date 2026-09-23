@@ -179,7 +179,7 @@ describe('ConteudoAbastecimento', () => {
     expect(trocarRolo).not.toHaveBeenCalled()
   })
 
-  it('troca reprovada volta ao 2/6 mantendo os valores e toca o som de erro', async () => {
+  it('troca reprovada volta ao 2/6 com os cinco bipes vazios e toca o som de erro', async () => {
     trocarRolo.mockResolvedValue({ ok: true, resultado: 'REPROVADO', motivos: ['O feeder F03 não está na posição 01.'], semFaixa: false })
     render(<ConteudoAbastecimento {...PROPS} />)
     for (const valor of BIPES) bipar(valor)
@@ -190,11 +190,14 @@ describe('ConteudoAbastecimento', () => {
     // Volta na posição: a reprova costuma ser de posição/feeder, não do rolo.
     expect(screen.getByText('2/6')).toBeInTheDocument()
 
-    // Os valores continuam preenchidos — o operador confirma o que está certo e corrige o resto.
-    for (const valor of ['L1-A-12', 'FD-0034', 'ROLO-SAI']) {
-      expect(campoAtual().value).toBe(valor)
-      fireEvent.keyDown(campoAtual(), { key: 'Enter' })
+    // Os cinco bipes vêm vazios — não dá para reenviar a mesma troca errada só apertando Enter.
+    for (const valor of ['P2', 'F2', 'S2', 'E2']) {
+      expect(campoAtual().value).toBe('')
+      bipar(valor)
     }
-    expect(screen.getByText('5/6')).toBeInTheDocument()
+    expect(screen.getByText('6/6')).toBeInTheDocument()
+    expect(campoAtual().value).toBe('')
+    // O crachá segue preenchido: só os campos bipados zeram.
+    expect(screen.getByText('1234')).toBeInTheDocument()
   })
 })

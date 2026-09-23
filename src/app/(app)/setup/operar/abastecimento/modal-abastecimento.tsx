@@ -16,8 +16,8 @@ type Campo = 'colaborador' | 'posicao' | 'feeder' | 'saida' | 'entrada' | 'sn'
 const CAMPOS_VAZIOS: Record<Campo, string> = { colaborador: '', posicao: '', feeder: '', saida: '', entrada: '', sn: '' }
 /**
  * 2/6 — para onde a troca reprovada volta. A reprova costuma ser de posição/feeder ("o feeder F03 não
- * está na posição 01"), não do rolo: voltando na posição o operador reconfere os quatro campos que a
- * verificação usa, em vez de só os rolos. Os valores ficam preenchidos, ele corrige o que estiver errado.
+ * está na posição 01"), não do rolo: voltando na posição o operador bipa de novo os quatro campos que a
+ * verificação usa, em vez de só os rolos.
  */
 const PASSO_POSICAO = 1
 
@@ -117,10 +117,15 @@ export function ConteudoAbastecimento({
           onFalhaConexao({ tipo: 'aviso', titulo: FALHA_CONEXAO_TROCA, chips })
           return
         }
+        // Todo desfecho zera os cinco bipes e mantém o crachá; muda só o passo de destino.
+        const recomecar = (indice: number) => {
+          setCampos({ ...CAMPOS_VAZIOS, colaborador: v.colaborador })
+          irPara(indice)
+        }
         if (!r.ok) {
           setResultado({ tipo: 'aviso', titulo: r.erro, chips })
           tocarErro()
-          irPara(PASSO_POSICAO)
+          recomecar(PASSO_POSICAO)
         } else if (r.resultado === 'APROVADO') {
           setResultado({
             tipo: 'ok',
@@ -128,14 +133,14 @@ export function ConteudoAbastecimento({
             chips,
             dica: r.semFaixa ? 'Confira o SN manualmente — a OP não tem faixa de SN cadastrada.' : undefined,
           })
-          // Zera os cinco bipes e mantém o crachá: a próxima troca começa confirmando quem está na máquina.
-          setCampos({ ...CAMPOS_VAZIOS, colaborador: v.colaborador })
-          irPara(0)
+          // A próxima troca começa confirmando quem está na máquina.
+          recomecar(0)
         } else {
           setResultado({ tipo: 'reprova', titulo: 'Troca reprovada — confira o componente', detalhe: r.motivos.join(' '), chips })
           tocarErro()
-          // Não limpa: o operador corrige só o que estiver errado.
-          irPara(PASSO_POSICAO)
+          // Campos vazios de propósito: com os valores antigos no lugar dava para sair apertando Enter
+          // por cima e reenviar a mesma troca errada, que é o oposto de voltar na posição.
+          recomecar(PASSO_POSICAO)
         }
         onTrocaRegistrada()
       } finally {
