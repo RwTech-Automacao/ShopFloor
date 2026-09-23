@@ -213,6 +213,18 @@ export function CartaoAlertas({
                           <span className="font-medium">t.me/seu_bot</span>
                         )}{' '}
                         e toque em Iniciar.
+                        {telegramBot && (
+                          <>
+                            {' '}
+                            {/* Sem o Telegram instalado no computador, o botao "Start Bot" da pagina do t.me nao
+                                faz nada: ele tenta abrir o aplicativo. O Telegram Web resolve no proprio navegador. */}
+                            Sem o Telegram no computador?{' '}
+                            <LinkExterno href={`https://web.telegram.org/k/#@${telegramBot}`}>
+                              Abra no Telegram Web
+                            </LinkExterno>
+                            .
+                          </>
+                        )}
                       </li>
                       <li>Cole o código na conversa e envie.</li>
                     </ol>

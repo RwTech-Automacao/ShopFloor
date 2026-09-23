@@ -72,6 +72,18 @@ describe('CartaoAlertas', () => {
     expect(link).toHaveAttribute('target', '_blank')
   })
 
+  it('oferece o Telegram Web para quem não tem o aplicativo no computador', async () => {
+    render(
+      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
+    expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Abra no Telegram Web' })).toHaveAttribute(
+      'href',
+      'https://web.telegram.org/k/#@shopfloor_bot',
+    )
+  })
+
   it('sem o nome do bot a instrução do Telegram não vira link', async () => {
     render(<CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="" />)
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
