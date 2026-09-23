@@ -93,7 +93,7 @@ describe('ConteudoAbastecimento', () => {
     bipar('FD-0034')
 
     expect(screen.getByText('4/6')).toBeInTheDocument()
-    expect([...container.querySelectorAll('dt')].map((e) => e.textContent)).toEqual(['Colaborador', 'Posição', 'Feeder'])
+    expect([...container.querySelectorAll('dt')].map((e) => e.textContent)).toEqual(['Colaborador:', 'Posição:', 'Feeder:'])
     expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234', 'L1-A-12', 'FD-0034'])
   })
 
@@ -179,15 +179,22 @@ describe('ConteudoAbastecimento', () => {
     expect(trocarRolo).not.toHaveBeenCalled()
   })
 
-  it('troca reprovada volta ao 4/6 mantendo os valores e toca o som de erro', async () => {
-    trocarRolo.mockResolvedValue({ ok: true, resultado: 'REPROVADO', motivos: ['Componente diferente do setup.'], semFaixa: false })
+  it('troca reprovada volta ao 2/6 mantendo os valores e toca o som de erro', async () => {
+    trocarRolo.mockResolvedValue({ ok: true, resultado: 'REPROVADO', motivos: ['O feeder F03 não está na posição 01.'], semFaixa: false })
     render(<ConteudoAbastecimento {...PROPS} />)
     for (const valor of BIPES) bipar(valor)
 
     expect(await screen.findByText('Troca reprovada — confira o componente')).toBeInTheDocument()
-    expect(screen.getByText('Componente diferente do setup.')).toBeInTheDocument()
+    expect(screen.getByText('O feeder F03 não está na posição 01.')).toBeInTheDocument()
     expect(tocarErro).toHaveBeenCalled()
-    expect(screen.getByText('4/6')).toBeInTheDocument()
-    expect(campoAtual().value).toBe('ROLO-SAI')
+    // Volta na posição: a reprova costuma ser de posição/feeder, não do rolo.
+    expect(screen.getByText('2/6')).toBeInTheDocument()
+
+    // Os valores continuam preenchidos — o operador confirma o que está certo e corrige o resto.
+    for (const valor of ['L1-A-12', 'FD-0034', 'ROLO-SAI']) {
+      expect(campoAtual().value).toBe(valor)
+      fireEvent.keyDown(campoAtual(), { key: 'Enter' })
+    }
+    expect(screen.getByText('5/6')).toBeInTheDocument()
   })
 })

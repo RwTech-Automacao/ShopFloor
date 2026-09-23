@@ -87,13 +87,14 @@ avançar exige o campo preenchido (o passo não passa em branco).
 ### 3. O rastro dos campos já preenchidos
 
 Acima do campo atual ficam os campos já respondidos, **em letra menor**, um por linha,
-acumulando conforme ele avança:
+acumulando conforme ele avança. Rótulo em cinza com **dois-pontos** e o valor colado em
+seguida ("Colaborador: Matheus"), sem vão entre os dois — ajuste pedido no smoke de 23/09:
 
 ```
 ┌─ Abastecimento ──────────────── 4/6 ─┐
-│  Colaborador  1234                    │
-│  Posição      L1-A-12                 │
-│  Feeder       FD-0034                 │
+│  Colaborador: 1234                    │
+│  Posição: L1-A-12                     │
+│  Feeder: FD-0034                      │
 │                                       │
 │  Rolo que sai                         │
 │  [_______________________]            │
@@ -114,7 +115,10 @@ O resultado aparece **dentro do modal**, no mesmo padrão visual de hoje (`Paine
   **passo 1/6**, com o Colaborador já preenchido com o último usado e os outros cinco
   campos vazios, pronto para a próxima troca.
 - **Reprovado:** motivos listados, `tocarErro()`, os valores digitados são mantidos e o
-  modal volta ao **passo 4/6 (Rolo que sai)**, como a tela faz hoje.
+  modal volta ao **passo 2/6 (Posição)**. A tela de hoje volta no Rolo que sai, mas o smoke
+  de 23/09 mostrou que a reprova costuma ser de posição/feeder ("o feeder F03 não está na
+  posição 01") — voltando na posição o operador passa de novo pelos quatro campos que a
+  verificação usa, e não só pelos rolos.
 - **Falha de rede:** mesma mensagem de hoje (`FALHA_CONEXAO_TROCA` — "Confira em Últimas
   trocas se a troca foi registrada antes de reenviar") e o modal fecha, para o operador
   conseguir olhar o quadro atrás.
@@ -171,7 +175,7 @@ modelo (jsdom + `@testing-library/react`).
    com o último usado, e os outros cinco campos vazios.
 5. No passo 1/6 pré-preenchido, `Enter` confirma e avança sem alterar o valor; bipar outro
    crachá substitui o valor inteiro (não concatena).
-6. Reprovado volta ao passo 4/6 mantendo os valores e toca o som de erro.
+6. Reprovado volta ao passo 2/6 mantendo os valores e toca o som de erro.
 
 ## Riscos
 

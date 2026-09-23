@@ -14,8 +14,12 @@ const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a 
 
 type Campo = 'colaborador' | 'posicao' | 'feeder' | 'saida' | 'entrada' | 'sn'
 const CAMPOS_VAZIOS: Record<Campo, string> = { colaborador: '', posicao: '', feeder: '', saida: '', entrada: '', sn: '' }
-/** 4/6 — para onde a troca reprovada volta: é o primeiro campo que o operador tem que reconferir. */
-const PASSO_ROLO_SAIDA = 3
+/**
+ * 2/6 — para onde a troca reprovada volta. A reprova costuma ser de posição/feeder ("o feeder F03 não
+ * está na posição 01"), não do rolo: voltando na posição o operador reconfere os quatro campos que a
+ * verificação usa, em vez de só os rolos. Os valores ficam preenchidos, ele corrige o que estiver errado.
+ */
+const PASSO_POSICAO = 1
 
 interface PropsAbastecimento {
   setupId: string
@@ -116,7 +120,7 @@ export function ConteudoAbastecimento({
         if (!r.ok) {
           setResultado({ tipo: 'aviso', titulo: r.erro, chips })
           tocarErro()
-          irPara(PASSO_ROLO_SAIDA)
+          irPara(PASSO_POSICAO)
         } else if (r.resultado === 'APROVADO') {
           setResultado({
             tipo: 'ok',
@@ -131,7 +135,7 @@ export function ConteudoAbastecimento({
           setResultado({ tipo: 'reprova', titulo: 'Troca reprovada — confira o componente', detalhe: r.motivos.join(' '), chips })
           tocarErro()
           // Não limpa: o operador corrige só o que estiver errado.
-          irPara(PASSO_ROLO_SAIDA)
+          irPara(PASSO_POSICAO)
         }
         onTrocaRegistrada()
       } finally {
@@ -148,8 +152,9 @@ export function ConteudoAbastecimento({
         {anteriores.length > 0 && (
           <dl className="flex flex-col gap-0.5 text-xs">
             {anteriores.map(({ campo, rotulo }) => (
-              <div key={campo} className="flex gap-2">
-                <dt className="w-24 flex-none truncate text-muted-foreground">{rotulo}</dt>
+              <div key={campo} className="flex gap-1">
+                {/* Rótulo e valor colados, com dois-pontos: "Colaborador: Matheus" se lê de uma olhada. */}
+                <dt className="flex-none text-muted-foreground">{rotulo}:</dt>
                 <dd className="min-w-0 truncate font-medium">{campos[campo]}</dd>
               </div>
             ))}
