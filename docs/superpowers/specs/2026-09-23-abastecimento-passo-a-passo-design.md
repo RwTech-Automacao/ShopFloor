@@ -18,13 +18,12 @@ porque mostra um campo por vez.
 ## Objetivo
 
 Registrar uma troca de rolo no tablet **sem nenhum scroll**, mantendo exatamente o mesmo
-fluxo e as mesmas validações de hoje, e aproveitando o espaço livre para mostrar duas
-informações que o operador não tem hoje: **qual componente está naquela posição** e
-**onde o rolo bipado já apareceu antes**.
+fluxo, os mesmos campos e as mesmas validações de hoje.
 
 ### Critérios de sucesso
 
-1. Nenhuma etapa da troca exige rolar a tela no tablet (retrato ou paisagem).
+1. Nenhuma etapa da troca exige rolar a tela no tablet (retrato ou paisagem), **inclusive
+   com o teclado virtual aberto**.
 2. Uma troca completa continua sendo feita **só com o leitor**, sem tocar na tela: cada
    bipe termina em Enter e avança sozinho.
 3. O registro gravado em `st_trocas` é idêntico ao de hoje para os mesmos dados.
@@ -36,11 +35,12 @@ informações que o operador não tem hoje: **qual componente está naquela posi
   p_rolo_entrada, p_sn_inicial, p_colaborador)` e suas 5 verificações.
 - A mecânica de bipe: `Enter` avança (`preventDefault` + foco no próximo), `onFocus` dá
   `select()` para o leitor sobrescrever em vez de concatenar, trava contra bipe duplo
-  (`enviandoRef`), campo vazio no envio foca o primeiro vazio e não envia.
+  (`enviandoRef`), campo vazio no envio não envia.
 - A **seleção do setup** no topo (OP → Processo → Linha → Bloco → Máquina → Face), que
   continua fora do modal, na página.
 - O quadro **"Últimas trocas"** (as 10 últimas do setup) continua na página.
-- **Nenhuma migração.** As duas informações novas vêm de ações que já existem.
+- **Nenhuma migração, nenhuma ação de servidor nova, nenhuma consulta nova.** O card é
+  reorganização do formulário que já existe.
 
 ## Desenho
 
@@ -77,42 +77,29 @@ mais por troca. Ganho: nenhuma troca fica registrada no nome de quem já saiu do
 Navegação: `Enter` avança; botão **Voltar** volta um passo mantendo o que foi digitado;
 avançar exige o campo preenchido (o passo não passa em branco).
 
-### 3. Contexto sempre visível
+### 3. O rastro dos campos já preenchidos
 
-A partir do passo 3 concluído, o topo do modal mostra, fixos e juntos:
+Acima do campo atual ficam os campos já respondidos, **em letra menor**, um por linha,
+acumulando conforme ele avança:
 
 ```
-Posição L1-A-12 · Feeder FD-0034 · Componente CAPJ91
+┌─ Abastecimento ──────────────── 4/6 ─┐
+│  Colaborador  1234                    │
+│  Posição      L1-A-12                 │
+│  Feeder       FD-0034                 │
+│                                       │
+│  Rolo que sai                         │
+│  [_______________________]            │
+└───────────────────────────────────────┘
 ```
 
-O **componente** é informação nova na tela: hoje o Abastecimento não mostra componente
-nenhum. Ele sai dos itens do setup, já carregados por `carregarSetupAction(setupId)`
-(`{ setup, itens: ItemSetup[] }`, onde `ItemSetup` tem `posicao`, `feeder`, `componente`,
-`rolo`). A busca é feita no cliente, por `posicao` + `feeder`, sem ida ao servidor.
+É só o que ele mesmo bipou nesta troca — **não há consulta a lugar nenhum**. Serve para ele
+conferir o que já informou sem precisar voltar.
 
-Se a combinação posição+feeder não existir no setup, o modal mostra
-**"Posição não cadastrada neste setup"** no lugar do componente, mas **não bloqueia**: quem
-decide continua sendo `st_trocar_rolo`, que já devolve o erro correto com os motivos.
+O rastro tem no máximo 5 linhas (os 5 campos anteriores ao último passo), uma linha curta
+cada. Junto com o contador e o campo atual, é o conteúdo inteiro do modal.
 
-### 4. Histórico do rolo bipado
-
-Ao concluir o passo 5 (Rolo que entra), o modal mostra as **5 últimas trocas** em que aquele
-rolo apareceu — em qualquer setup, entrando ou saindo — com data/hora, OP, posição e
-resultado.
-
-Fonte: `consultarTrocas({ rolo }, 0, 5)`, que já existe e já procura em `rolo_saida` **e**
-`rolo_entrada` (`setup-repository.ts`, filtro `f.rolo`). Sem consulta nova, sem migração.
-
-**Limite honesto desta informação:** o histórico cobre **trocas**, não a montagem inicial.
-Um rolo que foi montado em Montar Setup e nunca trocado não aparece. Ele é informativo,
-não uma trava — as travas de rolo repetido já existem no banco (`ROLO_JA_MONTADO` na
-inclusão, e a verificação de rolo que entra já montado em outra posição na troca).
-Sem histórico, o modal mostra "Primeira vez que este rolo aparece".
-
-A consulta é disparada em segundo plano e **nunca atrasa o bipe**: se demorar ou falhar, o
-operador segue para o passo 6 normalmente e o bloco some.
-
-### 5. Resultado
+### 4. Resultado
 
 O resultado aparece **dentro do modal**, no mesmo padrão visual de hoje (`PainelResultado`):
 
@@ -126,7 +113,7 @@ O resultado aparece **dentro do modal**, no mesmo padrão visual de hoje (`Paine
 
 Em qualquer um dos três casos o quadro "Últimas trocas" da página é recarregado, como hoje.
 
-### 6. Teclado virtual
+### 5. Teclado virtual
 
 O tablet é um mini PC Windows com teclado de toque, e o projeto já lida com isso: o
 `teclado-provider` rola o campo focado para o centro ao receber foco, e o `Dialog` usa
@@ -134,11 +121,14 @@ O tablet é um mini PC Windows com teclado de toque, e o projeto já lida com is
 teclado sem depender desse scroll. Isso é requisito de layout, não detalhe: se o teclado
 cobrir o campo, o problema do scroll volta por outra porta.
 
+Se o rastro não couber com o teclado aberto, **quem cede é o rastro** (ele encolhe ou
+mostra só os últimos), nunca o campo atual.
+
 ## Fora de escopo
 
 - Mudar a seleção do setup, o quadro de Últimas trocas ou as Consultas.
 - Mudar qualquer regra de validação (todas continuam em `st_trocar_rolo`).
-- Campo de componente editável, quantidade, SN final.
+- Mostrar o componente montado na posição, histórico do rolo, quantidade ou SN final.
 - Rascunho salvo: fechar o modal descarta o que foi digitado.
 
 ## Impacto técnico
@@ -168,20 +158,18 @@ modelo (jsdom + `@testing-library/react`).
 1. Sequência completa: bipar os 6 campos com Enter chama `trocarRolo` com exatamente os
    valores bipados, na ordem certa.
 2. Contador: começa em 1/6 e chega a 6/6; Voltar volta um passo sem perder o valor.
-3. Colaborador é pedido de novo depois de uma troca aprovada (campo vazio no passo 1/6).
-4. Contexto: com posição+feeder que existem no setup, mostra o componente; com uma
-   combinação que não existe, mostra "Posição não cadastrada neste setup" e continua
-   deixando enviar.
+3. Rastro: no passo 4/6 estão visíveis os três valores já bipados, e nenhum a mais.
+4. Colaborador é pedido de novo depois de uma troca aprovada (campo vazio no passo 1/6).
 5. Aprovado volta ao passo 1/6 com tudo vazio; reprovado volta ao passo 4/6 mantendo os
    valores e toca o som de erro.
-6. Histórico: falha na consulta do histórico não impede chegar ao passo 6 nem enviar.
 
 ## Riscos
 
 - **Mais toques por troca.** Seis passos com um campo cada só é mais rápido que a tela de
-  hoje se o Enter do leitor avançar sem falha. Se algum passo exigir toque na tela, a
-  troca fica mais lenta do que era. Isso precisa ser verificado no smoke, com o leitor
-  real, antes do merge.
+  hoje se o Enter do leitor avançar sem falha. Todo campo que for **digitado à mão** em vez
+  de bipado abre e fecha o teclado virtual uma vez por passo, e nesse caso o passo a passo
+  pode ficar mais lento do que a tela atual. Precisa ser verificado no smoke, com o leitor
+  real e no tablet real, antes do merge.
 - **Colaborador a cada troca** é uma bipada a mais. Foi decisão explícita, mas é a primeira
   coisa que o operador vai reclamar — vale combinar com quem opera antes de subir.
 - **Sem rascunho:** fechar o modal no meio perde o que foi digitado. Aceitável porque a
