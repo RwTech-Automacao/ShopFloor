@@ -7,6 +7,15 @@ const TEMPO_LIMITE_MS = 10_000
 export interface DiscordClient {
   /** Abre (ou reaproveita) a DM com a pessoa e manda a mensagem. */
   enviarDm(usuarioExternoId: string, texto: string, ocorrenciaIdBotao: string | null): Promise<ResultadoEnvio>
+  /**
+   * Posta direto num canal do servidor (0123). É o MESMO endpoint da DM
+   * (`POST /channels/{id}/messages`) — o que a conversa privada tem de específico é só o
+   * `POST /users/@me/channels` que cria o canal de DM antes.
+   *
+   * O bot precisa de "Ver canal" e "Enviar mensagens" naquele canal; sem isso o envio falha e a
+   * fila tenta 3 vezes antes de desistir.
+   */
+  enviarCanal(canalId: string, texto: string, ocorrenciaIdBotao: string | null): Promise<ResultadoEnvio>
   removerBotoes(mensagemExternaId: string): Promise<ResultadoSimples>
 }
 
@@ -76,18 +85,30 @@ export function criarDiscord(cfg: { token: string; fetch?: typeof fetch }): Disc
     }
   }
 
+  /** Postar num canal é a parte comum: a DM só acrescenta a criação do canal antes. */
+  async function postar(
+    canalId: string,
+    texto: string,
+    ocorrenciaIdBotao: string | null,
+  ): Promise<ResultadoEnvio> {
+    const msg = await chamar('POST', `/channels/${canalId}/messages`, payloadMensagemDiscord(texto, ocorrenciaIdBotao))
+    if (!msg.ok) return msg
+    const mensagemId = msg.json.id
+    if (typeof mensagemId !== 'string') return { ok: false, erro: 'Discord: resposta sem id da mensagem' }
+    return { ok: true, mensagemExternaId: montarIdMensagemDiscord(canalId, mensagemId) }
+  }
+
   return {
     async enviarDm(usuarioExternoId, texto, ocorrenciaIdBotao) {
       const canal = await chamar('POST', '/users/@me/channels', { recipient_id: usuarioExternoId })
       if (!canal.ok) return canal
       const canalId = canal.json.id
       if (typeof canalId !== 'string') return { ok: false, erro: 'Discord: resposta sem id do canal' }
+      return postar(canalId, texto, ocorrenciaIdBotao)
+    },
 
-      const msg = await chamar('POST', `/channels/${canalId}/messages`, payloadMensagemDiscord(texto, ocorrenciaIdBotao))
-      if (!msg.ok) return msg
-      const mensagemId = msg.json.id
-      if (typeof mensagemId !== 'string') return { ok: false, erro: 'Discord: resposta sem id da mensagem' }
-      return { ok: true, mensagemExternaId: montarIdMensagemDiscord(canalId, mensagemId) }
+    async enviarCanal(canalId, texto, ocorrenciaIdBotao) {
+      return postar(canalId, texto, ocorrenciaIdBotao)
     },
 
     async removerBotoes(mensagemExternaId) {

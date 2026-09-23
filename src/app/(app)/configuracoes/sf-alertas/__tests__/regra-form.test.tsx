@@ -58,6 +58,8 @@ function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {
     pausaMaxMin: null,
     lembreteMin: null,
     canais: ['telegram'],
+    avisarPessoas: true,
+    avisarCanal: false,
     destinatarios: ['u1'],
     pmos: [],
     ativa: true,
@@ -145,7 +147,9 @@ describe('RegraForm — taxa de aprovação', () => {
       limiteOcorrencias: '',
       lembreteMin: '10',
       canais: ['telegram'],
-      destinatarios: ['u1'],
+      avisarPessoas: true,
+    avisarCanal: false,
+    destinatarios: ['u1'],
       pmos: [],
       ativa: true,
     })
@@ -170,12 +174,12 @@ describe('RegraForm — taxa de aprovação', () => {
     expect(screen.getByText('Taxa de agora')).toBeInTheDocument()
   })
 
-  it('destinatário salvo que ficou inativo ou sem permissão sai da regra, com aviso', async () => {
+  it('responsável salvo que ficou inativo ou sem permissão sai da regra, com aviso', async () => {
     const onSalvo = vi.fn()
     montar({ regra: regraSalva({ destinatarios: ['u1', 'u-inativo', 'u-sem-permissao'] }), onSalvo })
     expect(
       screen.getByText(
-        '2 destinatário(s) inativo(s) ou sem permissão de administrar o ShopFloor removido(s) da regra — salve para confirmar.',
+        '2 responsável(is) inativo(s) ou sem permissão de administrar o ShopFloor removido(s) da regra — salve para confirmar.',
       ),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Ana Gestora')).toBeChecked()
@@ -359,6 +363,103 @@ describe('RegraForm — PMOs', () => {
     montar({ regra: regraSalva({ pmos: ['PMOZ'] }) })
     expect(screen.getByLabelText('PMO PMOZ')).toBeChecked()
     expect(screen.getByLabelText('PMO PMOA')).not.toBeChecked()
+  })
+})
+
+describe('RegraForm — como avisar', () => {
+  it('regra nova nasce na conversa privada, sem canal, com os canais dela à mostra', () => {
+    montar()
+    expect(screen.getByLabelText('Conversa privada do responsável')).toBeChecked()
+    expect(screen.getByLabelText('No canal do Discord')).not.toBeChecked()
+    // Telegram/Discord são sub-opções da conversa privada, e ela começa marcada.
+    expect(screen.getByLabelText('Telegram')).toBeInTheDocument()
+    expect(screen.getByLabelText('Discord')).toBeInTheDocument()
+  })
+
+  it('não existe mais um bloco "Canais" separado', () => {
+    montar()
+    expect(screen.queryByText('Canais')).not.toBeInTheDocument()
+    expect(screen.getByText('Como avisar')).toBeInTheDocument()
+  })
+
+  it('desmarcar a conversa privada esconde Telegram e Discord', () => {
+    montar()
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    expect(screen.queryByLabelText('Telegram')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Discord')).not.toBeInTheDocument()
+    // O aviso em canal continua lá: é irmão da conversa privada, não sub-opção dela.
+    expect(screen.getByLabelText('No canal do Discord')).toBeInTheDocument()
+  })
+
+  it('grava as duas formas de avisar', async () => {
+    montar()
+    preencherObrigatorios('Com canal')
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({
+      avisarPessoas: true,
+      avisarCanal: true,
+      // Privado só no Telegram: o aviso em canal NÃO acrescenta Discord ao fan-out de pessoa.
+      canais: ['telegram'],
+    })
+  })
+
+  it('"só no canal": desmarca a conversa privada e salva sem exigir canal dela', async () => {
+    montar()
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'So canal' } })
+    fireEvent.click(screen.getByLabelText('Teste'))
+    fireEvent.click(screen.getByLabelText('Ana Gestora'))
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ avisarPessoas: false, avisarCanal: true })
+    expect(toastErro).not.toHaveBeenCalled()
+  })
+
+  it('lê o que está salvo na regra', () => {
+    montar({ regra: regraSalva({ canais: ['discord'], avisarPessoas: false, avisarCanal: true }) })
+    expect(screen.getByLabelText('Conversa privada do responsável')).not.toBeChecked()
+    expect(screen.getByLabelText('No canal do Discord')).toBeChecked()
+    expect(screen.queryByLabelText('Telegram')).not.toBeInTheDocument()
+  })
+
+  it('conversa privada marcada sem nenhum canal dela é recusada', () => {
+    montar()
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Sem canal' } })
+    fireEvent.click(screen.getByLabelText('Teste'))
+    fireEvent.click(screen.getByLabelText('Ana Gestora'))
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(toastErro).toHaveBeenCalledWith(
+      'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.',
+      TOAST,
+    )
+    expect(salvarRegraAction).not.toHaveBeenCalled()
+  })
+
+  it('as duas formas desligadas é recusado', () => {
+    montar()
+    preencherObrigatorios('Muda')
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(toastErro).toHaveBeenCalledWith(
+      'Escolha avisar na conversa privada, no canal do Discord, ou os dois.',
+      TOAST,
+    )
+    expect(salvarRegraAction).not.toHaveBeenCalled()
+  })
+
+  it('"Fulano sem Telegram" só aparece quando a regra avisa no privado', () => {
+    montar()
+    fireEvent.click(screen.getByLabelText('Telegram'))
+    fireEvent.click(screen.getByLabelText('Carla Operadora'))
+    expect(screen.getByText('Carla Operadora sem Telegram')).toBeInTheDocument()
+    // Só no canal: quem vê no canal não precisa de conta vinculada nenhuma.
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    expect(screen.queryByText('Carla Operadora sem Telegram')).not.toBeInTheDocument()
   })
 })
 

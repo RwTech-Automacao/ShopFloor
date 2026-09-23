@@ -1,4 +1,12 @@
-import { ehCanal, ehJanelaTipo, ehTipoRegra, type Canal, type TipoEnvio } from './tipos'
+import {
+  ehCanal,
+  ehDestinoTipo,
+  ehJanelaTipo,
+  ehTipoRegra,
+  type Canal,
+  type DestinoTipo,
+  type TipoEnvio,
+} from './tipos'
 import type { Janela } from './janela'
 import {
   textoAlerta,
@@ -9,6 +17,7 @@ import {
   textoNormalizou,
   textoNormalizouDefeito,
   textoNormalizouTempo,
+  textoReabertura,
   textoResolvido,
   textoTeste,
 } from './mensagens'
@@ -20,8 +29,11 @@ import {
 export interface EnvioReservado {
   id: string
   ocorrenciaId: string | null
-  usuarioId: string
+  /** Null nas linhas de canal: um aviso no canal não é de ninguém. */
+  usuarioId: string | null
   canal: Canal
+  /** Destino da linha (0123). Linha sem a coluna (banco antigo) é de pessoa. */
+  destinoTipo: DestinoTipo
   externoId: string
   tipo: TipoEnvio
   /** O que o banco guardou para montar o texto (ver `textoDoEnvio`). */
@@ -52,8 +64,10 @@ export function lerEnvioReservado(bruto: unknown): EnvioReservado | null {
   return {
     id,
     ocorrenciaId: l.ocorrencia_id === null || l.ocorrencia_id === undefined ? null : String(l.ocorrencia_id),
-    usuarioId: String(l.usuario_id ?? ''),
+    usuarioId: l.usuario_id === null || l.usuario_id === undefined ? null : String(l.usuario_id),
     canal: l.canal,
+    // Banco ainda sem a 0123 (deploy antes da migração): toda linha é de pessoa.
+    destinoTipo: ehDestinoTipo(l.destino_tipo) ? l.destino_tipo : 'usuario',
     externoId,
     tipo: l.tipo,
     dados,
@@ -91,6 +105,14 @@ function data(d: Record<string, unknown>, campo: string): Date {
   const v = new Date(texto(d, campo))
   if (Number.isNaN(v.getTime())) throw new DadosEnvioInvalidos(campo)
   return v
+}
+
+/** Data que pode faltar (linha antiga da fila): ausente, vazia ou inválida = null, sem lançar. */
+function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
+  const bruto = textoOuNulo(d, campo)
+  if (bruto === null || bruto === '') return null
+  const v = new Date(bruto)
+  return Number.isNaN(v.getTime()) ? null : v
 }
 
 /** Envios que nascem de uma ocorrência — os únicos cujo texto depende do tipo da regra. */
@@ -173,6 +195,8 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *   defeito:   defeito, ocorrencias, limite_ocorrencias
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito)
  *   teste: nome
+ *   reabertura (só no 'alerta' que nasce de uma reabertura, 0122): reabertura = true,
+ *              resolvida_por_nome, resolvida_em, reaberturas
  * `regra_tipo` ausente = 'aprovacao' (linhas enfileiradas antes da 0115).
  */
 export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): string {
@@ -189,7 +213,21 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
 
   const regraTipo = dados.regra_tipo === null || dados.regra_tipo === undefined ? 'aprovacao' : dados.regra_tipo
   if (!ehTipoRegra(regraTipo)) throw new DadosEnvioInvalidos('regra_tipo')
-  if (regraTipo === 'tempo') return textoTempo(tipo, dados)
-  if (regraTipo === 'defeito') return textoDefeito(tipo, dados)
-  return textoAprovacao(tipo, dados)
+  const corpo =
+    regraTipo === 'tempo'
+      ? textoTempo(tipo, dados)
+      : regraTipo === 'defeito'
+        ? textoDefeito(tipo, dados)
+        : textoAprovacao(tipo, dados)
+
+  // REABERTURA: vale para os três tipos, então o cabeçalho envolve o texto já montado em vez de
+  // ser repetido dentro de cada um. Só no 'alerta' — a reabertura sempre enfileira esse tipo.
+  if (tipo === 'alerta' && dados.reabertura === true) {
+    return textoReabertura(corpo, {
+      nome: textoOuNulo(dados, 'resolvida_por_nome') ?? '',
+      resolvidaEm: dataOuNulo(dados, 'resolvida_em'),
+      em: data(dados, 'agora'),
+    })
+  }
+  return corpo
 }

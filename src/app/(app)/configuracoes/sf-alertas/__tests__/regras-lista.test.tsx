@@ -27,6 +27,8 @@ const BASE: RegraAlerta = {
   pausaMaxMin: 30,
   lembreteMin: null,
   canais: ['telegram'],
+  avisarPessoas: true,
+  avisarCanal: false,
   destinatarios: ['u1'],
   pmos: ['PMOX', 'PMOY'],
   ativa: true,

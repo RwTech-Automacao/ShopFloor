@@ -162,6 +162,23 @@ export function textoNormalizouDefeito(d: { posto: string; defeito: string }): s
   return `🟢 Defeito ${rotuloDefeito(d.defeito)} normalizou no ${d.posto}`
 }
 
+/**
+ * Cabeçalho da REABERTURA (spec de 2026-09-23): a ocorrência foi dada como resolvida, a carência
+ * da regra venceu e a condição continua ruim. Vem ANTES do texto normal do alerta porque, sem
+ * dizer que aquilo já tinha sido encerrado, quem recebe acha que é um problema novo.
+ *
+ * `resolvidaEm` nulo (linha antiga da fila, sem a data) = sai sem o "há X": o resto da frase já
+ * conta o que importa. Nome vazio (quem resolveu foi apagado) vira "alguém".
+ */
+export function textoReabertura(
+  alerta: string,
+  d: { nome: string; resolvidaEm: Date | null; em: Date },
+): string {
+  const quem = d.nome.trim() === '' ? 'alguém' : d.nome.trim()
+  const quando = d.resolvidaEm ? ` há ${formatarDuracao(d.em.getTime() - d.resolvidaEm.getTime())}` : ''
+  return `🔁 Reaberto — dado como resolvido por ${quem}${quando}, e continua fora do limite\n${alerta}`
+}
+
 /** Lembrete de tempo/defeito: o cabeçalho não fala em "abaixo" (um posto lento está ACIMA do limite). */
 export function textoLembreteTipo(alerta: string, abertaEm: Date, em: Date): string {
   const min = Math.max(0, Math.floor((em.getTime() - abertaEm.getTime()) / 60_000))

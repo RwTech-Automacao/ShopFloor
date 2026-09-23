@@ -13,6 +13,24 @@ export type TipoEnvio = 'alerta' | 'lembrete' | 'resolvido' | 'normalizou' | 'te
 export type EstadoOcorrencia = 'aberta' | 'resolvida' | 'normalizada'
 
 /**
+ * Para onde uma linha da fila vai (`alerta_envios.destino_tipo`, 0123): a conversa privada de um
+ * responsável ou o canal do Discord do sistema. O texto é o mesmo nos dois.
+ */
+export type DestinoTipo = 'usuario' | 'canal'
+
+/** O destino já resolvido pela fila: a reserva devolve o endereço pronto, seja de quem for. */
+export interface DestinoEnvio {
+  tipo: DestinoTipo
+  /** Chat/usuário do canal (pessoa) ou id do canal do Discord. */
+  externoId: string
+}
+
+/** É um tipo de destino conhecido? (linha vinda do banco) */
+export function ehDestinoTipo(valor: unknown): valor is DestinoTipo {
+  return valor === 'usuario' || valor === 'canal'
+}
+
+/**
  * Resultado de um envio. O `mensagemExternaId` é `"<chat|canal>:<id da mensagem>"` — guardamos os
  * dois pedaços porque tanto o Telegram quanto o Discord exigem o par para EDITAR a mensagem depois
  * (tirar o botão quando a ocorrência é resolvida).

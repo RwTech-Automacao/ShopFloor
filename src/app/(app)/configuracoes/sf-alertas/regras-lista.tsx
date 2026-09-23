@@ -90,7 +90,7 @@ export function RegrasLista({
               <TableHead>Limite</TableHead>
               <TableHead>Janela</TableHead>
               <TableHead>PMOs</TableHead>
-              <TableHead>Destinatários</TableHead>
+              <TableHead>Responsáveis</TableHead>
               <TableHead>Canais</TableHead>
               <TableHead>Ativa</TableHead>
               <TableHead className="text-right">Ações</TableHead>

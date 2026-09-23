@@ -28,8 +28,14 @@ export interface EntradaRegra {
   /** Tempo médio: minutos. */
   pausaMaxMin?: string | number | null
   lembreteMin: string | number | null
+  /** Os canais da CONVERSA PRIVADA (Telegram e/ou Discord). Só valem com `avisarPessoas`. */
   canais: string[]
+  /** Os RESPONSÁVEIS: quem responde pelo alerta e pode encerrá-lo. */
   destinatarios: string[]
+  /** Ausente = true (chamadas de antes do canal). Avisa na conversa privada de cada responsável. */
+  avisarPessoas?: boolean
+  /** Ausente = false. Avisa no canal do Discord do sistema (DISCORD_CANAL_ID). */
+  avisarCanal?: boolean
   /** Vazio = todas as PMOs. */
   pmos?: string[]
   ativa: boolean
@@ -50,6 +56,8 @@ export interface RegraValida {
   lembreteMin: number | null
   canais: Canal[]
   destinatarios: string[]
+  avisarPessoas: boolean
+  avisarCanal: boolean
   pmos: string[]
   ativa: boolean
 }
@@ -230,11 +238,29 @@ export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
   }
 
   const canaisEntrada = Array.isArray(e.canais) ? e.canais : []
-  const canais = CANAIS.filter((c) => canaisEntrada.includes(c))
-  if (canais.length === 0) return erro('Escolha pelo menos 1 canal.')
+  const canaisPrivado = CANAIS.filter((c) => canaisEntrada.includes(c))
 
   const destinatarios = unicos(e.destinatarios)
-  if (destinatarios.length === 0) return erro('Escolha pelo menos 1 destinatário.')
+  // Continua obrigatório: são os RESPONSÁVEIS, e é deles que sai o direito de encerrar. Uma regra
+  // que avisasse só no canal sem responsável nenhum deixaria o botão "Resolvido" sem quem apertar.
+  if (destinatarios.length === 0) return erro('Escolha pelo menos 1 responsável.')
+
+  const avisarPessoas = e.avisarPessoas ?? true
+  const avisarCanal = e.avisarCanal ?? false
+  if (!avisarPessoas && !avisarCanal) {
+    return erro('Escolha avisar na conversa privada, no canal do Discord, ou os dois.')
+  }
+  if (avisarPessoas && canaisPrivado.length === 0) {
+    return erro('Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.')
+  }
+
+  /**
+   * O que vai para `alerta_regras.canais`: os canais da conversa privada. Com a conversa privada
+   * DESLIGADA, entra `['discord']` só para satisfazer o `cardinality(canais) > 0` da 0113 — não
+   * muda nada, porque o fan-out de pessoa está desligado por `avisar_pessoas = false`. É isso que
+   * deixa o gestor marcar só "No canal do Discord" sem entender amarração nenhuma.
+   */
+  const canais: Canal[] = avisarPessoas ? [...canaisPrivado] : ['discord']
 
   return {
     ok: true,
@@ -250,8 +276,10 @@ export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
       limiteOcorrencias,
       pausaMaxMin,
       lembreteMin: lembrete,
-      canais: [...canais],
+      canais,
       destinatarios,
+      avisarPessoas,
+      avisarCanal,
       pmos: unicos(e.pmos),
       ativa: e.ativa,
     },

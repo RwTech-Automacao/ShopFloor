@@ -64,6 +64,7 @@ const ENVIO: EnvioReservado = {
   id: 'e1',
   ocorrenciaId: 'oc1',
   usuarioId: 'u1',
+  destinoTipo: 'usuario',
   canal: 'telegram',
   externoId: '111',
   tipo: 'resolvido',
@@ -176,10 +177,24 @@ describe('vincular — contrato jsonb do alerta_vincular', () => {
   })
 })
 
+describe('avaliar', () => {
+  it('passa o canal do Discord do ambiente (DISCORD_CANAL_ID) para o alerta_avaliar', async () => {
+    const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ocupado: false }, error: null }) })
+    await criarRepositorioServico(sb, { DISCORD_CANAL_ID: 'C9' } as unknown as NodeJS.ProcessEnv).avaliar()
+    expect(rpcs).toEqual([{ nome: 'alerta_avaliar', args: { p_canal_discord: 'C9' } }])
+  })
+
+  it('sem a variável, manda null: nenhuma linha de canal é enfileirada', async () => {
+    const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ocupado: false }, error: null }) })
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(rpcs[0]!.args).toEqual({ p_canal_discord: null })
+  })
+})
+
 describe('resolver', () => {
   it('erro do Postgres vira código + mensagem', async () => {
     const { sb } = sbFalso({ rpc: () => ({ data: null, error: { message: 'NAO_DESTINATARIO' } }) })
     const r = await criarRepositorioServico(sb).resolver('oc1', 'u3')
-    expect(r).toEqual({ ok: false, codigo: 'NAO_DESTINATARIO', erro: 'Você não é destinatário desta regra ou não administra o ShopFloor.' })
+    expect(r).toEqual({ ok: false, codigo: 'NAO_DESTINATARIO', erro: 'Você não é responsável por esta regra ou não administra o ShopFloor.' })
   })
 })

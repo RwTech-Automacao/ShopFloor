@@ -46,7 +46,9 @@ describe('RegraConteudo', () => {
       pausaMaxMin: null,
       lembreteMin: null,
       canais: ['telegram'],
-      destinatarios: ['u1'],
+      avisarPessoas: true,
+    avisarCanal: false,
+    destinatarios: ['u1'],
       pmos: [],
       ativa: true,
     }
