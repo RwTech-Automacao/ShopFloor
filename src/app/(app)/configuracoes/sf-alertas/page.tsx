@@ -4,7 +4,7 @@ import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarPostos } from '@/modules/shopfloor/infra/postos-repository'
 import { alertasLiberados } from '@/modules/alertas/application/liberacao'
 import { filtroOcorrenciasPadrao } from '@/modules/alertas/domain/ocorrencia'
-import { canaisConfigurados } from '@/modules/alertas/infra/canais'
+import { canaisConfigurados, canalDiscordConfigurado } from '@/modules/alertas/infra/canais'
 import {
   listarDestinatarios,
   listarOcorrencias,
@@ -39,6 +39,7 @@ export default async function AlertasPage() {
       pmos={pmos}
       destinatarios={destinatarios}
       configurados={canaisConfigurados()}
+      canalConfigurado={canalDiscordConfigurado()}
       ocorrenciasIniciais={ocorrencias}
       filtroInicial={filtro}
     />

@@ -5,6 +5,13 @@
 -- Aplica POR CIMA da 0113/0115 (já em produção — nenhuma das duas é editada). Idempotente: rodar
 -- de novo não quebra (add column if not exists, drop ... if exists antes de recriar).
 --
+-- ATENÇÃO — REAPLICAR ESTA MIGRAÇÃO EXIGE RODAR A 0123 EM SEGUIDA. Esta 0122 cria
+-- alerta_avaliar() SEM parâmetro; a 0123 cria alerta_avaliar(p_canal_discord text). São duas
+-- assinaturas diferentes, então rodar a 0122 DEPOIS da 0123 não substitui a função: deixa as
+-- DUAS no banco, e qualquer chamada sem argumento passa a falhar com
+-- "function alerta_avaliar() is not unique" — o cron e o "Avaliar agora" param. Rodou a 0122
+-- num banco que já tem a 0123? Rode a 0123 logo atrás, e só então confira a tela.
+--
 --   Dev e demo (SQL Editor do Supabase): cola o arquivo inteiro e roda.
 --   RDS:  PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "<conexão>" \
 --           -1 -v ON_ERROR_STOP=1 -f supabase/migrations/0122_alertas_reabertura.sql

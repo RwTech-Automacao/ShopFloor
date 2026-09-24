@@ -57,6 +57,17 @@ export function canalDiscordDoSistema(env: NodeJS.ProcessEnv = process.env): str
   return id === '' ? null : id
 }
 
+/**
+ * O aviso EM CANAL está configurado? Precisa de DUAS coisas: o token do bot e o DISCORD_CANAL_ID.
+ * Não é o mesmo que `canaisConfigurados().discord`, que só olha o token e vale para a conversa
+ * privada — com o token e sem o id, uma regra que avisa só no canal não avisa ninguém, e o lembrete
+ * também não salva (a abertura renova o `ultimo_envio_em`). Daqui sai o "(não configurado)" da
+ * opção "No canal do Discord" e a recusa da validação.
+ */
+export function canalDiscordConfigurado(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !!env.DISCORD_BOT_TOKEN && canalDiscordDoSistema(env) !== null
+}
+
 /** Nome dos canais configurados, para a mensagem da tela. */
 export function listaCanaisConfigurados(env: NodeJS.ProcessEnv = process.env): Canal[] {
   const mapa = canaisConfigurados(env)

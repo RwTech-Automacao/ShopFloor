@@ -21,6 +21,7 @@ export function AlertasTela({
   pmos,
   destinatarios,
   configurados,
+  canalConfigurado,
   ocorrenciasIniciais,
   filtroInicial,
 }: {
@@ -29,6 +30,8 @@ export function AlertasTela({
   pmos: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>
+  /** O aviso em canal está pronto (token + DISCORD_CANAL_ID)? */
+  canalConfigurado: boolean
   ocorrenciasIniciais: OcorrenciaLinha[]
   filtroInicial: FiltroOcorrencias
 }) {
@@ -105,6 +108,7 @@ export function AlertasTela({
           pmos={pmos}
           destinatarios={destinatarios}
           configurados={configurados}
+          canalConfigurado={canalConfigurado}
         />
       ) : (
         <OcorrenciasLista

@@ -9,8 +9,8 @@
  * embaixo (um campo de arquivo, um botão) e aciona também. Um gesto, dois efeitos.
  *
  * A correção não mexe em layout nem em geometria: ela engole **um** clique perdido logo
- * após o fechamento da camada, só em ponteiro grosso (toque), sem tocar em cliques que
- * aconteçam dentro da própria camada ou do campo que a abre — esses são legítimos.
+ * após o fechamento da camada, só onde existe toque, sem tocar em cliques que aconteçam
+ * dentro da própria camada ou do campo que a abre — esses são legítimos.
  *
  * Ver design completo em
  * `docs/superpowers/specs/2026-09-23-clique-fantasma-select-touch-design.md`.
@@ -19,19 +19,28 @@
 /** Cliques dentro desses elementos são legítimos e nunca são engolidos. */
 const SELETOR_CLIQUE_LEGITIMO = '[data-slot="select-content"], [data-slot="select-trigger"]'
 
-/** Só existe clique fantasma em ponteiro de toque; com mouse não há `click` sintetizado. */
+/**
+ * Só existe clique fantasma onde há toque; com mouse não há `click` sintetizado.
+ *
+ * A consulta é `any-pointer`, NÃO `pointer`, e isso é o coração da correção: `pointer` descreve só
+ * o ponteiro PRIMÁRIO. No mini PC Windows com tela de toque **e mouse plugado** — que é justamente
+ * o aparelho onde o clique fantasma foi relatado — o primário é o mouse, o navegador responde
+ * `fine` e, com `(pointer: coarse)`, a blindagem saía na primeira linha sem fazer nada: o bug
+ * continuava exatamente onde ele aparece. `(any-pointer: coarse)` pergunta o que de fato importa —
+ * existe ALGUM ponteiro grosso à mão? Não "simplifique" isto de volta para `pointer`.
+ */
 function temPonteiroGrosso(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-  return window.matchMedia('(pointer: coarse)').matches
+  return window.matchMedia('(any-pointer: coarse)').matches
 }
 
 /**
  * Arma, por `janelaMs` milissegundos, um filtro que cancela o primeiro clique fora da
  * lista/campo que a abre. Chamar quando uma lista de seleção fecha.
  *
- * Não faz nada em ponteiro fino (mouse/trackpad) — lá o comportamento de hoje continua
- * idêntico. A proteção some sozinha ao fim da janela, mesmo que nenhum clique chegue, e se
- * desarma depois do primeiro clique cancelado, mesmo que ainda dentro da janela.
+ * Não faz nada em aparelho sem nenhum ponteiro grosso (só mouse/trackpad) — lá o comportamento de
+ * hoje continua idêntico. A proteção some sozinha ao fim da janela, mesmo que nenhum clique
+ * chegue, e se desarma depois do primeiro clique cancelado, mesmo que ainda dentro da janela.
  */
 export function blindarCliqueFantasma(janelaMs = 350): void {
   if (!temPonteiroGrosso()) return

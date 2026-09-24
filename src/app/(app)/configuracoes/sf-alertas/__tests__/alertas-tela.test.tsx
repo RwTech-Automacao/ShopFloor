@@ -61,6 +61,7 @@ function montar(ocorrencias: OcorrenciaLinha[] = [RESOLVIDA]) {
       pmos={[]}
       destinatarios={[]}
       configurados={{ telegram: true, discord: true }}
+      canalConfigurado
       ocorrenciasIniciais={ocorrencias}
       filtroInicial={FILTRO}
     />,

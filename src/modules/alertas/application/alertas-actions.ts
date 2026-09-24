@@ -25,6 +25,7 @@ import {
   previaRegra,
   resolverOcorrenciaComoAdmin,
 } from '../infra/regras-repository'
+import { canalDiscordConfigurado } from '../infra/canais'
 import { criarDependenciasAlertas } from '../infra/fabrica'
 import { avaliarEEnviar, entregarPendentes, removerBotoesDaOcorrencia, type ResumoAvaliacao } from './enviar-alertas'
 
@@ -54,7 +55,7 @@ export async function salvarRegraAction(
     const g = await gestor()
     if (!g.ok) return { ok: false, erro: g.erro }
 
-    const v = validarRegra(entrada)
+    const v = validarRegra(entrada, { canalConfigurado: canalDiscordConfigurado() })
     if (!v.ok) return { ok: false, erro: v.erro }
 
     if (id) {

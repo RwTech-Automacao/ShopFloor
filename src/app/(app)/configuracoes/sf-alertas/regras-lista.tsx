@@ -28,12 +28,14 @@ export function RegrasLista({
   pmos,
   destinatarios,
   configurados,
+  canalConfigurado,
 }: {
   regras: RegraAlerta[]
   postos: string[]
   pmos: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>
+  canalConfigurado: boolean
 }) {
   const [dialogo, setDialogo] = useState<{ aberto: boolean; regra: RegraAlerta | null }>({ aberto: false, regra: null })
   const [pendente, startTransition] = useTransition()
@@ -191,6 +193,7 @@ export function RegrasLista({
         pmos={pmos}
         destinatarios={destinatarios}
         configurados={configurados}
+        canalConfigurado={canalConfigurado}
         onFechar={() => setDialogo({ aberto: false, regra: null })}
         onRegraExcluida={() => {
           setDialogo({ aberto: false, regra: null })
