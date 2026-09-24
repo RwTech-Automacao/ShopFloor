@@ -70,7 +70,12 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
 
       {/* overflow-hidden + anel dão o clip dos cantos e o realce de seleção do card inteiro. */}
       <div className={`overflow-hidden rounded-xl shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
-        <div className={`flex h-14 items-center gap-2 rounded-t-xl border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo}`}>
+        {/* Cabeçalho (a parte branca). Quando a borda é vinho, ela fecha ARREDONDADA nos quatro
+            cantos — mesmo tratamento do card Concluído/Manutenção do Fluxo do ShopFloor: a borda de
+            destaque é um contorno fechado em volta da parte branca, não um cantinho reto encostado
+            na subdivisão cinza. Sem destaque, o cabeçalho arredonda só em cima e a subdivisão
+            completa o cartão. */}
+        <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo} ${destaque ? 'rounded-xl' : 'rounded-t-xl'}`}>
           <div className="min-w-0 flex-1 text-left">
             <p className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
               {ROTULO_ETAPA[d.etapa]}
