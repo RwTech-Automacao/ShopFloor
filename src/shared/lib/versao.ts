@@ -5,10 +5,16 @@
  *  - mudança de patamar      → sobe o primeiro (3.0.0)
  * A versão nunca volta. Esconder uma função é papel do lançamento escondido, não do número.
  */
-export const VERSAO = '2.1.0'
+export const VERSAO = '2.2.0'
 
 /** Marcos principais, do mais novo pro mais antigo (tela Sobre). */
 export const HISTORICO_VERSOES: { versao: string; data: string; resumo: string }[] = [
+  {
+    versao: '2.2.0',
+    data: '28/09/2026',
+    resumo:
+      'Recebimento: telas de Fluxo e de Registros; Abastecimento do Setup passo a passo, um campo por vez; Alertas: alerta dado como resolvido que continua acontecendo volta a avisar, e a regra pode avisar num canal do Discord; Telegram Web no vínculo da conta; correção do toque nas listas de seleção.',
+  },
   {
     versao: '2.1.0',
     data: '22/09/2026',
