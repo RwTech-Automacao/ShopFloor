@@ -52,6 +52,7 @@ create table public.logs (
 select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 
 \i /tmp/0124.sql
+\i /tmp/0125.sql
 
 -- ---------- massa de teste ----------
 -- EMB390: um item em cada caixa (um deles divergente), mais um sem histórico nenhum.
@@ -151,6 +152,12 @@ do $t$ begin
   begin
     perform * from rec_registros();
     raise exception 'FALHOU: rec_registros sem permissão passou';
+  exception when others then
+    if sqlerrm <> 'SEM_PERMISSAO' then raise; end if;
+  end;
+  begin
+    perform * from rec_fluxo_emb_historico('EMB390', 'qualidade');
+    raise exception 'FALHOU: rec_fluxo_emb_historico sem permissão passou';
   exception when others then
     if sqlerrm <> 'SEM_PERMISSAO' then raise; end if;
   end;
@@ -398,6 +405,69 @@ begin
   if r.status_de <> 'Aprovado' or r.status_para <> 'em_conferencia' or r.etapa <> 'qualidade' then
     raise exception 'FALHOU: a reabertura como evento'; end if;
   raise notice 'reabertura: ok';
+end $t$;
+
+-- ---------- 7. Histórico de uma etapa (o painel do nó) ----------
+do $t$
+declare r record;
+begin
+  -- Origem do evento: espelha o `de` de passagemDoEvento.
+  if rec_etapa_origem_do_log('criar', '', '{}'::jsonb) is not null then
+    raise exception 'FALHOU: criação não vem de caixa nenhuma'; end if;
+  if rec_etapa_origem_do_log('alterar_campo', 'Processo #1 — seção recebimento salva', '[]'::jsonb) <> 'recebimento' then
+    raise exception 'FALHOU: salvar o Recebimento tira o item de lá'; end if;
+  if rec_etapa_origem_do_log('alterar_campo', 'Processo #1 — seção qualidade salva', '[]'::jsonb) is not null then
+    raise exception 'FALHOU: salvar a Qualidade não move o item'; end if;
+  if rec_etapa_origem_do_log('mudar_status', '', '{"de":"em_conferencia","para":"Aprovado"}'::jsonb) <> 'qualidade' then
+    raise exception 'FALHOU: a finalização sai da Qualidade'; end if;
+  if rec_etapa_origem_do_log('mudar_status', '', '{"de":"Aprovado","para":"em_conferencia"}'::jsonb) <> 'almoxarifado' then
+    raise exception 'FALHOU: a reabertura sai do Almoxarifado'; end if;
+  if rec_etapa_origem_do_log('mudar_status', '', '{"de":"aberto","para":"em_conferencia"}'::jsonb) is not null then
+    raise exception 'FALHOU: a promoção automática não é passagem'; end if;
+
+  -- Recebimento: as criações (→ Recebimento) e as saídas (Recebimento → Qualidade).
+  -- Na EMB390 são 3 salvamentos da seção Recebimento (CAPJ92, CAPJ93, CAPJ97) e nenhuma criação.
+  if (select count(*) from rec_fluxo_emb_historico('EMB390', 'recebimento')) <> 3 then
+    raise exception 'FALHOU: histórico do Recebimento (deu %)',
+      (select count(*) from rec_fluxo_emb_historico('EMB390', 'recebimento')); end if;
+
+  -- Qualidade: entradas (3) + salvamento da seção Qualidade (1) + finalizações (3) + reabertura (1).
+  if (select count(*) from rec_fluxo_emb_historico('EMB390', 'qualidade')) <> 8 then
+    raise exception 'FALHOU: histórico da Qualidade (deu %)',
+      (select count(*) from rec_fluxo_emb_historico('EMB390', 'qualidade')); end if;
+
+  -- Almoxarifado: as 2 chegadas aprovadas + a reabertura, que tira o item de lá.
+  if (select count(*) from rec_fluxo_emb_historico('EMB390', 'almoxarifado')) <> 3 then
+    raise exception 'FALHOU: histórico do Almoxarifado (deu %)',
+      (select count(*) from rec_fluxo_emb_historico('EMB390', 'almoxarifado')); end if;
+
+  -- Reprovado é fim de linha: só chegada.
+  if (select count(*) from rec_fluxo_emb_historico('EMB390', 'reprovado')) <> 1 then
+    raise exception 'FALHOU: histórico do Reprovado'; end if;
+  select * into r from rec_fluxo_emb_historico('EMB390', 'reprovado');
+  if r.item <> 'CAPJ94' or r.etapa <> 'reprovado' or r.etapa_origem <> 'qualidade'
+     or r.colaborador <> 'Ana' or r.status_para <> 'Reprovado' then
+    raise exception 'FALHOU: a linha do histórico do Reprovado'; end if;
+
+  -- Mais recente primeiro.
+  select * into r from rec_fluxo_emb_historico('EMB390', 'qualidade') limit 1;
+  if r.item <> 'CAPJ92' or r.secao <> 'qualidade' then
+    raise exception 'FALHOU: histórico da Qualidade fora de ordem (veio %)', r.item; end if;
+
+  -- Paginação: `total` conta o resultado inteiro, não a página.
+  if (select count(*) from rec_fluxo_emb_historico('EMB390', 'qualidade', 0, 3)) <> 3 then
+    raise exception 'FALHOU: p_limite não cortou'; end if;
+  if (select distinct total from rec_fluxo_emb_historico('EMB390', 'qualidade', 0, 3)) <> 8 then
+    raise exception 'FALHOU: total tem que contar o resultado inteiro'; end if;
+  if (select count(*) from rec_fluxo_emb_historico('EMB390', 'qualidade', 6, 3)) <> 2 then
+    raise exception 'FALHOU: p_offset não paginou'; end if;
+
+  -- Nada vaza entre EMBs, e etapa sem evento vem vazia (não estoura).
+  if (select count(*) from rec_fluxo_emb_historico('EMB999', 'recebimento')) <> 1 then
+    raise exception 'FALHOU: histórico da EMB999 (a criação dela)'; end if;
+  if (select count(*) from rec_fluxo_emb_historico('EMB999', 'reprovado')) <> 0 then
+    raise exception 'FALHOU: etapa sem evento tem que vir vazia'; end if;
+  raise notice 'histórico da etapa: ok';
 end $t$;
 
 select 'RECEBIMENTO FLUXO/REGISTROS OK' as resultado;

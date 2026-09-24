@@ -13,6 +13,9 @@ export interface HelperLinesResult {
  * Calcula as linhas-guia de alinhamento ao arrastar um nó: compara as bordas/centro do nó movido
  * com os demais e, se ficar dentro de `distancia`, "gruda" no alinhamento e devolve a coordenada da
  * guia (horizontal/vertical). Adaptado do exemplo oficial "Helper Lines" do React Flow. Puro.
+ *
+ * Compartilhado entre os canvas de Fluxo (ShopFloor e Recebimento) — arrastar card tem que se
+ * comportar igual nos dois.
  */
 export function getHelperLines(change: NodePositionChange, nodes: Node[], distancia = 6): HelperLinesResult {
   const padrao: HelperLinesResult = { horizontal: undefined, vertical: undefined, snapPosition: { x: undefined, y: undefined } }

@@ -1,6 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { ETAPAS, type Etapa } from '../domain/etapa-processo'
+import { ETAPAS, passagemDoEvento, type Etapa, type Passagem } from '../domain/etapa-processo'
 
 /** Uma caixa do fluxo, já agregada pela `rec_fluxo_emb` (0124). */
 export interface CaixaFluxo {
@@ -114,4 +114,79 @@ export async function carregarItensCaixa(emb: string, etapa: Etapa): Promise<Ite
     desde: l.desde,
     segundos: numero(l.segundos),
   }))
+}
+
+/** Uma linha do histórico da etapa: quem passou por ela e quando. */
+export interface PassagemEtapa {
+  id: string
+  /** Hora do evento (ISO). */
+  dataHora: string
+  colaborador: string
+  processoId: string
+  numero: number
+  item: string
+  descricao: string
+  /** O movimento, derivado no domínio. `null` = evento que não diz nada sobre o fluxo. */
+  passagem: Passagem | null
+}
+
+interface HistoricoRpc {
+  id: string
+  data_hora: string
+  colaborador: string
+  processo_id: string
+  numero: number
+  item: string
+  descricao: string
+  acao: string
+  secao: string | null
+  etapa: string | null
+  etapa_origem: string | null
+  status_de: string | null
+  status_para: string | null
+  total: number
+}
+
+/** Quantas linhas o histórico busca por vez (a mesma página do histórico do posto do ShopFloor). */
+export const PAGINA_HISTORICO = 100
+
+/**
+ * Histórico de uma etapa da EMB: os eventos que ENVOLVEM aquela caixa (chegou nela, trabalhou nela
+ * ou saiu dela), mais recente primeiro. Paginado — o painel busca +100 conforme rola.
+ */
+export async function carregarHistoricoEtapa(
+  emb: string,
+  etapa: Etapa,
+  offset: number,
+): Promise<{ linhas: PassagemEtapa[]; total: number }> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('rec_fluxo_emb_historico', {
+    p_emb: emb,
+    p_etapa: etapa,
+    p_offset: offset,
+    p_limite: PAGINA_HISTORICO,
+  })
+  if (error) throw error
+  const linhas = (data ?? []) as HistoricoRpc[]
+  return {
+    linhas: linhas.map((l) => ({
+      id: l.id,
+      dataHora: l.data_hora,
+      colaborador: l.colaborador,
+      processoId: l.processo_id,
+      numero: l.numero,
+      item: l.item,
+      descricao: l.descricao,
+      // A seção já vem resolvida do banco (diff + desempate pela descrição); o rótulo do movimento
+      // sai do domínio, o mesmo que a tela de Registros usa.
+      passagem: passagemDoEvento({
+        acao: l.acao,
+        descricao: l.secao ? `seção ${l.secao} salva` : '',
+        gruposTocados: [],
+        statusDe: l.status_de,
+        statusPara: l.status_para,
+      }),
+    })),
+    total: linhas[0]?.total ?? 0,
+  }
 }

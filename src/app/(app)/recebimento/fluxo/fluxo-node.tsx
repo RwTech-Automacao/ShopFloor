@@ -2,7 +2,7 @@
 
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { AlertTriangle, ClipboardCheck, Inbox, PackageCheck, Ban } from 'lucide-react'
+import { AlertTriangle, Ban, ClipboardCheck, History, Inbox, PackageCheck, Timer } from 'lucide-react'
 import { ROTULO_ETAPA, formatarEspera, type Etapa } from '@/modules/recebimento/domain/etapa-processo'
 
 /**
@@ -45,13 +45,18 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
   // Manutenção do Fluxo do ShopFloor. As outras ficam com a borda cinza.
   const destaque = d.etapa === 'almoxarifado' || d.etapa === 'reprovado'
   const bordaTopo = destaque ? 'border-enterplak' : 'border-border'
+  // Os itens sem tempo conhecido entram no tooltip da média em vez de virar linha nova: o card tem
+  // que ter a mesma altura do card do ShopFloor. O painel do nó mostra o número explícito.
+  const tipMedia = d.semTempo > 0
+    ? `Média de há quanto tempo os itens desta caixa estão nela — ${d.semTempo} sem tempo conhecido (aparecem na caixa do status)`
+    : 'Média de há quanto tempo os itens desta caixa estão nela'
 
   return (
     <div className="relative w-[220px]">
-      {/* Os quatro handles existem em todo nó (invisíveis por CSS, `.fluxo-canvas`): a aresta escolhe
-          o lado que usa — laterais na cadeia, topo/base no ramo do Reprovado. */}
-      <Handle type="target" position={Position.Left} id="esq" />
-      <Handle type="target" position={Position.Top} id="topo" />
+      {/* Um handle de cada tipo, como no card do ShopFloor: a aresta é FLUTUANTE (ela calcula o
+          ponto na borda que aponta pro outro card), então o lado do handle não manda no traçado.
+          Os pontos ficam invisíveis por CSS (`.fluxo-canvas`). */}
+      <Handle type="target" position={Position.Left} />
 
       {/* Mini-card da contagem — centrado no cabeçalho (top 28px = metade do h-14), como o WIP. */}
       <div
@@ -77,38 +82,33 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
           </div>
         </div>
 
-        {/* Subdivisão: o tempo da etapa — é o que responde "essa EMB está travada em quê". */}
-        <div className="flex flex-col gap-1 rounded-b-xl border-x-2 border-b-2 border-border bg-muted px-2.5 py-2 text-[11px] leading-none">
-          <div className="flex items-center justify-between gap-2" title="Média de há quanto tempo os itens desta caixa estão nela">
-            <span className="text-muted-foreground">Tempo médio</span>
-            <span className="font-semibold tabular-nums text-foreground">{formatarEspera(d.mediaSegundos)}</span>
-          </div>
-          <div className="flex items-center justify-between gap-2" title="O item mais antigo desta caixa">
-            <span className="text-muted-foreground">Mais antigo</span>
-            <span className="font-semibold tabular-nums text-foreground">{formatarEspera(d.maiorSegundos)}</span>
-          </div>
+        {/* Subdivisão — laterais e base sempre cinza, como no card do ShopFloor. Aqui vai o tempo da
+            etapa, que é o que responde "essa EMB está travada em quê". Uma linha de métricas com
+            tooltip em cada uma, no mesmo formato da linha de aprovadas/1ª/reprovadas de lá. */}
+        <div className="flex items-center justify-center gap-3 rounded-b-xl border-x-2 border-b-2 border-border bg-muted px-2.5 py-2 text-[11px] font-semibold leading-none tabular-nums">
+          <span className="inline-flex cursor-help items-center gap-1" title={tipMedia}>
+            <Timer className="size-3.5 text-muted-foreground" />
+            {formatarEspera(d.mediaSegundos)}
+          </span>
+          <span className="inline-flex cursor-help items-center gap-1" title="O item mais antigo desta caixa">
+            <History className="size-3.5 text-muted-foreground" />
+            {formatarEspera(d.maiorSegundos)}
+          </span>
           {d.divergentes > 0 && (
             <span
-              className="inline-flex cursor-help items-center gap-1 font-semibold text-amber-600"
+              className="inline-flex cursor-help items-center gap-1 text-amber-600"
               title={`Itens com divergência de quantidade nesta etapa: ${d.divergentes}`}
             >
               <AlertTriangle className="size-3.5" />
-              {d.divergentes} com divergência
-            </span>
-          )}
-          {d.semTempo > 0 && (
-            <span
-              className="cursor-help text-muted-foreground"
-              title="Itens sem histórico: aparecem na caixa do status, sem tempo"
-            >
-              {d.semTempo} sem tempo
+              {d.divergentes}
             </span>
           )}
         </div>
       </div>
 
-      <Handle type="source" position={Position.Right} id="dir" />
-      <Handle type="source" position={Position.Bottom} id="baixo" />
+      {/* O Reprovado é fim de linha: dele não sai aresta nenhuma (como a Manutenção do ShopFloor,
+          que também não tem handle de saída). */}
+      {d.etapa !== 'reprovado' && <Handle type="source" position={Position.Right} />}
     </div>
   )
 }
