@@ -392,19 +392,21 @@ end $func$;
 -- ---------- permissões ----------
 -- O Postgres dá EXECUTE a PUBLIC em toda função nova; sem o revoke, a anon key (pública, está no
 -- JavaScript do navegador) chamaria a função direto no PostgREST, sem login.
-revoke all on function public.rec_divergente(text) from public, anon;
-revoke all on function public.rec_etapa_por_resultado(text) from public, anon;
-revoke all on function public.rec_etapa_por_status(text) from public, anon;
-revoke all on function public.rec_secao_do_diff(jsonb) from public, anon;
-revoke all on function public.rec_secao_da_descricao(text) from public, anon;
-revoke all on function public.rec_secao_do_log(text, jsonb) from public, anon;
-revoke all on function public.rec_etapa_do_log(text, text, jsonb) from public, anon;
+-- Os helpers puros só são usados POR DENTRO das funções das telas (que são SECURITY DEFINER e
+-- rodam como donas): ninguém de fora precisa chamá-los.
+revoke all on function public.rec_divergente(text) from public, anon, authenticated;
+revoke all on function public.rec_etapa_por_resultado(text) from public, anon, authenticated;
+revoke all on function public.rec_etapa_por_status(text) from public, anon, authenticated;
+revoke all on function public.rec_secao_do_diff(jsonb) from public, anon, authenticated;
+revoke all on function public.rec_secao_da_descricao(text) from public, anon, authenticated;
+revoke all on function public.rec_secao_do_log(text, jsonb) from public, anon, authenticated;
+revoke all on function public.rec_etapa_do_log(text, text, jsonb) from public, anon, authenticated;
+
 revoke all on function public.rec_fluxo_emb(text) from public, anon;
 revoke all on function public.rec_fluxo_emb_itens(text, text, int) from public, anon;
 revoke all on function public.rec_registros(text, text, text, text, timestamptz, timestamptz, text, int, int)
   from public, anon;
 
--- Os helpers puros não precisam ser chamáveis de fora (só as três funções das telas são).
 grant execute on function public.rec_fluxo_emb(text) to authenticated;
 grant execute on function public.rec_fluxo_emb_itens(text, text, int) to authenticated;
 grant execute on function public.rec_registros(text, text, text, text, timestamptz, timestamptz, text, int, int)
