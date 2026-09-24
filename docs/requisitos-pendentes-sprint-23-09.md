@@ -158,3 +158,86 @@ Sem resolver isso, a metade "matéria-prima" do portal não existe.
 
 As três são perguntas de **negócio**, não de código. Nenhuma delas se resolve lendo o
 sistema — todas dependem de alguém que conhece o processo responder.
+
+---
+
+# Atualização de 24/09 (tarde)
+
+## Etiquetas — o card encolheu e ficou quase pronto para desenhar
+
+**A descoberta que resolve:** o Setup **não precisa** do part number completo. Ele parte o
+código bipado no primeiro separador e usa só duas coisas: **o que vem antes** (tem de ser o
+código do componente, e existir na estrutura da PMO) e **o que vem depois** (lote, texto
+livre). Pedido, DI e nota fiscal são rastreabilidade do Recebimento, **não requisito da
+montagem**. Logo, uma etiqueta genérica tipo `CAPJ91-L0001` **funciona no Setup hoje, sem
+mudar uma linha de código**. Perde-se só a rastreabilidade da compra — que, para material
+antigo, provavelmente já está perdida.
+
+**A posição NÃO serve como identificador.** Foi a primeira ideia e os dados a derrubaram
+(planilha `Saldo_por_Locacoes.xlsx`, coluna A1, 68 linhas):
+- **dez itens ocupam duas posições cada** (CAPH22 em A1.C.47 e 48; IND276 em 55 e 56; …);
+- **a posição A1.C.66 tem três itens diferentes** (dois capacitores e um circuito integrado).
+Além disso o usuário avisou que a posição **muda**.
+
+**Formato da locação:** `coluna.lado.posição` (ex.: `A1.C.66` = coluna A1, lado C, posição
+66). O lado **C é nomenclatura antiga saindo de uso**; o padrão novo é D e E. Na amostra:
+65 posições em C, 1 em D, 1 em E — a migração mal começou.
+
+**O que a planilha tem:** código do item, descrição, locação, categoria, estoque,
+negociante, **saldo**, unidade, peso. **Não tem lote, pedido, nota fiscal nem cliente** (o
+negociante é a própria Enterplak em todas as linhas).
+
+**A pergunta que ainda decide a automação: cada linha da planilha é UM rolo físico?**
+Há um forte indício de que sim: os dez itens repetidos estão quase sempre em posições
+**vizinhas** (47 e 48, 53 e 54, 55 e 56), o que sugere "mesmo item em dois rolos, lado a
+lado" e não erro de cadastro. **A confirmar na prateleira**, olhando esses pares. Se for um
+rolo por linha, a automação é direta: uma etiqueta por linha da planilha.
+
+**Qualidade do dado, para o gerador prever:** uma locação está fora do padrão
+(`A1.C37`, sem o ponto — é o DIO705, provavelmente `A1.C.37`), e a unidade aparece de três
+formas na mesma planilha (`PC - PEÇA`, `PÇ - PEÇA`, `UN - UNIDADE`). Linha malformada deve
+ser **recusada com aviso**, nunca virar etiqueta torta.
+
+**Atenção ao volume:** o arquivo está filtrado em `LOCAÇÃO: A1`. É uma amostra — o estoque
+inteiro é bem maior, e o número total ainda não é conhecido.
+
+## Central do cliente — a ACP é por projeto, mas o campo está solto
+
+**Descoberta:** a ACP é o campo **Projeto** do Recebimento, e o padrão é
+`ACP<número>/<ano> <sigla do cliente>` — ou seja, **por projeto, não por cliente**. O cliente
+VMI aparece com ACP010/26, ACP013/26 e ACP014/26. Isso responde o cenário do usuário
+("mesmo cliente com duas produções"): cada produção tem a sua ACP, e o material chega
+separado.
+
+**O problema é o campo ser texto livre.** Nos 24 valores distintos em produção:
+- **a mesma ACP escrita de formas diferentes** — `ACP14/26` e `ACP014/26`; `ACP13 E 14` e
+  `ACP013/26 E ACP014/26`;
+- **um processo pertencendo a mais de uma ACP** (`ACP013/26 E ACP014/26`, 20 processos;
+  `ACP13 E 14 VMI`, 85 processos) — a relação material ↔ projeto é **de muitos para muitos**,
+  e isso é realidade (uma compra atende dois projetos), não erro;
+- **valores que não são cliente**: `CONSUMO`, `RW`, `RW ESTOQUE`, `RW estoque seg`,
+  `Amostra RW`, `Amostra Sensis`, `Pend. Malb`, e `Facial`/`FACIAL` (o mesmo em duas grafias).
+
+**Recomendação antes de qualquer portal: a ACP virar campo de lista**, não texto livre — o
+Recebimento já tem esse mecanismo (vários campos dele são listas configuráveis). Sem isso, o
+cliente VMI veria sete grupos de material que na verdade são três projetos, e informação
+errada num portal de cliente é pior do que não ter portal.
+
+**Fica em aberto (decisão de negócio):** o que fazer quando um material serve duas produções
+— escolher uma ACP principal ou permitir marcar mais de uma.
+
+**A planilha do estoque não ajuda aqui:** ela não tem coluna de cliente.
+
+**O usuário vai confirmar** com quem preenche: a pessoa sabe que a ACP identifica o projeto,
+ou está usando o campo como observação?
+
+## Compels — sem novidade, e uma decisão
+
+Segue esperando o Valdeí. **Decisão do usuário:** as perguntas técnicas 1 a 10 **não foram
+enviadas** ao fornecedor — a ideia é descobrir "na marra" primeiro, com acesso à tela e
+ajuda de quem já integrou com essa API. **A metade do ShopFloor (o posto Almoxarifado) será
+feita numa branch separada**, e pode ser refinada sem depender de ninguém.
+
+**Dica combinada para quando ele tiver acesso à tela:** abrir o F12 na aba Rede e fazer o
+Valdeí lançar uma entrada real — o próprio ERP mostra qual chamada ele faz, o que responde
+de uma vez o endpoint oficial, os campos obrigatórios e a autenticação.
