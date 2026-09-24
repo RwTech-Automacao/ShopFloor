@@ -279,7 +279,7 @@ begin
     raise exception 'FALHOU: o item sem histórico vai pro fim e sem tempo (veio %)', r.item; end if;
 
   select * into r from rec_fluxo_emb_itens('EMB390', 'reprovado') limit 1;
-  if r.item <> 'CAPJ94' or not r.divergente or r.resultado <> 'Reprovado' then
+  if r.item <> 'CAPJ94' or not rec_divergente(r.divergencia) or r.resultado <> 'Reprovado' then
     raise exception 'FALHOU: o reprovado divergente'; end if;
 
   if (select count(*) from rec_fluxo_emb_itens('EMB390', 'qualidade', 1)) <> 1 then

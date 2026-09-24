@@ -33,7 +33,6 @@ const ITEM: ItemFluxo = {
   quantidadePedido: 500,
   quantidadeRecebida: 490,
   divergencia: '-10',
-  divergente: true,
   resultado: '',
   desde: '2026-09-20T12:00:00Z',
   segundos: 4 * 86400,
@@ -96,7 +95,7 @@ describe('FluxoForm', () => {
   it('item sem tempo conhecido mostra travessão na lista da caixa', async () => {
     carregarItensCaixaAction.mockResolvedValue({
       ok: true,
-      itens: [{ ...ITEM, divergente: false, divergencia: '', desde: null, segundos: null }],
+      itens: [{ ...ITEM, divergencia: '', desde: null, segundos: null }],
     })
     await escolherEmb()
     fireEvent.click(await screen.findByText('Qualidade'))

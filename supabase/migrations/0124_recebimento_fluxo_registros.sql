@@ -236,7 +236,6 @@ returns table (
   quantidade_pedido numeric,
   quantidade_recebida numeric,
   divergencia text,
-  divergente boolean,
   resultado text,
   desde timestamptz,
   segundos numeric
@@ -285,7 +284,9 @@ begin
   select i.id, i.numero,
          coalesce(i.codigo_material, ''), coalesce(i.descricao_material, ''),
          i.quantidade_pedido, i.quantidade_recebida,
-         coalesce(i.divergencia, ''), public.rec_divergente(i.divergencia),
+         -- Só o valor: quem decide se é divergência é o domínio (temDivergencia), que a tela usa
+         -- pra desenhar a marca. A contagem de divergentes por caixa vem do resumo.
+         coalesce(i.divergencia, ''),
          coalesce(i.resultado, ''),
          i.desde,
          extract(epoch from (now() - i.desde))

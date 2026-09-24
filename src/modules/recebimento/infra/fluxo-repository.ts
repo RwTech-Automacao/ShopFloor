@@ -26,8 +26,8 @@ export interface ItemFluxo {
   descricao: string
   quantidadePedido: number | null
   quantidadeRecebida: number | null
+  /** Valor cru do campo calculado. Quem decide se é divergência é `temDivergencia` (domínio). */
   divergencia: string
-  divergente: boolean
   resultado: string
   /** Quando entrou na caixa (ISO). `null` = não deu para saber. */
   desde: string | null
@@ -52,7 +52,6 @@ interface ItemRpc {
   quantidade_pedido: number | string | null
   quantidade_recebida: number | string | null
   divergencia: string
-  divergente: boolean
   resultado: string
   desde: string | null
   segundos: number | string | null
@@ -111,7 +110,6 @@ export async function carregarItensCaixa(emb: string, etapa: Etapa): Promise<Ite
     quantidadePedido: numero(l.quantidade_pedido),
     quantidadeRecebida: numero(l.quantidade_recebida),
     divergencia: l.divergencia,
-    divergente: l.divergente,
     resultado: l.resultado,
     desde: l.desde,
     segundos: numero(l.segundos),

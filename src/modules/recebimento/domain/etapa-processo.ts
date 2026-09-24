@@ -1,6 +1,11 @@
-// Onde cada item de uma EMB está e como ele andou. Regra pura (sem banco): as telas de Fluxo e de
-// Registros do Recebimento leem daqui, e as funções `rec_*` da migração 0124 espelham estas regras
-// em SQL (é lá que a agregação roda — `logs` é global e cresce).
+// Onde cada item de uma EMB está e como ele andou. Regra pura (sem banco), REFERÊNCIA das telas de
+// Fluxo e de Registros do Recebimento.
+//
+// Divisão de trabalho com o banco: a tela usa daqui o que decide item por item (`temDivergencia`,
+// `passagemDoEvento`, `rotuloPassagem`, `formatarEspera`); a AGREGAÇÃO por EMB roda nas funções
+// `rec_*` da migração 0124, porque `logs` é global e cresce — contar no navegador não escala. As
+// `rec_*` espelham `etapaPorStatus`, `etapaPorResultado`, `situacaoAtual` e as duas `secao*`: mudou
+// aqui, muda lá.
 //
 //   Recebimento ──► Qualidade ──► Almoxarifado
 //                       │

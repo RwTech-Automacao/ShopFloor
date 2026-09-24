@@ -22,6 +22,7 @@ import {
   ETAPAS,
   formatarEspera,
   ROTULO_ETAPA,
+  temDivergencia,
   type Etapa,
 } from '@/modules/recebimento/domain/etapa-processo'
 import type { CaixaFluxo, ItemFluxo } from '@/modules/recebimento/infra/fluxo-repository'
@@ -287,7 +288,7 @@ export function FluxoForm({ embs }: { embs: string[] }) {
                                 title={`Recebida: ${numeroBr(i.quantidadeRecebida)}`}
                               >
                                 {numeroBr(i.quantidadePedido)}
-                                {i.divergente && (
+                                {temDivergencia(i.divergencia) && (
                                   <Badge variant="outline" className="ml-1.5 border-amber-400 text-amber-700 dark:text-amber-400">
                                     <TriangleAlert /> {i.divergencia}
                                   </Badge>
