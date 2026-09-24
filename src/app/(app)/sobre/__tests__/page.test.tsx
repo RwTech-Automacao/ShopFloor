@@ -36,3 +36,24 @@ describe('tela Sobre', () => {
     }
   })
 })
+
+describe('tela Sobre — largura', () => {
+  it('a tela cobre a largura disponível, sem teto nem centralização no container', () => {
+    const { container } = render(<SobrePage />)
+    const raiz = container.firstElementChild as HTMLElement
+    // O `<main>` do app-shell já dá o respiro nas laterais, como em Registros e Processos.
+    expect(raiz.className).not.toContain('max-w-')
+    expect(raiz.className).not.toContain('mx-auto')
+  })
+
+  it('texto corrido tem largura de leitura; grade e lista de módulos ficam com a largura toda', () => {
+    render(<SobrePage />)
+    expect(screen.getByText(/Sistema de gestão de chão de fábrica/).className).toContain('max-w-2xl')
+    expect(historico().className).toContain('max-w-3xl')
+    // Grade de informações e cards de módulos são grade: sem teto de leitura.
+    for (const grade of [document.querySelector('dl'), document.querySelector('ul')]) {
+      expect(grade).not.toBeNull()
+      expect((grade as HTMLElement).className).not.toContain('max-w-')
+    }
+  })
+})

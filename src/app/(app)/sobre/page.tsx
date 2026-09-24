@@ -19,7 +19,11 @@ const INFORMACOES: { rotulo: string; valor: string }[] = [
 
 export default function SobrePage() {
   return (
-    <div className="flex max-w-3xl flex-col gap-4">
+    // Largura cheia, como as telas operacionais (Registros, Processos): o `<main>` do app-shell já
+    // dá o respiro nas laterais. O `max-w-3xl` sem `mx-auto` que estava aqui grudava tudo na
+    // esquerda e deixava um vazio à direita. Quem ganha teto agora é só o texto corrido, logo
+    // abaixo — grade e lista ficam com a largura toda.
+    <div className="flex flex-col gap-4">
       {/* Identidade */}
       <Card>
         <CardContent className="flex items-start gap-4">
@@ -31,7 +35,9 @@ export default function SobrePage() {
               <h2 className="text-lg font-semibold">ShopFloor</h2>
               <Badge variant="secondary">v{VERSAO}</Badge>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            {/* Teto no próprio parágrafo, como em `sem-permissao`: texto corrido esticado até a
+                borda de um monitor largo vira uma linha de leitura ruim. */}
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               Sistema de gestão de chão de fábrica (MES) da Enterplak — controle, registro e
               rastreio das operações de produção em um só lugar.
             </p>
@@ -45,7 +51,9 @@ export default function SobrePage() {
           <CardTitle>Informações</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          {/* Grade: fica com a largura toda. Os três itens cabem numa linha no desktop, no mesmo
+              escalonamento de colunas da Home. */}
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
             {INFORMACOES.map((info) => (
               <div key={info.rotulo} className="flex flex-col gap-0.5">
                 <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -64,6 +72,8 @@ export default function SobrePage() {
           <CardTitle>Módulos</CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Três módulos, três colunas — é o mesmo desenho da Home. Mais colunas não faz sentido
+              com três itens, então o espaço extra vira card maior, não coluna nova. */}
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {MODULOS.map((modulo) => (
               <li
@@ -94,8 +104,10 @@ export default function SobrePage() {
               celular e no desktop, e a entrada mais nova cabe inteira com a seguinte aparecendo em
               parte — é o que sinaliza que há mais histórico abaixo. A lista continua completa.
               16rem e não 20rem porque com 20rem o histórico de hoje cabia por pouco e a rolagem só
-              apareceria depois do próximo deploy: o teto precisa valer agora. */}
-          <ol className="flex max-h-64 flex-col gap-3 overflow-y-auto text-sm">
+              apareceria depois do próximo deploy: o teto precisa valer agora.
+              O `max-w-3xl` é de leitura: os resumos são texto corrido e não devem virar uma linha
+              de ponta a ponta do monitor; assim a barra de rolagem também fica perto do texto. */}
+          <ol className="flex max-h-64 max-w-3xl flex-col gap-3 overflow-y-auto text-sm">
             {HISTORICO_VERSOES.map((v) => (
               <li key={v.versao} className="flex gap-3">
                 <span className="w-14 shrink-0 font-medium tabular-nums">{v.versao}</span>
