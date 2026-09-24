@@ -101,13 +101,23 @@ export default function SobrePage() {
         <CardContent>
           {/* A lista cresce a cada deploy e esticaria a página sem fim. Teto em rem (não em vh), no
               mesmo padrão dos quadros do Setup e do Lançamento: a caixa ocupa o mesmo espaço no
-              celular e no desktop, e a entrada mais nova cabe inteira com a seguinte aparecendo em
-              parte — é o que sinaliza que há mais histórico abaixo. A lista continua completa.
-              16rem e não 20rem porque com 20rem o histórico de hoje cabia por pouco e a rolagem só
-              apareceria depois do próximo deploy: o teto precisa valer agora.
-              O `max-w-3xl` é de leitura: os resumos são texto corrido e não devem virar uma linha
-              de ponta a ponta do monitor; assim a barra de rolagem também fica perto do texto. */}
-          <ol className="flex max-h-64 max-w-3xl flex-col gap-3 overflow-y-auto text-sm">
+              celular e no desktop, e as primeiras entradas cabem inteiras com a seguinte aparecendo
+              em parte — é o que sinaliza que há mais histórico abaixo. A lista continua completa.
+              Só de ALTURA: a largura é cheia, como o resto da tela. Cada resumo é uma frase de
+              changelog, não parágrafo — na largura toda a entrada cabe em uma ou duas linhas, o que
+              lê melhor do que quebrar em três. O teto de leitura fica no texto corrido do cabeçalho.
+
+              12rem foi CALIBRADO três vezes; não arredonde sem medir de novo:
+                20rem  não disparava nem na largura antiga (o histórico cabia por pouco);
+                16rem  disparava na largura antiga, com os resumos quebrando em 2-3 linhas;
+                12rem  é o de agora — na largura cheia cada entrada encolhe para 1-2 linhas e a
+                       lista inteira mede ~248px num monitor de 1920px, ou seja, 16rem deixaria de
+                       disparar de novo.
+              A conta: cada entrada = 16px da data (text-xs) + 20px por linha do resumo (text-sm),
+              mais 12px de gap. Com as 5 entradas de hoje o PISO é 228px (todas em uma linha só, num
+              monitor bem largo), então o teto tem de ficar abaixo disso — 192px deixa uma entrada
+              inteira de margem. O histórico só cresce, então esse piso nunca baixa. */}
+          <ol className="flex max-h-48 flex-col gap-3 overflow-y-auto text-sm">
             {HISTORICO_VERSOES.map((v) => (
               <li key={v.versao} className="flex gap-3">
                 <span className="w-14 shrink-0 font-medium tabular-nums">{v.versao}</span>

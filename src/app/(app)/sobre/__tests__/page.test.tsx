@@ -19,8 +19,9 @@ describe('tela Sobre', () => {
   it('o histórico rola dentro de um teto em vez de esticar a página', () => {
     render(<SobrePage />)
     const classes = historico().className
-    // 16rem: com 20rem o histórico de hoje cabia por pouco e ninguém via rolagem.
-    expect(classes).toContain('max-h-64')
+    // 12rem, calibrado: na largura cheia a lista mede ~248px num monitor de 1920px, com piso de
+    // 228px, então 16rem (256px) e 20rem (320px) não disparavam a rolagem. Ver o comentário na tela.
+    expect(classes).toContain('max-h-48')
     expect(classes).toContain('overflow-y-auto')
     // Teto em rem, não em vh: mesma caixa no celular e no desktop.
     expect(classes).not.toContain('vh')
@@ -46,14 +47,17 @@ describe('tela Sobre — largura', () => {
     expect(raiz.className).not.toContain('mx-auto')
   })
 
-  it('texto corrido tem largura de leitura; grade e lista de módulos ficam com a largura toda', () => {
+  it('só o texto corrido do cabeçalho tem largura de leitura', () => {
     render(<SobrePage />)
     expect(screen.getByText(/Sistema de gestão de chão de fábrica/).className).toContain('max-w-2xl')
-    expect(historico().className).toContain('max-w-3xl')
-    // Grade de informações e cards de módulos são grade: sem teto de leitura.
-    for (const grade of [document.querySelector('dl'), document.querySelector('ul')]) {
-      expect(grade).not.toBeNull()
-      expect((grade as HTMLElement).className).not.toContain('max-w-')
+  })
+
+  it('grade, módulos e histórico ficam com a largura toda', () => {
+    render(<SobrePage />)
+    // O histórico é lista de changelog, não texto corrido: cada entrada cabe numa linha só.
+    for (const bloco of [document.querySelector('dl'), document.querySelector('ul'), historico()]) {
+      expect(bloco).not.toBeNull()
+      expect((bloco as HTMLElement).className).not.toContain('max-w-')
     }
   })
 })
