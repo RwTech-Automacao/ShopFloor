@@ -98,6 +98,7 @@ export function RegraForm({
   pmosDisponiveis,
   destinatarios,
   configurados,
+  canalConfigurado,
   onSalvo,
   onCancelar,
   onVoltar,
@@ -109,6 +110,11 @@ export function RegraForm({
   pmosDisponiveis: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>
+  /**
+   * O aviso EM CANAL está pronto (token do bot + DISCORD_CANAL_ID). Separado de
+   * `configurados.discord`, que só olha o token e vale para a conversa privada.
+   */
+  canalConfigurado: boolean
   onSalvo: () => void
   onCancelar: () => void
   /** Só na regra nova: volta para a escolha do tipo. */
@@ -175,7 +181,7 @@ export function RegraForm({
   function salvar() {
     // Mesma validação do servidor, antes de ir ao banco: o gestor vê o erro na hora.
     const dados = entrada()
-    const v = validarRegra(dados)
+    const v = validarRegra(dados, { canalConfigurado })
     if (!v.ok) {
       toast.error(v.erro, TOAST)
       return
@@ -489,7 +495,8 @@ export function RegraForm({
               onChange={() => setAvisarCanal((a) => !a)}
             />
             No canal do Discord
-            {!configurados.discord && <span className="text-xs text-muted-foreground">(não configurado)</span>}
+            {/* O canal precisa do token E do DISCORD_CANAL_ID: `configurados.discord` só olha o token. */}
+            {!canalConfigurado && <span className="text-xs text-muted-foreground">(não configurado)</span>}
           </label>
         </div>
       </fieldset>

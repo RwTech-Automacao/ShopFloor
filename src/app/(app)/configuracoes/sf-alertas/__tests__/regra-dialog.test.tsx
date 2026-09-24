@@ -14,6 +14,7 @@ const PROPS = {
   pmos: ['PMOA'],
   destinatarios: [],
   configurados: { telegram: true, discord: true },
+  canalConfigurado: true,
   onFechar: vi.fn(),
 }
 

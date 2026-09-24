@@ -67,7 +67,9 @@ function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {
   }
 }
 
-function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null; onSalvo?: () => void } = {}) {
+function montar(
+  o: { tipo?: TipoRegra; regra?: RegraAlerta | null; onSalvo?: () => void; canalConfigurado?: boolean } = {},
+) {
   const onSalvo = o.onSalvo ?? vi.fn()
   render(
     <RegraForm
@@ -77,6 +79,7 @@ function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null; onSalvo?: () 
       pmosDisponiveis={PMOS}
       destinatarios={DESTINATARIOS}
       configurados={CONFIGURADOS}
+      canalConfigurado={o.canalConfigurado ?? true}
       onSalvo={onSalvo}
       onCancelar={vi.fn()}
     />,
@@ -460,6 +463,50 @@ describe('RegraForm — como avisar', () => {
     fireEvent.click(screen.getByLabelText('No canal do Discord'))
     fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
     expect(screen.queryByText('Carla Operadora sem Telegram')).not.toBeInTheDocument()
+  })
+})
+
+const ERRO_SEM_CANAL =
+  'O canal do Discord não está configurado neste ambiente: marque também a conversa privada do responsável, ou peça ao TI para configurar o canal.'
+
+describe('RegraForm — canal do Discord não configurado', () => {
+  /** A `<label>` inteira da opção: é nela que o "(não configurado)" aparece. */
+  function opcao(nome: string) {
+    return screen.getByLabelText(nome).closest('label')!
+  }
+
+  it('a opção do canal avisa "(não configurado)" quando falta o DISCORD_CANAL_ID', () => {
+    montar({ canalConfigurado: false })
+    expect(opcao('No canal do Discord')).toHaveTextContent('(não configurado)')
+    // O Discord da conversa privada só precisa do token, que existe: ele continua configurado.
+    expect(opcao('Discord')).not.toHaveTextContent('(não configurado)')
+  })
+
+  it('com o canal configurado, nenhuma opção fica marcada como não configurada', () => {
+    montar()
+    expect(opcao('No canal do Discord')).not.toHaveTextContent('(não configurado)')
+  })
+
+  it('"só no canal" é recusado: ninguém seria avisado e nem o lembrete salvaria', () => {
+    montar({ canalConfigurado: false })
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'So canal' } })
+    fireEvent.click(screen.getByLabelText('Teste'))
+    fireEvent.click(screen.getByLabelText('Ana Gestora'))
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
+    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(toastErro).toHaveBeenCalledWith(ERRO_SEM_CANAL, TOAST)
+    expect(salvarRegraAction).not.toHaveBeenCalled()
+  })
+
+  it('canal MAIS conversa privada continua salvando: as pessoas ainda são avisadas', async () => {
+    montar({ canalConfigurado: false })
+    preencherObrigatorios('Canal e pessoas')
+    fireEvent.click(screen.getByLabelText('No canal do Discord'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ avisarPessoas: true, avisarCanal: true })
+    expect(toastErro).not.toHaveBeenCalled()
   })
 })
 

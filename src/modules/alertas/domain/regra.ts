@@ -148,7 +148,16 @@ function unicos(lista: unknown): string[] {
   ]
 }
 
-export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
+/**
+ * O que a validação precisa saber do AMBIENTE (o domínio não lê env: quem chama informa).
+ * Campo ausente = não restringe nada, para as chamadas que não passam ambiente.
+ */
+export interface AmbienteRegra {
+  /** O canal do Discord do sistema está pronto (token do bot + DISCORD_CANAL_ID)? */
+  canalConfigurado?: boolean
+}
+
+export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Resultado<RegraValida> {
   const tipoBruto = e.tipo === undefined || e.tipo === null || e.tipo === '' ? 'aprovacao' : e.tipo
   if (!ehTipoRegra(tipoBruto)) return erro('Escolha o tipo da regra.')
   const tipo: TipoRegra = tipoBruto
@@ -252,6 +261,15 @@ export function validarRegra(e: EntradaRegra): Resultado<RegraValida> {
   }
   if (avisarPessoas && canaisPrivado.length === 0) {
     return erro('Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.')
+  }
+  // Regra que avisaria SÓ no canal, num ambiente sem canal, some sem deixar rastro: a ocorrência
+  // abre, ninguém é avisado, e o lembrete também não salva porque a abertura já renovou o
+  // `ultimo_envio_em`. Avisar no canal E nas pessoas continua valendo — as pessoas são avisadas de
+  // qualquer jeito, e a mensagem do canal é o que se perde.
+  if (avisarCanal && !avisarPessoas && ambiente.canalConfigurado === false) {
+    return erro(
+      'O canal do Discord não está configurado neste ambiente: marque também a conversa privada do responsável, ou peça ao TI para configurar o canal.',
+    )
   }
 
   /**

@@ -79,3 +79,39 @@ describe('validarRegra — os canais gravados são os da conversa privada', () =
     expect(r.ok && r.valor.canais).toEqual(['discord'])
   })
 })
+
+describe('validarRegra — canal do Discord não configurado no ambiente', () => {
+  const ERRO =
+    'O canal do Discord não está configurado neste ambiente: marque também a conversa privada do responsável, ou peça ao TI para configurar o canal.'
+
+  it('SÓ no canal é recusado: a ocorrência abriria sem avisar ninguém, e nem o lembrete salvaria', () => {
+    // Sem o DISCORD_CANAL_ID nada sai no canal, e a abertura já renova o `ultimo_envio_em` —
+    // o alerta desaparece sem deixar rastro. Melhor recusar na hora de salvar.
+    expect(
+      validarRegra({ ...BASE, canais: [], avisarPessoas: false, avisarCanal: true }, { canalConfigurado: false }),
+    ).toEqual({ ok: false, erro: ERRO })
+  })
+
+  it('no canal E nas pessoas continua podendo ser salva (as pessoas são avisadas)', () => {
+    const r = validarRegra(
+      { ...BASE, canais: ['telegram'], avisarPessoas: true, avisarCanal: true },
+      { canalConfigurado: false },
+    )
+    expect(r.ok).toBe(true)
+    expect(r.ok && r.valor.avisarCanal).toBe(true)
+  })
+
+  it('com o canal configurado, só no canal passa', () => {
+    const r = validarRegra({ ...BASE, canais: [], avisarPessoas: false, avisarCanal: true }, { canalConfigurado: true })
+    expect(r.ok).toBe(true)
+  })
+
+  it('sem ambiente informado, nada muda (as chamadas que não passam ambiente não restringem)', () => {
+    expect(validarRegra({ ...BASE, canais: [], avisarPessoas: false, avisarCanal: true }).ok).toBe(true)
+  })
+
+  it('não avisar no canal nenhum: o ambiente sem canal não estorva', () => {
+    const r = validarRegra({ ...BASE, avisarPessoas: true, avisarCanal: false }, { canalConfigurado: false })
+    expect(r.ok).toBe(true)
+  })
+})

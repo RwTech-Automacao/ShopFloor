@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { canalDiscordDoSistema, criarPortasCanais } from '../canais'
+import { canalDiscordConfigurado, canalDiscordDoSistema, criarPortasCanais } from '../canais'
 import { criarDiscord } from '../discord'
 
 function fetchFalso(respostas: { corpo: unknown; status?: number }[]) {
@@ -27,6 +27,25 @@ describe('canalDiscordDoSistema', () => {
   it('ausente ou vazio = ambiente sem canal', () => {
     expect(canalDiscordDoSistema({} as NodeJS.ProcessEnv)).toBeNull()
     expect(canalDiscordDoSistema({ DISCORD_CANAL_ID: '   ' } as unknown as NodeJS.ProcessEnv)).toBeNull()
+  })
+})
+
+describe('canalDiscordConfigurado', () => {
+  it('token do bot MAIS DISCORD_CANAL_ID = o aviso em canal funciona', () => {
+    expect(
+      canalDiscordConfigurado({ DISCORD_BOT_TOKEN: 'D', DISCORD_CANAL_ID: 'C9' } as unknown as NodeJS.ProcessEnv),
+    ).toBe(true)
+  })
+
+  it('token sem canal = NÃO configurado (é o furo que fazia a regra só-no-canal sumir em silêncio)', () => {
+    expect(canalDiscordConfigurado({ DISCORD_BOT_TOKEN: 'D' } as unknown as NodeJS.ProcessEnv)).toBe(false)
+    expect(
+      canalDiscordConfigurado({ DISCORD_BOT_TOKEN: 'D', DISCORD_CANAL_ID: '  ' } as unknown as NodeJS.ProcessEnv),
+    ).toBe(false)
+  })
+
+  it('canal sem token também não envia nada', () => {
+    expect(canalDiscordConfigurado({ DISCORD_CANAL_ID: 'C9' } as unknown as NodeJS.ProcessEnv)).toBe(false)
   })
 })
 

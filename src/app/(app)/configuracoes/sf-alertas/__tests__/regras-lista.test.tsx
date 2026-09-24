@@ -56,6 +56,7 @@ describe('RegrasLista', () => {
         pmos={['PMOX']}
         destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
         configurados={{ telegram: true, discord: true }}
+        canalConfigurado
       />,
     )
     expect(screen.getAllByText('Tipo').length).toBeGreaterThan(0)

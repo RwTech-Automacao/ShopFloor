@@ -13,6 +13,7 @@ interface PropsRegra {
   pmos: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>
+  canalConfigurado: boolean
   onFechar: () => void
   onRegraExcluida?: () => void
 }
@@ -21,7 +22,16 @@ interface PropsRegra {
  * Regra nova: primeiro os 3 cartões de tipo, depois o formulário do tipo escolhido ("Trocar tipo"
  * volta). Editar: direto no formulário do tipo da regra — o tipo não muda depois de criado.
  */
-export function RegraConteudo({ regra, postos, pmos, destinatarios, configurados, onFechar, onRegraExcluida }: PropsRegra) {
+export function RegraConteudo({
+  regra,
+  postos,
+  pmos,
+  destinatarios,
+  configurados,
+  canalConfigurado,
+  onFechar,
+  onRegraExcluida,
+}: PropsRegra) {
   const [escolhido, setEscolhido] = useState<TipoRegra | null>(null)
   const tipo = regra?.tipo ?? escolhido
 
@@ -39,6 +49,7 @@ export function RegraConteudo({ regra, postos, pmos, destinatarios, configurados
         pmosDisponiveis={pmos}
         destinatarios={destinatarios}
         configurados={configurados}
+        canalConfigurado={canalConfigurado}
         onSalvo={onFechar}
         onCancelar={onFechar}
         onVoltar={regra ? undefined : () => setEscolhido(null)}
