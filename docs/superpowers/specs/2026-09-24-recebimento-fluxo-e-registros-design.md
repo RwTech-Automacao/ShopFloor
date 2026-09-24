@@ -70,11 +70,20 @@ marca some sozinha, porque o campo é recalculado.
 
 Escolhe-se uma **EMB** e vê-se onde estão os itens dela.
 
-- **Quatro caixas**: Recebimento, Qualidade, Almoxarifado e, lateral, Reprovado na Qualidade.
-- Cada caixa mostra **quantos itens estão nela agora**.
-- **Divergência** aparece como contador à parte ("N itens com divergência"), não como caixa,
-  e os itens divergentes ficam marcados onde estiverem.
-- Clicar numa caixa lista os itens que estão nela: **Item, Descrição, quantidade, há quanto
+O desenho é o **mesmo canvas React Flow do Fluxo do ShopFloor** — decidido no smoke de
+24/09 ("o fluxo deve ter o mesmo desenho reactflow do outro fluxo"). Mesma linguagem visual:
+cards com a contagem grudada na borda esquerda, ligações entre eles, fundo pontilhado e
+controles de zoom.
+
+- **Quatro nós**: Recebimento → Qualidade → Almoxarifado, e o Reprovado na Qualidade como
+  **ramo que desce da Qualidade** — desenhado como o ramo da Manutenção do ShopFloor
+  (tracejado vinho), com a diferença de que dele **não se volta**.
+- Cada nó mostra **quantos itens estão nele agora**, o tempo médio e o mais antigo.
+- Os cards são **fixos**: não se arrasta (são quatro), então não há layout para salvar —
+  ao contrário do Fluxo do ShopFloor, que guarda o arranjo por OP.
+- **Divergência** aparece como contador à parte ("N itens com divergência"), não como caixa:
+  no nó onde os itens estão e no rodapé com o total da EMB.
+- Clicar num nó lista os itens que estão nele: **Item, Descrição, quantidade, há quanto
   tempo está ali**, e a marca de divergência quando houver.
 - **Tempo por etapa**: com as horas dos eventos, a tela mostra há quanto tempo cada item
   está parado e qual o tempo médio da EMB em cada etapa. É o que responde "essa EMB está
@@ -183,6 +192,12 @@ em `$func$`, `revoke`/`grant` explícitos e `notify pgrst, 'reload schema'`:
 - `src/app/(app)/recebimento/fluxo/` e `src/app/(app)/recebimento/registros/` (+ a rota de
   exportação)
 
+O card do canvas é **próprio do Recebimento** (`fluxo/fluxo-node.tsx`), com a mesma anatomia
+do card do ShopFloor: o de lá carrega dados que aqui não existem (WIP, "devem passar",
+aprovados de primeira, barra de %). Do ShopFloor se reusa a classe compartilhada
+`.fluxo-canvas` (esconde os pontos de conexão) e a mesma configuração do canvas —
+**sem tocar naquela tela**.
+
 **Sem mudança** nas telas que já existem, no grid de Processos, nas importações ou em
 qualquer regra de gravação. As duas telas são **somente leitura**.
 
@@ -204,6 +219,12 @@ Banco (Postgres descartável, no modelo de `supabase/tests/`):
 Tela:
 8. A exportação usa **os mesmos filtros** da tela e escapa fórmula de planilha.
 9. Sem `recebimento: visualizar`, as duas telas e a exportação recusam.
+
+O canvas do Fluxo é testado com um **dublê do React Flow**: o canvas de verdade só desenha
+depois de medir o container, e no jsdom todo elemento tem 0×0. O dublê renderiza cada nó com
+o `nodeTypes` de verdade (o card é exercitado como está em produção) e o clique chama o
+`onNodeClick`. Fica fora do teste o que só o navegador mostra: posição dos nós, traçado das
+arestas e zoom.
 
 ## Fora de escopo
 

@@ -1,7 +1,18 @@
 'use client'
 
-import { Fragment, useMemo, useState } from 'react'
-import { ArrowDown, ArrowRight, ChevronsUpDown, TriangleAlert } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import {
+  Background,
+  Controls,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeMouseHandler,
+  type NodeTypes,
+  type ReactFlowInstance,
+} from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+import { ChevronsUpDown, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -19,7 +30,7 @@ import {
   carregarItensCaixaAction,
 } from '@/modules/recebimento/application/fluxo-actions'
 import {
-  ETAPAS,
+  ehEtapa,
   formatarEspera,
   ROTULO_ETAPA,
   temDivergencia,
@@ -27,62 +38,33 @@ import {
 } from '@/modules/recebimento/domain/etapa-processo'
 import type { CaixaFluxo, ItemFluxo } from '@/modules/recebimento/infra/fluxo-repository'
 import { cn } from '@/lib/utils'
+import { FluxoRecebimentoNode, type FluxoRecebimentoNodeData } from './fluxo-node'
 
-/** Cor de cada caixa. O Reprovado é fim de linha, então sai em vermelho. */
-const COR_CAIXA: Record<Etapa, string> = {
-  recebimento: 'border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40',
-  qualidade: 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30',
-  almoxarifado: 'border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950/30',
-  reprovado: 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/30',
+const ESPACO_X = 300 // folga entre as caixas (mesma do Fluxo do ShopFloor)
+const ESPACO_Y = 200 // altura entre as duas linhas: o ramo do Reprovado desce da Qualidade
+
+/** Arranjo das quatro caixas no canvas: a cadeia na 1ª linha, o ramo embaixo da Qualidade. */
+const POSICAO: Record<Etapa, { x: number; y: number }> = {
+  recebimento: { x: 0, y: 0 },
+  qualidade: { x: ESPACO_X, y: 0 },
+  almoxarifado: { x: 2 * ESPACO_X, y: 0 },
+  reprovado: { x: ESPACO_X, y: ESPACO_Y },
 }
+
+/** O que cada etapa é, em uma linha (o subtítulo do card). */
+const SUBTITULO: Record<Etapa, string> = {
+  recebimento: 'esperando conferência',
+  qualidade: 'em conferência',
+  almoxarifado: 'concluído',
+  reprovado: 'ramo · fim de linha',
+}
+
+/** Cores das arestas, as mesmas do Fluxo do ShopFloor. */
+const VINHO = '#8D2033'
+const CINZA = '#94a3b8'
 
 function numeroBr(v: number | null): string {
   return v === null ? '—' : v.toLocaleString('pt-BR')
-}
-
-interface CaixaProps {
-  caixa: CaixaFluxo
-  selecionada: boolean
-  onClick: () => void
-}
-
-function Caixa({ caixa, selecionada, onClick }: CaixaProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={selecionada}
-      className={cn(
-        'flex min-w-40 flex-1 flex-col gap-1 rounded-lg border p-3 text-left transition-all hover:brightness-95',
-        COR_CAIXA[caixa.etapa],
-        selecionada && 'ring-2 ring-enterplak ring-offset-1',
-      )}
-    >
-      <span className="text-xs font-medium text-muted-foreground">{ROTULO_ETAPA[caixa.etapa]}</span>
-      <span className="text-2xl font-semibold tabular-nums text-tinta">{caixa.itens}</span>
-      <span className="text-xs text-muted-foreground">
-        {caixa.itens === 1 ? 'item' : 'itens'}
-      </span>
-      {/* Tempo médio de quanto tempo os itens desta caixa estão NELA — é o que responde
-          "essa EMB está travada em quê". */}
-      <span className="mt-1 text-xs text-muted-foreground" title="Média de há quanto tempo os itens desta caixa estão nela">
-        Tempo médio: <span className="font-medium text-foreground">{formatarEspera(caixa.mediaSegundos)}</span>
-      </span>
-      <span className="text-xs text-muted-foreground" title="O item mais antigo desta caixa">
-        Mais antigo: <span className="font-medium text-foreground">{formatarEspera(caixa.maiorSegundos)}</span>
-      </span>
-      {caixa.divergentes > 0 && (
-        <span className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
-          <TriangleAlert className="size-3.5" /> {caixa.divergentes} com divergência
-        </span>
-      )}
-      {caixa.semTempo > 0 && (
-        <span className="text-xs text-muted-foreground" title="Itens sem histórico: aparecem na caixa do status, sem tempo">
-          {caixa.semTempo} sem tempo
-        </span>
-      )}
-    </button>
-  )
 }
 
 export function FluxoForm({ embs }: { embs: string[] }) {
@@ -97,6 +79,8 @@ export function FluxoForm({ embs }: { embs: string[] }) {
   const [itens, setItens] = useState<ItemFluxo[] | null>(null)
   const [carregandoItens, setCarregandoItens] = useState(false)
 
+  const rfRef = useRef<ReactFlowInstance | null>(null)
+
   const embsFiltradas = useMemo(() => {
     const f = filtro.trim().toLowerCase()
     return f ? embs.filter((e) => e.toLowerCase().includes(f)) : embs
@@ -107,6 +91,59 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     [caixas],
   )
   const total = useMemo(() => (caixas ?? []).reduce((soma, c) => soma + c.itens, 0), [caixas])
+
+  const nodeTypes = useMemo<NodeTypes>(() => ({ etapa: FluxoRecebimentoNode }), [])
+
+  // Os nós não são arrastáveis (são quatro caixas fixas), então saem de um useMemo e não de
+  // `useNodesState` — sem estado de posição pra guardar, não há o que sincronizar.
+  const nodes = useMemo<Node[]>(() => {
+    if (!caixas) return []
+    return caixas.map((c) => ({
+      id: c.etapa,
+      type: 'etapa',
+      position: POSICAO[c.etapa],
+      data: {
+        etapa: c.etapa,
+        subtitulo: SUBTITULO[c.etapa],
+        itens: c.itens,
+        divergentes: c.divergentes,
+        mediaSegundos: c.mediaSegundos,
+        maiorSegundos: c.maiorSegundos,
+        semTempo: c.semTempo,
+        selecionado: etapaSel === c.etapa,
+      } satisfies FluxoRecebimentoNodeData,
+    }))
+  }, [caixas, etapaSel])
+
+  const edges = useMemo<Edge[]>(() => {
+    if (!caixas) return []
+    const itensDe = (etapa: Etapa) => caixas.find((c) => c.etapa === etapa)?.itens ?? 0
+    /** Caixa de destino com item = linha vinho cheia; vazia = linha cinza fina (igual ao ShopFloor). */
+    const cadeia = (source: Etapa, target: Etapa): Edge => ({
+      id: `f:${source}->${target}`,
+      source,
+      target,
+      sourceHandle: 'dir',
+      targetHandle: 'esq',
+      style: itensDe(target) > 0
+        ? { stroke: VINHO, strokeWidth: 2 }
+        : { stroke: CINZA, strokeWidth: 1 },
+    })
+    return [
+      cadeia('recebimento', 'qualidade'),
+      cadeia('qualidade', 'almoxarifado'),
+      {
+        // O ramo do Reprovado é desenhado como o ramo da Manutenção do ShopFloor: tracejado vinho,
+        // saindo por baixo da Qualidade. A diferença é que dele não se volta.
+        id: 'r:qualidade->reprovado',
+        source: 'qualidade',
+        target: 'reprovado',
+        sourceHandle: 'baixo',
+        targetHandle: 'topo',
+        style: { stroke: VINHO, strokeWidth: 2, strokeDasharray: '4 4', opacity: 0.35 },
+      },
+    ]
+  }, [caixas])
 
   async function escolher(valor: string) {
     setEmb(valor)
@@ -124,6 +161,8 @@ export function FluxoForm({ embs }: { embs: string[] }) {
       return
     }
     setCaixas(r.caixas)
+    // Enquadra o fluxo da EMB nova depois do render (o canvas ainda não tem os nós neste tique).
+    setTimeout(() => rfRef.current?.fitView({ duration: 200 }), 0)
   }
 
   async function abrirCaixa(etapa: Etapa) {
@@ -143,6 +182,10 @@ export function FluxoForm({ embs }: { embs: string[] }) {
       return
     }
     setItens(r.itens)
+  }
+
+  const aoClicarNo: NodeMouseHandler = (_, node) => {
+    if (ehEtapa(node.id)) void abrirCaixa(node.id)
   }
 
   const contagemDaCaixa = etapaSel ? (caixas ?? []).find((c) => c.etapa === etapaSel)?.itens ?? 0 : 0
@@ -207,31 +250,26 @@ export function FluxoForm({ embs }: { embs: string[] }) {
 
         {caixas && !carregando && (
           <>
-            {/* Recebimento → Qualidade → Almoxarifado na 1ª linha; o Reprovado desce da Qualidade
-                (coluna 3 da grade), que é a saída lateral. As colunas `auto` são as setas. */}
-            <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-[1fr_auto_1fr_auto_1fr]">
-              {ETAPAS.filter((e) => e !== 'reprovado').map((etapa, i) => (
-                <Fragment key={etapa}>
-                  <Caixa
-                    caixa={caixas.find((c) => c.etapa === etapa)!}
-                    selecionada={etapaSel === etapa}
-                    onClick={() => void abrirCaixa(etapa)}
-                  />
-                  {i < 2 && (
-                    <ArrowRight className="hidden size-5 self-center text-muted-foreground sm:block" aria-hidden />
-                  )}
-                </Fragment>
-              ))}
-              <div className="flex flex-col gap-1 sm:col-start-3">
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <ArrowDown className="size-3.5" aria-hidden /> saída lateral (fim de linha)
-                </span>
-                <Caixa
-                  caixa={caixas.find((c) => c.etapa === 'reprovado')!}
-                  selecionada={etapaSel === 'reprovado'}
-                  onClick={() => void abrirCaixa('reprovado')}
-                />
-              </div>
+            {/* Mesmo canvas do Fluxo do ShopFloor: `fluxo-canvas` é a classe compartilhada que
+                esconde os pontos de conexão dos nós. Os cards são fixos (não se arrasta), então
+                não há layout pra salvar. Clicar num card lista os itens daquela caixa. */}
+            <div className="fluxo-canvas relative h-[50vh] min-h-80 w-full overflow-hidden rounded-lg border border-border bg-neutral-100">
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={nodeTypes}
+                fitView
+                minZoom={0.1}
+                maxZoom={4}
+                nodesDraggable={false}
+                nodesConnectable={false}
+                elementsSelectable={false}
+                onInit={(inst) => { rfRef.current = inst }}
+                onNodeClick={aoClicarNo}
+              >
+                <Background />
+                <Controls showInteractive={false} />
+              </ReactFlow>
             </div>
 
             <p className="text-sm text-muted-foreground">
