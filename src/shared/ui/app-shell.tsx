@@ -74,6 +74,8 @@ const HOME: Folha = { chave: 'home', rotulo: 'Home', href: '/home', icone: Home,
 const RECEBIMENTO: FolhaModular[] = [
   { chave: 'importar', rotulo: 'Importar Planilha', href: '/recebimento/importar', icone: Upload, modulo: 'recebimento', perm: 'importar' },
   { chave: 'processos', rotulo: 'Processos', href: '/recebimento/processos', icone: ClipboardList, modulo: 'recebimento', perm: 'visualizar' },
+  { chave: 'rec-fluxo', rotulo: 'Fluxo', href: '/recebimento/fluxo', icone: Workflow, modulo: 'recebimento', perm: 'visualizar' },
+  { chave: 'rec-registros', rotulo: 'Registros', href: '/recebimento/registros', icone: History, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, modulo: 'recebimento', perm: 'gerar_etiqueta' },
   { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, modulo: 'recebimento', perm: 'administrar' },
