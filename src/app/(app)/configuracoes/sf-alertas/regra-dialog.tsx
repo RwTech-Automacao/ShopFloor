@@ -3,13 +3,14 @@
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { NOME_TIPO_REGRA, type Canal, type TipoRegra } from '@/modules/alertas/domain/tipos'
+import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import type { DestinatarioDisponivel, RegraAlerta } from '@/modules/alertas/domain/regra'
 import { RegraForm } from './regra-form'
 import { TipoEscolha } from './tipo-escolha'
 
 interface PropsRegra {
   regra: RegraAlerta | null
-  postos: string[]
+  postos: PostoRegra[]
   pmos: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>

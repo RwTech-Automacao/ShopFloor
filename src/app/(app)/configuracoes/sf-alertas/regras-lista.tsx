@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { resumoJanela } from '@/modules/alertas/domain/janela'
+import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { NOME_CANAL, NOME_TIPO_REGRA, type Canal } from '@/modules/alertas/domain/tipos'
 import {
   resumoLimite,
@@ -31,7 +32,7 @@ export function RegrasLista({
   canalConfigurado,
 }: {
   regras: RegraAlerta[]
-  postos: string[]
+  postos: PostoRegra[]
   pmos: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>

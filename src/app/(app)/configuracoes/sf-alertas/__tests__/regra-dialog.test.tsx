@@ -10,7 +10,10 @@ vi.mock('@/modules/alertas/application/alertas-actions', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const PROPS = {
-  postos: ['Teste'],
+  postos: [
+    { chave: 'Teste', temStatus: true, coletaDefeito: true },
+    { chave: 'Embalagem', temStatus: false, coletaDefeito: false },
+  ],
   pmos: ['PMOA'],
   destinatarios: [],
   configurados: { telegram: true, discord: true },
@@ -57,5 +60,19 @@ describe('RegraConteudo', () => {
     expect(screen.getByLabelText('Repetições para alertar')).toHaveValue('3')
     expect(screen.queryByRole('button', { name: /Taxa de aprovação/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Trocar tipo' })).not.toBeInTheDocument()
+  })
+
+  it('trocar o tipo com posto marcado começa de novo: o formulário novo abre sem posto marcado', () => {
+    render(<RegraConteudo regra={null} {...PROPS} />)
+    // Tempo médio aceita a Embalagem; a taxa de aprovação, não.
+    fireEvent.click(screen.getByRole('button', { name: /Tempo médio por peça/ }))
+    fireEvent.click(screen.getByLabelText('Embalagem'))
+    fireEvent.click(screen.getByLabelText('Teste'))
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: /Taxa de aprovação/ }))
+    expect(screen.queryByLabelText('Embalagem')).not.toBeInTheDocument()
+    // Nada sobra da escolha anterior: o formulário é montado de novo, sem aviso de posto herdado.
+    expect(screen.getByLabelText('Teste')).not.toBeChecked()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
