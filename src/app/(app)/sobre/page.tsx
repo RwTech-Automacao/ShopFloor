@@ -92,8 +92,10 @@ export default function SobrePage() {
           {/* A lista cresce a cada deploy e esticaria a página sem fim. Teto em rem (não em vh), no
               mesmo padrão dos quadros do Setup e do Lançamento: a caixa ocupa o mesmo espaço no
               celular e no desktop, e a entrada mais nova cabe inteira com a seguinte aparecendo em
-              parte — é o que sinaliza que há mais histórico abaixo. A lista continua completa. */}
-          <ol className="flex max-h-80 flex-col gap-3 overflow-y-auto text-sm">
+              parte — é o que sinaliza que há mais histórico abaixo. A lista continua completa.
+              16rem e não 20rem porque com 20rem o histórico de hoje cabia por pouco e a rolagem só
+              apareceria depois do próximo deploy: o teto precisa valer agora. */}
+          <ol className="flex max-h-64 flex-col gap-3 overflow-y-auto text-sm">
             {HISTORICO_VERSOES.map((v) => (
               <li key={v.versao} className="flex gap-3">
                 <span className="w-14 shrink-0 font-medium tabular-nums">{v.versao}</span>

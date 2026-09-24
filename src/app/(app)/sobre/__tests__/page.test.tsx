@@ -19,7 +19,8 @@ describe('tela Sobre', () => {
   it('o histórico rola dentro de um teto em vez de esticar a página', () => {
     render(<SobrePage />)
     const classes = historico().className
-    expect(classes).toContain('max-h-80')
+    // 16rem: com 20rem o histórico de hoje cabia por pouco e ninguém via rolagem.
+    expect(classes).toContain('max-h-64')
     expect(classes).toContain('overflow-y-auto')
     // Teto em rem, não em vh: mesma caixa no celular e no desktop.
     expect(classes).not.toContain('vh')
