@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { RegraAlerta } from '@/modules/alertas/domain/regra'
+import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import type { TipoRegra } from '@/modules/alertas/domain/tipos'
 import { RegraForm, separarDestinatarios } from '../regra-form'
 
@@ -18,7 +19,11 @@ vi.mock('sonner', () => ({
   toast: { success: (...a: unknown[]) => toastSucesso(...a), error: (...a: unknown[]) => toastErro(...a) },
 }))
 
-const POSTOS = ['Teste', 'Embalagem']
+/** Teste dá status e coleta defeito; Embalagem só registra a passagem da peça. */
+const POSTOS: PostoRegra[] = [
+  { chave: 'Teste', temStatus: true, coletaDefeito: true },
+  { chave: 'Embalagem', temStatus: false, coletaDefeito: false },
+]
 const PMOS = ['PMOA', 'PMOB', 'PMOG13']
 const DESTINATARIOS = [
   { usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true },
@@ -68,14 +73,20 @@ function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {
 }
 
 function montar(
-  o: { tipo?: TipoRegra; regra?: RegraAlerta | null; onSalvo?: () => void; canalConfigurado?: boolean } = {},
+  o: {
+    tipo?: TipoRegra
+    regra?: RegraAlerta | null
+    onSalvo?: () => void
+    canalConfigurado?: boolean
+    postos?: PostoRegra[]
+  } = {},
 ) {
   const onSalvo = o.onSalvo ?? vi.fn()
   render(
     <RegraForm
       tipo={o.tipo ?? 'aprovacao'}
       regra={o.regra ?? null}
-      postos={POSTOS}
+      postos={o.postos ?? POSTOS}
       pmosDisponiveis={PMOS}
       destinatarios={DESTINATARIOS}
       configurados={CONFIGURADOS}
@@ -346,6 +357,66 @@ describe('RegraForm — defeito repetido', () => {
       janelaValor: '60',
       limiteOcorrencias: '5',
     })
+  })
+})
+
+describe('RegraForm — postos por tipo de regra', () => {
+  it('taxa de aprovação não oferece posto que só registra passagem', () => {
+    montar({ tipo: 'aprovacao' })
+    expect(screen.getByLabelText('Teste')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Embalagem')).not.toBeInTheDocument()
+  })
+
+  it('defeito repetido também não oferece: sem código de defeito nada se repete', () => {
+    montar({ tipo: 'defeito' })
+    expect(screen.getByLabelText('Teste')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Embalagem')).not.toBeInTheDocument()
+  })
+
+  it('tempo médio oferece todo posto: todo posto tem intervalo entre bipes', () => {
+    montar({ tipo: 'tempo' })
+    expect(screen.getByLabelText('Teste')).toBeInTheDocument()
+    expect(screen.getByLabelText('Embalagem')).toBeInTheDocument()
+  })
+
+  it('Inspeção NQA entra na taxa (ela reprova) e fica fora do defeito (não guarda código)', () => {
+    const postos = [...POSTOS, { chave: 'Inspeção NQA', temStatus: true, coletaDefeito: false }]
+    montar({ tipo: 'aprovacao', postos })
+    expect(screen.getByLabelText('Inspeção NQA')).toBeInTheDocument()
+    cleanup()
+    montar({ tipo: 'defeito', postos })
+    expect(screen.queryByLabelText('Inspeção NQA')).not.toBeInTheDocument()
+  })
+
+  it('regra salva não perde em silêncio o posto que o filtro esconderia', () => {
+    montar({ regra: regraSalva({ postos: ['Teste', 'Embalagem'] }) })
+    const embalagem = screen.getByLabelText('Embalagem')
+    expect(embalagem).toBeInTheDocument()
+    expect(embalagem).toBeChecked()
+    expect(screen.getByText('(não avalia)')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /Embalagem continua na regra, mas não dá Aprovado\/Reprovado/,
+    )
+  })
+
+  it('salvar uma regra antiga mantém o posto que o filtro esconderia', async () => {
+    montar({ regra: regraSalva({ postos: ['Teste', 'Embalagem'] }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ postos: ['Teste', 'Embalagem'] })
+  })
+
+  it('desmarcado, o posto fica na lista mas o aviso sai', () => {
+    montar({ regra: regraSalva({ postos: ['Teste', 'Embalagem'] }) })
+    fireEvent.click(screen.getByLabelText('Embalagem'))
+    expect(screen.getByLabelText('Embalagem')).not.toBeChecked()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('sem posto fora do tipo, nenhum aviso aparece', () => {
+    montar({ regra: regraSalva({ postos: ['Teste'] }) })
+    expect(screen.queryByText('(não avalia)')).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
 

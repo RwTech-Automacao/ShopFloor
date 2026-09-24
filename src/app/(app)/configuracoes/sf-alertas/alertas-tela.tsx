@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { NOME_CANAL, CANAIS, type Canal } from '@/modules/alertas/domain/tipos'
+import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import type { DestinatarioDisponivel, RegraAlerta } from '@/modules/alertas/domain/regra'
 import type { FiltroOcorrencias, OcorrenciaLinha } from '@/modules/alertas/domain/ocorrencia'
 import { avaliarAgoraAction } from '@/modules/alertas/application/alertas-actions'
@@ -26,7 +27,7 @@ export function AlertasTela({
   filtroInicial,
 }: {
   regras: RegraAlerta[]
-  postos: string[]
+  postos: PostoRegra[]
   pmos: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>

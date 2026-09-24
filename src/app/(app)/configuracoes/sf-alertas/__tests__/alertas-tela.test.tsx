@@ -57,7 +57,7 @@ function montar(ocorrencias: OcorrenciaLinha[] = [RESOLVIDA]) {
   render(
     <AlertasTela
       regras={[]}
-      postos={['Teste']}
+      postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
       pmos={[]}
       destinatarios={[]}
       configurados={{ telegram: true, discord: true }}

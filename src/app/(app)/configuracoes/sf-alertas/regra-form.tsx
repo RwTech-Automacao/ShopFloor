@@ -15,6 +15,7 @@ import {
   type EntradaRegra,
   type RegraAlerta,
 } from '@/modules/alertas/domain/regra'
+import { postosOferecidos, type PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { formatarMmSs } from '@/modules/alertas/domain/tempo'
 import { textoPreviaPosto, type PreviaPosto } from '@/modules/alertas/domain/ocorrencia'
 import { previaRegraAction, salvarRegraAction } from '@/modules/alertas/application/alertas-actions'
@@ -45,6 +46,23 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
     'O tempo médio é calculado separado para cada posto marcado. Cada posto que passar do limite abre o seu próprio alerta.',
   defeito:
     'Os defeitos são contados separados para cada posto marcado. Cada defeito que se repetir num posto abre o seu próprio alerta.',
+}
+
+/** Por que a lista de postos é mais curta neste tipo. Tempo médio serve em qualquer posto. */
+const EXPLICA_FILTRO: Partial<Record<TipoRegra, string>> = {
+  aprovacao:
+    'Só aparecem os postos que dão Aprovado ou Reprovado. Num posto que só registra a passagem da peça a taxa é sempre 100% e o alerta nunca sairia.',
+  defeito:
+    'Só aparecem os postos que registram o código do defeito na reprova. Sem código não há defeito para se repetir, e o alerta nunca sairia.',
+}
+
+/**
+ * O aviso do posto que a regra salva já trazia e que este tipo não avalia. Tempo médio não tem: lá
+ * nenhum posto fica fora, então `foraDoTipo` é sempre vazio.
+ */
+const AVISO_FORA_DO_TIPO: Partial<Record<TipoRegra, string>> = {
+  aprovacao: 'não dá Aprovado/Reprovado, então a taxa fica sempre em 100% e o alerta não sai',
+  defeito: 'não registra código de defeito, então não há o que repetir e o alerta não sai',
 }
 
 /**
@@ -106,7 +124,8 @@ export function RegraForm({
 }: {
   tipo: TipoRegra
   regra: RegraAlerta | null
-  postos: string[]
+  /** Todos os postos na ordem do fluxo, com o que o perfil de cada um faz. */
+  postos: PostoRegra[]
   pmosDisponiveis: string[]
   destinatarios: DestinatarioDisponivel[]
   configurados: Record<Canal, boolean>
@@ -124,6 +143,9 @@ export function RegraForm({
 }) {
   const [nome, setNome] = useState(regra?.nome ?? '')
   const [postosSel, setPostosSel] = useState<string[]>(regra?.postos ?? [])
+  // Congelado na abertura, como o `inicioDest`: os postos que a regra SALVA trazia continuam na
+  // lista mesmo que o filtro do tipo os esconda, e voltam a aparecer se o gestor desmarcar sem querer.
+  const [postosDaRegra] = useState<string[]>(() => regra?.postos ?? [])
   const [taxa, setTaxa] = useState(String(regra?.taxaMinima ?? PADROES_REGRA.taxaMinima).replace('.', ','))
   const [limiteTempo, setLimiteTempo] = useState(
     regra && regra.limiteTempoSeg !== null ? formatarMmSs(regra.limiteTempoSeg) : PADROES_TIPO.tempo.limiteTempo,
@@ -155,6 +177,10 @@ export function RegraForm({
   // conta vinculada nenhuma.
   const avisos = avisarPessoas ? destinatariosSemCanal(destinatarios, destSel, canaisSel) : []
   const janelaValor = janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : null
+
+  const oferecidos = postosOferecidos(tipo, postos, postosDaRegra)
+  // Só avisa sobre o que está de fato MARCADO: desmarcado, o posto não atrapalha mais.
+  const foraDoTipo = oferecidos.filter((p) => p.foraDoTipo && postosSel.includes(p.chave))
 
   function entrada(): EntradaRegra {
     return {
@@ -238,22 +264,30 @@ export function RegraForm({
           <Explica titulo="Postos">
             <p>Os postos que esta regra acompanha.</p>
             <p>{EXPLICA_POSTOS[tipo]}</p>
+            {EXPLICA_FILTRO[tipo] && <p>{EXPLICA_FILTRO[tipo]}</p>}
           </Explica>
         </legend>
         <div className="flex flex-wrap gap-3">
-          {postos.map((p) => (
-            <label key={p} className="flex items-center gap-2 text-sm">
+          {oferecidos.map((p) => (
+            <label key={p.chave} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                id={`posto-${p}`}
-                aria-label={p}
-                checked={postosSel.includes(p)}
-                onChange={() => setPostosSel((atual) => alterna(atual, p))}
+                id={`posto-${p.chave}`}
+                aria-label={p.chave}
+                checked={postosSel.includes(p.chave)}
+                onChange={() => setPostosSel((atual) => alterna(atual, p.chave))}
               />
-              {p}
+              {p.chave}
+              {p.foraDoTipo && <span className="text-xs text-amber-700 dark:text-amber-400">(não avalia)</span>}
             </label>
           ))}
         </div>
+        {foraDoTipo.length > 0 && AVISO_FORA_DO_TIPO[tipo] && (
+          <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
+            {foraDoTipo.map((p) => p.chave).join(', ')} {foraDoTipo.length > 1 ? 'continuam' : 'continua'} na regra,
+            mas {AVISO_FORA_DO_TIPO[tipo]}. Desmarque ou troque de posto.
+          </p>
+        )}
       </fieldset>
 
       {tipo === 'aprovacao' && (

@@ -52,7 +52,7 @@ describe('RegrasLista', () => {
             pmos: [],
           },
         ]}
-        postos={['Teste']}
+        postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
         pmos={['PMOX']}
         destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
         configurados={{ telegram: true, discord: true }}
