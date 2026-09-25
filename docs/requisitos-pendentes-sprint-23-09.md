@@ -241,3 +241,54 @@ feita numa branch separada**, e pode ser refinada sem depender de ninguém.
 **Dica combinada para quando ele tiver acesso à tela:** abrir o F12 na aba Rede e fazer o
 Valdeí lançar uma entrada real — o próprio ERP mostra qual chamada ele faz, o que responde
 de uma vez o endpoint oficial, os campos obrigatórios e a autenticação.
+
+---
+
+## 25/09 — Central do cliente: mock e a pergunta que sobrou
+
+Mock em canvas (3 pranchas): **https://claude.ai/artifact/BaucxZY5XxjRxfYjVV11TL**
+(privado — precisa ser compartilhado pelo menu Share para o comercial abrir).
+
+### O que o mock fixou
+
+**A tela** mostra um pedido por vez, com as três fases em cards na mesma ordem do processo
+real — Embarque, Recebimento, Produção —, a lista das EMBs do pedido e as OPs desse pedido,
+porque **um pedido pode ter duas PMOs em estados diferentes** (uma em produção, outra
+aguardando). O progresso de cada fase é uma fração com o total do pedido, não um número solto.
+
+**A régua do que sai**, em três grupos:
+
+| Sai como está | Sai traduzido | Não sai |
+|---|---|---|
+| Fase atual · EMBs e onde cada uma está · recebido/total · % de produção por ordem · quantidade embalada · previsão | Reprovado no NQA → "em verificação de qualidade" · divergência de quantidade → "quantidade em conferência com o fornecedor" · `PMOM90/357` → "Lote 1 de 2" · postos → nomes de etapa | Taxa de aprovação/reprovação por posto · defeitos e reparos · nome do colaborador · tempo por posto · fornecedor e fabricante · número de série · qualquer dado de outro cliente |
+
+Divergência de quantidade **sai** (traduzida) porque afeta o prazo do cliente — esconder isso
+é esconder um atraso que ele vai descobrir sozinho.
+
+**O filtro vem do login**, nunca de uma escolha na tela: o usuário do cliente está amarrado
+aos pedidos dele. É a mesma lógica de permissão por módulo do ShopFloor com um escopo a mais.
+
+### A ligação de cada fase com o pedido
+
+| Fase | Chave | Situação |
+|---|---|---|
+| Embarque | ACP → pedido | existe (a planilha é quase a do Recebimento) |
+| Recebimento | campo Projeto (ACP) | existe, mas é **texto livre e sujo** (ver a seção de 24/09) |
+| Produção | — | **não existe**: a OP sabe o **cliente**, não o **pedido** |
+
+### A pergunta que destrava o card
+
+**Como a OP vai saber de qual pedido é?** Três caminhos, e a escolha é de negócio:
+
+- **A — campo de ACP na OP.** Direto e barato, mas depende de alguém preencher toda vez;
+  campo que depende de disciplina costuma vir vazio.
+- **B — o ERP já sabe.** Se a ordem de produção do Compels aponta para o pedido de venda, a
+  ligação existe lá e só precisa ser lida. **Ninguém perguntou isso ainda** — entra na lista
+  do Valdeí.
+- **C — portal por cliente, não por pedido.** Funciona com o que existe hoje e entrega valor
+  já, mas não responde "e o meu segundo pedido?".
+
+Enquanto a ligação não existir, o portal mostra a produção **do cliente**, não **do pedido** —
+e para quem tem duas produções ao mesmo tempo os números aparecem misturados. É o que o mock
+deixa escrito na terceira prancha, de propósito: é a decisão a levar para a reunião, não um
+detalhe de implementação.
