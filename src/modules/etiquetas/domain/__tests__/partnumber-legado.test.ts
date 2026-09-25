@@ -7,6 +7,7 @@ import {
   montarPartNumberLegado,
   normalizarItem,
   normalizarLocacao,
+  ordenarPorPrateleira,
   recusaDoItem,
   resumirPrevia,
   type ConferenciaLegado,
@@ -288,5 +289,49 @@ describe('normalizarItem / chaveItemLocacao', () => {
   it('item e locação normalizados formam a chave de repetição', () => {
     expect(normalizarItem(' capa78 ')).toBe('CAPA78')
     expect(chaveItemLocacao('CAPA78', 'A1.C.39')).toBe('CAPA78|A1.C.39')
+  })
+})
+
+describe('ordenarPorPrateleira', () => {
+  function linha(locacao: string, item = 'CAPA78'): LinhaSaldo {
+    return { linhaPlanilha: 1, item, descricao: '', locacao }
+  }
+
+  it('ordena a posição como número, não como texto', () => {
+    const fora = [linha('A1.C.66'), linha('A1.C.7'), linha('A1.C.100'), linha('A1.C.9')]
+    expect(ordenarPorPrateleira(fora).map((l) => l.locacao)).toEqual([
+      'A1.C.7',
+      'A1.C.9',
+      'A1.C.66',
+      'A1.C.100',
+    ])
+  })
+
+  it('agrupa por coluna e depois por lado antes da posição', () => {
+    const fora = [linha('B1.D.5'), linha('A1.E.90'), linha('A1.D.2'), linha('A1.D.10')]
+    expect(ordenarPorPrateleira(fora).map((l) => l.locacao)).toEqual([
+      'A1.D.2',
+      'A1.D.10',
+      'A1.E.90',
+      'B1.D.5',
+    ])
+  })
+
+  it('joga locação fora do padrão para o fim, preservando a ordem da planilha', () => {
+    const fora = [linha('A1.C37'), linha('A1.C.8'), linha(''), linha('A1.C.3')]
+    expect(ordenarPorPrateleira(fora).map((l) => l.locacao)).toEqual(['A1.C.3', 'A1.C.8', 'A1.C37', ''])
+  })
+
+  it('mantém a ordem da planilha entre rolos na mesma posição', () => {
+    const fora = [linha('A1.C.5', 'RES0048'), linha('A1.C.5', 'CAPP18'), linha('A1.C.5', 'DIO870')]
+    expect(ordenarPorPrateleira(fora).map((l) => l.item)).toEqual(['RES0048', 'CAPP18', 'DIO870'])
+  })
+
+  it('lê a faixa do ERP pela posição inicial', () => {
+    const fora = [linha('A1.C.15 - A1.C.15'), linha('A1.C.2 - A1.C.2')]
+    expect(ordenarPorPrateleira(fora).map((l) => l.locacao)).toEqual([
+      'A1.C.2 - A1.C.2',
+      'A1.C.15 - A1.C.15',
+    ])
   })
 })

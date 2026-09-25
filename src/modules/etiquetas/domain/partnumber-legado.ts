@@ -126,6 +126,44 @@ export function montarPartNumberLegado(item: string, sequencial: number): string
   return `${normalizarItem(item)}-${MARCA_LEGADO}${lote}`
 }
 
+/**
+ * A locação partida em (coluna, lado, posição) para ORDENAR a leva na ordem da prateleira.
+ *
+ * Ordenar como texto não serve: `A1.C.66` vem antes de `A1.C.7`, e quem cola andaria para frente e
+ * para trás na estante. A posição é comparada como NÚMERO; coluna e lado, como texto.
+ * Locação fora do padrão devolve null — vai para o fim da lista, nunca some.
+ */
+export function partesDaLocacao(locacao: string): { coluna: string; lado: string; posicao: number } | null {
+  const casou = /^([A-Z0-9]+)\.([A-Z]+)\.(\d+)$/.exec(normalizarLocacao(locacao))
+  if (!casou) return null
+  return { coluna: casou[1] ?? '', lado: casou[2] ?? '', posicao: Number(casou[3] ?? 0) }
+}
+
+/**
+ * As linhas da planilha na ordem de quem caminha a prateleira: por coluna, por lado, e por posição
+ * em ordem numérica. A ordem da lista É a ordem de impressão e a ordem da colagem — é por isso que
+ * ela é decidida aqui e não na tela.
+ *
+ * O ERP não garante ordem nenhuma no export. Linhas com locação fora do padrão ficam no fim, na
+ * ordem em que vieram, para quem cola tratá-las à parte.
+ */
+export function ordenarPorPrateleira(linhas: LinhaSaldo[]): LinhaSaldo[] {
+  return linhas
+    .map((linha, i) => ({ linha, i, partes: partesDaLocacao(linha.locacao) }))
+    .sort((a, b) => {
+      if (!a.partes || !b.partes) {
+        if (a.partes) return -1
+        if (b.partes) return 1
+        return a.i - b.i
+      }
+      if (a.partes.coluna !== b.partes.coluna) return a.partes.coluna.localeCompare(b.partes.coluna)
+      if (a.partes.lado !== b.partes.lado) return a.partes.lado.localeCompare(b.partes.lado)
+      if (a.partes.posicao !== b.partes.posicao) return a.partes.posicao - b.partes.posicao
+      return a.i - b.i
+    })
+    .map((x) => x.linha)
+}
+
 /** Chave de repetição: mesmo item na mesma posição da prateleira. */
 export function chaveItemLocacao(item: string, locacao: string): string {
   return `${item}|${locacao}`

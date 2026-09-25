@@ -21,6 +21,7 @@ import { lerSaldoLocacoesXlsx } from '@/modules/etiquetas/domain/ler-saldo-locac
 import {
   LIMITE_LINHAS_LEGADO,
   avaliarLinhas,
+  ordenarPorPrateleira,
   resumirPrevia,
   type LinhaAvaliada,
 } from '@/modules/etiquetas/domain/partnumber-legado'
@@ -112,8 +113,12 @@ export function EtiquetasLegadoCliente() {
         return
       }
 
+      // Ordem da prateleira, não a do ERP: a lista da prévia é a ordem em que as etiquetas saem
+      // da impressora e em que vão ser coladas, coluna por coluna, posição por posição.
+      const naOrdemDaPrateleira = ordenarPorPrateleira(linhas)
+
       const conferencia = await conferirEtiquetasLegado(
-        linhas.map((l) => ({ item: l.item, locacao: l.locacao })),
+        naOrdemDaPrateleira.map((l) => ({ item: l.item, locacao: l.locacao })),
       )
       if (!conferencia.ok) {
         setAvaliadas(null)
@@ -122,7 +127,7 @@ export function EtiquetasLegadoCliente() {
         return
       }
 
-      const avaliacao = avaliarLinhas(linhas, conferencia.conferencias)
+      const avaliacao = avaliarLinhas(naOrdemDaPrateleira, conferencia.conferencias)
       setAvaliadas(avaliacao)
       setSelecionadas(selecaoPadrao(avaliacao))
     })
