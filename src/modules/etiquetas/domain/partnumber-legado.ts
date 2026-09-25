@@ -21,8 +21,13 @@ import { formatarVolume, type LinhaEtiqueta } from './partnumber'
 /** Marca de material legado no lote. `L` e não `GEN`: barra menor, barra mais fácil de ler. */
 export const MARCA_LEGADO = 'L'
 
-/** Teto de linhas por geração (o estoque antigo tem até 5.000 rolos). Espelha etq_legado_emitir. */
-export const LIMITE_LINHAS_LEGADO = 5000
+/**
+ * Teto de etiquetas por geração. O número é 1.000 porque o PostgREST corta QUALQUER resposta em
+ * 1.000 linhas (`supabase/config.toml`: max_rows): acima disso o banco emitiria etiquetas que não
+ * voltariam para o arquivo — rolo sem etiqueta e código gasto, em silêncio. O estoque antigo tem
+ * até 5.000 rolos, e a spec já recomenda gerar por coluna da prateleira. Espelha etq_legado_emitir.
+ */
+export const LIMITE_LINHAS_LEGADO = 1000
 
 /** Separadores que o Setup usa para partir o código do rolo (espelha `contemSeparador`). */
 const SEPARADOR = /[-–—_:/\s]/

@@ -185,8 +185,8 @@ describe('geração pela server action', () => {
     expect(emitirEtiquetasLegado).not.toHaveBeenCalled()
   })
 
-  it('acima do teto de 5.000 linhas, recusa antes de tocar o banco', async () => {
-    const muitas = Array.from({ length: 5001 }, (_, i) => ({ item: 'CAPA78', locacao: `A1.C.${i}` }))
+  it('acima do teto de 1.000 linhas (corte do PostgREST), recusa antes de tocar o banco', async () => {
+    const muitas = Array.from({ length: 1001 }, (_, i) => ({ item: 'CAPA78', locacao: `A1.C.${i}` }))
     expect((await gerarEtiquetasLegado(muitas)).ok).toBe(false)
     expect((await conferirEtiquetasLegado(muitas)).ok).toBe(false)
     expect(emitirEtiquetasLegado).not.toHaveBeenCalled()

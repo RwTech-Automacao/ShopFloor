@@ -172,9 +172,10 @@ begin
   if not tem_permissao('recebimento', 'gerar_etiqueta') then raise exception 'SEM_PERMISSAO'; end if;
   if jsonb_typeof(p_linhas) is distinct from 'array' then raise exception 'LINHAS_INVALIDAS'; end if;
   if jsonb_array_length(p_linhas) = 0 then raise exception 'SEM_LINHAS'; end if;
-  -- Teto da leva: o estoque antigo tem até 5.000 rolos, e gerar mais que isso de uma vez é sinal
-  -- de planilha errada (além do risco de colagem que a spec descreve).
-  if jsonb_array_length(p_linhas) > 5000 then raise exception 'LINHAS_DEMAIS'; end if;
+  -- Teto da leva = 1.000, o mesmo LIMITE_LINHAS_LEGADO do app: é o corte do PostgREST
+  -- (config.toml: max_rows). Passando disso, parte das etiquetas gravadas não voltaria no
+  -- resultado — rolo sem etiqueta e código gasto, em silêncio.
+  if jsonb_array_length(p_linhas) > 1000 then raise exception 'LINHAS_DEMAIS'; end if;
   if exists (
     select 1 from jsonb_array_elements(p_linhas) e
      where not public.etq_legado_item_valido(e.value->>'item')

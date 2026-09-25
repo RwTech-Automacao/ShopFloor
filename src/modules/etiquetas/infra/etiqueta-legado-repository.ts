@@ -64,7 +64,16 @@ export async function emitirEtiquetasLegado(pares: ParLegado[]): Promise<Etiquet
   const { data, error } = await supabase.rpc('etq_legado_emitir', { p_linhas: pares })
   if (error) throw error
 
-  return ((data ?? []) as EmitidaRpc[]).map((e) => ({
+  const linhas = (data ?? []) as EmitidaRpc[]
+  // Guarda contra resposta cortada (o PostgREST limita em max_rows): melhor falhar do que gerar um
+  // arquivo com menos etiquetas do que o banco emitiu — seriam rolos sem etiqueta e códigos gastos.
+  if (linhas.length !== pares.length) {
+    throw new Error(
+      `O banco emitiu ${linhas.length} etiqueta(s) para ${pares.length} linha(s). Nenhum arquivo foi gerado; confira o que já foi etiquetado antes de tentar de novo.`,
+    )
+  }
+
+  return linhas.map((e) => ({
     ordem: Number(e.ordem),
     item: e.item,
     sequencial: Number(e.sequencial),
