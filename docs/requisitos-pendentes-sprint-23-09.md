@@ -292,3 +292,62 @@ Enquanto a ligação não existir, o portal mostra a produção **do cliente**, 
 e para quem tem duas produções ao mesmo tempo os números aparecem misturados. É o que o mock
 deixa escrito na terceira prancha, de propósito: é a decisão a levar para a reunião, não um
 detalhe de implementação.
+
+---
+
+## 25/09 fim do dia — a Central do cliente virou um RASTREADOR
+
+Decisão do usuário depois de conversar internamente: **a ideia foi reduzida**. Sai o portal com
+três telas, painéis e métricas; entra **uma tela só**, no espírito do rastreamento dos Correios —
+o cliente informa o número do pedido e vê em que ponto está e o que já aconteceu.
+
+Mock só dessa tela: **https://claude.ai/artifact/CYuhDGzqshn8LBFXiEQayJ**
+(o canvas anterior, com as três telas, continua em https://claude.ai/artifact/BaucxZY5XxjRxfYjVV11TL
+como registro da ideia antiga.)
+
+### As 9 etapas, na ordem (ditadas pelo usuário)
+
+1. Pedido confirmado
+2. Aquisição de matéria-prima
+3. Agendamento de booking
+4. **[TRÂMITE — nome a confirmar]** (o usuário não conseguiu ler a própria anotação)
+5. Chegada no Brasil
+6. Desembaraço aduaneiro RF/RE
+7. Fábrica
+8. Produção iniciada
+9. Entrega
+
+### A forma
+
+- **Linha do tempo horizontal em bolinhas**: verde com check nas concluídas, anel vinho com miolo
+  cheio na atual, cinza vazia nas futuras; rótulo e data embaixo de cada uma.
+- **Histórico vertical embaixo**, com **data e hora** à esquerda, trilho com bolinha no meio e o
+  que aconteceu à direita, do mais recente para o mais antigo.
+- Em cima, campo do número do pedido + botão Acompanhar, e o objeto rastreado (pedido, produto,
+  previsão de entrega, situação).
+
+### Por que isso destrava o card
+
+A versão anterior morria na ligação **OP ↔ projeto**: para mostrar produção por projeto, a ordem
+precisava saber de qual projeto era. No rastreador, **"Produção iniciada" é uma etapa, não um
+painel** — não precisa de contagem por posto, só de saber que começou. O eixo continua sendo o
+pedido/projeto (a etapa 1 é "Pedido confirmado"), mas a exigência sobre o dado caiu muito.
+
+### O que falta para essa tela existir de verdade
+
+**De onde vem cada etapa:**
+
+| Etapa | Fonte hoje |
+|---|---|
+| Pedido confirmado | comercial / ERP |
+| Aquisição de matéria-prima | planilha de embarque (EMB) |
+| Agendamento de booking · [trâmite] · Chegada no Brasil · Desembaraço | **ninguém registra em sistema** |
+| Fábrica · Produção iniciada | ShopFloor (Recebimento e Lançamento) |
+| Entrega | expedição |
+
+**O nó agora é outro, e é mais simples:** quatro das nove etapas — booking, trâmite, chegada no
+Brasil e desembaraço — hoje não são registradas em lugar nenhum que o sistema leia. Ou alguém
+passa a marcar essas quatro (uma tela interna simples, quatro cliques por embarque), ou elas ficam
+sempre cinzas na linha do tempo. **É a pergunta a levar junto com o mock.**
+
+Também falta: o nome real da etapa 4.
