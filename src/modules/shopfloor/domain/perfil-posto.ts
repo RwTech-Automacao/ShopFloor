@@ -3,7 +3,7 @@ import { type DadosLancamento, type ResultadoRegra } from './regras-lancamento'
 
 export type ReprovaColeta = 'defeitos' | 'posicoes' | 'nenhum'
 export type GateSeq = 'aprovado' | 'registrado'
-export type RecursoPosto = 'nenhum' | 'caixa' | 'nqa' | 'integracao' | 'burnin' | 'manutencao'
+export type RecursoPosto = 'nenhum' | 'caixa' | 'nqa' | 'integracao' | 'burnin' | 'manutencao' | 'almoxarifado'
 
 export interface PerfilPosto {
   chave: string
