@@ -182,6 +182,25 @@ function ItensDaEtapa({
 }
 
 /**
+ * Quantos itens da EMB já CHEGARAM a uma etapa: os que estão nela agora mais os que já seguiram.
+ *
+ * Não precisa de histórico: o fluxo é linear (Recebimento → Qualidade → Almoxarifado), então quem
+ * está no Almoxarifado necessariamente passou pela Qualidade, e quem foi reprovado também passou.
+ * É o equivalente ao "aprovadas ÷ devem passar" do card do Fluxo do ShopFloor.
+ *
+ * O Reprovado devolve `null`: é ramo, fim de linha, e "quantos já passaram por ele" não quer dizer
+ * nada — por isso o card dele não tem barra (a Manutenção do ShopFloor também não tem).
+ */
+function jaChegaram(caixas: CaixaFluxo[], etapa: Etapa): number | null {
+  if (etapa === 'reprovado') return null
+  const de = (e: Etapa) => caixas.find((c) => c.etapa === e)?.itens ?? 0
+  const depoisDaQualidade = de('almoxarifado') + de('reprovado')
+  if (etapa === 'almoxarifado') return de('almoxarifado')
+  if (etapa === 'qualidade') return de('qualidade') + depoisDaQualidade
+  return de('recebimento') + de('qualidade') + depoisDaQualidade
+}
+
+/**
  * Histórico da etapa (acordeon): fecha por padrão; ao abrir, carrega 100 do banco e vai buscando
  * +100 conforme rola (server-side, não puxa tudo). Uma linha por passagem, mais recente primeiro.
  * Mesmo comportamento do "Histórico do posto" do Fluxo do ShopFloor.
@@ -361,14 +380,13 @@ export function FluxoForm({ embs }: { embs: string[] }) {
           subtitulo: SUBTITULO[c.etapa],
           itens: c.itens,
           divergentes: c.divergentes,
-          mediaSegundos: c.mediaSegundos,
-          maiorSegundos: c.maiorSegundos,
-          semTempo: c.semTempo,
+          passaram: jaChegaram(caixas, c.etapa),
+          total,
           selecionado: etapaSel === c.etapa,
         } satisfies FluxoRecebimentoNodeData,
       }))
     })
-  }, [caixas, emb, etapaSel, setNodes])
+  }, [caixas, emb, etapaSel, total, setNodes])
 
   const edges = useMemo<Edge[]>(() => {
     if (!caixas) return []
