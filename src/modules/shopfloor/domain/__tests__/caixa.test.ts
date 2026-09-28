@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gerarCodigoCaixa, marcadorCaixaAberta, codigoMontagemAposentada, seqDoMarcadorCaixa, seqsReabertas, caixaDaVez, seqsEmRemontagem } from '../caixa'
+import { gerarCodigoCaixa, marcadorCaixaAberta, codigoMontagemAposentada, seqDoMarcadorCaixa, separarCodigoCaixa, seqsReabertas, caixaDaVez, seqsEmRemontagem } from '../caixa'
 
 describe('caixa', () => {
   it('gerarCodigoCaixa monta CX[seq][qtd]OP-PMO com colchetes literais', () => {
@@ -34,6 +34,29 @@ describe('seqDoMarcadorCaixa', () => {
     expect(seqDoMarcadorCaixa('CX[7]R[14]8498-PMOC14')).toBeNull()
     expect(seqDoMarcadorCaixa('SN00123')).toBeNull()
     expect(seqDoMarcadorCaixa('')).toBeNull()
+  })
+})
+
+describe('separarCodigoCaixa', () => {
+  it('separa o código final da caixa vigente em seq/qtd/op/pmo', () => {
+    expect(separarCodigoCaixa('CX[3][10]12345-PMO973')).toEqual({
+      seq: 3, revisao: 0, qtd: 10, op: '12345', pmo: 'PMO973',
+    })
+  })
+  it('separa a remontagem (R, R2, R3…), com a revisão correta', () => {
+    expect(separarCodigoCaixa('CX[7]R[14]8498-PMOC14')).toEqual({
+      seq: 7, revisao: 1, qtd: 14, op: '8498', pmo: 'PMOC14',
+    })
+    expect(separarCodigoCaixa('CX[7]R2[14]8498-PMOC14')).toEqual({
+      seq: 7, revisao: 2, qtd: 14, op: '8498', pmo: 'PMOC14',
+    })
+  })
+  it('null pro marcador de caixa aberta: sem o segundo colchete não há quantidade fechada', () => {
+    expect(separarCodigoCaixa('CX[3]')).toBeNull()
+  })
+  it('null pra quem não é código de caixa (SN, vazio)', () => {
+    expect(separarCodigoCaixa('00043-00462-0015718')).toBeNull()
+    expect(separarCodigoCaixa('')).toBeNull()
   })
 })
 
