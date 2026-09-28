@@ -40,9 +40,10 @@ genérica **funciona no Setup hoje, sem mudar uma linha de código**.
 CAPA78-L0001
 ```
 
-O `L` marca material legado. Escolhido em vez de `GEN` por ser mais curto: o código vira
-código de barras, e barra menor é barra mais fácil de ler no chão de fábrica. E como o
-material novo tem pedido e nota no código, a diferença já é evidente sem precisar da palavra.
+O `L` marca material legado. Na etiqueta o código vira **QR code** (não código de barras —
+correção de 25/09), então o comprimento quase não pesa na leitura; `L` foi escolhido em vez de
+`GEN` por ser curto e legível a olho na etiqueta. E como o material novo tem pedido e nota no
+código, a diferença já é evidente sem precisar da palavra.
 
 **O que se perde:** rastrear de qual compra veio aquele rolo. Para material que já está na
 prateleira há tempo, isso provavelmente já estava perdido.
@@ -55,8 +56,9 @@ categoria (linha), estoque, negociante, saldo, unidade, peso**.
 **Cada linha é um rolo físico** — confirmado pelo usuário. É o que torna a automação
 possível: uma etiqueta por linha.
 
-A locação tem o formato `coluna.lado.posição` (ex.: `A1.C.66`). O lado **C é nomenclatura
-antiga**, saindo de uso em favor de D e E — na amostra, 65 posições em C, 1 em D, 1 em E.
+A locação tem o formato `coluna.lado.posição` (ex.: `A.C.67`), e o ERP exporta a coluna como
+**faixa** (`A.C.67 - A.C.67`) — o que vale é a posição inicial. O lado **C é o centro** e segue em
+uso junto com D e E (correção de 25/09; antes eu havia registrado que C estava saindo de uso).
 
 **A locação não identifica o rolo** e não entra na etiqueta: dez itens da amostra ocupam
 duas posições cada, a posição `A1.C.66` guarda três itens diferentes, e a posição muda com o
@@ -97,6 +99,11 @@ Em **Recebimento › Etiquetas**, ao lado do que já existe. Fluxo:
    etiqueta gerada para o mesmo item na mesma posição (com a data), e quantas foram
    **recusadas** e por quê.
 3. **Gerar** produz o arquivo de etiquetas e registra o que foi emitido.
+
+**A leva sai na ordem da prateleira** — por coluna, por lado, e a posição em ordem numérica
+(ordenar por texto colocaria a posição 67 antes da 7). O ERP não garante ordem no export, e é essa
+ordem que quem cola vai seguir de ponta a ponta da estante. Locação fora do padrão vai para o fim
+da lista, sinalizada.
 
 **O arquivo de saída é o mesmo do Recebimento** — três colunas, mesmo formato, mesma
 impressora. Nada muda no modelo de impressão, e isso é deliberado: é a diferença entre

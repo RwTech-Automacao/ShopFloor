@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,9 @@ import { trocarRolo } from '@/modules/setup/application/setup-actions'
 
 const INPUT_BIPE = 'h-11 text-lg uppercase'
 const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar.'
+/** Recusas que o operador tem de perceber: bipe engolido em silêncio é erro invisível. */
+const BIPE_EM_ENVIO = 'Registrando a troca anterior — esse bipe não contou. Bipe de novo.'
+const CAMPO_EM_BRANCO = 'Campo em branco — bipe o código antes de avançar.'
 
 type Campo = 'colaborador' | 'posicao' | 'feeder' | 'saida' | 'entrada' | 'sn'
 const CAMPOS_VAZIOS: Record<Campo, string> = { colaborador: '', posicao: '', feeder: '', saida: '', entrada: '', sn: '' }
@@ -46,10 +49,18 @@ export function ConteudoAbastecimento({
   // Sobe a cada `irPara`: força o efeito de foco a rodar mesmo quando o passo não muda.
   const [refoco, setRefoco] = useState(0)
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
-  const [enviando, startEnvio] = useTransition()
+  /**
+   * Estado comum, e não `useTransition`, de propósito. Com transição o React tratava o fim do envio
+   * como trabalho de baixa prioridade: o reset dos campos aparecia na tela num desenho e o fim do
+   * envio só no seguinte. No meio dos dois a tela já mostrava o passo novo e o componente ainda
+   * recusava — e o bipe que caía nessa fresta era apagado pelo reset, calado. Aqui tudo assenta
+   * junto, no mesmo desenho.
+   */
+  const [enviando, setEnviando] = useState(false)
 
   const campoRef = useRef<HTMLInputElement>(null)
-  // Evita bipe duplo (scanner manda Enter rápido) enquanto a transição ainda não marcou `enviando`.
+  // Espelha `enviando` de forma síncrona: o leitor manda dois Enter tão rápido que o segundo chega
+  // antes de o React aplicar o estado.
   const enviandoRef = useRef(false)
 
   const passos: { campo: Campo; rotulo: string; placeholder?: string }[] = [
@@ -78,10 +89,20 @@ export function ConteudoAbastecimento({
     el?.select()
   }, [passo, refoco])
 
+  /** Recusa que se percebe: som e painel. Recusa calada é bipe perdido sem ninguém notar. */
+  function recusar(titulo: string) {
+    setResultado({ tipo: 'aviso', titulo })
+    tocarErro()
+  }
+
   /** O que o Enter faz neste passo — e também o que o botão do rodapé faz, para o tablet só de toque. */
   function avancar() {
-    // O passo não passa em branco: sem valor, o Enter só mantém o operador no mesmo campo.
-    if (vazio) return
+    // A troca anterior ainda está no servidor. O bipe não pode valer (viraria troca duplicada), mas
+    // também não pode sumir: o operador não olha a tela, é o som que o alcança.
+    if (enviando || enviandoRef.current) { recusar(BIPE_EM_ENVIO); return }
+    // O passo não passa em branco — e avisa, porque um Enter sem valor é justamente o sintoma de
+    // bipe que não pegou.
+    if (vazio) { recusar(CAMPO_EM_BRANCO); return }
     if (!ultimo) { irPara(passo + 1); return }
     enviar()
   }
@@ -93,7 +114,7 @@ export function ConteudoAbastecimento({
       saida: campos.saida.trim(), entrada: campos.entrada.trim(), sn: campos.sn.trim(),
     }
     const iVazio = passos.findIndex((p) => v[p.campo] === '')
-    if (iVazio >= 0) { irPara(iVazio); return }
+    if (iVazio >= 0) { recusar(`Falta bipar ${passos[iVazio]!.rotulo}.`); irPara(iVazio); return }
     const chips: ChipResultado[] = [
       { rotulo: rotulos.posicao, valor: v.posicao },
       { rotulo: rotulos.feeder, valor: v.feeder },
@@ -102,8 +123,9 @@ export function ConteudoAbastecimento({
       { rotulo: 'SN Inicial', valor: v.sn, mono: true },
     ]
     enviandoRef.current = true
+    setEnviando(true)
     onColaboradorUsado(v.colaborador)
-    startEnvio(async () => {
+    void (async () => {
       try {
         let r: Awaited<ReturnType<typeof trocarRolo>>
         try {
@@ -144,9 +166,12 @@ export function ConteudoAbastecimento({
         }
         onTrocaRegistrada()
       } finally {
+        // Cai no mesmo desenho que o reset dos campos acima: tudo o que acontece neste mesmo passo
+        // do envio o React aplica de uma vez. É isso que fecha a fresta que engolia bipe.
         enviandoRef.current = false
+        setEnviando(false)
       }
-    })
+    })()
   }
 
   return (

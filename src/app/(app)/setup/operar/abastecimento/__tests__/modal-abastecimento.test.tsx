@@ -34,6 +34,17 @@ function bipar(valor: string) {
   fireEvent.keyDown(campo, { key: 'Enter' })
 }
 
+/** Uma volta do laço de eventos: no navegador cada evento do leitor chega em sua própria tarefa. */
+const tarefa = () => new Promise((r) => { setTimeout(r, 0) })
+
+/** O bipe do leitor com o tempo do navegador: o valor e o Enter caem em tarefas separadas. */
+async function biparRealista(valor: string) {
+  fireEvent.change(campoAtual(), { target: { value: valor } })
+  await tarefa()
+  fireEvent.keyDown(campoAtual(), { key: 'Enter' })
+  await tarefa()
+}
+
 /** Digitar à mão, sem Enter: é assim que o tablet só de toque chega ao botão do rodapé. */
 function digitar(valor: string) {
   fireEvent.change(campoAtual(), { target: { value: valor } })
@@ -199,5 +210,71 @@ describe('ConteudoAbastecimento', () => {
     expect(campoAtual().value).toBe('')
     // O crachá segue preenchido: só os campos bipados zeram.
     expect(screen.getByText('1234')).toBeInTheDocument()
+  })
+
+  /**
+   * A corrida que engolia bipe: enquanto o envio não terminava de assentar, o reset dos campos
+   * apagava por cima o que o operador tinha acabado de bipar, e o Enter caía na regra do campo
+   * vazio — sem som, sem aviso, sem mexer no contador. Estes três testes fixam o tempo do
+   * servidor na mão, então não dependem de sorte nem de carga da máquina.
+   */
+  it('bipe com a troca anterior em voo é recusado com som e aviso, sem reenviar nada', async () => {
+    let responder: (r: unknown) => void = () => {}
+    trocarRolo.mockReturnValue(new Promise((r) => { responder = r }))
+    render(<ConteudoAbastecimento {...PROPS} />)
+    for (const valor of BIPES) bipar(valor)
+    expect(screen.getByText('6/6')).toBeInTheDocument()
+
+    // O operador não olha a tela: já bipou a posição do componente seguinte.
+    await biparRealista('P2')
+
+    // Não passou — mas ele fica sabendo, e o servidor não foi chamado de novo.
+    expect(tocarErro).toHaveBeenCalled()
+    expect(screen.getByText('Registrando a troca anterior — esse bipe não contou. Bipe de novo.')).toBeInTheDocument()
+    expect(screen.getByText('6/6')).toBeInTheDocument()
+    expect(trocarRolo).toHaveBeenCalledTimes(1)
+
+    // E a troca que estava em voo termina normalmente.
+    responder(APROVADA)
+    expect(await screen.findByText('Troca aprovada — pode seguir')).toBeInTheDocument()
+    expect(screen.getByText('1/6')).toBeInTheDocument()
+  })
+
+  it('bipe que cai na virada da resposta do servidor não desaparece calado', async () => {
+    let responder: (r: unknown) => void = () => {}
+    trocarRolo.mockReturnValue(new Promise((r) => { responder = r }))
+    render(<ConteudoAbastecimento {...PROPS} />)
+    for (const valor of BIPES) bipar(valor)
+
+    // A resposta chega e o componente começa a se reorganizar — o bipe do operador cai justo aí.
+    responder({ ok: true, resultado: 'REPROVADO', motivos: ['O feeder F03 não está na posição 01.'], semFaixa: false })
+    await Promise.resolve()
+    await Promise.resolve()
+    tocarErro.mockClear() // o som da própria reprova não conta; só o que este bipe causar
+
+    await biparRealista('P2')
+
+    // Ou o bipe vale (o valor ficou, o passo andou), ou o operador é avisado. Sumir calado, não.
+    const naoSumiu = campoAtual().value !== '' || screen.queryByText('3/6') !== null
+    const avisou = tocarErro.mock.calls.length > 0
+    expect(naoSumiu || avisou).toBe(true)
+  })
+
+  it('quando a tela mostra o passo novo, o componente já aceita bipe', async () => {
+    trocarRolo.mockResolvedValue({ ok: true, resultado: 'REPROVADO', motivos: ['O feeder F03 não está na posição 01.'], semFaixa: false })
+    render(<ConteudoAbastecimento {...PROPS} />)
+    for (const valor of BIPES) bipar(valor)
+
+    // No mesmo desenho em que aparece o 2/6 os botões já têm de estar liberados: tela dizendo
+    // "pode bipar" com o componente ainda travado é exatamente o que engolia bipe.
+    expect(await screen.findByText('2/6')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Voltar' })).not.toBeDisabled()
+
+    // E aceitar de verdade, não só parecer liberado.
+    tocarErro.mockClear()
+    await biparRealista('P2')
+    expect(screen.getByText('3/6')).toBeInTheDocument()
+    expect(screen.getByText('P2')).toBeInTheDocument()
+    expect(tocarErro).not.toHaveBeenCalled()
   })
 })

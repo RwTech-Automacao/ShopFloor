@@ -241,3 +241,206 @@ feita numa branch separada**, e pode ser refinada sem depender de ninguém.
 **Dica combinada para quando ele tiver acesso à tela:** abrir o F12 na aba Rede e fazer o
 Valdeí lançar uma entrada real — o próprio ERP mostra qual chamada ele faz, o que responde
 de uma vez o endpoint oficial, os campos obrigatórios e a autenticação.
+
+---
+
+## 25/09 — Central do cliente: mock e a pergunta que sobrou
+
+Mock em canvas (3 pranchas): **https://claude.ai/artifact/BaucxZY5XxjRxfYjVV11TL**
+(privado — precisa ser compartilhado pelo menu Share para o comercial abrir).
+
+### O que o mock fixou
+
+**A tela** mostra um pedido por vez, com as três fases em cards na mesma ordem do processo
+real — Embarque, Recebimento, Produção —, a lista das EMBs do pedido e as OPs desse pedido,
+porque **um pedido pode ter duas PMOs em estados diferentes** (uma em produção, outra
+aguardando). O progresso de cada fase é uma fração com o total do pedido, não um número solto.
+
+**A régua do que sai**, em três grupos:
+
+| Sai como está | Sai traduzido | Não sai |
+|---|---|---|
+| Fase atual · EMBs e onde cada uma está · recebido/total · % de produção por ordem · quantidade embalada · previsão | Reprovado no NQA → "em verificação de qualidade" · divergência de quantidade → "quantidade em conferência com o fornecedor" · `PMOM90/357` → "Lote 1 de 2" · postos → nomes de etapa | Taxa de aprovação/reprovação por posto · defeitos e reparos · nome do colaborador · tempo por posto · fornecedor e fabricante · número de série · qualquer dado de outro cliente |
+
+Divergência de quantidade **sai** (traduzida) porque afeta o prazo do cliente — esconder isso
+é esconder um atraso que ele vai descobrir sozinho.
+
+**O filtro vem do login**, nunca de uma escolha na tela: o usuário do cliente está amarrado
+aos pedidos dele. É a mesma lógica de permissão por módulo do ShopFloor com um escopo a mais.
+
+### A ligação de cada fase com o pedido
+
+| Fase | Chave | Situação |
+|---|---|---|
+| Embarque | ACP → pedido | existe (a planilha é quase a do Recebimento) |
+| Recebimento | campo Projeto (ACP) | existe, mas é **texto livre e sujo** (ver a seção de 24/09) |
+| Produção | — | **não existe**: a OP sabe o **cliente**, não o **pedido** |
+
+### A pergunta que destrava o card
+
+**Como a OP vai saber de qual pedido é?** Três caminhos, e a escolha é de negócio:
+
+- **A — campo de ACP na OP.** Direto e barato, mas depende de alguém preencher toda vez;
+  campo que depende de disciplina costuma vir vazio.
+- **B — o ERP já sabe.** Se a ordem de produção do Compels aponta para o pedido de venda, a
+  ligação existe lá e só precisa ser lida. **Ninguém perguntou isso ainda** — entra na lista
+  do Valdeí.
+- **C — portal por cliente, não por pedido.** Funciona com o que existe hoje e entrega valor
+  já, mas não responde "e o meu segundo pedido?".
+
+Enquanto a ligação não existir, o portal mostra a produção **do cliente**, não **do pedido** —
+e para quem tem duas produções ao mesmo tempo os números aparecem misturados. É o que o mock
+deixa escrito na terceira prancha, de propósito: é a decisão a levar para a reunião, não um
+detalhe de implementação.
+
+---
+
+## 25/09 fim do dia — a Central do cliente virou um RASTREADOR
+
+Decisão do usuário depois de conversar internamente: **a ideia foi reduzida**. Sai o portal com
+três telas, painéis e métricas; entra **uma tela só**, no espírito do rastreamento dos Correios —
+o cliente informa o número do pedido e vê em que ponto está e o que já aconteceu.
+
+Mock só dessa tela: **https://claude.ai/artifact/CYuhDGzqshn8LBFXiEQayJ**
+(o canvas anterior, com as três telas, continua em https://claude.ai/artifact/BaucxZY5XxjRxfYjVV11TL
+como registro da ideia antiga.)
+
+### As 9 etapas, na ordem (ditadas pelo usuário)
+
+1. Pedido confirmado
+2. Aquisição de matéria-prima
+3. Agendamento de booking
+4. **[TRÂMITE — nome a confirmar]** (o usuário não conseguiu ler a própria anotação)
+5. Chegada no Brasil
+6. Desembaraço aduaneiro RF/RE
+7. Fábrica
+8. Produção iniciada
+9. Entrega
+
+### A forma
+
+- **Linha do tempo horizontal em bolinhas**: verde com check nas concluídas, anel vinho com miolo
+  cheio na atual, cinza vazia nas futuras; rótulo e data embaixo de cada uma.
+- **Histórico vertical embaixo**, com **data e hora** à esquerda, trilho com bolinha no meio e o
+  que aconteceu à direita, do mais recente para o mais antigo.
+- Em cima, campo do número do pedido + botão Acompanhar, e o objeto rastreado (pedido, produto,
+  previsão de entrega, situação).
+
+### Por que isso destrava o card
+
+A versão anterior morria na ligação **OP ↔ projeto**: para mostrar produção por projeto, a ordem
+precisava saber de qual projeto era. No rastreador, **"Produção iniciada" é uma etapa, não um
+painel** — não precisa de contagem por posto, só de saber que começou. O eixo continua sendo o
+pedido/projeto (a etapa 1 é "Pedido confirmado"), mas a exigência sobre o dado caiu muito.
+
+### O que falta para essa tela existir de verdade
+
+**De onde vem cada etapa:**
+
+| Etapa | Fonte hoje |
+|---|---|
+| Pedido confirmado | comercial / ERP |
+| Aquisição de matéria-prima | planilha de embarque (EMB) |
+| Agendamento de booking · [trâmite] · Chegada no Brasil · Desembaraço | **ninguém registra em sistema** |
+| Fábrica · Produção iniciada | ShopFloor (Recebimento e Lançamento) |
+| Entrega | expedição |
+
+**O nó agora é outro, e é mais simples:** quatro das nove etapas — booking, trâmite, chegada no
+Brasil e desembaraço — hoje não são registradas em lugar nenhum que o sistema leia. Ou alguém
+passa a marcar essas quatro (uma tela interna simples, quatro cliques por embarque), ou elas ficam
+sempre cinzas na linha do tempo. **É a pergunta a levar junto com o mock.**
+
+Também falta: o nome real da etapa 4.
+
+---
+
+## 28/09 — Rastreador: de onde vem cada etapa, e as regras de montagem
+
+Decidido com o usuário em 28/09, olhando o que a planilha de embarque e o ShopFloor realmente
+guardam. **O campo ACP já existe em `sf_ordens`** (`acp text not null default ''`, desde a 0028) e
+o formulário de OP já o mostra — o vínculo OP ↔ projeto **não precisa de migração**, precisa de
+preenchimento.
+
+### A fonte de cada etapa
+
+| # | Etapa | O que a conclui | Qualidade da data |
+|---|---|---|---|
+| 1 | Pedido confirmado | **integração com o Compels** (não existe hoje) | — |
+| 2 | Aquisição de matéria-prima | `data_compra` do processo, ou a linha na planilha com pedido e fornecedor | exata |
+| 3 | Agendamento de booking | coluna **Booking** da planilha | exata |
+| 4 | **[TRÂMITE — nome a confirmar]** | provavelmente **Carga em trânsito** da planilha | **aproximada \*** |
+| 5 | Chegada no Brasil | **não temos** — o usuário havia confundido com a chegada na fábrica | — |
+| 6 | Desembaraço aduaneiro RF/RE | a data em que a planilha foi (re)importada, ou em que o `di_inpi` foi preenchido (se a planilha migrar para a central) | **aproximada \*** |
+| 7 | Fábrica | `data_chegada` do processo (campo digitado na importação da EMB) | exata |
+| 8 | Produção iniciada | primeiro bipe numa OP cuja `acp` seja a do projeto | exata |
+| 9 | Entrega | **previsão** de entrega, à moda de rastreio de compra | prevista |
+
+### As três regras de montagem
+
+**1. Duas naturezas de data.** "Data do fato" é alguém escrevendo quando a coisa aconteceu; "data
+do registro" é o carimbo de quando o sistema soube. Cada etapa guarda a data **e** a qualidade
+(`exata` | `aproximada`). A tela marca as aproximadas com `*` e explica uma vez no rodapé: *as
+datas com \* são a data em que a informação chegou ao sistema, não necessariamente a do
+acontecimento*.
+
+**2. Coerência cronológica.** Ao montar a linha do tempo, etapa com data anterior à da etapa
+anterior **herda a data da anterior** e passa a valer como aproximada. Nunca inventa data, nunca
+mostra fora de ordem, nunca esconde a etapa. A inconsistência é registrada num lugar **interno**
+para alguém conferir — o cliente não vê.
+
+**3. Pior caso, porque uma ACP tem várias EMBs e várias OPs.** A **etapa atual da ACP é a da parte
+mais atrasada**; a **data de uma etapa concluída é a da última parte a concluí-la** (o máximo).
+
+**O caso que isso abre:** se uma EMB nova entrar no projeto depois, pelo pior caso a bolinha
+andaria para trás. **DECIDIDO pelo usuário (28/09): a bolinha NÃO VOLTA.** Etapa que ficou verde
+fica verde.
+
+Para que congelar não vire esconder: material novo entrando no projeto **vira uma linha no
+histórico** ("02/10 · entrou material novo neste projeto"), que é append-only por natureza, e a
+previsão de entrega no cabeçalho se atualiza. As bolinhas ficam estáveis e o fato não some.
+
+### Onde a planilha de embarque vive — DECIDIDO (28/09)
+
+**Correção do usuário:** o rastreador **não olha só o Recebimento — olha a planilha também**, então
+**não é** caso de acrescentar campos em `processos_recebimento`. O Recebimento fica intocado.
+
+Como a importação de hoje **guarda só os campos mapeados** (`importacoes` tem arquivo, formato,
+total de linhas e mapeamento — **não guarda as linhas cruas**), a planilha ganha casa própria do
+lado do rastreador: **ela é IMPORTADA**, com duas formas de se manter atualizada, porque o arquivo
+muda o tempo todo:
+
+1. **Editar dentro do sistema**, imitando o Excel — o Recebimento já tem o grid, dá para
+   reaproveitar em vez de fazer outro.
+2. **Reimportar sobrescrevendo.**
+3. **No futuro, integração** que puxa sozinha, sem intervenção de ninguém.
+
+**O conflito que as duas formas criam, e a regra:** alguém corrige uma data na tela e a
+reimportação seguinte traz o valor velho do Excel. Sobrescrever calado faz a pessoa preencher de
+novo sem entender por quê. A casa já resolveu isso uma vez — a `corrigir_importacao` (0079) só
+substitui os processos **se ninguém começou a trabalhar neles**. Mesmo princípio aqui:
+
+- cada célula sabe se foi **editada no sistema** (quem e quando);
+- a reimportação **sobrescreve à vontade** o que nunca foi tocado à mão — a maior parte;
+- onde houver edição à mão **e** o arquivo trouxer valor diferente, o sistema **mostra o conflito
+  antes de gravar** ("7 células foram editadas aqui e vêm diferentes no arquivo — qual fica?"),
+  como a prévia da etiquetagem;
+- valor igual não é conflito.
+
+A integração futura herda a regra: puxada automática **nunca** sobrescreve célula editada à mão —
+anota a divergência numa lista, já que não há ninguém na frente da tela para decidir.
+
+⚠️ A planilha carrega **preço, fornecedor, invoice e NCM**: **descartar essas colunas na ENTRADA**,
+não confiar em filtrar na saída.
+
+### O que continua faltando
+
+- **ACP obrigatória × OPs internas e OPs antigas em branco** — o usuário decidiu **deixar como
+  está por enquanto** (28/09). Volta quando o rastreador for construído de fato.
+- **A previsão de entrega ao cliente não existe em campo nenhum** (o `data_prevista` do Recebimento
+  é a previsão de chegada do *material*, outra coisa). **Em aberto: o usuário vai verificar de onde
+  puxar.** É a informação que o cliente mais olha.
+- **O nome da etapa 4** — deixado como está por enquanto.
+- **O filtro por ACP tem de saber ler campo com duas ACPs** — 105 processos em produção têm
+  `ACP013/26 E ACP014/26` no campo Projeto. Se essa EMB atrasa, as duas linhas do tempo atrasam,
+  o que está correto, mas o filtro precisa entender o formato.
+- **Etapa 5 (Chegada no Brasil)** não tem fonte, e **etapa 1** depende do Compels.

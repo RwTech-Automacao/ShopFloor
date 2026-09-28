@@ -8,15 +8,22 @@ import type {
 } from '@/modules/recebimento/infra/fluxo-repository'
 
 // vi.mock é içado para o topo do arquivo: os mocks precisam nascer num vi.hoisted.
-const { carregarFluxoEmbAction, carregarItensCaixaAction, carregarHistoricoEtapaAction } = vi.hoisted(() => ({
+const {
+  carregarFluxoEmbAction,
+  carregarItensCaixaAction,
+  carregarHistoricoEtapaAction,
+  carregarHistoricoItemAction,
+} = vi.hoisted(() => ({
   carregarFluxoEmbAction: vi.fn(),
   carregarItensCaixaAction: vi.fn(),
   carregarHistoricoEtapaAction: vi.fn(),
+  carregarHistoricoItemAction: vi.fn(),
 }))
 vi.mock('@/modules/recebimento/application/fluxo-actions', () => ({
   carregarFluxoEmbAction,
   carregarItensCaixaAction,
   carregarHistoricoEtapaAction,
+  carregarHistoricoItemAction,
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -94,6 +101,8 @@ const CAIXAS: CaixaFluxo[] = [
   caixa({ etapa: 'qualidade', itens: 3, divergentes: 1, mediaSegundos: 4 * 86400, maiorSegundos: 4 * 86400, semTempo: 1 }),
   caixa({ etapa: 'almoxarifado', itens: 2 }),
   caixa({ etapa: 'reprovado', itens: 1, divergentes: 1 }),
+  // A caixa de sinalização repete os marcados que já foram contados nas caixas reais.
+  caixa({ etapa: 'divergencia', itens: 2, divergentes: 2 }),
 ]
 
 const ITEM: ItemFluxo = {
@@ -120,11 +129,29 @@ const PASSAGEM: PassagemEtapa = {
   passagem: { tipo: 'avanco', de: 'recebimento', para: 'qualidade', resultado: null },
 }
 
+/** Uma passagem do item, como a `rec_registros` devolve (é o que o diálogo do item mostra). */
+const REGISTRO_ITEM = {
+  id: 'r1',
+  dataHora: '2026-09-24T12:30:00Z',
+  colaborador: 'João',
+  processoId: 'p9',
+  numero: 456,
+  emb: 'EMB390',
+  item: 'CAPJ99',
+  descricao: 'CAPACITOR 10uF',
+  fornecedor: 'ACME',
+  fabricante: '',
+  partNumber: '',
+  passagem: { tipo: 'finalizacao', de: 'qualidade', para: 'almoxarifado', resultado: 'Aprovado' },
+  alteracoes: [],
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   carregarFluxoEmbAction.mockResolvedValue({ ok: true, caixas: CAIXAS })
   carregarItensCaixaAction.mockResolvedValue({ ok: true, itens: [ITEM] })
   carregarHistoricoEtapaAction.mockResolvedValue({ ok: true, linhas: [PASSAGEM], temMais: false })
+  carregarHistoricoItemAction.mockResolvedValue({ ok: true, linhas: [REGISTRO_ITEM] })
   // jsdom não tem Fullscreen API; o Modo TV só precisa saber que foi pedida.
   Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
     configurable: true,
@@ -181,11 +208,33 @@ describe('FluxoForm', () => {
     expect(no('reprovado').dataset.pos).toBe('300,200')
   })
 
-  it('liga a cadeia e desenha o ramo do Reprovado saindo da Qualidade', async () => {
+  it('liga a cadeia e pendura os dois ramos: Reprovado na Qualidade, Divergência no Recebimento', async () => {
     await escolherEmb()
     expect(screen.getByTestId('canvas').dataset.arestas).toBe(
-      'f:recebimento->qualidade f:qualidade->almoxarifado r:qualidade->reprovado',
+      'f:recebimento->qualidade f:qualidade->almoxarifado r:qualidade->reprovado r:recebimento->divergencia',
     )
+  })
+
+  it('a caixa de sinalização mostra os marcados e diz que eles seguem no fluxo', async () => {
+    await escolherEmb()
+    const divergencia = within(no('divergencia'))
+    expect(divergencia.getByText('Divergência de quantidade')).toBeInTheDocument()
+    expect(divergencia.getByText('sinalizados · seguem no fluxo')).toBeInTheDocument()
+    // Os 2 marcados, sem barra: ela não é etapa da fila.
+    expect(divergencia.getByText('2')).toBeInTheDocument()
+    expect(divergencia.queryByText(/%$/)).toBeNull()
+  })
+
+  it('a caixa de sinalização não tem histórico de etapa — ninguém passa por ela', async () => {
+    await escolherEmb()
+    fireEvent.click(no('divergencia'))
+    // Abre a lista dos itens marcados, pela mesma action das outras caixas.
+    await waitFor(() =>
+      expect(carregarItensCaixaAction).toHaveBeenCalledWith('EMB390', 'divergencia'),
+    )
+    const p = painel()
+    expect(p.getByText(/Marcados:/)).toBeInTheDocument()
+    expect(p.queryByText('Histórico da etapa')).toBeNull()
   })
 
   it('os cards são arrastáveis, como no Fluxo do ShopFloor', async () => {
@@ -193,16 +242,35 @@ describe('FluxoForm', () => {
     expect(screen.getByTestId('canvas').dataset.arrastavel).toBe('true')
   })
 
-  it('cada nó mostra a contagem e o tempo da etapa', async () => {
+  it('cada nó mostra quantos estão nele agora e quantos da EMB já chegaram até ali', async () => {
     await escolherEmb()
+    // 4 + 3 + 2 + 1 = 10 itens na EMB.
     const recebimento = within(no('recebimento'))
-    expect(recebimento.getByText('4')).toBeInTheDocument()
-    expect(recebimento.getByText('10 d')).toBeInTheDocument() // mais antigo
-    expect(recebimento.getByText('3 d')).toBeInTheDocument() // tempo médio
-    // Caixa sem tempo nenhum mostra travessão, não zero.
-    expect(within(no('almoxarifado')).getAllByText('—')).toHaveLength(2)
-    // A divergência aparece no card da caixa onde os itens estão.
-    expect(within(no('qualidade')).getByText('1')).toBeInTheDocument()
+    expect(recebimento.getByText('4')).toBeInTheDocument() // na caixa agora
+    expect(recebimento.getByText('/ 10')).toBeInTheDocument()
+    expect(recebimento.getByText('100%')).toBeInTheDocument() // todos passaram pelo Recebimento
+
+    // Pela Qualidade já passaram os 3 que estão nela + 2 no Almoxarifado + 1 reprovado.
+    const qualidade = within(no('qualidade'))
+    expect(qualidade.getByText('6')).toBeInTheDocument()
+    expect(qualidade.getByText('60%')).toBeInTheDocument()
+  })
+
+  it('o Almoxarifado é card cheio como o Concluído do ShopFloor: contagem, sem barra', async () => {
+    await escolherEmb()
+    const almoxarifado = within(no('almoxarifado'))
+    expect(almoxarifado.getByText('2')).toBeInTheDocument()
+    expect(almoxarifado.getByText('Almoxarifado')).toBeInTheDocument()
+    // Sem barra de progresso: ele é o fim do caminho, a contagem já diz tudo.
+    expect(almoxarifado.queryByText(/%$/)).toBeNull()
+  })
+
+  it('o ramo Reprovado não tem barra, mas mostra a divergência', async () => {
+    await escolherEmb()
+    const reprovado = within(no('reprovado'))
+    // Duas vezes "1": a contagem da caixa e o selo de divergência.
+    expect(reprovado.getAllByText('1')).toHaveLength(2)
+    expect(reprovado.queryByText(/%$/)).toBeNull()
   })
 
   it('divergência é contador à parte, não caixa', async () => {
@@ -247,9 +315,40 @@ describe('FluxoForm', () => {
     const p = painel()
     expect(await p.findByText('CAPJ99')).toBeInTheDocument()
     expect(p.getByText('#456')).toBeInTheDocument()
-    // O mesmo formato compacto do histórico do posto do ShopFloor (hh:mm dd/mm em Brasília).
-    expect(p.getByText('Recebimento → Qualidade · 24/09, 09:30')).toBeInTheDocument()
+    // A linha mostra só o item e a hora: o que a passagem foi mudou de lugar, foi para o diálogo.
+    expect(p.getByText('24/09, 09:30')).toBeInTheDocument()
+    expect(p.queryByText(/Recebimento → Qualidade/)).toBeNull()
     expect(p.getByText('Histórico da etapa (1)')).toBeInTheDocument()
+  })
+
+  it('clicar num item do histórico abre a trilha DAQUELE processo, escolhido pelo id', async () => {
+    await escolherEmb()
+    fireEvent.click(no('qualidade'))
+    fireEvent.click(await painel().findByText('Histórico da etapa'))
+    fireEvent.click(await painel().findByText('CAPJ99'))
+
+    // Pelo id do processo, nunca pelo código: o mesmo item pode ter dois processos na mesma EMB.
+    await waitFor(() =>
+      expect(carregarHistoricoItemAction).toHaveBeenCalledWith('EMB390', 'CAPJ99', 'p9'),
+    )
+    const dialogo = await screen.findByRole('dialog')
+    expect(within(dialogo).getByText('Qualidade → Almoxarifado (Aprovado)')).toBeInTheDocument()
+    expect(within(dialogo).getByText(/João/)).toBeInTheDocument()
+    expect(within(dialogo).getByRole('link', { name: /Abrir processo/ })).toHaveAttribute(
+      'href',
+      '/recebimento/processos/p9',
+    )
+  })
+
+  it('o diálogo do item fecha no X', async () => {
+    await escolherEmb()
+    fireEvent.click(no('qualidade'))
+    fireEvent.click(await painel().findByText('Histórico da etapa'))
+    fireEvent.click(await painel().findByText('CAPJ99'))
+    const dialogo = await screen.findByRole('dialog')
+
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Fechar' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('clicar de novo no nó fecha o painel, e o X também', async () => {
