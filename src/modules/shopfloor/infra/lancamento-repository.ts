@@ -10,6 +10,9 @@ export interface OrdemLancamento {
   sn_ini: string
   sn_fim: string
   postos: string[]
+  /** OP de embalagem individual (1 peça = 1 caixa) × coletiva (caixa com N peças) — o Almoxarifado
+   *  usa isto pra saber se o bipe esperado é a série da peça ou o código da caixa fechada. */
+  embalagem_individual: boolean
 }
 
 export interface SfLancarArgs {
@@ -109,7 +112,7 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('cliente,descricao,qtd,sn_ini,sn_fim,sf_ordem_postos(posto,ordem)')
+    .select('cliente,descricao,qtd,sn_ini,sn_fim,embalagem_individual,sf_ordem_postos(posto,ordem)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
@@ -121,6 +124,7 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
     qtd: number | null
     sn_ini: string
     sn_fim: string
+    embalagem_individual: boolean
     sf_ordem_postos: { posto: string; ordem: number }[]
   }
   return {
@@ -129,6 +133,7 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
     qtd: row.qtd,
     sn_ini: row.sn_ini,
     sn_fim: row.sn_fim,
+    embalagem_individual: row.embalagem_individual,
     // postos NA ORDEM da OP (a sequência importa p/ a trava de sequência).
     postos: [...row.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
   }

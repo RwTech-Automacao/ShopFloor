@@ -20,6 +20,7 @@ import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes, e
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
+import { AlmoxarifadoPanel } from './almoxarifado-panel'
 import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { NqaCaixaPanel } from './nqa-caixa-panel'
@@ -205,6 +206,7 @@ export function LancamentoForm({
   const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
   const ehIntegracao = posto !== '' && perfilDo(posto).recurso === 'integracao'
+  const ehAlmoxarifado = posto !== '' && perfilDo(posto).recurso === 'almoxarifado'
   // Postos de teste/inspeção com defeito: status implícito pelo que se bipa (SN→aprova, defeito→reprova).
   // SPI (migração 0075) também é reprova==='defeitos' → entra aqui (usa lista fixa de solda via defeitosPosto).
   // Burn-in entra só na SAÍDA (entrada é neutra: grava direto, sem classificar SN/defeito).
@@ -856,7 +858,7 @@ export function LancamentoForm({
   const loteCheio = ehColetivo && lote.length >= MAX_LOTE && !temPendentes(lote)
 
   return (
-    <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
+    <div className={`flex flex-col gap-3 ${ehIntegracao || ehAlmoxarifado ? 'min-h-full' : 'h-full min-h-0'}`}>
       {/* Retomar inspeção NQA salva (localStorage) após refresh — só quando ainda não há contexto na tela. */}
       {grupoRetomado !== null && (
         <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
@@ -898,6 +900,10 @@ export function LancamentoForm({
           componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
           contexto={renderContexto()}
         />
+      ) : ehAlmoxarifado ? (
+        // Almoxarifado: último posto da linha — bipa o que acabou de ser embalado (peça ou caixa
+        // fechada). Igual às demais: o painel monta o próprio topo (Peça | Contexto).
+        <AlmoxarifadoPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} contexto={renderContexto()} />
       ) : ehEmbalagem ? (
         // Embalagem: o painel monta o PRÓPRIO topo (Peça | Contexto) e deixa o acompanhamento em
         // largura cheia embaixo — por isso recebe o Contexto por prop em vez de dividir a linha aqui.
