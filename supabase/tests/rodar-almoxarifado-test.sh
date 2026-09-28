@@ -78,3 +78,33 @@ N=$(docker exec "$NOME" psql -U postgres -tAq -c \
 [ "$B" = ja_lancado ] && [ "$N" = 1 ] \
   && echo "corrida (dois bipes na mesma peça): ok" \
   || { echo "corrida da peça FALHOU (B=$B, linhas=$N)"; exit 1; }
+
+# CORRIDA, série com bipes CRUS DIFERENTES que normalizam para a MESMA série (achado da revisão:
+# a trava travava pelo p_bipe cru, mas a checagem de duplicidade compara p_serie_norm — um zero à
+# esquerda a mais no coletor, ou minúsculas, dão bipes diferentes com o mesmo p_serie_norm, e cada
+# um pegava uma trava própria). Usa a OP sem faixa (PMOI02/9001) pra não depender de sf_sn_na_faixa
+# aceitar o formato do bipe. Este teste tem que falhar contra o código de hoje (chave = p_bipe cru).
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
+  "insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, qtd_por_caixa, numero_serie, numero_serie_norm)
+   values ('Marcos', 'Embalagem', 'PMOI02', '9001', 'Cliente Sem Faixa', '0015718', 1, '0015718', '430046200015718')"
+BIPE_A="sf_almoxarifado_entrada('PMOI02','9001','Almoxarifado','%s','00043-00462-0015718','serie',1,'430046200015718')"
+BIPE_B="sf_almoxarifado_entrada('PMOI02','9001','Almoxarifado','%s','000043-00462-0015718','serie',1,'430046200015718')"
+printf "%s\n" \
+  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "begin;" \
+  "select $(printf "$BIPE_A" Ana)->>'ok';" \
+  "select pg_sleep(3);" \
+  "commit;" \
+  | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq >/dev/null &
+A=$!
+B=$(printf "%s\n" \
+  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select pg_sleep(1);" \
+  "select $(printf "$BIPE_B" Bruno)->>'motivo';" \
+  | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
+wait "$A"
+N=$(docker exec "$NOME" psql -U postgres -tAq -c \
+  "select count(*) from sf_registros where posto = 'Almoxarifado' and numero_serie_norm = '430046200015718'")
+[ "$B" = ja_lancado ] && [ "$N" = 1 ] \
+  && echo "corrida (bipes crus diferentes, mesma série normalizada): ok" \
+  || { echo "corrida da série normalizada FALHOU (B=$B, linhas=$N)"; exit 1; }

@@ -120,9 +120,19 @@ begin
   -- checagem de duplicidade abaixo valer, porque não existe unique em sf_registros que sirva:
   -- a Embalagem grava N linhas com o mesmo numero_caixa (uma por peça) e a reprova grava N linhas
   -- com a mesma série (uma por defeito), então qualquer unicidade ampla quebraria os outros postos.
-  -- A chave é o bipe inteiro (e não a OP): dois operadores bipando caixas DIFERENTES não se esperam.
+  -- A chave é a mesma coisa que a checagem de duplicidade compara (e não a OP): dois operadores
+  -- bipando caixas/peças DIFERENTES não se esperam.
+  --
+  -- Por isso a chave é coalesce(p_serie_norm, p_bipe), e não p_bipe cru: no caminho da peça, quem
+  -- decide duplicidade é numero_serie_norm (abaixo), que já tirou zero à esquerda e caixa. Um
+  -- coletor com "tecla presa" (um zero a mais) ou um bipe em minúsculas dão p_bipe DIFERENTE para
+  -- a MESMA peça — travar pelo bipe cru deixaria as duas sessões passarem direto, sem se esperar,
+  -- e a peça entraria duas vezes (achado de revisão; o teste de corrida da série normalizada, no
+  -- script, prova isso). No caminho da caixa p_serie_norm vem vazio, então a chave cai no próprio
+  -- p_bipe (o código da caixa), que é exatamente o que a checagem de duplicidade da caixa compara.
   perform pg_advisory_xact_lock(
-    hashtext('sf_almox/' || p_pmo || '/' || p_op || '/' || p_posto || '/' || p_bipe)::bigint);
+    hashtext('sf_almox/' || p_pmo || '/' || p_op || '/' || p_posto || '/'
+             || coalesce(nullif(p_serie_norm, ''), p_bipe))::bigint);
 
   if p_tipo = 'caixa' then
     -- A marca de remontagem é lida ANTES de procurar a caixa: o R no código já diz que aquela
@@ -151,6 +161,14 @@ begin
     -- A trava vem pelo id (e não pelo código) justamente porque o código é o que essas duas
     -- operações reescrevem — filtrar pelo código depois do bloqueio devolveria "não encontrada".
     select * into v_caixa from sf_caixas where id = v_id for update;
+    -- Hoje é inalcançável (nada apaga caixa; a reabertura só limpa o código), mas sem este `if not
+    -- found` a linha sumindo entre os dois selects faria `not v_caixa.fechada` e `v_caixa.revisao >
+    -- 0` avaliarem NULL (falso nos dois), e a função continuaria e daria a entrada sem caixa nenhuma
+    -- por trás. Fechando aqui em vez de confiar no NULL.
+    if not found then
+      return jsonb_build_object('ok', false, 'motivo', 'caixa_nao_encontrada',
+        'detalhe', 'Nenhuma caixa da OP ' || p_op || ' com o código ' || p_bipe || '.');
+    end if;
 
     if not v_caixa.fechada then
       return jsonb_build_object('ok', false, 'motivo', 'caixa_aberta',
@@ -242,6 +260,12 @@ end $func$;
 
 -- O Postgres dá EXECUTE a PUBLIC em toda função nova; sem revoke, a anon key (que está no
 -- JavaScript do navegador) chamaria a função direto no PostgREST, sem login.
+--
+-- sf_sn_na_faixa NÃO ganha grant a authenticated (diferente da regra geral: revoke de
+-- public/anon + grant a authenticated). É deliberado: ela é só uma auxiliar de sf_almoxarifado_entrada,
+-- chamada de dentro da própria função (que é security definer); ninguém mais tem razão pra chamá-la
+-- direto. Revoke de todo mundo, sem grant nenhum, é MAIS restritivo que a regra padrão e continua
+-- funcionando porque a chamadora roda com o dono da função, não com o papel de quem invocou.
 revoke all on function public.sf_sn_na_faixa(text, text, text) from public, anon, authenticated;
 revoke all on function public.sf_almoxarifado_entrada(text, text, text, text, text, text, int, text)
   from public, anon;
