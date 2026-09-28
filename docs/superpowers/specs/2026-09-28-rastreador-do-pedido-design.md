@@ -49,7 +49,7 @@ As duas funcionam em **celular e computador**. No celular a linha do tempo vira 
 | # | Etapa | O que a conclui | Fonte | Qualidade da data |
 |---|---|---|---|---|
 | 1 | Pedido confirmado | a confirmação do pedido de venda | **Compels (integração que ainda não existe)** | — |
-| 2 | Aquisição de matéria-prima | a compra do material do projeto | planilha de embarque | exata |
+| 2 | Aquisição de matéria-prima | **a data de entrega do item** ao agente de carga, no pior caso | planilha de embarque | exata |
 | 3 | Agendamento de booking | coluna **Booking** preenchida | planilha de embarque | exata |
 | 4 | **[TRÂMITE — nome a confirmar]** | provavelmente **Carga em trânsito** | planilha de embarque | aproximada |
 | 5 | Chegada no Brasil | coluna nova na planilha | planilha de embarque | exata |
@@ -57,6 +57,19 @@ As duas funcionam em **celular e computador**. No celular a linha do tempo vira 
 | 7 | Fábrica | a data de chegada do material na fábrica | ShopFloor — Recebimento | exata |
 | 8 | Produção iniciada | o primeiro registro numa ordem com aquela ACP | ShopFloor — produção | exata |
 | 9 | Entrega | **previsão** de entrega | **em aberto** | prevista |
+
+**Decisão de 28/09 sobre a etapa 2.** Ela conclui pela coluna **Data de entrega do item**, não pela
+data da compra. Três razões: é a coluna que existe de fato nas planilhas (data da compra não existe
+na EMB347EA, e usar a data da importação deixaria a segunda bolinha quase sempre aproximada); faz a
+etapa significar algo verificável — *o material está em mãos* — em vez de apenas *alguém comprou*; e
+mantém visível o item que falta. Aplicando o pior caso: a etapa só conclui quando **todos** os itens
+do projeto naquela EMB tiverem data de entrega, e a data da etapa é a da **última**.
+
+⚠️ **Item preso tem de ser visível por dentro.** Segurar a etapa só é uma boa regra se alguém da
+Enterplak enxergar o que está segurando — "este projeto está parado há 12 dias esperando o CON985".
+Se isso viver só na tela do cliente, ninguém aqui descobre. Exemplo real: na EMB347EA, 17 dos 18
+itens do ACP017/26 têm data de entrega; o `CON985` (505 conectores microfit) não tem, e segura a
+etapa sozinho.
 
 **A leitura que importa:** as etapas 3 a 6 são **o mesmo problema com a mesma solução** — quatro
 datas que quem cuida da importação já sabe e que hoje não têm onde ser gravadas. Duas colunas já
