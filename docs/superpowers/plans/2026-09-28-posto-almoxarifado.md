@@ -292,8 +292,15 @@ caixa ao mesmo tempo de dar entrada em dobro.
 
 **Interfaces:**
 - Produz: `sf_almoxarifado_entrada(p_pmo text, p_op text, p_posto text, p_colaborador text,
-  p_bipe text, p_tipo text, p_quantidade int) returns jsonb` — devolve
+  p_bipe text, p_tipo text, p_quantidade int, p_serie_norm text) returns jsonb` — devolve
   `{"ok": true, "quantidade": 10}` ou `{"ok": false, "motivo": "<chave>", "detalhe": "<texto>"}`.
+
+⚠️ **`p_serie_norm` vem pronto do aplicativo, e isso não é escolha:** **não existe função de
+normalização de série no banco.** O `sf_lancar` (migração `0031_sf_lancar.sql`) já funciona assim —
+recebe `p_numero_serie_norm` de fora. Se a RPC nova normalizasse por conta própria, a comparação de
+duplicidade não casaria com as linhas que a Embalagem gravou, e o "já lançado" nunca pegaria nada.
+**Leia a `0031_sf_lancar.sql` antes de escrever: ela é a irmã mais próxima desta função.**
+Nas chamadas de tipo `caixa`, `p_serie_norm` vai vazio.
 
 **Motivos que a RPC devolve** (a tela traduz cada um numa frase):
 `sem_permissao` · `ordem_nao_encontrada` · `posto_invalido` · `caixa_nao_encontrada` ·
@@ -355,11 +362,9 @@ values
   (p_colaborador, p_posto, p_pmo, p_op, v_cliente,
    case when p_tipo = 'caixa' then p_bipe else '' end,
    case when p_tipo = 'serie' then p_bipe else '' end,
-   case when p_tipo = 'serie' then sf_serie_norm(p_bipe) else '' end);
+   case when p_tipo = 'serie' then p_serie_norm else '' end);
 ```
 
-  (confira o nome real da função de normalização de série nas migrações antes de usar — é a mesma
-  que o Lançamento usa para gravar `numero_serie_norm`);
 - o `status` fica **vazio**: o perfil não tem status, o bipe não julga a peça;
 - **tudo numa transação só**, com `select ... for update` na caixa antes de gravar: é o que resolve
   dois operadores bipando junto.
