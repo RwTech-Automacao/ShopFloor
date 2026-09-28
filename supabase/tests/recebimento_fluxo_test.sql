@@ -53,6 +53,7 @@ select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 
 \i /tmp/0124.sql
 \i /tmp/0125.sql
+\i /tmp/0127.sql
 
 -- ---------- massa de teste ----------
 -- EMB390: um item em cada caixa (um deles divergente), mais um sem histórico nenhum.
@@ -227,10 +228,10 @@ end $t$;
 do $t$
 declare r record;
 begin
-  -- Sempre as quatro caixas, na ordem do fluxo (a tela desenha as quatro).
+  -- Sempre as CINCO caixas, na ordem do fluxo, com a de sinalização por último (0127).
   if (select array_agg(etapa) from rec_fluxo_emb('EMB390'))
-     <> array['recebimento', 'qualidade', 'almoxarifado', 'reprovado'] then
-    raise exception 'FALHOU: o resumo tem que trazer as quatro caixas, na ordem do fluxo'; end if;
+     <> array['recebimento', 'qualidade', 'almoxarifado', 'reprovado', 'divergencia'] then
+    raise exception 'FALHOU: o resumo tem que trazer as cinco caixas, na ordem do fluxo'; end if;
 
   select * into r from rec_fluxo_emb('EMB390') where etapa = 'recebimento';
   if r.itens <> 1 then raise exception 'FALHOU: Recebimento tinha que ter 1 item, tem %', r.itens; end if;
@@ -259,16 +260,57 @@ begin
   if r.itens <> 1 then raise exception 'FALHOU: Reprovado tinha que ter 1 item, tem %', r.itens; end if;
   if r.divergentes <> 1 then raise exception 'FALHOU: o reprovado é divergente e a marca acompanha'; end if;
 
-  -- Divergência é marca, não caixa: os divergentes estão espalhados (1 na Qualidade + 1 no Reprovado).
-  if (select sum(divergentes) from rec_fluxo_emb('EMB390')) <> 2 then
+  -- Divergência é marca, não caixa: os divergentes estão espalhados (1 na Qualidade + 1 no
+  -- Reprovado). A caixa de sinalização da 0127 conta os mesmos 2 de novo, então a soma das quatro
+  -- caixas REAIS é que vale como total de marcados.
+  if (select sum(divergentes) from rec_fluxo_emb('EMB390') where etapa <> 'divergencia') <> 2 then
     raise exception 'FALHOU: a EMB tem 2 itens divergentes no total'; end if;
 
-  -- Nada vaza entre EMBs.
-  if (select sum(itens) from rec_fluxo_emb('EMB999')) <> 1 then
+  -- Nada vaza entre EMBs. A EMB999 tem 1 item, e ele é divergente, então a caixa de vista repete.
+  if (select sum(itens) from rec_fluxo_emb('EMB999') where etapa <> 'divergencia') <> 1 then
     raise exception 'FALHOU: a EMB999 tem 1 item só'; end if;
   if (select sum(itens) from rec_fluxo_emb('EMB000')) <> 0 then
-    raise exception 'FALHOU: EMB inexistente tem que vir zerada, com as quatro caixas'; end if;
+    raise exception 'FALHOU: EMB inexistente tem que vir zerada, com as cinco caixas'; end if;
+  if (select count(*) from rec_fluxo_emb('EMB000')) <> 5 then
+    raise exception 'FALHOU: EMB inexistente ainda traz as cinco caixas'; end if;
   raise notice 'fluxo (contagem, divergência e tempo): ok';
+end $t$;
+
+-- ---------- 2b. Fluxo: a caixa de sinalização "Divergência de quantidade" (0127) ----------
+-- Ela é caixa de VISTA, não de passagem: o item aparece nela E na caixa real dele, porque a
+-- divergência não tira o item do fluxo. Por isso as caixas NÃO somam o total da EMB.
+do $t$
+declare r record;
+begin
+  select * into r from rec_fluxo_emb('EMB390') where etapa = 'divergencia';
+  -- CAPJ92 (-10, na Qualidade) e CAPJ94 (12, reprovado). Os de '0', null e '' não contam.
+  if r.itens <> 2 then
+    raise exception 'FALHOU: 2 itens marcados na EMB390, veio %', r.itens; end if;
+  if r.divergentes <> 2 then
+    raise exception 'FALHOU: na caixa de divergência, itens e divergentes são o mesmo número'; end if;
+  -- Sem relógio: "há quanto tempo está divergente" não é registrado em lugar nenhum.
+  if r.media_segundos is not null or r.maior_segundos is not null or r.sem_tempo <> 0 then
+    raise exception 'FALHOU: a caixa de divergência não tem tempo'; end if;
+
+  -- O item continua contado na caixa REAL dele: a soma das caixas passa do total de propósito.
+  if (select itens from rec_fluxo_emb('EMB390') where etapa = 'qualidade') <> 3 then
+    raise exception 'FALHOU: a caixa de vista não pode tirar o item da caixa real'; end if;
+  if (select sum(itens) from rec_fluxo_emb('EMB390')) <> 9 then
+    raise exception 'FALHOU: 7 itens + 2 marcados contados de novo = 9'; end if;
+
+  -- Os itens da caixa: os marcados, onde quer que estejam, com o "desde" da caixa real.
+  if (select count(*) from rec_fluxo_emb_itens('EMB390', 'divergencia')) <> 2 then
+    raise exception 'FALHOU: 2 itens na caixa de divergência'; end if;
+  if exists (select 1 from rec_fluxo_emb_itens('EMB390', 'divergencia')
+              where not rec_divergente(divergencia)) then
+    raise exception 'FALHOU: entrou item sem marca na caixa de divergência'; end if;
+  if not exists (select 1 from rec_fluxo_emb_itens('EMB390', 'divergencia') where item = 'CAPJ94') then
+    raise exception 'FALHOU: o reprovado divergente tem que aparecer na caixa de sinalização'; end if;
+
+  -- A EMB999 tem um marcado só, e ele não pode vazar para a EMB390.
+  if (select itens from rec_fluxo_emb('EMB999') where etapa = 'divergencia') <> 1 then
+    raise exception 'FALHOU: a caixa de divergência tem que respeitar a EMB'; end if;
+  raise notice 'fluxo (caixa de divergência): ok';
 end $t$;
 
 -- ---------- 3. Fluxo: os itens de uma caixa ----------

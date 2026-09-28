@@ -1,10 +1,17 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { ETAPAS, passagemDoEvento, type Etapa, type Passagem } from '../domain/etapa-processo'
+import {
+  CAIXAS_FLUXO,
+  passagemDoEvento,
+  type CaixaFluxoId,
+  type Etapa,
+  type Passagem,
+} from '../domain/etapa-processo'
 
-/** Uma caixa do fluxo, já agregada pela `rec_fluxo_emb` (0124). */
+/** Uma caixa do fluxo, já agregada pela `rec_fluxo_emb` (0124/0127). */
 export interface CaixaFluxo {
-  etapa: Etapa
+  /** Uma das quatro etapas, ou a caixa de sinalização `divergencia` (0127). */
+  etapa: CaixaFluxoId
   /** Quantos itens estão na caixa agora. */
   itens: number
   /** Quantos deles carregam a marca de divergência (a marca não tira o item de lugar). */
@@ -76,7 +83,7 @@ export async function carregarFluxoEmb(emb: string): Promise<CaixaFluxo[]> {
   const porEtapa = new Map<string, CaixaRpc>()
   for (const linha of (data ?? []) as CaixaRpc[]) porEtapa.set(linha.etapa, linha)
 
-  return ETAPAS.map((etapa) => {
+  return CAIXAS_FLUXO.map((etapa) => {
     const l = porEtapa.get(etapa)
     return {
       etapa,
@@ -94,7 +101,7 @@ export async function carregarFluxoEmb(emb: string): Promise<CaixaFluxo[]> {
 export const TETO_ITENS_CAIXA = 500
 
 /** Os itens de uma caixa, mais antigo primeiro (é o que interessa em "travada em quê"). */
-export async function carregarItensCaixa(emb: string, etapa: Etapa): Promise<ItemFluxo[]> {
+export async function carregarItensCaixa(emb: string, etapa: CaixaFluxoId): Promise<ItemFluxo[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('rec_fluxo_emb_itens', {
     p_emb: emb,

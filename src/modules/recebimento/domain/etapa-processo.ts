@@ -35,6 +35,30 @@ export function ehEtapa(valor: string): valor is Etapa {
 }
 
 /**
+ * A caixa de sinalização do canvas do Fluxo. NÃO é etapa: nenhum processo tem esse status e nenhum
+ * log leva a ela — o item que está nela **também** está numa das quatro etapas, porque divergência
+ * não tira o item do fluxo, só o marca.
+ *
+ * Por isso ela vive num tipo à parte, e não dentro de `Etapa`: a tela de Registros deriva a etapa
+ * de cada log e filtra por ela, e uma opção "Divergência" lá nunca casaria com nada.
+ */
+export const CAIXA_DIVERGENCIA = 'divergencia'
+
+/** O id de uma caixa do canvas do Fluxo: as quatro etapas mais a de sinalização. */
+export type CaixaFluxoId = Etapa | typeof CAIXA_DIVERGENCIA
+
+export const CAIXAS_FLUXO: readonly CaixaFluxoId[] = [...ETAPAS, CAIXA_DIVERGENCIA]
+
+export const ROTULO_CAIXA: Record<CaixaFluxoId, string> = {
+  ...ROTULO_ETAPA,
+  [CAIXA_DIVERGENCIA]: 'Divergência de quantidade',
+}
+
+export function ehCaixaFluxo(valor: string): valor is CaixaFluxoId {
+  return (CAIXAS_FLUXO as readonly string[]).includes(valor)
+}
+
+/**
  * Divergência de Quantidade. O campo é CALCULADO pelo sistema
  * (`quantidade_recebida − quantidade_pedido`) e guardado como texto:
  *  - vazio → ainda não conferido, NÃO é divergência;
