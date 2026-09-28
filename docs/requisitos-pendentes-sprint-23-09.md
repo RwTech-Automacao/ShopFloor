@@ -392,10 +392,35 @@ para alguém conferir — o cliente não vê.
 mais atrasada**; a **data de uma etapa concluída é a da última parte a concluí-la** (o máximo).
 
 **O caso que isso abre:** se uma EMB nova entrar no projeto depois, pelo pior caso a bolinha
-**anda para trás**. Duas saídas — (a) **congelar** (verde não volta: fica bonito, mas a previsão
-passa a mentir porque entrou material que ninguém vê); (b) **deixar voltar com aviso** ("entrou
-material novo neste projeto em 02/10"). **Recomendação: (b)** — esconder material novo é esconder
-um atraso. Decisão ainda do usuário.
+andaria para trás. **DECIDIDO pelo usuário (28/09): a bolinha NÃO VOLTA.** Etapa que ficou verde
+fica verde.
+
+Para que congelar não vire esconder: material novo entrando no projeto **vira uma linha no
+histórico** ("02/10 · entrou material novo neste projeto"), que é append-only por natureza, e a
+previsão de entrega no cabeçalho se atualiza. As bolinhas ficam estáveis e o fato não some.
+
+### Onde a planilha de embarque vive (arquitetura, EM ABERTO)
+
+**Correção do usuário (28/09):** o rastreador **não olha só o Recebimento — olha a planilha
+também**, então **não é** caso de acrescentar campos em `processos_recebimento`. O Recebimento
+fica intocado.
+
+Mas a importação de hoje **guarda só os campos mapeados**: `importacoes` tem nome do arquivo,
+formato, total de linhas e o mapeamento — **não guarda as linhas cruas**. O que não vira campo do
+processo é descartado na entrada. Ou seja, os dados da planilha ainda precisam de um lugar onde
+morar, só que do lado do rastreador. Três caminhos, **decisão pendente**:
+
+- **(a) O rastreador tem a própria importação** — tabela própria com embarque, itens e datas.
+  Funciona amanhã; o custo é o mesmo arquivo importado duas vezes e a chance de duas verdades.
+- **(b) A planilha migra para dentro do sistema** — cada EMB vira registro preenchido em tela.
+  Acaba a duplicidade e o Recebimento passa a puxar do sistema; é mais trabalho e muda a rotina de
+  quem preenche.
+- **(c) A planilha fica num drive e o sistema lê por API** — sem ninguém subir nada, se ela viver
+  no Google Drive/OneDrive e o formato for estável (atenção às linhas de Tarifa e Frete
+  intercaladas, que não são itens).
+
+⚠️ **Em qualquer um dos três:** a planilha carrega **preço, fornecedor, invoice e NCM**. É mais
+seguro **descartar essas colunas na entrada** do que confiar em filtrar na saída.
 
 ### O que continua faltando
 
