@@ -159,8 +159,8 @@ que permite testar as regras sem subir Postgres, e é onde a regra fica legível
 - Testar: `src/modules/shopfloor/domain/__tests__/almoxarifado.test.ts`
 
 **Interfaces:**
-- Consome: `separarCodigoCaixa` e `marcadorCaixaAberta` de `./caixa`, `normalizarSerie` de
-  `./serie`.
+- Consome: `separarCodigoCaixa` de `./caixa` (se não existir, acrescente-a lá, com teste — é lá
+  que mora o formato do código).
 - Produz:
 
 ```ts
@@ -253,9 +253,18 @@ Crie `src/modules/shopfloor/domain/almoxarifado.ts` com a decisão em três degr
 `vazio`; começa com `CX[` → é caixa (sem quantidade no código → `caixa_aberta`; OP individual →
 `caixa_em_op_individual`); senão → é série (OP coletiva → `serie_em_op_coletiva`).
 
-A série passa por `normalizarSerie`. A quantidade da caixa sai do próprio código — **nunca de um
-`select` na tabela**: o código impresso é o que está colado na caixa física, e é ele que o operador
+**A série sai do domínio como foi bipada**, só com `trim` — e o teste acima manda exatamente isso.
+Eu tinha escrito aqui "passa por `normalizarSerie`" e estava errado: `normalizarSerie` come o
+prefixo de revenda (`00043-00462-0015718` vira `43004620015718`, porque ela lê o `00043` como zero
+à esquerda de enchimento, e ele é código de revenda). O que a tela mostra tem de ser o que a pessoa
 bipou.
+
+Normalizar é assunto da Task 3, no banco, e lá vale a regra oposta: a comparação de duplicidade tem
+de usar **a mesma normalização que o resto do sistema já usa** para gravar `numero_serie_norm`,
+senão o "já lançado" não casa com as linhas que a Embalagem gravou.
+
+A quantidade da caixa sai do próprio código — **nunca de um `select` na tabela**: o código impresso
+é o que está colado na caixa física, e é ele que o operador bipou.
 
 - [ ] **Passo 5: rodar e ver passar**
 
