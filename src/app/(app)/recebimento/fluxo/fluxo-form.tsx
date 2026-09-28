@@ -37,11 +37,13 @@ import {
   carregarItensCaixaAction,
 } from '@/modules/recebimento/application/fluxo-actions'
 import {
-  ehEtapa,
+  CAIXA_DIVERGENCIA,
+  ehCaixaFluxo,
   formatarEspera,
-  ROTULO_ETAPA,
+  ROTULO_CAIXA,
   rotuloPassagem,
   temDivergencia,
+  type CaixaFluxoId,
   type Etapa,
 } from '@/modules/recebimento/domain/etapa-processo'
 import type { CaixaFluxo, ItemFluxo, PassagemEtapa } from '@/modules/recebimento/infra/fluxo-repository'
@@ -53,20 +55,27 @@ import { HistoricoItemDialog, type ItemDoHistorico } from './historico-item-dial
 const ESPACO_X = 300 // folga entre as caixas (mesma do Fluxo do ShopFloor)
 const ESPACO_Y = 200 // altura entre as duas linhas: o ramo do Reprovado desce da Qualidade
 
-/** Arranjo padrão das quatro caixas: a cadeia na 1ª linha, o ramo embaixo da Qualidade. */
-const POSICAO: Record<Etapa, { x: number; y: number }> = {
+/**
+ * Arranjo padrão das cinco caixas: a cadeia na 1ª linha e os dois ramos embaixo — a Divergência sob
+ * o Recebimento, que é onde a marca nasce, e o Reprovado sob a Qualidade, que é onde ele nasce.
+ */
+const POSICAO: Record<CaixaFluxoId, { x: number; y: number }> = {
   recebimento: { x: 0, y: 0 },
   qualidade: { x: ESPACO_X, y: 0 },
   almoxarifado: { x: 2 * ESPACO_X, y: 0 },
+  divergencia: { x: 0, y: ESPACO_Y },
   reprovado: { x: ESPACO_X, y: ESPACO_Y },
 }
 
-/** O que cada etapa é, em uma linha (o subtítulo do card). */
-const SUBTITULO: Record<Etapa, string> = {
+/** O que cada caixa é, em uma linha (o subtítulo do card). */
+const SUBTITULO: Record<CaixaFluxoId, string> = {
   recebimento: 'esperando conferência',
   qualidade: 'em conferência',
   almoxarifado: 'concluído',
   reprovado: 'ramo · fim de linha',
+  // A diferença que o subtítulo tem que carregar: aqui o item NÃO parou — ele está marcado e
+  // continua andando. Sem isso, alguém soma as caixas e estranha o número.
+  divergencia: 'sinalizados · seguem no fluxo',
 }
 
 // Arranjo dos cards: cada EMB guarda o seu nesta máquina, como o Fluxo do ShopFloor faz por OP.
@@ -191,9 +200,10 @@ function ItensDaEtapa({
  * O Reprovado devolve `null`: é ramo, fim de linha, e "quantos já passaram por ele" não quer dizer
  * nada — por isso o card dele não tem barra (a Manutenção do ShopFloor também não tem).
  */
-function jaChegaram(caixas: CaixaFluxo[], etapa: Etapa): number | null {
-  if (etapa === 'reprovado') return null
-  const de = (e: Etapa) => caixas.find((c) => c.etapa === e)?.itens ?? 0
+function jaChegaram(caixas: CaixaFluxo[], etapa: CaixaFluxoId): number | null {
+  // Os dois ramos ficam sem barra: nenhum é etapa da fila.
+  if (etapa === 'reprovado' || etapa === CAIXA_DIVERGENCIA) return null
+  const de = (e: CaixaFluxoId) => caixas.find((c) => c.etapa === e)?.itens ?? 0
   const depoisDaQualidade = de('almoxarifado') + de('reprovado')
   if (etapa === 'almoxarifado') return de('almoxarifado')
   if (etapa === 'qualidade') return de('qualidade') + depoisDaQualidade
@@ -211,6 +221,7 @@ function HistoricoDaEtapa({
   abrirItem,
 }: {
   emb: string
+  /** Só as quatro etapas de verdade: a caixa de sinalização não tem passagens. */
   etapa: Etapa
   abrirItem: (l: PassagemEtapa) => void
 }) {
@@ -320,7 +331,7 @@ export function FluxoForm({ embs }: { embs: string[] }) {
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
 
-  const [etapaSel, setEtapaSel] = useState<Etapa | null>(null)
+  const [etapaSel, setEtapaSel] = useState<CaixaFluxoId | null>(null)
   // Item aberto no diálogo de histórico (null = fechado). Guarda o processo, não o código: o mesmo
   // material pode ter dois processos na mesma EMB.
   const [itemAberto, setItemAberto] = useState<ItemDoHistorico | null>(null)
@@ -343,11 +354,14 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     return f ? embs.filter((e) => e.toLowerCase().includes(f)) : embs
   }, [embs, filtro])
 
+  // As duas contagens do rodapé andam só pelas caixas REAIS: a de sinalização repete itens que já
+  // foram contados na caixa onde eles estão, e somá-la contaria cada marcado duas vezes.
+  const reais = useMemo(() => (caixas ?? []).filter((c) => c.etapa !== CAIXA_DIVERGENCIA), [caixas])
   const divergentes = useMemo(
-    () => (caixas ?? []).reduce((soma, c) => soma + c.divergentes, 0),
-    [caixas],
+    () => reais.reduce((soma, c) => soma + c.divergentes, 0),
+    [reais],
   )
-  const total = useMemo(() => (caixas ?? []).reduce((soma, c) => soma + c.itens, 0), [caixas])
+  const total = useMemo(() => reais.reduce((soma, c) => soma + c.itens, 0), [reais])
   // Progresso da EMB no Modo TV: itens que já saíram da conferência (Almoxarifado + Reprovado).
   const pctConcluido = useMemo(() => {
     if (!caixas || total === 0) return null
@@ -410,6 +424,16 @@ export function FluxoForm({ embs }: { embs: string[] }) {
         type: 'fluxo',
         data: { ramo: true },
       },
+      {
+        // A Divergência pendura no Recebimento, que é onde a marca nasce — e é ramo pelo mesmo
+        // motivo visual do Reprovado, mas por uma razão diferente: aqui o item não saiu do fluxo,
+        // ele está marcado e seguindo. O tracejado é o que diz "isto não é passagem".
+        id: 'r:recebimento->divergencia',
+        source: 'recebimento',
+        target: CAIXA_DIVERGENCIA,
+        type: 'fluxo',
+        data: { ramo: true },
+      },
     ]
   }, [caixas])
 
@@ -455,7 +479,7 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     setGuiaH(undefined)
     setGuiaV(undefined)
     setNodes((prev) => prev.map((n) => (
-      ehEtapa(n.id) ? { ...n, position: POSICAO[n.id] } : n
+      ehCaixaFluxo(n.id) ? { ...n, position: POSICAO[n.id] } : n
     )))
     setTimeout(() => rfRef.current?.fitView({ duration: 200 }), 0)
   }, [setNodes])
@@ -495,7 +519,7 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     setTimeout(() => rfRef.current?.fitView({ duration: 200 }), 0)
   }
 
-  async function abrirCaixa(etapa: Etapa) {
+  async function abrirCaixa(etapa: CaixaFluxoId) {
     // Clicar de novo na mesma caixa fecha o painel.
     if (etapaSel === etapa) {
       setEtapaSel(null)
@@ -515,7 +539,7 @@ export function FluxoForm({ embs }: { embs: string[] }) {
   }
 
   const aoClicarNo: NodeMouseHandler = (_, node) => {
-    if (ehEtapa(node.id)) void abrirCaixa(node.id)
+    if (ehCaixaFluxo(node.id)) void abrirCaixa(node.id)
   }
 
   const detalhe = etapaSel ? (caixas ?? []).find((c) => c.etapa === etapaSel) : undefined
@@ -678,7 +702,7 @@ export function FluxoForm({ embs }: { embs: string[] }) {
                 <aside className={`absolute right-0 z-30 flex w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur ${telaCheia ? 'top-16 h-[calc(100%-4rem)]' : 'top-0 h-full'}`}>
                   <header className="flex items-center justify-between border-b border-border px-4 py-3">
                     <div className="min-w-0">
-                      <p className="truncate font-semibold">{ROTULO_ETAPA[etapaSel]}</p>
+                      <p className="truncate font-semibold">{ROTULO_CAIXA[etapaSel]}</p>
                       <p className="text-xs text-muted-foreground">{SUBTITULO[etapaSel]}</p>
                     </div>
                     <button
@@ -693,35 +717,50 @@ export function FluxoForm({ embs }: { embs: string[] }) {
 
                   <div className="flex-1 overflow-y-auto px-4 py-3 text-sm">
                     <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1">
-                      <span>Agora: <span className="font-bold">{detalhe.itens}</span></span>
-                      <span className="text-muted-foreground">Médio: {formatarEspera(detalhe.mediaSegundos)}</span>
-                      <span className="text-muted-foreground">Mais antigo: {formatarEspera(detalhe.maiorSegundos)}</span>
-                      {detalhe.divergentes > 0 && (
+                      {etapaSel === CAIXA_DIVERGENCIA ? (
+                        // A caixa de sinalização não tem "agora" nem relógio: o item está marcado,
+                        // e onde ele está de verdade é a caixa real dele.
                         <span className="text-amber-600">
                           <TriangleAlert className="mr-1 inline size-3.5" />
-                          Divergência: {detalhe.divergentes}
+                          Marcados: <span className="font-bold">{detalhe.itens}</span>
                         </span>
-                      )}
-                      {detalhe.semTempo > 0 && (
-                        <span className="text-muted-foreground" title="Itens sem histórico: aparecem na caixa do status, sem tempo">
-                          Sem tempo: {detalhe.semTempo}
-                        </span>
+                      ) : (
+                        <>
+                          <span>Agora: <span className="font-bold">{detalhe.itens}</span></span>
+                          <span className="text-muted-foreground">Médio: {formatarEspera(detalhe.mediaSegundos)}</span>
+                          <span className="text-muted-foreground">Mais antigo: {formatarEspera(detalhe.maiorSegundos)}</span>
+                          {detalhe.divergentes > 0 && (
+                            <span className="text-amber-600">
+                              <TriangleAlert className="mr-1 inline size-3.5" />
+                              Divergência: {detalhe.divergentes}
+                            </span>
+                          )}
+                          {detalhe.semTempo > 0 && (
+                            <span className="text-muted-foreground" title="Itens sem histórico: aparecem na caixa do status, sem tempo">
+                              Sem tempo: {detalhe.semTempo}
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                     <ItensDaEtapa itens={itens} carregando={carregandoItens} total={detalhe.itens} />
-                    <HistoricoDaEtapa
-                      key={`${emb}:${etapaSel}`}
-                      emb={emb}
-                      etapa={etapaSel}
-                      abrirItem={(l) =>
-                        setItemAberto({
-                          processoId: l.processoId,
-                          numero: l.numero,
-                          item: l.item,
-                          descricao: l.descricao,
-                        })
-                      }
-                    />
+                    {/* A caixa de sinalização não tem histórico: ninguém "passa" por ela, e a
+                        trilha de cada item marcado abre no diálogo dele, pela lista acima. */}
+                    {etapaSel !== CAIXA_DIVERGENCIA && (
+                      <HistoricoDaEtapa
+                        key={`${emb}:${etapaSel}`}
+                        emb={emb}
+                        etapa={etapaSel}
+                        abrirItem={(l) =>
+                          setItemAberto({
+                            processoId: l.processoId,
+                            numero: l.numero,
+                            item: l.item,
+                            descricao: l.descricao,
+                          })
+                        }
+                      />
+                    )}
                   </div>
                 </aside>
               )}

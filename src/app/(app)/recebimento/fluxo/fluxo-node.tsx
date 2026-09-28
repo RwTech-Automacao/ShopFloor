@@ -3,7 +3,11 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { AlertTriangle, Ban, ClipboardCheck, Inbox, PackageCheck } from 'lucide-react'
-import { ROTULO_ETAPA, type Etapa } from '@/modules/recebimento/domain/etapa-processo'
+import {
+  CAIXA_DIVERGENCIA,
+  ROTULO_CAIXA,
+  type CaixaFluxoId,
+} from '@/modules/recebimento/domain/etapa-processo'
 
 /**
  * Card de uma caixa do fluxo do Recebimento, no canvas do React Flow.
@@ -14,7 +18,7 @@ import { ROTULO_ETAPA, type Etapa } from '@/modules/recebimento/domain/etapa-pro
  * carrega dados que aqui não existem (WIP, devem passar, aprovados de primeira, barra de %).
  */
 export interface FluxoRecebimentoNodeData {
-  etapa: Etapa
+  etapa: CaixaFluxoId
   /** O que a etapa é, em uma linha (o subtítulo "teste/inspeção · passagem" do card do ShopFloor). */
   subtitulo: string
   /** Quantos itens estão na caixa agora. */
@@ -33,12 +37,13 @@ export interface FluxoRecebimentoNodeData {
   selecionado: boolean
 }
 
-function icone(etapa: Etapa) {
+function icone(etapa: CaixaFluxoId) {
   switch (etapa) {
     case 'recebimento': return <Inbox className="size-5" />
     case 'qualidade': return <ClipboardCheck className="size-5" />
     case 'almoxarifado': return <PackageCheck className="size-5" />
     case 'reprovado': return <Ban className="size-5" />
+    case CAIXA_DIVERGENCIA: return <AlertTriangle className="size-5" />
   }
 }
 
@@ -56,7 +61,7 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
             <PackageCheck className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="whitespace-nowrap text-sm font-semibold">{ROTULO_ETAPA[d.etapa]}</p>
+            <p className="whitespace-nowrap text-sm font-semibold">{ROTULO_CAIXA[d.etapa]}</p>
             <p className="truncate text-xs text-white/80">
               {d.subtitulo}
               {d.divergentes > 0 && ` · ${d.divergentes} com divergência`}
@@ -73,9 +78,10 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
     )
   }
 
-  // O Reprovado é ramo, não etapa da fila: borda vinho e só a contagem, como a Manutenção do
-  // Fluxo do ShopFloor — sem barra, porque não faz sentido "quantos já passaram" por um fim de linha.
-  const ehRamo = d.etapa === 'reprovado'
+  // Os dois ramos — Reprovado e Divergência de quantidade — são desenhados como a Manutenção do
+  // Fluxo do ShopFloor: borda vinho e só a contagem, sem barra. "Quantos já passaram" não quer
+  // dizer nada num fim de linha nem numa caixa de sinalização.
+  const ehRamo = d.etapa === 'reprovado' || d.etapa === CAIXA_DIVERGENCIA
   const passaram = d.passaram ?? 0
   const temBarra = !ehRamo && d.passaram !== null && d.total > 0
   const pct = temBarra ? Math.min(100, (passaram / d.total) * 100) : 0
@@ -109,7 +115,7 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
         <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${ehRamo ? 'border-enterplak' : 'border-border'} ${temBarra ? 'rounded-t-xl' : 'rounded-xl'}`}>
           <div className="min-w-0 flex-1 text-left">
             <p className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
-              {ROTULO_ETAPA[d.etapa]}
+              {ROTULO_CAIXA[d.etapa]}
             </p>
             <p className="text-xs text-muted-foreground">{d.subtitulo}</p>
           </div>
@@ -152,8 +158,9 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
           </div>
         )}
 
-        {/* O ramo não tem subdivisão, então a divergência dele vira um selo solto embaixo. */}
-        {ehRamo && d.divergentes > 0 && (
+        {/* O Reprovado não tem subdivisão, então a divergência dele vira um selo solto embaixo.
+            A caixa de Divergência não repete o selo: ela INTEIRA já é a divergência. */}
+        {ehRamo && d.etapa !== CAIXA_DIVERGENCIA && d.divergentes > 0 && (
           <div className="flex items-center justify-center gap-1 rounded-b-xl border-x-2 border-b-2 border-border bg-muted px-2.5 py-1.5 text-[11px] font-semibold leading-none tabular-nums text-amber-600">
             <AlertTriangle className="size-3.5" />
             {d.divergentes}

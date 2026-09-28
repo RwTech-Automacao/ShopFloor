@@ -101,6 +101,8 @@ const CAIXAS: CaixaFluxo[] = [
   caixa({ etapa: 'qualidade', itens: 3, divergentes: 1, mediaSegundos: 4 * 86400, maiorSegundos: 4 * 86400, semTempo: 1 }),
   caixa({ etapa: 'almoxarifado', itens: 2 }),
   caixa({ etapa: 'reprovado', itens: 1, divergentes: 1 }),
+  // A caixa de sinalização repete os marcados que já foram contados nas caixas reais.
+  caixa({ etapa: 'divergencia', itens: 2, divergentes: 2 }),
 ]
 
 const ITEM: ItemFluxo = {
@@ -206,11 +208,33 @@ describe('FluxoForm', () => {
     expect(no('reprovado').dataset.pos).toBe('300,200')
   })
 
-  it('liga a cadeia e desenha o ramo do Reprovado saindo da Qualidade', async () => {
+  it('liga a cadeia e pendura os dois ramos: Reprovado na Qualidade, Divergência no Recebimento', async () => {
     await escolherEmb()
     expect(screen.getByTestId('canvas').dataset.arestas).toBe(
-      'f:recebimento->qualidade f:qualidade->almoxarifado r:qualidade->reprovado',
+      'f:recebimento->qualidade f:qualidade->almoxarifado r:qualidade->reprovado r:recebimento->divergencia',
     )
+  })
+
+  it('a caixa de sinalização mostra os marcados e diz que eles seguem no fluxo', async () => {
+    await escolherEmb()
+    const divergencia = within(no('divergencia'))
+    expect(divergencia.getByText('Divergência de quantidade')).toBeInTheDocument()
+    expect(divergencia.getByText('sinalizados · seguem no fluxo')).toBeInTheDocument()
+    // Os 2 marcados, sem barra: ela não é etapa da fila.
+    expect(divergencia.getByText('2')).toBeInTheDocument()
+    expect(divergencia.queryByText(/%$/)).toBeNull()
+  })
+
+  it('a caixa de sinalização não tem histórico de etapa — ninguém passa por ela', async () => {
+    await escolherEmb()
+    fireEvent.click(no('divergencia'))
+    // Abre a lista dos itens marcados, pela mesma action das outras caixas.
+    await waitFor(() =>
+      expect(carregarItensCaixaAction).toHaveBeenCalledWith('EMB390', 'divergencia'),
+    )
+    const p = painel()
+    expect(p.getByText(/Marcados:/)).toBeInTheDocument()
+    expect(p.queryByText('Histórico da etapa')).toBeNull()
   })
 
   it('os cards são arrastáveis, como no Fluxo do ShopFloor', async () => {

@@ -2,7 +2,7 @@
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
-import { ehEtapa } from '../domain/etapa-processo'
+import { ehCaixaFluxo, ehEtapa } from '../domain/etapa-processo'
 import { consultarRegistros, type RegistroRecebimento } from '../infra/registros-repository'
 import {
   carregarFluxoEmb,
@@ -40,12 +40,17 @@ export async function carregarFluxoEmbAction(emb: string): Promise<ResultadoFlux
   }
 }
 
-/** Os itens de uma caixa (o que abre ao clicar nela). Somente leitura. */
+/**
+ * Os itens de uma caixa (o que abre ao clicar nela). Somente leitura.
+ *
+ * Aceita também a caixa de sinalização `divergencia` (0127), que não é etapa: ela devolve os itens
+ * marcados da EMB inteira, onde quer que estejam.
+ */
 export async function carregarItensCaixaAction(emb: string, etapa: string): Promise<ResultadoItens> {
   if (!await podeVer()) return { ok: false, erro: 'Você não tem permissão para ver o fluxo do Recebimento.' }
   const alvo = emb.trim()
   if (!alvo) return { ok: false, erro: 'Escolha uma EMB.' }
-  if (!ehEtapa(etapa)) return { ok: false, erro: 'Etapa inválida.' }
+  if (!ehCaixaFluxo(etapa)) return { ok: false, erro: 'Etapa inválida.' }
   try {
     return { ok: true, itens: await carregarItensCaixa(alvo, etapa) }
   } catch {
