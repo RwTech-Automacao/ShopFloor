@@ -351,3 +351,63 @@ passa a marcar essas quatro (uma tela interna simples, quatro cliques por embarq
 sempre cinzas na linha do tempo. **É a pergunta a levar junto com o mock.**
 
 Também falta: o nome real da etapa 4.
+
+---
+
+## 28/09 — Rastreador: de onde vem cada etapa, e as regras de montagem
+
+Decidido com o usuário em 28/09, olhando o que a planilha de embarque e o ShopFloor realmente
+guardam. **O campo ACP já existe em `sf_ordens`** (`acp text not null default ''`, desde a 0028) e
+o formulário de OP já o mostra — o vínculo OP ↔ projeto **não precisa de migração**, precisa de
+preenchimento.
+
+### A fonte de cada etapa
+
+| # | Etapa | O que a conclui | Qualidade da data |
+|---|---|---|---|
+| 1 | Pedido confirmado | **integração com o Compels** (não existe hoje) | — |
+| 2 | Aquisição de matéria-prima | `data_compra` do processo, ou a linha na planilha com pedido e fornecedor | exata |
+| 3 | Agendamento de booking | coluna **Booking** da planilha | exata |
+| 4 | **[TRÂMITE — nome a confirmar]** | provavelmente **Carga em trânsito** da planilha | **aproximada \*** |
+| 5 | Chegada no Brasil | **não temos** — o usuário havia confundido com a chegada na fábrica | — |
+| 6 | Desembaraço aduaneiro RF/RE | a data em que a planilha foi (re)importada, ou em que o `di_inpi` foi preenchido (se a planilha migrar para a central) | **aproximada \*** |
+| 7 | Fábrica | `data_chegada` do processo (campo digitado na importação da EMB) | exata |
+| 8 | Produção iniciada | primeiro bipe numa OP cuja `acp` seja a do projeto | exata |
+| 9 | Entrega | **previsão** de entrega, à moda de rastreio de compra | prevista |
+
+### As três regras de montagem
+
+**1. Duas naturezas de data.** "Data do fato" é alguém escrevendo quando a coisa aconteceu; "data
+do registro" é o carimbo de quando o sistema soube. Cada etapa guarda a data **e** a qualidade
+(`exata` | `aproximada`). A tela marca as aproximadas com `*` e explica uma vez no rodapé: *as
+datas com \* são a data em que a informação chegou ao sistema, não necessariamente a do
+acontecimento*.
+
+**2. Coerência cronológica.** Ao montar a linha do tempo, etapa com data anterior à da etapa
+anterior **herda a data da anterior** e passa a valer como aproximada. Nunca inventa data, nunca
+mostra fora de ordem, nunca esconde a etapa. A inconsistência é registrada num lugar **interno**
+para alguém conferir — o cliente não vê.
+
+**3. Pior caso, porque uma ACP tem várias EMBs e várias OPs.** A **etapa atual da ACP é a da parte
+mais atrasada**; a **data de uma etapa concluída é a da última parte a concluí-la** (o máximo).
+
+**O caso que isso abre:** se uma EMB nova entrar no projeto depois, pelo pior caso a bolinha
+**anda para trás**. Duas saídas — (a) **congelar** (verde não volta: fica bonito, mas a previsão
+passa a mentir porque entrou material que ninguém vê); (b) **deixar voltar com aviso** ("entrou
+material novo neste projeto em 02/10"). **Recomendação: (b)** — esconder material novo é esconder
+um atraso. Decisão ainda do usuário.
+
+### O que continua faltando
+
+- **Tornar a ACP obrigatória vai travar as OPs internas** (cliente RW, "COLETOR DE DADOS BLUE",
+  ACP vazio). Saída: obrigatória só quando o cliente não for interno, **ou** uma opção explícita
+  **"sem projeto"** — que separa "não tem" de "esqueceram".
+- **As OPs antigas estão todas com ACP em branco.** Rodar um `count` antes de decidir entre
+  preencher as que importam e aceitar que o rastreador só vale para projetos novos.
+- **A previsão de entrega ao cliente não existe em campo nenhum.** O `data_prevista` do Recebimento
+  é a previsão de chegada do *material*, outra coisa. Alguém terá de digitar, e como é a informação
+  que o cliente mais olha, vale definir o dono dela.
+- **O filtro por ACP tem de saber ler campo com duas ACPs** — 105 processos em produção têm
+  `ACP013/26 E ACP014/26` no campo Projeto. Se essa EMB atrasa, as duas linhas do tempo atrasam,
+  o que está correto, mas o filtro precisa entender o formato.
+- **Etapa 5 (Chegada no Brasil)** não tem fonte, e **etapa 1** depende do Compels.
