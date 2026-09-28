@@ -112,12 +112,15 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
       <div className={`overflow-hidden rounded-xl shadow-sm ${d.selecionado ? 'ring-2 ring-enterplak/40' : ''}`}>
         {/* Cabeçalho (a parte branca). Quando a borda é vinho, ela fecha ARREDONDADA nos quatro
             cantos — mesmo tratamento do card Concluído/Manutenção do Fluxo do ShopFloor. */}
-        <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${ehRamo ? 'border-enterplak' : 'border-border'} ${temBarra ? 'rounded-t-xl' : 'rounded-xl'}`}>
+        {/* `min-h-14` e não `h-14`: nome comprido (a Divergência de quantidade ocupa duas linhas) com
+            subtítulo de duas linhas estourava a altura fixa e vazava por baixo da borda. Os cards de
+            nome curto continuam com os mesmos 56 px, então a fileira segue alinhada. */}
+        <div className={`flex min-h-14 items-center gap-2 border-2 bg-card py-2 pl-6 pr-3 transition-colors ${ehRamo ? 'border-enterplak' : 'border-border'} ${temBarra ? 'rounded-t-xl' : 'rounded-xl'}`}>
           <div className="min-w-0 flex-1 text-left">
             <p className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
               {ROTULO_CAIXA[d.etapa]}
             </p>
-            <p className="text-xs text-muted-foreground">{d.subtitulo}</p>
+            <p className="text-xs leading-tight text-muted-foreground">{d.subtitulo}</p>
           </div>
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
             {icone(d.etapa)}
