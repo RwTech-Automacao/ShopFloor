@@ -48,6 +48,7 @@ import type { CaixaFluxo, ItemFluxo, PassagemEtapa } from '@/modules/recebimento
 import { cn } from '@/lib/utils'
 import { ArestaFluxo } from './aresta-fluxo'
 import { FluxoRecebimentoNode, type FluxoRecebimentoNodeData } from './fluxo-node'
+import { HistoricoItemDialog, type ItemDoHistorico } from './historico-item-dialog'
 
 const ESPACO_X = 300 // folga entre as caixas (mesma do Fluxo do ShopFloor)
 const ESPACO_Y = 200 // altura entre as duas linhas: o ramo do Reprovado desce da Qualidade
@@ -185,7 +186,15 @@ function ItensDaEtapa({
  * +100 conforme rola (server-side, não puxa tudo). Uma linha por passagem, mais recente primeiro.
  * Mesmo comportamento do "Histórico do posto" do Fluxo do ShopFloor.
  */
-function HistoricoDaEtapa({ emb, etapa }: { emb: string; etapa: Etapa }) {
+function HistoricoDaEtapa({
+  emb,
+  etapa,
+  abrirItem,
+}: {
+  emb: string
+  etapa: Etapa
+  abrirItem: (l: PassagemEtapa) => void
+}) {
   const [aberto, setAberto] = useState(false)
   const [linhas, setLinhas] = useState<PassagemEtapa[]>([])
   const [temMais, setTemMais] = useState(false)
@@ -236,14 +245,19 @@ function HistoricoDaEtapa({ emb, etapa }: { emb: string; etapa: Etapa }) {
             <ul className="flex flex-col gap-0.5">
               {linhas.length === 0 && <li className="text-muted-foreground">—</li>}
               {linhas.map((l) => (
-                <li key={l.id} className="flex justify-between gap-2 font-mono text-xs">
-                  <ItemRotulo item={l.item} numero={l.numero} />
-                  <span
-                    className="shrink-0 text-muted-foreground"
+                <li key={l.id}>
+                  {/* A linha inteira é um botão: o item à esquerda, a hora à direita. O que a
+                      passagem foi ("Qualidade → Almoxarifado (Aprovado)") sai da lista e vai para o
+                      diálogo — era o texto que quebrava em duas linhas e embaralhava a leitura. */}
+                  <button
+                    type="button"
+                    onClick={() => abrirItem(l)}
                     title={`${l.passagem ? rotuloPassagem(l.passagem) : 'sem movimento'} · ${l.colaborador || 'sem colaborador'}`}
+                    className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left font-mono text-xs hover:bg-muted"
                   >
-                    {l.passagem ? rotuloPassagem(l.passagem) : '—'} · {fmtHora(l.dataHora)}
-                  </span>
+                    <ItemRotulo item={l.item} numero={l.numero} />
+                    <span className="shrink-0 text-muted-foreground">{fmtHora(l.dataHora)}</span>
+                  </button>
                 </li>
               ))}
               {temMais && (
@@ -288,6 +302,9 @@ export function FluxoForm({ embs }: { embs: string[] }) {
   const [carregando, setCarregando] = useState(false)
 
   const [etapaSel, setEtapaSel] = useState<Etapa | null>(null)
+  // Item aberto no diálogo de histórico (null = fechado). Guarda o processo, não o código: o mesmo
+  // material pode ter dois processos na mesma EMB.
+  const [itemAberto, setItemAberto] = useState<ItemDoHistorico | null>(null)
   const [itens, setItens] = useState<ItemFluxo[]>([])
   const [carregandoItens, setCarregandoItens] = useState(false)
 
@@ -674,7 +691,19 @@ export function FluxoForm({ embs }: { embs: string[] }) {
                       )}
                     </div>
                     <ItensDaEtapa itens={itens} carregando={carregandoItens} total={detalhe.itens} />
-                    <HistoricoDaEtapa key={`${emb}:${etapaSel}`} emb={emb} etapa={etapaSel} />
+                    <HistoricoDaEtapa
+                      key={`${emb}:${etapaSel}`}
+                      emb={emb}
+                      etapa={etapaSel}
+                      abrirItem={(l) =>
+                        setItemAberto({
+                          processoId: l.processoId,
+                          numero: l.numero,
+                          item: l.item,
+                          descricao: l.descricao,
+                        })
+                      }
+                    />
                   </div>
                 </aside>
               )}
@@ -692,6 +721,10 @@ export function FluxoForm({ embs }: { embs: string[] }) {
 
         {!caixas && carregando && (
           <p className="text-sm text-muted-foreground">Carregando o fluxo da EMB…</p>
+        )}
+
+        {itemAberto && (
+          <HistoricoItemDialog emb={emb} alvo={itemAberto} onFechar={() => setItemAberto(null)} />
         )}
       </CardContent>
     </Card>

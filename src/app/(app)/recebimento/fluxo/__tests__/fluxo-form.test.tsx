@@ -8,15 +8,22 @@ import type {
 } from '@/modules/recebimento/infra/fluxo-repository'
 
 // vi.mock é içado para o topo do arquivo: os mocks precisam nascer num vi.hoisted.
-const { carregarFluxoEmbAction, carregarItensCaixaAction, carregarHistoricoEtapaAction } = vi.hoisted(() => ({
+const {
+  carregarFluxoEmbAction,
+  carregarItensCaixaAction,
+  carregarHistoricoEtapaAction,
+  carregarHistoricoItemAction,
+} = vi.hoisted(() => ({
   carregarFluxoEmbAction: vi.fn(),
   carregarItensCaixaAction: vi.fn(),
   carregarHistoricoEtapaAction: vi.fn(),
+  carregarHistoricoItemAction: vi.fn(),
 }))
 vi.mock('@/modules/recebimento/application/fluxo-actions', () => ({
   carregarFluxoEmbAction,
   carregarItensCaixaAction,
   carregarHistoricoEtapaAction,
+  carregarHistoricoItemAction,
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -120,11 +127,29 @@ const PASSAGEM: PassagemEtapa = {
   passagem: { tipo: 'avanco', de: 'recebimento', para: 'qualidade', resultado: null },
 }
 
+/** Uma passagem do item, como a `rec_registros` devolve (é o que o diálogo do item mostra). */
+const REGISTRO_ITEM = {
+  id: 'r1',
+  dataHora: '2026-09-24T12:30:00Z',
+  colaborador: 'João',
+  processoId: 'p9',
+  numero: 456,
+  emb: 'EMB390',
+  item: 'CAPJ99',
+  descricao: 'CAPACITOR 10uF',
+  fornecedor: 'ACME',
+  fabricante: '',
+  partNumber: '',
+  passagem: { tipo: 'finalizacao', de: 'qualidade', para: 'almoxarifado', resultado: 'Aprovado' },
+  alteracoes: [],
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   carregarFluxoEmbAction.mockResolvedValue({ ok: true, caixas: CAIXAS })
   carregarItensCaixaAction.mockResolvedValue({ ok: true, itens: [ITEM] })
   carregarHistoricoEtapaAction.mockResolvedValue({ ok: true, linhas: [PASSAGEM], temMais: false })
+  carregarHistoricoItemAction.mockResolvedValue({ ok: true, linhas: [REGISTRO_ITEM] })
   // jsdom não tem Fullscreen API; o Modo TV só precisa saber que foi pedida.
   Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
     configurable: true,
@@ -247,9 +272,40 @@ describe('FluxoForm', () => {
     const p = painel()
     expect(await p.findByText('CAPJ99')).toBeInTheDocument()
     expect(p.getByText('#456')).toBeInTheDocument()
-    // O mesmo formato compacto do histórico do posto do ShopFloor (hh:mm dd/mm em Brasília).
-    expect(p.getByText('Recebimento → Qualidade · 24/09, 09:30')).toBeInTheDocument()
+    // A linha mostra só o item e a hora: o que a passagem foi mudou de lugar, foi para o diálogo.
+    expect(p.getByText('24/09, 09:30')).toBeInTheDocument()
+    expect(p.queryByText(/Recebimento → Qualidade/)).toBeNull()
     expect(p.getByText('Histórico da etapa (1)')).toBeInTheDocument()
+  })
+
+  it('clicar num item do histórico abre a trilha DAQUELE processo, escolhido pelo id', async () => {
+    await escolherEmb()
+    fireEvent.click(no('qualidade'))
+    fireEvent.click(await painel().findByText('Histórico da etapa'))
+    fireEvent.click(await painel().findByText('CAPJ99'))
+
+    // Pelo id do processo, nunca pelo código: o mesmo item pode ter dois processos na mesma EMB.
+    await waitFor(() =>
+      expect(carregarHistoricoItemAction).toHaveBeenCalledWith('EMB390', 'CAPJ99', 'p9'),
+    )
+    const dialogo = await screen.findByRole('dialog')
+    expect(within(dialogo).getByText('Qualidade → Almoxarifado (Aprovado)')).toBeInTheDocument()
+    expect(within(dialogo).getByText(/João/)).toBeInTheDocument()
+    expect(within(dialogo).getByRole('link', { name: /Abrir processo/ })).toHaveAttribute(
+      'href',
+      '/recebimento/processos/p9',
+    )
+  })
+
+  it('o diálogo do item fecha no X', async () => {
+    await escolherEmb()
+    fireEvent.click(no('qualidade'))
+    fireEvent.click(await painel().findByText('Histórico da etapa'))
+    fireEvent.click(await painel().findByText('CAPJ99'))
+    const dialogo = await screen.findByRole('dialog')
+
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Fechar' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('clicar de novo no nó fecha o painel, e o X também', async () => {
