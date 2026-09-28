@@ -49,25 +49,96 @@ administração.
 
 ## As duas telas
 
-### 1. Meus pedidos
+Descrição detalhada, para você não precisar adivinhar. Tudo com a paleta da seção "Identidade
+visual" mais abaixo.
 
-Uma linha por pedido, com:
-- nome do produto e quantidade;
-- o mês do pedido ("pedido de junho/26");
-- a etapa atual, com a data em que entrou nela;
-- uma barra de progresso e "etapa 8 de 9";
-- a previsão de entrega (ou a data de entrega, se já entregue).
+### Estrutura comum
 
-Abas "Em andamento" e "Entregues". Clicar numa linha abre a tela 2.
+Uma **barra de topo** de 56px, fundo branco, borda inferior `#e6e8ec`: à esquerda um quadrado de
+28px com o vinho da marca e o nome "Enterplak", um divisor vertical fino e o nome da aplicação em
+cinza; à direita o nome da empresa do cliente e um avatar redondo de 28px com as iniciais, fundo
+`#f7e9ec` e texto vinho. Fundo da página `#f5f6f8`.
 
-### 2. A linha do tempo do pedido
+### Tela 1 — Meus pedidos
 
-- Cabeçalho com o produto, a quantidade, a previsão de entrega e a situação atual.
-- **Linha do tempo com nove etapas em bolinhas**: verde com check nas concluídas, anel destacado
-  com o miolo cheio na atual, cinza vazia nas futuras. Cada uma com rótulo e data embaixo.
-- **Histórico vertical** abaixo: data e hora à esquerda, trilho com bolinha no meio, o que
-  aconteceu à direita, do mais recente para o mais antigo.
-- Um jeito de voltar para a lista.
+Abaixo da barra, um bloco com o título **"Meus pedidos"** (24px, semibold) e uma linha de apoio em
+cinza: *"Clique em um pedido para ver onde ele está."* Na mesma altura, à direita, um par de abas
+dentro de uma cápsula branca com borda: **"Em andamento"** (ativa, fundo vinho, texto branco) e
+**"Entregues"** (texto cinza).
+
+Depois, os pedidos empilhados, um cartão por pedido — fundo branco, borda `#e6e8ec`, cantos de
+12px, 20px de respiro interno, 12px entre cartões. Cada cartão, da esquerda para a direita:
+
+1. um quadrado de 46px, cantos de 10px, fundo `#f7e9ec`, com um ícone de caixa em vinho;
+2. um bloco de largura fixa com o **nome do produto** (17px, semibold) e, abaixo, em cinza,
+   **"500 peças · pedido de junho/26"**;
+3. um bloco que cresce, com três linhas: a **etapa atual** — uma bolinha pequena no estilo da etapa
+   atual da linha do tempo, o nome da etapa em vinho semibold e, em cinza, *"desde 15/09"*; abaixo
+   uma **barra de progresso** fina (6px, cantos redondos, trilho `#f1f2f5`, preenchimento vinho); e
+   abaixo dela, em cinza pequeno, **"etapa 8 de 9"**;
+4. um bloco à direita, alinhado à direita, com o rótulo **"Previsão"** em cinza pequeno e a data em
+   15px semibold — ou **"a definir"** em cinza quando não houver;
+5. um chevron `›` cinza no fim, indicando que o cartão abre.
+
+**Pedido entregue** muda três coisas: a bolinha vira um círculo verde preenchido com um check
+branco, o nome da etapa vira **"Entregue"** em verde, a barra fica verde e cheia com a palavra
+*"concluído"* embaixo, e o bloco da direita troca **"Previsão"** por **"Entregue em"**.
+
+O cartão inteiro é um link, não um `div` clicável — precisa funcionar com o teclado.
+
+Embaixo da lista, em cinza pequeno: *"Você vê apenas os pedidos da sua empresa."*
+
+**No celular** o cartão se reorganiza em blocos empilhados: produto e quantidade em cima, a etapa
+atual e a barra no meio, previsão numa linha própria. O chevron some — o cartão todo continua
+clicável.
+
+**Lista vazia:** uma mensagem centrada dizendo que não há pedidos em andamento, sem ilustração.
+
+### Tela 2 — A linha do tempo do pedido
+
+No topo do conteúdo, um botão discreto de voltar: **"‹ Meus pedidos"**, fundo branco, borda cinza,
+cantos de 10px.
+
+Abaixo, o **cartão do pedido** (branco, borda, cantos de 12px) com duas partes.
+
+A primeira é uma faixa horizontal: à esquerda o rótulo **"Pedido de junho/26"** em cinza pequeno e
+o **nome do produto** em 22px semibold logo abaixo; um divisor vertical; a **quantidade** com o
+rótulo "Quantidade" em cima; e, empurrados para a direita, a **previsão de entrega** (rótulo em
+cima, data em 17px semibold) e um **selo arredondado** com a situação atual — fundo `#f7e9ec`,
+texto vinho, por exemplo *"Em produção"*.
+
+A segunda parte é a **linha do tempo**, ocupando a largura toda: **nove colunas de larguras
+iguais**, cada uma com a bolinha em cima e o texto embaixo, e uma linha de 2px ligando cada bolinha
+à próxima (a última coluna não tem linha).
+
+Os três estados da bolinha, todos com 26px:
+
+- **concluída** — círculo verde preenchido, check branco dentro; a linha à direita dela é verde;
+- **atual** — círculo branco com anel vinho de 3px e um miolo vinho de 10px no centro; o rótulo
+  abaixo fica em negrito e em vinho, e a data ganha *"· em andamento"*; a linha à direita é cinza;
+- **futura** — círculo branco com borda cinza de 2px, rótulo e data em cinza.
+
+Sob cada bolinha: o **nome da etapa** em 12,5px semibold e a **data** em 12px cinza. Data
+aproximada leva um **asterisco** depois. Etapa sem data mostra um travessão.
+
+Abaixo do cartão, o **histórico**, em cartão próprio. Cabeçalho com o título **"Histórico"** e, ao
+lado em cinza, *"do mais recente para o mais antigo"*. Cada entrada tem três colunas:
+
+1. **data e hora**, largura fixa de ~148px, alinhadas à direita, em fonte monoespaçada — a data em
+   13px e a hora embaixo em 12,5px cinza;
+2. um **trilho** estreito no meio: uma bolinha e, descendo dela, uma linha vertical de 2px cinza
+   que liga até a próxima entrada;
+3. o **texto**: o título do acontecimento em 14,5px semibold e, abaixo, o detalhe em 13,5px cinza.
+
+A entrada mais recente se destaca: bolinha vinho de 13px com um halo claro em volta e o título
+também em vinho. As demais têm bolinha cinza de 11px e título na cor normal. No fim da lista, um
+link discreto em vinho: **"Ver as 5 etapas anteriores"**.
+
+No rodapé da tela, uma linha única de legenda em cinza pequeno explicando o asterisco.
+
+**No celular** a linha do tempo **vira vertical** e encosta no histórico, formando uma coluna só:
+bolinha à esquerda com a linha descendo, etapa e data à direita. O cartão do pedido vira blocos
+empilhados.
 
 ## As nove etapas
 

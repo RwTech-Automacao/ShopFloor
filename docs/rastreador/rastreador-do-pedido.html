@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Rastreador do Pedido — design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+  @page :first { margin: 0; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0; font-family: Geist, "Segoe UI", system-ui, sans-serif;
+    color: #171a1f; font-size: 10.5pt; line-height: 1.55;
+  }
+  .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+
+  /* capa */
+  .capa {
+    height: 297mm; padding: 40mm 22mm 22mm; background: #f5f6f8;
+    display: flex; flex-direction: column; page-break-after: always;
+  }
+  .marca { display: flex; align-items: center; gap: 10px; }
+  .marca .q { width: 30px; height: 30px; border-radius: 9px; background: #8D2033; }
+  .marca span { font-size: 15pt; font-weight: 600; }
+  .capa h1 {
+    margin: 26mm 0 0; font-size: 34pt; font-weight: 700; letter-spacing: -1.2px;
+    line-height: 1.06; max-width: 15cm;
+  }
+  .capa .sub { margin-top: 8mm; font-size: 13pt; color: #40464f; max-width: 13cm; line-height: 1.5; }
+  .capa .risco { width: 64px; height: 5px; background: #8D2033; border-radius: 3px; margin-top: 10mm; }
+  .capa .meta {
+    margin-top: auto; display: flex; gap: 14mm; font-size: 9.5pt; color: #6a7180;
+    border-top: 1px solid #dfe2e7; padding-top: 6mm;
+  }
+  .capa .meta b { display: block; color: #171a1f; font-weight: 600; font-size: 10.5pt; }
+
+  h2 {
+    font-size: 17pt; font-weight: 600; letter-spacing: -0.4px; margin: 11mm 0 3mm;
+    padding-bottom: 2.5mm; border-bottom: 2px solid #8D2033; page-break-after: avoid;
+  }
+  h2:first-of-type { margin-top: 0; }
+  h3 { font-size: 12pt; font-weight: 600; margin: 7mm 0 2mm; page-break-after: avoid; }
+  p { margin: 0 0 3mm; }
+  strong { font-weight: 600; }
+  ul { margin: 0 0 3mm; padding-left: 5mm; }
+  li { margin-bottom: 1.5mm; }
+
+  .lead { font-size: 11.5pt; color: #40464f; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 3mm 0 4mm; page-break-inside: avoid; }
+  th { text-align: left; background: #f1f2f5; font-weight: 600; padding: 2.2mm 3mm; border-bottom: 1px solid #e6e8ec; }
+  td { padding: 2.2mm 3mm; border-bottom: 1px solid #eef0f3; vertical-align: top; }
+  td.n { width: 8mm; color: #6a7180; font-family: "Geist Mono", monospace; }
+
+  .caixa {
+    background: #f5f6f8; border: 1px solid #e6e8ec; border-radius: 3mm;
+    padding: 4mm 5mm; margin: 3mm 0 4mm; page-break-inside: avoid;
+  }
+  .caixa.vinho { background: #f9eef0; border-color: #efd5da; border-left: 3px solid #8D2033; }
+  .caixa h4 { margin: 0 0 1.5mm; font-size: 10.5pt; font-weight: 600; color: #8D2033; }
+  .caixa p:last-child { margin-bottom: 0; }
+
+  .regras { counter-reset: r; margin: 0; padding: 0; list-style: none; }
+  .regras li {
+    counter-increment: r; position: relative; padding-left: 10mm; margin-bottom: 4mm;
+    page-break-inside: avoid;
+  }
+  .regras li::before {
+    content: counter(r); position: absolute; left: 0; top: 0.3mm;
+    width: 6.5mm; height: 6.5mm; border-radius: 50%; background: #8D2033; color: #fff;
+    font-size: 9pt; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .regras b { display: block; font-size: 11pt; margin-bottom: 0.8mm; }
+
+  /* mini linha do tempo */
+  .tl { display: flex; margin: 2mm 0 5mm; page-break-inside: avoid; }
+  .tl .et { flex: 1; }
+  .tl .bol { display: flex; align-items: center; }
+  .tl .c { width: 5mm; height: 5mm; border-radius: 50%; flex-shrink: 0; }
+  .tl .c.ok { background: #16a34a; }
+  .tl .c.at { background: #fff; border: 1.2mm solid #8D2033; }
+  .tl .c.fu { background: #fff; border: 0.5mm solid #d7dae0; }
+  .tl .ln { height: 0.6mm; flex-grow: 1; }
+  .tl .ln.ok { background: #16a34a; }
+  .tl .ln.fu { background: #e6e8ec; }
+  .tl .rot { font-size: 6.6pt; line-height: 1.25; margin-top: 1.5mm; padding-right: 2mm; color: #40464f; }
+  .tl .rot.at { color: #8D2033; font-weight: 700; }
+  .tl .rot.fu { color: #9aa1ad; }
+
+  .junto { page-break-inside: avoid; }
+  .duas { display: flex; gap: 5mm; page-break-inside: avoid; }
+  .duas > div { flex: 1; }
+
+  .fim { margin-top: 8mm; padding-top: 4mm; border-top: 1px solid #e6e8ec; font-size: 8.5pt; color: #6a7180; }
+  .tag {
+    display: inline-block; padding: 0.6mm 2.4mm; border-radius: 4mm; font-size: 7.5pt;
+    font-weight: 600; vertical-align: 1px; white-space: nowrap;
+  }
+  .tag.ok { background: #e7f5ec; color: #15803d; }
+  .tag.na { background: #f9eef0; color: #8D2033; }
+  .tag.qs { background: #fdf3e3; color: #92600d; }
+</style>
+</head>
+<body>
+
+<div class="capa">
+  <div class="marca"><div class="q"></div><span>Enterplak</span></div>
+  <h1>Rastreador<br>do Pedido</h1>
+  <div class="risco"></div>
+  <p class="sub">Onde o cliente acompanha o pedido dele de ponta a ponta — da confirmação até a entrega — do jeito que se acompanha uma encomenda.</p>
+  <div class="meta">
+    <div><b>Documento de design</b>Desenho fechado, implementação não começou</div>
+    <div><b>28 de setembro de 2026</b>Sprint 23/09</div>
+    <div><b>Card</b>Central do cliente</div>
+  </div>
+</div>
+
+<h2>O que é</h2>
+<p class="lead">Uma aplicação separada onde o cliente da Enterplak acompanha o pedido dele de ponta a ponta. O modelo mental é o rastreamento dos Correios: uma linha do tempo com o que já aconteceu, onde o pedido está agora e o que falta, mais um histórico com data e hora.</p>
+
+<h2>O que ele não é</h2>
+<p>A ideia original era um portal com três telas, painéis e métricas por posto. <strong>Foi reduzida de propósito.</strong> A diferença não é de tamanho, é de natureza: um painel precisa de números confiáveis por posto e por ordem; um rastreador precisa saber <strong>em que ponto a coisa está</strong>.</p>
+<div class="caixa vinho">
+  <h4>Foi isso que destravou o card</h4>
+  <p>O desenho antigo dependia de ligar cada ordem de produção ao projeto do cliente para poder contar peças. O rastreador só precisa saber que a produção começou — "Produção iniciada" virou uma bolinha, não um gráfico.</p>
+</div>
+
+<h2>Quem usa</h2>
+<p>O cliente <strong>entra logado</strong> — não existe campo de "digite seu código". O cadastro amarra <strong>usuário → cliente → lista de ACPs</strong>, e o cliente enxerga apenas os pedidos dessas ACPs. É controle explícito: ninguém vê nada por acidente, e dá para conferir na tela quem enxerga o quê.</p>
+<p>A ACP — o projeto — é o que amarra as três fases: embarque, recebimento e produção. Mas <strong>o cliente nunca vê esse código</strong>: é vocabulário de dentro de casa.</p>
+
+<h2>As duas telas</h2>
+<div class="duas">
+  <div>
+    <h3>Meus pedidos</h3>
+    <p>Uma linha por pedido, com o nome do produto, a quantidade e o mês do pedido. À direita, a etapa atual, uma barra de quanto andou e a previsão de entrega. Abas separando em andamento de entregues.</p>
+  </div>
+  <div>
+    <h3>A linha do tempo</h3>
+    <p>As nove etapas em bolinhas na horizontal, com rótulo e data embaixo de cada uma, e o histórico logo abaixo na vertical — data e hora à esquerda, o que aconteceu à direita, do mais recente para o mais antigo.</p>
+  </div>
+</div>
+<p>As duas funcionam em <strong>celular e computador</strong>. No celular a linha do tempo vira vertical.</p>
+
+<div class="junto"><p style="font-size:8.5pt;color:#6a7180;margin:5mm 0 0">A linha do tempo, em miniatura — concluídas em verde, a atual destacada, as que faltam em cinza.</p>
+<div class="tl">
+  <div class="et"><div class="bol"><div class="c ok"></div><div class="ln ok"></div></div><div class="rot">Pedido confirmado</div></div>
+  <div class="et"><div class="bol"><div class="c ok"></div><div class="ln ok"></div></div><div class="rot">Aquisição de matéria-prima</div></div>
+  <div class="et"><div class="bol"><div class="c ok"></div><div class="ln ok"></div></div><div class="rot">Agendamento de booking</div></div>
+  <div class="et"><div class="bol"><div class="c ok"></div><div class="ln ok"></div></div><div class="rot">[Trâmite]</div></div>
+  <div class="et"><div class="bol"><div class="c ok"></div><div class="ln ok"></div></div><div class="rot">Chegada no Brasil</div></div>
+  <div class="et"><div class="bol"><div class="c ok"></div><div class="ln ok"></div></div><div class="rot">Desembaraço RF/RE</div></div>
+  <div class="et"><div class="bol"><div class="c ok"></div><div class="ln ok"></div></div><div class="rot">Fábrica</div></div>
+  <div class="et"><div class="bol"><div class="c at"></div><div class="ln fu"></div></div><div class="rot at">Produção iniciada</div></div>
+  <div class="et" style="flex:0 0 18mm"><div class="bol"><div class="c fu"></div></div><div class="rot fu">Entrega</div></div>
+</div>
+</div>
+
+<h2>As nove etapas e de onde vem cada uma</h2>
+<table>
+  <thead><tr><th class="n">#</th><th>Etapa</th><th>Fonte</th><th style="width:30mm">Situação</th></tr></thead>
+  <tbody>
+    <tr><td class="n">1</td><td>Pedido confirmado</td><td>Compels — integração que ainda não existe</td><td><span class="tag na">falta</span></td></tr>
+    <tr><td class="n">2</td><td>Aquisição de matéria-prima</td><td>planilha de embarque</td><td><span class="tag ok">temos</span></td></tr>
+    <tr><td class="n">3</td><td>Agendamento de booking</td><td>planilha — coluna Booking</td><td><span class="tag ok">temos</span></td></tr>
+    <tr><td class="n">4</td><td><strong>[TRÂMITE — nome a confirmar]</strong></td><td>planilha — provavelmente Carga em trânsito</td><td><span class="tag qs">a confirmar</span></td></tr>
+    <tr><td class="n">5</td><td>Chegada no Brasil</td><td>planilha — coluna nova</td><td><span class="tag qs">nova</span></td></tr>
+    <tr><td class="n">6</td><td>Desembaraço aduaneiro RF/RE</td><td>planilha — coluna nova</td><td><span class="tag qs">nova</span></td></tr>
+    <tr><td class="n">7</td><td>Fábrica</td><td>ShopFloor — chegada do material</td><td><span class="tag ok">temos</span></td></tr>
+    <tr><td class="n">8</td><td>Produção iniciada</td><td>ShopFloor — primeiro registro na ordem</td><td><span class="tag ok">temos</span></td></tr>
+    <tr><td class="n">9</td><td>Entrega</td><td>previsão — fonte em aberto</td><td><span class="tag na">sem dono</span></td></tr>
+  </tbody>
+</table>
+
+<div class="caixa">
+  <h4 style="color:#171a1f">A leitura que importa</h4>
+  <p>As etapas 3 a 6 são <strong>o mesmo problema com a mesma solução</strong>: quatro datas que quem cuida da importação já sabe e que hoje não têm onde ser gravadas. Duas colunas já existem na planilha e vêm em branco; duas precisam ser criadas. Nenhuma delas exige tela nova nem que ninguém aprenda sistema novo.</p>
+  <p style="margin-top:2mm">Com isso, <strong>sete das nove etapas acendem</strong>. Sobram a primeira, que depende do Compels, e a última, que precisa de dono.</p>
+</div>
+
+<h2>As quatro regras que impedem a linha do tempo de mentir</h2>
+<ul class="regras">
+  <li><b>Toda data carrega a sua qualidade.</b>Existem duas naturezas de data: a <em>do fato</em>, quando alguém escreveu o dia em que a coisa aconteceu, e a <em>do registro</em>, o carimbo de quando o sistema soube. A segunda é marcada com asterisco, e o rodapé explica uma vez só.</li>
+  <li><b>Coerência cronológica por herança.</b>Etapa com data anterior à da etapa anterior <strong>herda a data da anterior</strong> e passa a valer como aproximada. Nunca inventa data, nunca mostra fora de ordem, nunca esconde a etapa. A inconsistência vai para um registro interno — o cliente não vê.</li>
+  <li><b>Pior caso.</b>Um pedido tem várias planilhas de embarque e várias ordens de produção. A etapa atual é a da <strong>parte mais atrasada</strong>; a data de uma etapa concluída é a da <strong>última parte a concluí-la</strong>.</li>
+  <li><b>A bolinha não volta.</b>Etapa que ficou verde fica verde, mesmo entrando material novo no projeto depois. Para congelar não virar esconder, material novo vira <strong>uma linha no histórico</strong>, e a previsão de entrega se atualiza no cabeçalho.</li>
+</ul>
+
+<h2>A planilha de embarque</h2>
+<p>Ela é <strong>importada no rastreador</strong>, que passa a ser dono desses dados. O Recebimento do ShopFloor continua importando a própria cópia para o que ele já faz — a duplicação é aceita conscientemente.</p>
+<p>Como a planilha muda o tempo todo, há duas formas de mantê-la atualizada: <strong>editar dentro do sistema</strong>, num grid que imita o Excel, e <strong>reimportar o arquivo</strong>, sobrescrevendo. Mais adiante, uma integração que puxe sozinha.</p>
+<div class="caixa">
+  <h4 style="color:#171a1f">A regra do conflito</h4>
+  <p>Alguém corrige uma data na tela e depois sobe um arquivo mais velho, sem aquela correção. Como as duas formas são a mesma pessoa fazendo a mesma coisa, o arquivo novo manda: a reimportação sobrescreve. Mas ela <strong>mostra um resumo do que mudou</strong> — "34 linhas atualizadas, 3 datas mudaram, 1 voltou ao valor anterior". Não pergunta nada, não trava nada, só deixa visível: é a diferença entre descobrir na hora que subiu o arquivo errado e descobrir uma semana depois pelo cliente.</p>
+  <p style="margin-top:2mm">A integração automática herda a regra com um ajuste: como não há ninguém na frente da tela, <strong>puxada automática nunca sobrescreve célula editada à mão</strong> — anota a divergência numa lista.</p>
+</div>
+<div class="caixa vinho">
+  <h4>Descartar na entrada</h4>
+  <p>A planilha carrega preço, fornecedor, invoice e NCM. É mais seguro não deixar esse dado entrar do que confiar em filtrar na saída.</p>
+</div>
+
+<h2>Arquitetura</h2>
+<p><strong>Aplicação separada, com banco próprio.</strong> Quando for para produção, o Postgres fica dentro do próprio servidor da aplicação, que roda o tempo todo — o banco da fábrica não serve, porque é desligado fora do horário e o cliente olha pedido à noite e no fim de semana.</p>
+<div class="caixa vinho">
+  <h4>Por que banco próprio, e não o mesmo do ShopFloor</h4>
+  <p>Este é um app voltado para fora, acessado por clientes. Num app de fábrica, um erro de permissão é um incômodo interno; num portal de cliente, é o cliente A vendo o pedido do cliente B. A revisão de segurança de setembro encontrou uma função de permissão que, chamada errado, anulava o controle de acesso inteiro — se aquilo estivesse num portal, um cliente teria visto a fábrica toda. Banco separado torna a classe inteira de erro <strong>impossível</strong>, porque o dado da fábrica simplesmente não está lá.</p>
+</div>
+<p><strong>Como o dado da fábrica chega:</strong> por sincronização, copiando só o que o cliente pode ver — o mesmo padrão do conector que já roda em produção. <strong>Backup:</strong> a maior parte do banco é reconstruível pela sincronização, menos a planilha editada, que nasce ali e não existe em mais lugar nenhum.</p>
+
+<h2>O que o cliente nunca vê</h2>
+<p>Taxa de aprovação ou reprovação por posto · defeitos e reparos · nome de colaborador · tempo por posto e produtividade · fornecedor e fabricante · número de série · preço, invoice e NCM · e qualquer dado de outro cliente.</p>
+<h3>Traduzido antes de sair</h3>
+<table>
+  <thead><tr><th style="width:52%">Como é por dentro</th><th>Como o cliente lê</th></tr></thead>
+  <tbody>
+    <tr><td>Reprovado na inspeção</td><td>em verificação de qualidade</td></tr>
+    <tr><td>Divergência de quantidade</td><td>quantidade em conferência com o fornecedor <span style="color:#6a7180">— essa aparece, porque afeta o prazo dele</span></td></tr>
+    <tr><td class="mono">PMOM90/357</td><td>Lote 1 de 2</td></tr>
+    <tr><td>Nomes de posto do chão de fábrica</td><td>nomes de etapa</td></tr>
+  </tbody>
+</table>
+
+<h2>O que ficou em aberto</h2>
+<ul>
+  <li><strong>A previsão de entrega ao cliente não existe em campo nenhum.</strong> É a informação que o cliente mais olha, e precisa de fonte e de dono.</li>
+  <li><strong>O nome da etapa 4.</strong></li>
+  <li><strong>A etapa 1</strong> depende da integração com o Compels, que também traria o nome e a quantidade do produto.</li>
+  <li><strong>A ACP no cadastro de ordem</strong> deve virar obrigatória, mas isso trava as ordens internas e as antigas estão todas em branco. Decidido deixar como está por enquanto.</li>
+  <li><strong>Confirmar com quem cuida da importação</strong> que booking, trâmite, chegada no Brasil e desembaraço são datas que ele tem na mão.</li>
+</ul>
+
+<h2>Riscos</h2>
+<ul>
+  <li><strong>O filtro por projeto precisa entender campo com duas ACPs.</strong> Em produção existem 105 processos com duas ACPs no mesmo campo. Se essa planilha atrasa, as duas linhas do tempo atrasam — o que está correto —, mas o filtro tem de saber ler o formato.</li>
+  <li><strong>A ACP é texto livre</strong> e a mesma aparece escrita de formas diferentes. Antes do portal ir para clientes de verdade, ela precisa virar lista.</li>
+  <li><strong>Quatro das nove etapas dependem de alguém preencher a planilha.</strong> Campo que depende de disciplina costuma vir vazio; se vier, as bolinhas ficam cinzas e o produto entrega menos do que promete.</li>
+  <li><strong>O mesmo arquivo importado em dois lugares</strong> pode divergir. Aceito conscientemente, mas é o primeiro lugar a olhar quando alguém disser que o número está errado.</li>
+</ul>
+
+<div class="fim">Enterplak · ShopFloor — documento de design do Rastreador do Pedido · 28/09/2026</div>
+
+</body>
+</html>
