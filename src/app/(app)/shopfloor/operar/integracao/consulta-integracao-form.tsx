@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { useConfirmacao } from '@/components/ui/confirm-dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { buscarIntegracao, cancelarIntegracao } from '@/modules/shopfloor/application/integracao-actions'
 import type { IntegracaoDetalhe } from '@/modules/shopfloor/infra/integracao-repository'
 
@@ -20,7 +20,9 @@ export function ConsultaIntegracaoForm({ podeCancelar }: { podeCancelar: boolean
   const [buscando, startBusca] = useTransition()
   const [cancelando, startCancel] = useTransition()
   const buscaRef = useRef<HTMLInputElement>(null)
-  const { confirmar, dialog } = useConfirmacao()
+  const [aCancelar, setACancelar] = useState<string | null>(null) // código da integração no diálogo
+  const [motivo, setMotivo] = useState('')
+  const [erroCancel, setErroCancel] = useState('')
 
   function buscar(sn: string) {
     if (sn.trim() === '' || buscando) return
@@ -37,21 +39,22 @@ export function ConsultaIntegracaoForm({ podeCancelar }: { podeCancelar: boolean
     })
   }
 
-  async function onCancelar(codigo: string) {
+  function onCancelar(codigo: string) {
     if (cancelando) return
-    const ok = await confirmar({
-      titulo: `Cancelar a integração ${codigo}?`,
-      descricao: 'O produto e as placas ficarão livres para re-integrar.',
-      rotuloConfirmar: 'Cancelar integração',
-    })
-    if (!ok) return
+    setMotivo(''); setErroCancel(''); setACancelar(codigo)
+  }
+
+  function confirmarCancelamento() {
+    const codigo = aCancelar
+    if (!codigo || motivo.trim() === '' || cancelando) return
     startCancel(async () => {
-      const r = await cancelarIntegracao(codigo)
+      const r = await cancelarIntegracao(codigo, motivo)
       if (r.ok) {
+        setACancelar(null)
         toast.success('Integração cancelada.')
         buscar(ultimoSN) // re-busca: o bloco cancelado some
       } else {
-        toast.error(r.erro)
+        setErroCancel(r.erro) // fica no diálogo (ex.: peça já avançou) — o gestor lê antes de fechar
       }
     })
   }
@@ -92,10 +95,13 @@ export function ConsultaIntegracaoForm({ podeCancelar }: { podeCancelar: boolean
             <div key={d.codigo} className="flex flex-col gap-3 rounded-lg border border-border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm">
-                  <p className="font-semibold text-tinta">{d.codigo}</p>
+                  <p className="font-semibold text-tinta">{d.codigo}{d.observacao.trim().startsWith('*') ? '*' : ''}</p>
                   <p className="text-muted-foreground">
                     {d.cliente} · {d.pmo}/{d.op} · {d.posto} · {d.qtdPlacas} placa(s) · por {d.colaborador}
                   </p>
+                  {d.observacao.trim() !== '' && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{d.observacao}</p>
+                  )}
                 </div>
                 {podeCancelar && (
                   <Button variant="destructive" size="sm" onClick={() => onCancelar(d.codigo)} disabled={cancelando}>
@@ -129,7 +135,32 @@ export function ConsultaIntegracaoForm({ podeCancelar }: { podeCancelar: boolean
           ))}
         </CardContent>
       </Card>
-      {dialog}
+      <Dialog open={aCancelar !== null} onOpenChange={(o) => { if (!o && !cancelando) setACancelar(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar a integração {aCancelar}?</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 text-sm">
+            <p className="text-muted-foreground">
+              O produto e as placas ficarão livres para re-integrar. Esta ação fica registrada com o motivo.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="motivo-cancel-integracao">Motivo (obrigatório)</Label>
+              <Input id="motivo-cancel-integracao" value={motivo} autoFocus
+                onChange={(e) => { setMotivo(e.target.value); if (erroCancel) setErroCancel('') }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarCancelamento() } }}
+                placeholder="Ex.: placa bipada errada" />
+            </div>
+            {erroCancel && <p className="text-sm text-red-600">{erroCancel}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={cancelando} onClick={() => setACancelar(null)}>Voltar</Button>
+            <Button variant="destructive" disabled={cancelando || motivo.trim() === ''} onClick={confirmarCancelamento}>
+              {cancelando ? 'Cancelando…' : 'Cancelar integração'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

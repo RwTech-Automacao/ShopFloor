@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import { LoginForm } from './login-form'
+import { VERSAO } from '@/shared/lib/versao'
 
 export default async function LoginPage({
   searchParams,
@@ -58,7 +59,7 @@ export default async function LoginPage({
             Acesse sua conta para continuar.
           </p>
           <LoginForm redefinida={redefinida === '1'} />
-          <p className="mt-10 text-center text-xs text-muted-foreground">Versão 1.1.0</p>
+          <p className="mt-10 text-center text-xs text-muted-foreground">Versão {VERSAO}</p>
         </div>
       </div>
     </div>

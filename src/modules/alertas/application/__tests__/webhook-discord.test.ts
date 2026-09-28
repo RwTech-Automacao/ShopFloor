@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { EnvioReservado } from '../../domain/envio'
+import type { DestinoEnvio } from '../../domain/tipos'
 import type { FiltroReserva, MensagemComBotao, RepositorioEnvios, RepositorioVinculo } from '../portas'
 import { tratarInteracaoDiscord } from '../webhook-discord'
 
@@ -79,6 +80,7 @@ function linhaResolvido(
     id,
     ocorrenciaId: OC,
     usuarioId,
+    destinoTipo: 'usuario',
     canal,
     externoId,
     tipo: 'resolvido',
@@ -131,9 +133,9 @@ describe('tratarInteracaoDiscord', () => {
     const enviados: string[] = []
     const portas = {
       discord: {
-        async enviar(externoId: string) {
-          enviados.push(externoId)
-          return { ok: true as const, mensagemExternaId: `${externoId}:1` }
+        async enviar(destino: DestinoEnvio) {
+          enviados.push(destino.externoId)
+          return { ok: true as const, mensagemExternaId: `${destino.externoId}:1` }
         },
         async removerBotoes() {
           return { ok: true as const }

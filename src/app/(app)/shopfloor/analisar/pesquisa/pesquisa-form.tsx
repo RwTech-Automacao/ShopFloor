@@ -177,7 +177,7 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
     const set = new Set<string>()
     for (const l of fonte) {
       const v = l.celulas['Embalagem']
-      if (v && v !== 'Pendente' && v !== 'Registrado') set.add(v)
+      if (v && v !== 'Pendente' && v !== 'Registrado' && v !== 'Registrado*') set.add(v)
     }
     return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
   }, [linhasCompletas, linhas])
@@ -477,6 +477,11 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                     </div>
                   )}
                 </div>
+              )}
+              {linhasFiltradas?.some((l) => Object.values(l.celulas).some((v) => v.endsWith('*'))) && (
+                <p className="text-xs text-muted-foreground">
+                  * Associado por hipótese (sem conferência física) — veja o motivo em Consultar Integração.
+                </p>
               )}
             </>
           )}

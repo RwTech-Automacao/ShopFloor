@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { caixasDaOp, qrDaCaixa } from '@/modules/shopfloor/application/embalagem-actions'
 import { pecasAntesDaCaixa } from '@/modules/shopfloor/domain/caixa'
 import type { OpComCaixa, CaixaConsulta } from '@/modules/shopfloor/infra/caixa-repository'
+import { campoCsv } from '@/shared/lib/csv'
 
 /** Pares QTD|NS por linha da folha — é o formato da planilha que a fábrica usa hoje. */
 const PARES = 3
@@ -111,7 +112,7 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
     const base = pecasAntesDaCaixa(caixas, caixa)
     const linhas = [
       ['#', 'Número de Série', 'Caixa'].join(';'),
-      ...caixa.sns.map((sn, i) => [base + i + 1, sn, caixa.codigo].join(';')),
+      ...caixa.sns.map((sn, i) => [base + i + 1, sn, caixa.codigo].map(campoCsv).join(';')),
     ]
     const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)

@@ -20,15 +20,22 @@ describe('validarRegra', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.valor).toEqual({
+      tipo: 'aprovacao',
       nome: 'Teste abaixo de 90',
       postos: ['Teste'],
       taxaMinima: 92.5,
       janelaTipo: 'tempo',
       janelaValor: 60,
       minimoBipes: 20,
+      limiteTempoSeg: null,
+      limiteOcorrencias: null,
+      pausaMaxMin: null,
       lembreteMin: null,
       canais: ['telegram'],
       destinatarios: ['u1', 'u2'],
+      avisarPessoas: true,
+      avisarCanal: false,
+      pmos: [],
       ativa: true,
     })
   })
@@ -47,17 +54,17 @@ describe('validarRegra', () => {
     expect(validarRegra({ ...BASE, nome: '   ' })).toEqual({ ok: false, erro: 'Informe o nome da regra.' })
   })
 
-  it('exige pelo menos 1 posto, 1 canal e 1 destinatário', () => {
+  it('exige pelo menos 1 posto, 1 canal da conversa privada e 1 responsável', () => {
     expect(validarRegra({ ...BASE, postos: [] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 posto.' })
-    expect(validarRegra({ ...BASE, canais: [] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
+    expect(validarRegra({ ...BASE, canais: [] })).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
     expect(validarRegra({ ...BASE, destinatarios: [] })).toEqual({
       ok: false,
-      erro: 'Escolha pelo menos 1 destinatário.',
+      erro: 'Escolha pelo menos 1 responsável.',
     })
   })
 
   it('recusa canal desconhecido', () => {
-    expect(validarRegra({ ...BASE, canais: ['whatsapp'] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
+    expect(validarRegra({ ...BASE, canais: ['whatsapp'] })).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
   })
 
   it('taxa mínima entre 0 e 100, com até 2 casas', () => {
@@ -147,10 +154,10 @@ describe('validarRegra', () => {
     ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 posto.' })
     expect(
       validarRegra({ ...BASE, canais: null as unknown as string[] }),
-    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 canal.' })
+    ).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
     expect(
       validarRegra({ ...BASE, destinatarios: undefined as unknown as string[] }),
-    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 destinatário.' })
+    ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 responsável.' })
   })
 
   it('recusa janela desconhecida', () => {
@@ -165,7 +172,19 @@ describe('validarRegra', () => {
 describe('validarPrevia', () => {
   it('aceita só o que a prévia precisa', () => {
     const r = validarPrevia({ postos: ['Teste'], janelaTipo: 'op', janelaValor: null, minimoBipes: '20' })
-    expect(r).toEqual({ ok: true, valor: { postos: ['Teste'], janelaTipo: 'op', janelaValor: null, minimoBipes: 20 } })
+    expect(r).toEqual({
+      ok: true,
+      valor: {
+        tipo: 'aprovacao',
+        postos: ['Teste'],
+        janelaTipo: 'op',
+        janelaValor: null,
+        minimoBipes: 20,
+        pausaMaxMin: null,
+        limiteOcorrencias: null,
+        pmos: [],
+      },
+    })
   })
   it('sem posto não há prévia', () => {
     expect(validarPrevia({ postos: [], janelaTipo: 'tempo', janelaValor: 60, minimoBipes: 20 })).toEqual({

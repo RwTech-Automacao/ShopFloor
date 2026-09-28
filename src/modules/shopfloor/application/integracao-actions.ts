@@ -10,6 +10,7 @@ import { perfilPrecisaAprovado, PERFIL_PADRAO } from '../domain/perfil-posto'
 import { resolverPlaca } from '../domain/integracao-matching'
 import { carregarOrdem, listarFaixasOrdens, listarOrdensParaLancamento } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { mensagemPecaAvancou } from '@/modules/shopfloor/domain/integracao-cancelamento'
 import {
   buscarIntegracoesPorSn,
   chamarSfIntegrar,
@@ -29,6 +30,7 @@ export interface EntradaIntegracao {
 const MENSAGENS: Record<string, string> = {
   SEM_PERMISSAO: 'Você não tem permissão para esta ação.',
   NAO_ENCONTRADA: 'Integração ativa não encontrada para este código.',
+  MOTIVO_OBRIGATORIO: 'Informe o motivo do cancelamento.',
   ERRO_INTERNO: 'Não foi possível concluir a operação.',
 }
 
@@ -185,19 +187,25 @@ export async function buscarIntegracao(
 
 export async function cancelarIntegracao(
   codigo: string,
+  motivo: string,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
     return { ok: false, erro: MENSAGENS.SEM_PERMISSAO! }
   }
-  const r = await chamarSfCancelarIntegracao(codigo.trim(), sessao.nome || sessao.email)
-  if (!r.ok) return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
+  const motivoLimpo = motivo.trim()
+  if (motivoLimpo === '') return { ok: false, erro: MENSAGENS.MOTIVO_OBRIGATORIO! }
+  const r = await chamarSfCancelarIntegracao(codigo.trim(), sessao.nome || sessao.email, motivoLimpo)
+  if (!r.ok) {
+    if (r.erro === 'PECA_AVANCOU') return { ok: false, erro: mensagemPecaAvancou(r.postos ?? '') }
+    return { ok: false, erro: MENSAGENS[r.erro ?? 'ERRO_INTERNO'] ?? MENSAGENS.ERRO_INTERNO! }
+  }
 
   await registrarLog({
     entidade: 'sf_integracao',
     entidadeId: codigo,
     acao: 'excluir',
-    descricao: `Integração ${codigo} cancelada`,
+    descricao: `Integração ${codigo} cancelada — motivo: ${motivoLimpo}`,
   })
   return { ok: true }
 }

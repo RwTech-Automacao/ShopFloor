@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { alertasLiberados } from '../liberacao'
+import { alertasDisponiveis, alertasLiberados } from '../liberacao'
 
 describe('alertasLiberados', () => {
   it('ninguém é liberado quando a variável está vazia', () => {
@@ -47,5 +47,44 @@ describe('alertasLiberados', () => {
     expect(alertasLiberados(null, lista)).toBe(false)
     expect(alertasLiberados(undefined, lista)).toBe(false)
     expect(alertasLiberados('', lista)).toBe(false)
+  })
+
+  describe('fora da produção a feature aparece sempre', () => {
+    it('preview da Vercel libera mesmo sem a variável', () => {
+      expect(alertasLiberados('ana@x.com', undefined, { vercel: 'preview', node: 'production' })).toBe(true)
+    })
+
+    it('dev local (npm run dev) libera mesmo sem a variável', () => {
+      expect(alertasLiberados('ana@x.com', '', { node: 'development' })).toBe(true)
+    })
+
+    it('produção na AWS (sem VERCEL_ENV) segue a lista', () => {
+      expect(alertasLiberados('ana@x.com', undefined, { node: 'production' })).toBe(false)
+      expect(alertasLiberados('ana@x.com', 'ana@x.com', { node: 'production' })).toBe(true)
+    })
+
+    it('produção da Vercel também segue a lista', () => {
+      expect(alertasLiberados('ana@x.com', '', { vercel: 'production', node: 'production' })).toBe(false)
+    })
+  })
+})
+
+describe('alertasDisponiveis (menu, Meu perfil e vínculo)', () => {
+  const admin = { porModulo: { shopfloor: { administrar: true } } } as never
+  const operador = { porModulo: { shopfloor: { visualizar: true, lancar: true } } } as never
+
+  it('exige administrar no ShopFloor', () => {
+    expect(alertasDisponiveis({ email: 'ana@x.com', perfil: operador })).toBe(false)
+  })
+
+  it('admin do ShopFloor segue a liberação (no teste, NODE_ENV=test → lista)', () => {
+    process.env.ALERTAS_LIBERADO_PARA = '*'
+    expect(alertasDisponiveis({ email: 'ana@x.com', perfil: admin })).toBe(true)
+    delete process.env.ALERTAS_LIBERADO_PARA
+    expect(alertasDisponiveis({ email: 'ana@x.com', perfil: admin })).toBe(false)
+  })
+
+  it('sem sessão, nada', () => {
+    expect(alertasDisponiveis(null)).toBe(false)
   })
 })

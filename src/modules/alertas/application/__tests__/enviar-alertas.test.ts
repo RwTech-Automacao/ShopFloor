@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { ContaDestino, ResultadoAvaliacaoRpc } from '../../domain/avaliacao'
 import type { EnvioReservado } from '../../domain/envio'
-import type { ResultadoEnvio } from '../../domain/tipos'
+import type { DestinoTipo, ResultadoEnvio } from '../../domain/tipos'
 import type {
   FiltroReserva,
   MensagemComBotao,
@@ -19,12 +19,13 @@ import {
 
 /** Porta de mentira: registra o que foi enviado e pode falhar (ou lançar) sob comando. */
 function portaFalsa(opcoes: { falharPara?: string[]; lancarPara?: string[] } = {}) {
-  const enviados: { externoId: string; texto: string; botao: string | null }[] = []
+  const enviados: { externoId: string; destino: DestinoTipo; texto: string; botao: string | null }[] = []
   const removidos: string[] = []
   const porta: PortaCanal = {
-    async enviar(externoId, texto, ocorrenciaIdBotao) {
+    async enviar(destino, texto, ocorrenciaIdBotao) {
+      const externoId = destino.externoId
       if (opcoes.lancarPara?.includes(externoId)) throw new Error('rede caiu')
-      enviados.push({ externoId, texto, botao: ocorrenciaIdBotao })
+      enviados.push({ externoId, destino: destino.tipo, texto, botao: ocorrenciaIdBotao })
       if (opcoes.falharPara?.includes(externoId)) return { ok: false, erro: 'Canal 403: bloqueado' }
       return { ok: true, mensagemExternaId: `${externoId}:m${enviados.length}` }
     },
@@ -55,6 +56,7 @@ function linha(p: Partial<EnvioReservado> & { id: string }): EnvioReservado {
   return {
     ocorrenciaId: 'oc1',
     usuarioId: 'u1',
+    destinoTipo: 'usuario',
     canal: 'telegram',
     externoId: '111',
     tipo: 'alerta',
@@ -99,6 +101,7 @@ function repoFalso(dados: {
         id: e.id,
         ocorrenciaId: e.ocorrenciaId,
         usuarioId: e.usuarioId,
+        destinoTipo: e.destinoTipo,
         canal: e.canal,
         externoId: e.externoId,
         tipo: e.tipo,
@@ -240,7 +243,9 @@ describe('entregarPendentes', () => {
     const r = await entregarPendentes({ telegram: tg.porta }, repo, { ocorrenciaId: 'oc1' })
     expect(reservas[0]!.ocorrenciaId).toBe('oc1')
     expect(r.enviados).toBe(1)
-    expect(tg.enviados).toEqual([{ externoId: '111', texto: '✅ Teste: resolvido por Bruno às 14:05', botao: null }])
+    expect(tg.enviados).toEqual([
+      { externoId: '111', destino: 'usuario', texto: '✅ Teste: resolvido por Bruno às 14:05', botao: null },
+    ])
   })
 
   it('falha do canal vira falha NA LINHA (que continua pendente pra próxima rodada)', async () => {

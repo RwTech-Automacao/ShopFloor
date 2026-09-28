@@ -9,6 +9,8 @@ vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
 beforeEach(() => { vi.stubEnv('ALERTAS_LIBERADO_PARA', '*') })
 afterEach(() => { vi.unstubAllEnvs() })
 
+const ADMIN_SHOPFLOOR = { porModulo: { shopfloor: { administrar: true } }, permissoes: {} }
+
 describe('actions de Meu perfil — erro ao consultar a sessão vira mensagem amigável', () => {
   it('gerarCodigoAction: getSessao lançando não estoura, vira ok:false', async () => {
     vi.doMock('@/modules/auth/application/get-sessao', () => ({
@@ -25,7 +27,7 @@ describe('actions de Meu perfil — erro ao consultar a sessão vira mensagem am
 
   it('desvincularAction: canal inválido (payload malformado) recusa sem exceção', async () => {
     vi.doMock('@/modules/auth/application/get-sessao', () => ({
-      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: {} }),
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),
     }))
     const { desvincularAction } = await import('../perfil-alertas-actions')
     const r = await desvincularAction('whatsapp')
@@ -36,7 +38,7 @@ describe('actions de Meu perfil — erro ao consultar a sessão vira mensagem am
 
   it('enviarTesteAction: erro ao montar as dependências (client) vira ok:false amigável', async () => {
     vi.doMock('@/modules/auth/application/get-sessao', () => ({
-      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: {} }),
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),
     }))
     vi.doMock('../../infra/fabrica', () => ({
       criarDependenciasAlertas: () => {
@@ -53,9 +55,23 @@ describe('actions de Meu perfil — erro ao consultar a sessão vira mensagem am
 
   it('lançamento escondido: usuário fora de ALERTAS_LIBERADO_PARA é recusado', async () => {
     vi.doMock('@/modules/auth/application/get-sessao', () => ({
-      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: {} }),
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),
     }))
     vi.stubEnv('ALERTAS_LIBERADO_PARA', 'outra@rwtech.com.br')
+    vi.resetModules()
+    const { desvincularAction } = await import('../perfil-alertas-actions')
+    const r = await desvincularAction('telegram')
+    expect(r).toEqual({ ok: false, erro: 'Recurso indisponível.' })
+    vi.doUnmock('@/modules/auth/application/get-sessao')
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  it('sem administrar no ShopFloor, Meu perfil fica fechado mesmo liberado', async () => {
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: { porModulo: { shopfloor: { visualizar: true } }, permissoes: {} } }),
+    }))
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', '*')
     vi.resetModules()
     const { desvincularAction } = await import('../perfil-alertas-actions')
     const r = await desvincularAction('telegram')

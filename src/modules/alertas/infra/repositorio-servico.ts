@@ -1,6 +1,7 @@
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceSupabase } from '@/shared/lib/supabase/service'
+import { canalDiscordDoSistema } from './canais'
 import { ehCanal, type Canal, type ResultadoEnvio } from '../domain/tipos'
 import { lerResultadoAvaliacao, type ContaDestino } from '../domain/avaliacao'
 import { lerEnvioReservado, type EnvioReservado } from '../domain/envio'
@@ -28,6 +29,7 @@ interface LinhaConta {
  */
 export function criarRepositorioServico(
   sb: SupabaseClient = createServiceSupabase(),
+  env: NodeJS.ProcessEnv = process.env,
 ): RepositorioEnvios & RepositorioVinculo {
   async function contas(usuarioIds: string[], canais: Canal[]): Promise<ContaDestino[]> {
     if (usuarioIds.length === 0 || canais.length === 0) return []
@@ -75,7 +77,9 @@ export function criarRepositorioServico(
 
   return {
     async avaliar() {
-      const { data, error } = await sb.rpc('alerta_avaliar')
+      // O id do canal mora no SERVIDOR, não no banco: o avaliar recebe e congela na linha da fila
+      // (0123). Null = ambiente sem canal, e nenhuma linha de canal é enfileirada.
+      const { data, error } = await sb.rpc('alerta_avaliar', { p_canal_discord: canalDiscordDoSistema(env) })
       if (error) throw new Error(`alerta_avaliar: ${error.message}`)
       return lerResultadoAvaliacao(data)
     },
@@ -123,6 +127,7 @@ export function criarRepositorioServico(
       const { error } = await sb.from('alerta_envios').insert({
         ocorrencia_id: null,
         usuario_id: e.usuarioId,
+        destino_tipo: 'usuario',
         canal: e.canal,
         tipo: e.tipo,
         dados: e.dados,

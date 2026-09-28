@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { validarForcaSenha } from '@/modules/usuarios/domain/senha'
+import { mensagemErroLogin } from '@/modules/auth/domain/erro-login'
 
 export async function entrar(
   _prev: { erro?: string } | undefined,
@@ -13,9 +14,12 @@ export async function entrar(
   const senha = String(formData.get('senha') ?? '')
 
   const supabase = await createServerSupabase()
-  const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
+  // Sem resposta do servidor (fetch rejeitado) cai no mesmo aviso de sistema fora do ar.
+  const { error } = await supabase.auth
+    .signInWithPassword({ email, password: senha })
+    .catch(() => ({ error: { name: 'AuthRetryableFetchError', status: 0 } }))
   if (error) {
-    return { erro: 'Usuário ou senha inválidos.' }
+    return { erro: mensagemErroLogin(error) }
   }
   redirect('/home')
 }

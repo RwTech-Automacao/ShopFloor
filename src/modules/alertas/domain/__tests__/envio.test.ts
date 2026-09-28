@@ -46,6 +46,25 @@ describe('textoDoEnvio', () => {
       }),
     ).toBe('✅ Teste: resolvido por Bruno Líder às 14:05')
   })
+  it('resolvido de regra de defeito diz qual código foi resolvido', () => {
+    expect(
+      textoDoEnvio('resolvido', {
+        posto: 'Teste',
+        resolvida_por_nome: 'Bruno Líder',
+        resolvida_em: '2026-09-17T17:05:00+00:00',
+        defeito: '2040 COMPONENTE FALTANDO',
+      }),
+    ).toBe('✅ Defeito 2040 (Componente Faltando) no Teste: resolvido por Bruno Líder às 14:05')
+  })
+  it('resolvido sem defeito no dados (linha antiga da fila) continua aceito, com o texto de antes', () => {
+    expect(
+      textoDoEnvio('resolvido', {
+        posto: 'Teste',
+        resolvida_por_nome: 'Bruno Líder',
+        resolvida_em: '2026-09-17T17:05:00+00:00',
+      }),
+    ).toBe('✅ Teste: resolvido por Bruno Líder às 14:05')
+  })
   it('teste', () => {
     expect(textoDoEnvio('teste', { nome: 'Ana' })).toContain('Ana')
   })
@@ -77,6 +96,8 @@ describe('lerEnvioReservado', () => {
       id: 'e1',
       ocorrenciaId: 'oc1',
       usuarioId: 'u1',
+      // Linha sem destino_tipo (banco antes da 0123) é de pessoa.
+      destinoTipo: 'usuario',
       canal: 'telegram',
       externoId: '111',
       tipo: 'alerta',
@@ -84,6 +105,17 @@ describe('lerEnvioReservado', () => {
       comBotao: true,
       tentativas: 1,
     })
+  })
+
+  it('linha de canal: sem usuário, com destino_tipo canal', () => {
+    const r = lerEnvioReservado({ ...LINHA, usuario_id: null, destino_tipo: 'canal', externo_id: 'C9' })
+    expect(r?.destinoTipo).toBe('canal')
+    expect(r?.usuarioId).toBeNull()
+    expect(r?.externoId).toBe('C9')
+  })
+
+  it('destino_tipo desconhecido cai em pessoa (não derruba a rodada)', () => {
+    expect(lerEnvioReservado({ ...LINHA, destino_tipo: 'grupo' })?.destinoTipo).toBe('usuario')
   })
   it('canal, tipo ou destino desconhecidos voltam null', () => {
     expect(lerEnvioReservado({ ...LINHA, canal: 'whatsapp' })).toBeNull()

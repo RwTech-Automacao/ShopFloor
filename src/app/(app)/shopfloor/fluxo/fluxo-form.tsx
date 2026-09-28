@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight, Minus } from 'lucide-react'
+import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, opsComBipes, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
-import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo } from '@/modules/shopfloor/domain/fluxo-op'
+import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo, ordenarOpsPorBipes } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
 import { DefeitosLista } from './defeitos-lista'
@@ -20,7 +20,8 @@ import { DashboardForm } from '../analisar/dashboard/dashboard-form'
 import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { HistoricoSnDialog } from './historico-sn-dialog'
 import { FloatingEdge } from './floating-edge'
-import { HelperLines, getHelperLines } from './helper-lines'
+import { HelperLines, getHelperLines } from '@/shared/ui/fluxo/helper-lines'
+import { ControlesCanvas } from '@/shared/ui/fluxo/controles-canvas'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
 const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
@@ -457,7 +458,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
   const [criadoDe, setCriadoDe] = useState('') // range custom — início (YYYY-MM-DD)
   const [criadoAte, setCriadoAte] = useState('') // range custom — fim (YYYY-MM-DD)
   // OPs com bipe no período, com a chave do período a que pertencem (`ops` null = a busca falhou).
-  const [bipesPeriodo, setBipesPeriodo] = useState<{ chave: string; ops: Set<string> | null } | null>(null)
+  const [bipesPeriodo, setBipesPeriodo] = useState<{ chave: string; bipes: Record<string, { bipes: number; pct: number | null }> | null } | null>(null)
   const [buscaSn, setBuscaSn] = useState('') // busca de SN pra realçar a rota no canvas
   // rota do SN buscado: `ordem` = postos na ordem cronológica (+ atual no fim) pra revelar UM A UM.
   const [rota, setRota] = useState<{ ordem: string[]; atual: string | null } | null>(null)
@@ -909,18 +910,17 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     return () => document.removeEventListener('fullscreenchange', onFs)
   }, [])
 
-  // Filtro de período da lista de OPs: busca no banco quais OPs tiveram BIPE no período (0109).
-  // Antes era a data de criação da OP. A chave muda só quando o período muda (não a cada minuto).
-  const chavePeriodoOps =
-    filtroData === 'tudo' || (filtroData === 'custom' && !criadoDe && !criadoAte)
-      ? ''
-      : `${filtroData}|${criadoDe}|${criadoAte}`
+  // Lista de OPs: busca no banco quantos BIPES cada OP teve no período (0120) — com período, só
+  // aparecem as OPs com bipe; em "Tudo" (período vazio) ninguém some, a contagem só ORDENA a lista
+  // (da OP com mais bipes pra menos). A chave muda só quando o período muda (não a cada minuto).
+  const semPeriodo = filtroData === 'tudo' || (filtroData === 'custom' && !criadoDe && !criadoAte)
+  const chavePeriodoOps = semPeriodo ? 'tudo' : `${filtroData}|${criadoDe}|${criadoAte}`
   useEffect(() => {
-    if (!chavePeriodoOps) return
     let ini: string | null = null
     let fim: string | null = null
     const agora = Date.now()
-    if (filtroData === 'hoje') { const d = new Date(agora); d.setHours(0, 0, 0, 0); ini = d.toISOString() }
+    if (chavePeriodoOps === 'tudo') { /* histórico todo: só ordena */ }
+    else if (filtroData === 'hoje') { const d = new Date(agora); d.setHours(0, 0, 0, 0); ini = d.toISOString() }
     else if (filtroData === '7') ini = new Date(agora - 7 * 86400000).toISOString()
     else if (filtroData === '30') ini = new Date(agora - 30 * 86400000).toISOString()
     else {
@@ -929,25 +929,31 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
       if (criadoAte) { const t = Date.parse(`${criadoAte}T00:00:00`); if (!Number.isNaN(t)) fim = new Date(t + 86400000).toISOString() }
     }
     let cancelado = false
-    opsComBipes(ini, fim).then((chaves) => {
+    opsComBipes(ini, fim).then((bipes) => {
       if (cancelado) return
-      if (chaves === null) toast.error('Não foi possível filtrar as OPs por período. Mostrando todas.')
-      setBipesPeriodo({ chave: chavePeriodoOps, ops: chaves === null ? null : new Set(chaves) })
+      if (bipes === null && chavePeriodoOps !== 'tudo') toast.error('Não foi possível filtrar as OPs por período. Mostrando todas.')
+      setBipesPeriodo({ chave: chavePeriodoOps, bipes })
     })
     return () => { cancelado = true }
   }, [chavePeriodoOps, filtroData, criadoDe, criadoAte])
-  const carregandoOps = chavePeriodoOps !== '' && bipesPeriodo?.chave !== chavePeriodoOps
-  const opsComBipe = chavePeriodoOps !== '' && !carregandoOps ? (bipesPeriodo?.ops ?? null) : null
+  const bipesDaVez = bipesPeriodo?.chave === chavePeriodoOps ? bipesPeriodo.bipes : null
+  const carregandoOps = !semPeriodo && bipesPeriodo?.chave !== chavePeriodoOps
+  const opsComBipe = !semPeriodo && !carregandoOps ? bipesDaVez : null
 
   // Dropdown de OP: filtro por PMO/OP/cliente (texto) + OPs com bipe no período (a lista pode ser longa).
   const opsFiltradas = useMemo(() => {
     const f = filtroOp.trim().toLowerCase()
-    return ops.filter((o) => {
+    const lista = ops.filter((o) => {
       if (f && !`${o.pmo}/${o.op} ${o.cliente ?? ''}`.toLowerCase().includes(f)) return false
-      if (opsComBipe && !opsComBipe.has(`${o.pmo}||${o.op}`)) return false
+      if (opsComBipe && !(`${o.pmo}||${o.op}` in opsComBipe)) return false
       return true
     })
-  }, [ops, filtroOp, opsComBipe])
+    // Da OP com mais bipes pra menos (no período, ou no histórico em "Tudo"); empate mantém a ordem original.
+    if (!bipesDaVez) return lista
+    const contagem: Record<string, number> = {}
+    for (const [k, v] of Object.entries(bipesDaVez)) contagem[k] = v.bipes
+    return ordenarOpsPorBipes(lista, contagem)
+  }, [ops, filtroOp, opsComBipe, bipesDaVez])
 
   const rotuloOpSel = useMemo(() => {
     const o = ops.find((x) => `${x.pmo}||${x.op}` === sel)
@@ -1022,9 +1028,15 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                           key={val}
                           type="button"
                           onClick={() => { escolher(val); setOpAberto(false); setFiltroOp('') }}
-                          className={`flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${sel === val ? 'bg-accent font-medium' : ''}`}
+                          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${sel === val ? 'bg-accent font-medium' : ''}`}
                         >
-                          {o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}
+                          <span className="min-w-0 flex-1 truncate">{o.pmo}/{o.op}{o.cliente ? ` · ${o.cliente}` : ''}</span>
+                          {bipesDaVez?.[val]?.pct != null && (
+                            // % de conclusão da OP (último posto do fluxo ÷ quantidade), só o número.
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground" title="Conclusão da OP (peças no último posto do fluxo ÷ quantidade)">
+                              {bipesDaVez[val]!.pct!.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+                            </span>
+                          )}
                         </button>
                       )
                     })
@@ -1483,64 +1495,3 @@ function RelogioAoVivo() {
 const fmtRelogio = new Intl.DateTimeFormat('pt-BR', {
   hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
 })
-
-/**
- * Controles do canvas numa barra só: enquadrar, afastar, o zoom em porcentagem e aproximar.
- *
- * Substitui o <Controls> do React Flow porque ele só aceita filhos DEPOIS dos botões dele — não
- * havia como pôr a porcentagem entre o "−" e o "+".
- *
- * A porcentagem existe porque a roda do mouse é boa pra procurar e ruim pra repetir: quem monta a
- * TV quer voltar sempre no MESMO zoom, e digitar 65 é a única forma de acertar duas vezes seguidas.
- *
- * Todos os alvos têm a mesma medida — a barra tem que ler como um controle só, não como peças
- * remendadas.
- */
-function ControlesCanvas({ pct, onAplicar, onMais, onMenos, onEnquadrar }: {
-  pct: number
-  onAplicar: (pct: number) => void
-  onMais: () => void
-  onMenos: () => void
-  onEnquadrar: () => void
-}) {
-  const [texto, setTexto] = useState('')
-  const [editando, setEditando] = useState(false)
-
-  function aplicar() {
-    const n = Number(texto.replace(/[^\d]/g, ''))
-    // Fora da faixa do canvas (10% a 400%) o React Flow ignoraria calado; melhor grudar no limite.
-    if (Number.isFinite(n) && n > 0) onAplicar(Math.min(400, Math.max(10, n)))
-    setEditando(false)
-  }
-
-  const alvo = 'flex size-8 shrink-0 items-center justify-center text-foreground transition-colors hover:bg-accent'
-
-  return (
-    <div className="flex divide-x divide-border overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-      <button type="button" onClick={onEnquadrar} aria-label="Enquadrar" title="Enquadrar" className={alvo}>
-        <Maximize2 className="size-4" />
-      </button>
-      <button type="button" onClick={onMenos} aria-label="Afastar" title="Afastar" className={alvo}>
-        <Minus className="size-4" />
-      </button>
-      <input
-        type="text"
-        inputMode="numeric"
-        aria-label="Zoom do canvas em porcentagem"
-        title="Zoom em % — digite e tecle Enter"
-        value={editando ? texto : String(pct)}
-        onFocus={(e) => { setEditando(true); setTexto(String(pct)); e.currentTarget.select() }}
-        onChange={(e) => setTexto(e.target.value)}
-        onBlur={aplicar}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
-          if (e.key === 'Escape') { setEditando(false); e.currentTarget.blur() }
-        }}
-        className={`${alvo} bg-transparent text-center text-[11px] tabular-nums outline-none focus:bg-accent`}
-      />
-      <button type="button" onClick={onMais} aria-label="Aproximar" title="Aproximar" className={alvo}>
-        <Plus className="size-4" />
-      </button>
-    </div>
-  )
-}

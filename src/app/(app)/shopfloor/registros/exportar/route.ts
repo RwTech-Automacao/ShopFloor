@@ -2,6 +2,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { listarTodosRegistros } from '@/modules/shopfloor/infra/registros-repository'
 import { parsearFiltrosRegistros } from '@/modules/shopfloor/domain/registros-filtros'
+import { campoCsv as campo } from '@/shared/lib/csv'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,15 +24,6 @@ const COLUNAS: [string, (r: Record<string, unknown>) => string][] = [
   ['Status', (r) => String(r.status ?? '')],
   ['Colaborador', (r) => String(r.colaborador ?? '')],
 ]
-
-/**
- * Escapa um campo de CSV: duplica aspas e envolve o valor quando ele tem separador, aspas ou quebra
- * de linha. A VÍRGULA entra na lista de propósito: o separador do arquivo é `;`, mas o Excel/Calc
- * costuma importar com vírgula marcada também — sem as aspas, um campo com vírgula vira duas colunas.
- */
-function campo(v: string): string {
-  return /[;,"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
-}
 
 /**
  * Exporta em CSV TODOS os registros que casam com os filtros da tela (mesmos parâmetros da URL).

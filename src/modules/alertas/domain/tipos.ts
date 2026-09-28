@@ -13,6 +13,24 @@ export type TipoEnvio = 'alerta' | 'lembrete' | 'resolvido' | 'normalizou' | 'te
 export type EstadoOcorrencia = 'aberta' | 'resolvida' | 'normalizada'
 
 /**
+ * Para onde uma linha da fila vai (`alerta_envios.destino_tipo`, 0123): a conversa privada de um
+ * responsável ou o canal do Discord do sistema. O texto é o mesmo nos dois.
+ */
+export type DestinoTipo = 'usuario' | 'canal'
+
+/** O destino já resolvido pela fila: a reserva devolve o endereço pronto, seja de quem for. */
+export interface DestinoEnvio {
+  tipo: DestinoTipo
+  /** Chat/usuário do canal (pessoa) ou id do canal do Discord. */
+  externoId: string
+}
+
+/** É um tipo de destino conhecido? (linha vinda do banco) */
+export function ehDestinoTipo(valor: unknown): valor is DestinoTipo {
+  return valor === 'usuario' || valor === 'canal'
+}
+
+/**
  * Resultado de um envio. O `mensagemExternaId` é `"<chat|canal>:<id da mensagem>"` — guardamos os
  * dois pedaços porque tanto o Telegram quanto o Discord exigem o par para EDITAR a mensagem depois
  * (tirar o botão quando a ocorrência é resolvida).
@@ -35,4 +53,26 @@ export function ehJanelaTipo(valor: unknown): valor is JanelaTipo {
 export interface ContaVinculada {
   canal: Canal
   vinculadoEm: string
+}
+
+/** Tipo da regra (spec 2026-09-18). O tipo não muda depois de criado. */
+export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito'
+export const TIPOS_REGRA: readonly TipoRegra[] = ['aprovacao', 'tempo', 'defeito']
+
+export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
+  aprovacao: 'Taxa de aprovação',
+  tempo: 'Tempo médio por peça',
+  defeito: 'Defeito repetido',
+}
+
+/** A frase de cada cartão da escolha do tipo. */
+export const DESCRICAO_TIPO_REGRA: Record<TipoRegra, string> = {
+  aprovacao: 'Avisa quando a taxa de aprovação do posto cai abaixo da meta.',
+  tempo: 'Avisa quando o tempo médio entre um bipe e o próximo passa do limite.',
+  defeito: 'Avisa quando o mesmo defeito se repete várias vezes no posto em pouco tempo.',
+}
+
+/** É um tipo de regra conhecido? */
+export function ehTipoRegra(valor: unknown): valor is TipoRegra {
+  return valor === 'aprovacao' || valor === 'tempo' || valor === 'defeito'
 }

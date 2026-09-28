@@ -108,6 +108,17 @@ export interface RegistroGrade {
   status: string
   numeroCaixa: string
   dataHora: string
+  observacao?: string
+}
+
+/**
+ * Registro lançado por ajuste com base numa HIPÓTESE (não confirmada fisicamente) — ex.: placa
+ * associada ao produto pelo horário do Teste depois que as peças já tinham saído da empresa (OP
+ * 8504, 21/09/2026). Convenção: `observacao` começa com '*'. A célula da grade ganha o '*'.
+ */
+export const MARCA_HIPOTESE = '*'
+export function ehHipotese(r: { observacao?: string }): boolean {
+  return (r.observacao ?? '').trimStart().startsWith(MARCA_HIPOTESE)
 }
 
 export interface LinhaGrade {
@@ -179,6 +190,10 @@ export function montarGrade(
         continue
       }
       celulas[posto] = 'Registrado'
+    }
+    for (const posto of colunas) {
+      const doPosto = regs.filter((r) => r.posto.toLowerCase() === posto.toLowerCase())
+      if (celulas[posto] !== CELULA_PENDENTE && doPosto.some(ehHipotese)) celulas[posto] += MARCA_HIPOTESE
     }
     return { sn, celulas }
   })
