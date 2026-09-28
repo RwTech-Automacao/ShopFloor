@@ -399,39 +399,47 @@ Para que congelar não vire esconder: material novo entrando no projeto **vira u
 histórico** ("02/10 · entrou material novo neste projeto"), que é append-only por natureza, e a
 previsão de entrega no cabeçalho se atualiza. As bolinhas ficam estáveis e o fato não some.
 
-### Onde a planilha de embarque vive (arquitetura, EM ABERTO)
+### Onde a planilha de embarque vive — DECIDIDO (28/09)
 
-**Correção do usuário (28/09):** o rastreador **não olha só o Recebimento — olha a planilha
-também**, então **não é** caso de acrescentar campos em `processos_recebimento`. O Recebimento
-fica intocado.
+**Correção do usuário:** o rastreador **não olha só o Recebimento — olha a planilha também**, então
+**não é** caso de acrescentar campos em `processos_recebimento`. O Recebimento fica intocado.
 
-Mas a importação de hoje **guarda só os campos mapeados**: `importacoes` tem nome do arquivo,
-formato, total de linhas e o mapeamento — **não guarda as linhas cruas**. O que não vira campo do
-processo é descartado na entrada. Ou seja, os dados da planilha ainda precisam de um lugar onde
-morar, só que do lado do rastreador. Três caminhos, **decisão pendente**:
+Como a importação de hoje **guarda só os campos mapeados** (`importacoes` tem arquivo, formato,
+total de linhas e mapeamento — **não guarda as linhas cruas**), a planilha ganha casa própria do
+lado do rastreador: **ela é IMPORTADA**, com duas formas de se manter atualizada, porque o arquivo
+muda o tempo todo:
 
-- **(a) O rastreador tem a própria importação** — tabela própria com embarque, itens e datas.
-  Funciona amanhã; o custo é o mesmo arquivo importado duas vezes e a chance de duas verdades.
-- **(b) A planilha migra para dentro do sistema** — cada EMB vira registro preenchido em tela.
-  Acaba a duplicidade e o Recebimento passa a puxar do sistema; é mais trabalho e muda a rotina de
-  quem preenche.
-- **(c) A planilha fica num drive e o sistema lê por API** — sem ninguém subir nada, se ela viver
-  no Google Drive/OneDrive e o formato for estável (atenção às linhas de Tarifa e Frete
-  intercaladas, que não são itens).
+1. **Editar dentro do sistema**, imitando o Excel — o Recebimento já tem o grid, dá para
+   reaproveitar em vez de fazer outro.
+2. **Reimportar sobrescrevendo.**
+3. **No futuro, integração** que puxa sozinha, sem intervenção de ninguém.
 
-⚠️ **Em qualquer um dos três:** a planilha carrega **preço, fornecedor, invoice e NCM**. É mais
-seguro **descartar essas colunas na entrada** do que confiar em filtrar na saída.
+**O conflito que as duas formas criam, e a regra:** alguém corrige uma data na tela e a
+reimportação seguinte traz o valor velho do Excel. Sobrescrever calado faz a pessoa preencher de
+novo sem entender por quê. A casa já resolveu isso uma vez — a `corrigir_importacao` (0079) só
+substitui os processos **se ninguém começou a trabalhar neles**. Mesmo princípio aqui:
+
+- cada célula sabe se foi **editada no sistema** (quem e quando);
+- a reimportação **sobrescreve à vontade** o que nunca foi tocado à mão — a maior parte;
+- onde houver edição à mão **e** o arquivo trouxer valor diferente, o sistema **mostra o conflito
+  antes de gravar** ("7 células foram editadas aqui e vêm diferentes no arquivo — qual fica?"),
+  como a prévia da etiquetagem;
+- valor igual não é conflito.
+
+A integração futura herda a regra: puxada automática **nunca** sobrescreve célula editada à mão —
+anota a divergência numa lista, já que não há ninguém na frente da tela para decidir.
+
+⚠️ A planilha carrega **preço, fornecedor, invoice e NCM**: **descartar essas colunas na ENTRADA**,
+não confiar em filtrar na saída.
 
 ### O que continua faltando
 
-- **Tornar a ACP obrigatória vai travar as OPs internas** (cliente RW, "COLETOR DE DADOS BLUE",
-  ACP vazio). Saída: obrigatória só quando o cliente não for interno, **ou** uma opção explícita
-  **"sem projeto"** — que separa "não tem" de "esqueceram".
-- **As OPs antigas estão todas com ACP em branco.** Rodar um `count` antes de decidir entre
-  preencher as que importam e aceitar que o rastreador só vale para projetos novos.
-- **A previsão de entrega ao cliente não existe em campo nenhum.** O `data_prevista` do Recebimento
-  é a previsão de chegada do *material*, outra coisa. Alguém terá de digitar, e como é a informação
-  que o cliente mais olha, vale definir o dono dela.
+- **ACP obrigatória × OPs internas e OPs antigas em branco** — o usuário decidiu **deixar como
+  está por enquanto** (28/09). Volta quando o rastreador for construído de fato.
+- **A previsão de entrega ao cliente não existe em campo nenhum** (o `data_prevista` do Recebimento
+  é a previsão de chegada do *material*, outra coisa). **Em aberto: o usuário vai verificar de onde
+  puxar.** É a informação que o cliente mais olha.
+- **O nome da etapa 4** — deixado como está por enquanto.
 - **O filtro por ACP tem de saber ler campo com duas ACPs** — 105 processos em produção têm
   `ACP013/26 E ACP014/26` no campo Projeto. Se essa EMB atrasa, as duas linhas do tempo atrasam,
   o que está correto, mas o filtro precisa entender o formato.
