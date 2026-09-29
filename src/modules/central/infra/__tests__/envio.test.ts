@@ -111,6 +111,30 @@ describe('criarEnviadorHttp', () => {
     expect(r).toEqual({ status: 502, corpo: null })
   })
 
+  it('60s sem resposta -> aborta de verdade (timers falsos, avança TEMPO_LIMITE_MS)', async () => {
+    vi.useFakeTimers()
+    try {
+      // fetch de mentira que só rejeita quando o AbortSignal dispara — como um fetch de verdade
+      // faria contra um servidor que nunca responde.
+      const fetchFalso = vi.fn((_url: string, opcoes: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          opcoes.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        })
+      })
+      global.fetch = fetchFalso as unknown as typeof fetch
+
+      const enviador = criarEnviadorHttp('http://127.0.0.1:3100', 's')
+      const promessa = enviador.enviar(FOTO)
+      const expectativa = expect(promessa).rejects.toThrow(/abort/i)
+
+      await vi.advanceTimersByTimeAsync(TEMPO_LIMITE_MS)
+
+      await expectativa
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('fetch que rejeita (Central fora do ar) propaga o erro pra quem chama', async () => {
     global.fetch = vi.fn(async () => {
       throw new Error('fetch failed')

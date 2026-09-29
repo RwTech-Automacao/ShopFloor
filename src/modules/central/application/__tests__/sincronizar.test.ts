@@ -90,13 +90,23 @@ describe('sincronizar', () => {
     expect(r).toEqual({ etapa: 'envio', ok: false, erro: 'fetch failed' })
   })
 
-  it('a Central responde mas com erro (409, foto vazia) -> ainda é etapa "central", com o status dela', async () => {
+  it('a Central responde mas com erro (409, foto vazia) -> ainda é etapa "central", com o status dela, ok: false', async () => {
     const leitor = leitorFalso()
     const enviador: EnviadorFoto = { enviar: vi.fn(async () => ({ status: 409, corpo: { erro: 'Foto vazia' } })) }
 
     const r = await sincronizar(leitor, enviador, AGORA)
 
-    expect(r).toEqual({ etapa: 'central', ok: true, status: 409, corpo: { erro: 'Foto vazia' } })
+    // ok: true aqui seria enganoso — a Central RECUSOU a sincronização (409 não é sucesso).
+    expect(r).toEqual({ etapa: 'central', ok: false, status: 409, corpo: { erro: 'Foto vazia' } })
+  })
+
+  it('etapa "central" com status 500 também vem com ok: false', async () => {
+    const leitor = leitorFalso()
+    const enviador: EnviadorFoto = { enviar: vi.fn(async () => ({ status: 500, corpo: { erro: 'boom' } })) }
+
+    const r = await sincronizar(leitor, enviador, AGORA)
+
+    expect(r).toEqual({ etapa: 'central', ok: false, status: 500, corpo: { erro: 'boom' } })
   })
 
   it('envio falha por AbortError (timeout) -> mensagem "tempo esgotado", não o texto genérico do DOMException', async () => {

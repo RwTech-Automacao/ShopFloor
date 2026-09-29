@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 
@@ -7,7 +7,7 @@ type ResultadoSincronizacaoDeMentira =
   | { etapa: 'leitura'; ok: false; erro: string }
   | { etapa: 'montagem'; ok: false; erro: string }
   | { etapa: 'envio'; ok: false; erro: string }
-  | { etapa: 'central'; ok: true; status: number; corpo: unknown }
+  | { etapa: 'central'; ok: boolean; status: number; corpo: unknown }
 
 // vi.mock é içado para o topo do arquivo: os mocks precisam nascer num vi.hoisted.
 const { criarDependenciasCentral, sincronizar } = vi.hoisted(() => ({
@@ -35,6 +35,10 @@ beforeEach(() => {
   vi.stubEnv('CENTRAL_SYNC_CRON_SECRET', 'segredo-do-cron')
   vi.stubEnv('CENTRAL_SYNC_SECRET', 'segredo-pra-central')
   vi.stubEnv('CENTRAL_SYNC_URL', 'http://127.0.0.1:3100')
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe('POST /api/central/sincronizar', () => {
@@ -121,13 +125,13 @@ describe('POST /api/central/sincronizar', () => {
   })
 
   it('Central responde 500 -> 502', async () => {
-    sincronizar.mockResolvedValue({ etapa: 'central', ok: true, status: 500, corpo: { erro: 'boom' } })
+    sincronizar.mockResolvedValue({ etapa: 'central', ok: false, status: 500, corpo: { erro: 'boom' } })
     const res = await POST(pedido({ authorization: 'Bearer segredo-do-cron' }))
     expect(res.status).toBe(502)
   })
 
   it('Central responde 409 (foto vazia) -> 502 também (não é sucesso)', async () => {
-    sincronizar.mockResolvedValue({ etapa: 'central', ok: true, status: 409, corpo: { erro: 'Foto vazia' } })
+    sincronizar.mockResolvedValue({ etapa: 'central', ok: false, status: 409, corpo: { erro: 'Foto vazia' } })
     const res = await POST(pedido({ authorization: 'Bearer segredo-do-cron' }))
     expect(res.status).toBe(502)
   })

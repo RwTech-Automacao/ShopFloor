@@ -31,7 +31,9 @@ export type ResultadoSincronizacao =
   | { etapa: 'leitura'; ok: false; erro: string }
   | { etapa: 'montagem'; ok: false; erro: string }
   | { etapa: 'envio'; ok: false; erro: string }
-  | { etapa: 'central'; ok: true; status: number; corpo: unknown }
+  // `ok` aqui é sobre o STATUS que a Central devolveu, não sobre "a etapa não lançou": um 409/500
+  // dela também chega até aqui (não é 'envio', o fetch funcionou) — ok: true só quando status 200.
+  | { etapa: 'central'; ok: boolean; status: number; corpo: unknown }
 
 /**
  * Lê a foto do banco do ShopFloor (leitor) e manda pra Central (enviador). Nunca lança: qualquer
@@ -58,7 +60,7 @@ export async function sincronizar(
 
   try {
     const resposta = await enviador.enviar(foto)
-    return { etapa: 'central', ok: true, status: resposta.status, corpo: resposta.corpo }
+    return { etapa: 'central', ok: resposta.status === 200, status: resposta.status, corpo: resposta.corpo }
   } catch (e) {
     return { etapa: 'envio', ok: false, erro: mensagemDe(e) }
   }
