@@ -1,8 +1,23 @@
 import { montarFoto } from '../domain/foto'
 import type { EnviadorFoto, LeitorFoto } from './portas'
 
+/**
+ * Erro de rede sem contexto vira só "fetch failed" — inútil no log `[central]` do cron. Acrescenta
+ * o que dá pra ver: o código da causa do undici (`ECONNREFUSED`, `ENOTFOUND`, `UND_ERR_*`) e o
+ * timeout do AbortController (o fetch aborta com um AbortError/DOMException, que NÃO é
+ * `instanceof Error` no Node — precisa checar pelo `name`).
+ */
 function mensagemDe(e: unknown): string {
-  return e instanceof Error ? e.message : String(e)
+  if (e && typeof e === 'object' && 'name' in e && (e as { name?: unknown }).name === 'AbortError') {
+    return 'tempo esgotado'
+  }
+  if (e instanceof Error) {
+    const causa = e.cause
+    const codigo =
+      causa && typeof causa === 'object' && 'code' in causa ? String((causa as { code?: unknown }).code) : null
+    return codigo ? `${e.message} (${codigo})` : e.message
+  }
+  return String(e)
 }
 
 /**

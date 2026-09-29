@@ -99,6 +99,36 @@ describe('sincronizar', () => {
     expect(r).toEqual({ etapa: 'central', ok: true, status: 409, corpo: { erro: 'Foto vazia' } })
   })
 
+  it('envio falha por AbortError (timeout) -> mensagem "tempo esgotado", não o texto genérico do DOMException', async () => {
+    const leitor = leitorFalso()
+    const erroAbort = new DOMException('This operation was aborted', 'AbortError')
+    const enviador: EnviadorFoto = {
+      enviar: vi.fn(async () => {
+        throw erroAbort
+      }),
+    }
+
+    const r = await sincronizar(leitor, enviador, AGORA)
+
+    expect(r).toEqual({ etapa: 'envio', ok: false, erro: 'tempo esgotado' })
+  })
+
+  it('envio falha com causa de rede (ECONNREFUSED) -> a mensagem inclui o código da causa', async () => {
+    const leitor = leitorFalso()
+    const causa = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:3100'), { code: 'ECONNREFUSED' })
+    const erroFetch = new Error('fetch failed', { cause: causa })
+    const enviador: EnviadorFoto = {
+      enviar: vi.fn(async () => {
+        throw erroFetch
+      }),
+    }
+
+    const r = await sincronizar(leitor, enviador, AGORA)
+
+    expect(r.etapa).toBe('envio')
+    expect((r as { erro: string }).erro).toContain('ECONNREFUSED')
+  })
+
   it('montarFoto lança (situação fora do contrato) -> etapa "montagem", nunca chama o enviador', async () => {
     const leitor = leitorFalso([
       { id: 'r1', projetos: 'ACP017/26', numero_emb: 'EMB1', data_chegada: null, situacao: 'cancelado' },
