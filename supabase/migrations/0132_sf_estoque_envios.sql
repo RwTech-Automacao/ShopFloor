@@ -244,6 +244,16 @@ end $chk3$;
 -- ENTRADA, VIVA e DO MESMO BIPE — é garantido por construção na reverter (ela copia pmo/op/posto/tipo/
 -- bipe/serie_norm da linha travada) e cobrado pela teste_fila_invariantes, em
 -- supabase/tests/almoxarifado_test.sql: CHECK não faz subconsulta.
+--
+-- ⚠️ ESTE `add constraint` NÃO É RETROCOMPATÍVEL: numa base que já tenha UM estorno sem `entrada_id`,
+-- reaplicar esta migração FALHA — `ERROR: check constraint "sf_estoque_envios_entrada_id_so_no_estorno"
+-- of relation "sf_estoque_envios" is violated by some row` — e como ela roda no RDS com `psql -1` (uma
+-- transação só), não é só este trecho que fica de fora: a 0132 INTEIRA não entra. Hoje isso não é
+-- alcançável em base nenhuma (a coluna `entrada_id` nasceu NESTA migração, e a única coisa que cria
+-- estorno é a sf_estoque_reverter, que sempre a preenche); o risco real é só um Dev onde alguém tenha
+-- rodado esta branch à mão ANTES desta correção do vínculo. Se for o caso: preencha o `entrada_id` da(s)
+-- linha(s) de estorno órfã(s) (ou apague a linha, se for lixo de teste) ANTES de reaplicar — depois, o
+-- `add constraint` já terá falhado e travado a migração toda.
 do $chk4$
 begin
   if not exists (
