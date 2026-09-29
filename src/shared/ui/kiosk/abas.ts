@@ -16,6 +16,9 @@ export const ABAS_ANALISE: AbaFluxo[] = [
   { rotulo: 'Burn-in', href: '/shopfloor/analisar/burn-in' },
   { rotulo: 'Caixas', href: '/shopfloor/analisar/caixas' },
   { rotulo: 'Cancelamentos', href: '/shopfloor/analisar/cancelamentos' },
+  // A fila de estoque do Almoxarifado que ainda não chegou ao ERP (0132). Fica em Análise, junto das
+  // outras telas de gestor, porque quem age nela é gestor — o posto de bipe não abre esta tela.
+  { rotulo: 'Estoque pendente', href: '/shopfloor/analisar/estoque-pendente' },
   { rotulo: 'Repinmetro', href: '/shopfloor/analisar/repinmetro' },
 ]
 
