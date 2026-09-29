@@ -1127,34 +1127,50 @@ begin
   raise notice '34. entrada de caixa → 1 linha na fila por BIPE, quantidade = peças reais: ok';
 end $t$;
 
--- ---------- 35. UMA TRANSAÇÃO SÓ: registro e fila vingam juntos, ou nenhum dos dois ----------
--- É o motivo de a fila ser gravada DENTRO da RPC. Os dois lados são provados fazendo cada um falhar
--- de propósito, com um gatilho:
---   (a) o registro falha → a fila não pode ficar com linha órfã (o ERP receberia entrada de peça que
---       não existe no ShopFloor);
---   (b) a fila falha → o registro não pode ficar sozinho (a peça estaria no ShopFloor e NUNCA iria
---       pro ERP, sem ninguém saber — o erro silencioso que esta feature inteira existe pra não ter).
+-- ---------- 35. A FALHA DE UM LADO ABORTA O BIPE: o erro PROPAGA, ninguém o engole ----------
+-- É o que faz o registro e a fila serem um gesto só: os dois inserts estão na MESMA transação, então
+-- basta o erro de um deles CHEGAR a quem chamou pra que nada do outro vingue. É isso que este teste
+-- mede, com um gatilho que explode em cada lado:
+--   (a) o registro explode → o erro tem que sair da RPC;
+--   (b) a fila explode → o erro tem que sair da RPC.
 -- O (b) é o que pega a "melhoria" mais provável de alguém escrever depois: engolir o erro da fila com
--- um `exception when others then null` pra "não quebrar o bipe por causa do ERP".
+-- um `exception when others then null` pra "não quebrar o bipe por causa do ERP". Engolido, o insert
+-- dos registros comitaria sozinho e a peça ficaria no ShopFloor sem NUNCA ir pro Compels, calada — o
+-- erro silencioso que esta integração inteira existe pra não ter.
+--
+-- O QUE ESTE TESTE NÃO PROVA — e o comentário daqui prometia antes (achado de revisão): que não sobra
+-- meio gesto gravado. Ele roda a RPC dentro de um `begin ... exception when others`, que abre uma
+-- SUBTRANSAÇÃO: ela desfaz os dois lados de qualquer forma, então contar linhas depois dela devolve
+-- zero MESMO SE a RPC tivesse gravado um lado só. A prova de que nada sobra tem que vir de FORA da
+-- transação que falhou, e vem: está no rodar-almoxarifado-test.sh, seção "atomicidade vista de fora",
+-- onde o bipe roda em autocommit numa sessão e a conferência vem de outra (é pra ela que a caixa 3
+-- desta massa existe). Aqui ficam só as asserções que a subtransação não falseia: a mensagem de erro
+-- que PROPAGOU, e o bipe entrando normal depois que os gatilhos saem.
 insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
   ('PMOC19', '8502', 'Cliente Transação', '9900', '9990', false);
 insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
   ('PMOC19', '8502', 'Embalagem', 1, 2, 2, 'CX[1][2]8502-PMOC19', true),
-  ('PMOC19', '8502', 'Embalagem', 2, 2, 2, 'CX[2][2]8502-PMOC19', true);
+  ('PMOC19', '8502', 'Embalagem', 2, 2, 2, 'CX[2][2]8502-PMOC19', true),
+  -- a caixa 3 fica de pé, sem entrada nenhuma: é a massa da prova de fora, no runner
+  ('PMOC19', '8502', 'Embalagem', 3, 2, 2, 'CX[3][2]8502-PMOC19', true);
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
 select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[1][2]8502-PMOC19',
        'SN-' || (9900 + i)::text, (9900 + i)::text from generate_series(1, 2) i;
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
 select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[2][2]8502-PMOC19',
        'SN-' || (9910 + i)::text, (9910 + i)::text from generate_series(1, 2) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[3][2]8502-PMOC19',
+       'SN-' || (9920 + i)::text, (9920 + i)::text from generate_series(1, 2) i;
 
+-- Fica no banco depois do teste de propósito: a prova de fora, no runner, cria outro gatilho com ela.
 create function public.teste_explode() returns trigger language plpgsql as $f$
 begin
   raise exception 'EXPLODIU';
 end $f$;
 
 do $t$
-declare v_erro text; v_n int;
+declare v_erro text;
 begin
   -- (a) o registro falha
   create trigger teste_explode_registro before insert on public.sf_registros
@@ -1168,9 +1184,6 @@ begin
   drop trigger teste_explode_registro on public.sf_registros;
   if coalesce(v_erro, '') not like '%EXPLODIU%' then
     raise exception 'FALHOU: a RPC engoliu a falha do registro (erro = %)', v_erro; end if;
-  select count(*) into v_n from sf_estoque_envios where alvo = 'CX[1][2]8502-PMOC19';
-  if v_n <> 0 then
-    raise exception 'FALHOU: o registro falhou e sobrou % linha(s) órfã(s) na fila', v_n; end if;
 
   -- (b) a fila falha
   create trigger teste_explode_fila before insert on public.sf_estoque_envios
@@ -1184,10 +1197,6 @@ begin
   drop trigger teste_explode_fila on public.sf_estoque_envios;
   if coalesce(v_erro, '') not like '%EXPLODIU%' then
     raise exception 'FALHOU: a falha da fila não abortou o bipe (erro = %) — a peça entraria no ShopFloor e nunca no ERP', v_erro; end if;
-  select count(*) into v_n from sf_registros
-   where posto = 'Almoxarifado' and numero_caixa = 'CX[2][2]8502-PMOC19';
-  if v_n <> 0 then
-    raise exception 'FALHOU: a fila falhou e sobraram % linha(s) de registro sem envio', v_n; end if;
 
   -- Sem os gatilhos, o mesmo bipe entra normal: um registro por peça, uma linha na fila.
   perform sf_almoxarifado_entrada('PMOC19', '8502', 'Almoxarifado', 'Ana',
@@ -1196,7 +1205,7 @@ begin
        where posto = 'Almoxarifado' and numero_caixa = 'CX[2][2]8502-PMOC19') <> 2
      or (select count(*) from sf_estoque_envios where alvo = 'CX[2][2]8502-PMOC19') <> 1 then
     raise exception 'FALHOU: depois dos gatilhos, o bipe tinha que entrar normal'; end if;
-  raise notice '35. transação única: registro sem fila e fila sem registro, nenhum dos dois acontece: ok';
+  raise notice '35. a falha de qualquer um dos dois lados propaga e aborta o bipe: ok';
 end $t$;
 
 -- =============================================================
