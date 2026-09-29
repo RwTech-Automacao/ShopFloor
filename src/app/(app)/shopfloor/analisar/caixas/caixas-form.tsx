@@ -82,7 +82,10 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
         qrCodigoDaCaixa(pmo, op, caixa.posto, caixa.seq),
       ])
       if (!rSns.ok) toast.error(rSns.erro)
-      if (!rCodigo.ok) toast.error(rCodigo.erro)
+      // Caixa aberta não tem código final (qrCodigoDaCaixa recusa de propósito — ver o comentário
+      // lá) e o botão Imprimir fica habilitado pra caixa aberta com peças: a ausência do QR pequeno
+      // aqui é o ESPERADO, não uma falha, e a folha já mostra o próprio aviso no lugar dele.
+      if (!rCodigo.ok && caixa.fechada) toast.error(rCodigo.erro)
       setFolha({
         caixa,
         base: pecasAntesDaCaixa(caixas, caixa),
