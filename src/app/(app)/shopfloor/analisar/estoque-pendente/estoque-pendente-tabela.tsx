@@ -99,7 +99,13 @@ function LinhaDaFila({
         */}
         {linha.erro
           ? <p className="break-words text-red-700 dark:text-red-300">{linha.erro}</p>
-          : <p className="text-muted-foreground">Sem erro registrado — esta linha ainda não foi tentada.</p>}
+          : (
+            <p className="text-muted-foreground">
+              {linha.situacao === 'esperando_entrada'
+                ? 'Sem erro: esta linha não falhou — está retida de propósito, esperando a entrada.'
+                : 'Sem erro registrado — esta linha ainda não foi tentada.'}
+            </p>
+          )}
         <p className="mt-1 break-words text-xs text-muted-foreground">{linha.oQueFazer}</p>
       </TableCell>
       <TableCell className="whitespace-nowrap">
@@ -131,7 +137,11 @@ export function EstoquePendenteTabela({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Bipado em</TableHead>
+            {/*
+              "Entrou na fila", e não "Bipado em": na linha de ESTORNO o `criado_em` é a hora do
+              CANCELAMENTO, não a do bipe. O rótulo neutro é verdade nas duas linhas.
+            */}
+            <TableHead>Entrou na fila</TableHead>
             <TableHead>Movimentação</TableHead>
             <TableHead>Peças</TableHead>
             <TableHead>Situação</TableHead>
@@ -144,7 +154,7 @@ export function EstoquePendenteTabela({
           {grupos.length === 0 && (
             <TableRow>
               <TableCell colSpan={COLUNAS} className="py-8 text-center text-muted-foreground">
-                Nada na fila: tudo que foi bipado no Almoxarifado já chegou ao Compels.
+                Nenhuma movimentação esperando na fila.
               </TableCell>
             </TableRow>
           )}

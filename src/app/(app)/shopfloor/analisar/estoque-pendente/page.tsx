@@ -27,22 +27,37 @@ export default async function EstoquePendentePage() {
 
   const { linhas, entradas, cortada } = await listarEstoquePendente(LIMITE)
   const grupos = agruparEstoquePendente(linhas, entradas)
-  const pecas = linhas.reduce(
-    (soma, l) => soma + (l.operacao === 'entrada' ? l.quantidade - l.estornado : l.quantidade),
-    0,
-  )
+
+  /*
+    ENTRADAS E SAÍDAS CONTADAS SEPARADO, porque somar as duas é somar sentidos opostos: uma entrada
+    de 3 revertida por inteiro mais o estorno de 3 dela dá "3 peças esperando" numa soma em que nada
+    entra no estoque, e duas entradas de 3 com um estorno de 3 dão 9 onde há 3 a entrar e 3 a sair.
+    O saldo (`quantidade - estornado`) é o que a entrada ainda vale; no estorno é a quantidade dele.
+  */
+  const entradasPendentes = linhas.filter((l) => l.operacao === 'entrada')
+  const saidasPendentes = linhas.filter((l) => l.operacao === 'estorno')
+  const pecasEntradas = entradasPendentes.reduce((soma, l) => soma + l.quantidade - l.estornado, 0)
+  const pecasSaidas = saidasPendentes.reduce((soma, l) => soma + l.quantidade, 0)
+  const plural = (n: number) => (n === 1 ? '' : 's')
 
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-lg font-semibold text-tinta">Estoque pendente no Compels</h2>
         <p className="text-sm text-muted-foreground">
+          {/*
+            NADA AQUI AFIRMA QUE ALGO CHEGOU AO ERP: com o último metro inexistente, nada pode ter
+            chegado, e dizer o contrário contradiria o aviso fixo logo abaixo.
+          */}
           {linhas.length === 0
-            ? 'Nada esperando: tudo que foi bipado no Almoxarifado já chegou ao ERP.'
-            : `${linhas.length} movimentaç${linhas.length === 1 ? 'ão' : 'ões'} `
-              + `(${pecas} peça${pecas === 1 ? '' : 's'}) esperando para ir ao Compels, `
-              + `em ${grupos.length} bipe${grupos.length === 1 ? '' : 's'}.`}
-          {cortada && ` Mostrando as ${LIMITE} mais recentes — há mais na fila.`}
+            ? 'Nenhuma movimentação esperando na fila.'
+            : `${entradasPendentes.length} entrada${plural(entradasPendentes.length)} `
+              + `(${pecasEntradas} peça${plural(pecasEntradas)}) · `
+              + `${saidasPendentes.length} saída${plural(saidasPendentes.length)} `
+              + `(${pecasSaidas} peça${plural(pecasSaidas)}) esperando para ir ao Compels, `
+              + `em ${grupos.length} bipe${plural(grupos.length)}.`}
+          {cortada
+            && ` Mostrando ${LIMITE} — as que precisam de alguém vêm primeiro; há mais na fila.`}
         </p>
       </div>
 

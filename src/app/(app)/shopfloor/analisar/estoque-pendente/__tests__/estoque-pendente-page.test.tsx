@@ -56,8 +56,8 @@ function linha(over: Partial<LinhaFilaEstoque> = {}): LinhaFilaEstoque {
   }
 }
 
-function fila(linhas: LinhaFilaEstoque[], entradas = new Map()) {
-  return { linhas, entradas, cortada: false }
+function fila(linhas: LinhaFilaEstoque[], entradas = new Map(), cortada = false) {
+  return { linhas, entradas, cortada }
 }
 
 beforeEach(() => {
@@ -108,7 +108,64 @@ describe('o que a tela diz sem contexto', () => {
     expect(
       screen.getByText(/A integração com o Compels ainda não foi configurada/),
     ).toBeInTheDocument()
-    expect(screen.getByText(/Nada na fila/)).toBeInTheDocument()
+    // O resumo do topo e o corpo da tabela dizem a mesma coisa, e nenhum dos dois afirma entrega.
+    expect(screen.getAllByText(/Nenhuma movimentação esperando na fila/)).toHaveLength(2)
+  })
+
+  it('nenhum texto AFIRMA que algo chegou ao ERP — com o envio inexistente, nada chegou', async () => {
+    listarEstoquePendente.mockResolvedValue(fila([]))
+    render(await EstoquePendentePage())
+    expect(screen.queryByText(/já chegou ao ERP/)).toBeNull()
+    expect(screen.queryByText(/já chegou ao Compels/)).toBeNull()
+  })
+
+  it('a coluna da data é neutra: no estorno o `criado_em` é a hora do CANCELAMENTO, não do bipe', async () => {
+    render(await EstoquePendentePage())
+    expect(screen.getByText('Entrou na fila')).toBeInTheDocument()
+    expect(screen.queryByText('Bipado em')).toBeNull()
+  })
+
+  it('o resumo separa entradas de saídas: somar as duas soma sentidos opostos', async () => {
+    const entrada = linha({ id: 'e1', quantidade: 3, estornado: 3 })
+    const estorno = linha({
+      id: 's1',
+      chave: 'ALMOX/PMOA01/9100/Almoxarifado/CX[1][3]9100-PMOA01/S1',
+      operacao: 'estorno',
+      entradaId: 'e1',
+      quantidade: 3,
+      tentativas: 0,
+      erro: null,
+    })
+    listarEstoquePendente.mockResolvedValue(
+      fila([entrada, estorno], new Map([['e1', { id: 'e1', chave: entrada.chave, ok: false, canceladoEm: null, tentativas: TETO_TENTATIVAS }]])),
+    )
+    render(await EstoquePendentePage())
+    // A entrada foi revertida por inteiro: 0 peça a entrar, 3 a sair. A soma antiga dizia "3 peças".
+    expect(screen.getByText(/1 entrada \(0 peças\) · 1 saída \(3 peças\)/)).toBeInTheDocument()
+  })
+
+  it('a lista cortada avisa que as que precisam de alguém vêm primeiro', async () => {
+    listarEstoquePendente.mockResolvedValue(fila([linha()], new Map(), true))
+    render(await EstoquePendentePage())
+    expect(screen.getByText(/precisam de alguém vêm primeiro/)).toBeInTheDocument()
+  })
+
+  it('o estorno retido diz que NÃO falhou, e não "ainda não foi tentada"', async () => {
+    const entrada = linha({ id: 'e1', tentativas: TETO_TENTATIVAS })
+    const estorno = linha({
+      id: 's1',
+      chave: 'ALMOX/PMOA01/9100/Almoxarifado/CX[1][3]9100-PMOA01/S1',
+      operacao: 'estorno',
+      entradaId: 'e1',
+      tentativas: 0,
+      erro: null,
+    })
+    listarEstoquePendente.mockResolvedValue(
+      fila([estorno, entrada], new Map([['e1', { id: 'e1', chave: entrada.chave, ok: false, canceladoEm: null, tentativas: TETO_TENTATIVAS }]])),
+    )
+    render(await EstoquePendentePage())
+    expect(screen.getByText(/está retida de propósito, esperando a entrada/)).toBeInTheDocument()
+    expect(screen.queryByText(/ainda não foi tentada/)).toBeNull()
   })
 
   it('a linha mostra o motivo do último erro e o que fazer', async () => {
