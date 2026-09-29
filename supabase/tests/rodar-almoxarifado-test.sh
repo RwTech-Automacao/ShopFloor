@@ -22,8 +22,10 @@ docker cp supabase/migrations/0087_sf_registros_cancelados.sql "$NOME":/tmp/0087
 docker cp supabase/migrations/0106_cancelar_embalagem_reabre_caixa.sql "$NOME":/tmp/0106.sql
 docker cp supabase/migrations/0131_sf_cancelar_caixa_almoxarifado.sql "$NOME":/tmp/0131.sql
 # A fila de envio ao Compels (0132): desde a Fase 2 a entrada grava na fila na MESMA transação em que
-# grava os registros, então a fila faz parte do que estes testes exercitam.
+# grava os registros, então a fila faz parte do que estes testes exercitam. A 0133 é a
+# sf_cancelar_lancamento revertendo na fila quando a linha cancelada é uma entrada de Almoxarifado.
 docker cp supabase/migrations/0132_sf_estoque_envios.sql "$NOME":/tmp/0132.sql
+docker cp supabase/migrations/0133_cancelar_lancamento_estoque.sql "$NOME":/tmp/0133.sql
 docker cp supabase/tests/almoxarifado_test.sql "$NOME":/tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 
@@ -38,6 +40,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0129.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0130.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0131.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0132.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0133.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','shopfloor.lancar',false)" \
   -c "select sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','Ana','CX[7][14]8498-PMOC14','caixa',14,'')->>'motivo'" \

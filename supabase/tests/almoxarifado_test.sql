@@ -733,6 +733,9 @@ $f$;
 \i /tmp/0087.sql
 \i /tmp/0106.sql
 \i /tmp/0131.sql
+-- A 0133 troca a sf_cancelar_lancamento (create or replace) pra ela também reverter na fila de estoque
+-- quando a linha cancelada é uma entrada de Almoxarifado. Depois da 0106, que é a versão de produção.
+\i /tmp/0133.sql
 
 -- Guarda ids entre blocos: cada `do $t$` é um escopo próprio, e o teste 28 precisa do id que o
 -- teste 26 já apagou.
@@ -1195,3 +1198,220 @@ begin
     raise exception 'FALHOU: depois dos gatilhos, o bipe tinha que entrar normal'; end if;
   raise notice '35. transação única: registro sem fila e fila sem registro, nenhum dos dois acontece: ok';
 end $t$;
+
+-- =============================================================
+-- O CANCELAMENTO NA FILA — a decisão que mais importa nesta tarefa.
+--
+-- Cancelar uma entrada que JÁ FOI pro ERP é um estorno: uma linha nova, com sinal trocado (operacao
+-- = 'estorno', que a chave escreve como S). Cancelar uma que AINDA NÃO SAIU não é: é cancelar o
+-- envio pendente (`cancelado_em`). Senão manda-se pro ERP uma entrada e uma saída que nunca
+-- precisaram existir, e alguém do outro lado gasta meia hora entendendo por que apareceu movimento
+-- de nada.
+-- =============================================================
+
+insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
+  ('PMOC20', '8503', 'Cliente Estorno', '9950', '9999', false);
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC20', '8503', 'Embalagem', 1, 3, 3, 'CX[1][3]8503-PMOC20', true),
+  ('PMOC20', '8503', 'Embalagem', 2, 2, 2, 'CX[2][2]8503-PMOC20', true),
+  ('PMOC20', '8503', 'Embalagem', 3, 3, 3, 'CX[3][3]8503-PMOC20', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[1][3]8503-PMOC20',
+       'SN-' || (9950 + i)::text, (9950 + i)::text from generate_series(1, 3) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[2][2]8503-PMOC20',
+       'SN-' || (9960 + i)::text, (9960 + i)::text from generate_series(1, 2) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[3][3]8503-PMOC20',
+       'SN-' || (9970 + i)::text, (9970 + i)::text from generate_series(1, 3) i;
+
+-- ---------- 36. cancelar a caixa com o envio AINDA PENDENTE → cancela o envio, sem estorno ----------
+do $t$
+declare e public.sf_estoque_envios; v_id uuid; v_n int;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[1][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 1 não entrou'; end if;
+
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[1][3]8503-PMOC20' limit 1;
+  if sf_cancelar_caixa_almoxarifado(v_id, 'bipou a caixa errada') <> 3 then
+    raise exception 'FALHOU (massa): esperava cancelar as 3 peças'; end if;
+
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[1][3]8503-PMOC20' and operacao = 'entrada';
+  if e.cancelado_em is null then
+    raise exception 'FALHOU: o envio ainda não tinha saído — tinha que ser CANCELADO, não estornado: %', to_jsonb(e); end if;
+  if e.ok then raise exception 'FALHOU: cancelou uma entrada marcada como enviada: %', to_jsonb(e); end if;
+
+  -- E nada de estorno: entrada e saída que nunca precisaram existir não vão pro ERP.
+  select count(*) into v_n from sf_estoque_envios
+   where alvo = 'CX[1][3]8503-PMOC20' and operacao = 'estorno';
+  if v_n <> 0 then
+    raise exception 'FALHOU: criou % estorno(s) de uma entrada que nunca saiu daqui', v_n; end if;
+  raise notice '36. cancelar caixa com envio pendente → cancela o envio, sem estorno: ok';
+end $t$;
+
+-- ---------- 37. cancelar a caixa com o envio JÁ ENVIADO → estorno ----------
+-- Aqui não tem escolha: o ERP já contou as peças, e a única forma de descontar é uma movimentação
+-- nova de saída. A entrada continua como está (o check da 0132 proíbe cancelar o que já foi enviado).
+do $t$
+declare e public.sf_estoque_envios; v_ent public.sf_estoque_envios; v_id uuid;
+begin
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[2][2]8503-PMOC20', 'caixa', 2, '')->>'quantidade')::int <> 2 then
+    raise exception 'FALHOU (massa): a caixa 2 não entrou'; end if;
+  -- O servidor entregou ao Compels (é o que a Task 3 vai fazer de verdade).
+  update sf_estoque_envios set ok = true, enviado_em = now(), tentativas = 1
+   where alvo = 'CX[2][2]8503-PMOC20' and operacao = 'entrada';
+
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[2][2]8503-PMOC20' limit 1;
+  if sf_cancelar_caixa_almoxarifado(v_id, 'caixa voltou do cliente') <> 2 then
+    raise exception 'FALHOU (massa): esperava cancelar as 2 peças'; end if;
+
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[2][2]8503-PMOC20' and operacao = 'estorno';
+  if not found then
+    raise exception 'FALHOU: a entrada já tinha ido pro ERP e ninguém enfileirou o estorno'; end if;
+  -- Chave de MOVIMENTAÇÃO NOVA (S1), senão o ERP descartaria o estorno como repetição da entrada.
+  if e.chave <> 'ALMOX/PMOC20/8503/Almoxarifado/CX[2][2]8503-PMOC20/S1' then
+    raise exception 'FALHOU: chave do estorno errada: %', e.chave; end if;
+  -- Mesma identidade de bipe da entrada (tipo/bipe/serie_norm copiados dela): é o que faz o `alvo`
+  -- do estorno bater com o da entrada — sem isso, o contador da chave e a busca do cancelamento
+  -- olhariam pra bipes diferentes.
+  if e.tipo <> 'caixa' or e.bipe <> 'CX[2][2]8503-PMOC20' or e.serie_norm <> '' then
+    raise exception 'FALHOU: o estorno não copiou a identidade do bipe: %', to_jsonb(e); end if;
+  -- Quantidade SEMPRE positiva (o sinal é assunto da carga, montada na hora do envio) e igual ao
+  -- que o ERP recebeu.
+  if e.quantidade <> 2 then
+    raise exception 'FALHOU: o estorno tinha que reverter as 2 peças que foram enviadas, veio %', e.quantidade; end if;
+  if e.ok or e.cancelado_em is not null or e.tentativas <> 0 then
+    raise exception 'FALHOU: o estorno tinha que nascer pendente: %', to_jsonb(e); end if;
+
+  select * into v_ent from sf_estoque_envios
+   where alvo = 'CX[2][2]8503-PMOC20' and operacao = 'entrada';
+  if not v_ent.ok or v_ent.cancelado_em is not null then
+    raise exception 'FALHOU: a entrada já enviada não se cancela: %', to_jsonb(v_ent); end if;
+  raise notice '37. cancelar caixa com envio já entregue → estorno S1, entrada intacta: ok';
+end $t$;
+
+-- ---------- 38. rebipe depois do cancelamento gera chave NOVA ----------
+-- Sem o contador na chave, o rebipe da caixa 1 bateria na chave da entrada de ontem (E1, cancelada) e
+-- a caixa nunca chegaria ao estoque: uma chave gasta não se reaproveita, porque não se sabe se o ERP
+-- viu a primeira (pode ter sido cancelada justamente depois de um envio com resposta perdida).
+do $t$
+declare e public.sf_estoque_envios;
+begin
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Bruno',
+                              'CX[1][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU: o rebipe depois do cancelamento tinha que ser aceito'; end if;
+
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[1][3]8503-PMOC20' and operacao = 'entrada' and cancelado_em is null;
+  if not found then raise exception 'FALHOU: o rebipe não enfileirou nada'; end if;
+  if e.chave <> 'ALMOX/PMOC20/8503/Almoxarifado/CX[1][3]8503-PMOC20/E2' then
+    raise exception 'FALHOU: o rebipe tinha que gerar chave nova (E2), veio %', e.chave; end if;
+  if e.quantidade <> 3 then raise exception 'FALHOU: o rebipe tinha que repor as 3 peças, veio %', e.quantidade; end if;
+  -- E a primeira continua cancelada, no lugar dela: é o histórico de que aquela entrada existiu.
+  if (select count(*) from sf_estoque_envios
+       where alvo = 'CX[1][3]8503-PMOC20' and operacao = 'entrada' and cancelado_em is not null) <> 1 then
+    raise exception 'FALHOU: a entrada cancelada tinha que continuar na tabela'; end if;
+  raise notice '38. rebipe depois de cancelar → E2, sem bater na chave de ontem: ok';
+end $t$;
+
+-- ---------- 39. CANCELAMENTO DE LINHA AVULSA (0133) também reverte na fila ----------
+-- A sf_cancelar_lancamento é a irmã que desfaz UMA linha, e ela está em produção desde a 0087 — por
+-- isso a mudança vem numa migração nova (0133, `create or replace`). Os três casos:
+--   (a) peça individual com o envio pendente → cancela o envio (uma linha, uma peça, nada sobra);
+--   (b) peça individual já enviada → estorno de 1;
+--   (c) UMA peça de uma caixa cujo envio ainda está pendente → a linha da fila é AJUSTADA (3 → 2).
+-- O (c) é a decisão menos óbvia: a entrada da caixa ainda não saiu, então ela ainda descreve o que
+-- VAI ser enviado — e o que vai ser enviado agora são 2 peças. Mandar 3 e estornar 1 seria pedir ao
+-- ERP duas movimentações para um número que ainda podia ser corrigido aqui. Quando a última peça da
+-- caixa cair, a linha é cancelada (é o caso (a) de novo, por outro caminho).
+insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
+  ('PMOI03', '9002', 'Cliente Avulso', '2000', '2100', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, qtd_por_caixa, numero_serie, numero_serie_norm)
+values ('Marcos', 'Embalagem', 'PMOI03', '9002', 'Cliente Avulso', '2001', 1, '2001', '2001');
+
+do $t$
+declare e public.sf_estoque_envios; v_id uuid; v_n int;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+
+  -- (a) peça individual, envio PENDENTE: é a entrada do teste 5 (peça 1042), que nunca saiu.
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and pmo = 'PMOI01' and numero_serie_norm = '1042';
+  perform sf_cancelar_lancamento(v_id, 'entrada errada');
+  select * into e from sf_estoque_envios where alvo = '1042' and operacao = 'entrada';
+  if e.cancelado_em is null then
+    raise exception 'FALHOU: o envio pendente da peça tinha que ser cancelado: %', to_jsonb(e); end if;
+  if (select count(*) from sf_estoque_envios where alvo = '1042' and operacao = 'estorno') <> 0 then
+    raise exception 'FALHOU: estornou uma entrada que nunca saiu daqui'; end if;
+
+  -- (b) peça individual JÁ ENVIADA: estorno de 1.
+  if (sf_almoxarifado_entrada('PMOI03', '9002', 'Almoxarifado', 'Ana', '2001', 'serie', 1, '2001')
+        ->>'quantidade')::int <> 1 then
+    raise exception 'FALHOU (massa): a peça 2001 não entrou'; end if;
+  update sf_estoque_envios set ok = true, enviado_em = now(), tentativas = 1
+   where alvo = '2001' and operacao = 'entrada';
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and pmo = 'PMOI03' and numero_serie_norm = '2001';
+  perform sf_cancelar_lancamento(v_id, 'peça voltou');
+  select * into e from sf_estoque_envios where alvo = '2001' and operacao = 'estorno';
+  if not found then raise exception 'FALHOU: a peça já enviada não gerou estorno'; end if;
+  if e.chave <> 'ALMOX/PMOI03/9002/Almoxarifado/2001/S1' then
+    raise exception 'FALHOU: chave do estorno da peça errada: %', e.chave; end if;
+  if e.tipo <> 'serie' or e.serie_norm <> '2001' or e.quantidade <> 1 then
+    raise exception 'FALHOU: estorno da peça errado: %', to_jsonb(e); end if;
+
+  -- (c) uma peça de caixa com envio PENDENTE: a linha da fila é ajustada, não estornada.
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[3][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 3 não entrou'; end if;
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[3][3]8503-PMOC20' order by numero_serie_norm limit 1;
+  perform sf_cancelar_lancamento(v_id, 'uma peça só');
+  select * into e from sf_estoque_envios where alvo = 'CX[3][3]8503-PMOC20' and operacao = 'entrada';
+  if e.cancelado_em is not null then
+    raise exception 'FALHOU: sobraram 2 peças na caixa — o envio não podia ser cancelado: %', to_jsonb(e); end if;
+  if e.quantidade <> 2 then
+    raise exception 'FALHOU: o envio pendente tinha que passar a valer 2 peças, veio %', e.quantidade; end if;
+  if (select count(*) from sf_estoque_envios where alvo = 'CX[3][3]8503-PMOC20' and operacao = 'estorno') <> 0 then
+    raise exception 'FALHOU: estornou peça de uma entrada que ainda nem saiu'; end if;
+
+  -- E quando a última peça cai, o envio é cancelado (não sobra entrada de caixa vazia na fila).
+  for v_id in select id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[3][3]8503-PMOC20' order by numero_serie_norm
+  loop
+    perform sf_cancelar_lancamento(v_id, 'e as outras duas');
+  end loop;
+  select * into e from sf_estoque_envios where alvo = 'CX[3][3]8503-PMOC20' and operacao = 'entrada';
+  if e.cancelado_em is null then
+    raise exception 'FALHOU: a caixa ficou sem nenhuma peça e o envio continuou pendente: %', to_jsonb(e); end if;
+  select count(*) into v_n from sf_estoque_envios
+   where alvo = 'CX[3][3]8503-PMOC20' and operacao = 'estorno';
+  if v_n <> 0 then raise exception 'FALHOU: criou % estorno(s) de entrada que nunca saiu', v_n; end if;
+  raise notice '39. cancelamento avulso: pendente cancela, enviado estorna, caixa parcial ajusta: ok';
+end $t$;
+
+-- ---------- 40. entrada SEM linha na fila (histórico) não inventa estorno ----------
+-- Toda entrada gravada ANTES desta migração não tem linha na fila. Cancelar uma delas não pode
+-- enfileirar estorno nenhum: seria mandar ao ERP uma saída de uma entrada que ele nunca recebeu.
+do $t$
+declare v_id uuid;
+begin
+  insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+  values ('Marcos', 'Almoxarifado', 'PMOI03', '9002', 'Cliente Avulso', '', '2099', '2099')
+  returning id into v_id;
+
+  perform sf_cancelar_lancamento(v_id, 'entrada antiga');
+  if exists (select 1 from sf_estoque_envios where alvo = '2099') then
+    raise exception 'FALHOU: inventou envio pra uma entrada que nunca passou pela fila'; end if;
+  if exists (select 1 from sf_registros where id = v_id) then
+    raise exception 'FALHOU: o cancelamento não apagou a linha'; end if;
+  raise notice '40. entrada anterior à fila → cancela sem estorno: ok';
+end $t$;
+

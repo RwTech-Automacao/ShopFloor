@@ -152,6 +152,25 @@ begin
   where pmo = v_pmo and op = v_op and posto = v_posto and numero_caixa = v_caixa;
   get diagnostics v_n = row_count;
 
+  -- ---------- A FILA DE ENVIO AO ERP (Fase 2) ----------
+  -- A caixa inteira foi desfeita, então o Compels tem que ficar sabendo — a não ser que a entrada nem
+  -- tenha saído daqui ainda, caso em que o certo é cancelar o envio pendente e não mandar uma entrada
+  -- e uma saída que nunca precisaram existir. Quem decide isso é a sf_estoque_reverter (0132), a
+  -- MESMA função que o cancelamento de linha avulsa chama (0133): é uma decisão só, e ter duas cópias
+  -- dela seria ter duas chances de errá-la em silêncio.
+  --
+  -- p_quantidade NULO = "o bipe inteiro", que é exatamente o que este gesto é. Sem aritmética de
+  -- propósito: a intenção é inequívoca, e a quantidade da linha da fila pode já não ser a de hoje (um
+  -- cancelamento avulso anterior pode ter ajustado o envio pendente de 14 pra 13). Se a entrada já foi
+  -- entregue, o estorno reverte o que o ERP RECEBEU, e não o que acabou de ser apagado aqui — é o que
+  -- chegou lá que precisa ser descontado lá.
+  --
+  -- Na mesma transação do delete, pelo mesmo motivo do bipe: se o delete vingasse e a reversão não, as
+  -- peças sairiam do ShopFloor e continuariam no ERP para sempre, caladas. Dependência de número
+  -- MENOR (esta migração chama uma função da 0132): as migrações desta branch nunca foram aplicadas em
+  -- banco nenhum e vão juntas; o corpo plpgsql só resolve o nome na hora de executar.
+  perform sf_estoque_reverter(v_pmo, v_op, v_posto, v_caixa, null);
+
   -- Quantas peças o gestor acabou de tirar do estoque — a tela diz "14 peças canceladas". Vem do
   -- delete, o que REALMENTE saiu, e não da etiqueta nem de uma contagem feita antes da trava.
   return v_n;
