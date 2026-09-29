@@ -79,7 +79,11 @@ export function AlmoxarifadoPanel({
         setResultado({
           tipo: 'ok',
           titulo: rotulo,
+          // Etiqueta × contagem real: a entrada foi aceita (quem manda é a peça), mas o operador
+          // precisa ver a diferença — ela era só um aviso no log do Postgres, que ninguém lê.
+          detalhe: r.divergencia,
           chips: [{ rotulo: r.tipo === 'caixa' ? 'Caixa' : 'Nº Série', valor: alvo.trim(), mono: true }],
+          dica: r.divergencia ? 'Confira a caixa física e avise o gestor: a diferença não deu entrada.' : undefined,
         })
         setRecentes((prev) => [{ bipe: alvo.trim(), quantidade: r.quantidade, tipo: r.tipo }, ...prev].slice(0, 30))
         setBipe('') // aceito → limpa pro próximo bipe

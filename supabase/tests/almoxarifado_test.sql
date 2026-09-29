@@ -132,6 +132,10 @@ begin
     raise exception 'FALHOU: caixa fechada não entrou: %', r; end if;
   if (r->>'quantidade')::int <> 14 then
     raise exception 'FALHOU: a quantidade tinha que vir do código (14): %', r; end if;
+  -- Etiqueta e contagem batendo: nada de qtd_etiqueta na resposta (o painel só fala da divergência
+  -- quando ela existe — ver teste 20).
+  if r ? 'qtd_etiqueta' then
+    raise exception 'FALHOU: sem divergência não pode vir qtd_etiqueta: %', r; end if;
 
   -- UMA LINHA POR PEÇA: 14 peças na caixa, 14 linhas no Almoxarifado — cada uma com a SÉRIE da peça
   -- preenchida (é o que todo leitor do sistema conta) e com o código da caixa em numero_caixa (é o
@@ -337,8 +341,9 @@ begin
 end $t$;
 
 -- ---------- 14. série normalizada vazia não vira entrada em branco ----------
--- Chamada fora do fluxo da tela (o domínio nunca deixa passar série vazia). Não pode casar com as
--- linhas de bipe de caixa, que gravam numero_serie_norm = ''.
+-- Chamada fora do fluxo da tela (o domínio nunca deixa passar série vazia). O bipe de caixa NÃO
+-- grava mais linha sem série (virou uma linha por peça), mas o histórico gravado ANTES dessa
+-- correção continua no banco com numero_serie_norm = '' — e série vazia não pode casar com ele.
 do $t$
 declare r jsonb;
 begin
@@ -347,7 +352,8 @@ begin
   r := sf_almoxarifado_entrada('PMOI01', '9000', 'Almoxarifado', 'Ana', '', 'serie', 1, '');
   if r->>'motivo' <> 'serie_fora_da_faixa' then
     raise exception 'FALHOU: série vazia está fora de qualquer faixa: %', r; end if;
-  -- Na OP sem faixa quem barra é a exigência da Embalagem, e não as linhas de caixa (norm = '').
+  -- Na OP sem faixa quem barra é a exigência da Embalagem: o `numero_serie_norm <> ''` da checagem
+  -- é o que impede a série vazia de casar com linha antiga de bipe de caixa (norm = '').
   r := sf_almoxarifado_entrada('PMOI02', '9001', 'Almoxarifado', 'Ana', '', 'serie', 1, '');
   if r->>'motivo' <> 'serie_sem_embalagem' then
     raise exception 'FALHOU: série vazia em OP sem faixa entrou: %', r; end if;
@@ -494,7 +500,9 @@ end $t$;
 -- é a PEÇA: entram 13 linhas e o painel mostra 13 — não há como inventar a 14ª série, e deixar de
 -- gravar as 13 por causa do número da etiqueta esconderia peça embalada do Fluxo (o defeito de
 -- origem). A divergência só é possível se alguém mexeu nos dados depois do fechamento, então é a
--- etiqueta que está velha. A função avisa em log (raise warning) sem barrar a entrada.
+-- etiqueta que está velha. A função avisa em log (raise warning) sem barrar a entrada — E devolve
+-- `qtd_etiqueta` na resposta, que é o que o painel usa pra dizer "14 peças na etiqueta, 13
+-- entraram". Só o log não servia: warning em chamada via PostgREST é engolido pelo supabase-js.
 do $t$
 declare r jsonb; v_n int;
 begin
@@ -509,6 +517,9 @@ begin
     raise exception 'FALHOU: a divergência não podia barrar a entrada: %', r; end if;
   if (r->>'quantidade')::int <> 13 then
     raise exception 'FALHOU: a quantidade tinha que ser a contagem real (13), veio %', r->>'quantidade'; end if;
+  -- A divergência chega à TELA, não só ao log do Postgres.
+  if coalesce(r->>'qtd_etiqueta', '') <> '14' then
+    raise exception 'FALHOU: a etiqueta (14) tinha que voltar no JSON pro painel: %', r; end if;
   select count(*) into v_n from sf_registros
    where posto = 'Almoxarifado' and numero_caixa = 'CX[12][14]8498-PMOC14';
   if v_n <> 13 then raise exception 'FALHOU: esperava 13 linhas, veio %', v_n; end if;
@@ -537,3 +548,61 @@ begin
   if v_n <> 2 then raise exception 'FALHOU: esperava 2 linhas, veio %', v_n; end if;
   raise notice '21. peça repetida na caixa entra uma vez só: ok';
 end $t$;
+
+-- ---------- 22. o insert não gravou nada: recusa em vez de "ok, 0 peças" ----------
+-- O guard `caixa_sem_pecas` conta as peças num statement e o insert copia as peças em OUTRO. Em READ
+-- COMMITTED cada statement pega um snapshot novo: se entre os dois um cancelamento de embalagem
+-- (0106) comitar e REABRIR a caixa — o que reescreve o numero_caixa das peças de volta pro marcador
+-- CX[seq] —, o insert não acha mais nada. Sem a conferência DEPOIS do insert a função devolveria
+-- ok com quantidade 0: o operador leria "0 peças" e a caixa ficaria fora do estoque em silêncio, que
+-- é o mesmo defeito calado que a recusa existe pra matar. As duas travas não se serializam (a 0106
+-- trava por (OP, posto de embalagem), esta por (OP, posto de almoxarifado, bipe)), então a janela é
+-- real.
+--
+-- O QUE ESTE TESTE PROVA, e o que não prova: a CORRIDA em si não é reproduzível aqui, e as duas
+-- tentativas ficam registradas pra ninguém repetir. (1) Um gatilho de statement que apaga as linhas
+-- antes do insert não serve: o que ele apaga ganha um command id NOVO, invisível pro snapshot do
+-- próprio insert, que grava as linhas normalmente. (2) Segurar o insert numa trava de tabela (share
+-- mode noutra sessão) e comitar o delete durante a espera também não: o snapshot do statement é
+-- anterior à espera pela trava, e o insert grava as linhas do mesmo jeito. Sobra reproduzir o ESTADO
+-- que a corrida produz — o insert não gravar linha nenhuma —, com um gatilho de linha que devolve
+-- null (a linha é descartada e `row_count` vem 0). É esse estado que o guard novo enxerga.
+insert into sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada)
+values ('PMOC14', '8498', 'Embalagem', 14, 2, 2, 'CX[14][2]8498-PMOC14', true);
+insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+values ('Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[14][2]8498-PMOC14', 'SN-8250', '8250'),
+       ('Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[14][2]8498-PMOC14', 'SN-8251', '8251');
+
+create function public.teste_engole_insert() returns trigger language plpgsql as $f$
+begin
+  -- Só as linhas da caixa marcada, e só no posto de almoxarifado: o resto do teste continua gravando.
+  if new.numero_caixa = coalesce(current_setting('teste.engolir', true), '') and new.posto = 'Almoxarifado' then
+    return null;
+  end if;
+  return new;
+end $f$;
+create trigger teste_engole before insert on public.sf_registros
+  for each row execute function public.teste_engole_insert();
+
+do $t$
+declare r jsonb; v_n int;
+begin
+  perform set_config('teste.engolir', 'CX[14][2]8498-PMOC14', false);
+  r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana',
+                               'CX[14][2]8498-PMOC14', 'caixa', 2, '');
+  perform set_config('teste.engolir', '', false);
+
+  if coalesce((r->>'ok')::boolean, true) is not false then
+    raise exception 'FALHOU: entrada de zero peça devolveu ok: %', r; end if;
+  if r->>'motivo' <> 'caixa_sem_pecas' then
+    raise exception 'FALHOU: motivo errado pra caixa que ficou sem peça: %', r; end if;
+  if r ? 'quantidade' then
+    raise exception 'FALHOU: recusa não devolve quantidade: %', r; end if;
+  select count(*) into v_n from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[14][2]8498-PMOC14';
+  if v_n <> 0 then raise exception 'FALHOU: gravou % linha(s) numa caixa sem peça', v_n; end if;
+  raise notice '22. insert sem nenhuma linha gravada → caixa_sem_pecas (e não "ok, 0 peças"): ok';
+end $t$;
+
+drop trigger teste_engole on public.sf_registros;
+drop function public.teste_engole_insert();

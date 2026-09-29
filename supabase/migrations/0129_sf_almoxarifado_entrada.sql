@@ -34,6 +34,9 @@
 --                        um cancelamento de lançamento (0087) levar as linhas da Embalagem pra
 --                        auditoria. Sem esta recusa o bipe gravaria ZERO linha e ainda devolveria
 --                        ok: o operador leria "0 peças" e a caixa ficaria fora do estoque em silêncio.
+--                        Conferida DUAS vezes: na contagem antes do insert e nas linhas gravadas
+--                        depois dele — são statements separados, e uma reabertura de caixa (0106)
+--                        que comite entre os dois deixa o insert sem nenhuma peça pra copiar.
 --   serie_fora_da_faixa  a série não pertence à faixa (sn_ini/sn_fim) da OP.
 --   serie_sem_embalagem  a série existe na OP mas não passou pela Embalagem: o Almoxarifado é o
 --                        último posto, só entra o que já foi embalado.
@@ -53,6 +56,13 @@
 -- A alternativa (ensinar cada leitor a somar a quantidade da linha de caixa) foi recusada porque
 -- espalharia um caso especial que, esquecido em qualquer leitor novo, conta errado calado.
 -- Gravando como a Embalagem e o Teste gravam, ninguém precisa nunca ter ouvido falar deste posto.
+--
+-- DIVERGÊNCIA ETIQUETA × CONTAGEM: quando o número impresso no código (CX[3][**14**]…) não bate com
+-- as peças que entraram, a resposta leva `qtd_etiqueta` junto de `quantidade` e o painel diz as duas
+-- ("14 peças na etiqueta, 13 entraram"). O aviso em log continua, mas ele sozinho não servia: um
+-- `raise warning` numa chamada via PostgREST é engolido pelo supabase-js e fica só no log do
+-- Postgres, que ninguém lê — a caixa física de 14 entrava como 13 calada e a 14ª peça ficava como
+-- trabalho em processo na Embalagem pra sempre, sem a OP nunca concluir.
 --
 -- Irmã mais próxima: sf_lancar (0031) — mesmo gate, mesma gravação em sf_registros, mesma ideia de
 -- duplicidade. Corpo com $func$: o SQL Editor do Supabase não aceita o delimitador de dois cifrões.
@@ -262,22 +272,15 @@ begin
         'detalhe', 'A caixa ' || v_caixa.seq || ' não tem nenhuma peça registrada na Embalagem.');
     end if;
 
-    -- DIVERGÊNCIA entre o número impresso na etiqueta e a contagem real. Os dois deveriam ser
-    -- iguais, porque sf_fechar_caixa calcula o código a partir de count(distinct numero_serie_norm)
-    -- dessas mesmas linhas. Quando divergirem, quem manda é a PEÇA, não o número do código: cada
-    -- linha gravada aqui precisa de uma série de verdade — não há como inventar a 15ª série porque
-    -- a etiqueta diz 15, nem faz sentido deixar a 15ª peça embalada fora do estoque porque a
-    -- etiqueta diz 14 (ela sumiria do Fluxo e a OP nunca concluiria, que é exatamente o defeito que
-    -- esta correção resolve). Divergir só é possível se alguém mexeu nos dados depois do
-    -- fechamento (cancelamento de lançamento, correção manual) — e aí a etiqueta é que está velha.
-    -- Por isso a quantidade devolvida ao painel é a contagem das linhas gravadas, e o número do
-    -- código fica só na conferência abaixo, que registra o aviso em log sem barrar a entrada:
-    -- barrar deixaria a caixa física sem entrada nenhuma, que é pior que entrar com o número certo.
+    -- A quantidade impressa na ETIQUETA, lida do próprio código bipado. Ela deveria ser igual à
+    -- contagem real, porque sf_fechar_caixa calculou o código a partir de
+    -- count(distinct numero_serie_norm) dessas mesmas linhas. Quando divergirem, quem manda é a
+    -- PEÇA, não o número do código: cada linha gravada aqui precisa de uma série de verdade — não há
+    -- como inventar a 15ª série porque a etiqueta diz 15, nem faz sentido deixar a 15ª peça embalada
+    -- fora do estoque porque a etiqueta diz 14 (ela sumiria do Fluxo e a OP nunca concluiria, que é
+    -- exatamente o defeito que esta correção resolve). A conferência em si fica DEPOIS do insert,
+    -- contra o que realmente entrou.
     v_qtd_codigo := nullif(substring(p_bipe from '^CX\[[0-9]+\](?:R[0-9]*)?\[([0-9]+)\]'), '')::int;
-    if v_qtd_codigo is not null and v_qtd_codigo <> v_pecas then
-      raise warning 'sf_almoxarifado_entrada: caixa % com % peças registradas, etiqueta diz %',
-        p_bipe, v_pecas, v_qtd_codigo;
-    end if;
 
     -- UMA LINHA POR PEÇA. A série vai nos DOIS formatos que a Embalagem já gravou (numero_serie cru
     -- e numero_serie_norm), copiados da linha dela: se esta função normalizasse por conta própria,
@@ -298,6 +301,33 @@ begin
          order by numero_serie_norm, data_hora, numero_serie
       ) pc;
     get diagnostics v_quantidade = row_count;
+
+    -- GRAVOU ZERO? Então a recusa `caixa_sem_pecas` acima foi contada num snapshot que já morreu.
+    -- A contagem e o insert são statements SEPARADOS e, em READ COMMITTED, cada um vê o banco no
+    -- instante em que começa: se entre os dois um cancelamento de embalagem (0106) comitar e REABRIR
+    -- a caixa — o que reescreve o numero_caixa das peças de volta pro marcador CX[seq] —, o
+    -- insert ... select não acha mais nada. Sem esta linha a função devolveria ok com quantidade 0, o
+    -- operador leria "0 peças" e a caixa ficaria fora do estoque em silêncio: exatamente o defeito
+    -- que a recusa existe pra matar. As duas travas não se serializam (a 0106 trava por
+    -- (OP, posto de embalagem), esta por (OP, posto de almoxarifado, bipe)), então a janela é real.
+    if v_quantidade = 0 then
+      return jsonb_build_object('ok', false, 'motivo', 'caixa_sem_pecas',
+        'detalhe', 'A caixa ' || v_caixa.seq || ' não tem nenhuma peça registrada na Embalagem.');
+    end if;
+
+    -- A conferência da etiqueta, agora contra o que REALMENTE entrou. Divergir só é possível se
+    -- alguém mexeu nos dados depois do fechamento (cancelamento de lançamento, correção manual por
+    -- SQL) — e aí é a etiqueta que está velha. A entrada NÃO é barrada: barrar deixaria a caixa
+    -- física sem entrada nenhuma, que é pior que entrar com o número certo. O aviso em log continua
+    -- (serve pra investigar depois), mas ele não é mais o único canal: quem precisa saber é o
+    -- operador, e a divergência volta no JSON, em `qtd_etiqueta`, pro painel dizer as duas
+    -- quantidades. Warning em chamada via PostgREST é engolido pelo supabase-js e só sobra no log do
+    -- Postgres, que ninguém lê — a caixa física de 14 entrando como 13 ficaria muda, e a 14ª peça
+    -- ficaria como trabalho em processo na Embalagem pra sempre, sem a OP nunca concluir.
+    if v_qtd_codigo is not null and v_qtd_codigo <> v_quantidade then
+      raise warning 'sf_almoxarifado_entrada: caixa % com % peças registradas, etiqueta diz %',
+        p_bipe, v_quantidade, v_qtd_codigo;
+    end if;
 
   else
     -- Qualquer coisa que não seja 'caixa' é tratada como série: o domínio só emite os dois valores,
@@ -356,6 +386,13 @@ begin
   -- O painel mostra este número ao operador ("14 peças" pra uma caixa de 14, "1 peça" pra uma peça),
   -- então ele é a contagem das LINHAS que acabaram de ser gravadas — o que realmente entrou —, e não
   -- o que a etiqueta prometia nem o que o domínio contou em p_quantidade.
+  --
+  -- `qtd_etiqueta` só aparece quando a etiqueta promete um número DIFERENTE do que entrou: é a
+  -- divergência saindo do log e chegando à tela ("14 peças na etiqueta, 13 entraram"). No caminho da
+  -- peça v_qtd_codigo é sempre null (não há etiqueta de caixa), então a chave nunca aparece lá.
+  if v_qtd_codigo is not null and v_qtd_codigo <> v_quantidade then
+    return jsonb_build_object('ok', true, 'quantidade', v_quantidade, 'qtd_etiqueta', v_qtd_codigo);
+  end if;
   return jsonb_build_object('ok', true, 'quantidade', v_quantidade);
 end $func$;
 

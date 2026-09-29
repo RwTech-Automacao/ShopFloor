@@ -78,6 +78,18 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
 }
 
 /**
+ * A etiqueta prometia um número e entrou outro — a frase que o painel mostra ao operador. A entrada
+ * FOI aceita (quem manda é a peça, não o número impresso), então isto não é recusa: é o aviso de que
+ * a caixa física e o código não combinam mais, e que alguém precisa olhar. Antes da 0129 devolver
+ * `qtd_etiqueta`, essa divergência só existia num `raise warning` do Postgres — engolido pelo
+ * supabase-js, invisível na tela, e a peça que faltava ficava parada na Embalagem pra sempre.
+ */
+function mensagemDivergenciaEtiqueta(qtdEtiqueta: number, quantidade: number): string {
+  const etiqueta = qtdEtiqueta === 1 ? '1 peça' : `${qtdEtiqueta} peças`
+  return `${etiqueta} na etiqueta, ${quantidade} ${quantidade === 1 ? 'entrou' : 'entraram'}.`
+}
+
+/**
  * Entrada no Almoxarifado: bipa o que acabou de ser embalado. `classificarBipeAlmoxarifado`
  * decide pelo FORMATO se peça ou caixa (sem tocar o banco); o que depende de dado — caixa existe,
  * está fechada, já foi lançada, a peça passou pela Embalagem — é a RPC `sf_almoxarifado_entrada`
@@ -86,10 +98,16 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
  * `quantidade` volta da RPC e é a contagem das PEÇAS que entraram: o bipe de caixa grava uma linha
  * por peça de dentro dela (ver 0129), então numa caixa de 14 voltam 14. O fallback pra `quantidade`
  * do domínio (a do código da etiqueta) só vale se a RPC não devolver o número.
+ *
+ * `divergencia` é o aviso de que a etiqueta e a contagem real não batem — a entrada foi aceita, mas
+ * o painel tem que dizer as duas quantidades em vez de deixar a diferença só no log do Postgres.
  */
 export async function registrarEntradaAlmoxarifado(
   entrada: EntradaAlmoxarifado,
-): Promise<{ ok: true; quantidade: number; tipo: 'serie' | 'caixa' } | { ok: false; erro: string }> {
+): Promise<
+  | { ok: true; quantidade: number; tipo: 'serie' | 'caixa'; divergencia?: string }
+  | { ok: false; erro: string }
+> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return { ok: false, erro: SEM_PERMISSAO }
@@ -138,7 +156,15 @@ export async function registrarEntradaAlmoxarifado(
   })
   if (error) return { ok: false, erro: 'Não foi possível registrar a entrada.' }
 
-  const r = data as { ok: boolean; motivo?: string; detalhe?: string; quantidade?: number }
+  const r = data as {
+    ok: boolean; motivo?: string; detalhe?: string; quantidade?: number; qtd_etiqueta?: number
+  }
   if (!r.ok) return { ok: false, erro: mensagemRecusaBanco(r.motivo ?? '', r.detalhe) }
-  return { ok: true, quantidade: r.quantidade ?? quantidade, tipo }
+  const gravadas = r.quantidade ?? quantidade
+  // `qtd_etiqueta` só vem quando a etiqueta promete um número diferente do que entrou (ver 0129).
+  const divergencia =
+    r.qtd_etiqueta !== undefined && r.qtd_etiqueta !== null && r.qtd_etiqueta !== gravadas
+      ? mensagemDivergenciaEtiqueta(r.qtd_etiqueta, gravadas)
+      : undefined
+  return { ok: true, quantidade: gravadas, tipo, divergencia }
 }
