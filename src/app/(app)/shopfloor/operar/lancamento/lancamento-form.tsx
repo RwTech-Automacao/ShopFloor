@@ -912,7 +912,10 @@ export function LancamentoForm({
         ordemSel?.embalagem_individual ? (
           <EmbalagemIndividualPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} contexto={renderContexto()} />
         ) : (
-          <EmbalagemPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} contexto={renderContexto()} />
+          <EmbalagemPanel
+            colaborador={colaborador} cliente={cliente} descricao={ordemSel?.descricao ?? ''}
+            pmo={pmo} op={op} posto={posto} qtdOP={ordemSel?.qtd ?? null} contexto={renderContexto()}
+          />
         )
       ) : ehNqaCaixa ? (
         // NQA: igual à Embalagem — o painel monta o próprio topo (Peça | Contexto) e deixa o

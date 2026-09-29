@@ -198,3 +198,35 @@ export async function qrDaCaixa(
     }
   }
 }
+
+/**
+ * QR Code do CÓDIGO da caixa (ex.: 'CX[3][10]12345-PMO973'), pequeno e ao lado do QR de SNs na
+ * folha. É o que o leitor de mão do Almoxarifado bipa na entrada — bipar o QR de cima daria dez
+ * linhas de número de série, não o código da caixa. Os dois QRs convivem: este não substitui o
+ * `qrDaCaixa`, que continua sendo a conferência pelo celular que a fábrica já usa.
+ *
+ * Caixa aberta não tem código final (ele só existe depois do "Fechar caixa") — sem código não há
+ * o que imprimir, então devolve erro em vez de um QR vazio ou com o marcador de "aberta".
+ */
+export async function qrCodigoDaCaixa(
+  pmo: string, op: string, posto: string, seq: number,
+): Promise<{ ok: true; svg: string; codigo: string } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    const caixas = await carregarCaixasDaOp(pmo.trim(), op.trim())
+    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq)
+    if (!caixa) return { ok: false, erro: 'Caixa não encontrada.' }
+    if (!caixa.fechada) return { ok: false, erro: 'Esta caixa ainda está aberta — feche a caixa para gerar o código.' }
+
+    const svg = await QRCode.toString(caixa.codigo, {
+      type: 'svg',
+      errorCorrectionLevel: 'M',
+      // Mesma zona de silêncio do QR de SNs, pelo mesmo motivo: sem ela o leitor erra a detecção.
+      margin: 4,
+    })
+    return { ok: true, svg, codigo: caixa.codigo }
+  } catch {
+    return { ok: false, erro: 'Não foi possível gerar o QR Code do código da caixa.' }
+  }
+}

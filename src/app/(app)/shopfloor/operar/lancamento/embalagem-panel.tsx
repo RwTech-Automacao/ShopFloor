@@ -7,8 +7,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
-import { carregarEmbalagem, embalarPeca, fecharCaixa, type ResultadoEmbalar } from '@/modules/shopfloor/application/embalagem-actions'
-import type { CaixaAberta, RemontagemCaixa } from '@/modules/shopfloor/infra/caixa-repository'
+import {
+  carregarEmbalagem, embalarPeca, fecharCaixa, caixasDaOp, qrDaCaixa, qrCodigoDaCaixa, type ResultadoEmbalar,
+} from '@/modules/shopfloor/application/embalagem-actions'
+import { pecasAntesDaCaixa } from '@/modules/shopfloor/domain/caixa'
+import type { CaixaAberta, RemontagemCaixa, OpComCaixa } from '@/modules/shopfloor/infra/caixa-repository'
+import { FolhaCaixa, useImpressaoFolha, fmtEmissao, type Folha } from '../../_components/folha-caixa'
 
 const AVISO_REIMPRIMIR = 'O código da caixa leva a quantidade: se ela fechar de novo com outra quantidade, o código muda — reimprima a folha.'
 
@@ -19,8 +23,11 @@ const AVISO_REIMPRIMIR = 'O código da caixa leva a quantidade: se ela fechar de
  * painel controla o próprio arranjo em vez de ser espremido numa coluna estreita pelo pai.
  */
 export function EmbalagemPanel({
-  colaborador, pmo, op, posto, qtdOP, contexto,
-}: { colaborador: string; pmo: string; op: string; posto: string; qtdOP: number | null; contexto?: React.ReactNode }) {
+  colaborador, cliente, descricao, pmo, op, posto, qtdOP, contexto,
+}: {
+  colaborador: string; cliente: string; descricao: string; pmo: string; op: string; posto: string
+  qtdOP: number | null; contexto?: React.ReactNode
+}) {
   const [seq, setSeq] = useState(1)
   const [limite, setLimite] = useState<number | null>(null)
   const [limiteInput, setLimiteInput] = useState('')
@@ -42,12 +49,16 @@ export function EmbalagemPanel({
   const [sn, setSn] = useState('')
   const [ehUltima, setEhUltima] = useState(false)
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
+  // Folha pronta pra imprimir — abre sozinha a cada caixa fechada (ver `abrirFolha`). Mesma folha e
+  // mesmo mecanismo de impressão da tela "Consultar Caixa"; aqui só dispara sem o operador pedir.
+  const [folha, setFolha] = useState<Folha | null>(null)
   const [carregando, startCarregar] = useTransition()
   const [embalando, startEmbalar] = useTransition()
   const [fechando, startFechar] = useTransition()
   const snRef = useRef<HTMLInputElement>(null)
   const acaoAposEmbalar = useRef<null | 'focus' | 'select'>(null)
   const { confirmar, dialog } = useConfirmacao()
+  useImpressaoFolha(folha, setFolha)
 
   // O input fica disabled durante a transição de embalar; refoca (ou seleciona, no erro)
   // quando ela termina, pra o operador bipar a próxima peça sem tocar no mouse.
@@ -206,6 +217,34 @@ export function EmbalagemPanel({
     if (remontagem) setRemontagem({ ...remontagem, faltando: remontagem.faltando.filter((s) => s !== alvo.trim()) })
   }
 
+  /**
+   * Monta e abre a folha da caixa que acabou de fechar — a impressão dispara sozinha (`useImpressaoFolha`).
+   * Busca os dados FRESCOS do servidor (`caixasDaOp`) em vez de aproveitar `snsNaCaixa`: esse estado
+   * guarda os SNs na ordem "mais recentes primeiro" (pro histórico da tela), enquanto a folha precisa
+   * da ordem de embalagem pra numerar as peças (1, 2, 3…) — reusar o estado local numeraria ao contrário.
+   * Roda em paralelo com `recarregar`, sem travar o campo de bipe: a folha é conveniência, não bloqueia
+   * a próxima peça. Se algo falhar aqui, a caixa já foi fechada e registrada — só a impressão não sai.
+   */
+  async function abrirFolha(seqFechada: number) {
+    const rc = await caixasDaOp(pmo, op)
+    if (!rc.ok) return
+    const caixa = rc.caixas.find((c) => c.posto === posto && c.seq === seqFechada)
+    if (!caixa) return
+    const [rSns, rCodigo] = await Promise.all([
+      qrDaCaixa(pmo, op, posto, seqFechada),
+      qrCodigoDaCaixa(pmo, op, posto, seqFechada),
+    ])
+    setFolha({
+      caixa,
+      base: pecasAntesDaCaixa(rc.caixas, caixa),
+      qrSvg: rSns.ok ? rSns.svg : null,
+      aviso: rSns.ok ? null : rSns.erro,
+      qrCodigoSvg: rCodigo.ok ? rCodigo.svg : null,
+      avisoCodigo: rCodigo.ok ? null : rCodigo.erro,
+      emitidoEm: fmtEmissao.format(new Date()),
+    })
+  }
+
   async function onFechar() {
     if (fechando || limite === null || qtdNaCaixa === 0) return
     // Numa remontagem, o que importa não é o limite e sim quem da caixa original ainda não voltou.
@@ -243,6 +282,8 @@ export function EmbalagemPanel({
       setSeqEmFoco(null); setEmReaberta(false); setEhUltima(false)
       recarregar(null, true)
       setTimeout(() => snRef.current?.focus(), 0)
+      // Sai em TODA caixa fechada, sem esperar — o operador já pode voltar a bipar enquanto a folha monta.
+      void abrirFolha(seq)
     })
   }
 
@@ -289,15 +330,20 @@ export function EmbalagemPanel({
   ) : null
 
   // Nas telas simples o Contexto fica ao lado, meio a meio — o operador não perde o cabeçalho.
+  // `print:hidden`: some da folha impressa, que é o único conteúdo desta tela que vai pro papel.
   const comContexto = (cartao: React.ReactNode) => (
-    <div className="grid shrink-0 gap-3 lg:grid-cols-2">{cartao}{contexto}</div>
+    <div className="grid shrink-0 gap-3 lg:grid-cols-2 print:hidden">{cartao}{contexto}</div>
   )
+  // A folha da última caixa fechada — existe só enquanto imprime (ver useImpressaoFolha) e sobrevive
+  // à troca de branch abaixo (ex.: fechar a última caixa da OP muda pra "Embalagem concluída").
+  const ordemAtual: OpComCaixa = { pmo, op, cliente, descricao, qtdOp: qtdOP }
+  const folhaEl = folha ? <FolhaCaixa folha={folha} ordem={ordemAtual} /> : null
 
   if (carregando && limite === null && !concluida) {
-    return comContexto(<Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Carregando…</CardContent></Card>)
+    return <>{comContexto(<Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Carregando…</CardContent></Card>)}{folhaEl}</>
   }
   if (concluida) {
-    return comContexto(
+    return <>{comContexto(
       <Card>
         <CardHeader><CardTitle>Embalagem concluída</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2">
@@ -306,10 +352,10 @@ export function EmbalagemPanel({
           {linhaCaixasAbertas}
         </CardContent>
       </Card>,
-    )
+    )}{folhaEl}</>
   }
   if (limite === null) {
-    return comContexto(
+    return <>{comContexto(
       <Card>
         <CardHeader><CardTitle>Embalagem</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2">
@@ -325,12 +371,14 @@ export function EmbalagemPanel({
         </CardContent>
         {dialog}
       </Card>,
-    )
+    )}{folhaEl}</>
   }
 
   const pct = Math.min(100, Math.round((qtdNaCaixa / limite) * 100))
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <>
+    {/* print:hidden: some da folha impressa, que é o único conteúdo desta tela que vai pro papel. */}
+    <div className="flex min-h-0 flex-1 flex-col gap-3 print:hidden">
       {/* Topo: Peça | Contexto — mesmo arranjo da bipagem normal, pra quem troca de posto encontrar
           o campo no mesmo lugar. Antes o campo dividia a linha com a lista de SNs (16rem fixos) e
           sobrava quase nada pra ele quando o painel era estreito. */}
@@ -432,5 +480,7 @@ export function EmbalagemPanel({
       </Card>
       {dialog}
     </div>
+    {folhaEl}
+    </>
   )
 }
