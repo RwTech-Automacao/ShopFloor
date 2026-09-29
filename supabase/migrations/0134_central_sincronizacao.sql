@@ -1,6 +1,11 @@
 -- =============================================================
 -- Central do Cliente: índice e as funções que montam a "foto" enviada de hora em hora.
 --
+-- ⚠️ Numeração: a `main` deste repositório vai até a 0127; a branch `feat/posto-almoxarifado`
+-- (não mergeada) já tem 0128-0133 commitados localmente. Esta 0134 usa `max(main, 0133) + 1`.
+-- Se essa branch ganhar uma 0134 própria antes do merge, uma das duas migrações precisa ser
+-- renumerada (ver tools/central-sync/README.md §5).
+--
 -- Só o que o cliente pode ver (contrato v1 — plano
 -- docs/superpowers/plans/2026-09-29-central-do-cliente-5-sincronizacao.md do repositório
 -- Central-Do-Cliente):
