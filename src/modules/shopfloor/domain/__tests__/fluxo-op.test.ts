@@ -182,6 +182,57 @@ describe('construirFluxo', () => {
       expect(edges.some((e) => e.source === 'Embalagem' && e.target === SAIDA)).toBe(false)
     })
 
+    it('o denominador do Almoxarifado é o que CHEGOU EMBALADO (deram entrada + disponíveis), não a qtd da OP', () => {
+      // OP de 140 peças, mas só 126 chegaram embaladas (o resto sucateou ou está em manutenção):
+      // 112 já deram entrada no estoque e 14 estão na porta (Disponível Produção = wip).
+      const agg: FluxoAgregado[] = [{ ...zero('Almoxarifado'), wip: 14, registros: 112, passouDistinto: 112 }]
+      const almox = construirFluxo(['Embalagem', 'Almoxarifado'], agg, () => false, recursoDe, 140).nodes
+        .find((n) => n.id === 'Almoxarifado')!.data
+      expect(almox.passou).toBe(112)
+      expect(almox.devemPassar).toBe(126) // 112 + 14, e NÃO os 140 da OP
+    })
+
+    it('Almoxarifado sem nada bipado ainda: denominador 0 (nada chegou), sem inventar a qtd da OP', () => {
+      const almox = construirFluxo(['Embalagem', 'Almoxarifado'], [], () => false, recursoDe, 140).nodes
+        .find((n) => n.id === 'Almoxarifado')!.data
+      expect(almox.devemPassar).toBe(0)
+    })
+
+    it('caixas (OP coletiva) chegam ao card do Almoxarifado: bipadas ÷ fechadas', () => {
+      const agg: FluxoAgregado[] = [{ ...zero('Almoxarifado'), wip: 28, registros: 112, passouDistinto: 112, caixasBipadas: 8, caixasFechadas: 10 }]
+      const almox = construirFluxo(['Embalagem', 'Almoxarifado'], agg, () => false, recursoDe, 140).nodes
+        .find((n) => n.id === 'Almoxarifado')!.data
+      expect(almox.caixasBipadas).toBe(8)
+      expect(almox.caixasFechadas).toBe(10)
+    })
+
+    it('OP de embalagem INDIVIDUAL: não existe caixa, então o card não recebe contagem de caixa', () => {
+      // O repositório nem consulta caixa nessas OPs → o agregado vem sem os campos.
+      const agg: FluxoAgregado[] = [{ ...zero('Almoxarifado'), wip: 2, registros: 5, passouDistinto: 5 }]
+      const almox = construirFluxo(['Embalagem', 'Almoxarifado'], agg, () => false, recursoDe, 10).nodes
+        .find((n) => n.id === 'Almoxarifado')!.data
+      expect(almox.caixasBipadas).toBeUndefined()
+      expect(almox.caixasFechadas).toBeUndefined()
+    })
+
+    it('REGRESSÃO: nenhum outro posto muda — denominador segue a qtd da OP e ninguém ganha caixa no card', () => {
+      // O card é o MESMO componente pra todos os postos, e o Fluxo é tela de uso diário: as métricas
+      // novas não podem vazar pra Embalagem (que tem caixa!), pro Teste nem pra Manutenção.
+      const agg: FluxoAgregado[] = [
+        { ...zero('Teste'), wip: 5, aprovadas: 90, registros: 95, passouDistinto: 90 },
+        // A Embalagem é quem FECHA as caixas; se o agregado dela trouxesse caixas, o card não pode mostrar.
+        { ...zero('Embalagem'), wip: 3, registros: 80, passouDistinto: 80, caixasBipadas: 8, caixasFechadas: 10 },
+        { ...zero(MANUTENCAO), wip: 4 },
+      ]
+      const { nodes } = construirFluxo(['Teste', 'Embalagem', 'Almoxarifado'], agg, (p) => p === 'Teste', recursoDe, 140)
+      const de = (id: string) => nodes.find((n) => n.id === id)!.data
+      for (const id of ['Teste', 'Embalagem', MANUTENCAO]) {
+        expect(de(id).devemPassar).toBe(140) // a qtd da OP, como sempre
+        expect(de(id).caixasBipadas).toBeUndefined()
+        expect(de(id).caixasFechadas).toBeUndefined()
+      }
+    })
+
     it('OP SEM Almoxarifado (a imensa maioria das OPs antigas): nada muda — Concluído continua ligado na Embalagem', () => {
       const { nodes, edges } = construirFluxo(
         ['Teste', 'Embalagem'], [], () => false, recursoDe, 10, () => true, 2, 3,

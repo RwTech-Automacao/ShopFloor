@@ -35,6 +35,12 @@ export interface FluxoAgregado {
   primeiroEm?: string | null
   /** Último registro no posto (ISO) — fim da janela macro. */
   ultimoEm?: string | null
+  /** SÓ no posto de Almoxarifado de OP COLETIVA: caixas já bipadas aqui (códigos distintos em
+   *  `numero_caixa`). Ausente = OP de embalagem individual (não existe caixa) ou outro posto. */
+  caixasBipadas?: number
+  /** SÓ no posto de Almoxarifado de OP COLETIVA: caixas FECHADAS da OP (denominador das caixas no
+   *  card). Não sai dos registros, e sim de sf_caixas — por isso vem de fora da RPC. */
+  caixasFechadas?: number
 }
 
 export interface FluxoNodeData extends FluxoAgregado {
@@ -60,6 +66,10 @@ export interface FluxoNodeData extends FluxoAgregado {
   op?: string
   /** Só na caixa de Entrada: descrição da OP (a tela corta em ≤20 chars ao exibir). */
   descricao?: string
+  /** Só no card do Almoxarifado de OP COLETIVA: caixas bipadas ÷ caixas fechadas. Na OP coletiva o
+   *  operador conta CAIXAS empilhadas, não peças. undefined nos dois = o card não mostra a linha. */
+  caixasBipadas?: number
+  caixasFechadas?: number
 }
 
 export interface FluxoNodePos {
@@ -146,6 +156,12 @@ function dados(
   // "Concluído" = passou ≥ qtd E NENHUMA pendente aqui (wip === 0). Manutenção é ramo, não conclui.
   const passou = a?.passouDistinto ?? (temStatus ? aprovadas : registros)
   const concluido = !ehManutencao && wip === 0 && qtd != null && qtd > 0 && passou >= qtd
+  // O ALMOXARIFADO é o único posto cujo denominador NÃO é a qtd da OP: ele só pode dar entrada no
+  // que CHEGOU EMBALADO — as peças que já entraram (passou) mais as que estão na porta esperando
+  // (wip = "Disponível Produção"). Peça sucateada ou parada em manutenção nunca chega aqui, então
+  // medir contra a qtd da OP daria uma barra que nunca fecha, sem dizer por quê.
+  const ehAlmoxarifado = recurso === 'almoxarifado'
+  const devemPassar = ehAlmoxarifado ? passou + wip : qtd
   return {
     posto,
     wip: a?.wip ?? 0,
@@ -160,7 +176,12 @@ function dados(
     recurso,
     concluido,
     passou,
-    devemPassar: qtd,
+    devemPassar,
+    // As caixas são métrica DESTE posto e de mais nenhum: a Embalagem também lida com caixa, mas o
+    // card dela conta peças. Filtrar pelo recurso aqui é o que impede a métrica de vazar pros outros.
+    ...(ehAlmoxarifado && a?.caixasBipadas != null && a?.caixasFechadas != null
+      ? { caixasBipadas: a.caixasBipadas, caixasFechadas: a.caixasFechadas }
+      : {}),
     primeiroEm: a?.primeiroEm ?? null,
     ultimoEm: a?.ultimoEm ?? null,
   }
