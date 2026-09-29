@@ -118,7 +118,9 @@ alter table public.sf_estoque_envios enable row level security;
 
 -- Aplicar o CHECK em bases que já têm a tabela (idempotência). O check inline só vale na
 -- primeira criação; se a tabela já existe e o constraint não está lá, add.
-do $$
+-- Delimitador $chk$ e não dois cifrões: o SQL Editor do Supabase recusa o de dois cifrões, e esta
+-- migração é aplicada por lá.
+do $chk$
 begin
   if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'sf_estoque_envios')
     and not exists (
@@ -131,7 +133,7 @@ begin
       add constraint sf_estoque_envios_tipo_serie_exige_serie_norm
       check (tipo <> 'serie' or btrim(serie_norm) <> '');
   end if;
-end $$;
+end $chk$;
 
 -- A chave de idempotência. Índice separado (e não `unique` na coluna) para a migração ser idempotente
 -- de verdade: com a tabela já criada, um `unique` inline não seria aplicado nunca.
