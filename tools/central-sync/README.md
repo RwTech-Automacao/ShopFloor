@@ -128,5 +128,9 @@ curl -i -fsS -m 120 -X POST -H @$HOME/.central-sync-cron-header http://127.0.0.1
   recebimentos e zero ordens) e a Central já tem dados: ela recusa de propósito, pra um bug no
   ShopFloor não apagar tudo lá. Investigue por que a 0134 não achou nenhuma linha com ACP antes de
   insistir.
+- **500** — a foto não pôde ser montada (uma linha veio com algo fora do contrato — por exemplo uma
+  `situacao` que a 0134 não deveria ter deixado passar) ou uma falha inesperada estourou na rota.
+  Nada foi enviado pra Central. Log `[central] ...` com o detalhe; investigue o banco/a 0134 antes
+  de insistir.
 - **200** — sucesso. O corpo é o resumo que a própria Central devolveu (novos/atualizados/removidos
   de recebimentos e ordens).

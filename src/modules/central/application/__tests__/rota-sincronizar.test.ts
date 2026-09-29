@@ -5,6 +5,7 @@ vi.mock('server-only', () => ({}))
 
 type ResultadoSincronizacaoDeMentira =
   | { etapa: 'leitura'; ok: false; erro: string }
+  | { etapa: 'montagem'; ok: false; erro: string }
   | { etapa: 'envio'; ok: false; erro: string }
   | { etapa: 'central'; ok: true; status: number; corpo: unknown }
 
@@ -124,5 +125,20 @@ describe('POST /api/central/sincronizar', () => {
     const res = await POST(pedido({ authorization: 'Bearer segredo-do-cron' }))
     expect(res.status).toBe(503)
     expect(sincronizar).not.toHaveBeenCalled()
+  })
+
+  it('etapa "montagem" (situação fora do contrato) devolve 500, sem vazar o detalhe interno no corpo', async () => {
+    sincronizar.mockResolvedValue({ etapa: 'montagem', ok: false, erro: 'situação fora do contrato: "cancelado"' })
+    const res = await POST(pedido({ authorization: 'Bearer segredo-do-cron' }))
+    expect(res.status).toBe(500)
+    const corpo = await res.json()
+    expect(corpo).toHaveProperty('erro')
+    expect(JSON.stringify(corpo)).not.toContain('cancelado')
+  })
+
+  it('sincronizar lança de forma inesperada -> try/catch de último recurso devolve 500', async () => {
+    sincronizar.mockRejectedValueOnce(new Error('bug inesperado'))
+    const res = await POST(pedido({ authorization: 'Bearer segredo-do-cron' }))
+    expect(res.status).toBe(500)
   })
 })

@@ -37,22 +37,36 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ erro: 'Banco indisponível.' }, { status: 503 })
   }
 
-  const resultado = await sincronizar(dependencias.leitor, dependencias.enviador)
+  // Último recurso: `sincronizar` foi escrita pra nunca lançar (cada falha vira uma `etapa` no
+  // resultado), mas se algo ainda assim escapar (bug novo, exceção fora do fluxo previsto), não
+  // deixa a rota estourar 500 sem corpo/log — melhor um 500 explicado do que o Next devolvendo a
+  // página de erro genérica pro cron.
+  try {
+    const resultado = await sincronizar(dependencias.leitor, dependencias.enviador)
 
-  if (resultado.etapa === 'leitura') {
-    console.error('[central] leitura do banco falhou:', resultado.erro)
-    return Response.json({ erro: 'Banco indisponível.' }, { status: 503 })
+    if (resultado.etapa === 'leitura') {
+      console.error('[central] leitura do banco falhou:', resultado.erro)
+      return Response.json({ erro: 'Banco indisponível.' }, { status: 503 })
+    }
+
+    if (resultado.etapa === 'montagem') {
+      console.error('[central] montagem da foto falhou:', resultado.erro)
+      return Response.json({ erro: 'Falha ao montar a foto para a Central.' }, { status: 500 })
+    }
+
+    if (resultado.etapa === 'envio') {
+      console.error('[central] envio pra Central falhou:', resultado.erro)
+      return Response.json({ erro: 'Central do Cliente indisponível.' }, { status: 502 })
+    }
+
+    if (resultado.status !== 200) {
+      console.error('[central] Central respondeu status', resultado.status)
+      return Response.json({ erro: 'Central do Cliente recusou a sincronização.' }, { status: 502 })
+    }
+
+    return Response.json(resultado.corpo, { status: 200 })
+  } catch (e) {
+    console.error('[central] falha inesperada na sincronização:', e instanceof Error ? e.message : e)
+    return Response.json({ erro: 'Falha inesperada na sincronização.' }, { status: 500 })
   }
-
-  if (resultado.etapa === 'envio') {
-    console.error('[central] envio pra Central falhou:', resultado.erro)
-    return Response.json({ erro: 'Central do Cliente indisponível.' }, { status: 502 })
-  }
-
-  if (resultado.status !== 200) {
-    console.error('[central] Central respondeu status', resultado.status)
-    return Response.json({ erro: 'Central do Cliente recusou a sincronização.' }, { status: 502 })
-  }
-
-  return Response.json(resultado.corpo, { status: 200 })
 }

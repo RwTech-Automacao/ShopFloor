@@ -98,4 +98,16 @@ describe('sincronizar', () => {
 
     expect(r).toEqual({ etapa: 'central', ok: true, status: 409, corpo: { erro: 'Foto vazia' } })
   })
+
+  it('montarFoto lança (situação fora do contrato) -> etapa "montagem", nunca chama o enviador', async () => {
+    const leitor = leitorFalso([
+      { id: 'r1', projetos: 'ACP017/26', numero_emb: 'EMB1', data_chegada: null, situacao: 'cancelado' },
+    ])
+    const enviador: EnviadorFoto = { enviar: vi.fn(async () => ({ status: 200, corpo: {} })) }
+
+    const r = await sincronizar(leitor, enviador, AGORA)
+
+    expect(r).toEqual({ etapa: 'montagem', ok: false, erro: expect.stringMatching(/situação fora do contrato/) })
+    expect(enviador.enviar).not.toHaveBeenCalled()
+  })
 })

@@ -7,12 +7,14 @@ function mensagemDe(e: unknown): string {
 
 /**
  * O resultado distingue ONDE parou, pra rota converter no status HTTP certo:
- *   'leitura' (banco do ShopFloor falhou)   -> 503, nada foi enviado.
- *   'envio'   (Central inalcançável/timeout) -> 502, a Central pode nunca ter recebido nada.
- *   'central' (a Central respondeu — 200, 409, 500...) -> a rota decide 200 ou 502 pelo `status`.
+ *   'leitura'  (banco do ShopFloor falhou)    -> 503, nada foi enviado.
+ *   'montagem' (linha fora do contrato — bug do banco/migração) -> 500, nada foi enviado.
+ *   'envio'    (Central inalcançável/timeout) -> 502, a Central pode nunca ter recebido nada.
+ *   'central'  (a Central respondeu — 200, 409, 500...) -> a rota decide 200 ou 502 pelo `status`.
  */
 export type ResultadoSincronizacao =
   | { etapa: 'leitura'; ok: false; erro: string }
+  | { etapa: 'montagem'; ok: false; erro: string }
   | { etapa: 'envio'; ok: false; erro: string }
   | { etapa: 'central'; ok: true; status: number; corpo: unknown }
 
@@ -32,7 +34,12 @@ export async function sincronizar(
     return { etapa: 'leitura', ok: false, erro: mensagemDe(e) }
   }
 
-  const foto = montarFoto(recebimentos, ordens, agora())
+  let foto
+  try {
+    foto = montarFoto(recebimentos, ordens, agora())
+  } catch (e) {
+    return { etapa: 'montagem', ok: false, erro: mensagemDe(e) }
+  }
 
   try {
     const resposta = await enviador.enviar(foto)
