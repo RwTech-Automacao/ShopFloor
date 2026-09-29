@@ -154,4 +154,23 @@ begin
   end if;
 end $$;
 
+-- ---------- search_path fixo (padrão da 0018/0125: security invoker set search_path = public) ----------
+do $$
+declare v text;
+begin
+  select array_to_string(p.proconfig, ',') into v
+  from pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.proname = 'central_recebimentos_para_sincronizar';
+  if v is null or v not like '%search_path=public%' then
+    raise exception 'central_recebimentos_para_sincronizar: search_path não está fixo em public (proconfig=%)', v;
+  end if;
+
+  select array_to_string(p.proconfig, ',') into v
+  from pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.proname = 'central_ordens_para_sincronizar';
+  if v is null or v not like '%search_path=public%' then
+    raise exception 'central_ordens_para_sincronizar: search_path não está fixo em public (proconfig=%)', v;
+  end if;
+end $$;
+
 select 'central_sincronizacao_test: ok' as resultado;

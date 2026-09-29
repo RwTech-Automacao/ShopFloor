@@ -22,7 +22,7 @@ create index concurrently if not exists sf_registros_pmo_op_data_hora
 -- duplicar, e a "foto" deixaria de ser uma foto.
 create or replace function public.central_recebimentos_para_sincronizar()
 returns jsonb
-language sql stable as $$
+language sql stable security invoker set search_path = public as $$
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', p.id,
     'projetos', trim(p.acp_cliente),
@@ -36,7 +36,7 @@ $$;
 
 create or replace function public.central_ordens_para_sincronizar()
 returns jsonb
-language sql stable as $$
+language sql stable security invoker set search_path = public as $$
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', o.id,
     'projetos', trim(o.acp),
