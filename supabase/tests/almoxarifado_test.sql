@@ -1486,3 +1486,112 @@ begin
     raise exception 'FALHOU: saldo esgotado ainda inseriu linha de estorno (soma = %, linhas = %)', v_soma, v_n; end if;
   raise notice '41. estornos de uma entrada somam o que foi enviado, nem uma peça mais (saldo esgotado devolve nada): ok';
 end $t$;
+
+-- ---------- 42. LINHA JÁ RESERVADA NÃO SE AJUSTA: ESTORNA ----------
+-- O ajuste (3 → 2) só é seguro enquanto NINGUÉM olhou para a linha. A sf_estoque_reservar devolve a
+-- quantidade no momento da reserva e o servidor monta a carga com aquele número: se o cancelamento
+-- cair na janela da reserva, o ajuste troca 3 por 2 numa linha cujo envio JÁ SAIU com 3. Depois o
+-- servidor marca a linha como entregue e ela fica parecendo certa — o ERP com 3, o ShopFloor com 2,
+-- e nenhuma linha cancelada, nenhum estorno, nenhuma chave por onde reconciliar. É o único caminho
+-- que não deixa vestígio, e por isso é o pior.
+do $t$
+declare e public.sf_estoque_envios; v_id uuid; v_est public.sf_estoque_envios;
+begin
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[5][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 5 não entrou'; end if;
+
+  -- O servidor reserva o lote e sai para falar com o Compels: a carga desta linha leva 3 peças.
+  perform sf_estoque_reservar(50);
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[5][3]8503-PMOC20' and operacao = 'entrada';
+  if e.reservado_em is null or e.tentativas <> 1 or e.ok then
+    raise exception 'FALHOU (massa): a linha tinha que estar reservada e ainda não entregue: %', to_jsonb(e); end if;
+
+  -- O cancelamento cai DENTRO da janela da reserva.
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[5][3]8503-PMOC20'
+   order by numero_serie_norm limit 1;
+  perform sf_cancelar_lancamento(v_id, 'uma peça, com o envio em voo');
+
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[5][3]8503-PMOC20' and operacao = 'entrada';
+  if e.quantidade <> 3 then
+    raise exception 'FALHOU: ajustou para % peças uma linha cujo envio já saiu com 3 — o ERP fica com 3, o ShopFloor com 2, e sem vestígio nenhum: %',
+      e.quantidade, to_jsonb(e); end if;
+  select * into v_est from sf_estoque_envios
+   where alvo = 'CX[5][3]8503-PMOC20' and operacao = 'estorno';
+  if not found then
+    raise exception 'FALHOU: linha já reservada tinha que ser ESTORNADA (a peça pode ter ido no envio em voo), não ajustada em silêncio'; end if;
+  if v_est.quantidade <> 1 then
+    raise exception 'FALHOU: o estorno tinha que valer a 1 peça cancelada, veio %', v_est.quantidade; end if;
+  -- E o saldo da entrada desce: as outras 2 peças ainda podem ser revertidas, uma terceira não.
+  if e.estornado <> 1 then
+    raise exception 'FALHOU: a entrada tinha que ficar com estornado = 1, veio %', e.estornado; end if;
+  raise notice '42. cancelamento na janela da reserva → estorno com rastro, sem ajuste cego: ok';
+end $t$;
+
+-- ---------- 43. TENTATIVA JÁ GASTA TAMBÉM ESTORNA; LINHA INTOCADA AINDA AJUSTA ----------
+-- Os dois lados da mesma decisão, olhados pelo RETORNO da sf_estoque_reverter:
+--   (a) reserva VENCIDA mas `tentativas > 0` — a linha voltou pra fila, só que uma rodada já falou com
+--       o Compels e a resposta pode ter sido perdida no caminho: a quantidade daquela carga já saiu,
+--       então ajustar a linha seria mentir sobre o que foi mandado. Estorna, e a entrada fica intacta.
+--       É por isso que a marca é `tentativas`, e não só a reserva viva: a reserva expira, o envio não.
+--   (b) linha que NINGUÉM leu (sem reserva, tentativas = 0) — aí o ajuste continua sendo o certo: a
+--       linha ainda descreve o que VAI ser enviado, e corrigir 3 para 2 poupa ao ERP duas
+--       movimentações para um número que ainda podia ser arrumado aqui.
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC20', '8503', 'Embalagem', 6, 3, 3, 'CX[6][3]8503-PMOC20', true),
+  ('PMOC20', '8503', 'Embalagem', 7, 3, 3, 'CX[7][3]8503-PMOC20', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[6][3]8503-PMOC20',
+       'SN-' || (9990 + i)::text, (9990 + i)::text from generate_series(1, 3) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[7][3]8503-PMOC20',
+       'SN-' || (9995 + i)::text, (9995 + i)::text from generate_series(1, 3) i;
+
+do $t$
+declare e public.sf_estoque_envios; v_r text;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+
+  -- (a) uma rodada tentou e a reserva já venceu (a linha está de volta na fila, mas tocada).
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[6][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 6 não entrou'; end if;
+  update sf_estoque_envios set tentativas = 1, reservado_em = now() - interval '20 minutes',
+                               erro = 'Compels não respondeu'
+   where alvo = 'CX[6][3]8503-PMOC20' and operacao = 'entrada';
+
+  v_r := sf_estoque_reverter('PMOC20', '8503', 'Almoxarifado', 'CX[6][3]8503-PMOC20', 1);
+  if v_r <> 'estorno' then
+    raise exception 'FALHOU: linha já tentada tinha que ESTORNAR (a carga de 3 peças pode ter chegado), devolveu %', v_r; end if;
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[6][3]8503-PMOC20' and operacao = 'entrada';
+  if e.quantidade <> 3 or e.estornado <> 1 or e.cancelado_em is not null then
+    raise exception 'FALHOU: a entrada já tentada tinha que ficar intacta (3 peças) com estornado 1: %', to_jsonb(e); end if;
+  if (select count(*) from sf_estoque_envios
+       where alvo = 'CX[6][3]8503-PMOC20' and operacao = 'estorno' and quantidade = 1) <> 1 then
+    raise exception 'FALHOU: esperava um estorno de 1 peça da caixa 6'; end if;
+
+  -- (b) a linha intocada: ajuste, como sempre foi.
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[7][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 7 não entrou'; end if;
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[7][3]8503-PMOC20' and operacao = 'entrada';
+  if e.tentativas <> 0 or e.reservado_em is not null then
+    raise exception 'FALHOU (massa): a caixa 7 tinha que estar intocada: %', to_jsonb(e); end if;
+
+  v_r := sf_estoque_reverter('PMOC20', '8503', 'Almoxarifado', 'CX[7][3]8503-PMOC20', 1);
+  if v_r <> 'ajustado' then
+    raise exception 'FALHOU: linha que ninguém leu tinha que ser AJUSTADA, devolveu %', v_r; end if;
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[7][3]8503-PMOC20' and operacao = 'entrada';
+  if e.quantidade <> 2 or e.estornado <> 0 then
+    raise exception 'FALHOU: o ajuste tinha que deixar 2 peças e estornado 0: %', to_jsonb(e); end if;
+  if exists (select 1 from sf_estoque_envios
+              where alvo = 'CX[7][3]8503-PMOC20' and operacao = 'estorno') then
+    raise exception 'FALHOU: ajustou E estornou a mesma peça'; end if;
+  raise notice '43. tentativa gasta estorna (entrada intacta); linha intocada ainda ajusta: ok';
+end $t$;
