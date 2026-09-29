@@ -10,14 +10,19 @@ trap 'docker rm -f "$NOME" >/dev/null 2>&1 || true' EXIT
 for _ in $(seq 1 30); do docker exec "$NOME" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
 docker cp supabase/migrations/0128_sf_perfil_almoxarifado.sql "$NOME":/tmp/0128.sql
 docker cp supabase/migrations/0129_sf_almoxarifado_entrada.sql "$NOME":/tmp/0129.sql
+# A 0130 entra porque o colateral desta correção bate no NQA: o bipe de caixa gravando uma linha por
+# peça tirou o `max(posto)` da sf_nqa_caixa do lugar (teste 23).
+docker cp supabase/migrations/0130_sf_nqa_caixa_posto_da_caixa.sql "$NOME":/tmp/0130.sql
 docker cp supabase/tests/almoxarifado_test.sql "$NOME":/tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 
 # Idempotência: o usuário reaplica migração quando fica na dúvida, então rodar as migrações duas
 # vezes na mesma base não pode falhar nem mudar o resultado. O caso conhecido é a caixa 7, que o
 # teste já deu entrada: reaplicar a 0129 não pode fazer o segundo bipe dela ser aceito.
+# A 0130 entra na conta pelo mesmo motivo: `create or replace` + grant, reaplicar não muda nada.
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0128.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0129.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0130.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','shopfloor.lancar',false)" \
   -c "select sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','Ana','CX[7][14]8498-PMOC14','caixa',14,'')->>'motivo'" \
