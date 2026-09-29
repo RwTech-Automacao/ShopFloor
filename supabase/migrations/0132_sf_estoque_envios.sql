@@ -356,11 +356,37 @@ begin
   -- várias no histórico (E1 cancelada, E2 depois do rebipe — ver o contador da chave acima), e é a
   -- última que descreve o que está no ShopFloor agora. `for update` porque dois cancelamentos da
   -- mesma caixa ajustariam a quantidade — e descontariam o saldo — a partir da mesma leitura.
+  --
+  -- QUEM É "A MAIS RECENTE" É O CONTADOR DA CHAVE, e não `criado_em` (achado da revisão desta rodada).
+  -- Enquanto o cancelamento matava a entrada antiga, havia no máximo UMA viva por bipe e esta ordem
+  -- não decidia nada. Depois da correção da ASSIMETRIA, duas entradas vivas do mesmo bipe são o
+  -- NORMAL (a E1 revertida por inteiro, que continua na fila pra chegar ao ERP, + a E2 do rebipe) —
+  -- então agora ela decide, e `criado_em` é `now()`, que é o instante da TRANSAÇÃO, não do comando:
+  -- cancelar a caixa de uma linha tocada e rebipar na MESMA transação dá às duas o mesmo `criado_em`,
+  -- e o desempate caía no uuid. Quando ele sorteava a E1 (saldo zero, já inteiramente estornada), a
+  -- reversão devolvia 'nada' CALADAMENTE: a peça saía do ShopFloor e ficava no estoque do Compels, que
+  -- é a perda silenciosa que esta feature inteira existe pra não ter. Hoje isso não é alcançável — as
+  -- duas chamadoras entram por RPCs separadas, uma transação cada —, mas depender disso é depender de
+  -- uma coisa que a próxima função que juntar os dois gestos desfaz sem perceber.
+  --
+  -- O `E<n>` da chave é o desempate certo porque a sf_estoque_chave o conta sobre TODAS as linhas
+  -- daquele bipe naquela operação (inclusive as canceladas e as que falharam): ele é monotônico por
+  -- bipe, nunca se repete (a chave é única) e distingue até duas linhas nascidas na MESMA transação —
+  -- a segunda conta a primeira, que já está visível pra ela. Ou seja, ele acerta exatamente onde
+  -- `criado_em` empata, e não há empate a desempatar depois dele.
+  -- A outra saída considerada — "preferir a entrada com saldo > 0" — foi descartada por duas razões:
+  -- ela NÃO tira o uuid do caminho (duas entradas vivas as duas COM saldo continuariam empatando, e o
+  -- empate volta a decidir em silêncio), e ela mudaria a regra aprovada em vez de só torná-la exata:
+  -- com a E2 (a de agora) já revertida por inteiro e uma E1 velha com saldo, ela escolheria a E1 —
+  -- estornaria de uma entrada que não é a que descreve o ShopFloor de hoje.
+  -- `criado_em`/`id` ficam como último critério para a chave que NÃO casar com o padrão (uma linha
+  -- posta à mão no SQL Editor, ou um formato de chave futuro): assim a ordem continua definida, em vez
+  -- de virar nenhuma.
   select * into v_ent
     from public.sf_estoque_envios
    where pmo = p_pmo and op = p_op and posto = p_posto and alvo = p_alvo
      and operacao = 'entrada' and cancelado_em is null
-   order by criado_em desc, id desc
+   order by (substring(chave from '/E([0-9]+)$'))::int desc nulls last, criado_em desc, id desc
    limit 1
    for update;
   if not found then

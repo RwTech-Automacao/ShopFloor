@@ -1881,3 +1881,86 @@ begin
 end $f$;
 
 do $t$ begin perform public.teste_fila_invariantes('fim do arquivo de testes'); end $t$;
+
+-- ---------- 45. QUAL É A ENTRADA VIGENTE NÃO PODE DEPENDER DO UUID ----------
+-- O achado que este teste trava: desde que a linha TOCADA passou a ser ESTORNADA em vez de cancelada
+-- (teste 44), duas entradas VIVAS do mesmo bipe são o normal — a E1 de saldo zero, que continua na
+-- fila esperando chegar ao ERP, e a E2 do rebipe. Aí a ordem que escolhe "a entrada vigente" passou a
+-- DECIDIR algo, e ela desempatava por `criado_em` — que é `now()`, o instante da TRANSAÇÃO. Cancelar a
+-- caixa e rebipar na MESMA transação dá às duas o mesmo `criado_em`, e a decisão caía no uuid: quando
+-- ele sorteava a E1 (saldo zero), a reversão da peça seguinte devolvia 'nada' CALADAMENTE — a peça
+-- saía do ShopFloor e ficava no estoque do Compels, sem estorno, sem rastro, sem ninguém saber.
+--
+-- Em produção isso não é alcançável hoje (as duas chamadoras entram por RPCs separadas, uma transação
+-- cada), e é por isso que o teste faz o empate à mão: um do-block é UMA transação, então a entrada, o
+-- cancelamento e o rebipe daqui nascem todos com o mesmo `criado_em`. Os uuids também são fixados, e de
+-- propósito ao contrário: com a ordem ANTIGA (`criado_em desc, id desc`) a E1 GANHA o desempate e este
+-- teste falha — sempre, e não por sorte. Com o desempate pelo `E<n>` da chave, a E2 é a vigente.
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC20', '8503', 'Embalagem', 12, 3, 3, 'CX[12][3]8503-PMOC20', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[12][3]8503-PMOC20',
+       'SN-' || (9940 + i)::text, (9940 + i)::text from generate_series(1, 3) i;
+
+do $t$
+declare e1 public.sf_estoque_envios; e2 public.sf_estoque_envios; v_id uuid; v_r text;
+  c_chave text := 'ALMOX/PMOC20/8503/Almoxarifado/CX[12][3]8503-PMOC20/';
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+
+  -- E1: entrada de 3 peças com uma rodada já TOCADA (a carga de 3 saiu), cancelada por inteiro em
+  -- Registros — o que a estorna e a deixa VIVA na fila com saldo zero (é o resultado do teste 44).
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[12][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 12 não entrou'; end if;
+  update sf_estoque_envios set tentativas = 1
+   where alvo = 'CX[12][3]8503-PMOC20' and operacao = 'entrada';
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[12][3]8503-PMOC20' limit 1;
+  if sf_cancelar_caixa_almoxarifado(v_id, 'em voo: estorna e rebipa') <> 3 then
+    raise exception 'FALHOU (massa): esperava cancelar as 3 peças da caixa 12'; end if;
+
+  -- E2: o rebipe, aqui na MESMA transação de propósito (é o empate que se quer provar).
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[12][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): o rebipe da caixa 12 tinha que ser aceito'; end if;
+
+  select * into e1 from sf_estoque_envios where chave = c_chave || 'E1';
+  select * into e2 from sf_estoque_envios where chave = c_chave || 'E2';
+  if e1.quantidade <> 3 or e1.estornado <> 3 or e1.cancelado_em is not null then
+    raise exception 'FALHOU (massa): a E1 tinha que ficar viva, 3/3 (saldo zero): %', to_jsonb(e1); end if;
+  if e2.quantidade <> 3 or e2.estornado <> 0 or e2.tentativas <> 0 or e2.reservado_em is not null then
+    raise exception 'FALHOU (massa): a E2 tinha que nascer limpa, 3/0: %', to_jsonb(e2); end if;
+
+  -- O EMPATE. Aqui ele já existe (mesma transação, mesmo now()), e o update é a rede embaixo disso:
+  -- se um dia o default de criado_em virar clock_timestamp(), o empate sumiria e este teste perderia o
+  -- dente em silêncio. `criado_em` da E1 — e não da E2 — porque o estorno S1 nasceu entre as duas, e
+  -- as invariantes do 44(iv) exigem uma entrada viva criada ATÉ o estorno.
+  update sf_estoque_envios set criado_em = e1.criado_em where id = e2.id;
+  -- E os uuids ao contrário do que o certo deveria escolher: a E1 (a errada) com o id MAIOR, a E2 com
+  -- o MENOR. Assim `order by criado_em desc, id desc` — a ordem de antes — escolhe a E1 sempre.
+  update sf_estoque_envios set id = 'ffffffff-ffff-4fff-8fff-ffffffffffff' where id = e1.id;
+  update sf_estoque_envios set id = '00000000-0000-4000-8000-000000000000' where id = e2.id;
+
+  -- Uma peça da caixa REBIPADA é cancelada. A entrada vigente é a E2, que está limpa: a resposta certa
+  -- é o AJUSTE de 3 pra 2. Se a ordem pegar a E1, o saldo dela é zero e a reversão devolve 'nada'.
+  v_r := sf_estoque_reverter('PMOC20', '8503', 'Almoxarifado', 'CX[12][3]8503-PMOC20', 1);
+  if v_r <> 'ajustado' then
+    raise exception 'FALHOU: com criado_em empatado, a entrada vigente tinha que ser a E2 (a do rebipe, limpa) e a peça tinha que ser AJUSTADA; devolveu % — a ordem caiu no uuid e pegou a E1 de saldo zero: a peça sai do ShopFloor e fica no Compels, calada', v_r; end if;
+
+  select * into e2 from sf_estoque_envios where chave = c_chave || 'E2';
+  if e2.quantidade <> 2 or e2.estornado <> 0 or e2.cancelado_em is not null then
+    raise exception 'FALHOU: o ajuste tinha que deixar a E2 com 2 peças e nada estornado: %', to_jsonb(e2); end if;
+  select * into e1 from sf_estoque_envios where chave = c_chave || 'E1';
+  if e1.quantidade <> 3 or e1.estornado <> 3 or e1.cancelado_em is not null then
+    raise exception 'FALHOU: a E1 tinha que ficar intacta (3/3, viva): %', to_jsonb(e1); end if;
+  -- E nenhum estorno novo: o ajuste e o estorno são caminhos EXCLUDENTES na mesma peça.
+  if (select count(*) from sf_estoque_envios
+       where alvo = 'CX[12][3]8503-PMOC20' and operacao = 'estorno') <> 1 then
+    raise exception 'FALHOU: esperava só o estorno S1 (o da caixa inteira) no bipe da caixa 12'; end if;
+  raise notice '45. entrada vigente pelo contador da chave (empate de criado_em não cai no uuid): ok';
+end $t$;
+
+-- As invariantes de novo, agora com a massa do 45 dentro (a chamada do fim do runner cobre as etapas
+-- em bash que ainda vêm depois deste arquivo).
+do $t$ begin perform public.teste_fila_invariantes('depois do teste 45'); end $t$;
