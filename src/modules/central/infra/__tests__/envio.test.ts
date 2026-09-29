@@ -47,7 +47,7 @@ describe('criarEnviadorHttp', () => {
   })
 
   it('aceita CENTRAL_SYNC_URL com barra final sem virar //api/sincronizacao', async () => {
-    const fetchFalso = vi.fn(async () => new Response('{}', { status: 200 }))
+    const fetchFalso = vi.fn(async (..._args: [string, RequestInit]) => new Response('{}', { status: 200 }))
     global.fetch = fetchFalso as unknown as typeof fetch
 
     const enviador = criarEnviadorHttp('http://127.0.0.1:3100/', 's')
@@ -58,7 +58,7 @@ describe('criarEnviadorHttp', () => {
   })
 
   it('não segue redirect (redirect: "error") — a Central nunca deveria redirecionar esta chamada', async () => {
-    const fetchFalso = vi.fn(async () => new Response('{}', { status: 200 }))
+    const fetchFalso = vi.fn(async (..._args: [string, RequestInit]) => new Response('{}', { status: 200 }))
     global.fetch = fetchFalso as unknown as typeof fetch
 
     const enviador = criarEnviadorHttp('http://127.0.0.1:3100', 's')
