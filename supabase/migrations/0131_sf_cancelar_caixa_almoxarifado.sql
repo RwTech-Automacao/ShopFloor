@@ -1,6 +1,13 @@
 -- =============================================================
 -- Cancelar a CAIXA INTEIRA no Almoxarifado: um gesto desfaz um gesto.
 --
+-- ⚠️ APLIQUE A 0132 ANTES DESTA: o cancelamento chama sf_estoque_reverter, que nasce lá. Criar esta
+-- função sem ela não dá erro (o corpo plpgsql só resolve nome na execução), mas quem aplica arquivo
+-- por arquivo, em ordem, fica com uma janela em que TODO "Cancelar a caixa inteira" morre com
+-- "function sf_estoque_reverter does not exist". É o mesmo aviso que a 0129 tem, pelo mesmo motivo:
+-- as duas dependem de uma migração de número MAIOR. Aplicadas juntas, ou a 0132 primeiro, não
+-- existe janela.
+--
 -- POR QUE ESTA FUNÇÃO EXISTE — a entrada no Almoxarifado é UM bipe: o operador lê o código da caixa
 -- fechada (CX[seq][qtd]OP-PMO) e a sf_almoxarifado_entrada (0129) grava UMA LINHA POR PEÇA de dentro
 -- dela. As N linhas são o jeito de registrar — é o que faz o posto não ser especial pra nenhum leitor
@@ -170,7 +177,7 @@ begin
   --
   -- Na mesma transação do delete, pelo mesmo motivo do bipe: se o delete vingasse e a reversão não, as
   -- peças sairiam do ShopFloor e continuariam no ERP para sempre, caladas. Dependência de número
-  -- MENOR (esta migração chama uma função da 0132): as migrações desta branch nunca foram aplicadas em
+  -- MAIOR (esta migração chama uma função da 0132): as migrações desta branch nunca foram aplicadas em
   -- banco nenhum e vão juntas; o corpo plpgsql só resolve o nome na hora de executar.
   perform sf_estoque_reverter(v_pmo, v_op, v_posto, v_caixa, null);
 

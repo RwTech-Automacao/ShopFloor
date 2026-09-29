@@ -71,7 +71,7 @@ insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exig
 \i /tmp/0129.sql
 -- A fila de envio ao Compels (0132) entra AQUI, antes do primeiro bipe: desde a Fase 2 a entrada
 -- grava em sf_estoque_envios na MESMA transação em que grava os registros, então sem a tabela nem a
--- primeira chamada da RPC passaria. A 0129 chama a sf_estoque_chave da 0132, que tem número MENOR —
+-- primeira chamada da RPC passaria. A 0129 chama a sf_estoque_chave da 0132, que tem número MAIOR —
 -- as migrações desta branch nunca foram aplicadas em banco nenhum e vão juntas; o corpo plpgsql só
 -- resolve o nome na hora de executar.
 \i /tmp/0132.sql

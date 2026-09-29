@@ -76,7 +76,7 @@
 -- A FILA DE ENVIO AO ERP (Fase 2): além dos registros, a entrada põe UMA linha em sf_estoque_envios
 -- (0132) — na mesma transação, com a chave de idempotência do bipe. O bipe NÃO espera o Compels: quem
 -- entrega é o servidor, depois. O porquê de cada decisão está no bloco "A FILA" no fim da função.
--- Dependência de número MENOR: esta migração chama funções da 0132. As migrações desta branch nunca
+-- Dependência de número MAIOR: esta migração chama funções da 0132. As migrações desta branch nunca
 -- foram aplicadas em banco nenhum e vão juntas; o corpo plpgsql só resolve o nome ao executar.
 --
 -- Irmã mais próxima: sf_lancar (0031) — mesmo gate, mesma gravação em sf_registros, mesma ideia de
