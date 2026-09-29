@@ -107,7 +107,23 @@ function FluxoNodeBase({ data }: NodeProps) {
   const basePassou = d.passou + d.reprovadosSemReteste
   const fpPct = basePassou > 0 ? Math.round((d.aprovadosPrimeira / basePassou) * 100) : 0
   const rotuloQtd = d.temStatus ? 'Aprovadas' : 'Passaram'
-  const tipAprov = mostrarP
+  // O ALMOXARIFADO é o único posto cujo trabalho continua DEPOIS do bipe, e por isso o único com
+  // métricas próprias: a fila na porta ("Disponível Produção"), as caixas (a unidade em que o
+  // operador conta numa OP coletiva) e um denominador que é o que CHEGOU EMBALADO — não a qtd da OP.
+  // Todo o resto do card (e todos os outros postos) continua exatamente como antes.
+  const ehAlmox = d.recurso === 'almoxarifado'
+  // Caixa só existe em OP COLETIVA; na individual o dado nem vem e a linha não aparece. No filtro de
+  // período a linha some também: caixa bipada é acumulado da OP e misturar com a contagem da janela
+  // faria o card mentir (mesmo motivo de esconder o % de 1ª ali).
+  const temCaixas = ehAlmox && !mostrarP && d.caixasBipadas != null && d.caixasFechadas != null
+  const tipAprovAlmox = mostrarP
+    ? `Entradas no estoque no período: ${aprovDisp} (de ${d.devemPassar ?? '—'} que chegaram embaladas — total da OP)`
+    : `Deram entrada no estoque ÷ o que chegou embalado: ${aprovDisp} de ${d.devemPassar ?? '—'}. O denominador é o que chegou embalado (entradas + Disponível Produção), NÃO a quantidade da OP: peça sucateada ou em manutenção nunca chega aqui.`
+  const tipDisponivel = `Disponível Produção: ${d.wip} peça(s) que passaram por todos os postos menos este — prontas, embaladas, esperando dar entrada no estoque. Cada bipe tira uma daqui.`
+  const tipCaixas = `Caixas bipadas ÷ caixas fechadas da OP: ${d.caixasBipadas} de ${d.caixasFechadas} (total). Na OP coletiva o bipe é por caixa: uma caixa vale todas as peças dela.`
+  const tipAprov = ehAlmox
+    ? tipAprovAlmox
+    : mostrarP
     ? `${rotuloQtd} no período: ${aprovDisp} (de ${d.devemPassar ?? '—'} da OP)`
     : `${rotuloQtd} ÷ devem passar: ${aprovDisp} de ${d.devemPassar ?? '—'}`
   const tipFp = `Aprovados de primeira: ${d.aprovadosPrimeira} de ${basePassou} que passaram = ${fpPct}% (total)`
@@ -125,7 +141,7 @@ function FluxoNodeBase({ data }: NodeProps) {
 
       {/* WIP mini-card — centrado no CABEÇALHO (top 28px = metade do h-14). */}
       <div
-        title={`Em processo neste posto (WIP): ${d.wip}`}
+        title={ehAlmox ? tipDisponivel : `Em processo neste posto (WIP): ${d.wip}`}
         className={`absolute left-0 top-7 z-10 flex h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 cursor-help items-center justify-center rounded-[10px] border-2 px-1.5 text-sm font-bold shadow-sm ${
           d.wip > 0 ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-muted text-muted-foreground'
         }`}
@@ -161,21 +177,49 @@ function FluxoNodeBase({ data }: NodeProps) {
                 {pctLabel}%
               </span>
             </div>
-            <div className="flex items-center justify-center gap-3 text-[11px] font-semibold leading-none tabular-nums">
-              <span title={tipAprov}><span className="text-green-700">{aprovDisp}</span> <span className="text-muted-foreground">/ {d.devemPassar}</span></span>
-              {d.temStatus && (
-                <>
-                  {!mostrarP && (
-                    <span className="inline-flex cursor-help items-center gap-1 text-green-700" title={tipFp}>
-                      <Check className="size-3.5" />{fpPct}%
-                    </span>
-                  )}
-                  <span className="inline-flex cursor-help items-center gap-1 text-amber-600" title={tipRep}>
-                    <AlertTriangle className="size-3.5" />{reprovDisp}
+            {ehAlmox ? (
+              <>
+                {/* Peças E caixas: numa OP coletiva o operador está olhando pra dez caixas empilhadas,
+                    não pra 140 peças. Sem caixa (OP individual) fica só a linha das peças. */}
+                <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold leading-none tabular-nums">
+                  <span className="cursor-help" title={tipAprov}>
+                    <span className="text-green-700">{aprovDisp}</span>
+                    <span className="text-muted-foreground">/{d.devemPassar} peças</span>
                   </span>
-                </>
-              )}
-            </div>
+                  {temCaixas && (
+                    <>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="cursor-help" title={tipCaixas}>
+                        <span className="text-foreground">{d.caixasBipadas}</span>
+                        <span className="text-muted-foreground">/{d.caixasFechadas} caixas</span>
+                      </span>
+                    </>
+                  )}
+                </div>
+                {/* A fila na porta do almoxarifado. O número já existia (é o WIP do mini-card); aqui
+                    ele ganha NOME, porque neste posto ele responde "o que tem pra dar entrada agora". */}
+                <div className="flex cursor-help items-center justify-center gap-1 text-[10px] leading-none" title={tipDisponivel}>
+                  <span className="text-muted-foreground">Disponível Produção</span>
+                  <span className="font-bold tabular-nums text-foreground">{d.wip}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center gap-3 text-[11px] font-semibold leading-none tabular-nums">
+                <span title={tipAprov}><span className="text-green-700">{aprovDisp}</span> <span className="text-muted-foreground">/ {d.devemPassar}</span></span>
+                {d.temStatus && (
+                  <>
+                    {!mostrarP && (
+                      <span className="inline-flex cursor-help items-center gap-1 text-green-700" title={tipFp}>
+                        <Check className="size-3.5" />{fpPct}%
+                      </span>
+                    )}
+                    <span className="inline-flex cursor-help items-center gap-1 text-amber-600" title={tipRep}>
+                      <AlertTriangle className="size-3.5" />{reprovDisp}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
