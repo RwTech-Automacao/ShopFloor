@@ -484,16 +484,31 @@ revoke all on function public.sf_estoque_reverter(text, text, text, text, int)
 -- Ordem: NOVAS (tentativas = 0) antes dos reenvios; dentro de cada grupo, as mais antigas primeiro —
 -- uma entrada que ficou para trás não fica esperando as de hoje.
 --
--- ⚠️ RESTRIÇÃO PRO LAÇO DE ENVIO (Task 3, que ainda não existe): A ORDEM DAQUI NÃO É A ORDEM DAS
--- MOVIMENTAÇÕES. Um estorno nasce com tentativas = 0, então ele entra no lote ANTES de um reenvio —
--- inclusive antes da ENTRADA EM VOO que ele reverte, que já tem tentativas > 0. E é justamente numa
--- entrada em voo que a sf_estoque_reverter cria estorno em vez de ajustar (ver "A EXCEÇÃO À DECISÃO",
--- lá em cima), então esse par existe de verdade. Mandar a saída antes da entrada deixa o ERP com
--- estoque negativo, ou faz ele recusar a saída de um item que ainda não entrou. Portanto: o laço NÃO
--- deve entregar um estorno enquanto a entrada correspondente — mesmo pmo/op/posto/`alvo`, operacao =
--- 'entrada', criada ANTES dele — não estiver `ok`; ele pula o estorno e tenta na rodada seguinte
--- (sem contar tentativa, senão o par queima o teto esperando). Não é a reserva que resolve isso: ela
--- é por linha e não sabe de par — por isso a restrição está escrita aqui, onde a ordem é decidida.
+-- ⚠️ A ORDEM DO PAR — ESTORNO NÃO SAI ANTES DA ENTRADA, E A REGRA MORA AQUI (no filtro, logo abaixo).
+-- A ORDEM DE SAÍDA DO LOTE NÃO É A ORDEM DAS MOVIMENTAÇÕES. Um estorno nasce com tentativas = 0,
+-- então ele entraria no lote ANTES de um reenvio — inclusive antes da ENTRADA EM VOO que ele reverte,
+-- que já tem tentativas > 0. E é justamente numa entrada em voo que a sf_estoque_reverter cria estorno
+-- em vez de ajustar (ver "A EXCEÇÃO À DECISÃO", lá em cima), então esse par existe de verdade. Mandar
+-- a saída antes da entrada deixa o ERP com estoque negativo, ou faz ele recusar a saída de um item que
+-- ainda não entrou. Portanto: um estorno NÃO É ELEGÍVEL enquanto a entrada correspondente — mesmo
+-- pmo/op/posto/`alvo`, operacao = 'entrada', criada ANTES dele — não estiver `ok`.
+--
+-- POR QUE NA RESERVA, E NÃO NO LAÇO DE ENVIO (a decisão da Task 3, escrita aqui porque é aqui que ela
+-- vale). As duas saídas davam o mesmo resultado hoje; estas duas coisas não:
+--   • A RESERVA É A ÚNICA PORTA DA FILA. Quem escrever o segundo consumidor (o Reenviar da tela de
+--     pendências, um worker, um script de recuperação às 18h) recebe a regra de graça e não tem como
+--     esquecê-la. No laço ela seria uma regra escrita num cliente, que o cliente seguinte copia ou não
+--     — e o preço de não copiar é uma saída sem entrada no ERP, em silêncio.
+--   • QUEM SEGURA NÃO PODE COBRAR TENTATIVA. A reserva soma 1 em `tentativas` ANTES de qualquer
+--     conversa com o ERP: filtrar depois de reservar cobraria uma tentativa de uma linha que ninguém
+--     tentou, e cinco rodadas de espera a tirariam da fila (`tentativas < 5`) sem ela nunca ter sido
+--     enviada — exatamente o desastre que o teto existe pra evitar, chegando pelo lado errado. Linha
+--     segurada não é linha que falhou: aqui ela simplesmente não é escolhida, fica com tentativas = 0
+--     e sem `erro`, e é assim que a tela de pendências consegue mostrá-la como "esperando a entrada"
+--     em vez de "falhou 3 vezes sem motivo".
+-- Consequência boa pro laço: entrada e estorno do mesmo bipe nunca caem no MESMO lote em ordem errada
+-- (o estorno só se torna elegível numa rodada POSTERIOR à que entregou a entrada), então o laço
+-- entrega o lote na ordem em que ele vem e não tem regra de par nenhuma pra saber.
 -- Essa espera TERMINA de uma de DUAS formas, e é preciso saber das duas:
 --   • a entrada vira `ok` — o caso normal. A sf_estoque_reverter nunca cancela uma entrada que já tem
 --     estorno (ver A ASSIMETRIA, lá em cima), então a entrada de um par continua na fila e o reenvio
@@ -505,10 +520,13 @@ revoke all on function public.sf_estoque_reverter(text, text, text, text, int)
 --     destrava é o Reenviar da tela de pendências, e o que torna isso resolvível por alguém é que os
 --     dois aparecem JUNTOS nessa tela (mesmo pmo/op/posto/`alvo`, a entrada falhada com o último erro
 --     e o estorno esperando por ela) em vez de o estorno sumir calado num canto.
--- O que o laço NÃO pode fazer é "resolver" essa retenção entregando o estorno sozinho: aí o Compels
--- fica com uma saída de peça que ele nunca recebeu — é o contrário do que a ordem existe pra evitar.
+-- O que NÃO se pode fazer é "resolver" essa retenção entregando o estorno sozinho: aí o Compels fica
+-- com uma saída de peça que ele nunca recebeu — é o contrário do que a ordem existe pra evitar.
 -- E se alguém afrouxar a regra da ASSIMETRIA (voltar a cancelar entrada que já tem estorno), a espera
 -- passa a ser eterna DE VERDADE: sem nem o par na tela, porque a entrada cancelada não aparece lá.
+-- O filtro abaixo cobra isso LITERALMENTE — a entrada cancelada também segura o estorno, porque ela
+-- não está `ok` —, e é de propósito: entre segurar uma saída pra sempre e mandar ao ERP uma saída sem
+-- entrada, segurar é o erro que dá pra descobrir depois.
 --
 -- A janela de reserva de 15 min cobre uma rodada inteira (lote de 30 x alguns segundos por chamada
 -- ao ERP, no pior caso). Se o processo cair no meio, a linha volta a ser elegível depois disso: a
@@ -547,6 +565,27 @@ begin
          and e.cancelado_em is null
          and e.tentativas < 5
          and (e.reservado_em is null or e.reservado_em < now() - interval '15 minutes')
+         -- A ORDEM DO PAR (ver o ⚠️ acima): estorno só é elegível depois que a entrada dele virou
+         -- `ok`. Uma entrada NÃO ok segura o estorno — inclusive a que chegou ao teto e a cancelada
+         -- (as duas não estão `ok`), e é isso que impede uma saída de chegar ao ERP sem a entrada.
+         --
+         -- `ent.criado_em < e.criado_em` é ESTRITO, e o desempate NÃO cai no uuid (o defeito que a
+         -- sf_estoque_reverter já teve que corrigir uma vez). Pode ser estrito porque o estorno só
+         -- EXISTE se uma rodada de envio já tocou a entrada — ou ela está `ok`, ou tem tentativas > 0
+         -- / reserva viva —, e isso é sempre uma transação anterior, commitada: `criado_em` é now(),
+         -- o instante da TRANSAÇÃO, então a entrada do par é estritamente mais antiga que o estorno
+         -- dela. Já uma entrada nascida na MESMA transação do estorno (cancelar a caixa de uma linha
+         -- tocada e rebipar juntos) não é o par de ninguém: segurá-la atrás dela só atrasaria o
+         -- estorno por causa de um rebipe que não tem nada com ele.
+         and (e.operacao <> 'estorno'
+              or not exists (
+                   select 1
+                     from public.sf_estoque_envios ent
+                    where ent.pmo = e.pmo and ent.op = e.op and ent.posto = e.posto
+                      and ent.alvo = e.alvo and ent.operacao = 'entrada'
+                      and ent.criado_em < e.criado_em
+                      and ent.ok = false
+                 ))
        order by (e.tentativas > 0), e.criado_em, e.id
        -- lote aparado: nulo cai no default, 0/negativo viram 1 e existe teto. Um lote gigante
        -- seguraria a reserva (e a rodada) por muito mais tempo do que a janela de 15 min cobre.

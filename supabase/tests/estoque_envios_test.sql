@@ -419,4 +419,80 @@ begin
   raise notice 'estornado dentro da quantidade (a invariante da reversão): ok';
 end $t$;
 
+-- 17. A ORDEM DO PAR: O ESTORNO NÃO É RESERVADO ENQUANTO A ENTRADA DELE NÃO ESTÁ `ok`. É a regra que
+--     impede o ERP de receber a saída antes da entrada (estoque negativo, ou uma saída recusada), e
+--     ela mora AQUI, na reserva, e não no laço de envio — o porquê está no ⚠️ do cabeçalho da
+--     sf_estoque_reservar. As duas metades do teste são as duas metades da regra:
+--       • a entrada em voo (uma rodada já tentou, a reserva venceu) sai; o estorno dela fica;
+--       • e o estorno segurado NÃO paga tentativa — linha segurada não é linha que falhou. Se ela
+--         pagasse, cinco rodadas de espera a tirariam da fila (tentativas < 5) sem nunca ter sido
+--         enviada, que é o desastre que o teto existe pra evitar, chegando pelo lado errado.
+do $t$
+declare n int; v_chaves text[];
+begin
+  update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
+
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, reservado_em)
+  values ('PAR/E1', 'entrada', 'PMOT01', '9906', 'Almoxarifado', 'caixa', 'CX[1][3]9906-PMOT01', 3,
+          now() - interval '10 minutes', 1, now() - interval '20 minutes'),
+         ('PAR/S1', 'estorno', 'PMOT01', '9906', 'Almoxarifado', 'caixa', 'CX[1][3]9906-PMOT01', 3,
+          now() - interval '5 minutes', 0, null);
+
+  select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
+  if v_chaves is distinct from array['PAR/E1'] then
+    raise exception 'FALHOU: a reserva tinha que devolver só a entrada, veio %', v_chaves;
+  end if;
+  select count(*) into n from sf_estoque_envios
+   where chave = 'PAR/S1' and tentativas = 0 and reservado_em is null and erro is null;
+  if n <> 1 then raise exception 'FALHOU: o estorno segurado saiu marcado/tentado da reserva'; end if;
+
+  -- a entrada chega ao ERP: na rodada SEGUINTE o estorno é liberado (é o fim normal da espera)
+  update sf_estoque_envios set ok = true, enviado_em = now() where chave = 'PAR/E1';
+  select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
+  if v_chaves is distinct from array['PAR/S1'] then
+    raise exception 'FALHOU: entrada entregue não liberou o estorno, veio %', v_chaves;
+  end if;
+  raise notice 'ordem do par (estorno espera a entrada, sem pagar tentativa): ok';
+end $t$;
+
+-- 18. AS TRÊS BORDAS DA MESMA REGRA, cada uma com um jeito de dar errado:
+--     (a) entrada que DESISTIU (teto de tentativas) segura o estorno — a espera passa a esperar UMA
+--         PESSOA (o Reenviar da tela de pendências), e "resolver" isso entregando a saída sozinha
+--         deixaria o Compels com uma saída que ele nunca recebeu;
+--     (b) entrada CANCELADA também segura, pelo mesmo motivo literal (não está `ok`). Sob as regras
+--         da sf_estoque_reverter isso não acontece (ela nunca cancela entrada que já tem estorno —
+--         ver A ASSIMETRIA), então este caso é a rede pra quem afrouxar aquela regra depois;
+--     (c) mas a entrada criada DEPOIS do estorno (o rebipe da caixa) NÃO é par dele e NÃO pode
+--         segurá-lo: senão um rebipe que falha prende para sempre um estorno que já tinha a entrada
+--         dele entregue.
+do $t$
+declare v_chaves text[];
+begin
+  update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, ok, enviado_em, cancelado_em)
+  values ('TETO/E1', 'entrada', 'PMOT01', '9907', 'Almoxarifado', 'caixa', 'CX[1][3]9907-PMOT01', 3,
+          now() - interval '10 minutes', 5, false, null, null),
+         ('TETO/S1', 'estorno', 'PMOT01', '9907', 'Almoxarifado', 'caixa', 'CX[1][3]9907-PMOT01', 3,
+          now() - interval '5 minutes', 0, false, null, null),
+         ('CANC/E1', 'entrada', 'PMOT01', '9908', 'Almoxarifado', 'caixa', 'CX[1][3]9908-PMOT01', 3,
+          now() - interval '10 minutes', 0, false, null, now()),
+         ('CANC/S1', 'estorno', 'PMOT01', '9908', 'Almoxarifado', 'caixa', 'CX[1][3]9908-PMOT01', 3,
+          now() - interval '5 minutes', 0, false, null, null),
+         ('REB/E1', 'entrada', 'PMOT01', '9909', 'Almoxarifado', 'caixa', 'CX[1][3]9909-PMOT01', 3,
+          now() - interval '30 minutes', 1, true, now(), null),
+         ('REB/S1', 'estorno', 'PMOT01', '9909', 'Almoxarifado', 'caixa', 'CX[1][3]9909-PMOT01', 3,
+          now() - interval '20 minutes', 0, false, null, null),
+         ('REB/E2', 'entrada', 'PMOT01', '9909', 'Almoxarifado', 'caixa', 'CX[1][3]9909-PMOT01', 3,
+          now() - interval '10 minutes', 0, false, null, null);
+
+  select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
+  -- só o rebipe pendente e o estorno já pareado: os dois estornos presos (teto e cancelada) ficam
+  if v_chaves is distinct from array['REB/E2', 'REB/S1'] then
+    raise exception 'FALHOU: as bordas da ordem do par não bateram, veio %', v_chaves;
+  end if;
+  raise notice 'bordas da ordem do par (teto, cancelada, rebipe posterior): ok';
+end $t$;
+
 select 'ESTOQUE ENVIOS SQL OK' as fim;
