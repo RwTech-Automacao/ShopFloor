@@ -79,6 +79,15 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     return { ok: false, erro: 'O posto Integração é registrado na tela de Integração.' }
   }
 
+  // Almoxarifado também não é lançável aqui, pelo mesmo motivo: a entrada tem RPC própria
+  // (sf_almoxarifado_entrada), com recusas que `lancar`/`sf_lancar` não conhecem — duplicidade por
+  // série OU por código de caixa, "caixa ainda aberta", "caixa reprovada no NQA", "peça não passou
+  // pela Embalagem", faixa de SN, individual×coletiva. Sem esta trava, qualquer perfil com
+  // shopfloor.lancar gravaria a entrada aqui sem nenhuma dessas checagens.
+  if (perfil.recurso === 'almoxarifado') {
+    return { ok: false, erro: 'O posto Almoxarifado é registrado na tela de Almoxarifado.' }
+  }
+
   // Burn-in tem lifecycle próprio (entrada/saída) — obrigatórios à parte.
   const ehBurnin = perfil.recurso === 'burnin'
   if (ehBurnin) {
