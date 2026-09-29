@@ -69,6 +69,12 @@ insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exig
 
 \i /tmp/0128.sql
 \i /tmp/0129.sql
+-- A fila de envio ao Compels (0132) entra AQUI, antes do primeiro bipe: desde a Fase 2 a entrada
+-- grava em sf_estoque_envios na MESMA transação em que grava os registros, então sem a tabela nem a
+-- primeira chamada da RPC passaria. A 0129 chama a sf_estoque_chave da 0132, que tem número MENOR —
+-- as migrações desta branch nunca foram aplicadas em banco nenhum e vão juntas; o corpo plpgsql só
+-- resolve o nome na hora de executar.
+\i /tmp/0132.sql
 
 select set_config('teste.perms', 'shopfloor.lancar', false);
 
@@ -1041,4 +1047,151 @@ begin
   if (r->>'quantidade')::int <> 4 then
     raise exception 'FALHOU: o rebipe tinha que repor as 4 peças, veio %', r->>'quantidade'; end if;
   raise notice '32. estado parcial → ja_lancado diz "2 de 4" e aponta a saída; cancelar a caixa destrava o rebipe: ok';
+end $t$;
+
+-- =============================================================
+-- A FILA DE ENVIO AO COMPELS (0132) — o bipe enfileira, o cancelamento reverte (Fase 2, Task 2)
+--
+-- Por que estes testes moram AQUI e não no estoque_envios_test.sql: o que se prova nesta parte não é
+-- a fila em si (a 0132 tem os testes dela), é o LIGAMENTO — que o bipe e o cancelamento gravam na
+-- fila DENTRO da mesma transação em que mexem em sf_registros. Isso só se prova rodando as RPCs de
+-- verdade, contra a massa que os testes de cima já montaram.
+--
+-- A 0132 é aplicada no topo deste arquivo (logo depois da 0129), então todas as entradas aceitas
+-- pelos testes 1..32 já passaram pela fila. As asserções abaixo são sempre POR ALVO (o bipe) e nunca
+-- por contagem total da tabela: contagem total viraria uma conta a acertar a cada teste novo.
+-- =============================================================
+
+-- ---------- 33. a entrada de PEÇA enfileira UMA linha, pendente ----------
+-- A entrada do teste 5 (peça 1042, OP de embalagem individual). O que importa: uma linha só, com a
+-- identidade do bipe em `alvo` = a SÉRIE NORMALIZADA (nunca o bipe cru — pelo cru, a mesma peça com
+-- um zero à esquerda a mais no coletor geraria duas chaves e entraria duas vezes no ERP) e a chave
+-- com E1, a primeira entrada daquele bipe.
+do $t$
+declare e public.sf_estoque_envios; v_n int;
+begin
+  select count(*) into v_n from sf_estoque_envios
+   where pmo = 'PMOI01' and op = '9000' and posto = 'Almoxarifado' and alvo = '1042';
+  if v_n <> 1 then
+    raise exception 'FALHOU: o bipe da peça tinha que deixar 1 linha na fila, veio %', v_n; end if;
+
+  select * into e from sf_estoque_envios
+   where pmo = 'PMOI01' and op = '9000' and posto = 'Almoxarifado' and alvo = '1042';
+  if e.chave <> 'ALMOX/PMOI01/9000/Almoxarifado/1042/E1' then
+    raise exception 'FALHOU: chave errada: %', e.chave; end if;
+  if e.operacao <> 'entrada' or e.tipo <> 'serie' then
+    raise exception 'FALHOU: operacao/tipo errados: % / %', e.operacao, e.tipo; end if;
+  if e.bipe <> '1042' or e.serie_norm <> '1042' then
+    raise exception 'FALHOU: bipe/serie_norm errados: % / %', e.bipe, e.serie_norm; end if;
+  if e.quantidade <> 1 then raise exception 'FALHOU: peça vale 1, veio %', e.quantidade; end if;
+  -- Pendente: o bipe NÃO espera o ERP, só deixa a linha na fila.
+  if e.ok or e.tentativas <> 0 or e.enviado_em is not null or e.cancelado_em is not null then
+    raise exception 'FALHOU: a linha tinha que nascer pendente: %', to_jsonb(e); end if;
+  raise notice '33. entrada de peça → 1 linha na fila (alvo = série normalizada, E1, pendente): ok';
+end $t$;
+
+-- ---------- 34. a entrada de CAIXA enfileira UMA linha POR BIPE, não uma por peça ----------
+-- A GRANULARIDADE, que é a decisão desta tarefa: em sf_registros o bipe de caixa grava uma linha por
+-- PEÇA (é o que faz o posto não ser especial pra nenhum leitor do sistema); na fila ele grava UMA
+-- linha só, com `quantidade` = as peças que entraram. A unidade da fila é a MOVIMENTAÇÃO de estoque,
+-- e a movimentação é o bipe: o ERP recebe "entraram 14 peças da caixa X", que é o que o operador fez.
+-- Uma linha por peça daria 14 chamadas ao ERP pro mesmo gesto, 14 chances de erro parcial e uma fila
+-- 14 vezes maior — e a identidade do bipe (`alvo`, a chave de idempotência) já é a da CAIXA, não a da
+-- peça: por peça, a chave teria que ser outra e nada casaria com o cancelamento.
+do $t$
+declare e public.sf_estoque_envios; v_n int;
+begin
+  select count(*) into v_n from sf_estoque_envios
+   where pmo = 'PMOC14' and op = '8498' and alvo = 'CX[7][14]8498-PMOC14';
+  if v_n <> 1 then
+    raise exception 'FALHOU: 14 peças, mas a fila é por BIPE — esperava 1 linha, veio %', v_n; end if;
+
+  select * into e from sf_estoque_envios
+   where pmo = 'PMOC14' and op = '8498' and alvo = 'CX[7][14]8498-PMOC14';
+  if e.chave <> 'ALMOX/PMOC14/8498/Almoxarifado/CX[7][14]8498-PMOC14/E1' then
+    raise exception 'FALHOU: chave errada: %', e.chave; end if;
+  if e.tipo <> 'caixa' or e.bipe <> 'CX[7][14]8498-PMOC14' or e.serie_norm <> '' then
+    raise exception 'FALHOU: tipo/bipe/serie_norm errados: %', to_jsonb(e); end if;
+  if e.quantidade <> 14 then
+    raise exception 'FALHOU: a quantidade da caixa é a contagem das peças (14), veio %', e.quantidade; end if;
+
+  -- E a quantidade é a que REALMENTE entrou, não a da etiqueta: a caixa 12 do teste 20 promete 14 e
+  -- tem 13 peças. Mandar 14 pro ERP por causa do número impresso inflaria o estoque em silêncio.
+  select quantidade into v_n from sf_estoque_envios
+   where pmo = 'PMOC14' and op = '8498' and alvo = 'CX[12][14]8498-PMOC14';
+  if v_n <> 13 then
+    raise exception 'FALHOU: etiqueta 14 × 13 peças reais — a fila tinha que levar 13, veio %', v_n; end if;
+  raise notice '34. entrada de caixa → 1 linha na fila por BIPE, quantidade = peças reais: ok';
+end $t$;
+
+-- ---------- 35. UMA TRANSAÇÃO SÓ: registro e fila vingam juntos, ou nenhum dos dois ----------
+-- É o motivo de a fila ser gravada DENTRO da RPC. Os dois lados são provados fazendo cada um falhar
+-- de propósito, com um gatilho:
+--   (a) o registro falha → a fila não pode ficar com linha órfã (o ERP receberia entrada de peça que
+--       não existe no ShopFloor);
+--   (b) a fila falha → o registro não pode ficar sozinho (a peça estaria no ShopFloor e NUNCA iria
+--       pro ERP, sem ninguém saber — o erro silencioso que esta feature inteira existe pra não ter).
+-- O (b) é o que pega a "melhoria" mais provável de alguém escrever depois: engolir o erro da fila com
+-- um `exception when others then null` pra "não quebrar o bipe por causa do ERP".
+insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
+  ('PMOC19', '8502', 'Cliente Transação', '9900', '9990', false);
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC19', '8502', 'Embalagem', 1, 2, 2, 'CX[1][2]8502-PMOC19', true),
+  ('PMOC19', '8502', 'Embalagem', 2, 2, 2, 'CX[2][2]8502-PMOC19', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[1][2]8502-PMOC19',
+       'SN-' || (9900 + i)::text, (9900 + i)::text from generate_series(1, 2) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[2][2]8502-PMOC19',
+       'SN-' || (9910 + i)::text, (9910 + i)::text from generate_series(1, 2) i;
+
+create function public.teste_explode() returns trigger language plpgsql as $f$
+begin
+  raise exception 'EXPLODIU';
+end $f$;
+
+do $t$
+declare v_erro text; v_n int;
+begin
+  -- (a) o registro falha
+  create trigger teste_explode_registro before insert on public.sf_registros
+    for each row when (new.posto = 'Almoxarifado' and new.numero_caixa = 'CX[1][2]8502-PMOC19')
+    execute function public.teste_explode();
+  begin
+    perform sf_almoxarifado_entrada('PMOC19', '8502', 'Almoxarifado', 'Ana',
+                                    'CX[1][2]8502-PMOC19', 'caixa', 2, '');
+  exception when others then v_erro := SQLERRM;
+  end;
+  drop trigger teste_explode_registro on public.sf_registros;
+  if coalesce(v_erro, '') not like '%EXPLODIU%' then
+    raise exception 'FALHOU: a RPC engoliu a falha do registro (erro = %)', v_erro; end if;
+  select count(*) into v_n from sf_estoque_envios where alvo = 'CX[1][2]8502-PMOC19';
+  if v_n <> 0 then
+    raise exception 'FALHOU: o registro falhou e sobrou % linha(s) órfã(s) na fila', v_n; end if;
+
+  -- (b) a fila falha
+  create trigger teste_explode_fila before insert on public.sf_estoque_envios
+    for each row when (new.bipe = 'CX[2][2]8502-PMOC19') execute function public.teste_explode();
+  v_erro := null;
+  begin
+    perform sf_almoxarifado_entrada('PMOC19', '8502', 'Almoxarifado', 'Ana',
+                                    'CX[2][2]8502-PMOC19', 'caixa', 2, '');
+  exception when others then v_erro := SQLERRM;
+  end;
+  drop trigger teste_explode_fila on public.sf_estoque_envios;
+  if coalesce(v_erro, '') not like '%EXPLODIU%' then
+    raise exception 'FALHOU: a falha da fila não abortou o bipe (erro = %) — a peça entraria no ShopFloor e nunca no ERP', v_erro; end if;
+  select count(*) into v_n from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[2][2]8502-PMOC19';
+  if v_n <> 0 then
+    raise exception 'FALHOU: a fila falhou e sobraram % linha(s) de registro sem envio', v_n; end if;
+
+  -- Sem os gatilhos, o mesmo bipe entra normal: um registro por peça, uma linha na fila.
+  perform sf_almoxarifado_entrada('PMOC19', '8502', 'Almoxarifado', 'Ana',
+                                  'CX[2][2]8502-PMOC19', 'caixa', 2, '');
+  if (select count(*) from sf_registros
+       where posto = 'Almoxarifado' and numero_caixa = 'CX[2][2]8502-PMOC19') <> 2
+     or (select count(*) from sf_estoque_envios where alvo = 'CX[2][2]8502-PMOC19') <> 1 then
+    raise exception 'FALHOU: depois dos gatilhos, o bipe tinha que entrar normal'; end if;
+  raise notice '35. transação única: registro sem fila e fila sem registro, nenhum dos dois acontece: ok';
 end $t$;

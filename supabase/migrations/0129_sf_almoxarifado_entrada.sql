@@ -68,6 +68,12 @@
 -- Postgres, que ninguém lê — a caixa física de 14 entrava como 13 calada e a 14ª peça ficava como
 -- trabalho em processo na Embalagem pra sempre, sem a OP nunca concluir.
 --
+-- A FILA DE ENVIO AO ERP (Fase 2): além dos registros, a entrada põe UMA linha em sf_estoque_envios
+-- (0132) — na mesma transação, com a chave de idempotência do bipe. O bipe NÃO espera o Compels: quem
+-- entrega é o servidor, depois. O porquê de cada decisão está no bloco "A FILA" no fim da função.
+-- Dependência de número MENOR: esta migração chama funções da 0132. As migrações desta branch nunca
+-- foram aplicadas em banco nenhum e vão juntas; o corpo plpgsql só resolve o nome ao executar.
+--
 -- Irmã mais próxima: sf_lancar (0031) — mesmo gate, mesma gravação em sf_registros, mesma ideia de
 -- duplicidade. Corpo com $func$: o SQL Editor do Supabase não aceita o delimitador de dois cifrões.
 -- Aditiva e idempotente: reaplicar não faz mal.
@@ -139,6 +145,12 @@ declare
   v_pecas      int;
   v_lancadas   int;
   v_qtd_codigo int;
+  -- O que vai pra fila de envio ao ERP (ver "A FILA", no fim da função). São definidos dentro de cada
+  -- caminho porque a identidade do bipe é diferente nos dois: a caixa é identificada pelo código, a
+  -- peça pela série NORMALIZADA.
+  v_tipo       text;
+  v_serie_fila text;
+  v_alvo       text;
 begin
   if not tem_permissao('shopfloor','lancar') then
     return jsonb_build_object('ok', false, 'motivo', 'sem_permissao');
@@ -364,6 +376,11 @@ begin
         p_bipe, v_quantidade, v_qtd_codigo;
     end if;
 
+    -- A identidade deste bipe pra fila: a CAIXA. serie_norm vai vazio de propósito (mesmo que o
+    -- chamador tenha mandado algo em p_serie_norm), porque é o código da caixa que a duplicidade
+    -- acima e o cancelamento (0131) comparam — e é dele que o `alvo` da fila é derivado.
+    v_tipo := 'caixa'; v_serie_fila := ''; v_alvo := p_bipe;
+
   else
     -- Qualquer coisa que não seja 'caixa' é tratada como série: o domínio só emite os dois valores,
     -- e inventar um motivo de recusa fora da spec só pra um p_tipo impossível não ajudaria a tela.
@@ -416,7 +433,41 @@ begin
       (p_colaborador, p_posto, p_pmo, p_op, v_ordem.cliente, '', p_bipe, p_serie_norm);
 
     v_quantidade := 1;
+    -- A identidade deste bipe pra fila: a SÉRIE NORMALIZADA, nunca o bipe cru. É a mesma escolha da
+    -- trava e da checagem de duplicidade logo acima: um zero à esquerda a mais no coletor, ou
+    -- minúsculas, dão bipes crus diferentes pra MESMA peça — pelo cru, ela geraria duas chaves de
+    -- idempotência e entraria duas vezes no ERP. Aqui p_serie_norm é garantidamente não vazia: série
+    -- vazia não casa com registro da Embalagem e já saiu por `serie_sem_embalagem`.
+    v_tipo := 'serie'; v_serie_fila := p_serie_norm; v_alvo := p_serie_norm;
   end if;
+
+  -- ---------- A FILA DE ENVIO AO ERP (Fase 2) ----------
+  -- NA MESMA TRANSAÇÃO em que os registros foram gravados, e não depois, pelo motivo de sempre: se o
+  -- insert dos registros vingasse e o da fila não, a peça estaria no ShopFloor e NUNCA iria pro
+  -- Compels, sem ninguém saber — exatamente o erro silencioso que esta integração existe pra não ter.
+  -- E vale o contrário também: se este insert falhar, o bipe inteiro é abortado e o operador vê erro,
+  -- em vez de a fila receber entrada de peça que não ficou registrada. NÃO envolva isto num
+  -- `exception when others` pra "não quebrar o bipe por causa do ERP": é a fila que vira mentira.
+  --
+  -- UMA LINHA POR BIPE, não uma por peça (o oposto de sf_registros, logo acima). A unidade da fila é
+  -- a MOVIMENTAÇÃO de estoque, e a movimentação é o gesto do operador: o ERP recebe "entraram 14
+  -- peças da caixa X". Por peça seriam 14 chamadas ao ERP pro mesmo gesto, 14 chances de erro parcial
+  -- e uma fila 14 vezes maior — e a chave de idempotência da 0132 é a identidade do BIPE (`alvo`), a
+  -- mesma que o cancelamento procura: por peça, nada casaria com ela. Quem precisa das peças uma a
+  -- uma é o ShopFloor, e elas estão em sf_registros.
+  --
+  -- `quantidade` é v_quantidade, a contagem das linhas REALMENTE gravadas — nunca o que a etiqueta
+  -- prometia (v_qtd_codigo) nem o que o domínio contou (p_quantidade). Mandar o número da etiqueta
+  -- inflaria o estoque do ERP em silêncio quando os dois divergem.
+  --
+  -- A chave sai da sf_estoque_chave (0132), que conta quantas vezes este bipe já teve esta operação:
+  -- o rebipe depois de um cancelamento vira E2, e não bate na chave de ontem. Se ainda assim a chave
+  -- repetir, o índice único mata a transação — e é isso que se quer: o mesmo bipe não entra duas vezes.
+  insert into public.sf_estoque_envios
+    (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade)
+  values
+    (sf_estoque_chave(p_pmo, p_op, p_posto, v_alvo, 'entrada'), 'entrada',
+     p_pmo, p_op, p_posto, v_tipo, p_bipe, v_serie_fila, v_quantidade);
 
   -- O painel mostra este número ao operador ("14 peças" pra uma caixa de 14, "1 peça" pra uma peça),
   -- então ele é a contagem das LINHAS que acabaram de ser gravadas — o que realmente entrou —, e não

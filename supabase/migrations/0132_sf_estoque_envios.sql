@@ -197,6 +197,109 @@ $func$;
 revoke all on function public.sf_estoque_chave(text, text, text, text, text)
   from public, anon, authenticated, service_role;
 
+-- ---------- sf_estoque_reverter(): desfazer uma entrada — cancelar o pendente OU estornar ----------
+-- Quem chama são as DUAS funções de cancelamento do Almoxarifado: a sf_cancelar_caixa_almoxarifado
+-- (0131, a caixa inteira) e a sf_cancelar_lancamento (0133, uma linha avulsa). A regra é a mesma nas
+-- duas e mora aqui porque é uma decisão só, e errá-la em um dos caminhos daria estoque errado no ERP
+-- sem ninguém ver. Ela é `internal` como a sf_estoque_chave: as chamadoras são `security definer` e
+-- rodam como donas, então a função é revogada de todos os papéis.
+--
+-- ⚠️ A DECISÃO: NÃO SE ESTORNA O QUE AINDA NÃO SAIU.
+-- Se a entrada correspondente ainda está na fila, o certo é CANCELAR o envio pendente (cancelado_em),
+-- e não enfileirar um estorno: senão manda-se ao ERP uma entrada e uma saída que nunca precisaram
+-- existir, e alguém do outro lado gasta meia hora entendendo por que apareceu movimento de nada. Só
+-- quando a entrada JÁ FOI entregue (ok = true) é que desfazer vira movimentação nova, de saída
+-- (operacao = 'estorno', que a chave escreve como S) — o check da tabela diz a mesma coisa: o que já
+-- foi enviado não se cancela.
+--
+-- O SINAL de "já saiu" é `ok`, e nada mais. Ele é o único registro de entrega que existe: a linha só
+-- vira ok quando o envio confirmou. Fica uma janela conhecida e assumida — uma linha com tentativas >
+-- 0 pode ter chegado ao ERP com a resposta perdida no caminho, e cancelá-la deixaria lá uma entrada
+-- sem estorno. Assumida porque a alternativa (estornar "por garantia" o que talvez não tenha chegado)
+-- é a que cria movimento de nada, e porque a linha cancelada FICA na tabela, com a chave, que é por
+-- onde alguém reconcilia isso depois. Mesma janela vale pro envio em VOO: quem for escrever o laço de
+-- envio (Task 3) deve marcar `ok` com `and cancelado_em is null` no filtro — senão o check
+-- `cancelado_em is null or not ok` estoura na cara do servidor quando um cancelamento cai no meio.
+--
+-- p_quantidade = quantas peças estão sendo desfeitas, ou NULO para "o bipe inteiro":
+--   • nulo (0131, a caixa inteira) — cancela a linha pendente de uma vez; se já foi enviada, estorna
+--     o que o ERP recebeu (v_ent.quantidade), e não o que acabou de ser apagado aqui: o que conserta
+--     o estoque de lá é reverter o que chegou lá;
+--   • um número (0133, uma linha avulsa = 1 peça) — a linha pendente ainda descreve o que VAI ser
+--     enviado, então ela é AJUSTADA (uma caixa de 3 vira 2). Mandar 3 e estornar 1 seriam duas
+--     movimentações no ERP para um número que ainda podia ser corrigido aqui. Quando a última peça
+--     cai (resta <= 0), a linha é cancelada.
+-- Devolve o que fez ('cancelado' | 'ajustado' | 'estorno' | 'sem_fila' | 'nada') — os testes leem
+-- isso, e um dia a tela de pendências também pode.
+--
+-- `sem_fila` NÃO é erro: toda entrada gravada antes desta fase não tem linha aqui, e cancelar uma
+-- delas não pode inventar um estorno de algo que o ERP nunca recebeu.
+create or replace function public.sf_estoque_reverter(
+  p_pmo text, p_op text, p_posto text, p_alvo text, p_quantidade int default null
+) returns text
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+declare
+  v_ent   public.sf_estoque_envios;
+  v_resta int;
+begin
+  -- Nada a desfazer: chamada defensiva (um cancelamento que não apagou linha nenhuma, um alvo vazio).
+  if coalesce(p_alvo, '') = '' or coalesce(p_quantidade, 1) <= 0 then
+    return 'nada';
+  end if;
+
+  -- A entrada VIGENTE daquele bipe: a mais recente que ainda não foi cancelada. O mesmo bipe pode ter
+  -- várias no histórico (E1 cancelada, E2 depois do rebipe — ver o contador da chave acima), e é a
+  -- última que descreve o que está no ShopFloor agora. `for update` porque dois cancelamentos da
+  -- mesma caixa ajustariam a quantidade a partir da mesma leitura.
+  select * into v_ent
+    from public.sf_estoque_envios
+   where pmo = p_pmo and op = p_op and posto = p_posto and alvo = p_alvo
+     and operacao = 'entrada' and cancelado_em is null
+   order by criado_em desc, id desc
+   limit 1
+   for update;
+  if not found then
+    return 'sem_fila';
+  end if;
+
+  if v_ent.ok then
+    -- JÁ ESTÁ NO ERP: a única forma de desfazer é uma saída. tipo/bipe/serie_norm são COPIADOS da
+    -- entrada de propósito — é o que garante que o `alvo` do estorno (coluna gerada) seja idêntico ao
+    -- da entrada, e portanto que o contador da chave e a busca daqui olhem o mesmo bipe.
+    insert into public.sf_estoque_envios
+      (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade)
+    values
+      (public.sf_estoque_chave(p_pmo, p_op, p_posto, p_alvo, 'estorno'), 'estorno',
+       v_ent.pmo, v_ent.op, v_ent.posto, v_ent.tipo, v_ent.bipe, v_ent.serie_norm,
+       coalesce(p_quantidade, v_ent.quantidade));
+    return 'estorno';
+  end if;
+
+  -- AINDA NÃO SAIU. O bipe inteiro (p_quantidade nulo) cancela a linha sem aritmética: a intenção é
+  -- inequívoca, e a quantidade da linha pode não bater com o que foi apagado agora (um ajuste
+  -- anterior já pode ter reduzido).
+  if p_quantidade is null then
+    update public.sf_estoque_envios set cancelado_em = now() where id = v_ent.id;
+    return 'cancelado';
+  end if;
+
+  v_resta := v_ent.quantidade - p_quantidade;
+  if v_resta <= 0 then
+    update public.sf_estoque_envios set cancelado_em = now() where id = v_ent.id;
+    return 'cancelado';
+  end if;
+  update public.sf_estoque_envios set quantidade = v_resta where id = v_ent.id;
+  return 'ajustado';
+end
+$func$;
+
+revoke all on function public.sf_estoque_reverter(text, text, text, text, int)
+  from public, anon, authenticated, service_role;
+
 -- ---------- sf_estoque_reservar(): pega um lote da fila, de forma ATÔMICA ----------
 -- Só o servidor. Numa única instrução: escolhe as pendentes, trava com `for update skip locked`
 -- (outra rodada simultânea PULA as que esta pegou, em vez de esperar), soma 1 em `tentativas` e marca
