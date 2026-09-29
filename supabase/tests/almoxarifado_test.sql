@@ -1549,9 +1549,18 @@ end $t$;
 --   (b) linha que NINGUÉM leu (sem reserva, tentativas = 0) — aí o ajuste continua sendo o certo: a
 --       linha ainda descreve o que VAI ser enviado, e corrigir 3 para 2 poupa ao ERP duas
 --       movimentações para um número que ainda podia ser arrumado aqui.
+--   (c) RESERVA VIVA com tentativas = 0 — a outra perna da marca, sozinha (achado da re-revisão: sem
+--       este caso nada travava a perna da reserva; trocando a marca inteira por `tentativas > 0` a
+--       suíte ficava verde). Ela não é decorativa: a 0132 diz que `reservado_em` pode existir sem
+--       tentativa (alguém mexendo na fila à mão), e o Reenviar da tela de pendências pode muito bem
+--       reservar antes de contar. Uma linha reservada tem a carga dela EM VOO, com as 3 peças.
 insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
   ('PMOC20', '8503', 'Embalagem', 6, 3, 3, 'CX[6][3]8503-PMOC20', true),
-  ('PMOC20', '8503', 'Embalagem', 7, 3, 3, 'CX[7][3]8503-PMOC20', true);
+  ('PMOC20', '8503', 'Embalagem', 7, 3, 3, 'CX[7][3]8503-PMOC20', true),
+  ('PMOC20', '8503', 'Embalagem', 8, 3, 3, 'CX[8][3]8503-PMOC20', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[8][3]8503-PMOC20',
+       'SN-' || (9954 + i)::text, (9954 + i)::text from generate_series(1, 3) i;
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
 select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[6][3]8503-PMOC20',
        'SN-' || (9990 + i)::text, (9990 + i)::text from generate_series(1, 3) i;
@@ -1602,5 +1611,23 @@ begin
   if exists (select 1 from sf_estoque_envios
               where alvo = 'CX[7][3]8503-PMOC20' and operacao = 'estorno') then
     raise exception 'FALHOU: ajustou E estornou a mesma peça'; end if;
-  raise notice '43. tentativa gasta estorna (entrada intacta); linha intocada ainda ajusta: ok';
+
+  -- (c) RESERVA VIVA, tentativas = 0: a perna da reserva sozinha. Sem ela a marca poderia ser só
+  -- `tentativas > 0` e nada acusaria — e a linha reservada é exatamente aquela cuja carga de 3 peças
+  -- está EM VOO, o caso que o ajuste não pode alcançar.
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[8][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 8 não entrou'; end if;
+  update sf_estoque_envios set tentativas = 0, reservado_em = now()
+   where alvo = 'CX[8][3]8503-PMOC20' and operacao = 'entrada';
+
+  v_r := sf_estoque_reverter('PMOC20', '8503', 'Almoxarifado', 'CX[8][3]8503-PMOC20', 1);
+  if v_r <> 'estorno' then
+    raise exception 'FALHOU: reserva VIVA (mesmo com tentativas = 0) tinha que ESTORNAR — a carga de 3 peças já saiu com a reserva; devolveu %', v_r; end if;
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[8][3]8503-PMOC20' and operacao = 'entrada';
+  if e.quantidade <> 3 or e.estornado <> 1 or e.cancelado_em is not null then
+    raise exception 'FALHOU: a entrada reservada tinha que ficar intacta (3 peças) com estornado 1: %', to_jsonb(e); end if;
+  raise notice '43. tentativa gasta estorna (entrada intacta); linha intocada ainda ajusta; reserva viva sem tentativa também estorna: ok';
 end $t$;
+
