@@ -1631,3 +1631,234 @@ begin
   raise notice '43. tentativa gasta estorna (entrada intacta); linha intocada ainda ajusta; reserva viva sem tentativa também estorna: ok';
 end $t$;
 
+-- ---------- 44. CANCELAR O BIPE INTEIRO DE UMA LINHA TOCADA NÃO DEIXA ESTORNO ÓRFÃO ----------
+-- O achado que este teste trava, e que foi CRIADO pela correção do 42/43: a exceção "linha em voo
+-- estorna em vez de ajustar" valia só quando vinha uma quantidade (0133, a peça). O caminho da caixa
+-- (0131, p_quantidade nulo) continuava CANCELANDO a entrada — e cancelar uma entrada que já tem
+-- estorno deixa o estorno na fila SEM PAR.
+--
+-- E a sequência não é exótica: é a que a própria mensagem de recusa da 0129 manda o gestor seguir
+-- ("cancele a caixa inteira em Registros e bipe outra vez"):
+--   1. caixa de 3 peças → entrada E1 de 3;
+--   2. o servidor reserva o lote e sai pro Compels (a carga levou 3);
+--   3. o gestor cancela 1 peça → estorno S1 de 1 (certo: a peça pode ter ido no envio em voo);
+--   4. o gestor cancela a CAIXA INTEIRA → aqui estava o buraco: E1 ganhava `cancelado_em`;
+--   5. o gestor rebipa → E2 de 3.
+-- Estado que sobrava: E1 cancelada com estornado 1 · S1 pendente · E2 pendente. Ou o laço de envio
+-- respeita a restrição de ordem escrita na 0132 (estorno não sai antes de a SUA entrada virar `ok`) e
+-- o S1 fica preso para sempre, porque E1 está cancelada e nunca vira ok; ou o laço é menos rigoroso,
+-- entrega o S1 depois do E2, e o Compels fica com 1 peça A MENOS que o ShopFloor, em silêncio.
+--
+-- As asserções são sobre as duas INVARIANTES, não sobre o mecanismo:
+--   • a soma dos estornos daquela entrada fecha com o que foi mandado ao ERP (3);
+--   • nenhum estorno fica sem par — o que, em dado, é "nenhuma entrada CANCELADA tem estornado > 0" e
+--     "todo estorno tem uma entrada viva do mesmo bipe, criada antes dele". Essas duas valem para a
+--     tabela TODA, não só para esta massa: é a forma mais barata de a suíte inteira vigiar isso.
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC20', '8503', 'Embalagem', 9, 3, 3, 'CX[9][3]8503-PMOC20', true),
+  ('PMOC20', '8503', 'Embalagem', 10, 3, 3, 'CX[10][3]8503-PMOC20', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[9][3]8503-PMOC20',
+       'SN-' || (9956 + i)::text, (9956 + i)::text from generate_series(1, 3) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[10][3]8503-PMOC20',
+       'SN-' || (9962 + i)::text, (9962 + i)::text from generate_series(1, 3) i;
+
+-- (i) VARIANTE RESERVA VIVA — passos 1 a 4, com as RPCs reais (a reserva é a de verdade).
+do $t$
+declare e public.sf_estoque_envios; v_id uuid; v_soma int; v_n int;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+
+  -- 1. a caixa entra: E1 de 3 peças.
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[9][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 9 não entrou'; end if;
+
+  -- 2. o servidor reserva e sai pro Compels — a carga desta linha levou 3 peças.
+  perform sf_estoque_reservar(50);
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[9][3]8503-PMOC20' and operacao = 'entrada';
+  if e.tentativas <> 1 or e.reservado_em is null or e.ok then
+    raise exception 'FALHOU (massa): a linha tinha que estar reservada e ainda não entregue: %', to_jsonb(e); end if;
+
+  -- 3. cancela UMA peça: estorno de 1 (é o fix do teste 42 funcionando).
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[9][3]8503-PMOC20'
+   order by numero_serie_norm limit 1;
+  perform sf_cancelar_lancamento(v_id, 'uma peça, com o envio em voo');
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[9][3]8503-PMOC20' and operacao = 'entrada';
+  if e.estornado <> 1 or e.cancelado_em is not null then
+    raise exception 'FALHOU (massa): esperava a entrada viva com estornado 1: %', to_jsonb(e); end if;
+
+  -- 4. cancela a CAIXA INTEIRA — o passo que a recusa da 0129 manda dar.
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[9][3]8503-PMOC20' limit 1;
+  if sf_cancelar_caixa_almoxarifado(v_id, 'cancela o resto e rebipa') <> 2 then
+    raise exception 'FALHOU (massa): esperava cancelar as 2 peças que sobraram'; end if;
+
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[9][3]8503-PMOC20' and operacao = 'entrada';
+  -- A entrada TOCADA não se cancela: ela continua na fila e VAI chegar ao ERP, e é isso que faz os
+  -- estornos dela terem par (e a restrição de ordem do laço de envio terminar algum dia).
+  if e.cancelado_em is not null then
+    raise exception 'FALHOU: cancelou uma entrada que já tinha estorno — o S1 fica na fila sem par (preso para sempre, ou entregue sozinho e o Compels fica com 1 peça a menos): %', to_jsonb(e); end if;
+  if e.quantidade <> 3 or e.estornado <> 3 then
+    raise exception 'FALHOU: a entrada tinha que ficar intacta (3) e inteiramente revertida (estornado 3), veio %/%', e.quantidade, e.estornado; end if;
+
+  -- A INVARIANTE: o ERP recebeu (ou pode ter recebido) 3, e os estornos somam 3. Nem mais, nem menos.
+  select coalesce(sum(quantidade), 0), count(*) into v_soma, v_n from sf_estoque_envios
+   where alvo = 'CX[9][3]8503-PMOC20' and operacao = 'estorno';
+  if v_soma <> 3 then
+    raise exception 'FALHOU: a carga mandou 3 peças e os estornos somam % (em % linha(s)) — sobra/falta de % peça(s) no Compels',
+      v_soma, v_n, v_soma - 3; end if;
+  raise notice '44(i). bipe inteiro de linha em voo → estorna o saldo, entrada viva, estornos fecham em 3: ok';
+end $t$;
+
+-- 5. O REBIPE, em transação própria (é o que acontece de verdade, e é o que dá ao E2 um criado_em
+-- posterior ao do E1 — a entrada VIGENTE de um bipe é a mais recente não cancelada).
+do $t$
+declare e public.sf_estoque_envios; v_n int;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Bruno',
+                              'CX[9][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU: o rebipe depois do cancelamento tinha que ser aceito'; end if;
+
+  -- Duas entradas VIVAS do mesmo bipe convivem: a E1 (revertida por inteiro, esperando chegar ao ERP)
+  -- e a E2 (as 3 peças de agora). É por isso que o saldo é POR ENTRADA e não uma soma por bipe.
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[9][3]8503-PMOC20' and operacao = 'entrada'
+   order by criado_em desc, id desc limit 1;
+  if e.chave <> 'ALMOX/PMOC20/8503/Almoxarifado/CX[9][3]8503-PMOC20/E2' then
+    raise exception 'FALHOU: o rebipe tinha que gerar E2, veio %', e.chave; end if;
+  if e.quantidade <> 3 or e.estornado <> 0 or e.ok or e.cancelado_em is not null then
+    raise exception 'FALHOU: a E2 tinha que nascer pendente, com 3 peças e nada revertido: %', to_jsonb(e); end if;
+
+  -- E o ciclo fecha: 3 peças no ShopFloor contra 3 na fila não cancelada (E1 3 − 3 estornados + E2 3).
+  select coalesce(sum(case when operacao = 'entrada' then quantidade - estornado else 0 end), 0)
+    into v_n from sf_estoque_envios
+   where alvo = 'CX[9][3]8503-PMOC20' and cancelado_em is null;
+  if v_n <> 3 then
+    raise exception 'FALHOU: o ShopFloor tem 3 peças e a fila não cancelada diz % — é a divergência que vai pro inventário do Compels', v_n; end if;
+  raise notice '44(i). rebipe → E2 de 3, ciclo fecha em 3 peças dos dois lados: ok';
+end $t$;
+
+-- (ii) VARIANTE DESISTIU (tentativas = 5) — a mesma sequência na linha que já caiu da fila. Aqui o
+-- cancelamento seria ainda pior: a entrada nunca foi entregue e não vai ser reenviada sozinha, então
+-- os estornos seriam as ÚNICAS linhas entregáveis do bipe — saída de peça que o ERP nunca recebeu.
+-- Não cancelando, entrada e estornos aparecem JUNTOS na tela de pendências, que é onde alguém decide.
+do $t$
+declare e public.sf_estoque_envios; v_id uuid; v_soma int; v_n int;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[10][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 10 não entrou'; end if;
+  -- Cinco rodadas tentaram e a última reserva já venceu: a linha está fora da fila (DESISTIU).
+  update sf_estoque_envios
+     set tentativas = 5, reservado_em = now() - interval '20 minutes', erro = 'Compels não respondeu'
+   where alvo = 'CX[10][3]8503-PMOC20' and operacao = 'entrada';
+
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[10][3]8503-PMOC20'
+   order by numero_serie_norm limit 1;
+  perform sf_cancelar_lancamento(v_id, 'uma peça');
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[10][3]8503-PMOC20' limit 1;
+  if sf_cancelar_caixa_almoxarifado(v_id, 'cancela o resto') <> 2 then
+    raise exception 'FALHOU (massa): esperava cancelar as 2 peças que sobraram'; end if;
+
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[10][3]8503-PMOC20' and operacao = 'entrada';
+  if e.cancelado_em is not null then
+    raise exception 'FALHOU: cancelou a entrada que DESISTIU e já tinha estorno — o estorno virou a única linha entregável do bipe: %', to_jsonb(e); end if;
+  if e.quantidade <> 3 or e.estornado <> 3 then
+    raise exception 'FALHOU: a entrada tinha que ficar com 3/3 (intacta e inteiramente revertida), veio %/%', e.quantidade, e.estornado; end if;
+  select coalesce(sum(quantidade), 0), count(*) into v_soma, v_n from sf_estoque_envios
+   where alvo = 'CX[10][3]8503-PMOC20' and operacao = 'estorno';
+  if v_soma <> 3 then
+    raise exception 'FALHOU: entrada de 3 peças e estornos somando % (em % linha(s))', v_soma, v_n; end if;
+  raise notice '44(ii). bipe inteiro de linha que DESISTIU → estorna o saldo, nada cancelado, estornos fecham em 3: ok';
+end $t$;
+
+-- (iii) A REDE DA LINHA MEIO REVERTIDA: `estornado > 0` é marca de linha tocada por si só.
+-- Hoje ninguém chega no ajuste com estornado > 0 — mas essa garantia era um PARÁGRAFO, e a 0132
+-- promete uma tela de pendências "onde alguém aperta Reenviar". Este teste simula exatamente esse
+-- Reenviar sobre uma linha meio revertida: zera tentativas e reservado_em de uma entrada com
+-- estornado 2 de 3. Sem `estornado > 0` na marca, a peça seguinte cairia no AJUSTE e a linha passaria
+-- a dizer 2 com 2 já estornados — a fila mentindo sobre o que mandou —, e a peça depois dela
+-- estouraria o CHECK na cara do gestor.
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC20', '8503', 'Embalagem', 11, 3, 3, 'CX[11][3]8503-PMOC20', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[11][3]8503-PMOC20',
+       'SN-' || (9965 + i)::text, (9965 + i)::text from generate_series(1, 3) i;
+
+do $t$
+declare e public.sf_estoque_envios; v_id uuid; v_r text;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[11][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 11 não entrou'; end if;
+  -- uma rodada já tentou: as duas peças canceladas agora viram estorno (é o caso 43(a))
+  update sf_estoque_envios set tentativas = 1
+   where alvo = 'CX[11][3]8503-PMOC20' and operacao = 'entrada';
+  for v_id in select id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[11][3]8503-PMOC20'
+   order by numero_serie_norm limit 2
+  loop
+    perform sf_cancelar_lancamento(v_id, 'duas peças, com a carga já em voo');
+  end loop;
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[11][3]8503-PMOC20' and operacao = 'entrada';
+  if e.quantidade <> 3 or e.estornado <> 2 then
+    raise exception 'FALHOU (massa): esperava a entrada 3 com estornado 2, veio %/%', e.quantidade, e.estornado; end if;
+
+  -- O REENVIAR da tela de pendências, como ele pode muito bem ser escrito: devolve a linha pra fila
+  -- limpando as marcas de rodada. A linha continua meio revertida.
+  update sf_estoque_envios set tentativas = 0, reservado_em = null, erro = null
+   where alvo = 'CX[11][3]8503-PMOC20' and operacao = 'entrada';
+
+  v_r := sf_estoque_reverter('PMOC20', '8503', 'Almoxarifado', 'CX[11][3]8503-PMOC20', 1);
+  if v_r <> 'estorno' then
+    raise exception 'FALHOU: linha com estornado 2 de 3 tinha que ESTORNAR mesmo com as marcas de rodada zeradas — ajustar reescreveria uma quantidade que já foi mandada; devolveu %', v_r; end if;
+  select * into e from sf_estoque_envios
+   where alvo = 'CX[11][3]8503-PMOC20' and operacao = 'entrada';
+  if e.quantidade <> 3 or e.estornado <> 3 then
+    raise exception 'FALHOU: a entrada tinha que ficar 3/3 (intacta, inteiramente revertida), veio %/%', e.quantidade, e.estornado; end if;
+  raise notice '44(iii). Reenviar não reabre o ajuste numa linha meio revertida (estornado é marca de tocada): ok';
+end $t$;
+
+-- (iv) AS DUAS INVARIANTES, na TABELA TODA — e não só nesta massa: qualquer teste desta suíte que um
+-- dia deixe um estorno órfão estoura aqui, mesmo que ele não pense na fila.
+do $t$
+declare v_a int; v_b int; v_orf text;
+begin
+  -- Nenhuma entrada CANCELADA com estorno: cancelar é dizer "isto nunca saiu", e um estorno é dizer
+  -- "isto saiu" — as duas coisas na mesma entrada é a contradição que gera o órfão.
+  select string_agg(chave, ', ') into v_orf from sf_estoque_envios
+   where operacao = 'entrada' and cancelado_em is not null and estornado > 0;
+  if v_orf is not null then
+    raise exception 'FALHOU: entrada(s) cancelada(s) com estorno já criado — os estornos ficaram sem par: %', v_orf; end if;
+
+  -- E o par visto do outro lado: todo estorno tem uma entrada VIVA do mesmo bipe, criada antes dele.
+  select string_agg(s.chave, ', ') into v_orf from sf_estoque_envios s
+   where s.operacao = 'estorno'
+     and not exists (
+       select 1 from sf_estoque_envios e
+        where e.operacao = 'entrada' and e.cancelado_em is null
+          and e.pmo = s.pmo and e.op = s.op and e.posto = s.posto and e.alvo = s.alvo
+          and e.criado_em <= s.criado_em);
+  if v_orf is not null then
+    raise exception 'FALHOU: estorno(s) sem entrada viva que os cubra: %', v_orf; end if;
+
+  -- E a contabilidade: cada estorno desceu o saldo da entrada dele, então as duas somas batem.
+  select coalesce(sum(quantidade), 0) into v_a from sf_estoque_envios where operacao = 'estorno';
+  select coalesce(sum(estornado), 0) into v_b from sf_estoque_envios where operacao = 'entrada';
+  if v_a <> v_b then
+    raise exception 'FALHOU: estornos somam % e os saldos descontados somam % — um dos dois lados ficou sem o outro', v_a, v_b; end if;
+  raise notice '44(iv). tabela toda: nenhum estorno órfão, estornos e saldos descontados batem (%): ok', v_a;
+end $t$;
