@@ -163,15 +163,24 @@ export async function entregarEstoquePendente(
         resultado = await compels(envio)
       } catch (e) {
         // Exceção (rede, JSON quebrado, um `throw` do último metro) é falha de envio como qualquer
-        // outra: o motivo vai para a linha e ela volta na próxima rodada.
-        console.error(`[estoque] envio ${envio.chave} falhou:`, mensagemDe(e))
+        // outra: o motivo vai para a linha e ela volta na próxima rodada. Quem loga é o `else` logo
+        // abaixo, um só lugar para os dois caminhos — logar aqui também daria duas linhas para a mesma
+        // falha, e quem lê o log contaria falhas em dobro.
         resultado = { ok: false, erro: `Erro interno: ${mensagemDe(e)}` }
       }
 
       if (resultado.ok) {
         enviados += 1
         enviadosNoLote += 1
-      } else falhas += 1
+      } else {
+        // O MOTIVO TEM QUE SAIR NO LOG, e no CAMINHO NORMAL o último metro DEVOLVE a falha — não lança:
+        // é assim que o `compels.ts` de hoje diz "não configurado" e é assim que o "o ERP recusou a carga"
+        // vai chegar amanhã. Sem esta linha o motivo ia só para a coluna `erro`, e aí o log do cron dizia
+        // "o motivo de cada linha saiu acima" com NADA acima: a rodada com falha ficava sem nenhum olho
+        // fora da tela de pendências — justo no estado esperado de hoje, em que TODAS falham.
+        console.error(`[estoque] envio ${envio.chave} falhou:`, resultado.erro)
+        falhas += 1
+      }
 
       try {
         await repo.concluirEnvio(envio, resultado)

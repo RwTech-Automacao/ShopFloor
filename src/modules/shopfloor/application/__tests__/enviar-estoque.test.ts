@@ -166,8 +166,13 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     const { repo } = repoFalso(fila)
     const { compels, enviados } = compelsFalso({ lancarPara: ['A/E1'] })
     const erros = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let linhasDoMotivo: string[]
     try {
       expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 1, falhas: 1 })
+      // lido aqui dentro: `mockRestore()` limpa o `mock.calls` junto com o espão
+      linhasDoMotivo = erros.mock.calls
+        .map((c) => c.map(String).join(' '))
+        .filter((l) => l.includes('envio A/E1 falhou:'))
     } finally {
       erros.mockRestore()
     }
@@ -175,6 +180,10 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     expect(fila[0]!).toMatchObject({ ok: false, tentativas: 1 })
     expect(fila[0]!.erro).toContain('rede caiu')
     expect(fila[1]!).toMatchObject({ ok: true, tentativas: 1 })
+    // UMA linha de log por falha: o motivo é escrito num lugar só (o `else`), e não também no
+    // `catch`. Duas linhas para a mesma falha faríam quem lê o log contar falhas em dobro.
+    expect(linhasDoMotivo).toHaveLength(1)
+    expect(linhasDoMotivo[0]!).toContain('rede caiu')
   })
 
   it('idempotência da rodada: nenhuma linha é enviada duas vezes, nem quando o laço vira o lote', async () => {
@@ -315,6 +324,27 @@ describe('o último metro não implementado, visto pelo laço', () => {
     expect(resumo).toEqual({ enviados: 0, falhas: 1 })
     expect(fila[0]!).toMatchObject({ ok: false, tentativas: 1, reservada: false })
     expect(fila[0]!.erro).toContain('Integração com o Compels ainda não configurada')
+  })
+
+  it('o MOTIVO da falha DEVOLVIDA sai no log — é dele que o cron diz "saiu acima"', async () => {
+    // A rodada com falha escreve no log do pm2 que o motivo de cada falha saiu acima (route.ts). No
+    // CAMINHO NORMAL o último metro DEVOLVE a falha, não lança — hoje o "não configurado", amanhã o
+    // "o ERP recusou a carga". Se só a exceção logasse, essa promessa seria falsa justamente no
+    // estado esperado de hoje, em que TODAS as linhas falham assim: o pm2 mostraria a contagem com
+    // nada acima, e o motivo existiria só na coluna `erro` da linha.
+    const fila = [linha({ chave: 'A/E1', ordem: 1 })]
+    const { repo } = repoFalso(fila)
+    const erros = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let log: string
+    try {
+      expect(await entregarEstoquePendente(enviarMovimentacaoCompels, repo)).toEqual({ enviados: 0, falhas: 1 })
+      // lido aqui dentro: `mockRestore()` limpa o `mock.calls` junto com o espão
+      log = erros.mock.calls.map((c) => c.map(String).join(' ')).join('\n')
+    } finally {
+      erros.mockRestore()
+    }
+    expect(log).toContain('[estoque] envio A/E1 falhou:')
+    expect(log).toContain('Integração com o Compels ainda não configurada')
   })
 
   it('o não-implementado diz a operação em português, e o texto vai inteiro para a tela', async () => {
