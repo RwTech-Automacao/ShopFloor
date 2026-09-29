@@ -77,11 +77,17 @@ Cria o índice `sf_registros_pmo_op_data_hora` e as funções `central_recebimen
 (não mergeada) já tem 0128-0133 commitados localmente. A 0134 usa `max(main, 0133) + 1`. **Se essa
 branch ganhar uma 0134 própria antes do merge, uma das duas migrações precisa ser renumerada.**
 
-### Dev (SQL Editor do Supabase)
+### Dev
 
-Cole o conteúdo de `supabase/migrations/0134_central_sincronizacao.sql` e **remova a palavra
-`concurrently`** da linha do `create index` antes de rodar (o SQL Editor roda dentro de uma
-transação implícita, e `create index concurrently` não roda em transação — mesmo caso da 0091/0095/0114).
+Duas formas — escolha uma:
+
+- **SQL Editor do Supabase:** cole o conteúdo de `supabase/migrations/0134_central_sincronizacao.sql`
+  e **remova a palavra `concurrently`** da linha do `create index` antes de rodar (o SQL Editor roda
+  dentro de uma transação implícita, e `create index concurrently` não roda em transação — mesmo
+  caso da 0091/0095/0114).
+- **`psql -f`** (sem `-1`, igual ao Prod abaixo), apontando pro Postgres do Dev — nesse caso o
+  arquivo **não** precisa ser editado: `psql -f` (sem `-1`/`--single-transaction`) não abre uma
+  transação envolvendo tudo, então `create index concurrently` roda como fora de transação.
 
 ### Prod (RDS, via `psql` na instância Lightsail)
 
@@ -102,6 +108,14 @@ de qualquer `create index concurrently` que falha no meio — ver `tools/alertas
 ```sql
 select indisvalid from pg_index where indexrelid = 'sf_registros_pmo_op_data_hora'::regclass;
 ```
+
+Tem que dar `true`. Se der `false`, o índice ficou pela metade — apague e recrie:
+
+```sql
+drop index concurrently if exists public.sf_registros_pmo_op_data_hora;
+```
+
+E rode a 0134 de novo (mesma forma usada da primeira vez: SQL Editor sem `concurrently`, ou `psql -f`).
 
 Teste local da migração (Postgres descartável, nada aplicado em banco nenhum):
 `supabase/tests/rodar-central-test.sh`.
