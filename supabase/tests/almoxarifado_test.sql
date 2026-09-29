@@ -1885,6 +1885,30 @@ begin
     raise exception 'FALHOU: estornos somam % e os saldos descontados somam % — um dos dois lados ficou sem o outro', v_a, v_b; end if;
   raise notice '44(iv). tabela toda (%): nenhum estorno órfão, estornos e saldos descontados batem (%): ok',
     p_onde, v_a;
+
+  -- A IDENTIDADE POR PAR, e não só a soma global acima: o `estornado` de CADA entrada bate com a soma
+  -- dos estornos que APONTAM pra ela (entrada_id) — não com "algum estorno do mesmo bipe" nem com o
+  -- total da tabela. As três invariantes de cima (nenhuma cancelada com estorno, todo estorno aponta pra
+  -- uma entrada viva do mesmo bipe, soma global de estornos = soma global de saldos) PASSAM as três
+  -- mesmo se um estorno apontar pra OUTRA entrada viva do MESMO bipe — a soma global não enxerga qual
+  -- entrada recebeu qual estorno, só que a conta fecha. Achado da revisão: com E1 e E2 vivas do mesmo
+  -- bipe CXB, saldo debitado da E2 mas vínculo (entrada_id) gravado na E1, esta é a única das quatro que
+  -- pega — as outras três continuam passando.
+  select string_agg(
+           e.chave || ' estornado=' || e.estornado || ' apontado=' || coalesce(s.soma, 0), ', '
+           order by e.chave)
+    into v_orf
+    from sf_estoque_envios e
+    left join (
+      select entrada_id, sum(quantidade) as soma
+        from sf_estoque_envios where operacao = 'estorno'
+       group by entrada_id
+    ) s on s.entrada_id = e.id
+   where e.operacao = 'entrada' and e.estornado <> coalesce(s.soma, 0);
+  if v_orf is not null then
+    raise exception 'FALHOU: entrada(s) cujo estornado não bate com a soma dos estornos que a apontam (entrada_id): %', v_orf; end if;
+  raise notice '44(v). tabela toda (%): o estornado de cada entrada bate com a soma dos estornos que a apontam: ok',
+    p_onde;
 end $f$;
 
 do $t$ begin perform public.teste_fila_invariantes('fim do arquivo de testes'); end $t$;
