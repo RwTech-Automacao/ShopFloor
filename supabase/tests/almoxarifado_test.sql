@@ -703,3 +703,342 @@ begin
   perform set_config('teste.perms', 'shopfloor.lancar', false);
   raise notice '23. NQA reprova: aposenta no posto da CAIXA mesmo com a linha do Almoxarifado: ok';
 end $t$;
+
+-- =============================================================
+-- CANCELAR A CAIXA INTEIRA (migração 0131)
+--
+-- A entrada foi UM gesto (o bipe do código da caixa gravou N linhas), então o desfazer também é: uma
+-- chamada, um motivo, as N linhas de uma vez. Antes eram N cancelamentos linha a linha e, parando no
+-- meio, a caixa ficava meio dentro/meio fora — com o rebipe recusado por `ja_lancado` e sem caminho
+-- de volta pela tela.
+--
+-- Estes testes rodam contra as funções REAIS do cancelamento: a 0087 (tabela de auditoria
+-- sf_registros_cancelados) e a 0106 (sf_cancelar_lancamento, que é como se produz o estado parcial do
+-- teste 32). Nenhuma das duas é editada — as duas estão em produção.
+-- =============================================================
+
+-- auth.uid(): a 0131 grava quem cancelou, como a irmã. Vazio aqui (cancelado_por é nullable) —
+-- o que importa provar é a linha inteira na auditoria e o motivo, não o dono da sessão.
+create schema auth;
+create function auth.uid() returns uuid language sql stable as $f$
+  select nullif(current_setting('teste.uid', true), '')::uuid
+$f$;
+
+\i /tmp/0087.sql
+\i /tmp/0106.sql
+\i /tmp/0131.sql
+
+-- Guarda ids entre blocos: cada `do $t$` é um escopo próprio, e o teste 28 precisa do id que o
+-- teste 26 já apagou.
+create table public.teste_caixa_ids (chave text primary key, id uuid);
+
+-- Massa própria, numa OP nova: os testes de cima contam linhas do posto 'Almoxarifado' em números
+-- absolutos, e mexer neles esconderia regressão.
+insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
+  ('PMOC18', '8501', 'Cliente Cancelar', '9700', '9800', false);
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC18', '8501', 'Embalagem', 1, 4, 4, 'CX[1][4]8501-PMOC18', true),
+  ('PMOC18', '8501', 'Embalagem', 2, 3, 3, 'CX[2][3]8501-PMOC18', true),
+  ('PMOC18', '8501', 'Embalagem', 3, 4, 4, 'CX[3][4]8501-PMOC18', true);
+-- As peças de cada caixa, carimbadas na Embalagem (é de onde a entrada tira a lista).
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC18', '8501', 'Cliente Cancelar', 'CX[1][4]8501-PMOC18',
+       'SN-' || (9700 + i)::text, (9700 + i)::text from generate_series(1, 4) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC18', '8501', 'Cliente Cancelar', 'CX[2][3]8501-PMOC18',
+       'SN-' || (9710 + i)::text, (9710 + i)::text from generate_series(1, 3) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC18', '8501', 'Cliente Cancelar', 'CX[3][4]8501-PMOC18',
+       'SN-' || (9720 + i)::text, (9720 + i)::text from generate_series(1, 4) i;
+
+-- As duas entradas que os testes abaixo vão desfazer.
+do $t$
+declare r jsonb;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Ana', 'CX[1][4]8501-PMOC18', 'caixa', 4, '');
+  if (r->>'quantidade')::int <> 4 then raise exception 'FALHOU (massa): caixa 1 não entrou: %', r; end if;
+  r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Ana', 'CX[2][3]8501-PMOC18', 'caixa', 3, '');
+  if (r->>'quantidade')::int <> 3 then raise exception 'FALHOU (massa): caixa 2 não entrou: %', r; end if;
+  insert into public.teste_caixa_ids (chave, id)
+  select 'cx1', id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[1][4]8501-PMOC18' order by numero_serie_norm limit 1;
+  insert into public.teste_caixa_ids (chave, id)
+  select 'cx2', id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[2][3]8501-PMOC18' order by numero_serie_norm limit 1;
+end $t$;
+
+-- ---------- 24. sem permissão de gestor, recusa ----------
+-- O gate é o de DOIS argumentos ('shopfloor','administrar'), o mesmo da irmã e o mesmo que a tela
+-- confere: a função de um argumento anula o RBAC (revisão de segurança de 21/09/2026). Quem só pode
+-- LANÇAR não pode desfazer — senão o operador desfaria a própria entrada sem ninguém saber.
+do $t$
+declare v_passou boolean := false; v_erro text; v_id uuid;
+begin
+  select id into v_id from teste_caixa_ids where chave = 'cx1';
+  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  begin
+    perform sf_cancelar_caixa_almoxarifado(v_id, 'teste');
+    v_passou := true;  -- marca aqui: um `raise` dentro do bloco seria pego pelo próprio handler
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_passou then raise exception 'FALHOU: cancelou sem permissão de administrar'; end if;
+  if v_erro <> 'SEM_PERMISSAO' then raise exception 'FALHOU: erro errado: %', v_erro; end if;
+
+  -- Permissão de administrar de OUTRO módulo não serve.
+  v_erro := null;
+  perform set_config('teste.perms', 'recebimento.administrar,shopfloor.visualizar', false);
+  begin
+    perform sf_cancelar_caixa_almoxarifado(v_id, 'teste');
+    v_passou := true;
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_passou then raise exception 'FALHOU: administrar de outro módulo passou'; end if;
+  if v_erro <> 'SEM_PERMISSAO' then raise exception 'FALHOU: erro errado: %', v_erro; end if;
+
+  if (select count(*) from sf_registros where numero_caixa = 'CX[1][4]8501-PMOC18' and posto = 'Almoxarifado') <> 4 then
+    raise exception 'FALHOU: a recusa apagou linha'; end if;
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  raise notice '24. cancelar a caixa sem permissão de gestor → SEM_PERMISSAO: ok';
+end $t$;
+
+-- ---------- 25. motivo obrigatório ----------
+-- Um motivo SÓ pra caixa inteira, mas obrigatório do mesmo jeito: cancelamento sem motivo é dado
+-- apagado sem explicação na auditoria. Só espaço em branco não conta como motivo.
+do $t$
+declare v_passou boolean := false; v_erro text; v_id uuid;
+begin
+  select id into v_id from teste_caixa_ids where chave = 'cx1';
+  begin
+    perform sf_cancelar_caixa_almoxarifado(v_id, '   ');
+    v_passou := true;
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_passou then raise exception 'FALHOU: cancelou com motivo em branco'; end if;
+  if v_erro <> 'MOTIVO_OBRIGATORIO' then raise exception 'FALHOU: erro errado: %', v_erro; end if;
+  if (select count(*) from sf_registros where numero_caixa = 'CX[1][4]8501-PMOC18' and posto = 'Almoxarifado') <> 4 then
+    raise exception 'FALHOU: a recusa apagou linha'; end if;
+  raise notice '25. motivo em branco → MOTIVO_OBRIGATORIO: ok';
+end $t$;
+
+-- ---------- 26. cancelar a caixa inteira: as N somem juntas e vão inteiras pra auditoria ----------
+-- O coração da correção. Uma chamada, pelo id de UMA das linhas, apaga as 4 e grava as 4 na
+-- auditoria com o MESMO motivo — e não encosta na outra caixa do mesmo posto.
+do $t$
+declare v_id uuid; v_n int; v_aud record;
+begin
+  select id into v_id from teste_caixa_ids where chave = 'cx1';
+  v_n := sf_cancelar_caixa_almoxarifado(v_id, 'caixa bipada por engano');
+
+  -- A contagem devolvida é o que a tela mostra ("4 peças canceladas").
+  if v_n <> 4 then raise exception 'FALHOU: devolveu % em vez de 4 linhas canceladas', v_n; end if;
+  if (select count(*) from sf_registros
+       where posto = 'Almoxarifado' and numero_caixa = 'CX[1][4]8501-PMOC18') <> 0 then
+    raise exception 'FALHOU: sobrou linha da caixa — é o estado meio dentro/meio fora'; end if;
+
+  -- A auditoria: uma entrada por peça (a linha INTEIRA em `dados`), todas com o mesmo motivo. Linha a
+  -- linha de propósito: é o retrato fiel do que existia, e é ele que permite reconstruir a caixa.
+  select count(*) as n, count(distinct motivo) as motivos, count(distinct numero_serie_norm) as sns,
+         count(*) filter (where dados->>'numero_caixa' = 'CX[1][4]8501-PMOC18') as com_caixa,
+         count(*) filter (where dados->>'posto' = 'Almoxarifado') as com_posto,
+         min(motivo) as motivo
+    into v_aud
+    from sf_registros_cancelados
+   where pmo = 'PMOC18' and op = '8501' and posto = 'Almoxarifado';
+  if v_aud.n <> 4 then raise exception 'FALHOU: auditoria com % entradas, esperava 4', v_aud.n; end if;
+  if v_aud.sns <> 4 then raise exception 'FALHOU: auditoria com % séries distintas, esperava 4', v_aud.sns; end if;
+  if v_aud.motivos <> 1 or v_aud.motivo <> 'caixa bipada por engano' then
+    raise exception 'FALHOU: o motivo tinha que ser um só nas 4: % (%)', v_aud.motivos, v_aud.motivo; end if;
+  if v_aud.com_caixa <> 4 or v_aud.com_posto <> 4 then
+    raise exception 'FALHOU: `dados` não guardou a linha inteira (caixa=%, posto=%)',
+      v_aud.com_caixa, v_aud.com_posto; end if;
+
+  -- A OUTRA caixa do mesmo posto continua inteira: o alcance é a caixa, não o posto.
+  if (select count(*) from sf_registros
+       where posto = 'Almoxarifado' and numero_caixa = 'CX[2][3]8501-PMOC18') <> 3 then
+    raise exception 'FALHOU: cancelar a caixa 1 mexeu na caixa 2'; end if;
+  -- E as peças continuam na EMBALAGEM: cancelar a entrada no estoque não desembala nada.
+  if (select count(*) from sf_registros
+       where posto = 'Embalagem' and numero_caixa = 'CX[1][4]8501-PMOC18') <> 4 then
+    raise exception 'FALHOU: cancelar a entrada mexeu nas linhas da Embalagem'; end if;
+  raise notice '26. cancelar a caixa inteira → 4 apagadas, 4 na auditoria, um motivo só: ok';
+end $t$;
+
+-- ---------- 27. depois do cancelamento completo, o REBIPE funciona ----------
+-- É o que fechava o beco sem saída: a duplicidade da 0129 procura QUALQUER linha com aquele código
+-- naquele posto, e depois do cancelamento não sobra nenhuma. Sem isto, cancelar não devolveria a
+-- caixa ao fluxo — ela simplesmente sairia do estoque pra sempre.
+do $t$
+declare r jsonb;
+begin
+  r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Bruno', 'CX[1][4]8501-PMOC18', 'caixa', 4, '');
+  if coalesce((r->>'ok')::boolean, false) is not true then
+    raise exception 'FALHOU: o rebipe depois do cancelamento foi recusado: %', r; end if;
+  if (r->>'quantidade')::int <> 4 then
+    raise exception 'FALHOU: o rebipe entrou com % peças, esperava 4', r->>'quantidade'; end if;
+  if (select count(*) from sf_registros
+       where posto = 'Almoxarifado' and numero_caixa = 'CX[1][4]8501-PMOC18') <> 4 then
+    raise exception 'FALHOU: o rebipe não repôs as 4 linhas'; end if;
+  raise notice '27. rebipe depois do cancelamento completo → aceito, 4 peças de novo: ok';
+end $t$;
+
+-- ---------- 28. caixa já cancelada ----------
+-- O id do teste 26 já não existe (o cancelamento apagou a própria linha do p_id), e o rebipe do teste
+-- 27 criou linhas NOVAS. Recusa por NAO_ENCONTRADO — que a tela traduz como "talvez já cancelado" —
+-- em vez de cancelar por engano a entrada nova que acabou de ser feita.
+do $t$
+declare v_passou boolean := false; v_erro text; v_id uuid;
+begin
+  select id into v_id from teste_caixa_ids where chave = 'cx1';
+  begin
+    perform sf_cancelar_caixa_almoxarifado(v_id, 'de novo');
+    v_passou := true;
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_passou then raise exception 'FALHOU: cancelou uma caixa já cancelada'; end if;
+  if v_erro <> 'NAO_ENCONTRADO' then raise exception 'FALHOU: erro errado: %', v_erro; end if;
+  -- E não levou as linhas do rebipe junto.
+  if (select count(*) from sf_registros
+       where posto = 'Almoxarifado' and numero_caixa = 'CX[1][4]8501-PMOC18') <> 4 then
+    raise exception 'FALHOU: a recusa apagou as linhas do rebipe'; end if;
+  raise notice '28. cancelar duas vezes a mesma caixa → NAO_ENCONTRADO: ok';
+end $t$;
+
+-- ---------- 29. entrada de OP INDIVIDUAL não é entrada de caixa ----------
+-- Na embalagem individual a entrada grava numero_caixa vazio: já é uma peça, um bipe, uma linha, e
+-- quem desfaz é a sf_cancelar_lancamento. Sem esta recusa, `numero_caixa = ''` casaria com TODAS as
+-- entradas individuais do posto e uma chamada apagaria o posto inteiro.
+do $t$
+declare v_passou boolean := false; v_erro text; v_id uuid; v_antes int;
+begin
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and pmo = 'PMOI01' and numero_serie_norm = '1042' limit 1;
+  if v_id is null then raise exception 'FALHOU (massa): o teste 5 tinha que ter deixado a entrada da peça 1042'; end if;
+  select count(*) into v_antes from sf_registros where posto = 'Almoxarifado';
+  begin
+    perform sf_cancelar_caixa_almoxarifado(v_id, 'teste');
+    v_passou := true;
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_passou then raise exception 'FALHOU: aceitou uma entrada sem caixa'; end if;
+  if v_erro <> 'NAO_E_ENTRADA_DE_CAIXA' then raise exception 'FALHOU: erro errado: %', v_erro; end if;
+  if (select count(*) from sf_registros where posto = 'Almoxarifado') <> v_antes then
+    raise exception 'FALHOU: a recusa apagou linha do posto'; end if;
+  raise notice '29. entrada individual (sem código de caixa) → NAO_E_ENTRADA_DE_CAIXA: ok';
+end $t$;
+
+-- ---------- 30. linha da EMBALAGEM não entra por aqui ----------
+-- A Embalagem também grava numero_caixa, mas lá a caixa é outra coisa: as peças estão DENTRO dela, o
+-- cancelamento reabre a caixa (0106) e o LIFO de cada peça manda. Cair aqui esvaziaria a caixa sem
+-- reabrir nada. O gate é pelo RECURSO do perfil ('almoxarifado' exigido), nunca pelo nome do posto.
+do $t$
+declare v_passou boolean := false; v_erro text; v_id uuid;
+begin
+  select id into v_id from sf_registros
+   where posto = 'Embalagem' and numero_caixa = 'CX[2][3]8501-PMOC18' limit 1;
+  begin
+    perform sf_cancelar_caixa_almoxarifado(v_id, 'teste');
+    v_passou := true;
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_passou then raise exception 'FALHOU: aceitou cancelar uma caixa da Embalagem'; end if;
+  if v_erro <> 'POSTO_NAO_CANCELAVEL' then raise exception 'FALHOU: erro errado: %', v_erro; end if;
+  if (select count(*) from sf_registros
+       where posto = 'Embalagem' and numero_caixa = 'CX[2][3]8501-PMOC18') <> 3 then
+    raise exception 'FALHOU: a recusa apagou linha da Embalagem'; end if;
+  raise notice '30. linha da Embalagem → POSTO_NAO_CANCELAVEL: ok';
+end $t$;
+
+-- ---------- 31. uma peça com bipe POSTERIOR recusa a caixa inteira ----------
+-- O LIFO é por peça, e o Almoxarifado é o último posto — então na prática nenhuma linha dele tem bipe
+-- posterior. Mas se tiver (um posto novo depois dele, uma correção manual), a caixa é recusada
+-- INTEIRA, e não "cancela as que dá": previsível é o que importa, e meio dentro/meio fora é o estado
+-- que esta função existe pra matar.
+do $t$
+declare v_passou boolean := false; v_erro text; v_id uuid;
+begin
+  -- Uma peça da caixa 2 ganha um bipe depois da entrada no Almoxarifado.
+  insert into sf_registros (data_hora, colaborador, posto, pmo, op, cliente, numero_serie, numero_serie_norm)
+  values (now() + interval '1 minute', 'Carlos', 'Inspeção Final', 'PMOC18', '8501',
+          'Cliente Cancelar', 'SN-9711', '9711');
+
+  select id into v_id from teste_caixa_ids where chave = 'cx2';
+  begin
+    perform sf_cancelar_caixa_almoxarifado(v_id, 'teste');
+    v_passou := true;
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_passou then raise exception 'FALHOU: cancelou com uma peça tendo bipe posterior'; end if;
+  if v_erro <> 'NAO_E_ULTIMO' then raise exception 'FALHOU: erro errado: %', v_erro; end if;
+  -- Nada foi pela metade: as 3 linhas continuam e a auditoria não ganhou entrada nenhuma.
+  if (select count(*) from sf_registros
+       where posto = 'Almoxarifado' and numero_caixa = 'CX[2][3]8501-PMOC18') <> 3 then
+    raise exception 'FALHOU: a recusa apagou parte da caixa'; end if;
+  if exists (select 1 from sf_registros_cancelados where dados->>'numero_caixa' = 'CX[2][3]8501-PMOC18') then
+    raise exception 'FALHOU: a recusa gravou auditoria'; end if;
+
+  -- Desfeito o bipe posterior, a caixa volta a poder ser cancelada — a saída é explícita, não um
+  -- cancelamento parcial.
+  delete from sf_registros where posto = 'Inspeção Final' and pmo = 'PMOC18' and numero_serie_norm = '9711';
+  if sf_cancelar_caixa_almoxarifado(v_id, 'agora sim') <> 3 then
+    raise exception 'FALHOU: depois de tirar o bipe posterior, a caixa tinha que cancelar as 3'; end if;
+  raise notice '31. peça com bipe posterior → NAO_E_ULTIMO, caixa intacta; sem ele, cancela as 3: ok';
+end $t$;
+
+-- ---------- 32. ESTADO PARCIAL: o ja_lancado diz quantas das N estão lançadas ----------
+-- O beco sem saída de antes: a caixa entra inteira, alguém cancela linha por linha (0087/0106) e
+-- para no meio. O rebipe continua recusado — e tem que continuar, senão um rebipe desfaria em
+-- silêncio um cancelamento feito de propósito —, mas a recusa agora DIZ o que o gestor está olhando
+-- ("2 de 4 peças desta caixa estão lançadas") e aponta a saída. Depois, cancelar a caixa inteira leva
+-- o que sobrou e o rebipe volta a ser aceito.
+do $t$
+declare r jsonb; v_id uuid; v_n int;
+begin
+  r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Ana', 'CX[3][4]8501-PMOC18', 'caixa', 4, '');
+  if (r->>'quantidade')::int <> 4 then raise exception 'FALHOU: a caixa 3 não entrou: %', r; end if;
+
+  -- Cancela DUAS das quatro linhas, uma a uma, como era o único jeito antes da 0131.
+  for v_id in
+    select id from sf_registros
+     where posto = 'Almoxarifado' and numero_caixa = 'CX[3][4]8501-PMOC18'
+     order by numero_serie_norm limit 2
+  loop
+    perform sf_cancelar_lancamento(v_id, 'uma por uma');
+  end loop;
+  if (select count(*) from sf_registros
+       where posto = 'Almoxarifado' and numero_caixa = 'CX[3][4]8501-PMOC18') <> 2 then
+    raise exception 'FALHOU (massa): esperava a caixa parcial com 2 linhas'; end if;
+
+  -- O rebipe continua recusado (a unidade do bipe é a caixa), mas a frase mudou: ela conta.
+  r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Bruno', 'CX[3][4]8501-PMOC18', 'caixa', 4, '');
+  if r->>'motivo' <> 'ja_lancado' then
+    raise exception 'FALHOU: o rebipe parcial não pode ser aceito: %', r; end if;
+  if r->>'detalhe' not like '%2 de 4 peças%' then
+    raise exception 'FALHOU: o detalhe tinha que dizer quantas das N estão lançadas: %', r->>'detalhe'; end if;
+  -- E aponta o caminho de volta, que é o que faltava pra não ser beco sem saída.
+  if r->>'detalhe' not like '%cancele a caixa inteira%' then
+    raise exception 'FALHOU: o detalhe tinha que apontar a saída: %', r->>'detalhe'; end if;
+  if r->>'detalhe' not like '%Ana%' then
+    raise exception 'FALHOU: o detalhe perdeu o quando/por quem: %', r->>'detalhe'; end if;
+
+  -- Caixa cheia, sem estado parcial: a frase diz "4 de 4" e NÃO fala de cancelamento no meio.
+  r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Bruno', 'CX[1][4]8501-PMOC18', 'caixa', 4, '');
+  if r->>'motivo' <> 'ja_lancado' then raise exception 'FALHOU: rebipe da caixa cheia: %', r; end if;
+  if r->>'detalhe' not like '%4 de 4 peças%' then
+    raise exception 'FALHOU: caixa cheia tinha que dizer 4 de 4: %', r->>'detalhe'; end if;
+  if r->>'detalhe' like '%parou no meio%' then
+    raise exception 'FALHOU: caixa cheia não é estado parcial: %', r->>'detalhe'; end if;
+
+  -- A saída: cancelar a caixa inteira leva as 2 que sobraram (uma chamada, um motivo)…
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[3][4]8501-PMOC18' limit 1;
+  v_n := sf_cancelar_caixa_almoxarifado(v_id, 'desfazendo o parcial');
+  if v_n <> 2 then raise exception 'FALHOU: esperava cancelar as 2 que sobraram, veio %', v_n; end if;
+  -- …e o rebipe volta a ser aceito, com a caixa inteira.
+  r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Bruno', 'CX[3][4]8501-PMOC18', 'caixa', 4, '');
+  if coalesce((r->>'ok')::boolean, false) is not true then
+    raise exception 'FALHOU: o rebipe depois de limpar o parcial foi recusado: %', r; end if;
+  if (r->>'quantidade')::int <> 4 then
+    raise exception 'FALHOU: o rebipe tinha que repor as 4 peças, veio %', r->>'quantidade'; end if;
+  raise notice '32. estado parcial → ja_lancado diz "2 de 4" e aponta a saída; cancelar a caixa destrava o rebipe: ok';
+end $t$;
