@@ -1,7 +1,9 @@
 -- =============================================================
 -- Central do Cliente: índice e as funções que montam a "foto" enviada de hora em hora.
 --
--- Só o que o cliente pode ver (global-constraints-p5.md):
+-- Só o que o cliente pode ver (contrato v1 — plano
+-- docs/superpowers/plans/2026-09-29-central-do-cliente-5-sincronizacao.md do repositório
+-- Central-Do-Cliente):
 --   Recebimento: id, acp_cliente (como texto), numero_emb, data_chegada e o status — só
 --   'aberto', 'em_conferencia' e 'finalizado'; 'cancelado' NUNCA vai.
 --   Ordem: id, acp (como texto), a DATA do primeiro registro de produção (fuso de São Paulo) e se

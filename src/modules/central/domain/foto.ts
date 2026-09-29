@@ -1,6 +1,8 @@
 /**
- * A "foto" enviada de hora em hora para a Central do Cliente — contrato v1
- * (global-constraints-p5.md). Só o que o cliente pode ver:
+ * A "foto" enviada de hora em hora para a Central do Cliente — contrato versão 1, definido no
+ * plano `docs/superpowers/plans/2026-09-29-central-do-cliente-5-sincronizacao.md` do repositório
+ * Central-Do-Cliente (ver o JSON de exemplo em tools/central-sync/README.md §0). Só o que o
+ * cliente pode ver:
  *   Recebimento: id, acp_cliente (como texto), numero_emb, data_chegada e o status — só
  *   'aberto', 'em_conferencia' e 'finalizado' ('cancelado' nunca chega aqui: a 0134 já filtra).
  *   Ordem: id, acp (como texto), a DATA do primeiro registro de produção (fuso de São Paulo) e se

@@ -2,8 +2,24 @@
 
 De hora em hora (minuto 7, seg-sex, só no horário em que o RDS fica ligado), o ShopFloor manda pra
 **Central do Cliente** uma "foto" mínima — só o que o cliente pode ver — dos processos de
-recebimento e das ordens que têm ACP. Ver o contrato inteiro (versão 1) e o que nunca sai daqui em
-`.superpowers/sdd/global-constraints-p5.md` (repositório da Central).
+recebimento e das ordens que têm ACP. O contrato inteiro (versão 1) está definido no plano
+`docs/superpowers/plans/2026-09-29-central-do-cliente-5-sincronizacao.md` do repositório
+Central-Do-Cliente. Nunca vão colaborador, defeito, número de série, fornecedor, NF, comprador ou
+quantidade de reprovação — essas colunas nem existem nas linhas que a 0134 seleciona.
+
+## 0. O contrato do envio (versão 1)
+
+`POST /api/sincronizacao` da Central espera exatamente este corpo (nenhuma chave além destas;
+`dataChegada`/`primeiroRegistro` são `aaaa-mm-dd` ou `null`):
+
+```json
+{
+  "versao": 1,
+  "geradoEm": "2026-09-29T15:07:00.000Z",
+  "recebimentos": [{ "id": "uuid", "projetos": "ACP017/26 GM", "numeroEmb": "EMB347EA", "dataChegada": "2026-10-05", "situacao": "finalizado" }],
+  "ordens": [{ "id": "uuid", "projetos": "ACP017/26", "primeiroRegistro": "2026-10-08", "concluida": false }]
+}
+```
 
 ## 1. As três variáveis
 
