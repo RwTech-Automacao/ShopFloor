@@ -1,6 +1,11 @@
 -- =============================================================
 -- Posto Almoxarifado — a RPC da entrada.
 --
+-- ⚠️ APLIQUE A 0132 ANTES DESTA: a entrada chama sf_estoque_chave e sf_estoque_reverter, que nascem
+-- lá. Criar esta função sem elas não dá erro (o corpo plpgsql só resolve nome na execução), mas quem
+-- aplica arquivo por arquivo, em ordem, fica com uma janela em que TODO bipe do Almoxarifado morre
+-- com "function does not exist". Aplicadas juntas, ou a 0132 primeiro, não existe janela.
+--
 -- O operador bipa o que acabou de ser embalado: o Nº de Série da peça (OP de embalagem individual,
 -- 1 unidade) ou o código da caixa fechada, CX[seq][qtd]OP-PMO (OP coletiva, o bipe vale a caixa
 -- inteira). O que o FORMATO resolve já foi resolvido em TS (classificarBipeAlmoxarifado); aqui fica
