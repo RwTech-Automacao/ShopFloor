@@ -180,6 +180,32 @@ begin
   end if;
 end $chk2$;
 
+-- ---------- seq_chave: o contador <n> da chave, MATERIALIZADO ----------
+-- Quem decide qual é a entrada VIGENTE de um bipe é o contador da chave (o `<n>` de E<n>): ele é
+-- monotônico por bipe, nunca se repete e distingue até duas linhas nascidas na MESMA transação, onde
+-- `criado_em` (que é now(), o instante da transação) empata e o desempate cairia no uuid. O porquê
+-- está escrito duas vezes lá embaixo, na sf_estoque_reverter (quem escolhe de QUEM o estorno sai) e na
+-- sf_estoque_reservar (quem escolhe QUEM o estorno espera) — e as duas têm que concordar.
+--
+-- POR QUE UMA COLUNA, e não o `substring(chave from ...)` nas duas:
+--   • UMA definição. Eram duas cópias do mesmo regex em duas funções que precisam concordar; divergir
+--     ali é escolher entradas diferentes em cada lado, silenciosamente.
+--   • VELOCIDADE, e não é detalhe: o predicado da ordem do par roda a escolha da vigente DENTRO de um
+--     `update ... returning` que varre as pendentes. Medido aqui (postgres:15, jit=off), o
+--     `substring` custa ~42 µs por chamada — no caso realista (80.700 linhas, 500 pendentes, metade
+--     estorno) isso levava a reserva de 2,1 ms para 15 ms, e numa massa patológica (um bipe com 300
+--     entradas no histórico e 500 estornos) para 4,7 SEGUNDOS. Com a coluna, o `order by` é de um int
+--     e o índice abaixo entrega a vigente sem ordenar nada. É a mesma lição da 0096: função caindo
+--     linha a linha dentro de um predicado é onde a lentidão mora.
+-- `{1,9}` e não `+`: uma chave posta à mão com 20 dígitos no fim estouraria o cast INT no insert do
+-- bipe (a coluna é gerada, calculada na escrita). Limitada a 9 dígitos, ela simplesmente não casa e a
+-- coluna fica nula — que é o caso "chave fora do padrão" que os `order by` já tratam com `nulls last`.
+-- `[ES]` e não só `E` pra a coluna valer o que o nome dela diz em qualquer linha; os dois consumidores
+-- comparam só entre linhas da MESMA `operacao`, então um E1 e um S1 nunca disputam a mesma ordem.
+alter table public.sf_estoque_envios
+  add column if not exists seq_chave int
+  generated always as ((substring(chave from '/[ES]([0-9]{1,9})$'))::int) stored;
+
 -- A chave de idempotência. Índice separado (e não `unique` na coluna) para a migração ser idempotente
 -- de verdade: com a tabela já criada, um `unique` inline não seria aplicado nunca.
 create unique index if not exists sf_estoque_envios_chave
@@ -194,8 +220,17 @@ create index if not exists sf_estoque_envios_pendentes
 
 -- (pmo, op, posto, alvo, operacao): o contador da chave (sf_estoque_chave) e o caminho da Task 2,
 -- que precisa achar o envio pendente de uma entrada que está sendo cancelada.
+--
+-- O RABO (seq_chave desc nulls last, criado_em desc, id desc) é a ORDEM DA ENTRADA VIGENTE, igual nas
+-- duas funções que a escolhem (sf_estoque_reverter e o predicado da ordem do par na
+-- sf_estoque_reservar). Com ele, "a vigente" sai do índice já ordenada e a busca PARA na primeira
+-- linha que serve, em vez de ler todas as entradas daquele bipe pra ordenar. Só o prefixo importa pros
+-- outros usos, então eles continuam servidos pelo mesmo índice. Medido na massa patológica (um bipe com
+-- 300 entradas no histórico, 500 estornos pendentes): 84 ms sem o rabo, 11 ms com ele. Se um dia
+-- alguém mudar o `order by` de uma daquelas funções, mude aqui também — senão volta a ordenar.
 create index if not exists sf_estoque_envios_alvo
-  on public.sf_estoque_envios (pmo, op, posto, alvo, operacao);
+  on public.sf_estoque_envios
+     (pmo, op, posto, alvo, operacao, seq_chave desc nulls last, criado_em desc, id desc);
 -- a tela de pendências e a leitura por OP
 create index if not exists sf_estoque_envios_op
   on public.sf_estoque_envios (op, criado_em desc);
@@ -373,7 +408,9 @@ begin
   -- daquele bipe naquela operação (inclusive as canceladas e as que falharam): ele é monotônico por
   -- bipe, nunca se repete (a chave é única) e distingue até duas linhas nascidas na MESMA transação —
   -- a segunda conta a primeira, que já está visível pra ela. Ou seja, ele acerta exatamente onde
-  -- `criado_em` empata, e não há empate a desempatar depois dele.
+  -- `criado_em` empata, e não há empate a desempatar depois dele. Ele vem da coluna `seq_chave`, que o
+  -- materializa na escrita: uma definição só, compartilhada com o predicado da ordem do par da
+  -- sf_estoque_reservar — que tem que escolher a MESMA entrada que esta função aqui.
   -- A outra saída considerada — "preferir a entrada com saldo > 0" — foi descartada por duas razões:
   -- ela NÃO tira o uuid do caminho (duas entradas vivas as duas COM saldo continuariam empatando, e o
   -- empate volta a decidir em silêncio), e ela mudaria a regra aprovada em vez de só torná-la exata:
@@ -386,7 +423,7 @@ begin
     from public.sf_estoque_envios
    where pmo = p_pmo and op = p_op and posto = p_posto and alvo = p_alvo
      and operacao = 'entrada' and cancelado_em is null
-   order by (substring(chave from '/E([0-9]+)$'))::int desc nulls last, criado_em desc, id desc
+   order by seq_chave desc nulls last, criado_em desc, id desc
    limit 1
    for update;
   if not found then
@@ -490,8 +527,15 @@ revoke all on function public.sf_estoque_reverter(text, text, text, text, int)
 -- que já tem tentativas > 0. E é justamente numa entrada em voo que a sf_estoque_reverter cria estorno
 -- em vez de ajustar (ver "A EXCEÇÃO À DECISÃO", lá em cima), então esse par existe de verdade. Mandar
 -- a saída antes da entrada deixa o ERP com estoque negativo, ou faz ele recusar a saída de um item que
--- ainda não entrou. Portanto: um estorno NÃO É ELEGÍVEL enquanto a entrada correspondente — mesmo
--- pmo/op/posto/`alvo`, operacao = 'entrada', criada ANTES dele — não estiver `ok`.
+-- ainda não entrou. Portanto: um estorno NÃO É ELEGÍVEL enquanto A ENTRADA DELE não estiver `ok`.
+--
+-- E "a entrada dele" é UMA, não "qualquer anterior do mesmo bipe": é a entrada VIGENTE — a mais
+-- recente das VIVAS (`cancelado_em is null`) do mesmo bipe criadas antes dele, escolhida pelo `E<n>`
+-- da chave, o MESMO desempate que a sf_estoque_reverter usa pra decidir de QUEM o estorno saiu. As
+-- duas têm que concordar: quem o estorno espera tem que ser quem foi debitado por ele. Um bipe tem
+-- várias entradas no histórico (E1 cancelada, E2 do rebipe — ver o contador da chave), e "qualquer
+-- anterior não-ok" segurava o estorno PARA SEMPRE por causa de um ciclo já encerrado daquele bipe; o
+-- porquê disso ser um desastre silencioso está escrito no filtro, junto do predicado.
 --
 -- POR QUE NA RESERVA, E NÃO NO LAÇO DE ENVIO (a decisão da Task 3, escrita aqui porque é aqui que ela
 -- vale). As duas saídas davam o mesmo resultado hoje; estas duas coisas não:
@@ -523,9 +567,11 @@ revoke all on function public.sf_estoque_reverter(text, text, text, text, int)
 -- O que NÃO se pode fazer é "resolver" essa retenção entregando o estorno sozinho: aí o Compels fica
 -- com uma saída de peça que ele nunca recebeu — é o contrário do que a ordem existe pra evitar.
 -- E se alguém afrouxar a regra da ASSIMETRIA (voltar a cancelar entrada que já tem estorno), a espera
--- passa a ser eterna DE VERDADE: sem nem o par na tela, porque a entrada cancelada não aparece lá.
--- O filtro abaixo cobra isso LITERALMENTE — a entrada cancelada também segura o estorno, porque ela
--- não está `ok` —, e é de propósito: entre segurar uma saída pra sempre e mandar ao ERP uma saída sem
+-- passa a ser eterna DE VERDADE: sem nem o par na tela, porque a entrada cancelada não aparece lá. O
+-- filtro abaixo não se ilude com isso e também não fica mais permissivo por causa disso — sem entrada
+-- VIVA anterior, ele cai no caso "nenhuma" e SEGURA (ver o predicado). Ou seja: afrouxar a ASSIMETRIA
+-- troca uma espera que termina por uma que só uma pessoa termina, e não troca estoque errado no ERP
+-- por espera. É de propósito: entre segurar uma saída pra sempre e mandar ao ERP uma saída sem
 -- entrada, segurar é o erro que dá pra descobrir depois.
 --
 -- A janela de reserva de 15 min cobre uma rodada inteira (lote de 30 x alguns segundos por chamada
@@ -565,9 +611,33 @@ begin
          and e.cancelado_em is null
          and e.tentativas < 5
          and (e.reservado_em is null or e.reservado_em < now() - interval '15 minutes')
-         -- A ORDEM DO PAR (ver o ⚠️ acima): estorno só é elegível depois que a entrada dele virou
-         -- `ok`. Uma entrada NÃO ok segura o estorno — inclusive a que chegou ao teto e a cancelada
-         -- (as duas não estão `ok`), e é isso que impede uma saída de chegar ao ERP sem a entrada.
+         -- A ORDEM DO PAR (ver o ⚠️ acima): estorno só é elegível depois que A ENTRADA DELE virou
+         -- `ok`. E a entrada dele é UMA: a VIGENTE — a mais recente das VIVAS (`cancelado_em is null`)
+         -- do mesmo bipe criadas ANTES dele, pelo `E<n>` da chave. É o MESMO desempate que a
+         -- sf_estoque_reverter usa pra escolher de quem o estorno saiu, e as duas têm que concordar:
+         -- quem o estorno espera tem que ser quem foi debitado por ele.
+         --
+         -- POR QUE NÃO "QUALQUER ANTERIOR NÃO-ok", que era o que este filtro dizia (Critical desta
+         -- revisão). O mesmo bipe tem VÁRIAS entradas no histórico — E1 cancelada, E2 do rebipe, E3...
+         -- (ver o contador da chave) — e uma entrada CANCELADA nunca vira `ok` (o check da tabela
+         -- proíbe). Então "qualquer anterior" fazia um ciclo JÁ ENCERRADO do bipe segurar o estorno de
+         -- um ciclo novo PARA SEMPRE: bipar a caixa (E1 limpa na fila) → o gestor cancela antes da
+         -- primeira rodada do cron, o que CANCELA a E1 (e é o caminho certo na linha limpa) → o
+         -- operador rebipa, como a recusa da 0129 manda (E2) → o cron entrega a E2 (`ok`) → o gestor
+         -- cancela de novo, e aí nasce o estorno S1, par da E2 — que nunca saía, preso pela E1
+         -- cancelada. Com tentativas = 0, sem `erro`, e com a linha que o bloqueava INVISÍVEL na tela
+         -- de pendências (que não lista canceladas): o Compels ficaria com peças que o ShopFloor já
+         -- removeu, sem erro, sem falha e sem linha nenhuma — a perda silenciosa que esta feature
+         -- existe pra não ter. E bastava a E1 ter sido cancelada UMA vez na vida daquele bipe pra todo
+         -- estorno futuro dele nascer preso.
+         --
+         -- A ASSIMETRIA (lá em cima) NÃO autorizava aquela leitura: ela proíbe CANCELAR UMA ENTRADA
+         -- QUE JÁ TEM ESTORNO, e não diz nada sobre uma entrada cancelada ANTES de o estorno existir,
+         -- cujo estorno pertence a OUTRA entrada do mesmo bipe. O que ela garante — e é disto que este
+         -- filtro depende — é que a entrada de um par continua VIVA: por isso olhar só as vivas nunca
+         -- perde o par de vista. A noção certa de par já estava escrita na teste_fila_invariantes
+         -- (supabase/tests/almoxarifado_test.sql): todo estorno tem uma entrada VIVA do mesmo bipe,
+         -- criada antes dele.
          --
          -- `ent.criado_em < e.criado_em` é ESTRITO, e o desempate NÃO cai no uuid (o defeito que a
          -- sf_estoque_reverter já teve que corrigir uma vez). Pode ser estrito porque o estorno só
@@ -576,16 +646,44 @@ begin
          -- o instante da TRANSAÇÃO, então a entrada do par é estritamente mais antiga que o estorno
          -- dela. Já uma entrada nascida na MESMA transação do estorno (cancelar a caixa de uma linha
          -- tocada e rebipar juntos) não é o par de ninguém: segurá-la atrás dela só atrasaria o
-         -- estorno por causa de um rebipe que não tem nada com ele.
+         -- estorno por causa de um rebipe que não tem nada com ele. `criado_em`/`id` ficam como último
+         -- critério pra chave que NÃO casar com o padrão (uma linha posta à mão no SQL Editor, um
+         -- formato de chave futuro), pra a ordem continuar definida em vez de virar nenhuma — igual à
+         -- sf_estoque_reverter.
+         --
+         -- E QUANDO NÃO EXISTE NENHUMA ENTRADA VIVA ANTERIOR? SEGURA — é o `coalesce(..., false)`, e a
+         -- escolha é deliberada. Pelas RPCs o caso é INALCANÇÁVEL (um estorno nasce da entrada viva
+         -- vigente, e a ASSIMETRIA impede cancelá-la depois), mas quem mexer na fila pelo SQL Editor
+         -- chega lá. As duas saídas são invisíveis sem a tela de pendências; o que difere é o que cada
+         -- uma estraga. LIBERAR manda ao ERP uma saída de peça que ele nunca recebeu: estoque de menos
+         -- lá, irreversível de cá, e ninguém sabendo — exatamente o que esta ordem existe pra evitar.
+         -- SEGURAR deixa a linha parada e não estraga estoque nenhum, e é um erro que dá pra descobrir
+         -- depois — a mesma escolha que o ⚠️ acima já faz pra entrada que chegou ao teto. Então segura.
+         -- O que torna isso VISÍVEL é a tela de pendências (Task 5): "estorno pendente cuja entrada
+         -- viva vigente não está `ok`" é esta mesma consulta, e é ela que transforma linha parada em
+         -- item que alguém resolve.
+         --
+         -- A ORDEM É A MESMA da sf_estoque_reverter, e pela coluna `seq_chave` (o contador da chave
+         -- materializado — ver o comentário dela, lá em cima): mesma expressão escrita uma vez, e sem
+         -- o `substring` aqui dentro, que custava ~42 µs por linha num predicado que varre as
+         -- pendentes a cada rodada. O rabo do índice sf_estoque_envios_alvo casa com este `order by`,
+         -- então a vigente sai do índice sem ordenação e a busca para na primeira linha que serve.
+         -- Medido com `explain analyze` e `jit=off` (postgres:15): 3,1 ms no caso realista (80.700
+         -- linhas, 500 pendentes, metade estorno) contra 2,2 ms do `not exists` errado que ela
+         -- substitui, e 10,8 ms na massa patológica (um bipe com 300 entradas no histórico e 500
+         -- estornos pendentes) contra 10,5 ms dele — ou seja, mesma casa nas duas. A sf_estoque_reservar
+         -- inteira (lote de 30 na massa realista) fecha em 6 a 11 ms por rodada.
          and (e.operacao <> 'estorno'
-              or not exists (
-                   select 1
+              or coalesce((
+                   select ent.ok
                      from public.sf_estoque_envios ent
                     where ent.pmo = e.pmo and ent.op = e.op and ent.posto = e.posto
                       and ent.alvo = e.alvo and ent.operacao = 'entrada'
+                      and ent.cancelado_em is null
                       and ent.criado_em < e.criado_em
-                      and ent.ok = false
-                 ))
+                    order by ent.seq_chave desc nulls last, ent.criado_em desc, ent.id desc
+                    limit 1
+                 ), false))
        order by (e.tentativas > 0), e.criado_em, e.id
        -- lote aparado: nulo cai no default, 0/negativo viram 1 e existe teto. Um lote gigante
        -- seguraria a reserva (e a rodada) por muito mais tempo do que a janela de 15 min cobre.

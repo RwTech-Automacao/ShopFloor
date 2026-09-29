@@ -1964,3 +1964,108 @@ end $t$;
 -- As invariantes de novo, agora com a massa do 45 dentro (a chamada do fim do runner cobre as etapas
 -- em bash que ainda vêm depois deste arquivo).
 do $t$ begin perform public.teste_fila_invariantes('depois do teste 45'); end $t$;
+
+-- ---------- 46. UM CICLO ANTIGO DO BIPE NÃO PRENDE O ESTORNO DO CICLO DE AGORA ----------
+-- O Critical da revisão da Task 3, rodado pelas RPCs de verdade (a versão em estado montado à mão está
+-- no teste 19 de supabase/tests/estoque_envios_test.sql, junto do predicado que ele cobre).
+--
+-- O filtro da ordem do par, na sf_estoque_reservar, dizia "QUALQUER entrada anterior do mesmo bipe que
+-- não esteja `ok` segura o estorno". Só que uma entrada CANCELADA nunca vira `ok` (o check da tabela
+-- proíbe), e o mesmo bipe tem várias entradas no histórico — então uma E1 cancelada num ciclo JÁ
+-- ENCERRADO prendia PARA SEMPRE todo estorno futuro daquele bipe: tentativas = 0, `erro` nulo, e a
+-- linha que o bloqueava INVISÍVEL na tela de pendências, que não lista canceladas. O Compels ficaria
+-- com peças que o ShopFloor já removeu, sem erro, sem falha e sem linha nenhuma pra alguém ver.
+--
+-- Nada aqui é exótico: cada passo é um caminho que o sistema manda seguir.
+--   1. bipe da caixa → E1 limpa na fila;
+--   2. o gestor cancela a caixa antes da primeira rodada do cron → a E1 é CANCELADA, e é o caminho
+--      CERTO na linha limpa (não se manda ao ERP uma entrada e uma saída que nunca precisaram existir);
+--   3. o operador rebipa a mesma caixa — o que a recusa da 0129 manda fazer → E2;
+--   4. o cron entrega a E2 ao Compels → ok;
+--   5. o gestor cancela a caixa outra vez → agora é ESTORNO (S1), par da E2, e o saldo dela desce;
+--   6. a reserva TEM que devolver a S1: a entrada dela — a VIGENTE entre as vivas, que é a E2 — está
+--      `ok`. Com o predicado antigo, a E1 cancelada a segurava, nesta rodada e em todas as seguintes.
+-- Cada passo em transação PRÓPIA de propósito: é assim que acontece de verdade (uma RPC por chamada),
+-- e é o que dá à E2 um `criado_em` posterior ao da E1 e anterior ao do estorno.
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC20', '8503', 'Embalagem', 13, 3, 3, 'CX[13][3]8503-PMOC20', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[13][3]8503-PMOC20',
+       'SN-' || (9930 + i)::text, (9930 + i)::text from generate_series(1, 3) i;
+
+-- 1 e 2. o primeiro ciclo, encerrado: a entrada limpa é CANCELADA (nada de estorno).
+do $t$
+declare e public.sf_estoque_envios; v_id uuid;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[13][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 13 não entrou'; end if;
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[13][3]8503-PMOC20' limit 1;
+  if sf_cancelar_caixa_almoxarifado(v_id, 'bipou a caixa errada, antes do cron') <> 3 then
+    raise exception 'FALHOU (massa): esperava cancelar as 3 peças da caixa 13'; end if;
+
+  select * into e from sf_estoque_envios
+   where chave = 'ALMOX/PMOC20/8503/Almoxarifado/CX[13][3]8503-PMOC20/E1';
+  if e.cancelado_em is null or e.estornado <> 0 then
+    raise exception 'FALHOU (massa): a linha estava LIMPA, tinha que ser cancelada sem estorno: %', to_jsonb(e); end if;
+  raise notice '46. passo 1-2: E1 limpa cancelada (o ciclo antigo, encerrado): ok';
+end $t$;
+
+-- 3. o rebipe, em transação própria (é o que dá à E2 um criado_em posterior ao da E1).
+do $t$
+declare e public.sf_estoque_envios;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Bruno',
+                              'CX[13][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): o rebipe da caixa 13 tinha que ser aceito'; end if;
+  select * into e from sf_estoque_envios
+   where chave = 'ALMOX/PMOC20/8503/Almoxarifado/CX[13][3]8503-PMOC20/E2';
+  if not found or e.cancelado_em is not null or e.ok then
+    raise exception 'FALHOU (massa): o rebipe tinha que enfileirar a E2, pendente: %', to_jsonb(e); end if;
+  raise notice '46. passo 3: rebipe → E2 pendente: ok';
+end $t$;
+
+-- 4. o cron entrega a E2 (é o que a Task 3 faz de verdade; aqui só o efeito dela na linha).
+update public.sf_estoque_envios set ok = true, enviado_em = now(), tentativas = 1, reservado_em = null
+ where chave = 'ALMOX/PMOC20/8503/Almoxarifado/CX[13][3]8503-PMOC20/E2';
+
+-- 5. o gestor cancela a caixa OUTRA VEZ: agora a entrada vigente já está no ERP, então é ESTORNO.
+do $t$
+declare e public.sf_estoque_envios; v_id uuid;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[13][3]8503-PMOC20' limit 1;
+  if sf_cancelar_caixa_almoxarifado(v_id, 'caixa voltou do cliente') <> 3 then
+    raise exception 'FALHOU (massa): esperava cancelar as 3 peças do rebipe'; end if;
+
+  select * into e from sf_estoque_envios
+   where chave = 'ALMOX/PMOC20/8503/Almoxarifado/CX[13][3]8503-PMOC20/S1';
+  if not found or e.quantidade <> 3 or e.tentativas <> 0 then
+    raise exception 'FALHOU (massa): esperava o estorno S1 de 3 peças, pendente e intocado: %', to_jsonb(e); end if;
+  select * into e from sf_estoque_envios
+   where chave = 'ALMOX/PMOC20/8503/Almoxarifado/CX[13][3]8503-PMOC20/E2';
+  if e.estornado <> 3 then
+    raise exception 'FALHOU (massa): o estorno tinha que descer o saldo da E2 (a vigente), veio estornado %', e.estornado; end if;
+  raise notice '46. passo 4-5: E2 entregue e cancelada de novo → estorno S1, saldo da E2 zerado: ok';
+end $t$;
+
+-- 6. A PROVA. A reserva é a de verdade, e o que importa é ela devolver a S1: a entrada vigente do bipe
+-- (a E2) está no ERP, então a saída pode ir. Com o predicado antigo, a E1 CANCELADA a segurava — nesta
+-- rodada e em todas as seguintes, sem erro e sem linha na tela de pendências.
+do $t$
+declare v_chaves text[];
+begin
+  select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r
+   where r.bipe = 'CX[13][3]8503-PMOC20';
+  if v_chaves is distinct from array['ALMOX/PMOC20/8503/Almoxarifado/CX[13][3]8503-PMOC20/S1'] then
+    raise exception 'FALHOU: a E1 CANCELADA de um ciclo encerrado prendeu o estorno da E2, que já está no Compels — as peças saem do ShopFloor e ficam no estoque de lá, sem erro, sem falha e sem linha na tela; a reserva devolveu % pra este bipe', v_chaves;
+  end if;
+  raise notice '46. passo 6: a reserva libera o S1 (a E1 cancelada não é a entrada dele): ok';
+end $t$;
+
+-- As invariantes de novo, agora com a massa do 46 dentro.
+do $t$ begin perform public.teste_fila_invariantes('depois do teste 46'); end $t$;

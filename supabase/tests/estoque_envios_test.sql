@@ -419,10 +419,11 @@ begin
   raise notice 'estornado dentro da quantidade (a invariante da reversão): ok';
 end $t$;
 
--- 17. A ORDEM DO PAR: O ESTORNO NÃO É RESERVADO ENQUANTO A ENTRADA DELE NÃO ESTÁ `ok`. É a regra que
---     impede o ERP de receber a saída antes da entrada (estoque negativo, ou uma saída recusada), e
---     ela mora AQUI, na reserva, e não no laço de envio — o porquê está no ⚠️ do cabeçalho da
---     sf_estoque_reservar. As duas metades do teste são as duas metades da regra:
+-- 17. A ORDEM DO PAR: O ESTORNO NÃO É RESERVADO ENQUANTO A ENTRADA VIGENTE DELE NÃO ESTÁ `ok`. É a
+--     regra que impede o ERP de receber a saída antes da entrada (estoque negativo, ou uma saída
+--     recusada), e ela mora AQUI, na reserva, e não no laço de envio — o porquê está no ⚠️ do
+--     cabeçalho da sf_estoque_reservar. Aqui o bipe tem UMA entrada só, então "vigente" não decide
+--     nada e o que se prova são as duas metades da regra (o caso de várias entradas é o teste 19):
 --       • a entrada em voo (uma rodada já tentou, a reserva venceu) sai; o estorno dela fica;
 --       • e o estorno segurado NÃO paga tentativa — linha segurada não é linha que falhou. Se ela
 --         pagasse, cinco rodadas de espera a tirariam da fila (tentativas < 5) sem nunca ter sido
@@ -460,9 +461,17 @@ end $t$;
 --     (a) entrada que DESISTIU (teto de tentativas) segura o estorno — a espera passa a esperar UMA
 --         PESSOA (o Reenviar da tela de pendências), e "resolver" isso entregando a saída sozinha
 --         deixaria o Compels com uma saída que ele nunca recebeu;
---     (b) entrada CANCELADA também segura, pelo mesmo motivo literal (não está `ok`). Sob as regras
---         da sf_estoque_reverter isso não acontece (ela nunca cancela entrada que já tem estorno —
---         ver A ASSIMETRIA), então este caso é a rede pra quem afrouxar aquela regra depois;
+--     (b) estorno SEM NENHUMA ENTRADA VIVA anterior também segura — aqui a única entrada do bipe está
+--         CANCELADA, então não sobra entrada viva pra ser a vigente, e o filtro cai no caso "nenhuma".
+--         ⚠️ Até a revisão desta rodada, este caso afirmava outra coisa: que "entrada cancelada segura
+--         o estorno". A asserção passava, mas a razão estava ERRADA, e a razão errada valia para
+--         QUALQUER entrada cancelada do bipe — inclusive uma de um ciclo antigo e já encerrado, que
+--         prendia para sempre o estorno de um ciclo novo (o Critical; a sequência inteira está no
+--         teste 19). Hoje o caso é o que o nome diz: sem entrada viva, o predicado SEGURA, porque
+--         liberar mandaria ao ERP uma saída de peça que ele nunca recebeu. Sob as regras da
+--         sf_estoque_reverter nem isso é alcançável (ela nunca cancela entrada que já tem estorno —
+--         ver A ASSIMETRIA), então este caso é a rede pra quem afrouxar aquela regra, ou mexer na
+--         fila pelo SQL Editor;
 --     (c) mas a entrada criada DEPOIS do estorno (o rebipe da caixa) NÃO é par dele e NÃO pode
 --         segurá-lo: senão um rebipe que falha prende para sempre um estorno que já tinha a entrada
 --         dele entregue.
@@ -492,7 +501,53 @@ begin
   if v_chaves is distinct from array['REB/E2', 'REB/S1'] then
     raise exception 'FALHOU: as bordas da ordem do par não bateram, veio %', v_chaves;
   end if;
-  raise notice 'bordas da ordem do par (teto, cancelada, rebipe posterior): ok';
+  raise notice 'bordas da ordem do par (teto, sem entrada viva, rebipe posterior): ok';
+end $t$;
+
+-- 19. UM CICLO ANTIGO DO MESMO BIPE NÃO SEGURA O ESTORNO DO CICLO DE AGORA (o Critical da revisão da
+--     Task 3). O predicado dizia "qualquer entrada anterior não-ok segura", e uma entrada CANCELADA
+--     nunca vira `ok` (o check da tabela proíbe): uma E1 cancelada em qualquer momento da vida do bipe
+--     prendia PARA SEMPRE todo estorno futuro dele — com tentativas = 0, sem `erro`, e com a linha que
+--     o bloqueava invisível na tela de pendências, que não lista canceladas. Resultado: o Compels
+--     ficava com peças que o ShopFloor já removeu, sem erro, sem falha e sem linha nenhuma — a perda
+--     silenciosa que esta feature existe pra não ter.
+--
+--     Os seis passos abaixo são só caminhos documentados, nenhum estado inventado (o mesmo roteiro
+--     rodado pelas RPCs de verdade está no teste 46 do almoxarifado_test.sql):
+--       1. bipe da caixa → E1 limpa na fila;
+--       2. o gestor cancela antes da primeira rodada do cron → a E1 é CANCELADA (é o caminho certo na
+--          linha limpa: não se manda ao ERP uma entrada e uma saída que nunca precisaram existir);
+--       3. o operador rebipa a mesma caixa, que é o que a recusa da 0129 manda fazer → E2;
+--       4. o cron entrega a E2 → ok;
+--       5. o gestor cancela a caixa outra vez → estorno S1, par da E2, e o saldo da E2 desce;
+--       6. a reserva TEM que devolver a S1: a entrada dela (a E2, a vigente entre as vivas) está `ok`.
+do $t$
+declare v_chaves text[];
+begin
+  update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, ok, enviado_em, cancelado_em, estornado)
+  values
+    -- 1+2. o primeiro ciclo, encerrado: entrada limpa cancelada antes de qualquer rodada
+    ('ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/E1', 'entrada', 'PMOT01', '9910',
+     'Almoxarifado', 'caixa', 'CX[1][3]9910-PMOT01', 3,
+     now() - interval '40 minutes', 0, false, null, now() - interval '35 minutes', 0),
+    -- 3+4. o rebipe, entregue ao ERP
+    ('ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/E2', 'entrada', 'PMOT01', '9910',
+     'Almoxarifado', 'caixa', 'CX[1][3]9910-PMOT01', 3,
+     now() - interval '30 minutes', 1, true, now() - interval '25 minutes', null, 3),
+    -- 5. o estorno da E2 (o saldo dela já desceu pra 3/3, como a sf_estoque_reverter faz)
+    ('ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/S1', 'estorno', 'PMOT01', '9910',
+     'Almoxarifado', 'caixa', 'CX[1][3]9910-PMOT01', 3,
+     now() - interval '5 minutes', 0, false, null, null, 0);
+
+  -- 6. A PROVA. Com o predicado antigo ("qualquer anterior não-ok"), a E1 cancelada segura a S1 e
+  -- este array vem VAZIO — agora e em toda rodada seguinte, calado.
+  select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
+  if v_chaves is distinct from array['ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/S1'] then
+    raise exception 'FALHOU: a E1 CANCELADA de um ciclo encerrado prendeu o estorno da E2, que já está no ERP — o Compels fica com peças que o ShopFloor removeu, sem erro e sem linha na tela; veio %', v_chaves;
+  end if;
+  raise notice '19. ciclo antigo (E1 cancelada) não segura o estorno da entrada vigente entregue: ok';
 end $t$;
 
 select 'ESTOQUE ENVIOS SQL OK' as fim;
