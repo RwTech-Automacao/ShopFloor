@@ -468,9 +468,21 @@ revoke all on function public.sf_estoque_reverter(text, text, text, text, int)
 -- 'entrada', criada ANTES dele — não estiver `ok`; ele pula o estorno e tenta na rodada seguinte
 -- (sem contar tentativa, senão o par queima o teto esperando). Não é a reserva que resolve isso: ela
 -- é por linha e não sabe de par — por isso a restrição está escrita aqui, onde a ordem é decidida.
--- Essa espera TERMINA porque a sf_estoque_reverter nunca cancela uma entrada que já tem estorno (ver
--- A ASSIMETRIA, lá em cima): a entrada de um par continua na fila até virar `ok`. Se alguém afrouxar
--- aquela regra, esta espera passa a ser eterna.
+-- Essa espera TERMINA de uma de DUAS formas, e é preciso saber das duas:
+--   • a entrada vira `ok` — o caso normal. A sf_estoque_reverter nunca cancela uma entrada que já tem
+--     estorno (ver A ASSIMETRIA, lá em cima), então a entrada de um par continua na fila e o reenvio
+--     insiste até entregar; aí o estorno é liberado na rodada seguinte;
+--   • ou o PAR INTEIRO para e passa a esperar UMA PESSOA. Uma entrada que chegou ao teto SAIU da fila
+--     (é o mesmo `tentativas < 5` do filtro logo abaixo e do predicado do índice parcial
+--     sf_estoque_envios_pendentes), então ela não vira `ok` sozinha — e o estorno dela fica retido
+--     indefinidamente, por esta mesma restrição de ordem. Isso é ASSUMIDO, não esquecido: o que
+--     destrava é o Reenviar da tela de pendências, e o que torna isso resolvível por alguém é que os
+--     dois aparecem JUNTOS nessa tela (mesmo pmo/op/posto/`alvo`, a entrada falhada com o último erro
+--     e o estorno esperando por ela) em vez de o estorno sumir calado num canto.
+-- O que o laço NÃO pode fazer é "resolver" essa retenção entregando o estorno sozinho: aí o Compels
+-- fica com uma saída de peça que ele nunca recebeu — é o contrário do que a ordem existe pra evitar.
+-- E se alguém afrouxar a regra da ASSIMETRIA (voltar a cancelar entrada que já tem estorno), a espera
+-- passa a ser eterna DE VERDADE: sem nem o par na tela, porque a entrada cancelada não aparece lá.
 --
 -- A janela de reserva de 15 min cobre uma rodada inteira (lote de 30 x alguns segundos por chamada
 -- ao ERP, no pior caso). Se o processo cair no meio, a linha volta a ser elegível depois disso: a
