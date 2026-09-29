@@ -28,7 +28,11 @@
 --                        Dar entrada nela contaria duas vezes a mesma etiqueta.
 --   ja_lancado           já existe entrada desta caixa/série NESTE posto — é a recusa que impede a
 --                        contagem em dobro quando dois operadores bipam a mesma etiqueta. O detalhe
---                        devolve quando e por quem, que é o que o painel mostra.
+--                        devolve quando, por quem e QUANTAS DAS N PEÇAS estão lançadas ("3 de 14"):
+--                        num estado parcial, deixado por um cancelamento linha a linha que parou no
+--                        meio, é isso que diz ao gestor o que ele está olhando em vez de repetir "já
+--                        lançada" e virar beco sem saída. O caminho de volta é a 0131 (cancelar a
+--                        caixa inteira, um gesto e um motivo só).
 --   caixa_sem_pecas      a caixa está fechada mas não tem nenhuma peça carimbada com o código dela.
 --                        sf_fechar_caixa recusa fechar caixa vazia, então isso só aparece depois de
 --                        um cancelamento de lançamento (0087) levar as linhas da Embalagem pra
@@ -133,6 +137,7 @@ declare
   v_na_faixa   boolean;
   v_quantidade int;
   v_pecas      int;
+  v_lancadas   int;
   v_qtd_codigo int;
 begin
   if not tem_permissao('shopfloor','lancar') then
@@ -241,17 +246,47 @@ begin
     -- outra peça com este código, e reabrir apaga o código) — o rebipe é recusado por INTEIRO, com
     -- quando e por quem, em vez de entrar "só a peça que faltava" e devolver 1 peça pra uma caixa
     -- de 14, que é o número que o operador levaria pra contagem. Sobrou peça de verdade? O gestor
-    -- cancela a entrada (Cancelar lançamento, 0087) e bipa a caixa outra vez.
+    -- cancela a caixa inteira (Cancelar a caixa inteira, 0131 — um gesto, um motivo) e bipa outra vez.
     select data_hora, colaborador into v_ja
       from sf_registros
      where pmo = p_pmo and op = p_op and posto = p_posto and numero_caixa = p_bipe
      order by data_hora
      limit 1;
     if found then
+      -- A recusa DIZ QUANTAS DAS N PEÇAS ESTÃO LANÇADAS. Antes ela dizia só "já lançada", e ponto:
+      -- num estado PARCIAL — a caixa entrou inteira e depois alguém cancelou linha por linha (0087) e
+      -- parou no meio — o gestor lia a mesma frase de sempre e não tinha como saber que a caixa estava
+      -- meio dentro, meio fora. Com "3 de 14", ele vê o que está olhando e sabe o que fazer: cancelar
+      -- a caixa inteira (0131) e bipar de novo. A recusa em si não muda (a unidade do bipe é a caixa),
+      -- muda o que ela conta.
+      --
+      -- Lançadas = séries distintas DESTA caixa já gravadas NESTE posto. Total = as peças da caixa,
+      -- contadas no POSTO DA EMBALAGEM (v_caixa.posto), que é a fonte da verdade da qual a etiqueta
+      -- foi impressa — a mesma contagem que o insert usa mais abaixo.
+      select count(distinct numero_serie_norm) into v_lancadas
+        from sf_registros
+       where pmo = p_pmo and op = p_op and posto = p_posto
+         and numero_caixa = p_bipe and numero_serie_norm <> '';
+      select count(distinct numero_serie_norm) into v_pecas
+        from sf_registros
+       where pmo = p_pmo and op = p_op and posto = v_caixa.posto
+         and numero_caixa = p_bipe and numero_serie_norm <> '';
       return jsonb_build_object('ok', false, 'motivo', 'ja_lancado',
         'detalhe', 'Caixa já lançada em '
           || to_char(v_ja.data_hora at time zone 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI')
-          || case when v_ja.colaborador = '' then '' else ' por ' || v_ja.colaborador end || '.');
+          || case when v_ja.colaborador = '' then '' else ' por ' || v_ja.colaborador end || '. '
+          -- v_pecas = 0: as linhas da Embalagem já foram canceladas, então não há N com que comparar.
+          -- Dizer "3 de 0" seria pior que não dizer o total — sobra a contagem do que está lançado.
+          -- O plural de "peça" segue o TOTAL ("1 de 14 peças"); o do verbo segue o que está lançado.
+          || case when v_pecas = 0 then v_lancadas::text
+                  else v_lancadas || ' de ' || v_pecas end
+          || case when greatest(v_pecas, v_lancadas) = 1 then ' peça' else ' peças' end
+          || ' desta caixa '
+          || case when v_lancadas = 1 then 'está lançada.' else 'estão lançadas.' end
+          -- O estado parcial é o que precisava de saída: diz onde é o caminho de volta.
+          || case when v_pecas > 0 and v_lancadas < v_pecas
+                  then ' Um cancelamento anterior parou no meio: cancele a caixa inteira em Registros e bipe outra vez.'
+                  else '' end);
     end if;
 
     -- AS PEÇAS DA CAIXA — de onde sai a lista: quando a caixa fecha, sf_fechar_caixa (0100)

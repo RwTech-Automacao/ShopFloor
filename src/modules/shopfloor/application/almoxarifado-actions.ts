@@ -67,6 +67,12 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
       // cancelamento de lançamento levar essas linhas pra auditoria — quem resolve é a Embalagem.
       return detalhe || 'Esta caixa não tem nenhuma peça registrada na Embalagem.'
     case 'ja_lancado':
+      // O `detalhe` da RPC é a frase inteira e é ela que vale: além de quando e por quem, ele agora
+      // diz QUANTAS DAS N PEÇAS da caixa estão lançadas ("3 de 14") e, quando o estado é parcial,
+      // aponta o caminho de volta (cancelar a caixa inteira em Registros). Antes a recusa dizia só
+      // "já lançada": num estado parcial — a caixa entrou inteira e um cancelamento linha a linha
+      // parou no meio — o operador via a mesma frase de sempre e não tinha saída nenhuma.
+      // O texto fixo aqui é só o caso de a RPC não mandar detalhe; ele não tem como saber a contagem.
       return detalhe || 'Este bipe já deu entrada antes.'
     case 'serie_fora_da_faixa':
       return detalhe || 'Esta série está fora da faixa desta OP.'
