@@ -381,4 +381,42 @@ begin
   raise notice 'chave obrigatória e não vazia: ok';
 end $t$;
 
+-- 16. `estornado` DENTRO DA QUANTIDADE — a invariante da reversão escrita como CHECK: a soma do que
+--     é estornado de uma entrada nunca passa do que foi enviado ao ERP. A conta em si é da
+--     sf_estoque_reverter (e o teste dela está no almoxarifado_test.sql, que roda o cancelamento de
+--     verdade); aqui prova-se a rede EMBAIXO dela — a que também vale pra próxima função que alguém
+--     escrever pra mexer na fila, e pro `update` manual no SQL Editor às 18h. Sem ela, o erro seria
+--     silencioso: estoque errado no Compels, e ninguém do lado de cá sabendo.
+do $t$
+declare v_id uuid;
+begin
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, quantidade)
+  values ('K_ESTORNADO', 'PMOA01', '9905', 'Almoxarifado', 'caixa', 'CX[1][3]9905-PMOA01', 3)
+  returning id into v_id;
+  -- nasce sem nada revertido: é o saldo cheio que a reversão vai encontrar
+  if (select estornado from sf_estoque_envios where id = v_id) <> 0 then
+    raise exception 'FALHOU: estornado tinha que nascer 0'; end if;
+
+  begin
+    update sf_estoque_envios set estornado = -1 where id = v_id;
+    raise exception 'FALHOU: aceitou estornado negativo';
+  exception when check_violation then null;
+  end;
+  begin
+    update sf_estoque_envios set estornado = 4 where id = v_id;
+    raise exception 'FALHOU: aceitou estornar 4 de uma entrada de 3';
+  exception when check_violation then null;
+  end;
+  -- reverter por INTEIRO é válido (é o fim normal de uma caixa cancelada depois de entregue)
+  update sf_estoque_envios set estornado = 3 where id = v_id;
+  -- e depois disso a quantidade não pode encolher abaixo do que já foi revertido: seria dizer que o
+  -- ERP recebeu menos do que já lhe foi devolvido.
+  begin
+    update sf_estoque_envios set quantidade = 2 where id = v_id;
+    raise exception 'FALHOU: aceitou quantidade menor que o já estornado';
+  exception when check_violation then null;
+  end;
+  raise notice 'estornado dentro da quantidade (a invariante da reversão): ok';
+end $t$;
+
 select 'ESTOQUE ENVIOS SQL OK' as fim;
