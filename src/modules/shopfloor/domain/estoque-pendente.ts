@@ -219,7 +219,13 @@ function oQueFazer(
         + `ainda por gastar).`
     }
     case 'na_fila':
-      return 'Nada: esta linha ainda não foi tentada nenhuma vez. A próxima rodada de envio a leva.'
+      // A ressalva NÃO é rodapé jurídico: hoje o cron nasce COMENTADO (é a recomendação em vigor —
+      // tools/estoque/README.md entrega a linha com o `#`), então "a próxima rodada" pode ser uma
+      // rodada que nunca acontece, e TODA linha da tela está neste estado. Prometer que ela é levada
+      // contradiria o aviso âmbar logo acima, que diz que é normal a lista só crescer — e é o mesmo
+      // cuidado do cabeçalho da página: nada aqui afirma que algo chegou (ou vai chegar) ao ERP.
+      return 'Nada: esta linha ainda não foi tentada nenhuma vez. A próxima rodada de envio a leva '
+        + '— se o envio ao Compels já estiver armado; enquanto não estiver, ela fica guardada aqui.'
   }
 }
 
