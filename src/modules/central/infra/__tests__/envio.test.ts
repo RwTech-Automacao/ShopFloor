@@ -35,14 +35,37 @@ describe('criarEnviadorHttp', () => {
 
     expect(fetchFalso).toHaveBeenCalledTimes(1)
     const [url, opcoes] = fetchFalso.mock.calls[0]!
-    expect(url).toBe('http://127.0.0.1:3100/api/sincronizacao')
+    expect(String(url)).toBe('http://127.0.0.1:3100/api/sincronizacao')
     expect(opcoes.method).toBe('POST')
     expect(opcoes.headers).toMatchObject({
       'content-type': 'application/json',
       authorization: 'Bearer segredo-super-secreto',
     })
+    expect(opcoes.redirect).toBe('error')
     expect(JSON.parse(opcoes.body as string)).toEqual(FOTO)
     expect(r).toEqual({ status: 200, corpo: { resumo: { ok: true } } })
+  })
+
+  it('aceita CENTRAL_SYNC_URL com barra final sem virar //api/sincronizacao', async () => {
+    const fetchFalso = vi.fn(async () => new Response('{}', { status: 200 }))
+    global.fetch = fetchFalso as unknown as typeof fetch
+
+    const enviador = criarEnviadorHttp('http://127.0.0.1:3100/', 's')
+    await enviador.enviar(FOTO)
+
+    const [url] = fetchFalso.mock.calls[0]!
+    expect(String(url)).toBe('http://127.0.0.1:3100/api/sincronizacao')
+  })
+
+  it('não segue redirect (redirect: "error") — a Central nunca deveria redirecionar esta chamada', async () => {
+    const fetchFalso = vi.fn(async () => new Response('{}', { status: 200 }))
+    global.fetch = fetchFalso as unknown as typeof fetch
+
+    const enviador = criarEnviadorHttp('http://127.0.0.1:3100', 's')
+    await enviador.enviar(FOTO)
+
+    const opcoes = fetchFalso.mock.calls[0]![1]
+    expect(opcoes.redirect).toBe('error')
   })
 
   it('usa um AbortSignal com tempo limite de 60 s (TEMPO_LIMITE_MS)', async () => {

@@ -65,6 +65,20 @@ describe('POST /api/central/sincronizar', () => {
     expect(res.status).toBe(503)
   })
 
+  it('CENTRAL_SYNC_URL http num host que não é loopback devolve 503 (segredo não pode viajar em texto claro)', async () => {
+    vi.stubEnv('CENTRAL_SYNC_URL', 'http://central.enterplak.com.br')
+    const res = await POST(pedido({ authorization: 'Bearer segredo-do-cron' }))
+    expect(res.status).toBe(503)
+    expect(criarDependenciasCentral).not.toHaveBeenCalled()
+    expect(sincronizar).not.toHaveBeenCalled()
+  })
+
+  it('CENTRAL_SYNC_URL https é sempre aceita, mesmo fora do loopback', async () => {
+    vi.stubEnv('CENTRAL_SYNC_URL', 'https://central.enterplak.com.br')
+    const res = await POST(pedido({ authorization: 'Bearer segredo-do-cron' }))
+    expect(res.status).toBe(200)
+  })
+
   it('sem cabeçalho de autorização devolve 401 e não sincroniza', async () => {
     const res = await POST(pedido())
     expect(res.status).toBe(401)

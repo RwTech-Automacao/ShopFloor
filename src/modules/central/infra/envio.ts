@@ -13,16 +13,22 @@ export const TEMPO_LIMITE_MS = 60_000
 export function criarEnviadorHttp(url: string, segredo: string): EnviadorFoto {
   return {
     async enviar(foto: Foto): Promise<RespostaCentral> {
+      // `new URL(caminho, base)` aceita `url` com ou sem barra final sem virar `//api/sincronizacao`
+      // (o que a concatenação por template string faria).
+      const alvo = new URL('/api/sincronizacao', url)
       const controlador = new AbortController()
       const tempoLimite = setTimeout(() => controlador.abort(), TEMPO_LIMITE_MS)
       try {
-        const resposta = await fetch(`${url}/api/sincronizacao`, {
+        const resposta = await fetch(alvo, {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
             authorization: `Bearer ${segredo}`,
           },
           body: JSON.stringify(foto),
+          // Nunca segue redirect: a Central não deveria redirecionar esta chamada, e seguir um
+          // redirect às cegas poderia levar o segredo (no cabeçalho Authorization) pra outro host.
+          redirect: 'error',
           signal: controlador.signal,
         })
         const corpo = await resposta.json().catch(() => null)

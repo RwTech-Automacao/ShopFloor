@@ -1,6 +1,7 @@
 import { sincronizar } from '@/modules/central/application/sincronizar'
 import { criarDependenciasCentral } from '@/modules/central/infra/fabrica'
 import { segredoConfere } from '@/modules/alertas/infra/assinatura'
+import { centralUrlSegura } from '@/modules/central/domain/url'
 
 /** Depende do cabeçalho e lê o banco na hora: nunca pode ser servida de cache. */
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,13 @@ export async function POST(request: Request): Promise<Response> {
       { erro: 'Sincronização com a Central do Cliente não está configurada neste ambiente.' },
       { status: 503 },
     )
+  }
+
+  // O segredo (CENTRAL_SYNC_SECRET) vai em texto claro no cabeçalho Authorization: só pode viajar
+  // por http:// quando o destino é a própria máquina (teste local). Fora disso, exige https.
+  if (!centralUrlSegura(centralUrl)) {
+    console.error('[central] CENTRAL_SYNC_URL precisa ser https fora da própria máquina')
+    return Response.json({ erro: 'Configuração inválida da Central do Cliente.' }, { status: 503 })
   }
 
   // Só o formato `Bearer <segredo>`: o segredo cru, sem o prefixo, também é recusado.
