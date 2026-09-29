@@ -213,3 +213,45 @@ SOBROU=$(docker exec "$NOME" psql -U postgres -tAq -c \
 [ "$ENTROU" = 2 ] && [ "$SOBROU" = 2/1 ] \
   && echo "controle positivo (sem gatilho, os dois lados gravam): ok" \
   || { echo "controle positivo FALHOU (quantidade=$ENTROU, registros/fila=$SOBROU)"; exit 1; }
+
+# O OUTRO SENTIDO DA MESMA ATOMICIDADE, também visto de fora: o REGISTRO falha → não sobra linha na
+# FILA. O bloco de cima quebra só o lado da fila (achado de revisão: este lado não tinha nenhuma
+# asserção falseável em lugar nenhum). Hoje ele não pode acontecer por construção — o insert da fila
+# vem DEPOIS do dos registros —, e é justamente por isso que ele merece rede: uma "melhoria" que
+# enfileire num gatilho, ou num helper que comita por conta própria, passaria a deixar a linha da fila
+# órfã (uma entrada no ERP de peça que não existe no ShopFloor) sem nada acusar. A caixa 4 da OP 8502
+# existe na massa do teste 35 só pra isto.
+BIPE4="sf_almoxarifado_entrada('PMOC19','8502','Almoxarifado','Ana','CX[4][2]8502-PMOC19','caixa',2,'')"
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
+  "create trigger teste_explode_registro_4 before insert on sf_registros
+     for each row when (new.posto = 'Almoxarifado' and new.numero_caixa = 'CX[4][2]8502-PMOC19')
+     execute function public.teste_explode()"
+set +e
+ERRO=$(printf "%s\n" \
+  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select $BIPE4;" \
+  | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq 2>&1)
+set -e
+SOBROU=$(docker exec "$NOME" psql -U postgres -tAq -c \
+  "select (select count(*) from sf_registros
+            where posto = 'Almoxarifado' and numero_caixa = 'CX[4][2]8502-PMOC19')
+       || '/' || (select count(*) from sf_estoque_envios where bipe = 'CX[4][2]8502-PMOC19')")
+echo "$ERRO" | grep -q EXPLODIU && [ "$SOBROU" = 0/0 ] \
+  && echo "atomicidade vista de fora, lado do registro (nada sobrou na fila): ok" \
+  || { echo "atomicidade do lado do registro FALHOU (erro=$ERRO, registros/fila=$SOBROU)"; exit 1; }
+
+# Controle positivo do mesmo lado: sem o gatilho, o MESMO bipe grava os dois lados (2 registros, 1
+# linha na fila). Sem ele, o 0/0 acima poderia ser a RPC recusando a caixa por outro motivo.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
+  "drop trigger teste_explode_registro_4 on sf_registros"
+ENTROU=$(printf "%s\n" \
+  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select $BIPE4->>'quantidade';" \
+  | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
+SOBROU=$(docker exec "$NOME" psql -U postgres -tAq -c \
+  "select (select count(*) from sf_registros
+            where posto = 'Almoxarifado' and numero_caixa = 'CX[4][2]8502-PMOC19')
+       || '/' || (select count(*) from sf_estoque_envios where bipe = 'CX[4][2]8502-PMOC19')")
+[ "$ENTROU" = 2 ] && [ "$SOBROU" = 2/1 ] \
+  && echo "controle positivo do lado do registro: ok" \
+  || { echo "controle positivo do lado do registro FALHOU (quantidade=$ENTROU, registros/fila=$SOBROU)"; exit 1; }

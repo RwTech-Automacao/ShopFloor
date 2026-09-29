@@ -1145,14 +1145,17 @@ end $t$;
 -- transação que falhou, e vem: está no rodar-almoxarifado-test.sh, seção "atomicidade vista de fora",
 -- onde o bipe roda em autocommit numa sessão e a conferência vem de outra (é pra ela que a caixa 3
 -- desta massa existe). Aqui ficam só as asserções que a subtransação não falseia: a mensagem de erro
--- que PROPAGOU, e o bipe entrando normal depois que os gatilhos saem.
+-- que PROPAGOU, e o bipe entrando normal depois que os gatilhos saem. Lá fora os DOIS sentidos são
+-- medidos: a fila explodindo (caixa 3) e o registro explodindo (caixa 4).
 insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
   ('PMOC19', '8502', 'Cliente Transação', '9900', '9990', false);
 insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
   ('PMOC19', '8502', 'Embalagem', 1, 2, 2, 'CX[1][2]8502-PMOC19', true),
   ('PMOC19', '8502', 'Embalagem', 2, 2, 2, 'CX[2][2]8502-PMOC19', true),
-  -- a caixa 3 fica de pé, sem entrada nenhuma: é a massa da prova de fora, no runner
-  ('PMOC19', '8502', 'Embalagem', 3, 2, 2, 'CX[3][2]8502-PMOC19', true);
+  -- as caixas 3 e 4 ficam de pé, sem entrada nenhuma: são a massa das duas provas de fora, no runner
+  -- (a 3 para o lado da FILA explodindo, a 4 para o lado do REGISTRO — os dois sentidos)
+  ('PMOC19', '8502', 'Embalagem', 3, 2, 2, 'CX[3][2]8502-PMOC19', true),
+  ('PMOC19', '8502', 'Embalagem', 4, 2, 2, 'CX[4][2]8502-PMOC19', true);
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
 select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[1][2]8502-PMOC19',
        'SN-' || (9900 + i)::text, (9900 + i)::text from generate_series(1, 2) i;
@@ -1162,6 +1165,9 @@ select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[2][2]
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
 select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[3][2]8502-PMOC19',
        'SN-' || (9920 + i)::text, (9920 + i)::text from generate_series(1, 2) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC19', '8502', 'Cliente Transação', 'CX[4][2]8502-PMOC19',
+       'SN-' || (9930 + i)::text, (9930 + i)::text from generate_series(1, 2) i;
 
 -- Fica no banco depois do teste de propósito: a prova de fora, no runner, cria outro gatilho com ela.
 create function public.teste_explode() returns trigger language plpgsql as $f$
