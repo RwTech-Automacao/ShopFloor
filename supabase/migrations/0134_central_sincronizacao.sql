@@ -20,6 +20,9 @@
 --    - Dev (SQL Editor do Supabase): REMOVA a palavra "concurrently" da linha abaixo.
 --    - Prod/RDS: psql -f supabase/migrations/0134_central_sincronizacao.sql  (SEM -1)
 -- sf_registros é grande e recebe bipe o tempo todo; CONCURRENTLY não trava a escrita.
+--
+-- ⚠️ Os corpos usam $func$, e não os dois cifrões: o SQL Editor do Supabase recusa o de dois
+-- cifrões, e o caminho do Dev é justamente colar isto lá. Não troque de volta.
 create index concurrently if not exists sf_registros_pmo_op_data_hora
   on public.sf_registros (pmo, op, data_hora);
 
@@ -29,7 +32,7 @@ create index concurrently if not exists sf_registros_pmo_op_data_hora
 -- duplicar, e a "foto" deixaria de ser uma foto.
 create or replace function public.central_recebimentos_para_sincronizar()
 returns jsonb
-language sql stable security invoker set search_path = public as $$
+language sql stable security invoker set search_path = public as $func$
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', p.id,
     'projetos', trim(p.acp_cliente),
@@ -39,11 +42,11 @@ language sql stable security invoker set search_path = public as $$
   ) order by p.id), '[]'::jsonb)
   from public.processos_recebimento p
   where coalesce(trim(p.acp_cliente), '') <> '' and p.status in ('aberto', 'em_conferencia', 'finalizado')
-$$;
+$func$;
 
 create or replace function public.central_ordens_para_sincronizar()
 returns jsonb
-language sql stable security invoker set search_path = public as $$
+language sql stable security invoker set search_path = public as $func$
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', o.id,
     'projetos', trim(o.acp),
@@ -53,7 +56,7 @@ language sql stable security invoker set search_path = public as $$
   ) order by o.id), '[]'::jsonb)
   from public.sf_ordens o
   where coalesce(trim(o.acp), '') <> ''
-$$;
+$func$;
 
 revoke all on function public.central_recebimentos_para_sincronizar() from public, anon, authenticated;
 revoke all on function public.central_ordens_para_sincronizar() from public, anon, authenticated;
