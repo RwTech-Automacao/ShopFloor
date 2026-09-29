@@ -12,7 +12,8 @@ import type { LeitorFoto } from '../application/portas'
 async function lerJsonb<T>(sb: SupabaseClient, funcao: string): Promise<T[]> {
   const { data, error } = await sb.rpc(funcao)
   if (error) throw new Error(`${funcao}: ${error.message}`)
-  return (data ?? []) as T[]
+  if (!Array.isArray(data)) throw new Error(`${funcao}: resposta não é um array jsonb (${data === null ? 'null' : typeof data})`)
+  return data as T[]
 }
 
 /**

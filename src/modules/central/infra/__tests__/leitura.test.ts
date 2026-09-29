@@ -61,4 +61,16 @@ describe('criarLeitorServico', () => {
     const leitor = criarLeitorServico({ rpc: rpcComErro } as never)
     await expect(leitor.lerRecebimentos()).rejects.toThrow(/connection refused/)
   })
+
+  it('dados null sem erro do Postgres lança (resposta não é array)', async () => {
+    const rpcComNull = () => Promise.resolve({ data: null, error: null })
+    const leitor = criarLeitorServico({ rpc: rpcComNull } as never)
+    await expect(leitor.lerRecebimentos()).rejects.toThrow(/não é um array/)
+  })
+
+  it('dados object sem erro do Postgres lança (resposta não é array)', async () => {
+    const rpcComObject = () => Promise.resolve({ data: {}, error: null })
+    const leitor = criarLeitorServico({ rpc: rpcComObject } as never)
+    await expect(leitor.lerOrdens()).rejects.toThrow(/não é um array/)
+  })
 })

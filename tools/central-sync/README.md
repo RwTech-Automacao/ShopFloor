@@ -39,7 +39,8 @@ CENTRAL_SYNC_URL=
   os dois lados têm que ter EXATAMENTE o mesmo segredo, ou toda sincronização vira 401.
 - **`CENTRAL_SYNC_URL`**: a base da Central, sem barra no final — `http://127.0.0.1:3100` pra
   testar local (a Central rodando com `npm run dev -- --port 3100`, por exemplo) ou
-  `https://central.enterplak.com.br` em produção.
+  `https://central.enterplak.com.br` em produção. A Central precisa estar na raiz do domínio: um
+  caminho na URL (ex.: `https://host/central`) é ignorado.
 
 ## 2. Gerar os segredos
 
