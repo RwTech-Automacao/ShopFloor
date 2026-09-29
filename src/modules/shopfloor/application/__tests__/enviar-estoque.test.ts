@@ -13,6 +13,10 @@ import { enviarMovimentacaoCompels } from '../../infra/compels'
 /**
  * Uma linha da fila de mentira. `ordem` faz o papel de `criado_em` (menor = mais antiga), e
  * `reservada` o da reserva viva — sem precisar de relógio nos testes.
+ *
+ * `retida` é o teste DIZENDO que o banco não devolve esta linha nesta rodada (um estorno esperando a
+ * entrada dele, por exemplo). É uma afirmação do teste sobre o que a reserva decidiu, e não uma
+ * regra recalculada aqui — ver o comentário do repoFalso.
  */
 interface LinhaFila {
   id: string
@@ -27,6 +31,7 @@ interface LinhaFila {
   ok: boolean
   erro: string | null
   cancelada: boolean
+  retida: boolean
 }
 
 function linha(p: Partial<LinhaFila> & { chave: string; ordem: number }): LinhaFila {
@@ -41,38 +46,37 @@ function linha(p: Partial<LinhaFila> & { chave: string; ordem: number }): LinhaF
     ok: false,
     erro: null,
     cancelada: false,
+    retida: false,
     ...p,
   }
 }
 
 /**
- * Repositório de mentira com uma FILA DE VERDADE: `reservarPendentes` implementa o MESMO contrato da
- * `sf_estoque_reservar` (0132) — pendentes (não ok, não canceladas, tentativas < 5, sem reserva
- * viva), novas antes dos reenvios, mais antigas primeiro, tentativa contada na reserva — INCLUSIVE a
- * ordem do par: estorno não é elegível enquanto a entrada dele (mesmo alvo, criada antes) não estiver
- * `ok`.
+ * Repositório de mentira com uma FILA DE VERDADE: `reservarPendentes` faz o que a `sf_estoque_reservar`
+ * (0132) faz e que o LAÇO consegue notar — pendentes (não ok, não canceladas, tentativas < 5, sem
+ * reserva viva), novas antes dos reenvios, mais antigas primeiro, tentativa contada na reserva, e o
+ * lote aparado pelo limite.
  *
- * Quem IMPÕE a ordem do par é o banco, e é lá que ela está provada (testes 17 e 18 de
- * `supabase/tests/estoque_envios_test.sql`, que rodam contra um Postgres de verdade). O que se prova
- * AQUI é o outro lado da mesma decisão: que o laço não desfaz essa regra — não reordena, não entrega
- * o estorno segurado e não cobra tentativa dele —, porque uma tentativa cobrada de uma linha que
- * ninguém tentou a tira da fila em cinco rodadas sem ela nunca ter sido enviada.
+ * O QUE ELA DE PROPÓSITO NÃO FAZ: a ordem do par (estorno não sai antes da entrada dele). Ela está no
+ * filtro da `sf_estoque_reservar`, é o BANCO que a impõe, e é lá que ela está provada com dentes —
+ * testes 17, 18 e 19 de `supabase/tests/estoque_envios_test.sql` e 46 de `almoxarifado_test.sql`, que
+ * rodam contra um Postgres de verdade. Esta fila já reimplementou o predicado uma vez, e o preço foi
+ * caro: como ela o copiava COM o defeito (`qualquer anterior && !e.ok`), nenhum dos dez testes daqui
+ * podia pegar o Critical da revisão — e os dois testes que diziam cobrir a ordem do par passavam mesmo
+ * com o laço embaralhando o lote, porque quem impunha a regra era a própria mentira deles.
+ *
+ * Então aqui a fila devolve o que o teste montar: quando o teste quer dizer "o banco segurou esta
+ * linha", ele marca `retida`. O que se prova deste lado é só o que é do laço: que ele entrega o lote
+ * COMO O BANCO O DEU e não vai atrás de linha que o banco não devolveu (nem pra enviar, nem pra cobrar
+ * tentativa — tentativa cobrada de linha que ninguém tentou a tira da fila em cinco rodadas).
  */
 function repoFalso(fila: LinhaFila[]) {
   const reservas: number[] = []
   const repo: RepositorioEstoqueEnvios = {
     async reservarPendentes(limite: number) {
       reservas.push(limite)
-      const alvo = (l: LinhaFila) => (l.serieNorm !== '' ? l.serieNorm : l.bipe)
       const elegiveis = fila
-        .filter((l) => !l.ok && !l.cancelada && l.tentativas < 5 && !l.reservada)
-        .filter(
-          (l) =>
-            l.operacao !== 'estorno'
-            || !fila.some(
-              (e) => e.operacao === 'entrada' && alvo(e) === alvo(l) && e.ordem < l.ordem && !e.ok,
-            ),
-        )
+        .filter((l) => !l.ok && !l.cancelada && l.tentativas < 5 && !l.reservada && !l.retida)
         .sort((a, b) => Number(a.tentativas > 0) - Number(b.tentativas > 0) || a.ordem - b.ordem)
         .slice(0, limite)
       for (const l of elegiveis) {
@@ -203,13 +207,34 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     expect(fila[1]!.tentativas).toBe(0)
   })
 
-  it('a ordem do par: estorno não é entregue antes da entrada, e não paga tentativa esperando', async () => {
-    // A entrada EM VOO (uma rodada já tentou, a reserva venceu) e o estorno que a reverte — o par
-    // que a sf_estoque_reverter cria de verdade ("A EXCEÇÃO À DECISÃO", 0132). O estorno é mais novo
-    // e nasce com tentativas = 0, então sem a regra ele sairia PRIMEIRO.
+  it('o laço entrega o lote NA ORDEM em que o banco o deu (não reordena por operação nem por nada)', async () => {
+    // O laço não tem regra de par nenhuma, e é isso que este teste trava: a ordem em que ele fala com
+    // o ERP é a ordem em que a reserva devolveu. Quem decide que ordem é essa é a
+    // `sf_estoque_reservar` (0132) — inclusive a de que um estorno não sai antes da entrada dele. Se
+    // alguém reordenar o lote aqui (por `operacao`, pra "mandar as entradas primeiro", ou por
+    // qualquer outro critério), essa decisão do banco vira mentira e este teste cai.
+    const fila = [
+      linha({ chave: 'A/S1', ordem: 1, operacao: 'estorno' }),
+      linha({ chave: 'A/E1', ordem: 2 }),
+      linha({ chave: 'A/E2', ordem: 3 }),
+    ]
+    const { repo } = repoFalso(fila)
+    const { compels, enviados } = compelsFalso()
+    expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 3, falhas: 0 })
+    expect(enviados).toEqual(['A/S1', 'A/E1', 'A/E2'])
+  })
+
+  it('linha que o banco SEGUROU fica intocada: o laço não a envia nem cobra tentativa dela', async () => {
+    // O outro lado da decisão de a ordem do par morar na reserva (0132): a linha segurada nem sai do
+    // banco, então o laço não tem como enviá-la — e, principalmente, não tem como COBRAR TENTATIVA
+    // dela. Se pagasse, cinco rodadas de espera a tirariam da fila (`tentativas < 5`) sem ela nunca ter
+    // sido enviada: o desastre que o teto existe pra evitar, chegando pelo lado errado.
+    //
+    // `retida` é o teste dizendo "a reserva não devolveu esta linha nesta rodada" — quem decide isso de
+    // verdade é o predicado do banco, provado nos testes SQL 17/18/19. Aqui o assunto é só o laço.
     const fila = [
       linha({ chave: 'A/E1', ordem: 1, tentativas: 1 }),
-      linha({ chave: 'A/S1', ordem: 2, operacao: 'estorno' }),
+      linha({ chave: 'A/S1', ordem: 2, operacao: 'estorno', retida: true }),
     ]
     const { repo } = repoFalso(fila)
 
@@ -219,33 +244,19 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     // segurado = intocado: sem tentativa, sem erro, sem reserva
     expect(fila[1]!).toMatchObject({ tentativas: 0, erro: null, reservada: false, ok: false })
 
-    // a entrada chega ao ERP nesta rodada; o estorno continua segurado nela (a reserva foi antes)
+    // a entrada chega ao ERP nesta rodada; o estorno continua segurado (o banco ainda não o soltou)
     const r2 = compelsFalso()
     await entregarEstoquePendente(r2.compels, repo)
     expect(r2.enviados).toEqual(['A/E1'])
     expect(fila[0]!.ok).toBe(true)
     expect(fila[1]!.tentativas).toBe(0)
 
-    // e na rodada SEGUINTE o estorno é liberado — é o fim normal da espera
+    // e quando o banco solta (a entrada virou `ok`, é o fim normal da espera), o laço entrega
+    fila[1]!.retida = false
     const r3 = compelsFalso()
     await entregarEstoquePendente(r3.compels, repo)
     expect(r3.enviados).toEqual(['A/S1'])
     expect(fila[1]!).toMatchObject({ ok: true, tentativas: 1 })
-  })
-
-  it('entrada no teto de tentativas segura o estorno, e é uma pessoa que destrava', async () => {
-    // A outra forma de a espera terminar (0132): a entrada saiu da fila com 5 tentativas, então ela
-    // não vira `ok` sozinha. O laço NÃO pode "resolver" isso entregando a saída sozinha — o Compels
-    // ficaria com uma saída de peça que nunca recebeu.
-    const fila = [
-      linha({ chave: 'A/E1', ordem: 1, tentativas: 5, erro: 'ERP 500: fora do ar' }),
-      linha({ chave: 'A/S1', ordem: 2, operacao: 'estorno' }),
-    ]
-    const { repo } = repoFalso(fila)
-    const { compels, enviados } = compelsFalso()
-    expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 0, falhas: 0 })
-    expect(enviados).toEqual([])
-    expect(fila[1]!.tentativas).toBe(0)
   })
 })
 
@@ -298,14 +309,12 @@ describe('o último metro não implementado, visto pelo laço', () => {
     // É o requisito central da Task 3: NENHUM caminho especial para "não configurado". A linha conta
     // tentativa, guarda o motivo em português e FICA na fila — é isso que faz a fila acumular e não
     // esvaziar enquanto o compels.ts não existir, e é esperado.
-    const fila = [linha({ chave: 'A/E1', ordem: 1 }), linha({ chave: 'A/S1', ordem: 2, operacao: 'estorno' })]
+    const fila = [linha({ chave: 'A/E1', ordem: 1 })]
     const { repo } = repoFalso(fila)
     const resumo = await entregarEstoquePendente(enviarMovimentacaoCompels, repo)
     expect(resumo).toEqual({ enviados: 0, falhas: 1 })
     expect(fila[0]!).toMatchObject({ ok: false, tentativas: 1, reservada: false })
     expect(fila[0]!.erro).toContain('Integração com o Compels ainda não configurada')
-    // o estorno segue segurado pela entrada que não saiu (a ordem do par não conhece o "motivo")
-    expect(fila[1]!.tentativas).toBe(0)
   })
 
   it('o não-implementado diz a operação em português, e o texto vai inteiro para a tela', async () => {
