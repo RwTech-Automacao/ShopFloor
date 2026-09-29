@@ -27,6 +27,7 @@ create table public.sf_ordens (
   id uuid primary key default gen_random_uuid(),
   pmo text not null, op text not null, cliente text not null,
   sn_ini text not null default '', sn_fim text not null default '',
+  embalagem_individual boolean not null default false,
   unique (pmo, op)
 );
 create table public.sf_caixas (
@@ -64,10 +65,14 @@ insert into public.sf_postos (chave, ordem, perfil) values
   ('Inspeção Final', 9, 'passagem'),
   ('Almoxarifado', 13, 'almoxarifado');
 
-insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim) values
-  ('PMOC14', '8498', 'Cliente Coletiva',   '8000', '8100'),   -- embalagem coletiva (caixa)
-  ('PMOI01', '9000', 'Cliente Individual', '1000', '1100'),   -- embalagem individual (peça)
-  ('PMOI02', '9001', 'Cliente Sem Faixa',  '',     '');       -- OP sem faixa cadastrada
+insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
+  ('PMOC14', '8498', 'Cliente Coletiva',   '8000', '8100', false),  -- embalagem coletiva (caixa)
+  ('PMOI01', '9000', 'Cliente Individual', '1000', '1100', true),   -- embalagem individual (peça)
+  ('PMOI02', '9001', 'Cliente Sem Faixa',  '',     '',     true),   -- OP sem faixa cadastrada (individual)
+  -- Segunda OP coletiva, só pra provar que o código de caixa não vaza de uma OP pra outra (teste
+  -- 12) sem misturar com a checagem nova do achado 2 — PMOI01 é individual e recusaria antes de
+  -- sequer olhar pra sf_caixas.
+  ('PMOC16', '8499', 'Cliente Coletiva 2', '9000', '9100', false);
 
 -- Caixas da OP coletiva:
 --  seq 7 → fechada e etiquetada (o caso bom);
@@ -274,8 +279,9 @@ begin
   r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana',
                                'CX[77][14]8498-PMOC14', 'caixa', 14, '');
   if r->>'motivo' <> 'caixa_nao_encontrada' then raise exception 'FALHOU: caixa inexistente: %', r; end if;
-  -- A caixa é da OP: o código da outra OP não vale nesta.
-  r := sf_almoxarifado_entrada('PMOI01', '9000', 'Almoxarifado', 'Ana',
+  -- A caixa é da OP: o código da outra OP não vale nesta. PMOC16 (e não PMOI01) porque precisa ser
+  -- coletiva — numa OP individual o achado 2 recusaria antes de olhar pra sf_caixas (ver teste 15).
+  r := sf_almoxarifado_entrada('PMOC16', '8499', 'Almoxarifado', 'Ana',
                                'CX[7][14]8498-PMOC14', 'caixa', 14, '');
   if r->>'motivo' <> 'caixa_nao_encontrada' then raise exception 'FALHOU: caixa de outra OP: %', r; end if;
   raise notice '12. caixa não encontrada (e não vaza entre OPs): ok';
@@ -297,7 +303,9 @@ end $t$;
 do $t$
 declare r jsonb;
 begin
-  r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana', '', 'serie', 1, '');
+  -- PMOI01 (individual) e não PMOC14: numa OP coletiva o achado 2 recusaria por
+  -- serie_em_op_coletiva antes mesmo de olhar pra faixa — o que este teste não quer exercitar aqui.
+  r := sf_almoxarifado_entrada('PMOI01', '9000', 'Almoxarifado', 'Ana', '', 'serie', 1, '');
   if r->>'motivo' <> 'serie_fora_da_faixa' then
     raise exception 'FALHOU: série vazia está fora de qualquer faixa: %', r; end if;
   -- Na OP sem faixa quem barra é a exigência da Embalagem, e não as linhas de caixa (norm = '').
@@ -305,4 +313,39 @@ begin
   if r->>'motivo' <> 'serie_sem_embalagem' then
     raise exception 'FALHOU: série vazia em OP sem faixa entrou: %', r; end if;
   raise notice '14. série vazia recusada nos dois caminhos: ok';
+end $t$;
+
+-- ---------- 15. caixa bipada numa OP individual (achado 2 da revisão) ----------
+-- A regra "individual bipa série, coletiva bipa caixa" é conferida de novo aqui porque
+-- embalagem_individual é editável numa OP já em andamento (Cadastrar OP) — sem esta trava, alguém
+-- muda a flag depois que caixas já foram fechadas e a mesma peça entraria como caixa E como série.
+-- Chama a RPC direto com p_tipo='caixa' (o que o TS nunca faria numa OP individual): é exatamente o
+-- caminho que pula a classificação em TS e só o banco pode barrar.
+do $t$
+declare r jsonb;
+begin
+  r := sf_almoxarifado_entrada('PMOI01', '9000', 'Almoxarifado', 'Ana',
+                               'CX[7][14]8498-PMOC14', 'caixa', 14, '');
+  if r->>'motivo' <> 'caixa_em_op_individual' then
+    raise exception 'FALHOU: caixa em OP individual tinha que ser recusada: %', r; end if;
+  raise notice '15. caixa em OP individual: ok';
+end $t$;
+
+-- ---------- 16. série bipada numa OP coletiva (achado 2 da revisão) ----------
+do $t$
+declare r jsonb;
+begin
+  r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana', '8001', 'serie', 1, '8001');
+  if r->>'motivo' <> 'serie_em_op_coletiva' then
+    raise exception 'FALHOU: série em OP coletiva tinha que ser recusada: %', r; end if;
+  raise notice '16. série em OP coletiva: ok';
+end $t$;
+
+-- ---------- 17. nada das recusas de formato-por-dado gravou registro ----------
+do $t$
+declare v_n int;
+begin
+  select count(*) into v_n from sf_registros where posto = 'Almoxarifado';
+  if v_n <> 3 then raise exception 'FALHOU: recusa de formato-por-dado não podia gravar: %', v_n; end if;
+  raise notice '17. recusas 15 e 16 não gravaram nada: ok';
 end $t$;

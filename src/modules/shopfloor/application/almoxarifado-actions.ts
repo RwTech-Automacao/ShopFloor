@@ -38,6 +38,10 @@ const RECUSAS_FORMATO: Record<RecusaBipeAlmoxarifado, string> = {
  *
  * `sem_permissao` volta SEM `detalhe` — por isso não depende dele. Os demais usam o `detalhe` da
  * RPC quando ele já é a frase pronta (data/hora/quem, faixa, etc.); quando não, um texto fixo.
+ *
+ * `caixa_em_op_individual`/`serie_em_op_coletiva`: a RPC confere de novo o mesmo cruzamento que
+ * `classificarBipeAlmoxarifado` já fez em TS (a flag `embalagem_individual` é editável numa OP em
+ * andamento — ver 0129), então a frase é a MESMA de `RECUSAS_FORMATO`, não uma redação nova.
  */
 function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
   switch (motivo) {
@@ -47,6 +51,10 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
       return detalhe || 'Ordem não encontrada.'
     case 'posto_invalido':
       return detalhe || 'Este posto não é um posto de Almoxarifado.'
+    case 'caixa_em_op_individual':
+      return RECUSAS_FORMATO.caixa_em_op_individual
+    case 'serie_em_op_coletiva':
+      return RECUSAS_FORMATO.serie_em_op_coletiva
     case 'caixa_nao_encontrada':
       return 'Caixa não encontrada nesta OP. Se ela foi reaberta na Embalagem, feche-a de novo antes de dar entrada.'
     case 'caixa_aberta':

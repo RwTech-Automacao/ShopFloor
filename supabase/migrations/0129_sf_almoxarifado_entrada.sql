@@ -12,6 +12,13 @@
 --   posto_invalido       o posto tem que existir com perfil de recurso 'almoxarifado' (0128). Sem
 --                        isso, chamar a RPC apontando pra qualquer posto daria entrada em qualquer
 --                        lugar da linha.
+--   caixa_em_op_individual / serie_em_op_coletiva
+--                        o par (p_tipo, sf_ordens.embalagem_individual) tem que casar. A regra
+--                        "individual bipa série, coletiva bipa caixa" também existe em TS
+--                        (classificarBipeAlmoxarifado), mas a flag é editável numa OP já em
+--                        andamento (Cadastrar OP) — sem checar de novo aqui, alguém muda a flag no
+--                        meio da OP e as duas classificações divergem: a mesma peça entraria como
+--                        caixa (na embalagem coletiva de ontem) E como série (na individual de hoje).
 --   caixa_nao_encontrada o código bipado não é de nenhuma caixa desta OP (etiqueta de outra OP,
 --                        código digitado errado, ou caixa que foi reaberta — o cancelamento de
 --                        embalagem limpa o código ao reabrir, e sem código não há entrada).
@@ -98,11 +105,22 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'sem_permissao');
   end if;
 
-  select cliente, sn_ini, sn_fim into v_ordem
+  select cliente, sn_ini, sn_fim, embalagem_individual into v_ordem
     from sf_ordens where pmo = p_pmo and op = p_op;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'ordem_nao_encontrada',
       'detalhe', 'Ordem ' || p_pmo || ' / ' || p_op || ' não cadastrada.');
+  end if;
+
+  -- Mesmo cruzamento de classificarBipeAlmoxarifado, mas contra o DADO atual da OP (a flag pode ter
+  -- mudado depois que a Embalagem já rodou sob a classificação antiga — ver o comentário do topo).
+  if p_tipo = 'caixa' and v_ordem.embalagem_individual then
+    return jsonb_build_object('ok', false, 'motivo', 'caixa_em_op_individual',
+      'detalhe', 'Nesta OP a entrada é por peça. Bipe o Nº de Série.');
+  end if;
+  if p_tipo = 'serie' and not v_ordem.embalagem_individual then
+    return jsonb_build_object('ok', false, 'motivo', 'serie_em_op_coletiva',
+      'detalhe', 'Nesta OP a entrada é por caixa. Bipe o código da caixa.');
   end if;
 
   -- O posto é conferido pelo PERFIL, nunca pelo nome: quem cadastra posto escolhe o perfil, e é o
