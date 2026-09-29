@@ -40,7 +40,9 @@ export interface FluxoAgregado {
 export interface FluxoNodeData extends FluxoAgregado {
   ehManutencao: boolean
   temStatus: boolean
-  /** Recurso do perfil do posto (nenhum/caixa/nqa/integracao/burnin/manutencao) — define o ícone. */
+  /** Recurso do perfil do posto (nenhum/caixa/nqa/integracao/burnin/manutencao/almoxarifado) — define
+   *  o ícone. O Almoxarifado é posto de PASSAGEM (sem status, como a Embalagem): não precisa de caso
+   *  especial em `postoPendenteDePeca` — cai na regra genérica de aprovada/passagem → próximo posto. */
   recurso: string
   /** Todas as peças da OP já passaram por este posto (passou ≥ qtd da OP). Manutenção nunca conclui. */
   concluido: boolean

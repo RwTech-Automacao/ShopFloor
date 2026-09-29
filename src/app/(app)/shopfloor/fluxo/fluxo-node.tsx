@@ -28,6 +28,8 @@ export function iconePorRecurso(recurso: string, temStatus: boolean, className =
     case 'integracao': return <GitMerge className={className} />
     case 'burnin': return <ThermometerSun className={className} strokeWidth={2.25} />
     case 'nqa': return <ShieldCheck className={className} />
+    // Mesmo ícone do card "Concluído" (a caixa de Saída): diz "entrou no estoque".
+    case 'almoxarifado': return <PackageCheck className={className} />
     default: return temStatus ? <ClipboardCheck className={className} /> : <CircleDot className={className} />
   }
 }

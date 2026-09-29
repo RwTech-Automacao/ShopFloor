@@ -162,6 +162,34 @@ describe('construirFluxo', () => {
     expect(nodes.find((n) => n.id === 'Burn-in')!.data.recurso).toBe('burnin')
     expect(nodes.find((n) => n.id === MANUTENCAO)!.data.recurso).toBe('manutencao')
   })
+
+  describe('posto Almoxarifado (último da linha, dá entrada em estoque)', () => {
+    // Recurso por posto desta OP: Embalagem é 'caixa', Almoxarifado é 'almoxarifado' — os demais 'nenhum'.
+    const recursoDe = (p: string) => (p === 'Embalagem' ? 'caixa' : p === 'Almoxarifado' ? 'almoxarifado' : 'nenhum')
+
+    it('OP com Almoxarifado no fluxo: entra DEPOIS da Embalagem e a caixa Concluído (Saída) liga nele', () => {
+      const { nodes, edges } = construirFluxo(
+        ['Teste', 'Embalagem', 'Almoxarifado'], [], () => false, recursoDe, 10, () => true, 2, 3,
+      )
+      const ids = nodes.map((n) => n.id)
+      // Almoxarifado aparece na ordem certa: depois da Embalagem, antes da Manutenção/Saída.
+      expect(ids.indexOf('Embalagem')).toBeLessThan(ids.indexOf('Almoxarifado'))
+      expect(nodes.find((n) => n.id === 'Almoxarifado')!.data.recurso).toBe('almoxarifado')
+      // A cadeia liga Embalagem → Almoxarifado, e é o Almoxarifado (não mais a Embalagem) que
+      // alimenta a caixa "Concluído" (Saída) — ele é agora o último posto do fluxo desta OP.
+      expect(edges).toContainEqual({ id: 'f:Embalagem->Almoxarifado', source: 'Embalagem', target: 'Almoxarifado', tipo: 'fluxo' })
+      expect(edges).toContainEqual({ id: `f:Almoxarifado->${SAIDA}`, source: 'Almoxarifado', target: SAIDA, tipo: 'fluxo' })
+      expect(edges.some((e) => e.source === 'Embalagem' && e.target === SAIDA)).toBe(false)
+    })
+
+    it('OP SEM Almoxarifado (a imensa maioria das OPs antigas): nada muda — Concluído continua ligado na Embalagem', () => {
+      const { nodes, edges } = construirFluxo(
+        ['Teste', 'Embalagem'], [], () => false, recursoDe, 10, () => true, 2, 3,
+      )
+      expect(nodes.some((n) => n.id === 'Almoxarifado')).toBe(false)
+      expect(edges).toContainEqual({ id: `f:Embalagem->${SAIDA}`, source: 'Embalagem', target: SAIDA, tipo: 'fluxo' })
+    })
+  })
 })
 
 describe('numerarPassagens', () => {
@@ -279,6 +307,27 @@ describe('postoPendenteDePeca', () => {
 
   it('sem bipe → primeiro posto', () => {
     expect(pp([])).toBe('SPI')
+  })
+
+  describe('Almoxarifado: posto de passagem sem status, último da linha', () => {
+    // Bipe do Almoxarifado grava status vazio (0129: "o perfil não tem status, o bipe não julga a
+    // peça") — igual a qualquer posto de passagem. Não precisa de caso especial em postoPendenteDePeca
+    // (diferente do Burn-in, que "cozinha" no mesmo posto): cai direto na regra genérica de aprovada/
+    // passagem → próximo posto, ou concluída se for o último.
+    const postosComAlmox = ['Embalagem', 'Almoxarifado']
+    const ppComAlmox = (regs: BipePeca[]) => postoPendenteDePeca(regs, postosComAlmox, () => false, () => 'nenhum')
+
+    it('OP com Almoxarifado: peça embalada fica pendente no Almoxarifado (o próximo)', () => {
+      expect(ppComAlmox([{ posto: 'Embalagem', status: '' }])).toBe('Almoxarifado')
+    })
+
+    it('OP com Almoxarifado: peça que já deu entrada está concluída (era o último posto)', () => {
+      expect(ppComAlmox([{ posto: 'Embalagem', status: '' }, { posto: 'Almoxarifado', status: '' }])).toBeNull()
+    })
+
+    it('OP SEM Almoxarifado: peça embalada já está concluída — sem regressão pras OPs antigas', () => {
+      expect(pp([{ posto: 'Embalagem', status: '' }])).toBeNull()
+    })
   })
 })
 
