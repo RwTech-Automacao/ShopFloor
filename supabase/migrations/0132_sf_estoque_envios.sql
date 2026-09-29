@@ -90,6 +90,12 @@ create table if not exists public.sf_estoque_envios (
   tipo         text not null check (tipo in ('caixa', 'serie')),
   bipe         text not null check (btrim(bipe) <> ''),   -- como veio do coletor
   serie_norm   text not null default '',                  -- vazio no bipe de caixa
+  -- Se tipo='serie', serie_norm DEVE estar preenchida: é o que fica em alvo (coluna gerada).
+  -- Sem este check, um bug na RPC futura poderia deixar serie_norm vazio, e alvo cairia no bipe
+  -- cru. Aí a mesma peça bipada duas vezes com formatos crus diferentes (zero à esquerda do
+  -- coletor, minúsculas) geraria duas identidades e duas chaves, burlando a unicidade de `chave`.
+  -- A coluna gerada só tira a divergência se serie_norm for garantidamente válida.
+  check (tipo <> 'serie' or btrim(serie_norm) <> ''),
   -- a identidade do bipe, sempre derivada do que foi gravado (nunca passada por fora, pra não poder
   -- divergir): série normalizada quando existe, senão o código da caixa.
   alvo         text generated always as (coalesce(nullif(serie_norm, ''), bipe)) stored,
@@ -109,6 +115,23 @@ create table if not exists public.sf_estoque_envios (
   check (cancelado_em is null or not ok)
 );
 alter table public.sf_estoque_envios enable row level security;
+
+-- Aplicar o CHECK em bases que já têm a tabela (idempotência). O check inline só vale na
+-- primeira criação; se a tabela já existe e o constraint não está lá, add.
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'sf_estoque_envios')
+    and not exists (
+      select 1 from information_schema.table_constraints
+      where table_schema = 'public' and table_name = 'sf_estoque_envios'
+        and constraint_name = 'sf_estoque_envios_tipo_serie_exige_serie_norm'
+    )
+  then
+    alter table public.sf_estoque_envios
+      add constraint sf_estoque_envios_tipo_serie_exige_serie_norm
+      check (tipo <> 'serie' or btrim(serie_norm) <> '');
+  end if;
+end $$;
 
 -- A chave de idempotência. Índice separado (e não `unique` na coluna) para a migração ser idempotente
 -- de verdade: com a tabela já criada, um `unique` inline não seria aplicado nunca.

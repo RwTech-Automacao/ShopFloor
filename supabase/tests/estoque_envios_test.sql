@@ -335,4 +335,50 @@ begin
 end $t$;
 reset role;
 
+-- 14. TIPO 'SERIE' EXIGE SERIE_NORM NÃO VAZIO: é o que garante que alvo (coluna gerada) nunca cai
+--     na identidade do bipe cru. Sem serie_norm preenchida, um bug futuro na RPC deixaria a mesma
+--     peça (com variação de formato cru) gerar duas chaves e duas linhas no ERP, violando a
+--     intenção da chave única.
+do $t$
+begin
+  begin
+    insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade)
+    values ('K_SERIE_VAZIO', 'PMOA01', '9900', 'Almoxarifado', 'serie', '00043-00462-0015718', '', 1);
+    raise exception 'FALHOU: aceitou tipo=serie com serie_norm vazio';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade)
+    values ('K_SERIE_VAZIO_ESPACOS', 'PMOA01', '9901', 'Almoxarifado', 'serie', '00043-00462-0015718', '   ', 1);
+    raise exception 'FALHOU: aceitou tipo=serie com serie_norm só espaços';
+  exception when check_violation then null;
+  end;
+  -- tipo=caixa COM serie_norm preenchida é permitido (não causa problema): alvo cai no bipe de
+  -- qualquer forma, e é a RPC security definer que controla quando preenchê-lo.
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade)
+  values ('K_CAIXA_COM_SERIE', 'PMOA01', '9902', 'Almoxarifado', 'caixa', 'CX[1][14]9902-PMOA01',
+          'SERIE_PODE_TER', 14);
+  raise notice 'tipo=serie exige serie_norm, caixa pode ter ou não: ok';
+end $t$;
+
+-- 15. A CHAVE é obrigatória e não pode ser vazia — ela é a identidade do bipe no ERP. O CHECK
+--     btrim(chave) <> '' garante que chave não é null e não é só espaços em branco. Este teste
+--     exercita especificamente o CHECK de valor vazio que existia antes.
+do $t$
+begin
+  begin
+    insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, quantidade)
+    values ('', 'PMOA01', '9903', 'Almoxarifado', 'caixa', 'CX[1][14]9903-PMOA01', 14);
+    raise exception 'FALHOU: aceitou chave vazia';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, quantidade)
+    values ('   ', 'PMOA01', '9904', 'Almoxarifado', 'caixa', 'CX[1][14]9904-PMOA01', 14);
+    raise exception 'FALHOU: aceitou chave só espaços';
+  exception when check_violation then null;
+  end;
+  raise notice 'chave obrigatória e não vazia: ok';
+end $t$;
+
 select 'ESTOQUE ENVIOS SQL OK' as fim;
