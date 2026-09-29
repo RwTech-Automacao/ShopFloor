@@ -150,9 +150,12 @@ begin
 
   -- ---------- A FILA DE ENVIO AO ERP (Fase 2) ----------
   -- A linha cancelada era uma entrada de estoque: UMA peça deixou de estar no estoque, e o Compels
-  -- tem que ficar sabendo — a não ser que a entrada nem tenha saído daqui ainda, caso em que o certo
-  -- é corrigir/cancelar o envio pendente e não mandar uma entrada e uma saída que nunca precisaram
-  -- existir. Quem decide isso é a sf_estoque_reverter (0132); aqui só se diz o que foi desfeito.
+  -- tem que ficar sabendo — a não ser que a entrada nem tenha saído daqui ainda NEM SIDO TOCADA por
+  -- uma rodada de envio (linha limpa), caso em que o certo é corrigir/cancelar o envio pendente e não
+  -- mandar uma entrada e uma saída que nunca precisaram existir. Na linha TOCADA (reservada, tentada,
+  -- ou com estorno) não dá pra corrigir: a carga dela já pode ter saído com o número antigo, então ela
+  -- é estornada mesmo sem estar `ok`. Quem decide isso é a sf_estoque_reverter (0132); aqui só se diz
+  -- o que foi desfeito.
   --
   -- Na mesma transação do delete, pelo mesmo motivo do bipe: se o delete vingasse e a reversão não, a
   -- peça sairia do ShopFloor e continuaria no ERP para sempre, calada.

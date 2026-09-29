@@ -154,8 +154,11 @@ begin
 
   -- ---------- A FILA DE ENVIO AO ERP (Fase 2) ----------
   -- A caixa inteira foi desfeita, então o Compels tem que ficar sabendo — a não ser que a entrada nem
-  -- tenha saído daqui ainda, caso em que o certo é cancelar o envio pendente e não mandar uma entrada
-  -- e uma saída que nunca precisaram existir. Quem decide isso é a sf_estoque_reverter (0132), a
+  -- tenha saído daqui ainda NEM SIDO TOCADA por uma rodada de envio (linha limpa), caso em que o certo
+  -- é cancelar o envio pendente e não mandar uma entrada e uma saída que nunca precisaram existir. Já
+  -- a linha TOCADA (reservada, tentada, ou com estorno) é estornada mesmo sem estar `ok`: a carga dela
+  -- pode ter chegado ao ERP, e cancelá-la deixaria os estornos dela sem par na fila.
+  -- Quem decide isso é a sf_estoque_reverter (0132), a
   -- MESMA função que o cancelamento de linha avulsa chama (0133): é uma decisão só, e ter duas cópias
   -- dela seria ter duas chances de errá-la em silêncio.
   --
