@@ -122,10 +122,12 @@ Teste local da migração (Postgres descartável, nada aplicado em banco nenhum)
 
 ## 6. Primeira sincronização manual
 
-Com as três variáveis já configuradas no ambiente e a migração 0134 já aplicada:
+Com as três variáveis já configuradas no ambiente e a migração 0134 já aplicada. **Sem `-f`** —
+diferente da linha do crontab (§4): com `-f` o curl engole o corpo em qualquer erro HTTP, e é
+exatamente o `{erro: "..."}` que interessa ver na primeira vez:
 
 ```bash
-curl -i -fsS -m 120 -X POST -H @$HOME/.central-sync-cron-header http://127.0.0.1:3000/api/central/sincronizar
+curl -i -sS -m 120 -X POST -H @$HOME/.central-sync-cron-header http://127.0.0.1:3000/api/central/sincronizar
 ```
 
 ## 7. O que cada resposta significa
