@@ -4,20 +4,15 @@ import { createServiceSupabase } from '@/shared/lib/supabase/service'
 import type { LinhaOrdem, LinhaRecebimento } from '../domain/foto'
 import type { LeitorFoto } from '../application/portas'
 
-/** O PostgREST limita a 1000 linhas por resposta (max_rows): pagina até vir menos que isso. */
-const TAMANHO_PAGINA = 1000
-
-async function paginar<T>(sb: SupabaseClient, funcao: string): Promise<T[]> {
-  const linhas: T[] = []
-  for (let i = 0; ; i++) {
-    const inicio = i * TAMANHO_PAGINA
-    const { data, error } = await sb.rpc(funcao).range(inicio, inicio + TAMANHO_PAGINA - 1)
-    if (error) throw new Error(`${funcao}: ${error.message}`)
-    const lote = (data ?? []) as T[]
-    linhas.push(...lote)
-    if (lote.length < TAMANHO_PAGINA) break
-  }
-  return linhas
+/**
+ * Cada função da 0134 devolve UM jsonb com a lista inteira (não `setof`/`table`): uma chamada só,
+ * sem `.range()`/paginação por offset. Paginar leria a tabela em pedaços, em instantes diferentes
+ * — linhas mudando entre uma página e outra fariam a "foto" deixar de ser uma foto.
+ */
+async function lerJsonb<T>(sb: SupabaseClient, funcao: string): Promise<T[]> {
+  const { data, error } = await sb.rpc(funcao)
+  if (error) throw new Error(`${funcao}: ${error.message}`)
+  return (data ?? []) as T[]
 }
 
 /**
@@ -26,7 +21,7 @@ async function paginar<T>(sb: SupabaseClient, funcao: string): Promise<T[]> {
  */
 export function criarLeitorServico(sb: SupabaseClient = createServiceSupabase()): LeitorFoto {
   return {
-    lerRecebimentos: () => paginar<LinhaRecebimento>(sb, 'central_recebimentos_para_sincronizar'),
-    lerOrdens: () => paginar<LinhaOrdem>(sb, 'central_ordens_para_sincronizar'),
+    lerRecebimentos: () => lerJsonb<LinhaRecebimento>(sb, 'central_recebimentos_para_sincronizar'),
+    lerOrdens: () => lerJsonb<LinhaOrdem>(sb, 'central_ordens_para_sincronizar'),
   }
 }

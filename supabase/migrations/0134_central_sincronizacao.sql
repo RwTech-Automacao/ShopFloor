@@ -16,25 +16,36 @@
 create index concurrently if not exists sf_registros_pmo_op_data_hora
   on public.sf_registros (pmo, op, data_hora);
 
+-- Cada função devolve um ÚNICO jsonb com a lista inteira (nunca `setof`/`table`): uma foto
+-- consistente lida numa chamada só. Paginar por `.range()` no cliente leria a tabela em pedaços,
+-- em instantes diferentes — linhas inseridas/alteradas entre uma página e outra poderiam faltar ou
+-- duplicar, e a "foto" deixaria de ser uma foto.
 create or replace function public.central_recebimentos_para_sincronizar()
-returns table (id uuid, projetos text, numero_emb text, data_chegada date, situacao text)
+returns jsonb
 language sql stable as $$
-  select p.id, trim(p.acp_cliente), coalesce(p.numero_emb, ''), p.data_chegada, p.status
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', p.id,
+    'projetos', trim(p.acp_cliente),
+    'numero_emb', coalesce(p.numero_emb, ''),
+    'data_chegada', p.data_chegada,
+    'situacao', p.status
+  ) order by p.id), '[]'::jsonb)
   from public.processos_recebimento p
   where coalesce(trim(p.acp_cliente), '') <> '' and p.status in ('aberto', 'em_conferencia', 'finalizado')
-  order by p.id
 $$;
 
 create or replace function public.central_ordens_para_sincronizar()
-returns table (id uuid, projetos text, primeiro_registro date, concluida boolean)
+returns jsonb
 language sql stable as $$
-  select o.id, trim(o.acp),
-         ((select min(r.data_hora) from public.sf_registros r where r.pmo = o.pmo and r.op = o.op)
-            at time zone 'America/Sao_Paulo')::date,
-         upper(coalesce(o.status, '')) = 'FINALIZADA'
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', o.id,
+    'projetos', trim(o.acp),
+    'primeiro_registro', ((select min(r.data_hora) from public.sf_registros r where r.pmo = o.pmo and r.op = o.op)
+                             at time zone 'America/Sao_Paulo')::date,
+    'concluida', upper(coalesce(o.status, '')) = 'FINALIZADA'
+  ) order by o.id), '[]'::jsonb)
   from public.sf_ordens o
   where coalesce(trim(o.acp), '') <> ''
-  order by o.id
 $$;
 
 revoke all on function public.central_recebimentos_para_sincronizar() from public, anon, authenticated;

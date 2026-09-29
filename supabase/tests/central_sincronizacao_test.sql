@@ -1,7 +1,9 @@
 -- Testes das funções da "foto" da Central do Cliente (migração 0134).
 -- Roda num Postgres descartável: supabase/tests/rodar-central-test.sh
--- Confere três coisas: (1) só linhas com ACP saem; (2) 'cancelado' fica de fora dos recebimentos;
--- (3) o primeiro registro é a menor data_hora, convertida pra data de São Paulo.
+-- Confere: (1) só linhas com ACP saem; (2) 'cancelado' fica de fora dos recebimentos;
+-- (3) o primeiro registro é a menor data_hora, convertida pra data de São Paulo;
+-- (4) cada função devolve um jsonb ÚNICO com a lista inteira (uma foto consistente, sem
+--     paginação por offset que poderia ler linhas de momentos diferentes).
 
 -- ---------- stubs mínimos: papéis (o revoke/grant da 0134 referencia estes três) ----------
 create role anon;
@@ -51,19 +53,25 @@ insert into public.processos_recebimento (numero_emb, acp_cliente, data_chegada,
   ('EMB007', null, '2026-10-07', 'aberto');
 
 do $$
-declare v_qtd int;
+declare v_qtd int; v_foto jsonb;
 begin
-  select count(*) into v_qtd from central_recebimentos_para_sincronizar();
+  -- A função devolve UM jsonb (não um conjunto de linhas): array com a lista inteira.
+  select central_recebimentos_para_sincronizar() into v_foto;
+  if jsonb_typeof(v_foto) <> 'array' then
+    raise exception 'central_recebimentos_para_sincronizar: esperava um array jsonb, veio %', jsonb_typeof(v_foto);
+  end if;
+
+  v_qtd := jsonb_array_length(v_foto);
   if v_qtd <> 3 then
     raise exception 'central_recebimentos_para_sincronizar: esperava 3 linhas, veio %', v_qtd;
   end if;
 
-  if exists (select 1 from central_recebimentos_para_sincronizar() where situacao = 'cancelado') then
+  if exists (select 1 from jsonb_array_elements(v_foto) e where e->>'situacao' = 'cancelado') then
     raise exception 'central_recebimentos_para_sincronizar: uma linha cancelada vazou';
   end if;
 
   -- acp_cliente aparado (trim) na saída.
-  if (select projetos from central_recebimentos_para_sincronizar() where numero_emb = 'EMB002') <> 'ACP002/26' then
+  if (select e->>'projetos' from jsonb_array_elements(v_foto) e where e->>'numero_emb' = 'EMB002') <> 'ACP002/26' then
     raise exception 'central_recebimentos_para_sincronizar: acp_cliente não veio aparado';
   end if;
 end $$;
@@ -86,41 +94,63 @@ insert into public.sf_registros (pmo, op, data_hora) values
 -- OP4: sem nenhum registro -> primeiro_registro null.
 
 do $$
-declare v_qtd int; v_primeiro date; v_concluida boolean;
+declare v_qtd int; v_primeiro text; v_concluida text; v_foto jsonb; v_op1 uuid; v_op2 uuid; v_op4 uuid;
 begin
-  select count(*) into v_qtd from central_ordens_para_sincronizar();
+  select id into v_op1 from public.sf_ordens where op = 'OP1';
+  select id into v_op2 from public.sf_ordens where op = 'OP2';
+  select id into v_op4 from public.sf_ordens where op = 'OP4';
+
+  select central_ordens_para_sincronizar() into v_foto;
+  if jsonb_typeof(v_foto) <> 'array' then
+    raise exception 'central_ordens_para_sincronizar: esperava um array jsonb, veio %', jsonb_typeof(v_foto);
+  end if;
+
+  v_qtd := jsonb_array_length(v_foto);
   if v_qtd <> 3 then
     raise exception 'central_ordens_para_sincronizar: esperava 3 linhas (sem ACP fica de fora), veio %', v_qtd;
   end if;
 
-  select primeiro_registro, concluida into v_primeiro, v_concluida
-  from central_ordens_para_sincronizar() where id = (select id from public.sf_ordens where op = 'OP1');
-  if v_primeiro <> date '2026-10-08' then
+  select e->>'primeiro_registro', e->>'concluida' into v_primeiro, v_concluida
+  from jsonb_array_elements(v_foto) e where e->>'id' = v_op1::text;
+  if v_primeiro <> '2026-10-08' then
     raise exception 'central_ordens_para_sincronizar: primeiro_registro devia ser 2026-10-08 (fuso SP), veio %', v_primeiro;
   end if;
-  if v_concluida <> true then
+  if v_concluida <> 'true' then
     raise exception 'central_ordens_para_sincronizar: OP1 devia estar concluida';
   end if;
 
-  select primeiro_registro into v_primeiro
-  from central_ordens_para_sincronizar() where id = (select id from public.sf_ordens where op = 'OP2');
-  if v_primeiro <> date '2026-10-04' then
+  select e->>'primeiro_registro' into v_primeiro
+  from jsonb_array_elements(v_foto) e where e->>'id' = v_op2::text;
+  if v_primeiro <> '2026-10-04' then
     raise exception 'central_ordens_para_sincronizar: primeiro_registro do OP2 devia virar 2026-10-04 no fuso SP, veio %', v_primeiro;
   end if;
 
   -- acp aparado na saída.
-  if (select projetos from central_ordens_para_sincronizar() where id = (select id from public.sf_ordens where op = 'OP1')) <> 'ACP010/26' then
+  if (select e->>'projetos' from jsonb_array_elements(v_foto) e where e->>'id' = v_op1::text) <> 'ACP010/26' then
     raise exception 'central_ordens_para_sincronizar: acp não veio aparado';
   end if;
 
   -- OP4 (ACP preenchida, sem nenhum registro): entra, primeiro_registro null, não finalizada por causa da caixa (minúsculo -> upper reconhece).
-  select primeiro_registro, concluida into v_primeiro, v_concluida
-  from central_ordens_para_sincronizar() where id = (select id from public.sf_ordens where op = 'OP4');
+  select e->>'primeiro_registro', e->>'concluida' into v_primeiro, v_concluida
+  from jsonb_array_elements(v_foto) e where e->>'id' = v_op4::text;
   if v_primeiro is not null then
     raise exception 'central_ordens_para_sincronizar: OP4 sem registros devia ter primeiro_registro null';
   end if;
-  if v_concluida <> true then
+  if v_concluida <> 'true' then
     raise exception 'central_ordens_para_sincronizar: OP4 (status "finalizada" minúsculo) devia contar como concluída';
+  end if;
+end $$;
+
+-- ---------- foto vazia: array jsonb vazio, nunca null ----------
+do $$
+begin
+  delete from public.processos_recebimento;
+  delete from public.sf_ordens;
+  if central_recebimentos_para_sincronizar() <> '[]'::jsonb then
+    raise exception 'central_recebimentos_para_sincronizar: sem linhas devia devolver [], veio %', central_recebimentos_para_sincronizar();
+  end if;
+  if central_ordens_para_sincronizar() <> '[]'::jsonb then
+    raise exception 'central_ordens_para_sincronizar: sem linhas devia devolver [], veio %', central_ordens_para_sincronizar();
   end if;
 end $$;
 
