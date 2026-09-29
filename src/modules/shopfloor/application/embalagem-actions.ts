@@ -178,7 +178,11 @@ export async function qrDaCaixa(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
     const caixas = await carregarCaixasDaOp(pmo.trim(), op.trim())
-    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq)
+    // Uma caixa reprovada no NQA e remontada tem DUAS linhas pro mesmo (posto,seq): a aposentada
+    // (revisao > 0) e a vigente (revisao 0). `carregarCaixasDaOp` ordena revisao desc, então sem
+    // este filtro o `find` pegava a aposentada — a folha saía com o QR da montagem que não existe
+    // mais. O QR de SNs é sempre da caixa vigente.
+    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq && c.revisao === 0)
     if (!caixa) return { ok: false, erro: 'Caixa não encontrada.' }
     if (caixa.sns.length === 0) return { ok: false, erro: 'Esta caixa não tem peças.' }
 
@@ -215,7 +219,9 @@ export async function qrCodigoDaCaixa(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
     const caixas = await carregarCaixasDaOp(pmo.trim(), op.trim())
-    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq)
+    // Mesmo motivo do `qrDaCaixa`: sem o filtro de revisao, uma caixa remontada pegava o código
+    // da montagem aposentada — o Almoxarifado bipava um QR de uma caixa que não existe mais.
+    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq && c.revisao === 0)
     if (!caixa) return { ok: false, erro: 'Caixa não encontrada.' }
     if (!caixa.fechada) return { ok: false, erro: 'Esta caixa ainda está aberta — feche a caixa para gerar o código.' }
 

@@ -247,7 +247,10 @@ export function EmbalagemPanel({
     // perfil da Embalagem não tiver `visualizar`, essa chamada falha em TODA caixa fechada; sem aviso
     // ninguém percebe até o material empacar no Almoxarifado por falta de folha pra bipar.
     if (!rc.ok) { avisarFolhaFalhou(rc.erro); return }
-    const caixa = rc.caixas.find((c) => c.posto === posto && c.seq === seqFechada)
+    // Remontagem: o mesmo (posto,seq) tem a linha aposentada (revisao > 0) e a vigente (revisao 0),
+    // que é a que acabou de fechar. Sem o filtro, o `find` podia trazer a aposentada — a folha saía
+    // com o código velho, os SNs da montagem reprovada e um QR que o Almoxarifado não reconhece.
+    const caixa = rc.caixas.find((c) => c.posto === posto && c.seq === seqFechada && c.revisao === 0)
     if (!caixa) { avisarFolhaFalhou(); return }
     const [rSns, rCodigo] = await Promise.all([
       qrDaCaixa(pmo, op, posto, seqFechada),
