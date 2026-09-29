@@ -117,18 +117,24 @@ describe('reservarPendentes', () => {
     const { sb, rpcs } = sbFalso({ rpc: () => ({ data: [LINHA_RPC], error: null }) })
     const lote = await criarRepositorioEstoqueEnvios(sb).reservarPendentes(30)
     expect(rpcs).toEqual([{ nome: 'sf_estoque_reservar', args: { p_limite: 30 } }])
-    expect(lote.map((l) => l.chave)).toEqual([LINHA_RPC.chave])
+    expect(lote.envios.map((l) => l.chave)).toEqual([LINHA_RPC.chave])
+    expect(lote.ilegiveis).toBe(0)
   })
 
-  it('linha ilegível é concluída como FALHA, não só pulada', async () => {
+  it('linha ilegível é concluída como FALHA e CONTADA pra quem chama', async () => {
     // Se fosse só pulada, ela voltaria a cada 15 min para sempre, ocupando lugar no lote e sem nunca
-    // registrar nada — ninguém veria que existe uma linha com defeito de dado.
+    // registrar nada — ninguém veria que existe uma linha com defeito de dado. E a CONTAGEM tem que
+    // sair daqui: é ela que vira falha no resumo (o log do cron é o único olho nesta fila) e é ela que
+    // faz o laço saber que o lote veio cheio — sem ela, uma rodada com linha ilegível reportava
+    // `falhas: 0` e o laço parava achando o lote incompleto.
     const { sb, chamadas } = sbFalso({
       rpc: () => ({ data: [{ ...LINHA_RPC, operacao: 'transferencia' }], error: null }),
     })
     const erros = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
-      expect(await criarRepositorioEstoqueEnvios(sb).reservarPendentes(30)).toEqual([])
+      expect(await criarRepositorioEstoqueEnvios(sb).reservarPendentes(30)).toEqual({
+        envios: [], ilegiveis: 1,
+      })
     } finally {
       erros.mockRestore()
     }

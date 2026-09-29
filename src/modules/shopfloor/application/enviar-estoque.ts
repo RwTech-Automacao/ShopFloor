@@ -65,9 +65,29 @@ export type ResultadoEnvioEstoque = { ok: true } | { ok: false; erro: string }
  */
 export type PortaCompels = (envio: EnvioEstoqueReservado) => Promise<ResultadoEnvioEstoque>
 
+/**
+ * O que uma rodada de reserva trouxe: as linhas que este código entende e QUANTAS o banco devolveu e
+ * ele não entendeu.
+ *
+ * As ilegíveis vêm como CONTAGEM, e não como linhas, porque não há nada a fazer com elas aqui: o
+ * repositório já as concluiu como falha (é ele que sabe escrever na linha), e o laço não tem o que
+ * mandar ao ERP. Mas a contagem tem que vir, por duas razões que o laço usa logo abaixo, e que sem ela
+ * ficavam erradas em silêncio:
+ *   • ela é FALHA no resumo. O resumo é o que o cron (Task 4) escreve no log, e é o único olho que
+ *     alguém tem nesta fila: uma rodada com uma linha ilegível reportando `falhas: 0` é o log mentindo
+ *     sobre a própria rodada;
+ *   • ela conta pro LOTE ESTAR CHEIO. "Cheio" quer dizer "o banco tinha mais do que o limite", e isso
+ *     se mede pelo que o banco devolveu, não pelo que sobrou depois da leitura — senão um lote cheio
+ *     com uma linha ilegível parece incompleto e o laço para antes da hora, deixando fila pra trás.
+ */
+export interface LoteEstoqueReservado {
+  envios: EnvioEstoqueReservado[]
+  ilegiveis: number
+}
+
 export interface RepositorioEstoqueEnvios {
   /** `sf_estoque_reservar()`: pega um lote da fila de forma atômica (ver a ordem na 0132). */
-  reservarPendentes(limite: number): Promise<EnvioEstoqueReservado[]>
+  reservarPendentes(limite: number): Promise<LoteEstoqueReservado>
   /**
    * Grava o resultado NA PRÓPRIA LINHA reservada (ok/erro/enviado_em) e solta a reserva. Lança em
    * erro de banco — quem chama trata por item.
@@ -77,6 +97,7 @@ export interface RepositorioEstoqueEnvios {
 
 export interface ResumoEnvioEstoque {
   enviados: number
+  /** Linhas que não chegaram ao ERP nesta rodada — inclusive as que o código não conseguiu ler. */
   falhas: number
 }
 
@@ -131,7 +152,10 @@ export async function entregarEstoquePendente(
   let falhas = 0
   for (;;) {
     let enviadosNoLote = 0
-    const lote = await repo.reservarPendentes(limite)
+    const { envios: lote, ilegiveis } = await repo.reservarPendentes(limite)
+    // A linha que o repositório não entendeu já foi concluída como falha lá, mas a FALHA é da rodada:
+    // sem isto o resumo diria `falhas: 0` e o log do cron mentiria sobre a única coisa que alguém lê.
+    falhas += ilegiveis
 
     for (const envio of lote) {
       let resultado: ResultadoEnvioEstoque
@@ -156,7 +180,10 @@ export async function entregarEstoquePendente(
       }
     }
 
-    const cheio = lote.length >= limite
+    // CHEIO é sobre o que o BANCO devolveu, não sobre o que sobrou depois da leitura: contando só as
+    // legíveis, um lote cheio com uma linha ilegível pareceria incompleto e o laço pararia antes da
+    // hora, deixando na fila o que caberia nesta rodada.
+    const cheio = lote.length + ilegiveis >= limite
     const soNovas = lote.every((e) => e.tentativas <= 1)
     if (!cheio || !soNovas || enviadosNoLote === 0 || agora() - inicio >= orcamento) break
   }

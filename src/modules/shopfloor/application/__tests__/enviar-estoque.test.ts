@@ -79,7 +79,7 @@ function repoFalso(fila: LinhaFila[]) {
         l.tentativas += 1
         l.reservada = true
       }
-      return elegiveis.map<EnvioEstoqueReservado>((l) => ({
+      const envios = elegiveis.map<EnvioEstoqueReservado>((l) => ({
         id: l.id,
         chave: l.chave,
         operacao: l.operacao,
@@ -93,6 +93,9 @@ function repoFalso(fila: LinhaFila[]) {
         tentativas: l.tentativas,
         criadoEm: `2026-09-29T10:${String(l.ordem).padStart(2, '0')}:00Z`,
       }))
+      // Fila de mentira não tem linha ilegível: aqui a linha é um objeto do próprio teste. Quem prova
+      // o caminho da ilegível é o teste do lote roteirizado, mais abaixo, e o do repositório.
+      return { envios, ilegiveis: 0 }
     },
     async concluirEnvio(envio: EnvioEstoqueReservado, resultado: ResultadoEnvioEstoque) {
       const l = fila.find((x) => x.id === envio.id)
@@ -243,6 +246,50 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 0, falhas: 0 })
     expect(enviados).toEqual([])
     expect(fila[1]!.tentativas).toBe(0)
+  })
+})
+
+/**
+ * Repositório de LOTES ROTEIRIZADOS: devolve, em ordem, os lotes que o teste escreveu — inclusive
+ * quantas linhas o banco mandou e o repositório não entendeu. Serve pro que a fila de mentira não
+ * consegue montar: o lote que veio CHEIO do banco mas com uma linha ilegível dentro.
+ */
+function repoRoteirizado(lotes: { envios: EnvioEstoqueReservado[]; ilegiveis: number }[]) {
+  let i = 0
+  const repo: RepositorioEstoqueEnvios = {
+    async reservarPendentes() {
+      return lotes[i++] ?? { envios: [], ilegiveis: 0 }
+    },
+    async concluirEnvio() {},
+  }
+  return repo
+}
+
+function envio(chave: string, tentativas = 1): EnvioEstoqueReservado {
+  return {
+    id: `id-${chave}`, chave, operacao: 'entrada', pmo: 'PMOT01', op: '9900',
+    posto: 'Almoxarifado', tipo: 'caixa', bipe: 'CX[1][3]9900-PMOT01', serieNorm: '',
+    quantidade: 3, tentativas, criadoEm: '2026-09-29T10:00:00Z',
+  }
+}
+
+describe('a linha que o banco devolveu e o código não entendeu', () => {
+  it('conta como FALHA no resumo, e conta pro lote estar CHEIO', async () => {
+    // O repositório conclui a linha ilegível como falha e não a devolve — mas as duas consequências
+    // disso são do laço, e as duas eram erradas em silêncio:
+    //   • o resumo dizia `falhas: 0` embora uma linha tivesse falhado, e o resumo é o que o cron
+    //     escreve no log — o único olho que alguém tem nesta fila;
+    //   • "cheio" era medido no array já filtrado, então este lote (limite 2, DUAS linhas vindas do
+    //     banco, uma ilegível) parecia incompleto e o laço parava antes da hora, deixando na fila o
+    //     que caberia nesta rodada.
+    const repo = repoRoteirizado([
+      { envios: [envio('A/E1')], ilegiveis: 1 },
+      { envios: [envio('A/E2')], ilegiveis: 0 },
+    ])
+    const { compels, enviados } = compelsFalso()
+    const resumo = await entregarEstoquePendente(compels, repo, { limite: 2 })
+    expect(resumo).toEqual({ enviados: 2, falhas: 1 })
+    expect(enviados).toEqual(['A/E1', 'A/E2'])
   })
 })
 

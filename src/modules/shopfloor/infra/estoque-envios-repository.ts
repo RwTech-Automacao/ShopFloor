@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceSupabase } from '@/shared/lib/supabase/service'
 import type {
   EnvioEstoqueReservado,
+  LoteEstoqueReservado,
   RepositorioEstoqueEnvios,
   ResultadoEnvioEstoque,
 } from '../application/enviar-estoque'
@@ -93,16 +94,24 @@ export function criarRepositorioEstoqueEnvios(
   }
 
   return {
-    async reservarPendentes(limite: number): Promise<EnvioEstoqueReservado[]> {
+    async reservarPendentes(limite: number): Promise<LoteEstoqueReservado> {
       const { data, error } = await sb.rpc('sf_estoque_reservar', { p_limite: limite })
       if (error) throw new Error(`sf_estoque_reservar: ${error.message}`)
-      const saida: EnvioEstoqueReservado[] = []
+      const envios: EnvioEstoqueReservado[] = []
+      let ilegiveis = 0
       for (const bruto of (data ?? []) as unknown[]) {
         const envio = lerEnvioEstoque(bruto)
-        if (envio) saida.push(envio)
-        else await concluirIlegivel(bruto)
+        if (envio) envios.push(envio)
+        else {
+          // Concluída como falha aqui (é este arquivo que sabe escrever na linha), mas CONTADA pra
+          // quem chama: a linha ilegível é uma falha da rodada e ocupou lugar no lote. Devolver só as
+          // legíveis escondia as duas coisas — o resumo dizia `falhas: 0` e o laço achava o lote
+          // incompleto. Ver LoteEstoqueReservado, em application/enviar-estoque.ts.
+          ilegiveis += 1
+          await concluirIlegivel(bruto)
+        }
       }
-      return saida
+      return { envios, ilegiveis }
     },
 
     async concluirEnvio(envio: EnvioEstoqueReservado, resultado: ResultadoEnvioEstoque) {
