@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -15,6 +16,20 @@ import type { CaixaAberta, RemontagemCaixa, OpComCaixa } from '@/modules/shopflo
 import { FolhaCaixa, useImpressaoFolha, fmtEmissao, type Folha } from '../../_components/folha-caixa'
 
 const AVISO_REIMPRIMIR = 'O código da caixa leva a quantidade: se ela fechar de novo com outra quantidade, o código muda — reimprima a folha.'
+
+/**
+ * Aviso padrão quando a folha da caixa falha em sair. A caixa JÁ foi fechada e registrada no servidor
+ * antes de chegar aqui — isso não muda e não pode assustar o operador —, então a mensagem só cobre a
+ * folha e diz o que fazer. `motivo` é o erro técnico da action (ex.: permissão faltando no perfil),
+ * incluído quando existe; sem ele (caixa não encontrada, rede caiu) o aviso fica genérico.
+ */
+function avisarFolhaFalhou(motivo?: string) {
+  toast.error(
+    motivo
+      ? `A caixa foi fechada, mas a folha não pôde ser aberta: ${motivo} Imprima pela tela Consultar Caixa.`
+      : 'A caixa foi fechada, mas a folha não pôde ser aberta. Imprima pela tela Consultar Caixa.',
+  )
+}
 
 /**
  * Embalagem por CAIXA. O layout segue o padrão das outras telas do Lançamento: topo com a Peça
@@ -227,9 +242,13 @@ export function EmbalagemPanel({
    */
   async function abrirFolha(seqFechada: number) {
     const rc = await caixasDaOp(pmo, op)
-    if (!rc.ok) return
+    // `caixasDaOp` exige `shopfloor.visualizar`, mas quem chega aqui é o posto de Embalagem, que opera
+    // sob `shopfloor.lancar` — e no modelo de perfis do projeto uma permissão não implica a outra. Se o
+    // perfil da Embalagem não tiver `visualizar`, essa chamada falha em TODA caixa fechada; sem aviso
+    // ninguém percebe até o material empacar no Almoxarifado por falta de folha pra bipar.
+    if (!rc.ok) { avisarFolhaFalhou(rc.erro); return }
     const caixa = rc.caixas.find((c) => c.posto === posto && c.seq === seqFechada)
-    if (!caixa) return
+    if (!caixa) { avisarFolhaFalhou(); return }
     const [rSns, rCodigo] = await Promise.all([
       qrDaCaixa(pmo, op, posto, seqFechada),
       qrCodigoDaCaixa(pmo, op, posto, seqFechada),
@@ -283,7 +302,10 @@ export function EmbalagemPanel({
       recarregar(null, true)
       setTimeout(() => snRef.current?.focus(), 0)
       // Sai em TODA caixa fechada, sem esperar — o operador já pode voltar a bipar enquanto a folha monta.
-      void abrirFolha(seq)
+      // `abrirFolha` já avisa os erros que ELA reconhece (action que devolveu `!ok`, caixa não achada);
+      // o `.catch` aqui é só pra rejeição de TRANSPORTE (a chamada de rede da própria server action caindo
+      // fora do try/catch dela) — sem isso vira unhandled rejection e o operador nem fica sabendo.
+      void abrirFolha(seq).catch(() => avisarFolhaFalhou())
     })
   }
 
