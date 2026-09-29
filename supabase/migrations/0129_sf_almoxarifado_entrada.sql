@@ -17,6 +17,13 @@
 --   posto_invalido       o posto tem que existir com perfil de recurso 'almoxarifado' (0128). Sem
 --                        isso, chamar a RPC apontando pra qualquer posto daria entrada em qualquer
 --                        lugar da linha.
+--   posto_fora_da_op     o posto tem que ser um dos postos DESTA OP (sf_ordem_postos). Sem isto o
+--                        bipe devolvia `ok`, o operador lia "3 peças", e para o Fluxo e o Dashboard
+--                        aquelas linhas não existiam: postoPendenteDePeca descarta todo registro de
+--                        posto fora do fluxo da OP e sf_fluxo_op só monta nó pros postos da OP. As
+--                        peças continuavam como trabalho em processo na Embalagem e "Concluído"
+--                        ficava 0 pra sempre — o MESMO modo de falha que a decisão "uma linha por
+--                        peça" (abaixo) veio matar, voltando por outra porta.
 --   caixa_em_op_individual / serie_em_op_coletiva
 --                        o par (p_tipo, sf_ordens.embalagem_individual) tem que casar. A regra
 --                        "individual bipa série, coletiva bipa caixa" também existe em TS
@@ -161,7 +168,10 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'sem_permissao');
   end if;
 
-  select cliente, sn_ini, sn_fim, embalagem_individual into v_ordem
+  -- `id` entra no select por causa da checagem de posto-na-OP mais abaixo: sf_ordem_postos é ligada
+  -- por ordem_id (é assim que TODO o resto do ShopFloor pergunta quais são os postos de uma OP —
+  -- fluxo-repository, lancamento-repository, pesquisa-repository), e não pelo par (pmo, op).
+  select id, cliente, sn_ini, sn_fim, embalagem_individual into v_ordem
     from sf_ordens where pmo = p_pmo and op = p_op;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'ordem_nao_encontrada',
@@ -188,6 +198,34 @@ begin
   ) then
     return jsonb_build_object('ok', false, 'motivo', 'posto_invalido',
       'detalhe', 'O posto "' || p_posto || '" não é um posto de Almoxarifado.');
+  end if;
+
+  -- O POSTO TEM QUE SER UM DOS POSTOS DESTA OP. A recusa mais importante que faltava: sem ela o bipe
+  -- num posto fora do fluxo da OP voltava `ok`, o operador lia "3 peças" — e para o Fluxo e o
+  -- Dashboard aquelas linhas NÃO EXISTIAM. postoPendenteDePeca (fluxo-op.ts) descarta todo registro
+  -- de posto fora do fluxo da OP (`doFluxo.has(p) || p === manut`) e sf_fluxo_op (0094) só monta nó
+  -- pros postos da OP, então as peças ficavam como trabalho em processo na Embalagem e "Concluído"
+  -- ficava 0 pra sempre, sem erro nenhum na tela.
+  --
+  -- Pelo ordem_id, que é o caminho que o resto do ShopFloor usa (sf_ordem_postos só se liga à OP por
+  -- ele) e a MESMA grafia: sf_ordem_postos.posto referencia sf_postos(chave), e p_posto é uma chave.
+  --
+  -- POR QUE AQUI, e não antes nem depois: as duas checagens de posto ficam juntas, da mais geral pra
+  -- mais específica. Primeiro "este posto existe e dá entrada em estoque?" (problema de Cadastrar
+  -- Posto), depois "este posto está nesta OP?" (problema de Cadastrar OP) — a ordem importa porque a
+  -- frase daqui manda acrescentar o posto na OP, e mandar isso para um posto que não existe seria
+  -- mandar o gestor cadastrar coisa errada. E as duas vêm ANTES da trava e de qualquer leitura de
+  -- caixa, faixa ou duplicidade, porque nenhuma delas depende do que foi bipado: quando a OP não tem
+  -- o posto, NENHUM bipe dela vai entrar, e fazer o operador esperar numa trava para descobrir
+  -- "caixa não encontrada" seria mandá-lo procurar a caixa errada. É também a recusa mais provável na
+  -- estreia do posto: toda OP cadastrada antes de ele existir está exatamente neste estado.
+  if not exists (
+    select 1 from sf_ordem_postos opp
+     where opp.ordem_id = v_ordem.id and opp.posto = p_posto
+  ) then
+    return jsonb_build_object('ok', false, 'motivo', 'posto_fora_da_op',
+      'detalhe', 'O posto "' || p_posto || '" não está nos postos da OP ' || p_op
+        || '. Acrescente o posto na OP em Cadastrar OP e bipe outra vez.');
   end if;
 
   -- CORRIDA, parte 1: serializa o MESMO bipe no mesmo posto da mesma OP. É esta trava que faz a

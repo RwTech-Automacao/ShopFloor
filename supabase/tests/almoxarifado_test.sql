@@ -37,6 +37,26 @@ create table public.sf_ordens (
   embalagem_individual boolean not null default false,
   unique (pmo, op)
 );
+-- OS POSTOS DE CADA OP. É por aqui que o resto do ShopFloor responde "este posto está nesta OP?"
+-- (fluxo-repository, lancamento-repository, pesquisa-repository, todos por ordem_id), e é a tabela
+-- que a recusa `posto_fora_da_op` da 0129 consulta. Entra no stub sem a coluna `ordem` (0030): a RPC
+-- da entrada só pergunta se o par existe, não em que posição ele está.
+create table public.sf_ordem_postos (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  posto text not null references public.sf_postos(chave),
+  primary key (ordem_id, posto)
+);
+-- "esta OP passa por estes postos", pra massa. Cada OP deste arquivo precisa dos postos dela desde
+-- que a entrada passou a recusar `posto_fora_da_op`; sem o açúcar, cada uma repetiria o mesmo insert
+-- com o subselect do ordem_id e a massa afogaria o teste.
+create function public.teste_op_postos(p_pmo text, p_op text, p_postos text[])
+returns void language sql as $f$
+  insert into public.sf_ordem_postos (ordem_id, posto)
+  select o.id, p.posto
+    from public.sf_ordens o, unnest(p_postos) as p(posto)
+   where o.pmo = p_pmo and o.op = p_op
+  on conflict do nothing;
+$f$;
 create table public.sf_caixas (
   id uuid primary key default gen_random_uuid(),
   pmo text not null, op text not null, posto text not null, seq int not null,
@@ -94,6 +114,16 @@ insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_indivi
   -- 12) sem misturar com a checagem nova do achado 2 — PMOI01 é individual e recusaria antes de
   -- sequer olhar pra sf_caixas.
   ('PMOC16', '8499', 'Cliente Coletiva 2', '9000', '9100', false);
+
+-- Os postos de cada OP. Antes da recusa `posto_fora_da_op` a massa não precisava disto — e era esse o
+-- defeito: a entrada aceitava bipe num posto que a OP não tem, e as peças sumiam do Fluxo (que só
+-- monta nó pros postos da OP e descarta registro de posto fora do fluxo).
+do $t$ begin
+  perform public.teste_op_postos('PMOC14', '8498', array['Embalagem', 'Almoxarifado']);
+  perform public.teste_op_postos('PMOI01', '9000', array['Embalagem', 'Almoxarifado']);
+  perform public.teste_op_postos('PMOI02', '9001', array['Embalagem', 'Almoxarifado']);
+  perform public.teste_op_postos('PMOC16', '8499', array['Embalagem', 'Almoxarifado']);
+end $t$;
 
 -- Caixas da OP coletiva:
 --  seq 7 → fechada e etiquetada (o caso bom);
@@ -660,6 +690,7 @@ insert into public.sf_postos (chave, ordem, perfil) values
   ('Estoque', 14, 'almoxarifado');
 insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
   ('PMOC17', '8500', 'Cliente NQA', '9500', '9600', false);
+do $t$ begin perform public.teste_op_postos('PMOC17', '8500', array['Embalagem', 'Inspeção NQA', 'Estoque']); end $t$;
 insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
   ('PMOC17', '8500', 'Embalagem', 1, 3, 3, 'CX[1][3]8500-PMOC17', true);
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
@@ -745,6 +776,7 @@ create table public.teste_caixa_ids (chave text primary key, id uuid);
 -- absolutos, e mexer neles esconderia regressão.
 insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
   ('PMOC18', '8501', 'Cliente Cancelar', '9700', '9800', false);
+do $t$ begin perform public.teste_op_postos('PMOC18', '8501', array['Embalagem', 'Almoxarifado']); end $t$;
 insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
   ('PMOC18', '8501', 'Embalagem', 1, 4, 4, 'CX[1][4]8501-PMOC18', true),
   ('PMOC18', '8501', 'Embalagem', 2, 3, 3, 'CX[2][3]8501-PMOC18', true),
@@ -1149,6 +1181,7 @@ end $t$;
 -- medidos: a fila explodindo (caixa 3) e o registro explodindo (caixa 4).
 insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
   ('PMOC19', '8502', 'Cliente Transação', '9900', '9990', false);
+do $t$ begin perform public.teste_op_postos('PMOC19', '8502', array['Embalagem', 'Almoxarifado']); end $t$;
 insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
   ('PMOC19', '8502', 'Embalagem', 1, 2, 2, 'CX[1][2]8502-PMOC19', true),
   ('PMOC19', '8502', 'Embalagem', 2, 2, 2, 'CX[2][2]8502-PMOC19', true),
@@ -1226,6 +1259,7 @@ end $t$;
 
 insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
   ('PMOC20', '8503', 'Cliente Estorno', '9950', '9999', false);
+do $t$ begin perform public.teste_op_postos('PMOC20', '8503', array['Embalagem', 'Almoxarifado']); end $t$;
 insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
   ('PMOC20', '8503', 'Embalagem', 1, 3, 3, 'CX[1][3]8503-PMOC20', true),
   ('PMOC20', '8503', 'Embalagem', 2, 2, 2, 'CX[2][2]8503-PMOC20', true),
@@ -1348,6 +1382,7 @@ end $t$;
 -- caixa cair, a linha é cancelada (é o caso (a) de novo, por outro caminho).
 insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
   ('PMOI03', '9002', 'Cliente Avulso', '2000', '2100', true);
+do $t$ begin perform public.teste_op_postos('PMOI03', '9002', array['Embalagem', 'Almoxarifado']); end $t$;
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, qtd_por_caixa, numero_serie, numero_serie_norm)
 values ('Marcos', 'Embalagem', 'PMOI03', '9002', 'Cliente Avulso', '2001', 1, '2001', '2001');
 
@@ -2220,3 +2255,91 @@ end $t$;
 
 -- As invariantes de novo, agora com a massa do 47 dentro.
 do $t$ begin perform public.teste_fila_invariantes('depois do teste 47'); end $t$;
+
+-- =============================================================
+-- 48. O POSTO TEM QUE SER UM DOS POSTOS DA OP — nos dois caminhos (caixa e peça)
+--
+-- O defeito: a entrada conferia tudo (OP, perfil do posto, caixa, faixa, Embalagem, duplicidade) MENOS
+-- se aquele posto pertence à OP. O bipe voltava `ok`, o operador lia "3 peças", e para o Fluxo e o
+-- Dashboard aquelas linhas NÃO EXISTIAM: postoPendenteDePeca descarta todo registro de posto fora do
+-- fluxo da OP (`doFluxo.has(p) || p === manut`) e sf_fluxo_op só monta nó pros postos da OP. As peças
+-- ficavam como trabalho em processo na Embalagem e "Concluído" ficava 0 pra sempre — exatamente o modo
+-- de falha que a decisão "uma linha por peça" veio matar, voltando por outra porta.
+--
+-- Massa própria, em OPs novas, porque as OPs de cima já têm o posto: aqui o que se mede é a AUSÊNCIA
+-- dele, e depois a mesma massa com ele presente (só sf_ordem_postos muda entre os dois lados).
+-- =============================================================
+
+insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
+  ('PMOC21', '8505', 'Cliente Fora do Fluxo',  '8600', '8700', false),
+  ('PMOI04', '9005', 'Cliente Fora Individual', '3000', '3100', true);
+-- Nenhuma das duas tem o Almoxarifado: a OP passa pela Embalagem e para ali (é o retrato de toda OP
+-- cadastrada antes de o posto existir).
+do $t$ begin perform public.teste_op_postos('PMOC21', '8505', array['Embalagem']); end $t$;
+do $t$ begin perform public.teste_op_postos('PMOI04', '9005', array['Embalagem']); end $t$;
+
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC21', '8505', 'Embalagem', 1, 3, 3, 'CX[1][3]8505-PMOC21', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC21', '8505', 'Cliente Fora do Fluxo', 'CX[1][3]8505-PMOC21',
+       'SN-' || (8600 + i)::text, (8600 + i)::text from generate_series(1, 3) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, qtd_por_caixa, numero_serie, numero_serie_norm)
+values ('Marcos', 'Embalagem', 'PMOI04', '9005', 'Cliente Fora Individual', '3001', 1, '3001', '3001');
+
+do $t$
+declare r jsonb; v_regs int; v_fila int;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar', false);
+
+  -- (a) CAIXA, na OP que não tem o posto.
+  r := sf_almoxarifado_entrada('PMOC21', '8505', 'Almoxarifado', 'Ana',
+                               'CX[1][3]8505-PMOC21', 'caixa', 3, '');
+  if r->>'motivo' is distinct from 'posto_fora_da_op' then
+    raise exception 'FALHOU (a): a caixa entrou num posto que a OP não tem — as 3 peças sumiriam do Fluxo: %', r; end if;
+  -- A frase é lida por um operador no coletor: tem que nomear o posto, a OP e o que fazer.
+  if r->>'detalhe' not like '%Almoxarifado%'
+     or r->>'detalhe' not like '%8505%'
+     or r->>'detalhe' not like '%Cadastrar OP%' then
+    raise exception 'FALHOU (a): o detalhe tem que dizer o posto, a OP e onde resolver: %', r->>'detalhe'; end if;
+
+  -- (b) PEÇA, na OP individual que não tem o posto. O outro caminho da função, e ele precisa ser
+  -- medido: a recusa mora antes do `if p_tipo = 'caixa'`, e um dia alguém pode movê-la pra dentro dele.
+  r := sf_almoxarifado_entrada('PMOI04', '9005', 'Almoxarifado', 'Ana', '3001', 'serie', 1, '3001');
+  if r->>'motivo' is distinct from 'posto_fora_da_op' then
+    raise exception 'FALHOU (b): a peça entrou num posto que a OP não tem: %', r; end if;
+
+  -- E nada ficou gravado por nenhum dos dois — nem registro nem linha na fila do Compels.
+  select count(*) into v_regs from sf_registros
+   where posto = 'Almoxarifado' and pmo in ('PMOC21', 'PMOI04');
+  select count(*) into v_fila from sf_estoque_envios where pmo in ('PMOC21', 'PMOI04');
+  if v_regs <> 0 or v_fila <> 0 then
+    raise exception 'FALHOU (a/b): a recusa gravou % registro(s) e % linha(s) na fila', v_regs, v_fila; end if;
+
+  raise notice '48(a/b). posto fora dos postos da OP: recusado nos dois caminhos, sem gravar nada: ok';
+end $t$;
+
+-- Agora o gestor faz o que a recusa mandou: acrescenta o posto nas duas OPs em Cadastrar OP.
+do $t$ begin perform public.teste_op_postos('PMOC21', '8505', array['Almoxarifado']); end $t$;
+do $t$ begin perform public.teste_op_postos('PMOI04', '9005', array['Almoxarifado']); end $t$;
+
+do $t$
+declare r jsonb;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar', false);
+
+  -- (c) O CAMINHO LEGÍTIMO NÃO QUEBROU: mesma caixa, mesma massa, só o posto agora está na OP.
+  r := sf_almoxarifado_entrada('PMOC21', '8505', 'Almoxarifado', 'Ana',
+                               'CX[1][3]8505-PMOC21', 'caixa', 3, '');
+  if coalesce((r->>'ok')::boolean, false) is not true or (r->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (c): a caixa da OP que TEM o posto não entrou: %', r; end if;
+
+  -- (d) e o mesmo pela peça.
+  r := sf_almoxarifado_entrada('PMOI04', '9005', 'Almoxarifado', 'Ana', '3001', 'serie', 1, '3001');
+  if coalesce((r->>'ok')::boolean, false) is not true or (r->>'quantidade')::int <> 1 then
+    raise exception 'FALHOU (d): a peça da OP que TEM o posto não entrou: %', r; end if;
+
+  raise notice '48(c/d). com o posto na OP, os dois caminhos entram normalmente: ok';
+end $t$;
+
+-- As invariantes de novo, agora com a massa do 48 dentro.
+do $t$ begin perform public.teste_fila_invariantes('depois do teste 48'); end $t$;

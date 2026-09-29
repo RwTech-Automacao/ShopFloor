@@ -78,4 +78,23 @@ describe('registrarEntradaAlmoxarifado — etiqueta × contagem real', () => {
     if (r.ok) throw new Error('esperado ok:false')
     expect(r.erro).toBe('A caixa 11 não tem nenhuma peça registrada na Embalagem.')
   })
+
+  it('posto fora dos postos da OP: a frase da RPC chega ao painel, com o que fazer', async () => {
+    // Sem o `case` do motivo, esta recusa cairia no `default` ("Não foi possível registrar a
+    // entrada.") e o operador perderia justamente a instrução — é uma recusa de cadastro, que alguém
+    // resolve em Cadastrar OP.
+    mocks({
+      ok: false,
+      motivo: 'posto_fora_da_op',
+      detalhe: 'O posto "Almoxarifado" não está nos postos da OP 8498. Acrescente o posto na OP em Cadastrar OP e bipe outra vez.',
+    })
+    const { registrarEntradaAlmoxarifado } = await import('../almoxarifado-actions')
+
+    const r = await registrarEntradaAlmoxarifado(BIPE)
+
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error('esperado ok:false')
+    expect(r.erro).toContain('não está nos postos da OP 8498')
+    expect(r.erro).toContain('Cadastrar OP')
+  })
 })

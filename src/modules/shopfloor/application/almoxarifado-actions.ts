@@ -51,6 +51,11 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
       return detalhe || 'Ordem não encontrada.'
     case 'posto_invalido':
       return detalhe || 'Este posto não é um posto de Almoxarifado.'
+    case 'posto_fora_da_op':
+      // Sem este `case`, a recusa cairia no `default` ("Não foi possível registrar a entrada.") e o
+      // operador ficaria sem o que fazer — justamente a recusa que se resolve com um gesto de
+      // cadastro. O `detalhe` da RPC já nomeia o posto, a OP e a tela onde se resolve.
+      return detalhe || 'Este posto não está nos postos desta OP. Acrescente-o em Cadastrar OP.'
     case 'caixa_em_op_individual':
       return RECUSAS_FORMATO.caixa_em_op_individual
     case 'serie_em_op_coletiva':
