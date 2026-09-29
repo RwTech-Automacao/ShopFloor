@@ -282,11 +282,30 @@ revoke all on function public.sf_estoque_chave(text, text, text, text, text)
 -- Sim, isso cria um estorno de uma entrada que ainda não está `ok`, que é o contrário da decisão
 -- acima. É PROPOSITAL, e o que reconcilia as duas é que a linha da entrada NÃO é cancelada: ela
 -- continua na fila e a entrada VAI chegar ao ERP (o reenvio insiste até o teto de 5), então o estorno
--- é o par dela e não movimento de nada. O que a decisão acima proíbe é estornar o que NUNCA vai sair
--- — e é por isso que o cancelamento do bipe inteiro (p_quantidade nulo) continua cancelando a linha
--- em vez de estornar: ali a entrada realmente não sai, e o cancelamento deixa rastro (cancelado_em +
--- a chave), que é o que o ajuste não deixava. Consequência para quem escrever o laço de envio: ver a
--- restrição de ORDEM escrita junto da sf_estoque_reservar — estorno não se entrega antes da entrada.
+-- é o par dela e não movimento de nada. O que a decisão acima proíbe é estornar o que NUNCA vai sair.
+--
+-- ⚠️ A ASSIMETRIA QUE SAI DISSO (achado da RE-revisão, criado pela própria correção acima): O BIPE
+-- INTEIRO (p_quantidade nulo) TAMBÉM NÃO PODE CANCELAR UMA LINHA TOCADA. A primeira versão da exceção
+-- valeu só para p_quantidade NÃO nulo, e isso abriu um buraco justamente no caminho que a recusa da
+-- 0129 manda o gestor seguir ("cancele a caixa inteira em Registros e bipe outra vez"): caixa de 3 em
+-- voo → cancelar 1 peça cria o estorno S1 (certo, é a exceção acima) → cancelar a caixa inteira
+-- marcava `cancelado_em` na entrada → o S1 fica na fila SEM PAR. Daí, ou o laço respeita a restrição
+-- de ordem (não entrega estorno antes de a entrada virar `ok`) e o S1 fica preso PARA SEMPRE numa
+-- entrada que nunca vai virar ok porque está cancelada; ou o laço é menos rigoroso, entrega o S1
+-- depois do rebipe e o Compels termina com 1 peça A MENOS que o ShopFloor, em silêncio. Pior ainda na
+-- linha que DESISTIU (tentativas = 5): o estorno seria a única linha entregável do bipe, uma saída
+-- para uma entrada que o ERP nunca recebeu.
+--
+-- Então a regra é UMA, e não duas: LINHA TOCADA ESTORNA O SALDO — com quantidade ou sem ela. Estornar
+-- o saldo (3 − 0, ou os 2 que sobraram depois do S1) fecha a conta (entrada 3 − estornos 3 = 0),
+-- mantém a entrada viva para chegar ao ERP e devolve sentido à restrição de ordem, porque a entrada
+-- chega a `ok`. O outro remédio possível — cancelar a entrada e os estornos pendentes dela juntos —
+-- só seria verdade se soubéssemos que a entrada nunca saiu, que é exatamente o que não se sabe.
+--
+-- O CANCELAMENTO continua sendo o caminho certo para a LINHA LIMPA (nunca reservada, tentativas = 0,
+-- estornado = 0): ali a entrada realmente não sai, e cancelar deixa rastro (cancelado_em + a chave),
+-- que é o que o ajuste não deixava. Consequência para quem escrever o laço de envio: ver a restrição
+-- de ORDEM escrita junto da sf_estoque_reservar — estorno não se entrega antes da entrada.
 --
 -- SALDO — A SOMA DOS ESTORNOS DE UMA ENTRADA NUNCA PASSA DO QUE FOI ENVIADO (o outro achado da mesma
 -- revisão). Todo estorno sai do SALDO da entrada (`quantidade - estornado`) e desce esse saldo na
@@ -298,10 +317,12 @@ revoke all on function public.sf_estoque_chave(text, text, text, text, text)
 -- uma soma pelas linhas de estorno, está junto do `alter table` dela, no começo desta migração.
 --
 -- p_quantidade = quantas peças estão sendo desfeitas, ou NULO para "o bipe inteiro":
---   • nulo (0131, a caixa inteira) — cancela a linha pendente de uma vez; se já foi enviada, estorna
---     o SALDO do que o ERP recebeu (e não a `quantidade` cheia, que pode já ter sido revertida em
+--   • nulo (0131, a caixa inteira) — na linha LIMPA, cancela o envio pendente de uma vez; se ela já
+--     foi enviada, ou está TOCADA (em voo, ou já revertida em parte), estorna o SALDO do que o ERP
+--     recebeu ou pode ter recebido (e não a `quantidade` cheia, que pode já ter sido revertida em
 --     parte, nem o que acabou de ser apagado aqui): o que conserta o estoque de lá é reverter o que
---     chegou lá e ainda está lá;
+--     chegou lá e ainda está lá. Cancelar uma linha tocada deixaria os estornos dela órfãos na fila —
+--     ver A ASSIMETRIA, acima;
 --   • um número (0133, uma linha avulsa = 1 peça) — na linha que nenhuma rodada tocou, ela ainda
 --     descreve o que VAI ser enviado, então é AJUSTADA (uma caixa de 3 vira 2): mandar 3 e estornar 1
 --     seriam duas movimentações no ERP para um número que ainda podia ser corrigido aqui, e quando a
@@ -324,7 +345,7 @@ declare
   v_resta  int;
   v_saldo  int;
   v_qtd    int;
-  v_em_voo boolean;
+  v_tocada boolean;
 begin
   -- Nada a desfazer: chamada defensiva (um cancelamento que não apagou linha nenhuma, um alvo vazio).
   if coalesce(p_alvo, '') = '' or coalesce(p_quantidade, 1) <= 0 then
@@ -346,19 +367,32 @@ begin
     return 'sem_fila';
   end if;
 
-  -- ALGUMA RODADA DE ENVIO JÁ TOCOU NESTA LINHA? `tentativas > 0` é a marca que não expira: a reserva
-  -- soma 1 ANTES de falar com o ERP e nunca volta atrás, então uma linha que já foi tentada pode ter
-  -- chegado lá com a resposta perdida no caminho. A reserva VIVA é a mesma janela de 15 min que a
-  -- sf_estoque_reservar usa pra dizer que uma rodada ainda está entregando esta linha — está aqui
-  -- junto porque `reservado_em` pode existir sem tentativa se alguém mexer na fila à mão.
-  v_em_voo := v_ent.tentativas > 0
+  -- LINHA TOCADA: ALGUMA RODADA DE ENVIO JÁ MEXEU NELA, OU ELA JÁ TEVE ESTORNO. É a marca que decide
+  -- tudo daqui pra baixo, e existe uma só pra regra ser dita uma vez (ver A ASSIMETRIA, acima).
+  --   • `tentativas > 0` é a marca que não expira: a reserva soma 1 ANTES de falar com o ERP e nunca
+  --     volta atrás, então uma linha que já foi tentada pode ter chegado lá com a resposta perdida no
+  --     caminho;
+  --   • a reserva VIVA é a mesma janela de 15 min que a sf_estoque_reservar usa pra dizer que uma
+  --     rodada ainda está entregando esta linha — está aqui junto porque `reservado_em` pode existir
+  --     sem tentativa se alguém mexer na fila à mão;
+  --   • `estornado > 0` entra na MESMA marca de propósito: linha que já teve estorno não se ajusta nem
+  --     se cancela, e é este `or` que garante isso. Hoje ele é redundante (só ganha estornado quem já
+  --     era tocada), mas essa garantia era um PARÁGRAFO e não código — e a tela de pendências
+  --     prometida junto da sf_estoque_reservar tem um botão Reenviar: se ele zerar
+  --     tentativas/reservado_em de uma linha meio revertida, o ajuste voltaria a ser alcançável e
+  --     reduziria a `quantidade` abaixo do que já foi estornado, até estourar o CHECK na cara do
+  --     gestor. Uma condição a mais aqui é mais barata que lembrar do parágrafo.
+  v_tocada := v_ent.tentativas > 0
               or (v_ent.reservado_em is not null
-                  and v_ent.reservado_em >= now() - interval '15 minutes');
+                  and v_ent.reservado_em >= now() - interval '15 minutes')
+              or v_ent.estornado > 0;
 
-  -- ESTORNO: pro que o ERP JÁ recebeu (ok) e pro que ele PODE ter recebido (uma peça saindo de uma
-  -- linha em voo — ver "A EXCEÇÃO À DECISÃO", acima). Nos dois casos a `quantidade` da entrada NÃO é
-  -- mexida: é isso que faz o que a fila diz que mandou bater com o que o ERP recebeu.
-  if v_ent.ok or (p_quantidade is not null and v_em_voo) then
+  -- ESTORNO: pro que o ERP JÁ recebeu (ok) e pro que ele PODE ter recebido (linha tocada — ver "A
+  -- EXCEÇÃO À DECISÃO" e "A ASSIMETRIA", acima). Vale com quantidade (uma peça) e sem ela (o bipe
+  -- inteiro, que então estorna o saldo): cancelar uma linha tocada deixaria os estornos dela sem par.
+  -- Nos dois casos a `quantidade` da entrada NÃO é mexida: é isso que faz o que a fila diz que mandou
+  -- bater com o que o ERP recebeu.
+  if v_ent.ok or v_tocada then
     -- SOBRE O SALDO, nunca sobre a quantidade cheia (ver "SALDO", acima).
     v_saldo := v_ent.quantidade - v_ent.estornado;
     if v_saldo <= 0 then
@@ -386,20 +420,20 @@ begin
     return 'estorno';
   end if;
 
-  -- AINDA NÃO SAIU, e nenhuma rodada de envio tocou nesta linha. O bipe inteiro (p_quantidade nulo)
-  -- cancela a linha sem aritmética: a intenção é inequívoca, e a quantidade da linha pode não bater
-  -- com o que foi apagado agora (um ajuste anterior já pode ter reduzido).
+  -- AINDA NÃO SAIU, e a linha está LIMPA (ninguém a reservou, ninguém a tentou, ninguém estornou dela).
+  -- O bipe inteiro (p_quantidade nulo) cancela a linha sem aritmética: a intenção é inequívoca, e a
+  -- quantidade da linha pode não bater com o que foi apagado agora (um ajuste anterior já pode ter
+  -- reduzido). É só aqui que o cancelamento é verdade — na linha tocada ele criaria estorno órfão.
   if p_quantidade is null then
     update public.sf_estoque_envios set cancelado_em = now() where id = v_ent.id;
     return 'cancelado';
   end if;
 
   -- AJUSTE — só aqui, na linha que ninguém leu ainda. E ele REDUZ a `quantidade`, o que levanta a
-  -- pergunta de o `estornado` poder ficar acima dela: não pode. Uma linha só ganha estornado > 0 no
-  -- ramo de cima, que exige `ok` ou "em voo", e nenhum dos dois volta atrás (nada devolve `ok` pra
-  -- false; `tentativas` só cresce, e reserva vencida continua contando pelo `tentativas > 0`). Então
-  -- toda linha que chega aqui tem estornado = 0, e a quantidade ajustada é >= 1. O CHECK fica como a
-  -- garantia de que isso continua verdade se alguém mexer nessas regras sem reler este parágrafo.
+  -- pergunta de o `estornado` poder ficar acima dela: não pode, e agora é o CÓDIGO que diz isso, não
+  -- este parágrafo. `v_tocada` inclui `estornado > 0`, então toda linha que chega aqui tem
+  -- estornado = 0 e a quantidade ajustada é >= 1 — mesmo que um dia o Reenviar da tela de pendências
+  -- zere tentativas/reservado_em de uma linha meio revertida. O CHECK segue como a rede embaixo disso.
   v_resta := v_ent.quantidade - p_quantidade;
   if v_resta <= 0 then
     update public.sf_estoque_envios set cancelado_em = now() where id = v_ent.id;
@@ -434,6 +468,9 @@ revoke all on function public.sf_estoque_reverter(text, text, text, text, int)
 -- 'entrada', criada ANTES dele — não estiver `ok`; ele pula o estorno e tenta na rodada seguinte
 -- (sem contar tentativa, senão o par queima o teto esperando). Não é a reserva que resolve isso: ela
 -- é por linha e não sabe de par — por isso a restrição está escrita aqui, onde a ordem é decidida.
+-- Essa espera TERMINA porque a sf_estoque_reverter nunca cancela uma entrada que já tem estorno (ver
+-- A ASSIMETRIA, lá em cima): a entrada de um par continua na fila até virar `ok`. Se alguém afrouxar
+-- aquela regra, esta espera passa a ser eterna.
 --
 -- A janela de reserva de 15 min cobre uma rodada inteira (lote de 30 x alguns segundos por chamada
 -- ao ERP, no pior caso). Se o processo cair no meio, a linha volta a ser elegível depois disso: a
