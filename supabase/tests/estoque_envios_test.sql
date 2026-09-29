@@ -98,7 +98,7 @@ end $t$;
 --    É o que permite o caminho de volta documentado na 0131 — cancelar a caixa inteira e bipar
 --    outra vez — sem a chave de ontem bloquear a entrada de hoje.
 do $t$
-declare k1 text; k2 text; ks text;
+declare k1 text; k2 text; ks text; v_e1 uuid;
 begin
   k1 := sf_estoque_chave('PMOA01', '9102', 'Almoxarifado', 'CX[5][14]9102-PMOA01', 'entrada');
   if k1 <> 'ALMOX/PMOA01/9102/Almoxarifado/CX[5][14]9102-PMOA01/E1' then
@@ -106,15 +106,17 @@ begin
   end if;
 
   insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, quantidade)
-  values (k1, 'PMOA01', '9102', 'Almoxarifado', 'caixa', 'CX[5][14]9102-PMOA01', 14);
+  values (k1, 'PMOA01', '9102', 'Almoxarifado', 'caixa', 'CX[5][14]9102-PMOA01', 14)
+  returning id into v_e1;
 
-  -- o estorno do mesmo bipe é outra movimentação: chave própria, que não colide com a entrada
+  -- o estorno do mesmo bipe é outra movimentação: chave própria, que não colide com a entrada. E ele
+  -- nasce com o PAR GRAVADO (`entrada_id`), como a sf_estoque_reverter faz — o CHECK da tabela cobra.
   ks := sf_estoque_chave('PMOA01', '9102', 'Almoxarifado', 'CX[5][14]9102-PMOA01', 'estorno');
   if ks <> 'ALMOX/PMOA01/9102/Almoxarifado/CX[5][14]9102-PMOA01/S1' then
     raise exception 'FALHOU: chave do estorno veio %', ks;
   end if;
-  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade)
-  values (ks, 'estorno', 'PMOA01', '9102', 'Almoxarifado', 'caixa', 'CX[5][14]9102-PMOA01', 14);
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, entrada_id)
+  values (ks, 'estorno', 'PMOA01', '9102', 'Almoxarifado', 'caixa', 'CX[5][14]9102-PMOA01', 14, v_e1);
 
   -- a caixa é bipada DE NOVO depois do estorno: entrada número 2, chave nova
   k2 := sf_estoque_chave('PMOA01', '9102', 'Almoxarifado', 'CX[5][14]9102-PMOA01', 'entrada');
@@ -419,26 +421,31 @@ begin
   raise notice 'estornado dentro da quantidade (a invariante da reversão): ok';
 end $t$;
 
--- 17. A ORDEM DO PAR: O ESTORNO NÃO É RESERVADO ENQUANTO A ENTRADA VIGENTE DELE NÃO ESTÁ `ok`. É a
+-- 17. A ORDEM DO PAR: O ESTORNO NÃO É RESERVADO ENQUANTO A ENTRADA GRAVADA NELE NÃO ESTÁ `ok`. É a
 --     regra que impede o ERP de receber a saída antes da entrada (estoque negativo, ou uma saída
 --     recusada), e ela mora AQUI, na reserva, e não no laço de envio — o porquê está no ⚠️ do
---     cabeçalho da sf_estoque_reservar. Aqui o bipe tem UMA entrada só, então "vigente" não decide
---     nada e o que se prova são as duas metades da regra (o caso de várias entradas é o teste 19):
+--     cabeçalho da sf_estoque_reservar. Aqui o bipe tem UMA entrada só, então o que se prova são as
+--     duas metades da regra (os casos de várias entradas são os testes 19 e 20):
 --       • a entrada em voo (uma rodada já tentou, a reserva venceu) sai; o estorno dela fica;
 --       • e o estorno segurado NÃO paga tentativa — linha segurada não é linha que falhou. Se ela
 --         pagasse, cinco rodadas de espera a tirariam da fila (tentativas < 5) sem nunca ter sido
 --         enviada, que é o desastre que o teto existe pra evitar, chegando pelo lado errado.
+--     O estorno nasce com `entrada_id` apontando pra entrada dele, que é o que a sf_estoque_reverter
+--     grava — e o que a reserva LÊ (ela não infere mais par nenhum).
 do $t$
-declare n int; v_chaves text[];
+declare n int; v_chaves text[]; v_e1 uuid;
 begin
   update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
 
   insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
                                  tentativas, reservado_em)
   values ('PAR/E1', 'entrada', 'PMOT01', '9906', 'Almoxarifado', 'caixa', 'CX[1][3]9906-PMOT01', 3,
-          now() - interval '10 minutes', 1, now() - interval '20 minutes'),
-         ('PAR/S1', 'estorno', 'PMOT01', '9906', 'Almoxarifado', 'caixa', 'CX[1][3]9906-PMOT01', 3,
-          now() - interval '5 minutes', 0, null);
+          now() - interval '10 minutes', 1, now() - interval '20 minutes')
+  returning id into v_e1;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, reservado_em, entrada_id)
+  values ('PAR/S1', 'estorno', 'PMOT01', '9906', 'Almoxarifado', 'caixa', 'CX[1][3]9906-PMOT01', 3,
+          now() - interval '5 minutes', 0, null, v_e1);
 
   select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
   if v_chaves is distinct from array['PAR/E1'] then
@@ -461,39 +468,53 @@ end $t$;
 --     (a) entrada que DESISTIU (teto de tentativas) segura o estorno — a espera passa a esperar UMA
 --         PESSOA (o Reenviar da tela de pendências), e "resolver" isso entregando a saída sozinha
 --         deixaria o Compels com uma saída que ele nunca recebeu;
---     (b) estorno SEM NENHUMA ENTRADA VIVA anterior também segura — aqui a única entrada do bipe está
---         CANCELADA, então não sobra entrada viva pra ser a vigente, e o filtro cai no caso "nenhuma".
---         ⚠️ Até a revisão desta rodada, este caso afirmava outra coisa: que "entrada cancelada segura
---         o estorno". A asserção passava, mas a razão estava ERRADA, e a razão errada valia para
---         QUALQUER entrada cancelada do bipe — inclusive uma de um ciclo antigo e já encerrado, que
---         prendia para sempre o estorno de um ciclo novo (o Critical; a sequência inteira está no
---         teste 19). Hoje o caso é o que o nome diz: sem entrada viva, o predicado SEGURA, porque
---         liberar mandaria ao ERP uma saída de peça que ele nunca recebeu. Sob as regras da
---         sf_estoque_reverter nem isso é alcançável (ela nunca cancela entrada que já tem estorno —
---         ver A ASSIMETRIA), então este caso é a rede pra quem afrouxar aquela regra, ou mexer na
---         fila pelo SQL Editor;
---     (c) mas a entrada criada DEPOIS do estorno (o rebipe da caixa) NÃO é par dele e NÃO pode
---         segurá-lo: senão um rebipe que falha prende para sempre um estorno que já tinha a entrada
---         dele entregue.
+--     (b) estorno cuja entrada GRAVADA está CANCELADA também segura: uma entrada cancelada nunca vira
+--         `ok` (o check da tabela proíbe), então a reserva lê `ok = false` e não solta.
+--         ⚠️ Este caso já afirmou outras duas coisas, e as duas vezes a razão estava errada. Primeiro
+--         "entrada cancelada do bipe segura o estorno", que valia pra QUALQUER cancelada — inclusive
+--         uma de um ciclo antigo já encerrado, que prendia pra sempre o estorno de um ciclo novo (o
+--         Critical da rodada anterior; a sequência está no teste 19). Depois "sem entrada VIVA anterior,
+--         segura", que era a inferência que discordava da sf_estoque_reverter (o Important desta
+--         rodada). Hoje não há inferência nenhuma: o estorno DIZ quem é o par dele, e este caso é o par
+--         cancelado. Sob as regras da sf_estoque_reverter ele não é alcançável (ela nunca cancela
+--         entrada que já tem estorno — ver A ASSIMETRIA), então é a rede pra quem afrouxar aquela
+--         regra, ou mexer na fila pelo SQL Editor;
+--     (c) e a entrada criada DEPOIS do estorno (o rebipe da caixa) NÃO é par dele e NÃO pode segurá-lo:
+--         senão um rebipe que falha prende para sempre um estorno que já tinha a entrada dele entregue.
+--         Com o par gravado isso é verdade por construção — o estorno aponta pra E1 e a E2 não tem como
+--         entrar na conta —, e o teste fica como rede pra quem quiser "melhorar" o predicado olhando o
+--         bipe outra vez.
 do $t$
-declare v_chaves text[];
+declare v_chaves text[]; v_teto uuid; v_canc uuid; v_reb uuid;
 begin
   update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
   insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
                                  tentativas, ok, enviado_em, cancelado_em)
   values ('TETO/E1', 'entrada', 'PMOT01', '9907', 'Almoxarifado', 'caixa', 'CX[1][3]9907-PMOT01', 3,
-          now() - interval '10 minutes', 5, false, null, null),
-         ('TETO/S1', 'estorno', 'PMOT01', '9907', 'Almoxarifado', 'caixa', 'CX[1][3]9907-PMOT01', 3,
-          now() - interval '5 minutes', 0, false, null, null),
-         ('CANC/E1', 'entrada', 'PMOT01', '9908', 'Almoxarifado', 'caixa', 'CX[1][3]9908-PMOT01', 3,
-          now() - interval '10 minutes', 0, false, null, now()),
+          now() - interval '10 minutes', 5, false, null, null)
+  returning id into v_teto;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, ok, enviado_em, cancelado_em)
+  values ('CANC/E1', 'entrada', 'PMOT01', '9908', 'Almoxarifado', 'caixa', 'CX[1][3]9908-PMOT01', 3,
+          now() - interval '10 minutes', 0, false, null, now())
+  returning id into v_canc;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, ok, enviado_em, cancelado_em)
+  values ('REB/E1', 'entrada', 'PMOT01', '9909', 'Almoxarifado', 'caixa', 'CX[1][3]9909-PMOT01', 3,
+          now() - interval '30 minutes', 1, true, now(), null)
+  returning id into v_reb;
+  -- os três estornos, cada um apontando pro par dele, e o rebipe pendente que não é par de ninguém
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, ok, enviado_em, cancelado_em, entrada_id)
+  values ('TETO/S1', 'estorno', 'PMOT01', '9907', 'Almoxarifado', 'caixa', 'CX[1][3]9907-PMOT01', 3,
+          now() - interval '5 minutes', 0, false, null, null, v_teto),
          ('CANC/S1', 'estorno', 'PMOT01', '9908', 'Almoxarifado', 'caixa', 'CX[1][3]9908-PMOT01', 3,
-          now() - interval '5 minutes', 0, false, null, null),
-         ('REB/E1', 'entrada', 'PMOT01', '9909', 'Almoxarifado', 'caixa', 'CX[1][3]9909-PMOT01', 3,
-          now() - interval '30 minutes', 1, true, now(), null),
+          now() - interval '5 minutes', 0, false, null, null, v_canc),
          ('REB/S1', 'estorno', 'PMOT01', '9909', 'Almoxarifado', 'caixa', 'CX[1][3]9909-PMOT01', 3,
-          now() - interval '20 minutes', 0, false, null, null),
-         ('REB/E2', 'entrada', 'PMOT01', '9909', 'Almoxarifado', 'caixa', 'CX[1][3]9909-PMOT01', 3,
+          now() - interval '20 minutes', 0, false, null, null, v_reb);
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, ok, enviado_em, cancelado_em)
+  values ('REB/E2', 'entrada', 'PMOT01', '9909', 'Almoxarifado', 'caixa', 'CX[1][3]9909-PMOT01', 3,
           now() - interval '10 minutes', 0, false, null, null);
 
   select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
@@ -501,7 +522,7 @@ begin
   if v_chaves is distinct from array['REB/E2', 'REB/S1'] then
     raise exception 'FALHOU: as bordas da ordem do par não bateram, veio %', v_chaves;
   end if;
-  raise notice 'bordas da ordem do par (teto, sem entrada viva, rebipe posterior): ok';
+  raise notice 'bordas da ordem do par (teto, par cancelado, rebipe posterior): ok';
 end $t$;
 
 -- 19. UM CICLO ANTIGO DO MESMO BIPE NÃO SEGURA O ESTORNO DO CICLO DE AGORA (o Critical da revisão da
@@ -519,35 +540,155 @@ end $t$;
 --          linha limpa: não se manda ao ERP uma entrada e uma saída que nunca precisaram existir);
 --       3. o operador rebipa a mesma caixa, que é o que a recusa da 0129 manda fazer → E2;
 --       4. o cron entrega a E2 → ok;
---       5. o gestor cancela a caixa outra vez → estorno S1, par da E2, e o saldo da E2 desce;
---       6. a reserva TEM que devolver a S1: a entrada dela (a E2, a vigente entre as vivas) está `ok`.
+--       5. o gestor cancela a caixa outra vez → estorno S1, par da E2 (é o que o `entrada_id` dele
+--          GRAVA, porque é da E2 que a sf_estoque_reverter desceu o saldo);
+--       6. a reserva TEM que devolver a S1: a entrada gravada nela (a E2) está `ok`.
+--     Hoje o passo 6 é verdade por construção — a E1 não tem como entrar na conta, porque a S1 diz de
+--     quem ela saiu. O teste fica como rede pra quem voltar a procurar o par pelo bipe.
 do $t$
-declare v_chaves text[];
+declare v_chaves text[]; c_pre text := 'ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/';
 begin
   update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
   insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
                                  tentativas, ok, enviado_em, cancelado_em, estornado)
   values
     -- 1+2. o primeiro ciclo, encerrado: entrada limpa cancelada antes de qualquer rodada
-    ('ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/E1', 'entrada', 'PMOT01', '9910',
+    (c_pre || 'E1', 'entrada', 'PMOT01', '9910',
      'Almoxarifado', 'caixa', 'CX[1][3]9910-PMOT01', 3,
      now() - interval '40 minutes', 0, false, null, now() - interval '35 minutes', 0),
     -- 3+4. o rebipe, entregue ao ERP
-    ('ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/E2', 'entrada', 'PMOT01', '9910',
+    (c_pre || 'E2', 'entrada', 'PMOT01', '9910',
      'Almoxarifado', 'caixa', 'CX[1][3]9910-PMOT01', 3,
-     now() - interval '30 minutes', 1, true, now() - interval '25 minutes', null, 3),
-    -- 5. o estorno da E2 (o saldo dela já desceu pra 3/3, como a sf_estoque_reverter faz)
-    ('ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/S1', 'estorno', 'PMOT01', '9910',
+     now() - interval '30 minutes', 1, true, now() - interval '25 minutes', null, 3);
+  -- 5. o estorno da E2 (o saldo dela já desceu pra 3/3 e o par está gravado, como a
+  --    sf_estoque_reverter faz)
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, ok, enviado_em, cancelado_em, estornado, entrada_id)
+  values
+    (c_pre || 'S1', 'estorno', 'PMOT01', '9910',
      'Almoxarifado', 'caixa', 'CX[1][3]9910-PMOT01', 3,
-     now() - interval '5 minutes', 0, false, null, null, 0);
+     now() - interval '5 minutes', 0, false, null, null, 0,
+     (select id from sf_estoque_envios where chave = c_pre || 'E2'));
 
-  -- 6. A PROVA. Com o predicado antigo ("qualquer anterior não-ok"), a E1 cancelada segura a S1 e
-  -- este array vem VAZIO — agora e em toda rodada seguinte, calado.
+  -- 6. A PROVA. Com o predicado que procurava o par pelo bipe ("qualquer anterior não-ok"), a E1
+  -- cancelada segura a S1 e este array vem VAZIO — agora e em toda rodada seguinte, calado.
   select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
-  if v_chaves is distinct from array['ALMOX/PMOT01/9910/Almoxarifado/CX[1][3]9910-PMOT01/S1'] then
+  if v_chaves is distinct from array[c_pre || 'S1'] then
     raise exception 'FALHOU: a E1 CANCELADA de um ciclo encerrado prendeu o estorno da E2, que já está no ERP — o Compels fica com peças que o ShopFloor removeu, sem erro e sem linha na tela; veio %', v_chaves;
   end if;
-  raise notice '19. ciclo antigo (E1 cancelada) não segura o estorno da entrada vigente entregue: ok';
+  raise notice '19. ciclo antigo (E1 cancelada) não segura o estorno da entrada gravada: ok';
+end $t$;
+
+-- 20. O PAR NASCIDO NA MESMA TRANSAÇÃO DO ESTORNO (o Important desta rodada). Quando o predicado
+--     INFERIA o par — "a mais recente das vivas do mesmo bipe criadas ANTES dele" —, o `<` estrito
+--     escolhia NENHUMA: cancelar a caixa de uma linha tocada e rebipar acontece numa transação só, e
+--     `criado_em` é `now()`, o instante da TRANSAÇÃO, então a E1 (que É o par, a que foi DEBITADA) tem
+--     exatamente o mesmo `criado_em` do estorno. A reserva caía no lado "segura" e — aqui está o pior —
+--     continuava caindo nele DEPOIS de a E1 ser entregue, porque o `criado_em <` a excluía antes de o
+--     `ok` dela ser lido. Preso para sempre, com tentativas = 0 e sem `erro`: o mesmo perfil silencioso
+--     do Critical do teste 19, por outra porta. É o estado que o teste 45 do almoxarifado_test.sql
+--     constrói pelas RPCs (um do-block é UMA transação), e a sf_estoque_reverter já o tratava certo — as
+--     duas funções discordavam sobre qual entrada era o par, e discordar aqui é ficar preso.
+--
+--     Com o par GRAVADO não há mais o que discordar: a reserva lê o `ok` da linha que o estorno aponta.
+--     As duas metades:
+--       • a entrada do par ENTREGUE (viva, `ok`, saldo todo estornado) → a reserva SOLTA o estorno;
+--       • a mesma coisa com ela AINDA NÃO entregue → SEGURA (o espelho, senão o teste passaria com um
+--         predicado que libera tudo).
+do $t$
+declare v_chaves text[]; v_e1 uuid; v_t timestamptz := now() - interval '7 minutes';
+  c_pre text := 'ALMOX/PMOT01/9911/Almoxarifado/CX[1][3]9911-PMOT01/';
+begin
+  update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
+
+  -- A E1 tocada e inteiramente estornada, VIVA na fila (é o que a sf_estoque_reverter deixa quando
+  -- cancelam a caixa de uma linha em voo: a entrada continua indo pro ERP), e a E2 do rebipe. As três
+  -- linhas com o MESMO `criado_em`, que é o empate da transação única.
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, estornado)
+  values (c_pre || 'E1', 'entrada', 'PMOT01', '9911', 'Almoxarifado', 'caixa',
+          'CX[1][3]9911-PMOT01', 3, v_t, 1, 3)
+  returning id into v_e1;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, estornado)
+  values (c_pre || 'E2', 'entrada', 'PMOT01', '9911', 'Almoxarifado', 'caixa',
+          'CX[1][3]9911-PMOT01', 3, v_t, 0, 0);
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, criado_em,
+                                 tentativas, entrada_id)
+  values (c_pre || 'S1', 'estorno', 'PMOT01', '9911', 'Almoxarifado', 'caixa',
+          'CX[1][3]9911-PMOT01', 3, v_t, 0, v_e1);
+
+  -- ESPELHO: a E1 ainda não chegou ao ERP, então o estorno dela NÃO sai (as duas entradas saem).
+  select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
+  if v_chaves is distinct from array[c_pre || 'E1', c_pre || 'E2'] then
+    raise exception 'FALHOU: com a entrada do par ainda não entregue, o estorno tinha que ficar; veio %', v_chaves;
+  end if;
+
+  -- O cron entrega a E1 — a entrada do par, mesmo tendo nascido na mesma transação do estorno.
+  update sf_estoque_envios set ok = true, enviado_em = now(), reservado_em = null
+   where chave = c_pre || 'E1';
+  -- A PROVA: a reserva solta a S1. Com o `criado_em <` estrito ela vinha VAZIA, agora e sempre.
+  select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
+  if v_chaves is distinct from array[c_pre || 'S1'] then
+    raise exception 'FALHOU: a entrada do par foi entregue e o estorno continuou preso — o par nasceu na MESMA transação e o predicado não o achou; veio %', v_chaves;
+  end if;
+  raise notice '20. par nascido na mesma transação: entrega da entrada gravada solta o estorno: ok';
+end $t$;
+
+-- 21. O VÍNCULO COMO INVARIANTE DA TABELA, e o que a reserva faz sem ele. Ter par é EXATAMENTE ser
+--     estorno: o CHECK recusa estorno sem `entrada_id` (o estado que a reserva não sabe ler) e entrada
+--     COM `entrada_id` (uma entrada não tem par — ela É o par). A rede vale pro `insert` à mão no SQL
+--     Editor e pra próxima função que alguém escrever pra mexer na fila, igual ao check do `estornado`.
+--     E o último pedaço: com o check DERRUBADO à mão, um estorno sem vínculo é SEGURADO, e não
+--     liberado. É a escolha escrita no predicado — liberar mandaria ao ERP uma saída de peça que ele
+--     nunca recebeu (estoque de menos lá, irreversível de cá, e ninguém sabendo); segurar deixa a linha
+--     parada, sem estragar estoque nenhum, e é um erro que dá pra descobrir depois.
+do $t$
+declare v_chaves text[]; v_e1 uuid;
+begin
+  update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, ok, enviado_em)
+  values ('VINC/E1', 'entrada', 'PMOT01', '9912', 'Almoxarifado', 'caixa', 'CX[1][3]9912-PMOT01', 3,
+          true, now())
+  returning id into v_e1;
+
+  begin
+    insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade)
+    values ('VINC/S0', 'estorno', 'PMOT01', '9912', 'Almoxarifado', 'caixa', 'CX[1][3]9912-PMOT01', 3);
+    raise exception 'FALHOU: aceitou estorno SEM entrada_id';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, entrada_id)
+    values ('VINC/E2', 'entrada', 'PMOT01', '9912', 'Almoxarifado', 'caixa', 'CX[1][3]9912-PMOT01', 3,
+            v_e1);
+    raise exception 'FALHOU: aceitou ENTRADA com entrada_id (entrada não tem par, ela é o par)';
+  exception when check_violation then null;
+  end;
+  -- e o vínculo tem que apontar pra uma linha que existe: a chave estrangeira é a outra metade
+  begin
+    insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, entrada_id)
+    values ('VINC/S9', 'estorno', 'PMOT01', '9912', 'Almoxarifado', 'caixa', 'CX[1][3]9912-PMOT01', 3,
+            '11111111-1111-4111-8111-111111111111');
+    raise exception 'FALHOU: aceitou estorno apontando pra linha que não existe';
+  exception when foreign_key_violation then null;
+  end;
+
+  -- Com o check fora do caminho (é só assim que este estado nasce), o estorno sem vínculo SEGURA.
+  alter table sf_estoque_envios drop constraint sf_estoque_envios_entrada_id_so_no_estorno;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade)
+  values ('VINC/S1', 'estorno', 'PMOT01', '9912', 'Almoxarifado', 'caixa', 'CX[1][3]9912-PMOT01', 3);
+  select array_agg(r.chave order by r.chave) into v_chaves from sf_estoque_reservar(100) r;
+  if v_chaves is not null then
+    raise exception 'FALHOU: estorno sem vínculo tinha que ser SEGURADO (liberar manda ao ERP uma saída que ele nunca recebeu); a reserva devolveu %', v_chaves;
+  end if;
+  -- desfaz o estado inválido e devolve o check, pra a reaplicação da migração (que roda no runner
+  -- depois deste arquivo) não encontrar a tabela sem ele nem com linha que o viola
+  delete from sf_estoque_envios where chave = 'VINC/S1';
+  alter table sf_estoque_envios
+    add constraint sf_estoque_envios_entrada_id_so_no_estorno
+    check ((operacao = 'estorno') = (entrada_id is not null));
+  raise notice '21. vínculo obrigatório no estorno (e proibido na entrada); sem vínculo, segura: ok';
 end $t$;
 
 select 'ESTOQUE ENVIOS SQL OK' as fim;
