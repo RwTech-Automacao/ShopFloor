@@ -104,6 +104,9 @@ describe('POST /api/shopfloor/estoque', () => {
     await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
     const linha = vi.mocked(console.error).mock.calls.map((c) => String(c[0])).join('\n')
     expect(linha).toContain('4 enviado(s), 1 falha(s)')
+    // A cauda promete o motivo acima — e a promessa é verdade porque o laço loga a falha DEVOLVIDA
+    // pelo último metro, não só a lançada (ver enviar-estoque.ts e o teste dele).
+    expect(linha).toContain('cada falha escreveu o motivo dela acima')
   })
 
   it('rodada limpa não suja o log de erro', async () => {
@@ -122,6 +125,45 @@ describe('POST /api/shopfloor/estoque', () => {
     // isso escrito, senão trata a rodada de 503 como incidente.
     const linha = vi.mocked(console.error).mock.calls.map((c) => String(c[0])).join('\n')
     expect(linha).toContain('ESPERADO fora do horário')
+  })
+
+  /**
+   * OS DOIS RAMOS DO RÓTULO. A rota não sabe por que o banco não respondeu — só tem o texto do erro —
+   * e o log é o único olho que alguém tem nas rodadas. Uma linha que AFIRMA "esperado, não é alarme"
+   * em cima de um bug de refatoração é pior que nenhuma linha: ela manda não investigar.
+   */
+  it('falha que NÃO parece de conexão é marcada INESPERADO (e o 503 fica)', async () => {
+    entregarEstoquePendente.mockRejectedValueOnce(
+      new TypeError('repo.reservarPendentes is not a function'),
+    )
+    const res = await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
+    // o 503 continua: 500 às 3h da manhã acordaria alguém para uma rodada perdida
+    expect(res.status).toBe(503)
+    const linha = vi.mocked(console.error).mock.calls.map((c) => c.map(String).join(' ')).join('\n')
+    expect(linha).toContain('INESPERADO')
+    // e NÃO pode sair a linha da noite normal: é ela que diz para não investigar
+    expect(linha).not.toContain('ESPERADO fora do horário')
+    expect(linha).toContain('repo.reservarPendentes is not a function')
+  })
+
+  it('falha que parece de conexão (inclusive pelo `cause`) segue como esperada, sem INESPERADO', async () => {
+    const naRede = [
+      new TypeError('fetch failed'),
+      // o código de verdade mora no `cause` quando o fetch do supabase-js embala a falha de rede
+      Object.assign(new Error('falha ao falar com o banco'), {
+        cause: new Error('connect ECONNREFUSED 10.0.0.9:5432'),
+      }),
+    ]
+    for (const erro of naRede) {
+      vi.mocked(console.error).mockClear()
+      entregarEstoquePendente.mockRejectedValueOnce(erro)
+      const res = await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
+      expect(res.status).toBe(503)
+      const linha = vi.mocked(console.error).mock.calls.map((c) => c.map(String).join(' ')).join('\n')
+      expect(linha).toContain('ESPERADO fora do horário')
+      // o filtro do log só serve se a noite normal NÃO cair nele
+      expect(linha).not.toContain('INESPERADO')
+    }
   })
 
   it('falha ao montar o repositório (env do banco ausente) também vira 503', async () => {
