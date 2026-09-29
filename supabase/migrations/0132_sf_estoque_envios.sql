@@ -78,6 +78,9 @@
 --               ERP, então o certo é cancelar o envio pendente, e não mandar uma entrada e uma saída
 --               que nunca precisaram existir (Task 2). Cancelar o que JÁ FOI enviado é outra coisa:
 --               é um estorno, uma linha nova com operacao = 'estorno' — daí o check abaixo.
+--   REVERTIDA (em parte ou por inteiro) = estornado > 0, a coluna acrescentada depois do create table
+--               (logo abaixo). Não é um estado à parte: é o quanto DESTA entrada já virou saída no
+--               ERP, e é ele que a reversão usa como saldo.
 create table if not exists public.sf_estoque_envios (
   id           uuid primary key default gen_random_uuid(),
   -- a chave que vai para o ERP; vem de sf_estoque_chave (ver DIFERENÇA 1 no cabeçalho)
@@ -134,6 +137,48 @@ begin
       check (tipo <> 'serie' or btrim(serie_norm) <> '');
   end if;
 end $chk$;
+
+-- ---------- estornado: QUANTO desta entrada já foi revertido ----------
+-- A INVARIANTE que esta coluna existe pra garantir: a soma do que é estornado de uma entrada NUNCA
+-- passa do que foi enviado ao ERP. Estoque é dinheiro do outro lado — sobra ou falta ali vira
+-- inventário errado, e ninguém do lado de cá fica sabendo.
+--
+-- Sem ela, a reversão não tinha onde anotar "isto já foi revertido" e trabalhava sempre sobre a
+-- quantidade CHEIA: numa caixa de 3 já entregue, cancelar 1 peça (estorno de 1) e depois a caixa
+-- inteira (estorno de 3) somava 4 estornos para uma entrada de 3. E era a sequência que a própria
+-- recusa do sistema manda o gestor seguir num estado parcial ("cancele a caixa inteira em Registros
+-- e bipe outra vez", 0129).
+--
+-- POR QUE UMA COLUNA NA ENTRADA, e não somar as linhas de estorno daquele bipe: o estorno é uma
+-- linha solta, sem vínculo com a entrada que ele desfaz — a chave identifica o BIPE (pmo, op, posto,
+-- alvo), e o mesmo bipe tem várias entradas no histórico (E1 cancelada, E2 do rebipe, E3...). Uma
+-- soma por bipe descontaria da E2 os estornos da E1, e a caixa rebipada nunca poderia ser revertida
+-- por inteiro. O saldo tem que ser POR ENTRADA, e o lugar dele é a própria linha da entrada — de
+-- graça, sem join, e travável junto com ela no `for update` da reversão.
+--
+-- ⚠️ FORA do `create table` de propósito: a tabela é criada com `create table if not exists`, então
+-- coluna nova escrita no corpo dele NÃO chega numa base que já tenha a tabela (Dev, onde a fila pode
+-- já existir de um teste anterior). Declarada só aqui, o mesmo comando serve aos dois casos — base
+-- nova e base velha — e não há duas definições pra divergirem.
+alter table public.sf_estoque_envios
+  add column if not exists estornado int not null default 0;
+
+-- A invariante como CHECK, e não só como cuidado na função: é a garantia que sobrevive a um `update`
+-- manual no SQL Editor às 18h e à próxima função que alguém escrever pra mexer na fila. Guardado no
+-- mesmo molde do check acima (do-block com guarda) porque `add constraint` não tem `if not exists`, e
+-- reaplicar a migração não pode falhar. Delimitador $chk2$, nunca dois cifrões (o SQL Editor recusa).
+do $chk2$
+begin
+  if not exists (
+    select 1 from information_schema.table_constraints
+    where table_schema = 'public' and table_name = 'sf_estoque_envios'
+      and constraint_name = 'sf_estoque_envios_estornado_dentro_da_quantidade'
+  ) then
+    alter table public.sf_estoque_envios
+      add constraint sf_estoque_envios_estornado_dentro_da_quantidade
+      check (estornado >= 0 and estornado <= quantidade);
+  end if;
+end $chk2$;
 
 -- A chave de idempotência. Índice separado (e não `unique` na coluna) para a migração ser idempotente
 -- de verdade: com a tabela já criada, um `unique` inline não seria aplicado nunca.
@@ -223,10 +268,20 @@ revoke all on function public.sf_estoque_chave(text, text, text, text, text)
 -- envio (Task 3) deve marcar `ok` com `and cancelado_em is null` no filtro — senão o check
 -- `cancelado_em is null or not ok` estoura na cara do servidor quando um cancelamento cai no meio.
 --
+-- SALDO — A SOMA DOS ESTORNOS DE UMA ENTRADA NUNCA PASSA DO QUE FOI ENVIADO (o outro achado da mesma
+-- revisão). Todo estorno sai do SALDO da entrada (`quantidade - estornado`) e desce esse saldo na
+-- mesma transação; saldo zerado não gera estorno nenhum e devolve 'nada'. Antes disso a reversão
+-- trabalhava sempre sobre a quantidade CHEIA: na caixa de 3 já entregue, cancelar 1 peça (estorno de
+-- 1) e depois a caixa inteira (estorno de 3) mandava 4 saídas para uma entrada de 3 — e essa é a
+-- sequência que a própria recusa do sistema manda o gestor seguir num estado parcial ("cancele a
+-- caixa inteira em Registros e bipe outra vez", 0129). O porquê da coluna estar na ENTRADA, e não de
+-- uma soma pelas linhas de estorno, está junto do `alter table` dela, no começo desta migração.
+--
 -- p_quantidade = quantas peças estão sendo desfeitas, ou NULO para "o bipe inteiro":
 --   • nulo (0131, a caixa inteira) — cancela a linha pendente de uma vez; se já foi enviada, estorna
---     o que o ERP recebeu (v_ent.quantidade), e não o que acabou de ser apagado aqui: o que conserta
---     o estoque de lá é reverter o que chegou lá;
+--     o SALDO do que o ERP recebeu (e não a `quantidade` cheia, que pode já ter sido revertida em
+--     parte, nem o que acabou de ser apagado aqui): o que conserta o estoque de lá é reverter o que
+--     chegou lá e ainda está lá;
 --   • um número (0133, uma linha avulsa = 1 peça) — a linha pendente ainda descreve o que VAI ser
 --     enviado, então ela é AJUSTADA (uma caixa de 3 vira 2). Mandar 3 e estornar 1 seriam duas
 --     movimentações no ERP para um número que ainda podia ser corrigido aqui. Quando a última peça
@@ -245,8 +300,10 @@ security definer
 set search_path = public
 as $func$
 declare
-  v_ent   public.sf_estoque_envios;
-  v_resta int;
+  v_ent    public.sf_estoque_envios;
+  v_resta  int;
+  v_saldo  int;
+  v_qtd    int;
 begin
   -- Nada a desfazer: chamada defensiva (um cancelamento que não apagou linha nenhuma, um alvo vazio).
   if coalesce(p_alvo, '') = '' or coalesce(p_quantidade, 1) <= 0 then
@@ -256,7 +313,7 @@ begin
   -- A entrada VIGENTE daquele bipe: a mais recente que ainda não foi cancelada. O mesmo bipe pode ter
   -- várias no histórico (E1 cancelada, E2 depois do rebipe — ver o contador da chave acima), e é a
   -- última que descreve o que está no ShopFloor agora. `for update` porque dois cancelamentos da
-  -- mesma caixa ajustariam a quantidade a partir da mesma leitura.
+  -- mesma caixa ajustariam a quantidade — e descontariam o saldo — a partir da mesma leitura.
   select * into v_ent
     from public.sf_estoque_envios
    where pmo = p_pmo and op = p_op and posto = p_posto and alvo = p_alvo
@@ -268,27 +325,49 @@ begin
     return 'sem_fila';
   end if;
 
+  -- JÁ ESTÁ NO ERP: a única forma de desfazer é uma saída, e a linha da entrada NÃO é mexida (o check
+  -- da tabela diz a mesma coisa: o que já foi enviado não se cancela).
   if v_ent.ok then
-    -- JÁ ESTÁ NO ERP: a única forma de desfazer é uma saída. tipo/bipe/serie_norm são COPIADOS da
-    -- entrada de propósito — é o que garante que o `alvo` do estorno (coluna gerada) seja idêntico ao
-    -- da entrada, e portanto que o contador da chave e a busca daqui olhem o mesmo bipe.
+    -- SOBRE O SALDO, nunca sobre a quantidade cheia (ver "SALDO", acima).
+    v_saldo := v_ent.quantidade - v_ent.estornado;
+    if v_saldo <= 0 then
+      -- Já revertida por inteiro: não há mais nada lá pra descontar, e insistir seria mandar ao ERP
+      -- uma saída que ele não tem como cobrir. 'nada' é o mesmo "não havia o que fazer" do começo.
+      return 'nada';
+    end if;
+    -- Aparado pelo saldo: o cancelamento diz quantas peças saíram do ShopFloor, mas o ERP não pode
+    -- devolver mais do que recebeu. Nulo (o bipe inteiro) é o saldo, e não a quantidade cheia.
+    v_qtd := least(coalesce(p_quantidade, v_saldo), v_saldo);
+    -- tipo/bipe/serie_norm são COPIADOS da entrada de propósito — é o que garante que o `alvo` do
+    -- estorno (coluna gerada) seja idêntico ao da entrada, e portanto que o contador da chave e a
+    -- busca daqui olhem o mesmo bipe.
     insert into public.sf_estoque_envios
       (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade)
     values
       (public.sf_estoque_chave(p_pmo, p_op, p_posto, p_alvo, 'estorno'), 'estorno',
-       v_ent.pmo, v_ent.op, v_ent.posto, v_ent.tipo, v_ent.bipe, v_ent.serie_norm,
-       coalesce(p_quantidade, v_ent.quantidade));
+       v_ent.pmo, v_ent.op, v_ent.posto, v_ent.tipo, v_ent.bipe, v_ent.serie_norm, v_qtd);
+    -- A baixa do saldo vai na MESMA transação do insert: se o estorno vingasse e ela não, a reversão
+    -- seguinte estornaria de novo sobre o valor cheio — exatamente o defeito que o saldo mata. O
+    -- CHECK da tabela (estornado <= quantidade) é a rede embaixo disto.
+    update public.sf_estoque_envios
+       set estornado = v_ent.estornado + v_qtd
+     where id = v_ent.id;
     return 'estorno';
   end if;
 
-  -- AINDA NÃO SAIU. O bipe inteiro (p_quantidade nulo) cancela a linha sem aritmética: a intenção é
-  -- inequívoca, e a quantidade da linha pode não bater com o que foi apagado agora (um ajuste
-  -- anterior já pode ter reduzido).
+  -- AINDA NÃO SAIU. O bipe inteiro (p_quantidade nulo)
+  -- cancela a linha sem aritmética: a intenção é inequívoca, e a quantidade da linha pode não bater
+  -- com o que foi apagado agora (um ajuste anterior já pode ter reduzido).
   if p_quantidade is null then
     update public.sf_estoque_envios set cancelado_em = now() where id = v_ent.id;
     return 'cancelado';
   end if;
 
+  -- AJUSTE. Ele REDUZ a `quantidade`, o que levanta a pergunta de o `estornado` poder ficar acima
+  -- dela: não pode. Uma linha só ganha estornado > 0 no ramo de cima, que exige `ok`, e `ok` não volta
+  -- atrás (nada devolve false) — então toda linha que chega aqui tem estornado = 0, e a quantidade
+  -- ajustada é >= 1. O CHECK fica como a garantia de que isso continua verdade se alguém mexer nessas
+  -- regras sem reler este parágrafo.
   v_resta := v_ent.quantidade - p_quantidade;
   if v_resta <= 0 then
     update public.sf_estoque_envios set cancelado_em = now() where id = v_ent.id;

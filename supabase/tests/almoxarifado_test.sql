@@ -1415,3 +1415,74 @@ begin
   raise notice '40. entrada anterior à fila → cancela sem estorno: ok';
 end $t$;
 
+
+-- ---------- 41. A SOMA DOS ESTORNOS DE UMA ENTRADA NUNCA PASSA DO QUE FOI ENVIADO ----------
+-- O achado que este teste trava: o estorno do BIPE INTEIRO (p_quantidade nulo) ignorava o que já
+-- havia sido estornado peça por peça, e mandava a quantidade CHEIA de novo. Numa caixa de 3 já
+-- entregue ao ERP: cancela 1 peça (estorno de 1), cancela a caixa inteira (estorno de 3) = 4 peças
+-- estornadas de uma entrada de 3. O ERP fica com estoque NEGATIVO de uma peça, para sempre.
+--
+-- E não é caminho exótico: é a sequência que a PRÓPRIA recusa do sistema manda o gestor seguir num
+-- estado parcial ("Um cancelamento anterior parou no meio: cancele a caixa inteira em Registros e
+-- bipe outra vez", 0129) — com o rebipe que a frase pede, a caixa de 3 fecharia o ciclo valendo 2
+-- peças no Compels.
+--
+-- A asserção é sobre a INVARIANTE, não sobre o mecanismo: somando todos os estornos daquele bipe, o
+-- total tem que ser exatamente o que o ERP recebeu.
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC20', '8503', 'Embalagem', 4, 3, 3, 'CX[4][3]8503-PMOC20', true),
+  ('PMOC20', '8503', 'Embalagem', 5, 3, 3, 'CX[5][3]8503-PMOC20', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[4][3]8503-PMOC20',
+       'SN-' || (9980 + i)::text, (9980 + i)::text from generate_series(1, 3) i;
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[5][3]8503-PMOC20',
+       'SN-' || (9985 + i)::text, (9985 + i)::text from generate_series(1, 3) i;
+
+do $t$
+declare v_id uuid; v_soma int; v_n int; v_est int; v_qtd int;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
+                              'CX[4][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
+    raise exception 'FALHOU (massa): a caixa 4 não entrou'; end if;
+  -- O servidor entregou as 3 ao Compels (é o que a Task 3 vai fazer de verdade).
+  update sf_estoque_envios set ok = true, enviado_em = now(), tentativas = 1
+   where alvo = 'CX[4][3]8503-PMOC20' and operacao = 'entrada';
+
+  -- (1) o gestor cancela UMA peça: estorno de 1, e sobram 2 no estoque do ERP.
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[4][3]8503-PMOC20'
+   order by numero_serie_norm limit 1;
+  perform sf_cancelar_lancamento(v_id, 'uma peça só');
+
+  -- (2) o gestor cancela a CAIXA INTEIRA (é o que a mensagem de recusa manda fazer).
+  select id into v_id from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[4][3]8503-PMOC20' limit 1;
+  if sf_cancelar_caixa_almoxarifado(v_id, 'cancela o resto') <> 2 then
+    raise exception 'FALHOU (massa): esperava cancelar as 2 peças que sobraram'; end if;
+
+  select coalesce(sum(quantidade), 0), count(*) into v_soma, v_n from sf_estoque_envios
+   where alvo = 'CX[4][3]8503-PMOC20' and operacao = 'estorno';
+  if v_soma <> 3 then
+    raise exception 'FALHOU: a entrada mandou 3 peças ao ERP e os estornos somam % (em % linha(s)) — sobra/falta de % peça(s) no estoque do Compels',
+      v_soma, v_n, v_soma - 3; end if;
+
+  -- E o SALDO da entrada tem que contar isso: é ele que a próxima reversão vai olhar.
+  select estornado, quantidade into v_est, v_qtd from sf_estoque_envios
+   where alvo = 'CX[4][3]8503-PMOC20' and operacao = 'entrada';
+  if v_est <> 3 or v_qtd <> 3 then
+    raise exception 'FALHOU: a entrada tinha que ficar com quantidade 3 e estornado 3, veio %/%', v_qtd, v_est; end if;
+
+  -- SALDO ESGOTADO: insistir não cria estorno nenhum e o retorno é 'nada' — não há mais nada lá para
+  -- descontar, e uma saída a mais viraria estoque negativo no Compels.
+  if sf_estoque_reverter('PMOC20', '8503', 'Almoxarifado', 'CX[4][3]8503-PMOC20', null) <> 'nada' then
+    raise exception 'FALHOU: reverter o bipe inteiro de uma entrada já revertida tinha que devolver nada'; end if;
+  if sf_estoque_reverter('PMOC20', '8503', 'Almoxarifado', 'CX[4][3]8503-PMOC20', 1) <> 'nada' then
+    raise exception 'FALHOU: reverter uma peça de uma entrada já revertida tinha que devolver nada'; end if;
+  select coalesce(sum(quantidade), 0), count(*) into v_soma, v_n from sf_estoque_envios
+   where alvo = 'CX[4][3]8503-PMOC20' and operacao = 'estorno';
+  if v_soma <> 3 or v_n <> 2 then
+    raise exception 'FALHOU: saldo esgotado ainda inseriu linha de estorno (soma = %, linhas = %)', v_soma, v_n; end if;
+  raise notice '41. estornos de uma entrada somam o que foi enviado, nem uma peça mais (saldo esgotado devolve nada): ok';
+end $t$;
