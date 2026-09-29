@@ -199,19 +199,31 @@ describe('agrupamento por bipe (pmo/op/posto/alvo)', () => {
     expect(est.podeReenviar).toBe(false)
   })
 
-  it('bipes diferentes ficam em grupos diferentes, o mais recente primeiro', () => {
-    const outro = linha({
+  it('bipes diferentes ficam em grupos diferentes e, entre iguais, o mais recente primeiro', () => {
+    // Nenhum dos dois pede gesto (ambos `na_fila`), então quem decide é a data.
+    const velho = linha({ id: 'v1', op: '9100', criadoEm: '2026-09-29T11:00:00.000Z' })
+    const novo = linha({
       id: 'x1',
       op: '9200',
       alvo: 'CX[1][5]9200-PMOA01',
       criadoEm: '2026-09-29T11:59:00.000Z',
     })
-    const grupos = agruparEstoquePendente(
-      [ENTRADA_TRAVADA, outro],
-      new Map(),
-      AGORA,
-    )
+    const grupos = agruparEstoquePendente([velho, novo], new Map(), AGORA)
     expect(grupos.map((g) => g.op)).toEqual(['9200', '9100'])
+  })
+
+  it('o grupo que PEDE GESTO vem antes do mais recente que não pede nada', () => {
+    // A tela não tem paginação nem filtro: com o envio falhando, quem precisa de alguém são as
+    // linhas mais ANTIGAS, e ordenar só por data as empurra para o fim — para fora da vista.
+    const recente = linha({
+      id: 'x1',
+      op: '9200',
+      alvo: 'CX[1][5]9200-PMOA01',
+      criadoEm: '2026-09-29T11:59:00.000Z',
+    })
+    const grupos = agruparEstoquePendente([recente, ENTRADA_TRAVADA], new Map(), AGORA)
+    expect(grupos.map((g) => g.op)).toEqual(['9100', '9200'])
+    expect(grupos[0]?.linhas.some((l) => l.podeReenviar)).toBe(true)
   })
 
   it('o mesmo alvo em POSTOS diferentes não se mistura (o posto faz parte da identidade do bipe)', () => {

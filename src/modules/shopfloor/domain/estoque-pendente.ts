@@ -283,10 +283,16 @@ function traduzir(
 /**
  * Monta os grupos da tela: traduz cada linha e junta as do MESMO bipe (`pmo/op/posto/alvo`).
  *
- * Ordem dos grupos: o bipe mais recente primeiro (pelo `criado_em` mais novo do grupo) — é o que
- * casa com a leitura de quem abre a tela procurando o que acabou de acontecer. Dentro do grupo a
- * ENTRADA vem antes dos estornos dela, e os estornos em ordem de chave (`S1`, `S2`...): é a ordem
- * dos fatos, e é ela que faz "reenvie a entrada, a de cima" ser uma instrução verdadeira.
+ * Ordem dos grupos: PRIMEIRO os que pedem um gesto (algum Reenviar possível — a linha que saiu da
+ * fila e não volta sozinha), depois o bipe mais recente (pelo `criado_em` mais novo do grupo). A
+ * acionabilidade vem antes da data porque, com o envio ao Compels falhando, o que precisa de gente
+ * são justamente as linhas MAIS ANTIGAS: ordenar só por data as empurra para o fim de uma tela sem
+ * paginação nem filtro. Entre grupos igualmente acionáveis (ou igualmente inertes) a data manda, que
+ * é o que casa com quem abre a tela procurando o que acabou de acontecer.
+ *
+ * Dentro do grupo a ENTRADA vem antes dos estornos dela, e os estornos em ordem de chave (`S1`,
+ * `S2`...): é a ordem dos fatos, e é ela que faz "reenvie a entrada, a de cima" ser uma instrução
+ * verdadeira.
  */
 export function agruparEstoquePendente(
   linhas: LinhaFilaEstoque[],
@@ -317,5 +323,8 @@ export function agruparEstoquePendente(
 
   const maisNovo = (g: GrupoEstoquePendente) =>
     g.linhas.reduce((max, l) => (l.criadoEm > max ? l.criadoEm : max), '')
-  return [...grupos.values()].sort((a, b) => maisNovo(b).localeCompare(maisNovo(a)))
+  const pedeGesto = (g: GrupoEstoquePendente) => (g.linhas.some((l) => l.podeReenviar) ? 0 : 1)
+  return [...grupos.values()].sort(
+    (a, b) => pedeGesto(a) - pedeGesto(b) || maisNovo(b).localeCompare(maisNovo(a)),
+  )
 }

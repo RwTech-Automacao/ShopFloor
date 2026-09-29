@@ -34,6 +34,27 @@ const COLUNAS =
   'id, chave, operacao, pmo, op, posto, tipo, bipe, alvo, quantidade, estornado, tentativas,'
   + ' reservado_em, erro, criado_em, entrada_id, seq_chave'
 
+/**
+ * A segunda leitura traz a linha INTEIRA da entrada, e não só o estado dela, porque agora ela pode
+ * entrar na lista (ver `listarEstoquePendente`). `ok`/`cancelado_em` vêm de fora do `COLUNAS` porque
+ * a primeira leitura já filtra por eles e não precisa lê-los.
+ */
+const COLUNAS_ENTRADA = COLUNAS + ', ok, cancelado_em'
+
+/**
+ * Quantos ids por `in (...)`. O PostgREST manda filtro na URL: 200 uuids viram uma linha de pedido de
+ * ~7,7 KB, e o `large_client_header_buffers` padrão do nginx é 8 KB — estourá-lo devolveria 4xx, o
+ * `throw` daqui derrubaria a tela inteira e não há `error.tsx` em lugar nenhum do projeto. 50 por
+ * lote deixa a URL em ~2 KB e tira a dúvida do caminho; o custo é uma requisição a mais por lote.
+ */
+const IDS_POR_LOTE = 50
+
+function emLotes<T>(itens: T[], tamanho: number): T[][] {
+  const lotes: T[][] = []
+  for (let i = 0; i < itens.length; i += tamanho) lotes.push(itens.slice(i, i + tamanho))
+  return lotes
+}
+
 interface LinhaBruta {
   id: string
   chave: string
@@ -102,10 +123,12 @@ export interface DadosEstoquePendente {
  * da 0132. O que já foi entregue (`ok`) e o que foi cancelado antes de sair não são pendência: a
  * linha fica na tabela para reconciliação, mas não é sobre ela que alguém age às 7h.
  *
- * A SEGUNDA LEITURA busca as ENTRADAS apontadas pelos estornos da lista, e ela é necessária porque a
- * entrada pode NÃO ser pendência: quando ela já chegou ao ERP (`ok = true`) o estorno está liberado,
- * e quando ela foi CANCELADA o estorno está retido para sempre — dois estados opostos que a primeira
- * leitura não distingue, porque nos dois a entrada está fora dela.
+ * A SEGUNDA LEITURA busca as ENTRADAS apontadas pelos estornos da lista, e ela faz DUAS coisas:
+ *   • explica o estorno retido — a entrada pode NÃO ser pendência: quando ela já chegou ao ERP
+ *     (`ok = true`) o estorno está liberado, e quando ela foi CANCELADA o estorno está retido para
+ *     sempre; dois estados opostos que a primeira leitura não distingue, porque nos dois a entrada
+ *     está fora dela;
+ *   • COMPLETA O PAR — se a entrada ainda é pendência e ficou fora do corte, ela entra na lista.
  */
 export async function listarEstoquePendente(limite = 200): Promise<DadosEstoquePendente> {
   const supabase = await createServerSupabase()
@@ -114,10 +137,22 @@ export async function listarEstoquePendente(limite = 200): Promise<DadosEstoqueP
     .select(COLUNAS)
     .eq('ok', false)
     .is('cancelado_em', null)
+    // ACIONABILIDADE ANTES DA DATA. Ordenar só por `criado_em desc` esconde exatamente quem a tela
+    // existe para mostrar: com o último metro falhando, em 5 rodadas TODA a fila vai para o teto, e
+    // as linhas que precisam de gente são as mais ANTIGAS — as primeiras a sair de um corte por
+    // data, e nada as tira da lista depois (o Reenviar não as remove da fila e, sem o envio, nada
+    // vira `ok`), sem paginação nem filtro para alcançá-las. `tentativas desc` traz primeiro quem
+    // está no teto (`>= TETO_TENTATIVAS`, a única situação em que o Reenviar se aplica) e, dentro do
+    // mesmo número de tentativas, a data manda como antes.
+    .order('tentativas', { ascending: false })
     .order('criado_em', { ascending: false })
-    .limit(limite)
+    // `limite + 1` só para saber se há mais: a linha extra é descartada e a tela mostra `limite`.
+    // Com `>= limite` a frase "há mais na fila" aparecia também na fila de exatamente `limite`.
+    .limit(limite + 1)
   if (error) throw error
-  const linhas = ((data ?? []) as unknown as LinhaBruta[]).map(converter)
+  const brutas = (data ?? []) as unknown as LinhaBruta[]
+  const cortada = brutas.length > limite
+  const linhas = brutas.slice(0, limite).map(converter)
 
   const idsEntradas = [
     ...new Set(
@@ -127,16 +162,17 @@ export async function listarEstoquePendente(limite = 200): Promise<DadosEstoqueP
         .filter((id): id is string => !!id),
     ),
   ]
+  const naLista = new Set(linhas.map((l) => l.id))
   const entradas = new Map<string, EntradaDoEstorno>()
-  if (idsEntradas.length > 0) {
-    const { data: brutas, error: erroEntradas } = await supabase
+  for (const lote of emLotes(idsEntradas, IDS_POR_LOTE)) {
+    const { data: brutasEntradas, error: erroEntradas } = await supabase
       .from('sf_estoque_envios')
-      .select('id, chave, ok, cancelado_em, tentativas')
-      .in('id', idsEntradas)
+      .select(COLUNAS_ENTRADA)
+      .in('id', lote)
     if (erroEntradas) throw erroEntradas
-    for (const e of (brutas ?? []) as unknown as {
-      id: string; chave: string; ok: boolean; cancelado_em: string | null; tentativas: number
-    }[]) {
+    for (const e of (brutasEntradas ?? []) as unknown as (LinhaBruta & {
+      ok: boolean; cancelado_em: string | null
+    })[]) {
       entradas.set(e.id, {
         id: e.id,
         chave: e.chave,
@@ -144,10 +180,19 @@ export async function listarEstoquePendente(limite = 200): Promise<DadosEstoqueP
         canceladoEm: e.cancelado_em,
         tentativas: Number(e.tentativas ?? 0),
       })
+      // O PAR NÃO PODE CHEGAR QUEBRADO. O estorno é sempre criado DEPOIS da entrada, então quem cai
+      // fora de qualquer corte é a ENTRADA — e é nela que está o botão e a frase "Aperte Reenviar NA
+      // LINHA DA ENTRADA (a de cima, neste mesmo bipe)", que não tem como ser cumprida se a linha
+      // não foi renderizada. Se a entrada ainda é pendência, ela entra na lista mesmo passando do
+      // `limite`: o grupo do bipe vale mais que o número redondo.
+      if (e.ok !== true && e.cancelado_em === null && !naLista.has(e.id)) {
+        naLista.add(e.id)
+        linhas.push(converter(e))
+      }
     }
   }
 
-  return { linhas, entradas, cortada: linhas.length >= limite }
+  return { linhas, entradas, cortada }
 }
 
 /** O que o Reenviar precisa saber da linha antes de decidir. */
