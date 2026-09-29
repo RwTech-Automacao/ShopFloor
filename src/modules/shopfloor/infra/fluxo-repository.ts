@@ -78,6 +78,11 @@ export async function carregarFluxoOp(
     exigeManutencao[p] = perfis[p]?.exigeManutencao ?? false
   }
 
+  // Caixa só interessa quando a OP TEM posto de almoxarifado e embala em caixa. Decidido ANTES do
+  // scan: sem isso, toda OP do Fluxo (a imensa maioria não tem almoxarifado) passaria a trazer uma
+  // coluna a mais em milhares de linhas sem ninguém usar.
+  const contarCaixas = postos.some((p) => (recurso[p] ?? 'nenhum') === 'almoxarifado') && !embalagemIndividual
+
   // WIP de cada nó = "pendentes no posto" (a fila): peça aprovada avança pro próximo posto.
   const { pendentes, iniciadas, finalizadas, caixasPorPosto } = await contarPendentesPorPosto(
     pmo,
@@ -85,6 +90,7 @@ export async function carregarFluxoOp(
     postos,
     (p) => exigeManutencao[p] ?? false,
     (p) => recurso[p] ?? 'nenhum',
+    contarCaixas,
   )
   // Caixa de Entrada = peças que ainda não começaram (qtd − peças com algum registro). Só se a OP tem qtd.
   const naoIniciadas = qtd != null ? Math.max(0, qtd - iniciadas) : null
@@ -94,11 +100,9 @@ export async function carregarFluxoOp(
     pendentes[k] = (pendentes[k] ?? 0) + naoIniciadas
   }
 
-  // Caixas do Almoxarifado: só quando a OP TEM posto de almoxarifado e embala em caixa. O
-  // denominador são as caixas FECHADAS da OP — caixa aberta não tem quantidade definida e nem pode
+  // O denominador são as caixas FECHADAS da OP — caixa aberta não tem quantidade definida e nem pode
   // ser bipada (0129).
-  const temAlmoxarifado = postos.some((p) => (recurso[p] ?? 'nenhum') === 'almoxarifado')
-  const caixasFechadas = temAlmoxarifado && !embalagemIndividual ? await contarCaixasFechadas(pmo, op) : null
+  const caixasFechadas = contarCaixas ? await contarCaixasFechadas(pmo, op) : null
 
   const agregadosComPendentes: FluxoAgregado[] = [...postos, MANUTENCAO].map((posto) => {
     const a = agregados.find((x) => x.posto.toLowerCase() === posto.toLowerCase())
@@ -138,14 +142,17 @@ async function contarPendentesPorPosto(
   postos: string[],
   exige: (p: string) => boolean,
   recurso: (p: string) => string,
+  // `false` (o caso comum) nem pede a coluna numero_caixa: OP sem almoxarifado não paga por ela.
+  contarCaixas = false,
 ): Promise<{ pendentes: Record<string, number>; iniciadas: number; finalizadas: number; caixasPorPosto: Record<string, number> }> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; numero_caixa: string | null; data_hora: string; id: number }[] = []
+  const COLUNAS = `numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id${contarCaixas ? ',numero_caixa' : ''}`
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; numero_caixa?: string | null; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,posto,posto_retorno,numero_caixa,data_hora,id')
+      .select(COLUNAS)
       .eq('pmo', pmo)
       .eq('op', op)
       .neq('numero_serie_norm', '')
@@ -153,7 +160,9 @@ async function contarPendentesPorPosto(
       .order('id', { ascending: true })
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (error) throw error
-    const lote = (data ?? []) as typeof linhas
+    // A lista de colunas é montada em runtime (numero_caixa entra só quando precisa), então o
+    // PostgREST não consegue inferir o tipo da linha — daí o cast.
+    const lote = (data ?? []) as unknown as typeof linhas
     linhas.push(...lote)
     if (lote.length < PAGINA) break
   }

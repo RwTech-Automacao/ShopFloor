@@ -14,6 +14,7 @@ let caixas: Record<string, unknown>[] = []
 let agregados: Record<string, unknown>[] = []
 let perfis: Record<string, { temStatus: boolean; recurso: string; exigeManutencao: boolean }> = {}
 let consultasEmCaixas = 0
+let colunasPedidas: string[] = []
 
 vi.mock('../postos-repository', () => ({ mapaPostoPerfil: async () => perfis }))
 
@@ -24,7 +25,8 @@ function consulta(tabela: string) {
   let de = 0
   let ate = Number.POSITIVE_INFINITY
   const q = {
-    select(_cols?: string, opts?: { count?: string; head?: boolean }) {
+    select(cols?: string, opts?: { count?: string; head?: boolean }) {
+      colunasPedidas.push(`${tabela}:${cols ?? ''}`)
       head = opts?.head === true
       return q
     },
@@ -72,6 +74,7 @@ function registro(posto: string, sn: string, caixa = '') {
 describe('carregarFluxoOp — caixas do posto de Almoxarifado', () => {
   beforeEach(() => {
     consultasEmCaixas = 0
+    colunasPedidas = []
     perfis = {
       Embalagem: { temStatus: false, recurso: 'caixa', exigeManutencao: false },
       Almoxarifado: { temStatus: false, recurso: 'almoxarifado', exigeManutencao: false },
@@ -136,5 +139,12 @@ describe('carregarFluxoOp — caixas do posto de Almoxarifado', () => {
     const r = await carregarFluxoOp(PMO, OP)
     expect(consultasEmCaixas).toBe(0)
     expect(r.agregados.every((a) => a.caixasBipadas === undefined && a.caixasFechadas === undefined)).toBe(true)
+    // E o scan dos registros (milhares de linhas) não paga por uma coluna que ninguém vai ler.
+    expect(colunasPedidas.some((c) => c.startsWith('sf_registros:') && c.includes('numero_caixa'))).toBe(false)
+  })
+
+  it('a coluna numero_caixa só é pedida quando a OP tem caixa pra contar', async () => {
+    await carregarFluxoOp(PMO, OP) // coletiva, com Almoxarifado
+    expect(colunasPedidas.some((c) => c.startsWith('sf_registros:') && c.includes('numero_caixa'))).toBe(true)
   })
 })
