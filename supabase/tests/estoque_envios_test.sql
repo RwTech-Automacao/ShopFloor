@@ -701,13 +701,17 @@ end $t$;
 --     resposta perdida no caminho. Este teste prova as três coisas que a decisão promete:
 --       (a) com tentativas = 1 a linha VOLTA a ser reservada, e o estorno dela continua retido (a
 --           ordem do par não é afrouxada pelo reenvio);
---       (b) com tentativas = 1 e `estornado > 0`, o cancelamento de uma peça ainda ESTORNA — o
+--       (b) com `estornado > 0`, o cancelamento de uma peça ainda ESTORNA depois do reenvio — o
 --           caminho do ajuste, que reduziria a `quantidade` abaixo do já estornado e estouraria o
 --           CHECK na cara do gestor, segue FECHADO;
---       (c) o contraste, que é o que justifica a decisão: com `estornado = 0`, a MESMA linha com
---           tentativas = 1 estorna, e com tentativas = 0 ela é CANCELADA — ou seja, zerar
+--       (c) o contraste, que é o que justifica a decisão: com `estornado = 0`, a MESMA linha
+--           reenviada COM 1 estorna, e reenviada COM 0 ela é CANCELADA — ou seja, zerar
 --           transformaria uma entrada que talvez já esteja no Compels em entrada cancelada, sem
 --           estorno e sem nada acusando. É a perda silenciosa que a fila existe para não ter.
+--     As três partes NASCEM NO TETO (tentativas = 5, a linha que saiu da fila) e passam pelo MESMO
+--     `update` que a `liberarParaReenvio` faz, em vez de já nascerem com o valor final inserido à
+--     mão: assim é o VALOR QUE O REENVIAR GRAVA que está sob teste, e não uma propriedade do banco
+--     que valeria para qualquer número. Trocar o `1` deste teste por `0` tem de derrubá-lo.
 do $t$
 declare v_chaves text[]; v_e uuid; n int; v_res text; r public.sf_estoque_envios;
 begin
@@ -737,6 +741,14 @@ begin
    where id = v_e and ok = false and cancelado_em is null and tentativas >= 5;
   if not found then raise exception 'FALHOU: o Reenviar não encontrou a linha para liberar'; end if;
 
+  -- O VALOR GRAVADO, conferido ANTES da reserva (que soma 1 e apagaria a evidência): 1, e nunca 0 —
+  -- `tentativas > 0` é a primeira perna da marca de LINHA TOCADA de que dependem (b) e (c).
+  select * into r from sf_estoque_envios where id = v_e;
+  if r.tentativas <> 1 then
+    raise exception 'FALHOU: o Reenviar tinha que deixar tentativas = 1 (nunca 0), veio %', r.tentativas;
+  end if;
+  if r.reservado_em is not null then raise exception 'FALHOU: o Reenviar não soltou a reserva'; end if;
+
   select array_agg(x.chave order by x.chave) into v_chaves from sf_estoque_reservar(100) x;
   if v_chaves is distinct from array['PEND/9920/E1'] then
     raise exception 'FALHOU: depois do Reenviar a reserva tinha que devolver só a entrada, veio %', v_chaves;
@@ -752,14 +764,22 @@ begin
     raise exception 'FALHOU: o Reenviar mexeu em quantidade/estornado: %', to_jsonb(r);
   end if;
 
-  -- (b) `estornado > 0` COM tentativas = 1: o cancelamento de uma peça ESTORNA, não ajusta. Bipe
-  --     novo porque a linha de (a) já está reservada por aquela rodada.
+  -- (b) `estornado > 0` DEPOIS DO REENVIAR: o cancelamento de uma peça ESTORNA, não ajusta. A linha
+  --     nasce no teto e é o `update` do Reenviar que a devolve à fila — é ele que está sob teste.
+  --     Bipe novo porque a linha de (a) já está reservada por aquela rodada.
   update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
   insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, estornado,
                                  tentativas, reservado_em)
   values ('PEND/9921/E1', 'entrada', 'PMOT01', '9921', 'Almoxarifado', 'caixa',
-          'CX[1][3]9921-PMOT01', 3, 2, 1, null)
+          'CX[1][3]9921-PMOT01', 3, 2, 5, null)
   returning id into v_e;
+  update sf_estoque_envios set tentativas = 1, reservado_em = null
+   where id = v_e and ok = false and cancelado_em is null and tentativas >= 5;
+  if not found then raise exception 'FALHOU (b): o Reenviar não encontrou a linha'; end if;
+  select * into r from sf_estoque_envios where id = v_e;
+  if r.tentativas <> 1 then
+    raise exception 'FALHOU (b): o Reenviar tinha que deixar tentativas = 1, veio %', r.tentativas;
+  end if;
   v_res := sf_estoque_reverter('PMOT01', '9921', 'Almoxarifado', 'CX[1][3]9921-PMOT01', 1);
   if v_res <> 'estorno' then
     raise exception 'FALHOU: linha reenviada com estornado > 0 tinha que ESTORNAR, veio %', v_res;
@@ -774,33 +794,39 @@ begin
   end if;
 
   -- (c) O CONTRASTE que justifica a decisão: `estornado = 0`, o caso em que a rede
-  --     `or estornado > 0` da reverter NÃO ajuda. Com tentativas = 1 (o que o Reenviar deixa) a
+  --     `or estornado > 0` da reverter NÃO ajuda. Reenviada como o código faz (tentativas = 1) a
   --     entrada é ESTORNADA e continua viva para chegar ao ERP...
   update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
   insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, tentativas)
   values ('PEND/9922/E1', 'entrada', 'PMOT01', '9922', 'Almoxarifado', 'caixa',
-          'CX[1][3]9922-PMOT01', 3, 1)
+          'CX[1][3]9922-PMOT01', 3, 5)
   returning id into v_e;
+  update sf_estoque_envios set tentativas = 1, reservado_em = null
+   where id = v_e and ok = false and cancelado_em is null and tentativas >= 5;
+  if not found then raise exception 'FALHOU (c): o Reenviar não encontrou a linha'; end if;
   v_res := sf_estoque_reverter('PMOT01', '9922', 'Almoxarifado', 'CX[1][3]9922-PMOT01', null);
   if v_res <> 'estorno' then
-    raise exception 'FALHOU: linha reenviada (tentativas = 1) tinha que ESTORNAR, veio %', v_res;
+    raise exception 'FALHOU: linha reenviada pelo código tinha que ESTORNAR, veio %', v_res;
   end if;
   select * into r from sf_estoque_envios where id = v_e;
   if r.cancelado_em is not null or r.estornado <> 3 then
     raise exception 'FALHOU: a entrada reenviada tinha que ficar viva e inteiramente estornada: %', to_jsonb(r);
   end if;
 
-  -- ...e com tentativas = 0 (o que ZERAR faria) a MESMA linha é CANCELADA: o Compels ficaria com
-  -- peças que o ShopFloor removeu, sem estorno e sem nada acusando. É por isso que o Reenviar
-  -- devolve 1, e não 0.
+  -- ...e o MESMO Reenviar escrito com 0 (o defeito que a decisão impede) deixa a MESMA linha ser
+  -- CANCELADA: o Compels ficaria com peças que o ShopFloor removeu, sem estorno e sem nada acusando.
+  -- Esta linha nasce igualzinha à de cima — a ÚNICA diferença entre as duas é o número gravado.
   update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
   insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, tentativas)
   values ('PEND/9923/E1', 'entrada', 'PMOT01', '9923', 'Almoxarifado', 'caixa',
-          'CX[1][3]9923-PMOT01', 3, 0)
+          'CX[1][3]9923-PMOT01', 3, 5)
   returning id into v_e;
+  update sf_estoque_envios set tentativas = 0, reservado_em = null
+   where id = v_e and ok = false and cancelado_em is null and tentativas >= 5;
+  if not found then raise exception 'FALHOU (contraste): o Reenviar não encontrou a linha'; end if;
   v_res := sf_estoque_reverter('PMOT01', '9923', 'Almoxarifado', 'CX[1][3]9923-PMOT01', null);
   if v_res <> 'cancelado' then
-    raise exception 'FALHOU: o teste do contraste não vale nada se a linha LIMPA não for cancelada, veio %', v_res;
+    raise exception 'FALHOU: o contraste não vale nada se a linha zerada não for cancelada, veio %', v_res;
   end if;
 
   raise notice '22. Reenviar devolve à fila com tentativas = 1: o par não é afrouxado e o ajuste/cancelamento segue fechado: ok';
