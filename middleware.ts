@@ -7,6 +7,11 @@ export async function middleware(request: NextRequest) {
   // assinatura Ed25519 (Discord), dentro da própria rota. Sem esta saída o middleware responderia
   // um redirect pro /login — e o Telegram trataria isso como entrega bem-sucedida.
   if (ehRotaPublicaDeAlertas(request.nextUrl.pathname)) return NextResponse.next()
+  // O cron da fila de estoque (Compels) também não tem sessão: quem autoriza é o segredo, dentro da
+  // própria rota (ver tools/estoque/README.md). Sem esta saída o middleware devolveria um redirect
+  // pro /login, e o `curl` do crontab veria um 3xx — que não é erro nem para o `-f`: a fila nunca
+  // sairia e o log diria que tudo correu bem.
+  if (request.nextUrl.pathname === '/api/shopfloor/estoque') return NextResponse.next()
   return updateSession(request)
 }
 
