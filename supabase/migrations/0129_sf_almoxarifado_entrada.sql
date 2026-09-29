@@ -29,12 +29,30 @@
 --   ja_lancado           já existe entrada desta caixa/série NESTE posto — é a recusa que impede a
 --                        contagem em dobro quando dois operadores bipam a mesma etiqueta. O detalhe
 --                        devolve quando e por quem, que é o que o painel mostra.
+--   caixa_sem_pecas      a caixa está fechada mas não tem nenhuma peça carimbada com o código dela.
+--                        sf_fechar_caixa recusa fechar caixa vazia, então isso só aparece depois de
+--                        um cancelamento de lançamento (0087) levar as linhas da Embalagem pra
+--                        auditoria. Sem esta recusa o bipe gravaria ZERO linha e ainda devolveria
+--                        ok: o operador leria "0 peças" e a caixa ficaria fora do estoque em silêncio.
 --   serie_fora_da_faixa  a série não pertence à faixa (sn_ini/sn_fim) da OP.
 --   serie_sem_embalagem  a série existe na OP mas não passou pela Embalagem: o Almoxarifado é o
 --                        último posto, só entra o que já foi embalado.
 --
 -- Toda recusa volta como DADO (ok:false + motivo), nunca como `raise`: o painel de resultado precisa
 -- mostrar a frase, e exceção vira erro genérico na tela.
+--
+-- COMO GRAVA — o ponto mais importante desta função: UMA LINHA POR PEÇA, sempre.
+-- O bipe de peça grava a linha dela; o bipe de CAIXA grava uma linha para CADA peça que está dentro
+-- da caixa (a série de cada uma, mais o código da caixa em numero_caixa). Não é detalhe de gosto: é
+-- o que faz o posto Almoxarifado deixar de ser especial. Todo leitor do sistema conta peça pela
+-- série — a RPC sf_fluxo_op (0094) e contarPendentesPorPosto filtram numero_serie_norm <> '', o
+-- Dashboard (0101) conta distinct numero_serie_norm, a Pesquisa procura por SN, o cancelamento
+-- (0087) desfaz por linha. Uma única linha de caixa (com série vazia) é invisível pra todos eles: o
+-- card do Almoxarifado no Fluxo mostraria 0 bipes, o trabalho em processo ficaria parado na
+-- Embalagem, a OP nunca concluiria e o Dashboard contaria zero peça — tudo isso SEM erro na tela.
+-- A alternativa (ensinar cada leitor a somar a quantidade da linha de caixa) foi recusada porque
+-- espalharia um caso especial que, esquecido em qualquer leitor novo, conta errado calado.
+-- Gravando como a Embalagem e o Teste gravam, ninguém precisa nunca ter ouvido falar deste posto.
 --
 -- Irmã mais próxima: sf_lancar (0031) — mesmo gate, mesma gravação em sf_registros, mesma ideia de
 -- duplicidade. Corpo com $func$: o SQL Editor do Supabase não aceita o delimitador de dois cifrões.
@@ -86,7 +104,11 @@ create or replace function public.sf_almoxarifado_entrada(
   p_colaborador text,
   p_bipe        text,   -- como veio do coletor: série da peça ou código da caixa
   p_tipo        text,   -- 'caixa' | 'serie' (decidido por classificarBipeAlmoxarifado)
-  p_quantidade  int,    -- o que o domínio contou; conferido aqui contra o próprio código
+  -- p_quantidade não é mais LIDO por esta função: a quantidade passou a ser a contagem das linhas
+  -- gravadas (uma por peça). Continua na assinatura de propósito — tirá-lo obrigaria a `drop
+  -- function` + regrant (deixa de ser uma migração aditiva) e a mexer no chamador em TS, sem ganho
+  -- nenhum. Se um dia a assinatura mudar por outro motivo, ele sai junto.
+  p_quantidade  int,    -- o que o domínio contou; mantido só pela assinatura
   p_serie_norm  text
 ) returns jsonb
 language plpgsql
@@ -100,6 +122,8 @@ declare
   v_ja         record;
   v_na_faixa   boolean;
   v_quantidade int;
+  v_pecas      int;
+  v_qtd_codigo int;
 begin
   if not tem_permissao('shopfloor','lancar') then
     return jsonb_build_object('ok', false, 'motivo', 'sem_permissao');
@@ -200,6 +224,14 @@ begin
         'detalhe', 'A caixa ' || v_caixa.seq || ' foi reprovada no NQA e vai ser remontada.');
     end if;
 
+    -- Duplicidade da caixa: continua sendo pelo CÓDIGO (numero_caixa), e não peça por peça, mesmo
+    -- agora que cada linha gravada leva a série. A unidade do bipe é a caixa: ou a caixa inteira
+    -- entrou ou não entrou. É isso que torna a recusa previsível no caso torto de a caixa ganhar
+    -- uma peça DEPOIS da entrada (não deveria acontecer: só uma reabertura na Embalagem carimbaria
+    -- outra peça com este código, e reabrir apaga o código) — o rebipe é recusado por INTEIRO, com
+    -- quando e por quem, em vez de entrar "só a peça que faltava" e devolver 1 peça pra uma caixa
+    -- de 14, que é o número que o operador levaria pra contagem. Sobrou peça de verdade? O gestor
+    -- cancela a entrada (Cancelar lançamento, 0087) e bipa a caixa outra vez.
     select data_hora, colaborador into v_ja
       from sf_registros
      where pmo = p_pmo and op = p_op and posto = p_posto and numero_caixa = p_bipe
@@ -212,12 +244,60 @@ begin
           || case when v_ja.colaborador = '' then '' else ' por ' || v_ja.colaborador end || '.');
     end if;
 
-    -- A quantidade sai do PRÓPRIO código bipado: é o número impresso na etiqueta colada na caixa
-    -- física (o mesmo que sf_fechar_caixa gravou em sf_caixas.qtd). p_quantidade é o que o domínio
-    -- contou e só entra como reserva, se algum dia o formato do código mudar antes desta regex.
-    v_quantidade := coalesce(
-      nullif(substring(p_bipe from '^CX\[[0-9]+\](?:R[0-9]*)?\[([0-9]+)\]'), '')::int,
-      p_quantidade, 1);
+    -- AS PEÇAS DA CAIXA — de onde sai a lista: quando a caixa fecha, sf_fechar_caixa (0100)
+    -- REESCREVE o numero_caixa das linhas das peças, trocando o marcador CX[seq] pelo código final.
+    -- Então as peças de CX[3][14]8498-PMOC14 estão em sf_registros no POSTO DA EMBALAGEM, com esse
+    -- código em numero_caixa e a série de cada uma. É a fonte da verdade: a etiqueta física foi
+    -- impressa a partir daí.
+    --
+    -- O filtro é pelo posto da caixa (v_caixa.posto), e não por qualquer posto: o código não é único
+    -- por construção (dois postos de embalagem da mesma OP podem chegar ao mesmo seq/qtd), e é esta
+    -- linha de caixa, achada logo acima, que diz de quem são as peças.
+    select count(distinct numero_serie_norm) into v_pecas
+      from sf_registros
+     where pmo = p_pmo and op = p_op and posto = v_caixa.posto
+       and numero_caixa = p_bipe and numero_serie_norm <> '';
+    if v_pecas = 0 then
+      return jsonb_build_object('ok', false, 'motivo', 'caixa_sem_pecas',
+        'detalhe', 'A caixa ' || v_caixa.seq || ' não tem nenhuma peça registrada na Embalagem.');
+    end if;
+
+    -- DIVERGÊNCIA entre o número impresso na etiqueta e a contagem real. Os dois deveriam ser
+    -- iguais, porque sf_fechar_caixa calcula o código a partir de count(distinct numero_serie_norm)
+    -- dessas mesmas linhas. Quando divergirem, quem manda é a PEÇA, não o número do código: cada
+    -- linha gravada aqui precisa de uma série de verdade — não há como inventar a 15ª série porque
+    -- a etiqueta diz 15, nem faz sentido deixar a 15ª peça embalada fora do estoque porque a
+    -- etiqueta diz 14 (ela sumiria do Fluxo e a OP nunca concluiria, que é exatamente o defeito que
+    -- esta correção resolve). Divergir só é possível se alguém mexeu nos dados depois do
+    -- fechamento (cancelamento de lançamento, correção manual) — e aí a etiqueta é que está velha.
+    -- Por isso a quantidade devolvida ao painel é a contagem das linhas gravadas, e o número do
+    -- código fica só na conferência abaixo, que registra o aviso em log sem barrar a entrada:
+    -- barrar deixaria a caixa física sem entrada nenhuma, que é pior que entrar com o número certo.
+    v_qtd_codigo := nullif(substring(p_bipe from '^CX\[[0-9]+\](?:R[0-9]*)?\[([0-9]+)\]'), '')::int;
+    if v_qtd_codigo is not null and v_qtd_codigo <> v_pecas then
+      raise warning 'sf_almoxarifado_entrada: caixa % com % peças registradas, etiqueta diz %',
+        p_bipe, v_pecas, v_qtd_codigo;
+    end if;
+
+    -- UMA LINHA POR PEÇA. A série vai nos DOIS formatos que a Embalagem já gravou (numero_serie cru
+    -- e numero_serie_norm), copiados da linha dela: se esta função normalizasse por conta própria,
+    -- ou gravasse o código da caixa no lugar da série, a mesma peça apareceria de duas formas
+    -- diferentes na Pesquisa e no Fluxo. numero_caixa leva o código da caixa, que é o que amarra as
+    -- 14 linhas ao mesmo bipe (e o que a checagem de duplicidade acima compara).
+    -- distinct on: uma peça bipada duas vezes na mesma caixa é uma peça só — a mesma regra que
+    -- sf_fechar_caixa usou pra contar. A ordem (data_hora, numero_serie) é só pra escolher sempre a
+    -- MESMA forma crua quando a peça tem mais de uma linha na Embalagem.
+    insert into public.sf_registros
+      (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+    select p_colaborador, p_posto, p_pmo, p_op, v_ordem.cliente, p_bipe, pc.numero_serie, pc.numero_serie_norm
+      from (
+        select distinct on (numero_serie_norm) numero_serie_norm, numero_serie
+          from sf_registros
+         where pmo = p_pmo and op = p_op and posto = v_caixa.posto
+           and numero_caixa = p_bipe and numero_serie_norm <> ''
+         order by numero_serie_norm, data_hora, numero_serie
+      ) pc;
+    get diagnostics v_quantidade = row_count;
 
   else
     -- Qualquer coisa que não seja 'caixa' é tratada como série: o domínio só emite os dois valores,
@@ -239,8 +319,10 @@ begin
         join sf_posto_perfis pe  on pe.chave = po.perfil
        where r.pmo = p_pmo and r.op = p_op and r.numero_serie_norm = p_serie_norm
          and pe.recurso = 'caixa'
-         -- Série normalizada vazia (chamada fora do fluxo da tela) não pode casar com as linhas de
-         -- bipe de caixa, que gravam numero_serie_norm = '': sem série não há entrada de peça.
+         -- Série normalizada vazia (chamada fora do fluxo da tela) não pode casar com linha nenhuma:
+         -- sem série não há peça, e `= ''` casaria com qualquer registro que a Embalagem tenha
+         -- gravado sem série. Este posto já não grava mais linha sem série (o bipe de caixa virou
+         -- uma linha por peça), mas o histórico gravado antes desta correção continua no banco.
          and r.numero_serie_norm <> ''
     ) then
       return jsonb_build_object('ok', false, 'motivo', 'serie_sem_embalagem',
@@ -259,20 +341,21 @@ begin
           || case when v_ja.colaborador = '' then '' else ' por ' || v_ja.colaborador end || '.');
     end if;
 
+    -- A peça: uma linha, como a Embalagem e o Teste gravam. `status` fica vazio — o perfil não tem
+    -- status, o bipe não julga a peça. numero_caixa fica vazio: não existe caixa neste caminho.
+    -- sf_registros não tem coluna de quantidade e não deve ganhar uma: quantidade agora é contagem
+    -- de linha, aqui e no caminho da caixa.
+    insert into public.sf_registros
+      (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+    values
+      (p_colaborador, p_posto, p_pmo, p_op, v_ordem.cliente, '', p_bipe, p_serie_norm);
+
     v_quantidade := 1;
   end if;
 
-  -- Um registro por BIPE: uma linha pra peça, uma linha pra caixa. sf_registros não tem coluna de
-  -- quantidade e não deve ganhar uma — a quantidade da caixa já vive no código (CX[seq][qtd]…) e em
-  -- sf_caixas.qtd. `status` fica vazio: o perfil não tem status, o bipe não julga a peça.
-  insert into public.sf_registros
-    (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
-  values
-    (p_colaborador, p_posto, p_pmo, p_op, v_ordem.cliente,
-     case when p_tipo = 'caixa' then p_bipe else '' end,
-     case when p_tipo = 'serie' then p_bipe else '' end,
-     case when p_tipo = 'serie' then p_serie_norm else '' end);
-
+  -- O painel mostra este número ao operador ("14 peças" pra uma caixa de 14, "1 peça" pra uma peça),
+  -- então ele é a contagem das LINHAS que acabaram de ser gravadas — o que realmente entrou —, e não
+  -- o que a etiqueta prometia nem o que o domínio contou em p_quantidade.
   return jsonb_build_object('ok', true, 'quantidade', v_quantidade);
 end $func$;
 

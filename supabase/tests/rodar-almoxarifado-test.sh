@@ -27,10 +27,14 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
 
 # CORRIDA: dois operadores bipando a MESMA caixa ao mesmo tempo — o risco que a RPC existe pra
 # resolver. A sessão A dá a entrada e segura a transação aberta; a B tem que ESPERAR na trava e,
-# quando a A comitar, ver o registro dela e recusar por ja_lancado. Uma caixa, uma linha.
+# quando a A comitar, ver os registros dela e recusar por ja_lancado. Uma caixa, UM conjunto de
+# linhas: 14 peças na caixa = 14 linhas no total, e não 28.
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
   "insert into sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada)
-   values ('PMOC14', '8498', 'Embalagem', 20, 14, 14, 'CX[20][14]8498-PMOC14', true)"
+   values ('PMOC14', '8498', 'Embalagem', 20, 14, 14, 'CX[20][14]8498-PMOC14', true)" -c \
+  "insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+   select 'Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[20][14]8498-PMOC14',
+          'SN-' || (8300 + i)::text, (8300 + i)::text from generate_series(1, 14) i"
 BIPE="sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','%s','CX[20][14]8498-PMOC14','caixa',14,'')"
 printf "%s\n" \
   "select set_config('teste.perms','shopfloor.lancar',false);" \
@@ -49,7 +53,7 @@ B=$(printf "%s\n" \
 wait "$A"
 N=$(docker exec "$NOME" psql -U postgres -tAq -c \
   "select count(*) from sf_registros where posto = 'Almoxarifado' and numero_caixa = 'CX[20][14]8498-PMOC14'")
-[ "$B" = ja_lancado ] && [ "$N" = 1 ] \
+[ "$B" = ja_lancado ] && [ "$N" = 14 ] \
   && echo "corrida (dois bipes na mesma caixa): ok" \
   || { echo "corrida FALHOU (B=$B, linhas=$N)"; exit 1; }
 

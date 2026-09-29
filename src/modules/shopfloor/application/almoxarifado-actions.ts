@@ -61,6 +61,11 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
       return 'Esta caixa ainda não foi fechada. Feche a caixa na Embalagem antes de dar entrada.'
     case 'caixa_reprovada':
       return detalhe || 'Esta caixa foi reprovada no NQA e vai ser remontada.'
+    case 'caixa_sem_pecas':
+      // A entrada grava uma linha por PEÇA da caixa, e as peças são as linhas que a Embalagem
+      // carimbou com o código dela. Caixa fechada sem nenhuma peça só existe depois de um
+      // cancelamento de lançamento levar essas linhas pra auditoria — quem resolve é a Embalagem.
+      return detalhe || 'Esta caixa não tem nenhuma peça registrada na Embalagem.'
     case 'ja_lancado':
       return detalhe || 'Este bipe já deu entrada antes.'
     case 'serie_fora_da_faixa':
@@ -77,6 +82,10 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
  * decide pelo FORMATO se peça ou caixa (sem tocar o banco); o que depende de dado — caixa existe,
  * está fechada, já foi lançada, a peça passou pela Embalagem — é a RPC `sf_almoxarifado_entrada`
  * quem confere, numa transação só (corrida entre dois operadores incluída).
+ *
+ * `quantidade` volta da RPC e é a contagem das PEÇAS que entraram: o bipe de caixa grava uma linha
+ * por peça de dentro dela (ver 0129), então numa caixa de 14 voltam 14. O fallback pra `quantidade`
+ * do domínio (a do código da etiqueta) só vale se a RPC não devolver o número.
  */
 export async function registrarEntradaAlmoxarifado(
   entrada: EntradaAlmoxarifado,

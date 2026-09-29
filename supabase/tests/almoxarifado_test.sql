@@ -39,13 +39,17 @@ create table public.sf_caixas (
   created_at timestamptz not null default now(), fechada_em timestamptz,
   unique (pmo, op, posto, seq, revisao)
 );
+-- posto_retorno e created_at não são escritos por esta RPC, mas ENTRAM no stub porque o teste 18
+-- roda a leitura do Fluxo (CTE de 0094) tal como ela é em produção — inclusive a rota de reteste e
+-- o desempate por created_at. Sem as colunas, a prova seria uma imitação da consulta, não ela.
 create table public.sf_registros (
   id uuid primary key default gen_random_uuid(),
   data_hora timestamptz not null default now(),
   colaborador text not null default '', posto text not null, pmo text not null, op text not null,
   cliente text not null default '', numero_caixa text not null default '', qtd_por_caixa int,
   status text not null default '', numero_serie text not null default '',
-  numero_serie_norm text not null default ''
+  numero_serie_norm text not null default '',
+  posto_retorno text, created_at timestamptz not null default now()
 );
 
 insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exige_manutencao, recurso) values
@@ -87,13 +91,26 @@ insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada,
 -- seq 10 → linha já aposentada (revisao 1) com o código AINDA sem o R. É o retrato do meio da
 -- corrida: o NQA reprovou depois que o bipe do almoxarifado já tinha achado a caixa pelo código
 -- antigo (a 0100 troca revisao e código juntos). A releitura depois da trava é o que pega isso.
-  ('PMOC14', '8498', 'Embalagem', 10, 14, 14, 'CX[10][14]8498-PMOC14', true, 1);
+  ('PMOC14', '8498', 'Embalagem', 10, 14, 14, 'CX[10][14]8498-PMOC14', true, 1),
+-- seq 11 → fechada e etiquetada, mas NENHUMA peça carimbada com o código dela (teste 19). Na prática
+-- é o rastro de um cancelamento de lançamento (0087) que levou as linhas da Embalagem pra auditoria.
+  ('PMOC14', '8498', 'Embalagem', 11, 14, 14, 'CX[11][14]8498-PMOC14', true, 0),
+-- seq 12 → etiqueta diz 14, mas só 13 peças estão carimbadas com o código (teste 20): a divergência
+-- entre o número impresso e a contagem real.
+  ('PMOC14', '8498', 'Embalagem', 12, 14, 14, 'CX[12][14]8498-PMOC14', true, 0);
 
--- As 14 peças da caixa 7, carimbadas com o código final NO POSTO EMBALAGEM. Elas provam que a
--- duplicidade é por POSTO: se não fosse, o primeiro bipe do Almoxarifado já sairia como 'ja_lancado'.
+-- As 14 peças da caixa 7, carimbadas com o código final NO POSTO EMBALAGEM (é o que
+-- sf_fechar_caixa faz ao fechar: troca o marcador CX[7] pelo código). Elas provam que a
+-- duplicidade é por POSTO — se não fosse, o primeiro bipe do Almoxarifado já sairia como
+-- 'ja_lancado' — e são a LISTA de onde o bipe de caixa tira as peças.
+--
+-- A série CRUA é de propósito diferente da normalizada ('SN-8001' × '8001'): a entrada tem que
+-- copiar as duas formas como a Embalagem gravou, e não inventar uma terceira. Se ela gravasse o
+-- código da caixa ou uma normalização própria em numero_serie, a mesma peça apareceria de dois
+-- jeitos na Pesquisa — foi o achado da revisão sobre gravar p_bipe cru.
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
 select 'Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[7][14]8498-PMOC14',
-       (8000 + i)::text, (8000 + i)::text
+       'SN-' || (8000 + i)::text, (8000 + i)::text
 from generate_series(1, 14) i;
 
 -- OP individual: a peça 1042 passou pela Embalagem (embalagem individual grava numero_caixa = o
@@ -116,16 +133,35 @@ begin
   if (r->>'quantidade')::int <> 14 then
     raise exception 'FALHOU: a quantidade tinha que vir do código (14): %', r; end if;
 
-  -- Um registro por bipe: UMA linha, com o código da caixa e sem série.
-  select count(*) as n, min(status) as status, min(cliente) as cliente,
-         min(numero_serie) as sn, min(numero_serie_norm) as snn
+  -- UMA LINHA POR PEÇA: 14 peças na caixa, 14 linhas no Almoxarifado — cada uma com a SÉRIE da peça
+  -- preenchida (é o que todo leitor do sistema conta) e com o código da caixa em numero_caixa (é o
+  -- que amarra as 14 ao mesmo bipe). Era aqui que estava o defeito: uma linha só, com série vazia.
+  select count(*) as n, count(distinct numero_serie_norm) as sns,
+         min(status) as status, min(cliente) as cliente,
+         count(*) filter (where numero_serie_norm = '') as sem_serie,
+         count(*) filter (where numero_caixa <> 'CX[7][14]8498-PMOC14') as sem_caixa
     into v
     from sf_registros where posto = 'Almoxarifado' and numero_caixa = 'CX[7][14]8498-PMOC14';
-  if v.n <> 1 then raise exception 'FALHOU: esperava 1 linha no Almoxarifado, veio %', v.n; end if;
+  if v.n <> 14 then raise exception 'FALHOU: esperava 14 linhas no Almoxarifado (uma por peça), veio %', v.n; end if;
+  if v.sns <> 14 then raise exception 'FALHOU: esperava 14 séries distintas, veio %', v.sns; end if;
+  if v.sem_serie <> 0 then raise exception 'FALHOU: % linha(s) sem série — invisível pro Fluxo', v.sem_serie; end if;
+  if v.sem_caixa <> 0 then raise exception 'FALHOU: % linha(s) sem o código da caixa', v.sem_caixa; end if;
   if v.status <> '' then raise exception 'FALHOU: o bipe não julga a peça, status tinha que ficar vazio: %', v.status; end if;
   if v.cliente <> 'Cliente Coletiva' then raise exception 'FALHOU: cliente não veio da ordem: %', v.cliente; end if;
-  if v.sn <> '' or v.snn <> '' then raise exception 'FALHOU: bipe de caixa não tem série'; end if;
-  raise notice '1. caixa fechada e nunca lançada: ok';
+
+  -- As séries são as MESMAS da Embalagem, nas duas formas: nada de série normalizada por conta
+  -- própria nem do código da caixa no lugar da série.
+  if exists (
+    select 1 from sf_registros a
+     where a.posto = 'Almoxarifado' and a.numero_caixa = 'CX[7][14]8498-PMOC14'
+       and not exists (
+         select 1 from sf_registros e
+          where e.posto = 'Embalagem' and e.numero_caixa = a.numero_caixa
+            and e.numero_serie = a.numero_serie and e.numero_serie_norm = a.numero_serie_norm)
+  ) then
+    raise exception 'FALHOU: série gravada em formato diferente do que a Embalagem gravou';
+  end if;
+  raise notice '1. caixa fechada e nunca lançada → 14 linhas, uma por peça: ok';
 end $t$;
 
 -- ---------- 2. a mesma caixa bipada de novo ----------
@@ -142,8 +178,11 @@ begin
     raise exception 'FALHOU: o detalhe tinha que dizer quem lançou: %', r; end if;
   if r->>'detalhe' not like '%' || to_char(now() at time zone 'America/Sao_Paulo', 'DD/MM/YYYY') || '%' then
     raise exception 'FALHOU: o detalhe tinha que dizer quando: %', r; end if;
-  if (select count(*) from sf_registros where posto = 'Almoxarifado') <> 1 then
-    raise exception 'FALHOU: a recusa gravou registro'; end if;
+  -- Continuam as 14 linhas do primeiro bipe: a recusa não gravou nenhuma a mais (é o rebipe da
+  -- caixa INTEIRA sendo recusado por inteiro — a duplicidade é pelo código, não peça por peça).
+  if (select count(*) from sf_registros where posto = 'Almoxarifado') <> 14 then
+    raise exception 'FALHOU: a recusa mexeu nas linhas (esperava 14, veio %)',
+      (select count(*) from sf_registros where posto = 'Almoxarifado'); end if;
   raise notice '2. mesma caixa de novo → ja_lancado (com quando e por quem): ok';
 end $t$;
 
@@ -292,8 +331,8 @@ do $t$
 declare v_n int;
 begin
   select count(*) into v_n from sf_registros where posto = 'Almoxarifado';
-  -- caixa 7 + peça 1042 + peça 7777 (OP sem faixa) = 3; todo o resto foi recusa.
-  if v_n <> 3 then raise exception 'FALHOU: esperava 3 entradas no Almoxarifado, veio %', v_n; end if;
+  -- 14 (as peças da caixa 7) + peça 1042 + peça 7777 (OP sem faixa) = 16; o resto foi recusa.
+  if v_n <> 16 then raise exception 'FALHOU: esperava 16 entradas no Almoxarifado, veio %', v_n; end if;
   raise notice '13. só as entradas aceitas gravaram: ok';
 end $t$;
 
@@ -346,6 +385,155 @@ do $t$
 declare v_n int;
 begin
   select count(*) into v_n from sf_registros where posto = 'Almoxarifado';
-  if v_n <> 3 then raise exception 'FALHOU: recusa de formato-por-dado não podia gravar: %', v_n; end if;
+  if v_n <> 16 then raise exception 'FALHOU: recusa de formato-por-dado não podia gravar: %', v_n; end if;
   raise notice '17. recusas 15 e 16 não gravaram nada: ok';
+end $t$;
+
+-- ---------- 18. A LEITURA DO FLUXO VÊ AS PEÇAS DO BIPE DE CAIXA ----------
+-- Este é o teste do defeito. Não basta afirmar que agora existe série gravada: o que precisa ser
+-- provado é o NÚMERO que as telas leem, porque foi exatamente isso que passou batido em seis
+-- revisões. Com a gravação antiga (uma linha por caixa, série vazia) tudo aqui dava zero:
+--   · o card do Almoxarifado no Fluxo mostrava 0 bipes e 0 de 14;
+--   · o trabalho em processo das 14 peças continuava parado na EMBALAGEM (o último registro visível
+--     de cada peça era o dela);
+--   · "Concluído" ficava 0 pra sempre — a OP nunca concluía;
+--   · o Dashboard (0101), que conta distinct numero_serie_norm não vazio, contava zero peça.
+-- A consulta abaixo é a de produção, copiada da RPC sf_fluxo_op (0094, CTE `regs`/`ult`/`wip_t`) —
+-- inclusive o filtro `numero_serie_norm <> ''`, que é o que tornava a linha de caixa invisível, e
+-- que contarPendentesPorPosto repete em .neq('numero_serie_norm','').
+do $t$
+declare
+  v_linhas     int;  -- o que contarPendentesPorPosto pagina (linhas visíveis no posto)
+  v_pecas      int;  -- o que o Dashboard conta (peças distintas)
+  v_wip_almox  int;
+  v_wip_embal  int;
+  v_ult_posto  int;
+begin
+  -- 1) As linhas do Almoxarifado passam pelo filtro dos dois leitores.
+  select count(*), count(distinct numero_serie_norm) into v_linhas, v_pecas
+    from sf_registros
+   where pmo = 'PMOC14' and op = '8498' and posto = 'Almoxarifado' and numero_serie_norm <> '';
+  if v_linhas <> 14 then
+    raise exception 'FALHOU: o Fluxo/Dashboard vê % linha(s) no Almoxarifado, esperava 14', v_linhas; end if;
+  if v_pecas <> 14 then
+    raise exception 'FALHOU: o Dashboard conta % peça(s) no Almoxarifado, esperava 14', v_pecas; end if;
+
+  -- 2) O trabalho em processo ANDOU: saiu da Embalagem e está no Almoxarifado. Mesmíssimas CTEs da
+  --    sf_fluxo_op — o último registro de cada SN decide onde a peça está.
+  with regs as (
+    select numero_serie_norm, posto, status, posto_retorno, data_hora, created_at
+    from sf_registros
+    where pmo = 'PMOC14' and op = '8498' and numero_serie_norm <> ''
+  ),
+  ult as (
+    select distinct on (numero_serie_norm) numero_serie_norm, posto, status, posto_retorno
+    from regs
+    order by numero_serie_norm, data_hora desc, created_at desc
+  ),
+  wip_t as (
+    select case
+             when coalesce(posto_retorno, '') <> '' then split_part(posto_retorno, ',', 1)
+             when lower(status) = 'reprovado' then 'Manutenção'
+             else posto
+           end as posto,
+           count(*)::int as wip
+    from ult
+    group by 1
+  )
+  select coalesce(max(wip) filter (where posto = 'Almoxarifado'), 0),
+         coalesce(max(wip) filter (where posto = 'Embalagem'), 0)
+    into v_wip_almox, v_wip_embal
+    from wip_t;
+  if v_wip_almox <> 14 then
+    raise exception 'FALHOU: trabalho em processo do Almoxarifado = %, esperava 14', v_wip_almox; end if;
+  if v_wip_embal <> 0 then
+    raise exception 'FALHOU: % peça(s) continuam paradas na Embalagem — era o defeito', v_wip_embal; end if;
+
+  -- 3) "Concluído": o Almoxarifado é o ÚLTIMO posto por ordem, e o último registro de TODAS as 14
+  --    peças é ele — então postoPendenteDePeca devolve null pra cada uma e as 14 contam como
+  --    finalizadas. Antes, nenhuma: a OP não concluía nunca.
+  if (select posto from (select chave as posto, ordem from sf_postos order by ordem desc limit 1) u)
+     <> 'Almoxarifado' then
+    raise exception 'FALHOU: o teste assume o Almoxarifado como último posto da linha'; end if;
+  with regs as (
+    select numero_serie_norm, posto, data_hora, created_at
+    from sf_registros
+    where pmo = 'PMOC14' and op = '8498' and numero_serie_norm <> ''
+  ),
+  ult as (
+    select distinct on (numero_serie_norm) numero_serie_norm, posto
+    from regs
+    order by numero_serie_norm, data_hora desc, created_at desc
+  )
+  select count(*) into v_ult_posto from ult where posto <> 'Almoxarifado';
+  if v_ult_posto <> 0 then
+    raise exception 'FALHOU: % peça(s) não chegaram ao último posto', v_ult_posto; end if;
+
+  raise notice '18. o Fluxo vê as 14 peças do bipe de caixa (WIP no Almoxarifado, nenhuma na Embalagem): ok';
+end $t$;
+
+-- ---------- 19. caixa fechada e etiquetada, mas sem nenhuma peça ----------
+-- Não existe no fluxo normal (sf_fechar_caixa recusa fechar caixa vazia), mas existe DEPOIS de um
+-- cancelamento de lançamento (0087) levar as linhas da Embalagem pra auditoria. Sem esta recusa o
+-- bipe gravaria zero linha e ainda devolveria ok: o painel diria "0 peças" e a caixa ficaria fora do
+-- estoque em silêncio — o mesmo tipo de contagem calada que esta correção veio matar.
+do $t$
+declare r jsonb;
+begin
+  r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana',
+                               'CX[11][14]8498-PMOC14', 'caixa', 14, '');
+  if r->>'motivo' <> 'caixa_sem_pecas' then
+    raise exception 'FALHOU: caixa sem peça tinha que ser recusada: %', r; end if;
+  if (select count(*) from sf_registros where posto = 'Almoxarifado') <> 16 then
+    raise exception 'FALHOU: a recusa gravou registro'; end if;
+  raise notice '19. caixa fechada sem peça nenhuma → caixa_sem_pecas: ok';
+end $t$;
+
+-- ---------- 20. etiqueta e contagem real divergem ----------
+-- A etiqueta da caixa 12 promete 14, mas só 13 peças estão carimbadas com o código dela. Quem manda
+-- é a PEÇA: entram 13 linhas e o painel mostra 13 — não há como inventar a 14ª série, e deixar de
+-- gravar as 13 por causa do número da etiqueta esconderia peça embalada do Fluxo (o defeito de
+-- origem). A divergência só é possível se alguém mexeu nos dados depois do fechamento, então é a
+-- etiqueta que está velha. A função avisa em log (raise warning) sem barrar a entrada.
+do $t$
+declare r jsonb; v_n int;
+begin
+  insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+  select 'Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[12][14]8498-PMOC14',
+         'SN-' || (8100 + i)::text, (8100 + i)::text
+  from generate_series(1, 13) i;
+
+  r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana',
+                               'CX[12][14]8498-PMOC14', 'caixa', 14, '');
+  if coalesce((r->>'ok')::boolean, false) is not true then
+    raise exception 'FALHOU: a divergência não podia barrar a entrada: %', r; end if;
+  if (r->>'quantidade')::int <> 13 then
+    raise exception 'FALHOU: a quantidade tinha que ser a contagem real (13), veio %', r->>'quantidade'; end if;
+  select count(*) into v_n from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[12][14]8498-PMOC14';
+  if v_n <> 13 then raise exception 'FALHOU: esperava 13 linhas, veio %', v_n; end if;
+  raise notice '20. etiqueta 14 × 13 peças reais → entram as 13, painel diz 13: ok';
+end $t$;
+
+-- ---------- 21. uma peça bipada duas vezes na mesma caixa é uma peça só ----------
+-- Espelha a regra de sf_fechar_caixa (count distinct): se a Embalagem tem duas linhas da mesma peça
+-- na mesma caixa, a entrada grava UMA. Sem o distinct, a caixa entraria com uma peça inflada.
+do $t$
+declare r jsonb; v_n int;
+begin
+  insert into sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada)
+  values ('PMOC14', '8498', 'Embalagem', 13, 14, 2, 'CX[13][2]8498-PMOC14', true);
+  insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+  values ('Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[13][2]8498-PMOC14', 'SN-8200', '8200'),
+         ('Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[13][2]8498-PMOC14', 'SN-8200', '8200'),
+         ('Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[13][2]8498-PMOC14', 'SN-8201', '8201');
+
+  r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana',
+                               'CX[13][2]8498-PMOC14', 'caixa', 2, '');
+  if (r->>'quantidade')::int <> 2 then
+    raise exception 'FALHOU: peça repetida na caixa contou duas vezes: %', r; end if;
+  select count(*) into v_n from sf_registros
+   where posto = 'Almoxarifado' and numero_caixa = 'CX[13][2]8498-PMOC14';
+  if v_n <> 2 then raise exception 'FALHOU: esperava 2 linhas, veio %', v_n; end if;
+  raise notice '21. peça repetida na caixa entra uma vez só: ok';
 end $t$;
