@@ -101,6 +101,30 @@ else
   exit 1
 fi
 
+# ---------- A GUARDA DO ÍNDICE: reaplicar em cima de uma DEFINIÇÃO ANTIGA troca o índice ----------
+# `create index if not exists` olha só o NOME. Numa base que já tenha sf_estoque_envios_alvo com a
+# definição de antes (a que tinha o rabo `seq_chave desc, criado_em desc, id desc`), reaplicar a migração
+# não faria nada e deixaria o índice velho de pé EM SILÊNCIO — e a consequência é perda de performance,
+# não erro, então nada acusaria. Aqui a definição antiga é instalada À MÃO e a 0132 reaplicada: ela tem
+# que derrubar e recriar. O bloco de idempotência acima não pega isso porque ali o índice já está na
+# definição nova.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+  -c "drop index sf_estoque_envios_alvo" \
+  -c "create index sf_estoque_envios_alvo on public.sf_estoque_envios
+        (pmo, op, posto, alvo, operacao, seq_chave desc nulls last, criado_em desc, id desc)"
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0132.sql
+DEF=$(sessao <<'SQL'
+select indexdef from pg_indexes where schemaname = 'public' and indexname = 'sf_estoque_envios_alvo';
+SQL
+)
+ESPERADA="CREATE INDEX sf_estoque_envios_alvo ON public.sf_estoque_envios USING btree (pmo, op, posto, alvo, operacao)"
+if [ "$DEF" = "$ESPERADA" ]; then
+  echo "guarda do índice (definição antiga é substituída na reaplicação): ok"
+else
+  echo "guarda do índice FALHOU: o índice ficou como '$DEF'"
+  exit 1
+fi
+
 # ---------- A migração passa inteira, do zero, como TRANSAÇÃO ÚNICA ----------
 # É assim que ela roda no RDS (psql -1). Num banco limpo, com só o stub da permissão de que ela
 # depende: se qualquer instrução dela não puder rodar dentro de transação (ou se faltar alguma

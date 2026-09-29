@@ -312,7 +312,26 @@ create index if not exists sf_estoque_envios_pendentes
 -- MB nesta massa), mantidos na escrita de TODO bipe. Não se paga, e por isso saiu.
 -- Se um dia um caminho QUENTE precisar da vigente (a tela de pendências ordenando por bipe, um
 -- relatório), o rabo volta — e os números acima são o que ele tem que bater.
-
+--
+-- O `drop` guardado abaixo é o que torna esta parte HONESTAMENTE idempotente. `create index if not
+-- exists` olha só o NOME: numa base que já tenha este índice com a definição ANTIGA (a com o rabo),
+-- reaplicar a migração não faria nada e deixaria o índice velho de pé EM SILÊNCIO — a consequência é
+-- perda de performance, não erro, então nada acusaria. O molde é o dos do-blocks de constraint acima
+-- (que existem porque `add constraint` não tem `if not exists`): guarda por `pg_indexes.indexdef` e,
+-- se a definição não é a que esta migração quer, derruba e recria. A comparação é o texto que o
+-- Postgres imprime, letra por letra: se uma versão futura imprimir diferente, o efeito é um
+-- drop+create desnecessário na reaplicação — barulho, não erro.
+do $idx$
+begin
+  if exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and indexname = 'sf_estoque_envios_alvo'
+      and indexdef <> 'CREATE INDEX sf_estoque_envios_alvo ON public.sf_estoque_envios'
+                      || ' USING btree (pmo, op, posto, alvo, operacao)'
+  ) then
+    drop index public.sf_estoque_envios_alvo;
+  end if;
+end $idx$;
 create index if not exists sf_estoque_envios_alvo
   on public.sf_estoque_envios (pmo, op, posto, alvo, operacao);
 -- a tela de pendências e a leitura por OP
