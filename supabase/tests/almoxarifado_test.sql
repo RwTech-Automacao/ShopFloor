@@ -1838,9 +1838,19 @@ begin
   raise notice '44(iii). Reenviar não reabre o ajuste numa linha meio revertida (estornado é marca de tocada): ok';
 end $t$;
 
--- (iv) AS DUAS INVARIANTES, na TABELA TODA — e não só nesta massa: qualquer teste desta suíte que um
--- dia deixe um estorno órfão estoura aqui, mesmo que ele não pense na fila.
-do $t$
+-- (iv) AS DUAS INVARIANTES, na TABELA TODA — e não só nesta massa: um teste que um dia deixe estorno
+-- órfão estoura aqui, mesmo que ele não pense na fila.
+--
+-- Em forma de FUNÇÃO de propósito (e não de um do-block solto): este arquivo não é o fim da suíte. O
+-- rodar-almoxarifado-test.sh continua DEPOIS dele com as etapas em bash (idempotência, as corridas, a
+-- atomicidade vista de fora) — e essas etapas também dão entrada, cancelam caixa e enfileiram. Um
+-- do-block aqui olharia só o que rodou ATÉ AQUI, e um teste escrito depois deste ponto passaria por
+-- baixo dele. Com a função, a MESMA verificação é chamada em todo lugar onde ela vale: aqui, depois do
+-- teste 45 (que mexe na fila e vem depois daqui) e na ÚLTIMA linha do runner, quando já rodou tudo,
+-- inclusive o bash. Uma definição só, sem cópias pra divergirem — e a falha aparece perto de quem a
+-- causou. Quem acrescentar um teste que mexa na fila: chame a função depois dele também. Ela mora neste
+-- arquivo, junto das invariantes que descreve, no mesmo molde da teste_explode() que o runner usa.
+create function public.teste_fila_invariantes(p_onde text) returns void language plpgsql as $f$
 declare v_a int; v_b int; v_orf text;
 begin
   -- Nenhuma entrada CANCELADA com estorno: cancelar é dizer "isto nunca saiu", e um estorno é dizer
@@ -1866,5 +1876,8 @@ begin
   select coalesce(sum(estornado), 0) into v_b from sf_estoque_envios where operacao = 'entrada';
   if v_a <> v_b then
     raise exception 'FALHOU: estornos somam % e os saldos descontados somam % — um dos dois lados ficou sem o outro', v_a, v_b; end if;
-  raise notice '44(iv). tabela toda: nenhum estorno órfão, estornos e saldos descontados batem (%): ok', v_a;
-end $t$;
+  raise notice '44(iv). tabela toda (%): nenhum estorno órfão, estornos e saldos descontados batem (%): ok',
+    p_onde, v_a;
+end $f$;
+
+do $t$ begin perform public.teste_fila_invariantes('fim do arquivo de testes'); end $t$;

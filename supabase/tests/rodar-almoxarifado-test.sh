@@ -255,3 +255,13 @@ SOBROU=$(docker exec "$NOME" psql -U postgres -tAq -c \
 [ "$ENTROU" = 2 ] && [ "$SOBROU" = 2/1 ] \
   && echo "controle positivo do lado do registro: ok" \
   || { echo "controle positivo do lado do registro FALHOU (quantidade=$ENTROU, registros/fila=$SOBROU)"; exit 1; }
+
+# AS INVARIANTES DA FILA, DEPOIS DE TUDO — inclusive das etapas em bash acima. A mesma função que o
+# teste 44(iv) chama dentro do almoxarifado_test.sql (uma definição, dois lugares de chamada): as
+# etapas daqui também dão entrada, cancelam caixa e enfileiram, e elas rodam DEPOIS do arquivo SQL —
+# sem esta chamada, ninguém olharia a fila que elas deixam. É a última coisa do runner de propósito:
+# assim ela vale pro arquivo todo e pro bash todo, e não só pro trecho que vem antes dela.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+  "select public.teste_fila_invariantes('fim do runner, depois das etapas em bash')" >/dev/null \
+  && echo "invariantes da fila depois das etapas em bash: ok" \
+  || { echo "invariantes da fila FALHARAM depois das etapas em bash"; exit 1; }
