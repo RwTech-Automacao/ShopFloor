@@ -315,11 +315,15 @@ create index if not exists sf_estoque_envios_pendentes
 -- escolhia a vigente uma vez POR LINHA PENDENTE a cada rodada (84 ms sem ele, 11 ms com ele, na massa
 -- patológica de então). Desde que o par passou a ser GRAVADO em `entrada_id`, esse predicado é um lookup
 -- de chave primária e não ordena mais nada: sobrou UMA consumidora da ordem, a sf_estoque_reverter, que
--- roda UMA vez por cancelamento — um gesto humano. Medido aqui (postgres:15, jit=off, 80.950 linhas):
--- a escolha da vigente num bipe REAL (1 a 3 entradas) dá 0,085 ms sem o rabo e 0,103 ms com ele (ou
--- seja, nada), e num bipe patológico (300 entradas vivas, que seriam 300 rebipes da mesma caixa) 0,386
--- contra 0,109 ms. Contra esses 0,28 ms por cancelamento, o rabo cobrava +53% no índice (5,4 MB → 8,3
--- MB nesta massa), mantidos na escrita de TODO bipe. Não se paga, e por isso saiu.
+-- roda UMA vez por cancelamento — um gesto humano. Medido aqui (postgres:15-alpine, jit=off, 80.828
+-- linhas, vacuum analyze, 5 rodadas descartando a 1ª): o rabo é, na verdade, CONSISTENTEMENTE MAIS
+-- RÁPIDO nas duas massas — 0,069–0,082 ms com ele contra 0,174–0,215 ms sem ele (o que está entregue) num
+-- bipe REAL (3 vivas), e 0,097–0,104 ms contra 0,335–0,393 ms num bipe patológico (300 vivas). O motivo
+-- está no plano: sem o rabo entra um `Sort ... top-N heapsort`, cujo custo FIXO já é ~0,09 ms mesmo com
+-- 3 linhas — é esse nó, e não o tamanho da massa, que domina a conta. Ainda assim, contra esses
+-- 0,09–0,24 ms por cancelamento (um gesto humano, uma vez cada), o rabo cobrava +41% no índice (mantidos
+-- na escrita de TODO bipe, não só no cancelamento). O que se paga aqui é tamanho de índice, não tempo de
+-- consulta — e é por isso, e não por o rabo "não fazer diferença", que ele saiu.
 -- Se um dia um caminho QUENTE precisar da vigente (a tela de pendências ordenando por bipe, um
 -- relatório), o rabo volta — e os números acima são o que ele tem que bater.
 --
