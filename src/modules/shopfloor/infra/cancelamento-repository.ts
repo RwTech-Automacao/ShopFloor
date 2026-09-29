@@ -13,7 +13,11 @@ export async function lerRegistroParaCancelar(
   if (error) throw error
   if (!data) return null
   const r = data as { pmo: string; op: string; numero_serie_norm: string; posto: string; numero_caixa: string | null }
-  // numero_caixa: só a embalagem preenche — é por ele que se acha a caixa a reabrir no cancelamento.
+  // numero_caixa: é por ele que se acha a caixa a reabrir no cancelamento. Não é mais só a embalagem
+  // que preenche — o bipe de caixa no Almoxarifado grava uma linha por peça com o código da caixa
+  // (0129), então existe linha com numero_caixa fora da Embalagem. Quem decide reabrir é o RECURSO do
+  // perfil do posto ('caixa'), conferido dentro da sf_cancelar_lancamento (0106): cancelar uma linha
+  // de almoxarifado não mexe em caixa nenhuma.
   return { pmo: r.pmo, op: r.op, numeroSerieNorm: r.numero_serie_norm, posto: r.posto, numeroCaixa: r.numero_caixa ?? '' }
 }
 
