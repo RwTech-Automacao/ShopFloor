@@ -265,6 +265,25 @@ begin
   raise notice '0135. pedido no código, remover só pendente, marcar impressas: ok';
 end $t$;
 
+\echo '--- 0135: acima de 9999 o número vai inteiro, na função que ficou de pé ---'
+-- Os mesmos dois asserts do bloco lá de cima, agora com a função de TRÊS argumentos. Os de cima
+-- passam por rodarem antes do `\i /tmp/0135.sql`, que dropa o overload de 2 argumentos: depois da
+-- 0135 eles cobrem uma função que não existe mais, e o `lpad` que trunca acima de 9999 (o pad de 4
+-- vira '1000' para 10000) ficaria sem cobertura nenhuma em SQL.
+select public.etq_legado_codigo('CAPA78', 9999, '') as nove_mil,
+       public.etq_legado_codigo('CAPA78', 10000, '') as dez_mil;
+do $t$
+begin
+  if public.etq_legado_codigo('CAPA78', 9999, '') <> 'CAPA78-L9999' then
+    raise exception 'FALHOU: o pad de 4 quebrou'; end if;
+  if public.etq_legado_codigo('CAPA78', 10000, '') <> 'CAPA78-L10000' then
+    raise exception 'FALHOU: truncou acima de 9999'; end if;
+  -- E com pedido: o número segue a mesma regra, o pedido só entra antes do L.
+  if public.etq_legado_codigo('CAPA78', 10000, '123425') <> 'CAPA78-123425L10000' then
+    raise exception 'FALHOU: com pedido, o número acima de 9999 saiu errado'; end if;
+end $t$;
+\echo 'ok'
+
 \echo '--- 0135: o BANCO recusa pedido com letra, mesmo que a aplicação erre ---'
 -- A recusa da função (PEDIDO_INVALIDO, acima) só vale para quem passa por ela. O CHECK é a cerca
 -- para a gravação que vem por fora — e é ele que garante que o `L` continua um separador
