@@ -78,9 +78,12 @@ const RECEBIMENTO: FolhaModular[] = [
   { chave: 'rec-registros', rotulo: 'Registros', href: '/recebimento/registros', icone: History, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, modulo: 'recebimento', perm: 'gerar_etiqueta' },
-  // Mutirão do estoque legado: é a ÚNICA porta de entrada da ferramenta. Para ocultar a função
-  // depois de etiquetado o estoque antigo, apague esta linha (nada mais depende dela).
-  { chave: 'etiquetas-legado', rotulo: 'Etiquetas legado', href: '/recebimento/etiquetas-legado', icone: Tags, modulo: 'recebimento', perm: 'gerar_etiqueta' },
+  // Etiqueta do material antigo, gerada no gesto da recontagem (inventário rotativo). Entrou no
+  // lugar da etiquetagem por planilha (`/recebimento/etiquetas-legado`): recontar rolo a rolo é o
+  // que o almoxarife faz de verdade, e duas portas para a mesma etiqueta confundiriam.
+  // A rota da planilha continua DE PÉ, com o gate que já tem — só saiu do menu. Se um dia servir
+  // para conferir a recontagem contra o saldo do ERP, é uma linha para devolver aqui.
+  { chave: 'etiquetar-rolo', rotulo: 'Etiquetar rolo', href: '/recebimento/etiquetar-rolo', icone: Tags, modulo: 'recebimento', perm: 'gerar_etiqueta' },
   { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, modulo: 'recebimento', perm: 'administrar' },
 ]
 
