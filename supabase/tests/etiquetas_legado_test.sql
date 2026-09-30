@@ -194,4 +194,58 @@ begin
 end $t$;
 \echo 'ok'
 
-\echo 'TODOS OS TESTES DA 0126 PASSARAM'
+-- ---------- 0135: o pedido e a impressão ----------
+-- A 0135 entra SÓ AQUI, depois dos testes da 0126, e não junto do `\i /tmp/0126.sql` lá em cima:
+-- ela troca a assinatura de `etq_legado_codigo` (ganha o pedido) e de `etq_legado_emitir` (ganha a
+-- coluna `pedido`). Carregada antes, os testes da 0126 estariam testando as funções da 0135.
+\i /tmp/0135.sql
+
+do $t$
+declare r record; v_id uuid; v_n int;
+begin
+  -- sem pedido, o código é o de sempre
+  select * into r from public.etq_legado_emitir('[{"item":"PEDX01"}]'::jsonb);
+  if r.codigo <> 'PEDX01-L0001' then
+    raise exception 'FALHOU: sem pedido o código tinha que ser PEDX01-L0001, veio %', r.codigo; end if;
+  if r.pedido <> '' then raise exception 'FALHOU: pedido tinha que vir vazio, veio %', r.pedido; end if;
+
+  -- com pedido, ele entra antes do L, e o sequencial continua do mesmo item
+  select * into r from public.etq_legado_emitir('[{"item":"PEDX01","pedido":"123425"}]'::jsonb);
+  if r.codigo <> 'PEDX01-123425L0002' then
+    raise exception 'FALHOU: com pedido o código tinha que ser PEDX01-123425L0002, veio %', r.codigo; end if;
+
+  -- pedido com letra é recusado: o L deixaria de ser um separador confiável
+  begin
+    perform public.etq_legado_emitir('[{"item":"PEDX02","pedido":"12A4"}]'::jsonb);
+    raise exception 'FALHOU: aceitou pedido com letra';
+  exception when others then
+    if SQLERRM not like '%PEDIDO_INVALIDO%' then raise; end if;
+  end;
+
+  -- remover só vale enquanto está pendente, e o número NÃO volta
+  select id into v_id from public.etiquetas_legado where codigo = 'PEDX01-123425L0002';
+  v_n := public.etq_legado_remover(v_id);
+  if v_n <> 1 then raise exception 'FALHOU: remover devolveu %', v_n; end if;
+  select * into r from public.etq_legado_emitir('[{"item":"PEDX01"}]'::jsonb);
+  if r.sequencial <> 3 then
+    raise exception 'FALHOU: o número do removido não pode voltar; esperava 3, veio %', r.sequencial; end if;
+
+  -- marcar impressas move só o que está pendente, e a segunda chamada move zero
+  select id into v_id from public.etiquetas_legado where codigo = 'PEDX01-L0001';
+  v_n := public.etq_legado_marcar_impressas(array[v_id]);
+  if v_n <> 1 then raise exception 'FALHOU: marcar devolveu %', v_n; end if;
+  v_n := public.etq_legado_marcar_impressas(array[v_id]);
+  if v_n <> 0 then raise exception 'FALHOU: marcar de novo tinha que mover 0, moveu %', v_n; end if;
+
+  -- e o que já foi impresso não pode mais ser removido
+  begin
+    perform public.etq_legado_remover(v_id);
+    raise exception 'FALHOU: removeu uma etiqueta já impressa';
+  exception when others then
+    if SQLERRM not like '%NAO_PENDENTE%' then raise; end if;
+  end;
+
+  raise notice '0135. pedido no código, remover só pendente, marcar impressas: ok';
+end $t$;
+
+\echo 'TODOS OS TESTES DA 0126 E DA 0135 PASSARAM'
