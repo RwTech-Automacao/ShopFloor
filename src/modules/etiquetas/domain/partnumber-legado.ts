@@ -287,6 +287,35 @@ export interface EtiquetaLegadoEmitida {
   sequencial: number
   codigo: string
   locacao: string
+  /**
+   * Dígitos do pedido escrito no rolo, ou '' quando o rolo não tem pedido.
+   *
+   * Opcional porque ausência e '' dizem a mesma coisa — "sem pedido" — e é assim que a etiquetagem
+   * por planilha (0126) sempre funcionou: ela não pergunta pedido nenhum. Quem tem pedido é o rolo
+   * que passa pelo inventário rotativo.
+   */
+  pedido?: string
+}
+
+/**
+ * Um rolo já etiquetado, como a tabela `etiquetas_legado` guarda.
+ *
+ * Mora no domínio, e não junto das actions, porque um arquivo `'use server'` só pode exportar
+ * funções async — um tipo exportado de lá derruba o build.
+ *
+ * `impressaEm` null é o que a tela chama de PENDENTE. A linha removida não aparece aqui: quem lê a
+ * tabela filtra `removida_em is null` (ver a 0135), então uma `RoloEtiquetado` em mão é sempre um
+ * rolo que ainda vale.
+ */
+export interface RoloEtiquetado {
+  id: string
+  item: string
+  pedido: string
+  sequencial: number
+  codigo: string
+  usuarioNome: string
+  criadoEm: string
+  impressaEm: string | null
 }
 
 /**
@@ -302,7 +331,9 @@ export function linhasDoArquivoLegado(emitidas: EtiquetaLegadoEmitida[]): LinhaE
   return [...emitidas]
     .sort((a, b) => a.ordem - b.ordem)
     .map((e) => {
-      const esperado = montarPartNumberLegado(e.item, e.sequencial)
+      // O pedido entra na conferência porque entra no código: sem repassá-lo, toda etiqueta de rolo
+      // com pedido seria acusada de divergente e a geração pararia sem motivo.
+      const esperado = montarPartNumberLegado(e.item, e.sequencial, e.pedido ?? '')
       if (e.codigo !== esperado) {
         throw new Error(`Código divergente para ${e.item}: banco "${e.codigo}", formato "${esperado}".`)
       }
