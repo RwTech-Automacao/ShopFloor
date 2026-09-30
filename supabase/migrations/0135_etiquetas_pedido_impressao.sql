@@ -11,6 +11,16 @@
 -- Convenções: corpo com $func$ (o SQL Editor do Supabase não aceita o de dois cifrões, nem em
 -- comentário); aditiva e idempotente; revoke + grant explícitos; notify pgrst na última linha;
 -- permissão pela função de DOIS argumentos (a de um anula o RBAC).
+--
+-- AVISO — REAPLICAR ESTA DUPLA COMEÇA NA 0135, NUNCA NA 0126. A 0126 deixou de ser reaplicável
+-- sozinha depois desta migração: `etq_legado_emitir` ganhou aqui a coluna `pedido` no retorno, e o
+-- `create or replace` da 0126 morre em "cannot change return type of existing function". O
+-- problema é ONDE ele morre: depois de a 0126 já ter recriado `etq_legado_codigo(text,int)` (o
+-- helper de 2 argumentos que esta migração dropa) e ANTES do bloco de `revoke` no fim do arquivo —
+-- deixando esse helper com EXECUTE para PUBLIC. Não há dano de dado (é formatação de string pura),
+-- mas fura a convenção do repositório de nenhuma função ficar aberta para `public`/`anon`. A 0135 é
+-- a versão vigente das duas funções e recria tudo o que a 0126 criou, então colar SÓ ESTE arquivo
+-- no SQL Editor é o caminho de reaplicação correto.
 -- =============================================================
 
 -- ---------- as colunas ----------
