@@ -7,10 +7,11 @@
 --
 -- COMO CONFERIR QUE SÃO SÓ ESSAS DUAS: extraia o corpo da função dos dois arquivos (da linha
 -- `create or replace function public.sf_nqa_caixa(` até o fim do corpo — na 0100 o corpo fecha com
--- `end;` + `$$;`, aqui com `end $func$;`) e rode `diff -u` entre os dois. Saem TRÊS blocos, e só
+-- `end;` + o delimitador de dois cifrões, aqui com `end $func$;`) e rode `diff -u` entre os dois.
+-- Saem TRÊS blocos, e só
 -- estes três:
 --
---   hunk 1  `as $$` → `as $func$`. Diferença de FORMA, não de comportamento: o SQL Editor do
+--   hunk 1  o `as` de dois cifrões → `as $func$`. Diferença de FORMA, não de comportamento: o SQL Editor do
 --           Supabase não aceita o delimitador de dois cifrões, e é regra do repositório. Já estava
 --           aqui antes desta correção.
 --   hunk 2  o `max(posto)` sai do primeiro `select` (parte da diferença (1)) e entra a recusa nova
