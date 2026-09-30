@@ -1,6 +1,6 @@
 'use server'
 
-import { gerarCsv } from '../domain/partnumber'
+import { carimboDataHora, gerarCsv } from '../domain/partnumber'
 import {
   linhasDoArquivoLegado,
   normalizarItem,
@@ -37,8 +37,15 @@ import {
  * tabela exige `recebimento:visualizar` na policy — não há caminho por fora.
  */
 
-/** O erro que veio do banco, virado frase que o almoxarife entende no tablet. */
-function frase(e: unknown): string {
+/**
+ * O erro que veio do banco, virado frase que o almoxarife entende no tablet.
+ *
+ * `oQue` é a ação que falhou, e entra só no fallback genérico: sem ele, o banco cair no download
+ * diria "Não foi possível etiquetar o rolo" a quem apertou "Baixar arquivo" — e o almoxarife
+ * acharia que perdeu a etiquetagem, não o arquivo. As frases ESPECÍFICAS (permissão, pedido, linha
+ * que já não é pendente) valem para qualquer ação e seguem iguais.
+ */
+function frase(e: unknown, oQue: string): string {
   const m = e instanceof Error ? e.message : String(e)
   if (m.includes('SEM_PERMISSAO')) return 'Você não tem permissão para gerar etiquetas.'
   if (m.includes('PEDIDO_INVALIDO')) return 'O pedido só pode ter números.'
@@ -48,30 +55,7 @@ function frase(e: unknown): string {
   if (m.includes('NAO_PENDENTE')) {
     return 'Essa etiqueta já saiu no arquivo ou já foi removida por outra pessoa. Atualize a lista.'
   }
-  return 'Não foi possível etiquetar o rolo. Tente de novo; se continuar, chame o desenvolvedor.'
-}
-
-/**
- * Carimbo de data/hora no nome do arquivo, no fuso de Brasília (o servidor roda em UTC).
- *
- * Cópia deliberada do helper de `gerar-etiquetas-legado.ts`, pelo mesmo motivo que ele é cópia do
- * de `gerar-etiquetas.ts`: um arquivo `'use server'` só pode exportar funções async, então não há
- * como compartilhar um helper entre eles. Sem o fuso, o arquivo baixado depois das 21h levaria a
- * data do dia seguinte no nome — e quem procura o arquivo do turno procura pelo dia do turno.
- */
-function carimboDataHora(agora: Date): string {
-  const partes = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(agora)
-  const parte = (tipo: Intl.DateTimeFormatPartTypes) => partes.find((p) => p.type === tipo)?.value ?? ''
-  return `${parte('year')}${parte('month')}${parte('day')}_${parte('hour')}${parte('minute')}${parte('second')}`
+  return `Não foi possível ${oQue}. Tente de novo; se continuar, chame o desenvolvedor.`
 }
 
 /**
@@ -128,7 +112,7 @@ export async function etiquetarRoloAction(
 
   try {
     const [emitida] = await emitirEtiquetasLegado([{ item, pedido: p.pedido }])
-    if (!emitida) return { ok: false as const, erro: frase('vazio') }
+    if (!emitida) return { ok: false as const, erro: frase('vazio', 'etiquetar o rolo') }
 
     // A etiqueta JÁ EXISTE a partir daqui — o banco gravou. Então o que vem depois não pode virar
     // recusa: dizer "não foi possível" a um rolo que acabou de ganhar número faria o almoxarife
@@ -154,7 +138,7 @@ export async function etiquetarRoloAction(
         },
     }
   } catch (e) {
-    return { ok: false as const, erro: frase(e) }
+    return { ok: false as const, erro: frase(e, 'etiquetar o rolo') }
   }
 }
 
@@ -166,7 +150,7 @@ export async function listarPendentesAction(): Promise<
     const { linhas, cortada } = await listarPendentesLegado()
     return { ok: true as const, linhas, cortada }
   } catch (e) {
-    return { ok: false as const, erro: frase(e) }
+    return { ok: false as const, erro: frase(e, 'carregar a lista') }
   }
 }
 
@@ -181,7 +165,7 @@ export async function removerPendenteAction(id: string): Promise<{ ok: true } | 
     await removerPendenteLegado(id)
     return { ok: true as const }
   } catch (e) {
-    return { ok: false as const, erro: frase(e) }
+    return { ok: false as const, erro: frase(e, 'remover a etiqueta') }
   }
 }
 
@@ -190,11 +174,11 @@ export async function removerPendenteAction(id: string): Promise<{ ok: true } | 
  * impressas.
  */
 export async function gerarCsvPendentesAction(): Promise<
-  | { ok: true; csv: string; fileName: string; quantidade: number; aviso?: string }
+  | { ok: true; csv: string; fileName: string; quantidade: number; cortada: boolean; aviso?: string }
   | { ok: false; erro: string }
 > {
   try {
-    const { linhas } = await listarPendentesLegado()
+    const { linhas, cortada } = await listarPendentesLegado()
     if (linhas.length === 0) {
       return { ok: false as const, erro: 'Não há nada esperando impressão.' }
     }
@@ -205,20 +189,41 @@ export async function gerarCsvPendentesAction(): Promise<
     const movidas = await marcarImpressasLegado(linhas.map((l) => l.id))
     const fileName = `Etiquetas_inventario_${carimboDataHora(new Date())}.csv`
 
-    // `etq_legado_marcar_impressas` só move o que ainda está pendente, e devolve quantas moveu.
-    // Menos do que entrou no arquivo é a assinatura de DUAS PESSOAS BAIXANDO AO MESMO TEMPO: a
-    // outra já levou parte da leva, e essas etiquetas vão sair nos dois arquivos. O arquivo sai de
-    // todo jeito (ele já está pronto e as linhas dele são as certas); o que faltava era avisar,
-    // porque imprimir os dois em silêncio termina com o mesmo código colado em dois rolos.
-    const repetidas = linhas.length - movidas
-    const aviso =
-      repetidas > 0
-        ? `Atenção: o arquivo saiu com ${linhas.length} etiqueta(s), mas ${repetidas} dela(s) já tinham sido baixadas por outra pessoa ao mesmo tempo — vão sair nos dois arquivos. Confira com ela antes de imprimir, para o mesmo código não acabar colado em dois rolos.`
-        : undefined
+    const avisos: string[] = []
 
-    return { ok: true as const, csv, fileName, quantidade: linhas.length, ...(aviso ? { aviso } : {}) }
+    // `etq_legado_marcar_impressas` só move o que ainda está `impressa_em is null and removida_em
+    // is null`, e devolve quantas moveu. Menos do que entrou no arquivo tem DOIS motivos, e os dois
+    // acontecem enquanto a tela estava aberta: outra pessoa baixou o arquivo (a etiqueta virou
+    // impressa) ou outra pessoa removeu a etiqueta. Só o primeiro é perigoso — o mesmo código sai
+    // nos dois arquivos. O arquivo sai de todo jeito (ele já está pronto e as linhas dele são as
+    // certas); o que faltava era avisar, porque imprimir os dois em silêncio termina com o mesmo
+    // código colado em dois rolos.
+    const repetidas = linhas.length - movidas
+    if (repetidas > 0) {
+      avisos.push(
+        `Atenção: o arquivo saiu com ${linhas.length} etiqueta(s), e ${repetidas} dela(s) já tinha(m) sido baixada(s) ou removida(s) por outra pessoa enquanto esta tela estava aberta. Se foi BAIXADA, o mesmo código também está no arquivo dela: confira antes de imprimir, para não colar o mesmo código em dois rolos. Se foi REMOVIDA, a etiqueta vai imprimir e é só jogar fora — o número dela fica queimado e nenhum outro rolo vai recebê-lo.`,
+      )
+    }
+
+    // Mais pendentes do que o arquivo levou: o teto é do PostgREST, não desta tela. Sem dizer, o
+    // almoxarife acha que levou tudo e só descobre porque a lista recarregada continua cheia.
+    if (cortada) {
+      avisos.push(
+        `Ainda sobrou: este arquivo levou as ${linhas.length} etiqueta(s) mais novas, e o resto continua esperando impressão. Baixe o arquivo de novo para pegar a próxima leva.`,
+      )
+    }
+
+    const aviso = avisos.length > 0 ? avisos.join(' ') : undefined
+    return {
+      ok: true as const,
+      csv,
+      fileName,
+      quantidade: linhas.length,
+      cortada,
+      ...(aviso ? { aviso } : {}),
+    }
   } catch (e) {
-    return { ok: false as const, erro: frase(e) }
+    return { ok: false as const, erro: frase(e, 'baixar o arquivo') }
   }
 }
 
@@ -232,7 +237,7 @@ export async function listarImpressasAction(
   try {
     return { ok: true as const, linhas: await listarImpressasLegado(desde, ate) }
   } catch (e) {
-    return { ok: false as const, erro: frase(e) }
+    return { ok: false as const, erro: frase(e, 'carregar as etiquetas impressas') }
   }
 }
 
@@ -258,6 +263,6 @@ export async function baixarDeNovoAction(
       fileName: `Etiquetas_inventario_2avia_${carimboDataHora(new Date())}.csv`,
     }
   } catch (e) {
-    return { ok: false as const, erro: frase(e) }
+    return { ok: false as const, erro: frase(e, 'baixar a etiqueta de novo') }
   }
 }

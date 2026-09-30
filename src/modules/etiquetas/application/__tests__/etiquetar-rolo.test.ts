@@ -138,19 +138,48 @@ describe('gerarCsvPendentesAction', () => {
     expect(marcarMock).toHaveBeenCalledWith(['a'])
   })
 
-  it('avisa quando outra pessoa baixou parte da leva ao mesmo tempo', async () => {
+  it('a leva do arquivo é a leva marcada: a lista é lida UMA vez', async () => {
+    // Reler a lista antes de marcar deixaria o arquivo e a marcação com levas diferentes — o que
+    // entrou no CSV ficaria pendente, e sairia de novo na próxima leva.
+    listarMock.mockResolvedValue({ linhas: [rolo()], cortada: false })
+    await gerarCsvPendentesAction()
+    expect(listarMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('se a marcação falhar, não entrega o arquivo — ele sairia de novo na próxima leva', async () => {
+    listarMock.mockResolvedValue({ linhas: [rolo()], cortada: false })
+    marcarMock.mockRejectedValue(new Error('falha de rede'))
+    const r = await gerarCsvPendentesAction()
+    expect(r.ok).toBe(false)
+    expect(r).not.toHaveProperty('csv')
+    // A frase genérica fala da ação de quem apertou o botão: "não foi possível etiquetar o rolo"
+    // aqui faria o almoxarife achar que perdeu a etiquetagem, e não o arquivo.
+    expect((r as { erro: string }).erro).toContain('baixar o arquivo')
+  })
+
+  it('avisa quando outra pessoa baixou OU removeu parte da leva, e explica os dois casos', async () => {
     listarMock.mockResolvedValue({ linhas: [rolo(), rolo({ id: 'b' })], cortada: false })
     marcarMock.mockResolvedValue(1)
     const r = await gerarCsvPendentesAction()
     expect(r.ok).toBe(true)
     expect((r as { quantidade: number }).quantidade).toBe(2)
-    expect((r as { aviso?: string }).aviso).toContain('ao mesmo tempo')
+    const aviso = (r as { aviso?: string }).aviso ?? ''
+    expect(aviso).toContain('baixada(s) ou removida(s)')
+    expect(aviso).toContain('queimado')
   })
 
-  it('sem disputa, nenhum aviso aparece', async () => {
+  it('avisa que ainda sobrou quando a lista veio cortada, e devolve o campo', async () => {
+    listarMock.mockResolvedValue({ linhas: [rolo()], cortada: true })
+    const r = await gerarCsvPendentesAction()
+    expect((r as { cortada: boolean }).cortada).toBe(true)
+    expect((r as { aviso?: string }).aviso).toContain('de novo')
+  })
+
+  it('sem disputa e sem corte, nenhum aviso aparece', async () => {
     listarMock.mockResolvedValue({ linhas: [rolo()], cortada: false })
     const r = await gerarCsvPendentesAction()
     expect((r as { aviso?: string }).aviso).toBeUndefined()
+    expect((r as { cortada: boolean }).cortada).toBe(false)
   })
 
   it('se o CSV não puder ser montado, nada é marcado como impresso', async () => {
