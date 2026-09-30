@@ -265,6 +265,49 @@ begin
   raise notice '0135. pedido no código, remover só pendente, marcar impressas: ok';
 end $t$;
 
+\echo '--- 0135: a linha removida sai do resumo e da repetição, mas o número segue queimado ---'
+-- Os dois lados da mesma linha, de uma vez — é o par que não pode ser satisfeito por um
+-- `where removida_em is null` aplicado em tudo:
+--   o resumo e o aviso de repetição NÃO podem contar o rolo descartado (ele não é etiqueta, e
+--     "já etiquetada" por um rolo que foi para o lixo é aviso falso);
+--   o ultimo_sequencial TEM de contar (remover queima o número — se a prévia voltar a mostrar o
+--     número queimado, ela projeta um código que etq_legado_emitir não vai gerar).
+-- Item novo, com UMA só etiqueta, para que a removida seja o max: com outra linha depois, filtrar
+-- o ultimo_sequencial passaria sem ninguém ver.
+do $t$
+declare v_antes bigint; v_depois bigint; v_itens_antes bigint; v_itens_depois bigint;
+        v_id uuid; r record;
+begin
+  select total_etiquetas, total_itens into v_antes, v_itens_antes from public.etq_legado_resumo();
+
+  perform public.etq_legado_emitir('[{"item":"REMX01","locacao":"Z9.A.01"}]'::jsonb);
+  select id into v_id from public.etiquetas_legado where item = 'REMX01';
+  perform public.etq_legado_remover(v_id);
+
+  select total_etiquetas, total_itens into v_depois, v_itens_depois from public.etq_legado_resumo();
+  if v_depois <> v_antes then
+    raise exception 'FALHOU: o resumo conta a linha removida (antes %, depois %)', v_antes, v_depois;
+  end if;
+  if v_itens_depois <> v_itens_antes then
+    raise exception 'FALHOU: o resumo conta o item que só tem linha removida (antes %, depois %)',
+      v_itens_antes, v_itens_depois;
+  end if;
+
+  select * into r from public.etq_legado_conferir('[{"item":"REMX01","locacao":"Z9.A.01"}]'::jsonb);
+  if r.emitidas_na_locacao <> 0 then
+    raise exception 'FALHOU: "já etiquetada" espúrio por um rolo descartado (emitidas = %)',
+      r.emitidas_na_locacao;
+  end if;
+  if r.ultima_na_locacao is not null then
+    raise exception 'FALHOU: a data da locação veio de uma linha removida';
+  end if;
+  if r.ultimo_sequencial <> 1 then
+    raise exception 'FALHOU: o número queimado voltou para a prévia; esperava 1, veio %',
+      r.ultimo_sequencial;
+  end if;
+end $t$;
+\echo 'ok'
+
 \echo '--- 0135: acima de 9999 o número vai inteiro, na função que ficou de pé ---'
 -- Os mesmos dois asserts do bloco lá de cima, agora com a função de TRÊS argumentos. Os de cima
 -- passam por rodarem antes do `\i /tmp/0135.sql`, que dropa o overload de 2 argumentos: depois da

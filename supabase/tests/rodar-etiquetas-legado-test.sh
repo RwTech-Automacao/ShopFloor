@@ -21,12 +21,13 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 # assinatura antiga ("cannot change return type of existing function"). Reaplicar à mão, portanto,
 # começa na 0135 — que é a versão vigente das duas funções e recria tudo o que a 0126 criou.
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0135.sql
-# 10 = as 7 linhas dos testes da 0126 + as 3 do item PEDX01 nos testes da 0135. A segunda delas é
-# a etiqueta removida: ela continua na tabela como registro do número QUEIMADO (é o que impede o
-# sequencial de voltar), por isso entra na contagem.
+# 9 = as 7 linhas dos testes da 0126 + as 3 do item PEDX01 e 1 do REMX01 nos testes da 0135, MENOS
+# as 2 removidas (PEDX01-123425L0002 e a única do REMX01). As removidas continuam na tabela como
+# registro do número QUEIMADO — é o que impede o sequencial de voltar —, mas não são etiquetas: o
+# resumo conta o progresso do mutirão, e um rolo descartado antes de imprimir não é progresso.
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','recebimento.gerar_etiqueta',false)" \
-  -c "select total_etiquetas from etq_legado_resumo()" | tail -1 | grep -qx 10 \
+  -c "select total_etiquetas from etq_legado_resumo()" | tail -1 | grep -qx 9 \
   && echo "idempotência da 0135: ok" \
   || { echo "idempotência da 0135 FALHOU"; exit 1; }
 

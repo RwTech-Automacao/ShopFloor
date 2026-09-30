@@ -248,11 +248,96 @@ begin
   return v_n;
 end $func$;
 
+-- ---------- as duas leituras, agora cientes da linha removida ----------
+-- A `removida_em` é nova, então as funções de leitura da 0126 não a conhecem e contam a linha
+-- removida como se ela valesse. A 0126 está congelada (já aplicada no Dev), então as duas são
+-- recriadas aqui — mesma assinatura, `create or replace`, nada mais mudou nelas.
+--
+-- ATENÇÃO: NÃO é o mesmo filtro nas duas. O que vale é a pergunta que cada número responde.
+
+-- `etq_legado_resumo` é o progresso do mutirão: "quantas etiquetas existem". A removida foi
+-- descartada antes de imprimir — ela não existe como etiqueta, e inflava o total e o total_itens.
+create or replace function public.etq_legado_resumo()
+returns table (total_etiquetas bigint, total_itens bigint, ultima timestamptz)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+begin
+  if not tem_permissao('recebimento', 'gerar_etiqueta') then raise exception 'SEM_PERMISSAO'; end if;
+
+  return query
+  select count(*), count(distinct el.item), max(el.created_at)
+    from public.etiquetas_legado el
+   where el.removida_em is null;
+end $func$;
+
+-- `etq_legado_conferir` devolve DOIS números com naturezas opostas, e o filtro vale para um só:
+--
+--   emitidas_na_locacao / ultima_na_locacao (o LEFT JOIN el_loc) = "este item já saiu desta posição
+--     antes?". É um aviso de repetição para o usuário decidir. Contar a linha removida aqui produz
+--     um "já etiquetada" ESPÚRIO por um rolo que foi descartado — é o bug que se corrige. O filtro
+--     vai no ON, não num WHERE: no WHERE ele viraria um inner join e o item sem histórico
+--     desapareceria da prévia.
+--
+--   ultimo_sequencial (o max(el.sequencial)) = "onde o contador daquele item está", para a prévia
+--     projetar o próximo código. Aqui a linha removida TEM de continuar contando: remover QUEIMA o
+--     número, e é esse max que queima. Filtrar `removida_em is null` neste subselect devolveria o
+--     número queimado à prévia — reintroduzindo exatamente o bug que a 0135 fecha, e ainda por um
+--     caminho pior: a prévia mostraria um código que `etq_legado_emitir` (que não filtra, de
+--     propósito) não vai gerar.
+create or replace function public.etq_legado_conferir(p_linhas jsonb)
+returns table (
+  item text,
+  locacao text,
+  emitidas_na_locacao bigint,
+  ultima_na_locacao timestamptz,
+  ultimo_sequencial int
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+begin
+  if not tem_permissao('recebimento', 'gerar_etiqueta') then raise exception 'SEM_PERMISSAO'; end if;
+  if jsonb_typeof(p_linhas) is distinct from 'array' then raise exception 'LINHAS_INVALIDAS'; end if;
+
+  return query
+  with entrada as (
+    select distinct
+           upper(btrim(coalesce(e.value->>'item', ''))) as item,
+           upper(btrim(coalesce(e.value->>'locacao', ''))) as locacao
+      from jsonb_array_elements(p_linhas) e
+     where upper(btrim(coalesce(e.value->>'item', ''))) <> ''
+  )
+  select n.item,
+         n.locacao,
+         count(el_loc.id),
+         max(el_loc.created_at),
+         coalesce((select max(el.sequencial) from public.etiquetas_legado el where el.item = n.item), 0)
+    from entrada n
+    left join public.etiquetas_legado el_loc
+           on el_loc.item = n.item and el_loc.locacao = n.locacao
+          and el_loc.removida_em is null
+   group by n.item, n.locacao
+   order by n.item, n.locacao;
+end $func$;
+
 -- ---------- permissões ----------
 revoke all on function public.etq_legado_codigo(text, int, text) from public, anon, authenticated;
 revoke all on function public.etq_legado_emitir(jsonb) from public, anon;
 revoke all on function public.etq_legado_remover(uuid) from public, anon;
 revoke all on function public.etq_legado_marcar_impressas(uuid[]) from public, anon;
+-- As duas recriadas acima: o `create or replace` preserva a ACL, mas repetir o revoke + grant é o
+-- que garante o estado, inclusive se alguém tiver reaplicado a 0126 e aberto algo no caminho.
+revoke all on function public.etq_legado_conferir(jsonb) from public, anon;
+revoke all on function public.etq_legado_resumo() from public, anon;
+grant execute on function public.etq_legado_conferir(jsonb) to authenticated;
+grant execute on function public.etq_legado_resumo() to authenticated;
 grant execute on function public.etq_legado_emitir(jsonb) to authenticated;
 grant execute on function public.etq_legado_remover(uuid) to authenticated;
 grant execute on function public.etq_legado_marcar_impressas(uuid[]) to authenticated;
