@@ -514,6 +514,8 @@ git commit -m "etiquetas: o banco guarda o pedido e sabe o que ainda não foi im
 
 **Arquivos:**
 - Modificar: `src/modules/etiquetas/infra/etiqueta-legado-repository.ts`
+- Modificar: `src/modules/etiquetas/domain/partnumber-legado.ts` (só para acrescentar o tipo
+  `RoloEtiquetado` — ele **não** pode morar no arquivo das actions, ver abaixo)
 - Criar: `src/modules/etiquetas/application/etiquetar-rolo.ts`
 - Teste: `src/modules/etiquetas/application/__tests__/etiquetar-rolo.test.ts`
 
@@ -653,10 +655,91 @@ limite. As escritas vão pelas RPCs da Task 2.
 
 - [ ] **Passo 4: escreva as actions**
 
-Crie `src/modules/etiquetas/application/etiquetar-rolo.ts` com `'use server'` no topo, exportando
-**só funções async**, com as assinaturas do bloco **Interfaces** acima e as mensagens da tabela de
-recusas. O gate de permissão é o do banco (as RPCs já recusam com `SEM_PERMISSAO`); a action
-traduz o erro para a frase da tabela.
+Crie `src/modules/etiquetas/application/etiquetar-rolo.ts`. As duas que carregam regra são estas —
+as outras quatro são repasse direto ao repositório, no mesmo molde:
+
+```ts
+'use server'
+
+import { gerarCsv } from '@/modules/etiquetas/domain/partnumber'
+import {
+  linhasDoArquivoLegado, normalizarItem, normalizarPedidoLegado, recusaDoItem,
+} from '@/modules/etiquetas/domain/partnumber-legado'
+import {
+  emitirEtiquetasLegado, listarPendentesLegado, marcarImpressasLegado,
+} from '@/modules/etiquetas/infra/etiqueta-legado-repository'
+
+/** O erro que veio do banco, virado frase que o almoxarife entende no tablet. */
+function frase(e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e)
+  if (m.includes('SEM_PERMISSAO')) return 'Você não tem permissão para gerar etiquetas.'
+  if (m.includes('PEDIDO_INVALIDO')) return 'O pedido só pode ter números.'
+  if (m.includes('ITEM_INVALIDO')) return 'O código do componente não pode ter separador.'
+  return 'Não foi possível etiquetar o rolo. Tente de novo; se continuar, chame o desenvolvedor.'
+}
+
+export async function etiquetarRoloAction(codigo: string, pedido: string) {
+  const item = normalizarItem(codigo)
+  if (item === '') return { ok: false as const, erro: 'Digite o código do componente.' }
+
+  // A ÚNICA recusa de código que existe: separador quebraria a leitura do Setup, que parte o
+  // código do rolo no primeiro separador e leria só o pedaço anterior como componente.
+  if (recusaDoItem(item) === 'item_com_separador') {
+    return {
+      ok: false as const,
+      erro: `O código "${item}" tem separador (- _ : / ou espaço). O Setup leria só o pedaço antes dele. Confira o que está escrito no rolo.`,
+    }
+  }
+
+  // `formatarPedido('abc')` devolve '0000' — por isso o pedido é RECUSADO, nunca normalizado às
+  // cegas. Uma etiqueta com pedido 0000 colada num rolo é um erro que ninguém vê.
+  const p = normalizarPedidoLegado(pedido)
+  if ('recusa' in p) {
+    return {
+      ok: false as const,
+      erro: `Não consegui ler o pedido "${String(pedido).trim()}". Digite só o número (ex.: 1234/25), ou deixe em branco se o rolo não tem pedido.`,
+    }
+  }
+
+  try {
+    const [emitida] = await emitirEtiquetasLegado([{ item, pedido: p.pedido }])
+    if (!emitida) return { ok: false as const, erro: frase('vazio') }
+    return { ok: true as const, linha: emitida }
+  } catch (e) {
+    return { ok: false as const, erro: frase(e) }
+  }
+}
+
+export async function gerarCsvPendentesAction() {
+  try {
+    const { linhas } = await listarPendentesLegado()
+    if (linhas.length === 0) {
+      return { ok: false as const, erro: 'Não há nada esperando impressão.' }
+    }
+
+    // O arquivo sai ANTES de marcar, e marca exatamente os ids que entraram nele. Se o CSV
+    // falhar ao ser montado, nada é marcado — e o almoxarife não perde a lista.
+    const csv = gerarCsv(
+      linhasDoArquivoLegado(
+        linhas.map((l, i) => ({
+          ordem: i, item: l.item, sequencial: l.sequencial, codigo: l.codigo, locacao: '',
+          pedido: l.pedido,
+        })),
+      ),
+    )
+    const movidas = await marcarImpressasLegado(linhas.map((l) => l.id))
+    const fileName = `Etiquetas_inventario_${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}.csv`
+    return { ok: true as const, csv, fileName, quantidade: movidas }
+  } catch (e) {
+    return { ok: false as const, erro: frase(e) }
+  }
+}
+```
+
+⚠️ `linhasDoArquivoLegado` (0126) confere o código do banco contra o formato do domínio e **lança**
+se divergirem. Com o pedido no meio, ela precisa passar o pedido para `montarPartNumberLegado` —
+ajuste-a para receber o campo `pedido` em `EtiquetaLegadoEmitida` e repassá-lo. Sem isso, toda
+etiqueta com pedido faria a geração parar com "Código divergente".
 
 - [ ] **Passo 5: rode e veja passar**
 
@@ -751,6 +834,38 @@ A página é Server Component com o gate de `gerar_etiqueta`, no molde da
 `etiquetas-legado/page.tsx`. O cliente tem: o formulário, a lista de pendentes com **remover** em
 cada linha, o botão **Gerar etiquetas (CSV)** (desabilitado quando não há pendentes) e a aba
 **Já impressas** com filtro por data e **Baixar de novo**.
+
+O trecho que os testes medem — e que é fácil de errar — é o de adicionar:
+
+```tsx
+const codigoRef = useRef<HTMLInputElement>(null)
+const [codigo, setCodigo] = useState('')
+const [pedido, setPedido] = useState('')
+const [pendentes, setPendentes] = useState<RoloEtiquetado[]>([])
+const [ocupado, setOcupado] = useState(false)
+
+async function adicionar() {
+  if (ocupado) return            // trava síncrona: Enter repetido não emite duas etiquetas
+  setOcupado(true)
+  try {
+    const r = await etiquetarRoloAction(codigo, pedido)
+    if (!r.ok) {
+      toast.error(r.erro)        // NÃO limpa nada: ele corrige o que digitou
+      return
+    }
+    setPendentes((atual) => [r.linha, ...atual])
+    setCodigo('')                // o código limpa...
+    codigoRef.current?.focus()   // ...e recebe o foco para o próximo rolo
+                                 // o PEDIDO fica: vêm vários rolos seguidos do mesmo pedido
+    toast.success(`Etiqueta ${r.linha.codigo} gerada.`)
+  } finally {
+    setOcupado(false)
+  }
+}
+```
+
+A trava `ocupado` é síncrona e muda **antes** de qualquer `await` — sem ela, dois Enter rápidos no
+tablet emitem duas etiquetas e queimam dois números para o mesmo rolo.
 
 - [ ] **Passo 4: troque o item do menu**
 
