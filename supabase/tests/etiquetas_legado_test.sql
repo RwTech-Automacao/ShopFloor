@@ -200,6 +200,23 @@ end $t$;
 -- coluna `pedido`). Carregada antes, os testes da 0126 estariam testando as funções da 0135.
 \i /tmp/0135.sql
 
+\echo '--- 0135: o backfill fecha o histórico da tela da planilha ---'
+-- As linhas acima foram emitidas ANTES da 0135, pela tela da planilha, cujo único desfecho era
+-- baixar o CSV. Elas têm de nascer IMPRESSAS: se ficassem pendentes, a primeira lista do inventário
+-- rotativo traria todo o histórico de volta, e etiquetas já coladas nos rolos poderiam ser
+-- "removidas" — queimando números que existem no mundo físico.
+do $t$
+declare v_pendentes int;
+begin
+  select count(*) into v_pendentes
+    from public.etiquetas_legado where impressa_em is null and removida_em is null;
+  if v_pendentes <> 0 then
+    raise exception 'FALHOU: % linha(s) anterior(es) à 0135 ficaram pendentes', v_pendentes; end if;
+  if exists (select 1 from public.etiquetas_legado where impressa_em is distinct from created_at) then
+    raise exception 'FALHOU: o backfill não usou created_at como data de impressão'; end if;
+end $t$;
+\echo 'ok'
+
 do $t$
 declare r record; v_id uuid; v_n int;
 begin

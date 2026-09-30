@@ -12,7 +12,15 @@
 -- comentário); aditiva e idempotente; revoke + grant explícitos; notify pgrst na última linha;
 -- permissão pela função de DOIS argumentos (a de um anula o RBAC).
 --
--- AVISO — REAPLICAR ESTA DUPLA COMEÇA NA 0135, NUNCA NA 0126. A 0126 deixou de ser reaplicável
+-- AVISO 1 — A TELA DA PLANILHA NUNCA MARCA NADA COMO IMPRESSA. Ela continua existindo (fora do
+-- menu) e só chama `etq_legado_emitir`; quem marca `impressa_em` é a tela do inventário, ao baixar
+-- o CSV. Enquanto a tela da planilha está desativada isso não incomoda, mas se um dia ela for
+-- reativada as linhas dela vão nascer PENDENTES e cair na lista do inventário rotativo — rolos "a
+-- etiquetar" que já foram etiquetados, o mesmo problema que o backfill abaixo resolve para o
+-- passado. Quem reativar a tela da planilha tem de resolver isso (marcar impressa ao gerar o
+-- arquivo, ou separar as duas origens); não há nada aqui que a proteja.
+--
+-- AVISO 2 — REAPLICAR ESTA DUPLA COMEÇA NA 0135, NUNCA NA 0126. A 0126 deixou de ser reaplicável
 -- sozinha depois desta migração: `etq_legado_emitir` ganhou aqui a coluna `pedido` no retorno, e o
 -- `create or replace` da 0126 morre em "cannot change return type of existing function". O
 -- problema é ONDE ele morre: depois de a 0126 já ter recriado `etq_legado_codigo(text,int)` (o
@@ -29,8 +37,38 @@
 -- imprimir" é `impressa_em is null`, e é isso que a tela lista.
 alter table public.etiquetas_legado
   add column if not exists pedido text not null default '';
-alter table public.etiquetas_legado
-  add column if not exists impressa_em timestamptz;
+
+-- BACKFILL: toda linha que já existia nasce IMPRESSA.
+--
+-- Antes desta migração não havia estado nenhum: a tela da planilha emitia a leva e o único desfecho
+-- possível era baixar o CSV e imprimir — não existia outro destino para uma linha emitida, nem
+-- botão de "imprimir depois". Então dizer que essas linhas já foram impressas não é uma suposição
+-- conveniente, é registrar o que aconteceu. Sem isso, a primeira abertura da tela do inventário
+-- listaria TODO o histórico como pendente: etiquetas há muito impressas e coladas nos rolos
+-- voltariam para o CSV, e poderiam até ser "removidas" — queimando números de etiquetas que
+-- existem no mundo físico.
+--
+-- `created_at` é a melhor data que existe (o momento da emissão) e, pela regra acima, é também o
+-- momento em que a etiqueta saiu no arquivo.
+--
+-- POR QUE É SEGURO RODAR DE NOVO: o backfill só acontece junto com a criação da coluna. Depois da
+-- primeira aplicação a coluna já existe, o bloco não roda, e as linhas pendentes que a tela do
+-- inventário criou desde então ficam intactas — elas serão marcadas pelo caminho normal
+-- (`etq_legado_marcar_impressas`, ao baixar o CSV). Fora do `if`, um `update ... where impressa_em
+-- is null` solto varreria justamente essas pendentes de verdade a cada reaplicação: o usuário
+-- reaplica migração quando fica na dúvida, e o rolo na prateleira nunca receberia etiqueta.
+do $bf$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'etiquetas_legado'
+       and column_name = 'impressa_em'
+  ) then
+    alter table public.etiquetas_legado add column impressa_em timestamptz;
+    update public.etiquetas_legado set impressa_em = created_at where impressa_em is null;
+  end if;
+end $bf$;
+
 alter table public.etiquetas_legado
   add column if not exists impressa_por uuid references public.usuarios(id);
 

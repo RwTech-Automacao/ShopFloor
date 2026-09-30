@@ -29,3 +29,14 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select total_etiquetas from etq_legado_resumo()" | tail -1 | grep -qx 10 \
   && echo "idempotência da 0135: ok" \
   || { echo "idempotência da 0135 FALHOU"; exit 1; }
+
+# Dente do backfill: reaplicar a 0135 NÃO pode marcar como impressas as pendentes que a tela do
+# inventário criou DEPOIS dela. No fim dos testes sobra 1 pendente (PEDX01-L0003, emitida e nunca
+# baixada). Se o backfill rodasse solto — `update ... where impressa_em is null` fora do `if` que
+# cria a coluna — a reaplicação a varreria e aqui daria 0: o rolo na prateleira nunca receberia
+# etiqueta, justamente por alguém reaplicar a migração "na dúvida".
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
+  -c "select count(*) from etiquetas_legado where impressa_em is null and removida_em is null" \
+  | tail -1 | grep -qx 1 \
+  && echo "backfill não varreu as pendentes novas: ok" \
+  || { echo "o backfill da 0135 reaplicada VARREU as pendentes novas"; exit 1; }
