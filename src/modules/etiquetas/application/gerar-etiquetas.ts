@@ -3,7 +3,13 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { elegivelParaEtiqueta, gerarCsv, gerarEtiquetasDoProcesso, type LinhaEtiqueta } from '../domain/partnumber'
+import {
+  carimboDataHora,
+  elegivelParaEtiqueta,
+  gerarCsv,
+  gerarEtiquetasDoProcesso,
+  type LinhaEtiqueta,
+} from '../domain/partnumber'
 import {
   buscarProcessosParaEtiqueta,
   carregarProcessosPorId,
@@ -22,23 +28,6 @@ export type ResultadoGerarEtiquetas =
       ignorados: number
     }
   | { ok: false; erro: string }
-
-function carimboDataHora(agora: Date): string {
-  // Componentes no fuso de Brasília (o servidor roda em UTC na Vercel), para o
-  // nome do arquivo refletir o horário local de quem gerou as etiquetas.
-  const partes = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(agora)
-  const parte = (tipo: Intl.DateTimeFormatPartTypes) => partes.find((p) => p.type === tipo)?.value ?? ''
-  return `${parte('year')}${parte('month')}${parte('day')}_${parte('hour')}${parte('minute')}${parte('second')}`
-}
 
 /**
  * Gera as etiquetas dos processos selecionados, autoritativamente no

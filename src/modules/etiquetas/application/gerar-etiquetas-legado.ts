@@ -4,7 +4,7 @@ import { refresh } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { gerarCsv } from '../domain/partnumber'
+import { carimboDataHora, gerarCsv } from '../domain/partnumber'
 import {
   LIMITE_LINHAS_LEGADO,
   linhasDoArquivoLegado,
@@ -47,28 +47,6 @@ export type ResultadoGerarLegado =
   | { ok: false; erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerar etiquetas.'
-
-/**
- * Carimbo de data/hora no nome do arquivo, no fuso de Brasília (o servidor roda em UTC).
- *
- * Cópia deliberada do mesmo helper em `gerar-etiquetas.ts`: esta é uma ferramenta de mutirão, que
- * deve poder ser removida inteira sem tocar na geração de etiquetas do material novo. Um arquivo
- * `use server` só pode exportar funções async, então não dá para compartilhar o helper de lá.
- */
-function carimboDataHora(agora: Date): string {
-  const partes = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(agora)
-  const parte = (tipo: Intl.DateTimeFormatPartTypes) => partes.find((p) => p.type === tipo)?.value ?? ''
-  return `${parte('year')}${parte('month')}${parte('day')}_${parte('hour')}${parte('minute')}${parte('second')}`
-}
 
 /** Normaliza e joga fora o que o Setup não conseguiria ler (item vazio ou com separador). */
 function paresValidos(linhas: ParLegado[]): { pares: ParLegado[]; ignoradas: number } {

@@ -284,6 +284,17 @@ describe('formato do arquivo de saída', () => {
       linhasDoArquivoLegado([{ ordem: 1, item: 'CAPA78', sequencial: 1, codigo: 'CAPA78-L1', locacao: '' }]),
     ).toThrow(/Código divergente/)
   })
+
+  it('a etiqueta COM pedido passa na conferência — o pedido entra no código', () => {
+    // O rolo do inventário rotativo tem o pedido escrito nele, e ele entra no part number. Sem
+    // repassar o pedido à conferência, TODA etiqueta com pedido seria acusada de divergente e o
+    // arquivo do turno não sairia — a única prova disso mora aqui, onde a regra mora.
+    expect(
+      linhasDoArquivoLegado([
+        { ordem: 1, item: 'CAPA78', sequencial: 4, codigo: 'CAPA78-123425L0004', locacao: '', pedido: '123425' },
+      ]).map((l) => l.partNumber),
+    ).toEqual(['CAPA78-123425L0004'])
+  })
 })
 
 describe('normalizarItem / chaveItemLocacao', () => {

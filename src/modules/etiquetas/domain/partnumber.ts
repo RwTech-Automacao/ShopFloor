@@ -102,3 +102,30 @@ export function gerarCsv(linhas: LinhaEtiqueta[]): string {
   const aspas = (c: string) => `"${String(c).replace(/"/g, '""')}"`
   return linhas.map((l) => [l.partNumber, l.codigo, l.volume].map(aspas).join(',')).join('\r\n')
 }
+
+/**
+ * Carimbo de data/hora para o NOME do arquivo baixado (`AAAAMMDD_HHMMSS`), no fuso de Brasília.
+ *
+ * Mora aqui, junto do `gerarCsv`, porque as três telas que geram arquivo (`gerar-etiquetas.ts`,
+ * `gerar-etiquetas-legado.ts` e `etiquetar-rolo.ts`) precisam do MESMO carimbo — e um módulo
+ * `'use server'` não pode exportar função síncrona, então o helper tinha de sair para um módulo
+ * comum (a restrição é dos EXPORTS do `'use server'`; importar de fora sempre foi permitido, como
+ * já acontecia com o próprio `gerarCsv`).
+ *
+ * Sem o fuso, o arquivo baixado depois das 21h levaria a data do dia seguinte no nome — e quem
+ * procura o arquivo do turno procura pelo dia do turno (o servidor roda em UTC).
+ */
+export function carimboDataHora(agora: Date): string {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(agora)
+  const parte = (tipo: Intl.DateTimeFormatPartTypes) => partes.find((p) => p.type === tipo)?.value ?? ''
+  return `${parte('year')}${parte('month')}${parte('day')}_${parte('hour')}${parte('minute')}${parte('second')}`
+}
