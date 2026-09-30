@@ -1,4 +1,4 @@
-# Etiquetas na recontagem — design
+# Etiquetagem junto ao inventário rotativo — design
 
 **Card:** Avaliar automação para classificar/etiquetar o que está no estoque sem etiqueta —
 Sprint 23/09/2026 [4h]
@@ -11,9 +11,12 @@ O desenho anterior importava a planilha "Saldo por Locação" do ERP, tratava ca
 rolo e gerava uma leva inteira de etiquetas genéricas de uma vez. Estava pronto e testado na
 branch `feat/etiquetas-estoque-legado`, segurado aguardando a reunião.
 
-A reunião decidiu outra coisa: **a etiqueta passa a nascer dentro do processo de recontagem do
-almoxarifado** (inventário rotativo — o nome exato está por confirmar). O almoxarife tira os rolos
-da prateleira para conferir e, nesse mesmo gesto, etiqueta os que não têm etiqueta.
+A reunião decidiu outra coisa: **a etiqueta passa a nascer dentro do inventário rotativo** — o
+processo em que o almoxarifado tira algumas peças da prateleira para recontar. O almoxarife já está
+com o rolo na mão para conferir; nesse mesmo gesto, etiqueta o que não tem etiqueta.
+
+O nome importa: é **etiquetagem junto ao inventário rotativo**, não um processo novo. Ninguém vai
+ao almoxarifado "para etiquetar" — a etiquetagem pega carona numa contagem que já acontece.
 
 E isso trouxe uma informação que a planilha não tinha: **muitos rolos têm o número do pedido
 escrito neles**. Quando tem, a pessoa digita; quando não tem, a etiqueta continua genérica.
@@ -129,7 +132,7 @@ como impressas.
 **O arquivo:** o mesmo `gerarCsv` que o Recebimento e a versão da planilha já usam
 (`src/modules/etiquetas/domain/partnumber.ts:101`) — três colunas entre aspas, `\r\n` entre as
 linhas: **part number, código do item, volume**. É o formato que o software da impressora já
-consome; mudá-lo obrigaria a mexer lá, e não há motivo. No caminho da recontagem o volume é
+consome; mudá-lo obrigaria a mexer lá, e não há motivo. No caminho do inventário rotativo o volume é
 `01-01` (cada rolo é um volume único), como a versão da planilha já faz.
 
 **Aba "Já impressas"**, com filtro por data e **"Baixar de novo"** — não desfaz nada, só gera o CSV
@@ -170,7 +173,7 @@ formato).
 dela não pode mudar se a regra de formação mudar um dia.
 
 O campo `locacao` da 0126 (posição de onde o rolo saiu, usado só na prévia da leva por planilha)
-fica como está, vazio no caminho da recontagem.
+fica como está, vazio no caminho do inventário rotativo.
 
 ⚠️ **A 0126 já está aplicada no Dev** — por isso a mudança vai como migração nova e não editando a
 0126, que sairia de sincronia com o banco.
@@ -181,7 +184,7 @@ antes de aplicar, porque a ordem de merge entre as branches pode mudar.
 
 ## A branch
 
-`feat/etiquetas-na-recontagem`, criada da main (`a775415`), **com a
+`feat/etiquetas-inventario-rotativo`, criada da main (`a775415`), **com a
 `feat/etiquetas-estoque-legado` mergeada dentro** — em vez de copiar pedaços.
 
 Isso traz de uma vez a 0126, o domínio do formato, as recusas e o gate, **e** a tela da planilha —
