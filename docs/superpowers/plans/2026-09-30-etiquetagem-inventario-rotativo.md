@@ -223,7 +223,7 @@ sai idêntico ao de hoje. Um caminho só.
 
 A tela nova chama essa mesma função com **um elemento** no array.
 
-- [ ] **Passo 1: escreva a migração**
+- [ ] **Passo 3: escreva a migração**
 
 Crie `supabase/migrations/0135_etiquetas_pedido_impressao.sql`:
 
@@ -415,12 +415,12 @@ grant execute on function public.etq_legado_marcar_impressas(uuid[]) to authenti
 notify pgrst, 'reload schema';
 ```
 
-- [ ] **Passo 2: faça o runner carregar a 0135**
+- [ ] **Passo 1: faça o runner carregar a 0135**
 
 Em `supabase/tests/rodar-etiquetas-legado-test.sh`, logo depois da linha que copia e aplica a
 0126, acrescente a 0135 do mesmo jeito (copie o padrão da linha da 0126 — `docker cp` + `psql -f`).
 
-- [ ] **Passo 3: escreva os testes que falham**
+- [ ] **Passo 2: escreva os testes que falham**
 
 Acrescente ao fim de `supabase/tests/etiquetas_legado_test.sql`, antes da linha final que imprime
 o `ok` da suíte:
@@ -476,24 +476,27 @@ begin
 end $t$;
 ```
 
-- [ ] **Passo 4: rode e veja falhar**
+> **A ordem importa:** o runner e os testes vêm ANTES da migração, para você ver o teste falhar
+> pelo motivo certo (coluna `pedido` não existe) e não por um erro de digitação no runner.
+
+- [ ] **Passo 2b: rode e veja falhar**
 
 Run: `supabase/tests/rodar-etiquetas-legado-test.sh`
-Esperado: FALHA (a 0135 ainda não está no runner, ou as colunas não existem).
-Depois do Passo 2 e da migração, deve passar — rode de novo no passo 5.
+Esperado: FALHA com `column "pedido" does not exist` (ou
+`function etq_legado_marcar_impressas does not exist`) — a migração ainda não existe.
 
-- [ ] **Passo 5: rode e veja passar**
+- [ ] **Passo 4: rode e veja passar**
 
 Run: `supabase/tests/rodar-etiquetas-legado-test.sh`
 Esperado: sai `0135. pedido no código, remover só pendente, marcar impressas: ok` e o script
 termina com exit 0.
 
-- [ ] **Passo 6: confira a idempotência**
+- [ ] **Passo 5: confira a idempotência**
 
 Rode o script **de novo**. Esperado: passa igual (a migração é reaplicada pelo runner; só devem
 aparecer `NOTICE ... already exists, skipping`).
 
-- [ ] **Passo 7: confira as convenções**
+- [ ] **Passo 6: confira as convenções**
 
 ```bash
 grep -c '\$\$' supabase/migrations/0135_etiquetas_pedido_impressao.sql
@@ -501,7 +504,7 @@ tail -1 supabase/migrations/0135_etiquetas_pedido_impressao.sql
 ```
 Esperado: `0` na primeira, e `notify pgrst, 'reload schema';` na segunda.
 
-- [ ] **Passo 8: commit**
+- [ ] **Passo 7: commit**
 
 ```bash
 git add supabase/migrations/0135_etiquetas_pedido_impressao.sql supabase/tests/etiquetas_legado_test.sql supabase/tests/rodar-etiquetas-legado-test.sh
