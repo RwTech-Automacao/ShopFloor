@@ -363,6 +363,16 @@ describe('pedido na etiqueta do inventário rotativo', () => {
 
   // A armadilha: formatarPedido('abc') devolve '0000'. Sem esta recusa, um dedo errado vira uma
   // etiqueta com um pedido que não existe, colada num rolo — e ninguém vê.
+  // Mesma armadilha pela outra porta: "0" passa no teste de dígito e formatarPedido o transforma
+  // em "0000" — o pedido inexistente que a recusa acima barra.
+  it('pedido só de zeros é RECUSADO, mas zero à esquerda continua valendo', () => {
+    expect(normalizarPedidoLegado('0')).toEqual({ recusa: 'pedido_ilegivel' })
+    expect(normalizarPedidoLegado('000')).toEqual({ recusa: 'pedido_ilegivel' })
+    expect(normalizarPedidoLegado('0000')).toEqual({ recusa: 'pedido_ilegivel' })
+    expect(normalizarPedidoLegado('45/2025')).toEqual({ pedido: '004525' })
+    expect(normalizarPedidoLegado('12')).toEqual({ pedido: '0012' })
+  })
+
   it('pedido sem nenhum dígito é RECUSADO, nunca vira 0000', () => {
     expect(normalizarPedidoLegado('abc')).toEqual({ recusa: 'pedido_ilegivel' })
     expect(normalizarPedidoLegado('x')).toEqual({ recusa: 'pedido_ilegivel' })

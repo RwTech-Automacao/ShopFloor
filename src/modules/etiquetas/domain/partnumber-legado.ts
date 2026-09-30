@@ -149,7 +149,12 @@ export function normalizarPedidoLegado(
   const bruto = String(valor ?? '').trim()
   if (bruto === '') return { pedido: '' }
   if (!/[0-9]/.test(bruto)) return { recusa: 'pedido_ilegivel' }
-  return { pedido: formatarPedido(bruto) }
+  const pedido = formatarPedido(bruto)
+  // Só zeros é o mesmo pedido inexistente que a recusa acima existe para barrar, chegando pela
+  // outra porta: digitar "0" passa pelo teste de dígito e vira "0000". Zero à esquerda é legítimo
+  // (45/2025 vira 004525) — o que não existe é um pedido que é SÓ zero.
+  if (/^0+$/.test(pedido)) return { recusa: 'pedido_ilegivel' }
+  return { pedido }
 }
 
 /**
