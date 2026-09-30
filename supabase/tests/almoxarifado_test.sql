@@ -654,16 +654,28 @@ end $t$;
 drop trigger teste_engole on public.sf_registros;
 drop function public.teste_engole_insert();
 
--- ---------- 23. o colateral no NQA: o posto da caixa não é mais max(posto) (0130) ----------
--- Com o bipe de caixa gravando uma linha por peça, as linhas com aquele `numero_caixa` passaram a
--- estar em DOIS postos — e a sf_nqa_caixa da 0100 derivava o posto da caixa de `max(posto)`. A chave
--- do posto é livre: aqui o posto de almoxarifado se chama 'Estoque', que ordena DEPOIS de
--- 'Embalagem'. Com o `max`, v_posto_caixa vinha 'Estoque', que não está no p_posto_retorno, e
--- sf_aposentar_caixa NÃO era chamada: a caixa reprovada ficava com revisao = 0 e o código original
--- (o guard `caixa_reprovada` da 0129 nunca dispararia e ela daria entrada em estoque), e a montagem
--- aposentada não virava histórico. Com a chave 'Almoxarifado' o defeito não aparece — ela ordena
--- antes de 'Embalagem' —, e é por isso que o teste usa 'Estoque': depender da ordem do NOME é
--- justamente o que este projeto decidiu não fazer.
+-- ---------- 23. sf_nqa_caixa (0130): o posto da caixa, e caixa que já foi pro estoque ----------
+-- A 0130 recria a sf_nqa_caixa com duas mudanças em relação à 0100 (que está em produção e não é
+-- editada no lugar), e este bloco mede as duas, mais um controle:
+--
+--   (a) o POSTO DA CAIXA não é mais `max(posto)` dos registros;
+--   (b) a recusa NOVA `CAIXA_JA_NO_ALMOXARIFADO` — caixa que já deu entrada no Almoxarifado não se
+--       inspeciona mais;
+--   (c) o controle: OP sem posto de almoxarifado nenhum inspeciona exatamente como sempre.
+--
+-- (a) e (b) são a mesma história. Foi o posto Almoxarifado que pôs as linhas de uma caixa em DOIS
+-- postos (uma linha por peça, com a série da peça E o código da caixa) e tirou o `max(posto)` do
+-- lugar: com ele, v_posto_caixa vinha do nome maior, não estava no p_posto_retorno, e
+-- sf_aposentar_caixa NÃO era chamada — a caixa reprovada ficava com revisao = 0 e o código original
+-- (a 0129 deixaria ela dar entrada em estoque) e a montagem aposentada não virava histórico.
+--
+-- A (b) fecha esse caminho pela frente: o NQA vem ANTES do estoque, então a caixa que já entrou não
+-- volta pra inspeção. Mas o `max(posto)` erra sozinho, sem Almoxarifado nenhum — dois postos de
+-- EMBALAGEM da mesma OP podem carimbar o MESMO código de caixa (o código não é único por
+-- construção, e é por isso que a 0130 tem o desempate por `exists`) —, e é esse o cenário que a (a)
+-- mede daqui pra frente. A chave do posto é livre: os postos deste teste se chamam 'Embalagem SMD'
+-- (que ordena DEPOIS de 'Embalagem') e 'Estoque' (que ordena depois dos dois), porque depender da
+-- ordem do NOME é justamente o que este projeto decidiu não fazer.
 
 -- Stubs só do que a sf_nqa_caixa toca além do que já existe aqui.
 create table public.tabela_nqa (
@@ -671,8 +683,8 @@ create table public.tabela_nqa (
 );
 insert into public.tabela_nqa values (1, 1, 100, 2);
 -- Espião no lugar da sf_aposentar_caixa (0100): o que este teste precisa provar é COM QUAL POSTO ela
--- é chamada. A aposentadoria de verdade tem os seus próprios testes e renomearia o código no meio da
--- massa daqui.
+-- é chamada — e, no caso (b), que ela NÃO é chamada. A aposentadoria de verdade tem os seus próprios
+-- testes e renomearia o código no meio da massa daqui.
 create table public.teste_aposentadas (pmo text, op text, posto text, numero_caixa text);
 create function public.sf_aposentar_caixa(p_pmo text, p_op text, p_posto text, p_numero_caixa text)
 returns jsonb language plpgsql as $f$
@@ -687,14 +699,37 @@ insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exig
 values ('nqa', 'NQA', true, 'escolhido', 'registrado', false, 'nqa');
 insert into public.sf_postos (chave, ordem, perfil) values
   ('Inspeção NQA', 11, 'nqa'),
+  -- Segundo posto de EMBALAGEM, com nome que ordena depois de 'Embalagem': é ele que faz o
+  -- `max(posto)` errar no caso (a), sem precisar de posto de almoxarifado nenhum.
+  ('Embalagem SMD', 12, 'embalagem'),
   ('Estoque', 14, 'almoxarifado');
 insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_individual) values
-  ('PMOC17', '8500', 'Cliente NQA', '9500', '9600', false);
-do $t$ begin perform public.teste_op_postos('PMOC17', '8500', array['Embalagem', 'Inspeção NQA', 'Estoque']); end $t$;
+  ('PMOC17', '8500', 'Cliente NQA',           '9500', '9600', false),
+  ('PMOC22', '8506', 'Cliente NQA Estoque',   '9900', '9990', false),
+  ('PMOC23', '8507', 'Cliente NQA Sem Almox', '9920', '9999', false);
+-- A PMOC17 TEM o posto de almoxarifado na rota (é OP de verdade), só não deu entrada ainda: é isso
+-- que faz o caso (a) provar que a recusa nova olha a ENTRADA, e não a mera existência do posto.
+do $t$ begin
+  perform public.teste_op_postos('PMOC17', '8500', array['Embalagem', 'Embalagem SMD', 'Inspeção NQA', 'Estoque']);
+  perform public.teste_op_postos('PMOC22', '8506', array['Embalagem', 'Inspeção NQA', 'Estoque']);
+  -- A (c) não tem posto de almoxarifado nenhum: é o retrato de toda OP cadastrada antes de o posto existir.
+  perform public.teste_op_postos('PMOC23', '8507', array['Embalagem', 'Inspeção NQA']);
+end $t$;
+
+-- (a) As DUAS caixas com o MESMO código, uma em cada posto de embalagem — o empate que o desempate
+-- por `exists`/`order by` da 0130 resolve, e que o `max(posto)` resolvia pro lado errado.
 insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
-  ('PMOC17', '8500', 'Embalagem', 1, 3, 3, 'CX[1][3]8500-PMOC17', true);
+  ('PMOC17', '8500', 'Embalagem',     1, 3, 3, 'CX[1][3]8500-PMOC17', true),
+  ('PMOC17', '8500', 'Embalagem SMD', 1, 3, 3, 'CX[1][3]8500-PMOC17', true);
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
 select 'Marcos', 'Embalagem', 'PMOC17', '8500', 'Cliente NQA', 'CX[1][3]8500-PMOC17',
+       'SN-' || (9500 + i)::text, (9500 + i)::text
+from generate_series(1, 3) i;
+-- AS MESMAS TRÊS SÉRIES carimbadas também no outro posto de embalagem (peça bipada no posto errado).
+-- Séries repetidas de propósito: a caixa continua sendo de 3 peças (o total é contagem de séries
+-- DISTINTAS), então os números deste teste medem o posto da aposentadoria e nada mais.
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem SMD', 'PMOC17', '8500', 'Cliente NQA', 'CX[1][3]8500-PMOC17',
        'SN-' || (9500 + i)::text, (9500 + i)::text
 from generate_series(1, 3) i;
 
@@ -705,40 +740,134 @@ begin
   -- do Almoxarifado. Os dois juntos porque o teste roda as duas funções em sequência.
   perform set_config('teste.perms', 'shopfloor.lancar,lancar', false);
 
-  -- A entrada no Almoxarifado ACONTECE de verdade (é ela que cria o colateral): 3 linhas no posto
-  -- 'Estoque', cada uma com a série da peça e o código da caixa.
-  r := sf_almoxarifado_entrada('PMOC17', '8500', 'Estoque', 'Ana',
-                               'CX[1][3]8500-PMOC17', 'caixa', 3, '');
-  if coalesce((r->>'ok')::boolean, false) is not true then
-    raise exception 'FALHOU: a entrada no Almoxarifado não passou: %', r; end if;
-  if (select count(*) from sf_registros
-       where posto = 'Estoque' and numero_caixa = 'CX[1][3]8500-PMOC17') <> 3 then
-    raise exception 'FALHOU: o teste depende das 3 linhas do Almoxarifado'; end if;
+  -- O que faz o `max(posto)` errar: as linhas do código estão em DOIS postos, e o maior deles não é
+  -- o posto da caixa que a qualidade vai mandar remontar.
+  if (select max(posto) from sf_registros
+       where pmo = 'PMOC17' and numero_caixa = 'CX[1][3]8500-PMOC17') <> 'Embalagem SMD' then
+    raise exception 'FALHOU: o teste depende de o max(posto) dos registros NÃO ser o posto da caixa'; end if;
 
-  -- Agora a qualidade reprova a caixa e manda de volta pra Embalagem.
+  -- A qualidade reprova a caixa da 'Embalagem' e manda de volta pra lá.
   r := sf_nqa_caixa('PMOC17', '8500', 'Inspeção NQA', 'Qualidade', 'CX[1][3]8500-PMOC17',
                     'Reprovado', 'Embalagem',
                     '[{"sn_norm":"9501","visual":"Reprovado","funcional":"Aprovado","observacao":"riscada"}]'::jsonb);
   if coalesce((r->>'ok')::boolean, false) is not true then
-    raise exception 'FALHOU: a reprova no NQA não passou: %', r; end if;
-  -- As linhas do Almoxarifado repetem as MESMAS séries, então a caixa continua sendo de 3 peças (o
-  -- total é contagem de séries distintas, não de linhas) e o NQA grava 3 registros, não 6.
+    raise exception 'FALHOU (a): a reprova no NQA não passou: %', r; end if;
+  -- As séries repetidas no outro posto não incham a caixa (total = séries distintas), e o NQA grava
+  -- 3 registros, não 6.
   if (r->>'total')::int <> 3 then
-    raise exception 'FALHOU: a caixa virou de % peças por causa das linhas do Almoxarifado', r->>'total'; end if;
+    raise exception 'FALHOU (a): a caixa virou de % peças por causa das linhas do outro posto', r->>'total'; end if;
   if (select count(*) from sf_registros where pmo = 'PMOC17' and posto = 'Inspeção NQA') <> 3 then
-    raise exception 'FALHOU: esperava 3 registros de NQA, veio %',
+    raise exception 'FALHOU (a): esperava 3 registros de NQA, veio %',
       (select count(*) from sf_registros where pmo = 'PMOC17' and posto = 'Inspeção NQA'); end if;
 
   -- O ponto do teste: a montagem foi aposentada NO POSTO DA CAIXA (Embalagem), e uma vez só.
   select count(*) as n, min(posto) as posto into v
     from teste_aposentadas where numero_caixa = 'CX[1][3]8500-PMOC17';
   if v.n <> 1 then
-    raise exception 'FALHOU: sf_aposentar_caixa foi chamada % vez(es), esperava 1 — a caixa reprovada ficaria com o código original', v.n; end if;
+    raise exception 'FALHOU (a): sf_aposentar_caixa foi chamada % vez(es), esperava 1 — a caixa reprovada ficaria com o código original', v.n; end if;
   if v.posto <> 'Embalagem' then
-    raise exception 'FALHOU: aposentou no posto errado (%) — o posto da caixa é da Embalagem', v.posto; end if;
+    raise exception 'FALHOU (a): aposentou no posto errado (%) — o posto da caixa é da Embalagem', v.posto; end if;
 
   perform set_config('teste.perms', 'shopfloor.lancar', false);
-  raise notice '23. NQA reprova: aposenta no posto da CAIXA mesmo com a linha do Almoxarifado: ok';
+  raise notice '23(a). NQA reprova: aposenta no posto da CAIXA, e não no max(posto) dos registros: ok';
+end $t$;
+
+-- (b) A RECUSA NOVA. Massa própria porque a PMOC17 já foi inspecionada (e seria recusada por
+-- CAIXA_JA_INSPECIONADA antes de chegar na guarda que interessa aqui).
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC22', '8506', 'Embalagem', 1, 3, 3, 'CX[1][3]8506-PMOC22', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC22', '8506', 'Cliente NQA Estoque', 'CX[1][3]8506-PMOC22',
+       'SN-' || (9900 + i)::text, (9900 + i)::text
+from generate_series(1, 3) i;
+
+do $t$
+declare r jsonb; v_erro text; v_regs int; v_codigo text; v_revisao int;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,lancar', false);
+
+  -- A entrada no Almoxarifado ACONTECE de verdade: 3 linhas no posto 'Estoque', cada uma com a série
+  -- da peça e o código da caixa. É esse estado que a recusa existe pra defender.
+  r := sf_almoxarifado_entrada('PMOC22', '8506', 'Estoque', 'Ana',
+                               'CX[1][3]8506-PMOC22', 'caixa', 3, '');
+  if coalesce((r->>'ok')::boolean, false) is not true then
+    raise exception 'FALHOU (b): a entrada no Almoxarifado não passou: %', r; end if;
+
+  -- Agora a qualidade tenta reprovar a caixa que JÁ ESTÁ NO ESTOQUE. Sem a recusa, a 0100 renomearia
+  -- só as linhas da Embalagem, as 3 do Estoque ficariam com o código antigo, o rebipe da remontagem
+  -- morreria em `ja_lancado` e nem "Cancelar a caixa inteira" nem "Cancelar lançamento" aceitariam
+  -- desfazer (o bipe do NQA passaria a ser o mais recente). A caixa física nunca mais entraria.
+  begin
+    r := sf_nqa_caixa('PMOC22', '8506', 'Inspeção NQA', 'Qualidade', 'CX[1][3]8506-PMOC22',
+                      'Reprovado', 'Embalagem',
+                      '[{"sn_norm":"9901","visual":"Reprovado","funcional":"Aprovado","observacao":"riscada"}]'::jsonb);
+    v_erro := '';
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_erro is distinct from 'CAIXA_JA_NO_ALMOXARIFADO' then
+    raise exception 'FALHOU (b): a reprova de caixa já no Almoxarifado devolveu "%" (r = %)', v_erro, r; end if;
+
+  -- O 'Aprovado' também é recusado, e com amostra INSUFICIENTE de propósito: a caixa é de 3 peças,
+  -- a Tabela NQA pede 2 amostras e aqui vai 1. Se a resposta fosse AMOSTRAS_INSUFICIENTES, a guarda
+  -- estaria depois das validações do formulário — e o inspetor inspecionaria peça por peça pra ouvir
+  -- o "não" no fim. É o teste da POSIÇÃO da guarda, não só da existência dela.
+  begin
+    r := sf_nqa_caixa('PMOC22', '8506', 'Inspeção NQA', 'Qualidade', 'CX[1][3]8506-PMOC22',
+                      'Aprovado', '',
+                      '[{"sn_norm":"9901","visual":"Aprovado","funcional":"Aprovado","observacao":""}]'::jsonb);
+    v_erro := '';
+  exception when others then v_erro := SQLERRM;
+  end;
+  if v_erro is distinct from 'CAIXA_JA_NO_ALMOXARIFADO' then
+    raise exception 'FALHOU (b): o Aprovado devolveu "%" — esperava a recusa da caixa já no estoque, antes das validações da amostra', v_erro; end if;
+
+  -- E a recusa não deixou rastro: caixa NÃO aposentada (revisao 0, código intocado), espião nunca
+  -- chamado, nenhum registro no posto de NQA — e as 3 linhas do Almoxarifado continuam de pé, que é
+  -- o que permite cancelar a entrada (teste 49).
+  select revisao, codigo into v_revisao, v_codigo from sf_caixas
+   where pmo = 'PMOC22' and op = '8506' and posto = 'Embalagem' and seq = 1;
+  if v_revisao <> 0 or v_codigo <> 'CX[1][3]8506-PMOC22' then
+    raise exception 'FALHOU (b): a caixa foi aposentada mesmo com a recusa (revisao %, código %)', v_revisao, v_codigo; end if;
+  if exists (select 1 from teste_aposentadas where numero_caixa = 'CX[1][3]8506-PMOC22') then
+    raise exception 'FALHOU (b): sf_aposentar_caixa foi chamada numa inspeção recusada'; end if;
+  select count(*) into v_regs from sf_registros where pmo = 'PMOC22' and posto = 'Inspeção NQA';
+  if v_regs <> 0 then
+    raise exception 'FALHOU (b): a recusa gravou % registro(s) no posto de NQA', v_regs; end if;
+  select count(*) into v_regs from sf_registros
+   where pmo = 'PMOC22' and posto = 'Estoque' and numero_caixa = 'CX[1][3]8506-PMOC22';
+  if v_regs <> 3 then
+    raise exception 'FALHOU (b): as 3 linhas do Almoxarifado viraram %', v_regs; end if;
+
+  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  raise notice '23(b). caixa que já deu entrada no Almoxarifado: NQA recusado (reprova e aprova), sem rastro: ok';
+end $t$;
+
+-- (c) O CONTROLE: OP que não passa por posto de almoxarifado nenhum. A recusa nova olha registro em
+-- posto de perfil almoxarifado, então aqui ela não tem o que ver — e é o retrato de todas as OPs que
+-- estão em produção hoje, antes de o posto existir.
+insert into public.sf_caixas (pmo, op, posto, seq, limite, qtd, codigo, fechada) values
+  ('PMOC23', '8507', 'Embalagem', 1, 3, 3, 'CX[1][3]8507-PMOC23', true);
+insert into public.sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
+select 'Marcos', 'Embalagem', 'PMOC23', '8507', 'Cliente NQA Sem Almox', 'CX[1][3]8507-PMOC23',
+       'SN-' || (9920 + i)::text, (9920 + i)::text
+from generate_series(1, 3) i;
+
+do $t$
+declare r jsonb;
+begin
+  perform set_config('teste.perms', 'shopfloor.lancar,lancar', false);
+
+  r := sf_nqa_caixa('PMOC23', '8507', 'Inspeção NQA', 'Qualidade', 'CX[1][3]8507-PMOC23',
+                    'Reprovado', 'Embalagem',
+                    '[{"sn_norm":"9921","visual":"Reprovado","funcional":"Aprovado","observacao":"riscada"}]'::jsonb);
+  if coalesce((r->>'ok')::boolean, false) is not true or (r->>'total')::int <> 3 then
+    raise exception 'FALHOU (c): a caixa de OP sem Almoxarifado não passou no NQA: %', r; end if;
+  if (select count(*) from teste_aposentadas
+       where numero_caixa = 'CX[1][3]8507-PMOC23' and posto = 'Embalagem') <> 1 then
+    raise exception 'FALHOU (c): a montagem não foi aposentada na Embalagem'; end if;
+
+  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  raise notice '23(c). OP sem posto de almoxarifado: NQA aprova/reprova como sempre: ok';
 end $t$;
 
 -- =============================================================
@@ -2343,3 +2472,55 @@ end $t$;
 
 -- As invariantes de novo, agora com a massa do 48 dentro.
 do $t$ begin perform public.teste_fila_invariantes('depois do teste 48'); end $t$;
+
+-- =============================================================
+-- 49. A RECUSA DO NQA TEM SAÍDA: cancelar a entrada devolve a caixa pra inspeção
+--
+-- O teste 23(b) prova que o NQA recusa a caixa que já deu entrada no Almoxarifado. Uma recusa sem
+-- caminho de volta seria trocar um beco sem saída por outro — a frase da tela manda o gestor cancelar
+-- a entrada em Registros → "Cancelar a caixa inteira" e inspecionar depois, e é isso que este teste
+-- executa, com as funções REAIS: a 0131 (que só existe no arquivo a partir daqui) e a sf_nqa_caixa.
+--
+-- Usa a MESMA massa do 23(b) — a caixa recusada continua fechada, com as 3 linhas do Estoque de pé
+-- e a montagem intocada, exatamente como o 23(b) deixou.
+-- =============================================================
+
+do $t$
+declare r jsonb; v_id uuid; v_regs int; v_n int;
+begin
+  select id into v_id from sf_registros
+   where pmo = 'PMOC22' and op = '8506' and posto = 'Estoque'
+     and numero_caixa = 'CX[1][3]8506-PMOC22'
+   limit 1;
+  if v_id is null then
+    raise exception 'FALHOU: o teste 49 depende das 3 linhas que o 23(b) deixou no Estoque'; end if;
+
+  -- O gestor cancela a entrada inteira (um gesto, um motivo, as 3 linhas). A 0131 devolve a
+  -- QUANTIDADE de linhas canceladas, não um jsonb.
+  perform set_config('teste.perms', 'shopfloor.administrar', false);
+  v_n := sf_cancelar_caixa_almoxarifado(v_id, 'entrada dada antes do NQA');
+  if v_n <> 3 then
+    raise exception 'FALHOU: o cancelamento devolveu % linha(s), esperava 3', v_n; end if;
+  select count(*) into v_regs from sf_registros
+   where pmo = 'PMOC22' and posto = 'Estoque' and numero_caixa = 'CX[1][3]8506-PMOC22';
+  if v_regs <> 0 then
+    raise exception 'FALHOU: sobraram % linha(s) no Almoxarifado depois do cancelamento', v_regs; end if;
+
+  -- E agora a inspeção passa: sem entrada em estoque, a guarda nova não tem o que ver.
+  perform set_config('teste.perms', 'shopfloor.lancar,lancar', false);
+  r := sf_nqa_caixa('PMOC22', '8506', 'Inspeção NQA', 'Qualidade', 'CX[1][3]8506-PMOC22',
+                    'Reprovado', 'Embalagem',
+                    '[{"sn_norm":"9901","visual":"Reprovado","funcional":"Aprovado","observacao":"riscada"}]'::jsonb);
+  if coalesce((r->>'ok')::boolean, false) is not true or (r->>'total')::int <> 3 then
+    raise exception 'FALHOU: depois de cancelar a entrada, o NQA ainda recusou: %', r; end if;
+  if (select count(*) from teste_aposentadas
+       where numero_caixa = 'CX[1][3]8506-PMOC22' and posto = 'Embalagem') <> 1 then
+    raise exception 'FALHOU: a montagem não foi aposentada na Embalagem depois da reprova'; end if;
+
+  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  raise notice '49. cancelar a entrada devolve a caixa pro NQA (a recusa do 23(b) tem saída): ok';
+end $t$;
+
+-- As invariantes da fila de novo, agora com o cancelamento do 49 dentro (a entrada do 23(b) foi
+-- estornada aqui).
+do $t$ begin perform public.teste_fila_invariantes('depois do teste 49'); end $t$;

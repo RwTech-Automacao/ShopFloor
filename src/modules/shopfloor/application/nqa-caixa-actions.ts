@@ -111,6 +111,15 @@ export async function finalizarNqaCaixa(entrada: {
     if (error) {
       const msg = error.message || ''
       if (msg.includes('CAIXA_JA_INSPECIONADA')) return { ok: false, erro: 'Esta caixa já foi inspecionada no NQA.' }
+      // Recusa nova da 0130. Sem este `case` a frase cairia no genérico do fim e o inspetor não
+      // saberia o que fazer — e o que fazer está em OUTRA tela, com OUTRA pessoa (o gestor é quem
+      // cancela a entrada). Por isso a mensagem nomeia a tela e o botão.
+      if (msg.includes('CAIXA_JA_NO_ALMOXARIFADO')) {
+        return {
+          ok: false,
+          erro: 'Esta caixa já deu entrada no Almoxarifado — o NQA tem que vir antes do estoque. Para inspecionar, o gestor precisa cancelar a entrada em Registros → "Cancelar a caixa inteira".',
+        }
+      }
       if (msg.includes('CAIXA_VAZIA')) return { ok: false, erro: 'Caixa sem peças.' }
       if (msg.includes('AMOSTRA_FORA_DA_CAIXA')) return { ok: false, erro: 'Há amostra que não pertence a esta caixa. Recarregue e inspecione de novo.' }
       if (msg.includes('AMOSTRAS_INSUFICIENTES')) return { ok: false, erro: 'Quantidade de amostras menor que a exigida pela Tabela NQA.' }
