@@ -528,6 +528,7 @@ git commit -m "etiquetas: o banco guarda o pedido e sabe o que ainda não foi im
   `etq_legado_marcar_impressas` (Task 2); `gerarCsv` de
   `src/modules/etiquetas/domain/partnumber.ts:101`.
 - Produz, todas `async` (o módulo é `'use server'`):
+  - **`pendente` = `impressa_em is null` E `removida_em is null`** (ver o aviso do Passo 3)
   - `etiquetarRoloAction(codigo: string, pedido: string): Promise<{ ok: true; linha: RoloEtiquetado } | { ok: false; erro: string }>`
   - `listarPendentesAction(): Promise<{ ok: true; linhas: RoloEtiquetado[]; cortada: boolean } | { ok: false; erro: string }>`
   - `removerPendenteAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }>`
@@ -648,9 +649,16 @@ const { data, error } = await supabase
   .from('etiquetas_legado')
   .select('id,item,pedido,sequencial,codigo,usuario_nome,created_at,impressa_em')
   .is('impressa_em', null)
+  .is('removida_em', null)
   .order('created_at', { ascending: false })
   .limit(LIMITE_LINHAS_LEGADO + 1)
 ```
+
+⚠️ **`removida_em` é obrigatório nos dois filtros — pendentes e já impressas.** A Task 2 descobriu
+que remover **não pode** apagar a linha: é ela que guarda o sequencial, e apagá-la devolveria o
+número ao próximo rolo — o contrário do que a spec manda ("remover queima o número"). Então
+remover é uma **marca**, e a linha continua na tabela. Sem `.is('removida_em', null)`, o que o
+almoxarife removeu **volta para a lista e entra no CSV**.
 
 Peça `LIMITE_LINHAS_LEGADO + 1` e devolva `cortada: linhas.length > LIMITE_LINHAS_LEGADO`,
 exibindo só `LIMITE_LINHAS_LEGADO` — assim o aviso "há mais" não aparece quando há exatamente o
