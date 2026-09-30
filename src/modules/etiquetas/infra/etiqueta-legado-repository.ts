@@ -150,23 +150,26 @@ export async function resumoLegado(): Promise<ResumoLegado> {
  *
  * É `select` direto, sem RPC: a policy da 0126 já exige `recebimento:visualizar` para ler a tabela.
  *
- * Pede uma linha ALÉM do limite só para saber se há mais — devolve no máximo `LIMITE_LINHAS_LEGADO`
- * e avisa em `cortada`. Pedir o limite exato não distingue "tem exatamente mil" de "tem mais de
- * mil", e o aviso apareceria sem haver nada de fora.
+ * `cortada` = há mais pendentes do que a lista traz, e vem do `count: 'exact'` (a contagem que o
+ * banco faz ignorando o limite). Pedir uma linha além do teto não funcionaria: o PostgREST corta
+ * QUALQUER resposta em `max_rows` = 1.000 (`supabase/config.toml`), que é o próprio
+ * `LIMITE_LINHAS_LEGADO` — pedir 1.001 devolve 1.000 e `cortada` nunca ficaria true. Se o
+ * `max_rows` não valer no self-host da AWS, o problema muda de lugar (seria a justificativa da
+ * constante que estaria errada), mas o `count` serve nos dois casos: ele compara com o que veio.
  */
 export async function listarPendentesLegado(): Promise<{ linhas: RoloEtiquetado[]; cortada: boolean }> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase
+  const { data, count, error } = await supabase
     .from('etiquetas_legado')
-    .select(COLUNAS_ROLO)
+    .select(COLUNAS_ROLO, { count: 'exact' })
     .is('impressa_em', null)
     .is('removida_em', null)
     .order('created_at', { ascending: false })
-    .limit(LIMITE_LINHAS_LEGADO + 1)
+    .limit(LIMITE_LINHAS_LEGADO)
   if (error) throw error
 
   const linhas = ((data ?? []) as RoloRow[]).map(paraRolo)
-  return { linhas: linhas.slice(0, LIMITE_LINHAS_LEGADO), cortada: linhas.length > LIMITE_LINHAS_LEGADO }
+  return { linhas, cortada: (count ?? 0) > linhas.length }
 }
 
 /**
@@ -211,9 +214,22 @@ export async function listarImpressasLegado(desde: string, ate: string): Promise
  *
  * Só as IMPRESSAS de propósito: uma pendente que saísse por aqui iria para o arquivo sem ser
  * marcada, e voltaria na próxima leva — o mesmo código colado em dois rolos.
+ *
+ * Recusa a leva acima do teto ANTES de consultar, como `emitirEtiquetasLegado` recusa a resposta
+ * cortada: o PostgREST corta em `max_rows` = 1.000 e a 2ª via sairia curta em silêncio — rolo sem
+ * etiqueta, e ninguém percebe porque o arquivo baixa normalmente. A guarda mira `ids.length` (e não
+ * `data.length` contra `ids.length`) porque aqui vir MENOS é legítimo: um id que outra pessoa
+ * removeu, ou que ainda está pendente, fica de fora pelos filtros acima — e é `baixarDeNovoAction`
+ * quem explica isso. Com até 1.000 ids não há corte possível: `id` é único, então a resposta tem no
+ * máximo `ids.length` linhas.
  */
 export async function listarImpressasPorIdsLegado(ids: string[]): Promise<RoloEtiquetado[]> {
   if (ids.length === 0) return []
+  if (ids.length > LIMITE_LINHAS_LEGADO) {
+    throw new Error(
+      `Você escolheu ${ids.length} etiquetas, e o arquivo de 2ª via só sai com até ${LIMITE_LINHAS_LEGADO} por vez. Baixe em levas menores, senão o arquivo sairia incompleto sem avisar.`,
+    )
+  }
 
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
