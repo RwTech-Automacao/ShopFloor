@@ -265,4 +265,21 @@ begin
   raise notice '0135. pedido no código, remover só pendente, marcar impressas: ok';
 end $t$;
 
+\echo '--- 0135: o BANCO recusa pedido com letra, mesmo que a aplicação erre ---'
+-- A recusa da função (PEDIDO_INVALIDO, acima) só vale para quem passa por ela. O CHECK é a cerca
+-- para a gravação que vem por fora — e é ele que garante que o `L` continua um separador
+-- confiável: com letra no pedido, um código gravado hoje vira ambíguo de ler amanhã.
+do $t$
+begin
+  -- Insert direto, por fora da função: é o cenário "o app errou".
+  begin
+    insert into public.etiquetas_legado (item, sequencial, codigo, pedido)
+    values ('CHKX01', 1, 'CHKX01-XL0001', 'X');
+    raise exception 'FALHOU: o CHECK de pedido só-dígitos não barrou';
+  exception when check_violation then
+    null;
+  end;
+end $t$;
+\echo 'ok'
+
 \echo 'TODOS OS TESTES DA 0126 E DA 0135 PASSARAM'
