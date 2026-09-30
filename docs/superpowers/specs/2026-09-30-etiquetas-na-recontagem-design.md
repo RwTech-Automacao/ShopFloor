@@ -126,6 +126,12 @@ regra que a 0126 já segue: não dá para saber se aquela etiqueta chegou a ser 
 **Imprimir:** botão **Gerar etiquetas (CSV)**, que baixa tudo o que está pendente e marca as linhas
 como impressas.
 
+**O arquivo:** o mesmo `gerarCsv` que o Recebimento e a versão da planilha já usam
+(`src/modules/etiquetas/domain/partnumber.ts:101`) — três colunas entre aspas, `\r\n` entre as
+linhas: **part number, código do item, volume**. É o formato que o software da impressora já
+consome; mudá-lo obrigaria a mexer lá, e não há motivo. No caminho da recontagem o volume é
+`01-01` (cada rolo é um volume único), como a versão da planilha já faz.
+
 **Aba "Já impressas"**, com filtro por data e **"Baixar de novo"** — não desfaz nada, só gera o CSV
 daquelas linhas outra vez. Existe para o caso de o download falhar, a impressora estar sem ribbon
 ou o arquivo se perder: sem isso, o almoxarife redigitaria 40 rolos.
