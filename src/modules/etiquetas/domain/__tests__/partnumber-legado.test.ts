@@ -7,6 +7,7 @@ import {
   montarPartNumberLegado,
   normalizarItem,
   normalizarLocacao,
+  normalizarPedidoLegado,
   ordenarPorPrateleira,
   recusaDoItem,
   resumirPrevia,
@@ -333,5 +334,48 @@ describe('ordenarPorPrateleira', () => {
       'A1.C.2 - A1.C.2',
       'A1.C.15 - A1.C.15',
     ])
+  })
+})
+
+describe('pedido na etiqueta do inventário rotativo', () => {
+  it('sem pedido, o código é o mesmo de hoje', () => {
+    expect(montarPartNumberLegado('CAPA78', 4)).toBe('CAPA78-L0004')
+    expect(montarPartNumberLegado('CAPA78', 4, '')).toBe('CAPA78-L0004')
+  })
+
+  it('com pedido, o pedido entra antes do L', () => {
+    expect(montarPartNumberLegado('CAPA78', 4, '123425')).toBe('CAPA78-123425L0004')
+  })
+
+  it('o pedido aceita o que estiver escrito no rolo', () => {
+    expect(normalizarPedidoLegado('1234/25')).toEqual({ pedido: '123425' })
+    expect(normalizarPedidoLegado('45/2025')).toEqual({ pedido: '004525' })
+    expect(normalizarPedidoLegado('1234-25')).toEqual({ pedido: '123425' })
+    expect(normalizarPedidoLegado('  12  ')).toEqual({ pedido: '0012' })
+  })
+
+  it('campo vazio é ausência de pedido, não erro', () => {
+    expect(normalizarPedidoLegado('')).toEqual({ pedido: '' })
+    expect(normalizarPedidoLegado('   ')).toEqual({ pedido: '' })
+    expect(normalizarPedidoLegado(null)).toEqual({ pedido: '' })
+    expect(normalizarPedidoLegado(undefined)).toEqual({ pedido: '' })
+  })
+
+  // A armadilha: formatarPedido('abc') devolve '0000'. Sem esta recusa, um dedo errado vira uma
+  // etiqueta com um pedido que não existe, colada num rolo — e ninguém vê.
+  it('pedido sem nenhum dígito é RECUSADO, nunca vira 0000', () => {
+    expect(normalizarPedidoLegado('abc')).toEqual({ recusa: 'pedido_ilegivel' })
+    expect(normalizarPedidoLegado('x')).toEqual({ recusa: 'pedido_ilegivel' })
+    expect(normalizarPedidoLegado('--')).toEqual({ recusa: 'pedido_ilegivel' })
+  })
+
+  // O L é o que impede uma etiqueta do inventário de colidir com uma etiqueta de verdade do
+  // Recebimento (lá o lugar do L é o documento, DI ou NF, SEMPRE numérico).
+  it('o pedido normalizado é só dígitos, então o L nunca fica ambíguo', () => {
+    for (const bruto of ['1234/25', '45/2025', '1234-25', '12', '999999999']) {
+      const r = normalizarPedidoLegado(bruto)
+      expect('pedido' in r).toBe(true)
+      expect((r as { pedido: string }).pedido).toMatch(/^[0-9]*$/)
+    }
   })
 })

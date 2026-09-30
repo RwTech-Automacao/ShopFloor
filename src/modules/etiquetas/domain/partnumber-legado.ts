@@ -16,7 +16,7 @@
  * byte a byte no formato que a impressora já conhece.
  */
 
-import { formatarVolume, type LinhaEtiqueta } from './partnumber'
+import { formatarPedido, formatarVolume, type LinhaEtiqueta } from './partnumber'
 
 /** Marca de material legado no lote. `L` e não `GEN`: barra menor, barra mais fácil de ler. */
 export const MARCA_LEGADO = 'L'
@@ -119,11 +119,37 @@ export function recusaDoItem(item: string): MotivoRecusa | null {
   return null
 }
 
-/** `CAPA78` + 1 → `CAPA78-L0001`. Espelha `etq_legado_codigo` na 0126. */
-export function montarPartNumberLegado(item: string, sequencial: number): string {
+/**
+ * O código da etiqueta do estoque legado, com o pedido quando o rolo tem um.
+ *
+ *     CAPA78-123425L0004        com pedido
+ *     CAPA78-L0004              sem pedido (o formato de sempre)
+ *
+ * O `L` fica DEPOIS do pedido, no lugar que a etiqueta de verdade do Recebimento reserva para o
+ * documento (DI ou NF). Documento real é sempre numérico, então uma etiqueta daqui nunca pode ser
+ * confundida com uma de lá — por construção, não por convenção.
+ */
+export function montarPartNumberLegado(item: string, sequencial: number, pedido = ''): string {
   const numero = Math.trunc(sequencial)
   const lote = numero < 10000 ? String(numero).padStart(4, '0') : String(numero)
-  return `${normalizarItem(item)}-${MARCA_LEGADO}${lote}`
+  return `${normalizarItem(item)}-${pedido}${MARCA_LEGADO}${lote}`
+}
+
+/**
+ * O pedido que o almoxarife digitou, do jeito que está escrito no rolo, virando os dígitos que a
+ * etiqueta usa — ou uma recusa.
+ *
+ * Campo vazio é ausência de pedido (etiqueta genérica), não erro. Mas texto SEM NENHUM DÍGITO é
+ * recusado: `formatarPedido('abc')` devolve `'0000'`, e deixar passar colaria num rolo uma etiqueta
+ * com um pedido que não existe.
+ */
+export function normalizarPedidoLegado(
+  valor: unknown,
+): { pedido: string } | { recusa: 'pedido_ilegivel' } {
+  const bruto = String(valor ?? '').trim()
+  if (bruto === '') return { pedido: '' }
+  if (!/[0-9]/.test(bruto)) return { recusa: 'pedido_ilegivel' }
+  return { pedido: formatarPedido(bruto) }
 }
 
 /**
