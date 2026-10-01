@@ -130,6 +130,74 @@ describe('etiquetar um rolo', () => {
     await waitFor(() => expect(campos().codigo).toHaveValue(''))
   })
 
+  it('durante a gravação os campos travam, o foco sai deles e o botão diz que está enviando', async () => {
+    let solta: (v: unknown) => void = () => {}
+    etiquetarRoloAction.mockImplementation(() => new Promise((r) => (solta = r)))
+    abrir()
+
+    const c = campos()
+    fireEvent.change(c.codigo, { target: { value: 'CAPA78' } })
+    fireEvent.keyDown(c.codigo, { key: 'Enter' })
+
+    // Em voo. É AQUI que o rolo 2 era perdido: o campo continuava vivo, o que ele digitava era
+    // anexado ao valor antigo (`CAPA78CAPB99`) e a resposta do rolo 1 limpava o campo, apagando o
+    // rolo 2 sem que nada na tela dissesse que havia gravação em curso.
+    expect(campos().codigo).toBeDisabled()
+    expect(campos().pedido).toBeDisabled()
+    expect(document.activeElement).not.toBe(campos().codigo)
+    expect(screen.getByRole('button', { name: 'Enviando…' })).toBeDisabled()
+
+    solta({ ok: true, linha: rolo() })
+
+    await waitFor(() => expect(campos().codigo).toBeEnabled())
+    expect(campos().codigo).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Adicionar' })).toBeEnabled()
+  })
+
+  it('o Enter que chega durante a gravação avisa, em vez de ser engolido em silêncio', async () => {
+    let solta: (v: unknown) => void = () => {}
+    etiquetarRoloAction.mockImplementation(() => new Promise((r) => (solta = r)))
+    abrir()
+
+    const c = campos()
+    fireEvent.change(c.codigo, { target: { value: 'CAPA78' } })
+    fireEvent.keyDown(c.codigo, { key: 'Enter' })
+    // O Enter do rolo 2 caindo na janela da gravação do rolo 1: descartar calado fazia ele ver a
+    // linha do rolo 1 entrar na lista, achar que era a do rolo 2 e seguir para a prateleira
+    // seguinte — com o rolo 2 ainda sem etiqueta.
+    fireEvent.keyDown(campos().codigo, { key: 'Enter' })
+
+    expect(etiquetarRoloAction).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/ainda está sendo gravado/)).toBeInTheDocument()
+
+    solta({ ok: true, linha: rolo() })
+    await waitFor(() => expect(campos().codigo).toBeEnabled())
+  })
+
+  it('quando destrava, o foco volta ao Código — é o que faz o gesto existir', async () => {
+    etiquetarRoloAction.mockResolvedValue({ ok: true, linha: rolo() })
+    abrir()
+
+    // O foco é o único jeito de ele emendar dezenas de rolos sem tocar no tablet. Uma quebra no
+    // encaminhamento do `ref` pelo wrapper `Input` (código de terceiro no meio) passaria verde sem
+    // este teste.
+    await digitarEAdicionar('CAPA78', '1234/25')
+
+    await waitFor(() => expect(campos().codigo).toHaveValue(''))
+    expect(document.activeElement).toBe(campos().codigo)
+  })
+
+  it('carga que falha não deixa a tabela dizendo que não há nada esperando impressão', async () => {
+    listarPendentesAction.mockResolvedValue({
+      ok: false,
+      erro: 'Não foi possível carregar a lista. Tente de novo; se continuar, chame o desenvolvedor.',
+    })
+    abrir()
+
+    expect(await screen.findByText(/Não deu para carregar a lista/)).toBeInTheDocument()
+    expect(screen.queryByText(/Nada esperando impressão/)).not.toBeInTheDocument()
+  })
+
   it('a linha que voltou sem id não oferece remover (removê-la mandaria id vazio)', async () => {
     etiquetarRoloAction.mockResolvedValue({ ok: true, linha: rolo({ id: '' }) })
     abrir()
@@ -156,7 +224,7 @@ describe('o arquivo do turno', () => {
     )
   })
 
-  it('mostra o aviso INTEIRO — as duas frases têm instrução de ação', async () => {
+  it('mostra o aviso INTEIRO, na tarja — as duas frases têm instrução de ação', async () => {
     const aviso =
       'Atenção: o arquivo saiu com 2 etiqueta(s), e 1 dela(s) já tinha(m) sido baixada(s) ou removida(s) por outra pessoa enquanto esta tela estava aberta. ' +
       'Ainda sobrou: este arquivo levou as 2 etiqueta(s) mais novas, e o resto continua esperando impressão. Baixe o arquivo de novo para pegar a próxima leva.'
@@ -175,6 +243,9 @@ describe('o arquivo do turno', () => {
 
     const mostrado = await screen.findByText(/já tinha\(m\) sido baixada/)
     expect(mostrado).toHaveTextContent(/Baixe o arquivo de novo para pegar a próxima leva/)
+    // Na TARJA larga, não no toast estreito: são ~565 caracteres, que no tablet virariam um
+    // paredão de 14 linhas no canto de baixo.
+    expect(mostrado).toHaveAttribute('role', 'status')
   })
 })
 
@@ -197,12 +268,58 @@ describe('2ª via das já impressas', () => {
     await waitFor(() => expect(listarImpressasAction).toHaveBeenCalled())
 
     fireEvent.click(await screen.findByRole('button', { name: 'Marcar todas' }))
-    expect(
-      await screen.findByText(new RegExp(`${LIMITE_LINHAS_LEGADO} de ${LIMITE_LINHAS_LEGADO}`)),
-    ).toBeInTheDocument()
+    // O denominador é o que está na TELA (como na etiquetagem por planilha), e a saída oferecida é
+    // estreitar as datas: "limpe a seleção e siga com o resto" não funciona, porque o resto do
+    // período não está na tela para ser marcado depois.
+    const contador = await screen.findByText(
+      new RegExp(`${LIMITE_LINHAS_LEGADO} selecionada\\(s\\) de ${muitas.length} linha\\(s\\)`),
+    )
+    expect(contador).toHaveTextContent(/estreite as datas/)
 
     fireEvent.click(screen.getByRole('button', { name: /Baixar 2ª via/ }))
     await waitFor(() => expect(baixarDeNovoAction).toHaveBeenCalled())
     expect(baixarDeNovoAction.mock.calls[0]?.[0]).toHaveLength(LIMITE_LINHAS_LEGADO)
+  })
+
+  it('a leva pequena não fala de teto e conta as linhas da tela', async () => {
+    listarImpressasAction.mockResolvedValue({
+      ok: true,
+      linhas: [rolo({ id: 'r1', impressaEm: '2026-09-30T18:00:00.000Z' })],
+    })
+    abrir()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Já impressas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+    await waitFor(() => expect(listarImpressasAction).toHaveBeenCalled())
+
+    expect(await screen.findByText(/0 selecionada\(s\) de 1 linha\(s\)/)).toBeInTheDocument()
+    expect(screen.queryByText(new RegExp(`de ${LIMITE_LINHAS_LEGADO}`))).not.toBeInTheDocument()
+  })
+
+  it('busca que devolveu zero não continua mandando escolher o período', async () => {
+    abrir()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Já impressas' }))
+    expect(screen.getByText('Escolha o período e toque em Buscar.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+
+    // A frase exata é a da TABELA: o toast tem a mesma abertura e mais a instrução das datas.
+    expect(await screen.findByText('Nenhuma etiqueta impressa nesse período.')).toBeInTheDocument()
+    expect(screen.queryByText('Escolha o período e toque em Buscar.')).not.toBeInTheDocument()
+  })
+
+  it('busca que falhou não se passa por período sem etiqueta', async () => {
+    listarImpressasAction.mockResolvedValue({
+      ok: false,
+      erro: 'Não foi possível carregar a lista. Tente de novo; se continuar, chame o desenvolvedor.',
+    })
+    abrir()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Já impressas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
+
+    expect(await screen.findByText(/Não deu para carregar a lista/)).toBeInTheDocument()
+    expect(screen.queryByText('Nenhuma etiqueta impressa nesse período.')).not.toBeInTheDocument()
   })
 })

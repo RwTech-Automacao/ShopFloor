@@ -64,27 +64,48 @@ export function EtiquetarRoloCliente() {
   const [aba, setAba] = useState<'etiquetar' | 'impressas'>('etiquetar')
 
   const codigoRef = useRef<HTMLInputElement>(null)
+  /** Sumidouro: engole o que for digitado enquanto a gravação está em voo (ver o efeito abaixo). */
+  const bloqueioRef = useRef<HTMLInputElement>(null)
+  /** Ligado enquanto uma ação trava os campos: o foco volta ao Código quando ela destrava. */
+  const focarCodigo = useRef(false)
   const [codigo, setCodigo] = useState('')
   const [pedido, setPedido] = useState('')
   const [pendentes, setPendentes] = useState<RoloEtiquetado[]>([])
   const [cortada, setCortada] = useState(false)
+  const [avisoArquivo, setAvisoArquivo] = useState<string | null>(null)
+  const [erroPendentes, setErroPendentes] = useState<string | null>(null)
   const [ocupado, setOcupado] = useState(false)
 
   const [desde, setDesde] = useState(hojeISO)
   const [ate, setAte] = useState(hojeISO)
   const [impressas, setImpressas] = useState<RoloEtiquetado[]>([])
+  const [estadoImpressas, setEstadoImpressas] = useState<'inicio' | 'vazia' | 'erro'>('inicio')
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const [ocupadoVia, setOcupadoVia] = useState(false)
 
   const noTeto = selecionadas.size >= LIMITE_LINHAS_LEGADO
+  /** A busca já corta em 1.000 em silêncio: leva cheia quer dizer que o período pode ter mais. */
+  const levaCheia = impressas.length >= LIMITE_LINHAS_LEGADO
 
-  /** A lista de pendentes vem do banco, sempre: é ela que traz os ids que o remover usa. */
+  /**
+   * A lista de pendentes vem do banco, sempre: é ela que traz os ids que o remover usa.
+   *
+   * Ela é carregada AQUI, no cliente, e não na página, porque é isso que dá ao botão "Atualizar
+   * lista" o que recarregar sem recarregar a rota inteira. (Não é por medo de erro de permissão:
+   * a policy de leitura da 0126 exige `recebimento:visualizar`, e RLS negando um `select` devolve
+   * ZERO LINHAS, não erro — `tem_permissao` é `sql stable` e devolve boolean, nunca levanta. Quem
+   * garante que esse perfil não chega até aqui é o gate da página, que exige as duas permissões.)
+   */
   const recarregar = useCallback(async () => {
     const r = await listarPendentesAction()
     if (!r.ok) {
       toast.error(r.erro)
+      // O toast passa em 4 s e a tabela continua na tela: sem isto ela afirmaria "Nada esperando
+      // impressão" para quem na verdade não conseguiu carregar a lista.
+      setErroPendentes(r.erro)
       return
     }
+    setErroPendentes(null)
     setPendentes(r.linhas)
     setCortada(r.cortada)
   }, [])
@@ -96,9 +117,49 @@ export function EtiquetarRoloCliente() {
     void recarregar()
   }, [recarregar])
 
-  async function adicionar() {
-    if (ocupado) return // trava síncrona: Enter repetido não emite duas etiquetas
+  /**
+   * Enquanto GRAVA, os campos ficam travados e o foco vai para o campo-sumidouro — mesmo padrão do
+   * Lançamento (`lancamento-form.tsx`), onde isto já foi bug de produção.
+   *
+   * Sem a trava, o rolo seguinte era digitado POR CIMA da gravação: o valor era anexado ao antigo
+   * (`CAPA78` + `CAPB99`) e a resposta do rolo anterior limpava o campo, apagando o que ele acabara
+   * de digitar. O rolo 2 ficava sem etiqueta — o problema que esta tela existe para resolver.
+   *
+   * Sem `setTimeout` (o Lançamento precisa dele por causa do overlay): o efeito roda depois do
+   * commit, então os campos já estão `disabled` e o sumidouro já existe.
+   */
+  useEffect(() => {
+    if (!ocupado) return
+    bloqueioRef.current?.focus()
+  }, [ocupado])
+
+  /**
+   * E o foco volta ao Código quando destrava, que é o que faz o gesto existir: ele não toca no
+   * tablet entre um rolo e outro. Tem de ser num efeito — o `focus()` de dentro da ação não pega
+   * enquanto o campo ainda está `disabled` (a resposta e o destravamento são o mesmo ciclo).
+   */
+  useEffect(() => {
+    if (ocupado || !focarCodigo.current) return
+    focarCodigo.current = false
+    codigoRef.current?.focus()
+  }, [ocupado])
+
+  /** Trava a tela para uma ação e marca que o foco volta ao Código quando ela terminar. */
+  function travar() {
+    focarCodigo.current = true
     setOcupado(true)
+  }
+
+  async function adicionar() {
+    // Trava síncrona: Enter repetido não emite duas etiquetas. Com os campos travados e o foco no
+    // sumidouro nada deveria chegar aqui em voo — mas se chegar, ele fica SABENDO: engolir o Enter
+    // em silêncio fazia ele ver a linha do rolo 1 entrar na lista, achar que era a do rolo 2 e ir
+    // para a prateleira seguinte com o rolo 2 ainda sem etiqueta.
+    if (ocupado) {
+      toast.warning('Espere: o rolo anterior ainda está sendo gravado.')
+      return
+    }
+    travar()
     try {
       const r = await etiquetarRoloAction(codigo, pedido)
       if (!r.ok) {
@@ -106,8 +167,7 @@ export function EtiquetarRoloCliente() {
         return
       }
       setPendentes((atual) => [r.linha, ...atual])
-      setCodigo('') // o código limpa...
-      codigoRef.current?.focus() // ...e recebe o foco para o próximo rolo
+      setCodigo('') // o código limpa (e o efeito acima devolve o foco a ele)
       // o PEDIDO fica: vêm vários rolos seguidos do mesmo pedido
       toast.success(`Etiqueta ${r.linha.codigo} gerada.`)
     } finally {
@@ -117,7 +177,7 @@ export function EtiquetarRoloCliente() {
 
   async function remover(linha: RoloEtiquetado) {
     if (ocupado) return
-    setOcupado(true)
+    travar()
     try {
       const r = await removerPendenteAction(linha.id)
       if (!r.ok) {
@@ -137,7 +197,8 @@ export function EtiquetarRoloCliente() {
 
   async function baixarArquivo() {
     if (ocupado) return
-    setOcupado(true)
+    travar()
+    setAvisoArquivo(null) // o aviso da leva anterior não vale para esta
     try {
       const r = await gerarCsvPendentesAction()
       if (!r.ok) {
@@ -148,10 +209,12 @@ export function EtiquetarRoloCliente() {
       toast.success(
         `Arquivo ${r.fileName} baixado com ${r.quantidade} etiqueta(s). Imprima e cole cada etiqueta no rolo do código dela.`,
       )
-      // O aviso sai INTEIRO e sem prazo para desaparecer: ele pode juntar duas frases (alguém
-      // baixou ou removeu junto · a leva foi cortada em 1.000) e CADA UMA diz o que fazer. Cortar
-      // uma delas tiraria do almoxarife a informação que evita colar o mesmo código em dois rolos.
-      if (r.aviso) toast.warning(r.aviso, { duration: Infinity })
+      // O aviso sai INTEIRO e na TARJA, não em toast: ele pode juntar duas frases (alguém baixou ou
+      // removeu junto · a leva foi cortada em 1.000) e CADA UMA diz o que fazer — são ~565
+      // caracteres, um paredão de 14 linhas no toast estreito do tablet. É a mensagem que evita
+      // colar o mesmo código em dois rolos, então fica na tarja larga, do lado da tabela em que ele
+      // vai conferir, e não desaparece sozinha.
+      setAvisoArquivo(r.aviso ?? null)
       await recarregar()
     } finally {
       setOcupado(false)
@@ -165,10 +228,16 @@ export function EtiquetarRoloCliente() {
       const r = await listarImpressasAction(desde, ate)
       if (!r.ok) {
         toast.error(r.erro)
+        // A busca que falhou não pode deixar a tabela dizendo "Escolha o período e toque em
+        // Buscar", como se ele ainda não tivesse buscado.
+        setImpressas([])
+        setSelecionadas(new Set())
+        setEstadoImpressas('erro')
         return
       }
       setImpressas(r.linhas)
       setSelecionadas(new Set())
+      setEstadoImpressas(r.linhas.length === 0 ? 'vazia' : 'inicio')
       if (r.linhas.length === 0) {
         toast.info('Nenhuma etiqueta impressa nesse período. Confira as datas e busque de novo.')
       }
@@ -178,20 +247,16 @@ export function EtiquetarRoloCliente() {
   }
 
   /**
-   * O teto de 1.000 é fechado AQUI, na marcação.
+   * O teto de 1.000 é fechado na CAIXA, que fica `disabled` quando a seleção enche — é lá que ele
+   * descobre o limite antes de apertar, e é o contador do cabeçalho que diz o que fazer.
    *
-   * Passar de 1.000 ids faz a 2ª via falhar com uma mensagem que não chega ao usuário (o
-   * tratamento de erro não reconhece aquele código e mostra o genérico "chame o desenvolvedor"), e
-   * tentar de novo falha igual. Então a tela nem deixa marcar a 1.001ª: ele descobre o limite
-   * antes de apertar, com a instrução do que fazer, em vez de depois.
+   * Aqui a guarda se repete só como invariante: passar de 1.000 ids faz a 2ª via falhar com uma
+   * mensagem que não chega ao usuário (o tratamento de erro não reconhece aquele código e mostra o
+   * genérico "chame o desenvolvedor"). Sai sem aviso de propósito: no teto a caixa não responde ao
+   * toque, então nenhum aviso daqui teria como aparecer.
    */
   function alternar(id: string, marcado: boolean) {
-    if (marcado && noTeto) {
-      toast.warning(
-        `O arquivo de 2ª via sai com até ${LIMITE_LINHAS_LEGADO} etiquetas por vez. Baixe estas ${LIMITE_LINHAS_LEGADO}, limpe a seleção e siga com o resto.`,
-      )
-      return
-    }
+    if (marcado && noTeto) return
     setSelecionadas((atual) => {
       const proximo = new Set(atual)
       if (marcado) proximo.add(id)
@@ -200,12 +265,18 @@ export function EtiquetarRoloCliente() {
     })
   }
 
+  /**
+   * A BUSCA já corta em 1.000 em silêncio, então a lista nunca vem com mais do que cabe no arquivo:
+   * marcar todas nunca deixa uma linha da tela de fora. O que pode ter ficado de fora é do PERÍODO,
+   * e o único jeito de alcançar o resto é estreitar as datas — "limpe a seleção e siga com o resto"
+   * não funcionaria, porque o resto não está na tela para ser marcado.
+   */
   function marcarTodas() {
     const cabem = impressas.slice(0, LIMITE_LINHAS_LEGADO)
     setSelecionadas(new Set(cabem.map((l) => l.id)))
-    if (impressas.length > cabem.length) {
+    if (levaCheia) {
       toast.warning(
-        `Marquei as ${cabem.length} primeiras: o arquivo de 2ª via sai com até ${LIMITE_LINHAS_LEGADO} etiquetas por vez. Baixe esta leva, limpe a seleção e siga com o resto.`,
+        `A busca traz até ${LIMITE_LINHAS_LEGADO} etiquetas por vez, e este período pode ter mais. Baixe esta leva e depois estreite as datas para ver o resto.`,
       )
     }
   }
@@ -215,10 +286,10 @@ export function EtiquetarRoloCliente() {
     // A ordem é a da lista, não a dos cliques: as etiquetas saem do arquivo na ordem em que ele as
     // lê, e é nessa ordem que quem cola vai achá-las.
     const ids = impressas.filter((l) => selecionadas.has(l.id)).map((l) => l.id)
-    if (ids.length === 0) {
-      toast.error('Marque as etiquetas que você quer baixar de novo.')
-      return
-    }
+    // Seleção vazia não chega aqui: o botão fica `disabled`. A guarda continua como invariante (um
+    // arquivo só com cabeçalho não ajuda ninguém), e por isso sai calada — um aviso daqui não
+    // teria como aparecer.
+    if (ids.length === 0) return
     setOcupadoVia(true)
     try {
       const r = await baixarDeNovoAction(ids)
@@ -253,6 +324,7 @@ export function EtiquetarRoloCliente() {
                 value={codigo}
                 autoFocus
                 autoComplete="off"
+                disabled={ocupado}
                 onChange={(e) => setCodigo(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -270,6 +342,7 @@ export function EtiquetarRoloCliente() {
                 id="pedido-rolo"
                 value={pedido}
                 autoComplete="off"
+                disabled={ocupado}
                 onChange={(e) => setPedido(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -281,15 +354,26 @@ export function EtiquetarRoloCliente() {
                 className="font-mono"
               />
             </div>
-            {/* Os campos NÃO ficam desabilitados durante o envio: desabilitar tira o foco do campo
-                Código e o `focus()` do próximo rolo não teria onde pegar. Quem impede o Enter
-                repetido de virar duas etiquetas é a trava síncrona de `adicionar`. */}
+            {/* O campo-sumidouro: enquanto grava, é ELE quem tem o foco, e o que for digitado por
+                cima não cai em campo nenhum (e não é apagado pela resposta do rolo anterior). Fora
+                da gravação não existe para o usuário — nem foco por Tab, nem leitor de tela. */}
+            <input
+              ref={bloqueioRef}
+              className="sr-only"
+              readOnly
+              tabIndex={-1}
+              aria-hidden="true"
+              onKeyDown={(e) => e.preventDefault()}
+            />
+            {/* O rótulo troca porque `disabled` sozinho não diz que HÁ gravação em curso: ele
+                precisa saber que o rolo anterior ainda está sendo gravado, senão acha que a tela
+                travou. */}
             <Button
               onClick={() => void adicionar()}
               disabled={ocupado}
               className="bg-enterplak hover:bg-enterplak-700 sm:w-auto"
             >
-              Adicionar
+              {ocupado ? 'Enviando…' : 'Adicionar'}
             </Button>
           </div>
 
@@ -307,6 +391,17 @@ export function EtiquetarRoloCliente() {
               Atualizar lista
             </Button>
           </div>
+
+          {/* O aviso do arquivo vem PRIMEIRO e mais forte: é ele que evita colar o mesmo código em
+              dois rolos. O de leva cortada é informativo. */}
+          {avisoArquivo && (
+            <p
+              role="status"
+              className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900"
+            >
+              {avisoArquivo}
+            </p>
+          )}
 
           {cortada && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
@@ -329,8 +424,15 @@ export function EtiquetarRoloCliente() {
               <TableBody>
                 {pendentes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-sm text-muted-foreground">
-                      Nada esperando impressão. Digite o código do rolo que está na sua mão.
+                    {/* Carga que falhou ≠ lista vazia: dizer "nada esperando impressão" a quem não
+                        conseguiu carregar a lista é mentira, e o toast do erro já passou. */}
+                    <TableCell
+                      colSpan={5}
+                      className={cn('text-sm', erroPendentes ? 'text-amber-800' : 'text-muted-foreground')}
+                    >
+                      {erroPendentes
+                        ? 'Não deu para carregar a lista — toque em Atualizar lista.'
+                        : 'Nada esperando impressão. Digite o código do rolo que está na sua mão.'}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -440,9 +542,14 @@ export function EtiquetarRoloCliente() {
                 Limpar seleção
               </Button>
             </div>
+            {/* O denominador é o que está na TELA, como na etiquetagem por planilha: "de 1.000"
+                lia-se como "há 1.000 para marcar" com três linhas na tabela. O teto só entra na
+                frase quando a leva veio cheia — e aí o caminho é estreitar as datas, porque o resto
+                do período não está na tela para ser marcado depois. */}
             <span className={cn('text-sm', noTeto ? 'text-amber-700' : 'text-muted-foreground')}>
-              {selecionadas.size} de {LIMITE_LINHAS_LEGADO} selecionada(s)
-              {noTeto && ' — é o máximo por arquivo; baixe esta leva e siga com o resto'}
+              {selecionadas.size} selecionada(s) de {impressas.length} linha(s)
+              {levaCheia &&
+                ` · a busca traz até ${LIMITE_LINHAS_LEGADO} por vez; para ver o resto do período, estreite as datas`}
             </span>
           </div>
 
@@ -460,8 +567,21 @@ export function EtiquetarRoloCliente() {
               <TableBody>
                 {impressas.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-sm text-muted-foreground">
-                      Escolha o período e toque em Buscar.
+                    {/* Três estados diferentes: ainda não buscou · buscou e não achou · a busca
+                        falhou. Um texto só para os três faria a tela dizer "escolha o período"
+                        depois de ele ter escolhido, e "não achei" quando o que houve foi falha. */}
+                    <TableCell
+                      colSpan={5}
+                      className={cn(
+                        'text-sm',
+                        estadoImpressas === 'erro' ? 'text-amber-800' : 'text-muted-foreground',
+                      )}
+                    >
+                      {estadoImpressas === 'erro'
+                        ? 'Não deu para carregar a lista — toque em Buscar de novo.'
+                        : estadoImpressas === 'vazia'
+                          ? 'Nenhuma etiqueta impressa nesse período.'
+                          : 'Escolha o período e toque em Buscar.'}
                     </TableCell>
                   </TableRow>
                 ) : (
