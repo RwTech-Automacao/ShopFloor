@@ -112,7 +112,10 @@ function trechoOps(d: RefOp): string {
   const itens = rotulosOps(d)
   if (itens.length === 0) return ''
   if (itens.length === 1) return `OP ${itens[0]}`
-  return `OPs ${listaComCorte(itens, ORCAMENTO_OPS, 'OP', 'OPs')}`
+  const lista = listaComCorte(itens, ORCAMENTO_OPS, 'OP', 'OPs')
+  // Orçamento que não cabe nem uma ordem com o aviso: o cortador devolve '' e aqui sairia um 'OPs'
+  // pendurado sem lista nenhuma ("normalizou: 0:55 por peça · OPs"). Mesma saída das posições.
+  return lista === '' ? '' : `OPs ${lista}`
 }
 
 /**
