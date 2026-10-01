@@ -1,5 +1,6 @@
 'use server'
 
+import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { carimboDataHora, gerarCsv } from '../domain/partnumber'
 import {
   linhasDoArquivoLegado,
@@ -10,6 +11,7 @@ import {
 } from '../domain/partnumber-legado'
 import {
   buscarPendentePorCodigoLegado,
+  buscarPendentePorIdLegado,
   emitirEtiquetasLegado,
   listarImpressasLegado,
   listarImpressasPorIdsLegado,
@@ -35,6 +37,12 @@ import {
  *
  * A permissão `recebimento:gerar_etiqueta` é exigida por TODAS as funções do banco, e a leitura da
  * tabela exige `recebimento:visualizar` na policy — não há caminho por fora.
+ *
+ * ⚠️ AS AÇÕES QUE MUDAM ESTADO GRAVAM LOG (emitir, remover, baixar o arquivo); as leituras não.
+ * `logs.entidade_id` é **uuid**: só o `id` da linha de `etiquetas_legado` pode entrar lá. O CÓDIGO
+ * da etiqueta vai na descrição e em `dados` — passá-lo como `entidadeId` faria o insert do log
+ * falhar com 22P02 e o erro morreria num `console.error` (foi assim que a Integração e o Reparo
+ * ficaram meses sem auditoria nenhuma, sem ninguém notar).
  */
 
 /**
@@ -56,6 +64,23 @@ function frase(e: unknown, oQue: string): string {
     return 'Essa etiqueta já saiu no arquivo ou já foi removida por outra pessoa. Atualize a lista.'
   }
   return `Não foi possível ${oQue}. Tente de novo; se continuar, chame o desenvolvedor.`
+}
+
+/**
+ * Grava o log sem poder derrubar a ação que JÁ ACONTECEU no banco.
+ *
+ * As três ações registram DEPOIS da escrita. Se o log pudesse levantar, a emissão de um rolo que
+ * acabou de ganhar número devolveria "não foi possível" ao almoxarife, ele digitaria de novo e
+ * queimaria um segundo número — e o download devolveria erro com a leva já marcada como impressa,
+ * perdendo o arquivo para sempre. `inserirLog` já engole a falha do insert; aqui a cerca é contra o
+ * resto (a leitura da sessão, por exemplo), e nunca em silêncio.
+ */
+async function anotar(entrada: Parameters<typeof registrarLog>[0]): Promise<void> {
+  try {
+    await registrarLog(entrada)
+  } catch (e) {
+    console.error('[etiquetar-rolo] falha ao registrar log', { acao: entrada.acao, erro: e })
+  }
 }
 
 /**
@@ -123,6 +148,24 @@ export async function etiquetarRoloAction(
     // em seguida), o resultado sai com `id` vazio: serve para o painel mostrar o código, não para
     // remover.
     const relida = await buscarPendentePorCodigoLegado(emitida.codigo).catch(() => null)
+
+    // `entidadeId` só sai quando a releitura trouxe o id (uuid de verdade). Sem ela, o log sai sem
+    // id — o código está na descrição, e é por ele que se acha a etiqueta.
+    await anotar({
+      entidade: 'etiqueta_legado',
+      ...(relida?.id ? { entidadeId: relida.id } : {}),
+      acao: 'gerar_etiqueta',
+      descricao:
+        `Etiqueta ${emitida.codigo} emitida no inventário rotativo (componente ${emitida.item}, ` +
+        `${p.pedido === '' ? 'rolo sem pedido escrito' : `pedido ${p.pedido}`})`,
+      dados: {
+        codigo: emitida.codigo,
+        item: emitida.item,
+        pedido: p.pedido,
+        sequencial: emitida.sequencial,
+      },
+    })
+
     return {
       ok: true as const,
       linha:
@@ -162,7 +205,25 @@ export async function removerPendenteAction(id: string): Promise<{ ok: true } | 
   if (!id) return { ok: false as const, erro: 'Escolha a etiqueta que quer remover.' }
 
   try {
+    // Lido ANTES: depois da marca a linha sai da lista de pendentes, e o log precisa do código
+    // para dizer QUAL número ficou queimado. Best-effort — a remoção não para por causa do log.
+    const linha = await buscarPendentePorIdLegado(id).catch(() => null)
     await removerPendenteLegado(id)
+
+    await anotar({
+      entidade: 'etiqueta_legado',
+      entidadeId: id,
+      acao: 'excluir',
+      descricao: linha
+        ? `Etiqueta ${linha.codigo} removida da lista antes de imprimir; o número ${linha.sequencial} do componente ${linha.item} fica queimado`
+        : 'Etiqueta removida da lista antes de imprimir; o número dela fica queimado',
+      dados: {
+        codigo: linha?.codigo ?? '',
+        item: linha?.item ?? '',
+        sequencial: linha?.sequencial ?? null,
+      },
+    })
+
     return { ok: true as const }
   } catch (e) {
     return { ok: false as const, erro: frase(e, 'remover a etiqueta') }
@@ -214,6 +275,28 @@ export async function gerarCsvPendentesAction(): Promise<
     }
 
     const aviso = avisos.length > 0 ? avisos.join(' ') : undefined
+
+    // Depois de marcar: é a marcação que muda o estado, e `movidas` é o que separa "a leva era
+    // minha" de "outra pessoa levou parte dela" — a disputa que termina com o mesmo código colado
+    // em dois rolos. Sem `entidadeId`: a leva são N linhas, e `logs.entidade_id` é um uuid só.
+    await anotar({
+      entidade: 'etiqueta_legado',
+      acao: 'gerar_etiqueta',
+      descricao:
+        `Arquivo ${fileName} baixado com ${linhas.length} etiqueta(s) do inventário rotativo ` +
+        `(de ${linhas[0]?.codigo ?? ''} a ${linhas[linhas.length - 1]?.codigo ?? ''}), ` +
+        `${movidas} marcada(s) como impressa(s)`,
+      dados: {
+        quantidade: linhas.length,
+        movidas,
+        /** Entraram no arquivo mas já tinham sido baixadas ou removidas por outra pessoa. */
+        repetidas,
+        cortada,
+        primeiro: linhas[0]?.codigo ?? '',
+        ultimo: linhas[linhas.length - 1]?.codigo ?? '',
+      },
+    })
+
     return {
       ok: true as const,
       csv,

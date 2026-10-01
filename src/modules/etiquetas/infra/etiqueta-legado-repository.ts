@@ -254,6 +254,31 @@ export async function removerPendenteLegado(id: string): Promise<void> {
 }
 
 /**
+ * A linha pendente de um `id`, para o log saber QUAL etiqueta a ação mexeu.
+ *
+ * `etq_legado_remover` recebe o id e devolve só a contagem, e a tela chama a remoção pelo id — o
+ * código fica fora do caminho. Sem ler a linha, a auditoria da remoção diria "uma etiqueta foi
+ * removida" sem dizer qual, e remover é justamente o que QUEIMA um número: o log tem de nomear o
+ * código para responder, meses depois, por que aquele sequencial não existe. Vem do banco (e não do
+ * cliente, que também tem o código na tela) para a auditoria não registrar o que o navegador
+ * afirmou, e sim o que está gravado.
+ */
+export async function buscarPendentePorIdLegado(id: string): Promise<RoloEtiquetado | null> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('etiquetas_legado')
+    .select(COLUNAS_ROLO)
+    .eq('id', id)
+    .is('impressa_em', null)
+    .is('removida_em', null)
+    .limit(1)
+  if (error) throw error
+
+  const linha = ((data ?? []) as RoloRow[])[0]
+  return linha ? paraRolo(linha) : null
+}
+
+/**
  * Marca como impressas as linhas que entraram no arquivo e devolve QUANTAS de fato moveu.
  *
  * O número importa: a função só move o que está pendente, então menos do que se pediu quer dizer

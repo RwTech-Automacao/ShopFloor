@@ -9,6 +9,7 @@ import type { RoloEtiquetado } from '../../domain/partnumber-legado'
 
 const {
   emitirMock, listarMock, marcarMock, removerMock, impressasMock, porIdsMock, relerMock,
+  porIdMock, logMock,
 } = vi.hoisted(() => ({
   emitirMock: vi.fn(),
   relerMock: vi.fn(),
@@ -17,9 +18,12 @@ const {
   removerMock: vi.fn(),
   impressasMock: vi.fn(),
   porIdsMock: vi.fn(),
+  porIdMock: vi.fn(),
+  logMock: vi.fn(),
 }))
 
 vi.mock('server-only', () => ({}))
+vi.mock('@/modules/logs/application/registrar-log', () => ({ registrarLog: logMock }))
 vi.mock('../../infra/etiqueta-legado-repository', () => ({
   emitirEtiquetasLegado: emitirMock,
   listarPendentesLegado: listarMock,
@@ -28,12 +32,14 @@ vi.mock('../../infra/etiqueta-legado-repository', () => ({
   listarImpressasLegado: impressasMock,
   listarImpressasPorIdsLegado: porIdsMock,
   buscarPendentePorCodigoLegado: relerMock,
+  buscarPendentePorIdLegado: porIdMock,
 }))
 
 import {
   baixarDeNovoAction,
   etiquetarRoloAction,
   gerarCsvPendentesAction,
+  listarImpressasAction,
   listarPendentesAction,
   removerPendenteAction,
 } from '../etiquetar-rolo'
@@ -63,7 +69,21 @@ beforeEach(() => {
   impressasMock.mockResolvedValue([])
   porIdsMock.mockResolvedValue([])
   relerMock.mockResolvedValue(null)
+  porIdMock.mockResolvedValue(null)
+  logMock.mockResolvedValue(undefined)
 })
+
+/** A primeira (e única, nestes casos) chamada do log. */
+function log(): {
+  entidade: string
+  entidadeId?: string
+  acao: string
+  descricao: string
+  dados?: Record<string, unknown>
+} {
+  expect(logMock).toHaveBeenCalledTimes(1)
+  return logMock.mock.calls[0]![0]
+}
 
 describe('etiquetarRoloAction', () => {
   it('código vazio é recusado antes de chamar o banco', async () => {
@@ -188,6 +208,104 @@ describe('gerarCsvPendentesAction', () => {
     const r = await gerarCsvPendentesAction()
     expect(r.ok).toBe(false)
     expect(marcarMock).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * AUDITORIA das três ações que mudam estado. A armadilha que estes casos seguram é o
+ * `logs.entidade_id` ser **uuid**: uma chave de negócio ali derruba o insert com 22P02 e o erro só
+ * aparece num `console.error` — foi assim que a Integração e o Reparo ficaram sem auditoria nenhuma
+ * por meses. O CÓDIGO da etiqueta vai na descrição; em `entidadeId` só entra uuid de verdade.
+ */
+describe('o log das ações', () => {
+  it('a emissão registra o código da etiqueta, e o id da linha relida como entidadeId', async () => {
+    relerMock.mockResolvedValue(rolo())
+    await etiquetarRoloAction('CAPA78', '1234/25')
+
+    const l = log()
+    expect(l.entidade).toBe('etiqueta_legado')
+    expect(l.acao).toBe('gerar_etiqueta')
+    expect(l.entidadeId).toBe('a')
+    expect(l.descricao).toContain('CAPA78-123425L0004')
+    expect(l.descricao).toContain('pedido 123425')
+    expect(l.dados).toMatchObject({ codigo: 'CAPA78-123425L0004', item: 'CAPA78', sequencial: 4 })
+  })
+
+  it('sem releitura, o log sai SEM entidadeId — nunca com o código no campo uuid', async () => {
+    relerMock.mockResolvedValue(null)
+    await etiquetarRoloAction('CAPA78', '1234/25')
+
+    const l = log()
+    expect(l.entidadeId).toBeUndefined()
+    expect(l).not.toHaveProperty('entidadeId')
+    expect(l.descricao).toContain('CAPA78-123425L0004')
+  })
+
+  it('o rolo sem pedido escrito é dito como tal, não como "pedido "', async () => {
+    emitirMock.mockResolvedValue([
+      { ordem: 1, item: 'CAPA78', sequencial: 4, codigo: 'CAPA78-L0004', locacao: '', pedido: '' },
+    ])
+    await etiquetarRoloAction('CAPA78', '')
+    expect(log().descricao).toContain('sem pedido escrito')
+  })
+
+  it('o que o banco recusou NÃO é logado: nada aconteceu para auditar', async () => {
+    emitirMock.mockRejectedValue(new Error('SEM_PERMISSAO'))
+    await etiquetarRoloAction('CAPA78', '')
+    expect(logMock).not.toHaveBeenCalled()
+  })
+
+  it('a falha do log não derruba a emissão — ela queimaria um segundo número', async () => {
+    // O rolo JÁ tem número neste ponto. Devolver erro faria o almoxarife digitar de novo.
+    logMock.mockRejectedValue(new Error('sessão caiu'))
+    const r = await etiquetarRoloAction('CAPA78', '1234/25')
+    expect(r.ok).toBe(true)
+  })
+
+  it('a remoção registra o número queimado, com o código lido do BANCO e o id como entidadeId', async () => {
+    porIdMock.mockResolvedValue(rolo({ id: 'r1' }))
+    await removerPendenteAction('r1')
+
+    const l = log()
+    expect(l.acao).toBe('excluir')
+    expect(l.entidadeId).toBe('r1')
+    expect(l.descricao).toContain('CAPA78-123425L0004')
+    expect(l.descricao).toContain('queimado')
+    // Lido antes da remoção: depois dela a linha sai da lista de pendentes.
+    expect(porIdMock).toHaveBeenCalledWith('r1')
+  })
+
+  it('a remoção recusada pelo banco não é logada', async () => {
+    removerMock.mockRejectedValue(new Error('NAO_PENDENTE'))
+    await removerPendenteAction('r1')
+    expect(logMock).not.toHaveBeenCalled()
+  })
+
+  it('o download registra quantas etiquetas saíram e quantas de fato foram marcadas', async () => {
+    listarMock.mockResolvedValue({ linhas: [rolo(), rolo({ id: 'b' })], cortada: false })
+    marcarMock.mockResolvedValue(1)
+    await gerarCsvPendentesAction()
+
+    const l = log()
+    expect(l.acao).toBe('gerar_etiqueta')
+    expect(l.descricao).toContain('CAPA78-123425L0004')
+    expect(l.descricao).toContain('2 etiqueta(s)')
+    expect(l.dados).toMatchObject({ quantidade: 2, movidas: 1, repetidas: 1, cortada: false })
+  })
+
+  it('o arquivo que não saiu não é logado', async () => {
+    listarMock.mockResolvedValue({ linhas: [], cortada: false })
+    await gerarCsvPendentesAction()
+    expect(logMock).not.toHaveBeenCalled()
+  })
+
+  it('leitura pura não gera log: a lista e a 2ª via não mudam estado', async () => {
+    listarMock.mockResolvedValue({ linhas: [rolo()], cortada: false })
+    await listarPendentesAction()
+    await listarImpressasAction('2026-09-30', '2026-09-30')
+    porIdsMock.mockResolvedValue([rolo({ impressaEm: '2026-09-30T11:00:00Z' })])
+    await baixarDeNovoAction(['a'])
+    expect(logMock).not.toHaveBeenCalled()
   })
 })
 

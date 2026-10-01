@@ -124,6 +124,7 @@ vi.mock('@/shared/lib/supabase/server', () => ({
 
 const {
   buscarPendentePorCodigoLegado,
+  buscarPendentePorIdLegado,
   listarImpressasLegado,
   listarImpressasPorIdsLegado,
   listarPendentesLegado,
@@ -276,6 +277,23 @@ describe('listarImpressasPorIdsLegado', () => {
 
     await expect(listarImpressasPorIdsLegado(ids)).rejects.toThrow(/levas menores/)
     expect(consultas).toHaveLength(0)
+  })
+})
+
+describe('buscarPendentePorIdLegado', () => {
+  it('acha a linha pelo id, para o log dizer QUAL número foi queimado', async () => {
+    tabela = [linha({ id: 'r1' })]
+
+    const r = await buscarPendentePorIdLegado('r1')
+
+    expect(r?.codigo).toBe('CAPA78-123425L0004')
+    expect(filtros()).toEqual(expect.arrayContaining(['eq:id', 'is:impressa_em', 'is:removida_em']))
+  })
+
+  it('não devolve uma linha já removida: ela não é mais pendente', async () => {
+    tabela = [linha({ id: 'r1', removida_em: '2026-09-30T11:00:00Z' })]
+
+    expect(await buscarPendentePorIdLegado('r1')).toBeNull()
   })
 })
 
