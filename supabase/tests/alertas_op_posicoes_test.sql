@@ -390,4 +390,38 @@ begin
   end if;
 end $t$;
 
+-- T13. A função nova não pode ficar aberta: o `drop`/`create` da seção B e C devolve EXECUTE ao
+--      PUBLIC, e é o `revoke` seguinte que fecha. Sem ele, `anon` lê as OPs e os defeitos de
+--      qualquer posto por uma security definer (o furo que a 0119 existiu para fechar).
+do $t$
+declare
+  f text;
+begin
+  foreach f in array array['public.alerta_ops(text[],text,int,text[],boolean)',
+                           'public.alerta_defeitos(text[],int,text[])']
+  loop
+    if has_function_privilege('anon', f, 'EXECUTE') then
+      raise exception 'FALHOU: % está aberta para o anon', f;
+    end if;
+    if has_function_privilege('authenticated', f, 'EXECUTE') then
+      raise exception 'FALHOU: % está aberta para o authenticated', f;
+    end if;
+  end loop;
+end $t$;
+
+-- T14. O aviso da janela duplicada mora no comentário das duas funções que medem — é lá que quem
+--      for mexer na janela está olhando, não no cabeçalho da 0136.
+do $t$
+declare
+  c text;
+begin
+  foreach c in array array[obj_description('public.alerta_taxas(text[],text,int,text[])'::regprocedure, 'pg_proc'),
+                           obj_description('public.alerta_tempos(text[],text,int,int,text[])'::regprocedure, 'pg_proc')]
+  loop
+    if coalesce(c, '') not like '%alerta_ops%' then
+      raise exception 'FALHOU: comentário sem o aviso da janela duplicada (%)', c;
+    end if;
+  end loop;
+end $t$;
+
 select 'alertas 0136 (OP e posições): ok' as resultado;
