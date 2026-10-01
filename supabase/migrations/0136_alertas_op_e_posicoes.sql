@@ -132,9 +132,10 @@ as $func$
     left join lateral (
       select x.pmo, x.op from public.alerta_ultima_op(p.posto, p_pmos) x where p_janela_tipo = 'op'
     ) u on true
-    left join lateral (
-      select public.alerta_op_inicio(p.posto, u.pmo, u.op) as inicio where u.op is not null
-    ) f on true
+    -- Nenhum `alerta_op_inicio` aqui: o ramo 'op' sai do próprio `u` (a OP em andamento), e o
+    -- primeiro bipe dela só serviria para cortar a leitura de uma varredura que esta função não faz.
+    -- O alerta_taxas precisa dele; copiar para cá seria chamar um CTE recursivo sobre sf_registros
+    -- de graça, a cada avaliação, para um valor que ninguém lê.
     left join lateral (
       select jsonb_agg(jsonb_build_object('pmo', z.pmo, 'op', z.op) order by z.pmo, z.op) as ops
         from (
