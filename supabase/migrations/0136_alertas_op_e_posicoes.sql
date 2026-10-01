@@ -36,8 +36,9 @@
 --
 -- public.alerta_avaliar(text)  — 8 diferenças:
 --   1. ramo 'aprovacao': duas colunas novas no select ('{}'::text[] as posicoes, po.ops) e um
---      `cross join lateral public.alerta_ops(...)`;
---   2. ramo 'tempo': idem;
+--      `cross join lateral public.alerta_ops(..., p_so_com_status => true)`;
+--   2. ramo 'tempo': idem, com `p_so_com_status => false` (a janela do alerta_tempos não filtra
+--      status — ver a ATENÇÃO mais abaixo);
 --   3. ramo 'defeito': as colunas posicoes/ops saem do alerta_defeitos; o ramo do `union all` que
 --      traz a ocorrência viva que saiu da janela reaproveita as OPs já gravadas (coalesce(oc.ops));
 --   4. insert da ocorrência: grava a coluna nova `ops`;
@@ -56,12 +57,16 @@
 -- public.alerta_defeitos(text[], int, text[]) — assinatura muda (returns table ganha posicoes e
 --   ops), então vai com `drop function if exists` antes. É função de leitura pura: não decide nada.
 --
--- NÃO SÃO TOCADAS, de propósito: alerta_taxas e alerta_tempos. São elas que calculam a taxa e a
+-- NÃO SÃO RECRIADAS, de propósito: alerta_taxas e alerta_tempos. São elas que calculam a taxa e a
 --   cadência que a fábrica usa, e recriá-las só para devolver uma coluna a mais seria arriscar um
 --   número em produção por conveniência. As OPs da janela saem de uma função NOVA (alerta_ops), que
 --   por ser aditiva não pode mudar nenhum resultado existente. O preço é que a lógica das três
 --   janelas ('tempo', 'bipes', 'op') aparece em dois lugares: se a janela do alerta_taxas mudar, a
 --   do alerta_ops tem que mudar junto. Está escrito aqui porque é o risco real desta escolha.
+--   ATENÇÃO: as duas NÃO olham os mesmos bipes. O alerta_taxas conta só 'aprovado'/'reprovado'; o
+--   alerta_tempos conta TODOS os bipes do posto. Por isso a alerta_ops recebe `p_so_com_status`: a
+--   regra de aprovação pede a janela com status e a de tempo pede a janela sem. Sem esse parâmetro,
+--   posto de passagem (status '', o default da 0028) alertava por lentidão com a lista de OPs vazia.
 --
 -- PERMISSÃO: nenhuma função ganha ou perde checagem. O `usuario_tem_permissao(uuid, text, text)` do
 --   alerta_avaliar e do alerta_resolver_interno é o de TRÊS argumentos (usuário + módulo +
@@ -80,13 +85,39 @@ comment on column public.alerta_ocorrencias.ops is
   'com OP na janela. As colunas pmo/op (escalares) continuam só para a janela do tipo op.';
 
 -- ---------- B. alerta_ops(): todas as OPs da janela do posto ----------
--- Função INTERNA e NOVA. Espelha a janela do alerta_taxas: 'tempo' = os bipes com status dos últimos
--- N minutos; 'bipes' = os N últimos bipes com status (olhando no máximo 30 dias); 'op' = a OP em
--- andamento do posto. Devolve um jsonb array de {pmo, op} DISTINTOS, ordenado, e '[]' quando não há
--- nenhum bipe com OP na janela (posto parado, ou OP em branco no registro).
+-- Função INTERNA e NOVA. Espelha a janela de quem mede: 'tempo' = os bipes dos últimos N minutos;
+-- 'bipes' = os N últimos bipes (olhando no máximo 30 dias); 'op' = a OP em andamento do posto.
+-- Devolve um jsonb array de {pmo, op} DISTINTOS, ordenado, e '[]' quando não há nenhum bipe com OP
+-- na janela (posto parado, ou OP em branco no registro).
 -- PMO aparada dos dois lados: 'PMOX' e ' PMOX ' são a mesma ordem (igual ao resto do módulo).
+--
+-- p_so_com_status: QUAIS bipes contam como "dentro da janela". É que as duas funções que medem não
+-- olham os mesmos bipes:
+--   alerta_taxas  conta só 'aprovado'/'reprovado' (é uma TAXA: sem status não há o que aprovar) →
+--                 a regra de aprovação chama com true;
+--   alerta_tempos mede a cadência de TODOS os bipes do posto, de qualquer status (é um RELÓGIO: o
+--                 bipe aconteceu) → a regra de tempo chama com false.
+-- Sem essa distinção, num POSTO DE PASSAGEM — status '', o default da 0028, que é o caso de
+-- Printer, Montagem PTH, Manutenção e a entrada do Burn-in — o alerta de lentidão disparava e a
+-- lista de OPs vinha VAZIA: a cadência existia, mas a mensagem não dizia a ordem. Mesma coisa, mais
+-- brando, no posto de status misto (entrada de Burn-in '' + saída 'Aprovado'): a cadência conta as
+-- duas pontas e a lista só traria as saídas.
+-- POR QUE UM PARÂMETRO, e não um ramo/função só para o tempo: a diferença entre os dois chamadores é
+-- ESTA linha; as três janelas, o filtro de PMO, o aparo da PMO e o descarte de OP vazia são os
+-- mesmos. Uma segunda função duplicaria a janela uma terceira vez (já são duas) e seria mais um
+-- lugar para esquecer de mudar junto. Os dois chamadores passam o valor por NOME, para o leitor do
+-- alerta_avaliar ver qual janela está pedindo sem ter que vir ler esta função.
+-- A janela 'bipes' também respeita o parâmetro (é o mesmo conceito de "bipe que conta"), ainda que
+-- hoje nenhuma regra de tempo chegue aqui com ela: o check da 0115 RECUSA tipo 'tempo' com janela
+-- 'bipes' (e o alerta_tempos nem tem ramo 'bipes'). Se um dia for liberada, a lista de OPs já
+-- acompanha, em vez de voltar vazia de novo.
+--
+-- Assinatura nova (ganhou p_so_com_status) → a de 4 parâmetros sai antes, senão as duas conviveriam
+-- e a chamada com 4 argumentos ficaria ambígua (a nova resolveria por default) num banco onde uma
+-- versão anterior desta migração já rodou.
+drop function if exists public.alerta_ops(text[], text, int, text[]);
 create or replace function public.alerta_ops(
-  p_postos text[], p_janela_tipo text, p_janela_valor int, p_pmos text[]
+  p_postos text[], p_janela_tipo text, p_janela_valor int, p_pmos text[], p_so_com_status boolean
 )
 returns table (posto text, ops jsonb)
 language sql
@@ -113,7 +144,7 @@ as $func$
            where p_janela_tipo = 'tempo'
              and r.posto = p.posto
              and r.data_hora >= now() - make_interval(mins => p_janela_valor)
-             and lower(r.status) in ('aprovado', 'reprovado')
+             and (not p_so_com_status or lower(r.status) in ('aprovado', 'reprovado'))
              and (coalesce(cardinality(p_pmos), 0) = 0 or btrim(r.pmo) = any (p_pmos))
           union
           select btrim(b.pmo), btrim(b.op)
@@ -122,7 +153,7 @@ as $func$
                 from sf_registros r
                where p_janela_tipo = 'bipes'
                  and r.posto = p.posto
-                 and lower(r.status) in ('aprovado', 'reprovado')
+                 and (not p_so_com_status or lower(r.status) in ('aprovado', 'reprovado'))
                  and r.data_hora >= now() - interval '30 days'
                  and (coalesce(cardinality(p_pmos), 0) = 0 or btrim(r.pmo) = any (p_pmos))
                order by r.data_hora desc
@@ -136,7 +167,7 @@ as $func$
     ) a on true
 $func$;
 
-revoke all on function public.alerta_ops(text[], text, int, text[])
+revoke all on function public.alerta_ops(text[], text, int, text[], boolean)
   from public, anon, authenticated, service_role;
 
 -- ---------- C. alerta_defeitos(): agora com as POSIÇÕES e as OPs de cada código ----------
@@ -244,8 +275,10 @@ begin
           from public.alerta_regras rg
           cross join lateral public.alerta_taxas(rg.postos, rg.janela_tipo, rg.janela_valor,
                                                  public.alerta_pmos_normalizar(rg.pmos)) tx
+          -- Mesma janela do alerta_taxas acima: só os bipes com status (é uma taxa).
           cross join lateral public.alerta_ops(array[tx.posto], rg.janela_tipo, rg.janela_valor,
-                                               public.alerta_pmos_normalizar(rg.pmos)) po
+                                               public.alerta_pmos_normalizar(rg.pmos),
+                                               p_so_com_status => true) po
          where rg.ativa and rg.excluida_em is null and rg.tipo = 'aprovacao'
         union all
         -- Tempo médio por peça
@@ -264,8 +297,12 @@ begin
           cross join lateral public.alerta_tempos(rg.postos, rg.janela_tipo, rg.janela_valor,
                                                   rg.pausa_max_min,
                                                   public.alerta_pmos_normalizar(rg.pmos)) tp
+          -- Mesma janela do alerta_tempos acima: TODOS os bipes do posto, de qualquer status. Com
+          -- `true` aqui, um posto de passagem (status '', o default da 0028) alertaria por lentidão
+          -- com a lista de OPs vazia — a mensagem sem a ordem é justamente o que a 0136 conserta.
           cross join lateral public.alerta_ops(array[tp.posto], rg.janela_tipo, rg.janela_valor,
-                                               public.alerta_pmos_normalizar(rg.pmos)) po
+                                               public.alerta_pmos_normalizar(rg.pmos),
+                                               p_so_com_status => false) po
          where rg.ativa and rg.excluida_em is null and rg.tipo = 'tempo'
         union all
         -- Defeito repetido: os códigos da janela + os que têm ocorrência viva (contagem 0 se sumiram)

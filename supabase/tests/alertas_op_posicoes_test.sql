@@ -75,22 +75,24 @@ begin
   end if;
 end $t$;
 
--- T3. alerta_ops, janela 'tempo': as duas OPs, ordenadas, sem a linha de OP em branco. PMO aparada
---     dos dois lados (' PMOA ' e 'PMOA' são a mesma ordem). Posto sem bipe = lista vazia.
+-- T3. alerta_ops, janela 'tempo' da TAXA (p_so_com_status => true, só bipes aprovado/reprovado):
+--     as duas OPs, ordenadas, sem a linha de OP em branco. PMO aparada dos dois lados (' PMOA ' e
+--     'PMOA' são a mesma ordem). Posto sem bipe = lista vazia. A janela do TEMPO (sem filtro de
+--     status) está na T10.
 do $t$
 declare
   v jsonb;
 begin
-  select ops into v from public.alerta_ops(array['OP-Taxa'], 'tempo', 60, '{}');
+  select ops into v from public.alerta_ops(array['OP-Taxa'], 'tempo', 60, '{}', p_so_com_status => true);
   if v is distinct from '[{"pmo": "PMOA", "op": "1"}, {"pmo": "PMOA", "op": "2"}]'::jsonb then
     raise exception 'FALHOU: alerta_ops janela tempo = %', v;
   end if;
-  select ops into v from public.alerta_ops(array['OP-Nada'], 'tempo', 60, '{}');
+  select ops into v from public.alerta_ops(array['OP-Nada'], 'tempo', 60, '{}', p_so_com_status => true);
   if v is distinct from '[]'::jsonb then
     raise exception 'FALHOU: posto sem bipe devia dar lista vazia, deu %', v;
   end if;
   -- Filtro de PMO da regra: PMOB não aparece no posto OP-Taxa.
-  select ops into v from public.alerta_ops(array['OP-Taxa'], 'tempo', 60, array['PMOB']);
+  select ops into v from public.alerta_ops(array['OP-Taxa'], 'tempo', 60, array['PMOB'], p_so_com_status => true);
   if v is distinct from '[]'::jsonb then
     raise exception 'FALHOU: filtro de PMO ignorado, deu %', v;
   end if;
@@ -102,15 +104,15 @@ do $t$
 declare
   v jsonb;
 begin
-  select ops into v from public.alerta_ops(array['OP-Taxa'], 'bipes', 1, '{}');
+  select ops into v from public.alerta_ops(array['OP-Taxa'], 'bipes', 1, '{}', p_so_com_status => true);
   if v is distinct from '[]'::jsonb then
     raise exception 'FALHOU: janela de 1 bipe pegou mais que o último (%)', v;
   end if;
-  select ops into v from public.alerta_ops(array['OP-Taxa'], 'bipes', 2, '{}');
+  select ops into v from public.alerta_ops(array['OP-Taxa'], 'bipes', 2, '{}', p_so_com_status => true);
   if v is distinct from '[{"pmo": "PMOA", "op": "1"}]'::jsonb then
     raise exception 'FALHOU: janela de 2 bipes = %', v;
   end if;
-  select ops into v from public.alerta_ops(array['OP-Taxa'], 'bipes', 10, '{}');
+  select ops into v from public.alerta_ops(array['OP-Taxa'], 'bipes', 10, '{}', p_so_com_status => true);
   if v is distinct from '[{"pmo": "PMOA", "op": "1"}, {"pmo": "PMOA", "op": "2"}]'::jsonb then
     raise exception 'FALHOU: janela de 10 bipes = %', v;
   end if;
@@ -307,6 +309,84 @@ begin
   -- pmo/op escalares continuam só da janela 'op' (nulos aqui), mas a CHAVE passa a existir.
   if not (d ? 'pmo') or not (d ? 'op') then
     raise exception 'FALHOU: o resolvido não leva as chaves pmo/op (%)', d;
+  end if;
+end $t$;
+
+-- ---------------------------------------------------------------------------------------------
+-- T10. POSTO DE PASSAGEM: a janela do tempo não filtra status, a da taxa filtra.
+--
+-- `status = ''` é o DEFAULT da 0028 e é o que Printer, Montagem PTH, Manutenção e a entrada do
+-- Burn-in gravam. O alerta_tempos mede a cadência desses bipes (é um relógio: o bipe aconteceu),
+-- então a regra de tempo dispara — e, se a lista de OPs viesse da janela da TAXA, ela voltaria
+-- vazia e a mensagem sairia sem a ordem, justamente no caso que a 0136 existe para consertar.
+do $t$
+declare
+  v    jsonb;
+  r    record;
+begin
+  insert into public.sf_registros (data_hora, posto, pmo, op, status, codigo_defeito, posicao) values
+    (now() - interval '12 minutes', 'OP-Passa', 'PMOC', '100', '', '', ''),
+    (now() - interval '7 minutes',  'OP-Passa', 'PMOC', '100', '', '', ''),
+    (now() - interval '2 minutes',  'OP-Passa', 'PMOC', '200', '', '', '');
+
+  -- A cadência EXISTE (é isto que faz o alerta disparar num posto sem status).
+  select * into r from public.alerta_tempos(array['OP-Passa'], 'tempo', 60, null, '{}');
+  if r.pecas <> 3 or r.intervalos <> 2 or r.media_seg is null then
+    raise exception 'FALHOU: alerta_tempos no posto de passagem = pecas %, intervalos %, media %',
+                    r.pecas, r.intervalos, r.media_seg;
+  end if;
+
+  -- A janela do TEMPO (sem filtro de status) tem de devolver as OPs.
+  select ops into v
+    from public.alerta_ops(array['OP-Passa'], 'tempo', 60, '{}', p_so_com_status => false);
+  if v is distinct from '[{"pmo": "PMOC", "op": "100"}, {"pmo": "PMOC", "op": "200"}]'::jsonb then
+    raise exception 'FALHOU: alerta_ops sem filtro de status no posto de passagem = %', v;
+  end if;
+
+  -- E a janela da TAXA continua a de antes: sem bipe aprovado/reprovado, nada. (Se este ramo
+  -- mudasse, a 0136 estaria alterando o que já está em produção.)
+  select ops into v
+    from public.alerta_ops(array['OP-Passa'], 'tempo', 60, '{}', p_so_com_status => true);
+  if v is distinct from '[]'::jsonb then
+    raise exception 'FALHOU: a janela da taxa passou a aceitar bipe sem status (%)', v;
+  end if;
+end $t$;
+
+-- T11. Ponta a ponta: a regra de TEMPO num posto de passagem enfileira o alerta COM a ordem.
+do $t$
+declare
+  v jsonb;
+begin
+  perform public.teste_regra('OP passa', 'tempo', array['OP-Passa'], null, 'tempo', 60, 2, 60, null, 30);
+  set role service_role;
+  perform alerta_avaliar();
+  reset role;
+  select ops into v from public.alerta_ocorrencias where posto = 'OP-Passa' and estado = 'aberta';
+  if v is null then raise exception 'FALHOU: a ocorrência do OP-Passa não abriu'; end if;
+  if v is distinct from '[{"pmo": "PMOC", "op": "100"}, {"pmo": "PMOC", "op": "200"}]'::jsonb then
+    raise exception 'FALHOU: ops da ocorrência do posto de passagem = %', v;
+  end if;
+  select dados->'ops' into v from public.alerta_envios
+   where tipo = 'alerta' and dados->>'posto' = 'OP-Passa' limit 1;
+  if v is distinct from '[{"pmo": "PMOC", "op": "100"}, {"pmo": "PMOC", "op": "200"}]'::jsonb then
+    raise exception 'FALHOU: dados.ops do posto de passagem = %', v;
+  end if;
+end $t$;
+
+-- T12. POSTO DE STATUS MISTO (entrada do Burn-in '' + saída 'Aprovado'): a cadência conta as duas
+--      pontas, então a lista de OPs também tem de contar as duas. É o caso brando da mesma causa.
+do $t$
+declare
+  v jsonb;
+begin
+  insert into public.sf_registros (data_hora, posto, pmo, op, status, codigo_defeito, posicao) values
+    (now() - interval '12 minutes', 'OP-Misto', 'PMOC', '300', '',         '', ''),
+    (now() - interval '7 minutes',  'OP-Misto', 'PMOC', '300', '',         '', ''),
+    (now() - interval '2 minutes',  'OP-Misto', 'PMOC', '400', 'Aprovado', '', '');
+  select ops into v
+    from public.alerta_ops(array['OP-Misto'], 'tempo', 60, '{}', p_so_com_status => false);
+  if v is distinct from '[{"pmo": "PMOC", "op": "300"}, {"pmo": "PMOC", "op": "400"}]'::jsonb then
+    raise exception 'FALHOU: posto misto perdeu a OP da entrada (%)', v;
   end if;
 end $t$;
 
