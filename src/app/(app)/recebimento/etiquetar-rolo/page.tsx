@@ -17,12 +17,27 @@ import { EtiquetarRoloCliente } from './etiquetar-rolo-cliente'
  *
  * Mesma permissão de todas as etiquetas: `recebimento: gerar_etiqueta`, aqui e em toda server
  * action (e também nas funções do banco, que exigem a permissão por conta própria).
+ *
+ * E TAMBÉM `visualizar`, porque aqui etiquetar e ler são a mesma tarefa. As permissões são caixas
+ * independentes (não há herança em `podeNoModulo`), então o perfil com `gerar_etiqueta` e sem
+ * `visualizar` é criável — e para ele esta tela era pior que um erro: a policy de leitura da 0126
+ * exige `visualizar`, RLS negando um `select` devolve ZERO LINHAS (não erro), então ele etiquetava
+ * dezenas de rolos com a tela dizendo "nada esperando impressão", cada linha voltava sem id
+ * ("atualize a lista para poder remover") e o botão do arquivo respondia "não há nada esperando
+ * impressão" com tudo na tela — sem arquivo, sem saída e com os números já queimados.
  */
 export default async function EtiquetarRoloPage() {
   const sessao = await getSessao()
 
-  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'gerar_etiqueta')) {
-    return <SemPermissao descricao="Você não tem permissão para gerar etiquetas." />
+  const podeEtiquetar =
+    !!sessao &&
+    podeNoModulo(sessao.perfil, 'recebimento', 'gerar_etiqueta') &&
+    podeNoModulo(sessao.perfil, 'recebimento', 'visualizar')
+
+  if (!podeEtiquetar) {
+    return (
+      <SemPermissao descricao="Você não tem permissão para gerar etiquetas. Etiquetar rolo exige também poder visualizar o Recebimento — é a lista de etiquetas esperando impressão que a tela precisa ler." />
+    )
   }
 
   return (

@@ -5,6 +5,11 @@ import type { Perfil } from '@/modules/auth/domain/perfil'
 /**
  * O gate da tela: a etiqueta do inventário rotativo é a mesma permissão de todas as outras
  * (`recebimento: gerar_etiqueta`), e sem ela a tela não abre. As ações têm gate próprio no banco.
+ *
+ * E exige TAMBÉM `visualizar`: a policy de leitura da 0126 pede essa permissão, e RLS negando um
+ * `select` devolve zero linhas em vez de erro — o perfil que só gera etiqueta etiquetaria dezenas
+ * de rolos numa tela que diz "nada esperando impressão" e depois não conseguiria baixar o arquivo,
+ * com os números já queimados. É melhor não abrir.
  */
 
 vi.mock('server-only', () => ({}))
@@ -47,13 +52,19 @@ describe('gate da tela de etiquetar rolo', () => {
   })
 
   it('a permissão de outro módulo não abre a tela', async () => {
-    getSessao.mockResolvedValue(sessao({ gerar_etiqueta: true }, 'shopfloor'))
+    getSessao.mockResolvedValue(sessao({ gerar_etiqueta: true, visualizar: true }, 'shopfloor'))
     render(await EtiquetarRoloPage())
     expect(screen.getByText('Acesso restrito')).toBeInTheDocument()
   })
 
-  it('com a permissão, abre', async () => {
+  it('com `gerar_etiqueta` e sem `visualizar`, recusa e diz que precisa das duas', async () => {
     getSessao.mockResolvedValue(sessao({ gerar_etiqueta: true }))
+    render(await EtiquetarRoloPage())
+    expect(screen.getByText(/poder visualizar o Recebimento/i)).toBeInTheDocument()
+  })
+
+  it('com as duas permissões, abre', async () => {
+    getSessao.mockResolvedValue(sessao({ gerar_etiqueta: true, visualizar: true }))
     render(await EtiquetarRoloPage())
     expect(screen.getByRole('heading', { name: 'Etiquetar rolo' })).toBeInTheDocument()
   })
