@@ -9,8 +9,19 @@ const EMISSOR = 'rwtech-portal'
 /** Tolerância de relógio entre o portal e este servidor. Além disso é problema de NTP, não de janela. */
 const TOLERANCIA_S = 30
 
-/** Registro de tokens já usados. Vive no processo — ver a nota em RegistroJti sobre múltiplas instâncias. */
-const jtisUsados = new RegistroJti()
+/** Sobra além da tolerância, pra não depender de o `exp` e o relógio baterem no milissegundo. */
+const MARGEM_RETENCAO_S = 30
+
+/**
+ * Registro de tokens já usados. Vive no processo — ver a nota em RegistroJti sobre múltiplas
+ * instâncias.
+ *
+ * A folga de retenção é DERIVADA da tolerância de relógio aqui mesmo, de propósito: o `jwtVerify`
+ * abaixo aceita o token até `exp + TOLERANCIA_S`, então o jti precisa ser lembrado até depois
+ * disso. Se as duas constantes vivessem separadas, aumentar a tolerância um dia reabriria a janela
+ * de replay em silêncio.
+ */
+const jtisUsados = new RegistroJti((TOLERANCIA_S + MARGEM_RETENCAO_S) * 1000)
 
 export type ResultadoSso =
   | { ok: true }
