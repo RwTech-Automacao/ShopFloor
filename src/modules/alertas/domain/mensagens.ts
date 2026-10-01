@@ -154,7 +154,10 @@ function linhas(...partes: readonly string[]): string {
  * encurta a lista, que é o que decide se a mensagem é legível no celular.
  *
  * Ordem: o que mais aconteceu primeiro (é por onde se começa a olhar a placa), desempatando pelo
- * designador para a lista não dançar entre dois alertas da mesma ocorrência.
+ * designador para a lista não dançar entre dois alertas da mesma ocorrência. O desempate é NUMÉRICO
+ * (`numeric: true`): sem isso a comparação é letra por letra e sai 'R10, R11, …, R29, R3, R30' —
+ * ler 'R3' depois de 'R29' é o contrário de ajudar quem está com a placa na mão, e dizer onde olhar
+ * é a única razão desta linha existir.
  *
  * `normalizarCodigoDefeito` é reaproveitado do domínio de defeito: faz exatamente o que um
  * designador precisa (apara, colapsa espaços e sobe para maiúsculas), então 'r12' e 'R12 ' contam
@@ -168,7 +171,7 @@ export function rotulosPosicoes(posicoes: readonly (string | null | undefined)[]
     contagem.set(p, (contagem.get(p) ?? 0) + 1)
   }
   return [...contagem.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR', { numeric: true }))
     .map(([p, n]) => (n > 1 ? `${p} (${n}x)` : p))
 }
 
