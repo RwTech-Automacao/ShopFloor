@@ -170,6 +170,17 @@ export function EtiquetarRoloCliente() {
       setCodigo('') // o código limpa (e o efeito acima devolve o foco a ele)
       // o PEDIDO fica: vêm vários rolos seguidos do mesmo pedido
       toast.success(`Etiqueta ${r.linha.codigo} gerada.`)
+    } catch {
+      // A AÇÃO NÃO VOLTOU — quase sempre o wifi do tablet caindo no meio do galpão. O servidor pode
+      // JÁ TER GRAVADO a etiqueta: a resposta é que se perdeu. Sem isto, o `finally` destravava, o
+      // campo limpava e nenhum toast aparecia; ele não via a linha na lista, achava que não gravou,
+      // digitava de novo e ficavam duas etiquetas — uma órfã, com o número queimado.
+      //
+      // NÃO limpa nem recarrega nada: o que ele digitou continua no campo (é com ele que ele
+      // confere), e recarregar a lista com a conexão caída só erraria de novo.
+      toast.error(
+        'Falha de conexão. Toque em Atualizar lista para ver se o rolo foi gravado antes de digitar de novo — se ele estiver lá, a etiqueta existe.',
+      )
     } finally {
       setOcupado(false)
     }
@@ -189,6 +200,13 @@ export function EtiquetarRoloCliente() {
       setPendentes((atual) => atual.filter((l) => l.id !== linha.id))
       toast.success(
         `Etiqueta ${linha.codigo} removida. O número dela fica queimado — o próximo rolo desse componente pega o seguinte.`,
+      )
+    } catch {
+      // Mesma queda de conexão: a remoção pode ter acontecido no banco. Remover de novo não
+      // estraga nada (a segunda vez é recusada com NAO_PENDENTE), mas em silêncio a linha ficaria
+      // na tela como se nada tivesse sido feito — e ela já não é mais pendente.
+      toast.error(
+        `Falha de conexão. Toque em Atualizar lista para ver se a etiqueta ${linha.codigo} saiu — ela pode já ter sido removida.`,
       )
     } finally {
       setOcupado(false)
@@ -216,6 +234,15 @@ export function EtiquetarRoloCliente() {
       // vai conferir, e não desaparece sozinha.
       setAvisoArquivo(r.aviso ?? null)
       await recarregar()
+    } catch {
+      // O caso mais caro dos três: o servidor monta o arquivo E MARCA a leva como impressa antes de
+      // responder. Se a resposta se perder, as etiquetas ficam marcadas e o arquivo nunca chegou ao
+      // tablet — e elas não voltam para esta lista. Então a saída NÃO é etiquetar de novo (seriam
+      // números novos para rolos que já têm código): é pegar as mesmas na aba "Já impressas", que é
+      // onde a 2ª via existe exatamente para isso.
+      toast.error(
+        'Falha de conexão ao baixar o arquivo. Toque em Atualizar lista: se a lista esvaziou, as etiquetas foram marcadas como impressas e o arquivo não chegou — baixe a 2ª via delas na aba "Já impressas", não etiquete os rolos de novo.',
+      )
     } finally {
       setOcupado(false)
     }

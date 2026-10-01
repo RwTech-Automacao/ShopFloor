@@ -249,6 +249,58 @@ describe('o arquivo do turno', () => {
   })
 })
 
+/**
+ * A QUEDA DE CONEXÃO. O wifi do galpão cai no meio da gravação: o servidor pode já ter gravado, e a
+ * resposta é que se perde. Sem `catch`, o `finally` destravava a tela e NENHUM toast aparecia — ele
+ * não via a linha na lista, achava que não gravou, digitava de novo, e ficavam duas etiquetas (uma
+ * órfã, com o número queimado). Cada frase tem de mandar CONFERIR antes de repetir o gesto.
+ */
+describe('a conexão que cai no meio da ação', () => {
+  it('ao gravar o rolo, manda conferir a lista antes de digitar de novo', async () => {
+    etiquetarRoloAction.mockRejectedValue(new Error('Failed to fetch'))
+    abrir()
+
+    await digitarEAdicionar('CAPA78', '1234/25')
+
+    const dito = await screen.findByText(/Falha de conexão/)
+    expect(dito).toHaveTextContent(/Atualizar lista para ver se o rolo foi gravado/)
+    // O que ele digitou fica: é com isso na mão que ele confere a lista.
+    expect(campos().codigo).toHaveValue('CAPA78')
+    expect(campos().pedido).toHaveValue('1234/25')
+    // E o ciclo do foco segue inteiro — sem isto ele digitaria o rolo seguinte no nada.
+    await waitFor(() => expect(campos().codigo).toBeEnabled())
+    expect(document.activeElement).toBe(campos().codigo)
+  })
+
+  it('ao remover, diz que a etiqueta pode já ter saído, e a linha fica na tela', async () => {
+    listarPendentesAction.mockResolvedValue({ ok: true, linhas: [rolo()], cortada: false })
+    removerPendenteAction.mockRejectedValue(new Error('Failed to fetch'))
+    abrir()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Remover/ }))
+
+    const dito = await screen.findByText(/Falha de conexão/)
+    expect(dito).toHaveTextContent(/CAPA78-123425L0004/)
+    expect(dito).toHaveTextContent(/pode já ter sido removida/)
+    expect(screen.getByRole('button', { name: /Remover/ })).toBeInTheDocument()
+  })
+
+  it('ao baixar o arquivo, manda na 2ª via — nunca etiquetar os rolos de novo', async () => {
+    // O caso mais caro: o servidor marca a leva como impressa ANTES de responder, então as
+    // etiquetas podem estar marcadas sem o arquivo ter chegado ao tablet. Etiquetar de novo daria
+    // números novos a rolos que já têm código.
+    listarPendentesAction.mockResolvedValue({ ok: true, linhas: [rolo()], cortada: false })
+    gerarCsvPendentesAction.mockRejectedValue(new Error('Failed to fetch'))
+    abrir()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Baixar arquivo de etiquetas/ }))
+
+    const dito = await screen.findByText(/Falha de conexão ao baixar o arquivo/)
+    expect(dito).toHaveTextContent(/baixe a 2ª via delas na aba "Já impressas"/)
+    expect(dito).toHaveTextContent(/não etiquete os rolos de novo/)
+  })
+})
+
 describe('2ª via das já impressas', () => {
   it('não deixa marcar mais de 1.000 e diz por que antes de apertar', async () => {
     const muitas = Array.from({ length: LIMITE_LINHAS_LEGADO + 1 }, (_, i) =>
