@@ -40,7 +40,48 @@ export function formatarDuracao(ms: number): string {
   return `${h} h ${m} min`
 }
 
-export interface DadosMensagem {
+/** A ordem de produção a que o alerta se refere. Opcional: nem toda linha da fila tem as duas. */
+export interface RefOp {
+  pmo?: string | null
+  op?: string | null
+}
+
+/** 'PMOG01/8504'; só um dos dois → só ele; nenhum → '' (quem chama omite o trecho inteiro). */
+export function textoOp(d: RefOp): string {
+  const pmo = (d.pmo ?? '').trim()
+  const op = (d.op ?? '').trim()
+  if (pmo !== '' && op !== '') return `${pmo}/${op}`
+  return op !== '' ? op : pmo
+}
+
+/**
+ * Sufixo das mensagens de UMA linha (normalizou, resolvido): ' · OP PMOG01/8504'. Sem PMO nem OP
+ * sai vazio — nunca um ' · OP ' pendurado.
+ */
+function sufixoOp(d: RefOp): string {
+  const t = textoOp(d)
+  return t === '' ? '' : ` · OP ${t}`
+}
+
+/**
+ * Linha própria da OP, logo abaixo do cabeçalho: é a primeira coisa que quem recebe no celular
+ * precisa saber ("onde eu vou olhar?"), antes do número que disparou o alerta.
+ *
+ * Omitida quando a janela é a da OP: ali `textoJanela` JÁ diz "na OP PMO/OP" dentro da frase, e
+ * repetir a mesma ordem duas vezes em duas linhas seguidas só faria a mensagem parecer errada.
+ */
+function linhaOp(d: RefOp & { janela: Janela }): string {
+  if (d.janela.tipo === 'op') return ''
+  const t = textoOp(d)
+  return t === '' ? '' : `OP ${t}`
+}
+
+/** Junta as linhas de uma mensagem descartando as que saíram vazias (ex.: alerta sem PMO/OP). */
+function linhas(...partes: readonly string[]): string {
+  return partes.filter((l) => l !== '').join('\n')
+}
+
+export interface DadosMensagem extends RefOp {
   posto: string
   regraNome: string
   taxaMinima: number
@@ -50,12 +91,13 @@ export interface DadosMensagem {
   em: Date
 }
 
-/** Corpo comum do alerta e do lembrete (duas linhas). */
+/** Corpo comum do alerta e do lembrete: a OP (quando há), a taxa e a regra. */
 function corpo(d: DadosMensagem): string {
-  return (
+  return linhas(
+    linhaOp(d),
     `Taxa: ${formatarTaxa(d.aprovados, d.reprovados)}% ${textoJanela(d.janela)} ` +
-    `(mínimo ${formatarMeta(d.taxaMinima)}%) · ${d.aprovados} aprovados, ${d.reprovados} reprovados\n` +
-    `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`
+      `(mínimo ${formatarMeta(d.taxaMinima)}%) · ${d.aprovados} aprovados, ${d.reprovados} reprovados`,
+    `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`,
   )
 }
 
@@ -74,12 +116,14 @@ export function textoLembrete(d: DadosMensagem & { abertaEm: Date }): string {
  * antes; com ele, entra o rótulo do defeito — senão, com 2 códigos abertos no mesmo posto, "✅
  * Posto X: resolvido" não diria QUAL dos dois foi.
  */
-export function textoResolvido(d: { posto: string; nome: string; em: Date; defeito?: string | null }): string {
+export function textoResolvido(
+  d: RefOp & { posto: string; nome: string; em: Date; defeito?: string | null },
+): string {
   const alvo = d.defeito ? `Defeito ${rotuloDefeito(d.defeito)} no ${d.posto}` : d.posto
-  return `✅ ${alvo}: resolvido por ${d.nome} às ${formatarHora(d.em)}`
+  return `✅ ${alvo}: resolvido por ${d.nome} às ${formatarHora(d.em)}${sufixoOp(d)}`
 }
 
-export function textoNormalizou(d: {
+export function textoNormalizou(d: RefOp & {
   posto: string
   aprovados: number
   reprovados: number
@@ -87,7 +131,10 @@ export function textoNormalizou(d: {
   em: Date
 }): string {
   const duracao = formatarDuracao(d.em.getTime() - d.abertaEm.getTime())
-  return `🟢 ${d.posto} normalizou: ${formatarTaxa(d.aprovados, d.reprovados)}% (ficou ${duracao} abaixo)`
+  return (
+    `🟢 ${d.posto} normalizou: ${formatarTaxa(d.aprovados, d.reprovados)}% ` +
+    `(ficou ${duracao} abaixo)${sufixoOp(d)}`
+  )
 }
 
 export function textoTeste(nome: string): string {
@@ -118,7 +165,7 @@ export function rotuloDefeito(codigo: string): string {
   return numero || desc || codigo.trim()
 }
 
-export interface DadosMensagemTempo {
+export interface DadosMensagemTempo extends RefOp {
   posto: string
   regraNome: string
   mediaSeg: number
@@ -129,18 +176,19 @@ export interface DadosMensagemTempo {
 }
 
 export function textoAlertaTempo(d: DadosMensagemTempo): string {
-  return (
+  return linhas(
     `🔴 ${d.posto} lento: ${formatarMmSs(d.mediaSeg)} por peça ${textoJanela(d.janela)} ` +
-    `(limite ${formatarMmSs(d.limiteSeg)}) · ${d.pecas} peças\n` +
-    `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`
+      `(limite ${formatarMmSs(d.limiteSeg)}) · ${d.pecas} peças`,
+    linhaOp(d),
+    `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`,
   )
 }
 
-export function textoNormalizouTempo(d: { posto: string; mediaSeg: number }): string {
-  return `🟢 ${d.posto} normalizou: ${formatarMmSs(d.mediaSeg)} por peça`
+export function textoNormalizouTempo(d: RefOp & { posto: string; mediaSeg: number }): string {
+  return `🟢 ${d.posto} normalizou: ${formatarMmSs(d.mediaSeg)} por peça${sufixoOp(d)}`
 }
 
-export interface DadosMensagemDefeito {
+export interface DadosMensagemDefeito extends RefOp {
   posto: string
   regraNome: string
   defeito: string
@@ -151,15 +199,16 @@ export interface DadosMensagemDefeito {
 }
 
 export function textoAlertaDefeito(d: DadosMensagemDefeito): string {
-  return (
+  return linhas(
     `🔴 Defeito ${rotuloDefeito(d.defeito)} repetido no ${d.posto}: ${d.ocorrencias} vezes ` +
-    `${textoJanela(d.janela)} (limite ${d.limite})\n` +
-    `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`
+      `${textoJanela(d.janela)} (limite ${d.limite})`,
+    linhaOp(d),
+    `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`,
   )
 }
 
-export function textoNormalizouDefeito(d: { posto: string; defeito: string }): string {
-  return `🟢 Defeito ${rotuloDefeito(d.defeito)} normalizou no ${d.posto}`
+export function textoNormalizouDefeito(d: RefOp & { posto: string; defeito: string }): string {
+  return `🟢 Defeito ${rotuloDefeito(d.defeito)} normalizou no ${d.posto}${sufixoOp(d)}`
 }
 
 /**
