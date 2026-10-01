@@ -128,6 +128,16 @@ function refOpDe(d: Record<string, unknown>): RefOp {
   return { pmo: textoOuNulo(d, 'pmo'), op: textoOuNulo(d, 'op') }
 }
 
+/**
+ * Lista de textos de um campo jsonb (as posições do defeito). Campo ausente ou que não é array vira
+ * lista vazia: a mensagem sai sem a linha das posições, como antes desta mudança.
+ */
+function listaTextos(d: Record<string, unknown>, campo: string): string[] {
+  const v = d[campo]
+  if (!Array.isArray(v)) return []
+  return v.map((x) => (x === null || x === undefined ? '' : String(x)))
+}
+
 function janelaDe(d: Record<string, unknown>): Janela {
   const tipo = d.janela_tipo
   if (!ehJanelaTipo(tipo)) throw new DadosEnvioInvalidos('janela_tipo')
@@ -187,6 +197,7 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
   const agora = data(dados, 'agora')
   const alerta = textoAlertaDefeito({
     ...refOp,
+    posicoes: listaTextos(dados, 'posicoes'),
     posto,
     regraNome: texto(dados, 'regra_nome'),
     defeito,
@@ -210,7 +221,7 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *                                        pmo, op, aberta_em, agora
  *   aprovacao: taxa, taxa_minima, aprovados, reprovados
  *   tempo:     media_seg, limite_tempo_seg, pecas
- *   defeito:   defeito, ocorrencias, limite_ocorrencias
+ *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op (opcionais)
  *   teste: nome
