@@ -153,10 +153,18 @@ do $t$
 declare
   v jsonb;
 begin
+  -- Duas guardas SEPARADAS: `dados->'posicoes'` nulo tanto quando a linha não existe (o alerta não
+  -- foi enfileirado) quanto quando a chave não foi gravada. Juntas numa só, apagar a chave
+  -- 'posicoes' do alerta_avaliar falhava com a mensagem da fila — mandando quem depura para o
+  -- lugar errado.
+  if not exists (select 1 from public.alerta_envios
+                  where tipo = 'alerta' and dados->>'posto' = 'OP-Def') then
+    raise exception 'FALHOU: o alerta de defeito não foi enfileirado';
+  end if;
   select dados->'posicoes' into v from public.alerta_envios
    where tipo = 'alerta' and dados->>'posto' = 'OP-Def' limit 1;
   if v is null then
-    raise exception 'FALHOU: o alerta de defeito não foi enfileirado';
+    raise exception 'FALHOU: o dados do alerta de defeito não leva a chave posicoes';
   end if;
   if jsonb_array_length(v) <> 3 then
     raise exception 'FALHOU: dados.posicoes = % (esperava 3 entradas)', v;
