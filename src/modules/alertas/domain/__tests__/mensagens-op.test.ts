@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { textoDoEnvio } from '../envio'
-import { textoOp } from '../mensagens'
+import { LIMITE_MENSAGEM, rotulosOps, textoOp } from '../mensagens'
 
 /**
  * O PMO e a OP em TODOS os alertas: quem recebe no celular não sabia de qual ordem a mensagem
@@ -158,5 +158,111 @@ describe('janela da própria OP não repete a ordem', () => {
     const t = textoDoEnvio('alerta', { ...APROVACAO, janela_tipo: 'op', janela_valor: null })
     expect(t).toContain('na OP PMOG01/8504')
     expect(t).not.toContain('\nOP PMOG01/8504\n')
+  })
+})
+
+/**
+ * `dados.ops` (0136): TODAS as OPs da janela, porque uma janela de 60 min pode atravessar várias e
+ * escolher uma delas inventaria informação. Decisão do usuário em 01/10.
+ */
+const UMA = [{ pmo: 'PMOG01', op: '8504' }]
+const DUAS = [{ pmo: 'PMOG01', op: '8504' }, { pmo: 'PMOG01', op: '8510' }]
+
+describe('rotulosOps', () => {
+  it('a lista vira texto na ordem que o banco deu', () => {
+    expect(rotulosOps({ ops: DUAS })).toEqual(['PMOG01/8504', 'PMOG01/8510'])
+  })
+  it('repetida entra uma vez só', () => {
+    expect(rotulosOps({ ops: [...UMA, ...UMA] })).toEqual(['PMOG01/8504'])
+  })
+  it('lista vazia cai no par escalar (linha antiga da fila, sem a 0136)', () => {
+    expect(rotulosOps({ pmo: 'PMOG01', op: '8504', ops: [] })).toEqual(['PMOG01/8504'])
+  })
+  it('sem lista e sem par, nada', () => {
+    expect(rotulosOps({})).toEqual([])
+  })
+  it('par sem OP dentro da lista é descartado', () => {
+    expect(rotulosOps({ ops: [{ pmo: 'PMOG01', op: null }, ...UMA] })).toEqual(['PMOG01', 'PMOG01/8504'])
+  })
+})
+
+describe('a lista de OPs na mensagem', () => {
+  it('uma ordem: "OP" no singular', () => {
+    expect(textoDoEnvio('alerta', { ...APROVACAO, pmo: null, op: null, ops: UMA })).toContain(
+      '\nOP PMOG01/8504\n',
+    )
+  })
+  it('duas ordens: "OPs" no plural, numa linha só', () => {
+    expect(textoDoEnvio('alerta', { ...APROVACAO, pmo: null, op: null, ops: DUAS })).toContain(
+      '\nOPs PMOG01/8504, PMOG01/8510\n',
+    )
+  })
+  it('a lista manda; o par escalar é só reserva', () => {
+    const t = textoDoEnvio('alerta', { ...APROVACAO, pmo: 'PMOX', op: '1', ops: DUAS })
+    expect(t).toContain('\nOPs PMOG01/8504, PMOG01/8510\n')
+    expect(t).not.toContain('PMOX/1')
+  })
+  it('sem a chave ops (fila antiga), vale o par escalar', () => {
+    expect(textoDoEnvio('alerta', APROVACAO)).toContain('\nOP PMOG01/8504\n')
+  })
+  it('ops que não é array é ignorado', () => {
+    expect(textoDoEnvio('alerta', { ...APROVACAO, ops: 'PMOG01/8504' })).toContain('\nOP PMOG01/8504\n')
+  })
+  it('item que não é objeto é descartado', () => {
+    expect(
+      textoDoEnvio('alerta', { ...APROVACAO, pmo: null, op: null, ops: ['PMOG01/8504', null, ...UMA] }),
+    ).toContain('\nOP PMOG01/8504\n')
+  })
+  it('normalizou leva a lista no sufixo', () => {
+    expect(textoDoEnvio('normalizou', { ...TEMPO, pmo: null, op: null, ops: DUAS })).toBe(
+      '🟢 Teste normalizou: 3:00 por peça · OPs PMOG01/8504, PMOG01/8510',
+    )
+  })
+  it('defeito leva a lista, e as posições vêm depois', () => {
+    const t = textoDoEnvio('alerta', { ...DEFEITO, pmo: null, op: null, ops: DUAS, posicoes: ['R12'] })
+    expect(t).toContain('\nOPs PMOG01/8504, PMOG01/8510\nPosição: R12\n')
+  })
+  it('resolvido leva a lista', () => {
+    expect(
+      textoDoEnvio('resolvido', {
+        posto: 'Teste',
+        resolvida_por_nome: 'Ana Gestora',
+        resolvida_em: '2026-09-17T17:05:00+00:00',
+        ops: DUAS,
+      }),
+    ).toBe('✅ Teste: resolvido por Ana Gestora às 14:05 · OPs PMOG01/8504, PMOG01/8510')
+  })
+  it('janela da própria OP continua sem a linha, mesmo com a lista', () => {
+    const t = textoDoEnvio('alerta', { ...APROVACAO, janela_tipo: 'op', janela_valor: null, ops: UMA })
+    expect(t).toContain('na OP PMOG01/8504')
+    expect(t).not.toContain('\nOP PMOG01/8504\n')
+  })
+})
+
+describe('lista de OPs comprida não vira paredão nem estoura o limite', () => {
+  const MUITAS = Array.from({ length: 200 }, (_, i) => ({ pmo: 'PMOG01', op: String(9000 + i) }))
+
+  it('corta dizendo quantas ficaram de fora', () => {
+    const t = textoDoEnvio('alerta', { ...APROVACAO, pmo: null, op: null, ops: MUITAS })
+    const linha = t.split('\n').find((l) => l.startsWith('OPs '))!
+    const m = /… e mais (\d+) OPs$/.exec(linha)
+    expect(m).not.toBeNull()
+    const mostradas = linha.slice('OPs '.length).split(', ').length - 1
+    expect(mostradas + Number(m![1])).toBe(MUITAS.length)
+  })
+  it('o alerta inteiro continua cabendo no limite', () => {
+    const t = textoDoEnvio('alerta', { ...APROVACAO, pmo: null, op: null, ops: MUITAS })
+    expect(t.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
+  })
+  it('com a lista comprida E muitas posições, o defeito ainda cabe', () => {
+    const t = textoDoEnvio('alerta', {
+      ...DEFEITO,
+      pmo: null,
+      op: null,
+      ops: MUITAS,
+      posicoes: Array.from({ length: 400 }, (_, i) => `R${i + 1}`),
+    })
+    expect(t.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
+    expect(t).toContain('Posições: ')
   })
 })

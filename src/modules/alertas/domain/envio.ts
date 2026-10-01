@@ -20,6 +20,7 @@ import {
   textoReabertura,
   textoResolvido,
   textoTeste,
+  type ParOp,
   type RefOp,
 } from './mensagens'
 
@@ -120,12 +121,23 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
 type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido'>
 
 /**
- * PMO/OP da linha da fila. Tolerante de propósito: as chaves já existem no `dados` de hoje, mas
- * ficam nulas em parte das linhas (janela que não é de OP, tipo defeito, linha antiga da fila) — e
- * uma mensagem sem elas tem de continuar saindo igual à de antes, não falhar.
+ * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
+ * par escalar `pmo`/`op` (que o banco preenche só na janela do tipo `op`).
+ *
+ * Tolerante de propósito: linha enfileirada antes da 0136 não tem `ops`, e aí vale o par escalar —
+ * a mensagem sai igual à de antes em vez de falhar. Item que não é objeto é descartado.
  */
 function refOpDe(d: Record<string, unknown>): RefOp {
-  return { pmo: textoOuNulo(d, 'pmo'), op: textoOuNulo(d, 'op') }
+  const bruto = d.ops
+  const ops: ParOp[] = []
+  if (Array.isArray(bruto)) {
+    for (const item of bruto) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+      const par = item as Record<string, unknown>
+      ops.push({ pmo: textoOuNulo(par, 'pmo'), op: textoOuNulo(par, 'op') })
+    }
+  }
+  return { pmo: textoOuNulo(d, 'pmo'), op: textoOuNulo(d, 'op'), ops }
 }
 
 /**
@@ -218,12 +230,12 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *
  * Chaves (as mesmas do jsonb_build_object do alerta_avaliar da 0115):
  *   comuns (alerta/lembrete/normalizou): regra_tipo, regra_nome, posto, janela_tipo, janela_valor,
- *                                        pmo, op, aberta_em, agora
+ *                                        pmo, op, ops (lista de {pmo, op} da 0136), aberta_em, agora
  *   aprovacao: taxa, taxa_minima, aprovados, reprovados
  *   tempo:     media_seg, limite_tempo_seg, pecas
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
- *              pmo, op (opcionais)
+ *              pmo, op, ops (opcionais)
  *   teste: nome
  *   reabertura (só no 'alerta' que nasce de uma reabertura, 0122): reabertura = true,
  *              resolvida_por_nome, resolvida_em, reaberturas
