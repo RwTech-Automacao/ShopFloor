@@ -248,7 +248,14 @@ export function ModalAbastecimento({ aberto, onFechar, ...props }: PropsAbasteci
     <Dialog open={aberto} onOpenChange={(v) => { if (!v) onFechar() }}>
       {/* initialFocus={false}: abrindo por toque o Base UI focaria o popup (para não abrir o teclado) e o
           primeiro bipe se perderia. Quem manda no foco é o efeito do passo, que também dá select(). */}
-      <DialogContent className="flex flex-col sm:max-w-md" initialFocus={false}>
+      {/* 65% da largura e da altura da tela, com um piso para o celular e um teto para o monitor
+          grande. O `sm:max-w-md` de antes eram 448px FIXOS: no tablet do chão de fábrica, que é
+          onde esta tela vive, sobrava tela de um lado e o rastro dos bipes já feitos ficava
+          espremido. */}
+      <DialogContent
+        className="flex max-h-[65vh] min-h-[28rem] flex-col sm:max-w-[65vw] sm:min-w-[32rem] lg:max-w-[52rem]"
+        initialFocus={false}
+      >
         <DialogHeader>
           <DialogTitle>Abastecimento</DialogTitle>
         </DialogHeader>
