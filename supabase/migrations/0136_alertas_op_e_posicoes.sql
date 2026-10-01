@@ -62,7 +62,10 @@
 --   número em produção por conveniência. As OPs da janela saem de uma função NOVA (alerta_ops), que
 --   por ser aditiva não pode mudar nenhum resultado existente. O preço é que a lógica das três
 --   janelas ('tempo', 'bipes', 'op') aparece em dois lugares: se a janela do alerta_taxas mudar, a
---   do alerta_ops tem que mudar junto. Está escrito aqui porque é o risco real desta escolha.
+--   do alerta_ops tem que mudar junto. Está escrito aqui porque é o risco real desta escolha — e,
+--   para o aviso não ficar só neste arquivo, o trecho F põe um `comment on function` nas duas
+--   apontando para a alerta_ops. `comment on` não mexe em corpo nem em permissão: elas seguem
+--   intactas.
 --   ATENÇÃO: as duas NÃO olham os mesmos bipes. O alerta_taxas conta só 'aprovado'/'reprovado'; o
 --   alerta_tempos conta TODOS os bipes do posto. Por isso a alerta_ops recebe `p_so_com_status`: a
 --   regra de aprovação pede a janela com status e a de tempo pede a janela sem. Sem esse parâmetro,
@@ -168,6 +171,12 @@ as $func$
     ) a on true
 $func$;
 
+-- ⚠️ O `revoke` ABAIXO NÃO É DECORAÇÃO, NÃO APLIQUE A MIGRAÇÃO SEM ELE. Função recém-criada nasce
+-- com EXECUTE para o PUBLIC (é o default do Postgres, e `pg_proc.proacl` fica NULL), e esta é uma
+-- `security definer` que varre sf_registros inteira: sem o revoke, `anon` — a chave pública do
+-- PostgREST, que qualquer um lê no HTML — passa a poder listar as OPs de qualquer posto. É
+-- exatamente o furo que a 0119 existiu só para fechar. Rodar este arquivo em pedaços pelo SQL
+-- Editor é o jeito fácil de deixar o revoke para trás: cole o arquivo INTEIRO.
 revoke all on function public.alerta_ops(text[], text, int, text[], boolean)
   from public, anon, authenticated, service_role;
 
@@ -206,6 +215,14 @@ as $func$
    group by r.posto, btrim(r.codigo_defeito)
 $func$;
 
+-- ⚠️ O `revoke` ABAIXO É OBRIGATÓRIO, pelo mesmo motivo do alerta_ops — e aqui o risco é MAIOR,
+-- porque esta função JÁ EXISTE em produção FECHADA e o `drop` acima joga a ACL dela no lixo. Um
+-- `create or replace` preservaria as permissões; um `drop` + `create` recria do zero, e do zero
+-- significa EXECUTE para o PUBLIC. Medido: aplicando só o trecho acima, sem este revoke,
+-- `pg_proc.proacl` de alerta_defeitos fica NULL e
+-- `has_function_privilege('anon', 'public.alerta_defeitos(text[],int,text[])', 'EXECUTE')` volta
+-- `t` — uma `security definer` que varre sf_registros inteira, aberta para o `anon`. Cole o
+-- arquivo INTEIRO no SQL Editor; não rode da linha do `create` até a do `$func$` e pare.
 revoke all on function public.alerta_defeitos(text[], int, text[])
   from public, anon, authenticated, service_role;
 
@@ -572,5 +589,30 @@ $func$;
 
 revoke all on function public.alerta_resolver_interno(uuid, uuid, boolean)
   from public, anon, authenticated, service_role;
+
+-- ---------- F. O aviso da janela duplicada, DENTRO do banco ----------
+-- A escolha de não recriar alerta_taxas/alerta_tempos (ver cabeçalho) deixa a lógica das janelas em
+-- dois lugares. O cabeçalho deste arquivo avisa — mas quem for mexer na janela vai editar o
+-- alerta_taxas/alerta_tempos (na 0115, ou já no \df do banco) e não tem motivo nenhum para abrir a
+-- 0136. Então o aviso fica também no COMENTÁRIO das duas funções, que aparece no `\df+` e no Studio.
+-- Só comentário: as funções NÃO são recriadas (nem o corpo, nem a ACL — `comment on` não mexe em
+-- permissão).
+comment on function public.alerta_taxas(text[], text, int, text[]) is
+  'Aprovados/reprovados por posto na janela da regra. ⚠️ A JANELA ESTÁ EM DOIS LUGARES: '
+  'public.alerta_ops(..., p_so_com_status => true) repete os mesmos três ramos (tempo/bipes/op) '
+  'para listar as OPs do alerta (0136). Mexeu aqui, mexa lá. Diferença CONHECIDA entre as duas, na '
+  'janela ''bipes'': o corte é "order by data_hora desc limit N" e, com empate de data_hora na '
+  'fronteira do N, qual das empatadas entra é indefinido — cada função roda o corte por conta, '
+  'então podem pegar linhas diferentes e a lista de OPs sair levemente diferente da amostra que '
+  'gerou o número. Não afeta a decisão do alerta (o número sai daqui); afeta só o texto.';
+
+comment on function public.alerta_tempos(text[], text, int, int, text[]) is
+  'Cadência do posto (tempo médio entre bipes seguidos), de TODOS os bipes, de qualquer status. '
+  '⚠️ A JANELA ESTÁ EM DOIS LUGARES: public.alerta_ops(..., p_so_com_status => false) repete os '
+  'mesmos ramos para listar as OPs do alerta (0136) — o `false` existe porque esta função não '
+  'filtra status, e exigir status deixaria a lista vazia em posto de passagem (status '''', o '
+  'default da 0028: Printer, Montagem PTH, Manutenção, entrada do Burn-in). Mexeu aqui, mexa lá. '
+  'Mesma ressalva do empate de data_hora na janela ''bipes'' descrita no comentário do '
+  'alerta_taxas (hoje inofensiva aqui: esta função não tem ramo ''bipes'').';
 
 notify pgrst, 'reload schema';
