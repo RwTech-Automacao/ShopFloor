@@ -40,7 +40,9 @@ create table public.sf_registros (
   pmo text not null default '',
   op text not null default '',
   status text not null default '',
-  codigo_defeito text not null default ''
+  codigo_defeito text not null default '',
+  -- posicao: o designador na placa (R12, C47), da 0028. A 0136 lê isto no alerta de defeito.
+  posicao text not null default ''
 );
 
 create table public.sf_ordens (
