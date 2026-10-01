@@ -33,6 +33,13 @@ describe('rotulosPosicoes', () => {
   it('o que mais aconteceu vem primeiro; empate desempata pelo designador', () => {
     expect(rotulosPosicoes(['C47', 'R12', 'C47', 'R12', 'L3'])).toEqual(['C47 (2x)', 'R12 (2x)', 'L3'])
   })
+  it('o desempate é numérico: R3 antes de R10, não depois de R29', () => {
+    // Letra por letra sairia 'R10, R29, R3' — quem está com a placa na mão procura R3 perto de R2.
+    expect(rotulosPosicoes(['R29', 'R3', 'R10', 'R4'])).toEqual(['R3', 'R4', 'R10', 'R29'])
+  })
+  it('a frequência continua mandando; o numérico é só o desempate', () => {
+    expect(rotulosPosicoes(['R29', 'R29', 'R3'])).toEqual(['R29 (2x)', 'R3'])
+  })
   it('a mesma posição escrita de outro jeito conta como uma só', () => {
     expect(rotulosPosicoes(['r12', ' R12 ', 'R12'])).toEqual(['R12 (3x)'])
   })
