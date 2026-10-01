@@ -60,14 +60,29 @@ export const LIMITE_MENSAGEM = 2000
  */
 const MARGEM_CABECALHO = 160
 
-/** A ordem de produção a que o alerta se refere. Opcional: nem toda linha da fila tem as duas. */
-export interface RefOp {
+/** Uma ordem de produção: o par PMO + OP como o banco guarda. */
+export interface ParOp {
   pmo?: string | null
   op?: string | null
 }
 
+/**
+ * A ordem de produção a que o alerta se refere.
+ *
+ * `ops` é a lista de TODAS as ordens da janela (0136). Existe porque uma janela de 60 minutos pode
+ * atravessar três OPs, e escolher uma delas (a última, a de mais bipes) seria inventar informação —
+ * decisão do usuário em 01/10. `pmo`/`op` escalares continuam vindo preenchidos só na janela do
+ * tipo `op`, e servem de reserva para as linhas antigas da fila, enfileiradas antes da 0136.
+ */
+export interface RefOp extends ParOp {
+  ops?: readonly ParOp[] | null
+}
+
+/** Orçamento da lista de OPs: ~18 ordens. Mais que isso numa janela só não é informação, é ruído. */
+const ORCAMENTO_OPS = 300
+
 /** 'PMOG01/8504'; só um dos dois → só ele; nenhum → '' (quem chama omite o trecho inteiro). */
-export function textoOp(d: RefOp): string {
+export function textoOp(d: ParOp): string {
   const pmo = (d.pmo ?? '').trim()
   const op = (d.op ?? '').trim()
   if (pmo !== '' && op !== '') return `${pmo}/${op}`
@@ -75,25 +90,51 @@ export function textoOp(d: RefOp): string {
 }
 
 /**
- * Sufixo das mensagens de UMA linha (normalizou, resolvido): ' · OP PMOG01/8504'. Sem PMO nem OP
- * sai vazio — nunca um ' · OP ' pendurado.
+ * As ordens da janela, já como texto e sem repetição. Lista vazia (ou ausente, numa linha antiga da
+ * fila) cai no par escalar — é o que mantém a mensagem igual à de antes quando o banco ainda não
+ * tem a 0136. A ordem é a que o SQL devolve (já ordenada por PMO e OP).
  */
-function sufixoOp(d: RefOp): string {
-  const t = textoOp(d)
-  return t === '' ? '' : ` · OP ${t}`
+export function rotulosOps(d: RefOp): string[] {
+  const vistos = new Set<string>()
+  for (const par of d.ops ?? []) {
+    const t = textoOp(par ?? {})
+    if (t !== '') vistos.add(t)
+  }
+  if (vistos.size === 0) {
+    const t = textoOp(d)
+    return t === '' ? [] : [t]
+  }
+  return [...vistos]
+}
+
+/** 'OP PMOG01/8504' ou 'OPs PMOG01/8504, PMOG01/8510'; sem nenhuma, ''. */
+function trechoOps(d: RefOp): string {
+  const itens = rotulosOps(d)
+  if (itens.length === 0) return ''
+  if (itens.length === 1) return `OP ${itens[0]}`
+  return `OPs ${listaComCorte(itens, ORCAMENTO_OPS, 'OP', 'OPs')}`
 }
 
 /**
- * Linha própria da OP, logo abaixo do cabeçalho: é a primeira coisa que quem recebe no celular
+ * Sufixo das mensagens de UMA linha (normalizou, resolvido): ' · OP PMOG01/8504'. Sem ordem nenhuma
+ * sai vazio — nunca um ' · OP ' pendurado.
+ */
+function sufixoOp(d: RefOp): string {
+  const t = trechoOps(d)
+  return t === '' ? '' : ` · ${t}`
+}
+
+/**
+ * Linha própria da ordem, logo abaixo do cabeçalho: é a primeira coisa que quem recebe no celular
  * precisa saber ("onde eu vou olhar?"), antes do número que disparou o alerta.
  *
  * Omitida quando a janela é a da OP: ali `textoJanela` JÁ diz "na OP PMO/OP" dentro da frase, e
  * repetir a mesma ordem duas vezes em duas linhas seguidas só faria a mensagem parecer errada.
+ * (Nessa janela a lista tem uma entrada só, por construção — não se perde nada.)
  */
 function linhaOp(d: RefOp & { janela: Janela }): string {
   if (d.janela.tipo === 'op') return ''
-  const t = textoOp(d)
-  return t === '' ? '' : `OP ${t}`
+  return trechoOps(d)
 }
 
 /** Junta as linhas de uma mensagem descartando as que saíram vazias (OP ausente, posição ausente). */
@@ -129,7 +170,7 @@ export function rotulosPosicoes(posicoes: readonly (string | null | undefined)[]
 }
 
 /**
- * Lista as posições dentro de um ORÇAMENTO de caracteres. Estourar o limite do Discord perderia a
+ * Lista itens dentro de um ORÇAMENTO de caracteres. Estourar o limite do Discord perderia a
  * mensagem TODA (o alerta não chegaria), então, quando não cabe, o corte é explícito — "… e mais 12
  * posições" — para quem lê saber que a lista continua e ir ver na tela. Corte silencioso aqui seria
  * pior que lista comprida: daria a entender que o defeito só saiu nas posições mostradas.
@@ -137,16 +178,24 @@ export function rotulosPosicoes(posicoes: readonly (string | null | undefined)[]
  * Orçamento que não cabe nem um item com o aviso → devolve '' e a linha inteira sai da mensagem (o
  * resto do alerta vale mais que meia lista).
  */
-export function listaPosicoes(itens: readonly string[], orcamento: number): string {
+function listaComCorte(
+  itens: readonly string[], orcamento: number, singular: string, plural: string,
+): string {
   if (itens.length === 0) return ''
   const tudo = itens.join(', ')
   if (tudo.length <= orcamento) return tudo
   for (let n = itens.length - 1; n >= 1; n -= 1) {
     const restantes = itens.length - n
-    const texto = `${itens.slice(0, n).join(', ')}, … e mais ${restantes} ${restantes === 1 ? 'posição' : 'posições'}`
+    const texto =
+      `${itens.slice(0, n).join(', ')}, … e mais ${restantes} ${restantes === 1 ? singular : plural}`
     if (texto.length <= orcamento) return texto
   }
   return ''
+}
+
+/** O cortador acima, com as palavras das POSIÇÕES. */
+export function listaPosicoes(itens: readonly string[], orcamento: number): string {
+  return listaComCorte(itens, orcamento, 'posição', 'posições')
 }
 
 export interface DadosMensagem extends RefOp {
