@@ -2,7 +2,7 @@
 
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { AlertTriangle, Ban, ClipboardCheck, Inbox, PackageCheck } from 'lucide-react'
+import { AlertTriangle, Ban, ClipboardCheck, Inbox, PackageCheck, Truck } from 'lucide-react'
 import {
   CAIXA_DIVERGENCIA,
   ROTULO_CAIXA,
@@ -179,3 +179,68 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
 }
 
 export const FluxoRecebimentoNode = memo(FluxoRecebimentoNodeBase)
+
+/**
+ * Card de INÍCIO do fluxo: a EMB em si, antes do Recebimento.
+ *
+ * É o irmão da caixa de **Entrada** do Fluxo do ShopFloor (`shopfloor/fluxo/fluxo-node.tsx`, ramo
+ * `ehEntrada`): o mesmo bloco vinho de 240 px, ícone num quadrado claro à esquerda, duas linhas de
+ * texto no meio (lá PMO · OP + descrição da OP; aqui a EMB + a data de chegada) e a contagem no
+ * selo claro à direita. Como lá, não abre painel ao clicar — ele não é etapa, é de onde a carga vem.
+ *
+ * Componente SEPARADO do card das etapas (o ShopFloor resolve com um `if` dentro do mesmo
+ * componente) porque lá os dois casos compartilham o `FluxoNodeData` e aqui não: a EMB não tem
+ * etapa, nem divergentes, nem barra. Virando `nodeType` próprio, o card que já está em produção
+ * fica intocado.
+ */
+export interface FluxoEmbNodeData {
+  emb: string
+  /** Data de chegada da EMB (`aaaa-mm-dd`). `null` = nenhum item da EMB tem data preenchida. */
+  dataChegada: string | null
+  /** Itens que ainda não começaram a conferência (ver a conta na tela). */
+  naoIniciados: number
+  /** Total de itens da EMB — o de-onde-saiu da subtração, no tooltip. */
+  total: number
+}
+
+/**
+ * `aaaa-mm-dd` → `dd/mm/aaaa`, na mão.
+ *
+ * `data_chegada` é coluna DATE: não tem hora nem fuso. Passar por `new Date()` a lê como meia-noite
+ * em UTC, e meia-noite em UTC é a VÉSPERA em Brasília — 02/09 apareceria como 01/09. Texto que não
+ * casa o formato volta intacto, em vez de virar "Invalid Date".
+ */
+function dataBr(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim())
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso
+}
+
+function FluxoEmbNodeBase({ data }: NodeProps) {
+  const d = data as unknown as FluxoEmbNodeData
+  return (
+    <div className="relative w-[240px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm">
+      <div className="flex items-center gap-2.5 px-3 py-2.5">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
+          <Truck className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold" title={`EMB ${d.emb}`}>EMB {d.emb}</p>
+          <p className="truncate text-xs text-white/80">
+            {d.dataChegada ? `chegou em ${dataBr(d.dataChegada)}` : 'sem data de chegada'}
+          </p>
+        </div>
+        <span
+          className="shrink-0 rounded-md bg-white/20 px-2 py-0.5 text-sm font-bold"
+          title={`Itens que ainda não começaram a conferência: ${d.naoIniciados} de ${d.total} da EMB`}
+        >
+          {d.naoIniciados}
+        </span>
+      </div>
+      {/* Só saída: a carga entra no fluxo por aqui, nada chega nela de volta. */}
+      <Handle type="source" position={Position.Right} />
+    </div>
+  )
+}
+
+export const FluxoEmbNode = memo(FluxoEmbNodeBase)
+
