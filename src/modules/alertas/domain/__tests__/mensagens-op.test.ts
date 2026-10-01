@@ -254,6 +254,17 @@ describe('lista de OPs comprida não vira paredão nem estoura o limite', () => 
     const t = textoDoEnvio('alerta', { ...APROVACAO, pmo: null, op: null, ops: MUITAS })
     expect(t.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
   })
+  it('orçamento que não cabe nem uma ordem com o aviso: sai o trecho inteiro, sem "OPs" pendurado', () => {
+    // Duas ordens de ~300 caracteres cada (importação ruim, não bipe): nem uma delas mais o
+    // "… e mais 1 OP" cabe no orçamento, e o cortador devolve ''. A linha toda tem de sair.
+    const GIGANTES = [
+      { pmo: 'P'.repeat(300), op: '1' },
+      { pmo: 'Q'.repeat(300), op: '2' },
+    ]
+    const t = textoDoEnvio('normalizou', { ...TEMPO, pmo: null, op: null, ops: GIGANTES })
+    expect(t).toBe('🟢 Teste normalizou: 3:00 por peça')
+    expect(t).not.toContain('OP')
+  })
   it('com a lista comprida E muitas posições, o defeito ainda cabe', () => {
     const t = textoDoEnvio('alerta', {
       ...DEFEITO,
