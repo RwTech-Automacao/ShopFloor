@@ -243,6 +243,13 @@ begin
   select id into v_id from public.etiquetas_legado where codigo = 'PEDX01-123425L0002';
   v_n := public.etq_legado_remover(v_id);
   if v_n <> 1 then raise exception 'FALHOU: remover devolveu %', v_n; end if;
+  -- E a linha guarda QUEM queimou o número. Remover é a única operação que gasta um sequencial de
+  -- propósito, e sem isto "por que o L0002 não existe?" não tem resposta nenhuma meses depois.
+  if not exists (
+    select 1 from public.etiquetas_legado
+     where id = v_id and removida_por = '00000000-0000-0000-0000-000000000001'::uuid
+  ) then
+    raise exception 'FALHOU: a remoção não gravou removida_por (quem queimou o número)'; end if;
   select * into r from public.etq_legado_emitir('[{"item":"PEDX01"}]'::jsonb);
   if r.sequencial <> 3 then
     raise exception 'FALHOU: o número do removido não pode voltar; esperava 3, veio %', r.sequencial; end if;

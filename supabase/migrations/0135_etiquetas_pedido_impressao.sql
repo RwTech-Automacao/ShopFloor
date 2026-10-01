@@ -85,6 +85,17 @@ alter table public.etiquetas_legado
 alter table public.etiquetas_legado
   add column if not exists removida_em timestamptz;
 
+-- `removida_por`: QUEM queimou o número.
+--
+-- A tabela já diz quem emitiu (`usuario_id`/`usuario_nome`) e quem imprimiu (`impressa_por`), mas
+-- remover é a única operação que gasta um número de propósito: o sequencial do removido não volta,
+-- e o próximo rolo daquele item pega o seguinte. Sem esta coluna, "por que o L0002 não existe?"
+-- não tem resposta nenhuma três meses depois — a linha está lá, marcada, e ninguém sabe de quem
+-- foi a decisão. O log da aplicação registra a ação, mas a tabela é quem guarda o número queimado,
+-- e é nela que a pergunta é feita.
+alter table public.etiquetas_legado
+  add column if not exists removida_por uuid references public.usuarios(id);
+
 -- O pedido é o que separa o código do `L`. Se entrar letra aqui, o `L` deixa de ser um separador
 -- confiável e um código gravado hoje vira ambíguo de ler amanhã. O CHECK é essa garantia escrita.
 do $chk$
@@ -217,7 +228,7 @@ begin
   if not tem_permissao('recebimento', 'gerar_etiqueta') then raise exception 'SEM_PERMISSAO'; end if;
 
   update public.etiquetas_legado
-     set removida_em = now()
+     set removida_em = now(), removida_por = auth.uid()
    where id = p_id and impressa_em is null and removida_em is null;
   get diagnostics v_n = row_count;
 
