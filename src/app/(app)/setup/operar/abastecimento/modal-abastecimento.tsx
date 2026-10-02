@@ -9,7 +9,10 @@ import { PainelResultado, type ChipResultado, type ResultadoAcao } from '@/compo
 import { tocarErro } from '@/shared/lib/som-erro'
 import { trocarRolo } from '@/modules/setup/application/setup-actions'
 
-const INPUT_BIPE = 'h-11 text-lg uppercase'
+// O campo é o herói desta tela: o operador bipa de pé, com o tablet na bancada, e confere
+// de relance se o leitor pegou. Fonte grande não é enfeite — é o que se lê a um braço de
+// distância sem abaixar a cabeça.
+const INPUT_BIPE = 'h-16 text-3xl uppercase tracking-wide'
 const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar.'
 /** Recusas que o operador tem de perceber: bipe engolido em silêncio é erro invisível. */
 const BIPE_EM_ENVIO = 'Registrando a troca anterior — esse bipe não contou. Bipe de novo.'
@@ -175,12 +178,12 @@ export function ConteudoAbastecimento({
   }
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       {/* Resultado e rastro cedem espaço (rolam por dentro) quando o teclado virtual abre; o campo atual, nunca. */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto empty:hidden">
         <PainelResultado resultado={resultado} />
         {anteriores.length > 0 && (
-          <dl className="flex flex-col gap-0.5 text-xs">
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-base sm:grid-cols-2">
             {anteriores.map(({ campo, rotulo }) => (
               <div key={campo} className="flex gap-1">
                 {/* Rótulo e valor colados, com dois-pontos: "Colaborador: Matheus" se lê de uma olhada. */}
@@ -192,10 +195,12 @@ export function ConteudoAbastecimento({
         )}
       </div>
 
-      <div className="flex flex-none flex-col gap-1.5">
+      {/* O passo atual fica no CENTRO do que sobra: numa tela grande ele cai na altura do olhar, em
+          vez de ficar encostado no topo com um vazio embaixo. `flex-none` continuaria colando em cima. */}
+      <div className="flex flex-none flex-col justify-center gap-2 py-2 sm:flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor={`troca-${atual.campo}`} className="text-base">{atual.rotulo}</Label>
-          <span className="text-sm tabular-nums text-muted-foreground">{passo + 1}/{passos.length}</span>
+          <Label htmlFor={`troca-${atual.campo}`} className="text-2xl font-semibold">{atual.rotulo}</Label>
+          <span className="text-lg tabular-nums text-muted-foreground">{passo + 1}/{passos.length}</span>
         </div>
         <Input
           id={`troca-${atual.campo}`}
@@ -222,7 +227,7 @@ export function ConteudoAbastecimento({
           <Button
             type="button"
             variant="outline"
-            className="h-11 px-4 text-base"
+            className="h-14 px-6 text-lg"
             onClick={() => irPara(passo - 1)}
             disabled={enviando}
           >
@@ -231,7 +236,7 @@ export function ConteudoAbastecimento({
         )}
         <Button
           type="button"
-          className="h-11 flex-1 bg-enterplak px-4 text-base hover:bg-enterplak-700"
+          className="h-14 flex-1 bg-enterplak px-6 text-lg hover:bg-enterplak-700"
           onClick={avancar}
           disabled={enviando || vazio}
         >
@@ -253,7 +258,7 @@ export function ModalAbastecimento({ aberto, onFechar, ...props }: PropsAbasteci
           onde esta tela vive, sobrava tela de um lado e o rastro dos bipes já feitos ficava
           espremido. */}
       <DialogContent
-        className="flex max-h-[65vh] min-h-[28rem] flex-col sm:max-w-[65vw] sm:min-w-[32rem] lg:max-w-[52rem]"
+        className="flex max-h-[85vh] flex-col sm:h-[65vh] sm:max-w-[65vw] sm:min-w-[34rem] lg:max-w-[54rem]"
         initialFocus={false}
       >
         <DialogHeader>
