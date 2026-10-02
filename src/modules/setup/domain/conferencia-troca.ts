@@ -41,6 +41,8 @@ function itemBipado(e: EntradaConferencia): ItemDoSetup | undefined {
  * duplicaria lógica de faixa. Como é o ÚLTIMO passo, a resposta do servidor chega logo em seguida.
  */
 export function conferirPasso(e: EntradaConferencia): string | null {
+  // Nada bipado ainda: não há o que recusar (mesma regra de "passo sem o anterior" abaixo).
+  if (normalizarTexto(e.valor) === '') return null
   switch (e.campo) {
     // O crachá é livre na st_trocar_rolo (não entra na avaliação) e o SN fica com o servidor.
     case 'colaborador':
@@ -88,6 +90,8 @@ export function conferirPasso(e: EntradaConferencia): string | null {
     case 'entrada': {
       const entrada = normalizarTexto(e.valor)
       const saida = normalizarTexto(e.bipados.saida ?? '')
+      // Sem o rolo que sai bipado, este passo ainda não pode ser conferido.
+      if (saida === '') return null
       const chaveEntrada = chaveRolo(entrada)
       const chaveSaida = chaveRolo(saida)
       if (chaveEntrada === null) return `Código do rolo que entra inválido: ${entrada}.`

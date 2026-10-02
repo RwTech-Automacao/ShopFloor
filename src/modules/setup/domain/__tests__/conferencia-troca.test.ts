@@ -5,6 +5,7 @@ const itens: ItemDoSetup[] = [
   { posicao: 'P1', feeder: 'F1', componente: 'CAPJ41', rolo: 'CAPJ41-0001' },
   { posicao: 'P2', feeder: 'F2', componente: 'RESX10', rolo: 'RESX10-0007' },
   { posicao: 'P3', feeder: 'F3', componente: 'CAPJ41', rolo: null },
+  { posicao: 'P4', feeder: 'F4', componente: 'CAPJ41', rolo: 'CAPJ41-0002' },
 ]
 const smd = { itens, pth: false }
 const pth = { itens, pth: true }
@@ -83,9 +84,28 @@ describe('passo do ROLO QUE ENTRA', () => {
     expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'RESX10-0007', bipados: b }))
       .toBe('Componente diferente: sai CAPJ41, entra RESX10.')
   })
+  it('recusa o rolo que já está montado em outra posição (SMD)', () => {
+    expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'CAPJ41-2', bipados: b }))
+      .toBe('O rolo CAPJ41-2 já está montado na posição P4.')
+  })
+  it('recusa o rolo que já está montado em outro posto (PTH)', () => {
+    expect(conferirPasso({ ...pth, campo: 'entrada', valor: 'capj41-02', bipados: b }))
+      .toBe('O rolo CAPJ41-02 já está montado no posto P4.')
+  })
+  it('sem o rolo que sai bipado, o passo ainda não pode ser conferido', () => {
+    expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'CAPJ41-0099',
+      bipados: { posicao: 'P1', feeder: 'F1' } })).toBeNull()
+  })
   it('recusa código de rolo inválido', () => {
     expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'SEMTRACO', bipados: b }))
       .toBe('Código do rolo que entra inválido: SEMTRACO.')
+  })
+})
+
+describe('valor vazio: nada bipado, nada a conferir', () => {
+  it('o rolo que sai vazio devolve null, não uma frase com valor em branco', () => {
+    expect(conferirPasso({ ...smd, campo: 'saida', valor: '',
+      bipados: { posicao: 'P1', feeder: 'F1' } })).toBeNull()
   })
 })
 
