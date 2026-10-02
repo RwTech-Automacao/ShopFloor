@@ -23,3 +23,15 @@ export function separarRolo(codigo: string): { valido: boolean; prefixo: string;
   const sequencial = normalizado.slice(i + 1).trim()
   return { valido: sequencial !== '', prefixo, sequencial, normalizado }
 }
+
+/**
+ * Chave canônica do rolo: prefixo + '-' + sequencial sem zeros à esquerda — CAPJ41-1, CAPJ41-0001 e
+ * CAPJ41 1 são o MESMO rolo. `null` quando o código é vazio ou inválido. Espelha st_rolo_chave
+ * (0112), e é por ela que o banco compara rolo: comparar pelo texto bruto separaria rolos iguais,
+ * porque a etiqueta nem sempre traz os zeros à esquerda.
+ */
+export function chaveRolo(codigo: string): string | null {
+  const { prefixo, sequencial } = separarRolo(codigo)
+  if (prefixo === '' || sequencial === '') return null
+  return `${prefixo}-${sequencial.replace(/^0+/, '')}`
+}

@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { PainelResultado, type ChipResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { tocarErro } from '@/shared/lib/som-erro'
-import { localizarSetup, ultimasTrocas } from '@/modules/setup/application/setup-actions'
+import { carregarSetupAction, localizarSetup, ultimasTrocas } from '@/modules/setup/application/setup-actions'
+import type { ItemDoSetup } from '@/modules/setup/domain/conferencia-troca'
 import { rotuloEquipamento, rotulosPosicao } from '@/modules/setup/domain/tipos'
 import type { Equipamento, OrdemSetup, SetupResumo, Troca } from '@/modules/setup/infra/setup-repository'
 import { chaveDaSelecao, SELECAO_VAZIA, SelecaoSetup, selecaoCompleta, type ValorSelecao } from '../../selecao-setup'
@@ -27,10 +28,17 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
   const [ultimoColaborador, setUltimoColaborador] = useState('')
   const [modalAberto, setModalAberto] = useState(false)
   const [trocas, setTrocas] = useState<Troca[]>([])
+  // null = a carga falhou: o modal abre sem conferência no cliente e o servidor confere no envio.
+  const [itens, setItens] = useState<ItemDoSetup[] | null>(null)
+  // Recarga em voo: o trilho do modal distingue "carregando" de "sem conferência".
+  const [carregandoItens, setCarregandoItens] = useState(false)
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
 
   // Descarta respostas de uma seleção antiga (o operador trocou a máquina antes de a busca voltar).
   const buscaSeq = useRef(0)
+  // Monotônico por carga de itens. O `buscaSeq` só sobe ao trocar de setup, então duas recargas em voo
+  // (uma por troca) carregariam o mesmo valor e a que chegasse por último venceria, mesmo sendo a mais velha.
+  const itensSeq = useRef(0)
 
   const completa = selecaoCompleta(selecao)
   const rotulos = rotulosPosicao(setup?.processo ?? (selecao.processo || 'SMD'))
@@ -51,11 +59,29 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
     }
   }
 
+  /** Uma consulta por setup aberto, nenhuma por bipe. Falhou: segue sem conferência (itens null). */
+  async function carregarItens(setupId: string, seq: number) {
+    const minha = ++itensSeq.current
+    setCarregandoItens(true)
+    try {
+      const r = await carregarSetupAction(setupId)
+      // Só a carga mais recente vale: uma resposta atrasada de antes da última troca traria o rolo velho.
+      if (seq !== buscaSeq.current || minha !== itensSeq.current) return
+      setItens(r.ok ? r.itens : null)
+    } catch {
+      // A conferência é um extra: sem ela o servidor continua conferindo no envio.
+    } finally {
+      if (minha === itensSeq.current) setCarregandoItens(false)
+    }
+  }
+
   function mudarSelecao(v: ValorSelecao) {
     setSelecao(v)
     setSetup(null)
     setLocalizado(false)
     setTrocas([])
+    setItens(null)
+    setCarregandoItens(false)
     setResultado(null)
     setModalAberto(false)
     const seq = ++buscaSeq.current
@@ -70,6 +96,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
         setLocalizado(true)
         if (r.setup?.estado === 'liberado') {
           await recarregarTrocas(r.setup.id, seq)
+          await carregarItens(r.setup.id, seq)
           // Abre o passo a passo uma vez por setup localizado; depois de fechado, só volta pelo botão.
           if (seq === buscaSeq.current) setModalAberto(true)
         }
@@ -124,7 +151,13 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             </div>
             <Button
               className="h-11 flex-none bg-enterplak px-4 text-base hover:bg-enterplak-700"
-              onClick={() => setModalAberto(true)}
+              onClick={() => {
+                setModalAberto(true)
+                // A lista pode ter envelhecido (supervisor mexeu no Cadastro, outro turno trocou rolo). Recarrega a
+                // cada abertura: custo zero por bipe, e "fechar e abrir" vira a saída. Não zera os itens: a
+                // conferência segue com o que já temos até a recarga chegar e substituir.
+                void carregarItens(setup.id, buscaSeq.current)
+              }}
             >
               Abastecer
             </Button>
@@ -194,10 +227,20 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             aberto={modalAberto}
             setupId={setup.id}
             rotulos={rotulos}
+            itens={itens}
+            carregandoItens={carregandoItens}
+            contexto={{ op: `${setup.pmo}/${setup.op}`, processo: setup.processo, local: `Linha ${setup.linha} · ${rotuloEquipamento(setup)}`, face: setup.face }}
             colaboradorInicial={ultimoColaborador}
             onFechar={() => setModalAberto(false)}
             onColaboradorUsado={setUltimoColaborador}
-            onTrocaRegistrada={() => { void recarregarTrocas(setup.id, buscaSeq.current) }}
+            onTrocaRegistrada={() => {
+              void recarregarTrocas(setup.id, buscaSeq.current)
+              // Troca aprovada muda o rolo montado na posição NO SERVIDOR. A lista daqui envelheceria e a
+              // conferência recusaria o rolo certo da troca seguinte. Zera e recarrega, em vez de copiar a
+              // regra para o cliente; enquanto a carga não volta, a conferência fica desligada (como em falha).
+              setItens(null)
+              void carregarItens(setup.id, buscaSeq.current)
+            }}
             onFalhaConexao={(r) => { setResultado(r); setModalAberto(false) }}
           />
         </div>
