@@ -277,7 +277,7 @@ export function ConteudoAbastecimento({
       <div className="@container flex min-h-0 flex-1 flex-col">
         <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 @xl:grid-cols-[300px_minmax(0,1fr)] @xl:grid-rows-none">
           {/* Trilho: o que o sistema já sabe. A pessoa confere em vez de lembrar. */}
-          <aside className="flex max-h-[35vh] min-h-0 flex-col gap-2 overflow-y-auto rounded-lg border border-border bg-muted/30 p-4 @xl:max-h-none @xl:p-3">
+          <aside className="order-2 flex max-h-[35vh] min-h-0 flex-col gap-2 overflow-y-auto rounded-lg border border-border bg-muted/30 p-4 self-start @xl:order-none @xl:self-auto @xl:max-h-none @xl:p-3">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">O que você está trocando</h3>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 @xl:grid-cols-1">
               {linhas.map((l) => (
@@ -299,7 +299,7 @@ export function ConteudoAbastecimento({
             {temItens && !posicaoBipada && <p className="text-sm text-muted-foreground">{dicaPosicao}</p>}
           </aside>
 
-          <div className="flex min-h-0 flex-col gap-3">
+          <div className="order-1 flex min-h-0 flex-col gap-3 @xl:order-none">
             {/* A recusa fica acima do campo: o motivo em destaque, onde o olho já está. Rola por dentro
                 só se passar de 45vh; não cede espaço ao campo, que nunca sai da tela. */}
             <div className="flex max-h-[45vh] flex-none flex-col gap-3 overflow-y-auto empty:hidden">
