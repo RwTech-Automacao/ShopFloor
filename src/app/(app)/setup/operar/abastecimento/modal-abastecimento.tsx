@@ -33,7 +33,7 @@ interface PropsAbastecimento {
   rotulos: { posicao: string; feeder: string }
   /**
    * Os itens montados no setup, para conferir cada bipe no passo em que nasce. `null` quando a carga
-   * falhou: o modal funciona como antes e o servidor confere tudo no envio — a conferência é um extra,
+   * falhou (ou veio vazia): o modal funciona como antes e o servidor confere tudo no envio — a conferência é um extra,
    * nunca pode travar o operador.
    */
   itens: ItemDoSetup[] | null
@@ -118,7 +118,9 @@ export function ConteudoAbastecimento({
     // passo em branco avançar calado.
     // Roda no cliente: nenhuma ida ao servidor entre um passo e outro, então não há espera nem janela
     // para o bipe seguinte entrar por cima. O envio final continua passando pela st_trocar_rolo, que vale.
-    const recusaDoPasso = itens === null ? null : conferirPasso({
+    // Lista ausente OU vazia = sem conferência: com zero itens toda posição seria recusada e o operador
+    // ficaria preso (um admin pode apagar os itens de um setup já liberado).
+    const recusaDoPasso = itens === null || itens.length === 0 ? null : conferirPasso({
       campo: atual.campo,
       valor: campos[atual.campo],
       bipados: { posicao: campos.posicao, feeder: campos.feeder, saida: campos.saida },

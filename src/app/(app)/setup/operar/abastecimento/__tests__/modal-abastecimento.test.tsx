@@ -357,5 +357,30 @@ describe('ConteudoAbastecimento', () => {
       expect(await screen.findByText('O feeder F1 não está na posição P4.')).toBeInTheDocument()
       expect(trocarRolo).not.toHaveBeenCalled()
     })
+
+    it('lista de itens vazia desliga a conferência: o operador não fica preso', async () => {
+      trocarRolo.mockResolvedValue(APROVADA)
+      render(<ConteudoAbastecimento {...PROPS} itens={[]} />)
+      for (const v of ['1234', 'P9', 'F9', 'QUALQUER', 'OUTRO', 'SN-0001']) bipar(v)
+      await waitFor(() => expect(trocarRolo).toHaveBeenCalledTimes(1))
+    })
+
+    it('recusa o rolo que sai quando não é o montado na posição', async () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      for (const v of ['1234', 'P1', 'F1']) bipar(v)
+      bipar('CAPJ41-0777')
+      expect(await screen.findByText('O rolo montado na posição P1 é CAPJ41-0001, não CAPJ41-0777.')).toBeInTheDocument()
+      expect(screen.getByText('4/6')).toBeInTheDocument()
+      expect(trocarRolo).not.toHaveBeenCalled()
+    })
+
+    it('recusa o rolo que entra quando já está montado em outra posição', async () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      for (const v of ['1234', 'P1', 'F1', 'CAPJ41-0001']) bipar(v)
+      bipar('CAPJ41-0002')
+      expect(await screen.findByText(/CAPJ41-0002.*P4/)).toBeInTheDocument()
+      expect(screen.getByText('5/6')).toBeInTheDocument()
+      expect(trocarRolo).not.toHaveBeenCalled()
+    })
   })
 })

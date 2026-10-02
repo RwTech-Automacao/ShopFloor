@@ -214,7 +214,14 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             colaboradorInicial={ultimoColaborador}
             onFechar={() => setModalAberto(false)}
             onColaboradorUsado={setUltimoColaborador}
-            onTrocaRegistrada={() => { void recarregarTrocas(setup.id, buscaSeq.current) }}
+            onTrocaRegistrada={() => {
+              void recarregarTrocas(setup.id, buscaSeq.current)
+              // Troca aprovada muda o rolo montado na posição NO SERVIDOR. A lista daqui envelheceria e a
+              // conferência recusaria o rolo certo da troca seguinte. Zera e recarrega, em vez de copiar a
+              // regra para o cliente; enquanto a carga não volta, a conferência fica desligada (como em falha).
+              setItens(null)
+              void carregarItens(setup.id, buscaSeq.current)
+            }}
             onFalhaConexao={(r) => { setResultado(r); setModalAberto(false) }}
           />
         </div>
