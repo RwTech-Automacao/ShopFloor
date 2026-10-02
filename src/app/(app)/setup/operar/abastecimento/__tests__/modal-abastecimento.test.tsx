@@ -12,6 +12,8 @@ vi.mock('@/shared/lib/som-erro', () => ({ tocarErro: () => tocarErro() }))
 
 const PROPS = {
   setupId: 's1',
+  // null = a carga dos itens falhou (ou não houve): sem conferência no cliente, o servidor confere no envio.
+  itens: null,
   rotulos: { posicao: 'Posição', feeder: 'Feeder' },
   colaboradorInicial: '',
   onColaboradorUsado: vi.fn(),
@@ -276,5 +278,84 @@ describe('ConteudoAbastecimento', () => {
     expect(screen.getByText('3/6')).toBeInTheDocument()
     expect(screen.getByText('P2')).toBeInTheDocument()
     expect(tocarErro).not.toHaveBeenCalled()
+  })
+
+  describe('conferência a cada bipe', () => {
+    const ITENS = [
+      { posicao: 'P1', feeder: 'F1', componente: 'CAPJ41', rolo: 'CAPJ41-0001' },
+      { posicao: 'P4', feeder: 'F4', componente: 'CAPJ41', rolo: 'CAPJ41-0002' },
+    ]
+    const PROPS_CONF = { ...PROPS, itens: ITENS }
+
+    it('recusa a posição que não existe no setup, sem ir ao servidor', async () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      bipar('1234')
+      bipar('P9')
+      expect(await screen.findByText('A posição P9 não existe nesse setup.')).toBeInTheDocument()
+      expect(trocarRolo).not.toHaveBeenCalled()
+      expect(tocarErro).toHaveBeenCalled()
+    })
+
+    it('na recusa, o campo limpa e o passo NÃO avança', async () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      bipar('1234')
+      bipar('P9')
+      await screen.findByText('A posição P9 não existe nesse setup.')
+      expect(campoAtual()).toHaveValue('')
+      expect(screen.getByText(/2\s*\/\s*6/)).toBeInTheDocument()
+    })
+
+    it('os passos anteriores não se perdem na recusa', async () => {
+      const { container } = render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      bipar('1234')
+      bipar('P9')
+      await screen.findByText('A posição P9 não existe nesse setup.')
+      expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234'])
+    })
+
+    it('o caminho certo atravessa os seis passos e envia uma vez só', async () => {
+      trocarRolo.mockResolvedValue(APROVADA)
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      for (const v of ['1234', 'P1', 'F1', 'CAPJ41-0001', 'CAPJ41-0099', 'SN-0001']) bipar(v)
+      await waitFor(() => expect(trocarRolo).toHaveBeenCalledTimes(1))
+    })
+
+    it('o SN não é conferido no cliente — segue para o servidor', async () => {
+      trocarRolo.mockResolvedValue(APROVADA)
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      for (const v of ['1234', 'P1', 'F1', 'CAPJ41-0001', 'CAPJ41-0099', 'SN-FORA-DE-FAIXA']) bipar(v)
+      await waitFor(() => expect(trocarRolo).toHaveBeenCalled())
+    })
+
+    it('o campo em branco continua recusado pela guarda do vazio (conferência não o deixa passar)', () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      bipar('1234')
+      fireEvent.keyDown(campoAtual(), { key: 'Enter' })
+      expect(screen.getByText('Campo em branco — bipe o código antes de avançar.')).toBeInTheDocument()
+      expect(screen.getByText('2/6')).toBeInTheDocument()
+    })
+
+    it('no PTH a recusa fala em posto', async () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} rotulos={{ posicao: 'Posto', feeder: 'Locação' }} />)
+      bipar('1234')
+      bipar('P9')
+      expect(await screen.findByText('O posto P9 não existe nesse setup.')).toBeInTheDocument()
+    })
+
+    it('voltar e trocar a posição reconfere o feeder', async () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      bipar('1234')
+      bipar('P1')
+      bipar('F1')
+      // Está no passo do rolo que sai (4/6): dois Voltar chegam à posição.
+      fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+      bipar('P4')
+      expect(screen.getByText('3/6')).toBeInTheDocument()
+      expect(campoAtual()).toHaveValue('F1')
+      fireEvent.keyDown(campoAtual(), { key: 'Enter' })
+      expect(await screen.findByText('O feeder F1 não está na posição P4.')).toBeInTheDocument()
+      expect(trocarRolo).not.toHaveBeenCalled()
+    })
   })
 })

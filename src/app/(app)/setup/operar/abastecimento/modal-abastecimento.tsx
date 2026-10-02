@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { PainelResultado, type ChipResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { tocarErro } from '@/shared/lib/som-erro'
 import { trocarRolo } from '@/modules/setup/application/setup-actions'
+import { conferirPasso, type ItemDoSetup } from '@/modules/setup/domain/conferencia-troca'
 
 // O campo é o herói desta tela: o operador bipa de pé, com o tablet na bancada, e confere
 // de relance se o leitor pegou. Fonte grande não é enfeite — é o que se lê a um braço de
@@ -30,6 +31,12 @@ const PASSO_POSICAO = 1
 interface PropsAbastecimento {
   setupId: string
   rotulos: { posicao: string; feeder: string }
+  /**
+   * Os itens montados no setup, para conferir cada bipe no passo em que nasce. `null` quando a carga
+   * falhou: o modal funciona como antes e o servidor confere tudo no envio — a conferência é um extra,
+   * nunca pode travar o operador.
+   */
+  itens: ItemDoSetup[] | null
   /** Último crachá usado: o passo 1/6 já vem preenchido com ele, só de confirmar. */
   colaboradorInicial: string
   onColaboradorUsado: (cracha: string) => void
@@ -45,7 +52,7 @@ interface PropsAbastecimento {
  * Exportado separado do Dialog para o teste montar só o passo a passo.
  */
 export function ConteudoAbastecimento({
-  setupId, rotulos, colaboradorInicial, onColaboradorUsado, onTrocaRegistrada, onFalhaConexao,
+  setupId, rotulos, itens, colaboradorInicial, onColaboradorUsado, onTrocaRegistrada, onFalhaConexao,
 }: PropsAbastecimento) {
   const [campos, setCampos] = useState<Record<Campo, string>>({ ...CAMPOS_VAZIOS, colaborador: colaboradorInicial })
   const [passo, setPasso] = useState(0)
@@ -106,6 +113,24 @@ export function ConteudoAbastecimento({
     // O passo não passa em branco — e avisa, porque um Enter sem valor é justamente o sintoma de
     // bipe que não pegou.
     if (vazio) { recusar(CAMPO_EM_BRANCO); return }
+    // ATENÇÃO: `conferirPasso` devolve null para "nada a conferir" (inclusive valor vazio), não para
+    // "aprovado". Por isso esta conferência vem DEPOIS da guarda do vazio — inverter a ordem deixaria o
+    // passo em branco avançar calado.
+    // Roda no cliente: nenhuma ida ao servidor entre um passo e outro, então não há espera nem janela
+    // para o bipe seguinte entrar por cima. O envio final continua passando pela st_trocar_rolo, que vale.
+    const recusaDoPasso = itens === null ? null : conferirPasso({
+      campo: atual.campo,
+      valor: campos[atual.campo],
+      bipados: { posicao: campos.posicao, feeder: campos.feeder, saida: campos.saida },
+      itens,
+      pth: rotulos.posicao === 'Posto',
+    })
+    if (recusaDoPasso) {
+      recusar(recusaDoPasso)
+      setCampos((c) => ({ ...c, [atual.campo]: '' }))
+      setRefoco((n) => n + 1)
+      return
+    }
     if (!ultimo) { irPara(passo + 1); return }
     enviar()
   }

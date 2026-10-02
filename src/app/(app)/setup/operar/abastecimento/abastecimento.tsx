@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { PainelResultado, type ChipResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { tocarErro } from '@/shared/lib/som-erro'
-import { localizarSetup, ultimasTrocas } from '@/modules/setup/application/setup-actions'
+import { carregarSetupAction, localizarSetup, ultimasTrocas } from '@/modules/setup/application/setup-actions'
+import type { ItemDoSetup } from '@/modules/setup/domain/conferencia-troca'
 import { rotuloEquipamento, rotulosPosicao } from '@/modules/setup/domain/tipos'
 import type { Equipamento, OrdemSetup, SetupResumo, Troca } from '@/modules/setup/infra/setup-repository'
 import { chaveDaSelecao, SELECAO_VAZIA, SelecaoSetup, selecaoCompleta, type ValorSelecao } from '../../selecao-setup'
@@ -27,6 +28,8 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
   const [ultimoColaborador, setUltimoColaborador] = useState('')
   const [modalAberto, setModalAberto] = useState(false)
   const [trocas, setTrocas] = useState<Troca[]>([])
+  // null = a carga falhou: o modal abre sem conferência no cliente e o servidor confere no envio.
+  const [itens, setItens] = useState<ItemDoSetup[] | null>(null)
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
 
   // Descarta respostas de uma seleção antiga (o operador trocou a máquina antes de a busca voltar).
@@ -51,11 +54,23 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
     }
   }
 
+  /** Uma consulta por setup aberto, nenhuma por bipe. Falhou: segue sem conferência (itens null). */
+  async function carregarItens(setupId: string, seq: number) {
+    try {
+      const r = await carregarSetupAction(setupId)
+      if (seq !== buscaSeq.current) return
+      setItens(r.ok ? r.itens : null)
+    } catch {
+      // A conferência é um extra: sem ela o servidor continua conferindo no envio.
+    }
+  }
+
   function mudarSelecao(v: ValorSelecao) {
     setSelecao(v)
     setSetup(null)
     setLocalizado(false)
     setTrocas([])
+    setItens(null)
     setResultado(null)
     setModalAberto(false)
     const seq = ++buscaSeq.current
@@ -70,6 +85,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
         setLocalizado(true)
         if (r.setup?.estado === 'liberado') {
           await recarregarTrocas(r.setup.id, seq)
+          await carregarItens(r.setup.id, seq)
           // Abre o passo a passo uma vez por setup localizado; depois de fechado, só volta pelo botão.
           if (seq === buscaSeq.current) setModalAberto(true)
         }
@@ -194,6 +210,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             aberto={modalAberto}
             setupId={setup.id}
             rotulos={rotulos}
+            itens={itens}
             colaboradorInicial={ultimoColaborador}
             onFechar={() => setModalAberto(false)}
             onColaboradorUsado={setUltimoColaborador}
