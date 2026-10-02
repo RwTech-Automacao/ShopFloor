@@ -7,8 +7,9 @@
 # Depois dos testes da 0113, a 0115 (tipos de regra) é aplicada POR CIMA, com -1 e DUAS VEZES
 # (prova que é idempotente e que migra dados de verdade da 0113), e roda alertas_tipos_test.sql.
 # Mesma receita para a 0122 (reabertura) e a 0123 (canal do Discord), cada uma por cima de tudo,
-# com alertas_reabertura_test.sql e alertas_canal_test.sql. A 0136 (PMO/OP e posições) fecha a
-# fila, com alertas_op_posicoes_test.sql.
+# com alertas_reabertura_test.sql e alertas_canal_test.sql. Depois a 0136 (PMO/OP e posições), com
+# alertas_op_posicoes_test.sql, e a 0137 (explicação de quem resolve) fecha a fila, com
+# alertas_explicacao_test.sql.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 NOME=pg-alertas-test
@@ -174,5 +175,13 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0136.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0136.sql   # de novo: idempotente
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_op.sql
 echo "0136 (OP e posições): ok"
+
+# ---------- 0137: quem resolve o alerta diz o que fez ----------
+docker cp supabase/migrations/0137_alertas_explicacao.sql "$NOME":/tmp/0137.sql
+docker cp supabase/tests/alertas_explicacao_test.sql "$NOME":/tmp/teste_expl.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0137.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0137.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_expl.sql
+echo "0137 (explicação ao resolver): ok"
 
 echo "ALERTAS SQL OK"
