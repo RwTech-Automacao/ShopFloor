@@ -8,12 +8,13 @@ import { Label } from '@/components/ui/label'
 import { PainelResultado, type ChipResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { tocarErro } from '@/shared/lib/som-erro'
 import { trocarRolo } from '@/modules/setup/application/setup-actions'
+import { normalizarTexto } from '@/modules/setup/domain/codigo-rolo'
 import { conferirPasso, type ItemDoSetup } from '@/modules/setup/domain/conferencia-troca'
 
 // O campo é o herói desta tela: o operador bipa de pé, com o tablet na bancada, e confere
 // de relance se o leitor pegou. Fonte grande não é enfeite — é o que se lê a um braço de
 // distância sem abaixar a cabeça.
-const INPUT_BIPE = 'h-16 text-3xl uppercase tracking-wide'
+const INPUT_BIPE = 'h-20 font-mono text-4xl uppercase tracking-wide md:text-4xl'
 const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar.'
 /** Recusas que o operador tem de perceber: bipe engolido em silêncio é erro invisível. */
 const BIPE_EM_ENVIO = 'Registrando a troca anterior — esse bipe não contou. Bipe de novo.'
@@ -37,6 +38,8 @@ interface PropsAbastecimento {
    * nunca pode travar o operador.
    */
   itens: ItemDoSetup[] | null
+  /** Onde ele está trabalhando (OP, processo, linha/bloco, face); some do resto da tela quando o modal abre. */
+  contexto?: { op: string; processo: string; local: string; face: string }
   /** Último crachá usado: o passo 1/6 já vem preenchido com ele, só de confirmar. */
   colaboradorInicial: string
   onColaboradorUsado: (cracha: string) => void
@@ -52,7 +55,7 @@ interface PropsAbastecimento {
  * Exportado separado do Dialog para o teste montar só o passo a passo.
  */
 export function ConteudoAbastecimento({
-  setupId, rotulos, itens, colaboradorInicial, onColaboradorUsado, onTrocaRegistrada, onFalhaConexao,
+  setupId, rotulos, itens, contexto, colaboradorInicial, onColaboradorUsado, onTrocaRegistrada, onFalhaConexao,
 }: PropsAbastecimento) {
   const [campos, setCampos] = useState<Record<Campo, string>>({ ...CAMPOS_VAZIOS, colaborador: colaboradorInicial })
   const [passo, setPasso] = useState(0)
@@ -83,7 +86,6 @@ export function ConteudoAbastecimento({
   ]
   // `passo` só muda por `irPara` com índice de `passos`: o passo atual existe sempre.
   const atual = passos[passo]!
-  const anteriores = passos.slice(0, passo)
   const ultimo = passo === passos.length - 1
   const vazio = campos[atual.campo].trim() === ''
 
@@ -204,71 +206,135 @@ export function ConteudoAbastecimento({
     })()
   }
 
+  // O que o sistema já sabe, derivado dos itens JÁ carregados (nenhuma consulta nova). Só vale depois
+  // da posição bipada; sem itens (null ou vazio) as linhas mostram "—", nunca moldura vazia.
+  const temItens = itens !== null && itens.length > 0
+  const iPosicao = passos.findIndex((p) => p.campo === 'posicao')
+  const iFeeder = passos.findIndex((p) => p.campo === 'feeder')
+  const posicaoBipada = passo > iPosicao && campos.posicao.trim() !== ''
+  const feederBipado = passo > iFeeder && campos.feeder.trim() !== ''
+  const daPosicao = temItens && posicaoBipada
+    ? itens.filter((i) => normalizarTexto(i.posicao) === normalizarTexto(campos.posicao))
+    : []
+  const doItem = feederBipado ? daPosicao.filter((i) => normalizarTexto(i.feeder) === normalizarTexto(campos.feeder)) : daPosicao
+  const unicos = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].join(' · ')
+  const esperadoFeeder = unicos(daPosicao.map((i) => i.feeder))
+  const esperadoComponente = unicos(doItem.map((i) => i.componente))
+  const esperadoRolo = unicos(doItem.map((i) => i.rolo))
+  const dicaPosicao = `Bipe ${rotulos.posicao === 'Posto' ? 'o posto' : 'a posição'} para ver o que o sistema espera.`
+
+  type Linha = { chave: string; rotulo: string; valor: string; esperado: boolean; mono?: boolean }
+  const linhas: Linha[] = [
+    { chave: 'colaborador', rotulo: 'Colaborador', valor: passo > 0 ? campos.colaborador.trim() : '', esperado: false },
+    { chave: 'posicao', rotulo: rotulos.posicao, valor: posicaoBipada ? campos.posicao.trim() : '', esperado: false, mono: true },
+    feederBipado
+      ? { chave: 'feeder', rotulo: rotulos.feeder, valor: campos.feeder.trim(), esperado: false, mono: true }
+      : { chave: 'feeder', rotulo: rotulos.feeder, valor: esperadoFeeder, esperado: true, mono: true },
+    { chave: 'componente', rotulo: 'Componente', valor: esperadoComponente, esperado: true, mono: true },
+    { chave: 'rolo', rotulo: 'Rolo montado', valor: esperadoRolo, esperado: true, mono: true },
+  ]
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      {/* Resultado e rastro cedem espaço (rolam por dentro) quando o teclado virtual abre; o campo atual, nunca. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto empty:hidden">
-        <PainelResultado resultado={resultado} />
-        {anteriores.length > 0 && (
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-base sm:grid-cols-2">
-            {anteriores.map(({ campo, rotulo }) => (
-              <div key={campo} className="flex gap-1">
-                {/* Rótulo e valor colados, com dois-pontos: "Colaborador: Matheus" se lê de uma olhada. */}
-                <dt className="flex-none text-muted-foreground">{rotulo}:</dt>
-                <dd className="min-w-0 truncate font-medium">{campos[campo]}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Onde ele está trabalhando: some do resto da tela quando o modal abre, então fica aqui. */}
+      {contexto && (
+        <p className="flex-none text-base font-medium" data-testid="contexto">
+          OP {contexto.op} · {contexto.processo} · {contexto.local} · {contexto.face}
+        </p>
+      )}
+
+      {/* Trilha dos seis passos: feito / agora / por vir. O contador N/6 fica ao lado do rótulo. */}
+      <div className="flex flex-none items-center gap-3">
+        <ol className="flex flex-1 gap-1.5" aria-label="Passos da troca">
+          {passos.map((p, i) => (
+            <li
+              key={p.campo}
+              data-estado={i < passo ? 'feito' : i === passo ? 'agora' : 'porvir'}
+              aria-current={i === passo ? 'step' : undefined}
+              className={`h-2 flex-1 rounded-full ${i < passo ? 'bg-enterplak' : i === passo ? 'bg-enterplak/60 ring-2 ring-enterplak/40' : 'bg-muted'}`}
+            />
+          ))}
+        </ol>
+        <span className="text-lg font-semibold tabular-nums text-muted-foreground">{passo + 1}/{passos.length}</span>
       </div>
 
-      {/* O passo atual fica no CENTRO do que sobra: numa tela grande ele cai na altura do olhar, em
-          vez de ficar encostado no topo com um vazio embaixo. `flex-none` continuaria colando em cima. */}
-      <div className="flex flex-none flex-col justify-center gap-2 py-2 sm:flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor={`troca-${atual.campo}`} className="text-2xl font-semibold">{atual.rotulo}</Label>
-          <span className="text-lg tabular-nums text-muted-foreground">{passo + 1}/{passos.length}</span>
+      <div className="@container flex min-h-0 flex-1 flex-col">
+        <div className="grid min-h-0 flex-1 gap-4 @xl:grid-cols-[300px_minmax(0,1fr)]">
+          {/* Trilho: o que o sistema já sabe. A pessoa confere em vez de lembrar. */}
+          <aside className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">O que você está trocando</h3>
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 @xl:grid-cols-1">
+              {linhas.map((l) => (
+                <div key={l.chave} className="min-w-0">
+                  <dt className="text-sm text-muted-foreground">{l.rotulo}</dt>
+                  <dd className={`flex min-w-0 items-baseline gap-2 text-xl font-semibold ${l.mono ? 'font-mono' : ''}`}>
+                    {l.valor !== '' ? (
+                      <>
+                        <span className="min-w-0 break-all">{l.valor}</span>
+                        {l.esperado && <span className="flex-none rounded bg-muted px-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">esperado</span>}
+                      </>
+                    ) : (
+                      <span className="text-base font-normal text-muted-foreground">{!temItens && l.esperado ? '—' : 'aguardando'}</span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {temItens && !posicaoBipada && <p className="text-sm text-muted-foreground">{dicaPosicao}</p>}
+          </aside>
+
+          <div className="flex min-h-0 flex-col gap-3">
+            {/* A recusa fica acima do campo: o motivo em destaque, onde o olho já está. Rola por dentro
+                (e cede espaço) quando o teclado virtual abre; o campo atual, nunca. */}
+            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto empty:hidden">
+              <PainelResultado resultado={resultado} />
+            </div>
+
+            <div className="flex flex-none flex-col justify-center gap-2 sm:flex-1">
+              <Label htmlFor={`troca-${atual.campo}`} className="text-2xl font-semibold">{atual.rotulo}</Label>
+              <Input
+                id={`troca-${atual.campo}`}
+                key={atual.campo}
+                ref={campoRef}
+                value={campos[atual.campo]}
+                onChange={(e) => setCampos((c) => ({ ...c, [atual.campo]: e.target.value }))}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  avancar()
+                }}
+                placeholder={atual.placeholder}
+                autoComplete="off"
+                className={INPUT_BIPE}
+              />
+            </div>
+
+            {/* O Enter do leitor continua sendo o caminho normal; o botão é para o tablet só de toque, cujo
+                teclado virtual pode não ter Enter. Ele faz exatamente o que o Enter faria neste passo. */}
+            <div className="flex flex-none gap-2">
+              {passo > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-14 px-6 text-lg"
+                  onClick={() => irPara(passo - 1)}
+                  disabled={enviando}
+                >
+                  Voltar
+                </Button>
+              )}
+              <Button
+                type="button"
+                className="h-14 flex-1 bg-enterplak px-6 text-lg hover:bg-enterplak-700"
+                onClick={avancar}
+                disabled={enviando || vazio}
+              >
+                {ultimo ? 'Registrar troca' : 'Avançar'}
+              </Button>
+            </div>
+          </div>
         </div>
-        <Input
-          id={`troca-${atual.campo}`}
-          key={atual.campo}
-          ref={campoRef}
-          value={campos[atual.campo]}
-          onChange={(e) => setCampos((c) => ({ ...c, [atual.campo]: e.target.value }))}
-          onFocus={(e) => e.currentTarget.select()}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter') return
-            e.preventDefault()
-            avancar()
-          }}
-          placeholder={atual.placeholder}
-          autoComplete="off"
-          className={INPUT_BIPE}
-        />
-      </div>
-
-      {/* O Enter do leitor continua sendo o caminho normal; o botão é para o tablet só de toque, cujo
-          teclado virtual pode não ter Enter. Ele faz exatamente o que o Enter faria neste passo. */}
-      <div className="flex flex-none gap-2">
-        {passo > 0 && (
-          <Button
-            type="button"
-            variant="outline"
-            className="h-14 px-6 text-lg"
-            onClick={() => irPara(passo - 1)}
-            disabled={enviando}
-          >
-            Voltar
-          </Button>
-        )}
-        <Button
-          type="button"
-          className="h-14 flex-1 bg-enterplak px-6 text-lg hover:bg-enterplak-700"
-          onClick={avancar}
-          disabled={enviando || vazio}
-        >
-          {ultimo ? 'Registrar troca' : 'Avançar'}
-        </Button>
       </div>
     </div>
   )

@@ -211,6 +211,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             setupId={setup.id}
             rotulos={rotulos}
             itens={itens}
+            contexto={{ op: `${setup.pmo}/${setup.op}`, processo: setup.processo, local: `Linha ${setup.linha} · ${rotuloEquipamento(setup)}`, face: setup.face }}
             colaboradorInicial={ultimoColaborador}
             onFechar={() => setModalAberto(false)}
             onColaboradorUsado={setUltimoColaborador}

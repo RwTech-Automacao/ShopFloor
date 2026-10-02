@@ -106,8 +106,9 @@ describe('ConteudoAbastecimento', () => {
     bipar('FD-0034')
 
     expect(screen.getByText('4/6')).toBeInTheDocument()
-    expect([...container.querySelectorAll('dt')].map((e) => e.textContent)).toEqual(['Colaborador:', 'Posição:', 'Feeder:'])
-    expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234', 'L1-A-12', 'FD-0034'])
+    expect([...container.querySelectorAll('dt')].map((e) => e.textContent)).toEqual(['Colaborador', 'Posição', 'Feeder', 'Componente', 'Rolo montado'])
+    // Os três bipados; sem itens carregados, o que o sistema esperaria fica em "—" (nunca moldura vazia).
+    expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234', 'L1-A-12', 'FD-0034', '—', '—'])
   })
 
   it('depois de uma troca aprovada volta ao 1/6 com o crachá preenchido e os outros cinco vazios', async () => {
@@ -310,7 +311,7 @@ describe('ConteudoAbastecimento', () => {
       bipar('1234')
       bipar('P9')
       await screen.findByText('A posição P9 não existe nesse setup.')
-      expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234'])
+      expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234', 'aguardando', 'aguardando', 'aguardando', 'aguardando'])
     })
 
     it('o caminho certo atravessa os seis passos e envia uma vez só', async () => {
@@ -381,6 +382,54 @@ describe('ConteudoAbastecimento', () => {
       expect(await screen.findByText(/CAPJ41-0002.*P4/)).toBeInTheDocument()
       expect(screen.getByText('5/6')).toBeInTheDocument()
       expect(trocarRolo).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('o trilho mostra o que o sistema já sabe', () => {
+    const ITENS = [{ posicao: 'P14', feeder: 'F07', componente: 'CAPJ41', rolo: 'CAPJ41-0001' }]
+
+    it('depois da posição, mostra feeder, componente e rolo montado', () => {
+      render(<ConteudoAbastecimento {...PROPS} itens={ITENS} />)
+      bipar('1234')
+      bipar('P14')
+      expect(screen.getByText('F07')).toBeInTheDocument()
+      expect(screen.getByText('CAPJ41')).toBeInTheDocument()
+      expect(screen.getByText('CAPJ41-0001')).toBeInTheDocument()
+      expect(screen.getAllByText('esperado').length).toBe(3)
+    })
+
+    it('antes da posição, diz o que falta em vez de mostrar vazio', () => {
+      render(<ConteudoAbastecimento {...PROPS} itens={ITENS} />)
+      expect(screen.getByText(/bipe a posição/i)).toBeInTheDocument()
+      expect(screen.queryByText('F07')).not.toBeInTheDocument()
+    })
+
+    it('sem itens, os campos esperados mostram — e o fluxo segue', () => {
+      render(<ConteudoAbastecimento {...PROPS} itens={[]} />)
+      bipar('1234')
+      bipar('P14')
+      expect(screen.getAllByText('—').length).toBe(3)
+      expect(screen.getByText('3/6')).toBeInTheDocument()
+    })
+
+    it('no PTH o trilho fala em posto e locação', () => {
+      render(<ConteudoAbastecimento {...PROPS} itens={ITENS} rotulos={{ posicao: 'Posto', feeder: 'Locação' }} />)
+      expect(screen.getByText('Locação')).toBeInTheDocument()
+      expect(screen.getByText(/bipe o posto/i)).toBeInTheDocument()
+      expect(screen.queryByText('Feeder')).not.toBeInTheDocument()
+    })
+
+    it('a trilha marca o passo atual entre seis traços', () => {
+      render(<ConteudoAbastecimento {...PROPS} itens={ITENS} />)
+      bipar('1234')
+      const tracos = screen.getByRole('list', { name: 'Passos da troca' }).querySelectorAll('li')
+      expect(tracos.length).toBe(6)
+      expect([...tracos].map((t) => t.getAttribute('data-estado'))).toEqual(['feito', 'agora', 'porvir', 'porvir', 'porvir', 'porvir'])
+    })
+
+    it('o cabeçalho mostra onde ele está trabalhando', () => {
+      render(<ConteudoAbastecimento {...PROPS} contexto={{ op: 'P/1', processo: 'SMD', local: 'Linha 1 · Bloco A · MG5', face: 'TOP' }} />)
+      expect(screen.getByTestId('contexto')).toHaveTextContent('OP P/1 · SMD · Linha 1 · Bloco A · MG5 · TOP')
     })
   })
 })
