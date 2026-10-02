@@ -75,6 +75,25 @@ describe('ConteudoAbastecimento', () => {
     })
   })
 
+  it('o envio apara as pontas de cada bipe: o servidor (btrim) não apara tab nem espaço fixo, o JS sim', async () => {
+    trocarRolo.mockResolvedValue(APROVADA)
+    render(<ConteudoAbastecimento {...PROPS} />)
+
+    // O leitor às vezes acrescenta tab ou espaço fixo; o cliente e o servidor têm de ver o mesmo texto.
+    for (const valor of BIPES) bipar(`\t ${valor}\u00a0 `)
+
+    await waitFor(() => expect(trocarRolo).toHaveBeenCalledTimes(1))
+    expect(trocarRolo).toHaveBeenCalledWith({
+      setupId: 's1',
+      posicao: 'L1-A-12',
+      feeder: 'FD-0034',
+      roloSaida: 'ROLO-SAI',
+      roloEntrada: 'ROLO-ENT',
+      snInicial: 'SN-0001',
+      colaborador: '1234',
+    })
+  })
+
   it('contador vai de 1/6 a 6/6 e Voltar volta um passo sem perder o valor', () => {
     render(<ConteudoAbastecimento {...PROPS} />)
     expect(screen.getByText('1/6')).toBeInTheDocument()
@@ -425,6 +444,56 @@ describe('ConteudoAbastecimento', () => {
       const tracos = screen.getByRole('list', { name: 'Passos da troca' }).querySelectorAll('li')
       expect(tracos.length).toBe(6)
       expect([...tracos].map((t) => t.getAttribute('data-estado'))).toEqual(['feito', 'agora', 'porvir', 'porvir', 'porvir', 'porvir'])
+    })
+
+    it('voltar para corrigir não apaga o contexto: o trilho segue o conteúdo, não o número do passo', () => {
+      render(<ConteudoAbastecimento {...PROPS} itens={ITENS} />)
+      for (const v of ['1234', 'P14', 'F07', 'CAPJ41-0001']) bipar(v)
+      expect(screen.getByText('5/6')).toBeInTheDocument()
+      // Volta ao passo 2/6 (posição) para corrigir.
+      for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+      expect(screen.getByText('2/6')).toBeInTheDocument()
+      expect(screen.getByText('P14')).toBeInTheDocument()
+      expect(screen.getByText('F07')).toBeInTheDocument()
+      expect(screen.getByText('CAPJ41')).toBeInTheDocument()
+      // O rolo montado esperado e o rolo que saiu já bipado coincidem aqui; o que importa é o rótulo.
+      expect(screen.getByText('Rolo montado')).toBeInTheDocument()
+      expect(screen.getAllByText('CAPJ41-0001').length).toBeGreaterThan(0)
+      expect(screen.queryByText('aguardando')).not.toBeInTheDocument()
+      // E no passo 0 o crachá preenchido continua à vista.
+      fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+      expect(screen.getByText('1/6')).toBeInTheDocument()
+      expect(screen.getByText('1234')).toBeInTheDocument()
+    })
+
+    it('o rolo que saiu e o que entrou aparecem no trilho só depois de bipados', () => {
+      const { container } = render(<ConteudoAbastecimento {...PROPS} itens={ITENS} />)
+      const rotulos = () => [...container.querySelectorAll('dt')].map((e) => e.textContent)
+      for (const v of ['1234', 'P14', 'F07']) bipar(v)
+      expect(rotulos()).not.toContain('Rolo que sai')
+      expect(rotulos()).not.toContain('Rolo que entra')
+      bipar('CAPJ41-0001')
+      expect(rotulos()).toContain('Rolo que sai')
+      expect(rotulos()).not.toContain('Rolo que entra')
+      bipar('CAPJ41-0007')
+      expect(screen.getByText('6/6')).toBeInTheDocument()
+      expect(rotulos()).toEqual(expect.arrayContaining(['Rolo que sai', 'Rolo que entra']))
+      const dd = (rotulo: string) => [...container.querySelectorAll('dt')].find((e) => e.textContent === rotulo)!.nextElementSibling!
+      expect(dd('Rolo que sai')).toHaveTextContent('CAPJ41-0001')
+      expect(dd('Rolo que entra')).toHaveTextContent('CAPJ41-0007')
+      expect(dd('Rolo que entra').querySelector('span')!.className).toContain('break-all')
+      expect(dd('Rolo que entra').className).toContain('font-mono')
+    })
+
+    it('recarregando os itens o trilho diz carregando; sem itens (carga falha) segue —', () => {
+      const { rerender } = render(<ConteudoAbastecimento {...PROPS} itens={null} carregandoItens />)
+      bipar('1234')
+      bipar('P14')
+      expect(screen.getAllByText('carregando…').length).toBe(3)
+      expect(screen.queryByText('—')).not.toBeInTheDocument()
+      rerender(<ConteudoAbastecimento {...PROPS} itens={null} carregandoItens={false} />)
+      expect(screen.getAllByText('—').length).toBe(3)
+      expect(screen.queryByText('carregando…')).not.toBeInTheDocument()
     })
 
     it('o cabeçalho mostra onde ele está trabalhando', () => {

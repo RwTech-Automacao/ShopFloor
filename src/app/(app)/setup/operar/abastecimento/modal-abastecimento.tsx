@@ -38,6 +38,8 @@ interface PropsAbastecimento {
    * nunca pode travar o operador.
    */
   itens: ItemDoSetup[] | null
+  /** A lista está sendo recarregada (pós-troca): o trilho diz "carregando", não "—" (que é "sem itens"). */
+  carregandoItens?: boolean
   /** Onde ele está trabalhando (OP, processo, linha/bloco, face); some do resto da tela quando o modal abre. */
   contexto?: { op: string; processo: string; local: string; face: string }
   /** Último crachá usado: o passo 1/6 já vem preenchido com ele, só de confirmar. */
@@ -55,7 +57,7 @@ interface PropsAbastecimento {
  * Exportado separado do Dialog para o teste montar só o passo a passo.
  */
 export function ConteudoAbastecimento({
-  setupId, rotulos, itens, contexto, colaboradorInicial, onColaboradorUsado, onTrocaRegistrada, onFalhaConexao,
+  setupId, rotulos, itens, carregandoItens = false, contexto, colaboradorInicial, onColaboradorUsado, onTrocaRegistrada, onFalhaConexao,
 }: PropsAbastecimento) {
   const [campos, setCampos] = useState<Record<Campo, string>>({ ...CAMPOS_VAZIOS, colaborador: colaboradorInicial })
   const [passo, setPasso] = useState(0)
@@ -209,10 +211,10 @@ export function ConteudoAbastecimento({
   // O que o sistema já sabe, derivado dos itens JÁ carregados (nenhuma consulta nova). Só vale depois
   // da posição bipada; sem itens (null ou vazio) as linhas mostram "—", nunca moldura vazia.
   const temItens = itens !== null && itens.length > 0
-  const iPosicao = passos.findIndex((p) => p.campo === 'posicao')
-  const iFeeder = passos.findIndex((p) => p.campo === 'feeder')
-  const posicaoBipada = passo > iPosicao && campos.posicao.trim() !== ''
-  const feederBipado = passo > iFeeder && campos.feeder.trim() !== ''
+  // O trilho decide pelo CONTEÚDO do campo, não pelo número do passo: quem volta para corrigir a
+  // posição não pode perder o contexto justamente na hora em que ele mais importa.
+  const posicaoBipada = campos.posicao.trim() !== ''
+  const feederBipado = campos.feeder.trim() !== ''
   const daPosicao = temItens && posicaoBipada
     ? itens.filter((i) => normalizarTexto(i.posicao) === normalizarTexto(campos.posicao))
     : []
@@ -225,13 +227,16 @@ export function ConteudoAbastecimento({
 
   type Linha = { chave: string; rotulo: string; valor: string; esperado: boolean; mono?: boolean }
   const linhas: Linha[] = [
-    { chave: 'colaborador', rotulo: 'Colaborador', valor: passo > 0 ? campos.colaborador.trim() : '', esperado: false },
+    { chave: 'colaborador', rotulo: 'Colaborador', valor: campos.colaborador.trim(), esperado: false },
     { chave: 'posicao', rotulo: rotulos.posicao, valor: posicaoBipada ? campos.posicao.trim() : '', esperado: false, mono: true },
     feederBipado
       ? { chave: 'feeder', rotulo: rotulos.feeder, valor: campos.feeder.trim(), esperado: false, mono: true }
       : { chave: 'feeder', rotulo: rotulos.feeder, valor: esperadoFeeder, esperado: true, mono: true },
     { chave: 'componente', rotulo: 'Componente', valor: esperadoComponente, esperado: true, mono: true },
     { chave: 'rolo', rotulo: 'Rolo montado', valor: esperadoRolo, esperado: true, mono: true },
+    // O que saiu e o que entrou aparecem só depois de bipados: conferência de relance no 6/6.
+    ...(campos.saida.trim() !== '' ? [{ chave: 'saida', rotulo: 'Rolo que sai', valor: campos.saida.trim(), esperado: false, mono: true }] : []),
+    ...(campos.entrada.trim() !== '' ? [{ chave: 'entrada', rotulo: 'Rolo que entra', valor: campos.entrada.trim(), esperado: false, mono: true }] : []),
   ]
 
   return (
@@ -274,7 +279,7 @@ export function ConteudoAbastecimento({
                         {l.esperado && <span className="flex-none rounded bg-muted px-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">esperado</span>}
                       </>
                     ) : (
-                      <span className="text-base font-normal text-muted-foreground">{!temItens && l.esperado ? '—' : 'aguardando'}</span>
+                      <span className="text-base font-normal text-muted-foreground">{!temItens && l.esperado ? (carregandoItens ? 'carregando…' : '—') : 'aguardando'}</span>
                     )}
                   </dd>
                 </div>

@@ -30,6 +30,8 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
   const [trocas, setTrocas] = useState<Troca[]>([])
   // null = a carga falhou: o modal abre sem conferência no cliente e o servidor confere no envio.
   const [itens, setItens] = useState<ItemDoSetup[] | null>(null)
+  // Recarga em voo: o trilho do modal distingue "carregando" de "sem conferência".
+  const [carregandoItens, setCarregandoItens] = useState(false)
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
 
   // Descarta respostas de uma seleção antiga (o operador trocou a máquina antes de a busca voltar).
@@ -60,6 +62,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
   /** Uma consulta por setup aberto, nenhuma por bipe. Falhou: segue sem conferência (itens null). */
   async function carregarItens(setupId: string, seq: number) {
     const minha = ++itensSeq.current
+    setCarregandoItens(true)
     try {
       const r = await carregarSetupAction(setupId)
       // Só a carga mais recente vale: uma resposta atrasada de antes da última troca traria o rolo velho.
@@ -67,6 +70,8 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
       setItens(r.ok ? r.itens : null)
     } catch {
       // A conferência é um extra: sem ela o servidor continua conferindo no envio.
+    } finally {
+      if (minha === itensSeq.current) setCarregandoItens(false)
     }
   }
 
@@ -76,6 +81,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
     setLocalizado(false)
     setTrocas([])
     setItens(null)
+    setCarregandoItens(false)
     setResultado(null)
     setModalAberto(false)
     const seq = ++buscaSeq.current
@@ -216,6 +222,7 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             setupId={setup.id}
             rotulos={rotulos}
             itens={itens}
+            carregandoItens={carregandoItens}
             contexto={{ op: `${setup.pmo}/${setup.op}`, processo: setup.processo, local: `Linha ${setup.linha} · ${rotuloEquipamento(setup)}`, face: setup.face }}
             colaboradorInicial={ultimoColaborador}
             onFechar={() => setModalAberto(false)}
