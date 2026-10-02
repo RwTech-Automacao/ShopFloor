@@ -197,3 +197,38 @@ export async function carregarHistoricoEtapa(
     total: linhas[0]?.total ?? 0,
   }
 }
+
+/**
+ * A data de chegada da EMB — o dado do card de início do Fluxo.
+ *
+ * Ela é digitada UMA vez no wizard de importação e aplicada a todas as linhas da planilha
+ * (`CAMPOS_DIGITADOS`), então na prática é a mesma para a EMB inteira. Mas o banco guarda
+ * `data_chegada` POR PROCESSO (é campo do grupo `comercial`, que o salvamento de seção aceita
+ * editar item a item), a mesma EMB pode ser importada mais de uma vez (a correção de importação
+ * redigita a data) e o campo não é obrigatório na importação — ou seja, divergir e faltar são
+ * possíveis.
+ *
+ * Por isso a regra é: a MAIS ANTIGA entre os itens que TÊM data. Nunca uma data inventada — se
+ * nenhum item tem data, devolve `null` e o card diz que não há data.
+ *
+ * `order` ascendente + `limit 1` é o `min()` sem trazer uma linha por item (o PostgREST não expõe
+ * agregação). Sem migração: `processos_select` já libera a leitura a quem tem `visualizar`.
+ */
+export async function carregarChegadaEmb(emb: string): Promise<string | null> {
+  const alvo = emb.trim()
+  if (alvo === '') return null
+  const supabase = await createServerSupabase()
+  // Mesmo casamento de EMB de `contarProcessosDaEmb`: `ilike` sem curinga casa exato ignorando a
+  // caixa, e `%`/`_`/`\` escapados pra uma EMB com underscore no nome não virar curinga.
+  const termo = alvo.replace(/[\\%_]/g, (c) => `\\${c}`)
+  const { data, error } = await supabase
+    .from('processos_recebimento')
+    .select('data_chegada')
+    .ilike('numero_emb', termo)
+    .not('data_chegada', 'is', null)
+    .order('data_chegada', { ascending: true })
+    .limit(1)
+  if (error) throw error
+  const linhas = (data ?? []) as { data_chegada: string | null }[]
+  return linhas[0]?.data_chegada ?? null
+}
