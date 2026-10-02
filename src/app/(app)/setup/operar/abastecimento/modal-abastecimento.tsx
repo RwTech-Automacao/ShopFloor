@@ -14,7 +14,8 @@ import { conferirPasso, type ItemDoSetup } from '@/modules/setup/domain/conferen
 // O campo é o herói desta tela: o operador bipa de pé, com o tablet na bancada, e confere
 // de relance se o leitor pegou. Fonte grande não é enfeite — é o que se lê a um braço de
 // distância sem abaixar a cabeça.
-const INPUT_BIPE = 'h-20 font-mono text-4xl uppercase tracking-wide md:text-4xl'
+// O placeholder (dica) é um degrau menor que o valor: a dica longa do crachá tem de caber, o que se lê não encolhe.
+const INPUT_BIPE = 'h-20 font-mono text-4xl uppercase tracking-wide placeholder:text-3xl md:text-4xl md:placeholder:text-3xl'
 const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar.'
 /** Recusas que o operador tem de perceber: bipe engolido em silêncio é erro invisível. */
 const BIPE_EM_ENVIO = 'Registrando a troca anterior — esse bipe não contou. Bipe de novo.'
@@ -77,6 +78,8 @@ export function ConteudoAbastecimento({
   // Espelha `enviando` de forma síncrona: o leitor manda dois Enter tão rápido que o segundo chega
   // antes de o React aplicar o estado.
   const enviandoRef = useRef(false)
+  // Há uma recusa de PASSO na tela (e não o desfecho do envio)? Só ela some quando o passo seguinte dá certo.
+  const recusaDePassoRef = useRef(false)
 
   const passos: { campo: Campo; rotulo: string; placeholder?: string }[] = [
     { campo: 'colaborador', rotulo: 'Colaborador', placeholder: 'Bipe ou digite o crachá' },
@@ -105,6 +108,7 @@ export function ConteudoAbastecimento({
 
   /** Recusa que se percebe: som e painel. Recusa calada é bipe perdido sem ninguém notar. */
   function recusar(titulo: string) {
+    recusaDePassoRef.current = true
     setResultado({ tipo: 'aviso', titulo })
     tocarErro()
   }
@@ -137,6 +141,8 @@ export function ConteudoAbastecimento({
       setRefoco((n) => n + 1)
       return
     }
+    // Bipe certo depois de um errado: o erro já foi resolvido, não fica olhando para ele.
+    if (recusaDePassoRef.current) { recusaDePassoRef.current = false; setResultado(null) }
     if (!ultimo) { irPara(passo + 1); return }
     enviar()
   }
@@ -174,6 +180,8 @@ export function ConteudoAbastecimento({
           return
         }
         // Todo desfecho zera os cinco bipes e mantém o crachá; muda só o passo de destino.
+        // Desfecho do envio: não é recusa de passo, e permanece.
+        recusaDePassoRef.current = false
         const recomecar = (indice: number) => {
           setCampos({ ...CAMPOS_VAZIOS, colaborador: v.colaborador })
           irPara(indice)
@@ -227,7 +235,7 @@ export function ConteudoAbastecimento({
 
   type Linha = { chave: string; rotulo: string; valor: string; esperado: boolean; mono?: boolean }
   const linhas: Linha[] = [
-    { chave: 'colaborador', rotulo: 'Colaborador', valor: campos.colaborador.trim(), esperado: false },
+    { chave: 'colaborador', rotulo: 'Colaborador', valor: campos.colaborador.trim().toUpperCase(), esperado: false },
     { chave: 'posicao', rotulo: rotulos.posicao, valor: posicaoBipada ? campos.posicao.trim() : '', esperado: false, mono: true },
     feederBipado
       ? { chave: 'feeder', rotulo: rotulos.feeder, valor: campos.feeder.trim(), esperado: false, mono: true }
@@ -290,8 +298,8 @@ export function ConteudoAbastecimento({
 
           <div className="flex min-h-0 flex-col gap-3">
             {/* A recusa fica acima do campo: o motivo em destaque, onde o olho já está. Rola por dentro
-                (e cede espaço) quando o teclado virtual abre; o campo atual, nunca. */}
-            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto empty:hidden">
+                só se passar de 45vh; não cede espaço ao campo, que nunca sai da tela. */}
+            <div className="flex max-h-[45vh] flex-none flex-col gap-3 overflow-y-auto empty:hidden">
               <PainelResultado resultado={resultado} />
             </div>
 
@@ -356,7 +364,7 @@ export function ModalAbastecimento({ aberto, onFechar, ...props }: PropsAbasteci
           onde esta tela vive, sobrava tela de um lado e o rastro dos bipes já feitos ficava
           espremido. */}
       <DialogContent
-        className="flex max-h-[85vh] flex-col sm:h-[65vh] sm:max-w-[65vw] sm:min-w-[34rem] lg:max-w-[54rem]"
+        className="flex max-h-[85vh] flex-col sm:h-[75vh] sm:max-w-[65vw] sm:min-w-[34rem] lg:max-w-[54rem]"
         initialFocus={false}
       >
         <DialogHeader>

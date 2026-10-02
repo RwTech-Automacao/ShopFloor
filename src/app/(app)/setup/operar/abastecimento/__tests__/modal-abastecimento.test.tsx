@@ -325,6 +325,22 @@ describe('ConteudoAbastecimento', () => {
       expect(screen.getByText(/2\s*\/\s*6/)).toBeInTheDocument()
     })
 
+    it('recusa e depois bipe certo: o painel de erro some', async () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      bipar('1234')
+      bipar('P9')
+      await screen.findByText('A posição P9 não existe nesse setup.')
+      bipar('P1')
+      expect(screen.queryByText('A posição P9 não existe nesse setup.')).not.toBeInTheDocument()
+      expect(screen.getByText(/3\s*\/\s*6/)).toBeInTheDocument()
+    })
+
+    it('o colaborador aparece em maiúsculas no trilho, mas o envio leva o valor digitado', () => {
+      render(<ConteudoAbastecimento {...PROPS_CONF} />)
+      bipar('matheus')
+      expect(screen.getByText('MATHEUS')).toBeInTheDocument()
+    })
+
     it('os passos anteriores não se perdem na recusa', async () => {
       const { container } = render(<ConteudoAbastecimento {...PROPS_CONF} />)
       bipar('1234')
