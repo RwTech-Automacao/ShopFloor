@@ -145,6 +145,24 @@ describe('reservarPendentes — linha ilegível', () => {
   })
 })
 
+describe('resolver — nome do parâmetro p_explicacao (0137)', () => {
+  it('com texto: vai como p_explicacao', async () => {
+    const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ok: true }, error: null }) })
+    await criarRepositorioServico(sb).resolver('oc1', 'u1', 'troquei o feeder')
+    expect(rpcs).toEqual([
+      { nome: 'alerta_resolver', args: { p_ocorrencia_id: 'oc1', p_usuario_id: 'u1', p_explicacao: 'troquei o feeder' } },
+    ])
+  })
+  it('sem texto (ou vazio): a chave nem é enviada', async () => {
+    for (const expl of [undefined, '']) {
+      const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ok: true }, error: null }) })
+      await criarRepositorioServico(sb).resolver('oc1', 'u1', expl)
+      expect(rpcs[0]!.args).toEqual({ p_ocorrencia_id: 'oc1', p_usuario_id: 'u1' })
+      expect('p_explicacao' in rpcs[0]!.args).toBe(false)
+    }
+  })
+})
+
 describe('vincular — contrato jsonb do alerta_vincular', () => {
   it('sucesso devolve o nome', async () => {
     const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ok: true, nome: 'Ana Gestora' }, error: null }) })

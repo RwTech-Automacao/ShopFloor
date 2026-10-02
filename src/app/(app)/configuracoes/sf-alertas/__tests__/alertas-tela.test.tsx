@@ -43,6 +43,7 @@ const RESOLVIDA: OcorrenciaLinha = {
   reprovados: 5,
   abertaEm: '2026-09-23T12:00:00Z',
   resolvidaPorNome: 'Ana Gestora',
+  explicacao: '',
   resolvidaEm: '2026-09-23T13:00:00Z',
   normalizadaEm: null,
   reabertaEm: null,
