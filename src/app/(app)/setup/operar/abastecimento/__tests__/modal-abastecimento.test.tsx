@@ -125,9 +125,9 @@ describe('ConteudoAbastecimento', () => {
     bipar('FD-0034')
 
     expect(screen.getByText('4/6')).toBeInTheDocument()
-    expect([...container.querySelectorAll('dt')].map((e) => e.textContent)).toEqual(['Colaborador', 'Posição', 'Feeder', 'Componente', 'Rolo montado'])
+    expect([...container.querySelectorAll('dt')].map((e) => e.textContent)).toEqual(['Colaborador', 'Posição', 'Feeder', 'Rolo montado'])
     // Os três bipados; sem itens carregados, o que o sistema esperaria fica em "—" (nunca moldura vazia).
-    expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234', 'L1-A-12', 'FD-0034', '—', '—'])
+    expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234', 'L1-A-12', 'FD-0034', '—'])
   })
 
   it('depois de uma troca aprovada volta ao 1/6 com o crachá preenchido e os outros cinco vazios', async () => {
@@ -346,7 +346,7 @@ describe('ConteudoAbastecimento', () => {
       bipar('1234')
       bipar('P9')
       await screen.findByText('A posição P9 não existe nesse setup.')
-      expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234', 'aguardando', 'aguardando', 'aguardando', 'aguardando'])
+      expect([...container.querySelectorAll('dd')].map((e) => e.textContent)).toEqual(['1234', 'aguardando', 'aguardando', 'aguardando'])
     })
 
     it('o caminho certo atravessa os seis passos e envia uma vez só', async () => {
@@ -423,14 +423,23 @@ describe('ConteudoAbastecimento', () => {
   describe('o trilho mostra o que o sistema já sabe', () => {
     const ITENS = [{ posicao: 'P14', feeder: 'F07', componente: 'CAPJ41', rolo: 'CAPJ41-0001' }]
 
-    it('depois da posição, mostra feeder, componente e rolo montado', () => {
+    it('depois da posição, mostra feeder e rolo montado (o componente já está no código do rolo)', () => {
       render(<ConteudoAbastecimento {...PROPS} itens={ITENS} />)
       bipar('1234')
       bipar('P14')
       expect(screen.getByText('F07')).toBeInTheDocument()
-      expect(screen.getByText('CAPJ41')).toBeInTheDocument()
       expect(screen.getByText('CAPJ41-0001')).toBeInTheDocument()
-      expect(screen.getAllByText('esperado').length).toBe(3)
+      expect(screen.queryByText('Componente')).not.toBeInTheDocument()
+      expect(screen.getAllByText('esperado').length).toBe(2)
+    })
+
+    it('posição SEM rolo montado mostra o Componente: é a única indicação do que deve entrar', () => {
+      const VAZIA = [{ posicao: 'P14', feeder: 'F07', componente: 'CAPJ41', rolo: null }]
+      render(<ConteudoAbastecimento {...PROPS} itens={VAZIA} />)
+      bipar('1234')
+      bipar('P14')
+      expect(screen.getByText('Componente')).toBeInTheDocument()
+      expect(screen.getByText('CAPJ41')).toBeInTheDocument()
     })
 
     it('antes da posição, diz o que falta em vez de mostrar vazio', () => {
@@ -443,7 +452,7 @@ describe('ConteudoAbastecimento', () => {
       render(<ConteudoAbastecimento {...PROPS} itens={[]} />)
       bipar('1234')
       bipar('P14')
-      expect(screen.getAllByText('—').length).toBe(3)
+      expect(screen.getAllByText('—').length).toBe(2)
       expect(screen.getByText('3/6')).toBeInTheDocument()
     })
 
@@ -471,7 +480,6 @@ describe('ConteudoAbastecimento', () => {
       expect(screen.getByText('2/6')).toBeInTheDocument()
       expect(screen.getByText('P14')).toBeInTheDocument()
       expect(screen.getByText('F07')).toBeInTheDocument()
-      expect(screen.getByText('CAPJ41')).toBeInTheDocument()
       // O rolo montado esperado e o rolo que saiu já bipado coincidem aqui; o que importa é o rótulo.
       expect(screen.getByText('Rolo montado')).toBeInTheDocument()
       expect(screen.getAllByText('CAPJ41-0001').length).toBeGreaterThan(0)
@@ -505,10 +513,10 @@ describe('ConteudoAbastecimento', () => {
       const { rerender } = render(<ConteudoAbastecimento {...PROPS} itens={null} carregandoItens />)
       bipar('1234')
       bipar('P14')
-      expect(screen.getAllByText('carregando…').length).toBe(3)
+      expect(screen.getAllByText('carregando…').length).toBe(2)
       expect(screen.queryByText('—')).not.toBeInTheDocument()
       rerender(<ConteudoAbastecimento {...PROPS} itens={null} carregandoItens={false} />)
-      expect(screen.getAllByText('—').length).toBe(3)
+      expect(screen.getAllByText('—').length).toBe(2)
       expect(screen.queryByText('carregando…')).not.toBeInTheDocument()
     })
 

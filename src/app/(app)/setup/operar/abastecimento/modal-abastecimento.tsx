@@ -231,6 +231,9 @@ export function ConteudoAbastecimento({
   const esperadoFeeder = unicos(daPosicao.map((i) => i.feeder))
   const esperadoComponente = unicos(doItem.map((i) => i.componente))
   const esperadoRolo = unicos(doItem.map((i) => i.rolo))
+  // Posição sem rolo montado: item encontrado e "Rolo montado" vazio (mesma fonte da linha abaixo). Só aí
+  // o componente é a única indicação do que deve entrar; com rolo montado ele já está no código do rolo.
+  const semRoloMontado = doItem.length > 0 && esperadoRolo === ''
   const dicaPosicao = `Bipe ${rotulos.posicao === 'Posto' ? 'o posto' : 'a posição'} para ver o que o sistema espera.`
 
   type Linha = { chave: string; rotulo: string; valor: string; esperado: boolean; mono?: boolean }
@@ -240,7 +243,7 @@ export function ConteudoAbastecimento({
     feederBipado
       ? { chave: 'feeder', rotulo: rotulos.feeder, valor: campos.feeder.trim(), esperado: false, mono: true }
       : { chave: 'feeder', rotulo: rotulos.feeder, valor: esperadoFeeder, esperado: true, mono: true },
-    { chave: 'componente', rotulo: 'Componente', valor: esperadoComponente, esperado: true, mono: true },
+    ...(semRoloMontado ? [{ chave: 'componente', rotulo: 'Componente', valor: esperadoComponente, esperado: true, mono: true }] : []),
     { chave: 'rolo', rotulo: 'Rolo montado', valor: esperadoRolo, esperado: true, mono: true },
     // O que saiu e o que entrou aparecem só depois de bipados: conferência de relance no 6/6.
     ...(campos.saida.trim() !== '' ? [{ chave: 'saida', rotulo: 'Rolo que sai', valor: campos.saida.trim(), esperado: false, mono: true }] : []),
