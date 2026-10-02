@@ -196,6 +196,7 @@ describe('tratarInteracaoDiscord', () => {
         content:
           '🔴 Teste abaixo da meta\n\n✅ Teste: resolvido por Bruno Líder às 14:05\nO que foi feito: Trocamos o feeder',
         components: [],
+        allowed_mentions: { parse: [] },
       },
     })
     expect(r.depois).not.toBeNull()
@@ -214,6 +215,13 @@ describe('tratarInteracaoDiscord', () => {
       expect(resolucoes[0]!.explicacao ?? '').toBe('')
       expect(r.corpo.type).toBe(7)
     }
+  })
+
+  it('a edição (tipo 7) não notifica ninguém: allowed_mentions vazio, mesmo com @everyone na explicação', async () => {
+    const { repo } = repoFalso({ usuario: 'u2' })
+    const r = await tratarInteracaoDiscord(envioModal('@everyone <@123> trocou o feeder'), { portas: {}, repo })
+    expect(r.corpo.type).toBe(7)
+    expect((r.corpo as { data: Record<string, unknown> }).data.allowed_mentions).toEqual({ parse: [] })
   })
 
   it('envio do modal sem o campo no payload também resolve', async () => {

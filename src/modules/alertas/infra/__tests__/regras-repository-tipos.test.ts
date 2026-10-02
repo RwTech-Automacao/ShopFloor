@@ -324,3 +324,23 @@ describe('listarPmosAlerta', () => {
     expect(await listarPmosAlerta()).toEqual([])
   })
 })
+
+describe('resolverOcorrenciaComoAdmin — nome do parâmetro p_explicacao (0137)', () => {
+  it('com texto: vai como p_explicacao', async () => {
+    const { sb, chamadas } = sbRpc({})
+    const { resolverOcorrenciaComoAdmin } = await repositorioCom(sb)
+    await resolverOcorrenciaComoAdmin('oc1', 'troquei o feeder')
+    expect(chamadas).toEqual([
+      { nome: 'alerta_resolver_admin', args: { p_ocorrencia_id: 'oc1', p_explicacao: 'troquei o feeder' } },
+    ])
+  })
+  it('sem texto (ou vazio): a chave nem é enviada', async () => {
+    const { sb, chamadas } = sbRpc({})
+    const { resolverOcorrenciaComoAdmin } = await repositorioCom(sb)
+    for (const expl of [undefined, '']) {
+      chamadas.length = 0
+      await resolverOcorrenciaComoAdmin('oc1', expl)
+      expect(chamadas[0]!.args).toEqual({ p_ocorrencia_id: 'oc1' })
+    }
+  })
+})

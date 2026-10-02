@@ -233,7 +233,7 @@ export function OcorrenciasLista({
             onChange={(e) => setExplicacao(e.target.value)}
           />
           <p className="text-right text-xs text-muted-foreground">
-            {explicacao.length}/{LIMITE_EXPLICACAO}
+            {[...explicacao].length}/{LIMITE_EXPLICACAO}
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setResolvendo(null)}>

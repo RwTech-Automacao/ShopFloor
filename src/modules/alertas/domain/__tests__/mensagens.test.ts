@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   formatarDataHoraCurta, formatarHora, formatarDuracao,
   textoAlerta, textoLembrete, textoResolvido, textoNormalizou, textoTeste, textoVinculado,
-  TEXTO_INSTRUCOES_TELEGRAM, cortarExplicacao, LIMITE_EXPLICACAO, anexarLinha,
+  TEXTO_INSTRUCOES_TELEGRAM, cortarExplicacao, LIMITE_EXPLICACAO, anexarLinha, LIMITE_MENSAGEM,
 } from '../mensagens'
 
 // 17/09/2026 14:05 em São Paulo (UTC-3, sem horário de verão desde 2019).
@@ -137,6 +137,26 @@ describe('anexarLinha (editar mensagem já enviada)', () => {
     expect(r.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
     expect(r.endsWith(linha)).toBe(true)
     expect(r).toContain('…')
+  })
+})
+
+describe('anexarLinha — emoji na borda do corte', () => {
+  it('nunca deixa surrogate solto e nunca passa de 2000, em qualquer posição da borda', () => {
+    const linha = '✅ Teste: resolvido por Ana às 14:05'
+    // Prefixos de tamanhos variados deslocam a borda por todas as paridades.
+    for (let n = 1900; n < 2000; n++) {
+      const original = 'A'.repeat(n % 2) + '😀'.repeat(1500)
+      const r = anexarLinha(original, linha)
+      expect(r.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
+      expect(r.endsWith(linha)).toBe(true)
+      // sem surrogate solto: reescrever como UTF-8 e voltar não muda nada
+      expect(r.isWellFormed()).toBe(true)
+    }
+  })
+  it('linha sozinha maior que o limite também corta sem partir emoji', () => {
+    const r = anexarLinha('x', '😀'.repeat(1500))
+    expect(r.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
+    expect(r.isWellFormed()).toBe(true)
   })
 })
 

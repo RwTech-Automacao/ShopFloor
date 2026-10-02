@@ -130,7 +130,13 @@ export async function tratarInteracaoDiscord(
       // type 7 edita a MENSAGEM CLICADA: acrescenta quem resolveu e apaga o botão.
       corpo: {
         type: RESPOSTA_ATUALIZA_MENSAGEM,
-        data: { content: anexarLinha(i.message?.content ?? '', linha), components: [] },
+        data: {
+          content: anexarLinha(i.message?.content ?? '', linha),
+          components: [],
+          // A linha agora leva o que a pessoa digitou: sem isto, um @everyone na explicação
+          // notificaria o servidor inteiro. Mesma forma do envio normal (infra/discord.ts).
+          allowed_mentions: { parse: [] },
+        },
       },
       depois: async () => {
         await removerBotoesDaOcorrencia(deps.portas, deps.repo, ocorrenciaId)

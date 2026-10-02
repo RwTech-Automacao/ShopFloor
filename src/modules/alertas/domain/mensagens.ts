@@ -80,14 +80,30 @@ export function cortarExplicacao(texto: unknown): string {
  * ficaria no ar e a pessoa veria "Esta interação falhou"), é o ORIGINAL que cede: perde o fim, com
  * reticências, e a linha — que é o que o clique quer dizer — sobrevive intacta.
  */
+/**
+ * Corta em no máximo `max` unidades UTF-16 (a medida do Discord), mas só em FRONTEIRA de ponto de
+ * código: um emoji na borda sai inteiro, nunca com meio caractere (surrogate solto, que o Discord
+ * pode recusar como texto inválido).
+ */
+function cortarUtf16(texto: string, max: number): string {
+  let usado = 0
+  let fim = 0
+  for (const ponto of texto) {
+    if (usado + ponto.length > max) break
+    usado += ponto.length
+    fim += ponto.length
+  }
+  return texto.slice(0, fim)
+}
+
 export function anexarLinha(original: string, linha: string): string {
   const sep = '\n\n'
   const juntas = `${original}${sep}${linha}`.trim()
   if (juntas.length <= LIMITE_MENSAGEM) return juntas
   const cauda = `${sep}${linha}`
   const sobra = LIMITE_MENSAGEM - cauda.length - 1
-  if (sobra <= 0) return linha.slice(0, LIMITE_MENSAGEM)
-  return `${original.slice(0, sobra).trimEnd()}…${cauda}`
+  if (sobra <= 0) return cortarUtf16(linha, LIMITE_MENSAGEM)
+  return `${cortarUtf16(original, sobra).trimEnd()}…${cauda}`
 }
 
 /** Uma ordem de produção: o par PMO + OP como o banco guarda. */
