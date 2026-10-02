@@ -8,8 +8,14 @@ import { Label } from '@/components/ui/label'
 import { PainelResultado, type ChipResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { tocarErro } from '@/shared/lib/som-erro'
 import { trocarRolo } from '@/modules/setup/application/setup-actions'
+import { normalizarTexto } from '@/modules/setup/domain/codigo-rolo'
+import { conferirPasso, type ItemDoSetup } from '@/modules/setup/domain/conferencia-troca'
 
-const INPUT_BIPE = 'h-11 text-lg uppercase'
+// O campo é o herói desta tela: o operador bipa de pé, com o tablet na bancada, e confere
+// de relance se o leitor pegou. Fonte grande não é enfeite — é o que se lê a um braço de
+// distância sem abaixar a cabeça.
+// O placeholder (dica) é um degrau menor que o valor: a dica longa do crachá tem de caber, o que se lê não encolhe.
+const INPUT_BIPE = 'h-24 @xl:h-20 font-mono text-4xl uppercase tracking-wide placeholder:text-3xl md:text-4xl md:placeholder:text-3xl'
 const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar.'
 /** Recusas que o operador tem de perceber: bipe engolido em silêncio é erro invisível. */
 const BIPE_EM_ENVIO = 'Registrando a troca anterior — esse bipe não contou. Bipe de novo.'
@@ -27,6 +33,16 @@ const PASSO_POSICAO = 1
 interface PropsAbastecimento {
   setupId: string
   rotulos: { posicao: string; feeder: string }
+  /**
+   * Os itens montados no setup, para conferir cada bipe no passo em que nasce. `null` quando a carga
+   * falhou (ou veio vazia): o modal funciona como antes e o servidor confere tudo no envio — a conferência é um extra,
+   * nunca pode travar o operador.
+   */
+  itens: ItemDoSetup[] | null
+  /** A lista está sendo recarregada (pós-troca): o trilho diz "carregando", não "—" (que é "sem itens"). */
+  carregandoItens?: boolean
+  /** Onde ele está trabalhando (OP, processo, linha/bloco, face); some do resto da tela quando o modal abre. */
+  contexto?: { op: string; processo: string; local: string; face: string }
   /** Último crachá usado: o passo 1/6 já vem preenchido com ele, só de confirmar. */
   colaboradorInicial: string
   onColaboradorUsado: (cracha: string) => void
@@ -42,7 +58,7 @@ interface PropsAbastecimento {
  * Exportado separado do Dialog para o teste montar só o passo a passo.
  */
 export function ConteudoAbastecimento({
-  setupId, rotulos, colaboradorInicial, onColaboradorUsado, onTrocaRegistrada, onFalhaConexao,
+  setupId, rotulos, itens, carregandoItens = false, contexto, colaboradorInicial, onColaboradorUsado, onTrocaRegistrada, onFalhaConexao,
 }: PropsAbastecimento) {
   const [campos, setCampos] = useState<Record<Campo, string>>({ ...CAMPOS_VAZIOS, colaborador: colaboradorInicial })
   const [passo, setPasso] = useState(0)
@@ -62,6 +78,8 @@ export function ConteudoAbastecimento({
   // Espelha `enviando` de forma síncrona: o leitor manda dois Enter tão rápido que o segundo chega
   // antes de o React aplicar o estado.
   const enviandoRef = useRef(false)
+  // Há uma recusa de PASSO na tela (e não o desfecho do envio)? Só ela some quando o passo seguinte dá certo.
+  const recusaDePassoRef = useRef(false)
 
   const passos: { campo: Campo; rotulo: string; placeholder?: string }[] = [
     { campo: 'colaborador', rotulo: 'Colaborador', placeholder: 'Bipe ou digite o crachá' },
@@ -73,7 +91,6 @@ export function ConteudoAbastecimento({
   ]
   // `passo` só muda por `irPara` com índice de `passos`: o passo atual existe sempre.
   const atual = passos[passo]!
-  const anteriores = passos.slice(0, passo)
   const ultimo = passo === passos.length - 1
   const vazio = campos[atual.campo].trim() === ''
 
@@ -91,6 +108,7 @@ export function ConteudoAbastecimento({
 
   /** Recusa que se percebe: som e painel. Recusa calada é bipe perdido sem ninguém notar. */
   function recusar(titulo: string) {
+    recusaDePassoRef.current = true
     setResultado({ tipo: 'aviso', titulo })
     tocarErro()
   }
@@ -103,6 +121,28 @@ export function ConteudoAbastecimento({
     // O passo não passa em branco — e avisa, porque um Enter sem valor é justamente o sintoma de
     // bipe que não pegou.
     if (vazio) { recusar(CAMPO_EM_BRANCO); return }
+    // ATENÇÃO: `conferirPasso` devolve null para "nada a conferir" (inclusive valor vazio), não para
+    // "aprovado". Por isso esta conferência vem DEPOIS da guarda do vazio — inverter a ordem deixaria o
+    // passo em branco avançar calado.
+    // Roda no cliente: nenhuma ida ao servidor entre um passo e outro, então não há espera nem janela
+    // para o bipe seguinte entrar por cima. O envio final continua passando pela st_trocar_rolo, que vale.
+    // Lista ausente OU vazia = sem conferência: com zero itens toda posição seria recusada e o operador
+    // ficaria preso (um admin pode apagar os itens de um setup já liberado).
+    const recusaDoPasso = itens === null || itens.length === 0 ? null : conferirPasso({
+      campo: atual.campo,
+      valor: campos[atual.campo],
+      bipados: { posicao: campos.posicao, feeder: campos.feeder, saida: campos.saida },
+      itens,
+      pth: rotulos.posicao === 'Posto',
+    })
+    if (recusaDoPasso) {
+      recusar(recusaDoPasso)
+      setCampos((c) => ({ ...c, [atual.campo]: '' }))
+      setRefoco((n) => n + 1)
+      return
+    }
+    // Bipe certo depois de um errado: o erro já foi resolvido, não fica olhando para ele.
+    if (recusaDePassoRef.current) { recusaDePassoRef.current = false; setResultado(null) }
     if (!ultimo) { irPara(passo + 1); return }
     enviar()
   }
@@ -140,6 +180,8 @@ export function ConteudoAbastecimento({
           return
         }
         // Todo desfecho zera os cinco bipes e mantém o crachá; muda só o passo de destino.
+        // Desfecho do envio: não é recusa de passo, e permanece.
+        recusaDePassoRef.current = false
         const recomecar = (indice: number) => {
           setCampos({ ...CAMPOS_VAZIOS, colaborador: v.colaborador })
           irPara(indice)
@@ -174,69 +216,145 @@ export function ConteudoAbastecimento({
     })()
   }
 
+  // O que o sistema já sabe, derivado dos itens JÁ carregados (nenhuma consulta nova). Só vale depois
+  // da posição bipada; sem itens (null ou vazio) as linhas mostram "—", nunca moldura vazia.
+  const temItens = itens !== null && itens.length > 0
+  // O trilho decide pelo CONTEÚDO do campo, não pelo número do passo: quem volta para corrigir a
+  // posição não pode perder o contexto justamente na hora em que ele mais importa.
+  const posicaoBipada = campos.posicao.trim() !== ''
+  const feederBipado = campos.feeder.trim() !== ''
+  const daPosicao = temItens && posicaoBipada
+    ? itens.filter((i) => normalizarTexto(i.posicao) === normalizarTexto(campos.posicao))
+    : []
+  const doItem = feederBipado ? daPosicao.filter((i) => normalizarTexto(i.feeder) === normalizarTexto(campos.feeder)) : daPosicao
+  const unicos = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].join(' · ')
+  const esperadoFeeder = unicos(daPosicao.map((i) => i.feeder))
+  const esperadoComponente = unicos(doItem.map((i) => i.componente))
+  const esperadoRolo = unicos(doItem.map((i) => i.rolo))
+  // Posição sem rolo montado: item encontrado e "Rolo montado" vazio (mesma fonte da linha abaixo). Só aí
+  // o componente é a única indicação do que deve entrar; com rolo montado ele já está no código do rolo.
+  const semRoloMontado = doItem.length > 0 && esperadoRolo === ''
+  const dicaPosicao = `Bipe ${rotulos.posicao === 'Posto' ? 'o posto' : 'a posição'} para ver o que o sistema espera.`
+
+  type Linha = { chave: string; rotulo: string; valor: string; esperado: boolean; mono?: boolean }
+  const linhas: Linha[] = [
+    { chave: 'colaborador', rotulo: 'Colaborador', valor: campos.colaborador.trim().toUpperCase(), esperado: false },
+    { chave: 'posicao', rotulo: rotulos.posicao, valor: posicaoBipada ? campos.posicao.trim() : '', esperado: false, mono: true },
+    feederBipado
+      ? { chave: 'feeder', rotulo: rotulos.feeder, valor: campos.feeder.trim(), esperado: false, mono: true }
+      : { chave: 'feeder', rotulo: rotulos.feeder, valor: esperadoFeeder, esperado: true, mono: true },
+    ...(semRoloMontado ? [{ chave: 'componente', rotulo: 'Componente', valor: esperadoComponente, esperado: true, mono: true }] : []),
+    { chave: 'rolo', rotulo: 'Rolo montado', valor: esperadoRolo, esperado: true, mono: true },
+    // O que saiu e o que entrou aparecem só depois de bipados: conferência de relance no 6/6.
+    ...(campos.saida.trim() !== '' ? [{ chave: 'saida', rotulo: 'Rolo que sai', valor: campos.saida.trim(), esperado: false, mono: true }] : []),
+    ...(campos.entrada.trim() !== '' ? [{ chave: 'entrada', rotulo: 'Rolo que entra', valor: campos.entrada.trim(), esperado: false, mono: true }] : []),
+  ]
+
   return (
-    <div className="flex min-h-0 flex-col gap-3">
-      {/* Resultado e rastro cedem espaço (rolam por dentro) quando o teclado virtual abre; o campo atual, nunca. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto empty:hidden">
-        <PainelResultado resultado={resultado} />
-        {anteriores.length > 0 && (
-          <dl className="flex flex-col gap-0.5 text-xs">
-            {anteriores.map(({ campo, rotulo }) => (
-              <div key={campo} className="flex gap-1">
-                {/* Rótulo e valor colados, com dois-pontos: "Colaborador: Matheus" se lê de uma olhada. */}
-                <dt className="flex-none text-muted-foreground">{rotulo}:</dt>
-                <dd className="min-w-0 truncate font-medium">{campos[campo]}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Onde ele está trabalhando: some do resto da tela quando o modal abre, então fica aqui. */}
+      {contexto && (
+        <p className="flex-none text-base font-medium" data-testid="contexto">
+          OP {contexto.op} · {contexto.processo} · {contexto.local} · {contexto.face}
+        </p>
+      )}
+
+      {/* Trilha dos seis passos: feito / agora / por vir. O contador N/6 fica ao lado do rótulo. */}
+      <div className="flex flex-none items-center gap-3">
+        <ol className="flex flex-1 gap-1.5" aria-label="Passos da troca">
+          {passos.map((p, i) => (
+            <li
+              key={p.campo}
+              data-estado={i < passo ? 'feito' : i === passo ? 'agora' : 'porvir'}
+              aria-current={i === passo ? 'step' : undefined}
+              className={`h-2 flex-1 rounded-full ${i < passo ? 'bg-enterplak' : i === passo ? 'bg-enterplak/60 ring-2 ring-enterplak/40' : 'bg-muted'}`}
+            />
+          ))}
+        </ol>
+        <span className="text-lg font-semibold tabular-nums text-muted-foreground">{passo + 1}/{passos.length}</span>
       </div>
 
-      <div className="flex flex-none flex-col gap-1.5">
-        <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor={`troca-${atual.campo}`} className="text-base">{atual.rotulo}</Label>
-          <span className="text-sm tabular-nums text-muted-foreground">{passo + 1}/{passos.length}</span>
+      <div className="@container flex min-h-0 flex-1 flex-col">
+        <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 @xl:grid-cols-[300px_minmax(0,1fr)] @xl:grid-rows-none">
+          {/* Trilho: o que o sistema já sabe. A pessoa confere em vez de lembrar. */}
+          <aside className="order-2 flex max-h-[35vh] min-h-0 flex-col gap-2 overflow-y-auto rounded-lg border border-border bg-muted/30 p-4 self-start @xl:order-none @xl:self-auto @xl:max-h-none @xl:p-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">O que você está trocando</h3>
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 @xl:grid-cols-1">
+              {linhas.map((l) => (
+                <div key={l.chave} className="min-w-0">
+                  <dt className="text-base text-muted-foreground @xl:text-sm">{l.rotulo}</dt>
+                  {/* Código de rolo quer ficar inteiro: partir `CAPJ48-0002` em duas linhas é justo o que o
+                      operador precisa ler de relance. Quem cede e desce é a etiqueta "esperado" (daí o
+                      `flex-wrap`); e o valor quebra só se NÃO couber nem sozinho na linha (`break-words`,
+                      não `break-all`, que partia mesmo cabendo). Sem isso, código longo vazaria da caixa. */}
+                  <dd className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-2xl font-semibold @xl:text-xl ${l.mono ? 'font-mono' : ''}`}>
+                    {l.valor !== '' ? (
+                      <>
+                        <span className="min-w-0 break-words">{l.valor}</span>
+                        {l.esperado && <span className="flex-none rounded bg-muted px-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">esperado</span>}
+                      </>
+                    ) : (
+                      <span className="text-base font-normal text-muted-foreground">{!temItens && l.esperado ? (carregandoItens ? 'carregando…' : '—') : 'aguardando'}</span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {temItens && !posicaoBipada && <p className="text-sm text-muted-foreground">{dicaPosicao}</p>}
+          </aside>
+
+          <div className="order-1 flex min-h-0 flex-col gap-3 @xl:order-none">
+            {/* Retrato: campo, recusa, botões (o teclado virtual sobe de baixo; o campo não pode descer). Paisagem: recusa acima do campo. Rola por dentro
+                só se passar de 45vh; não cede espaço ao campo, que nunca sai da tela. */}
+            <div className="order-2 flex max-h-[45vh] flex-none flex-col gap-3 overflow-y-auto empty:hidden @xl:order-none">
+              <PainelResultado resultado={resultado} />
+            </div>
+
+            <div className="order-1 flex flex-none flex-col justify-center gap-2 sm:flex-1 @xl:order-none">
+              <Label htmlFor={`troca-${atual.campo}`} className="text-3xl font-semibold @xl:text-2xl">{atual.rotulo}</Label>
+              <Input
+                id={`troca-${atual.campo}`}
+                key={atual.campo}
+                ref={campoRef}
+                value={campos[atual.campo]}
+                onChange={(e) => setCampos((c) => ({ ...c, [atual.campo]: e.target.value }))}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  avancar()
+                }}
+                placeholder={atual.placeholder}
+                autoComplete="off"
+                className={INPUT_BIPE}
+              />
+            </div>
+
+            {/* O Enter do leitor continua sendo o caminho normal; o botão é para o tablet só de toque, cujo
+                teclado virtual pode não ter Enter. Ele faz exatamente o que o Enter faria neste passo. */}
+            <div className="order-3 flex flex-none gap-2 @xl:order-none">
+              {passo > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-16 px-6 text-xl @xl:h-14 @xl:text-lg"
+                  onClick={() => irPara(passo - 1)}
+                  disabled={enviando}
+                >
+                  Voltar
+                </Button>
+              )}
+              <Button
+                type="button"
+                className="h-16 flex-1 bg-enterplak px-6 text-xl hover:bg-enterplak-700 @xl:h-14 @xl:text-lg"
+                onClick={avancar}
+                disabled={enviando || vazio}
+              >
+                {ultimo ? 'Registrar troca' : 'Avançar'}
+              </Button>
+            </div>
+          </div>
         </div>
-        <Input
-          id={`troca-${atual.campo}`}
-          key={atual.campo}
-          ref={campoRef}
-          value={campos[atual.campo]}
-          onChange={(e) => setCampos((c) => ({ ...c, [atual.campo]: e.target.value }))}
-          onFocus={(e) => e.currentTarget.select()}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter') return
-            e.preventDefault()
-            avancar()
-          }}
-          placeholder={atual.placeholder}
-          autoComplete="off"
-          className={INPUT_BIPE}
-        />
-      </div>
-
-      {/* O Enter do leitor continua sendo o caminho normal; o botão é para o tablet só de toque, cujo
-          teclado virtual pode não ter Enter. Ele faz exatamente o que o Enter faria neste passo. */}
-      <div className="flex flex-none gap-2">
-        {passo > 0 && (
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 px-4 text-base"
-            onClick={() => irPara(passo - 1)}
-            disabled={enviando}
-          >
-            Voltar
-          </Button>
-        )}
-        <Button
-          type="button"
-          className="h-11 flex-1 bg-enterplak px-4 text-base hover:bg-enterplak-700"
-          onClick={avancar}
-          disabled={enviando || vazio}
-        >
-          {ultimo ? 'Registrar troca' : 'Avançar'}
-        </Button>
       </div>
     </div>
   )
@@ -248,7 +366,14 @@ export function ModalAbastecimento({ aberto, onFechar, ...props }: PropsAbasteci
     <Dialog open={aberto} onOpenChange={(v) => { if (!v) onFechar() }}>
       {/* initialFocus={false}: abrindo por toque o Base UI focaria o popup (para não abrir o teclado) e o
           primeiro bipe se perderia. Quem manda no foco é o efeito do passo, que também dá select(). */}
-      <DialogContent className="flex flex-col sm:max-w-md" initialFocus={false}>
+      {/* 65% da largura e da altura da tela, com um piso para o celular e um teto para o monitor
+          grande. O `sm:max-w-md` de antes eram 448px FIXOS: no tablet do chão de fábrica, que é
+          onde esta tela vive, sobrava tela de um lado e o rastro dos bipes já feitos ficava
+          espremido. */}
+      <DialogContent
+        className="flex max-h-[85vh] flex-col sm:h-[75vh] sm:max-w-[65vw] sm:min-w-[34rem] lg:max-w-[54rem]"
+        initialFocus={false}
+      >
         <DialogHeader>
           <DialogTitle>Abastecimento</DialogTitle>
         </DialogHeader>
