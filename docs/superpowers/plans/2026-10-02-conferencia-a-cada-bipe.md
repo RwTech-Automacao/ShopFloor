@@ -303,6 +303,38 @@ o campo limpo para ele bipar de novo"*). O passo **não** muda e os passos anter
 síncrono de propósito — o comentário explica que o leitor manda dois Enter tão rápido que o segundo
 chega antes de o React aplicar o estado.
 
+**O que a revisão da Task 1 deixou amarrado aqui — três coisas que NÃO podem mudar:**
+
+1. ⚠️ **A ordem das guardas é parte da correção.** A `conferirPasso` devolve `null` quando o valor
+   está vazio (é "nada a conferir", não "está certo"). Quem recusa o campo em branco é a guarda
+   `if (vazio)` do `avancar()`, que vem **antes**. Se a conferência rodar primeiro, o passo em
+   branco avança **calado** — o oposto do que a feature existe para fazer. Não inverta, e não
+   trate `null` como "passo aprovado" em nenhum outro lugar.
+
+2. ⚠️ **Não tire o `.trim()` do `enviar()`.** O JavaScript apara tab, enter e espaço fixo das
+   pontas; o `btrim` do Postgres apara só o espaço comum. É o `.trim()` do call site que faz o
+   cliente e o servidor verem o mesmo texto — sem ele, a tela aprovaria o que o envio recusa.
+
+3. ⚠️ **Não crie atalho que pule passos.** Hoje ir para frente passa **sempre** pelo `avancar()`,
+   e é só por isso que voltar e editar a posição faz o feeder ser reconferido contra a posição
+   nova. Um atalho que salte direto para o último passo deixaria passar o que o servidor recusa.
+
+**Teste a mais, por causa do item 3** (acrescente aos do Passo 1):
+
+```tsx
+it('voltar e trocar a posição reconfere o feeder', async () => {
+  // bipa P1, Enter; bipa F1, Enter (F1 está em P1 — passa)
+  // volta um passo, troca a posição para P4 (que existe, e tem o feeder F4), Enter
+  // avança para o feeder, que ainda mostra F1, Enter
+  expect(await screen.findByText('O feeder F1 não está na posição P4.')).toBeInTheDocument()
+  expect(trocarRoloMock).not.toHaveBeenCalled()
+})
+```
+
+⚠️ Confira os valores do fixture e a frase exata rodando — a frase tem variação PTH
+(`"no posto"` em vez de `"na posição"`) e a função normaliza o valor para maiúsculas como o
+servidor faz.
+
 - [ ] **Passo 1: escreva os testes que falham**
 
 No arquivo de teste do modal, acrescente:
