@@ -15,7 +15,7 @@ import { conferirPasso, type ItemDoSetup } from '@/modules/setup/domain/conferen
 // de relance se o leitor pegou. Fonte grande não é enfeite — é o que se lê a um braço de
 // distância sem abaixar a cabeça.
 // O placeholder (dica) é um degrau menor que o valor: a dica longa do crachá tem de caber, o que se lê não encolhe.
-const INPUT_BIPE = 'h-20 font-mono text-4xl uppercase tracking-wide placeholder:text-3xl md:text-4xl md:placeholder:text-3xl'
+const INPUT_BIPE = 'h-24 @xl:h-20 font-mono text-4xl uppercase tracking-wide placeholder:text-3xl md:text-4xl md:placeholder:text-3xl'
 const FALHA_CONEXAO_TROCA = 'Falha de conexão. Confira em Últimas trocas se a troca foi registrada antes de reenviar.'
 /** Recusas que o operador tem de perceber: bipe engolido em silêncio é erro invisível. */
 const BIPE_EM_ENVIO = 'Registrando a troca anterior — esse bipe não contou. Bipe de novo.'
@@ -275,15 +275,15 @@ export function ConteudoAbastecimento({
       </div>
 
       <div className="@container flex min-h-0 flex-1 flex-col">
-        <div className="grid min-h-0 flex-1 gap-4 @xl:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 @xl:grid-cols-[300px_minmax(0,1fr)] @xl:grid-rows-none">
           {/* Trilho: o que o sistema já sabe. A pessoa confere em vez de lembrar. */}
-          <aside className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3">
+          <aside className="flex max-h-[35vh] min-h-0 flex-col gap-2 overflow-y-auto rounded-lg border border-border bg-muted/30 p-4 @xl:max-h-none @xl:p-3">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">O que você está trocando</h3>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 @xl:grid-cols-1">
               {linhas.map((l) => (
                 <div key={l.chave} className="min-w-0">
-                  <dt className="text-sm text-muted-foreground">{l.rotulo}</dt>
-                  <dd className={`flex min-w-0 items-baseline gap-2 text-xl font-semibold ${l.mono ? 'font-mono' : ''}`}>
+                  <dt className="text-base text-muted-foreground @xl:text-sm">{l.rotulo}</dt>
+                  <dd className={`flex min-w-0 items-baseline gap-2 text-2xl font-semibold @xl:text-xl ${l.mono ? 'font-mono' : ''}`}>
                     {l.valor !== '' ? (
                       <>
                         <span className="min-w-0 break-all">{l.valor}</span>
@@ -307,7 +307,7 @@ export function ConteudoAbastecimento({
             </div>
 
             <div className="flex flex-none flex-col justify-center gap-2 sm:flex-1">
-              <Label htmlFor={`troca-${atual.campo}`} className="text-2xl font-semibold">{atual.rotulo}</Label>
+              <Label htmlFor={`troca-${atual.campo}`} className="text-3xl font-semibold @xl:text-2xl">{atual.rotulo}</Label>
               <Input
                 id={`troca-${atual.campo}`}
                 key={atual.campo}
@@ -333,7 +333,7 @@ export function ConteudoAbastecimento({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-14 px-6 text-lg"
+                  className="h-16 px-6 text-xl @xl:h-14 @xl:text-lg"
                   onClick={() => irPara(passo - 1)}
                   disabled={enviando}
                 >
@@ -342,7 +342,7 @@ export function ConteudoAbastecimento({
               )}
               <Button
                 type="button"
-                className="h-14 flex-1 bg-enterplak px-6 text-lg hover:bg-enterplak-700"
+                className="h-16 flex-1 bg-enterplak px-6 text-xl hover:bg-enterplak-700 @xl:h-14 @xl:text-lg"
                 onClick={avancar}
                 disabled={enviando || vazio}
               >
