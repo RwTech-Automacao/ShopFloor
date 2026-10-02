@@ -34,9 +34,11 @@ export function payloadMensagemDiscord(
         components: [
           {
             type: 2, // button
-            style: 3, // success (verde)
-            label: 'Resolvido',
-            emoji: { name: '✅' },
+            // Cinza: o Discord só tem azul, cinza, verde e vermelho — o amarelo é do emoji. Verde
+            // dizia "resolvido" antes de qualquer coisa ter sido feita.
+            style: 2, // secondary (cinza)
+            label: 'Resolver',
+            emoji: { name: '⚠️' },
             custom_id: montarCallbackResolver(ocorrenciaIdBotao),
           },
         ],

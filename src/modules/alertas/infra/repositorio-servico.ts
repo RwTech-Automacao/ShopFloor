@@ -202,10 +202,13 @@ export function criarRepositorioServico(
       return (data as { usuario_id: string } | null)?.usuario_id ?? null
     },
 
-    async resolver(ocorrenciaId: string, usuarioId: string) {
+    async resolver(ocorrenciaId: string, usuarioId: string, explicacao?: string) {
       const { data, error } = await sb.rpc('alerta_resolver', {
         p_ocorrencia_id: ocorrenciaId,
         p_usuario_id: usuarioId,
+        // Sem texto o parâmetro nem vai: o default do banco ('') faz o papel, e o telegram, que
+        // ainda não pergunta nada, segue chamando exatamente como antes.
+        ...(explicacao ? { p_explicacao: explicacao } : {}),
       })
       if (error) {
         return {

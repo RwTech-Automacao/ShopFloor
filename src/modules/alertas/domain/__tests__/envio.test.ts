@@ -65,6 +65,29 @@ describe('textoDoEnvio', () => {
       }),
     ).toBe('✅ Teste: resolvido por Bruno Líder às 14:05')
   })
+  it('resolvido com explicação no dados leva o texto; o aviso da fila cabe em 2000', () => {
+    const base = {
+      posto: 'Teste',
+      resolvida_por_nome: 'Bruno Líder',
+      resolvida_em: '2026-09-17T17:05:00+00:00',
+    }
+    expect(textoDoEnvio('resolvido', { ...base, explicacao: 'Trocamos o feeder' })).toBe(
+      '✅ Teste: resolvido por Bruno Líder às 14:05\nO que foi feito: Trocamos o feeder',
+    )
+    expect(textoDoEnvio('resolvido', { ...base, explicacao: 'x'.repeat(500) }).length).toBeLessThan(2000)
+  })
+  it('resolvido com explicacao nula ou vazia no dados sai sem rabo', () => {
+    for (const explicacao of [null, '']) {
+      expect(
+        textoDoEnvio('resolvido', {
+          posto: 'Teste',
+          resolvida_por_nome: 'Bruno Líder',
+          resolvida_em: '2026-09-17T17:05:00+00:00',
+          explicacao,
+        }),
+      ).toBe('✅ Teste: resolvido por Bruno Líder às 14:05')
+    }
+  })
   it('teste', () => {
     expect(textoDoEnvio('teste', { nome: 'Ana' })).toContain('Ana')
   })

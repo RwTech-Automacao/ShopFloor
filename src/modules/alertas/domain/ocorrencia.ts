@@ -54,6 +54,8 @@ export interface OcorrenciaLinha {
   reprovados: number
   abertaEm: string
   resolvidaPorNome: string
+  /** O que a pessoa escreveu ao resolver (0137); '' = não disse nada. */
+  explicacao: string
   resolvidaEm: string | null
   normalizadaEm: string | null
   /** Última reabertura (0122); null = nunca reabriu. */

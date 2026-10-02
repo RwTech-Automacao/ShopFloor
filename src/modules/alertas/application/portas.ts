@@ -73,7 +73,8 @@ export interface RepositorioVinculo {
   vincular(codigo: string, canal: Canal, externoId: string): Promise<ResultadoVinculo>
   /** Dono da conta externa (chat do Telegram / usuário do Discord), ou null se não vinculada. */
   usuarioPorConta(canal: Canal, externoId: string): Promise<string | null>
-  resolver(ocorrenciaId: string, usuarioId: string): Promise<ResultadoResolver>
+  /** `explicacao` é OPCIONAL: ausente ou vazia resolve do mesmo jeito (quem apara é o banco). */
+  resolver(ocorrenciaId: string, usuarioId: string, explicacao?: string): Promise<ResultadoResolver>
 }
 
 export interface DependenciasWebhook {
