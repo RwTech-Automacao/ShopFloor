@@ -5,6 +5,7 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { ehCaixaFluxo, ehEtapa } from '../domain/etapa-processo'
 import { consultarRegistros, type RegistroRecebimento } from '../infra/registros-repository'
 import {
+  carregarChegadaEmb,
   carregarFluxoEmb,
   carregarHistoricoEtapa,
   carregarItensCaixa,
@@ -13,7 +14,14 @@ import {
   type PassagemEtapa,
 } from '../infra/fluxo-repository'
 
-export type ResultadoFluxo = { ok: true; caixas: CaixaFluxo[] } | { ok: false; erro: string }
+export type ResultadoFluxo =
+  | {
+      ok: true
+      caixas: CaixaFluxo[]
+      /** Data de chegada da EMB (`aaaa-mm-dd`), pro card de início. `null` = nenhum item tem data. */
+      chegada: string | null
+    }
+  | { ok: false; erro: string }
 export type ResultadoItens = { ok: true; itens: ItemFluxo[] } | { ok: false; erro: string }
 export type ResultadoHistorico =
   | { ok: true; linhas: PassagemEtapa[]; temMais: boolean }
@@ -28,13 +36,19 @@ async function podeVer(): Promise<boolean> {
   return !!sessao && podeNoModulo(sessao.perfil, 'recebimento', 'visualizar')
 }
 
-/** As quatro caixas de uma EMB: quantos itens em cada uma, divergentes e tempo. Somente leitura. */
+/**
+ * As quatro caixas de uma EMB: quantos itens em cada uma, divergentes e tempo — mais a data de
+ * chegada, que o card de início mostra. Somente leitura.
+ *
+ * As duas leituras vão em paralelo: são independentes e a tela só desenha com as duas na mão.
+ */
 export async function carregarFluxoEmbAction(emb: string): Promise<ResultadoFluxo> {
   if (!await podeVer()) return { ok: false, erro: 'Você não tem permissão para ver o fluxo do Recebimento.' }
   const alvo = emb.trim()
   if (!alvo) return { ok: false, erro: 'Escolha uma EMB.' }
   try {
-    return { ok: true, caixas: await carregarFluxoEmb(alvo) }
+    const [caixas, chegada] = await Promise.all([carregarFluxoEmb(alvo), carregarChegadaEmb(alvo)])
+    return { ok: true, caixas, chegada }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar o fluxo agora.' }
   }
