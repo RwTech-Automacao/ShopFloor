@@ -33,9 +33,9 @@ describe('payloadMensagemDiscord', () => {
         components: [
           {
             type: 2,
-            style: 3,
-            label: 'Resolvido',
-            emoji: { name: '✅' },
+            style: 2,
+            label: 'Resolver',
+            emoji: { name: '⚠️' },
             custom_id: 'r:11111111-2222-3333-4444-555555555555',
           },
         ],

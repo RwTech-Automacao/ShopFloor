@@ -1,5 +1,6 @@
 import { CANAIS, NOME_CANAL, type Canal, type ResultadoEnvio, type ResultadoSimples } from '../domain/tipos'
 import { textoDoEnvio } from '../domain/envio'
+import { LIMITE_MENSAGEM, cortarUtf16 } from '../domain/mensagens'
 import type { PortasCanais, RepositorioEnvios } from './portas'
 
 function mensagemDe(e: unknown): string {
@@ -71,7 +72,9 @@ export async function entregarPendentes(
       try {
         const porta = portas[envio.canal]
         if (!porta) throw new Error(`${NOME_CANAL[envio.canal]} não configurado`)
-        texto = textoDoEnvio(envio.tipo, envio.dados)
+        // Teto duro: o Discord RECUSA a mensagem inteira acima de 2000 (não corta), e a fila desistiria
+        // após 3 tentativas. Cobre todos os tipos, inclusive o aviso de resolvido com explicação enorme.
+        texto = cortarUtf16(textoDoEnvio(envio.tipo, envio.dados), LIMITE_MENSAGEM)
         resultado = await porta.enviar(
           { tipo: envio.destinoTipo, externoId: envio.externoId },
           texto,
