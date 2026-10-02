@@ -74,18 +74,11 @@ export function cortarExplicacao(texto: unknown): string {
 }
 
 /**
- * Acrescenta uma linha (o "resolvido por") ao fim de uma mensagem JÁ ENVIADA, ao editá-la. O texto
- * original foi montado para caber em 2000 com folga só para o cabeçalho de lembrete/reabertura —
- * não para mais uma linha. Como o Discord RECUSA a edição inteira quando passa do limite (o botão
- * ficaria no ar e a pessoa veria "Esta interação falhou"), é o ORIGINAL que cede: perde o fim, com
- * reticências, e a linha — que é o que o clique quer dizer — sobrevive intacta.
- */
-/**
  * Corta em no máximo `max` unidades UTF-16 (a medida do Discord), mas só em FRONTEIRA de ponto de
  * código: um emoji na borda sai inteiro, nunca com meio caractere (surrogate solto, que o Discord
  * pode recusar como texto inválido).
  */
-function cortarUtf16(texto: string, max: number): string {
+export function cortarUtf16(texto: string, max: number): string {
   let usado = 0
   let fim = 0
   for (const ponto of texto) {
@@ -96,6 +89,13 @@ function cortarUtf16(texto: string, max: number): string {
   return texto.slice(0, fim)
 }
 
+/**
+ * Acrescenta uma linha (o "resolvido por") ao fim de uma mensagem JÁ ENVIADA, ao editá-la. O texto
+ * original foi montado para caber em 2000 com folga só para o cabeçalho de lembrete/reabertura —
+ * não para mais uma linha. Como o Discord RECUSA a edição inteira quando passa do limite (o botão
+ * ficaria no ar e a pessoa veria "Esta interação falhou"), é o ORIGINAL que cede: perde o fim, com
+ * reticências, e a linha — que é o que o clique quer dizer — sobrevive intacta.
+ */
 export function anexarLinha(original: string, linha: string): string {
   const sep = '\n\n'
   const juntas = `${original}${sep}${linha}`.trim()

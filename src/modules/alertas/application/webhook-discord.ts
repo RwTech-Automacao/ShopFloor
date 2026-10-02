@@ -118,20 +118,30 @@ export async function tratarInteracaoDiscord(
     }
 
     const res = r.resolucao
-    // Já resolvida por outra pessoa: o banco manteve a explicação DELA, não a digitada agora, então
-    // mostrar o texto daqui seria atribuir a quem resolveu algo que ele não disse.
+    // Já resolvida por outra pessoa: o banco manteve a explicação DELA e não devolve qual é, então
+    // o texto digitado aqui é descartado. Avisa (como o Telegram) em vez de sumir com ele em silêncio;
+    // o botão sai das mensagens do mesmo jeito.
+    if (res.jaResolvida) {
+      const aviso = efemera(`Já resolvido por ${res.resolvidaPorNome}. O que você escreveu não foi guardado.`)
+      aviso.depois = () => removerBotoesDaOcorrencia(deps.portas, deps.repo, ocorrenciaId)
+      return aviso
+    }
     const linha = textoResolvido({
       posto: res.posto,
       nome: res.resolvidaPorNome,
       em: res.resolvidaEm,
-      explicacao: res.jaResolvida ? '' : explicacao,
+      explicacao,
     })
+    // Sem `message` no payload (o modal pode nascer sem componente de mensagem), NÃO se manda `content`:
+    // o type 7 SUBSTITUI o texto, e mandar só a linha apagaria o corpo do alerta. Omitido, o Discord
+    // preserva o que está lá e `components: []` ainda tira o botão.
+    const original = i.message?.content
     return {
       // type 7 edita a MENSAGEM CLICADA: acrescenta quem resolveu e apaga o botão.
       corpo: {
         type: RESPOSTA_ATUALIZA_MENSAGEM,
         data: {
-          content: anexarLinha(i.message?.content ?? '', linha),
+          ...(original === undefined ? {} : { content: anexarLinha(original, linha) }),
           components: [],
           // A linha agora leva o que a pessoa digitou: sem isto, um @everyone na explicação
           // notificaria o servidor inteiro. Mesma forma do envio normal (infra/discord.ts).
@@ -141,9 +151,7 @@ export async function tratarInteracaoDiscord(
       depois: async () => {
         await removerBotoesDaOcorrencia(deps.portas, deps.repo, ocorrenciaId)
         // O aviso aos outros já está na fila (alerta_resolver): só adianta a entrega.
-        if (!res.jaResolvida) {
-          await entregarPendentes(deps.portas, deps.repo, { ocorrenciaId })
-        }
+        await entregarPendentes(deps.portas, deps.repo, { ocorrenciaId })
       },
     }
   }

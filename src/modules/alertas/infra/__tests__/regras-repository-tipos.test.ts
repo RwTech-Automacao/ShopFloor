@@ -286,6 +286,7 @@ describe('listarOcorrencias', () => {
         reprovados: 0,
         aberta_em: '2026-09-18T12:00:00Z',
         resolvida_por_nome: '',
+        explicacao: 'troquei o feeder',
         resolvida_em: null,
         normalizada_em: null,
         envios_ok: 2,
@@ -302,6 +303,7 @@ describe('listarOcorrencias', () => {
     expect(o).toMatchObject({
       regraTipo: 'defeito',
       defeito: '2040 COMPONENTE FALTANDO',
+      explicacao: 'troquei o feeder',
       taxaAbertura: null,
       taxaUltima: null,
       valorAbertura: 3,

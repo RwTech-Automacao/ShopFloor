@@ -232,6 +232,16 @@ describe('tratarInteracaoDiscord', () => {
     )
     expect(resolucoes).toHaveLength(1)
     expect(r.corpo.type).toBe(7)
+    // Sem `message`, mandar `content` SUBSTITUIRIA o alerta só pela linha: a chave tem de faltar.
+    const data = r.corpo.data as Record<string, unknown>
+    expect(data).not.toHaveProperty('content')
+    expect(data.components).toEqual([])
+  })
+
+  it('message presente mas sem content também não manda content', async () => {
+    const { repo } = repoFalso({ usuario: 'u2' })
+    const r = await tratarInteracaoDiscord(envioModal('ok', { message: {} }), { portas: {}, repo })
+    expect(r.corpo.data as Record<string, unknown>).not.toHaveProperty('content')
   })
 
   it('explicação passando do limite é cortada no servidor (defesa além do max_length do modal)', async () => {
@@ -269,7 +279,7 @@ describe('tratarInteracaoDiscord', () => {
     expect(content).not.toContain('O que foi feito')
   })
 
-  it('já resolvida por outra pessoa: não atribui a ela o texto digitado agora', async () => {
+  it('já resolvida por outra pessoa: avisa em efêmero que o texto não foi guardado', async () => {
     const { repo } = repoFalso({
       usuario: 'u2',
       resolver: {
@@ -281,9 +291,13 @@ describe('tratarInteracaoDiscord', () => {
       },
     })
     const r = await tratarInteracaoDiscord(envioModal('meu texto'), { portas: {}, repo })
-    const content = String((r.corpo.data as { content: string }).content)
-    expect(content).toContain('resolvido por Carla')
-    expect(content).not.toContain('meu texto')
+    expect(r.corpo.type).toBe(4)
+    const data = r.corpo.data as { content: string; flags: number }
+    expect(data.flags).toBe(64)
+    expect(data.content).toContain('Já resolvido por Carla')
+    expect(data.content).toContain('não foi guardado')
+    expect(data.content).not.toContain('meu texto')
+    expect(r.depois).not.toBeNull()
   })
 
   it('botão de quem não vinculou responde efêmero e NÃO abre o modal', async () => {
