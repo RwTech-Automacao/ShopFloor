@@ -60,6 +60,23 @@ export const LIMITE_MENSAGEM = 2000
  */
 const MARGEM_CABECALHO = 160
 
+/**
+ * Acrescenta uma linha (o "resolvido por") ao fim de uma mensagem JÁ ENVIADA, ao editá-la. O texto
+ * original foi montado para caber em 2000 com folga só para o cabeçalho de lembrete/reabertura —
+ * não para mais uma linha. Como o Discord RECUSA a edição inteira quando passa do limite (o botão
+ * ficaria no ar e a pessoa veria "Esta interação falhou"), é o ORIGINAL que cede: perde o fim, com
+ * reticências, e a linha — que é o que o clique quer dizer — sobrevive intacta.
+ */
+export function anexarLinha(original: string, linha: string): string {
+  const sep = '\n\n'
+  const juntas = `${original}${sep}${linha}`.trim()
+  if (juntas.length <= LIMITE_MENSAGEM) return juntas
+  const cauda = `${sep}${linha}`
+  const sobra = LIMITE_MENSAGEM - cauda.length - 1
+  if (sobra <= 0) return linha.slice(0, LIMITE_MENSAGEM)
+  return `${original.slice(0, sobra).trimEnd()}…${cauda}`
+}
+
 /** Uma ordem de produção: o par PMO + OP como o banco guarda. */
 export interface ParOp {
   pmo?: string | null

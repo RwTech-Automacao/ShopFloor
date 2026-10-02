@@ -111,3 +111,19 @@ describe('textos de vínculo', () => {
     expect(TEXTO_INSTRUCOES_TELEGRAM).toContain('ALERTA-')
   })
 })
+
+describe('anexarLinha (editar mensagem já enviada)', () => {
+  it('cabendo, junta com linha em branco', async () => {
+    const { anexarLinha } = await import('../mensagens')
+    expect(anexarLinha('alerta', '✅ ok')).toBe('alerta\n\n✅ ok')
+  })
+
+  it('estourando 2000, o ORIGINAL cede e a linha sobrevive inteira', async () => {
+    const { anexarLinha, LIMITE_MENSAGEM } = await import('../mensagens')
+    const linha = '✅ Teste: resolvido por Ana às 14:05'
+    const r = anexarLinha('A'.repeat(1995), linha)
+    expect(r.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
+    expect(r.endsWith(linha)).toBe(true)
+    expect(r).toContain('…')
+  })
+})

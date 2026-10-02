@@ -1,5 +1,5 @@
-import { extrairCodigoVinculo, lerCallbackResolver } from '../domain/codigos'
-import { textoResolvido, textoVinculado } from '../domain/mensagens'
+import { extrairCodigoVinculo, lerCallbackResolver, montarCallbackResolver } from '../domain/codigos'
+import { anexarLinha, textoResolvido, textoVinculado } from '../domain/mensagens'
 import { entregarPendentes, removerBotoesDaOcorrencia } from './enviar-alertas'
 import type { DependenciasWebhook } from './portas'
 
@@ -7,16 +7,31 @@ import type { DependenciasWebhook } from './portas'
 const INTERACAO_PING = 1
 const INTERACAO_COMANDO = 2
 const INTERACAO_COMPONENTE = 3
+const INTERACAO_MODAL = 5
 const RESPOSTA_PONG = 1
 const RESPOSTA_MENSAGEM = 4
 const RESPOSTA_ATUALIZA_MENSAGEM = 7
+const RESPOSTA_MODAL = 9
+const CAMPO_EXPLICACAO = 'explicacao'
+/**
+ * Tamanho máximo do que a pessoa escreve. O texto vai para a coluna, para cada linha da fila e para
+ * a mensagem do Discord (teto de 2000, que RECUSA a mensagem inteira se passar). 500 deixa folga
+ * para o cabeçalho, PMO/OP e as posições, e é bastante para dizer "trocamos o feeder da 3".
+ */
+export const LIMITE_EXPLICACAO = 500
 const FLAG_EFEMERA = 64
 
 interface InteracaoDiscord {
   type?: number
   member?: { user?: { id?: string } }
   user?: { id?: string }
-  data?: { name?: string; custom_id?: string; options?: { name?: string; value?: unknown }[] }
+  data?: {
+    name?: string
+    custom_id?: string
+    options?: { name?: string; value?: unknown }[]
+    /** Só no envio do modal: linhas de ação, cada uma com o campo de texto dentro. */
+    components?: { components?: { custom_id?: string; value?: unknown }[] }[]
+  }
   message?: { content?: string }
 }
 
@@ -29,6 +44,45 @@ export interface RespostaDiscord {
 
 function efemera(texto: string): RespostaDiscord {
   return { corpo: { type: RESPOSTA_MENSAGEM, data: { content: texto, flags: FLAG_EFEMERA } }, depois: null }
+}
+
+/** O modal que o clique abre. O `custom_id` carrega o id da ocorrência até o envio. */
+function modalExplicacao(ocorrenciaId: string): RespostaDiscord {
+  return {
+    corpo: {
+      type: RESPOSTA_MODAL,
+      data: {
+        custom_id: montarCallbackResolver(ocorrenciaId),
+        title: 'Resolver alerta',
+        components: [
+          {
+            type: 1, // action row
+            components: [
+              {
+                type: 4, // text input
+                custom_id: CAMPO_EXPLICACAO,
+                label: 'O que foi feito? (opcional)',
+                style: 2, // parágrafo
+                required: false,
+                max_length: LIMITE_EXPLICACAO,
+                placeholder: 'Ex.: trocamos o feeder da posição 3',
+              },
+            ],
+          },
+        ],
+      },
+    },
+    depois: null,
+  }
+}
+
+/** Texto digitado no modal, ou '' (campo vazio, ausente ou só espaços). */
+function lerExplicacao(i: InteracaoDiscord): string {
+  const campos = (i.data?.components ?? []).flatMap((linha) => linha.components ?? [])
+  const valor = campos.find((c) => c.custom_id === CAMPO_EXPLICACAO)?.value
+  if (typeof valor !== 'string') return ''
+  // Por pontos de código: cortar no meio de um emoji deixaria meio caractere na mensagem.
+  return [...valor.trim()].slice(0, LIMITE_EXPLICACAO).join('')
 }
 
 export async function tratarInteracaoDiscord(
@@ -50,14 +104,18 @@ export async function tratarInteracaoDiscord(
     return efemera(r.ok ? textoVinculado(r.nome) : r.erro)
   }
 
-  if (i.type === INTERACAO_COMPONENTE) {
+  // Resolver são DUAS interações: o clique no botão abre a caixa de texto (nada é resolvido ainda) e
+  // o envio dela resolve. Em ambas, conta não vinculada recusa antes de qualquer coisa.
+  if (i.type === INTERACAO_COMPONENTE || i.type === INTERACAO_MODAL) {
     const ocorrenciaId = lerCallbackResolver(i.data?.custom_id)
     if (!ocorrenciaId || !externoId) return efemera('Ação desconhecida.')
 
     const usuarioId = await deps.repo.usuarioPorConta('discord', externoId)
     if (!usuarioId) return efemera('Sua conta do Discord não está vinculada ao ShopFloor.')
 
-    const r = await deps.repo.resolver(ocorrenciaId, usuarioId)
+    if (i.type === INTERACAO_COMPONENTE) return modalExplicacao(ocorrenciaId)
+
+    const r = await deps.repo.resolver(ocorrenciaId, usuarioId, lerExplicacao(i))
     if (!r.ok) {
       const resposta = efemera(r.erro)
       if (r.codigo === 'OCORRENCIA_ENCERRADA') {
@@ -72,7 +130,7 @@ export async function tratarInteracaoDiscord(
       // type 7 edita a MENSAGEM CLICADA: acrescenta quem resolveu e apaga o botão.
       corpo: {
         type: RESPOSTA_ATUALIZA_MENSAGEM,
-        data: { content: `${i.message?.content ?? ''}\n\n${linha}`.trim(), components: [] },
+        data: { content: anexarLinha(i.message?.content ?? '', linha), components: [] },
       },
       depois: async () => {
         await removerBotoesDaOcorrencia(deps.portas, deps.repo, ocorrenciaId)
