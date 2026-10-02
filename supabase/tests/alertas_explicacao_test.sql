@@ -316,6 +316,29 @@ begin
 end $t$;
 reset role;
 
+-- T9. A listagem que alimenta a tela devolve a explicação gravada (e vazio para quem não disse).
+--     Sem o campo no retorno de alerta_listar_ocorrencias a tela não teria o que mostrar.
+do $t$
+declare
+  oc_com  uuid := public.teste_ocorrencia_expl('EX-Lista');
+  oc_sem  uuid := public.teste_ocorrencia_expl('EX-ListaSem');
+  v_com   text;
+  v_sem   text;
+begin
+  set local role authenticated;
+  perform public.alerta_resolver_admin(oc_com, 'Trocamos o feeder 3');
+  perform public.alerta_resolver_admin(oc_sem);
+  select explicacao into v_com from public.alerta_listar_ocorrencias(now() - interval '1 day', now() + interval '1 day', '') where id = oc_com;
+  select explicacao into v_sem from public.alerta_listar_ocorrencias(now() - interval '1 day', now() + interval '1 day', '') where id = oc_sem;
+  reset role;
+  if v_com is distinct from 'Trocamos o feeder 3' then
+    raise exception 'FALHOU: a listagem devolveu explicacao=% (esperado o texto gravado)', v_com;
+  end if;
+  if v_sem is distinct from '' then
+    raise exception 'FALHOU: a listagem devolveu explicacao=% para quem não escreveu nada', v_sem;
+  end if;
+end $t$;
+
 drop function public.teste_ocorrencia_expl(text);
 
 select 'alertas 0137 (explicação ao resolver): ok' as resultado;

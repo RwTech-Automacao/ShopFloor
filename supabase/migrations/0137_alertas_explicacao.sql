@@ -58,6 +58,12 @@
 --   `_interno` leva o parâmetro. O `tem_permissao('shopfloor', 'administrar')` de DOIS argumentos do
 --   admin fica como está (a versão de um argumento anula o RBAC).
 --
+-- public.alerta_listar_ocorrencias(timestamptz, timestamptz, text) — 1 diferença contra a 0122:
+--   1. o `returns table` ganha `explicacao text` como ÚLTIMA coluna, e o `select` que o preenche
+--      ganha `oc.explicacao` na mesma posição. Mais nada: corpo, filtros, ordem, limite, security
+--      definer, search_path, tem_permissao de dois argumentos e os grants (authenticated e
+--      service_role) ficam como na 0122.
+--
 -- NÃO É RECRIADO, de propósito: alerta_avaliar. Quem abre, lembra, reabre e normaliza ocorrência
 -- não tem nada a ver com explicação — ela só existe quando alguém resolve à mão. A 0136 continua
 -- sendo a versão viva daquela função.
@@ -216,5 +222,63 @@ $func$;
 
 revoke all on function public.alerta_resolver_admin(uuid, text) from public, anon;
 grant execute on function public.alerta_resolver_admin(uuid, text) to authenticated, service_role;
+
+-- ---------- D. alerta_listar_ocorrencias(): + explicacao ----------
+-- Sem o campo no retorno, a tela de ocorrências não teria como mostrar o que a pessoa escreveu.
+-- Recriada da 0122 (a versão viva: 0113 -> 0115 -> 0122) com a única diferença declarada no
+-- cabeçalho. O retorno mudou: create or replace não troca retorno, então o drop vem antes, e ele
+-- zera a ACL, por isso o revoke/grant é reemitido igual ao da 0122.
+drop function if exists public.alerta_listar_ocorrencias(timestamptz, timestamptz, text);
+create or replace function public.alerta_listar_ocorrencias(
+  p_de timestamptz, p_ate timestamptz, p_estado text default ''
+)
+returns table (
+  id uuid, regra_id uuid, regra_nome text, posto text, pmo text, op text, estado text,
+  taxa_abertura numeric, taxa_ultima numeric, aprovados int, reprovados int,
+  aberta_em timestamptz, resolvida_por_nome text, resolvida_em timestamptz,
+  normalizada_em timestamptz, envios_ok int, envios_falha int,
+  regra_tipo text, defeito text, valor_abertura numeric, valor_ultimo numeric, amostras int,
+  reaberta_em timestamptz, reaberturas int, explicacao text
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+begin
+  if not tem_permissao('shopfloor', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
+  return query
+    select oc.id, oc.regra_id,
+           rg.nome || case when rg.excluida_em is not null then ' (excluída)' else '' end,
+           oc.posto, oc.pmo, oc.op, oc.estado,
+           oc.taxa_abertura, oc.taxa_ultima, oc.aprovados, oc.reprovados, oc.aberta_em,
+           coalesce(nullif(btrim(u.nome), ''), u.email, ''),
+           oc.resolvida_em, oc.normalizada_em,
+           coalesce(e.ok_qtd, 0)::int, coalesce(e.falha_qtd, 0)::int,
+           rg.tipo, oc.defeito, oc.valor_abertura, oc.valor_ultimo, oc.amostras,
+           oc.reaberta_em, oc.reaberturas, oc.explicacao
+      from alerta_ocorrencias oc
+      join alerta_regras rg on rg.id = oc.regra_id
+      left join usuarios u on u.id = oc.resolvida_por
+      left join lateral (
+        -- falha = tentou e não entregou, ou gastou as 3 tentativas (mesma régua da 0113)
+        select count(*) filter (where ev.ok)                                        as ok_qtd,
+               count(*) filter (where not ev.ok
+                                  and (ev.erro is not null or ev.tentativas >= 3)) as falha_qtd
+          from alerta_envios ev
+         where ev.ocorrencia_id = oc.id
+      ) e on true
+     where oc.aberta_em >= p_de
+       and oc.aberta_em <= p_ate
+       and (coalesce(p_estado, '') = '' or oc.estado = p_estado)
+     order by oc.aberta_em desc
+     limit 500;
+end
+$func$;
+
+revoke all on function public.alerta_listar_ocorrencias(timestamptz, timestamptz, text) from public, anon;
+grant execute on function public.alerta_listar_ocorrencias(timestamptz, timestamptz, text)
+  to authenticated, service_role;
 
 notify pgrst, 'reload schema';
