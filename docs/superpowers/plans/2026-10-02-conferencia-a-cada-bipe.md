@@ -404,3 +404,92 @@ git commit -m "setup: o erro aparece no passo em que nasce, não só no envio"
    componente diferente · rolo que entra igual ao que sai · e o caminho certo de ponta a ponta.
    **Conferir que o som toca na recusa** — é ele que alcança o operador, não a tela.
 3. Conferir no tablet que o modal (agora em 65% da tela) mostra o rastro dos bipes já feitos.
+
+---
+
+### Task 3: o layout do modal, usando o que a Task 2 carregou
+
+**Arquivos:**
+- Modificar: `src/app/(app)/setup/operar/abastecimento/modal-abastecimento.tsx`
+- Teste: `src/app/(app)/setup/operar/abastecimento/__tests__/modal-abastecimento.test.tsx`
+
+**Interfaces:**
+- Consome: a prop `itens: ItemDoSetup[]` que a Task 2 acrescentou ao modal, e os campos já bipados.
+
+**O mockup aprovado:** https://claude.ai/artifact/TZkr63TJeiePQLzwkMJxLC — três estados (começo,
+contexto preenchido, recusa). Siga-o; onde ele e este texto divergirem, **o texto manda**, porque
+ele conhece o código.
+
+**O problema que isto resolve.** Numa tentativa anterior o modal foi esticado para 65% da tela
+**sem** redesenhar o conteúdo: a altura nova virou vazio, a fonte continuou de modal estreito e o
+rastro dos bipes ficou em tamanho de rodapé. O usuário recusou duas vezes. O diagnóstico certo:
+**não sobrava espaço, faltava conteúdo** — a tela não mostra o que o sistema já sabe.
+
+**A ideia.** Assim que a posição é bipada, o sistema conhece o feeder, o componente e o rolo
+montado naquela posição (estão em `itens`). Hoje guarda isso calado. Mostrando, a pessoa **confere
+em vez de lembrar**, e o erro fica visível antes de a conferência da Task 2 reclamar.
+
+**O que muda:**
+
+1. **Trilho "O que você está trocando"**, à esquerda (300px), empilhando acima do campo abaixo de
+   900px: Colaborador · Posição · Feeder · Componente · Rolo montado. Cada linha mostra
+   `aguardando` enquanto o passo não chegou, e o **valor derivado dos `itens`** assim que a posição
+   permite — com um selo discreto de "esperado" no que veio do sistema, e não do bipe.
+2. **Trilha de seis traços no topo** (feito / agora / por vir) no lugar do `N/6` solto. O contador
+   fica, ao lado do rótulo.
+3. **O campo é o maior elemento da tela**, em fonte **mono** — código de rolo se lê por comparação
+   (`CAPJ41-0001` × `CAPJ41-0007`), e mono alinha os dígitos.
+4. **O cabeçalho mostra onde ele está trabalhando**: OP, processo, linha/bloco, face. Hoje some
+   quando o modal abre.
+5. **A recusa fica acima do campo**, com o motivo em destaque e uma linha dizendo o que fazer.
+
+⚠️ **O que NÃO muda:** a ordem dos seis passos, as regras, as frases de recusa, a trava do Enter
+duplo, o foco com `select()` a cada passo, e o `recusar()` que **toca o som** — o comentário dele
+diz por quê: *"Recusa calada é bipe perdido sem ninguém notar."* O operador não olha a tela.
+
+⚠️ **PTH:** os rótulos saem de `rotulos` (posto/locação em vez de posição/feeder). O trilho tem de
+respeitar isso — não escreva "Posição" fixo.
+
+- [ ] **Passo 1: escreva os testes que falham**
+
+```tsx
+it('o trilho mostra o que o sistema já sabe, depois da posição', async () => {
+  // itens: [{posicao:'P14', feeder:'F07', componente:'CAPJ41', rolo:'CAPJ41-0001'}]
+  // bipa colaborador, avança, bipa P14, avança
+  expect(screen.getByText('F07')).toBeInTheDocument()
+  expect(screen.getByText('CAPJ41')).toBeInTheDocument()
+  expect(screen.getByText('CAPJ41-0001')).toBeInTheDocument()
+})
+
+it('antes da posição, o trilho diz o que falta em vez de mostrar vazio', () => {
+  expect(screen.getByText(/bipe a posição/i)).toBeInTheDocument()
+})
+
+it('no PTH o trilho fala em posto e locação', () => { /* rotulos de PTH */ })
+
+it('a trilha marca o passo atual', async () => { /* 6 traços, o 2º como atual */ })
+```
+
+- [ ] **Passo 2: rode e veja falhar**
+
+Run: `npx vitest run "src/app/(app)/setup" --exclude "**/.claude/**" --maxWorkers=2`
+
+- [ ] **Passo 3: implemente**
+
+Monte o layout. **A moldura já está em 65%** (`DialogContent` no fim do arquivo) — o trabalho aqui
+é o conteúdo preencher essa moldura, não mexer no tamanho dela de novo.
+
+- [ ] **Passo 4: rode e veja passar**
+
+```bash
+npx vitest run "src/app/(app)/setup" src/modules/setup --exclude "**/.claude/**" --maxWorkers=2
+npx tsc --noEmit
+npx next build
+```
+
+- [ ] **Passo 5: commit**
+
+```bash
+git add "src/app/(app)/setup/operar/abastecimento"
+git commit -m "setup: a tela mostra o que o sistema já sabe, em vez de só perguntar"
+```
