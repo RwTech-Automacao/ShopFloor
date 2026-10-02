@@ -151,7 +151,13 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
             </div>
             <Button
               className="h-11 flex-none bg-enterplak px-4 text-base hover:bg-enterplak-700"
-              onClick={() => setModalAberto(true)}
+              onClick={() => {
+                setModalAberto(true)
+                // A lista pode ter envelhecido (supervisor mexeu no Cadastro, outro turno trocou rolo). Recarrega a
+                // cada abertura: custo zero por bipe, e "fechar e abrir" vira a saída. Não zera os itens: a
+                // conferência segue com o que já temos até a recarga chegar e substituir.
+                void carregarItens(setup.id, buscaSeq.current)
+              }}
             >
               Abastecer
             </Button>

@@ -105,4 +105,28 @@ describe('Abastecimento: a lista de itens acompanha o servidor', () => {
     expect(screen.queryByText(/não CAPJ41-C/)).not.toBeInTheDocument()
     expect(await screen.findByText('5/6')).toBeInTheDocument()
   })
+
+  it('itens mudam no servidor: fechar e reabrir o modal mostra os novos', async () => {
+    carregarSetupAction.mockResolvedValueOnce(itensCom('CAPJ41-A')).mockResolvedValue(itensCom('CAPJ41-B'))
+    render(<Abastecimento ordens={[]} equipamentos={[]} />)
+    fireEvent.click(screen.getByText('escolher'))
+    await screen.findByText('1/6')
+    await new Promise((r) => { setTimeout(r, 20) })
+
+    // Com a lista velha (A) o rolo que de fato está montado (B) é recusado.
+    for (const v of ['1234', 'P1', 'F1', 'CAPJ41-B']) bipar(v)
+    expect(await screen.findByText(/não CAPJ41-B/)).toBeInTheDocument()
+
+    fireEvent.keyDown(campo(), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('textbox')).not.toBeInTheDocument())
+    expect(carregarSetupAction).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByText('Abastecer'))
+    await waitFor(() => expect(carregarSetupAction).toHaveBeenCalledTimes(2))
+    await screen.findByText('1/6')
+    await new Promise((r) => { setTimeout(r, 20) })
+
+    for (const v of ['1234', 'P1', 'F1', 'CAPJ41-B']) bipar(v)
+    expect(screen.queryByText(/não CAPJ41-B/)).not.toBeInTheDocument()
+    expect(await screen.findByText('5/6')).toBeInTheDocument()
+  })
 })

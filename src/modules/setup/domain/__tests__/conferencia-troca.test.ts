@@ -63,6 +63,12 @@ describe('passo do ROLO QUE SAI', () => {
   })
 })
 
+describe('feeder sem posição bipada', () => {
+  it('não cruza com a posição em branco', () => {
+    expect(conferirPasso({ ...smd, campo: 'feeder', valor: 'F1', bipados: {} })).toBeNull()
+  })
+})
+
 describe('passo do ROLO QUE ENTRA', () => {
   const b = { posicao: 'P1', feeder: 'F1', saida: 'CAPJ41-0001' }
   it('passa com outro rolo do mesmo componente', () => {
@@ -76,13 +82,11 @@ describe('passo do ROLO QUE ENTRA', () => {
     expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'CAPJ41-1', bipados: b }))
       .toBe('O rolo que entra é o mesmo que sai.')
   })
-  it('recusa rolo que já está montado em outra posição', () => {
-    expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'RESX10-0007',
-      bipados: { posicao: 'P2', feeder: 'F2', saida: 'RESX10-0007' } }))
-      .toBe('O rolo que entra é o mesmo que sai.')
-    // e o caso de verdade: entra na P1 um rolo que está montado na P2
-    expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'RESX10-0007', bipados: b }))
-      .toBe('Componente diferente: sai CAPJ41, entra RESX10.')
+  it('o rolo montado na própria posição da troca não conta como "já montado em outra"', () => {
+    // P1 está com o rolo ...0005 (que sai) e o rolo ...0001 aparece na lista como montado na própria P1:
+    // sem excluir o item atual, o cliente recusaria para sempre o rolo que de fato está lá.
+    expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'CAPJ41-0001',
+      bipados: { posicao: 'P1', feeder: 'F1', saida: 'CAPJ41-0005' } })).toBeNull()
   })
   it('recusa o rolo que já está montado em outra posição (SMD)', () => {
     expect(conferirPasso({ ...smd, campo: 'entrada', valor: 'CAPJ41-2', bipados: b }))
