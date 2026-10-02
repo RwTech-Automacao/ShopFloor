@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   formatarDataHoraCurta, formatarHora, formatarDuracao,
   textoAlerta, textoLembrete, textoResolvido, textoNormalizou, textoTeste, textoVinculado,
-  TEXTO_INSTRUCOES_TELEGRAM,
+  TEXTO_INSTRUCOES_TELEGRAM, cortarExplicacao, LIMITE_EXPLICACAO, anexarLinha,
 } from '../mensagens'
 
 // 17/09/2026 14:05 em São Paulo (UTC-3, sem horário de verão desde 2019).
@@ -81,6 +81,18 @@ describe('textoResolvido', () => {
       '✅ Teste: resolvido por Ana Gestora às 14:05',
     )
   })
+  it('com explicação, diz o que foi feito', () => {
+    expect(
+      textoResolvido({ posto: 'Teste', nome: 'Ana Gestora', em: EM, explicacao: 'Troquei o feeder da 3' }),
+    ).toBe('✅ Teste: resolvido por Ana Gestora às 14:05\nO que foi feito: Troquei o feeder da 3')
+  })
+  it('sem explicação (ausente, nula, vazia ou só espaços) NÃO deixa rabo', () => {
+    for (const explicacao of [undefined, null, '', '   ']) {
+      expect(textoResolvido({ posto: 'Teste', nome: 'Ana Gestora', em: EM, explicacao })).toBe(
+        '✅ Teste: resolvido por Ana Gestora às 14:05',
+      )
+    }
+  })
 })
 
 describe('textoNormalizou', () => {
@@ -125,5 +137,29 @@ describe('anexarLinha (editar mensagem já enviada)', () => {
     expect(r.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
     expect(r.endsWith(linha)).toBe(true)
     expect(r).toContain('…')
+  })
+})
+
+describe('cortarExplicacao', () => {
+  it('apara, e o que não é texto vira vazio', () => {
+    expect(cortarExplicacao('  trocou o feeder ')).toBe('trocou o feeder')
+    expect(cortarExplicacao(undefined)).toBe('')
+    expect(cortarExplicacao(42)).toBe('')
+  })
+  it('corta em 500 por pontos de código, sem partir emoji', () => {
+    const cortado = cortarExplicacao('😀'.repeat(900))
+    expect([...cortado]).toHaveLength(LIMITE_EXPLICACAO)
+    expect(cortado).toBe('😀'.repeat(LIMITE_EXPLICACAO))
+  })
+})
+
+describe('resolvido com explicação cabe no limite do Discord', () => {
+  it('mensagem original grande + linha com 500 caracteres de explicação: ≤ 2000 e a explicação sobrevive', () => {
+    const linha = textoResolvido({
+      posto: 'Teste', nome: 'Ana Gestora', em: EM, explicacao: 'x'.repeat(LIMITE_EXPLICACAO),
+    })
+    const editada = anexarLinha('A'.repeat(1990), linha)
+    expect(editada.length).toBeLessThanOrEqual(2000)
+    expect(editada.endsWith('x'.repeat(LIMITE_EXPLICACAO))).toBe(true)
   })
 })

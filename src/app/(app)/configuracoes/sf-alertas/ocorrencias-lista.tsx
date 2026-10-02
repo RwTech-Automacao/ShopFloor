@@ -1,13 +1,23 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { CircleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatarDataHoraCurta, rotuloDefeito } from '@/modules/alertas/domain/mensagens'
+import { LIMITE_EXPLICACAO, formatarDataHoraCurta, rotuloDefeito } from '@/modules/alertas/domain/mensagens'
 import { NOME_TIPO_REGRA } from '@/modules/alertas/domain/tipos'
 import {
   formatarValorOcorrencia,
@@ -49,6 +59,9 @@ export function OcorrenciasLista({
   const [filtro, setFiltro] = useState<FiltroOcorrencias>(filtroInicial)
   const [lista, setLista] = useState<OcorrenciaLinha[]>(ocorrenciasIniciais)
   const [pendente, startTransition] = useTransition()
+  // A ocorrência que está sendo resolvida (diálogo aberto) e o que a pessoa escreveu.
+  const [resolvendo, setResolvendo] = useState<OcorrenciaLinha | null>(null)
+  const [explicacao, setExplicacao] = useState('')
   // O filtro de agora, para a recarga de fora poder usá-lo sem entrar nas dependências do efeito
   // (senão cada troca de filtro buscaria duas vezes).
   const filtroAtual = useRef(filtroInicial)
@@ -77,9 +90,16 @@ export function OcorrenciasLista({
     carregar(filtroAtual.current)
   }, [recarregar, carregar])
 
-  function resolver(o: OcorrenciaLinha) {
+  function abrirResolver(o: OcorrenciaLinha) {
+    setExplicacao('')
+    setResolvendo(o)
+  }
+
+  function resolver(o: OcorrenciaLinha, texto: string) {
+    setResolvendo(null)
     startTransition(async () => {
-      const r = await resolverOcorrenciaAction(o.id)
+      // A explicação é OPCIONAL: vazia, resolve do mesmo jeito (o banco apara e decide).
+      const r = await resolverOcorrenciaAction(o.id, texto)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         return
@@ -161,6 +181,11 @@ export function OcorrenciasLista({
                 <TableCell>{quando(o.abertaEm)}</TableCell>
                 <TableCell>
                   {o.resolvidaEm ? `${o.resolvidaPorNome} · ${quando(o.resolvidaEm)}` : '—'}
+                  {o.resolvidaEm && o.explicacao && (
+                    <span className="block max-w-xs whitespace-pre-wrap text-xs text-muted-foreground">
+                      {o.explicacao}
+                    </span>
+                  )}
                   {/* A reabertura preserva resolvida_por/resolvida_em: sem esta marca, a linha diria
                       "resolvida às 10:00" numa ocorrência que já voltou. */}
                   {o.resolvidaEm && o.estado !== 'resolvida' && o.reaberturas > 0 && (
@@ -175,8 +200,14 @@ export function OcorrenciasLista({
                 </TableCell>
                 <TableCell className="text-right">
                   {o.estado === 'aberta' && (
-                    <Button variant="outline" size="sm" disabled={pendente} onClick={() => resolver(o)}>
-                      Marcar resolvida
+                    <Button
+                      size="sm"
+                      disabled={pendente}
+                      onClick={() => abrirResolver(o)}
+                      className="bg-amber-400 text-black hover:bg-amber-500"
+                    >
+                      <CircleAlert aria-hidden="true" />
+                      Resolver
                     </Button>
                   )}
                 </TableCell>
@@ -185,6 +216,38 @@ export function OcorrenciasLista({
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={resolvendo !== null} onOpenChange={(aberto) => !aberto && setResolvendo(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resolver alerta{resolvendo ? ` — ${resolvendo.posto}` : ''}</DialogTitle>
+            <DialogDescription>
+              O que foi feito para resolver? É opcional, mas ajuda quem recebe o alerta a saber o que mudou.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            aria-label="O que foi feito"
+            placeholder="Ex.: troquei o feeder da máquina 3"
+            maxLength={LIMITE_EXPLICACAO}
+            value={explicacao}
+            onChange={(e) => setExplicacao(e.target.value)}
+          />
+          <p className="text-right text-xs text-muted-foreground">
+            {explicacao.length}/{LIMITE_EXPLICACAO}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResolvendo(null)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-amber-400 text-black hover:bg-amber-500"
+              onClick={() => resolvendo && resolver(resolvendo, explicacao)}
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

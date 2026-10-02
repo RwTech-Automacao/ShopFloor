@@ -15,6 +15,7 @@ import {
 } from '../domain/regra'
 import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/ocorrencia'
 import { resumoJanela } from '../domain/janela'
+import { cortarExplicacao } from '../domain/mensagens'
 import { NOME_TIPO_REGRA } from '../domain/tipos'
 import {
   atualizarRegra,
@@ -163,14 +164,17 @@ export async function listarOcorrenciasAction(
   }
 }
 
-export async function resolverOcorrenciaAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
+export async function resolverOcorrenciaAction(
+  id: string,
+  explicacao?: string,
+): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
     const g = await gestor()
     if (!g.ok) return { ok: false, erro: g.erro }
 
     // alerta_resolver_admin resolve E enfileira o "✅ resolvido por" para os destinatários (menos
     // quem resolveu), na mesma transação.
-    const r = await resolverOcorrenciaComoAdmin(id)
+    const r = await resolverOcorrenciaComoAdmin(id, cortarExplicacao(explicacao))
     if (!r.ok) return { ok: false, erro: r.erro }
 
     // Tira o botão das mensagens já entregues e adianta a entrega do aviso que está na fila. Falha

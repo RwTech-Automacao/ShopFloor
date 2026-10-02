@@ -61,6 +61,19 @@ export const LIMITE_MENSAGEM = 2000
 const MARGEM_CABECALHO = 160
 
 /**
+ * Tamanho máximo do que a pessoa escreve ao resolver. O texto vai para a coluna, para cada linha da
+ * fila e para a mensagem do Discord (teto de 2000, que RECUSA a mensagem inteira se passar). 500
+ * deixa folga para o cabeçalho, PMO/OP e as posições. Vale na tela e no Discord.
+ */
+export const LIMITE_EXPLICACAO = 500
+
+/** Apara e corta por PONTOS DE CÓDIGO (cortar no meio de um emoji deixaria meio caractere). */
+export function cortarExplicacao(texto: unknown): string {
+  if (typeof texto !== 'string') return ''
+  return [...texto.trim()].slice(0, LIMITE_EXPLICACAO).join('')
+}
+
+/**
  * Acrescenta uma linha (o "resolvido por") ao fim de uma mensagem JÁ ENVIADA, ao editá-la. O texto
  * original foi montado para caber em 2000 com folga só para o cabeçalho de lembrete/reabertura —
  * não para mais uma linha. Como o Discord RECUSA a edição inteira quando passa do limite (o botão
@@ -257,10 +270,13 @@ export function textoLembrete(d: DadosMensagem & { abertaEm: Date }): string {
  * Posto X: resolvido" não diria QUAL dos dois foi.
  */
 export function textoResolvido(
-  d: RefOp & { posto: string; nome: string; em: Date; defeito?: string | null },
+  d: RefOp & { posto: string; nome: string; em: Date; defeito?: string | null; explicacao?: string | null },
 ): string {
   const alvo = d.defeito ? `Defeito ${rotuloDefeito(d.defeito)} no ${d.posto}` : d.posto
-  return `✅ ${alvo}: resolvido por ${d.nome} às ${formatarHora(d.em)}${sufixoOp(d)}`
+  const base = `✅ ${alvo}: resolvido por ${d.nome} às ${formatarHora(d.em)}${sufixoOp(d)}`
+  // A explicação é opcional: sem texto (ou só espaços) a mensagem é a de sempre, sem rabo.
+  const expl = (d.explicacao ?? '').trim()
+  return expl === '' ? base : `${base}\nO que foi feito: ${expl}`
 }
 
 export function textoNormalizou(d: RefOp & {

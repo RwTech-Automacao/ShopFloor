@@ -1,5 +1,5 @@
 import { extrairCodigoVinculo, lerCallbackResolver, montarCallbackResolver } from '../domain/codigos'
-import { anexarLinha, textoResolvido, textoVinculado } from '../domain/mensagens'
+import { LIMITE_EXPLICACAO, anexarLinha, cortarExplicacao, textoResolvido, textoVinculado } from '../domain/mensagens'
 import { entregarPendentes, removerBotoesDaOcorrencia } from './enviar-alertas'
 import type { DependenciasWebhook } from './portas'
 
@@ -13,12 +13,6 @@ const RESPOSTA_MENSAGEM = 4
 const RESPOSTA_ATUALIZA_MENSAGEM = 7
 const RESPOSTA_MODAL = 9
 const CAMPO_EXPLICACAO = 'explicacao'
-/**
- * Tamanho máximo do que a pessoa escreve. O texto vai para a coluna, para cada linha da fila e para
- * a mensagem do Discord (teto de 2000, que RECUSA a mensagem inteira se passar). 500 deixa folga
- * para o cabeçalho, PMO/OP e as posições, e é bastante para dizer "trocamos o feeder da 3".
- */
-export const LIMITE_EXPLICACAO = 500
 const FLAG_EFEMERA = 64
 
 interface InteracaoDiscord {
@@ -80,9 +74,7 @@ function modalExplicacao(ocorrenciaId: string): RespostaDiscord {
 function lerExplicacao(i: InteracaoDiscord): string {
   const campos = (i.data?.components ?? []).flatMap((linha) => linha.components ?? [])
   const valor = campos.find((c) => c.custom_id === CAMPO_EXPLICACAO)?.value
-  if (typeof valor !== 'string') return ''
-  // Por pontos de código: cortar no meio de um emoji deixaria meio caractere na mensagem.
-  return [...valor.trim()].slice(0, LIMITE_EXPLICACAO).join('')
+  return cortarExplicacao(valor)
 }
 
 export async function tratarInteracaoDiscord(
@@ -115,7 +107,8 @@ export async function tratarInteracaoDiscord(
 
     if (i.type === INTERACAO_COMPONENTE) return modalExplicacao(ocorrenciaId)
 
-    const r = await deps.repo.resolver(ocorrenciaId, usuarioId, lerExplicacao(i))
+    const explicacao = lerExplicacao(i)
+    const r = await deps.repo.resolver(ocorrenciaId, usuarioId, explicacao)
     if (!r.ok) {
       const resposta = efemera(r.erro)
       if (r.codigo === 'OCORRENCIA_ENCERRADA') {
@@ -125,7 +118,14 @@ export async function tratarInteracaoDiscord(
     }
 
     const res = r.resolucao
-    const linha = textoResolvido({ posto: res.posto, nome: res.resolvidaPorNome, em: res.resolvidaEm })
+    // Já resolvida por outra pessoa: o banco manteve a explicação DELA, não a digitada agora, então
+    // mostrar o texto daqui seria atribuir a quem resolveu algo que ele não disse.
+    const linha = textoResolvido({
+      posto: res.posto,
+      nome: res.resolvidaPorNome,
+      em: res.resolvidaEm,
+      explicacao: res.jaResolvida ? '' : explicacao,
+    })
     return {
       // type 7 edita a MENSAGEM CLICADA: acrescenta quem resolveu e apaga o botão.
       corpo: {

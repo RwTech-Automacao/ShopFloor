@@ -193,7 +193,8 @@ describe('tratarInteracaoDiscord', () => {
     expect(r.corpo).toEqual({
       type: 7,
       data: {
-        content: '🔴 Teste abaixo da meta\n\n✅ Teste: resolvido por Bruno Líder às 14:05',
+        content:
+          '🔴 Teste abaixo da meta\n\n✅ Teste: resolvido por Bruno Líder às 14:05\nO que foi feito: Trocamos o feeder',
         components: [],
       },
     })
@@ -240,6 +241,41 @@ describe('tratarInteracaoDiscord', () => {
     const content = String((r.corpo.data as { content: string }).content)
     expect(content.length).toBeLessThanOrEqual(2000)
     expect(content).toContain('resolvido por Bruno Líder')
+  })
+
+  it('com 500 caracteres de explicação e mensagem original grande, a edição cabe e a explicação sobrevive', async () => {
+    const { repo } = repoFalso({ usuario: 'u2' })
+    const r = await tratarInteracaoDiscord(
+      envioModal('y'.repeat(500), { message: { content: 'A'.repeat(1990) } }),
+      { portas: {}, repo },
+    )
+    const content = String((r.corpo.data as { content: string }).content)
+    expect(content.length).toBeLessThanOrEqual(2000)
+    expect(content.endsWith('y'.repeat(500))).toBe(true)
+  })
+
+  it('sem explicação a mensagem editada não tem rabo ("O que foi feito" não aparece)', async () => {
+    const { repo } = repoFalso({ usuario: 'u2' })
+    const r = await tratarInteracaoDiscord(envioModal('  '), { portas: {}, repo })
+    const content = String((r.corpo.data as { content: string }).content)
+    expect(content).not.toContain('O que foi feito')
+  })
+
+  it('já resolvida por outra pessoa: não atribui a ela o texto digitado agora', async () => {
+    const { repo } = repoFalso({
+      usuario: 'u2',
+      resolver: {
+        ok: true,
+        resolucao: {
+          ocorrenciaId: 'oc1', regraId: 'r1', posto: 'Teste', jaResolvida: true,
+          resolvidaPorId: 'u9', resolvidaPorNome: 'Carla', resolvidaEm: new Date('2026-09-17T17:05:00Z'),
+        },
+      },
+    })
+    const r = await tratarInteracaoDiscord(envioModal('meu texto'), { portas: {}, repo })
+    const content = String((r.corpo.data as { content: string }).content)
+    expect(content).toContain('resolvido por Carla')
+    expect(content).not.toContain('meu texto')
   })
 
   it('botão de quem não vinculou responde efêmero e NÃO abre o modal', async () => {

@@ -235,7 +235,7 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *   tempo:     media_seg, limite_tempo_seg, pecas
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
- *              pmo, op, ops (opcionais)
+ *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome
  *   reabertura (só no 'alerta' que nasce de uma reabertura, 0122): reabertura = true,
  *              resolvida_por_nome, resolvida_em, reaberturas
@@ -251,6 +251,8 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
       em: data(dados, 'resolvida_em'),
       // Ausente nas linhas antigas da fila (de antes desta correção) e nos tipos sem defeito.
       defeito: textoOuNulo(dados, 'defeito'),
+      // Só existe quando a pessoa escreveu algo (o banco omite a chave nos outros casos).
+      explicacao: textoOuNulo(dados, 'explicacao'),
     })
   }
 
