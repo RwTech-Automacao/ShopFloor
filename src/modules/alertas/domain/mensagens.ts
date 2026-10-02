@@ -60,6 +60,52 @@ export const LIMITE_MENSAGEM = 2000
  */
 const MARGEM_CABECALHO = 160
 
+/**
+ * Tamanho máximo do que a pessoa escreve ao resolver. O texto vai para a coluna, para cada linha da
+ * fila e para a mensagem do Discord (teto de 2000, que RECUSA a mensagem inteira se passar). 500
+ * deixa folga para o cabeçalho, PMO/OP e as posições. Vale na tela e no Discord.
+ */
+export const LIMITE_EXPLICACAO = 500
+
+/** Apara e corta por PONTOS DE CÓDIGO (cortar no meio de um emoji deixaria meio caractere). */
+export function cortarExplicacao(texto: unknown): string {
+  if (typeof texto !== 'string') return ''
+  return [...texto.trim()].slice(0, LIMITE_EXPLICACAO).join('')
+}
+
+/**
+ * Corta em no máximo `max` unidades UTF-16 (a medida do Discord), mas só em FRONTEIRA de ponto de
+ * código: um emoji na borda sai inteiro, nunca com meio caractere (surrogate solto, que o Discord
+ * pode recusar como texto inválido).
+ */
+export function cortarUtf16(texto: string, max: number): string {
+  let usado = 0
+  let fim = 0
+  for (const ponto of texto) {
+    if (usado + ponto.length > max) break
+    usado += ponto.length
+    fim += ponto.length
+  }
+  return texto.slice(0, fim)
+}
+
+/**
+ * Acrescenta uma linha (o "resolvido por") ao fim de uma mensagem JÁ ENVIADA, ao editá-la. O texto
+ * original foi montado para caber em 2000 com folga só para o cabeçalho de lembrete/reabertura —
+ * não para mais uma linha. Como o Discord RECUSA a edição inteira quando passa do limite (o botão
+ * ficaria no ar e a pessoa veria "Esta interação falhou"), é o ORIGINAL que cede: perde o fim, com
+ * reticências, e a linha — que é o que o clique quer dizer — sobrevive intacta.
+ */
+export function anexarLinha(original: string, linha: string): string {
+  const sep = '\n\n'
+  const juntas = `${original}${sep}${linha}`.trim()
+  if (juntas.length <= LIMITE_MENSAGEM) return juntas
+  const cauda = `${sep}${linha}`
+  const sobra = LIMITE_MENSAGEM - cauda.length - 1
+  if (sobra <= 0) return cortarUtf16(linha, LIMITE_MENSAGEM)
+  return `${cortarUtf16(original, sobra).trimEnd()}…${cauda}`
+}
+
 /** Uma ordem de produção: o par PMO + OP como o banco guarda. */
 export interface ParOp {
   pmo?: string | null
@@ -240,10 +286,13 @@ export function textoLembrete(d: DadosMensagem & { abertaEm: Date }): string {
  * Posto X: resolvido" não diria QUAL dos dois foi.
  */
 export function textoResolvido(
-  d: RefOp & { posto: string; nome: string; em: Date; defeito?: string | null },
+  d: RefOp & { posto: string; nome: string; em: Date; defeito?: string | null; explicacao?: string | null },
 ): string {
   const alvo = d.defeito ? `Defeito ${rotuloDefeito(d.defeito)} no ${d.posto}` : d.posto
-  return `✅ ${alvo}: resolvido por ${d.nome} às ${formatarHora(d.em)}${sufixoOp(d)}`
+  const base = `✅ ${alvo}: resolvido por ${d.nome} às ${formatarHora(d.em)}${sufixoOp(d)}`
+  // A explicação é opcional: sem texto (ou só espaços) a mensagem é a de sempre, sem rabo.
+  const expl = (d.explicacao ?? '').trim()
+  return expl === '' ? base : `${base}\nO que foi feito: ${expl}`
 }
 
 export function textoNormalizou(d: RefOp & {

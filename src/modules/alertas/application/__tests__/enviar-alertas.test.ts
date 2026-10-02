@@ -204,6 +204,24 @@ describe('entregarPendentes', () => {
     ])
   })
 
+  it('o texto entregue nunca passa de 2000 (o Discord recusa a mensagem inteira), mesmo com explicação enorme', async () => {
+    const tg = portaFalsa()
+    const { repo, concluidos } = repoFalso({
+      fila: [
+        linha({
+          id: 'e1',
+          tipo: 'resolvido',
+          comBotao: false,
+          dados: { ...DADOS_ALERTA, resolvida_por_nome: 'Bruno', resolvida_em: '2026-09-17T17:05:00Z', explicacao: '😀'.repeat(2000) },
+        }),
+      ],
+    })
+    await entregarPendentes({ telegram: tg.porta }, repo)
+    expect(tg.enviados[0]!.texto.length).toBeLessThanOrEqual(2000)
+    expect(concluidos[0]!.texto.length).toBeLessThanOrEqual(2000)
+    expect(tg.enviados[0]!.texto).not.toMatch(/[\uD800-\uDBFF]$/)
+  })
+
   it('ordem: novas antes dos reenvios', async () => {
     const tg = portaFalsa()
     const { repo } = repoFalso({

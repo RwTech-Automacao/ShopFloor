@@ -283,6 +283,7 @@ export async function listarOcorrencias(f: FiltroOcorrencias): Promise<Ocorrenci
     amostras: number | null
     reaberta_em: string | null
     reaberturas: number | null
+    explicacao: string | null
   }[]).map((l) => ({
     id: l.id,
     regraId: l.regra_id,
@@ -302,6 +303,8 @@ export async function listarOcorrencias(f: FiltroOcorrencias): Promise<Ocorrenci
     reprovados: l.reprovados,
     abertaEm: l.aberta_em,
     resolvidaPorNome: l.resolvida_por_nome ?? '',
+    // Banco ainda sem a 0137 (deploy antes da migração): a coluna não vem.
+    explicacao: l.explicacao ?? '',
     resolvidaEm: l.resolvida_em,
     normalizadaEm: l.normalizada_em,
     reabertaEm: l.reaberta_em,
@@ -313,9 +316,13 @@ export async function listarOcorrencias(f: FiltroOcorrencias): Promise<Ocorrenci
 }
 
 /** Resolver pela TELA (gestor). Quem resolve pelo botão da mensagem passa por alerta_resolver. */
-export async function resolverOcorrenciaComoAdmin(id: string): Promise<ResultadoResolver> {
+export async function resolverOcorrenciaComoAdmin(id: string, explicacao = ''): Promise<ResultadoResolver> {
   const sb = await createServerSupabase()
-  const { data, error } = await sb.rpc('alerta_resolver_admin', { p_ocorrencia_id: id })
+  // Sem texto o parâmetro nem vai: o default do banco ('') faz o papel (e o banco apara o resto).
+  const { data, error } = await sb.rpc('alerta_resolver_admin', {
+    p_ocorrencia_id: id,
+    ...(explicacao ? { p_explicacao: explicacao } : {}),
+  })
   if (error) {
     return { ok: false, codigo: codigoErroAlerta(error.message), erro: mensagemErroAlerta(error.message) }
   }
