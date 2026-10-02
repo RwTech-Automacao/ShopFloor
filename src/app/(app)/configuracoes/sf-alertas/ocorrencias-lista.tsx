@@ -201,10 +201,10 @@ export function OcorrenciasLista({
                 <TableCell className="text-right">
                   {o.estado === 'aberta' && (
                     <Button
+                      variant="outline"
                       size="sm"
                       disabled={pendente}
                       onClick={() => abrirResolver(o)}
-                      className="bg-amber-400 text-black hover:bg-amber-500"
                     >
                       <CircleAlert aria-hidden="true" />
                       Resolver
@@ -222,7 +222,7 @@ export function OcorrenciasLista({
           <DialogHeader>
             <DialogTitle>Resolver alerta{resolvendo ? ` — ${resolvendo.posto}` : ''}</DialogTitle>
             <DialogDescription>
-              O que foi feito para resolver? É opcional, mas ajuda quem recebe o alerta a saber o que mudou.
+              O que foi feito para resolver?
             </DialogDescription>
           </DialogHeader>
           <Textarea
@@ -239,10 +239,7 @@ export function OcorrenciasLista({
             <Button variant="outline" onClick={() => setResolvendo(null)}>
               Cancelar
             </Button>
-            <Button
-              className="bg-amber-400 text-black hover:bg-amber-500"
-              onClick={() => resolvendo && resolver(resolvendo, explicacao)}
-            >
+            <Button onClick={() => resolvendo && resolver(resolvendo, explicacao)}>
               Confirmar
             </Button>
           </DialogFooter>

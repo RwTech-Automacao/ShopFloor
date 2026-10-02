@@ -162,7 +162,11 @@ describe('OcorrenciasLista — resolver pergunta o que foi feito', () => {
   it('o botão é "Resolver" (ação), não "Resolvido"/"Marcar resolvida", e é amarelo', () => {
     montar()
     const botao = screen.getByRole('button', { name: 'Resolver' })
-    expect(botao.className).toContain('bg-amber-400')
+    // A cor voltou ao neutro do projeto: na TELA nunca houve verde (o verde era só o do Discord).
+    // A garantia que resta é o VERBO: "Resolver" é ação, "Resolvido" parecia conclusão antes de
+    // qualquer coisa ter sido feita — foi isso que o usuário pediu para mudar.
+    expect(botao).toHaveTextContent('Resolver')
+    expect(botao).not.toHaveTextContent('Resolvido')
     expect(screen.queryByRole('button', { name: /resolvid/i })).not.toBeInTheDocument()
   })
 
