@@ -105,6 +105,9 @@ const CAIXAS: CaixaFluxo[] = [
   caixa({ etapa: 'divergencia', itens: 2, divergentes: 2 }),
 ]
 
+/** Data de chegada da EMB, como a coluna DATE chega do banco (sem hora, sem fuso). */
+const CHEGADA = '2026-09-02'
+
 const ITEM: ItemFluxo = {
   processoId: 'p1',
   numero: 123,
@@ -148,7 +151,7 @@ const REGISTRO_ITEM = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  carregarFluxoEmbAction.mockResolvedValue({ ok: true, caixas: CAIXAS })
+  carregarFluxoEmbAction.mockResolvedValue({ ok: true, caixas: CAIXAS, chegada: CHEGADA })
   carregarItensCaixaAction.mockResolvedValue({ ok: true, itens: [ITEM] })
   carregarHistoricoEtapaAction.mockResolvedValue({ ok: true, linhas: [PASSAGEM], temMais: false })
   carregarHistoricoItemAction.mockResolvedValue({ ok: true, linhas: [REGISTRO_ITEM] })
@@ -211,7 +214,8 @@ describe('FluxoForm', () => {
   it('liga a cadeia e pendura os dois ramos: Reprovado na Qualidade, Divergência no Recebimento', async () => {
     await escolherEmb()
     expect(screen.getByTestId('canvas').dataset.arestas).toBe(
-      'f:recebimento->qualidade f:qualidade->almoxarifado r:qualidade->reprovado r:recebimento->divergencia',
+      'f:emb->recebimento f:recebimento->qualidade f:qualidade->almoxarifado'
+        + ' r:qualidade->reprovado r:recebimento->divergencia',
     )
   })
 
@@ -383,6 +387,55 @@ describe('FluxoForm', () => {
     await escolherEmb()
     fireEvent.click(no('qualidade'))
     expect(await painel().findByText('Mostrando os 1 mais antigos de 3.')).toBeInTheDocument()
+  })
+
+  // ---------- card de início (a EMB) ----------
+
+  it('abre o fluxo com o card da EMB: número, data de chegada e quantos ainda não começaram', async () => {
+    await escolherEmb()
+    const cardEmb = within(no('emb'))
+    expect(cardEmb.getByText('EMB EMB390')).toBeInTheDocument()
+    // A data vem como `aaaa-mm-dd` e aparece em dd/mm/aaaa — sem passar por fuso (02/09 não vira 01/09).
+    expect(cardEmb.getByText('chegou em 02/09/2026')).toBeInTheDocument()
+    // Dos 10 itens da EMB, 4 ainda estão no Recebimento: são os que não começaram.
+    expect(cardEmb.getByText('4')).toBeInTheDocument()
+    // Fica uma coluna ANTES do Recebimento, como a Entrada do Fluxo do ShopFloor.
+    expect(no('emb').dataset.pos).toBe('-300,0')
+  })
+
+  it('a quantidade do card da EMB vai sendo subtraída conforme os itens avançam', async () => {
+    // Mesma EMB de 10 itens, com 2 dos 4 do Recebimento já promovidos à Qualidade.
+    carregarFluxoEmbAction.mockResolvedValue({
+      ok: true,
+      chegada: CHEGADA,
+      caixas: [
+        caixa({ etapa: 'recebimento', itens: 2 }),
+        caixa({ etapa: 'qualidade', itens: 5 }),
+        caixa({ etapa: 'almoxarifado', itens: 2 }),
+        caixa({ etapa: 'reprovado', itens: 1 }),
+        caixa({ etapa: 'divergencia', itens: 0 }),
+      ],
+    })
+    await escolherEmb()
+    const cardEmb = within(no('emb'))
+    // 10 da EMB − 8 que já saíram da espera (5 + 2 + 1) = 2. Não é o total da EMB.
+    expect(cardEmb.getByText('2')).toBeInTheDocument()
+    expect(cardEmb.queryByText('10')).toBeNull()
+  })
+
+  it('EMB sem nenhum item com data de chegada diz isso, em vez de inventar uma data', async () => {
+    carregarFluxoEmbAction.mockResolvedValue({ ok: true, caixas: CAIXAS, chegada: null })
+    await escolherEmb()
+    const cardEmb = within(no('emb'))
+    expect(cardEmb.getByText('sem data de chegada')).toBeInTheDocument()
+    expect(cardEmb.queryByText(/chegou em/)).toBeNull()
+  })
+
+  it('o card da EMB não abre painel: ele não é etapa', async () => {
+    await escolherEmb()
+    fireEvent.click(no('emb'))
+    await waitFor(() => expect(carregarItensCaixaAction).not.toHaveBeenCalled())
+    expect(document.querySelector('aside')).toBeNull()
   })
 
   it('erro da action aparece na tela em vez de quebrar', async () => {

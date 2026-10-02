@@ -49,11 +49,26 @@ import {
 import type { CaixaFluxo, ItemFluxo, PassagemEtapa } from '@/modules/recebimento/infra/fluxo-repository'
 import { cn } from '@/lib/utils'
 import { ArestaFluxo } from './aresta-fluxo'
-import { FluxoRecebimentoNode, type FluxoRecebimentoNodeData } from './fluxo-node'
+import {
+  FluxoEmbNode,
+  FluxoRecebimentoNode,
+  type FluxoEmbNodeData,
+  type FluxoRecebimentoNodeData,
+} from './fluxo-node'
 import { HistoricoItemDialog, type ItemDoHistorico } from './historico-item-dialog'
 
 const ESPACO_X = 300 // folga entre as caixas (mesma do Fluxo do ShopFloor)
 const ESPACO_Y = 200 // altura entre as duas linhas: o ramo do Reprovado desce da Qualidade
+
+/**
+ * Id do card de início (a EMB). Fica FORA de `CaixaFluxoId` de propósito: assim `ehCaixaFluxo` diz
+ * não pra ele e o clique não abre painel nenhum — igual à caixa de Entrada do Fluxo do ShopFloor,
+ * que também não tem detalhe.
+ */
+const ID_EMB = 'emb'
+
+/** O card de início fica uma coluna ANTES do Recebimento, como a Entrada do Fluxo do ShopFloor. */
+const POSICAO_EMB = { x: -ESPACO_X, y: 0 }
 
 /**
  * Arranjo padrão das cinco caixas: a cadeia na 1ª linha e os dois ramos embaixo — a Divergência sob
@@ -328,6 +343,8 @@ export function FluxoForm({ embs }: { embs: string[] }) {
   const [aberto, setAberto] = useState(false)
   const [filtro, setFiltro] = useState('')
   const [caixas, setCaixas] = useState<CaixaFluxo[] | null>(null)
+  // Data de chegada da EMB (`aaaa-mm-dd`), do card de início. `null` = nenhum item tem data.
+  const [chegada, setChegada] = useState<string | null>(null)
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
 
@@ -362,6 +379,23 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     [reais],
   )
   const total = useMemo(() => reais.reduce((soma, c) => soma + c.itens, 0), [reais])
+  /**
+   * Contagem do card de início: a MESMA conta da caixa de Entrada do Fluxo do ShopFloor, que mostra
+   * `qtd da OP − peças com ≥1 bipe` (ou seja, o total da ordem menos as que já começaram a andar) e
+   * por isso cai de um em um conforme a produção pega cada peça.
+   *
+   * Traduzida pra EMB: `itens da EMB − itens que já saíram da espera`. No Recebimento, "começar" é
+   * sair do Recebimento — o item é promovido a Qualidade no 1º salvamento de seção —, então quem já
+   * começou é quem está na Qualidade, no Almoxarifado ou reprovado. Dá no mesmo número da caixa
+   * Recebimento, e dá de propósito: ali "ainda não começou" é exatamente "status aberto".
+   *
+   * `Math.max` por paridade com lá (a conta nunca mostra negativo).
+   */
+  const naoIniciados = useMemo(() => {
+    const de = (e: CaixaFluxoId) => reais.find((c) => c.etapa === e)?.itens ?? 0
+    const jaComecaram = de('qualidade') + de('almoxarifado') + de('reprovado')
+    return Math.max(0, total - jaComecaram)
+  }, [reais, total])
   // Progresso da EMB no Modo TV: itens que já saíram da conferência (Almoxarifado + Reprovado).
   const pctConcluido = useMemo(() => {
     if (!caixas || total === 0) return null
@@ -371,7 +405,10 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     return raw >= 100 ? '100' : (Math.floor(raw * 10) / 10).toLocaleString('pt-BR', { maximumFractionDigits: 1 })
   }, [caixas, total])
 
-  const nodeTypes = useMemo<NodeTypes>(() => ({ etapa: FluxoRecebimentoNode }), [])
+  const nodeTypes = useMemo<NodeTypes>(
+    () => ({ etapa: FluxoRecebimentoNode, emb: FluxoEmbNode }),
+    [],
+  )
   const edgeTypes = useMemo<EdgeTypes>(() => ({ fluxo: ArestaFluxo }), [])
 
   // Sincroniza os nós com os dados preservando a posição arrastada. Ao trocar de EMB, ignora as
@@ -384,23 +421,39 @@ export function FluxoForm({ embs }: { embs: string[] }) {
       const posPorId = mesmaEmb
         ? new Map(prev.map((n) => [n.id, n.position]))
         : new Map<string, { x: number; y: number }>()
-      return caixas.map((c) => ({
-        id: c.etapa,
-        type: 'etapa',
-        // prioridade: posição arrastada na sessão → layout salvo da EMB → posição padrão.
-        position: posPorId.get(c.etapa) ?? layoutRef.current.get(c.etapa) ?? POSICAO[c.etapa],
+      // prioridade: posição arrastada na sessão → layout salvo da EMB → posição padrão.
+      const posDe = (id: string, padrao: { x: number; y: number }) =>
+        posPorId.get(id) ?? layoutRef.current.get(id) ?? padrao
+      const cardEmb: Node = {
+        id: ID_EMB,
+        type: 'emb',
+        position: posDe(ID_EMB, POSICAO_EMB),
         data: {
-          etapa: c.etapa,
-          subtitulo: SUBTITULO[c.etapa],
-          itens: c.itens,
-          divergentes: c.divergentes,
-          passaram: jaChegaram(caixas, c.etapa),
+          emb,
+          dataChegada: chegada,
+          naoIniciados,
           total,
-          selecionado: etapaSel === c.etapa,
-        } satisfies FluxoRecebimentoNodeData,
-      }))
+        } satisfies FluxoEmbNodeData,
+      }
+      return [
+        cardEmb,
+        ...caixas.map((c) => ({
+          id: c.etapa,
+          type: 'etapa',
+          position: posDe(c.etapa, POSICAO[c.etapa]),
+          data: {
+            etapa: c.etapa,
+            subtitulo: SUBTITULO[c.etapa],
+            itens: c.itens,
+            divergentes: c.divergentes,
+            passaram: jaChegaram(caixas, c.etapa),
+            total,
+            selecionado: etapaSel === c.etapa,
+          } satisfies FluxoRecebimentoNodeData,
+        })),
+      ]
     })
-  }, [caixas, emb, etapaSel, total, setNodes])
+  }, [caixas, chegada, emb, etapaSel, naoIniciados, total, setNodes])
 
   const edges = useMemo<Edge[]>(() => {
     if (!caixas) return []
@@ -413,6 +466,15 @@ export function FluxoForm({ embs }: { embs: string[] }) {
       data: { ativo: itensDe(target) > 0 },
     })
     return [
+      {
+        // A carga entra no fluxo pelo Recebimento: mesma ligação que a Entrada → 1º posto no Fluxo
+        // do ShopFloor. Fica cheia enquanto a EMB tem item (é o que o `ativo` diz nas outras).
+        id: `f:${ID_EMB}->recebimento`,
+        source: ID_EMB,
+        target: 'recebimento',
+        type: 'fluxo',
+        data: { ativo: itensDe('recebimento') > 0 },
+      },
       cadeia('recebimento', 'qualidade'),
       cadeia('qualidade', 'almoxarifado'),
       {
@@ -478,9 +540,10 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     layoutRef.current = new Map()
     setGuiaH(undefined)
     setGuiaV(undefined)
-    setNodes((prev) => prev.map((n) => (
-      ehCaixaFluxo(n.id) ? { ...n, position: POSICAO[n.id] } : n
-    )))
+    setNodes((prev) => prev.map((n) => {
+      if (n.id === ID_EMB) return { ...n, position: POSICAO_EMB }
+      return ehCaixaFluxo(n.id) ? { ...n, position: POSICAO[n.id] } : n
+    }))
     setTimeout(() => rfRef.current?.fitView({ duration: 200 }), 0)
   }, [setNodes])
 
@@ -511,10 +574,12 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     setCarregando(false)
     if (!r.ok) {
       setCaixas(null)
+      setChegada(null)
       setErro(r.erro)
       return
     }
     setCaixas(r.caixas)
+    setChegada(r.chegada)
     // Enquadra o fluxo da EMB nova depois do render (o canvas ainda não tem os nós neste tique).
     setTimeout(() => rfRef.current?.fitView({ duration: 200 }), 0)
   }
