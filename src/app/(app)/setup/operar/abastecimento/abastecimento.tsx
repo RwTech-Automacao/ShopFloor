@@ -34,6 +34,9 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
 
   // Descarta respostas de uma seleção antiga (o operador trocou a máquina antes de a busca voltar).
   const buscaSeq = useRef(0)
+  // Monotônico por carga de itens. O `buscaSeq` só sobe ao trocar de setup, então duas recargas em voo
+  // (uma por troca) carregariam o mesmo valor e a que chegasse por último venceria, mesmo sendo a mais velha.
+  const itensSeq = useRef(0)
 
   const completa = selecaoCompleta(selecao)
   const rotulos = rotulosPosicao(setup?.processo ?? (selecao.processo || 'SMD'))
@@ -56,9 +59,11 @@ export function Abastecimento({ ordens, equipamentos }: { ordens: OrdemSetup[]; 
 
   /** Uma consulta por setup aberto, nenhuma por bipe. Falhou: segue sem conferência (itens null). */
   async function carregarItens(setupId: string, seq: number) {
+    const minha = ++itensSeq.current
     try {
       const r = await carregarSetupAction(setupId)
-      if (seq !== buscaSeq.current) return
+      // Só a carga mais recente vale: uma resposta atrasada de antes da última troca traria o rolo velho.
+      if (seq !== buscaSeq.current || minha !== itensSeq.current) return
       setItens(r.ok ? r.itens : null)
     } catch {
       // A conferência é um extra: sem ela o servidor continua conferindo no envio.
