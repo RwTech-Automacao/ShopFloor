@@ -300,13 +300,13 @@ export function ConteudoAbastecimento({
           </aside>
 
           <div className="order-1 flex min-h-0 flex-col gap-3 @xl:order-none">
-            {/* A recusa fica acima do campo: o motivo em destaque, onde o olho já está. Rola por dentro
+            {/* Retrato: campo, recusa, botões (o teclado virtual sobe de baixo; o campo não pode descer). Paisagem: recusa acima do campo. Rola por dentro
                 só se passar de 45vh; não cede espaço ao campo, que nunca sai da tela. */}
-            <div className="flex max-h-[45vh] flex-none flex-col gap-3 overflow-y-auto empty:hidden">
+            <div className="order-2 flex max-h-[45vh] flex-none flex-col gap-3 overflow-y-auto empty:hidden @xl:order-none">
               <PainelResultado resultado={resultado} />
             </div>
 
-            <div className="flex flex-none flex-col justify-center gap-2 sm:flex-1">
+            <div className="order-1 flex flex-none flex-col justify-center gap-2 sm:flex-1 @xl:order-none">
               <Label htmlFor={`troca-${atual.campo}`} className="text-3xl font-semibold @xl:text-2xl">{atual.rotulo}</Label>
               <Input
                 id={`troca-${atual.campo}`}
@@ -328,7 +328,7 @@ export function ConteudoAbastecimento({
 
             {/* O Enter do leitor continua sendo o caminho normal; o botão é para o tablet só de toque, cujo
                 teclado virtual pode não ter Enter. Ele faz exatamente o que o Enter faria neste passo. */}
-            <div className="flex flex-none gap-2">
+            <div className="order-3 flex flex-none gap-2 @xl:order-none">
               {passo > 0 && (
                 <Button
                   type="button"
