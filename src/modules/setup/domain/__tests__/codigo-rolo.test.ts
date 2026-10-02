@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { separarRolo, normalizarTexto } from '../codigo-rolo'
+import { chaveRolo, separarRolo, normalizarTexto } from '../codigo-rolo'
 
 describe('separarRolo', () => {
   it('separa código do ERP e lote/número do rolo no primeiro hífen', () => {
@@ -28,5 +28,19 @@ describe('normalizarTexto', () => {
   it('maiúsculas, sem espaços nas pontas, mantém zeros', () => {
     expect(normalizarTexto('  zsy-008-01 ')).toBe('ZSY-008-01')
     expect(normalizarTexto('01')).toBe('01')
+  })
+})
+
+describe('chaveRolo', () => {
+  it('despreza os zeros à esquerda do sequencial: o mesmo rolo tem a mesma chave', () => {
+    expect(chaveRolo('CAPJ41-0001')).toBe('CAPJ41-1')
+    expect(chaveRolo('capj41-1')).toBe('CAPJ41-1')
+    expect(chaveRolo('CAPJ41 0001')).toBe('CAPJ41-1')
+  })
+  it('é null quando o código é vazio ou não tem sequencial', () => {
+    expect(chaveRolo('CAPJ41')).toBeNull()
+    expect(chaveRolo('CAPJ41-')).toBeNull()
+    expect(chaveRolo('-123')).toBeNull()
+    expect(chaveRolo('')).toBeNull()
   })
 })

@@ -20,6 +20,8 @@ import {
   textoReabertura,
   textoResolvido,
   textoTeste,
+  type ParOp,
+  type RefOp,
 } from './mensagens'
 
 /**
@@ -118,6 +120,36 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
 /** Envios que nascem de uma ocorrência — os únicos cujo texto depende do tipo da regra. */
 type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido'>
 
+/**
+ * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
+ * par escalar `pmo`/`op` (que o banco preenche só na janela do tipo `op`).
+ *
+ * Tolerante de propósito: linha enfileirada antes da 0136 não tem `ops`, e aí vale o par escalar —
+ * a mensagem sai igual à de antes em vez de falhar. Item que não é objeto é descartado.
+ */
+function refOpDe(d: Record<string, unknown>): RefOp {
+  const bruto = d.ops
+  const ops: ParOp[] = []
+  if (Array.isArray(bruto)) {
+    for (const item of bruto) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+      const par = item as Record<string, unknown>
+      ops.push({ pmo: textoOuNulo(par, 'pmo'), op: textoOuNulo(par, 'op') })
+    }
+  }
+  return { pmo: textoOuNulo(d, 'pmo'), op: textoOuNulo(d, 'op'), ops }
+}
+
+/**
+ * Lista de textos de um campo jsonb (as posições do defeito). Campo ausente ou que não é array vira
+ * lista vazia: a mensagem sai sem a linha das posições, como antes desta mudança.
+ */
+function listaTextos(d: Record<string, unknown>, campo: string): string[] {
+  const v = d[campo]
+  if (!Array.isArray(v)) return []
+  return v.map((x) => (x === null || x === undefined ? '' : String(x)))
+}
+
 function janelaDe(d: Record<string, unknown>): Janela {
   const tipo = d.janela_tipo
   if (!ehJanelaTipo(tipo)) throw new DadosEnvioInvalidos('janela_tipo')
@@ -131,8 +163,12 @@ function textoAprovacao(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown
   const reprovados = numero(dados, 'reprovados')
   const abertaEm = data(dados, 'aberta_em')
   const agora = data(dados, 'agora')
-  if (tipo === 'normalizou') return textoNormalizou({ posto, aprovados, reprovados, abertaEm, em: agora })
+  const refOp = refOpDe(dados)
+  if (tipo === 'normalizou') {
+    return textoNormalizou({ ...refOp, posto, aprovados, reprovados, abertaEm, em: agora })
+  }
   const base = {
+    ...refOp,
     posto,
     regraNome: texto(dados, 'regra_nome'),
     taxaMinima: numero(dados, 'taxa_minima'),
@@ -148,9 +184,11 @@ function textoAprovacao(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown
 function textoTempo(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
   const posto = texto(dados, 'posto')
   const mediaSeg = numero(dados, 'media_seg')
-  if (tipo === 'normalizou') return textoNormalizouTempo({ posto, mediaSeg })
+  const refOp = refOpDe(dados)
+  if (tipo === 'normalizou') return textoNormalizouTempo({ ...refOp, posto, mediaSeg })
   const agora = data(dados, 'agora')
   const alerta = textoAlertaTempo({
+    ...refOp,
     posto,
     regraNome: texto(dados, 'regra_nome'),
     mediaSeg,
@@ -166,9 +204,12 @@ function textoTempo(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): 
 function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
   const posto = texto(dados, 'posto')
   const defeito = texto(dados, 'defeito')
-  if (tipo === 'normalizou') return textoNormalizouDefeito({ posto, defeito })
+  const refOp = refOpDe(dados)
+  if (tipo === 'normalizou') return textoNormalizouDefeito({ ...refOp, posto, defeito })
   const agora = data(dados, 'agora')
   const alerta = textoAlertaDefeito({
+    ...refOp,
+    posicoes: listaTextos(dados, 'posicoes'),
     posto,
     regraNome: texto(dados, 'regra_nome'),
     defeito,
@@ -189,11 +230,12 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *
  * Chaves (as mesmas do jsonb_build_object do alerta_avaliar da 0115):
  *   comuns (alerta/lembrete/normalizou): regra_tipo, regra_nome, posto, janela_tipo, janela_valor,
- *                                        pmo, op, aberta_em, agora
+ *                                        pmo, op, ops (lista de {pmo, op} da 0136), aberta_em, agora
  *   aprovacao: taxa, taxa_minima, aprovados, reprovados
  *   tempo:     media_seg, limite_tempo_seg, pecas
- *   defeito:   defeito, ocorrencias, limite_ocorrencias
- *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito)
+ *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
+ *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
+ *              pmo, op, ops (opcionais)
  *   teste: nome
  *   reabertura (só no 'alerta' que nasce de uma reabertura, 0122): reabertura = true,
  *              resolvida_por_nome, resolvida_em, reaberturas
@@ -203,6 +245,7 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
   if (tipo === 'resolvido') {
     return textoResolvido({
+      ...refOpDe(dados),
       posto: texto(dados, 'posto'),
       nome: texto(dados, 'resolvida_por_nome'),
       em: data(dados, 'resolvida_em'),
