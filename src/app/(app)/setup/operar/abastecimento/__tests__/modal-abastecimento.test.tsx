@@ -505,7 +505,13 @@ describe('ConteudoAbastecimento', () => {
       const dd = (rotulo: string) => [...container.querySelectorAll('dt')].find((e) => e.textContent === rotulo)!.nextElementSibling!
       expect(dd('Rolo que sai')).toHaveTextContent('CAPJ41-0001')
       expect(dd('Rolo que entra')).toHaveTextContent('CAPJ41-0007')
-      expect(dd('Rolo que entra').querySelector('span')!.className).toContain('break-all')
+      // O código não pode partir cabendo (o operador lê `CAPJ41-0007` de relance), mas também não pode
+      // vazar da caixa: `break-words` quebra só quando não cabe nem sozinho na linha. `break-all` partia
+      // mesmo cabendo — era o que cortava `CAPJ48-0002` em "CAPJ48-000" e "2". E o `flex-wrap` do dd é
+      // quem faz a etiqueta "esperado" descer em vez de espremer o valor.
+      expect(dd('Rolo que entra').querySelector('span')!.className).toContain('break-words')
+      expect(dd('Rolo que entra').querySelector('span')!.className).not.toContain('break-all')
+      expect(dd('Rolo que entra').className).toContain('flex-wrap')
       expect(dd('Rolo que entra').className).toContain('font-mono')
     })
 

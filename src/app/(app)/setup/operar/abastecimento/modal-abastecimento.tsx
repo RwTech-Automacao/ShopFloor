@@ -283,10 +283,14 @@ export function ConteudoAbastecimento({
               {linhas.map((l) => (
                 <div key={l.chave} className="min-w-0">
                   <dt className="text-base text-muted-foreground @xl:text-sm">{l.rotulo}</dt>
-                  <dd className={`flex min-w-0 items-baseline gap-2 text-2xl font-semibold @xl:text-xl ${l.mono ? 'font-mono' : ''}`}>
+                  {/* Código de rolo quer ficar inteiro: partir `CAPJ48-0002` em duas linhas é justo o que o
+                      operador precisa ler de relance. Quem cede e desce é a etiqueta "esperado" (daí o
+                      `flex-wrap`); e o valor quebra só se NÃO couber nem sozinho na linha (`break-words`,
+                      não `break-all`, que partia mesmo cabendo). Sem isso, código longo vazaria da caixa. */}
+                  <dd className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-2xl font-semibold @xl:text-xl ${l.mono ? 'font-mono' : ''}`}>
                     {l.valor !== '' ? (
                       <>
-                        <span className="min-w-0 break-all">{l.valor}</span>
+                        <span className="min-w-0 break-words">{l.valor}</span>
                         {l.esperado && <span className="flex-none rounded bg-muted px-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">esperado</span>}
                       </>
                     ) : (
