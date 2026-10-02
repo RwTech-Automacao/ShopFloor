@@ -168,4 +168,52 @@ describe('actions de alertas — payload malformado não lança exceção', () =
     )
     limparMocks()
   })
+
+  describe('resolverOcorrenciaAction', () => {
+    const RESOLUCAO = {
+      ok: true,
+      resolucao: { ocorrenciaId: 'o1', regraId: 'g1', posto: 'Teste', jaResolvida: false },
+    }
+
+    async function chamar(explicacao?: unknown) {
+      const resolverOcorrenciaComoAdmin = vi.fn().mockResolvedValue(RESOLUCAO)
+      comoGestor()
+      repositorioFalso({ resolverOcorrenciaComoAdmin })
+      vi.doMock('@/modules/logs/application/registrar-log', () => ({ registrarLog: vi.fn() }))
+      vi.doMock('next/cache', () => ({ revalidatePath: vi.fn() }))
+      // O envio pós-resolução (Discord/Telegram) não é o assunto aqui e não pode ir à rede.
+      vi.doMock('../../infra/fabrica', () => ({ criarDependenciasAlertas: () => ({ portas: {}, repo: {} }) }))
+      vi.doMock('../enviar-alertas', () => ({
+        avaliarEEnviar: vi.fn(),
+        entregarPendentes: vi.fn(),
+        removerBotoesDaOcorrencia: vi.fn(),
+      }))
+      vi.resetModules()
+      const { resolverOcorrenciaAction } = await import('../alertas-actions')
+      const r = await resolverOcorrenciaAction('o1', explicacao as string | undefined)
+      vi.doUnmock('../../infra/fabrica')
+      vi.doUnmock('../enviar-alertas')
+      limparMocks()
+      return { r, resolverOcorrenciaComoAdmin }
+    }
+
+    it('repassa a explicação aparada', async () => {
+      const { r, resolverOcorrenciaComoAdmin } = await chamar('  Troquei o feeder  ')
+      expect(r).toEqual({ ok: true })
+      expect(resolverOcorrenciaComoAdmin).toHaveBeenCalledWith('o1', 'Troquei o feeder')
+    })
+
+    it('sem explicação (ausente ou em branco) resolve, e vai vazio', async () => {
+      for (const e of [undefined, '', '   ']) {
+        const { r, resolverOcorrenciaComoAdmin } = await chamar(e)
+        expect(r).toEqual({ ok: true })
+        expect(resolverOcorrenciaComoAdmin).toHaveBeenCalledWith('o1', '')
+      }
+    })
+
+    it('corta em 500 caracteres no servidor', async () => {
+      const { resolverOcorrenciaComoAdmin } = await chamar('z'.repeat(3000))
+      expect(resolverOcorrenciaComoAdmin.mock.calls[0]![1]).toHaveLength(500)
+    })
+  })
 })
