@@ -167,8 +167,12 @@ export function EtiquetarRoloCliente() {
         return
       }
       setPendentes((atual) => [r.linha, ...atual])
-      setCodigo('') // o código limpa (e o efeito acima devolve o foco a ele)
-      // o PEDIDO fica: vêm vários rolos seguidos do mesmo pedido
+      // Os DOIS campos limpam (o efeito acima devolve o foco ao código). O pedido ficava, para a
+      // recontagem de vários rolos do mesmo pedido — mas no uso real os pedidos variam de rolo em
+      // rolo, e o pedido grudado tinha um risco pior que a redigitação: o rolo SEM pedido escrito
+      // herdava em silêncio o pedido do anterior, e saía com uma etiqueta que mente.
+      setCodigo('')
+      setPedido('')
       toast.success(`Etiqueta ${r.linha.codigo} gerada.`)
     } catch {
       // A AÇÃO NÃO VOLTOU — quase sempre o wifi do tablet caindo no meio do galpão. O servidor pode
@@ -405,8 +409,8 @@ export function EtiquetarRoloCliente() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Um rolo por vez. O pedido fica no campo para o rolo seguinte — na recontagem vêm vários
-            rolos do mesmo pedido. Deixe em branco o rolo que não tem pedido escrito.
+            Um rolo por vez. Os dois campos limpam a cada etiqueta. Deixe o pedido em branco no
+            rolo que não tem pedido escrito.
           </p>
 
           <div className="flex flex-wrap items-center justify-between gap-2">

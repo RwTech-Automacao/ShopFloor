@@ -82,14 +82,30 @@ beforeEach(() => {
 })
 
 describe('etiquetar um rolo', () => {
-  it('depois de adicionar, o Código limpa e o Pedido continua', async () => {
+  it('depois de adicionar, os DOIS campos limpam', async () => {
     etiquetarRoloAction.mockResolvedValue({ ok: true, linha: rolo() })
     abrir()
 
     await digitarEAdicionar('CAPA78', '1234/25')
 
     await waitFor(() => expect(campos().codigo).toHaveValue(''))
-    expect(campos().pedido).toHaveValue('1234/25')
+    expect(campos().pedido).toHaveValue('')
+  })
+
+  it('o rolo SEM pedido não herda o pedido do rolo anterior', async () => {
+    // É este o motivo de limpar os dois, e não a economia de digitação: antes o pedido ficava no
+    // campo, então etiquetar um rolo com pedido e em seguida um rolo SEM pedido escrito colava no
+    // segundo uma etiqueta com o pedido do primeiro — uma etiqueta que mente, e ninguém percebe.
+    etiquetarRoloAction.mockResolvedValue({ ok: true, linha: rolo() })
+    abrir()
+
+    await digitarEAdicionar('CAPA78', '1234/25')
+    await waitFor(() => expect(campos().pedido).toHaveValue(''))
+
+    etiquetarRoloAction.mockClear()
+    await digitarEAdicionar('RWPRA14', '')
+
+    expect(etiquetarRoloAction).toHaveBeenCalledWith('RWPRA14', '')
   })
 
   it('a lista mostra o código final por extenso', async () => {
