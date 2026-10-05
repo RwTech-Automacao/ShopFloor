@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   normalizarCodigo, formatarPedido, resolverDoc, padSeq, formatarVolume,
   gerarEtiquetasDoProcesso, gerarCsv,
-  camposCompletosEtiqueta, elegivelParaEtiqueta,
+  camposCompletosEtiqueta, elegivelParaEtiqueta, carimboDataHora,
 } from '../partnumber'
 
 describe('formatarPedido', () => {
@@ -113,5 +113,35 @@ describe('gerarCsv', () => {
       { partNumber: 'X', codigo: 'Y', volume: '02-02' },
     ])
     expect(csv).toBe('"A""B","C","01-02"\r\n"X","Y","02-02"')
+  })
+})
+
+describe('carimboDataHora', () => {
+  /**
+   * Finge que a máquina roda em UTC, como o servidor. Sem isto o teste não prova nada nesta
+   * máquina, que já está em Brasília: apagar o `timeZone` do helper daria o mesmo resultado aqui e
+   * a data errada só apareceria em produção. Um `timeZone` explícito (o do helper) ganha do UTC.
+   */
+  function comoNoServidor<T>(f: () => T): T {
+    const real = Intl.DateTimeFormat
+    // Função comum, não arrow: ela é chamada com `new` lá dentro.
+    function fingido(locais?: string, opcoes?: Intl.DateTimeFormatOptions) {
+      return new real(locais, { timeZone: 'UTC', ...opcoes })
+    }
+    vi.stubGlobal('Intl', { ...Intl, DateTimeFormat: fingido as unknown as typeof Intl.DateTimeFormat })
+    try {
+      return f()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  }
+
+  it('carimba no fuso de Brasília, não no do servidor', () => {
+    expect(comoNoServidor(() => carimboDataHora(new Date('2026-09-30T23:30:00Z')))).toBe('20260930_203000')
+  })
+  it('depois das 21h de Brasília o nome NÃO pula para o dia seguinte', () => {
+    // 01:15 UTC do dia 1º ainda são 22:15 do dia 30 aqui — e quem procura o arquivo do turno
+    // procura pelo dia do turno.
+    expect(comoNoServidor(() => carimboDataHora(new Date('2026-10-01T01:15:00Z')))).toBe('20260930_221500')
   })
 })
