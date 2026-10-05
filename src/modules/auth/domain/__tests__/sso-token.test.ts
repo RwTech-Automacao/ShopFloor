@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { validarClaimsSso, RegistroJti } from '../sso-token'
 
 describe('validarClaimsSso', () => {
@@ -30,6 +30,9 @@ describe('validarClaimsSso', () => {
 })
 
 describe('RegistroJti', () => {
+  // Um teste aqui adianta o relógio; sem isto o próximo teste herdaria o relógio falso.
+  afterEach(() => { vi.useRealTimers() })
+
   it('aceita o primeiro uso e recusa o mesmo token de novo', () => {
     const r = new RegistroJti()
     expect(r.registrar('uuid-1', 1_000, 0)).toBe(true)
@@ -46,13 +49,42 @@ describe('RegistroJti', () => {
     const r = new RegistroJti()
     r.registrar('uuid-1', 1_000, 0)
     expect(r.tamanho).toBe(1)
-    r.registrar('uuid-2', 5_000, 2_000) // a limpeza roda no registro seguinte
+    r.registrar('uuid-2', 65_000, 61_001) // a limpeza roda no registro seguinte, já passada a folga
     expect(r.tamanho).toBe(1)
   })
 
   it('depois de expirado o mesmo jti volta a ser aceito — mas o exp do token já o barra antes', () => {
     const r = new RegistroJti()
     r.registrar('uuid-1', 1_000, 0)
-    expect(r.registrar('uuid-1', 9_000, 2_000)).toBe(true)
+    expect(r.registrar('uuid-1', 70_000, 61_001)).toBe(true)
+  })
+
+  it('um token 10 s depois do exp não é aceito duas vezes — a tolerância de relógio deixava essa janela descoberta', () => {
+    const r = new RegistroJti()
+    const exp = 60_000
+    expect(r.registrar('uuid-1', exp, 50_000)).toBe(true)
+    // Passado o `exp`, o jwtVerify AINDA aceita o token (clockTolerance). Se o registro já tiver
+    // esquecido o jti nessa janela, o mesmo link entra de novo.
+    expect(r.registrar('uuid-1', exp, exp + 10_000)).toBe(false)
+  })
+
+  it('lembra do jti na janela de tolerância usando o relógio real — é o caminho que a rota /sso usa', () => {
+    const r = new RegistroJti()
+    const t0 = new Date('2026-10-01T12:00:00Z').getTime()
+    const exp = t0 + 60_000
+    vi.useFakeTimers()
+    vi.setSystemTime(t0)
+    expect(r.registrar('uuid-1', exp)).toBe(true)
+    vi.setSystemTime(exp + 10_000)
+    expect(r.registrar('uuid-1', exp)).toBe(false)
+  })
+
+  it('a folga não é eterna: passada a retenção o jti sai do mapa', () => {
+    const r = new RegistroJti(60_000)
+    const exp = 60_000
+    r.registrar('uuid-1', exp, 50_000)
+    r.registrar('uuid-2', exp, exp + 60_000 + 1) // a limpeza roda no registro seguinte
+    expect(r.tamanho).toBe(1)
   })
 })
+
