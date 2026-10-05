@@ -37,6 +37,13 @@ export function validarClaimsSso(
 }
 
 /**
+ * Folga de retenção padrão: 60s além do `exp`. É o piso seguro para quem instancia o registro sem
+ * dizer nada — é mais do que qualquer tolerância de relógio razoável, e o custo é só lembrar de
+ * cada jti por um minuto a mais.
+ */
+export const FOLGA_RETENCAO_MS = 60_000
+
+/**
  * Registro dos `jti` já usados, para recusar o mesmo token duas vezes.
  *
  * Em memória porque o Shopfloor roda em UM processo (pm2 fork). Se um dia virarem várias
@@ -49,17 +56,31 @@ export function validarClaimsSso(
 export class RegistroJti {
   private readonly vistos = new Map<string, number>()
 
+  /**
+   * Quanto tempo o jti é guardado DEPOIS do `exp` do token.
+   *
+   * Isto não é zelo: quem valida a assinatura aceita o token por mais um tanto além do `exp`
+   * (tolerância de relógio entre o portal e este servidor). Se o registro esquecesse o jti no
+   * `exp` cravado, sobraria uma janela em que o token ainda passa na validação e o anti-replay já
+   * não lembra dele — o mesmo link entraria duas vezes. A folga tem que COBRIR essa tolerância,
+   * com sobra; quem chama passa a sua (ver a constante da tolerância em sso-portal).
+   */
+  constructor(private readonly folgaMs: number = FOLGA_RETENCAO_MS) {}
+
   /** Marca o jti. `false` = já tinha sido usado (replay). */
   registrar(jti: string, expiraEmMs: number, agoraMs: number = Date.now()): boolean {
     this.limpar(agoraMs)
     if (this.vistos.has(jti)) return false
-    this.vistos.set(jti, expiraEmMs)
+    this.vistos.set(jti, expiraEmMs + this.folgaMs)
     return true
   }
 
-  /** Descarta os que já passaram da validade — o mapa não pode crescer para sempre. */
+  /**
+   * Descarta os que já passaram da validade — o mapa não pode crescer para sempre.
+   * O que está guardado é o fim da RETENÇÃO (`exp` + folga), não o `exp` do token.
+   */
   private limpar(agoraMs: number): void {
-    for (const [jti, expira] of this.vistos) if (expira <= agoraMs) this.vistos.delete(jti)
+    for (const [jti, ateQuando] of this.vistos) if (ateQuando <= agoraMs) this.vistos.delete(jti)
   }
 
   get tamanho(): number {
