@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { entrarPorSsoDashboard, type CodigoSsoDashboard } from '@/modules/auth/application/sso-dashboard'
+import { scriptPonteEmbed } from '@/shared/lib/mensagem-embed'
 
 /**
  * Entrada de SSO do Dashboard Enterplak: `GET /embed/sso?token=<JWT>&next=<caminho>`.
@@ -62,28 +63,16 @@ const ESCAPES: Record<string, string> = {
 }
 const escaparHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ESCAPES[c] ?? c)
 
-/** JSON dentro de `<script>`: o `<` escapado impede que um valor com `</script>` feche a tag. */
-const paraScript = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c')
-
 /**
  * Página mínima de falha, em PT-BR, com o aviso ao pai.
  *
- * ⚠️ PROVISÓRIO: a ponte de `postMessage` é da Task 4 (`src/app/embed/embed-ponte.tsx`). Quando ela
- * existir, este `<script>` inline sai e a página passa a usar o componente de ponte — aqui está só
- * o mínimo para o dashboard não ficar esperando um iframe mudo.
- *
- * `targetOrigin` é a origem do dashboard, lida do env; sem ela, NÃO se manda mensagem (nunca `*`,
- * que entregaria o aviso a qualquer página que estivesse nos embutindo).
+ * O aviso sai pela MESMA ponte da tela embutida (`src/shared/lib/mensagem-embed.ts`): aqui a
+ * resposta é HTML cru de um Route Handler, sem React pra montar o `<EmbedPonte>`, então usa-se a
+ * versão `<script>` do mesmo contrato — forma da mensagem, origem do env e a regra do "sem origem,
+ * nada" vêm todas de lá, numa implementação só.
  */
 function paginaDeErro(erro: string, codigo: CodigoSsoDashboard | null): string {
-  const origem = process.env.DASHBOARD_ORIGIN ?? ''
-  const ponte =
-    origem === ''
-      ? ''
-      : `<script>try{window.parent.postMessage(${paraScript({
-          type: 'sf-embed:error',
-          code: codigo,
-        })},${paraScript(origem)})}catch(e){}</script>`
+  const ponte = scriptPonteEmbed('sf-embed:error', codigo)
 
   return `<!doctype html>
 <html lang="pt-BR">
