@@ -57,6 +57,14 @@ describe('FluxoForm sem as props do embed — comportamento idêntico ao de hoje
     render(<FluxoForm ops={OPS} ordensDashboard={[]} />)
     expect(carregarFluxo).not.toHaveBeenCalled()
   })
+
+  // Par da asserção negativa do embed (logo abaixo): prova que o botão EXISTE quando não há
+  // `ocultarSeletor`. Sem este teste, o "não aparece" de lá passaria mesmo se o botão fosse
+  // apagado do componente — asserção vazia.
+  it('mostra o botão Apresentação (a tela normal não perde o recurso)', () => {
+    render(<FluxoForm ops={OPS} ordensDashboard={[]} />)
+    expect(screen.getByRole('button', { name: /Apresentação/ })).toBeInTheDocument()
+  })
 })
 
 describe('FluxoForm com `opFixa` + `ocultarSeletor` (tela embutida no dashboard)', () => {
@@ -86,6 +94,19 @@ describe('FluxoForm com `opFixa` + `ocultarSeletor` (tela embutida no dashboard)
     expect(screen.getByText('PMOC13/2340/26 · VMI')).toBeInTheDocument()
     expect(screen.queryByText('Selecione a OP')).not.toBeInTheDocument()
     expect(carregarFluxo).toHaveBeenCalledWith('PMOC13', '2340/26')
+  })
+
+  // O painel da Apresentação tem um SEGUNDO seletor de OP (com TODAS as OPs) e iniciar a playlist
+  // chama o mesmo `escolher` do seletor principal: era um caminho para trocar a OP dentro do
+  // /embed, onde a OP é fixa pela URL. O botão tem que sumir junto com o seletor.
+  it('não oferece o Modo Apresentação (seria uma porta pra trocar a OP)', () => {
+    render(
+      <FluxoForm ops={OPS} ordensDashboard={[]} opFixa={{ pmo: 'PMOC13', op: '2340/26' }} ocultarSeletor />,
+    )
+
+    expect(screen.queryByRole('button', { name: /Apresentação/ })).not.toBeInTheDocument()
+    // E o painel (que traz o outro seletor de OP) não tem como ser aberto.
+    expect(screen.queryByText('Apresentação · playlist')).not.toBeInTheDocument()
   })
 
   it('`ocultarSeletor` sozinho esconde o seletor sem escolher OP nenhuma', () => {

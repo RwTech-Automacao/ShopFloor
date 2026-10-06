@@ -58,5 +58,52 @@ lancamento/configuracao do ShopFloor deve ficar inacessivel para essa conta.
 
 ## Se o segredo do SSO vazar
 
-Gire `DASHBOARD_SSO_SECRET` (ShopFloor e Dashboard, juntos) e, se quiser, desative a conta
-(`ativo = false`). O perfil ja limita o dano a leitura do ShopFloor.
+⚠️ **Girar o segredo NAO revoga quem ja entrou.** O cookie de sessao do `@supabase/ssr` carrega o
+**refresh token**: quem rodou o `/embed/sso` por fora do navegador (um `curl` com um token
+assinado) ficou com uma sessao que **se renova indefinidamente**, sem passar mais nenhuma vez
+pelo `/embed/sso`. Trocar o segredo fecha a porta de entrada e deixa quem esta dentro, dentro.
+
+Os tres passos sao **obrigatorios**, nesta ordem:
+
+1. **Desativar a conta** — corta o acesso de quem **ja esta** dentro na proxima requisicao
+   (o app checa `ativo` a cada acesso):
+
+   ```sql
+   update public.usuarios set ativo = false
+    where email = 'dashboard@enterplak.com.br';
+   ```
+2. **Revogar as sessoes no GoTrue** — mata os refresh tokens vivos, pra que a sessao nao se
+   renove nem volte depois que a conta for reativada. No Supabase Studio: Authentication > Users
+   > a conta > *Sign out user* (ou a API admin `POST /auth/v1/admin/users/<id>/logout`). Sem este
+   passo, reativar a conta ressuscita o acesso do vazamento.
+3. **Girar `DASHBOARD_SSO_SECRET`** (ShopFloor e Dashboard, juntos) — impede **novas** entradas
+   com o segredo vazado. So isso: nao mexe em nenhuma sessao existente.
+
+Depois, para voltar ao normal: `ativo = true` de novo e novo build/deploy dos dois lados com o
+segredo novo.
+
+### O que a conta alcanca enquanto esta de pe
+
+**Nao e "somente o ShopFloor".** O perfil da a flag **global** `pode_visualizar`, que e o que os
+RPCs do Fluxo exigem (eles checam a `tem_permissao('visualizar')` de **1 argumento**). Hoje **9**
+policies de SELECT ainda usam essa forma, e **tres sao de outro sistema**:
+
+| Tabela | O que a conta consegue ler |
+|---|---|
+| `repinmetro_logs` | logs de teste de qualidade dos repinmetros (~52 mil linhas): nº de serie, modelo, datas, status e os 15 resultados de teste por linha |
+| `repinmetro_revendas` | o serial de cada REP **ligado a razao social da revenda** — a relacao produto ↔ cliente final |
+| `repinmetro_producao` | os seriais de cada peca montada (impressora, MRP, modulo bio, RFID, fonte, barras) + 12 resultados de teste |
+
+As outras 6 sao do proprio ShopFloor (`sf_caixas`, `sf_lotes`, `sf_consertos`,
+`sf_conserto_confirmado`, `sf_ordem_burnin`, `sf_registros_cancelados`).
+
+**Fora de alcance** (ja migradas para a forma por modulo): o **Recebimento inteiro** — processos,
+importacoes, anexos **e os arquivos no Storage** (migracoes 0051 e 0057) —,
+**Setup/Abastecimento**, a tabela **`logs`** de auditoria e os **Alertas** (migracao 0054). E a
+conta **nao escreve nada**: nenhuma policy de INSERT/UPDATE/DELETE e alcancavel so com
+`visualizar`.
+
+**A cura** e trocar as policies `repinmetro_logs_select`, `repinmetro_revendas_select` e
+`repinmetro_producao_select` para a forma de 2 argumentos
+(`tem_permissao('repinmetro','visualizar')`), ou migrar os 8 RPCs do Fluxo para a forma por
+modulo. As duas mexem em tela de producao: **outra branch**, nao esta.

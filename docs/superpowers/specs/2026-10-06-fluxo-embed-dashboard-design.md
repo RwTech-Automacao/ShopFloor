@@ -114,7 +114,14 @@ infra, Vitest, migração SQL idempotente).
 
 - Rotas `/embed/*`: `Content-Security-Policy: frame-ancestors https://dashboard.enterplak.com.br`
   (lista configurável por env `EMBED_FRAME_ANCESTORS`, para incluir preview/dev quando preciso).
-- Demais rotas: `frame-ancestors 'self'` (hoje não há nenhuma proteção contra embutir).
+- Demais rotas: `frame-ancestors 'self'`.
+- ⚠️ A proteção contra embutir que existe hoje **não é do repositório**: vem do
+  `X-Frame-Options` do **nginx do servidor** (ligado na revisão de segurança de 21/09; não há
+  `add_header` nenhum em `deploy/aws/nginx-shopfloor-aws.conf` e o Next não o define). O
+  navegador honra esse cabeçalho **independentemente** do `frame-ancestors`, então o CSP da
+  aplicação **não basta**: o `/embed` precisa de **exceção no nginx**, senão o iframe do
+  dashboard não carrega mesmo com o CSP certo. Passo a passo em
+  `docs/operacao/nginx-embed-dashboard.md`.
 
 ### A6. Mensagens para o dashboard (`window.parent.postMessage`)
 

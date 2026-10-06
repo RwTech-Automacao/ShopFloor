@@ -1110,9 +1110,15 @@ export function FluxoForm({
                 <Maximize2 className="mr-1 size-4" /> Modo TV
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => setApresPainel(true)} title="Montar e rodar uma apresentação (playlist de OPs/telas)">
-              <MonitorPlay className="mr-1 size-4" /> Apresentação{playlist.length > 0 ? ` (${playlist.length})` : ''}
-            </Button>
+            {/* Fica no mesmo `!ocultarSeletor` do seletor: o painel da apresentação tem um SEGUNDO
+                seletor de OP (todas as OPs) e iniciar a playlist chama `escolher`, que trocaria a OP.
+                Na tela embutida a OP é fixa (vem da URL), então aqui não pode haver essa porta —
+                e a tela cheia da apresentação não funcionaria dentro do iframe de qualquer forma. */}
+            {!ocultarSeletor && (
+              <Button variant="outline" size="sm" onClick={() => setApresPainel(true)} title="Montar e rodar uma apresentação (playlist de OPs/telas)">
+                <MonitorPlay className="mr-1 size-4" /> Apresentação{playlist.length > 0 ? ` (${playlist.length})` : ''}
+              </Button>
+            )}
           </div>
         </div>
 
