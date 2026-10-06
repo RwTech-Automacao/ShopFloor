@@ -11,7 +11,7 @@ const { entrarPorSsoDashboard } = vi.hoisted(() => ({
 }))
 vi.mock('@/modules/auth/application/sso-dashboard', () => ({ entrarPorSsoDashboard }))
 
-import { GET, dynamic } from '@/app/embed/sso/route'
+import { GET, HEAD, dynamic } from '@/app/embed/sso/route'
 
 const pedido = (query: string) =>
   new Request(`https://shopfloor.enterplak.com.br/embed/sso${query}`)
@@ -43,6 +43,8 @@ describe('GET /embed/sso', () => {
     // ⚠️ CRU, caractere por caractere: `new URL(...).pathname` ou um decode a mais quebrariam a OP
     // com `/` no nome (2340/26) e transformariam o duplo encoding em travessia de verdade.
     expect(r.headers.get('Location')).toBe('/embed/fluxo/PMOC13/2340%2F26')
+    // O 307 carrega o Set-Cookie: cache aqui serviria a sessão de uma pessoa para a próxima.
+    expect(r.headers.get('Cache-Control')).toContain('no-store')
     expect(await r.text()).toBe('')
   })
 
@@ -111,6 +113,18 @@ describe('GET /embed/sso', () => {
 
     expect(corpo).not.toContain('<script>alert(1)</script>')
     expect(corpo).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+  })
+
+  it('a página de erro não manda Referer (a URL dela carrega o token)', async () => {
+    entrarPorSsoDashboard.mockResolvedValue({ ok: false, status: 401, erro: 'x', codigo: null })
+    const corpo = await (await GET(pedido('?token=t&next=x'))).text()
+    expect(corpo).toContain('<meta name="referrer" content="no-referrer">')
+  })
+
+  it('HEAD → 405 e NÃO executa o SSO (não queima o token)', async () => {
+    const r = await HEAD()
+    expect(r.status).toBe(405)
+    expect(entrarPorSsoDashboard).not.toHaveBeenCalled()
   })
 
   it('a resposta de falha não é guardada em cache', async () => {

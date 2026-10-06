@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { entrarPorSsoDashboard } from '@/modules/auth/application/sso-dashboard'
+import { entrarPorSsoDashboard, type CodigoSsoDashboard } from '@/modules/auth/application/sso-dashboard'
 
 /**
  * Entrada de SSO do Dashboard Enterplak: `GET /embed/sso?token=<JWT>&next=<caminho>`.
@@ -44,6 +44,15 @@ export async function GET(request: Request) {
   })
 }
 
+/**
+ * O Next auto-implementa HEAD a partir do GET, o que queimaria o token e abriria sessão com o corpo
+ * descartado — um scanner de link ou antivírus que fizesse HEAD gastaria o token do dashboard.
+ * Endpoint que executa ação não responde a HEAD executando a ação.
+ */
+export async function HEAD() {
+  return new NextResponse(null, { status: 405, headers: { Allow: 'GET', 'Cache-Control': 'no-store' } })
+}
+
 const ESCAPES: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
@@ -66,7 +75,7 @@ const paraScript = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c')
  * `targetOrigin` é a origem do dashboard, lida do env; sem ela, NÃO se manda mensagem (nunca `*`,
  * que entregaria o aviso a qualquer página que estivesse nos embutindo).
  */
-function paginaDeErro(erro: string, codigo: 'forbidden' | 'inactive' | null): string {
+function paginaDeErro(erro: string, codigo: CodigoSsoDashboard | null): string {
   const origem = process.env.DASHBOARD_ORIGIN ?? ''
   const ponte =
     origem === ''
@@ -81,6 +90,7 @@ function paginaDeErro(erro: string, codigo: 'forbidden' | 'inactive' | null): st
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
 <title>Fluxo da OP</title>
 <style>
 body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;

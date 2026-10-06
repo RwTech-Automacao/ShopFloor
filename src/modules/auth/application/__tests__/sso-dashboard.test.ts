@@ -15,6 +15,10 @@ vi.mock('server-only', () => ({}))
 const mocks = vi.hoisted(() => ({
   criarServico: vi.fn(),
   criarServidor: vi.fn(),
+  marca: { valor: '1' as string | null },
+}))
+vi.mock('next/headers', () => ({
+  headers: async () => ({ get: (n: string) => (n === 'x-sf-embed' ? mocks.marca.valor : null) }),
 }))
 vi.mock('@/shared/lib/supabase/service', () => ({ createServiceSupabase: mocks.criarServico }))
 vi.mock('@/shared/lib/supabase/server', () => ({ createServerSupabase: mocks.criarServidor }))
@@ -134,6 +138,7 @@ async function assinar(o: OpcoesToken = {}): Promise<string> {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.marca.valor = '1'
   vi.stubEnv('DASHBOARD_SSO_SECRET', SEGREDO)
   vi.stubEnv('DASHBOARD_SSO_EMAIL', EMAIL)
   prepararSupabase()
@@ -208,7 +213,7 @@ describe('entrarPorSsoDashboard — token recusado (401)', () => {
   it('expirado além da tolerância de relógio', async () => {
     const agora = Math.floor(Date.now() / 1000)
     const token = await assinar({ iat: agora - 180, exp: agora - 120 })
-    expect(await entrarPorSsoDashboard(token, NEXT_OK)).toEqual(RECUSADO)
+    expect(await entrarPorSsoDashboard(token, NEXT_OK)).toEqual({ ...RECUSADO, codigo: 'expirado' })
   })
 
   it('não é nem um JWT', async () => {
@@ -240,7 +245,7 @@ describe('entrarPorSsoDashboard — token recusado (401)', () => {
       ok: false,
       status: 401,
       erro: 'Token já utilizado.',
-      codigo: null,
+      codigo: 'expirado',
     })
   })
 
@@ -260,6 +265,26 @@ describe('entrarPorSsoDashboard — token recusado (401)', () => {
       status: 401,
       erro: 'Token com validade acima de 60 segundos.',
       codigo: null,
+    })
+  })
+
+  it('iat no FUTURO com exp = iat + 60: o teto é de posição, não só de vão', async () => {
+    const agora = Math.floor(Date.now() / 1000)
+    const iat = agora + 3600
+    expect(await entrarPorSsoDashboard(await assinar({ iat, exp: iat + 60 }), NEXT_OK)).toEqual({
+      ok: false,
+      status: 401,
+      erro: 'Token com validade acima de 60 segundos.',
+      codigo: null,
+    })
+  })
+
+  it('iat dentro da tolerância de relógio (+10s) é aceito', async () => {
+    const agora = Math.floor(Date.now() / 1000)
+    const iat = agora + 10
+    expect(await entrarPorSsoDashboard(await assinar({ iat, exp: iat + 60 }), NEXT_OK)).toEqual({
+      ok: true,
+      next: NEXT_OK,
     })
   })
 
@@ -411,6 +436,18 @@ describe('entrarPorSsoDashboard — indisponível (503)', () => {
   it('verifyOtp falhando', async () => {
     prepararSupabase({ erroSessao: true })
     expect(await entrarPorSsoDashboard(await assinar(), NEXT_OK)).toEqual(SESSAO)
+  })
+})
+
+describe('entrarPorSsoDashboard — fail-closed sem a marca de embed', () => {
+  it('sem x-sf-embed: 503 e NENHUMA sessão aberta', async () => {
+    mocks.marca.valor = null
+    const reg = prepararSupabase()
+    const r = await entrarPorSsoDashboard(await assinar(), NEXT_OK)
+    expect(r).toMatchObject({ ok: false, status: 503 })
+    expect(reg.generateLink).toHaveLength(0)
+    expect(reg.verifyOtp).toHaveLength(0)
+    expect(mocks.criarServidor).toHaveBeenCalledTimes(0)
   })
 })
 

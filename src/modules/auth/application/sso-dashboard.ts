@@ -1,7 +1,9 @@
 import 'server-only'
 import { jwtVerify, decodeJwt } from 'jose'
+import { headers } from 'next/headers'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { createServiceSupabase } from '@/shared/lib/supabase/service'
+import { CABECALHO_EMBED } from '@/shared/lib/supabase/embed'
 import { RegistroJti } from '../domain/sso-token'
 import {
   AUDIENCIA_DASHBOARD,
@@ -37,6 +39,14 @@ const VALIDADE_MAX_S = 60
  */
 const jtisUsados = new RegistroJti((TOLERANCIA_S + MARGEM_RETENCAO_S) * 1000)
 
+/**
+ * ⚠️ `'expirado'` existe para o DASHBOARD RE-ASSINAR SOZINHO: o iframe usa a URL de SSO como `src`
+ * e o botão "Atualizar" recarrega esse `src`, reapresentando um token já gasto. É este código — não
+ * a mensagem — que o dashboard lê para saber que deve assinar um token novo. Não é código morto:
+ * não remover nem fundir com `null`.
+ */
+export type CodigoSsoDashboard = 'forbidden' | 'inactive' | 'expirado'
+
 export type ResultadoSsoDashboard =
   | { ok: true; next: string }
   | {
@@ -44,13 +54,13 @@ export type ResultadoSsoDashboard =
       status: 400 | 401 | 403 | 503
       erro: string
       /** Código para o `postMessage` do iframe (spec A6). `null` quando não é falha de acesso. */
-      codigo: 'forbidden' | 'inactive' | null
+      codigo: CodigoSsoDashboard | null
     }
 
 const falha = (
   status: 400 | 401 | 403 | 503,
   erro: string,
-  codigo: 'forbidden' | 'inactive' | null = null,
+  codigo: CodigoSsoDashboard | null = null,
 ): ResultadoSsoDashboard => ({ ok: false, status, erro, codigo })
 
 /**
@@ -88,6 +98,13 @@ export async function entrarPorSsoDashboard(
     return falha(503, 'SSO não configurado neste ambiente.')
   }
 
+  // FAIL-CLOSED: este endpoint ESCREVE sessão, e o cookie certo (o do embed) depende da marca que o
+  // middleware injeta. Sem ela, `createServerSupabase` cairia no cookie padrão em Path=/ e a conta
+  // compartilhada sobrescreveria o supervisor logado — em silêncio. Melhor recusar.
+  if ((await headers()).get(CABECALHO_EMBED) !== '1') {
+    return falha(503, 'Ambiente mal configurado: a marca de embed não chegou à rota.')
+  }
+
   // O destino é conferido ANTES da assinatura de propósito: é barato, não depende de nada, e evita
   // queimar um token de uso único num pedido que vai ser recusado de qualquer forma.
   const destino = validarNextEmbed(next)
@@ -110,7 +127,8 @@ export async function entrarPorSsoDashboard(
     // falhou ajuda quem está tentando forjar mais do que ajuda quem está tentando entrar. O motivo
     // vai pro LOG DO SERVIDOR, onde quem configura a integração precisa dele.
     registrarFalha(e, token)
-    return falha(401, 'Token inválido ou expirado.')
+    const expirou = (e as { code?: string })?.code === 'ERR_JWT_EXPIRED'
+    return falha(401, 'Token inválido ou expirado.', expirou ? 'expirado' : null)
   }
 
   // O teto de validade. `exp` e `iat` são números porque a biblioteca já recusaria outra coisa em
@@ -119,6 +137,13 @@ export async function entrarPorSsoDashboard(
   const iat = bruto.iat
   if (typeof exp !== 'number') return falha(401, 'Token sem expiração (exp).')
   if (typeof iat !== 'number') return falha(401, 'Token sem emissão (iat).')
+  // O teto limita o VÃO, não a POSIÇÃO: sem esta conferência, `iat` no futuro com `exp = iat + 60`
+  // passaria e o token ficaria utilizável por horas. Relógio dessincronizado dentro da tolerância
+  // é esperado e não pode travar o dashboard.
+  const agora = Math.floor(Date.now() / 1000)
+  if (iat > agora + TOLERANCIA_S) {
+    return falha(401, `Token com validade acima de ${VALIDADE_MAX_S} segundos.`)
+  }
   if (exp - iat > VALIDADE_MAX_S) {
     return falha(401, `Token com validade acima de ${VALIDADE_MAX_S} segundos.`)
   }
@@ -135,7 +160,7 @@ export async function entrarPorSsoDashboard(
   }
   const { email, jti } = v.claims
 
-  if (!jtisUsados.registrar(jti, exp * 1000)) return falha(401, 'Token já utilizado.')
+  if (!jtisUsados.registrar(jti, exp * 1000)) return falha(401, 'Token já utilizado.', 'expirado')
 
   // Busca com service role: o usuário ainda NÃO tem sessão, então nenhuma policy de RLS o alcança.
   const service = createServiceSupabase()
