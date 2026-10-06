@@ -93,3 +93,81 @@ export function validarIntervalos(lista: unknown, passoMin: number | null): Resu
 
   return { ok: true, valor: itens.map((i) => ({ inicio: formatarHhMm(i.ini), fim: formatarHhMm(i.fim) })) }
 }
+
+const FUSO = 'America/Sao_Paulo'
+
+/** Partes da data no fuso da fábrica, não no do processo. */
+function partesSp(d: Date): { ano: number; mes: number; dia: number } {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d)
+  const achar = (t: string) => Number(p.find((x) => x.type === t)?.value ?? '0')
+  return { ano: achar('year'), mes: achar('month'), dia: achar('day') }
+}
+
+/** Deslocamento do fuso da fábrica, em minutos, NAQUELE instante. */
+function deslocamentoMin(d: Date): number {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(d)
+  const achar = (t: string) => Number(p.find((x) => x.type === t)?.value ?? '0')
+  const comoUtc = Date.UTC(achar('year'), achar('month') - 1, achar('day'),
+                           achar('hour') % 24, achar('minute'), achar('second'))
+  return (comoUtc - Math.floor(d.getTime() / 1000) * 1000) / 60_000
+}
+
+/**
+ * O instante de uma hora de PAREDE da fábrica. Duas passadas: o deslocamento do palpite pode
+ * diferir do deslocamento do instante correto numa fronteira de horário de verão. O Brasil não
+ * tem horário de verão desde 2019, mas a conta não custa nada e não depende disso continuar.
+ */
+function instanteSp(ano: number, mes: number, dia: number, minutosDoDia: number): Date {
+  const palpite = Date.UTC(ano, mes - 1, dia) + minutosDoDia * 60_000
+  const d1 = deslocamentoMin(new Date(palpite))
+  const corrigido = palpite - d1 * 60_000
+  const d2 = deslocamentoMin(new Date(corrigido))
+  return new Date(d2 === d1 ? corrigido : palpite - d2 * 60_000)
+}
+
+/**
+ * O bloco mais recente que FECHOU HOJE (no dia da fábrica, em São Paulo), ou null se nenhum
+ * fechou ainda. Os intervalos chegam já validados por `validarIntervalos`; lista vazia → null.
+ */
+export function blocoCandidato(intervalos: Intervalo[], passoMin: number, agora: Date): Bloco | null {
+  // Passo não positivo nunca passa pela validação; aqui a guarda só evita laço infinito.
+  if (!Number.isFinite(passoMin) || passoMin <= 0) return null
+
+  const hoje = partesSp(agora)
+  const limite = agora.getTime()
+  let melhor: Bloco | null = null
+
+  for (const intervalo of intervalos) {
+    const i = lerHhMm(intervalo.inicio)
+    const f = lerHhMm(intervalo.fim)
+    if (i === null || f === null || f <= i) continue
+
+    for (let ini = i; ini < f; ini += passoMin) {
+      // O último bloco do intervalo termina no fim do intervalo, mesmo que seja mais curto.
+      const fim = Math.min(ini + passoMin, f)
+      const fimEm = instanteSp(hoje.ano, hoje.mes, hoje.dia, fim)
+      if (fimEm.getTime() > limite) continue
+      if (melhor === null || fimEm.getTime() > melhor.fim.getTime()) {
+        melhor = { inicio: instanteSp(hoje.ano, hoje.mes, hoje.dia, ini), fim: fimEm }
+      }
+    }
+  }
+
+  return melhor
+}
+
+/** A sobra do intervalo: o último bloco, quando o passo não fecha redondo. Null quando fecha. */
+export function sobraDoIntervalo(intervalo: Intervalo, passoMin: number): Intervalo | null {
+  if (!Number.isFinite(passoMin) || passoMin <= 0) return null
+  const i = lerHhMm(intervalo.inicio)
+  const f = lerHhMm(intervalo.fim)
+  if (i === null || f === null || f <= i) return null
+  const resto = (f - i) % passoMin
+  if (resto === 0) return null
+  return { inicio: formatarHhMm(f - resto), fim: formatarHhMm(f) }
+}
