@@ -1,5 +1,5 @@
 import type { JanelaTipo } from './tipos'
-import { formatarDuracao, formatarHora } from './mensagens'
+import { formatarDuracao, formatarHora } from './relogio'
 
 export interface Janela {
   tipo: JanelaTipo
