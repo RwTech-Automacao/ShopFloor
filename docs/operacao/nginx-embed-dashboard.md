@@ -9,6 +9,25 @@ de 21/09 ligou HSTS, X-Frame e nosniff, e **`X-Frame-Options` não está em nenh
 vem do nginx do servidor. Se for `SAMEORIGIN` ou `DENY`, o iframe do dashboard **não carrega**,
 mesmo com o CSP certo. Sem este ajuste o smoke do embed falha.
 
+
+## Medido em produção (06/10/2026)
+
+`curl -sSI https://shopfloor.enterplak.com.br/login` devolve **hoje**:
+
+```
+X-Frame-Options: SAMEORIGIN
+Strict-Transport-Security: max-age=86400
+```
+
+Ou seja: **a mudança abaixo é necessária** — o `SAMEORIGIN` bloqueia o iframe vindo de
+`dashboard.enterplak.com.br`, que é outra **origem** ainda que seja o mesmo site. Não há
+`Content-Security-Policy` hoje; o `frame-ancestors` passa a existir com esta feature.
+
+⚠️ O HSTS de produção é **`max-age=86400`** (um dia), não o ano que costuma ser padrão. Os
+`add_header` repetidos dentro do `location /embed/` usam **esse** valor, para o `/embed` não acabar
+com uma política diferente do resto do site por acidente. Se um dia o HSTS do site mudar, mude os
+dois juntos.
+
 ## 1. Conferir (no servidor, o TI)
 
 ```bash
@@ -37,7 +56,7 @@ location /embed/ {
     # NÃO repetir add_header X-Frame-Options aqui
     # Atenção: add_header de nível superior NÃO é herdado se este location tiver add_header próprio;
     # repita aqui HSTS e nosniff:
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Strict-Transport-Security "max-age=86400" always;   # o valor REAL de hoje, medido
     add_header X-Content-Type-Options "nosniff" always;
 }
 
