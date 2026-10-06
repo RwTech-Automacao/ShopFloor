@@ -14,12 +14,13 @@ import {
   montarLinhasPerfil,
   obrigatoriosPorPerfil,
 } from '../domain/perfil-posto'
+import { postoEhDestinoDeRota, type ConsertoConfirmavel } from '../domain/rota-reteste'
 import {
   carregarOrdem, chamarSfLancar, chamarSfBurnin, buscarEntradaBurninAberta,
-  buscarUltimaReprovaDoPosto, inserirConservoConfirmado, contarLancadosNoPosto,
+  buscarUltimaReprovaDoPosto, buscarUltimoReparo, inserirConservoConfirmado, contarLancadosNoPosto,
   type DefeitoConfirmavel,
 } from '../infra/lancamento-repository'
-import { mapaPostoPerfil } from '../infra/postos-repository'
+import { mapaPostoPerfil, mapaPostoRotaDestino } from '../infra/postos-repository'
 import { criarLote, snsPendentesDoLote } from '../infra/lote-repository'
 
 export interface EntradaLancamento {
@@ -41,6 +42,8 @@ export interface EntradaLancamento {
   burninEvento?: 'entrada' | 'saida'
   /** Defeitos que o operador confirmou terem sido consertados (auditoria ao aprovar). */
   conservoConfirmado?: DefeitoConfirmavel[]
+  /** Consertos da Manutenção que o operador confirmou no posto da rota de reteste. */
+  consertoManutencaoConfirmado?: ConsertoConfirmavel[]
   /** Comentário livre (usado no NQA). */
   observacao?: string
 }
@@ -254,6 +257,24 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     }
   }
 
+
+  // Auditoria da confirmação dos consertos da Manutenção, no posto da rota de reteste.
+  // Secundária, igual à de cima: se falhar, o lançamento já ocorreu.
+  if (entrada.consertoManutencaoConfirmado?.length) {
+    try {
+      await inserirConservoConfirmado(
+        entrada.consertoManutencaoConfirmado.map((c) => ({
+          colaborador: entrada.colaborador.trim(), pmo: entrada.pmo, op: entrada.op,
+          numeroSerie: limparSerie(entrada.numeroSerie), numeroSerieNorm: normalizarSerie(entrada.numeroSerie),
+          posto: entrada.posto, codigo: '', posicao: c.posicao, tipo: '',
+          origem: 'manutencao' as const, conserto: c.conserto,
+        })),
+      )
+    } catch {
+      // ignora: auditoria é secundária
+    }
+  }
+
   return { ok: true, caixaCount: r.caixa_count }
 }
 
@@ -272,6 +293,26 @@ export async function verificarConserto(
     const perfil = mapa[posto] ?? PERFIL_PADRAO
     if (!perfilPedeConfirmacaoConserto(perfil)) return null
     return await buscarUltimaReprovaDoPosto(pmo, op, normalizarSerie(numeroSerie), posto)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Ao aprovar no posto da ROTA DE RETESTE: se a peça acabou de sair da Manutenção, devolve os
+ * consertos registrados lá, para o operador confirmar. Senão, null.
+ * A checagem de destino de rota vem ANTES da consulta: nos demais postos nenhuma ida ao banco.
+ * Fail-open, igual à irmã: erro no lookup devolve null e o bipe passa sem perguntar.
+ */
+export async function verificarConsertoManutencao(
+  pmo: string, op: string, numeroSerie: string, posto: string,
+): Promise<ConsertoConfirmavel[] | null> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return null
+  try {
+    const [destinos, mapa] = await Promise.all([mapaPostoRotaDestino(), mapaPostoPerfil()])
+    if (!postoEhDestinoDeRota(posto, destinos)) return null
+    return await buscarUltimoReparo(pmo, op, normalizarSerie(numeroSerie), (p) => mapa[p] ?? PERFIL_PADRAO)
   } catch {
     return null
   }
