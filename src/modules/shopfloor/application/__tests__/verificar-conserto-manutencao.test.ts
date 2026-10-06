@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { PERFIL_PADRAO } from '@/modules/shopfloor/domain/perfil-posto'
+import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 
 const getSessao = vi.fn()
 const mapaPostoPerfil = vi.fn()
@@ -53,5 +55,18 @@ describe('verificarConsertoManutencao', () => {
   it('erro ao carregar os mapas → nulo, não lança', async () => {
     mapaPostoRotaDestino.mockRejectedValue(new Error('boom'))
     expect(await verificarConsertoManutencao('P1', '1', 'SN1', 'Inspeção PTH')).toBeNull()
+  })
+
+  it('chama a busca com a PEÇA certa, o SN normalizado e um resolvedor de perfil que usa o mapa', async () => {
+    const manutencao = { ...PERFIL_PADRAO, chave: 'manutencao', recurso: 'manutencao' as const }
+    mapaPostoPerfil.mockResolvedValue({ 'Reparo Central': manutencao })
+    const sn = ' sn-1 '
+    expect(normalizarSerie(sn)).not.toBe(sn) // o SN precisa de normalização, senão o teste não prova nada
+    await verificarConsertoManutencao('P1', '7', sn, 'Inspeção PTH')
+    expect(buscarUltimoReparo).toHaveBeenCalledWith('P1', '7', normalizarSerie(sn), expect.any(Function))
+    // O callback é o que reconhece a Manutenção: sem o mapa, o modal nunca apareceria.
+    const perfilDe = buscarUltimoReparo.mock.calls[0]![3] as (p: string) => typeof PERFIL_PADRAO
+    expect(perfilDe('Reparo Central').recurso).toBe('manutencao')
+    expect(perfilDe('Qualquer outro')).toEqual(PERFIL_PADRAO)
   })
 })

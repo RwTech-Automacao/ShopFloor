@@ -3,22 +3,23 @@ import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perf
 
 vi.mock('server-only', () => ({}))
 const linhas = vi.fn()
+const from = vi.fn()
+const select = vi.fn()
+const eq = vi.fn()
+const order = vi.fn()
+const limit = vi.fn()
+// Cada elo devolve o próximo e REGISTRA os argumentos: o mock não pode aceitar qualquer coisa.
 vi.mock('@/shared/lib/supabase/server', () => ({
-  createServerSupabase: async () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          eq: () => ({
-            eq: () => ({
-              order: () => ({
-                order: () => ({ limit: () => linhas() }),
-              }),
-            }),
-          }),
-        }),
-      }),
-    }),
-  }),
+  createServerSupabase: async () => {
+    const cadeia: Record<string, unknown> = {}
+    from.mockImplementation(() => cadeia)
+    select.mockImplementation(() => cadeia)
+    eq.mockImplementation(() => cadeia)
+    order.mockImplementation(() => cadeia)
+    limit.mockImplementation(() => linhas())
+    Object.assign(cadeia, { select, eq, order, limit })
+    return { from }
+  },
 }))
 
 const { buscarUltimoReparo } = await import('../lancamento-repository')
@@ -26,7 +27,9 @@ const { buscarUltimoReparo } = await import('../lancamento-repository')
 const MANUTENCAO: PerfilPosto = { ...PERFIL_PADRAO, chave: 'manutencao', recurso: 'manutencao' }
 const perfilDe = (p: string) => (p === 'Manutenção' ? MANUTENCAO : PERFIL_PADRAO)
 
-beforeEach(() => linhas.mockReset())
+beforeEach(() => {
+  for (const m of [linhas, from, select, eq, order, limit]) m.mockReset()
+})
 
 describe('buscarUltimoReparo', () => {
   it('último registro é reparo → devolve os consertos daquele evento', async () => {
@@ -96,6 +99,36 @@ describe('buscarUltimoReparo', () => {
 
   it('erro do banco sobe (quem trata é a camada de aplicação)', async () => {
     linhas.mockResolvedValue({ data: null, error: { message: 'boom' } })
-    await expect(buscarUltimoReparo('P1', '1', 'SN1', perfilDe)).rejects.toBeTruthy()
+    await expect(buscarUltimoReparo('P1', '1', 'SN1', perfilDe)).rejects.toMatchObject({ message: 'boom' })
+  })
+
+  it('consulta a PEÇA certa, do evento mais RECENTE, com folga de linhas', async () => {
+    linhas.mockResolvedValue({ data: [], error: null })
+    await buscarUltimoReparo('P1', '7', 'SN1', perfilDe)
+    expect(from).toHaveBeenCalledWith('sf_registros')
+    expect(eq.mock.calls).toEqual([['pmo', 'P1'], ['op', '7'], ['numero_serie_norm', 'SN1']])
+    expect(order.mock.calls).toEqual([
+      ['data_hora', { ascending: false }],
+      ['id', { ascending: false }],
+    ])
+    expect(limit).toHaveBeenCalledWith(50)
+  })
+
+  it('FORMA REAL: a Manutenção grava constatados e consertos no MESMO instante; o topo é um constatado', async () => {
+    // sf_manutencao_registrar (0103) insere tudo na mesma transação, sem data_hora → mesmo now().
+    // O topo (id mais alto) é uma linha de defeito constatado, SEM reparo_conserto.
+    linhas.mockResolvedValue({
+      data: [
+        { posto: 'Manutenção', data_hora: '2026-10-06T10:00:00Z', reparo_conserto: '', reparo_posicao: 'R12' },
+        { posto: 'Manutenção', data_hora: '2026-10-06T10:00:00Z', reparo_conserto: 'Ressolda', reparo_posicao: 'R12' },
+        { posto: 'Manutenção', data_hora: '2026-10-06T10:00:00Z', reparo_conserto: 'Troca', reparo_posicao: 'C5' },
+        { posto: 'Teste', data_hora: '2026-10-06T09:00:00Z', reparo_conserto: '', reparo_posicao: '' },
+      ],
+      error: null,
+    })
+    expect(await buscarUltimoReparo('P1', '1', 'SN1', perfilDe)).toEqual([
+      { conserto: 'Ressolda', posicao: 'R12' },
+      { conserto: 'Troca', posicao: 'C5' },
+    ])
   })
 })

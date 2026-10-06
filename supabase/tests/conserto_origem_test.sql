@@ -5,22 +5,33 @@ do $func$
 declare
   v_origem_default text;
   v_conserto_default text;
+  v_origem_null text;
+  v_conserto_null text;
   v_tem_check boolean;
   v_erro text;
 begin
-  -- 1. as colunas existem, com o default certo
-  select column_default into v_origem_default
+  -- 1. as colunas existem, NOT NULL, com o default certo (comparado por igualdade, não por "contém")
+  select column_default, is_nullable into v_origem_default, v_origem_null
     from information_schema.columns
    where table_schema='public' and table_name='sf_conserto_confirmado' and column_name='origem';
-  if v_origem_default is null or v_origem_default not like '%posto%' then
-    raise exception 'FALHOU: origem sem default ''posto'' (achei %)', coalesce(v_origem_default, '<ausente>');
+  if v_origem_default is distinct from '''posto''::text' then
+    raise exception 'FALHOU: origem com default errado (achei %, esperava ''posto''::text)', coalesce(v_origem_default, '<ausente>');
+  end if;
+  if v_origem_null is distinct from 'NO' then
+    raise exception 'FALHOU: origem deveria ser NOT NULL (is_nullable=%)', coalesce(v_origem_null, '<coluna ausente>');
   end if;
 
-  select column_default into v_conserto_default
+  select column_default, is_nullable into v_conserto_default, v_conserto_null
     from information_schema.columns
    where table_schema='public' and table_name='sf_conserto_confirmado' and column_name='conserto';
-  if v_conserto_default is null then
+  if v_conserto_null is null then
     raise exception 'FALHOU: coluna conserto ausente';
+  end if;
+  if v_conserto_default is distinct from '''''::text' then
+    raise exception 'FALHOU: conserto com default errado (achei %, esperava vazio ''''::text)', coalesce(v_conserto_default, '<sem default>');
+  end if;
+  if v_conserto_null is distinct from 'NO' then
+    raise exception 'FALHOU: conserto deveria ser NOT NULL (is_nullable=%)', v_conserto_null;
   end if;
 
   -- 2. o check existe

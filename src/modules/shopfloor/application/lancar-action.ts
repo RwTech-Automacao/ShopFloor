@@ -301,7 +301,9 @@ export async function verificarConserto(
 /**
  * Ao aprovar no posto da ROTA DE RETESTE: se a peça acabou de sair da Manutenção, devolve os
  * consertos registrados lá, para o operador confirmar. Senão, null.
- * A checagem de destino de rota vem ANTES da consulta: nos demais postos nenhuma ida ao banco.
+ * A checagem de destino de rota vem ANTES da consulta de reparo. Os dois mapas de postos são
+ * buscados em paralelo (não em série: o caso comum ficaria mais lento); nos demais postos, quem
+ * garante zero ida ao banco é o CLIENTE, que só chama esta função no posto da rota.
  * Fail-open, igual à irmã: erro no lookup devolve null e o bipe passa sem perguntar.
  */
 export async function verificarConsertoManutencao(
