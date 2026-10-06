@@ -515,22 +515,6 @@ export function LancamentoForm({
         }
       }
     }
-    // Confirmação de conserto: ao APROVAR num posto que coleta defeito e conserta no próprio posto,
-    // se o último registro da peça ali foi reprova, confirmar que o defeito foi consertado.
-    let conservoConfirmado: { codigo: string; posicao: string; tipo: string }[] | undefined
-    if (!ehBurnin && comStatus && status === 'Aprovado' && perfilPedeConfirmacaoConserto(perfilDo(posto))) {
-      const defeitos = await verificarConserto(pmo, op, numeroSerie, posto)
-      if (defeitos && defeitos.length > 0) {
-        const lista = defeitos.map(descreverDefeito).join(' · ')
-        const ok = await confirmar({
-          titulo: 'Confirmar conserto do defeito?',
-          descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
-          rotuloConfirmar: 'Sim, foi consertado',
-        })
-        if (!ok) { limparPeca(); return } // cancelou o conserto → limpa o SN (peça fica de lado)
-        conservoConfirmado = defeitos
-      }
-    }
     // Confirmação dos consertos da Manutenção: no posto da rota de reteste, ao APROVAR, se a peça
     // acabou de sair da Manutenção, confirmar o que foi reparado lá.
     let consertoManutencaoConfirmado: ConsertoConfirmavel[] | undefined
@@ -545,6 +529,24 @@ export function LancamentoForm({
         })
         if (!ok) { setProcessando(false); limparPeca(); return }
         consertoManutencaoConfirmado = consertos
+      }
+    }
+    // O diálogo da Manutenção, quando aparece, CALA este (o inspetor não conserta nada aqui: quem
+    // reparou foi a Manutenção). Por isso o bloco acima roda primeiro e este só consulta se ele calou.
+    // Confirmação de conserto: ao APROVAR num posto que coleta defeito e conserta no próprio posto,
+    // se o último registro da peça ali foi reprova, confirmar que o defeito foi consertado.
+    let conservoConfirmado: { codigo: string; posicao: string; tipo: string }[] | undefined
+    if (consertoManutencaoConfirmado === undefined && !ehBurnin && comStatus && status === 'Aprovado' && perfilPedeConfirmacaoConserto(perfilDo(posto))) {
+      const defeitos = await verificarConserto(pmo, op, numeroSerie, posto)
+      if (defeitos && defeitos.length > 0) {
+        const lista = defeitos.map(descreverDefeito).join(' · ')
+        const ok = await confirmar({
+          titulo: 'Confirmar conserto do defeito?',
+          descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
+          rotuloConfirmar: 'Sim, foi consertado',
+        })
+        if (!ok) { limparPeca(); return } // cancelou o conserto → limpa o SN (peça fica de lado)
+        conservoConfirmado = defeitos
       }
     }
 
@@ -690,23 +692,6 @@ export function LancamentoForm({
       }
     }
 
-    // Confirmação de conserto: se o posto pede e a peça tinha reprova, confirma que o defeito foi
-    // consertado antes de gravar o Aprovado (mesma regra do fluxo antigo, agora no caminho scanner).
-    // Burn-in exige manutenção → perfilPedeConfirmacaoConserto é sempre false pra ele; não roda aqui.
-    let conservoConfirmado: { codigo: string; posicao: string; tipo: string }[] | undefined
-    if (perfilPedeConfirmacaoConserto(perfilDo(posto))) {
-      const defeitos = await verificarConserto(pmo, op, sn, posto)
-      if (defeitos && defeitos.length > 0) {
-        const lista = defeitos.map(descreverDefeito).join(' · ')
-        const ok = await confirmar({
-          titulo: 'Confirmar conserto do defeito?',
-          descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
-          rotuloConfirmar: 'Sim, foi consertado',
-        })
-        if (!ok) { setProcessando(false); limparPeca(); return } // cancelou o conserto → aborta e limpa o SN
-        conservoConfirmado = defeitos
-      }
-    }
     let consertoManutencaoConfirmado: ConsertoConfirmavel[] | undefined
     if (postoEhDestinoDeRota(posto, destinosRota)) {
       const consertos = await verificarConsertoManutencao(pmo, op, sn, posto)
@@ -719,6 +704,25 @@ export function LancamentoForm({
         })
         if (!ok) { setProcessando(false); limparPeca(); return }
         consertoManutencaoConfirmado = consertos
+      }
+    }
+
+    // O diálogo da Manutenção (acima), quando aparece, CALA este — roda primeiro e este só consulta se ele calou.
+    // Confirmação de conserto: se o posto pede e a peça tinha reprova, confirma que o defeito foi
+    // consertado antes de gravar o Aprovado (mesma regra do fluxo antigo, agora no caminho scanner).
+    // Burn-in exige manutenção → perfilPedeConfirmacaoConserto é sempre false pra ele; não roda aqui.
+    let conservoConfirmado: { codigo: string; posicao: string; tipo: string }[] | undefined
+    if (consertoManutencaoConfirmado === undefined && perfilPedeConfirmacaoConserto(perfilDo(posto))) {
+      const defeitos = await verificarConserto(pmo, op, sn, posto)
+      if (defeitos && defeitos.length > 0) {
+        const lista = defeitos.map(descreverDefeito).join(' · ')
+        const ok = await confirmar({
+          titulo: 'Confirmar conserto do defeito?',
+          descricao: `Esta peça reprovou com: ${lista}. Confirma que foi consertado antes de aprovar?`,
+          rotuloConfirmar: 'Sim, foi consertado',
+        })
+        if (!ok) { setProcessando(false); limparPeca(); return } // cancelou o conserto → aborta e limpa o SN
+        conservoConfirmado = defeitos
       }
     }
     setTimeout(() => snRef.current?.focus(), 0)

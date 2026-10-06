@@ -59,6 +59,11 @@ const PERFIL_FORM: PerfilPosto = { chave: 'manual', nome: 'Manual', temStatus: t
 // pra que só o modal da Manutenção possa aparecer nestes testes.
 const PERFIL_SCANNER_SEM_IRMAO: PerfilPosto = { ...PERFIL_SCANNER, exigeManutencao: true }
 
+// Perfis que satisfazem os DOIS diálogos (destino de rota + perfilPedeConfirmacaoConserto).
+// Formulário: reprova por posições (SPI) não é scanner e não exige Manutenção. Leitor: PERFIL_SCANNER.
+const PERFIL_FORM_COM_IRMAO: PerfilPosto = { ...PERFIL_FORM, reprova: 'posicoes', exigeManutencao: false }
+const DEFEITOS_IRMAO = [{ codigo: 'D9', posicao: 'R9', tipo: 'PTH' }]
+
 const CONSERTOS = [{ conserto: 'Ressolda', posicao: 'R12' }]
 
 function montar(perfil: PerfilPosto, destinos: string[]) {
@@ -239,5 +244,50 @@ describe('confirmação dos consertos da Manutenção', () => {
     await waitFor(() => expect(mocks.lancar).toHaveBeenCalledTimes(1))
     expect(mocks.verificarConsertoManutencao).toHaveBeenCalledTimes(1)
     expect(screen.queryByText(/Confirmar os consertos/)).not.toBeInTheDocument()
+  })
+
+  describe('o diálogo do irmão CALA quando o da Manutenção vai falar', () => {
+    const casos = [
+      { nome: 'FORMULÁRIO', perfil: PERFIL_FORM_COM_IRMAO, aprovar: aprovarPeloFormulario },
+      { nome: 'LEITOR', perfil: PERFIL_SCANNER, aprovar: aprovarPeloLeitor },
+    ]
+    for (const c of casos) {
+      it(`${c.nome}: peça vinda da Manutenção → só o diálogo novo; verificarConserto nem é chamada; trilha só da Manutenção`, async () => {
+        mocks.verificarConserto.mockResolvedValue(DEFEITOS_IRMAO)
+        montar(c.perfil, ['Inspeção PTH'])
+        await entrarNoPosto('Inspeção PTH')
+        await c.aprovar()
+        expect(await screen.findByText(/Confirmar os consertos da Manutenção/)).toBeInTheDocument()
+        expect(screen.queryByText(/Confirmar conserto do defeito/)).not.toBeInTheDocument()
+        expect(mocks.verificarConserto).not.toHaveBeenCalled()
+        clicarNoDialogo(/Sim, confirmo/)
+        await waitFor(() => expect(mocks.lancar).toHaveBeenCalledTimes(1))
+        // ainda sem diálogo do irmão depois do "sim", e a consulta dele nunca aconteceu
+        expect(screen.queryByText(/Confirmar conserto do defeito/)).not.toBeInTheDocument()
+        expect(mocks.verificarConserto).not.toHaveBeenCalled()
+        expect(mocks.verificarConsertoManutencao).toHaveBeenCalledTimes(1)
+        expect(mocks.verificarConsertoManutencao).toHaveBeenCalledWith('PMO1', 'OP1', 'SN100', 'Inspeção PTH')
+        const enviado = mocks.lancar.mock.calls[0]![0]
+        expect(enviado.consertoManutencaoConfirmado).toEqual(CONSERTOS)
+        expect(enviado.conservoConfirmado).toBeUndefined()
+      })
+
+      it(`${c.nome}: peça que não veio da Manutenção (null) → só o diálogo do irmão, como hoje`, async () => {
+        mocks.verificarConsertoManutencao.mockResolvedValue(null)
+        mocks.verificarConserto.mockResolvedValue(DEFEITOS_IRMAO)
+        montar(c.perfil, ['Inspeção PTH'])
+        await entrarNoPosto('Inspeção PTH')
+        await c.aprovar()
+        expect(await screen.findByText(/Confirmar conserto do defeito/)).toBeInTheDocument()
+        expect(screen.queryByText(/Confirmar os consertos da Manutenção/)).not.toBeInTheDocument()
+        expect(mocks.verificarConserto).toHaveBeenCalledTimes(1)
+        expect(mocks.verificarConserto).toHaveBeenCalledWith('PMO1', 'OP1', 'SN100', 'Inspeção PTH')
+        clicarNoDialogo(/Sim, foi consertado/)
+        await waitFor(() => expect(mocks.lancar).toHaveBeenCalledTimes(1))
+        const enviado = mocks.lancar.mock.calls[0]![0]
+        expect(enviado.conservoConfirmado).toEqual(DEFEITOS_IRMAO)
+        expect(enviado.consertoManutencaoConfirmado).toBeUndefined()
+      })
+    }
   })
 })
