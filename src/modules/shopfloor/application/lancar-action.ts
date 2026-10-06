@@ -246,6 +246,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
           colaborador: entrada.colaborador.trim(), pmo: entrada.pmo, op: entrada.op,
           numeroSerie: limparSerie(entrada.numeroSerie), numeroSerieNorm: normalizarSerie(entrada.numeroSerie),
           posto: entrada.posto, codigo: d.codigo, posicao: d.posicao, tipo: d.tipo,
+          origem: 'posto' as const, conserto: '',
         })),
       )
     } catch {
