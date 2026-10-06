@@ -223,6 +223,39 @@ válido (mínimo 15, máximo 10) e o formulário recusaria tudo sem dizer qual c
 - **Formulário:** o aviso da sobra aparece com a faixa certa; some quando o passo fecha; os
   intervalos salvos voltam na edição.
 
+## O que ficou de fora na entrega, e é reversível
+
+Duas coisas foram deixadas para depois, de propósito, e estão registradas aqui para ninguém achar que
+foram esquecimento.
+
+### O alerta não diz qual OP
+
+Os outros tipos de alerta listam as OPs envolvidas. Nesta janela a lista sai **vazia**, porque
+`alerta_ops` (0136) não tem ramo para `'intervalos'` — e o "✅ resolvido" também perde a OP. A
+mensagem fica *"Inspeção PTH ficou em 88% das 07:00 às 08:00"*, sem dizer em qual ordem.
+
+**Não erra número, degrada em silêncio.** Acrescentar pediria recriar outra função de produção que a
+0136 acabou de criar, com dois parâmetros novos e um `drop` da assinatura de cinco — risco
+desproporcional ao ganho no momento da entrega.
+
+⚠️ O teste SQL (`supabase/tests/alertas_intervalos_test.sql`) **prega esse contrato de hoje**, com
+comentário dizendo qual `if` vai avisar quem acrescentar o ramo. Então o dia em que alguém mexer, o
+teste fala.
+
+### A prévia do formulário está escondida nesta janela
+
+`alerta_previa` (0115) levanta `JANELA_INVALIDA` para qualquer janela fora de
+`('tempo','bipes','op')`, então o botão de prévia **quebraria**. O formulário não o renderiza quando
+a janela é `intervalos`, com comentário no código explicando por quê.
+
+É a perda mais sentida das duas: a prévia é justamente onde o gestor conferiria se os intervalos e o
+passo fazem sentido antes de salvar — *"com esse turno e esse passo, os últimos blocos teriam dado
+X"*. Ensinar a `alerta_previa` a receber o bloco calculado, no mesmo padrão que o `alerta_avaliar` já
+usa, é uma tarefa curta e **não** exige mudar nada do que já foi entregue.
+
+⚠️ Quem reabilitar a prévia precisa também passar os intervalos pelo `verPrevia` do formulário, que
+hoje não os conhece.
+
 ## Fora de escopo, e por quê
 
 **A janela `intervalos` vale só pro tipo `aprovacao`.** Conceitualmente serviria pro tempo médio e
