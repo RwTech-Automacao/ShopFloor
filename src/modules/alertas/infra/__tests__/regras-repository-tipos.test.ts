@@ -21,7 +21,18 @@ function sbGravacao() {
       gravado.update = v
       return q
     },
+    // A edição apaga os intervalos do turno antes de inserir os novos (0139). Aqui as duas regras
+    // são de janela 'tempo', então o delete acontece e nenhum intervalo é inserido.
+    delete() {
+      return q
+    },
     eq() {
+      return q
+    },
+    in() {
+      return q
+    },
+    order() {
       return q
     },
     is() {

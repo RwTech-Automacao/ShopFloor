@@ -37,6 +37,22 @@ export function formatarHhMm(minutosDoDia: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+/**
+ * Um intervalo como o BANCO entrega: `time` do Postgres chega 'HH:MM:SS' (às vezes com fração) no
+ * PostgREST, e o resto do módulo fala 'HH:MM'. Linha ilegível (ou invertida) devolve null — quem
+ * lê pula a linha em vez de inventar horário.
+ *
+ * Mora aqui, e não na infra, porque é este arquivo que define o formato 'HH:MM': os DOIS lados que
+ * leem `alerta_regra_intervalos` (a tela do gestor e o cron) têm que converter do mesmo jeito, e
+ * duas cópias da regra divergiriam em silêncio.
+ */
+export function lerIntervaloDoBanco(inicio: unknown, fim: unknown): Intervalo | null {
+  const i = lerHhMm(typeof inicio === 'string' ? inicio.slice(0, 5) : inicio)
+  const f = lerHhMm(typeof fim === 'string' ? fim.slice(0, 5) : fim)
+  if (i === null || f === null || f <= i) return null
+  return { inicio: formatarHhMm(i), fim: formatarHhMm(f) }
+}
+
 function nomeIntervalo(i: { ini: number; fim: number }): string {
   return `${formatarHhMm(i.ini)}–${formatarHhMm(i.fim)}`
 }

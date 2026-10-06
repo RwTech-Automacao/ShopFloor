@@ -5,6 +5,7 @@ import { canalDiscordDoSistema } from './canais'
 import { ehCanal, type Canal, type ResultadoEnvio } from '../domain/tipos'
 import { lerResultadoAvaliacao, type ContaDestino } from '../domain/avaliacao'
 import { lerEnvioReservado, type EnvioReservado } from '../domain/envio'
+import { blocoCandidato, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
 import { lerResolucao } from '../domain/resolucao'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
 import type {
@@ -21,6 +22,22 @@ interface LinhaConta {
   usuario_id: string
   canal: string
   externo_id: string
+}
+
+/**
+ * Regra de janela por blocos, como o PostgREST entrega. `janela_valor` (o PASSO em minutos) fica
+ * `unknown` DE PROPÓSITO: o tipo dele é afirmado em `blocosDaRodada`, não suposto aqui.
+ */
+interface LinhaRegraBloco {
+  id: string
+  janela_tipo: string
+  janela_valor: unknown
+}
+
+interface LinhaIntervaloBloco {
+  regra_id: string
+  inicio: string | null
+  fim: string | null
 }
 
 /**
@@ -75,11 +92,98 @@ export function criarRepositorioServico(
     }
   }
 
+  /**
+   * O mapa `p_blocos` da rodada: {"<regra_id>": {inicio, fim}} com SÓ as regras de janela
+   * 'intervalos' cujo bloco FECHOU agora. Regra ausente do mapa é PULADA pelo banco (não abre, não
+   * insiste, não normaliza, não encosta no bloco_reportado).
+   *
+   * ⚠️ POR QUE A CONTA DE HORÁRIO MORA AQUI, E NÃO NO SQL: é o MESMO padrão do `p_canal_discord`
+   * logo abaixo — o que o banco não tem como saber (ou não tem como testar) chega pronto do
+   * servidor. Ladrilhar o intervalo pelo passo, resolver o fuso America/Sao_Paulo num processo que
+   * roda em UTC e decidir "só o bloco que fechou HOJE" são contas que erram em silêncio; em
+   * `domain/intervalos.ts` elas têm 100+ testes rodando em quatro fusos, e SQL neste projeto não
+   * tem teste de unidade nenhum. A 0139 declara a mesma coisa do lado de lá: nenhum `now()`,
+   * `current_date` ou `at time zone` aparece nela.
+   *
+   * Duas consultas no total — as regras e os intervalos de TODAS elas —, nunca uma por regra.
+   * Erro de leitura não derruba a rodada: as outras três janelas não podem parar porque esta
+   * falhou, e o que acontece fica no log.
+   */
+  async function blocosDaRodada(agora: Date): Promise<Record<string, { inicio: string; fim: string }>> {
+    const mapa: Record<string, { inicio: string; fim: string }> = {}
+
+    const { data, error } = await sb
+      .from('alerta_regras')
+      .select('id, janela_tipo, janela_valor')
+      .eq('ativa', true)
+      .is('excluida_em', null)
+      .eq('janela_tipo', 'intervalos')
+    if (error) {
+      console.error('[alertas] ler as regras da janela por blocos falhou:', error.message)
+      return mapa
+    }
+    // O filtro vai no `where` E aqui: regra de outra janela não pode entrar no mapa nem se um dia
+    // a consulta mudar — no banco a chave dela faria o ramo 'intervalos' medir a faixa errada.
+    const regras = ((data ?? []) as LinhaRegraBloco[]).filter((r) => r.janela_tipo === 'intervalos')
+    if (regras.length === 0) return mapa
+
+    const { data: linhas, error: erroIntervalos } = await sb
+      .from('alerta_regra_intervalos')
+      .select('regra_id, inicio, fim')
+      .in('regra_id', regras.map((r) => r.id))
+      .order('inicio')
+    if (erroIntervalos) {
+      console.error('[alertas] ler os intervalos do turno falhou:', erroIntervalos.message)
+      return mapa
+    }
+    const porRegra = new Map<string, Intervalo[]>()
+    for (const l of (linhas ?? []) as LinhaIntervaloBloco[]) {
+      const intervalo = lerIntervaloDoBanco(l.inicio, l.fim)
+      if (!intervalo) continue
+      const lista = porRegra.get(l.regra_id)
+      if (lista) lista.push(intervalo)
+      else porRegra.set(l.regra_id, [intervalo])
+    }
+
+    for (const r of regras) {
+      const intervalos = porRegra.get(r.id) ?? []
+      if (intervalos.length === 0) {
+        // Regra de janela por blocos sem turno cadastrado nunca tem bloco: ela não alertaria mais,
+        // e sem este log ninguém saberia por quê.
+        console.error(`[alertas] regra ${r.id}: janela por blocos SEM intervalo cadastrado — nada a avaliar`)
+        continue
+      }
+      const passo = r.janela_valor
+      // ⚠️ O PASSO TEM QUE SER NÚMERO. Hoje `janela_valor` é `int` e o PostgREST entrega number;
+      // no dia em que a coluna virar `numeric` ou `bigint` ele passa a entregar STRING, e
+      // `blocoCandidato` devolve null para o que não é inteiro >= 1 — null é indistinguível de
+      // "nenhum bloco fechou", então os alertas desta janela parariam PARA SEMPRE sem um log. Por
+      // isso o tipo é AFIRMADO aqui, e o que não é número vira barulho no log em vez de silêncio.
+      if (typeof passo !== 'number' || !Number.isInteger(passo) || passo < 1) {
+        console.error(
+          `[alertas] regra ${r.id}: janela_valor não chegou como inteiro de minutos ` +
+            `(${typeof passo}: ${String(passo)}) — bloco NÃO calculado`,
+        )
+        continue
+      }
+      const bloco = blocoCandidato(intervalos, passo, agora)
+      // Null aqui é o caso NORMAL: fora do turno, ou antes do primeiro bloco fechar.
+      if (!bloco) continue
+      mapa[r.id] = { inicio: bloco.inicio.toISOString(), fim: bloco.fim.toISOString() }
+    }
+    return mapa
+  }
+
   return {
     async avaliar() {
-      // O id do canal mora no SERVIDOR, não no banco: o avaliar recebe e congela na linha da fila
-      // (0123). Null = ambiente sem canal, e nenhuma linha de canal é enfileirada.
-      const { data, error } = await sb.rpc('alerta_avaliar', { p_canal_discord: canalDiscordDoSistema(env) })
+      // Os dois parâmetros vêm do SERVIDOR pelo mesmo motivo (ver `blocosDaRodada`):
+      // - o id do canal mora no servidor, não no banco: o avaliar recebe e congela na linha da
+      //   fila (0123). Null = ambiente sem canal, e nenhuma linha de canal é enfileirada;
+      // - o bloco que fechou é conta de horário, e ela mora no TS, onde tem teste.
+      const { data, error } = await sb.rpc('alerta_avaliar', {
+        p_canal_discord: canalDiscordDoSistema(env),
+        p_blocos: await blocosDaRodada(new Date()),
+      })
       if (error) throw new Error(`alerta_avaliar: ${error.message}`)
       return lerResultadoAvaliacao(data)
     },
