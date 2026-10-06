@@ -1,4 +1,5 @@
 import type { JanelaTipo } from './tipos'
+import { formatarDuracao, formatarHora } from './mensagens'
 
 export interface Janela {
   tipo: JanelaTipo
@@ -7,6 +8,9 @@ export interface Janela {
   /** Só no tipo `op`: a OP em que a taxa foi medida. */
   pmo?: string | null
   op?: string | null
+  /** Só no tipo `intervalos`: a faixa do bloco medido (ISO, como vem do jsonb de `alerta_envios.dados`). */
+  blocoInicio?: string | null
+  blocoFim?: string | null
 }
 
 /** Trecho da mensagem: "Taxa: 75,0% **na última hora** (mínimo 90%)". */
@@ -24,6 +28,14 @@ export function textoJanela(j: Janela): string {
     }
     case 'op':
       return j.pmo && j.op ? `na OP ${j.pmo}/${j.op}` : 'na OP em andamento'
+    case 'intervalos': {
+      const ini = j.blocoInicio ? new Date(j.blocoInicio) : null
+      const fim = j.blocoFim ? new Date(j.blocoFim) : null
+      if (!ini || !fim || Number.isNaN(ini.getTime()) || Number.isNaN(fim.getTime())) {
+        return 'no bloco do turno'
+      }
+      return `das ${formatarHora(ini)} às ${formatarHora(fim)}`
+    }
   }
 }
 
@@ -31,5 +43,6 @@ export function textoJanela(j: Janela): string {
 export function resumoJanela(j: { tipo: JanelaTipo; valor: number | null }): string {
   if (j.tipo === 'tempo') return `Últimos ${j.valor ?? 60} min`
   if (j.tipo === 'bipes') return `Últimos ${j.valor ?? 50} bipes`
+  if (j.tipo === 'intervalos') return `Blocos de ${formatarDuracao((j.valor ?? 60) * 60_000)}`
   return 'OP em andamento'
 }
