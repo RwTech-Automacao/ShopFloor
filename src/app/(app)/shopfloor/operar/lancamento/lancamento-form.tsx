@@ -13,9 +13,10 @@ import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancament
 import { serieDentroDaFaixa, normalizarSerie, MAX_SERIE } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
+import { postoEhDestinoDeRota, type ConsertoConfirmavel } from '@/modules/shopfloor/domain/rota-reteste'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { formatarDuracao } from '@/modules/shopfloor/domain/tempo-burnin'
-import { lancar, lancarLote, buscarEntradaBurnin, verificarConserto, contarLancadosPosto, carregarLotePendente, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
+import { lancar, lancarLote, buscarEntradaBurnin, verificarConserto, verificarConsertoManutencao, contarLancadosPosto, carregarLotePendente, type EntradaLancamento } from '@/modules/shopfloor/application/lancar-action'
 import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes, emojiItemLote, corItemLote } from '@/modules/shopfloor/domain/lote'
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
@@ -52,17 +53,26 @@ function descreverDefeito(d: { codigo: string; posicao: string; tipo: string }):
   return partes.join(' · ') || 'defeito relatado'
 }
 
+/** Texto curto de um conserto da Manutenção para o diálogo de confirmação. */
+function descreverConserto(c: { conserto: string; posicao: string }): string {
+  const partes: string[] = []
+  if (c.conserto.trim()) partes.push(c.conserto.trim())
+  if (c.posicao.trim()) partes.push(`Posição ${c.posicao.trim()}`)
+  return partes.join(' · ') || 'conserto registrado'
+}
 
 export function LancamentoForm({
   ordens,
   defeitos,
   postosPerfil,
   postosColetivo,
+  postosRotaDestino,
 }: {
   ordens: OrdemLancamentoLista[]
   defeitos: { codigo: string; tipo: number }[]
   postosPerfil: Record<string, PerfilPosto>
   postosColetivo: Record<string, boolean>
+  postosRotaDestino: string[]
 }) {
   const [colaborador, setColaborador] = useState('')
   const [cliente, setCliente] = useState('')
@@ -108,6 +118,8 @@ export function LancamentoForm({
     [ordens, cliente, pmo, op],
   )
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
+  // O Set não atravessa servidor→cliente (a página manda array); reconstrói aqui.
+  const destinosRota = useMemo(() => new Set(postosRotaDestino), [postosRotaDestino])
 
   // Lançados nesta sessão = SNs distintos com lançamento OK desde a última troca de contexto (rebipe não soma).
   const lancadosSessao = useMemo(() => {
@@ -519,6 +531,22 @@ export function LancamentoForm({
         conservoConfirmado = defeitos
       }
     }
+    // Confirmação dos consertos da Manutenção: no posto da rota de reteste, ao APROVAR, se a peça
+    // acabou de sair da Manutenção, confirmar o que foi reparado lá.
+    let consertoManutencaoConfirmado: ConsertoConfirmavel[] | undefined
+    if (!ehBurnin && comStatus && status === 'Aprovado' && postoEhDestinoDeRota(posto, destinosRota)) {
+      const consertos = await verificarConsertoManutencao(pmo, op, numeroSerie, posto)
+      if (consertos && consertos.length > 0) {
+        const lista = consertos.map(descreverConserto).join(' · ')
+        const ok = await confirmar({
+          titulo: 'Confirmar os consertos da Manutenção?',
+          descricao: `A Manutenção registrou: ${lista}. Confirma antes de aprovar?`,
+          rotuloConfirmar: 'Sim, confirmo',
+        })
+        if (!ok) { setProcessando(false); limparPeca(); return }
+        consertoManutencaoConfirmado = consertos
+      }
+    }
 
     const entrada: EntradaLancamento = {
       colaborador,
@@ -537,6 +565,7 @@ export function LancamentoForm({
           : undefined,
       posicoesSPI: reprovado && ehSpi ? posicoesSPI.filter((p) => p.trim() !== '') : undefined,
       conservoConfirmado,
+      consertoManutencaoConfirmado,
     }
     // Resultado (aprovado/reprovado) do posto: NQA é derivado de Visual/Funcional; demais, do Status.
     const outcome: 'aprovado' | 'reprovado' | null = ehNqa
@@ -678,9 +707,23 @@ export function LancamentoForm({
         conservoConfirmado = defeitos
       }
     }
+    let consertoManutencaoConfirmado: ConsertoConfirmavel[] | undefined
+    if (postoEhDestinoDeRota(posto, destinosRota)) {
+      const consertos = await verificarConsertoManutencao(pmo, op, sn, posto)
+      if (consertos && consertos.length > 0) {
+        const lista = consertos.map(descreverConserto).join(' · ')
+        const ok = await confirmar({
+          titulo: 'Confirmar os consertos da Manutenção?',
+          descricao: `A Manutenção registrou: ${lista}. Confirma antes de aprovar?`,
+          rotuloConfirmar: 'Sim, confirmo',
+        })
+        if (!ok) { setProcessando(false); limparPeca(); return }
+        consertoManutencaoConfirmado = consertos
+      }
+    }
     setTimeout(() => snRef.current?.focus(), 0)
     const entrada: EntradaLancamento = {
-      colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado,
+      colaborador, posto, pmo, op, numeroSerie: sn, status: 'Aprovado', conservoConfirmado, consertoManutencaoConfirmado,
       burninEvento: ehBurnin ? 'saida' : undefined,
     }
     if (ehColetivo) { setProcessando(false); empilharNoLote(entrada, 'aprovado'); return }

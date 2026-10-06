@@ -2,7 +2,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdensParaLancamento, listarDefeitos } from '@/modules/shopfloor/infra/lancamento-repository'
-import { mapaPostoPerfil, mapaPostoColetivo } from '@/modules/shopfloor/infra/postos-repository'
+import { mapaPostoPerfil, mapaPostoColetivo, mapaPostoRotaDestino } from '@/modules/shopfloor/infra/postos-repository'
 import { LancamentoForm } from './lancamento-form'
 
 export default async function LancamentoPage() {
@@ -10,16 +10,23 @@ export default async function LancamentoPage() {
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
     return <SemPermissao descricao="Você não tem permissão para lançar." />
   }
-  const [ordens, defeitos, postosPerfil, postosColetivo] = await Promise.all([
+  const [ordens, defeitos, postosPerfil, postosColetivo, postosRotaDestino] = await Promise.all([
     listarOrdensParaLancamento(),
     listarDefeitos(),
     mapaPostoPerfil(),
     mapaPostoColetivo(),
+    mapaPostoRotaDestino(),
   ])
 
   return (
     <div className="flex flex-col gap-4">
-      <LancamentoForm ordens={ordens} defeitos={defeitos} postosPerfil={postosPerfil} postosColetivo={postosColetivo} />
+      <LancamentoForm
+        ordens={ordens}
+        defeitos={defeitos}
+        postosPerfil={postosPerfil}
+        postosColetivo={postosColetivo}
+        postosRotaDestino={[...postosRotaDestino]} // array: Set não é serializável servidor→cliente
+      />
     </div>
   )
 }
