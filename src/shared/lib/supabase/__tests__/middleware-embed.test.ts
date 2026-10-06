@@ -77,6 +77,17 @@ describe('middleware: a marca de embed é decidida pelo caminho', () => {
     expect(createServerClient).not.toHaveBeenCalled()
   })
 
+  // A API de dados do dashboard também autentica por segredo dentro da rota — e também precisa ter
+  // a marca apagada: um cliente que mandasse `x-sf-embed` não escolhe o cookie de sessão de nada.
+  it('APAGA a marca mandada pelo cliente na API de dados do dashboard', async () => {
+    const res = await middleware(
+      pedido('/api/dashboard/ops-ativas?dias=30', { [CABECALHO_EMBED]: '1', authorization: 'Bearer x' }),
+    )
+    expect(marcaPropagada(res)).toBeNull()
+    expect(res.headers.get('x-middleware-override-headers') ?? '').not.toContain(CABECALHO_EMBED)
+    expect(createServerClient).not.toHaveBeenCalled()
+  })
+
   it('a marca sobrevive à renovação de cookies, e o cookie novo também', async () => {
     renovar = [{ name: 'sf-embed-auth', value: 'novo', options: { path: '/embed' } }]
     const res = await middleware(pedido('/embed/fluxo/PMOC13/2340', { cookie: 'antigo=1' }))
@@ -151,6 +162,18 @@ describe('middleware: redirecionamentos', () => {
     appUser = VALIDO
     const res = await middleware(pedido('/embed/fluxo/PMOC13/2340'))
     expect(res.status).toBe(200)
+  })
+
+  // ⚠️ O matcher do middleware cobre /api/*: sem esta saída, `GET /api/dashboard/ops-ativas?dias=30`
+  // responde 307 pro /login (com o `dias` virando query do /login) e a rota NUNCA executa — o
+  // dashboard receberia uma página de HTML em vez da lista de OPs, e um 401 jamais aconteceria.
+  it('a API de dados do dashboard NÃO vai pro /login: quem autoriza é o segredo na rota', async () => {
+    for (const p of ['/api/dashboard', '/api/dashboard/ops-ativas', '/api/dashboard/ops-ativas?dias=30']) {
+      const res = await middleware(pedido(p))
+      expect(res.status, p).toBe(200)
+      expect(res.headers.get('location'), p).toBeNull()
+    }
+    expect(createServerClient).not.toHaveBeenCalled()
   })
 
   it('o /login ainda manda quem já está logado pro /home', async () => {
