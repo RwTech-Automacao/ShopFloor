@@ -97,7 +97,12 @@ describe('middleware: a marca de embed é decidida pelo caminho', () => {
 describe('middleware: qual cookie de sessão o cliente usa', () => {
   it('em /embed/* é o cookie próprio, com Path=/embed', async () => {
     await middleware(pedido('/embed/fluxo/PMOC13/2340'))
-    expect(opcoes?.cookieOptions).toEqual({ name: COOKIE_EMBED, path: '/embed' })
+    expect(opcoes?.cookieOptions).toEqual({
+      name: COOKIE_EMBED,
+      path: '/embed',
+      httpOnly: true,
+      secure: false, // fora de produção
+    })
   })
 
   it('em rota normal é o cookie de sempre (nenhuma opção)', async () => {

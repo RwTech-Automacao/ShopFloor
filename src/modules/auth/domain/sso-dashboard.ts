@@ -4,6 +4,8 @@
  * Como no SSO do Portal (sso-token.ts), ASSINATURA, `exp`, `iss` e `aud` são conferidos pela
  * biblioteca de JWT — aqui fica só o que ela não sabe: se o payload traz o que a integração exige.
  */
+import { PREFIXO_EMBED } from '@/shared/lib/supabase/embed'
+
 export interface ClaimsDashboard {
   email: string
   jti: string
@@ -61,7 +63,7 @@ export function validarNextEmbed(
   if (valor.length > TAMANHO_MAX_NEXT) return INVALIDO
   if (CONTROLE.test(valor)) return INVALIDO
   if (valor.startsWith('//') || valor.startsWith('/\\')) return INVALIDO
-  if (!valor.startsWith('/embed/')) return INVALIDO
+  if (!valor.startsWith(`${PREFIXO_EMBED}/`)) return INVALIDO
 
   // A travessia é conferida DEPOIS de decodificar: `/embed/..%2Fhome` escapa se só olhar o cru.
   let decodificado: string

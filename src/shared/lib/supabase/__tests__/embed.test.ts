@@ -22,7 +22,23 @@ describe('ehCaminhoEmbed', () => {
 
 describe('opcoesCookieEmbed', () => {
   it('no embed devolve o cookie próprio, com Path=/embed', () => {
-    expect(opcoesCookieEmbed(true)).toEqual({ name: COOKIE_EMBED, path: '/embed' })
+    expect(opcoesCookieEmbed(true, true)).toEqual({
+      name: COOKIE_EMBED,
+      path: '/embed',
+      httpOnly: true,
+      secure: true,
+    })
+  })
+  it('secure só em produção; httpOnly sempre', () => {
+    expect(opcoesCookieEmbed(true, false)).toEqual({
+      name: COOKIE_EMBED,
+      path: '/embed',
+      httpOnly: true,
+      secure: false,
+    })
+  })
+  it('sem parâmetro, o ambiente vem de NODE_ENV (testes rodam fora de produção)', () => {
+    expect(opcoesCookieEmbed(true)?.secure).toBe(false)
   })
   it('fora do embed não devolve nada: vale o cookie padrão', () => {
     expect(opcoesCookieEmbed(false)).toBeUndefined()

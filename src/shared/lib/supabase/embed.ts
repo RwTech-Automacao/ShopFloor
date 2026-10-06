@@ -21,11 +21,27 @@ export function ehCaminhoEmbed(pathname: string): boolean {
   return pathname === PREFIXO_EMBED || pathname.startsWith(`${PREFIXO_EMBED}/`)
 }
 
-/** O que vai em `cookieOptions` do createServerClient quando é embed; nada quando não é. */
+/**
+ * O que vai em `cookieOptions` do createServerClient quando é embed; nada quando não é.
+ *
+ * - `httpOnly: true` SEMPRE: nada no cliente lê esse cookie (a tela busca tudo por Server Action).
+ *   Sem isso, quem abrisse o dashboard leria o token no devtools e poderia recolocá-lo com o
+ *   nome padrão em `Path=/`, navegando o ShopFloor inteiro como a conta compartilhada. O
+ *   cabeçalho `x-sf-embed` protege contra o ENVIO automático do cookie, não contra quem LÊ o valor.
+ * - `secure` só em produção: lá o servidor já manda HSTS. Em dev, sobre `http://localhost`, um
+ *   `secure: true` fixo faria o navegador REJEITAR o cookie e o embed não funcionaria.
+ * - `sameSite` fica `lax` (default do @supabase/ssr), que é o correto: dashboard.enterplak.com.br
+ *   e shopfloor.enterplak.com.br são cross-origin mas SAME-SITE. NÃO usar `none`.
+ *
+ * `producao` é parâmetro para a decisão ser testável sem mexer em `NODE_ENV`.
+ */
 export function opcoesCookieEmbed(
   ehEmbed: boolean,
-): { name: string; path: string } | undefined {
-  return ehEmbed ? { name: COOKIE_EMBED, path: PREFIXO_EMBED } : undefined
+  producao: boolean = process.env.NODE_ENV === 'production',
+): { name: string; path: string; httpOnly: boolean; secure: boolean } | undefined {
+  return ehEmbed
+    ? { name: COOKIE_EMBED, path: PREFIXO_EMBED, httpOnly: true, secure: producao }
+    : undefined
 }
 
 /**
@@ -37,6 +53,10 @@ export function opcoesCookieEmbed(
  * inteiro como a conta do dashboard.
  */
 export function cabecalhosComMarcaEmbed(cabecalhos: Headers, pathname: string): Headers {
+  // ⚠️ A defesa depende de o middleware SEMPRE devolver `x-middleware-override-headers` NÃO vazio.
+  // Se esta cópia ficasse sem nenhuma chave, o Next gravaria a lista como string vazia e os
+  // cabeçalhos CRUS do cliente passariam inteiros (resolve-routes.js:413), reabrindo o buraco.
+  // É inalcançável na prática (`host` sempre vem), mas NÃO "otimize" a cópia nem filtre chaves.
   const copia = new Headers(cabecalhos)
   if (ehCaminhoEmbed(pathname)) copia.set(CABECALHO_EMBED, '1')
   else copia.delete(CABECALHO_EMBED)
