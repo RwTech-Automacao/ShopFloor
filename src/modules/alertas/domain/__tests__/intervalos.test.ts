@@ -13,6 +13,10 @@ describe('lerHhMm', () => {
       expect(lerHhMm(ruim)).toBeNull()
     }
   })
+  it('exige o texto inteiro: nada antes do horário', () => {
+    expect(lerHhMm('x07:00')).toBeNull()
+    expect(lerHhMm(' 07:00')).toBeNull()
+  })
 })
 
 describe('formatarHhMm', () => {
@@ -104,5 +108,47 @@ describe('validarIntervalos', () => {
   it('apara espaço e ignora duplicata exata', () => {
     const r = validarIntervalos([{ inicio: ' 07:00 ', fim: '12:00' }, { inicio: '07:00', fim: '12:00' }], 60)
     expect(r.ok && r.valor).toEqual([{ inicio: '07:00', fim: '12:00' }])
+  })
+
+  const MSG_MEIA_NOITE =
+    'O horário final precisa ser maior que o inicial. Turno que passa da meia-noite não é suportado.'
+
+  it('fim igual ao início dá a mensagem da meia-noite (não a do mínimo)', () => {
+    expect(validarIntervalos([{ inicio: '07:00', fim: '07:00' }], 60)).toEqual({ ok: false, erro: MSG_MEIA_NOITE })
+  })
+
+  it('intervalo de exatamente 15 minutos é aceito', () => {
+    expect(validarIntervalos([{ inicio: '07:00', fim: '07:15' }], 15)).toEqual({
+      ok: true,
+      valor: [{ inicio: '07:00', fim: '07:15' }],
+    })
+  })
+
+  it('passo de exatamente 15 minutos é aceito', () => {
+    expect(validarIntervalos(bons, 15).ok).toBe(true)
+  })
+
+  it('apara espaço também no fim', () => {
+    const r = validarIntervalos([{ inicio: '07:00', fim: ' 12:00 ' }], 60)
+    expect(r).toEqual({ ok: true, valor: [{ inicio: '07:00', fim: '12:00' }] })
+  })
+
+  it('horário malformado dá a mensagem do formato', () => {
+    expect(validarIntervalos([{ inicio: '7h', fim: '12:00' }], 60)).toEqual({
+      ok: false,
+      erro: 'Informe os horários no formato HH:MM (ex.: 07:00).',
+    })
+  })
+
+  it('dois intervalos com o mesmo início: o de fim menor vem primeiro', () => {
+    expect(
+      validarIntervalos([{ inicio: '07:00', fim: '12:00' }, { inicio: '07:00', fim: '09:00' }], 60),
+    ).toEqual({ ok: false, erro: 'Os intervalos 07:00–09:00 e 07:00–12:00 se sobrepõem.' })
+  })
+
+  it('passo NaN ou Infinity é recusado', () => {
+    const esperado = { ok: false, erro: 'O passo precisa ter no mínimo 15 minutos.' }
+    expect(validarIntervalos(bons, Number.NaN)).toEqual(esperado)
+    expect(validarIntervalos(bons, Number.POSITIVE_INFINITY)).toEqual(esperado)
   })
 })
