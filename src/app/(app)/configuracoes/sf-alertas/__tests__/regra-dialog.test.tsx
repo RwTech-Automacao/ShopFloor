@@ -49,6 +49,7 @@ describe('RegraConteudo', () => {
       limiteOcorrencias: 3,
       pausaMaxMin: null,
       lembreteMin: null,
+      intervalos: [],
       canais: ['telegram'],
       avisarPessoas: true,
     avisarCanal: false,

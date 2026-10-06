@@ -89,6 +89,7 @@ const TEMPO: RegraValida = {
   limiteOcorrencias: null,
   pausaMaxMin: 30,
   lembreteMin: null,
+  intervalos: [],
   canais: ['telegram'],
   avisarPessoas: true,
   avisarCanal: false,
@@ -230,6 +231,7 @@ describe('prévia por tipo', () => {
       minimoBipes: null,
       pausaMaxMin: null,
       limiteOcorrencias: 3,
+      intervalos: [],
       pmos: ['PMOA'],
     })
     expect(chamadas).toEqual([

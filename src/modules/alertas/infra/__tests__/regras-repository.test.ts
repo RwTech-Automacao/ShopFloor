@@ -86,6 +86,7 @@ const REGRA: RegraValida = {
   limiteOcorrencias: null,
   pausaMaxMin: null,
   lembreteMin: null,
+  intervalos: [],
   canais: ['telegram'],
   avisarPessoas: true,
   avisarCanal: false,

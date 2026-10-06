@@ -63,6 +63,8 @@ function paraRegra(l: LinhaRegra): RegraAlerta {
     limiteOcorrencias: l.limite_ocorrencias,
     pausaMaxMin: l.pausa_max_min,
     lembreteMin: l.lembrete_min,
+    // A coluna chega na Task 5/6; até lá nenhuma regra salva usa a janela por blocos.
+    intervalos: [],
     canais: (l.canais ?? []).filter(ehCanal),
     destinatarios: l.destinatarios ?? [],
     // Banco ainda sem a 0123 (deploy antes da migração): o comportamento de hoje é avisar as pessoas.
