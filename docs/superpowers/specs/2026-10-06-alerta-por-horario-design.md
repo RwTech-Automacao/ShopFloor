@@ -91,6 +91,19 @@ sexta. **Cron parado das 08:00 às 11:00:** às 11:05 o candidato é 10:00–11:
 08:00–09:00 e 09:00–10:00 **não são recuperados**, e isso é de propósito — alerta de bloco de três
 horas atrás não serve pra nada, e o bloco atual conta a verdade sobre agora.
 
+### Dia parado não precisa de calendário — e não deve ter
+
+`blocoCandidato` **não** sabe se hoje é dia de expediente: num domingo às 18:00 ela devolve o
+último bloco daquele domingo. Parece um buraco, e **não é**: o bloco de domingo tem zero bipe, e o
+mínimo de bipes já faz a regra não decidir nada
+([0113_alertas.sql:454](../../../supabase/migrations/0113_alertas.sql) — *"Abaixo do mínimo de bipes
+a regra não decide NADA (nem abre, nem normaliza)"*). Nenhum alerta nasce, nada normaliza, e o
+`bloco_reportado` não se move — então o primeiro bloco de segunda ainda fala.
+
+⚠️ **Não acrescente uma checagem de seg–sex aqui.** Ela seria pior que a ausência: no sábado de hora
+extra — que já tem procedimento próprio de ligar o banco — tem gente trabalhando, e a regra **deve**
+avisar. Quem decide se o dia conta é a produção, não o calendário.
+
 ### Os intervalos são de cada regra
 
 Não há cadastro reaproveitável de turnos. A regra já escolhe os postos; os intervalos ficam com ela.
