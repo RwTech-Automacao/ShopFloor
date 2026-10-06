@@ -12,7 +12,10 @@ export interface ClaimsDashboard {
 export const EMISSOR_DASHBOARD = 'enterplak-dashboard'
 export const AUDIENCIA_DASHBOARD = 'shopfloor-embed'
 
-const normalizar = (v: unknown): string => String(v ?? '').trim().toLowerCase()
+// Só STRING de verdade vale: `String({})` viraria "[object Object]" e todos os tokens com `jti`
+// objeto dividiriam a mesma chave no anti-replay.
+const normalizar = (v: unknown): string => (typeof v === 'string' ? v.trim().toLowerCase() : '')
+const TAMANHO_MAX_NEXT = 512
 
 /**
  * Confere o que a biblioteca de JWT não cobre. `emailAceito` vem do env (DASHBOARD_SSO_EMAIL).
@@ -24,6 +27,8 @@ export function validarClaimsDashboard(
   bruto: Record<string, unknown>,
   emailAceito: string,
 ): { ok: true; claims: ClaimsDashboard } | { ok: false; erro: string } {
+  // `bruto` nulo recusa em vez de estourar: exceção aqui viraria 500, não 401.
+  if (bruto === null || typeof bruto !== 'object') return { ok: false, erro: 'Token sem e-mail.' }
   const email = normalizar(bruto.email)
   if (email === '') return { ok: false, erro: 'Token sem e-mail.' }
 
@@ -34,7 +39,7 @@ export function validarClaimsDashboard(
   }
 
   // Sem `jti` não há como recusar repetição.
-  const jti = String(bruto.jti ?? '').trim()
+  const jti = typeof bruto.jti === 'string' ? bruto.jti.trim() : ''
   if (jti === '') return { ok: false, erro: 'Token sem identificador (jti).' }
 
   return { ok: true, claims: { email, jti } }
@@ -53,6 +58,7 @@ export function validarNextEmbed(
   valor: unknown,
 ): { ok: true; next: string } | { ok: false; erro: string } {
   if (typeof valor !== 'string' || valor.trim() === '') return INVALIDO
+  if (valor.length > TAMANHO_MAX_NEXT) return INVALIDO
   if (CONTROLE.test(valor)) return INVALIDO
   if (valor.startsWith('//') || valor.startsWith('/\\')) return INVALIDO
   if (!valor.startsWith('/embed/')) return INVALIDO

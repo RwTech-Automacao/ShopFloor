@@ -93,4 +93,42 @@ describe('validarNextEmbed', () => {
     expect(validarNextEmbed('/embed/x%0d%0aSet-Cookie:y').ok).toBe(false)
     expect(validarNextEmbed('/embed/..%5Chome').ok).toBe(false)
   })
+
+  it('recusa next acima de 512 caracteres e aceita com exatamente 512', () => {
+    const base = '/embed/'
+    expect(validarNextEmbed(base + 'a'.repeat(512 - base.length))).toEqual({
+      ok: true,
+      next: base + 'a'.repeat(512 - base.length),
+    })
+    expect(validarNextEmbed(base + 'a'.repeat(513 - base.length))).toEqual({ ok: false, erro: 'Destino inválido.' })
+  })
+})
+
+describe('validarClaimsDashboard - endurecimento', () => {
+  it('recusa jti que não é string e aceita string válida', () => {
+    for (const jti of [5, false, {}, ['x']]) {
+      expect(validarClaimsDashboard({ email: ACEITO, jti }, ACEITO)).toEqual({
+        ok: false,
+        erro: 'Token sem identificador (jti).',
+      })
+    }
+    expect(validarClaimsDashboard({ email: ACEITO, jti: 'ok-1' }, ACEITO)).toEqual({
+      ok: true,
+      claims: { email: ACEITO, jti: 'ok-1' },
+    })
+  })
+
+  it('recusa e-mail que não é string, mesmo com toString igual ao aceito', () => {
+    for (const email of [5, [ACEITO], { toString: () => ACEITO }]) {
+      expect(validarClaimsDashboard({ email, jti: 'a' }, ACEITO)).toEqual({ ok: false, erro: 'Token sem e-mail.' })
+    }
+  })
+
+  it('recusa bruto nulo ou indefinido sem lançar', () => {
+    for (const bruto of [null, undefined]) {
+      const chamar = () => validarClaimsDashboard(bruto as never, ACEITO)
+      expect(chamar).not.toThrow()
+      expect(chamar()).toEqual({ ok: false, erro: 'Token sem e-mail.' })
+    }
+  })
 })
