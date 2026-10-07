@@ -134,6 +134,7 @@ describe('actions de alertas — payload malformado não lança exceção', () =
       pausaMaxMin: 30,
       limiteOcorrencias: null,
       pmos: ['PMOA'],
+      intervalos: [],
     })
     limparMocks()
   })

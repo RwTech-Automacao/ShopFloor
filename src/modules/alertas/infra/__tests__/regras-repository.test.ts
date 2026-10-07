@@ -34,6 +34,15 @@ function sbFalso(linhas: number) {
         c.filtros.push([col, v])
         return q
       },
+      // A edição troca os intervalos do turno (0139): apaga os antigos e insere os novos.
+      delete() {
+        c.update = { delete: true }
+        return q
+      },
+      insert(v: Record<string, unknown>) {
+        c.update = v
+        return q
+      },
       select(cols: string) {
         c.select = cols
         return q
@@ -61,6 +70,12 @@ function sbComErro(mensagem: string) {
       is() {
         return q
       },
+      delete() {
+        return q
+      },
+      insert() {
+        return q
+      },
       select() {
         return q
       },
@@ -86,6 +101,7 @@ const REGRA: RegraValida = {
   limiteOcorrencias: null,
   pausaMaxMin: null,
   lembreteMin: null,
+  intervalos: [],
   canais: ['telegram'],
   avisarPessoas: true,
   avisarCanal: false,
