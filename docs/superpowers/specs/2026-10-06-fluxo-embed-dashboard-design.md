@@ -118,7 +118,8 @@ infra, Vitest, migração SQL idempotente).
 - ⚠️ A proteção contra embutir que existe hoje **não é do repositório**: vem do
   `X-Frame-Options` do **nginx do servidor** (ligado na revisão de segurança de 21/09; não há
   `add_header` nenhum em `deploy/aws/nginx-shopfloor-aws.conf` e o Next não o define). O
-  navegador honra esse cabeçalho **independentemente** do `frame-ancestors`, então o CSP da
+  navegador IGNORA esse cabeçalho quando há `frame-ancestors` (CSP Level 2) — Chrome e Firefox
+  atuais fazem isso, mas o motor das TVs pode não fazer, e aí o CSP da
   aplicação **não basta**: o `/embed` precisa de **exceção no nginx**, senão o iframe do
   dashboard não carrega mesmo com o CSP certo. Passo a passo em
   `docs/operacao/nginx-embed-dashboard.md`.
