@@ -26,6 +26,7 @@ const BASE: RegraAlerta = {
   limiteOcorrencias: null,
   pausaMaxMin: 30,
   lembreteMin: null,
+  intervalos: [],
   canais: ['telegram'],
   avisarPessoas: true,
   avisarCanal: false,
@@ -66,5 +67,37 @@ describe('RegrasLista', () => {
     expect(screen.getAllByText('≥ 5 vezes').length).toBeGreaterThan(0)
     expect(screen.getAllByText('PMOX, PMOY').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Todas').length).toBeGreaterThan(0)
+  })
+
+  it('regra de janela "intervalos": a coluna Janela mostra "Blocos de 1 h" e o limite sai como taxa', () => {
+    render(
+      <RegrasLista
+        regras={[
+          {
+            ...BASE,
+            id: 'r3',
+            tipo: 'aprovacao',
+            nome: 'Taxa por bloco',
+            taxaMinima: 95,
+            janelaTipo: 'intervalos',
+            janelaValor: 60,
+            limiteTempoSeg: null,
+            pausaMaxMin: null,
+            intervalos: [
+              { inicio: '07:00', fim: '12:00' },
+              { inicio: '13:30', fim: '17:30' },
+            ],
+          },
+        ]}
+        postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
+        pmos={['PMOX']}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
+        configurados={{ telegram: true, discord: true }}
+        canalConfigurado
+      />,
+    )
+    expect(screen.getAllByText('Blocos de 1 h').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('≥ 95%').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Últimos/)).toBeNull()
   })
 })

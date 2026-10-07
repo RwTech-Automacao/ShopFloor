@@ -31,6 +31,7 @@ describe('validarRegra', () => {
       limiteOcorrencias: null,
       pausaMaxMin: null,
       lembreteMin: null,
+      intervalos: [],
       canais: ['telegram'],
       destinatarios: ['u1', 'u2'],
       avisarPessoas: true,
@@ -183,6 +184,7 @@ describe('validarPrevia', () => {
         pausaMaxMin: null,
         limiteOcorrencias: null,
         pmos: [],
+        intervalos: [],
       },
     })
   })

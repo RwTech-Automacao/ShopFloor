@@ -154,7 +154,17 @@ function janelaDe(d: Record<string, unknown>): Janela {
   const tipo = d.janela_tipo
   if (!ehJanelaTipo(tipo)) throw new DadosEnvioInvalidos('janela_tipo')
   const valor = d.janela_valor === null || d.janela_valor === undefined ? null : numero(d, 'janela_valor')
-  return { tipo, valor, pmo: textoOuNulo(d, 'pmo'), op: textoOuNulo(d, 'op') }
+  return {
+    tipo,
+    valor,
+    pmo: textoOuNulo(d, 'pmo'),
+    op: textoOuNulo(d, 'op'),
+    // A FAIXA do bloco medido (0139), só na janela 'intervalos'. Sem ela repassada aqui, o
+    // `textoJanela` cai no genérico 'no bloco do turno' e a mensagem não diz de que hora fala.
+    // Linha de outra janela traz as duas chaves nulas (ou nem as traz), e nada muda.
+    blocoInicio: textoOuNulo(d, 'bloco_inicio'),
+    blocoFim: textoOuNulo(d, 'bloco_fim'),
+  }
 }
 
 function textoAprovacao(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {

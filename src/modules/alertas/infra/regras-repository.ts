@@ -3,6 +3,7 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { ehCanal, ehJanelaTipo, ehTipoRegra, type EstadoOcorrencia } from '../domain/tipos'
 import type { DestinatarioDisponivel, PreviaValida, RegraAlerta, RegraValida } from '../domain/regra'
 import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/ocorrencia'
+import { lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
 import { periodoOcorrencias } from '../domain/ocorrencia'
 import { lerResolucao } from '../domain/resolucao'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
@@ -35,6 +36,13 @@ interface LinhaRegra {
   atualizado_em: string
 }
 
+/** Uma linha da tabela filha `alerta_regra_intervalos` (0139). `inicio`/`fim` são `time`. */
+interface LinhaIntervalo {
+  regra_id: string
+  inicio: string | null
+  fim: string | null
+}
+
 /** numeric do Postgres chega como string no supabase-js; null continua null. */
 function numeroOuNulo(v: number | string | null | undefined): number | null {
   if (v === null || v === undefined) return null
@@ -48,7 +56,7 @@ function erroDeBanco(error: { code?: string; message: string }): string {
   return mensagemErroAlerta(error.message)
 }
 
-function paraRegra(l: LinhaRegra): RegraAlerta {
+function paraRegra(l: LinhaRegra, intervalos: Intervalo[]): RegraAlerta {
   return {
     id: l.id,
     // Tipo desconhecido (banco mais novo que o app) cai em 'aprovacao' em vez de quebrar a lista.
@@ -63,6 +71,9 @@ function paraRegra(l: LinhaRegra): RegraAlerta {
     limiteOcorrencias: l.limite_ocorrencias,
     pausaMaxMin: l.pausa_max_min,
     lembreteMin: l.lembrete_min,
+    // Os intervalos do turno vêm da tabela FILHA (alerta_regra_intervalos), carregada de uma vez
+    // para todas as regras da lista. Janela que não é 'intervalos' não tem nenhum.
+    intervalos,
     canais: (l.canais ?? []).filter(ehCanal),
     destinatarios: l.destinatarios ?? [],
     // Banco ainda sem a 0123 (deploy antes da migração): o comportamento de hoje é avisar as pessoas.
@@ -102,6 +113,74 @@ function paraLinha(r: RegraValida, comTipo: boolean): Record<string, unknown> {
   return linha
 }
 
+type ClienteSupabase = Awaited<ReturnType<typeof createServerSupabase>>
+
+/** Mensagem das duas gravações: a regra foi salva, o turno não — e o gestor precisa saber. */
+const ERRO_TURNO =
+  'A regra foi salva, mas os horários do turno não. Abra a regra, confira os horários e salve de novo.'
+
+/**
+ * Os intervalos de TODAS as regras da lista em UMA consulta (`regra_id in (...)`). A listagem de
+ * regras é tela de gestor: uma consulta por regra multiplicaria o round-trip pelo número de regras
+ * (N+1) por um dado que cabe numa só.
+ */
+async function intervalosPorRegra(sb: ClienteSupabase, ids: string[]): Promise<Map<string, Intervalo[]>> {
+  const mapa = new Map<string, Intervalo[]>()
+  if (ids.length === 0) return mapa
+  const { data, error } = await sb
+    .from('alerta_regra_intervalos')
+    .select('regra_id, inicio, fim')
+    .in('regra_id', ids)
+    .order('inicio')
+  // NÃO silencia: turno vazio por engano faria a regra parar de alertar sem ninguém notar, e na
+  // tela faria o gestor salvar de volta uma regra sem horário nenhum (o delete+insert da edição).
+  if (error) throw new Error(`alerta_regra_intervalos: ${error.message}`)
+  for (const l of (data ?? []) as LinhaIntervalo[]) {
+    const intervalo = lerIntervaloDoBanco(l.inicio, l.fim)
+    if (!intervalo) continue
+    const lista = mapa.get(l.regra_id)
+    if (lista) lista.push(intervalo)
+    else mapa.set(l.regra_id, [intervalo])
+  }
+  return mapa
+}
+
+/**
+ * Grava os intervalos do turno da regra. `apagarAntes` é a EDIÇÃO: trocar o turno é APAGAR e
+ * INSERIR, nunca um upsert. Se o gestor troca 07:00–12:00 por 08:00–12:00, a linha velha tem que
+ * SUMIR — senão a regra fica com DOIS intervalos e passa a medir um turno que não existe, em
+ * silêncio. O mesmo delete limpa a sobra da regra que SAIU da janela 'intervalos'.
+ *
+ * Falha aqui NÃO vira sucesso: regra de janela 'intervalos' sem intervalo nenhum nunca tem bloco
+ * fechado, então o banco a pula em toda rodada e ela não alerta mais — calada. Melhor o gestor ver
+ * o erro na hora.
+ */
+async function trocarIntervalos(
+  sb: ClienteSupabase,
+  regraId: string,
+  r: RegraValida,
+  apagarAntes: boolean,
+): Promise<{ ok: true } | { ok: false; erro: string }> {
+  if (apagarAntes) {
+    const { error } = await sb.from('alerta_regra_intervalos').delete().eq('regra_id', regraId)
+    if (error) {
+      console.error(`[alertas] apagar os intervalos da regra ${regraId} falhou:`, error.message)
+      return { ok: false, erro: ERRO_TURNO }
+    }
+  }
+  // Regra de outra janela não tem intervalo nenhum para inserir.
+  const linhas = r.janelaTipo === 'intervalos' ? r.intervalos : []
+  if (linhas.length === 0) return { ok: true }
+  const { error } = await sb
+    .from('alerta_regra_intervalos')
+    .insert(linhas.map((i) => ({ regra_id: regraId, inicio: i.inicio, fim: i.fim })))
+  if (error) {
+    console.error(`[alertas] gravar os intervalos da regra ${regraId} falhou:`, error.message)
+    return { ok: false, erro: ERRO_TURNO }
+  }
+  return { ok: true }
+}
+
 export async function listarRegras(): Promise<RegraAlerta[]> {
   const sb = await createServerSupabase()
   // Regra excluída (exclusão lógica) some da lista; as ocorrências dela continuam na aba Ocorrências.
@@ -111,14 +190,21 @@ export async function listarRegras(): Promise<RegraAlerta[]> {
     .is('excluida_em', null)
     .order('nome')
   if (error) throw error
-  return ((data ?? []) as unknown as LinhaRegra[]).map(paraRegra)
+  const linhas = (data ?? []) as unknown as LinhaRegra[]
+  const comBlocos = linhas.filter((l) => l.janela_tipo === 'intervalos').map((l) => l.id)
+  const porRegra = await intervalosPorRegra(sb, comBlocos)
+  return linhas.map((l) => paraRegra(l, porRegra.get(l.id) ?? []))
 }
 
 export async function inserirRegra(r: RegraValida): Promise<{ ok: true; id: string } | { ok: false; erro: string }> {
   const sb = await createServerSupabase()
   const { data, error } = await sb.from('alerta_regras').insert(paraLinha(r, true)).select('id').single()
   if (error) return { ok: false, erro: erroDeBanco(error) }
-  return { ok: true, id: (data as { id: string }).id }
+  const id = (data as { id: string }).id
+  // Regra nova não tem intervalo velho para apagar.
+  const turno = await trocarIntervalos(sb, id, r, false)
+  if (!turno.ok) return { ok: false, erro: turno.erro }
+  return { ok: true, id }
 }
 
 export async function atualizarRegra(
@@ -132,7 +218,10 @@ export async function atualizarRegra(
     .eq('id', id)
     .select('id')
   if (error) return { ok: false, erro: erroDeBanco(error) }
+  // Regra que já não existe não tem o turno mexido: o update não bateu em nada.
   if ((data ?? []).length === 0) return { ok: false, erro: 'Essa regra foi excluída.' }
+  const turno = await trocarIntervalos(sb, id, r, true)
+  if (!turno.ok) return { ok: false, erro: turno.erro }
   return { ok: true }
 }
 
