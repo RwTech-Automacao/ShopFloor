@@ -12,6 +12,9 @@ export interface ClaimsDashboard {
 }
 
 export const EMISSOR_DASHBOARD = 'enterplak-dashboard'
+/** O próprio endpoint de SSO: nunca é destino válido de `next`. */
+const ROTA_SSO_EMBED = `${PREFIXO_EMBED}/sso`
+
 export const AUDIENCIA_DASHBOARD = 'shopfloor-embed'
 
 // Só STRING de verdade vale: `String({})` viraria "[object Object]" e todos os tokens com `jti`
@@ -73,7 +76,14 @@ export function validarNextEmbed(
     return INVALIDO
   }
   if (CONTROLE.test(decodificado)) return INVALIDO
-  if (decodificado.split(/[/\\]/).includes('..')) return INVALIDO
+  const partes = decodificado.split(/[/\\]/)
+  if (partes.includes('..')) return INVALIDO
+
+  // O próprio /embed/sso nunca é destino válido: mandar o SSO redirecionar para ele mesmo não faz
+  // sentido e o dashboard pede essa recusa no contrato. Compara o CAMINHO já normalizado (sem os
+  // segmentos '.') e sem query nem fragmento, para pegar /embed/./sso, /embed/%73so e /embed/sso?x.
+  const caminho = partes.filter((s) => s !== '.').join('/').split(/[?#]/)[0] ?? ''
+  if (caminho === ROTA_SSO_EMBED || caminho.startsWith(`${ROTA_SSO_EMBED}/`)) return INVALIDO
 
   return { ok: true, next: valor }
 }
