@@ -521,10 +521,12 @@ export function LancamentoForm({
     if (!ehBurnin && comStatus && status === 'Aprovado' && postoEhDestinoDeRota(posto, destinosRota)) {
       const consertos = await verificarConsertoManutencao(pmo, op, numeroSerie, posto)
       if (consertos && consertos.length > 0) {
-        const lista = consertos.map(descreverConserto).join(' · ')
+        // Um conserto por LINHA: colados por '·' os três viram texto corrido e ninguém acha onde
+          // um termina. O diálogo respeita \n (whitespace-pre-line no confirm-dialog).
+          const lista = consertos.map(descreverConserto).join('\n')
         const ok = await confirmar({
           titulo: 'Confirmar os consertos da Manutenção?',
-          descricao: `A Manutenção registrou: ${lista}. Confirma antes de aprovar?`,
+          descricao: `A Manutenção registrou:\n\n${lista}\n\nConfirma antes de aprovar?`,
           rotuloConfirmar: 'Sim, confirmo',
         })
         if (!ok) { setProcessando(false); limparPeca(); return }
@@ -696,10 +698,12 @@ export function LancamentoForm({
     if (postoEhDestinoDeRota(posto, destinosRota)) {
       const consertos = await verificarConsertoManutencao(pmo, op, sn, posto)
       if (consertos && consertos.length > 0) {
-        const lista = consertos.map(descreverConserto).join(' · ')
+        // Um conserto por LINHA: colados por '·' os três viram texto corrido e ninguém acha onde
+          // um termina. O diálogo respeita \n (whitespace-pre-line no confirm-dialog).
+          const lista = consertos.map(descreverConserto).join('\n')
         const ok = await confirmar({
           titulo: 'Confirmar os consertos da Manutenção?',
-          descricao: `A Manutenção registrou: ${lista}. Confirma antes de aprovar?`,
+          descricao: `A Manutenção registrou:\n\n${lista}\n\nConfirma antes de aprovar?`,
           rotuloConfirmar: 'Sim, confirmo',
         })
         if (!ok) { setProcessando(false); limparPeca(); return }
