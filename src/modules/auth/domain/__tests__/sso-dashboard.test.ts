@@ -131,4 +131,25 @@ describe('validarClaimsDashboard - endurecimento', () => {
       expect(chamar()).toEqual({ ok: false, erro: 'Token sem e-mail.' })
     }
   })
+
+  it('recusa o próprio /embed/sso como destino, inclusive disfarçado', () => {
+    // O contrato do Dashboard exige esta recusa; são as formas que a spec deles lista.
+    for (const ruim of [
+      '/embed/sso',
+      '/embed/sso?x',
+      '/embed/sso?token=abc',
+      '/embed/./sso',
+      '/embed/%73so',
+      '/embed/sso/',
+      '/embed/sso#frag',
+    ]) {
+      expect(validarNextEmbed(ruim), ruim).toEqual({ ok: false, erro: 'Destino inválido.' })
+    }
+  })
+
+  it('não recusa demais: caminho que apenas COMEÇA parecido continua válido', () => {
+    for (const bom of ['/embed/ssonho/x', '/embed/fluxo/sso/y']) {
+      expect(validarNextEmbed(bom), bom).toEqual({ ok: true, next: bom })
+    }
+  })
 })
