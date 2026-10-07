@@ -8,6 +8,7 @@ import {
   type TipoRegra,
 } from './tipos'
 import { formatarMeta } from './taxa'
+import { validarIntervalos, type Intervalo } from './intervalos'
 import { formatarMmSs, lerMmSs } from './tempo'
 
 /** O que vem do formulário (tudo pode chegar como texto). Campos de outro tipo são ignorados. */
@@ -38,6 +39,8 @@ export interface EntradaRegra {
   avisarCanal?: boolean
   /** Vazio = todas as PMOs. */
   pmos?: string[]
+  /** Janela `intervalos`: os horários do turno ({ inicio, fim } 'HH:MM'). Nas outras, é ignorado. */
+  intervalos?: unknown
   ativa: boolean
 }
 
@@ -54,6 +57,8 @@ export interface RegraValida {
   limiteOcorrencias: number | null
   pausaMaxMin: number | null
   lembreteMin: number | null
+  /** Janela `intervalos`: os horários do turno, ordenados. Vazio nas outras janelas. */
+  intervalos: Intervalo[]
   canais: Canal[]
   destinatarios: string[]
   avisarPessoas: boolean
@@ -85,6 +90,7 @@ export interface EntradaPrevia {
   pausaMaxMin?: string | number | null
   limiteOcorrencias?: string | number | null
   pmos?: string[]
+  intervalos?: unknown
 }
 
 export interface PreviaValida {
@@ -96,6 +102,7 @@ export interface PreviaValida {
   pausaMaxMin: number | null
   limiteOcorrencias: number | null
   pmos: string[]
+  intervalos: Intervalo[]
 }
 
 /** Teto da janela `tempo` (7 dias), igual ao check da 0113. */
@@ -182,6 +189,9 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
 
   if (!ehJanelaTipo(e.janelaTipo)) return erro('Escolha a janela da regra.')
   const janelaTipo: JanelaTipo = e.janelaTipo
+  if (tipo !== 'aprovacao' && janelaTipo === 'intervalos') {
+    return erro('Só a taxa de aprovação usa a janela por blocos de turno.')
+  }
   if (tipo === 'tempo' && janelaTipo === 'bipes') {
     return erro('Tempo médio por peça usa a janela por minutos ou a OP em andamento.')
   }
@@ -191,12 +201,22 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   if (janelaTipo !== 'op') {
     const v = inteiro(e.janelaValor)
     if (v === null || Number.isNaN(v) || v <= 0) {
+      if (janelaTipo === 'intervalos') return erro('Informe o passo do bloco em minutos.')
       return erro(janelaTipo === 'tempo' ? 'Informe quantos minutos a janela olha.' : 'Informe quantos bipes a janela olha.')
     }
     if (janelaTipo === 'tempo' && v > JANELA_TEMPO_MAX_MIN) {
       return erro('A janela de tempo pode ter no máximo 7 dias (10080 minutos).')
     }
     janelaValor = v
+  }
+
+  // Janela por blocos: `janelaValor` é o PASSO em minutos. As faixas do passo e os horários são
+  // conferidas por `validarIntervalos`, e o erro dela sobe como erro da regra, sem reescrever.
+  let intervalos: Intervalo[] = []
+  if (janelaTipo === 'intervalos') {
+    const ri = validarIntervalos(e.intervalos, janelaValor)
+    if (!ri.ok) return erro(ri.erro)
+    intervalos = ri.valor
   }
 
   let minimoBipes: number | null = null
@@ -208,6 +228,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     minimoBipes = m
   }
   // Janela de 10 bipes com mínimo de 20 NUNCA decidiria nada — melhor recusar do que ficar muda.
+  // (Só na janela `bipes`: na janela `intervalos` o valor é minutos, outra grandeza.)
   if (tipo === 'aprovacao' && janelaTipo === 'bipes' && janelaValor !== null && minimoBipes !== null && janelaValor < minimoBipes) {
     return erro('A janela de bipes precisa ser maior ou igual ao mínimo de bipes.')
   }
@@ -241,9 +262,14 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     limiteOcorrencias = n
   }
 
-  const lembrete = inteiro(e.lembreteMin)
-  if (lembrete !== null && (Number.isNaN(lembrete) || lembrete <= 0)) {
-    return erro('O lembrete deve ser um número inteiro de minutos (ou vazio).')
+  // Na janela por blocos quem comanda a insistência é o bloco, não os minutos: o lembrete é
+  // ignorado (sai null), mesmo preenchido.
+  let lembrete: number | null = null
+  if (janelaTipo !== 'intervalos') {
+    lembrete = inteiro(e.lembreteMin)
+    if (lembrete !== null && (Number.isNaN(lembrete) || lembrete <= 0)) {
+      return erro('O lembrete deve ser um número inteiro de minutos (ou vazio).')
+    }
   }
 
   const canaisEntrada = Array.isArray(e.canais) ? e.canais : []
@@ -294,6 +320,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
       limiteOcorrencias,
       pausaMaxMin,
       lembreteMin: lembrete,
+      intervalos,
       canais,
       destinatarios,
       avisarPessoas,
@@ -323,6 +350,7 @@ export function validarPrevia(e: EntradaPrevia): Resultado<PreviaValida> {
     canais: ['telegram'],
     destinatarios: ['previa'],
     pmos: e.pmos,
+    intervalos: e.intervalos,
     ativa: true,
   })
   if (!r.ok) return r
@@ -338,6 +366,7 @@ export function validarPrevia(e: EntradaPrevia): Resultado<PreviaValida> {
       pausaMaxMin: v.pausaMaxMin,
       limiteOcorrencias: v.limiteOcorrencias,
       pmos: v.pmos,
+      intervalos: v.intervalos,
     },
   }
 }

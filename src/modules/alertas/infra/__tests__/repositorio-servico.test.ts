@@ -28,6 +28,10 @@ function sbFalso(opcoes: {
     const c: Chamada = { tabela, filtros: [] }
     chamadas.push(c)
     const resultado = () => {
+      // As consultas da janela por blocos (alerta_regras + alerta_regra_intervalos, 0139) não são
+      // o assunto destes testes: sem regra nenhuma, o `p_blocos` sai vazio e o resto do avaliar
+      // segue idêntico. Quem testa o mapa é intervalos-repo.test.ts.
+      if (c.tabela !== 'alerta_envios') return { data: [], error: null }
       const n = opcoes.linhasAfetadas?.(c) ?? 1
       return { data: Array.from({ length: n }, (_, i) => ({ id: `x${i}` })), error: null }
     }
@@ -38,6 +42,17 @@ function sbFalso(opcoes: {
       },
       eq(col: string, v: unknown) {
         c.filtros.push([col, v])
+        return q
+      },
+      is(col: string, v: unknown) {
+        c.filtros.push([col, v])
+        return q
+      },
+      in(col: string, v: unknown) {
+        c.filtros.push([col, v])
+        return q
+      },
+      order() {
         return q
       },
       select(cols: string) {
@@ -199,13 +214,13 @@ describe('avaliar', () => {
   it('passa o canal do Discord do ambiente (DISCORD_CANAL_ID) para o alerta_avaliar', async () => {
     const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ocupado: false }, error: null }) })
     await criarRepositorioServico(sb, { DISCORD_CANAL_ID: 'C9' } as unknown as NodeJS.ProcessEnv).avaliar()
-    expect(rpcs).toEqual([{ nome: 'alerta_avaliar', args: { p_canal_discord: 'C9' } }])
+    expect(rpcs).toEqual([{ nome: 'alerta_avaliar', args: { p_canal_discord: 'C9', p_blocos: {} } }])
   })
 
   it('sem a variável, manda null: nenhuma linha de canal é enfileirada', async () => {
     const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ocupado: false }, error: null }) })
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
-    expect(rpcs[0]!.args).toEqual({ p_canal_discord: null })
+    expect(rpcs[0]!.args).toEqual({ p_canal_discord: null, p_blocos: {} })
   })
 })
 

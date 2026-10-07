@@ -17,9 +17,11 @@ import {
 } from '@/modules/alertas/domain/regra'
 import { postosOferecidos, type PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { formatarMmSs } from '@/modules/alertas/domain/tempo'
+import type { Intervalo } from '@/modules/alertas/domain/intervalos'
 import { textoPreviaPosto, type PreviaPosto } from '@/modules/alertas/domain/ocorrencia'
 import { previaRegraAction, salvarRegraAction } from '@/modules/alertas/application/alertas-actions'
 import { Explica } from './explica'
+import { IntervalosEditor } from './intervalos-editor'
 import { PmosSelecao } from './pmos-selecao'
 
 const TOAST = { position: 'bottom-center' } as const
@@ -28,7 +30,7 @@ export const ERRO_REGRA_EXCLUIDA = 'Essa regra foi excluída.'
 
 /** As janelas que cada tipo aceita (spec 2026-09-18, §2). */
 const JANELAS: Record<TipoRegra, JanelaTipo[]> = {
-  aprovacao: ['tempo', 'bipes', 'op'],
+  aprovacao: ['tempo', 'bipes', 'op', 'intervalos'],
   tempo: ['tempo', 'op'],
   defeito: ['tempo'],
 }
@@ -93,6 +95,20 @@ function janelaInicial(tipo: TipoRegra, regra: RegraAlerta | null): JanelaTipo {
 function minutosIniciais(tipo: TipoRegra, regra: RegraAlerta | null): string {
   if (regra && regra.janelaTipo === 'tempo' && regra.janelaValor !== null) return String(regra.janelaValor)
   return String(tipo === 'aprovacao' ? PADROES_REGRA.janelaTempo : PADROES_TIPO[tipo].janelaTempo)
+}
+
+/** O passo do bloco na janela por blocos: 1 hora, a cadência que a fábrica já usa no turno. */
+const PASSO_PADRAO_MIN = 60
+
+function passoInicial(regra: RegraAlerta | null): string {
+  if (regra && regra.janelaTipo === 'intervalos' && regra.janelaValor !== null) return String(regra.janelaValor)
+  return String(PASSO_PADRAO_MIN)
+}
+
+/** Regra nova (ou de outra janela) abre com UMA linha vazia; regra salva, com os horários dela. */
+function intervalosIniciais(regra: RegraAlerta | null): Intervalo[] {
+  if (regra && regra.janelaTipo === 'intervalos' && regra.intervalos.length > 0) return regra.intervalos
+  return [{ inicio: '', fim: '' }]
 }
 
 function minimoInicial(tipo: TipoRegra, regra: RegraAlerta | null): string {
@@ -161,6 +177,8 @@ export function RegraForm({
       regra?.janelaTipo === 'bipes' ? (regra.janelaValor ?? PADROES_REGRA.janelaBipes) : PADROES_REGRA.janelaBipes,
     ),
   )
+  const [passo, setPasso] = useState(passoInicial(regra))
+  const [intervalos, setIntervalos] = useState<Intervalo[]>(() => intervalosIniciais(regra))
   const [minimo, setMinimo] = useState(minimoInicial(tipo, regra))
   const [lembrete, setLembrete] = useState(regra?.lembreteMin === null || regra === null ? '' : String(regra.lembreteMin))
   const [canaisSel, setCanaisSel] = useState<Canal[]>(regra?.canais ?? [])
@@ -176,7 +194,9 @@ export function RegraForm({
   // "Fulano sem Telegram" só importa se a regra avisa no privado: no canal, quem vê não precisa de
   // conta vinculada nenhuma.
   const avisos = avisarPessoas ? destinatariosSemCanal(destinatarios, destSel, canaisSel) : []
-  const janelaValor = janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : null
+  // Na janela por blocos o `janelaValor` é o PASSO em minutos (outra grandeza, mesmo campo do banco).
+  const janelaValor =
+    janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
 
   const oferecidos = postosOferecidos(tipo, postos, postosDaRegra)
   // Só avisa sobre o que está de fato MARCADO: desmarcado, o posto não atrapalha mais.
@@ -194,12 +214,16 @@ export function RegraForm({
       limiteTempo: tipo === 'tempo' ? limiteTempo : '',
       pausaMaxMin: tipo === 'tempo' ? pausa : '',
       limiteOcorrencias: tipo === 'defeito' ? repeticoes : '',
-      lembreteMin: lembrete,
+      // O campo do lembrete não aparece na janela por blocos (quem comanda a insistência é o bloco):
+      // um campo escondido não manda valor nenhum.
+      lembreteMin: janelaTipo === 'intervalos' ? '' : lembrete,
       canais: canaisSel,
       destinatarios: destSel,
       avisarPessoas,
       avisarCanal,
       pmos: pmosSel,
+      // Só a janela que os usa manda os horários: nas outras a chave nem vai.
+      ...(janelaTipo === 'intervalos' ? { intervalos } : {}),
       ativa: regra?.ativa ?? true,
     }
   }
@@ -392,6 +416,9 @@ export function RegraForm({
                   <p><strong>Últimos N bipes</strong>: os N bipes com resultado mais recentes do posto, de todas as OPs, olhando no máximo 30 dias. Precisa ser maior ou igual ao mínimo de bipes.</p>
                 )}
                 <p><strong>OP em andamento</strong>: todos os bipes do posto na OP do último bipe dele. Se o posto está parado há mais de 2 horas, não avalia.</p>
+                {JANELAS[tipo].includes('intervalos') && (
+                  <p><strong>Por blocos de turno</strong>: os bipes de cada bloco do turno, medidos no fechamento do bloco. Ex.: 07:00–12:00 com passo de 1 hora = a taxa é conferida às 08:00, 09:00, e assim por diante.</p>
+                )}
               </>
             )}
           </Explica>
@@ -462,26 +489,65 @@ export function RegraForm({
               />
               OP em andamento
             </label>
+            {JANELAS[tipo].includes('intervalos') && (
+              <>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="janela"
+                    aria-label="Por blocos de turno"
+                    checked={janelaTipo === 'intervalos'}
+                    onChange={() => setJanelaTipo('intervalos')}
+                  />
+                  Por blocos de turno
+                </label>
+                {janelaTipo === 'intervalos' && (
+                  <div className="ml-6 flex flex-col gap-3 border-l border-border pl-3">
+                    <div className="flex flex-col gap-2 sm:max-w-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="passo">Passo do bloco (min)</Label>
+                        <Explica titulo="Passo do bloco (min)">
+                          <p>De quanto em quanto tempo o turno é fatiado. A taxa é medida <strong>bloco a bloco</strong>, e o aviso sai no fechamento de cada bloco.</p>
+                          <p>Padrão 1 hora (60 minutos); no mínimo 15. O passo precisa caber no menor intervalo cadastrado.</p>
+                          <p>Nessa janela o <strong>lembrete</strong> não se aplica: quem comanda a insistência é o próximo bloco.</p>
+                        </Explica>
+                      </div>
+                      <Input id="passo" value={passo} onChange={(e) => setPasso(e.target.value)} inputMode="numeric" />
+                    </div>
+                    <IntervalosEditor
+                      intervalos={intervalos}
+                      passoMin={Number.parseInt(passo, 10)}
+                      onChange={setIntervalos}
+                    />
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
       </fieldset>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-1.5">
-          <Label htmlFor="lembrete">Lembrar a cada (min)</Label>
-          <Explica titulo="Lembrar a cada (min)">
-            <p>Enquanto o problema continuar e ninguém apertar <strong>Resolvido</strong>, o alerta é reenviado a cada X minutos.</p>
-            <p>Vazio = só um alerta quando começa e um aviso quando normaliza.</p>
-          </Explica>
+      {/* O lembrete é IGNORADO na janela por blocos (sai null na validação): quem comanda a
+          insistência é o fechamento do próximo bloco. Campo que não faz nada é pior que campo
+          nenhum, então ele some. */}
+      {janelaTipo !== 'intervalos' && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="lembrete">Lembrar a cada (min)</Label>
+            <Explica titulo="Lembrar a cada (min)">
+              <p>Enquanto o problema continuar e ninguém apertar <strong>Resolvido</strong>, o alerta é reenviado a cada X minutos.</p>
+              <p>Vazio = só um alerta quando começa e um aviso quando normaliza.</p>
+            </Explica>
+          </div>
+          <Input
+            id="lembrete"
+            value={lembrete}
+            onChange={(e) => setLembrete(e.target.value)}
+            inputMode="numeric"
+            placeholder="vazio = sem lembrete"
+          />
         </div>
-        <Input
-          id="lembrete"
-          value={lembrete}
-          onChange={(e) => setLembrete(e.target.value)}
-          inputMode="numeric"
-          placeholder="vazio = sem lembrete"
-        />
-      </div>
+      )}
 
       <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
@@ -596,9 +662,15 @@ export function RegraForm({
         <Button variant="ghost" onClick={onCancelar} disabled={pendente}>
           Cancelar
         </Button>
-        <Button variant="outline" onClick={verPrevia} disabled={pendente}>
-          Ver prévia
-        </Button>
+        {/* A prévia NÃO aparece na janela por blocos, e isso não é esquecimento: a `alerta_previa`
+            do banco levanta JANELA_INVALIDA em qualquer janela fora de tempo/bipes/op, então o
+            botão quebraria. É decisão consciente e REVERSÍVEL — ensinar a `alerta_previa` a receber
+            o bloco é tarefa própria, e o botão volta. */}
+        {janelaTipo !== 'intervalos' && (
+          <Button variant="outline" onClick={verPrevia} disabled={pendente}>
+            Ver prévia
+          </Button>
+        )}
         <Button onClick={salvar} disabled={pendente} className="bg-enterplak hover:bg-enterplak-700">
           {pendente ? 'Salvando...' : 'Salvar'}
         </Button>

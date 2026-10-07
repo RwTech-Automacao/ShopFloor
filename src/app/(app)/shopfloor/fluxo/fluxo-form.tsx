@@ -427,8 +427,24 @@ function ListaSimples({ titulo, itens, onSn, limite = Infinity }: { titulo: stri
   )
 }
 
-export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashboard: OrdemPesquisa[] }) {
-  const [sel, setSel] = useState('')
+/**
+ * `opFixa` e `ocultarSeletor` existem pra tela embutida no Dashboard (`/embed/fluxo/[pmo]/[op]`),
+ * que mostra UMA OP e não tem onde trocar de OP. Sem elas, nada muda: o seletor aparece e nada vem
+ * pré-selecionado, exatamente como na rota `/shopfloor/fluxo`.
+ */
+export function FluxoForm({
+  ops,
+  ordensDashboard,
+  opFixa,
+  ocultarSeletor,
+}: {
+  ops: OpItem[]
+  ordensDashboard: OrdemPesquisa[]
+  opFixa?: { pmo: string; op: string }
+  ocultarSeletor?: boolean
+}) {
+  // `sel` = "pmo||op" (a chave da OP escolhida). Com `opFixa`, já nasce escolhida.
+  const [sel, setSel] = useState(opFixa ? `${opFixa.pmo}||${opFixa.op}` : '')
   const [dom, setDom] = useState<FluxoNodePos[]>([])
   const [edgesBase, setEdgesBase] = useState<Edge[]>([])
   const [aberto, setAberto] = useState<string | null>(null)
@@ -565,9 +581,9 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
 
   const onNodeDragStop = useCallback(() => { setGuiaH(undefined); setGuiaV(undefined); salvarLayout() }, [salvarLayout])
 
-  const escolher = useCallback((v: string) => {
-    setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
-    setRota(null); setBuscaSn('') // troca de OP zera o realce de rota
+  // Busca o fluxo da OP `v` ("pmo||op") — a metade de BUSCA do `escolher`, separada porque a tela
+  // embutida no dashboard já NASCE com a OP em `sel` (prop `opFixa`) e precisa só da busca.
+  const carregar = useCallback((v: string) => {
     const [pmo, op] = v.split('||')
     if (!pmo || !op) return
     ctx.current = { pmo, op }
@@ -581,6 +597,19 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
       setAtualizadoMs(Date.now())
       setBuscou(true)
     })
+  }, [])
+
+  const escolher = useCallback((v: string) => {
+    setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
+    setRota(null); setBuscaSn('') // troca de OP zera o realce de rota
+    carregar(v)
+  }, [carregar])
+
+  // A OP que já veio escolhida (`opFixa`, tela embutida) não passou por clique nenhum: a busca dela
+  // dispara aqui, no primeiro render. Na tela normal `sel` nasce vazio e isto não faz nada.
+  useEffect(() => {
+    if (sel) carregar(sel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só no mount: depois quem carrega é o `escolher`
   }, [])
 
   // ===== Modo Apresentação (playlist) =====
@@ -964,6 +993,8 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
     <Card>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
+          {/* `ocultarSeletor`: na tela embutida no dashboard a OP vem da URL e não se troca aqui. */}
+          {!ocultarSeletor && (
           <div className="flex flex-1 flex-col gap-1.5 sm:max-w-md sm:min-w-64">
             <Label>OP</Label>
             {/* Combobox (Popover + input) — o Select do Radix sequestrava as teclas (typeahead) e
@@ -1045,6 +1076,7 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
               </PopoverContent>
             </Popover>
           </div>
+          )}
           <div className="flex flex-wrap items-center gap-3 pb-1">
             {buscou && atualizadoMs !== null && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Atualiza automaticamente a cada 15s">
@@ -1078,9 +1110,15 @@ export function FluxoForm({ ops, ordensDashboard }: { ops: OpItem[]; ordensDashb
                 <Maximize2 className="mr-1 size-4" /> Modo TV
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => setApresPainel(true)} title="Montar e rodar uma apresentação (playlist de OPs/telas)">
-              <MonitorPlay className="mr-1 size-4" /> Apresentação{playlist.length > 0 ? ` (${playlist.length})` : ''}
-            </Button>
+            {/* Fica no mesmo `!ocultarSeletor` do seletor: o painel da apresentação tem um SEGUNDO
+                seletor de OP (todas as OPs) e iniciar a playlist chama `escolher`, que trocaria a OP.
+                Na tela embutida a OP é fixa (vem da URL), então aqui não pode haver essa porta —
+                e a tela cheia da apresentação não funcionaria dentro do iframe de qualquer forma. */}
+            {!ocultarSeletor && (
+              <Button variant="outline" size="sm" onClick={() => setApresPainel(true)} title="Montar e rodar uma apresentação (playlist de OPs/telas)">
+                <MonitorPlay className="mr-1 size-4" /> Apresentação{playlist.length > 0 ? ` (${playlist.length})` : ''}
+              </Button>
+            )}
           </div>
         </div>
 
