@@ -67,6 +67,7 @@ describe('validarRegra — tempo médio por peça', () => {
         limiteOcorrencias: null,
         pausaMaxMin: 30,
         lembreteMin: null,
+        intervalos: [],
         canais: ['telegram'],
         destinatarios: ['u1'],
         avisarPessoas: true,
@@ -161,6 +162,7 @@ describe('validarRegra — defeito repetido', () => {
         limiteOcorrencias: 5,
         pausaMaxMin: null,
         lembreteMin: null,
+        intervalos: [],
         canais: ['telegram'],
         destinatarios: ['u1'],
         avisarPessoas: true,
@@ -225,6 +227,7 @@ describe('validarPrevia por tipo', () => {
         pausaMaxMin: 30,
         limiteOcorrencias: null,
         pmos: ['PMOA'],
+        intervalos: [],
       },
     })
   })

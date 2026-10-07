@@ -4,7 +4,7 @@ export const CANAIS: readonly Canal[] = ['telegram', 'discord']
 export const NOME_CANAL: Record<Canal, string> = { telegram: 'Telegram', discord: 'Discord' }
 
 /** Como a janela de avaliação é medida (ver seção 3 da spec). */
-export type JanelaTipo = 'tempo' | 'bipes' | 'op'
+export type JanelaTipo = 'tempo' | 'bipes' | 'op' | 'intervalos'
 
 /** Tipos de mensagem gravados em `alerta_envios.tipo`. */
 export type TipoEnvio = 'alerta' | 'lembrete' | 'resolvido' | 'normalizou' | 'teste'
@@ -46,7 +46,7 @@ export function ehCanal(valor: unknown): valor is Canal {
 
 /** É um tipo de janela conhecido? */
 export function ehJanelaTipo(valor: unknown): valor is JanelaTipo {
-  return valor === 'tempo' || valor === 'bipes' || valor === 'op'
+  return valor === 'tempo' || valor === 'bipes' || valor === 'op' || valor === 'intervalos'
 }
 
 /** Vínculo do usuário logado num canal (o que a tela Meu perfil mostra). */

@@ -8,8 +8,8 @@
 # (prova que é idempotente e que migra dados de verdade da 0113), e roda alertas_tipos_test.sql.
 # Mesma receita para a 0122 (reabertura) e a 0123 (canal do Discord), cada uma por cima de tudo,
 # com alertas_reabertura_test.sql e alertas_canal_test.sql. Depois a 0136 (PMO/OP e posições), com
-# alertas_op_posicoes_test.sql, e a 0137 (explicação de quem resolve) fecha a fila, com
-# alertas_explicacao_test.sql.
+# alertas_op_posicoes_test.sql, a 0137 (explicação de quem resolve) com alertas_explicacao_test.sql
+# e, fechando a fila, a 0139 (janela por blocos de turno) com alertas_intervalos_test.sql.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 NOME=pg-alertas-test
@@ -183,5 +183,16 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0137.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0137.sql   # de novo: idempotente
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_expl.sql
 echo "0137 (explicação ao resolver): ok"
+
+# ---------- 0139: janela por blocos de turno ('intervalos') ----------
+# Fecha a fila: é a última migração dos alertas. O teste dela depende de a 0139 já ter trocado as
+# assinaturas (alerta_taxas de 4 -> 6 parâmetros, alerta_avaliar de 1 -> 2), então vem DEPOIS do
+# teste da 0136 — que cita a assinatura de 4 de propósito, para conferir o que valia naquele ponto.
+docker cp supabase/migrations/0139_alertas_intervalos.sql "$NOME":/tmp/0139.sql
+docker cp supabase/tests/alertas_intervalos_test.sql "$NOME":/tmp/teste_interv.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0139.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0139.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_interv.sql
+echo "0139 (janela por blocos de turno): ok"
 
 echo "ALERTAS SQL OK"
