@@ -42,9 +42,14 @@ No `server` do `shopfloor.enterplak.com.br` (HTTPS), **remover** o `add_header X
 do bloco geral. O `frame-ancestors 'self'` da aplicação já cobre o que ele cobria (navegadores
 modernos priorizam o CSP). Se quiser manter o X-Frame nas demais rotas, use `location` separado:
 
+⚠️ O `^~` não é enfeite: ele faz o nginx **parar de procurar** quando este prefixo casa. Sem ele,
+uma `location` por expressão regular (de arquivo estático, por exemplo) pode vencer este bloco e
+recolocar o `X-Frame-Options` — e aí o iframe continua bloqueado com a configuração "certa" no
+arquivo.
+
 ```nginx
 # Embed: SEM X-Frame-Options (o frame-ancestors da aplicação decide quem embute)
-location /embed/ {
+location ^~ /embed/ {
     proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
