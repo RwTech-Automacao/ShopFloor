@@ -290,6 +290,51 @@ falha). Nesta base já houve asserção negativa passando vazia porque o element
 
 ---
 
+
+### Task 4b: O nome do autor tem de aparecer (achado da revisão da Task 4)
+
+**O problema, apurado:** o requisito do usuário é que a caixa mostre **o nome de quem editou**. Mas a
+policy de leitura de `public.usuarios` é `id = auth.uid() or tem_permissao('administrar')` — ou seja,
+**só a si mesmo, ou quem administra o SISTEMA** (`0001_perfis_usuarios.sql:101-102`, preservada de
+propósito pela `0054`). Note que esse `tem_permissao` é o de **1 argumento**, que é permissão global.
+
+Resultado: quem tem `recebimento.administrar` mas **não** administra o sistema lê a justificativa e a
+data, e **não** lê o nome. O requisito quebra justamente para o perfil que mais vai usar a tela.
+
+**A decisão: denormalizar o nome, como o projeto já faz.** `public.logs` guarda
+`usuario_nome text not null default ''` (`0005_logs.sql:10`) exatamente por esse motivo. Siga esse
+padrão em vez de criar RPC ou view nova: a função `rec_justificar_divergencia` é `security definer`,
+então **ela** consegue ler `usuarios` e gravar o nome no momento da escrita. Na leitura não há RLS a
+contornar, porque o nome já está na própria linha do processo.
+
+**Como fazer** — a `0142` e a `0143` **não foram aplicadas em banco nenhum** (Prod e Dev estão na
+`0140`; elas só rodaram no harness), então **corrija as duas no lugar**, sem empilhar uma `0144`:
+
+1. Na **`0142`**: mais uma coluna, `divergencia_justificada_por_nome text not null default ''`, com
+   `comment on column` dizendo que é o nome **no momento em que justificou** — se a pessoa mudar de
+   nome depois, o registro histórico não muda, e isso é intencional (igual ao `logs.usuario_nome`).
+2. Na **`0143`**: a função passa a resolver o nome e gravá-lo no mesmo `update`. Use o mesmo critério
+   de exibição que o resto do app (nome, e e-mail como reserva quando o nome está vazio) — veja como
+   `registrarLog` monta `usuarioNome` em `src/modules/logs/application/registrar-log.ts`. Se o
+   usuário não for encontrado, grave `''` em vez de falhar: a justificativa é mais importante que o
+   nome.
+3. No **harness** (`supabase/tests/recebimento_fluxo_test.sql`, seção 8): o stub de `public.usuarios`
+   passa a ter nome, e o teste 8.2 afirma o **valor** do nome gravado, não só que não é vazio. O
+   teste 8.4 (texto vazio apaga) afirma que o nome **também** é atualizado para o segundo usuário.
+4. Na **tela e no repositório**: ler o nome da própria linha e parar de resolver em `usuarios`. Isso
+   remove o "melhor esforço" e a diferença de comportamento entre perfis.
+
+⚠️ **Não afrouxe a policy de `usuarios`.** Ela protege dado de pessoa, e a `0054` a preservou de
+propósito. A denormalização existe para não precisar tocá-la.
+
+⚠️ Continua valendo: `tem_permissao` com **dois** argumentos dentro da `0143`, `$func$` e nunca `$$`,
+`create or replace` e nunca `drop function`, e idempotência provada aplicando duas vezes.
+
+- [ ] **Passos:** corrigir a 0142 · corrigir a 0143 · estender a seção 8 do harness · rodar o
+      harness · ajustar tela e repositório · rodar vitest + tsc + next build · commit
+
+---
+
 ### Task 5: Tela — o selo no card do Fluxo
 
 **Arquivos:** `src/app/(app)/recebimento/fluxo/fluxo-form.tsx` (por volta da linha 181, onde o
