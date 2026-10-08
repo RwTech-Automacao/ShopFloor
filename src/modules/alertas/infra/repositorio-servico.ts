@@ -6,6 +6,7 @@ import { ehCanal, type Canal, type ResultadoEnvio } from '../domain/tipos'
 import { lerResultadoAvaliacao, type ContaDestino } from '../domain/avaliacao'
 import { lerEnvioReservado, type EnvioReservado } from '../domain/envio'
 import { blocoCandidato, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
+import { horaDeEnviarResumo, resumoDaRodada, type ResumoDaRodada } from '../domain/resumo'
 import { lerResolucao } from '../domain/resolucao'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
 import type {
@@ -39,6 +40,12 @@ interface LinhaIntervaloBloco {
   regra_id: string
   inicio: string | null
   fim: string | null
+}
+
+interface LinhaRegraResumo {
+  id: string
+  hora_resumo: string | null
+  resumo_enviado_em: string | null
 }
 
 /**
@@ -176,15 +183,76 @@ export function criarRepositorioServico(
     return mapa
   }
 
+  /**
+   * O mapa `p_resumos` da rodada: {"<regra_id>": {dia, faixas}} com SÓ as regras de resumo cuja hora
+   * chegou e que ainda não mandaram hoje. Mesmo padrão e mesma razão do `blocosDaRodada`: o dia de
+   * São Paulo e a conversão de hora local em instante moram no TS (`domain/resumo.ts`, testado em
+   * quatro fusos); o banco só compara instantes e grava o `dia` que recebeu. Regra ausente do mapa
+   * é PULADA pelo banco.
+   *
+   * Caminho PRÓPRIO, de propósito: `blocosDaRodada` filtra `tipo = 'aprovacao'` para o resumo não
+   * entrar na janela por blocos (nem no log de "sem intervalo") — aqui o filtro é o oposto.
+   * Erro de leitura não derruba a rodada.
+   */
+  async function resumosDaRodada(agora: Date): Promise<Record<string, ResumoDaRodada>> {
+    const mapa: Record<string, ResumoDaRodada> = {}
+    const { data, error } = await sb
+      .from('alerta_regras')
+      .select('id, hora_resumo, resumo_enviado_em')
+      .eq('ativa', true)
+      .is('excluida_em', null)
+      .eq('tipo', 'resumo')
+    if (error) {
+      console.error('[alertas] ler as regras de resumo falhou:', error.message)
+      return mapa
+    }
+    const devidas = ((data ?? []) as LinhaRegraResumo[]).filter(
+      (r) =>
+        typeof r.hora_resumo === 'string' &&
+        horaDeEnviarResumo(r.hora_resumo, typeof r.resumo_enviado_em === 'string' ? r.resumo_enviado_em : null, agora),
+    )
+    if (devidas.length === 0) return mapa
+
+    const { data: linhas, error: erroIntervalos } = await sb
+      .from('alerta_regra_intervalos')
+      .select('regra_id, inicio, fim')
+      .in('regra_id', devidas.map((r) => r.id))
+      .order('inicio')
+    if (erroIntervalos) {
+      console.error('[alertas] ler os intervalos do resumo falhou:', erroIntervalos.message)
+      return mapa
+    }
+    const porRegra = new Map<string, Intervalo[]>()
+    for (const l of (linhas ?? []) as LinhaIntervaloBloco[]) {
+      const intervalo = lerIntervaloDoBanco(l.inicio, l.fim)
+      if (!intervalo) continue
+      const lista = porRegra.get(l.regra_id)
+      if (lista) lista.push(intervalo)
+      else porRegra.set(l.regra_id, [intervalo])
+    }
+    for (const r of devidas) {
+      const pacote = resumoDaRodada(porRegra.get(r.id) ?? [], agora)
+      if (!pacote) {
+        console.error(`[alertas] regra ${r.id}: resumo SEM intervalo cadastrado — nada a enviar`)
+        continue
+      }
+      mapa[r.id] = pacote
+    }
+    return mapa
+  }
+
   return {
     async avaliar() {
-      // Os dois parâmetros vêm do SERVIDOR pelo mesmo motivo (ver `blocosDaRodada`):
+      // Os parâmetros vêm do SERVIDOR pelo mesmo motivo (ver `blocosDaRodada`):
       // - o id do canal mora no servidor, não no banco: o avaliar recebe e congela na linha da
       //   fila (0123). Null = ambiente sem canal, e nenhuma linha de canal é enfileirada;
-      // - o bloco que fechou é conta de horário, e ela mora no TS, onde tem teste.
+      // - o bloco que fechou, o dia do resumo e as faixas dele são conta de horário/fuso, e ela mora
+      //   no TS, onde tem teste em quatro fusos (o banco não tem `at time zone` nenhum nisso).
+      const agora = new Date()
       const { data, error } = await sb.rpc('alerta_avaliar', {
         p_canal_discord: canalDiscordDoSistema(env),
-        p_blocos: await blocosDaRodada(new Date()),
+        p_blocos: await blocosDaRodada(agora),
+        p_resumos: await resumosDaRodada(agora),
       })
       if (error) throw new Error(`alerta_avaliar: ${error.message}`)
       return lerResultadoAvaliacao(data)

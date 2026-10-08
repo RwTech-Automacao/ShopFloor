@@ -13,7 +13,8 @@
 -- O período ("o dia") é o que cai dentro dos intervalos cadastrados na regra, na tabela
 -- alerta_regra_intervalos da 0139. A hora de envio é decidida pelo APP (src/modules/alertas/domain/
 -- resumo.ts, com testes nos fusos): o banco recebe só o mapa p_resumos e não compara horário.
--- Única conta de horário aqui: qual é o DIA de São Paulo (ver o comentário no bloco do laço).
+-- NENHUMA conta de fuso mora aqui: o app manda o DIA de São Paulo e as faixas já em instantes
+-- (ver o contrato abaixo), e o banco só compara instantes e grava a data que recebeu.
 --
 --   Dev e demo (SQL Editor do Supabase): cola o arquivo inteiro e roda.
 --   RDS:  PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "<conexão>" \
@@ -152,16 +153,20 @@ alter table public.alerta_envios
 -- A LÓGICA: alerta_avaliar ganha a saída do resumo
 --
 -- O CONTRATO NOVO: alerta_avaliar(p_canal_discord text, p_blocos jsonb, p_resumos jsonb).
--- p_resumos é {"<regra_id>": true} e traz SÓ as regras de resumo cuja hora chegou e que ainda não
--- mandaram hoje (src/modules/alertas/domain/resumo.ts decide). Regra de resumo AUSENTE do mapa é
--- PULADA. Mesmo padrão do p_blocos da 0139.
+-- p_resumos é
+--   {"<regra_id>": {"dia": "2026-10-08",
+--                   "faixas": [{"inicio": "<timestamptz ISO>", "fim": "<timestamptz ISO>"}, ...]}}
+-- e traz SÓ as regras de resumo cuja hora chegou e que ainda não mandaram hoje
+-- (src/modules/alertas/domain/resumo.ts decide e calcula: o dia de São Paulo e cada intervalo do
+-- turno posto nesse dia como instante). Regra de resumo AUSENTE do mapa é PULADA. Mesmo padrão do
+-- p_blocos da 0139: o que depende de fuso chega pronto do servidor, onde tem teste em quatro fusos.
 --
 -- ---------------------------------------------------------------------------------------------
 -- ⚠️ FUNÇÃO EM PRODUÇÃO QUE ESTE TRECHO RECRIA, E AS ÚNICAS DIFERENÇAS DECLARADAS
 --
 -- public.alerta_avaliar — a versão viva é a da 0139 — 4 diferenças:
 --   1. a assinatura ganha `p_resumos jsonb default null` ao fim;
---   2. variáveis novas (v_dia, v_postos, v_pmos_resumo, v_linhas, v_resumo_n), só do resumo;
+--   2. variáveis novas (v_dia, v_faixas, v_postos, v_pmos_resumo, v_linhas, v_resumo_n), só do resumo;
 --   3. um QUARTO ramo no `union all` do cursor: uma linha por regra de resumo presente em
 --      p_resumos, com avaliavel = false e valor/limite nulos;
 --   4. UM bloco no topo do laço, `if t.tipo = 'resumo' then ... continue; end if;`.
@@ -217,6 +222,7 @@ declare
   v_dados        jsonb;
   -- Só o resumo diário usa estas (ver o bloco no topo do laço).
   v_dia          date;
+  v_faixas       jsonb;
   v_postos       text[];
   v_pmos_resumo  text[];
   v_linhas       jsonb;
@@ -373,9 +379,11 @@ begin
                null::timestamptz, null::timestamptz
           from public.alerta_regras rg
          where rg.ativa and rg.excluida_em is null and rg.tipo = 'resumo'
-           and (p_resumos ->> rg.id::text) = 'true'
-           and (rg.resumo_enviado_em is null
-                or rg.resumo_enviado_em <> (v_agora at time zone 'America/Sao_Paulo')::date)
+           and (p_resumos -> rg.id::text ->> 'dia') is not null
+           -- ⚠️ A GUARDA CONTRA REENVIO (I-1): quem já mandou NESTE dia não entra de novo. O dia é o
+           -- que o app mandou no mapa (o mesmo que o laço grava), então guarda e gravação não têm
+           -- como divergir. `is distinct from` cobre a data ainda nula (nunca enviou).
+           and rg.resumo_enviado_em is distinct from (p_resumos -> rg.id::text ->> 'dia')::date
       ) m
      order by m.criado_em, m.regra_id, m.posto, m.defeito nulls first
   loop
@@ -389,11 +397,15 @@ begin
     -- Também não conta em `avaliadas` (que continua sendo "itens de posto avaliados"): num dia só de resumo o retorno
     -- traz `avaliadas: 0` com `enfileirados > 0`, e isso NÃO é contradição.
     if t.tipo = 'resumo' then
-      -- O DIA É O DE SÃO PAULO, e é a ÚNICA conta de horário que o banco faz. O app só decide SE é
-      -- a hora (domain/resumo.ts); QUAL é o dia o banco tira do mesmo `v_agora` do resto da
-      -- função, para a data gravada e a faixa medida serem o mesmo dia por construção. A fábrica
-      -- não tem horário de verão (UTC-3 o ano todo), então o fuso nomeado não tem surpresa.
-      v_dia := (v_agora at time zone 'America/Sao_Paulo')::date;
+      -- O DIA E AS FAIXAS VÊM PRONTOS DO APP (p_resumos), e o banco NÃO faz conta de fuso nenhuma:
+      -- o dia de São Paulo e a conversão de 'HH:MM' em instante moram em domain/resumo.ts, com
+      -- teste em quatro fusos. Daqui sai a mesma data para a guarda do cursor, a faixa medida e a
+      -- data gravada. Faixas ausentes ou que não são lista valem lista vazia: nenhum bipe entra,
+      -- nada é enviado e a data não é gravada.
+      v_dia := (p_resumos -> t.regra_id::text ->> 'dia')::date;
+      v_faixas := case when jsonb_typeof(p_resumos -> t.regra_id::text -> 'faixas') = 'array'
+                       then p_resumos -> t.regra_id::text -> 'faixas'
+                       else '[]'::jsonb end;
 
       select rg.postos, public.alerta_pmos_normalizar(rg.pmos)
         into v_postos, v_pmos_resumo
@@ -401,8 +413,8 @@ begin
        where rg.id = t.regra_id;
 
       -- Uma linha por posto COM dado: posto sem nenhum bipe com status no dia fica FORA (não vira
-      -- "—" nem 0%). "O dia" = só o que cai dentro dos intervalos cadastrados na regra (hora extra
-      -- e almoço não entram). Fronteira `>=` no início e `<` no fim, como no alerta_taxas: o bipe
+      -- "—" nem 0%). "O dia" = só o que cai dentro das faixas que o app mandou, que são os
+      -- intervalos cadastrados na regra (hora extra e almoço não entram). Fronteira `>=` no início e `<` no fim, como no alerta_taxas: o bipe
       -- da hora exata do fim pertence ao intervalo seguinte, não a este. `exists` (e não join)
       -- para um bipe num intervalo sobreposto não contar duas vezes. Filtro de PMO igual ao dos
       -- outros tipos. Ordem: a dos postos na regra.
@@ -421,10 +433,9 @@ begin
              and (coalesce(cardinality(v_pmos_resumo), 0) = 0 or btrim(r.pmo) = any (v_pmos_resumo))
              and exists (
                    select 1
-                     from public.alerta_regra_intervalos i
-                    where i.regra_id = t.regra_id
-                      and r.data_hora >= ((v_dia + i.inicio) at time zone 'America/Sao_Paulo')
-                      and r.data_hora <  ((v_dia + i.fim)    at time zone 'America/Sao_Paulo'))
+                     from jsonb_array_elements(v_faixas) f
+                    where r.data_hora >= (f ->> 'inicio')::timestamptz
+                      and r.data_hora <  (f ->> 'fim')::timestamptz)
            group by p.posto
         ) x;
 

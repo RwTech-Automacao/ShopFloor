@@ -147,7 +147,7 @@ function deslocamentoMin(d: Date): number {
  * diferir do deslocamento do instante correto numa fronteira de horário de verão. O Brasil não
  * tem horário de verão desde 2019, mas a conta não custa nada e não depende disso continuar.
  */
-function instanteSp(ano: number, mes: number, dia: number, minutosDoDia: number): Date {
+export function instanteSp(ano: number, mes: number, dia: number, minutosDoDia: number): Date {
   const palpite = Date.UTC(ano, mes - 1, dia) + minutosDoDia * 60_000
   const d1 = deslocamentoMin(new Date(palpite))
   const corrigido = palpite - d1 * 60_000
