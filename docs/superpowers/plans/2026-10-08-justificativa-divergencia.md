@@ -206,8 +206,23 @@ export async function salvarJustificativaDivergencia(
 ```
 
 **O que faz:** confere a sessão e `podeNoModulo(perfil, 'recebimento', 'administrar')`; apara o
-texto; chama a função `rec_justificar_divergencia` da Task 2b por RPC; registra no log de auditoria
-(`acao: 'justificar_divergencia'`); `revalidatePath` da tela do processo.
+texto; chama a função `rec_justificar_divergencia` da Task 2b por RPC; registra no log de auditoria;
+`revalidatePath` da tela do processo.
+
+⚠️ **A ação do log é `'alterar_campo'`, NÃO `'justificar_divergencia'`** (corrigido em 2026-10-08;
+a versão anterior deste plano mandava a segunda e estava errada). Dois motivos, os dois apurados:
+
+1. `public.logs.acao` tem CHECK fechado (`0005_logs.sql:5-6`): só aceita `'criar'`, `'importar'`,
+   `'alterar_campo'`, `'mudar_status'`, `'gerar_etiqueta'`, `'excluir'`, `'login'`. E o tipo
+   `AcaoLog` em `src/modules/logs/application/registrar-log.ts:4-11` é a união fechada espelhando
+   esse CHECK — um valor novo **não compila**. Não invente ação nem altere o CHECK.
+2. A trilha do histórico do item no Fluxo de Recebimento filtra
+   `l.acao in ('criar', 'alterar_campo', 'mudar_status')` (`0124:364` e `0125:94`). Usando
+   `'alterar_campo'`, a justificativa **aparece no histórico do item**, que é o que se quer. Uma
+   ação fora dessa lista gravaria o log e ele ficaria invisível na tela que mais importa.
+
+Use `entidade: 'processo'` e `entidadeId: id`, como o molde `transicoes-processo.ts:73-75` faz. O
+que distingue este log dos outros vai na `descricao` e em `dados`.
 
 ⚠️ **A permissão é `administrar`, não `editar`** — ver a decisão do usuário na Task 2b.
 
@@ -227,7 +242,8 @@ dos alertas é 500). Corte por **ponto de código**, não por unidade UTF-16, se
 sai pela metade. Veja `cortarExplicacao` em `modules/alertas/domain/mensagens.ts`.
 
 - [ ] **Passos 1 a 5.** Testes: sem sessão recusa · sem permissão (`administrar` ausente) recusa ·
-      a RPC é chamada com o id e o texto aparado · `SEM_PERMISSAO` da função vira erro PT-BR ·
+      a RPC é chamada com o id e o texto aparado · o log sai com `acao: 'alterar_campo'` ·
+      `SEM_PERMISSAO` da função vira erro PT-BR ·
       `PROCESSO_NAO_ENCONTRADO` vira erro PT-BR · texto vazio apaga · texto acima do limite é
       cortado na fronteira certa. ⚠️ Prove que os mocks pegam.
 
