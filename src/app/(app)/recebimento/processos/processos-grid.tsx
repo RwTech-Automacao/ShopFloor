@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/table'
 import { carregarValoresColuna } from '@/modules/recebimento/application/carregar-processos-grid'
 import { rotuloMes } from '@/modules/recebimento/domain/agrupamento-mes'
+import { estadoDaDivergencia } from '@/modules/recebimento/domain/divergencia'
 import {
   TAMANHOS_PAGINA,
   codificarEstadoGrid,
@@ -30,17 +31,73 @@ import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-proces
 import type { ColunaGrid } from '@/modules/recebimento/infra/processo-repository'
 import { classeChipTrigger } from '@/lib/chip-trigger'
 import { ScrollHorizontalTopo } from '@/shared/ui/scroll-horizontal-topo'
+import { JustificarDivergenciaDialog, type AlvoJustificativa } from './justificar-divergencia-dialog'
 
 interface ProcessosGridProps {
   colunas: ColunaGrid[]
   linhas: Record<string, unknown>[]
   total: number
   estado: EstadoGrid
+  /** `recebimento.administrar`: pode escrever a justificativa. Sem isso o selo aparece e a caixa é só leitura. */
+  podeJustificar?: boolean
+}
+
+/** Justificativa gravada nesta sessão, ainda não refletida nas `linhas` (que vêm do servidor). */
+interface Otimista {
+  /** Texto que a linha tinha quando salvamos — se o servidor mandar outro, o otimista caduca. */
+  base: string
+  texto: string
+}
+
+type AoAbrirJustificativa = (linha: Record<string, unknown>) => void
+
+function textoJustificativa(linha: Record<string, unknown>): string {
+  return typeof linha.divergencia_justificativa === 'string' ? linha.divergencia_justificativa : ''
+}
+
+/** O selo de uma divergência. Estado vem de `estadoDaDivergencia` (única fonte da verdade); é um
+ *  botão (toque, não só mouse) e o `title` é complemento. Sem divergência, não renderiza nada. */
+function SeloDivergencia({
+  estado,
+  texto,
+  onClick,
+}: {
+  estado: 'pendente' | 'justificada'
+  texto: string
+  onClick: () => void
+}) {
+  const pendente = estado === 'pendente'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={
+        pendente
+          ? 'Sem justificativa — clique para explicar'
+          : `Justificada: ${[...texto.trim()].slice(0, 80).join('')}${[...texto.trim()].length > 80 ? '…' : ''}`
+      }
+      aria-label={pendente ? 'Divergência sem justificativa' : 'Divergência justificada'}
+      data-estado={estado}
+      className={
+        // `relative z-10`: no card, o link que cobre tudo fica por baixo e não engole o toque.
+        pendente
+          ? 'relative z-10 inline-flex size-5 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-800 hover:bg-amber-200'
+          : 'relative z-10 inline-flex size-5 items-center justify-center rounded-full text-xs text-green-600 hover:bg-green-100'
+      }
+    >
+      {pendente ? '?' : '✅'}
+    </button>
+  )
 }
 
 /** Texto de uma célula. Status vira Badge; data vira dd/mm/aaaa; número ganha separador de
  *  milhar (negativo em vermelho); o resto é o valor cru. */
-function celula(coluna: ColunaGrid, valor: unknown): React.ReactNode {
+function celula(
+  coluna: ColunaGrid,
+  valor: unknown,
+  linha: Record<string, unknown>,
+  aoAbrir: AoAbrirJustificativa,
+): React.ReactNode {
   if (valor === null || valor === undefined || valor === '') return '—'
   if (coluna.campo === 'status') {
     const s = rotuloStatusProcesso(String(valor))
@@ -60,15 +117,50 @@ function celula(coluna: ColunaGrid, valor: unknown): React.ReactNode {
     const n = Number(valor)
     if (Number.isFinite(n)) {
       const texto = n.toLocaleString('pt-BR')
-      return n < 0 ? <span className="font-medium text-red-600">{texto}</span> : texto
+      const numero = n < 0 ? <span className="font-medium text-red-600">{texto}</span> : texto
+      if (coluna.campo !== 'divergencia') return numero
+      // O selo NÃO olha o status do processo: justificar vale antes e depois de finalizar.
+      const estado = estadoDaDivergencia(valor, linha.divergencia_justificativa)
+      if (estado === 'sem') return numero
+      return (
+        <span className="inline-flex items-center gap-1.5">
+          {numero}
+          <SeloDivergencia estado={estado} texto={textoJustificativa(linha)} onClick={() => aoAbrir(linha)} />
+        </span>
+      )
     }
   }
   return String(valor)
 }
 
-export function ProcessosGrid({ colunas, linhas, total, estado }: ProcessosGridProps) {
+export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, podeJustificar = false }: ProcessosGridProps) {
   const router = useRouter()
   const [navegando, startNavegacao] = useTransition()
+  const [alvo, setAlvo] = useState<AlvoJustificativa | null>(null)
+  const [otimistas, setOtimistas] = useState<Record<string, Otimista>>({})
+
+  // Mostra o que acabou de ser salvo sem esperar a nova leitura do servidor. Só vale enquanto a
+  // linha do servidor ainda tem o texto de antes; se mudou (releitura ou outra pessoa), ele manda.
+  const linhas = linhasServidor.map((l) => {
+    const o = otimistas[String(l.id)]
+    if (!o || textoJustificativa(l) !== o.base) return l
+    return { ...l, divergencia_justificativa: o.texto, divergencia_justificada_por_nome: '', divergencia_justificada_em: null }
+  })
+
+  const abrirJustificativa: AoAbrirJustificativa = (linha) => {
+    setAlvo({
+      id: String(linha.id),
+      numero: String(linha.numero ?? ''),
+      texto: textoJustificativa(linha),
+      autor: String(linha.divergencia_justificada_por_nome ?? ''),
+      quando: typeof linha.divergencia_justificada_em === 'string' ? linha.divergencia_justificada_em : null,
+    })
+  }
+
+  function aoSalvar(id: string, texto: string) {
+    const original = linhasServidor.find((l) => String(l.id) === id)
+    setOtimistas((o) => ({ ...o, [id]: { base: original ? textoJustificativa(original) : '', texto } }))
+  }
 
   function aplicar(novo: EstadoGrid) {
     startNavegacao(() => {
@@ -121,7 +213,7 @@ export function ProcessosGrid({ colunas, linhas, total, estado }: ProcessosGridP
                 return (
                   <TableRow key={String(linha.id)}>
                     {colunas.map((coluna) => (
-                      <TableCell key={coluna.campo}>{celula(coluna, linha[coluna.campo])}</TableCell>
+                      <TableCell key={coluna.campo}>{celula(coluna, linha[coluna.campo], linha, abrirJustificativa)}</TableCell>
                     ))}
                     <TableCell className="text-right">
                       <Button
@@ -166,7 +258,7 @@ export function ProcessosGrid({ colunas, linhas, total, estado }: ProcessosGridP
           </p>
         )}
         {linhas.map((linha, i) => (
-          <CardProcesso key={String(linha.id)} linha={linha} colunas={colunas} estado={estado} indice={i} />
+          <CardProcesso key={String(linha.id)} linha={linha} colunas={colunas} estado={estado} indice={i} aoAbrir={abrirJustificativa} />
         ))}
       </div>
 
@@ -205,6 +297,16 @@ export function ProcessosGrid({ colunas, linhas, total, estado }: ProcessosGridP
           </Button>
         </div>
       </div>
+
+      {alvo && (
+        <JustificarDivergenciaDialog
+          key={alvo.id}
+          alvo={alvo}
+          podeJustificar={podeJustificar}
+          onFechar={() => setAlvo(null)}
+          onSalvo={aoSalvar}
+        />
+      )}
     </div>
   )
 }
@@ -376,11 +478,13 @@ function CardProcesso({
   colunas,
   estado,
   indice,
+  aoAbrir,
 }: {
   linha: Record<string, unknown>
   colunas: ColunaGrid[]
   estado: EstadoGrid
   indice: number
+  aoAbrir: AoAbrirJustificativa
 }) {
   const [expandido, setExpandido] = useState(false)
   const status = rotuloStatusProcesso(String(linha.status ?? ''))
@@ -416,7 +520,7 @@ function CardProcesso({
               className="min-w-4 flex-1 -translate-y-1 border-b border-dotted border-border"
             />
             <dd className="max-w-[55%] truncate text-sm font-medium">
-              {celula(coluna, linha[coluna.campo])}
+              {celula(coluna, linha[coluna.campo], linha, aoAbrir)}
             </dd>
           </div>
         ))}

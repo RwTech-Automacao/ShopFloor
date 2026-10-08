@@ -146,16 +146,43 @@ export async function listarProcessosGrid({
   const supabase = await createServerSupabase()
 
   const inicio = estado.pagina * estado.tamanho
+  // Os dados da justificativa vão em TODA linha (a coluna Divergência pode estar oculta no
+  // layout, mas o selo precisa deles quando ela aparecer). São 3 colunas leves.
   const { data, error, count } = await montarQueryGrid(
     supabase,
-    ['id', ...colunas].join(', '),
+    ['id', ...colunas, ...COLUNAS_JUSTIFICATIVA.filter((c) => !colunas.includes(c))].join(', '),
     estado,
     tiposPorCampo,
   ).range(inicio, inicio + estado.tamanho - 1)
   if (error) throw error
 
-  return { linhas: (data ?? []) as unknown as Record<string, unknown>[], total: count ?? 0 }
+  const linhas = (data ?? []) as unknown as Record<string, unknown>[]
+
+  // uuid -> nome de quem justificou por último. Best-effort: a RLS de `usuarios` pode esconder
+  // o nome de outra pessoa; nesse caso a tela mostra só o instante (sem inventar autor).
+  const ids = [
+    ...new Set(
+      linhas.map((l) => l.divergencia_justificada_por).filter((x): x is string => typeof x === 'string'),
+    ),
+  ]
+  const nomes = new Map<string, string>()
+  if (ids.length > 0) {
+    const { data: us } = await supabase.from('usuarios').select('id, nome').in('id', ids)
+    for (const u of (us ?? []) as { id: string; nome: string }[]) nomes.set(u.id, u.nome)
+  }
+  for (const l of linhas) {
+    const por = l.divergencia_justificada_por
+    l.divergencia_justificada_por_nome = (typeof por === 'string' && nomes.get(por)) || ''
+  }
+
+  return { linhas, total: count ?? 0 }
 }
+
+const COLUNAS_JUSTIFICATIVA = [
+  'divergencia_justificativa',
+  'divergencia_justificada_por',
+  'divergencia_justificada_em',
+]
 
 /** O PostgREST corta cada resposta em `max_rows` (`supabase/config.toml`: 1000). É o
  *  tamanho de cada bloco em `listarIdsGrid`. */
