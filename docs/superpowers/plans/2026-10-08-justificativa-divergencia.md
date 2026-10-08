@@ -18,8 +18,11 @@ seis correções neste projeto.
 - ⚠️ `--maxWorkers=2` é **obrigatório** no vitest desta máquina (4 núcleos; sem isso exit 137).
 - ⚠️ `next build` **RODA** nesta worktree (`node_modules` é diretório real):
   `NODE_OPTIONS="--max-old-space-size=4096" npx next build`.
-- ⚠️ **`'use server'` só exporta funções async.** Exportar um tipo de lá quebra o `next build` **em
-  silêncio**. Tipos vão para `domain/`.
+- ⚠️ **`'use server'` só exporta funções async** — mas a regra é sobre **valores**, não tipos.
+  `export type`/`export interface` são apagados na compilação e passam (vários arquivos deste
+  projeto fazem isso em produção). O que quebra o `next build` **em silêncio** é exportar de lá um
+  valor que não é função: `export const LIMITE = 1000`. Tipos e constantes vão para `domain/` de
+  qualquer forma, por organização.
 - ⚠️ **`tem_permissao` sempre com 2 argumentos.** A de 1 argumento checa permissão GLOBAL e anula o
   RBAC por módulo. Aqui o módulo é **`recebimento`**.
 - Migração **idempotente**; `$func$` se houver função (o SQL Editor recusa `$$`, inclusive em
