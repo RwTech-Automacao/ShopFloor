@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type {
@@ -462,6 +462,9 @@ describe('FluxoForm', () => {
   })
 
   describe('selo de divergência no item', () => {
+    // Mesmo se um teste falhar no meio, a função volta à real (não contamina os seguintes).
+    afterEach(() => { vi.mocked(estadoDaDivergencia).mockRestore() })
+
     /** Abre o painel da Qualidade com estes itens e espera a lista aparecer (prova positiva). */
     async function abrirComItens(itens: ItemFluxo[], podeJustificar = true) {
       carregarItensCaixaAction.mockResolvedValue({ ok: true, itens })
@@ -508,7 +511,9 @@ describe('FluxoForm', () => {
     it('quem decide o selo é estadoDaDivergencia: a tela obedece a função, não decide por conta', async () => {
       const espiao = vi.mocked(estadoDaDivergencia)
       // Item SEM divergência de verdade; a função (dublada) manda 'justificada'.
-      espiao.mockReturnValueOnce('justificada')
+      // mockImplementation (não Once): vale para TODA renderização da lista, então um render a mais
+      // não devolve a função real e não gera falso vermelho. Restaurada no fim.
+      espiao.mockImplementation(() => 'justificada')
       const p = await abrirComItens([SEM_DIV])
       expect(p.getByText('RESI00')).toBeInTheDocument()
       expect(espiao).toHaveBeenCalledWith('0', '')
