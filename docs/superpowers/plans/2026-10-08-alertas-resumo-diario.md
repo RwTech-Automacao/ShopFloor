@@ -295,6 +295,16 @@ o `janela_valor`.
 
 ---
 
+⚠️ **A prévia não serve ao `resumo` — apurado na revisão da Task 2.** `validarPrevia` monta um
+`validarRegra` com `taxaMinima: 100` e `limiteTempo: '0:01'` **fixos** e sem `horaResumo`. Chamada
+com `tipo: 'resumo'`, ela devolveria *'O resumo diário não usa este campo.'* — erro enganoso, vindo
+de um campo que o gestor nem preencheu. E faz sentido que não sirva: a prévia existe para antecipar
+a **janela** de um alerta, e o resumo não tem janela a prever. Então **a tela não deve chamar a
+prévia quando o tipo é `resumo`** (esconda o botão/bloco de prévia nesse tipo). Se preferir tratar
+dentro da `validarPrevia`, trate — mas não deixe o caminho atual, que mostra erro de campo alheio.
+
+---
+
 ### Task 8: A lista de regras e a tela de Ocorrências
 
 **Conferir, e só mexer se faltar.** A coluna "Limite" e a "Janela" precisam fazer sentido para o
