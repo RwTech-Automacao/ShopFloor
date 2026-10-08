@@ -57,13 +57,13 @@ function provarQueMontou() {
   expect(screen.getByRole('button', { name: 'Salvar' })).toBeInTheDocument()
 }
 
-function preencher(hora?: string) {
+function preencher(hora?: string, turno = { inicio: '07:00', fim: '17:00' }) {
   fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Resumo do dia' } })
   fireEvent.click(screen.getByLabelText('Teste'))
   fireEvent.click(screen.getByLabelText('Telegram'))
   fireEvent.click(screen.getByLabelText('Ana Gestora'))
-  fireEvent.change(screen.getByLabelText('Início do intervalo 1'), { target: { value: '07:00' } })
-  fireEvent.change(screen.getByLabelText('Fim do intervalo 1'), { target: { value: '17:00' } })
+  fireEvent.change(screen.getByLabelText('Início do intervalo 1'), { target: { value: turno.inicio } })
+  fireEvent.change(screen.getByLabelText('Fim do intervalo 1'), { target: { value: turno.fim } })
   if (hora !== undefined) fireEvent.change(screen.getByLabelText('Hora do resumo'), { target: { value: hora } })
 }
 
@@ -194,7 +194,8 @@ describe('RegraForm — resumo diário: o que sai ao salvar', () => {
           onCancelar={vi.fn()}
         />,
       )
-      preencher(hora)
+      // 06:00 só cabe num turno que fecha antes dela (a hora não pode preceder o fim do turno).
+      preencher(hora, hora === '06:00' ? { inicio: '04:00', fim: '05:00' } : undefined)
       fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
       await waitFor(() => expect(salvarRegraAction).toHaveBeenCalledTimes(1))
       expect(enviado()).toMatchObject({ horaResumo: hora })

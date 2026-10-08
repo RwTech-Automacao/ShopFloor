@@ -58,8 +58,8 @@ describe('validarRegra: resumo válido', () => {
     expect(r.valor.lembreteMin).toBeNull()
   })
 
-  it('ignora a janela que o formulário mandar: sai sempre intervalos', () => {
-    const r = validarRegra({ ...BASE, janelaTipo: 'tempo', janelaValor: '60' })
+  it('ignora o tipo de janela que o formulário mandar: sai sempre intervalos', () => {
+    const r = validarRegra({ ...BASE, janelaTipo: 'tempo' })
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.valor.janelaTipo).toBe('intervalos')
@@ -81,7 +81,8 @@ describe('validarRegra: hora do resumo, fronteiras exatas', () => {
     expect(HORA_RESUMO_MAX).toBe('19:00')
   })
   it('06:00 é aceita', () => {
-    const r = validarRegra({ ...BASE, horaResumo: '06:00' })
+    // Turno que fecha antes das 06:00, para isolar o piso da regra do fim do turno.
+    const r = validarRegra({ ...BASE, intervalos: [{ inicio: '04:00', fim: '05:00' }], horaResumo: '06:00' })
     expect(r.ok && r.valor.horaResumo).toBe('06:00')
   })
   it('19:00 é aceita', () => {
@@ -130,4 +131,37 @@ describe('validarRegra: resumo continua exigindo o que é dele', () => {
     expect(erroDe({ ...BASE, canais: [] })).toBe(
       'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.',
     ))
+})
+
+const MSG_APOS_TURNO =
+  'O resumo do dia tem de sair depois que o último intervalo fecha. Antes disso ele sairia com os números do começo do turno e o relatório do dia inteiro se perderia.'
+
+describe('validarRegra: o resumo só sai depois que o último intervalo fecha', () => {
+  // Fora de ordem de propósito: o último da LISTA (07:00–12:00) não é o que fecha por último.
+  const FORA_DE_ORDEM = [
+    { inicio: '13:30', fim: '17:30' },
+    { inicio: '07:00', fim: '12:00' },
+  ]
+
+  it('hora IGUAL ao fim do último intervalo é aceita', () => {
+    expect(erroDe({ ...BASE, intervalos: FORA_DE_ORDEM, horaResumo: '17:30' })).toBeNull()
+  })
+  it('UM minuto antes do fim do último intervalo é recusada', () => {
+    expect(erroDe({ ...BASE, intervalos: FORA_DE_ORDEM, horaResumo: '17:29' })).toBe(MSG_APOS_TURNO)
+  })
+  it('o último é o de MAIOR fim, não o último do array (nem o primeiro)', () => {
+    // Se a validação olhasse o último do array (07:00–12:00), 12:00 passaria. Não pode.
+    expect(erroDe({ ...BASE, intervalos: FORA_DE_ORDEM, horaResumo: '12:00' })).toBe(MSG_APOS_TURNO)
+    // E se olhasse o primeiro do array (13:30–17:30), 17:30 já passava; aqui o maior fim é 18:10.
+    const tres = [...FORA_DE_ORDEM, { inicio: '17:40', fim: '18:10' }]
+    expect(erroDe({ ...BASE, intervalos: tres, horaResumo: '18:09' })).toBe(MSG_APOS_TURNO)
+    expect(erroDe({ ...BASE, intervalos: tres, horaResumo: '18:10' })).toBeNull()
+  })
+  it('o piso de 06:00 continua valendo com turno que fecha cedo', () => {
+    const cedo = [{ inicio: '04:00', fim: '05:00' }]
+    expect(erroDe({ ...BASE, intervalos: cedo, horaResumo: '05:30' })).toBe(MSG_HORA)
+  })
+  it('janelaValor preenchido é recusado, como os demais campos alheios', () => {
+    expect(erroDe({ ...BASE, janelaValor: '30' })).toBe(MSG_CAMPO)
+  })
 })

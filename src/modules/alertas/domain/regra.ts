@@ -131,6 +131,9 @@ const MSG_RESUMO_CAMPO = 'O resumo diário não usa este campo.'
 const MSG_RESUMO_HORA =
   'A hora do resumo deve ficar entre 06:00 e 19:00 (fora disso o banco está desligado e o relatório não sairia).'
 
+const MSG_RESUMO_APOS_TURNO =
+  'O resumo do dia tem de sair depois que o último intervalo fecha. Antes disso ele sairia com os números do começo do turno e o relatório do dia inteiro se perderia.'
+
 const RE_DECIMAL = /^\d{1,3}([.,]\d{1,2})?$/
 
 type Resultado<T> = { ok: true; valor: T } | { ok: false; erro: string }
@@ -190,7 +193,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   let horaResumo: string | null = null
   let intervalosResumo: Intervalo[] = []
   if (tipo === 'resumo') {
-    const naoUsados = [e.taxaMinima, e.minimoBipes, e.lembreteMin, e.limiteTempo, e.limiteOcorrencias, e.pausaMaxMin]
+    const naoUsados = [e.taxaMinima, e.janelaValor, e.minimoBipes, e.lembreteMin, e.limiteTempo, e.limiteOcorrencias, e.pausaMaxMin]
     if (naoUsados.some((v) => textoLimpo(v) !== '')) return erro(MSG_RESUMO_CAMPO)
     // Sem passo: o resumo usa os intervalos só para saber o que é "o dia" de cada posto.
     const ri = validarIntervalos(e.intervalos, null)
@@ -202,6 +205,9 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     if (hora < (lerHhMm(HORA_RESUMO_MIN) as number) || hora > (lerHhMm(HORA_RESUMO_MAX) as number)) {
       return erro(MSG_RESUMO_HORA)
     }
+    // O fim do último intervalo é o MAIOR fim da lista, não o do último item do array.
+    const fimDoTurno = Math.max(...intervalosResumo.map((i) => lerHhMm(i.fim) as number))
+    if (hora < fimDoTurno) return erro(MSG_RESUMO_APOS_TURNO)
     horaResumo = textoLimpo(e.horaResumo)
   }
 

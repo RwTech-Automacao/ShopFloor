@@ -402,13 +402,25 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.useFakeTimers()
     vi.setSystemTime(AS_10_30)
+    // O fake devolve as MESMAS linhas para a consulta do resumo (não filtra por tipo), então toda
+    // linha traz hora_resumo: o banco de verdade só devolve ali regras de resumo, com hora.
     const { sb, rpcs } = sbAvaliar([MANHA], [
-      { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
-      { id: 'rResumo', tipo: 'resumo', janela_tipo: 'intervalos', janela_valor: null },
+      { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60, hora_resumo: '18:00:00' },
+      { id: 'rResumo', tipo: 'resumo', janela_tipo: 'intervalos', janela_valor: null, hora_resumo: '18:00:00' },
     ])
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
     expect(Object.keys(rpcs[0]!.args.p_blocos as object)).toEqual(['r1'])
     expect(erro).not.toHaveBeenCalled()
+    erro.mockRestore()
+  })
+
+  it('resumo cuja hora_resumo não chega como texto grita com o id da regra (M-1)', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_10_30)
+    const { sb } = sbAvaliar([], [{ id: 'rSemHora', tipo: 'resumo', janela_tipo: 'intervalos', hora_resumo: 1800 }])
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(erro.mock.calls.map((a) => a.map(String).join(' ')).join('\n')).toContain('rSemHora')
     erro.mockRestore()
   })
 

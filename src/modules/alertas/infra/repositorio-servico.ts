@@ -206,11 +206,22 @@ export function criarRepositorioServico(
       console.error('[alertas] ler as regras de resumo falhou:', error.message)
       return mapa
     }
-    const devidas = ((data ?? []) as LinhaRegraResumo[]).filter(
-      (r) =>
-        typeof r.hora_resumo === 'string' &&
-        horaDeEnviarResumo(r.hora_resumo, typeof r.resumo_enviado_em === 'string' ? r.resumo_enviado_em : null, agora),
-    )
+    const devidas = ((data ?? []) as LinhaRegraResumo[]).filter((r) => {
+      // Mesmo grito do caminho da tela (regras-repository): hora que não chega como texto faria o
+      // resumo deixar de sair SEM nenhum rastro. Aqui é onde ele ENVIA, então aqui não pode ser mudo.
+      if (typeof r.hora_resumo !== 'string') {
+        console.error(
+          `[alertas] regra ${r.id}: hora_resumo não chegou como texto — o resumo desta regra NÃO vai sair. ` +
+            `Recebido: ${JSON.stringify(r.hora_resumo)} (${typeof r.hora_resumo})`,
+        )
+        return false
+      }
+      return horaDeEnviarResumo(
+        r.hora_resumo,
+        typeof r.resumo_enviado_em === 'string' ? r.resumo_enviado_em : null,
+        agora,
+      )
+    })
     if (devidas.length === 0) return mapa
 
     const { data: linhas, error: erroIntervalos } = await sb

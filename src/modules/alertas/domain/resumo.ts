@@ -4,6 +4,9 @@ import { instanteSp, lerHhMm, partesSp, type Intervalo } from './intervalos'
 export const HORA_RESUMO_MIN = '06:00'
 export const HORA_RESUMO_MAX = '19:00'
 
+/** Hora do resumo que uma regra nova já traz (dentro de HORA_RESUMO_MIN–HORA_RESUMO_MAX). */
+export const HORA_RESUMO_PADRAO = '18:00'
+
 const dois = (n: number) => String(n).padStart(2, '0')
 
 /** O dia de São Paulo ('AAAA-MM-DD') daquele instante — nunca o dia do processo (que roda em UTC). */

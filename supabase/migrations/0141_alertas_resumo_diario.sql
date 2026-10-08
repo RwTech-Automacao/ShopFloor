@@ -212,6 +212,7 @@ declare
   v_agora        timestamptz := now();
   v_avaliadas    int := 0;
   v_enfileirados int := 0;
+  v_resumos_vazios int := 0;
   v_n            int;
   v_normalizadas uuid[];
   v_abaixo       boolean;
@@ -485,6 +486,12 @@ begin
              set resumo_enviado_em = v_dia
            where id = t.regra_id;
         end if;
+      else
+        -- O resumo era DEVIDO e saiu vazio. Sem este rastro, intervalos que não casam com o turno
+        -- real (ou um filtro de PMOs que não bate) deixariam o relatório sem sair todo dia, sem log
+        -- e sem contador: `avaliadas: 0, enfileirados: 0` é igual a "nenhum resumo era devido".
+        v_resumos_vazios := v_resumos_vazios + 1;
+        raise log 'alerta_avaliar: resumo da regra % (%) devido em % e sem nenhum posto com dado', t.regra_id, t.nome, v_dia;
       end if;
 
       continue;
@@ -681,7 +688,8 @@ begin
   end loop;
 
   return jsonb_build_object('ocupado', false, 'avaliadas', v_avaliadas,
-                            'enfileirados', v_enfileirados, 'normalizadas', to_jsonb(v_normalizadas));
+                            'enfileirados', v_enfileirados, 'normalizadas', to_jsonb(v_normalizadas),
+                            'resumos_vazios', v_resumos_vazios);
 end
 $func$;
 

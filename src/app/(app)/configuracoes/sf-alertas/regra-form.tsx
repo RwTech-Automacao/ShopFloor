@@ -15,7 +15,7 @@ import {
   type EntradaRegra,
   type RegraAlerta,
 } from '@/modules/alertas/domain/regra'
-import { HORA_RESUMO_MAX, HORA_RESUMO_MIN } from '@/modules/alertas/domain/resumo'
+import { HORA_RESUMO_MAX, HORA_RESUMO_MIN, HORA_RESUMO_PADRAO } from '@/modules/alertas/domain/resumo'
 import { postosOferecidos, type PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { formatarMmSs } from '@/modules/alertas/domain/tempo'
 import type { Intervalo } from '@/modules/alertas/domain/intervalos'
@@ -54,13 +54,15 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
   defeito:
     'Os defeitos são contados separados para cada posto marcado. Cada defeito que se repetir num posto abre o seu próprio alerta.',
   resumo:
-    'O resumo traz a taxa de aprovação do dia, separada para cada posto marcado. Posto que só registra a passagem da peça aparece com taxa de 100%.',
+    'O resumo traz a taxa de aprovação do dia, separada para cada posto marcado.',
 }
 
 /** Por que a lista de postos é mais curta neste tipo. Tempo médio serve em qualquer posto. */
 const EXPLICA_FILTRO: Partial<Record<TipoRegra, string>> = {
   aprovacao:
     'Só aparecem os postos que dão Aprovado ou Reprovado. Num posto que só registra a passagem da peça a taxa é sempre 100% e o alerta nunca sairia.',
+  resumo:
+    'Só aparecem os postos que dão Aprovado ou Reprovado. Posto que só registra a passagem da peça não tem taxa e ficaria fora do relatório, sem aviso.',
   defeito:
     'Só aparecem os postos que registram o código do defeito na reprova. Sem código não há defeito para se repetir, e o alerta nunca sairia.',
 }
@@ -71,6 +73,7 @@ const EXPLICA_FILTRO: Partial<Record<TipoRegra, string>> = {
  */
 const AVISO_FORA_DO_TIPO: Partial<Record<TipoRegra, string>> = {
   aprovacao: 'não dá Aprovado/Reprovado, então a taxa fica sempre em 100% e o alerta não sai',
+  resumo: 'não dá Aprovado/Reprovado, então não tem taxa e fica fora do resumo',
   defeito: 'não registra código de defeito, então não há o que repetir e o alerta não sai',
 }
 
@@ -118,9 +121,6 @@ function intervalosIniciais(regra: RegraAlerta | null): Intervalo[] {
   if (regra && regra.janelaTipo === 'intervalos' && regra.intervalos.length > 0) return regra.intervalos
   return [{ inicio: '', fim: '' }]
 }
-
-/** Hora do resumo que uma regra nova já traz (dentro de HORA_RESUMO_MIN–HORA_RESUMO_MAX). */
-export const HORA_RESUMO_PADRAO = '18:00'
 
 function minimoInicial(tipo: TipoRegra, regra: RegraAlerta | null): string {
   if (regra && regra.minimoBipes !== null) return String(regra.minimoBipes)

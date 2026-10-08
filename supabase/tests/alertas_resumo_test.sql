@@ -194,6 +194,10 @@ begin
   if (r->>'enfileirados')::int <> 0 then
     raise exception 'FALHOU: dia sem dado devolveu enfileirados = %', r->>'enfileirados';
   end if;
+  -- O resumo era devido e saiu vazio: tem de deixar rastro no retorno (I-3 da revisão final).
+  if (r->>'resumos_vazios')::int <> 1 then
+    raise exception 'FALHOU: dia sem dado devolveu resumos_vazios = % (esperado 1)', r->>'resumos_vazios';
+  end if;
   -- E as faixas ausentes / que não são lista valem lista vazia: nada entra, nada é gravado.
   r := alerta_avaliar('CANAL-T', null, jsonb_build_object(
          (select id::text from public.alerta_regras where nome = 'RES vazio'),
@@ -230,6 +234,9 @@ begin
     raise exception 'FALHOU: o retorno diz enfileirados = % mas a fila ganhou %', r1->>'enfileirados', n_env;
   end if;
   -- ⚠️ avaliadas = 0: é o que denuncia a falta do `continue` do topo do laço (ver o cabeçalho).
+  if (r1->>'resumos_vazios')::int <> 0 then
+    raise exception 'FALHOU: dia com dado devolveu resumos_vazios = %', r1->>'resumos_vazios';
+  end if;
   if (r1->>'avaliadas')::int <> 0 then
     raise exception 'FALHOU: o dia só de resumo devolveu avaliadas = % (o resumo vazou para o caminho da ocorrência)',
       r1->>'avaliadas';
