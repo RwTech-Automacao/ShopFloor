@@ -6,6 +6,7 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { cortarJustificativa } from '../domain/divergencia'
+import { caminhoProcesso, ROTA_LISTA_PROCESSOS } from '../domain/rotas'
 
 /**
  * Grava a justificativa de uma divergência de quantidade (texto vazio apaga). Exige
@@ -52,7 +53,7 @@ export async function salvarJustificativaDivergencia(
     dados: { campo: 'divergencia_justificativa', valor: limpo },
   })
 
-  revalidatePath(`/recebimento/processos/${id}`)
-  revalidatePath('/recebimento/processos')
+  revalidatePath(caminhoProcesso(id))
+  revalidatePath(ROTA_LISTA_PROCESSOS)
   return { ok: true }
 }
