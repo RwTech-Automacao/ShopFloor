@@ -25,6 +25,9 @@ insert into public.configuracao_campos (campo, grupo) values
   ('quantidade_recebida', 'recebimento'), ('volumes', 'recebimento'), ('divergencia', 'recebimento'),
   ('fabricante', 'qualidade'), ('resultado', 'qualidade'), ('observacao', 'qualidade');
 
+-- FK da 0142 (divergencia_justificada_por).
+create table public.usuarios (id uuid primary key);
+
 create sequence public.processos_numero_seq;
 create table public.processos_recebimento (
   id uuid primary key default gen_random_uuid(),

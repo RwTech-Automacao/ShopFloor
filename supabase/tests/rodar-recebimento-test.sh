@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes SQL do Fluxo e dos Registros do Recebimento (0124/0125/0127) num Postgres descartável.
+# Testes SQL do Fluxo e dos Registros do Recebimento (0124/0125/0127/0142/0143) num Postgres descartável.
 # Uso: supabase/tests/rodar-recebimento-test.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -11,6 +11,8 @@ for _ in $(seq 1 30); do docker exec "$NOME" pg_isready -U postgres >/dev/null 2
 docker cp supabase/migrations/0124_recebimento_fluxo_registros.sql "$NOME":/tmp/0124.sql
 docker cp supabase/migrations/0125_recebimento_fluxo_historico.sql "$NOME":/tmp/0125.sql
 docker cp supabase/migrations/0127_recebimento_caixa_divergencia.sql "$NOME":/tmp/0127.sql
+docker cp supabase/migrations/0142_divergencia_justificativa.sql "$NOME":/tmp/0142.sql
+docker cp supabase/migrations/0143_rec_justificar_divergencia.sql "$NOME":/tmp/0143.sql
 docker cp supabase/tests/recebimento_fluxo_test.sql "$NOME":/tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 
@@ -19,6 +21,17 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0124.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0125.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0127.sql
+# 0142 e 0143: primeira aplicação e depois a segunda (idempotência).
+for _ in 1 2; do
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0142.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0143.sql
+done
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
+  -c "select count(*) from information_schema.columns where table_schema='public' and table_name='processos_recebimento' and column_name in ('divergencia_justificativa','divergencia_justificada_por','divergencia_justificada_em')" | grep -qx 3 \
+  && echo "colunas da 0142: ok" || { echo "colunas da 0142 FALTAM"; exit 1; }
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
+  -c "select count(*) from pg_proc where proname='rec_justificar_divergencia' and pronamespace='public'::regnamespace" | grep -qx 1 \
+  && echo "função da 0143: ok" || { echo "função da 0143 FALTA"; exit 1; }
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','recebimento.visualizar',false)" \
   -c "select sum(itens) from rec_fluxo_emb('EMB390')" | tail -1 | grep -qx 9 \
