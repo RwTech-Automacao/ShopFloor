@@ -57,6 +57,8 @@ select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 \i /tmp/0124.sql
 \i /tmp/0125.sql
 \i /tmp/0127.sql
+\i /tmp/0142.sql
+\i /tmp/0143.sql
 
 -- ---------- massa de teste ----------
 -- EMB390: um item em cada caixa (um deles divergente), mais um sem histórico nenhum.
@@ -513,6 +515,95 @@ begin
   if (select count(*) from rec_fluxo_emb_historico('EMB999', 'reprovado')) <> 0 then
     raise exception 'FALHOU: etapa sem evento tem que vir vazia'; end if;
   raise notice 'histórico da etapa: ok';
+end $t$;
+
+-- ---------- 8. Justificar divergência (0143): o único freio é o `if not tem_permissao` ----------
+-- A função é security definer (ignora RLS). Sem estes testes, apagar aquela linha num refactor
+-- deixaria qualquer usuário autenticado escrever em qualquer processo, sem nada acusar.
+insert into public.usuarios (id) values ('00000000-0000-0000-0000-000000000001');
+-- A massa nasce depois da 0142 aplicada: a justificativa começa '' e o resto, nulo.
+insert into public.processos_recebimento (id, numero_emb, codigo_material)
+values ('00000000-0000-0000-0000-0000000000aa', 'EMBJUST', 'JUST01');
+
+-- 8.1 Sem administrar não grava: nem com `editar` (que não serve) e nada muda na linha.
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.visualizar,recebimento.editar', false);
+  begin
+    perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', 'tentativa sem permissão');
+    raise exception 'FALHOU: sem administrar (só editar) tinha que levantar SEM_PERMISSAO';
+  exception when others then
+    if sqlerrm <> 'SEM_PERMISSAO' then raise; end if;
+  end;
+  select * into r from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  if r.divergencia_justificativa <> '' or r.divergencia_justificada_por is not null
+     or r.divergencia_justificada_em is not null then
+    raise exception 'FALHOU: a chamada barrada alterou a linha (justificativa=%)', r.divergencia_justificativa; end if;
+  raise notice 'justificar (sem administrar): ok';
+end $t$;
+
+-- 8.2 Com administrar grava os três campos juntos, com os valores certos.
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.administrar', false);
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', 'Fornecedor enviou a mais; alinhado com compras.');
+  select * into r from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  if r.divergencia_justificativa <> 'Fornecedor enviou a mais; alinhado com compras.' then
+    raise exception 'FALHOU: texto gravado errado (%)', r.divergencia_justificativa; end if;
+  if r.divergencia_justificada_por is distinct from '00000000-0000-0000-0000-000000000001'::uuid then
+    raise exception 'FALHOU: o autor tem que ser auth.uid() (veio %)', r.divergencia_justificada_por; end if;
+  if r.divergencia_justificada_em is null or r.divergencia_justificada_em < now() - interval '1 minute' then
+    raise exception 'FALHOU: o instante da justificativa não foi gravado (%)', r.divergencia_justificada_em; end if;
+  raise notice 'justificar (administrar grava): ok';
+end $t$;
+
+-- 8.3 Id inexistente: PROCESSO_NAO_ENCONTRADO, mesmo com administrar.
+do $t$
+begin
+  perform set_config('teste.perms', 'recebimento.administrar', false);
+  begin
+    perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000ff', 'x');
+    raise exception 'FALHOU: id inexistente tinha que levantar PROCESSO_NAO_ENCONTRADO';
+  exception when others then
+    if sqlerrm <> 'PROCESSO_NAO_ENCONTRADO' then raise; end if;
+  end;
+  raise notice 'justificar (id inexistente): ok';
+end $t$;
+
+-- 8.4 Texto vazio apaga a justificativa, mas autor e instante são atualizados (quem apagou também é informação).
+do $t$
+declare antes timestamptz; r record;
+begin
+  perform set_config('teste.perms', 'recebimento.administrar', false);
+  perform set_config('teste.uid', '00000000-0000-0000-0000-000000000002', false);
+  insert into public.usuarios (id) values ('00000000-0000-0000-0000-000000000002');
+  select divergencia_justificada_em into antes from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  -- now() é fixo dentro da transação: cada bloco `do` é a sua, então o instante novo é posterior.
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', '');
+  select * into r from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  if r.divergencia_justificativa <> '' then
+    raise exception 'FALHOU: texto vazio tinha que apagar (veio %)', r.divergencia_justificativa; end if;
+  if r.divergencia_justificada_por is distinct from '00000000-0000-0000-0000-000000000002'::uuid then
+    raise exception 'FALHOU: quem apagou tem que virar o autor (veio %)', r.divergencia_justificada_por; end if;
+  if r.divergencia_justificada_em is null or r.divergencia_justificada_em <= antes then
+    raise exception 'FALHOU: apagar tem que atualizar o instante'; end if;
+  perform set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
+  raise notice 'justificar (texto vazio apaga): ok';
+end $t$;
+
+-- 8.5 p_texto nulo grava '' (a coluna é not null; a função usa coalesce).
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.administrar', false);
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', 'texto a ser limpo');
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', null);
+  select * into r from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  if r.divergencia_justificativa is distinct from '' then
+    raise exception 'FALHOU: p_texto nulo tinha que gravar vazio (veio %)', coalesce(r.divergencia_justificativa, 'NULL'); end if;
+  raise notice 'justificar (texto nulo): ok';
 end $t$;
 
 select 'RECEBIMENTO FLUXO/REGISTROS OK' as resultado;

@@ -35,5 +35,5 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','recebimento.visualizar',false)" \
   -c "select sum(itens) from rec_fluxo_emb('EMB390')" | tail -1 | grep -qx 9 \
-  && echo "idempotência da 0124/0125/0127: ok" \
-  || { echo "idempotência da 0124/0125/0127 FALHOU"; exit 1; }
+  && echo "idempotência da 0124/0125/0127/0142/0143: ok" \
+  || { echo "idempotência da 0124/0125/0127/0142/0143 FALHOU"; exit 1; }
