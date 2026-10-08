@@ -11,6 +11,7 @@ import { formatarMeta } from './taxa'
 import { lerHhMm, validarIntervalos, type Intervalo } from './intervalos'
 import { formatarMmSs, lerMmSs } from './tempo'
 import { HORA_RESUMO_MAX, HORA_RESUMO_MIN } from './resumo'
+import { resumoJanela } from './janela'
 
 /** O que vem do formulário (tudo pode chegar como texto). Campos de outro tipo são ignorados. */
 export interface EntradaRegra {
@@ -409,6 +410,17 @@ export function resumoLimite(
   if (r.tipo === 'tempo') return r.limiteTempoSeg === null ? '—' : `≤ ${formatarMmSs(r.limiteTempoSeg)}/peça`
   if (r.tipo === 'defeito') return r.limiteOcorrencias === null ? '—' : `≥ ${r.limiteOcorrencias} vezes`
   return r.taxaMinima === null ? '—' : `≥ ${formatarMeta(r.taxaMinima)}%`
+}
+
+/**
+ * Coluna "Janela" da lista. O resumo diário guarda `janelaTipo = 'intervalos'` só para saber o que é
+ * "o dia" de cada posto: mostrar "Blocos de 1h" diria uma janela que ele não tem. Ele mostra a hora.
+ */
+export function resumoJanelaRegra(
+  r: Pick<RegraValida, 'tipo' | 'janelaTipo' | 'janelaValor' | 'horaResumo'>,
+): string {
+  if (r.tipo === 'resumo') return r.horaResumo ? `Dia inteiro, às ${r.horaResumo}` : '—'
+  return resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })
 }
 
 /** Coluna "PMOs": nenhuma = todas. */
