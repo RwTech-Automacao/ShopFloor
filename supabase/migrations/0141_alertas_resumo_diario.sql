@@ -39,6 +39,14 @@ alter table public.alerta_regras
   add constraint alerta_regras_resumo_hora
   check (tipo <> 'resumo' or hora_resumo is not null);
 
+-- Faixa da hora: ela mantém o relatório longe da virada do dia. ⚠️ Os mesmos valores de
+-- HORA_RESUMO_MIN / HORA_RESUMO_MAX em src/modules/alertas/domain/resumo.ts: os dois lugares têm
+-- de concordar. Nulo passa (só o tipo resumo exige hora, pelo check acima).
+alter table public.alerta_regras drop constraint if exists alerta_regras_resumo_hora_faixa;
+alter table public.alerta_regras
+  add constraint alerta_regras_resumo_hora_faixa
+  check (hora_resumo is null or hora_resumo between time '06:00' and time '19:00');
+
 -- ---------- o tipo e os campos de cada tipo ----------
 alter table public.alerta_regras drop constraint if exists alerta_regras_tipo_valido;
 alter table public.alerta_regras add constraint alerta_regras_tipo_valido
@@ -96,9 +104,24 @@ alter table public.alerta_regras
 --     exigem valor positivo (e o `is not null` explícito fecha o mesmo buraco do NULL neles).
 --     Quem "arrumar" esta expressão: o resumo precisa continuar passando com valor nulo.
 --
+-- ORDEM: o check NOVO entra ANTES de o antigo cair. Se o novo falhar (linha legada que ele recusa),
+-- o velho continua no lugar, rodando a migração com `psql -1` ou sem. Derrubar primeiro deixava a
+-- tabela SEM check de janela_valor num `psql -f` sem transação única.
+-- ⚠️ Não há `else`: um 5o janela_tipo no futuro é RECUSADO (os ramos dão false). É falha alta, de
+-- propósito, mas quem acrescentar um janela_tipo TEM de mexer aqui, como no resumo (acima).
 -- O check de coluna da 0113 tem DUAS colunas na expressão, então o Postgres lhe deu um nome
 -- automático que não dá para adivinhar (alerta_regras_check, alerta_regras_check1...). Acha-se pela
 -- definição: a única que traz `janela_valor > 0`. O novo tem nome próprio, que o loop poupa.
+alter table public.alerta_regras drop constraint if exists alerta_regras_janela_valor_nulo_explicito;
+alter table public.alerta_regras
+  add constraint alerta_regras_janela_valor_nulo_explicito
+  check (
+    (janela_tipo = 'op' and janela_valor is null)
+    or (janela_tipo = 'intervalos' and (janela_valor is null or janela_valor > 0))
+    or (janela_tipo in ('tempo', 'bipes') and janela_valor is not null and janela_valor > 0)
+  );
+
+-- Agora o antigo da 0113 pode cair (o novo, já presente, é poupado pelo loop).
 do $func$
 declare
   v_nome text;
@@ -115,15 +138,6 @@ begin
   end loop;
 end
 $func$;
-
-alter table public.alerta_regras drop constraint if exists alerta_regras_janela_valor_nulo_explicito;
-alter table public.alerta_regras
-  add constraint alerta_regras_janela_valor_nulo_explicito
-  check (
-    (janela_tipo = 'op' and janela_valor is null)
-    or (janela_tipo = 'intervalos' and (janela_valor is null or janela_valor > 0))
-    or (janela_tipo in ('tempo', 'bipes') and janela_valor is not null and janela_valor > 0)
-  );
 
 -- ---------- o tipo de envio 'resumo' ----------
 -- O envio do relatório não é alerta, lembrete, resolvido nem normalizou: ele nasce SEM ocorrência
@@ -360,6 +374,8 @@ begin
           from public.alerta_regras rg
          where rg.ativa and rg.excluida_em is null and rg.tipo = 'resumo'
            and (p_resumos ->> rg.id::text) = 'true'
+           and (rg.resumo_enviado_em is null
+                or rg.resumo_enviado_em <> (v_agora at time zone 'America/Sao_Paulo')::date)
       ) m
      order by m.criado_em, m.regra_id, m.posto, m.defeito nulls first
   loop
@@ -370,7 +386,8 @@ begin
     -- numa função de ~400 linhas SEM teste de unidade, e esquecer UM deles não dá erro: dá
     -- ocorrência fantasma de relatório, botão "Resolvido" num relatório ou o relatório reenviado a
     -- cada 5 minutos. Uma saída única, no topo, só pode falhar de um jeito, e esse jeito aparece.
-    -- Também não conta em `avaliadas` (que continua sendo "itens de posto avaliados").
+    -- Também não conta em `avaliadas` (que continua sendo "itens de posto avaliados"): num dia só de resumo o retorno
+    -- traz `avaliadas: 0` com `enfileirados > 0`, e isso NÃO é contradição.
     if t.tipo = 'resumo' then
       -- O DIA É O DE SÃO PAULO, e é a ÚNICA conta de horário que o banco faz. O app só decide SE é
       -- a hora (domain/resumo.ts); QUAL é o dia o banco tira do mesmo `v_agora` do resto da

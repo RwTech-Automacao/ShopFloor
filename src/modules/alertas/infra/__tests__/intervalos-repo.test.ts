@@ -330,8 +330,8 @@ function sbAvaliar(intervalos: unknown[], regras?: unknown[]) {
       ? {
           data:
             regras ?? [
-              { id: 'r1', janela_tipo: 'intervalos', janela_valor: 60 },
-              { id: 'r2', janela_tipo: 'intervalos', janela_valor: 60 },
+              { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+              { id: 'r2', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
             ],
           ...SEM_ERRO,
         }
@@ -376,6 +376,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     expect(chamadas[0]!.filtros).toEqual([
       ['ativa', true],
       ['excluida_em', null],
+      ['tipo', 'aprovacao'],
       ['janela_tipo', 'intervalos'],
     ])
   })
@@ -384,11 +385,40 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     vi.useFakeTimers()
     vi.setSystemTime(AS_10_30)
     const { sb, rpcs } = sbAvaliar([MANHA, { ...MANHA, regra_id: 'r9' }], [
-      { id: 'r1', janela_tipo: 'intervalos', janela_valor: 60 },
-      { id: 'r9', janela_tipo: 'tempo', janela_valor: 60 },
+      { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+      { id: 'r9', tipo: 'aprovacao', janela_tipo: 'tempo', janela_valor: 60 },
     ])
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
     expect(Object.keys(rpcs[0]!.args.p_blocos as object)).toEqual(['r1'])
+  })
+
+  it('⚠️ regra de RESUMO (janela intervalos, valor nulo) fica fora do mapa e NÃO suja o log (0141)', async () => {
+    // A 0141 faz a regra de resumo nascer com janela_tipo='intervalos' e janela_valor nulo. Se
+    // `blocosDaRodada` a lesse, a guarda do passo gritaria a cada 5 minutos, por regra: falso
+    // positivo permanente que esconderia o defeito de verdade. O resumo não tem bloco nenhum.
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_10_30)
+    const { sb, rpcs } = sbAvaliar([MANHA], [
+      { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+      { id: 'rResumo', tipo: 'resumo', janela_tipo: 'intervalos', janela_valor: null },
+    ])
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(Object.keys(rpcs[0]!.args.p_blocos as object)).toEqual(['r1'])
+    expect(erro).not.toHaveBeenCalled()
+    erro.mockRestore()
+  })
+
+  it('o teste do resumo não é vácuo: a mesma fixture com uma SEGUNDA aprovação a inclui no mapa', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_10_30)
+    const { sb, rpcs } = sbAvaliar([MANHA, { ...MANHA, regra_id: 'r3' }], [
+      { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+      { id: 'r3', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+      { id: 'rResumo', tipo: 'resumo', janela_tipo: 'intervalos', janela_valor: null },
+    ])
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(Object.keys(rpcs[0]!.args.p_blocos as object)).toEqual(['r1', 'r3'])
   })
 
   it('regra de janela intervalos SEM intervalo cadastrado fica fora do mapa — e isso vai pro log', async () => {
@@ -416,7 +446,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.useFakeTimers()
     vi.setSystemTime(AS_10_30)
-    const { sb, rpcs } = sbAvaliar([MANHA], [{ id: 'r1', janela_tipo: 'intervalos', janela_valor: '60' }])
+    const { sb, rpcs } = sbAvaliar([MANHA], [{ id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: '60' }])
 
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
 
@@ -432,7 +462,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
       const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.useFakeTimers()
       vi.setSystemTime(AS_10_30)
-      const { sb, rpcs } = sbAvaliar([MANHA], [{ id: 'r1', janela_tipo: 'intervalos', janela_valor: passo }])
+      const { sb, rpcs } = sbAvaliar([MANHA], [{ id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: passo }])
       await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
       expect(rpcs[0]!.args.p_blocos).toEqual({})
       expect(erro.mock.calls.length).toBeGreaterThan(0)
@@ -461,7 +491,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     vi.setSystemTime(AS_10_30)
     const { sb, rpcs } = sbFake((c) =>
       c.tabela === 'alerta_regras'
-        ? { data: [{ id: 'r1', janela_tipo: 'intervalos', janela_valor: 60 }], ...SEM_ERRO }
+        ? { data: [{ id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 }], ...SEM_ERRO }
         : { data: null, error: { message: 'permission denied' } },
     )
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()

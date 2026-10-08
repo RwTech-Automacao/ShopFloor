@@ -30,6 +30,7 @@ interface LinhaConta {
  */
 interface LinhaRegraBloco {
   id: string
+  tipo: string
   janela_tipo: string
   janela_valor: unknown
 }
@@ -114,9 +115,10 @@ export function criarRepositorioServico(
 
     const { data, error } = await sb
       .from('alerta_regras')
-      .select('id, janela_tipo, janela_valor')
+      .select('id, tipo, janela_tipo, janela_valor')
       .eq('ativa', true)
       .is('excluida_em', null)
+      .eq('tipo', 'aprovacao')
       .eq('janela_tipo', 'intervalos')
     if (error) {
       console.error('[alertas] ler as regras da janela por blocos falhou:', error.message)
@@ -124,7 +126,7 @@ export function criarRepositorioServico(
     }
     // O filtro vai no `where` E aqui: regra de outra janela não pode entrar no mapa nem se um dia
     // a consulta mudar — no banco a chave dela faria o ramo 'intervalos' medir a faixa errada.
-    const regras = ((data ?? []) as LinhaRegraBloco[]).filter((r) => r.janela_tipo === 'intervalos')
+    const regras = ((data ?? []) as LinhaRegraBloco[]).filter((r) => r.tipo === 'aprovacao' && r.janela_tipo === 'intervalos')
     if (regras.length === 0) return mapa
 
     const { data: linhas, error: erroIntervalos } = await sb
