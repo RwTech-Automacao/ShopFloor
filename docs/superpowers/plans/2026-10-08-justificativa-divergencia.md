@@ -116,6 +116,82 @@ divergência — que é a verdade (ninguém justificou nada ainda).
 
 ---
 
+### Task 2b: Migração — a função que grava a justificativa
+
+**Decisão do usuário (2026-10-08), que substitui o que a Task 3 dizia antes:** justificar pode ser
+feito **antes ou depois** da EMB ser finalizada — finalizar só muda o envio do e-mail, não o direito
+de justificar — e a permissão para justificar é a de **administrador do módulo recebimento**:
+`tem_permissao('recebimento','administrar')`.
+
+**Por que isso exige função no banco.** A policy `processos_update` (migração 0051, linhas 88–98)
+exige `recebimento.editar` **e**, se o status não for `aberto`/`em_conferencia`, também
+`editar_finalizado`. `administrar` é um flag separado de `editar`: um admin sem `editar` seria
+barrado, e um admin com `editar` seria barrado numa EMB finalizada. Um `update` direto da aplicação
+atualizaria **0 linhas em silêncio**. Afrouxar a policy não serve: policy não restringe *colunas*,
+então qualquer policy nova que deixasse o admin passar abriria a edição de **todas** as colunas de um
+processo finalizado. Por isso a gravação vai numa função `security definer` que escreve **só os três
+campos**.
+
+**Arquivo:** criar `supabase/migrations/0143_rec_justificar_divergencia.sql`.
+
+**Molde a seguir:** `supabase/migrations/0127_recebimento_caixa_divergencia.sql` — mesma família
+(`rec_*`), mesmo jeito de barrar (`if not tem_permissao('recebimento', '<acao>') then raise
+exception 'SEM_PERMISSAO'; end if;`), mesmo `grant execute ... to authenticated` no fim.
+
+```sql
+create or replace function public.rec_justificar_divergencia(p_id uuid, p_texto text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $func$
+begin
+  if not tem_permissao('recebimento', 'administrar') then
+    raise exception 'SEM_PERMISSAO';
+  end if;
+
+  update public.processos_recebimento
+     set divergencia_justificativa = coalesce(p_texto, ''),
+         divergencia_justificada_por = auth.uid(),
+         divergencia_justificada_em = now()
+   where id = p_id;
+
+  if not found then
+    raise exception 'PROCESSO_NAO_ENCONTRADO';
+  end if;
+end;
+$func$;
+
+grant execute on function public.rec_justificar_divergencia(uuid, text) to authenticated;
+```
+
+⚠️ **O autor vem de `auth.uid()` dentro da função**, nunca de parâmetro. Um id vindo do cliente
+permitiria assinar em nome de outra pessoa, e `security definer` tira a última barreira contra isso.
+
+⚠️ **`create or replace`, nunca `drop function`** — a 0127 explica: `drop` exigiria recriar os grants
+e quebraria chamadas em voo.
+
+⚠️ **`tem_permissao` com DOIS argumentos.** A forma de 1 argumento checa permissão GLOBAL e anula o
+RBAC por módulo. A 0070 usa a forma de 1 argumento; **não copie isso dela**.
+
+⚠️ **`$func$`, nunca `$$`** — o SQL Editor do Supabase recusa `$$`, inclusive dentro de comentário.
+
+⚠️ O **limite de tamanho** do texto é aparado na aplicação (Task 3), não aqui.
+
+**Cobrir no harness** (achado Minor da revisão da Task 2, que esta task resolve):
+`supabase/tests/rodar-recebimento-test.sh` hoje só aplica as migrações 0124, 0125 e 0127 — a 0142
+não é coberta por ninguém, e a idempotência dela foi provada à mão, sem ficar reproduzível. Faça o
+harness aplicar **0142 e 0143** também, duas vezes cada, como ele já faz com as outras. O
+`recebimento_fluxo_test.sql` já cria stub de `public.processos_recebimento`; falta um stub de
+`public.usuarios(id uuid primary key)` para o FK da 0142 pegar. Depois da segunda aplicação,
+confirme com um `select` em `information_schema.columns` que as três colunas existem. **Rode o
+harness e cole a saída no relatório.**
+
+- [ ] **Passos:** escrever a migração · estender o harness · rodar o harness · reler as duas
+      migrações instrução por instrução conferindo a idempotência · commit
+
+---
+
 ### Task 3: Aplicação — gravar a justificativa
 
 **Arquivos:** `src/modules/recebimento/application/justificar-divergencia.ts` (criar) e teste.
@@ -129,23 +205,31 @@ export async function salvarJustificativaDivergencia(
 ): Promise<{ ok: true } | { ok: false; erro: string }>
 ```
 
-**O que faz:** confere a sessão e `podeNoModulo(perfil, 'recebimento', 'editar')`; apara o texto;
-grava os três campos (`texto`, o `usuarioId` **da sessão** e `now()`); registra no log de auditoria
+**O que faz:** confere a sessão e `podeNoModulo(perfil, 'recebimento', 'administrar')`; apara o
+texto; chama a função `rec_justificar_divergencia` da Task 2b por RPC; registra no log de auditoria
 (`acao: 'justificar_divergencia'`); `revalidatePath` da tela do processo.
 
-⚠️ **O autor vem da SESSÃO, nunca do cliente.** Um id vindo do formulário permitiria assinar em nome
-de outra pessoa.
+⚠️ **A permissão é `administrar`, não `editar`** — ver a decisão do usuário na Task 2b.
+
+⚠️ **O autor NÃO vai como parâmetro.** Quem grava o autor é a função no banco, via `auth.uid()`.
+A action não manda id de usuário nenhum.
+
+⚠️ **Traduza os erros da função.** `SEM_PERMISSAO` e `PROCESSO_NAO_ENCONTRADO` chegam como exceção
+do Postgres. Cada um vira uma mensagem PT-BR em `{ ok: false, erro }`. **Nunca** deixe a gravação
+falhar em silêncio: se a RPC não confirmar, a tela tem de dizer isso.
 
 ⚠️ **Texto vazio é permitido** e significa apagar a justificativa: grava `''`, e o selo volta a `?`.
-Nesse caso, grave também o autor e o instante — quem apagou também é informação.
+Nesse caso, grave também o autor e o instante — quem apagou também é informação. (A função da
+Task 2b já faz isso: ela escreve autor e instante em toda chamada.)
 
 ⚠️ Há um **limite** a definir para o texto (sugestão: 1000 caracteres, como o `LIMITE_EXPLICACAO`
 dos alertas é 500). Corte por **ponto de código**, não por unidade UTF-16, senão um emoji na borda
 sai pela metade. Veja `cortarExplicacao` em `modules/alertas/domain/mensagens.ts`.
 
-- [ ] **Passos 1 a 5.** Testes: sem sessão recusa · sem permissão recusa · grava os três campos
-      juntos · o autor é o da sessão (afirme o **valor**, não só que gravou) · texto vazio apaga ·
-      texto acima do limite é cortado na fronteira certa. ⚠️ Prove que os mocks pegam.
+- [ ] **Passos 1 a 5.** Testes: sem sessão recusa · sem permissão (`administrar` ausente) recusa ·
+      a RPC é chamada com o id e o texto aparado · `SEM_PERMISSAO` da função vira erro PT-BR ·
+      `PROCESSO_NAO_ENCONTRADO` vira erro PT-BR · texto vazio apaga · texto acima do limite é
+      cortado na fronteira certa. ⚠️ Prove que os mocks pegam.
 
 ---
 
