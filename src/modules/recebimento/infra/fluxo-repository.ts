@@ -40,6 +40,12 @@ export interface ItemFluxo {
   desde: string | null
   /** Há quanto tempo está na caixa, em segundos. `null` = não deu para saber. */
   segundos: number | null
+  /** Texto da justificativa da divergência ('' = ninguém justificou). */
+  justificativa: string
+  /** Nome de quem justificou, gravado na própria linha ('' = desconhecido). */
+  justificadaPorNome: string
+  /** Quando foi justificada pela última vez (ISO). */
+  justificadaEm: string | null
 }
 
 interface CaixaRpc {
@@ -62,6 +68,9 @@ interface ItemRpc {
   resultado: string
   desde: string | null
   segundos: number | string | null
+  divergencia_justificativa: string | null
+  divergencia_justificada_por_nome: string | null
+  divergencia_justificada_em: string | null
 }
 
 /** `numeric` do Postgres chega como string no PostgREST (não cabe em float sem perda). */
@@ -120,6 +129,9 @@ export async function carregarItensCaixa(emb: string, etapa: CaixaFluxoId): Prom
     resultado: l.resultado,
     desde: l.desde,
     segundos: numero(l.segundos),
+    justificativa: l.divergencia_justificativa ?? '',
+    justificadaPorNome: l.divergencia_justificada_por_nome ?? '',
+    justificadaEm: l.divergencia_justificada_em ?? null,
   }))
 }
 

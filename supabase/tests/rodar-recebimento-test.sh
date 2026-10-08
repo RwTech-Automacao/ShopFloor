@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes SQL do Fluxo e dos Registros do Recebimento (0124/0125/0127/0142/0143) num Postgres descartável.
+# Testes SQL do Fluxo e dos Registros do Recebimento (0124/0125/0127/0142/0143/0144) num Postgres descartável.
 # Uso: supabase/tests/rodar-recebimento-test.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -13,18 +13,24 @@ docker cp supabase/migrations/0125_recebimento_fluxo_historico.sql "$NOME":/tmp/
 docker cp supabase/migrations/0127_recebimento_caixa_divergencia.sql "$NOME":/tmp/0127.sql
 docker cp supabase/migrations/0142_divergencia_justificativa.sql "$NOME":/tmp/0142.sql
 docker cp supabase/migrations/0143_rec_justificar_divergencia.sql "$NOME":/tmp/0143.sql
+docker cp supabase/migrations/0144_rec_fluxo_itens_justificativa.sql "$NOME":/tmp/0144.sql
 docker cp supabase/tests/recebimento_fluxo_test.sql "$NOME":/tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 
 # Idempotência: o usuário reaplica migração quando fica na dúvida, então rodar as migrações duas
 # vezes na mesma base não pode falhar nem mudar o resultado.
+# A 0144 mudou o tipo de retorno de rec_fluxo_emb_itens; a 0124 e a 0127 (mais velhas) não sabem disso e o
+# `create or replace` delas não voltam atrás. Reaplicar as duas SOBRE a 0144 exige derrubar antes — e a
+# 0144 reaplicada logo abaixo restaura o estado final.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "drop function if exists public.rec_fluxo_emb_itens(text, text, int)"
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0124.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0125.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0127.sql
-# 0142 e 0143: primeira aplicação e depois a segunda (idempotência).
+# 0142, 0143 e 0144: primeira aplicação e depois a segunda (idempotência).
 for _ in 1 2; do
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0142.sql
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0143.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0144.sql
 done
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select count(*) from information_schema.columns where table_schema='public' and table_name='processos_recebimento' and column_name in ('divergencia_justificativa','divergencia_justificada_por','divergencia_justificada_em')" | grep -qx 3 \
@@ -35,5 +41,5 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','recebimento.visualizar',false)" \
   -c "select sum(itens) from rec_fluxo_emb('EMB390')" | tail -1 | grep -qx 9 \
-  && echo "idempotência da 0124/0125/0127/0142/0143: ok" \
-  || { echo "idempotência da 0124/0125/0127/0142/0143 FALHOU"; exit 1; }
+  && echo "idempotência da 0124/0125/0127/0142/0143/0144: ok" \
+  || { echo "idempotência da 0124/0125/0127/0142/0143/0144 FALHOU"; exit 1; }

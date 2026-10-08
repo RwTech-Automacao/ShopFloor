@@ -59,6 +59,7 @@ select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 \i /tmp/0127.sql
 \i /tmp/0142.sql
 \i /tmp/0143.sql
+\i /tmp/0144.sql
 
 -- ---------- massa de teste ----------
 -- EMB390: um item em cada caixa (um deles divergente), mais um sem histórico nenhum.
@@ -609,6 +610,32 @@ begin
   if r.divergencia_justificativa is distinct from '' then
     raise exception 'FALHOU: p_texto nulo tinha que gravar vazio (veio %)', coalesce(r.divergencia_justificativa, 'NULL'); end if;
   raise notice 'justificar (texto nulo): ok';
+end $t$;
+
+-- ---------- 9. Itens da caixa trazem a justificativa (0144) ----------
+-- O selo do Fluxo lê daqui: texto, NOME de quem justificou (da própria linha, não de `usuarios`) e quando.
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.administrar,recebimento.visualizar', false);
+  update public.processos_recebimento set numero_emb = 'EMB777', divergencia = '-10', status = 'aberto'
+   where id = '00000000-0000-0000-0000-0000000000aa';
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', 'Fornecedor enviou a menos.');
+  -- Quem só visualiza lê o nome do autor sem ler `usuarios`.
+  perform set_config('teste.perms', 'recebimento.visualizar', false);
+  select * into r from rec_fluxo_emb_itens('EMB777', 'recebimento') limit 1;
+  if r.divergencia_justificativa is distinct from 'Fornecedor enviou a menos.' then
+    raise exception 'FALHOU: a justificativa não veio nos itens (veio %)', r.divergencia_justificativa; end if;
+  if r.divergencia_justificada_por_nome is distinct from 'Maria Souza' then
+    raise exception 'FALHOU: o nome do autor não veio nos itens (veio %)', r.divergencia_justificada_por_nome; end if;
+  if r.divergencia_justificada_em is null then
+    raise exception 'FALHOU: o instante da justificativa não veio nos itens'; end if;
+  -- Item nunca justificado: texto '' (não nulo), nome '' e instante nulo.
+  select * into r from rec_fluxo_emb_itens('EMB390', 'qualidade') limit 1;
+  if r.divergencia_justificativa is distinct from '' or r.divergencia_justificada_por_nome is distinct from ''
+     or r.divergencia_justificada_em is not null then
+    raise exception 'FALHOU: item sem justificativa tem que vir vazio'; end if;
+  raise notice 'itens da caixa trazem a justificativa (0144): ok';
 end $t$;
 
 select 'RECEBIMENTO FLUXO/REGISTROS OK' as resultado;
