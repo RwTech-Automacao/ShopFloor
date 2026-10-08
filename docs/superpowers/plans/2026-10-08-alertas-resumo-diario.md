@@ -19,8 +19,11 @@ passos existentes. A aritmética de horário fica no TypeScript, como na 0139.
   O servidor roda em UTC e esta branch irmã já teve vazamento que **só** morria com `TZ=UTC`.
 - ⚠️ `next build` **RODA** nesta worktree (`node_modules` é diretório real, não symlink). Use-o:
   `NODE_OPTIONS="--max-old-space-size=4096" npx next build`.
-- ⚠️ **`'use server'` só exporta funções async.** Exportar um tipo de lá quebra o `next build` **em
-  silêncio**. Tipos vão para `domain/`.
+- ⚠️ **`'use server'` só exporta funções async** — mas a regra é sobre **valores**, não tipos.
+  `export type`/`export interface` são apagados na compilação e passam (vários arquivos deste
+  projeto fazem isso em produção). O que quebra o `next build` **em silêncio** é exportar de lá um
+  valor que não é função: `export const LIMITE = 1000`. Tipos e constantes vão para `domain/` de
+  qualquer forma, por organização.
 - ⚠️ **O projeto TEM harness de teste SQL**: `supabase/tests/rodar-alertas-test.sh` sobe um Postgres
   15 descartável em Docker e aplica cada migração **duas vezes**. Rodar é seguro e esperado.
 - Migração **idempotente**, corpo de função com `$func$` (o SQL Editor recusa `$$`, inclusive em
