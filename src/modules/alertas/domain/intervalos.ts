@@ -113,7 +113,7 @@ export function validarIntervalos(lista: unknown, passoMin: number | null): Resu
 const FUSO = 'America/Sao_Paulo'
 
 /**
- * Partes da data no fuso da fábrica, não no do processo. `hourCycle: 'h23'` fica declarado para
+ * Partes da data e da hora no fuso da fábrica (ano, mês, dia, hora 0–23 e minuto), não no do processo. `hourCycle: 'h23'` fica declarado para
  * o dia nunca depender do ciclo de hora que o locale escolher (ver `deslocamentoMin`).
  */
 export function partesSp(d: Date): { ano: number; mes: number; dia: number; hora: number; minuto: number } {
