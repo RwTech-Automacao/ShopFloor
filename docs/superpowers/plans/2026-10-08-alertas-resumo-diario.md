@@ -279,17 +279,30 @@ migração.
 
 ---
 
-### Task 6: Infra — decidir a hora no app e passar o mapa
+### Task 6: Infra — o repositório guarda a hora
 
-**Arquivos:** `infra/regras-repository.ts`, `infra/repositorio-servico.ts`, testes
+✅ **METADE JÁ FEITA** pela mudança de contrato do fuso (commit `ccb2150`): `avaliar()` já monta e
+manda o `p_resumos` novo (`{dia, faixas}`), com `resumosDaRodada` e consulta própria em
+`infra/repositorio-servico.ts`, e o `p_canal_discord`/`p_blocos` seguem intactos. **Não refaça isso.**
 
-- o repositório lê e grava `hora_resumo` e `resumo_enviado_em`
-- `avaliar()` monta `p_resumos` chamando `horaDeEnviarResumo` para cada regra de resumo ativa
-- mantém `p_canal_discord` e `p_blocos`
+**O que falta, e é a sua task:** `infra/regras-repository.ts` **não** lê nem grava `hora_resumo`
+(confirmado: zero ocorrências no arquivo). Sem isso o gestor não consegue salvar a hora pela tela, e
+a regra de resumo nasce sem hora — que o check `alerta_regras_resumo_hora` do banco recusa.
 
-⚠️ **Afirme o tipo** do que vem do banco antes de usar — se `hora_resumo` chegar em outro formato, o
-resumo para de sair **sem log**. Registre no `console.error` com o id da regra, como a 0139 faz com
-o `janela_valor`.
+**Arquivos:** `infra/regras-repository.ts` e testes.
+
+- ler `hora_resumo` do banco para o `horaResumo` do domínio, e gravar na volta
+- `resumo_enviado_em` é só leitura pela aplicação: quem escreve é o banco, dentro da
+  `alerta_avaliar`. **Não grave essa coluna pela aplicação** — duas fontes escrevendo a mesma marca
+  de "já enviei hoje" é como o relatório sai duas vezes.
+
+⚠️ **Afirme o tipo** do que vem do banco antes de usar. `hora_resumo` é `time` no Postgres e chega
+como texto pelo PostgREST; se vier em outro formato, o resumo para de sair **sem log**. Registre no
+`console.error` com o id da regra, como a 0139 faz com o `janela_valor`.
+
+⚠️ Esta task deve **zerar boa parte dos 12 erros de `npx tsc --noEmit`** que estão pendurados desde
+a Task 2 (`regras-repository.ts:60` é um deles). Diga no relatório quantos sobraram e quais — os de
+tela são da Task 7.
 
 - [ ] **Passos 1 a 5**, afirmando os **argumentos** das chamadas, não só o efeito. ⚠️ Prove que os
       mocks pegam: um teste que **falha** quando o mock devolve erro.
