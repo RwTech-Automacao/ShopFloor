@@ -1,6 +1,7 @@
 -- Justificativa de divergencia de quantidade no Recebimento: quem clica no selo "?" escreve o porque
 -- e o que foi alinhado, e o selo vira "ok". Idempotente (pode reaplicar).
--- Sem policy nova: a escrita segue a processos_update (0051), que ja exige recebimento.editar.
+-- Sem policy nova: a escrita NAO passa pela processos_update (0051). Vai pela funcao rec_justificar_divergencia
+-- (0143), security definer, que exige recebimento.ADMINISTRAR (editar nao basta).
 
 alter table public.processos_recebimento
   add column if not exists divergencia_justificativa text not null default '',

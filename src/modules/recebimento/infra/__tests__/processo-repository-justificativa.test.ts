@@ -53,6 +53,11 @@ describe('listarProcessosGrid: autor da justificativa', () => {
     expect(selects[0]).toContain('divergencia_justificada_por_nome')
   })
 
+  it('não pede o uuid do autor (nenhuma tela usa; o nome vem denormalizado)', async () => {
+    await listar()
+    expect(selects[0]).not.toMatch(/divergencia_justificada_por(?!_nome)/)
+  })
+
   it('devolve o nome que veio na própria linha', async () => {
     const r = await listar()
     expect(r.linhas[0]?.divergencia_justificada_por_nome).toBe('Maria Souza')

@@ -73,12 +73,12 @@ registra que houve uma alteração.
 
 | camada | o quê |
 |---|---|
-| **Banco** | `processos_recebimento` ganha `divergencia_justificativa text`, `divergencia_justificada_por uuid`, `divergencia_justificada_em timestamptz` |
+| **Banco** | `processos_recebimento` ganha `divergencia_justificativa text`, `divergencia_justificada_por uuid`, `divergencia_justificada_em timestamptz` e `divergencia_justificada_por_nome text` (nome de quem justificou, denormalizado: a RLS de `usuarios` só deixa ler a si mesmo ou quem administra o **sistema**, então o nome vem da própria linha, nunca de `usuarios`) |
 | **Domínio** | `estadoDaDivergencia(divergencia, justificativa)` — função pura: `'sem'` · `'pendente'` · `'justificada'`. É ela que decide qual selo (ou nenhum) |
-| **Aplicação** | `salvarJustificativaDivergencia(id, texto)` — permissão de **editar** do Recebimento, grava os três campos |
+| **Aplicação** | `salvarJustificativaDivergencia(id, texto)` — permissão **`administrar`** do módulo `recebimento` (editar não basta), via a função `rec_justificar_divergencia` (security definer), grava os quatro campos |
 | **Tela** | o selo + o diálogo na grade de Processos; o selo no card do Fluxo |
 
-**Por que os três campos na própria tabela, e não numa tabela à parte:** a justificativa é 1-para-1
+**Por que os quatro campos na própria tabela, e não numa tabela à parte:** a justificativa é 1-para-1
 com o processo, nasce e morre com ele, e não tem histórico. Uma tabela filha só faria sentido para
 guardar versões — que a decisão acima descartou.
 
@@ -95,19 +95,19 @@ seis correções neste projeto. A grade e o Fluxo **têm** que concordar sobre o
 |---|---|
 | Sem divergência | **nenhum selo** — nem ?, nem ✅ |
 | Divergência, sem texto | **?** · clicar abre a caixa vazia |
-| Divergência, com texto | **✅** · clicar abre a caixa com o texto e o nome de quem escreveu |
+| Divergência, com texto | **✅** · clicar abre a caixa com o texto e o nome de quem editou por último |
 | Salvar texto vazio | volta a **?** (apagar a justificativa é permitido) |
 | Divergência corrigida para zero | selo some; **o texto continua guardado** |
-| Sem permissão de editar | o selo **mostra** o estado, mas a caixa é **só leitura** |
+| Sem permissão de administrar | o selo **mostra** o estado, mas a caixa é **só leitura** |
 
 ## Como se prova que funciona
 
 - **Domínio:** os três estados, nas fronteiras — divergência `'0'`, `''`, `'-42'`, `'1,5'` (vírgula
   decimal, que o campo aceita), texto vazio × texto com espaços.
-- **Aplicação:** grava os três campos juntos; sem permissão recusa; o id vem da sessão, não do
+- **Aplicação:** grava os quatro campos juntos; sem `administrar` recusa (inclusive quem só tem `editar`); o id vem da sessão, não do
   cliente.
 - **Tela:** o selo certo em cada estado; sem divergência não aparece selo; editar mostra o texto
-  anterior; salvar vazio volta para `?`; sem permissão a caixa é só leitura.
+  anterior; salvar vazio volta para `?`; sem `administrar` a caixa é só leitura (as páginas de Processos e Fluxo têm teste de fiação para isso).
 - **As duas telas concordam:** o mesmo processo mostra o mesmo selo na grade e no Fluxo.
 
 ## Fora de escopo, e por quê
@@ -121,3 +121,14 @@ vai levar as justificativas junto, e isso basta.
 
 **Os filtros rápidos** (Divergências · positivas · negativas) são **branch própria**, ainda que na
 mesma tela: são independentes desta e saem sozinhos.
+
+## Decisões travadas depois do desenho inicial
+
+- Justificar vale **antes ou depois** de a EMB ser finalizada (finalizar só muda o envio do e-mail).
+- A permissão é **`administrar`** do módulo `recebimento`, não `editar`.
+- O diálogo mostra o **nome de quem editou por último** e quando.
+- Texto vazio **apaga** a justificativa (o selo volta a `?`).
+
+## Ordem de aplicação (migrações 0142, 0143 e 0144)
+
+Ver o plano, seção "Depois das tarefas": **banco primeiro** (0142, 0143, 0144), **app depois**.

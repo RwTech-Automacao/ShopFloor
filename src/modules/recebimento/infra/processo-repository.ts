@@ -147,7 +147,7 @@ export async function listarProcessosGrid({
 
   const inicio = estado.pagina * estado.tamanho
   // Os dados da justificativa vão em TODA linha (a coluna Divergência pode estar oculta no
-  // layout, mas o selo precisa deles quando ela aparecer). São 3 colunas leves.
+  // layout, mas o selo precisa deles quando ela aparecer). São 3 colunas leves (texto, nome de quem justificou e quando).
   const { data, error, count } = await montarQueryGrid(
     supabase,
     ['id', ...colunas, ...COLUNAS_JUSTIFICATIVA.filter((c) => !colunas.includes(c))].join(', '),
@@ -163,7 +163,6 @@ export async function listarProcessosGrid({
 
 const COLUNAS_JUSTIFICATIVA = [
   'divergencia_justificativa',
-  'divergencia_justificada_por',
   'divergencia_justificada_por_nome',
   'divergencia_justificada_em',
 ]

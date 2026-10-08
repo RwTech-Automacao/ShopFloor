@@ -371,4 +371,21 @@ renderize nas duas telas, afirmando que o selo é o mesmo nos três estados.
 1. Revisão de branch inteira (modelo mais capaz).
 2. 0142 no Dev → `docker compose restart rest` → smoke: achar um processo com divergência, escrever,
    ver virar ✅, reabrir e editar, conferir o nome; e ver o mesmo selo no Fluxo.
-3. A migração é **aditiva** (três colunas com default) — a ordem em relação ao app é indiferente.
+3. **Ordem obrigatória: `0142` → `0143` → `0144` no banco, ANTES do deploy do app.**
+   Motivo: `listarProcessosGrid` (`processo-repository.ts`) soma as colunas da justificativa ao
+   `select` de **toda** página da grade, sempre, mesmo com a coluna Divergência oculta. Se o app subir
+   antes da `0142`, o PostgREST responde 400 (`column ... does not exist`), o `catch` de
+   `processos/page.tsx` mostra "Não foi possível carregar os processos" com lista vazia, **para
+   qualquer usuário**. Não é degradação parcial: a tela de Processos fica fora do ar até a migração entrar.
+   (A migração ser aditiva NÃO torna a ordem indiferente.)
+4. Se a ordem for quebrada:
+   - app antes da **0144**: a lista não quebra (o mapeamento usa `?? ''`), mas o selo **mente** — mostra
+     `?` em item já justificado — e quem escrever no diálogo **sobrescreve a justificativa existente sem
+     ver o que havia**;
+   - app antes da **0143**: benigno — a RPC não existe, a action mostra "Não foi possível salvar a
+     justificativa"; nada é gravado nem perdido.
+5. Na ordem certa o risco é **zero**, e voltar o app com as migrações no banco é seguro. Mas:
+   - **voltar a 0144 com o app no ar NÃO é seguro** — o selo volta a mentir;
+   - **não reaplicar a 0124 nem a 0127 depois da 0144**: o `create or replace` delas não volta o tipo de
+     retorno (erro 42P13);
+   - no self-host, `docker compose restart rest` depois da 0144, porque ela muda o **tipo de retorno** da RPC.

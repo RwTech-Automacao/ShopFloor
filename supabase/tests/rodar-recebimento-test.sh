@@ -33,8 +33,8 @@ for _ in 1 2; do
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0144.sql
 done
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
-  -c "select count(*) from information_schema.columns where table_schema='public' and table_name='processos_recebimento' and column_name in ('divergencia_justificativa','divergencia_justificada_por','divergencia_justificada_em')" | grep -qx 3 \
-  && echo "colunas da 0142: ok" || { echo "colunas da 0142 FALTAM"; exit 1; }
+  -c "select count(*) from information_schema.columns where table_schema='public' and table_name='processos_recebimento' and column_name in ('divergencia_justificativa','divergencia_justificada_por','divergencia_justificada_em','divergencia_justificada_por_nome')" | grep -qx 4 \
+  && echo "colunas da 0142 (4): ok" || { echo "colunas da 0142 FALTAM"; exit 1; }
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select count(*) from pg_proc where proname='rec_justificar_divergencia' and pronamespace='public'::regnamespace" | grep -qx 1 \
   && echo "função da 0143: ok" || { echo "função da 0143 FALTA"; exit 1; }

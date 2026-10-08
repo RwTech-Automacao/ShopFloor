@@ -612,6 +612,17 @@ begin
   raise notice 'justificar (texto nulo): ok';
 end $t$;
 
+-- 8.6 Grants fechados: anon (e PUBLIC) não executam a função de escrita; authenticated executa.
+-- O teste 8.1 só cobre o `if` interno; este cobre o backstop de grant que as demais funções do projeto têm.
+do $t$
+begin
+  if has_function_privilege('anon', 'public.rec_justificar_divergencia(uuid, text)', 'execute') then
+    raise exception 'FALHOU: anon executa rec_justificar_divergencia (faltou o revoke)'; end if;
+  if not has_function_privilege('authenticated', 'public.rec_justificar_divergencia(uuid, text)', 'execute') then
+    raise exception 'FALHOU: authenticated perdeu o execute de rec_justificar_divergencia'; end if;
+  raise notice 'justificar (grants fechados): ok';
+end $t$;
+
 -- ---------- 9. Itens da caixa trazem a justificativa (0144) ----------
 -- O selo do Fluxo lê daqui: texto, NOME de quem justificou (da própria linha, não de `usuarios`) e quando.
 do $t$

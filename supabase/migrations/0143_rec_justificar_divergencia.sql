@@ -39,6 +39,7 @@ begin
 end;
 $func$;
 
+revoke all on function public.rec_justificar_divergencia(uuid, text) from public, anon;
 grant execute on function public.rec_justificar_divergencia(uuid, text) to authenticated;
 
 notify pgrst, 'reload schema';
