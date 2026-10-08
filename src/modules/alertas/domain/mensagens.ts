@@ -416,8 +416,12 @@ export function textoResumo(nomeRegra: string, dia: Date, linhas: readonly Linha
   // Nome de regra absurdo: o próprio cabeçalho cederia o limite, então é ele que é aparado.
   const cabecalho = cortarUtf16(`📊 Resumo do dia ${formatarDia(dia)} — ${nomeRegra}`, LIMITE_MENSAGEM)
   if (linhas.length === 0) return cabecalho
+  // Concordância: "1 aprovado", "0 aprovados", "2 aprovados" (zero é plural em português).
+  const n = (v: number, s: string, p: string) => `${v} ${v === 1 ? s : p}`
   const itens = linhas.map(
-    (l) => `${l.posto}: ${formatarTaxa(l.aprovados, l.reprovados)}% · ${l.aprovados} aprovados, ${l.reprovados} reprovados`,
+    (l) =>
+      `${l.posto}: ${formatarTaxa(l.aprovados, l.reprovados)}% · ` +
+      `${n(l.aprovados, 'aprovado', 'aprovados')}, ${n(l.reprovados, 'reprovado', 'reprovados')}`,
   )
   const lista = listaComCorte(itens, LIMITE_MENSAGEM - cabecalho.length - 1, 'posto', 'postos', '\n')
   // Nem um posto cabe com o aviso (nome de regra gigante): a mensagem inteira vale mais que a lista.

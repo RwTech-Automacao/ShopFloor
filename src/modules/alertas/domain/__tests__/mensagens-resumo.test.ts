@@ -11,6 +11,12 @@ function postoN(i: number, nomeExtra = ''): LinhaResumo {
 const linhaDe = (l: LinhaResumo) => `${l.posto}: 100,0% · 100 aprovados, 0 reprovados`
 
 describe('textoResumo', () => {
+  it('concorda no singular com 1 aprovado e 1 reprovado', () => {
+    expect(textoResumo('Resumo diário', DIA, [{ posto: 'Teste', aprovados: 1, reprovados: 1 }])).toBe(
+      `${CAB}\nTeste: 50,0% · 1 aprovado, 1 reprovado`,
+    )
+  })
+
   it('um posto: cabeçalho com o dia e a linha com a taxa', () => {
     expect(textoResumo('Resumo diário', DIA, [{ posto: 'Teste', aprovados: 95, reprovados: 5 }])).toBe(
       `${CAB}\nTeste: 95,0% · 95 aprovados, 5 reprovados`,
@@ -24,8 +30,8 @@ describe('textoResumo', () => {
       { posto: 'Embalagem', aprovados: 1, reprovados: 2 },
     ])
     expect(t).toBe(
-      `${CAB}\nTeste: 88,8% · 8 aprovados, 1 reprovados\nBurn-in: 100,0% · 10 aprovados, 0 reprovados\n` +
-        'Embalagem: 33,3% · 1 aprovados, 2 reprovados',
+      `${CAB}\nTeste: 88,8% · 8 aprovados, 1 reprovado\nBurn-in: 100,0% · 10 aprovados, 0 reprovados\n` +
+        'Embalagem: 33,3% · 1 aprovado, 2 reprovados',
     )
   })
 
