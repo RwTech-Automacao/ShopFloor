@@ -3,7 +3,7 @@
 -- fora de aberto/em_conferencia, tambem editar_finalizado. Quem justifica e o administrador do modulo
 -- (recebimento.administrar), que e outro flag; um update direto atualizaria 0 linhas em silencio.
 -- Policy nao restringe colunas, entao afrouxa-la abriria a edicao de todas as colunas de um processo
--- finalizado. Esta funcao security definer escreve SO os tres campos da justificativa.
+-- finalizado. Esta funcao security definer escreve SO os campos da justificativa.
 -- O nome do autor e gravado junto (denormalizado, como logs.usuario_nome): a policy de leitura de
 -- public.usuarios nao deixa quem so administra o Recebimento ler o nome dos outros. Como esta funcao
 -- e security definer, ela le usuarios e grava o nome na propria linha. Usuario nao encontrado grava ''.

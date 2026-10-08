@@ -33,19 +33,34 @@ const { listarProcessosGrid } = await import('../processo-repository')
 describe('listarProcessosGrid: autor da justificativa', () => {
   beforeEach(() => { tabelasLidas.length = 0; selects.length = 0; linhasDoBanco = [] })
 
-  it('pede a coluna do nome, devolve o que veio na linha e não consulta usuarios', async () => {
+  // Três asserções separadas de propósito: num `it` só, a primeira a falhar esconde as outras —
+  // e a terceira (a negativa) é justamente a que prova o ponto desta mudança.
+  async function listar() {
     linhasDoBanco = [{
       id: 'p1',
       divergencia_justificada_por: 'u1',
       divergencia_justificada_por_nome: 'Maria Souza',
     }]
-    const r = await listarProcessosGrid({
+    return listarProcessosGrid({
       estado: { pagina: 0, tamanho: 20, ordenar: 'numero', filtros: {} } as never,
       colunas: ['numero_emb'],
       tiposPorCampo: {},
     })
+  }
+
+  it('pede a coluna do nome no select', async () => {
+    await listar()
     expect(selects[0]).toContain('divergencia_justificada_por_nome')
+  })
+
+  it('devolve o nome que veio na própria linha', async () => {
+    const r = await listar()
     expect(r.linhas[0]?.divergencia_justificada_por_nome).toBe('Maria Souza')
+  })
+
+  it('não consulta a tabela usuarios para resolver o nome', async () => {
+    await listar()
+    expect(tabelasLidas).toContain('processos_recebimento') // a consulta aconteceu de fato
     expect(tabelasLidas).not.toContain('usuarios')
   })
 })
