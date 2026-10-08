@@ -26,7 +26,7 @@ insert into public.configuracao_campos (campo, grupo) values
   ('fabricante', 'qualidade'), ('resultado', 'qualidade'), ('observacao', 'qualidade');
 
 -- FK da 0142 (divergencia_justificada_por).
-create table public.usuarios (id uuid primary key);
+create table public.usuarios (id uuid primary key, nome text not null default '', email text);
 
 create sequence public.processos_numero_seq;
 create table public.processos_recebimento (
@@ -520,7 +520,7 @@ end $t$;
 -- ---------- 8. Justificar divergência (0143): o único freio é o `if not tem_permissao` ----------
 -- A função é security definer (ignora RLS). Sem estes testes, apagar aquela linha num refactor
 -- deixaria qualquer usuário autenticado escrever em qualquer processo, sem nada acusar.
-insert into public.usuarios (id) values ('00000000-0000-0000-0000-000000000001');
+insert into public.usuarios (id, nome, email) values ('00000000-0000-0000-0000-000000000001', 'Maria Souza', 'maria@enterplak.com.br');
 -- A massa nasce depois da 0142 aplicada: a justificativa começa '' e o resto, nulo.
 insert into public.processos_recebimento (id, numero_emb, codigo_material)
 values ('00000000-0000-0000-0000-0000000000aa', 'EMBJUST', 'JUST01');
@@ -554,6 +554,8 @@ begin
     raise exception 'FALHOU: texto gravado errado (%)', r.divergencia_justificativa; end if;
   if r.divergencia_justificada_por is distinct from '00000000-0000-0000-0000-000000000001'::uuid then
     raise exception 'FALHOU: o autor tem que ser auth.uid() (veio %)', r.divergencia_justificada_por; end if;
+  if r.divergencia_justificada_por_nome is distinct from 'Maria Souza' then
+    raise exception 'FALHOU: nome gravado errado (veio %)', r.divergencia_justificada_por_nome; end if;
   if r.divergencia_justificada_em is null or r.divergencia_justificada_em < now() - interval '1 minute' then
     raise exception 'FALHOU: o instante da justificativa não foi gravado (%)', r.divergencia_justificada_em; end if;
   raise notice 'justificar (administrar grava): ok';
@@ -578,7 +580,8 @@ declare antes timestamptz; r record;
 begin
   perform set_config('teste.perms', 'recebimento.administrar', false);
   perform set_config('teste.uid', '00000000-0000-0000-0000-000000000002', false);
-  insert into public.usuarios (id) values ('00000000-0000-0000-0000-000000000002');
+  -- Nome vazio: o e-mail entra como reserva (mesmo critério do registrarLog).
+  insert into public.usuarios (id, nome, email) values ('00000000-0000-0000-0000-000000000002', '', 'joao@enterplak.com.br');
   select divergencia_justificada_em into antes from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
   -- now() é fixo dentro da transação: cada bloco `do` é a sua, então o instante novo é posterior.
   perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', '');
@@ -587,6 +590,8 @@ begin
     raise exception 'FALHOU: texto vazio tinha que apagar (veio %)', r.divergencia_justificativa; end if;
   if r.divergencia_justificada_por is distinct from '00000000-0000-0000-0000-000000000002'::uuid then
     raise exception 'FALHOU: quem apagou tem que virar o autor (veio %)', r.divergencia_justificada_por; end if;
+  if r.divergencia_justificada_por_nome is distinct from 'joao@enterplak.com.br' then
+    raise exception 'FALHOU: o nome tem que acompanhar o novo autor, com e-mail de reserva (veio %)', r.divergencia_justificada_por_nome; end if;
   if r.divergencia_justificada_em is null or r.divergencia_justificada_em <= antes then
     raise exception 'FALHOU: apagar tem que atualizar o instante'; end if;
   perform set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);

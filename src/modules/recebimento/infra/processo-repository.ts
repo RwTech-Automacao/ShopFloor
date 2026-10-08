@@ -158,29 +158,13 @@ export async function listarProcessosGrid({
 
   const linhas = (data ?? []) as unknown as Record<string, unknown>[]
 
-  // uuid -> nome de quem justificou por último. Best-effort: a RLS de `usuarios` pode esconder
-  // o nome de outra pessoa; nesse caso a tela mostra só o instante (sem inventar autor).
-  const ids = [
-    ...new Set(
-      linhas.map((l) => l.divergencia_justificada_por).filter((x): x is string => typeof x === 'string'),
-    ),
-  ]
-  const nomes = new Map<string, string>()
-  if (ids.length > 0) {
-    const { data: us } = await supabase.from('usuarios').select('id, nome').in('id', ids)
-    for (const u of (us ?? []) as { id: string; nome: string }[]) nomes.set(u.id, u.nome)
-  }
-  for (const l of linhas) {
-    const por = l.divergencia_justificada_por
-    l.divergencia_justificada_por_nome = (typeof por === 'string' && nomes.get(por)) || ''
-  }
-
   return { linhas, total: count ?? 0 }
 }
 
 const COLUNAS_JUSTIFICATIVA = [
   'divergencia_justificativa',
   'divergencia_justificada_por',
+  'divergencia_justificada_por_nome',
   'divergencia_justificada_em',
 ]
 
