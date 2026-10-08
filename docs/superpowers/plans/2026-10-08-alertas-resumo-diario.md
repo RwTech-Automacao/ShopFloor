@@ -169,6 +169,38 @@ este projeto recria essas duas funções declarando diferença por diferença.
 - o check de `janela_tipo` aceita o que a Task 2 apurou para o `resumo`
 - um check: `tipo <> 'resumo' or hora_resumo is not null`
 
+**Os dois checks de `janela_valor` — apurado, não suponha.** O `resumo` sai com
+`janela_tipo = 'intervalos'` e `janela_valor = null`, e há DOIS checks no caminho:
+
+1. **O da 0139, que BARRA e você tem de afrouxar:**
+   ```sql
+   alerta_regras_intervalos_check:
+   check (janela_tipo <> 'intervalos' or (tipo = 'aprovacao' and janela_valor >= 15))
+   ```
+   Um `resumo` falha nele por dois motivos: exige `tipo = 'aprovacao'` e exige `janela_valor >= 15`.
+   Afrouxe para `tipo in ('aprovacao','resumo')` **e** exija `janela_valor >= 15` só da
+   `'aprovacao'` — o `resumo` não tem passo, então não pode herdar o piso de 15.
+
+2. **O da 0113, que NÃO barra — mas por acidente, e isso precisa virar decisão:**
+   ```sql
+   -- 0113_alertas.sql:83-86
+   janela_valor int check (
+     (janela_tipo = 'op' and janela_valor is null)
+     or (janela_tipo <> 'op' and janela_valor > 0)
+   )
+   ```
+   Com `janela_tipo = 'intervalos'` e `janela_valor = null`: o 1o ramo dá `false`; o 2o dá
+   `true and (null > 0)` = `true and NULL` = `NULL`; e `false or NULL` = **NULL**. Um CHECK só
+   rejeita quando o resultado é `FALSE`, então **passa**. Ou seja: funciona, mas pela lógica de três
+   valores do SQL, não porque alguém escreveu que `intervalos` pode ter valor nulo.
+
+   ⚠️ **O comentário da 0139 (linha 33) afirma que o check da 0113 "já cobre 'intervalos'". Isso
+   está errado** — ele cobre o caso de valor preenchido e deixa passar o nulo sem querer. **Torne a
+   intenção explícita** nesta migração: reescreva o check da 0113 nomeando os tipos que podem ter
+   `janela_valor` nulo (`'op'` e `'intervalos'`), em vez de depender do `NULL` propagado, e
+   **corrija aquele comentário da 0139** no texto da sua migração nova. Um check que passa por
+   acidente é o que quebra no dia em que alguém "arruma" a expressão.
+
 **A lógica — e aqui está o ponto do plano:**
 
 ⚠️ **O resumo entra por UMA saída no topo do laço, com `continue` logo depois.** O caminho da
