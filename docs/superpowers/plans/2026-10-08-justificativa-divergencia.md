@@ -270,8 +270,16 @@ vindo de `estadoDaDivergencia`:
 **O diálogo:** uma caixa de texto, o nome de quem escreveu por último e quando (se houver), botões
 salvar e cancelar. Reaproveite o componente de diálogo que o projeto já usa.
 
-⚠️ **Sem permissão de editar, o selo MOSTRA o estado mas a caixa é só leitura.** Esconder o selo
-tiraria informação de quem tem direito de ver.
+⚠️ **A permissão de justificar é `administrar` do módulo `recebimento`** (decisão do usuário,
+2026-10-08 — ver Task 2b), **não `editar`**. Quem pode *ver* a tela não necessariamente pode
+justificar.
+
+⚠️ **Sem `administrar`, o selo MOSTRA o estado mas a caixa é só leitura.** Esconder o selo tiraria
+informação de quem tem direito de ver: saber que existe uma divergência sem justificativa é útil
+para o conferente mesmo que ele não seja quem escreve.
+
+⚠️ **O estado do selo NÃO depende do status do processo.** Justificar vale antes e depois de a EMB
+ser finalizada — finalizar só muda o envio do e-mail, não o direito de justificar.
 
 - [ ] **Passos 1 a 5.** Testes: os três estados · sem divergência não tem selo · abrir mostra o
       texto anterior e o autor · salvar chama a action com o **texto exato** · salvar vazio volta
