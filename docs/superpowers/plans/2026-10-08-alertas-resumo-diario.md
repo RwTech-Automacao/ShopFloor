@@ -248,7 +248,14 @@ antiga, **depois** do `create`. `notify pgrst` no fim.
    idempotência numa **cópia** descartável do runner, que não foi commitada — ou seja, ninguém
    depois consegue reproduzir. Faça o `rodar-alertas-test.sh` aplicar a `0141` duas vezes, como ele
    já faz com as outras.
-2. **O teste da `0139` afirma a assinatura de DOIS parâmetros do `alerta_avaliar`.** Depois da
+2. ⚠️ **A guarda contra reenvio NÃO tem teste no repositório.** É a linha que impede o relatório de
+   sair duas vezes no mesmo dia — o defeito I-1, que foi reproduzido em banco (duas chamadas
+   enfileiravam 4 e 4). Hoje ela só é exercitada pelo `rodar.sh` que o revisor deixou em
+   `scratchpad/rev/`, que é descartável e **não está versionado**. Uma sabotagem que faça a guarda
+   comparar com o dia errado **passa** pelo vitest inteiro, porque o defeito é em SQL. Inclua no
+   `rodar-alertas-test.sh`: duas chamadas de `alerta_avaliar` com o mesmo `p_resumos`, afirmando
+   que a segunda enfileira **zero**.
+3. **O teste da `0139` afirma a assinatura de DOIS parâmetros do `alerta_avaliar`.** Depois da
    `0141` são três. Hoje passa por acidente de ordem (ele roda antes da `0141`); rodar duas vezes na
    mesma base já falha. Conserte o teste, não a migração.
 
