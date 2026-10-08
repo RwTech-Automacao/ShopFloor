@@ -7,7 +7,7 @@ export const NOME_CANAL: Record<Canal, string> = { telegram: 'Telegram', discord
 export type JanelaTipo = 'tempo' | 'bipes' | 'op' | 'intervalos'
 
 /** Tipos de mensagem gravados em `alerta_envios.tipo`. */
-export type TipoEnvio = 'alerta' | 'lembrete' | 'resolvido' | 'normalizou' | 'teste'
+export type TipoEnvio = 'alerta' | 'lembrete' | 'resolvido' | 'normalizou' | 'teste' | 'resumo'
 
 /** Estados de uma ocorrência (`alerta_ocorrencias.estado`). */
 export type EstadoOcorrencia = 'aberta' | 'resolvida' | 'normalizada'
