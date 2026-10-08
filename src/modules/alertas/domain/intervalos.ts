@@ -116,12 +116,13 @@ const FUSO = 'America/Sao_Paulo'
  * Partes da data no fuso da fábrica, não no do processo. `hourCycle: 'h23'` fica declarado para
  * o dia nunca depender do ciclo de hora que o locale escolher (ver `deslocamentoMin`).
  */
-function partesSp(d: Date): { ano: number; mes: number; dia: number } {
+export function partesSp(d: Date): { ano: number; mes: number; dia: number; hora: number; minuto: number } {
   const p = new Intl.DateTimeFormat('en-CA', {
-    timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit', hourCycle: 'h23',
+    timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(d)
   const achar = (t: string) => Number(p.find((x) => x.type === t)?.value ?? '0')
-  return { ano: achar('year'), mes: achar('month'), dia: achar('day') }
+  return { ano: achar('year'), mes: achar('month'), dia: achar('day'), hora: achar('hour'), minuto: achar('minute') }
 }
 
 /**
