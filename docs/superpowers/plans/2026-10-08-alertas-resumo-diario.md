@@ -242,6 +242,16 @@ antiga, **depois** do `create`. `notify pgrst` no fim.
 
 ### Task 5: Teste SQL no harness
 
+⚠️ **Duas pendências que a Task 4 deixou e são suas:**
+
+1. **O runner ainda não inclui a `0141` nem um teste dela.** O implementador da Task 4 provou a
+   idempotência numa **cópia** descartável do runner, que não foi commitada — ou seja, ninguém
+   depois consegue reproduzir. Faça o `rodar-alertas-test.sh` aplicar a `0141` duas vezes, como ele
+   já faz com as outras.
+2. **O teste da `0139` afirma a assinatura de DOIS parâmetros do `alerta_avaliar`.** Depois da
+   `0141` são três. Hoje passa por acidente de ordem (ele roda antes da `0141`); rodar duas vezes na
+   mesma base já falha. Conserte o teste, não a migração.
+
 **Arquivos:** criar `supabase/tests/alertas_resumo_test.sql`; estender `rodar-alertas-test.sh`.
 
 **Leia** `alertas_intervalos_test.sql` — é o molde.
@@ -276,6 +286,34 @@ o `janela_valor`.
 
 - [ ] **Passos 1 a 5**, afirmando os **argumentos** das chamadas, não só o efeito. ⚠️ Prove que os
       mocks pegam: um teste que **falha** quando o mock devolve erro.
+
+---
+
+### Task 6b: o resumo SAI de fato (buraco achado na Task 4)
+
+⚠️ **Sem esta task a feature fica pronta e não manda nada.** A `0141` enfileira o envio, mas o
+TypeScript não conhece o tipo `'resumo'`: `TipoEnvio` e `ehTipoEnvio` não o listam,
+`lerEnvioReservado` devolve `null` e o despachante **pula a linha em silêncio**. Nenhum log, nenhum
+erro, nenhuma mensagem. Isso foi achado pelo implementador da Task 4 — não estava no plano.
+
+**Arquivos:** os do despacho de envio em `src/modules/alertas/` (`TipoEnvio`, `ehTipoEnvio`,
+`lerEnvioReservado`, `textoDoEnvio`), e testes.
+
+**O que fazer:**
+1. `TipoEnvio` e `ehTipoEnvio` passam a aceitar `'resumo'`.
+2. `textoDoEnvio` ganha o ramo do resumo: lê o `dados` do envio e chama `textoResumo` de
+   `domain/mensagens.ts`.
+3. **O formato do `dados`, como a `0141` o grava** — use estes nomes, não invente:
+   `regra_tipo`, `regra_nome`, `dia` (texto `AAAA-MM-DD`) e `linhas`, um array de
+   `{ posto, aprovados, reprovados }`.
+
+⚠️ **Afirme o formato antes de usar.** Se o `dados` vier diferente do esperado, o resumo para de
+sair **sem log** — o mesmo modo de falha que esta task existe para corrigir. Registre no
+`console.error` com o id do envio, como a 0139 faz com o `janela_valor`.
+
+- [ ] **Passos 1 a 5.** Testes: o tipo novo é aceito · o texto sai igual ao de `textoResumo` para o
+      mesmo `dados` · `dados` malformado **não** derruba o despacho dos outros envios e **registra**
+      · ⚠️ prove que o teste pega: sabote tirando `'resumo'` de `ehTipoEnvio` e confirme que morre.
 
 ---
 
