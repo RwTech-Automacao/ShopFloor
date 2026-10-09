@@ -24,6 +24,7 @@ import {
 } from '@/modules/setup/application/setup-actions'
 import { separarRolo } from '@/modules/setup/domain/codigo-rolo'
 import { mensagemErroSetup } from '@/modules/setup/domain/mensagens'
+import { maisRecentePrimeiro } from '@/modules/setup/domain/ordenacao-itens'
 import { rotuloEquipamento, rotulosPosicao } from '@/modules/setup/domain/tipos'
 import type { Equipamento, ItemSetup, OrdemSetup, SetupResumo } from '@/modules/setup/infra/setup-repository'
 import { chaveDaSelecao, SELECAO_VAZIA, SelecaoSetup, selecaoCompleta, type ValorSelecao } from '../../selecao-setup'
@@ -54,6 +55,7 @@ export function MontarSetup({
 }) {
   const [selecao, setSelecao] = useState<ValorSelecao>(SELECAO_VAZIA)
   const [setup, setSetup] = useState<SetupResumo | null>(null)
+  // Fica na ordem de exibição: mais recente primeiro (só nesta tela; as outras leem por posição).
   const [itens, setItens] = useState<ItemSetup[]>([])
   const [buscando, setBuscando] = useState(false)
   // SN de Abertura: pedido no diálogo de liberação (não na abertura do setup).
@@ -105,7 +107,7 @@ export function MontarSetup({
       const r = await carregarSetupAction(id)
       if (!r.ok) { avisar(r.erro); return false }
       setSetup(r.setup)
-      setItens(r.itens)
+      setItens(maisRecentePrimeiro(r.itens))
       return true
     } catch {
       avisar('Falha de conexão. Não foi possível atualizar a lista.')
@@ -136,7 +138,7 @@ export function MontarSetup({
           const c = await carregarSetupAction(r.setup.id)
           if (seq !== buscaSeq.current) return
           if (!c.ok) avisar(c.erro)
-          else { setSetup(c.setup); setItens(c.itens) }
+          else { setSetup(c.setup); setItens(maisRecentePrimeiro(c.itens)) }
         }
       } catch {
         // Rede caiu no meio da busca: avisa em vez de deixar a tela presa em "Procurando…".
