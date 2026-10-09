@@ -6,7 +6,8 @@
 
 **Objetivo:** o Fluxo da OP embutido no Dashboard abre já em Modo TV com `?modo=tv`, **sem** chamar a
 API de tela cheia do navegador (que hoje briga com a tela cheia do próprio Dashboard), e com três
-controles de operação (Filtro, Zoom, Defeitos) escondidos até o hover.
+controles de operação (Filtro, Zoom, Defeitos) escondidos até o hover — no embed **sempre** (com ou
+sem `?modo=tv`) e no Modo TV da tela normal.
 
 **Spec:** `docs/superpowers/specs/2026-10-09-embed-modo-tv-design.md` — leia inteira antes de começar.
 
@@ -25,9 +26,10 @@ Testing Library (jsdom), Tailwind v4.
 ## Restrições globais
 
 - **Tudo em PT-BR**: identificadores, comentários, textos de tela.
-- ⚠️ **O alvo real é tablet, que NÃO tem hover.** Por isso esconder os controles vale **só no embed em
-  Modo TV e no Modo TV** (`telaCheia`). A tela normal `/shopfloor/fluxo` fica intacta e **um teste
-  tem de provar isso** (Task 3, caso 4 da spec).
+- ⚠️ **O alvo real é tablet, que NÃO tem hover.** Por isso esconder os controles vale **só no embed (com ou
+  sem `?modo=tv`) e no Modo TV da tela normal** (`telaCheia`). A tela normal fora do Modo TV `/shopfloor/fluxo` fica intacta e **um teste
+  tem de provar isso** (Task 3, caso 4 da spec). Quem sabe que está no embed é a prop `embed`
+  (Task 3), passada sempre pela página do embed.
 - ⚠️ **`--maxWorkers=2` é obrigatório** no vitest desta máquina (4 núcleos; sem isso exit 137):
   `npx vitest run --maxWorkers=2 <arquivo>`.
 - ⚠️ **`next build` roda** nesta worktree: `NODE_OPTIONS="--max-old-space-size=4096" npx next build`.
@@ -47,8 +49,10 @@ Testing Library (jsdom), Tailwind v4.
 |---|---|---|
 | **3** — com `?modo=tv` o navegador NÃO entra em tela cheia | `com modoTv o navegador NÃO entra em tela cheia` | 2 |
 | **4** — tela normal: os três botões visíveis SEM hover (protege o tablet) | `tela normal (fora do Modo TV): Filtro, Zoom e Defeitos continuam visíveis sem hover` | 3 |
+| 1 — embed SEM `?modo=tv`: layout normal, mas os três já escondidos (hover) | `embed sem modoTv: layout normal, mas Filtro, Zoom e Defeitos já só no hover` | 3 |
 | 2 — com modoTv os três escondem e reaparecem no hover | `modoTv: Filtro, Zoom e Defeitos só aparecem no hover` | 3 |
-| 1 / 2 / 5 — página lê `?modo=tv`, `sf-embed:ready` sai nos dois | `lê ?modo=tv ...` | 4 |
+| 2 — Modo TV da tela normal (tela cheia do navegador) também esconde | `tela normal em tela cheia do navegador: os três só no hover` | 3 |
+| 1 / 2 / 5 — página lê `?modo=tv`, passa `embed` SEMPRE, `sf-embed:ready` sai nos dois | `lê ?modo=tv ...`, `passa embed mesmo sem o parâmetro` | 4 |
 
 ## Estrutura de arquivos
 
@@ -56,9 +60,9 @@ Testing Library (jsdom), Tailwind v4.
 |---|---|
 | `src/shared/lib/modo-tv.ts` (**criar**) | `lerModoTv`, `controlesSoNoHover`, `classeSoNoHover` — puro |
 | `src/shared/lib/__tests__/modo-tv.test.ts` (**criar**) | testes do módulo acima |
-| `src/app/(app)/shopfloor/fluxo/fluxo-form.tsx` (**editar**) | prop `modoTv`; `telaCheia` derivado; canvas `fixed`; sem API; hover |
+| `src/app/(app)/shopfloor/fluxo/fluxo-form.tsx` (**editar**) | props `modoTv` e `embed`; `telaCheia` derivado; canvas `fixed`; sem API; hover |
 | `src/app/(app)/shopfloor/fluxo/__tests__/fluxo-form-modo-tv.test.tsx` (**criar**) | casos 3 e 4 |
-| `src/app/embed/fluxo/[pmo]/[op]/page.tsx` (**editar**) | lê `searchParams.modo`, passa `modoTv` |
+| `src/app/embed/fluxo/[pmo]/[op]/page.tsx` (**editar**) | lê `searchParams.modo`, passa `modoTv` e `embed` (sempre) |
 | `src/app/embed/__tests__/fluxo-embed.test.tsx` (**editar**) | `abrir` aceita `modo`; casos 1/2/5 |
 | `src/modules/auth/domain/__tests__/sso-dashboard.test.ts` (**editar**) | `next` com `?modo=tv` atravessa |
 
@@ -98,11 +102,13 @@ describe('lerModoTv', () => {
 })
 
 describe('controlesSoNoHover', () => {
-  // Decisão de produto (spec, "Os três controles"): só some quando está em Modo TV. A tela normal
-  // fica de fora porque o tablet não tem hover.
-  it('só esconde em Modo TV', () => {
-    expect(controlesSoNoHover(true)).toBe(true)
-    expect(controlesSoNoHover(false)).toBe(false)
+  // Decisão de produto (spec, "Os três controles"): esconde no embed (com ou sem ?modo=tv) OU em
+  // Modo TV. Só a tela normal fora do Modo TV fica de fora, porque o tablet não tem hover.
+  it('esconde no embed ou em Modo TV; só a tela normal fora do Modo TV fica visível', () => {
+    expect(controlesSoNoHover(true, false)).toBe(true) // embed sem ?modo=tv
+    expect(controlesSoNoHover(true, true)).toBe(true) // embed com ?modo=tv
+    expect(controlesSoNoHover(false, true)).toBe(true) // tela normal em tela cheia
+    expect(controlesSoNoHover(false, false)).toBe(false) // tela normal (tablet)
   })
 })
 
@@ -142,14 +148,15 @@ export function lerModoTv(valor: string | string[] | undefined): boolean {
 }
 
 /**
- * Os três controles de operação (Filtro, Zoom, Defeitos) só aparecem no hover EM Modo TV.
+ * Os três controles de operação (Filtro, Zoom, Defeitos) só aparecem no hover quando a tela está
+ * NO EMBED (com ou sem `?modo=tv`) OU em Modo TV (prop `modoTv` ou tela cheia do navegador).
  *
- * ⚠️ Fora do Modo TV continuam sempre visíveis: o Fluxo é usado em TABLET pelos supervisores, e
- * tablet não tem hover — esconder lá deixaria os três inalcançáveis. Este é o ÚNICO ponto da
- * decisão; se o produto decidir esconder também no embed sem `?modo=tv`, muda aqui.
+ * ⚠️ Só a tela normal fora do Modo TV mantém os três sempre visíveis: o Fluxo é usado em TABLET
+ * pelos supervisores, e tablet não tem hover — esconder lá deixaria os três inalcançáveis. Este é
+ * o ÚNICO ponto da decisão (usuário, 09/10: o embed esconde SEMPRE, não só em apresentação).
  */
-export function controlesSoNoHover(emModoTv: boolean): boolean {
-  return emModoTv
+export function controlesSoNoHover(emEmbed: boolean, emModoTv: boolean): boolean {
+  return emEmbed || emModoTv
 }
 
 /**
@@ -340,8 +347,9 @@ describe('FluxoForm com modoTv (embed em Modo TV)', () => {
 ## Task 3 — Filtro, Zoom e Defeitos só no hover em Modo TV (casos 2 e 4)
 
 **Consome:** `classeSoNoHover`, `controlesSoNoHover` (Task 1); `telaCheia`/`group/canvas` (Task 2).
-**Produz:** os três controles escondem em Modo TV (por prop **ou** por tela cheia do navegador);
-tela normal intacta.
+**Produz:** a prop `embed?: boolean` em `FluxoForm` (passada pela página do embed, Task 4) e os três
+controles escondidos no embed (com ou sem `modoTv`) e em Modo TV (por prop **ou** por tela cheia do
+navegador); tela normal fora do Modo TV intacta.
 
 **Arquivos:** editar `fluxo-form.tsx`; acrescentar casos em `fluxo-form-modo-tv.test.tsx`.
 
@@ -371,16 +379,35 @@ describe('os três controles de operação (hover)', () => {
     }
   })
 
-  // CASO 1 da spec: o embed SEM `?modo=tv` é "tela normal" (decisão acima, em controlesSoNoHover).
-  it('embed sem modoTv: os três botões continuam visíveis', async () => {
-    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor />)
+  // CASO 1 da spec: o embed SEM `?modo=tv` tem layout normal, mas os botões JÁ escondidos (hover).
+  it('embed sem modoTv: layout normal, mas Filtro, Zoom e Defeitos já só no hover', async () => {
+    const { container } = render(
+      <FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />,
+    )
     await esperarCarregar()
     const { filtro, zoom, defeitos } = controles()
-    for (const el of [filtro, zoom, defeitos]) expect(el.className).not.toMatch(/opacity-0/)
+    for (const el of [filtro, zoom, defeitos]) {
+      expect(el).toHaveClass('opacity-0', 'group-hover/canvas:opacity-100')
+    }
+    // layout normal: sem modoTv o canvas NÃO vira apresentação (sem `fixed inset-0`).
+    expect(container.querySelector('.fluxo-canvas')).not.toHaveClass('fixed')
+  })
+
+  // Modo TV da tela normal (tela cheia do navegador): também esconde. Disparar o evento com
+  // `document.fullscreenElement` apontando para o canvas (mesmo padrão dos testes da Task 2).
+  it('tela normal em tela cheia do navegador: os três só no hover', async () => {
+    const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} />)
+    await esperarCarregar()
+    const canvas = container.querySelector('.fluxo-canvas') as HTMLElement
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => canvas })
+    fireEvent(document, new Event('fullscreenchange'))
+    const { filtro, zoom, defeitos } = controles()
+    for (const el of [filtro, zoom, defeitos]) expect(el).toHaveClass('opacity-0')
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => null })
   })
 
   it('modoTv: Filtro, Zoom e Defeitos só aparecem no hover', async () => {
-    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor modoTv />)
+    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
     await esperarCarregar()
     const { filtro, zoom, defeitos } = controles()
     for (const el of [filtro, zoom, defeitos]) {
@@ -401,7 +428,13 @@ describe('os três controles de operação (hover)', () => {
 - [ ] **3.3 Implementar em `fluxo-form.tsx`:**
 
   a) imports: `import { classeSoNoHover, controlesSoNoHover } from '@/shared/lib/modo-tv'`.
-  b) logo após `const telaCheia = ...`: `const soNoHover = classeSoNoHover(controlesSoNoHover(telaCheia))`.
+  a2) **Props:** acrescentar `embed = false` na desestruturação e `embed?: boolean` no tipo, com o
+  comentário "marca que a tela roda dentro do iframe do Dashboard (passada SEMPRE pela página do
+  embed, independente de `?modo=tv`); hoje só decide o esconder-no-hover dos três controles". Não
+  reaproveitar `ocultarSeletor`/`opFixa` pra isso: são outra coisa e os testes da tela normal usam
+  `opFixa` sem ser embed.
+  b) logo após `const telaCheia = ...`:
+  `const soNoHover = classeSoNoHover(controlesSoNoHover(embed, telaCheia))`.
   c) **Filtro (~1286):** acrescentar `${soNoHover}` ao `className` do botão vermelho.
   d) **Defeitos (~1260):** acrescentar `${soNoHover}` ao `className` do botão (virar template string).
   e) **Zoom (~1241):** dentro do `<Panel position="bottom-left">`, envolver
@@ -417,19 +450,20 @@ describe('os três controles de operação (hover)', () => {
 
 - [ ] **3.4 Rodar e ver passar** (arquivo novo + a pasta `__tests__` do fluxo).
 - [ ] **3.5 Commit:** `git add "src/app/(app)/shopfloor/fluxo/fluxo-form.tsx" "src/app/(app)/shopfloor/fluxo/__tests__/fluxo-form-modo-tv.test.tsx"`
-  `git commit -m "feat(fluxo): Filtro, Zoom e Defeitos só no hover em Modo TV (tela normal intacta)"`.
+  `git commit -m "feat(fluxo): Filtro, Zoom e Defeitos só no hover no embed e no Modo TV (tela normal intacta)"`.
 
 ---
 
 ## Task 4 — A página do embed lê `?modo=tv`
 
 **Consome:** `lerModoTv` (Task 1), `FluxoForm modoTv` (Task 2). **Produz:** `/embed/fluxo/<pmo>/<op>?modo=tv`
-abre em Modo TV; sem o parâmetro, igual a hoje.
+abre em Modo TV; sem o parâmetro, layout normal mas com os três controles já só no hover (a página
+passa `embed` **sempre**, independente do parâmetro).
 
 **Arquivos:** editar `src/app/embed/fluxo/[pmo]/[op]/page.tsx` e `src/app/embed/__tests__/fluxo-embed.test.tsx`.
 
 - [ ] **4.1 Testes (falham primeiro)** — em `fluxo-embed.test.tsx`:
-  - interface `PropsFluxoForm`: acrescentar `modoTv?: boolean`.
+  - interface `PropsFluxoForm`: acrescentar `modoTv?: boolean` e `embed?: boolean`.
   - helper `abrir` passa a aceitar `modo` (a página recebe `searchParams` como `Promise`, Next 16):
   ```tsx
   const abrir = (pmo = 'PMOC13', op = '2340%2F26', modo?: string | string[]) =>
@@ -445,11 +479,19 @@ abre em Modo TV; sem o parâmetro, igual a hoje.
   it('lê ?modo=tv e liga o Modo TV no fluxo', async () => {
     render(await abrir('PMOC13', '2340%2F26', 'tv'))
     expect(props().modoTv).toBe(true)
+    expect(props().embed).toBe(true)
     expect(props().opFixa).toEqual({ pmo: 'PMOC13', op: '2340/26' })
     expect(props().ocultarSeletor).toBe(true) // o embed continua sem seletor
   })
   it('sem o parâmetro: Modo TV desligado (tela normal)', async () => {
     render(await abrir())
+    expect(props().modoTv).toBe(false)
+  })
+  // Decisão do usuário (09/10): o embed esconde os três controles SEMPRE. A página tem de passar
+  // `embed` mesmo sem o parâmetro (e com valor desconhecido).
+  it('passa embed mesmo sem o parâmetro (esconder no hover não depende de ?modo=tv)', async () => {
+    render(await abrir())
+    expect(props().embed).toBe(true)
     expect(props().modoTv).toBe(false)
   })
   it('valor desconhecido não liga (?modo=foo)', async () => {
@@ -486,10 +528,11 @@ abre em Modo TV; sem o parâmetro, igual a hoje.
   }) {
     const cru = await params
     // `?modo=tv`: o Dashboard manda quando ELE está em tela cheia. Só liga o layout — a tela cheia
-    // do navegador continua do Dashboard (o Fluxo não a pede nem a larga).
+    // do navegador continua do Dashboard (o Fluxo não a pede nem a larga). `embed` vai SEMPRE: é ele
+    // (não o ?modo=tv) que esconde Filtro/Zoom/Defeitos até o hover.
     const modoTv = lerModoTv((await searchParams).modo)
     ...
-    <FluxoForm ops={ops} ordensDashboard={ordensDashboard} opFixa={{ pmo, op }} ocultarSeletor modoTv={modoTv} />
+    <FluxoForm ops={ops} ordensDashboard={ordensDashboard} opFixa={{ pmo, op }} ocultarSeletor embed modoTv={modoTv} />
   ```
   ⚠️ Só leitura de `searchParams` — **nenhum** `fetch('/api')`, `Link`, `href` ou `router` novo. O
   aviso do topo do arquivo continua valendo; acrescente "e `?modo=tv` é só layout" no docstring.
@@ -536,9 +579,11 @@ it('a query não destrava o /embed/sso nem a travessia', () => {
 - [ ] **6.2** `npx vitest run --maxWorkers=2` (suíte inteira).
 - [ ] **6.3** `NODE_OPTIONS="--max-old-space-size=4096" npx next build` (roda nesta worktree).
 - [ ] **6.4 Smoke manual** (jsdom não calcula CSS, então o que é **layout** só se vê no navegador):
-  1. `/shopfloor/fluxo` (tela normal), OP escolhida: Filtro, Zoom e Defeitos visíveis **sem** mover o mouse.
+  1. `/shopfloor/fluxo` (tela normal), OP escolhida: Filtro, Zoom e Defeitos visíveis **sem** mover o mouse
+     (no tablet de verdade, se possível — é o que o teste do caso 4 protege).
      Clicar "Modo TV": entra em tela cheia, controles somem, aparecem no hover; Esc sai.
-  2. `/embed/fluxo/<pmo>/<op>` num iframe **sem** o parâmetro: tela normal, três botões visíveis.
+  2. `/embed/fluxo/<pmo>/<op>` num iframe **sem** o parâmetro: layout normal (não apresentação), mas
+     os três botões **já escondidos**, aparecendo no hover.
   3. Mesmo iframe **com** `?modo=tv`, dentro de uma página em tela cheia: o canvas preenche o iframe,
      barra com OP/relógio/progresso, **sem** "Sair (Esc)", três controles só no hover, e **a página-pai
      continua em tela cheia** o tempo todo (o sintoma original).
@@ -590,10 +635,12 @@ Hoje o destino é `fullscreenElement` (o canvas). Com `modoTv` **não há** `ful
 
 ## Pontos da spec ambíguos (e a recomendação adotada)
 
-1. **"Esconder no embed e no Modo TV" × caso 1 ("embed sem o parâmetro: três botões visíveis").** Se
-   conflitam. Adotado: esconder **só em Modo TV** (`modoTv` ou tela cheia do navegador); embed sem
-   `?modo=tv` fica visível. A decisão está num único ponto (`controlesSoNoHover`, Task 1) e tem
-   teste (`embed sem modoTv ...`). Confirmar com o Matheus.
+1. ~~**"Esconder no embed e no Modo TV" × caso 1 ("embed sem o parâmetro: três botões visíveis").**~~
+   **DECIDIDO (usuário, 09/10; spec corrigida em `8e7c9c5`):** o embed esconde os três controles
+   **sempre**, com ou sem `?modo=tv`; a tela normal em Modo TV (tela cheia do navegador) também; só
+   a tela normal fora do Modo TV mantém os três visíveis (tablet, sem hover). Implementação: prop
+   `embed` em `FluxoForm`, passada sempre pela página do embed; `controlesSoNoHover(emEmbed, emModoTv)`
+   é o ponto único. Testes: `embed sem modoTv: ...` e `passa embed mesmo sem o parâmetro`.
 2. **Modo TV pela tela cheia do navegador num tablet** (botão "Modo TV" da tela normal): pela spec os
    três somem lá também, e o tablet não alcança sem hover (só "Sair" da barra e Esc). Recomendação:
    manter como a spec diz (é Modo TV, a pessoa está apresentando), mas avisar o produto.
