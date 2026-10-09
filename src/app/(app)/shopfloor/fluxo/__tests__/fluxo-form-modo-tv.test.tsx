@@ -129,3 +129,79 @@ describe('FluxoForm com modoTv (embed em Modo TV)', () => {
     expect(screen.queryByText(/Sair \(Esc\)/)).not.toBeInTheDocument() // quem sai é o Dashboard
   })
 })
+
+/** Os três controles, pelo que o usuário enxerga. */
+function controles() {
+  return {
+    filtro: screen.getByRole('button', { name: 'Filtro e busca de SN' }),
+    zoom: screen.getByTestId('controle-zoom'),
+    defeitos: screen.getByRole('button', { name: /Defeitos/ }),
+  }
+}
+const NOMES = ['filtro', 'zoom', 'defeitos'] as const
+
+describe('os três controles de operação (hover)', () => {
+  // CASO 4 — o teste que protege o tablet. Tablet não tem hover: se algum dos três ganhar
+  // `opacity-0` fora do Modo TV, o supervisor perde o filtro, o zoom e os defeitos.
+  it('tela normal (fora do Modo TV): Filtro, Zoom e Defeitos continuam visíveis sem hover', async () => {
+    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} />) // seletor visível = tela normal
+    await esperarCarregar()
+    const c = controles()
+    for (const n of NOMES) {
+      const el = c[n]
+      expect(el.className, n).not.toMatch(/opacity-0/)
+      expect(el.className, n).not.toMatch(/group-hover/)
+      expect(el.className, n).not.toMatch(/pointer-events-none/)
+    }
+  })
+
+  // CASO 1 da spec: o embed SEM `?modo=tv` tem layout normal, mas os botões JÁ escondidos (hover).
+  // Um teste por controle: um `for` único mascararia qual deles regrediu.
+  describe.each(NOMES)('embed sem modoTv: %s', (nome) => {
+    it('já só no hover, com layout normal', async () => {
+      const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />)
+      await esperarCarregar()
+      expect(controles()[nome]).toHaveClass('opacity-0', 'group-hover/canvas:opacity-100')
+      expect(container.querySelector('.fluxo-canvas')).not.toHaveClass('fixed')
+    })
+  })
+
+  // Modo TV da tela normal (tela cheia do navegador): também esconde.
+  describe.each(NOMES)('tela normal em tela cheia do navegador: %s', (nome) => {
+    it('só no hover', async () => {
+      const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} />)
+      await esperarCarregar()
+      const canvas = container.querySelector('.fluxo-canvas') as HTMLElement
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => canvas })
+      try {
+        fireEvent(document, new Event('fullscreenchange'))
+        await waitFor(() => expect(controles()[nome]).toHaveClass('opacity-0'))
+      } finally {
+        Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => null })
+      }
+    })
+  })
+
+  // Modo TV por prop SEM embed: prova que o esconder também olha o Modo TV, não só o embed.
+  describe.each(NOMES)('modoTv sem embed: %s', (nome) => {
+    it('só no hover', async () => {
+      render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor modoTv />)
+      await esperarCarregar()
+      expect(controles()[nome]).toHaveClass('opacity-0', 'group-hover/canvas:opacity-100')
+    })
+  })
+
+  describe.each(NOMES)('embed com modoTv: %s', (nome) => {
+    it('só no hover', async () => {
+      render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
+      await esperarCarregar()
+      expect(controles()[nome]).toHaveClass('opacity-0', 'group-hover/canvas:opacity-100')
+    })
+  })
+
+  it('o canvas é o `group/canvas` (o hover é dele, não do botão invisível)', async () => {
+    const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor modoTv />)
+    await esperarCarregar()
+    expect(container.querySelector('.fluxo-canvas')).toHaveClass('group/canvas')
+  })
+})

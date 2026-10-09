@@ -22,6 +22,7 @@ import { HistoricoSnDialog } from './historico-sn-dialog'
 import { FloatingEdge } from './floating-edge'
 import { HelperLines, getHelperLines } from '@/shared/ui/fluxo/helper-lines'
 import { ControlesCanvas } from '@/shared/ui/fluxo/controles-canvas'
+import { classeSoNoHover, controlesSoNoHover } from '@/shared/lib/modo-tv'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
 const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
@@ -438,6 +439,7 @@ export function FluxoForm({
   opFixa,
   ocultarSeletor,
   modoTv = false,
+  embed = false,
 }: {
   ops: OpItem[]
   ordensDashboard: OrdemPesquisa[]
@@ -446,6 +448,9 @@ export function FluxoForm({
   /** Liga o layout do Modo TV POR FORA (embed `?modo=tv`) — sem a API de tela cheia do navegador:
    *  a tela cheia, aí, é do Dashboard, e disputá-la derrubava a dele. */
   modoTv?: boolean
+  /** Marca que a tela roda dentro do iframe do Dashboard (passada SEMPRE pela página do embed,
+   *  independente de `?modo=tv`); hoje só decide o esconder-no-hover dos três controles. */
+  embed?: boolean
 }) {
   // `sel` = "pmo||op" (a chave da OP escolhida). Com `opFixa`, já nasce escolhida.
   const [sel, setSel] = useState(opFixa ? `${opFixa.pmo}||${opFixa.op}` : '')
@@ -913,6 +918,9 @@ export function FluxoForm({
   const [zoomPct, setZoomPct] = useState(100)
   const [telaCheiaApi, setTelaCheiaApi] = useState(false) // espelho do `fullscreenchange`
   const telaCheia = telaCheiaApi || modoTv // `modoTv` = ligado por fora, sem API
+  // Filtro, Zoom e Defeitos: só no hover no embed e no Modo TV; na tela normal ficam sempre
+  // visíveis (tablet não tem hover).
+  const soNoHover = classeSoNoHover(controlesSoNoHover(embed, telaCheia))
   const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
     if (modoTv) return // não há o que alternar: a tela cheia (se houver) é do Dashboard
@@ -1259,13 +1267,15 @@ export function FluxoForm({
             {/* Controles próprios no lugar do <Controls>: o React Flow só aceita filhos DEPOIS
                 dos botões dele, então não dava pra encaixar a porcentagem entre o "−" e o "+". */}
             <Panel position="bottom-left">
-              <ControlesCanvas
-                pct={zoomPct}
-                onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })}
-                onMais={() => rfRef.current?.zoomIn({ duration: 200 })}
-                onMenos={() => rfRef.current?.zoomOut({ duration: 200 })}
-                onEnquadrar={() => rfRef.current?.fitView({ duration: 200 })}
-              />
+              <div data-testid="controle-zoom" className={soNoHover}>
+                <ControlesCanvas
+                  pct={zoomPct}
+                  onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })}
+                  onMais={() => rfRef.current?.zoomIn({ duration: 200 })}
+                  onMenos={() => rfRef.current?.zoomOut({ duration: 200 })}
+                  onEnquadrar={() => rfRef.current?.fitView({ duration: 200 })}
+                />
+              </div>
             </Panel>
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
@@ -1276,7 +1286,7 @@ export function FluxoForm({
               type="button"
               onClick={() => setDefeitosAberto(true)}
               title="Defeitos desta OP (→)"
-              className="absolute bottom-3 right-3 z-40 flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-sm font-medium shadow-lg hover:bg-accent"
+              className={`absolute bottom-3 right-3 z-40 flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-sm font-medium shadow-lg hover:bg-accent ${soNoHover}`}
             >
               <Bug className="size-4" /> Defeitos <ChevronRight className="size-4 opacity-60" />
             </button>
@@ -1302,7 +1312,7 @@ export function FluxoForm({
               title={`Filtro & busca de SN — ${rotuloJanela(janela, custom)}`}
               aria-label="Filtro e busca de SN"
               // Com a aba lateral do posto aberta (w-80 = 20rem), desloca pra fora dela pra não cobrir o X de fechar.
-              className={`absolute z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? 'top-[4.75rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'}`}
+              className={`absolute z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? 'top-[4.75rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'} ${soNoHover}`}
             >
               <SlidersHorizontal className="size-4" />
             </button>
