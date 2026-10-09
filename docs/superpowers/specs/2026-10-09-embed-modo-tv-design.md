@@ -106,3 +106,9 @@ vazou para quem não devia.
 1. O embed abre em Modo TV pelo parâmetro `?modo=tv` (08–09/10).
 2. Os três controles viram hover **no embed e no Modo TV**; a tela normal fica intacta (08/10).
 3. O ShopFloor **não** chama a tela cheia do navegador dentro do embed (09/10, depois de medido).
+4. **No tablet, em Modo TV, os três controles ficam inalcançáveis — e isso está ACEITO** (09/10,
+   depois que a revisão final mediu o CSS gerado). O `@media (hover:hover)` não casa em dispositivo
+   de toque, e o `pointer-events-none` impede o toque que daria o foco. A saída é o botão
+   **"Sair (Esc)"**, que não recebe o esconder e continua visível — ninguém fica preso.
+   O Modo TV no tablet serve para **mostrar** a tela, não para trabalhar nela. Se um dia for preciso
+   operar em Modo TV no tablet, isso é feature nova, não ajuste.
