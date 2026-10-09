@@ -110,6 +110,7 @@ const TURNO: RegraValida = {
   limiteOcorrencias: null,
   pausaMaxMin: null,
   lembreteMin: null,
+  horaResumo: null,
   intervalos: [
     { inicio: '07:00', fim: '12:00' },
     { inicio: '13:30', fim: '17:30' },
@@ -330,8 +331,8 @@ function sbAvaliar(intervalos: unknown[], regras?: unknown[]) {
       ? {
           data:
             regras ?? [
-              { id: 'r1', janela_tipo: 'intervalos', janela_valor: 60 },
-              { id: 'r2', janela_tipo: 'intervalos', janela_valor: 60 },
+              { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+              { id: 'r2', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
             ],
           ...SEM_ERRO,
         }
@@ -360,11 +361,13 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
           p_blocos: {
             r1: { inicio: '2026-10-06T12:00:00.000Z', fim: '2026-10-06T13:00:00.000Z' },
           },
+          p_resumos: {},
         },
       },
     ])
-    // Duas consultas no total: as regras e os intervalos de todas elas.
-    expect(chamadas.map((c) => c.tabela)).toEqual(['alerta_regras', 'alerta_regra_intervalos'])
+    // Duas consultas para os blocos (as regras e os intervalos de todas elas) + UMA do resumo
+    // (as regras de resumo; sem nenhuma devida, os intervalos nem são lidos).
+    expect(chamadas.map((c) => c.tabela)).toEqual(['alerta_regras', 'alerta_regra_intervalos', 'alerta_regras'])
     expect(chamadas[1]!.filtros).toEqual([['regra_id', ['r1', 'r2']]])
   })
 
@@ -376,6 +379,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     expect(chamadas[0]!.filtros).toEqual([
       ['ativa', true],
       ['excluida_em', null],
+      ['tipo', 'aprovacao'],
       ['janela_tipo', 'intervalos'],
     ])
   })
@@ -384,11 +388,52 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     vi.useFakeTimers()
     vi.setSystemTime(AS_10_30)
     const { sb, rpcs } = sbAvaliar([MANHA, { ...MANHA, regra_id: 'r9' }], [
-      { id: 'r1', janela_tipo: 'intervalos', janela_valor: 60 },
-      { id: 'r9', janela_tipo: 'tempo', janela_valor: 60 },
+      { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+      { id: 'r9', tipo: 'aprovacao', janela_tipo: 'tempo', janela_valor: 60 },
     ])
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
     expect(Object.keys(rpcs[0]!.args.p_blocos as object)).toEqual(['r1'])
+  })
+
+  it('⚠️ regra de RESUMO (janela intervalos, valor nulo) fica fora do mapa e NÃO suja o log (0141)', async () => {
+    // A 0141 faz a regra de resumo nascer com janela_tipo='intervalos' e janela_valor nulo. Se
+    // `blocosDaRodada` a lesse, a guarda do passo gritaria a cada 5 minutos, por regra: falso
+    // positivo permanente que esconderia o defeito de verdade. O resumo não tem bloco nenhum.
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_10_30)
+    // O fake devolve as MESMAS linhas para a consulta do resumo (não filtra por tipo), então toda
+    // linha traz hora_resumo: o banco de verdade só devolve ali regras de resumo, com hora.
+    const { sb, rpcs } = sbAvaliar([MANHA], [
+      { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60, hora_resumo: '18:00:00' },
+      { id: 'rResumo', tipo: 'resumo', janela_tipo: 'intervalos', janela_valor: null, hora_resumo: '18:00:00' },
+    ])
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(Object.keys(rpcs[0]!.args.p_blocos as object)).toEqual(['r1'])
+    expect(erro).not.toHaveBeenCalled()
+    erro.mockRestore()
+  })
+
+  it('resumo cuja hora_resumo não chega como texto grita com o id da regra (M-1)', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_10_30)
+    const { sb } = sbAvaliar([], [{ id: 'rSemHora', tipo: 'resumo', janela_tipo: 'intervalos', hora_resumo: 1800 }])
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(erro.mock.calls.map((a) => a.map(String).join(' ')).join('\n')).toContain('rSemHora')
+    erro.mockRestore()
+  })
+
+  it('o teste do resumo não é vácuo: a mesma fixture com uma SEGUNDA aprovação a inclui no mapa', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_10_30)
+    const { sb, rpcs } = sbAvaliar([MANHA, { ...MANHA, regra_id: 'r3' }], [
+      { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+      { id: 'r3', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
+      { id: 'rResumo', tipo: 'resumo', janela_tipo: 'intervalos', janela_valor: null },
+    ])
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(Object.keys(rpcs[0]!.args.p_blocos as object)).toEqual(['r1', 'r3'])
   })
 
   it('regra de janela intervalos SEM intervalo cadastrado fica fora do mapa — e isso vai pro log', async () => {
@@ -416,7 +461,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.useFakeTimers()
     vi.setSystemTime(AS_10_30)
-    const { sb, rpcs } = sbAvaliar([MANHA], [{ id: 'r1', janela_tipo: 'intervalos', janela_valor: '60' }])
+    const { sb, rpcs } = sbAvaliar([MANHA], [{ id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: '60' }])
 
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
 
@@ -432,7 +477,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
       const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.useFakeTimers()
       vi.setSystemTime(AS_10_30)
-      const { sb, rpcs } = sbAvaliar([MANHA], [{ id: 'r1', janela_tipo: 'intervalos', janela_valor: passo }])
+      const { sb, rpcs } = sbAvaliar([MANHA], [{ id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: passo }])
       await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
       expect(rpcs[0]!.args.p_blocos).toEqual({})
       expect(erro.mock.calls.length).toBeGreaterThan(0)
@@ -450,7 +495,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
 
     await criarRepositorioServico(sb, { DISCORD_CANAL_ID: 'C9' } as unknown as NodeJS.ProcessEnv).avaliar()
 
-    expect(rpcs[0]!.args).toEqual({ p_canal_discord: 'C9', p_blocos: {} })
+    expect(rpcs[0]!.args).toEqual({ p_canal_discord: 'C9', p_blocos: {}, p_resumos: {} })
     expect(erro.mock.calls.length).toBeGreaterThan(0)
     erro.mockRestore()
   })
@@ -461,12 +506,113 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
     vi.setSystemTime(AS_10_30)
     const { sb, rpcs } = sbFake((c) =>
       c.tabela === 'alerta_regras'
-        ? { data: [{ id: 'r1', janela_tipo: 'intervalos', janela_valor: 60 }], ...SEM_ERRO }
+        ? { data: [{ id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 }], ...SEM_ERRO }
         : { data: null, error: { message: 'permission denied' } },
     )
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
     expect(rpcs[0]!.args.p_blocos).toEqual({})
     expect(erro.mock.calls.length).toBeGreaterThan(0)
+    erro.mockRestore()
+  })
+})
+
+// =============================================================================================
+// O MAPA p_resumos DA RODADA (0141)
+// =============================================================================================
+
+/** 18:30 em São Paulo (21:30 UTC) — a hora do resumo (18:00) já chegou. */
+const AS_18_30 = new Date('2026-10-08T21:30:00Z')
+
+function sbResumo(regrasResumo: unknown[], intervalos: unknown[]) {
+  return sbFake((c) => {
+    if (c.tabela === 'alerta_regras') {
+      // O caminho do resumo pede tipo='resumo'; o dos blocos, tipo='aprovacao'. Cada um recebe o seu.
+      const tipo = c.filtros.find(([col]) => col === 'tipo')?.[1]
+      return { data: tipo === 'resumo' ? regrasResumo : [], ...SEM_ERRO }
+    }
+    return { data: intervalos, ...SEM_ERRO }
+  })
+}
+
+const T_RES = [
+  { regra_id: 'rr1', inicio: '07:00:00', fim: '12:00:00' },
+  { regra_id: 'rr1', inicio: '13:00:00', fim: '17:00:00' },
+]
+
+describe('avaliar — monta o p_resumos (dia e faixas de São Paulo, prontos)', () => {
+  it('regra cuja hora chegou entra com o DIA de SP e as faixas em instantes ISO', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_18_30)
+    const { sb, rpcs } = sbResumo([{ id: 'rr1', hora_resumo: '18:00', resumo_enviado_em: null }], T_RES)
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(rpcs[0]!.args.p_resumos).toEqual({
+      rr1: {
+        dia: '2026-10-08',
+        faixas: [
+          { inicio: '2026-10-08T10:00:00.000Z', fim: '2026-10-08T15:00:00.000Z' },
+          { inicio: '2026-10-08T16:00:00.000Z', fim: '2026-10-08T20:00:00.000Z' },
+        ],
+      },
+    })
+  })
+
+  it('01:30 UTC de 09/10 ainda é 08/10 em SP: o dia mandado é 08, não 09', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-09T01:30:00Z')) // 22:30 SP
+    const { sb, rpcs } = sbResumo([{ id: 'rr1', hora_resumo: '18:00', resumo_enviado_em: null }], T_RES)
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    const r = (rpcs[0]!.args.p_resumos as Record<string, { dia: string }>).rr1
+    expect(r?.dia).toBe('2026-10-08')
+  })
+
+  it('antes da hora, ou já enviado HOJE, fica fora do mapa; enviado ontem entra', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_18_30)
+    const { sb, rpcs } = sbResumo(
+      [
+        { id: 'rr1', hora_resumo: '19:00', resumo_enviado_em: null }, // ainda não chegou
+        { id: 'rr2', hora_resumo: '18:00', resumo_enviado_em: '2026-10-08' }, // já mandou hoje
+        { id: 'rr3', hora_resumo: '18:00', resumo_enviado_em: '2026-10-07' }, // mandou ontem
+      ],
+      [...T_RES, { ...T_RES[0], regra_id: 'rr3' }],
+    )
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(Object.keys(rpcs[0]!.args.p_resumos as object)).toEqual(['rr3'])
+  })
+
+  it('a consulta das regras pede só resumo ATIVO e vivo; o filtro da aprovação (I-3) segue intacto', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_18_30)
+    const { sb, chamadas } = sbResumo([], [])
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    const regras = chamadas.filter((c) => c.tabela === 'alerta_regras').map((c) => c.filtros)
+    expect(regras).toContainEqual([['ativa', true], ['excluida_em', null], ['tipo', 'aprovacao'], ['janela_tipo', 'intervalos']])
+    expect(regras).toContainEqual([['ativa', true], ['excluida_em', null], ['tipo', 'resumo']])
+  })
+
+  it('regra de resumo sem intervalo legível fica fora do mapa e vai pro log', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_18_30)
+    const { sb, rpcs } = sbResumo([{ id: 'rr1', hora_resumo: '18:00', resumo_enviado_em: null }], [])
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(rpcs[0]!.args.p_resumos).toEqual({})
+    expect(erro.mock.calls.map((a) => a.map(String).join(' ')).join('\n')).toContain('rr1')
+    erro.mockRestore()
+  })
+
+  it('erro ao ler as regras de resumo: log e a rodada SEGUE com p_resumos vazio', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    vi.setSystemTime(AS_18_30)
+    const { sb, rpcs } = sbFake((c) => {
+      const tipo = c.filtros.find(([col]) => col === 'tipo')?.[1]
+      return tipo === 'resumo' ? { data: null, error: { message: 'boom' } } : { data: [], ...SEM_ERRO }
+    })
+    await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
+    expect(rpcs).toHaveLength(1)
+    expect(rpcs[0]!.args.p_resumos).toEqual({})
+    expect(erro).toHaveBeenCalled()
     erro.mockRestore()
   })
 })

@@ -3,7 +3,19 @@
 O ShopFloor agora manda `Content-Security-Policy: frame-ancestors <dashboard>` nas rotas `/embed/*`
 e `frame-ancestors 'self'` no resto (`next.config.ts`).
 
-**Problema:** o navegador honra `X-Frame-Options` **independentemente** do CSP. A revisão de segurança
+**Problema — com uma nuance que importa:** pela especificação do CSP Level 2, quando a resposta traz
+`Content-Security-Policy: frame-ancestors`, o navegador **tem que IGNORAR** o `X-Frame-Options`.
+Chrome, Firefox e Edge atuais fazem isso. Ou seja: depois do deploy que põe o `frame-ancestors`, o
+iframe provavelmente **já funciona** nesses navegadores, mesmo com o `SAMEORIGIN` do nginx no lugar.
+
+⚠️ **O ajuste continua necessário**, e não é formalidade: navegador que **não** implementa
+`frame-ancestors` (Safari antigo, e principalmente o motor embutido das TVs onde o Dashboard vai
+rodar) volta a obedecer o `X-Frame-Options` e bloqueia o iframe. Como a gente não controla o
+navegador das TVs, a exceção no nginx é o que garante o funcionamento em todos.
+
+**Nota de histórico:** a versão anterior deste documento afirmava que o navegador honra o
+`X-Frame-Options` *independentemente* do CSP. Está errado para os navegadores atuais; a correção
+veio da equipe do Dashboard em 07/10/2026. A revisão de segurança
 de 21/09 ligou HSTS, X-Frame e nosniff, e **`X-Frame-Options` não está em nenhum arquivo versionado**
 (`deploy/aws/nginx-shopfloor-aws.conf` não tem `add_header`; o Next também não o define). Logo ele
 vem do nginx do servidor. Se for `SAMEORIGIN` ou `DENY`, o iframe do dashboard **não carrega**,

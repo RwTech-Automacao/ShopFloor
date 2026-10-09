@@ -41,6 +41,17 @@ describe('postoServeAoTipo', () => {
     expect(postoServeAoTipo('aprovacao', EMBALAGEM)).toBe(false)
   })
 
+  it('resumo diário: só quem dá Aprovado/Reprovado (posto de passagem sumiria do relatório)', () => {
+    // Positivo primeiro: sem isso a negativa abaixo passaria mesmo com o filtro quebrado.
+    expect(postoServeAoTipo('resumo', TESTE)).toBe(true)
+    expect(postoServeAoTipo('resumo', NQA)).toBe(true)
+    expect(postoServeAoTipo('resumo', EMBALAGEM)).toBe(false)
+    // E o formulário não oferece o posto sem status, mas oferece o que tem.
+    const chaves = postosOferecidos('resumo', FLUXO, []).map((p) => p.chave)
+    expect(chaves).toContain('Teste')
+    expect(chaves).not.toContain('Embalagem')
+  })
+
   it('defeito repetido: só quem registra o código do defeito', () => {
     expect(postoServeAoTipo('defeito', TESTE)).toBe(true)
     expect(postoServeAoTipo('defeito', NQA)).toBe(false)

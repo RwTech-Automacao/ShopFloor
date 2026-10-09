@@ -113,15 +113,16 @@ export function validarIntervalos(lista: unknown, passoMin: number | null): Resu
 const FUSO = 'America/Sao_Paulo'
 
 /**
- * Partes da data no fuso da fábrica, não no do processo. `hourCycle: 'h23'` fica declarado para
+ * Partes da data e da hora no fuso da fábrica (ano, mês, dia, hora 0–23 e minuto), não no do processo. `hourCycle: 'h23'` fica declarado para
  * o dia nunca depender do ciclo de hora que o locale escolher (ver `deslocamentoMin`).
  */
-function partesSp(d: Date): { ano: number; mes: number; dia: number } {
+export function partesSp(d: Date): { ano: number; mes: number; dia: number; hora: number; minuto: number } {
   const p = new Intl.DateTimeFormat('en-CA', {
-    timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit', hourCycle: 'h23',
+    timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(d)
   const achar = (t: string) => Number(p.find((x) => x.type === t)?.value ?? '0')
-  return { ano: achar('year'), mes: achar('month'), dia: achar('day') }
+  return { ano: achar('year'), mes: achar('month'), dia: achar('day'), hora: achar('hour'), minuto: achar('minute') }
 }
 
 /**
@@ -146,7 +147,7 @@ function deslocamentoMin(d: Date): number {
  * diferir do deslocamento do instante correto numa fronteira de horário de verão. O Brasil não
  * tem horário de verão desde 2019, mas a conta não custa nada e não depende disso continuar.
  */
-function instanteSp(ano: number, mes: number, dia: number, minutosDoDia: number): Date {
+export function instanteSp(ano: number, mes: number, dia: number, minutosDoDia: number): Date {
   const palpite = Date.UTC(ano, mes - 1, dia) + minutosDoDia * 60_000
   const d1 = deslocamentoMin(new Date(palpite))
   const corrigido = palpite - d1 * 60_000

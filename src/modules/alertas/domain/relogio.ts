@@ -29,6 +29,12 @@ export function formatarDataHoraCurta(d: Date): string {
   return `${p.day}/${p.month} ${p.hour}:${p.minute}`
 }
 
+/** '07/10' — o dia (no fuso da fábrica) a que um resumo se refere. */
+export function formatarDia(d: Date): string {
+  const p = partes(d, { day: '2-digit', month: '2-digit' })
+  return `${p.day}/${p.month}`
+}
+
 /** '14:05' */
 export function formatarHora(d: Date): string {
   const p = partes(d, { hour: '2-digit', minute: '2-digit', hour12: false })

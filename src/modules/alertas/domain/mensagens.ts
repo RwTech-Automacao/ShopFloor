@@ -6,10 +6,10 @@ import {
 import { formatarMeta, formatarTaxa } from './taxa'
 import { textoJanela, type Janela } from './janela'
 import { formatarMmSs } from './tempo'
-import { formatarDataHoraCurta, formatarDuracao, formatarHora } from './relogio'
+import { formatarDataHoraCurta, formatarDia, formatarDuracao, formatarHora } from './relogio'
 
 // Reexportadas para quem já importava daqui (ver o cabeçalho de relogio.ts).
-export { formatarDataHoraCurta, formatarDuracao, formatarHora } from './relogio'
+export { formatarDataHoraCurta, formatarDia, formatarDuracao, formatarHora } from './relogio'
 
 
 /**
@@ -199,15 +199,15 @@ export function rotulosPosicoes(posicoes: readonly (string | null | undefined)[]
  * resto do alerta vale mais que meia lista).
  */
 function listaComCorte(
-  itens: readonly string[], orcamento: number, singular: string, plural: string,
+  itens: readonly string[], orcamento: number, singular: string, plural: string, separador = ', ',
 ): string {
   if (itens.length === 0) return ''
-  const tudo = itens.join(', ')
+  const tudo = itens.join(separador)
   if (tudo.length <= orcamento) return tudo
   for (let n = itens.length - 1; n >= 1; n -= 1) {
     const restantes = itens.length - n
     const texto =
-      `${itens.slice(0, n).join(', ')}, … e mais ${restantes} ${restantes === 1 ? singular : plural}`
+      `${itens.slice(0, n).join(separador)}${separador}… e mais ${restantes} ${restantes === 1 ? singular : plural}`
     if (texto.length <= orcamento) return texto
   }
   return ''
@@ -392,4 +392,38 @@ export function textoReabertura(
 export function textoLembreteTipo(alerta: string, abertaEm: Date, em: Date): string {
   const min = Math.max(0, Math.floor((em.getTime() - abertaEm.getTime()) / 60_000))
   return `⏰ Lembrete — continua há ${min} min\n${alerta}`
+}
+
+// ---------------------------------------------------------------------------
+// Resumo diário: a taxa do DIA INTEIRO de cada posto, na hora que o gestor escolheu
+// ---------------------------------------------------------------------------
+
+export interface LinhaResumo {
+  posto: string
+  aprovados: number
+  reprovados: number
+}
+
+/**
+ * Uma linha por posto, com a taxa do dia. Postos sem bipe JÁ VÊM FORA da lista (quem chama filtra).
+ *
+ * Uma regra com muitos postos passaria dos 2000 do Discord, que RECUSA a mensagem inteira. O corte
+ * é o mesmo das posições (`listaComCorte`), só que com uma linha por posto: "… e mais 12 postos". O
+ * orçamento é o que sobra do limite depois do cabeçalho e do `\n` que o separa da lista. Sem
+ * `MARGEM_CABECALHO`: o resumo não vira lembrete nem reabertura, ninguém embrulha este texto.
+ */
+export function textoResumo(nomeRegra: string, dia: Date, linhas: readonly LinhaResumo[]): string {
+  // Nome de regra absurdo: o próprio cabeçalho cederia o limite, então é ele que é aparado.
+  const cabecalho = cortarUtf16(`📊 Resumo do dia ${formatarDia(dia)} — ${nomeRegra}`, LIMITE_MENSAGEM)
+  if (linhas.length === 0) return cabecalho
+  // Concordância: "1 aprovado", "0 aprovados", "2 aprovados" (zero é plural em português).
+  const n = (v: number, s: string, p: string) => `${v} ${v === 1 ? s : p}`
+  const itens = linhas.map(
+    (l) =>
+      `${l.posto}: ${formatarTaxa(l.aprovados, l.reprovados)}% · ` +
+      `${n(l.aprovados, 'aprovado', 'aprovados')}, ${n(l.reprovados, 'reprovado', 'reprovados')}`,
+  )
+  const lista = listaComCorte(itens, LIMITE_MENSAGEM - cabecalho.length - 1, 'posto', 'postos', '\n')
+  // Nem um posto cabe com o aviso (nome de regra gigante): a mensagem inteira vale mais que a lista.
+  return lista === '' ? cabecalho : `${cabecalho}\n${lista}`
 }

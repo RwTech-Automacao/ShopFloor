@@ -65,7 +65,9 @@ export function useConfirmacao(): UseConfirmacao {
         <DialogHeader>
           <DialogTitle>{opcoes?.titulo}</DialogTitle>
           {/* base-ui exige Description para acessibilidade; fica vazia se não houver. */}
-          <DialogDescription>{opcoes?.descricao ?? ''}</DialogDescription>
+          {/* whitespace-pre-line: a descrição pode vir com \n para listar itens um por linha
+              (ex.: os consertos da Manutenção). Texto de uma linha só não muda. */}
+          <DialogDescription className="whitespace-pre-line">{opcoes?.descricao ?? ''}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => responder(false)}>

@@ -53,6 +53,24 @@ export async function mapaPostoColetivo(): Promise<Record<string, boolean>> {
   return mapa
 }
 
+/**
+ * Os postos que ALGUÉM escolheu em "Depois da Manutenção, passar por" (0102).
+ *
+ * É a lista de destinos, não de origens: a chave aqui é o posto pelo qual a peça reparada precisa
+ * repassar. A tela usa isso pra decidir, SEM ir ao servidor, se vale perguntar pelos consertos.
+ */
+export async function mapaPostoRotaDestino(): Promise<Set<string>> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.from('sf_postos').select('retorno_pos_manutencao')
+  if (error) throw error
+  const destinos = new Set<string>()
+  for (const row of (data as { retorno_pos_manutencao: string | null }[]) ?? []) {
+    const d = (row.retorno_pos_manutencao ?? '').trim()
+    if (d !== '') destinos.add(d)
+  }
+  return destinos
+}
+
 export async function postoEmUsoEmOrdem(chave: string): Promise<boolean> {
   const supabase = await createServerSupabase()
   const { count, error } = await supabase.from('sf_ordem_postos').select('*', { count: 'exact', head: true }).eq('posto', chave)

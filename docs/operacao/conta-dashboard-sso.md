@@ -17,11 +17,27 @@ ambiente (cria o perfil "Dashboard (somente leitura)").
 
 ## Passo a passo
 
-1. **Criar no GoTrue.** No Supabase Studio do ambiente: Authentication > Users > Add user >
-   *Create new user*, e-mail `dashboard@enterplak.com.br`, marcar *Auto Confirm User*.
-   Senha: gere uma aleatoria longa so para o formulario aceitar e **descarte** (nao anote, nao
-   compartilhe). Ela nunca sera usada. Se precisar de outro metodo (API admin), pergunte ao
-   Matheus pelas credenciais — nao as coloque aqui.
+1. **Criar no GoTrue.**
+
+   ⚠️ **O Studio NAO serve na AWS:** a porta 8000 foi fechada na revisao de seguranca de 21/09.
+   Use a **API admin do GoTrue**, que responde em `localhost` de dentro da instancia (feito assim
+   no Prod em 08/10/2026, funcionou de primeira):
+
+   ```bash
+   # 1. carrega a chave de servico SEM imprimir
+   cd ~/supabase/docker && export SRK=$(grep -m1 '^SERVICE_ROLE_KEY=' .env | cut -d= -f2-)
+   printf 'achou=%s tamanho=%s\n' "$([ -n "$SRK" ] && echo sim || echo NAO)" "${#SRK}"
+
+   # 2. cria a conta; a senha e gerada na hora e ninguem a ve
+   curl -s -X POST http://localhost:8000/auth/v1/admin/users \
+     -H "apikey: $SRK" -H "Authorization: Bearer $SRK" -H "Content-Type: application/json" \
+     -d "{\"email\":\"dashboard@enterplak.com.br\",\"password\":\"$(openssl rand -base64 36)\",\"email_confirm\":true}"
+   ```
+
+   Devolve um JSON com `id` e o e-mail. A senha nunca e usada: a conta entra so por SSO.
+
+   No Studio (Dev, ou qualquer ambiente onde ele esteja acessivel) o caminho equivalente e
+   Authentication > Users > Add user > *Create new user*, com *Auto Confirm User* marcado.
 2. **Linha em `public.usuarios`.** O gatilho `on_auth_user_created` cria a linha sozinho, com o
    perfil padrao "Consulta". Confira que ela existe; se nao existir, crie com o mesmo `id` do
    `auth.users`.

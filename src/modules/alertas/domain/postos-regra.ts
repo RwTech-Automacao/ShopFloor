@@ -25,12 +25,15 @@ export function postoRegraDe(chave: string, perfil: PerfilPosto): PostoRegra {
  *  - aprovação: só quem grava status. `alerta_taxas` conta apenas os bipes Aprovado/Reprovado, então
  *    num posto de passagem (Inicial, Integração, Embalagem, Printer) a janela vem com 0 amostras e a
  *    regra nunca fica avaliável. Inspeção NQA ENTRA: ela reprova, só não guarda código de defeito.
+ *  - resumo: igual à aprovação. `0141` só conta Aprovado/Reprovado; posto de passagem não tem linha
+ *    e seria removido do relatório em silêncio.
  *  - defeito: só quem registra o código. `alerta_defeitos` exige status reprovado E
  *    `codigo_defeito` preenchido — sem código não há o que repetir.
  *  - tempo médio: qualquer posto, que todo posto tem intervalo entre um bipe e o próximo.
  */
 export function postoServeAoTipo(tipo: TipoRegra, posto: PostoRegra): boolean {
-  if (tipo === 'aprovacao') return posto.temStatus
+  // O resumo traz a taxa de aprovação: posto sem status não tem linha Aprovado/Reprovado e sumiria.
+  if (tipo === 'aprovacao' || tipo === 'resumo') return posto.temStatus
   if (tipo === 'defeito') return posto.coletaDefeito
   return true
 }

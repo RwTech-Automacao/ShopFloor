@@ -3,7 +3,7 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { ehCanal, ehJanelaTipo, ehTipoRegra, type EstadoOcorrencia } from '../domain/tipos'
 import type { DestinatarioDisponivel, PreviaValida, RegraAlerta, RegraValida } from '../domain/regra'
 import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/ocorrencia'
-import { lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
+import { formatarHhMm, lerHhMm, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
 import { periodoOcorrencias } from '../domain/ocorrencia'
 import { lerResolucao } from '../domain/resolucao'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
@@ -11,7 +11,7 @@ import type { ResultadoResolver } from '../application/portas'
 
 const CAMPOS_REGRA =
   'id, tipo, nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes, limite_tempo_seg, ' +
-  'limite_ocorrencias, pausa_max_min, pmos, lembrete_min, canais, destinatarios, ' +
+  'limite_ocorrencias, pausa_max_min, pmos, lembrete_min, hora_resumo, canais, destinatarios, ' +
   'avisar_pessoas, avisar_canal, ativa, atualizado_em'
 
 interface LinhaRegra {
@@ -28,6 +28,8 @@ interface LinhaRegra {
   pausa_max_min: number | null
   pmos: string[] | null
   lembrete_min: number | null
+  /** `time` no Postgres: o PostgREST entrega texto 'HH:MM:SS'. `unknown` de propósito — o tipo é afirmado em `lerHoraResumo`. */
+  hora_resumo: unknown
   canais: string[] | null
   destinatarios: string[] | null
   avisar_pessoas: boolean | null
@@ -56,6 +58,27 @@ function erroDeBanco(error: { code?: string; message: string }): string {
   return mensagemErroAlerta(error.message)
 }
 
+/**
+ * A hora do resumo como o banco entrega (`time` → texto 'HH:MM:SS', às vezes sem os segundos) para
+ * o 'HH:MM' do resto do módulo. ⚠️ O tipo é AFIRMADO, como o `janela_valor` na 0139: se a coluna
+ * mudar de tipo e chegar outra coisa, a regra de resumo ficaria sem hora e deixaria de sair SEM um
+ * log. Por isso, numa regra de resumo, o que não é hora legível vira `console.error` com o id.
+ * Regra de outro tipo não usa a coluna: devolve null sem barulho.
+ */
+function lerHoraResumo(l: LinhaRegra): string | null {
+  if (l.tipo !== 'resumo') return null
+  const bruto = l.hora_resumo
+  const minutos = lerHhMm(typeof bruto === 'string' ? bruto.slice(0, 5) : bruto)
+  if (minutos === null) {
+    console.error(
+      `[alertas] regra ${l.id}: hora_resumo não chegou como hora legível ('HH:MM:SS') — ` +
+        `o resumo desta regra NÃO vai sair. Recebido: ${JSON.stringify(bruto)} (${typeof bruto})`,
+    )
+    return null
+  }
+  return formatarHhMm(minutos)
+}
+
 function paraRegra(l: LinhaRegra, intervalos: Intervalo[]): RegraAlerta {
   return {
     id: l.id,
@@ -74,6 +97,7 @@ function paraRegra(l: LinhaRegra, intervalos: Intervalo[]): RegraAlerta {
     // Os intervalos do turno vêm da tabela FILHA (alerta_regra_intervalos), carregada de uma vez
     // para todas as regras da lista. Janela que não é 'intervalos' não tem nenhum.
     intervalos,
+    horaResumo: lerHoraResumo(l),
     canais: (l.canais ?? []).filter(ehCanal),
     destinatarios: l.destinatarios ?? [],
     // Banco ainda sem a 0123 (deploy antes da migração): o comportamento de hoje é avisar as pessoas.
@@ -103,6 +127,9 @@ function paraLinha(r: RegraValida, comTipo: boolean): Record<string, unknown> {
     pausa_max_min: r.pausaMaxMin,
     pmos: r.pmos,
     lembrete_min: r.lembreteMin,
+    // Só a HORA é gravada pela aplicação. `resumo_enviado_em` (a marca de "já enviei hoje") é
+    // escrita SÓ pelo banco, dentro da alerta_avaliar: duas fontes nela = relatório duas vezes.
+    hora_resumo: r.tipo === 'resumo' ? r.horaResumo : null,
     canais: r.canais,
     destinatarios: r.destinatarios,
     avisar_pessoas: r.avisarPessoas,

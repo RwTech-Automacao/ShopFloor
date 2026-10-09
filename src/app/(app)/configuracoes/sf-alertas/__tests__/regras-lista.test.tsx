@@ -27,6 +27,7 @@ const BASE: RegraAlerta = {
   pausaMaxMin: 30,
   lembreteMin: null,
   intervalos: [],
+  horaResumo: null,
   canais: ['telegram'],
   avisarPessoas: true,
   avisarCanal: false,
@@ -99,5 +100,45 @@ describe('RegrasLista', () => {
     expect(screen.getAllByText('Blocos de 1 h').length).toBeGreaterThan(0)
     expect(screen.getAllByText('≥ 95%').length).toBeGreaterThan(0)
     expect(screen.queryByText(/Últimos/)).toBeNull()
+  })
+
+  it('resumo diário: Limite vira traço, Janela mostra a hora (nunca "Blocos de") e sem null/undefined/NaN', () => {
+    const { container } = render(
+      <RegrasLista
+        regras={[
+          BASE,
+          {
+            ...BASE,
+            id: 'r3',
+            tipo: 'resumo',
+            nome: 'Fechamento do dia',
+            janelaTipo: 'intervalos',
+            janelaValor: null,
+            minimoBipes: null,
+            limiteTempoSeg: null,
+            pausaMaxMin: null,
+            horaResumo: '18:00',
+          },
+        ]}
+        postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
+        pmos={[]}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
+        configurados={{ telegram: true, discord: true }}
+        canalConfigurado
+      />,
+    )
+    // Positivo antes do negativo: a tela montou com a outra regra e com o resumo.
+    expect(screen.getAllByText('Teste lento').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('≤ 2:00/peça').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Fechamento do dia').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Resumo diário').length).toBeGreaterThan(0)
+
+    const linha = screen.getAllByText('Fechamento do dia')[0]!.closest('tr') as HTMLElement
+    const celulas = Array.from(linha.querySelectorAll('td')).map((c) => c.textContent)
+    expect(celulas[3]).toBe('—') // Limite
+    expect(celulas[4]).toBe('Dia inteiro, às 18:00') // Janela
+    const texto = container.textContent ?? ''
+    expect(texto).not.toMatch(/null|undefined|NaN/)
+    expect(texto).not.toContain('Blocos de')
   })
 })

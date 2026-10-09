@@ -214,13 +214,13 @@ describe('avaliar', () => {
   it('passa o canal do Discord do ambiente (DISCORD_CANAL_ID) para o alerta_avaliar', async () => {
     const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ocupado: false }, error: null }) })
     await criarRepositorioServico(sb, { DISCORD_CANAL_ID: 'C9' } as unknown as NodeJS.ProcessEnv).avaliar()
-    expect(rpcs).toEqual([{ nome: 'alerta_avaliar', args: { p_canal_discord: 'C9', p_blocos: {} } }])
+    expect(rpcs).toEqual([{ nome: 'alerta_avaliar', args: { p_canal_discord: 'C9', p_blocos: {}, p_resumos: {} } }])
   })
 
   it('sem a variável, manda null: nenhuma linha de canal é enfileirada', async () => {
     const { sb, rpcs } = sbFalso({ rpc: () => ({ data: { ocupado: false }, error: null }) })
     await criarRepositorioServico(sb, {} as NodeJS.ProcessEnv).avaliar()
-    expect(rpcs[0]!.args).toEqual({ p_canal_discord: null, p_blocos: {} })
+    expect(rpcs[0]!.args).toEqual({ p_canal_discord: null, p_blocos: {}, p_resumos: {} })
   })
 })
 
