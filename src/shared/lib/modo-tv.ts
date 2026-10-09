@@ -14,12 +14,17 @@ export function lerModoTv(valor: string | string[] | undefined): boolean {
 }
 
 /**
- * Os três controles de operação (Filtro, Zoom, Defeitos) só aparecem no hover quando a tela está
- * NO EMBED (com ou sem `?modo=tv`) OU em Modo TV (prop `modoTv` ou tela cheia do navegador).
+ * Os controles de operação só aparecem no hover quando a tela está NO EMBED (com ou sem
+ * `?modo=tv`) OU em Modo TV (prop `modoTv` ou tela cheia do navegador).
  *
- * ⚠️ Só a tela normal fora do Modo TV mantém os três sempre visíveis: o Fluxo é usado em TABLET
- * pelos supervisores, e tablet não tem hover — esconder lá deixaria os três inalcançáveis. Este é
- * o ÚNICO ponto da decisão (usuário, 09/10: o embed esconde SEMPRE, não só em apresentação).
+ * QUAIS controles são, depende de onde: na tela normal e no Modo TV dela são TRÊS (Filtro, Zoom,
+ * Defeitos); no EMBED são DOIS (Filtro e Zoom), porque Defeitos saiu do embed em 09/10 — no
+ * Dashboard o embutido é tela de Fluxo e mais nada. Esta função não distingue: ela só responde
+ * "esconder ou não"; quem não existe no embed simplesmente não é renderizado lá.
+ *
+ * ⚠️ Só a tela normal fora do Modo TV mantém os controles sempre visíveis: o Fluxo é usado em
+ * TABLET pelos supervisores, e tablet não tem hover — esconder lá deixaria os três inalcançáveis.
+ * Este é o ÚNICO ponto da decisão (usuário, 09/10: o embed esconde SEMPRE, não só em apresentação).
  */
 export function controlesSoNoHover(emEmbed: boolean, emModoTv: boolean): boolean {
   return emEmbed || emModoTv

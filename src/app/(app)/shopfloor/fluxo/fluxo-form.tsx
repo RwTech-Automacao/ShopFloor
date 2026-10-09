@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { ReactFlow, Background, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance } from '@xyflow/react'
+import { ReactFlow, Background, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance, type FitViewOptions } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight } from 'lucide-react'
 import { toast } from 'sonner'
@@ -38,6 +38,48 @@ function lerLayout(pmo: string, op: string): Map<string, { x: number; y: number 
     return new Map()
   }
 }
+
+/**
+ * Barra do Modo TV (PMO/OP + relógio + progresso): é um OVERLAY `absolute top-0` por cima do
+ * canvas, não um irmão dele — então o canvas inteiro fica atrás dela. Quem depende da altura dela
+ * tem DUAS exigências bem diferentes:
+ *
+ * - **O ENQUADRAMENTO precisa da altura EXATA.** Ela decide se o card fica visível ou atrás da
+ *   barra. Por isso a altura usada no `fitView` é MEDIDA do elemento em tempo de execução
+ *   (`alturaBarraTv`), não um número daqui: a altura real varia por aparelho (resolução da TV,
+ *   zoom do navegador, fonte do sistema) e por conteúdo (o PMO/OP quebrando em tela estreita, a %
+ *   saindo de "—" pra um número). Primeiro fixamos 4rem e o usuário mediu na TV: ficou CURTO, a
+ *   fileira de cima saiu sem a borda. Qualquer constante estaria errada em alguma tela.
+ * - **O LAYOUT se contenta com aproximação.** As classes abaixo são CSS e não têm como ler a
+ *   medição (o Tailwind v4 varre o código-fonte: `top-[${x}rem]` montado em runtime não gera CSS).
+ *   Elas só empurram painel e botões pra baixo da barra, e um fio de folga a mais ou a menos não
+ *   esconde nada. ⚠️ Registro do estado de hoje: elas JÁ DISCORDAM entre si — o `aside` usa 4rem
+ *   e os controles 4.75rem (4rem + respiro). É aproximação de layout, e está tudo bem assim.
+ */
+const BARRA_TV = {
+  /** PISO da reserva do enquadramento (4rem), pra antes da 1ª medição e pra medição estranha.
+   *  Nunca é a palavra final: o que vale é o maior entre isto e o que a barra mede. */
+  px: 64,
+  /** Painel lateral do posto: começa embaixo da barra (4rem) e ocupa o resto. Aproximação. */
+  aside: 'top-16 h-[calc(100%-4rem)]',
+  /** Controles logo abaixo da barra: 4rem dela + 0.75rem de respiro. Aproximação. */
+  abaixo: 'top-[4.75rem]',
+} as const
+/** Folga entre a barra e a primeira fileira de cards — pra o card não ENCOSTAR na barra. */
+const FOLGA_BARRA_TV = 8
+/** Reserva no topo: a altura MEDIDA da barra, com `BARRA_TV.px` de PISO, mais a folga.
+ *  O piso vale sempre, não só no primeiro render: medição estranha (barra escondida, meio de uma
+ *  transição, jsdom) devolveria o fluxo pra trás da barra — e reservar 0 é o próprio sintoma. */
+function reservaTopo(altura: number): number {
+  return Math.max(altura, BARRA_TV.px) + FOLGA_BARRA_TV
+}
+/** Opções do `fitView`. SEM barra devolve `undefined` = o padrão do React Flow, como era antes de
+ *  tudo isso: fora do Modo TV não pode haver margem extra no topo. */
+function opcoesEnquadrar(comBarra: boolean, altura: number): FitViewOptions | undefined {
+  return comBarra ? { padding: { x: PADDING_PADRAO, y: PADDING_PADRAO, top: `${reservaTopo(altura)}px` } } : undefined
+}
+/** Padrão do React Flow (`padding: 0.1` ≈ 4,5% de cada lado). Mantido nos lados que a barra não ocupa. */
+const PADDING_PADRAO = 0.1
 
 interface Listas { agora: SnDoPosto[]; historico: PassagemPosto[] }
 const LISTAS_VAZIAS: Listas = { agora: [], historico: [] }
@@ -576,7 +618,9 @@ export function FluxoForm({
   }, [nodes, onNodesChange])
 
   // Salva o layout (posição de cada nó) da OP no localStorage desta máquina.
+  // NO EMBED NÃO GRAVA: um arrasto acidental na TV viraria o "padrão" daquele aparelho pra sempre.
   const salvarLayout = useCallback(() => {
+    if (embed) return
     const { pmo, op } = ctx.current
     if (!pmo || !op) return
     setNodes((cur) => {
@@ -586,7 +630,7 @@ export function FluxoForm({
       try { localStorage.setItem(chaveLayout(pmo, op), JSON.stringify(mapa)) } catch { /* storage cheio/off */ }
       return cur
     })
-  }, [setNodes])
+  }, [embed, setNodes])
 
   const onNodeDragStop = useCallback(() => { setGuiaH(undefined); setGuiaV(undefined); salvarLayout() }, [salvarLayout])
 
@@ -596,7 +640,9 @@ export function FluxoForm({
     const [pmo, op] = v.split('||')
     if (!pmo || !op) return
     ctx.current = { pmo, op }
-    layoutRef.current = lerLayout(pmo, op) // recupera o arranjo salvo desta OP nesta máquina
+    // NO EMBED IGNORA O ARRANJO SALVO: o que vale na TV é a melhor visualização possível (arranjo
+    // padrão do domínio + enquadramento automático), não o que alguém arrastou naquela máquina.
+    layoutRef.current = embed ? new Map() : lerLayout(pmo, op)
     startCarregar(async () => {
       const r = await carregarFluxo(pmo, op)
       if (!r.ok) { toast.error(r.erro); return }
@@ -606,7 +652,7 @@ export function FluxoForm({
       setAtualizadoMs(Date.now())
       setBuscou(true)
     })
-  }, [])
+  }, [embed])
 
   const escolher = useCallback((v: string) => {
     setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
@@ -874,7 +920,7 @@ export function FluxoForm({
   // Navegação por setas Fluxo ↔ Defeitos (→ abre Defeitos, ← volta pro Fluxo). Fora da apresentação
   // (que usa as setas pros slides) e ignorando quando o foco está num campo de texto ou num diálogo.
   useEffect(() => {
-    if (apresentando) return
+    if (apresentando || embed) return // no embed Defeitos não existe: a seta também não pode abrir
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
       if (!buscou || opAberto || snAberto) return
@@ -884,7 +930,7 @@ export function FluxoForm({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [apresentando, buscou, opAberto, snAberto])
+  }, [apresentando, buscou, embed, opAberto, snAberto])
   // Não iniciadas (fila do 1º posto): vêm do nó Entrada; mostradas no detalhe do 1º posto pra explicar o badge
   // (essas peças ainda não têm SN bipado, então não aparecem na lista "Pendentes no posto").
   const naoIniciadasPrimeiro = aberto && aberto === postosOP[0] ? (dom.find((n) => n.id === ENTRADA)?.data.wip ?? 0) : 0
@@ -918,9 +964,43 @@ export function FluxoForm({
   const [zoomPct, setZoomPct] = useState(100)
   const [telaCheiaApi, setTelaCheiaApi] = useState(false) // espelho do `fullscreenchange`
   const telaCheia = telaCheiaApi || modoTv // `modoTv` = ligado por fora, sem API
-  // Filtro, Zoom e Defeitos: só no hover no embed e no Modo TV; na tela normal ficam sempre
-  // visíveis (tablet não tem hover).
+  // Controles de operação só no hover no embed e no Modo TV; na tela normal ficam sempre visíveis
+  // (tablet não tem hover). São Filtro + Zoom + Defeitos na tela normal e no Modo TV dela; no
+  // EMBED são só Filtro + Zoom, porque lá Defeitos não existe (decisão de 09/10).
   const soNoHover = classeSoNoHover(controlesSoNoHover(embed, telaCheia))
+
+  // ===== Enquadrar (fitView) reservando a barra do Modo TV =====
+  // A barra é overlay por cima do canvas (ver BARRA_TV): com ela visível, o enquadramento tem de
+  // reservar o topo, senão a 1ª fileira de cards fica atrás dela. Fora do Modo TV não há barra e
+  // NÃO pode haver margem extra (sobraria espaço no topo da tela normal sem motivo).
+  const barraTvVisivel = telaCheia && !apresentando
+  const barraTvEl = useRef<HTMLDivElement>(null) // a barra, pra MEDIR a altura real
+  const [alturaBarraTv, setAlturaBarraTv] = useState(0) // 0 = ainda não medida (cai no piso)
+  // Refs espelhando os dois: as chamadas de `fitView` saem de `setTimeout`/`ResizeObserver`, que
+  // leriam o valor do render em que foram agendadas — ao ENTRAR no Modo TV isso seria o "sem barra".
+  const barraTvVisivelRef = useRef(false)
+  const alturaBarraTvRef = useRef(0)
+  useEffect(() => { barraTvVisivelRef.current = barraTvVisivel }, [barraTvVisivel])
+  // Mede a barra e continua medindo: ela muda de altura quando o PMO/OP quebra em tela estreita e
+  // quando a % sai de "—" pra um número. Sem barra, zera (não há o que reservar).
+  useEffect(() => {
+    const el = barraTvVisivel ? barraTvEl.current : null
+    if (!el) { alturaBarraTvRef.current = 0; setAlturaBarraTv(0); return }
+    const medir = () => {
+      const h = Math.round(el.getBoundingClientRect().height)
+      alturaBarraTvRef.current = h // o ref vai junto: `enquadrar` é estável e lê daqui
+      setAlturaBarraTv(h)
+    }
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [barraTvVisivel])
+  const enquadrar = useCallback((extra?: FitViewOptions) => {
+    rfRef.current?.fitView({ ...extra, ...opcoesEnquadrar(barraTvVisivelRef.current, alturaBarraTvRef.current) })
+  }, [])
+  // Primeiro desenho (prop `fitView` do <ReactFlow>): aí o valor do render é o certo.
+  const fitViewInicial = useMemo(() => opcoesEnquadrar(barraTvVisivel, alturaBarraTv), [alturaBarraTv, barraTvVisivel])
   const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
     // Não há o que alternar: no Modo TV por prop e no embed a tela cheia (se houver) é do Dashboard.
@@ -933,7 +1013,9 @@ export function FluxoForm({
   // Redefinir: descarta o layout salvo desta OP e volta os cards pra posição padrão do domínio.
   const redefinirLayout = useCallback(() => {
     const { pmo, op } = ctx.current
-    if (pmo && op) { try { localStorage.removeItem(chaveLayout(pmo, op)) } catch { /* storage off */ } }
+    // O embed não é dono desse arranjo (não lê e não grava): também não apaga o de quem usa a tela
+    // normal no mesmo navegador. Lá ele só reaplica a serpentina e re-enquadra.
+    if (!embed && pmo && op) { try { localStorage.removeItem(chaveLayout(pmo, op)) } catch { /* storage off */ } }
     layoutRef.current = new Map()
     setGuiaH(undefined)
     setGuiaV(undefined)
@@ -941,8 +1023,8 @@ export function FluxoForm({
       const d = dom.find((x) => x.id === n.id)
       return d ? { ...n, position: { x: d.x, y: d.y } } : n
     }))
-    setTimeout(() => rfRef.current?.fitView(), 0)
-  }, [dom, setNodes])
+    setTimeout(() => enquadrar(), 0)
+  }, [dom, embed, enquadrar, setNodes])
   useEffect(() => {
     if (modoTv) return // o modo é por prop; evento de tela cheia (do Dashboard) não decide nada aqui
     const onFs = () => {
@@ -950,11 +1032,11 @@ export function FluxoForm({
       setTelaCheiaApi(emTv)
       setContainerTv(emTv ? canvasRef.current : null) // captura o alvo do portal fora do render (regra dos refs)
       if (!emTv) setApresentando(false) // saiu da tela cheia (Esc/botão) → encerra a apresentação
-      setTimeout(() => rfRef.current?.fitView(), 120)
+      setTimeout(() => enquadrar(), 120)
     }
     document.addEventListener('fullscreenchange', onFs)
     return () => document.removeEventListener('fullscreenchange', onFs)
-  }, [modoTv])
+  }, [enquadrar, modoTv])
 
   // Com `modoTv` não há `fullscreenElement`: o diálogo do SN (HistoricoSnDialog) precisa renderizar
   // DENTRO do canvas (que aqui é `fixed inset-0 z-50` e cria o próprio contexto de empilhamento),
@@ -962,9 +1044,51 @@ export function FluxoForm({
   useEffect(() => {
     if (!modoTv) return
     setContainerTv(canvasRef.current)
-    const t = setTimeout(() => rfRef.current?.fitView(), 120)
+    const t = setTimeout(() => enquadrar(), 120)
     return () => { clearTimeout(t); setContainerTv(null) }
-  }, [modoTv])
+  }, [enquadrar, modoTv])
+
+  // ===== O embed se enquadra sozinho =====
+  // ⚠️ SÓ NO EMBED. Na tela normal a pessoa posiciona o fluxo de propósito (e o arranjo dela fica
+  // salvo): re-enquadrar sozinho desfaria isso na frente dela.
+  //
+  // (a) Quando o CONJUNTO de nós muda — os cards chegaram, a OP trocou, a OP ganhou um posto. A
+  //     prop `fitView` do <ReactFlow> enquadra só na primeira montagem, quando ainda não há card
+  //     nenhum. A chave é só a lista de ids: o refresh de 20s muda os NÚMEROS dos cards, e
+  //     enquadrar a cada 20s faria o fluxo pular na TV sem motivo.
+  const chaveNos = useMemo(() => nodes.map((n) => n.id).join('|'), [nodes])
+  useEffect(() => {
+    if (!embed || !chaveNos) return
+    // O respiro deixa o React Flow MEDIR os cards novos antes do enquadramento (o mesmo 120 das
+    // outras chamadas): medidos como 0×0, o fit sairia errado.
+    const t = setTimeout(() => enquadrar(), 120)
+    return () => clearTimeout(t)
+  }, [chaveNos, embed, enquadrar])
+
+  // (a2) Quando a ALTURA MEDIDA da barra muda. O primeiro desenho usa o piso (a barra ainda não
+  //      foi medida), então a medida chegando é a hora de enquadrar com a reserva de verdade — e
+  //      depois a cada vez que a barra mudar de altura.
+  useEffect(() => {
+    if (!embed || !alturaBarraTv) return
+    const t = setTimeout(() => enquadrar(), 120)
+    return () => clearTimeout(t)
+  }, [alturaBarraTv, embed, enquadrar])
+
+  // (b) Quando o CANVAS muda de tamanho. No embed o iframe acerta o tamanho depois do primeiro
+  //     desenho (e o Dashboard muda o tamanho ao entrar/sair da tela cheia dele): o enquadramento
+  //     feito antes vira sobra ou corte. O debounce evita enquadrar a cada pixel da transição.
+  useEffect(() => {
+    if (!embed) return
+    const el = canvasRef.current
+    if (!el) return
+    let t: ReturnType<typeof setTimeout> | undefined
+    const ro = new ResizeObserver(() => {
+      if (t) clearTimeout(t)
+      t = setTimeout(() => enquadrar(), 150)
+    })
+    ro.observe(el)
+    return () => { if (t) clearTimeout(t); ro.disconnect() }
+  }, [embed, enquadrar])
 
   // Lista de OPs: busca no banco quantos BIPES cada OP teve no período (0120) — com período, só
   // aparecem as OPs com bipe; em "Tudo" (período vazio) ninguém some, a contagem só ORDENA a lista
@@ -1253,6 +1377,7 @@ export function FluxoForm({
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
+            fitViewOptions={fitViewInicial}
             // O padrão do React Flow (0.5 a 2) é apertado pra este canvas: OP com muitos postos não
             // cabe inteira no mínimo, e no detalhe de um card 2× ainda é pouco pra ler de longe.
             minZoom={0.1}
@@ -1275,15 +1400,16 @@ export function FluxoForm({
                   onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })}
                   onMais={() => rfRef.current?.zoomIn({ duration: 200 })}
                   onMenos={() => rfRef.current?.zoomOut({ duration: 200 })}
-                  onEnquadrar={() => rfRef.current?.fitView({ duration: 200 })}
+                  onEnquadrar={() => enquadrar({ duration: 200 })}
                 />
               </div>
             </Panel>
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
-          {/* Botão de canto "Defeitos" — no canvas (canto inferior-direito); alcança no Modo TV também. */}
-          {buscou && !defeitosAberto && (
+          {/* Botão de canto "Defeitos" — no canvas (canto inferior-direito); alcança no Modo TV também.
+              FORA DO EMBED (09/10): no Dashboard o embutido é tela de Fluxo e mais nada. */}
+          {buscou && !embed && !defeitosAberto && (
             <button
               type="button"
               onClick={() => setDefeitosAberto(true)}
@@ -1293,8 +1419,9 @@ export function FluxoForm({
               <Bug className="size-4" /> Defeitos <ChevronRight className="size-4 opacity-60" />
             </button>
           )}
-          {/* Painel de Defeitos da OP — dentro do Fluxo (cobre o canvas); funciona no Modo TV/apresentação. */}
-          {defeitosAberto && (
+          {/* Painel de Defeitos da OP — dentro do Fluxo (cobre o canvas); funciona no Modo TV/apresentação.
+              Não é só esconder o botão: no embed o painel não pode nem ser renderizado. */}
+          {!embed && defeitosAberto && (
             <div className="absolute inset-0 z-50 flex flex-col gap-2 bg-card p-3">
               <div className="flex shrink-0 items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1314,14 +1441,14 @@ export function FluxoForm({
               title={`Filtro & busca de SN — ${rotuloJanela(janela, custom)}`}
               aria-label="Filtro e busca de SN"
               // Com a aba lateral do posto aberta (w-80 = 20rem), desloca pra fora dela pra não cobrir o X de fechar.
-              className={`absolute z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? 'top-[4.75rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'} ${soNoHover}`}
+              className={`absolute z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? BARRA_TV.abaixo : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'} ${soNoHover}`}
             >
               <SlidersHorizontal className="size-4" />
             </button>
           )}
           {/* Painel de Filtro + Busca — barra HORIZONTAL no topo, NÃO cobre o fluxo (dá pra ver o resultado). */}
           {filtroAberto && (
-            <div className={`absolute left-3 z-40 rounded-xl border border-border bg-card p-3 shadow-xl ${telaCheia ? 'top-[4.75rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'}`}>
+            <div className={`absolute left-3 z-40 rounded-xl border border-border bg-card p-3 shadow-xl ${telaCheia ? BARRA_TV.abaixo : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'}`}>
               <div className="flex flex-wrap items-end gap-x-4 gap-y-2 pr-8">
                 {/* Busca de SN */}
                 <div className="flex flex-col gap-1">
@@ -1430,7 +1557,9 @@ export function FluxoForm({
           )}
 
           {telaCheia && !apresentando && (
-            <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
+            // `barra-modo-tv` + o ref existem pra ela ser MEDIDA (ver BARRA_TV): a altura real
+            // varia por aparelho, e é ela que o enquadramento reserva no topo.
+            <div ref={barraTvEl} className="barra-modo-tv absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
               <div className="min-w-0">
                 <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
               </div>
@@ -1462,7 +1591,7 @@ export function FluxoForm({
 
           {detalhe && (
             // Em Modo TV o cabeçalho (z-20) ocupa o topo; o aside desce pra baixo dele (senão o X fica coberto e não fecha).
-            <aside className={`absolute right-0 z-30 flex w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur ${telaCheia ? 'top-16 h-[calc(100%-4rem)]' : 'top-0 h-full'}`}>
+            <aside className={`absolute right-0 z-30 flex w-80 max-w-[85%] flex-col border-l border-border bg-card/95 text-foreground shadow-lg backdrop-blur ${telaCheia ? BARRA_TV.aside : 'top-0 h-full'}`}>
               <header className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{detalhe.posto}</p>
