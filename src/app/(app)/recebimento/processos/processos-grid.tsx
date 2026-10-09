@@ -21,11 +21,13 @@ import { carregarValoresColuna } from '@/modules/recebimento/application/carrega
 import { rotuloMes } from '@/modules/recebimento/domain/agrupamento-mes'
 import { estadoDaDivergencia } from '@/modules/recebimento/domain/divergencia'
 import {
+  FILTROS_RAPIDOS,
   TAMANHOS_PAGINA,
   codificarEstadoGrid,
   rotulosOrdenacao,
   type EstadoGrid,
   type FiltroColuna,
+  type FiltroRapido,
 } from '@/modules/recebimento/domain/estado-grid'
 import { rotuloStatusProcesso } from '@/modules/recebimento/domain/status-processo'
 import type { ColunaGrid } from '@/modules/recebimento/infra/processo-repository'
@@ -51,6 +53,14 @@ interface Otimista {
 }
 
 type AoAbrirJustificativa = (linha: Record<string, unknown>) => void
+
+/** Rótulo de cada filtro rápido, como o usuário pediu em 09/10/2026. "Divergências" é TODA
+ *  divergência (justificada ou não); as outras duas são o recorte pelo sinal. */
+const ROTULOS_RAPIDOS: Record<FiltroRapido, string> = {
+  divergencias: 'Divergências',
+  positivas: 'positivas',
+  negativas: 'negativas',
+}
 
 function textoJustificativa(linha: Record<string, unknown>): string {
   return typeof linha.divergencia_justificativa === 'string' ? linha.divergencia_justificativa : ''
@@ -135,12 +145,44 @@ export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, 
     })
   }
 
+  /** Um só estado: clicar no que já está ligado desliga (volta a mostrar tudo); clicar noutro
+   *  troca. Zera a página, como os filtros de coluna — a página 8 do conjunto de antes não
+   *  existe no conjunto de agora. */
+  function alternarRapido(valor: FiltroRapido) {
+    aplicar({ ...estado, rapido: estado.rapido === valor ? undefined : valor, pagina: 0 })
+  }
+
   const primeira = total === 0 ? 0 : estado.pagina * estado.tamanho + 1
   const ultima = Math.min((estado.pagina + 1) * estado.tamanho, total)
   const temProxima = ultima < total
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Filtros rápidos: o selo `?` da linha não trava a finalização, então uma divergência
+          pode ficar esquecida para sempre numa base de dezenas de milhares de linhas — são
+          estes botões que a fazem aparecer. Mesma pílula dos chips de filtro da tela. */}
+      <div
+        role="group"
+        aria-label="Filtros rápidos de divergência"
+        className="flex flex-wrap items-center gap-2"
+      >
+        {FILTROS_RAPIDOS.map((valor) => {
+          const ligado = estado.rapido === valor
+          return (
+            <button
+              key={valor}
+              type="button"
+              aria-pressed={ligado}
+              title={ligado ? 'Clique de novo para tirar o filtro' : undefined}
+              className={classeChipTrigger(ligado, false)}
+              onClick={() => alternarRapido(valor)}
+            >
+              {ROTULOS_RAPIDOS[valor]}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="hidden lg:block">
         <ScrollHorizontalTopo>
           <Table containerClassName="max-h-[70vh] overflow-auto rounded-lg border border-border" className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
