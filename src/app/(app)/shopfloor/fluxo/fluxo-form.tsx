@@ -923,7 +923,9 @@ export function FluxoForm({
   const soNoHover = classeSoNoHover(controlesSoNoHover(embed, telaCheia))
   const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
-    if (modoTv) return // não há o que alternar: a tela cheia (se houver) é do Dashboard
+    // Não há o que alternar: no Modo TV por prop e no embed a tela cheia (se houver) é do Dashboard.
+    // Protege qualquer chamador, além do botão (que também some no embed).
+    if (modoTv || embed) return
     if (document.fullscreenElement) void document.exitFullscreen()
     else void canvasRef.current?.requestFullscreen?.()
   }
@@ -1130,7 +1132,7 @@ export function FluxoForm({
                 {linhaReta ? 'Linha curva' : 'Linha 90°'}
               </Button>
             )}
-            {buscou && (
+            {buscou && !embed && ( // no embed a tela cheia é do Dashboard: o botão não pode existir
               <Button variant="outline" size="sm" onClick={alternarTv}>
                 <Maximize2 className="mr-1 size-4" /> Modo TV
               </Button>

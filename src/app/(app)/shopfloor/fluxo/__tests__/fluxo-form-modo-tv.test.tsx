@@ -86,6 +86,43 @@ describe('FluxoForm com modoTv (embed em Modo TV)', () => {
     expect(exitFullscreen).not.toHaveBeenCalled()
   })
 
+  // A sonda que denuncia a sabotagem: o teste acima nunca passa por `alternarTv`/`iniciarApresentacao`.
+  // `modoTv` SEM `embed` é um estado válido do componente e mantém o botão na tela.
+  it('com modoTv, clicar em "Modo TV" NÃO pede a tela cheia ao navegador', async () => {
+    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} modoTv />)
+    await esperarCarregar()
+    fireEvent.click(screen.getByRole('button', { name: /Modo TV/ }))
+    expect(requestFullscreen).not.toHaveBeenCalled()
+    expect(exitFullscreen).not.toHaveBeenCalled()
+  })
+
+  it('no embed (com ou sem modoTv) o botão "Modo TV" não existe', async () => {
+    const { unmount } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />)
+    await esperarCarregar()
+    expect(screen.queryByRole('button', { name: /Modo TV/ })).not.toBeInTheDocument()
+    unmount()
+    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
+    await esperarCarregar()
+    expect(screen.queryByRole('button', { name: /Modo TV/ })).not.toBeInTheDocument()
+  })
+
+  // Caminho de `alternarTv` com embed: o outro chamador é o "Sair (Esc)" da barra, que aparece
+  // quando o documento do iframe reporta tela cheia. Com embed ele não pode mexer na tela cheia.
+  it('no embed, "Sair (Esc)" (outro chamador de alternarTv) NÃO mexe na tela cheia', async () => {
+    const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />)
+    await esperarCarregar()
+    const canvas = container.querySelector('.fluxo-canvas') as HTMLElement
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => canvas })
+    try {
+      fireEvent(document, new Event('fullscreenchange'))
+      fireEvent.click(await screen.findByText(/Sair \(Esc\)/))
+      expect(requestFullscreen).not.toHaveBeenCalled()
+      expect(exitFullscreen).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => null })
+    }
+  })
+
   // Par positivo: sem ele o "não chamou" acima passaria mesmo com o espião quebrado.
   it('sem modoTv o botão "Modo TV" continua pedindo a tela cheia ao navegador', async () => {
     render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} />)
