@@ -41,24 +41,43 @@ function lerLayout(pmo: string, op: string): Map<string, { x: number; y: number 
 
 /**
  * Barra do Modo TV (PMO/OP + relógio + progresso): é um OVERLAY `absolute top-0` por cima do
- * canvas, não um irmão dele — então o canvas inteiro fica atrás dela.
+ * canvas, não um irmão dele — então o canvas inteiro fica atrás dela. Quem depende da altura dela
+ * tem DUAS exigências bem diferentes:
  *
- * TUDO que depende da altura dessa barra sai daqui. Eram 3 literais repetidos da mesma medida
- * (painel lateral, botão do filtro, painel do filtro) e o enquadramento virou o 4º cliente: sem
- * reservar o topo, o `fitView` usa o canvas inteiro e a PRIMEIRA FILEIRA de cards vai parar atrás
- * da barra — é o "cortado" que o usuário viu na TV em 09/10.
- *
- * As classes são literais porque o Tailwind v4 varre o código-fonte: `top-[${x}rem]` montado em
- * tempo de execução não gera CSS. O número único fica no `px`, e os literais apontam pra ele.
+ * - **O ENQUADRAMENTO precisa da altura EXATA.** Ela decide se o card fica visível ou atrás da
+ *   barra. Por isso a altura usada no `fitView` é MEDIDA do elemento em tempo de execução
+ *   (`alturaBarraTv`), não um número daqui: a altura real varia por aparelho (resolução da TV,
+ *   zoom do navegador, fonte do sistema) e por conteúdo (o PMO/OP quebrando em tela estreita, a %
+ *   saindo de "—" pra um número). Primeiro fixamos 4rem e o usuário mediu na TV: ficou CURTO, a
+ *   fileira de cima saiu sem a borda. Qualquer constante estaria errada em alguma tela.
+ * - **O LAYOUT se contenta com aproximação.** As classes abaixo são CSS e não têm como ler a
+ *   medição (o Tailwind v4 varre o código-fonte: `top-[${x}rem]` montado em runtime não gera CSS).
+ *   Elas só empurram painel e botões pra baixo da barra, e um fio de folga a mais ou a menos não
+ *   esconde nada. ⚠️ Registro do estado de hoje: elas JÁ DISCORDAM entre si — o `aside` usa 4rem
+ *   e os controles 4.75rem (4rem + respiro). É aproximação de layout, e está tudo bem assim.
  */
 const BARRA_TV = {
-  /** 4rem — o que o enquadramento reserva no topo (um pouco mais que a altura real = respiro). */
+  /** PISO da reserva do enquadramento (4rem), pra antes da 1ª medição e pra medição estranha.
+   *  Nunca é a palavra final: o que vale é o maior entre isto e o que a barra mede. */
   px: 64,
-  /** Painel lateral do posto: começa embaixo da barra (4rem) e ocupa o resto. */
+  /** Painel lateral do posto: começa embaixo da barra (4rem) e ocupa o resto. Aproximação. */
   aside: 'top-16 h-[calc(100%-4rem)]',
-  /** Controles logo abaixo da barra: 4rem dela + 0.75rem de respiro. */
+  /** Controles logo abaixo da barra: 4rem dela + 0.75rem de respiro. Aproximação. */
   abaixo: 'top-[4.75rem]',
 } as const
+/** Folga entre a barra e a primeira fileira de cards — pra o card não ENCOSTAR na barra. */
+const FOLGA_BARRA_TV = 8
+/** Reserva no topo: a altura MEDIDA da barra, com `BARRA_TV.px` de PISO, mais a folga.
+ *  O piso vale sempre, não só no primeiro render: medição estranha (barra escondida, meio de uma
+ *  transição, jsdom) devolveria o fluxo pra trás da barra — e reservar 0 é o próprio sintoma. */
+function reservaTopo(altura: number): number {
+  return Math.max(altura, BARRA_TV.px) + FOLGA_BARRA_TV
+}
+/** Opções do `fitView`. SEM barra devolve `undefined` = o padrão do React Flow, como era antes de
+ *  tudo isso: fora do Modo TV não pode haver margem extra no topo. */
+function opcoesEnquadrar(comBarra: boolean, altura: number): FitViewOptions | undefined {
+  return comBarra ? { padding: { x: PADDING_PADRAO, y: PADDING_PADRAO, top: `${reservaTopo(altura)}px` } } : undefined
+}
 /** Padrão do React Flow (`padding: 0.1` ≈ 4,5% de cada lado). Mantido nos lados que a barra não ocupa. */
 const PADDING_PADRAO = 0.1
 
@@ -955,17 +974,33 @@ export function FluxoForm({
   // reservar o topo, senão a 1ª fileira de cards fica atrás dela. Fora do Modo TV não há barra e
   // NÃO pode haver margem extra (sobraria espaço no topo da tela normal sem motivo).
   const barraTvVisivel = telaCheia && !apresentando
-  // Um ref espelhando o estado: as chamadas de `fitView` saem de `setTimeout`/`ResizeObserver`, que
+  const barraTvEl = useRef<HTMLDivElement>(null) // a barra, pra MEDIR a altura real
+  const [alturaBarraTv, setAlturaBarraTv] = useState(0) // 0 = ainda não medida (cai no piso)
+  // Refs espelhando os dois: as chamadas de `fitView` saem de `setTimeout`/`ResizeObserver`, que
   // leriam o valor do render em que foram agendadas — ao ENTRAR no Modo TV isso seria o "sem barra".
-  const barraTvRef = useRef(false)
-  useEffect(() => { barraTvRef.current = barraTvVisivel }, [barraTvVisivel])
-  const opcoesEnquadrar = (comBarra: boolean): FitViewOptions | undefined =>
-    comBarra ? { padding: { x: PADDING_PADRAO, y: PADDING_PADRAO, top: `${BARRA_TV.px}px` } } : undefined
+  const barraTvVisivelRef = useRef(false)
+  const alturaBarraTvRef = useRef(0)
+  useEffect(() => { barraTvVisivelRef.current = barraTvVisivel }, [barraTvVisivel])
+  // Mede a barra e continua medindo: ela muda de altura quando o PMO/OP quebra em tela estreita e
+  // quando a % sai de "—" pra um número. Sem barra, zera (não há o que reservar).
+  useEffect(() => {
+    const el = barraTvVisivel ? barraTvEl.current : null
+    if (!el) { alturaBarraTvRef.current = 0; setAlturaBarraTv(0); return }
+    const medir = () => {
+      const h = Math.round(el.getBoundingClientRect().height)
+      alturaBarraTvRef.current = h // o ref vai junto: `enquadrar` é estável e lê daqui
+      setAlturaBarraTv(h)
+    }
+    medir()
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [barraTvVisivel])
   const enquadrar = useCallback((extra?: FitViewOptions) => {
-    rfRef.current?.fitView({ ...extra, ...opcoesEnquadrar(barraTvRef.current) })
+    rfRef.current?.fitView({ ...extra, ...opcoesEnquadrar(barraTvVisivelRef.current, alturaBarraTvRef.current) })
   }, [])
   // Primeiro desenho (prop `fitView` do <ReactFlow>): aí o valor do render é o certo.
-  const fitViewInicial = useMemo(() => opcoesEnquadrar(barraTvVisivel), [barraTvVisivel])
+  const fitViewInicial = useMemo(() => opcoesEnquadrar(barraTvVisivel, alturaBarraTv), [alturaBarraTv, barraTvVisivel])
   const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
     // Não há o que alternar: no Modo TV por prop e no embed a tela cheia (se houver) é do Dashboard.
@@ -1029,6 +1064,15 @@ export function FluxoForm({
     const t = setTimeout(() => enquadrar(), 120)
     return () => clearTimeout(t)
   }, [chaveNos, embed, enquadrar])
+
+  // (a2) Quando a ALTURA MEDIDA da barra muda. O primeiro desenho usa o piso (a barra ainda não
+  //      foi medida), então a medida chegando é a hora de enquadrar com a reserva de verdade — e
+  //      depois a cada vez que a barra mudar de altura.
+  useEffect(() => {
+    if (!embed || !alturaBarraTv) return
+    const t = setTimeout(() => enquadrar(), 120)
+    return () => clearTimeout(t)
+  }, [alturaBarraTv, embed, enquadrar])
 
   // (b) Quando o CANVAS muda de tamanho. No embed o iframe acerta o tamanho depois do primeiro
   //     desenho (e o Dashboard muda o tamanho ao entrar/sair da tela cheia dele): o enquadramento
@@ -1513,7 +1557,9 @@ export function FluxoForm({
           )}
 
           {telaCheia && !apresentando && (
-            <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
+            // `barra-modo-tv` + o ref existem pra ela ser MEDIDA (ver BARRA_TV): a altura real
+            // varia por aparelho, e é ela que o enquadramento reserva no topo.
+            <div ref={barraTvEl} className="barra-modo-tv absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-6 border-b border-border bg-card/85 px-6 py-3 backdrop-blur">
               <div className="min-w-0">
                 <p className="truncate text-2xl font-bold leading-tight">{opInfo.pmo}/{opInfo.op}</p>
               </div>

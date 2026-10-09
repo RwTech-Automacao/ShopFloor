@@ -158,17 +158,44 @@ fluxo cabe. O problema é que a **barra do Modo TV** (PMO/OP + relógio + progre
 a barra tapa, e a primeira fileira de cards vai parar atrás dela. Por isso re-enquadrar, sozinho,
 não resolveria.
 
-**Correção:** com a barra visível, toda chamada de `fitView` passa `padding: { top: '64px', x, y }`
-(o `FitViewOptions.padding` do `@xyflow/react` 12.11.2 aceita valor **por lado**, em px ou %). Os
-lados que a barra não ocupa mantêm o padrão do React Flow (`0.1`), senão os cards colariam nas
-bordas. **Fora do Modo TV não há barra e não há margem extra** — senão o Fluxo da tela normal
-passaria a sobrar espaço no topo sem motivo.
+**Correção:** com a barra visível, toda chamada de `fitView` passa
+`padding: { top: '<altura da barra + 8>px', x: 0.1, y: 0.1 }` — o `FitViewOptions.padding` do
+`@xyflow/react` 12.11.2 aceita valor **por lado**, em px ou %. Os lados que a barra não ocupa
+mantêm o padrão do React Flow (`0.1`), senão os cards colariam nas bordas. **Fora do Modo TV não há
+barra e não há margem extra** — senão o Fluxo da tela normal passaria a sobrar espaço no topo sem
+motivo.
 
-A altura da barra agora tem **um único lugar**: a constante `BARRA_TV` em `fluxo-form.tsx`. Eram
-três literais repetidos da mesma medida (painel lateral `top-16 h-[calc(100%-4rem)]`, botão do
-filtro e painel do filtro `top-[4.75rem]`) e o enquadramento virou o quarto cliente. As classes
-seguem literais porque o Tailwind v4 varre o código-fonte (`top-[${x}rem]` montado em runtime não
-gera CSS), mas apontam todas pro mesmo número.
+### A altura da barra é MEDIDA, não constante
+
+> ⚠️ A primeira versão desta correção fixou **4rem (64px)**, com o argumento de que o layout já
+> tratava a barra como 4rem. **O usuário testou na TV e ficou curto**: a fileira de cima aparecia
+> sem a borda de cima. Trocado por medição no mesmo dia. A frase "a altura da barra tem um único
+> lugar, a constante `BARRA_TV`" **não vale mais** — está substituída pelo que vem abaixo.
+
+A conta explica o erro: `py-3` (24px) + `text-3xl leading-none` (30px) sobre `text-xs` (12px) + a
+borda ≈ **67–70px**, não 64. Mas o motivo forte não é o número: **a altura real varia por
+aparelho** — resolução da TV, zoom do navegador, fonte do sistema — e por conteúdo (o PMO/OP
+quebrando em tela estreita, a % saindo de `—` pra um número). Qualquer constante estaria errada em
+alguma tela, e a próxima TV não é a tela onde medimos.
+
+Como ficou:
+
+- `ref` na `<div>` da barra (marcada com a classe `barra-modo-tv`), altura lida com
+  `getBoundingClientRect().height`, guardada em estado e **observada por `ResizeObserver`** — a
+  barra muda de altura sozinha.
+- A reserva do `fitView` é `max(altura medida, 64px) + 8px`. Os 8px são a folga explícita pra o
+  card não **encostar** na barra.
+- Os 64px viraram **piso**, não valor: antes da primeira medição (e numa medição estranha — barra
+  escondida, meio de transição) o enquadramento nunca reserva 0, que é o próprio sintoma.
+- No embed, **a medida chegar re-enquadra**: o primeiro desenho usa o piso, e o fit de verdade sai
+  quando a barra foi medida.
+
+**O que NÃO pode ser medido continua constante, e isso é intencional.** Os três literais de
+Tailwind (`top-16 h-[calc(100%-4rem)]` no painel lateral, `top-[4.75rem]` nos controles) são CSS e
+não têm como ler a medição — e não precisam: eles só empurram painel e botões pra baixo da barra, e
+um fio de folga a mais ou a menos não **esconde** nada. **A única medida que precisa ser exata é a
+do enquadramento**, porque é ela que decide se o card fica visível. Registro do estado de hoje:
+esses literais **já discordam entre si** — o painel usa 4rem e os controles 4.75rem.
 
 ### 3. Defeitos sai do embed
 

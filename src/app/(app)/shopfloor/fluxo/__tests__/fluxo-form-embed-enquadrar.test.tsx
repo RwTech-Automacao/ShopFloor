@@ -205,25 +205,80 @@ describe('a barra do Modo TV reserva espaço no topo ao enquadrar', () => {
   // A barra (PMO/OP + relógio + progresso) é um overlay `absolute top-0` POR CIMA do canvas: sem
   // reservar o topo, o `fitView` usa o canvas inteiro e a primeira fileira de cards vai parar
   // atrás dela. Foi o que o usuário viu como "cortado" na TV (09/10).
+  //
+  // A reserva é a altura MEDIDA da barra, não uma constante: a altura real varia por aparelho
+  // (resolução da TV, zoom do navegador, fonte do sistema) e também por conteúdo (o PMO/OP
+  // quebrando em tela estreita, a % saindo de "—" pra um número). A primeira versão fixou 64px e
+  // o usuário mediu na tela: ficou CURTA, a fileira de cima saiu sem a borda de cima.
   const topoReservado = (o: FitViewOptions | undefined) =>
     typeof o?.padding === 'object' ? (o.padding as { top?: unknown }).top : undefined
 
-  it('com a barra (modoTv): o enquadramento reserva o topo', async () => {
+  /** O jsdom não faz layout: a barra mede 0. Aqui se diz quanto ela "mede" e avisa o observador. */
+  function fingirAlturaDaBarra(container: HTMLElement, altura: number) {
+    const barra = container.querySelector('.barra-modo-tv')
+    expect(barra, 'a barra do Modo TV precisa existir pra ser medida').not.toBeNull()
+    Object.defineProperty(barra!, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ height: altura, width: 1280, top: 0, left: 0, right: 1280, bottom: altura, x: 0, y: 0, toJSON: () => ({}) }),
+    })
+    dispararResize() // o ResizeObserver da barra re-mede
+  }
+
+  it('a reserva ACOMPANHA a altura medida da barra (não é constante)', async () => {
     const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
     await esperarCarregar()
+    const canvas = container.querySelector('.fluxo-canvas')!
+    await waitFor(() => expect(observam(canvas)).toBe(true))
+
+    // Barra de 100px → 100 + FOLGA (8).
+    await act(async () => { fingirAlturaDaBarra(container, 100) })
+    fitView.mockClear()
+    await act(async () => { dispararResize() })
+    await waitFor(() => expect(fitView).toHaveBeenCalled())
+    expect(topoReservado(opcoesDoUltimoFit())).toBe('108px')
+
+    // A MESMA barra mais alta (texto quebrou / % apareceu) → a reserva cresce junto.
+    await act(async () => { fingirAlturaDaBarra(container, 140) })
+    fitView.mockClear()
+    await act(async () => { dispararResize() })
+    await waitFor(() => expect(fitView).toHaveBeenCalled())
+    expect(topoReservado(opcoesDoUltimoFit())).toBe('148px')
+  })
+
+  it('enquanto a barra não foi medida, a reserva cai no piso (nunca 0)', async () => {
+    // Primeiro desenho: o React Flow ainda não mediu nada e a barra pode medir 0. Reservar 0 faria
+    // o primeiro enquadramento nascer cortado, que é justamente o sintoma.
+    const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
+    await esperarCarregar()
+    expect(topoReservado(rfProps.atual?.fitViewOptions as FitViewOptions | undefined)).toBe('72px') // piso 64 + folga 8
     const canvas = container.querySelector('.fluxo-canvas')!
     await waitFor(() => expect(observam(canvas)).toBe(true))
     fitView.mockClear()
     await act(async () => { dispararResize() })
     await waitFor(() => expect(fitView).toHaveBeenCalled())
-    expect(topoReservado(opcoesDoUltimoFit())).toBe('64px')
+    expect(topoReservado(opcoesDoUltimoFit())).toBe('72px')
   })
 
-  it('sem a barra (embed sem modoTv): não reserva nada', async () => {
+  it('uma barra MENOR que o piso não encolhe a reserva', async () => {
+    // O piso vale como piso, não só como valor inicial: uma medição estranha (0 de novo, elemento
+    // escondido, transição no meio) não pode devolver o fluxo pra trás da barra.
+    const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
+    await esperarCarregar()
+    const canvas = container.querySelector('.fluxo-canvas')!
+    await waitFor(() => expect(observam(canvas)).toBe(true))
+    await act(async () => { fingirAlturaDaBarra(container, 20) })
+    fitView.mockClear()
+    await act(async () => { dispararResize() })
+    await waitFor(() => expect(fitView).toHaveBeenCalled())
+    expect(topoReservado(opcoesDoUltimoFit())).toBe('72px')
+  })
+
+  it('sem a barra (embed sem modoTv): não reserva nada, e não há barra pra medir', async () => {
     const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />)
     await esperarCarregar()
     const canvas = container.querySelector('.fluxo-canvas')!
     await waitFor(() => expect(observam(canvas)).toBe(true))
+    expect(container.querySelector('.barra-modo-tv')).toBeNull()
     fitView.mockClear()
     await act(async () => { dispararResize() })
     await waitFor(() => expect(fitView).toHaveBeenCalled())
@@ -231,31 +286,43 @@ describe('a barra do Modo TV reserva espaço no topo ao enquadrar', () => {
   })
 
   // Na tela normal o gatilho é o botão "Reorganizar" (o re-enquadramento automático é só do embed).
-  it('tela normal em Modo TV: "Reorganizar" reserva o topo; fora do Modo TV, não', async () => {
-    const { unmount } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} modoTv />)
+  it('tela normal em Modo TV: "Reorganizar" reserva o que a barra mede; fora do Modo TV, nada', async () => {
+    const { container, unmount } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} modoTv />)
     await esperarCarregar()
+    await act(async () => { fingirAlturaDaBarra(container, 90) })
     fitView.mockClear()
     fireEvent.click(screen.getByRole('button', { name: /Reorganizar/ }))
     await waitFor(() => expect(fitView).toHaveBeenCalled())
-    expect(topoReservado(opcoesDoUltimoFit())).toBe('64px')
+    expect(topoReservado(opcoesDoUltimoFit())).toBe('98px')
     unmount()
 
-    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} />)
+    const normal = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} />)
     await esperarCarregar()
+    expect(normal.container.querySelector('.barra-modo-tv')).toBeNull()
     fitView.mockClear()
     fireEvent.click(screen.getByRole('button', { name: /Reorganizar/ }))
     await waitFor(() => expect(fitView).toHaveBeenCalled())
     expect(topoReservado(opcoesDoUltimoFit())).toBeUndefined()
   })
 
-  it('o primeiro desenho (fitView do React Flow) já nasce com o topo reservado em Modo TV', async () => {
+  it('o primeiro desenho (fitViewOptions do React Flow) já nasce com o topo reservado em Modo TV', async () => {
     const { unmount } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
     await esperarCarregar()
-    expect(topoReservado(rfProps.atual?.fitViewOptions as FitViewOptions | undefined)).toBe('64px')
+    expect(topoReservado(rfProps.atual?.fitViewOptions as FitViewOptions | undefined)).toBe('72px')
     unmount()
 
     render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} />)
     await esperarCarregar()
     expect(topoReservado(rfProps.atual?.fitViewOptions as FitViewOptions | undefined)).toBeUndefined()
+  })
+
+  it('a MEDIDA da barra chegar re-enquadra o embed (o 1º desenho usou o piso)', async () => {
+    const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
+    await esperarCarregar()
+    await waitFor(() => expect(fitView).toHaveBeenCalled()) // os cards chegaram
+    fitView.mockClear()
+    await act(async () => { fingirAlturaDaBarra(container, 110) })
+    await waitFor(() => expect(fitView).toHaveBeenCalled())
+    expect(topoReservado(opcoesDoUltimoFit())).toBe('118px')
   })
 })
