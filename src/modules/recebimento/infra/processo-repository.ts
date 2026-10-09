@@ -115,6 +115,16 @@ function montarQueryGrid(
     }
   }
 
+  // Filtro rápido de divergência: SOMA-SE aos filtros de coluna acima (não substitui nenhum).
+  // A condição cai em `divergencia_num` — a coluna GERADA da 0147 —, nunca em `divergencia`, que
+  // é `text` e faria o Postgres comparar como TEXTO ('9' > '10', '-5' > '0'): o filtro sairia
+  // silenciosamente errado e os botões discordariam dos selos da mesma tela.
+  // Linha sem número (não conferida, texto, NaN) tem `divergencia_num` nulo e não entra em
+  // nenhum dos três — em SQL `null <> 0` é desconhecido, e é o comportamento certo.
+  if (estado.rapido === 'divergencias') query = query.neq('divergencia_num', 0)
+  else if (estado.rapido === 'positivas') query = query.gt('divergencia_num', 0)
+  else if (estado.rapido === 'negativas') query = query.lt('divergencia_num', 0)
+
   const ordenada = query.order(estado.ordenar, { ascending: estado.direcao === 'asc' })
   // `numero` desempata. Sem isto, colunas com valores repetidos (status, fornecedor,
   // data_chegada) saem em ordem NÃO-determinística: a consulta paginada (top-N) e a de
@@ -146,16 +156,26 @@ export async function listarProcessosGrid({
   const supabase = await createServerSupabase()
 
   const inicio = estado.pagina * estado.tamanho
+  // Os dados da justificativa vão em TODA linha (a coluna Divergência pode estar oculta no
+  // layout, mas o selo precisa deles quando ela aparecer). São 3 colunas leves (texto, nome de quem justificou e quando).
   const { data, error, count } = await montarQueryGrid(
     supabase,
-    ['id', ...colunas].join(', '),
+    ['id', ...colunas, ...COLUNAS_JUSTIFICATIVA.filter((c) => !colunas.includes(c))].join(', '),
     estado,
     tiposPorCampo,
   ).range(inicio, inicio + estado.tamanho - 1)
   if (error) throw error
 
-  return { linhas: (data ?? []) as unknown as Record<string, unknown>[], total: count ?? 0 }
+  const linhas = (data ?? []) as unknown as Record<string, unknown>[]
+
+  return { linhas, total: count ?? 0 }
 }
+
+const COLUNAS_JUSTIFICATIVA = [
+  'divergencia_justificativa',
+  'divergencia_justificada_por_nome',
+  'divergencia_justificada_em',
+]
 
 /** O PostgREST corta cada resposta em `max_rows` (`supabase/config.toml`: 1000). É o
  *  tamanho de cada bloco em `listarIdsGrid`. */

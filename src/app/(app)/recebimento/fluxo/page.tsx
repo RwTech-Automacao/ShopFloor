@@ -12,6 +12,9 @@ export default async function FluxoRecebimentoPage() {
     return <SemPermissao descricao="Você não tem permissão para ver o fluxo do Recebimento." />
   }
 
+  // Justificar divergência é de quem administra o Recebimento (não de quem só edita).
+  const podeJustificar = podeNoModulo(sessao.perfil, 'recebimento', 'administrar')
+
   const embs = await listarValoresDistintos('numero_emb')
 
   return (
@@ -22,7 +25,7 @@ export default async function FluxoRecebimentoPage() {
           Escolha a EMB para ver onde estão os itens dela e há quanto tempo estão parados.
         </p>
       </div>
-      <FluxoForm embs={embs} />
+      <FluxoForm embs={embs} podeJustificar={podeJustificar} />
     </div>
   )
 }

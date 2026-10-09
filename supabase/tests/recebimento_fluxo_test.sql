@@ -25,6 +25,9 @@ insert into public.configuracao_campos (campo, grupo) values
   ('quantidade_recebida', 'recebimento'), ('volumes', 'recebimento'), ('divergencia', 'recebimento'),
   ('fabricante', 'qualidade'), ('resultado', 'qualidade'), ('observacao', 'qualidade');
 
+-- FK da 0142 (divergencia_justificada_por).
+create table public.usuarios (id uuid primary key, nome text not null default '', email text);
+
 create sequence public.processos_numero_seq;
 create table public.processos_recebimento (
   id uuid primary key default gen_random_uuid(),
@@ -54,6 +57,10 @@ select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 \i /tmp/0124.sql
 \i /tmp/0125.sql
 \i /tmp/0127.sql
+\i /tmp/0142.sql
+\i /tmp/0143.sql
+\i /tmp/0144.sql
+\i /tmp/0147.sql
 
 -- ---------- massa de teste ----------
 -- EMB390: um item em cada caixa (um deles divergente), mais um sem histórico nenhum.
@@ -510,6 +517,254 @@ begin
   if (select count(*) from rec_fluxo_emb_historico('EMB999', 'reprovado')) <> 0 then
     raise exception 'FALHOU: etapa sem evento tem que vir vazia'; end if;
   raise notice 'histórico da etapa: ok';
+end $t$;
+
+-- ---------- 8. Justificar divergência (0143): o único freio é o `if not tem_permissao` ----------
+-- A função é security definer (ignora RLS). Sem estes testes, apagar aquela linha num refactor
+-- deixaria qualquer usuário autenticado escrever em qualquer processo, sem nada acusar.
+insert into public.usuarios (id, nome, email) values ('00000000-0000-0000-0000-000000000001', 'Maria Souza', 'maria@enterplak.com.br');
+-- A massa nasce depois da 0142 aplicada: a justificativa começa '' e o resto, nulo.
+insert into public.processos_recebimento (id, numero_emb, codigo_material)
+values ('00000000-0000-0000-0000-0000000000aa', 'EMBJUST', 'JUST01');
+
+-- 8.1 Sem administrar não grava: nem com `editar` (que não serve) e nada muda na linha.
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.visualizar,recebimento.editar', false);
+  begin
+    perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', 'tentativa sem permissão');
+    raise exception 'FALHOU: sem administrar (só editar) tinha que levantar SEM_PERMISSAO';
+  exception when others then
+    if sqlerrm <> 'SEM_PERMISSAO' then raise; end if;
+  end;
+  select * into r from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  if r.divergencia_justificativa <> '' or r.divergencia_justificada_por is not null
+     or r.divergencia_justificada_em is not null then
+    raise exception 'FALHOU: a chamada barrada alterou a linha (justificativa=%)', r.divergencia_justificativa; end if;
+  raise notice 'justificar (sem administrar): ok';
+end $t$;
+
+-- 8.2 Com administrar grava os três campos juntos, com os valores certos.
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.administrar', false);
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', 'Fornecedor enviou a mais; alinhado com compras.');
+  select * into r from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  if r.divergencia_justificativa <> 'Fornecedor enviou a mais; alinhado com compras.' then
+    raise exception 'FALHOU: texto gravado errado (%)', r.divergencia_justificativa; end if;
+  if r.divergencia_justificada_por is distinct from '00000000-0000-0000-0000-000000000001'::uuid then
+    raise exception 'FALHOU: o autor tem que ser auth.uid() (veio %)', r.divergencia_justificada_por; end if;
+  if r.divergencia_justificada_por_nome is distinct from 'Maria Souza' then
+    raise exception 'FALHOU: nome gravado errado (veio %)', r.divergencia_justificada_por_nome; end if;
+  if r.divergencia_justificada_em is null or r.divergencia_justificada_em < now() - interval '1 minute' then
+    raise exception 'FALHOU: o instante da justificativa não foi gravado (%)', r.divergencia_justificada_em; end if;
+  raise notice 'justificar (administrar grava): ok';
+end $t$;
+
+-- 8.3 Id inexistente: PROCESSO_NAO_ENCONTRADO, mesmo com administrar.
+do $t$
+begin
+  perform set_config('teste.perms', 'recebimento.administrar', false);
+  begin
+    perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000ff', 'x');
+    raise exception 'FALHOU: id inexistente tinha que levantar PROCESSO_NAO_ENCONTRADO';
+  exception when others then
+    if sqlerrm <> 'PROCESSO_NAO_ENCONTRADO' then raise; end if;
+  end;
+  raise notice 'justificar (id inexistente): ok';
+end $t$;
+
+-- 8.4 Texto vazio apaga a justificativa, mas autor e instante são atualizados (quem apagou também é informação).
+do $t$
+declare antes timestamptz; r record;
+begin
+  perform set_config('teste.perms', 'recebimento.administrar', false);
+  perform set_config('teste.uid', '00000000-0000-0000-0000-000000000002', false);
+  -- Nome vazio: o e-mail entra como reserva (mesmo critério do registrarLog).
+  insert into public.usuarios (id, nome, email) values ('00000000-0000-0000-0000-000000000002', '', 'joao@enterplak.com.br');
+  select divergencia_justificada_em into antes from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  -- now() é fixo dentro da transação: cada bloco `do` é a sua, então o instante novo é posterior.
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', '');
+  select * into r from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  if r.divergencia_justificativa <> '' then
+    raise exception 'FALHOU: texto vazio tinha que apagar (veio %)', r.divergencia_justificativa; end if;
+  if r.divergencia_justificada_por is distinct from '00000000-0000-0000-0000-000000000002'::uuid then
+    raise exception 'FALHOU: quem apagou tem que virar o autor (veio %)', r.divergencia_justificada_por; end if;
+  if r.divergencia_justificada_por_nome is distinct from 'joao@enterplak.com.br' then
+    raise exception 'FALHOU: o nome tem que acompanhar o novo autor, com e-mail de reserva (veio %)', r.divergencia_justificada_por_nome; end if;
+  if r.divergencia_justificada_em is null or r.divergencia_justificada_em <= antes then
+    raise exception 'FALHOU: apagar tem que atualizar o instante'; end if;
+  perform set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
+  raise notice 'justificar (texto vazio apaga): ok';
+end $t$;
+
+-- 8.5 p_texto nulo grava '' (a coluna é not null; a função usa coalesce).
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.administrar', false);
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', 'texto a ser limpo');
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', null);
+  select * into r from public.processos_recebimento where id = '00000000-0000-0000-0000-0000000000aa';
+  if r.divergencia_justificativa is distinct from '' then
+    raise exception 'FALHOU: p_texto nulo tinha que gravar vazio (veio %)', coalesce(r.divergencia_justificativa, 'NULL'); end if;
+  raise notice 'justificar (texto nulo): ok';
+end $t$;
+
+-- 8.6 Grants fechados: anon (e PUBLIC) não executam a função de escrita; authenticated executa.
+-- O teste 8.1 só cobre o `if` interno; este cobre o backstop de grant que as demais funções do projeto têm.
+do $t$
+begin
+  if has_function_privilege('anon', 'public.rec_justificar_divergencia(uuid, text)', 'execute') then
+    raise exception 'FALHOU: anon executa rec_justificar_divergencia (faltou o revoke)'; end if;
+  if not has_function_privilege('authenticated', 'public.rec_justificar_divergencia(uuid, text)', 'execute') then
+    raise exception 'FALHOU: authenticated perdeu o execute de rec_justificar_divergencia'; end if;
+  raise notice 'justificar (grants fechados): ok';
+end $t$;
+
+-- ---------- 9. Itens da caixa trazem a justificativa (0144) ----------
+-- O selo do Fluxo lê daqui: texto, NOME de quem justificou (da própria linha, não de `usuarios`) e quando.
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.administrar,recebimento.visualizar', false);
+  update public.processos_recebimento set numero_emb = 'EMB777', divergencia = '-10', status = 'aberto'
+   where id = '00000000-0000-0000-0000-0000000000aa';
+  perform rec_justificar_divergencia('00000000-0000-0000-0000-0000000000aa', 'Fornecedor enviou a menos.');
+  -- Quem só visualiza lê o nome do autor sem ler `usuarios`.
+  perform set_config('teste.perms', 'recebimento.visualizar', false);
+  select * into r from rec_fluxo_emb_itens('EMB777', 'recebimento') limit 1;
+  if r.divergencia_justificativa is distinct from 'Fornecedor enviou a menos.' then
+    raise exception 'FALHOU: a justificativa não veio nos itens (veio %)', r.divergencia_justificativa; end if;
+  if r.divergencia_justificada_por_nome is distinct from 'Maria Souza' then
+    raise exception 'FALHOU: o nome do autor não veio nos itens (veio %)', r.divergencia_justificada_por_nome; end if;
+  if r.divergencia_justificada_em is null then
+    raise exception 'FALHOU: o instante da justificativa não veio nos itens'; end if;
+  -- Item nunca justificado: texto '' (não nulo), nome '' e instante nulo.
+  select * into r from rec_fluxo_emb_itens('EMB390', 'qualidade') limit 1;
+  if r.divergencia_justificativa is distinct from '' or r.divergencia_justificada_por_nome is distinct from ''
+     or r.divergencia_justificada_em is not null then
+    raise exception 'FALHOU: item sem justificativa tem que vir vazio'; end if;
+  raise notice 'itens da caixa trazem a justificativa (0144): ok';
+end $t$;
+
+-- ---------- 10. Divergência em número (0147) ----------
+-- A coluna gerada `divergencia_num` é o que os filtros rápidos (Divergências/positivas/negativas)
+-- consultam no banco. Ela TEM que concordar com temDivergencia() do domínio, caso a caso: nulo e
+-- zero não são divergência; texto que não é número não é divergência; vírgula decimal é número.
+do $t$
+declare
+  v_casos text[][] := array[
+    -- [entrada, esperado ('<nulo>' quando a regra diz "não é divergência por falta de número")]
+    array['0',          '0'],
+    array['10',         '10'],
+    array['-10',        '-10'],
+    array['1,5',        '1.5'],
+    array['-1,5',       '-1.5'],
+    array['  7  ',      '7'],
+    array['0,0',        '0.0'],
+    array['',           '<nulo>'],
+    array['   ',        '<nulo>'],
+    array['ok',         '<nulo>'],
+    array['-',          '<nulo>'],
+    array['NaN',        '<nulo>'],
+    array['Infinity',   '<nulo>'],
+    array['-Infinity',  '<nulo>']
+  ];
+  v_caso text[];
+  v_obtido numeric;
+  v_texto text;
+begin
+  foreach v_caso slice 1 in array v_casos loop
+    v_obtido := public.rec_divergencia_num(v_caso[1]);
+    v_texto := coalesce(v_obtido::text, '<nulo>');
+    if v_caso[2] = '<nulo>' then
+      if v_obtido is not null then
+        raise exception 'FALHOU: rec_divergencia_num(%) devia ser nulo e veio %', v_caso[1], v_texto; end if;
+    else
+      if v_obtido is distinct from v_caso[2]::numeric then
+        raise exception 'FALHOU: rec_divergencia_num(%) devia ser % e veio %', v_caso[1], v_caso[2], v_texto; end if;
+    end if;
+  end loop;
+  if public.rec_divergencia_num(null) is not null then
+    raise exception 'FALHOU: rec_divergencia_num(null) devia ser nulo'; end if;
+  raise notice 'rec_divergencia_num, caso a caso (0147): ok';
+end $t$;
+
+-- A coluna gerada acompanha a coluna de texto, inclusive quando a quantidade é corrigida depois.
+do $t$
+declare v_id uuid; v_num numeric;
+begin
+  insert into public.processos_recebimento (numero_emb, codigo_material, divergencia)
+  values ('EMB147', 'NUM147', '-4,5') returning id into v_id;
+  select divergencia_num into v_num from public.processos_recebimento where id = v_id;
+  if v_num is distinct from -4.5 then
+    raise exception 'FALHOU: divergencia_num devia ser -4.5 e veio %', coalesce(v_num::text,'<nulo>'); end if;
+
+  -- Divergência corrigida: a marca some sozinha (é o que o domínio promete).
+  update public.processos_recebimento set divergencia = '0' where id = v_id;
+  select divergencia_num into v_num from public.processos_recebimento where id = v_id;
+  if v_num is distinct from 0 then
+    raise exception 'FALHOU: depois de corrigir, divergencia_num devia ser 0 e veio %', coalesce(v_num::text,'<nulo>'); end if;
+
+  -- Célula apagada: volta a "não conferido", que NÃO é divergência.
+  update public.processos_recebimento set divergencia = '' where id = v_id;
+  select divergencia_num into v_num from public.processos_recebimento where id = v_id;
+  if v_num is not null then
+    raise exception 'FALHOU: divergencia vazia devia dar divergencia_num nulo e veio %', v_num; end if;
+  raise notice 'coluna gerada acompanha a correção da quantidade (0147): ok';
+end $t$;
+
+-- Os TRÊS filtros, como o grid os manda pro banco. É aqui que se vê o erro que a 0147 existe para
+-- evitar: comparando como TEXTO, '9' seria maior que '10' e '-5' maior que '0'.
+do $t$
+declare
+  v_divergentes int; v_positivas int; v_negativas int;
+begin
+  delete from public.processos_recebimento where numero_emb = 'EMB148';
+  insert into public.processos_recebimento (numero_emb, codigo_material, divergencia) values
+    ('EMB148', 'A', '9'),    -- positiva
+    ('EMB148', 'B', '10'),   -- positiva (em texto, '10' < '9')
+    ('EMB148', 'C', '-5'),   -- negativa (em texto, '-5' > '0')
+    ('EMB148', 'D', '0'),    -- sem divergência
+    ('EMB148', 'E', ''),     -- não conferido
+    ('EMB148', 'F', 'ok');   -- texto: sem significado
+
+  select count(*) into v_divergentes from public.processos_recebimento
+   where numero_emb = 'EMB148' and divergencia_num <> 0;
+  select count(*) into v_positivas from public.processos_recebimento
+   where numero_emb = 'EMB148' and divergencia_num > 0;
+  select count(*) into v_negativas from public.processos_recebimento
+   where numero_emb = 'EMB148' and divergencia_num < 0;
+
+  if v_divergentes <> 3 then
+    raise exception 'FALHOU: Divergências devia achar 3 e achou %', v_divergentes; end if;
+  if v_positivas <> 2 then
+    raise exception 'FALHOU: positivas devia achar 2 e achou %', v_positivas; end if;
+  if v_negativas <> 1 then
+    raise exception 'FALHOU: negativas devia achar 1 e achou %', v_negativas; end if;
+  -- positivas + negativas tem que fechar com Divergências: nenhuma linha divergente sem sinal.
+  if v_positivas + v_negativas <> v_divergentes then
+    raise exception 'FALHOU: positivas (%) + negativas (%) não fecham com Divergências (%)',
+      v_positivas, v_negativas, v_divergentes; end if;
+  raise notice 'os três filtros rápidos no banco (0147): ok';
+end $t$;
+
+-- Não se escreve na coluna gerada: se alguém tentar, o Postgres recusa. Isso protege a regra de
+-- um UPDATE distraído que faria a lista filtrada discordar do selo da linha.
+do $t$
+declare v_recusou boolean := false;
+begin
+  begin
+    update public.processos_recebimento set divergencia_num = 999 where numero_emb = 'EMB148';
+  exception when others then
+    v_recusou := true;
+  end;
+  if not v_recusou then
+    raise exception 'FALHOU: o banco deixou escrever na coluna gerada divergencia_num'; end if;
+  raise notice 'coluna gerada é só de leitura (0147): ok';
 end $t$;
 
 select 'RECEBIMENTO FLUXO/REGISTROS OK' as resultado;

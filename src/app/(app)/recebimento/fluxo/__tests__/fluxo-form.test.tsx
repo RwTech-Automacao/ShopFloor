@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type {
@@ -13,7 +13,9 @@ const {
   carregarItensCaixaAction,
   carregarHistoricoEtapaAction,
   carregarHistoricoItemAction,
+  salvarJustificativa,
 } = vi.hoisted(() => ({
+  salvarJustificativa: vi.fn(),
   carregarFluxoEmbAction: vi.fn(),
   carregarItensCaixaAction: vi.fn(),
   carregarHistoricoEtapaAction: vi.fn(),
@@ -25,6 +27,14 @@ vi.mock('@/modules/recebimento/application/fluxo-actions', () => ({
   carregarHistoricoEtapaAction,
   carregarHistoricoItemAction,
 }))
+vi.mock('@/modules/recebimento/application/justificar-divergencia', () => ({
+  salvarJustificativaDivergencia: salvarJustificativa,
+}))
+// Espia a fonte da verdade do selo: por padrão repassa à função de verdade.
+vi.mock('@/modules/recebimento/domain/divergencia', async (importarOriginal) => {
+  const original = await importarOriginal<typeof import('@/modules/recebimento/domain/divergencia')>()
+  return { ...original, estadoDaDivergencia: vi.fn(original.estadoDaDivergencia) }
+})
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 /**
@@ -91,6 +101,7 @@ vi.mock('@xyflow/react', async () => {
 })
 
 import { FluxoForm } from '../fluxo-form'
+import { estadoDaDivergencia } from '@/modules/recebimento/domain/divergencia'
 
 function caixa(parcial: Partial<CaixaFluxo> & { etapa: CaixaFluxo['etapa'] }): CaixaFluxo {
   return { itens: 0, divergentes: 0, mediaSegundos: null, maiorSegundos: null, semTempo: 0, ...parcial }
@@ -119,6 +130,9 @@ const ITEM: ItemFluxo = {
   resultado: '',
   desde: '2026-09-20T12:00:00Z',
   segundos: 4 * 86400,
+  justificativa: '',
+  justificadaPorNome: '',
+  justificadaEm: null,
 }
 
 const PASSAGEM: PassagemEtapa = {
@@ -445,5 +459,113 @@ describe('FluxoForm', () => {
     fireEvent.click(await screen.findByText('EMB390'))
     expect(await screen.findByText('Não foi possível carregar o fluxo agora.')).toBeInTheDocument()
     expect(screen.queryByTestId('canvas')).not.toBeInTheDocument()
+  })
+
+  describe('selo de divergência no item', () => {
+    // Mesmo se um teste falhar no meio, a função volta à real (não contamina os seguintes).
+    afterEach(() => { vi.mocked(estadoDaDivergencia).mockRestore() })
+
+    /** Abre o painel da Qualidade com estes itens e espera a lista aparecer (prova positiva). */
+    async function abrirComItens(itens: ItemFluxo[], podeJustificar = true) {
+      carregarItensCaixaAction.mockResolvedValue({ ok: true, itens })
+      render(<FluxoForm embs={['EMB390']} podeJustificar={podeJustificar} />)
+      fireEvent.click(screen.getByText('Selecione a EMB'))
+      fireEvent.click(await screen.findByText('EMB390'))
+      await waitFor(() => expect(document.querySelector('[data-no="qualidade"]')).not.toBeNull())
+      fireEvent.click(no('qualidade'))
+      const p = painel()
+      expect(await p.findByText(`Itens nesta etapa (${itens.length})`)).toBeInTheDocument()
+      return p
+    }
+
+    const SEM_DIV: ItemFluxo = { ...ITEM, processoId: 'p0', numero: 100, item: 'RESI00', divergencia: '0' }
+    const PENDENTE: ItemFluxo = { ...ITEM, processoId: 'p1', numero: 101, item: 'RESI01', divergencia: '-10' }
+    const JUSTIFICADO: ItemFluxo = {
+      ...ITEM,
+      processoId: 'p2',
+      numero: 102,
+      item: 'RESI02',
+      divergencia: '5',
+      justificativa: 'Fornecedor mandou a mais; alinhado com compras.',
+      justificadaPorNome: 'Maria Souza',
+      justificadaEm: '2026-10-07T15:00:00Z',
+    }
+
+    it('mostra os três estados: ? sem justificativa, ✅ com, e nada sem divergência', async () => {
+      const p = await abrirComItens([SEM_DIV, PENDENTE, JUSTIFICADO])
+      // Positivas primeiro: os três itens estão na tela, então a ausência de selo no primeiro é real.
+      expect(p.getByText('RESI00')).toBeInTheDocument()
+      expect(p.getByText('RESI01')).toBeInTheDocument()
+      expect(p.getByText('RESI02')).toBeInTheDocument()
+      const pend = p.getAllByRole('button', { name: 'Divergência sem justificativa' })
+      const just = p.getAllByRole('button', { name: 'Divergência justificada' })
+      expect(pend).toHaveLength(1)
+      expect(pend[0]!).toHaveTextContent('?')
+      expect(just).toHaveLength(1)
+      expect(just[0]!).toHaveTextContent('✅')
+      expect(just[0]!.getAttribute('title')).toContain('Fornecedor mandou a mais')
+      // Sem divergência: nenhum terceiro selo (só os 2 de cima).
+      expect(p.getAllByRole('button', { name: /^Divergência / })).toHaveLength(2)
+    })
+
+    it('quem decide o selo é estadoDaDivergencia: a tela obedece a função, não decide por conta', async () => {
+      const espiao = vi.mocked(estadoDaDivergencia)
+      // Item SEM divergência de verdade; a função (dublada) manda 'justificada'.
+      // mockImplementation (não Once): vale para TODA renderização da lista, então um render a mais
+      // não devolve a função real e não gera falso vermelho. Restaurada no fim.
+      espiao.mockImplementation(() => 'justificada')
+      const p = await abrirComItens([SEM_DIV])
+      expect(p.getByText('RESI00')).toBeInTheDocument()
+      expect(espiao).toHaveBeenCalledWith('0', '')
+      expect(p.getByRole('button', { name: 'Divergência justificada' })).toBeInTheDocument()
+    })
+
+    it('o selo fica à esquerda do identificador do item', async () => {
+      const p = await abrirComItens([PENDENTE])
+      const selo = p.getByRole('button', { name: 'Divergência sem justificativa' })
+      const rotulo = p.getByText('RESI01')
+      expect(selo.compareDocumentPosition(rotulo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it.each([
+      ['zero', '0'],
+      ['vazio', ''],
+    ])('divergência %s não tem selo, mesmo com justificativa antiga guardada', async (_n, valor) => {
+      const p = await abrirComItens([{ ...JUSTIFICADO, divergencia: valor }])
+      expect(p.getByText('RESI02')).toBeInTheDocument()
+      expect(p.queryAllByRole('button', { name: /^Divergência / })).toHaveLength(0)
+    })
+
+    it('clicar no selo abre o diálogo com o texto e o autor da linha (sem consultar usuários)', async () => {
+      const p = await abrirComItens([JUSTIFICADO])
+      fireEvent.click(p.getByRole('button', { name: 'Divergência justificada' }))
+      const d = await screen.findByRole('dialog')
+      expect(within(d).getByText('Divergência de quantidade — processo Nº 102')).toBeInTheDocument()
+      expect(within(d).getByLabelText('Justificativa da divergência')).toHaveValue('Fornecedor mandou a mais; alinhado com compras.')
+      expect(within(d).getByText(/por Maria Souza/)).toBeInTheDocument()
+    })
+
+    it('com permissão: salvar manda o texto EXATO e o selo vira ✅', async () => {
+      salvarJustificativa.mockResolvedValue({ ok: true })
+      const p = await abrirComItens([PENDENTE])
+      fireEvent.click(p.getByRole('button', { name: 'Divergência sem justificativa' }))
+      const d = await screen.findByRole('dialog')
+      fireEvent.change(within(d).getByLabelText('Justificativa da divergência'), { target: { value: 'Quebra no transporte.' } })
+      fireEvent.click(within(d).getByRole('button', { name: 'Salvar' }))
+      await waitFor(() => expect(salvarJustificativa).toHaveBeenCalledWith('p1', 'Quebra no transporte.'))
+      await waitFor(() => expect(p.getByRole('button', { name: 'Divergência justificada' })).toBeInTheDocument())
+      expect(p.queryByRole('button', { name: 'Divergência sem justificativa' })).not.toBeInTheDocument()
+    })
+
+    it('sem permissão: o selo aparece e o diálogo é só leitura, sem Salvar', async () => {
+      const p = await abrirComItens([PENDENTE, JUSTIFICADO], false)
+      // Contraste: o selo existe para quem não pode editar.
+      expect(p.getAllByRole('button', { name: /^Divergência / })).toHaveLength(2)
+      fireEvent.click(p.getByRole('button', { name: 'Divergência justificada' }))
+      const d = await screen.findByRole('dialog')
+      expect(within(d).getByLabelText('Justificativa da divergência')).toHaveAttribute('readonly')
+      expect(within(d).getByRole('button', { name: 'Fechar' })).toBeInTheDocument()
+      expect(within(d).queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
+    })
   })
 })
