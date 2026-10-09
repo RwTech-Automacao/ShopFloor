@@ -46,6 +46,7 @@ import {
   type CaixaFluxoId,
   type Etapa,
 } from '@/modules/recebimento/domain/etapa-processo'
+import { estadoDaDivergencia } from '@/modules/recebimento/domain/divergencia'
 import type { CaixaFluxo, ItemFluxo, PassagemEtapa } from '@/modules/recebimento/infra/fluxo-repository'
 import { cn } from '@/lib/utils'
 import { ArestaFluxo } from './aresta-fluxo'
@@ -56,6 +57,11 @@ import {
   type FluxoRecebimentoNodeData,
 } from './fluxo-node'
 import { HistoricoItemDialog, type ItemDoHistorico } from './historico-item-dialog'
+import {
+  JustificarDivergenciaDialog,
+  type AlvoJustificativa,
+} from '../processos/justificar-divergencia-dialog'
+import { SeloDivergencia } from '../processos/selo-divergencia'
 
 const ESPACO_X = 300 // folga entre as caixas (mesma do Fluxo do ShopFloor)
 const ESPACO_Y = 200 // altura entre as duas linhas: o ramo do Reprovado desce da Qualidade
@@ -139,14 +145,21 @@ function ItensDaEtapa({
   itens,
   carregando,
   total,
+  podeJustificar,
+  aoSalvarJustificativa,
 }: {
   itens: ItemFluxo[]
   carregando: boolean
   /** Contagem da caixa: quando for maior que a lista, a consulta bateu no teto. */
   total: number
+  /** `recebimento.administrar`: pode escrever a justificativa. Sem isso o diálogo é só leitura. */
+  podeJustificar: boolean
+  /** Depois de salvar: o pai atualiza a lista para o selo virar ✅ sem nova ida ao servidor. */
+  aoSalvarJustificativa: (processoId: string, texto: string) => void
 }) {
   const [aberto, setAberto] = useState(true)
   const [limite, setLimite] = useState(100)
+  const [alvo, setAlvo] = useState<AlvoJustificativa | null>(null)
   const visiveis = itens.slice(0, limite)
   return (
     <div className="mb-3">
@@ -171,9 +184,29 @@ function ItensDaEtapa({
           ) : (
             <ul className="flex flex-col gap-0.5">
               {itens.length === 0 && <li className="text-muted-foreground">—</li>}
-              {visiveis.map((i) => (
+              {visiveis.map((i) => {
+                // Única fonte da verdade do selo: a mesma função da grade de Processos.
+                const estado = estadoDaDivergencia(i.divergencia, i.justificativa)
+                return (
                 <li key={i.processoId} className="flex justify-between gap-2 font-mono text-xs">
-                  <ItemRotulo item={i.item} numero={i.numero} />
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {estado !== 'sem' && (
+                      <SeloDivergencia
+                        estado={estado}
+                        texto={i.justificativa}
+                        onClick={() =>
+                          setAlvo({
+                            id: i.processoId,
+                            numero: String(i.numero),
+                            texto: i.justificativa,
+                            autor: i.justificadaPorNome,
+                            quando: i.justificadaEm,
+                          })
+                        }
+                      />
+                    )}
+                    <ItemRotulo item={i.item} numero={i.numero} />
+                  </span>
                   <span
                     className="shrink-0 text-muted-foreground"
                     title={`${i.descricao} · pedida ${numeroBr(i.quantidadePedido)} · recebida ${numeroBr(i.quantidadeRecebida)}`}
@@ -186,7 +219,8 @@ function ItensDaEtapa({
                     {formatarEspera(i.segundos)}
                   </span>
                 </li>
-              ))}
+                )
+              })}
               {itens.length > visiveis.length && (
                 <li className="pt-1 text-center text-[11px] text-muted-foreground">
                   +{itens.length - visiveis.length} — role para carregar
@@ -200,6 +234,15 @@ function ItensDaEtapa({
             </ul>
           )}
         </div>
+      )}
+      {alvo && (
+        <JustificarDivergenciaDialog
+          key={alvo.id}
+          alvo={alvo}
+          podeJustificar={podeJustificar}
+          onFechar={() => setAlvo(null)}
+          onSalvo={aoSalvarJustificativa}
+        />
       )}
     </div>
   )
@@ -338,7 +381,7 @@ function RelogioAoVivo() {
   )
 }
 
-export function FluxoForm({ embs }: { embs: string[] }) {
+export function FluxoForm({ embs, podeJustificar = false }: { embs: string[]; podeJustificar?: boolean }) {
   const [emb, setEmb] = useState('')
   const [aberto, setAberto] = useState(false)
   const [filtro, setFiltro] = useState('')
@@ -603,6 +646,18 @@ export function FluxoForm({ embs }: { embs: string[] }) {
     setItens(r.itens)
   }
 
+  /** Mostra o que acabou de ser salvo sem esperar nova leitura. O autor e a hora só o servidor
+   *  sabe; até a próxima leitura ficam vazios (igual à grade de Processos). */
+  function aoSalvarJustificativa(processoId: string, texto: string) {
+    setItens((lista) =>
+      lista.map((i) =>
+        i.processoId === processoId
+          ? { ...i, justificativa: texto, justificadaPorNome: '', justificadaEm: null }
+          : i,
+      ),
+    )
+  }
+
   const aoClicarNo: NodeMouseHandler = (_, node) => {
     if (ehCaixaFluxo(node.id)) void abrirCaixa(node.id)
   }
@@ -808,7 +863,13 @@ export function FluxoForm({ embs }: { embs: string[] }) {
                         </>
                       )}
                     </div>
-                    <ItensDaEtapa itens={itens} carregando={carregandoItens} total={detalhe.itens} />
+                    <ItensDaEtapa
+                      itens={itens}
+                      carregando={carregandoItens}
+                      total={detalhe.itens}
+                      podeJustificar={podeJustificar}
+                      aoSalvarJustificativa={aoSalvarJustificativa}
+                    />
                     {/* A caixa de sinalização não tem histórico: ninguém "passa" por ela, e a
                         trilha de cada item marcado abre no diálogo dele, pela lista acima. */}
                     {etapaSel !== CAIXA_DIVERGENCIA && (
