@@ -66,6 +66,12 @@ function textoJustificativa(linha: Record<string, unknown>): string {
   return typeof linha.divergencia_justificativa === 'string' ? linha.divergencia_justificativa : ''
 }
 
+/** Valor da linha como ele veio do banco (o `numeric` do PostgREST chega como string). Quem
+ *  formata é o diálogo, com a mesma régua da célula — o que não é texto nem número não existe. */
+function bruto(valor: unknown): number | string | null {
+  return typeof valor === 'number' || typeof valor === 'string' ? valor : null
+}
+
 /** Texto de uma célula. Status vira Badge; data vira dd/mm/aaaa; número ganha separador de
  *  milhar (negativo em vermelho); o resto é o valor cru. */
 function celula(
@@ -130,6 +136,15 @@ export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, 
       texto: textoJustificativa(linha),
       autor: String(linha.divergencia_justificada_por_nome ?? ''),
       quando: typeof linha.divergencia_justificada_em === 'string' ? linha.divergencia_justificada_em : null,
+      // De que item é a divergência. As colunas vêm em TODA linha (COLUNAS_CONTEXTO_DIVERGENCIA
+      // no `processo-repository`), mesmo que o layout do usuário as esconda.
+      contexto: {
+        codigo: String(linha.codigo_material ?? ''),
+        descricao: String(linha.descricao_material ?? ''),
+        quantidadePedido: bruto(linha.quantidade_pedido),
+        quantidadeRecebida: bruto(linha.quantidade_recebida),
+        divergencia: bruto(linha.divergencia),
+      },
     })
   }
 
