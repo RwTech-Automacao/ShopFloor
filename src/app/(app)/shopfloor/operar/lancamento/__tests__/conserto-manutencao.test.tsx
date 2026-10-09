@@ -22,6 +22,8 @@ vi.mock('@/modules/shopfloor/application/lancar-action', () => ({
 vi.mock('server-only', () => ({}))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/shared/lib/som-erro', () => ({ tocarErro: vi.fn() }))
+// Router do App Router: a tela usa `useRouter().refresh()` no bipe em OP finalizada.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 
 // Select nativo no lugar do Base UI (portal/floating-ui não funcionam em jsdom).
 vi.mock('@/components/ui/select', () => ({

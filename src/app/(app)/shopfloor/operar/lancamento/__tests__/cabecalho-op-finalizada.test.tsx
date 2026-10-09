@@ -26,6 +26,11 @@ vi.mock('server-only', () => ({}))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/shared/lib/som-erro', () => ({ tocarErro: vi.fn() }))
 
+// Router do App Router: a tela pede ao Next os dados novos do servidor quando bate numa OP
+// finalizada (a lista `ordens` é prop resolvida no carregamento da página).
+const nav = vi.hoisted(() => ({ refresh: vi.fn() }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: nav.refresh }) }))
+
 // Select nativo no lugar do Base UI (portal/floating-ui não funcionam em jsdom).
 vi.mock('@/components/ui/select', () => ({
   Select: ({ value, onValueChange, children, disabled }: { value?: string; onValueChange?: (v: string) => void; children?: React.ReactNode; disabled?: boolean }) => (
@@ -75,6 +80,7 @@ function biparCabecalho(sn: string) {
 
 beforeEach(() => {
   vi.mocked(toast.error).mockReset()
+  nav.refresh.mockReset()
   try { localStorage.clear() } catch { /* sem storage */ }
 })
 
@@ -134,5 +140,38 @@ describe('bipe do cabeçalho em OP finalizada', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('SN não encontrado em nenhuma OP.'))
     expect(campoBipe()).toBeInTheDocument()
+  })
+
+  it('a mensagem manda falar com quem administra — não manda o operador reativar a OP', async () => {
+    // O Cadastro de OP exige `administrar` no módulo shopfloor; quem bipa não tem. Mandar o
+    // operador "reativar a OP no cadastro" é mandá-lo fazer o que ele não consegue fazer.
+    montar([ATIVA, FINALIZADA])
+
+    biparCabecalho('F150')
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    const msg = String(vi.mocked(toast.error).mock.calls[0]?.[0] ?? '').toLowerCase()
+    expect(msg).toMatch(/administrador/)
+    expect(msg).not.toMatch(/reative a op no cadastro/)
+  })
+
+  it('OP finalizada pede ao Next os dados novos do servidor (senão reativar a OP nunca chega aqui)', async () => {
+    // A tela do posto fica aberta o turno inteiro e `ordens` é prop resolvida UMA vez, no
+    // carregamento. Sem `router.refresh()`, o gestor reativa a OP e o mesmo bipe repete a mesma
+    // mensagem para sempre, até alguém apertar F5.
+    montar([ATIVA, FINALIZADA])
+
+    biparCabecalho('F150')
+
+    await waitFor(() => expect(nav.refresh).toHaveBeenCalled())
+  })
+
+  it('bipe que carrega não pede refresh (o caminho normal não vai ao servidor de graça)', async () => {
+    montar([ATIVA, FINALIZADA])
+
+    biparCabecalho('A150')
+
+    await waitFor(() => expect(screen.getByLabelText('Colaborador')).toBeInTheDocument())
+    expect(nav.refresh).not.toHaveBeenCalled()
   })
 })
