@@ -3,6 +3,7 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { listarOrdens } from '@/modules/shopfloor/infra/fluxo-repository'
 import { listarTodasOrdens } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { FluxoForm } from '@/app/(app)/shopfloor/fluxo/fluxo-form'
+import { lerModoTv } from '@/shared/lib/modo-tv'
 import { EmbedPonte } from '../../../embed-ponte'
 import { origemDashboard, type CodigoErroEmbed, type TipoMensagemEmbed } from '@/shared/lib/mensagem-embed'
 
@@ -15,10 +16,20 @@ import { origemDashboard, type CodigoErroEmbed, type TipoMensagemEmbed } from '@
  * A tela busca TUDO por Server Action, que é POST pra própria URL `/embed/...` — então o cookie de
  * sessão do embed (`Path=/embed`) vai junto e nada falta. ⚠️ Não introduzir `fetch('/api/...')`,
  * `<Link>`, `href` nem `router.push` aqui: sairiam do prefixo e levariam a sessão errada (ou
- * nenhuma).
+ * nenhuma). `?modo=tv` é só layout: nada de rede nova.
  */
-export default async function FluxoEmbedPage({ params }: { params: Promise<{ pmo: string; op: string }> }) {
+export default async function FluxoEmbedPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ pmo: string; op: string }>
+  searchParams: Promise<{ modo?: string | string[] }>
+}) {
   const cru = await params
+  // `?modo=tv`: o Dashboard manda quando ELE está em tela cheia. Só liga o layout — a tela cheia
+  // do navegador continua do Dashboard (o Fluxo não a pede nem a larga). `embed` vai SEMPRE: é ele
+  // (não o ?modo=tv) que esconde Filtro/Zoom/Defeitos até o hover.
+  const modoTv = lerModoTv((await searchParams).modo)
   // ⚠️ Os segmentos chegam codificados: a OP do ShopFloor tem `/` no nome (2340/26) e viaja como
   // `2340%2F26`. Sem o decode nenhuma OP casaria com o banco.
   const pmo = decodificar(cru.pmo)
@@ -57,7 +68,7 @@ export default async function FluxoEmbedPage({ params }: { params: Promise<{ pmo
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
-      <FluxoForm ops={ops} ordensDashboard={ordensDashboard} opFixa={{ pmo, op }} ocultarSeletor />
+      <FluxoForm ops={ops} ordensDashboard={ordensDashboard} opFixa={{ pmo, op }} ocultarSeletor embed modoTv={modoTv} />
       <EmbedPonte origem={origem} tipo="sf-embed:ready" />
     </div>
   )

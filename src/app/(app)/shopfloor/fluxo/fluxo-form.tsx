@@ -22,6 +22,7 @@ import { HistoricoSnDialog } from './historico-sn-dialog'
 import { FloatingEdge } from './floating-edge'
 import { HelperLines, getHelperLines } from '@/shared/ui/fluxo/helper-lines'
 import { ControlesCanvas } from '@/shared/ui/fluxo/controles-canvas'
+import { classeSoNoHover, controlesSoNoHover } from '@/shared/lib/modo-tv'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
 const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
@@ -437,11 +438,19 @@ export function FluxoForm({
   ordensDashboard,
   opFixa,
   ocultarSeletor,
+  modoTv = false,
+  embed = false,
 }: {
   ops: OpItem[]
   ordensDashboard: OrdemPesquisa[]
   opFixa?: { pmo: string; op: string }
   ocultarSeletor?: boolean
+  /** Liga o layout do Modo TV POR FORA (embed `?modo=tv`) — sem a API de tela cheia do navegador:
+   *  a tela cheia, aí, é do Dashboard, e disputá-la derrubava a dele. */
+  modoTv?: boolean
+  /** Marca que a tela roda dentro do iframe do Dashboard (passada SEMPRE pela página do embed,
+   *  independente de `?modo=tv`); hoje só decide o esconder-no-hover dos três controles. */
+  embed?: boolean
 }) {
   // `sel` = "pmo||op" (a chave da OP escolhida). Com `opFixa`, já nasce escolhida.
   const [sel, setSel] = useState(opFixa ? `${opFixa.pmo}||${opFixa.op}` : '')
@@ -641,9 +650,9 @@ export function FluxoForm({
   const iniciarApresentacao = () => {
     if (playlist.length === 0) { toast.error('Monte a playlist antes de apresentar.'); return }
     setApresPainel(false); setSlideIdx(0); setApresentando(true)
-    void canvasRef.current?.requestFullscreen?.() // tela cheia (Esc sai)
+    if (!modoTv) void canvasRef.current?.requestFullscreen?.() // tela cheia (Esc sai); com modoTv a tela cheia é do Dashboard
   }
-  const sairApresentacao = () => { setApresentando(false); if (document.fullscreenElement) void document.exitFullscreen() }
+  const sairApresentacao = () => { setApresentando(false); if (!modoTv && document.fullscreenElement) void document.exitFullscreen() }
   const slideAtual = apresentando ? playlist[slideIdx] : undefined
 
   // Slide de FLUXO → carrega a OP no canvas (defeitos/dashboard usam overlay, não precisam do canvas).
@@ -907,9 +916,16 @@ export function FluxoForm({
   const canvasRef = useRef<HTMLDivElement>(null)
   const rfRef = useRef<ReactFlowInstance | null>(null)
   const [zoomPct, setZoomPct] = useState(100)
-  const [telaCheia, setTelaCheia] = useState(false)
+  const [telaCheiaApi, setTelaCheiaApi] = useState(false) // espelho do `fullscreenchange`
+  const telaCheia = telaCheiaApi || modoTv // `modoTv` = ligado por fora, sem API
+  // Filtro, Zoom e Defeitos: só no hover no embed e no Modo TV; na tela normal ficam sempre
+  // visíveis (tablet não tem hover).
+  const soNoHover = classeSoNoHover(controlesSoNoHover(embed, telaCheia))
   const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
+    // Não há o que alternar: no Modo TV por prop e no embed a tela cheia (se houver) é do Dashboard.
+    // Protege qualquer chamador, além do botão (que também some no embed).
+    if (modoTv || embed) return
     if (document.fullscreenElement) void document.exitFullscreen()
     else void canvasRef.current?.requestFullscreen?.()
   }
@@ -928,16 +944,27 @@ export function FluxoForm({
     setTimeout(() => rfRef.current?.fitView(), 0)
   }, [dom, setNodes])
   useEffect(() => {
+    if (modoTv) return // o modo é por prop; evento de tela cheia (do Dashboard) não decide nada aqui
     const onFs = () => {
       const emTv = document.fullscreenElement === canvasRef.current
-      setTelaCheia(emTv)
+      setTelaCheiaApi(emTv)
       setContainerTv(emTv ? canvasRef.current : null) // captura o alvo do portal fora do render (regra dos refs)
       if (!emTv) setApresentando(false) // saiu da tela cheia (Esc/botão) → encerra a apresentação
       setTimeout(() => rfRef.current?.fitView(), 120)
     }
     document.addEventListener('fullscreenchange', onFs)
     return () => document.removeEventListener('fullscreenchange', onFs)
-  }, [])
+  }, [modoTv])
+
+  // Com `modoTv` não há `fullscreenElement`: o diálogo do SN (HistoricoSnDialog) precisa renderizar
+  // DENTRO do canvas (que aqui é `fixed inset-0 z-50` e cria o próprio contexto de empilhamento),
+  // senão cairia no `body` por trás dele. Também re-encaixa o fluxo: o canvas mudou de tamanho.
+  useEffect(() => {
+    if (!modoTv) return
+    setContainerTv(canvasRef.current)
+    const t = setTimeout(() => rfRef.current?.fitView(), 120)
+    return () => { clearTimeout(t); setContainerTv(null) }
+  }, [modoTv])
 
   // Lista de OPs: busca no banco quantos BIPES cada OP teve no período (0120) — com período, só
   // aparecem as OPs com bipe; em "Tudo" (período vazio) ninguém some, a contagem só ORDENA a lista
@@ -1105,7 +1132,7 @@ export function FluxoForm({
                 {linhaReta ? 'Linha curva' : 'Linha 90°'}
               </Button>
             )}
-            {buscou && (
+            {buscou && !embed && ( // no embed a tela cheia é do Dashboard: o botão não pode existir
               <Button variant="outline" size="sm" onClick={alternarTv}>
                 <Maximize2 className="mr-1 size-4" /> Modo TV
               </Button>
@@ -1208,7 +1235,9 @@ export function FluxoForm({
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
         )}
 
-        <div ref={canvasRef} className="fluxo-canvas relative h-[70vh] w-full overflow-hidden rounded-lg border border-border bg-neutral-100">
+        <div ref={canvasRef} className={`fluxo-canvas w-full overflow-hidden bg-neutral-100 ${
+          modoTv ? 'fixed inset-0 z-50 h-dvh' : 'relative h-[70vh] rounded-lg border border-border'
+        }`}>
           {/* Transição entre fluxos: borra o canvas atual + spinner enquanto carrega a OP nova. */}
           {carregando && (
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/40 backdrop-blur-sm">
@@ -1240,13 +1269,15 @@ export function FluxoForm({
             {/* Controles próprios no lugar do <Controls>: o React Flow só aceita filhos DEPOIS
                 dos botões dele, então não dava pra encaixar a porcentagem entre o "−" e o "+". */}
             <Panel position="bottom-left">
-              <ControlesCanvas
-                pct={zoomPct}
-                onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })}
-                onMais={() => rfRef.current?.zoomIn({ duration: 200 })}
-                onMenos={() => rfRef.current?.zoomOut({ duration: 200 })}
-                onEnquadrar={() => rfRef.current?.fitView({ duration: 200 })}
-              />
+              <div data-testid="controle-zoom" className={soNoHover}>
+                <ControlesCanvas
+                  pct={zoomPct}
+                  onAplicar={(p) => rfRef.current?.zoomTo(p / 100, { duration: 200 })}
+                  onMais={() => rfRef.current?.zoomIn({ duration: 200 })}
+                  onMenos={() => rfRef.current?.zoomOut({ duration: 200 })}
+                  onEnquadrar={() => rfRef.current?.fitView({ duration: 200 })}
+                />
+              </div>
             </Panel>
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
@@ -1257,7 +1288,7 @@ export function FluxoForm({
               type="button"
               onClick={() => setDefeitosAberto(true)}
               title="Defeitos desta OP (→)"
-              className="absolute bottom-3 right-3 z-40 flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-sm font-medium shadow-lg hover:bg-accent"
+              className={`absolute bottom-3 right-3 z-40 flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-sm font-medium shadow-lg hover:bg-accent ${soNoHover}`}
             >
               <Bug className="size-4" /> Defeitos <ChevronRight className="size-4 opacity-60" />
             </button>
@@ -1283,7 +1314,7 @@ export function FluxoForm({
               title={`Filtro & busca de SN — ${rotuloJanela(janela, custom)}`}
               aria-label="Filtro e busca de SN"
               // Com a aba lateral do posto aberta (w-80 = 20rem), desloca pra fora dela pra não cobrir o X de fechar.
-              className={`absolute z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? 'top-[4.75rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'}`}
+              className={`absolute z-40 flex size-9 items-center justify-center rounded-full bg-enterplak text-white shadow-lg hover:bg-enterplak-700 ${telaCheia ? 'top-[4.75rem]' : 'top-3'} ${detalhe ? 'right-[20.75rem]' : 'right-3'} ${soNoHover}`}
             >
               <SlidersHorizontal className="size-4" />
             </button>
@@ -1409,13 +1440,15 @@ export function FluxoForm({
                   <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
                   <p className="text-xs text-muted-foreground">progresso</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={alternarTv}
-                  className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
-                >
-                  <Minimize2 className="size-4" /> Sair (Esc)
-                </button>
+                {!modoTv && (
+                  <button
+                    type="button"
+                    onClick={alternarTv}
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
+                  >
+                    <Minimize2 className="size-4" /> Sair (Esc)
+                  </button>
+                )}
               </div>
             </div>
           )}
