@@ -66,6 +66,12 @@ function textoJustificativa(linha: Record<string, unknown>): string {
   return typeof linha.divergencia_justificativa === 'string' ? linha.divergencia_justificativa : ''
 }
 
+/** Valor da linha como ele veio do banco (o `numeric` do PostgREST chega como string). Quem
+ *  formata é o diálogo, com a mesma régua da célula — o que não é texto nem número não existe. */
+function bruto(valor: unknown): number | string | null {
+  return typeof valor === 'number' || typeof valor === 'string' ? valor : null
+}
+
 /** Texto de uma célula. Status vira Badge; data vira dd/mm/aaaa; número ganha separador de
  *  milhar (negativo em vermelho); o resto é o valor cru. */
 function celula(
@@ -130,6 +136,15 @@ export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, 
       texto: textoJustificativa(linha),
       autor: String(linha.divergencia_justificada_por_nome ?? ''),
       quando: typeof linha.divergencia_justificada_em === 'string' ? linha.divergencia_justificada_em : null,
+      // De que item é a divergência. As colunas vêm em TODA linha (COLUNAS_CONTEXTO_DIVERGENCIA
+      // no `processo-repository`), mesmo que o layout do usuário as esconda.
+      contexto: {
+        codigo: String(linha.codigo_material ?? ''),
+        descricao: String(linha.descricao_material ?? ''),
+        quantidadePedido: bruto(linha.quantidade_pedido),
+        quantidadeRecebida: bruto(linha.quantidade_recebida),
+        divergencia: bruto(linha.divergencia),
+      },
     })
   }
 
@@ -186,7 +201,11 @@ export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, 
       <div className="hidden lg:block">
         <ScrollHorizontalTopo>
           <Table containerClassName="max-h-[70vh] overflow-auto rounded-lg border border-border" className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
-            <TableHeader className="sticky top-0 z-10 bg-card">
+            {/* z-20: o selo de divergência da linha é `relative z-10` (precisa disso no card do Fluxo,
+    para receber o toque por cima do link que cobre o card). Empatados em z-10, a linha
+    vencia por vir depois no DOM e o selo aparecia por cima da palavra "Divergência" ao
+    rolar. Visto em produção em 09/10/2026. */}
+            <TableHeader className="sticky top-0 z-20 bg-card">
               <TableRow>
                 {colunas.map((coluna) => (
                   <TableHead key={coluna.campo}>
