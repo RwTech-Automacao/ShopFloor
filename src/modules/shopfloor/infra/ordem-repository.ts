@@ -39,6 +39,8 @@ export interface DadosOrdem {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  /** Quem encerrou (0145). A tela só grava 'manual' ou null; 'rotina' é exclusivo da rotina SQL. */
+  finalizada_por: 'manual' | null
 }
 
 export async function listarPostos(): Promise<PostoRow[]> {
