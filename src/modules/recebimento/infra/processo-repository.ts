@@ -156,11 +156,15 @@ export async function listarProcessosGrid({
   const supabase = await createServerSupabase()
 
   const inicio = estado.pagina * estado.tamanho
-  // Os dados da justificativa vão em TODA linha (a coluna Divergência pode estar oculta no
-  // layout, mas o selo precisa deles quando ela aparecer). São 3 colunas leves (texto, nome de quem justificou e quando).
+  // O diálogo da justificativa precisa de dados que podem não estar no layout do usuário, então
+  // eles vão em TODA linha: os da justificativa em si e os do item (ver as duas listas abaixo).
+  // São 8 colunas leves; `filter` evita repetir a que já está visível.
+  const extras = [...COLUNAS_JUSTIFICATIVA, ...COLUNAS_CONTEXTO_DIVERGENCIA].filter(
+    (c) => !colunas.includes(c),
+  )
   const { data, error, count } = await montarQueryGrid(
     supabase,
-    ['id', ...colunas, ...COLUNAS_JUSTIFICATIVA.filter((c) => !colunas.includes(c))].join(', '),
+    ['id', ...colunas, ...extras].join(', '),
     estado,
     tiposPorCampo,
   ).range(inicio, inicio + estado.tamanho - 1)
@@ -171,10 +175,24 @@ export async function listarProcessosGrid({
   return { linhas, total: count ?? 0 }
 }
 
+/** O estado do selo (? / ✅) e a autoria: texto, nome de quem justificou e quando (0142). A
+ *  coluna Divergência pode estar oculta no layout, mas o selo precisa deles quando ela aparecer. */
 const COLUNAS_JUSTIFICATIVA = [
   'divergencia_justificativa',
   'divergencia_justificada_por_nome',
   'divergencia_justificada_em',
+]
+
+/** De que item é a divergência: são os CINCO campos que o diálogo mostra no bloco de contexto
+ *  (pedido de 09/10/2026), e ele os mostra igual no Fluxo, onde vêm da `rec_fluxo_emb_itens`.
+ *  Esconder a coluna "Código do Material" no layout não pode deixar o diálogo sem o código —
+ *  é por isso que elas vão forçadas, e não porque o grid as exiba. */
+const COLUNAS_CONTEXTO_DIVERGENCIA = [
+  'codigo_material',
+  'descricao_material',
+  'quantidade_pedido',
+  'quantidade_recebida',
+  'divergencia',
 ]
 
 /** O PostgREST corta cada resposta em `max_rows` (`supabase/config.toml`: 1000). É o
