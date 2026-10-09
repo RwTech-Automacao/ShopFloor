@@ -69,3 +69,40 @@ describe('listarProcessosGrid: autor da justificativa', () => {
     expect(tabelasLidas).not.toContain('usuarios')
   })
 })
+
+/**
+ * O diálogo da justificativa mostra o item da divergência (código, descrição, pedida, recebida e
+ * a divergência). O SELECT do grid traz só as colunas do LAYOUT, então quem esconde a coluna
+ * "Código do Material" deixaria o diálogo sem ela: estas colunas vão forçadas em toda linha.
+ */
+describe('listarProcessosGrid: colunas do contexto da divergência', () => {
+  beforeEach(() => { tabelasLidas.length = 0; selects.length = 0; linhasDoBanco = [] })
+
+  async function selectCom(colunas: string[]): Promise<string> {
+    linhasDoBanco = [{ id: 'p1' }]
+    await listarProcessosGrid({
+      estado: { pagina: 0, tamanho: 20, ordenar: 'numero', filtros: {} } as never,
+      colunas,
+      tiposPorCampo: {},
+    })
+    return selects[0] ?? ''
+  }
+
+  const CONTEXTO = [
+    'codigo_material',
+    'descricao_material',
+    'quantidade_pedido',
+    'quantidade_recebida',
+    'divergencia',
+  ]
+
+  it.each(CONTEXTO)('pede %s mesmo com a coluna fora do layout', async (campo) => {
+    const select = await selectCom(['numero_emb'])
+    expect(select.split(', ')).toContain(campo)
+  })
+
+  it('não repete a coluna que já está no layout', async () => {
+    const campos = (await selectCom(['divergencia'])).split(', ')
+    expect(campos.filter((c) => c === 'divergencia')).toHaveLength(1)
+  })
+})

@@ -234,3 +234,68 @@ describe('ordenação e filtro da coluna Divergência continuam funcionando', ()
     expect(g).toContain('divergencia')
   })
 })
+
+/** Pares rótulo→valor do bloco de contexto do diálogo, na ordem em que a pessoa lê. `vermelho`
+ *  é a cor do valor (a divergência negativa vem em vermelho, como na célula da grade). */
+function contextoDoDialogo(): { rotulo: string; valor: string; vermelho: boolean }[] {
+  const bloco = within(screen.getByRole('dialog')).getByRole('group', {
+    name: 'Contexto da divergência',
+  })
+  return [...bloco.querySelectorAll('dt')].map((dt) => {
+    const dd = dt.nextElementSibling
+    return {
+      rotulo: dt.textContent ?? '',
+      valor: dd?.textContent ?? '',
+      vermelho: Boolean(dd?.querySelector('.text-red-600')),
+    }
+  })
+}
+
+describe('contexto da divergência dentro do diálogo', () => {
+  /** O item como a GRADE o recebe: `numeric` do Postgres chega como STRING no PostgREST e
+   *  `divergencia` é coluna text. */
+  const ITEM = {
+    codigo_material: 'CAPJ91',
+    descricao_material: 'CAPACITOR CERAMICO 100NF 50V',
+    quantidade_pedido: '1010',
+    quantidade_recebida: '505',
+    divergencia: '-505',
+  }
+
+  function abrir(extra: Record<string, unknown> = {}) {
+    montar([linha({ ...ITEM, ...extra })], true)
+    fireEvent.click(tabela().getByRole('button', { name: /^Divergência / }))
+    return within(screen.getByRole('dialog'))
+  }
+
+  it('mostra os cinco campos do item, com o número em pt-BR', () => {
+    abrir()
+    expect(contextoDoDialogo()).toEqual([
+      { rotulo: 'Código do material', valor: 'CAPJ91', vermelho: false },
+      { rotulo: 'Descrição', valor: 'CAPACITOR CERAMICO 100NF 50V', vermelho: false },
+      { rotulo: 'Quantidade pedida', valor: '1.010', vermelho: false },
+      { rotulo: 'Quantidade recebida', valor: '505', vermelho: false },
+      { rotulo: 'Divergência', valor: '-505', vermelho: true },
+    ])
+  })
+
+  it('com a coluna do Código OCULTA no layout, o diálogo mostra o código de todo jeito', () => {
+    // Premissa do teste: o layout desta grade não tem a coluna do código (só Nº, Status e
+    // Divergência). Se o campo sair da lista forçada do SELECT, o diálogo fica sem ele.
+    expect(colunas.map((c) => c.campo)).not.toContain('codigo_material')
+    const d = abrir()
+    expect(d.getByText('CAPJ91')).toBeInTheDocument()
+  })
+
+  it('divergência POSITIVA não vem em vermelho (o contraste que dá força ao teste de cima)', () => {
+    abrir({ divergencia: '12', quantidade_recebida: '1022' })
+    const div = contextoDoDialogo().at(-1)
+    expect(div).toEqual({ rotulo: 'Divergência', valor: '12', vermelho: false })
+  })
+
+  it('campo sem valor sai como —, igual à célula da grade', () => {
+    abrir({ codigo_material: null, descricao_material: '', quantidade_recebida: null })
+    const vistos = contextoDoDialogo().map((c) => c.valor)
+    expect(vistos).toEqual(['—', '—', '1.010', '—', '-505'])
+  })
+})

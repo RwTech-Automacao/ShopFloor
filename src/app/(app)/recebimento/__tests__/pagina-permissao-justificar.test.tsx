@@ -20,6 +20,9 @@ vi.mock('@/modules/recebimento/application/justificar-divergencia', () => ({
   salvarJustificativaDivergencia: vi.fn(),
 }))
 
+/** O diálogo exige o contexto do item; aqui ele é só enfeite — o que se vigia é a permissão. */
+const CONTEXTO = { codigo: 'CAPJ91', descricao: 'CAPACITOR', quantidadePedido: 1010, quantidadeRecebida: 505, divergencia: '-505' }
+
 // As telas filhas são trocadas por um stub que só abre o diálogo REAL com a prop `podeJustificar`
 // que a página entregou. O que se vigia aqui é a fiação da página (qual permissão ela consulta),
 // que os testes das telas filhas (que recebem a prop pronta) não enxergam.
@@ -28,7 +31,7 @@ vi.mock('../processos/processos-grid', async () => {
   return {
     ProcessosGrid: ({ podeJustificar }: { podeJustificar?: boolean }) => (
       <JustificarDivergenciaDialog
-        alvo={{ id: 'p1', numero: '101', texto: 'texto', autor: '', quando: null }}
+        alvo={{ id: 'p1', numero: '101', texto: 'texto', autor: '', quando: null, contexto: CONTEXTO }}
         podeJustificar={podeJustificar === true}
         onFechar={() => {}}
         onSalvo={() => {}}
@@ -41,7 +44,7 @@ vi.mock('../fluxo/fluxo-form', async () => {
   return {
     FluxoForm: ({ podeJustificar }: { podeJustificar?: boolean }) => (
       <JustificarDivergenciaDialog
-        alvo={{ id: 'p1', numero: '101', texto: 'texto', autor: '', quando: null }}
+        alvo={{ id: 'p1', numero: '101', texto: 'texto', autor: '', quando: null, contexto: CONTEXTO }}
         podeJustificar={podeJustificar === true}
         onFechar={() => {}}
         onSalvo={() => {}}

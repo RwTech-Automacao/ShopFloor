@@ -106,32 +106,55 @@ const colunas: ColunaGrid[] = [
 ]
 const estadoGrid = decodificarEstadoGrid(undefined, colunas.map((c) => c.campo))
 
-function selosNaGrade(divergencia: number | string | null, justificativa: string): SeloVisto[] {
+/**
+ * O MESMO item do MESMO processo, nos dois formatos em que cada tela o recebe: a grade lê a linha
+ * do banco (o `numeric` do PostgREST chega como STRING, e `divergencia` é coluna text), o Fluxo lê
+ * a RPC, que o repositório já converte para número. Os valores são os mesmos — é sobre eles que as
+ * duas telas têm de contar a mesma história.
+ */
+const ITEM = {
+  codigo: 'CAPJ91',
+  descricao: 'CAPACITOR CERAMICO 100NF 50V',
+  pedido: 1010,
+  recebida: 505,
+}
+
+/** Monta a grade com uma linha e devolve a tabela (a raiz onde se olha o selo). */
+function renderGrade(divergencia: number | string | null, justificativa: string): HTMLElement {
   const linha = {
     id: 'p1',
     numero: 101,
     divergencia,
+    codigo_material: ITEM.codigo,
+    descricao_material: ITEM.descricao,
+    quantidade_pedido: String(ITEM.pedido),
+    quantidade_recebida: String(ITEM.recebida),
     divergencia_justificativa: justificativa,
     divergencia_justificada_por_nome: '',
     divergencia_justificada_em: null,
   }
   render(<ProcessosGrid colunas={colunas} linhas={[linha]} total={1} estado={estadoGrid} podeJustificar />)
   // A grade renderiza tabela (desktop) E cards (celular); olha-se a tabela, como nos outros testes.
-  return selosDe(screen.getByRole('table'))
+  return screen.getByRole('table')
+}
+
+function selosNaGrade(divergencia: number | string | null, justificativa: string): SeloVisto[] {
+  return selosDe(renderGrade(divergencia, justificativa))
 }
 
 const CAIXAS: CaixaFluxo[] = (['recebimento', 'qualidade', 'almoxarifado', 'reprovado', 'divergencia'] as const).map(
   (etapa) => ({ etapa, itens: etapa === 'qualidade' ? 1 : 0, divergentes: 0, mediaSegundos: null, maiorSegundos: null, semTempo: 0 }),
 )
 
-async function selosNoFluxo(divergencia: string, justificativa: string): Promise<SeloVisto[]> {
+/** Abre a EMB, clica na caixa e devolve o painel da caixa (a raiz onde se olha o selo). */
+async function renderFluxo(divergencia: string, justificativa: string): Promise<HTMLElement> {
   const item: ItemFluxo = {
     processoId: 'p1',
     numero: 101,
-    item: 'CAPJ91',
-    descricao: 'CAPACITOR',
-    quantidadePedido: 500,
-    quantidadeRecebida: 490,
+    item: ITEM.codigo,
+    descricao: ITEM.descricao,
+    quantidadePedido: ITEM.pedido,
+    quantidadeRecebida: ITEM.recebida,
     divergencia,
     resultado: '',
     desde: '2026-09-20T12:00:00Z',
@@ -149,8 +172,12 @@ async function selosNoFluxo(divergencia: string, justificativa: string): Promise
   fireEvent.click(document.querySelector('[data-no="qualidade"]') as HTMLElement)
   const painel = document.querySelector('aside') as HTMLElement
   // Prova positiva: o item está na lista, então a ausência de selo é real e não "ainda carregando".
-  expect(await within(painel).findByText('CAPJ91')).toBeInTheDocument()
-  return selosDe(painel)
+  expect(await within(painel).findByText(ITEM.codigo)).toBeInTheDocument()
+  return painel
+}
+
+async function selosNoFluxo(divergencia: string, justificativa: string): Promise<SeloVisto[]> {
+  return selosDe(await renderFluxo(divergencia, justificativa))
 }
 
 const PENDENTE: SeloVisto = { nome: 'Divergência sem justificativa', texto: '?' }
@@ -182,5 +209,55 @@ describe('selo de divergência: grade de Processos e Fluxo concordam', () => {
     expect(noFluxo, `Fluxo ${JSON.stringify(noFluxo)} diverge da grade ${JSON.stringify(naGrade)}`).toEqual(naGrade)
     // E é a coisa certa (senão as duas poderiam errar juntas).
     expect(naGrade).toEqual(esperado)
+  })
+})
+
+/** Pares rótulo→valor do bloco de contexto do diálogo, na ordem em que a pessoa lê. `vermelho`
+ *  é a cor do valor (divergência negativa sai em vermelho nas duas telas). */
+function contextoDoDialogo(): { rotulo: string; valor: string; vermelho: boolean }[] {
+  const bloco = within(screen.getByRole('dialog')).getByRole('group', {
+    name: 'Contexto da divergência',
+  })
+  return [...bloco.querySelectorAll('dt')].map((dt) => {
+    const dd = dt.nextElementSibling
+    return {
+      rotulo: dt.textContent ?? '',
+      valor: dd?.textContent ?? '',
+      vermelho: Boolean(dd?.querySelector('.text-red-600')),
+    }
+  })
+}
+
+/** Clica no selo da raiz dada (tabela da grade ou painel do Fluxo) e lê o diálogo que abriu. */
+function abrirDialogo(raiz: HTMLElement) {
+  fireEvent.click(within(raiz).getByRole('button', SELO))
+  return contextoDoDialogo()
+}
+
+describe('contexto da divergência: o diálogo é o mesmo nas duas telas', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', { configurable: true, writable: true, value: vi.fn() })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, writable: true, value: () => null })
+  })
+
+  // Vale para a pendente (?) e para a justificada (✅): as duas abrem o mesmo diálogo.
+  it.each([
+    ['pendente', ''],
+    ['justificada', 'Fornecedor mandou a menos; reposição acertada.'],
+  ])('divergência %s: grade e Fluxo mostram o mesmo item', async (_nome, justificativa) => {
+    const naGrade = abrirDialogo(renderGrade('-505', justificativa))
+    cleanup()
+    const noFluxo = abrirDialogo(await renderFluxo('-505', justificativa))
+    // O principal: as duas telas mostram a MESMA coisa. A mensagem aponta quem divergiu.
+    expect(noFluxo, `Fluxo ${JSON.stringify(noFluxo)} diverge da grade ${JSON.stringify(naGrade)}`).toEqual(naGrade)
+    // E é a coisa certa (senão as duas poderiam errar juntas): milhar em pt-BR e negativo vermelho.
+    expect(naGrade).toEqual([
+      { rotulo: 'Código do material', valor: 'CAPJ91', vermelho: false },
+      { rotulo: 'Descrição', valor: 'CAPACITOR CERAMICO 100NF 50V', vermelho: false },
+      { rotulo: 'Quantidade pedida', valor: '1.010', vermelho: false },
+      { rotulo: 'Quantidade recebida', valor: '505', vermelho: false },
+      { rotulo: 'Divergência', valor: '-505', vermelho: true },
+    ])
   })
 })
