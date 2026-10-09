@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { finalizadaPorDoCadastro } from '../domain/finalizacao'
+import { ehReativacaoManual, finalizadaPorDoCadastro } from '../domain/finalizacao'
 import { validarOrdem } from '../domain/validar-ordem'
 import { mensagemOpDuplicada } from '../domain/op-unica'
 import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto'
@@ -131,6 +131,11 @@ export async function editarOrdemAction(
   const id = String(formData.get('id') ?? '').trim()
   if (id === '') return { ok: false, erro: 'OP inválida.' }
   const dados = lerDados(formData)
+  // Reativar na mão (FINALIZADA -> outro status) tira a OP do controle automático para sempre, ou a
+  // rotina dos 100% a fecharia de novo em até 5 minutos. O status ANTERIOR vem do banco: o do
+  // formulário é do cliente, e a marca é definitiva demais para depender dele.
+  const base = await buscarOrdemBase(id)
+  if (ehReativacaoManual(base?.status, dados.status)) dados.reaberta_manual = true
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd })
   if (!v.ok) return v
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).

@@ -17,6 +17,21 @@ export function finalizadaPorDoCadastro(status: string): 'manual' | null {
   return ehOpFinalizada(status) ? 'manual' : null
 }
 
+/**
+ * A tela de Cadastro de OP acabou de REATIVAR esta OP? (FINALIZADA -> qualquer outro status.)
+ *
+ * É o que liga `sf_ordens.reaberta_manual` (migração 0148), e a partir daí a rotina dos 100% nunca
+ * mais fecha a OP sozinha: senão o gestor reativa a OP para a peça atrasada entrar e a rotina a
+ * fecha de novo em até 5 minutos, às vezes antes de o operador bipar.
+ *
+ * Compara o status ANTERIOR (lido do banco, não do formulário) com o novo. Só a transição conta:
+ * marcar em toda edição de OP ativa tiraria a base inteira do controle automático. Status anterior
+ * desconhecido (nulo) -> não é reativação; na dúvida, a OP continua automática.
+ */
+export function ehReativacaoManual(statusAnterior: string | null | undefined, statusNovo: string): boolean {
+  return ehOpFinalizada(statusAnterior) && !ehOpFinalizada(statusNovo)
+}
+
 /** Contagem devolvida por `sf_sincronizar_finalizacao()`. */
 export interface ResumoFinalizacao {
   finalizadas: number

@@ -41,6 +41,11 @@ export interface DadosOrdem {
   embalagem_individual: boolean
   /** Quem encerrou (0145). A tela só grava 'manual' ou null; 'rotina' é exclusivo da rotina SQL. */
   finalizada_por: 'manual' | null
+  /**
+   * Reativação na mão (0148). Só aparece no payload QUANDO a OP está sendo reativada, e só com
+   * `true`: a marca é definitiva, então a tela nunca a apaga. Ausente = não mexe na coluna.
+   */
+  reaberta_manual?: true
 }
 
 export async function listarPostos(): Promise<PostoRow[]> {
@@ -151,9 +156,10 @@ export async function buscarOpEmUso(op: string, excetoId?: string): Promise<{ id
   return row ? (row as { id: string; pmo: string; op: string }) : null
 }
 
-export async function buscarOrdemBase(id: string): Promise<{ pmo: string; op: string } | null> {
+/** PMO, OP e status atuais da OP. O status vem para o editar saber se a OP está sendo REATIVADA. */
+export async function buscarOrdemBase(id: string): Promise<{ pmo: string; op: string; status: string } | null> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('sf_ordens').select('pmo,op').eq('id', id).single()
+  const { data, error } = await supabase.from('sf_ordens').select('pmo,op,status').eq('id', id).single()
   if (error) return null
-  return data as { pmo: string; op: string }
+  return data as { pmo: string; op: string; status: string }
 }

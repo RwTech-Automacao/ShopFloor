@@ -1,4 +1,4 @@
--- Prova a 0145. Roda depois da 0121 e da 0145 (esta aplicada duas vezes).
+-- Prova a 0145 e a 0148. Roda depois da 0121, da 0145 e da 0148 (as duas aplicadas duas vezes).
 \set ON_ERROR_STOP on
 
 -- ---------- ferramentas ----------
@@ -16,7 +16,7 @@ $func$;
 -- Impressão digital do banco INTEIRO de ordens, inclusive updated_at: prova "não reescreveu nada".
 create function pg_temp.digital() returns text language sql as $func$
   select md5(coalesce(string_agg(id::text || '|' || status || '|' || coalesce(finalizada_por, '~')
-                                 || '|' || updated_at::text, ';' order by id), ''))
+                                 || '|' || reaberta_manual::text || '|' || updated_at::text, ';' order by id), ''))
     from public.sf_ordens
 $func$;
 
@@ -142,6 +142,80 @@ select pg_temp.rodar();   -- A volta a fechar
 create temp table d2 as select pg_temp.digital() as d;
 select pg_temp.confere(pg_temp.rodar() = '{"finalizadas": 0, "reabertas": 0}'::jsonb, 'estado final não convergiu');
 select pg_temp.confere(pg_temp.digital() = (select d from d2), 'rodada final mexeu no banco');
+
+-- =============================================================
+-- 0148: REATIVAR NA MÃO TIRA A OP DO CONTROLE AUTOMÁTICO, PARA SEMPRE
+-- (caso 5 do adendo de 09/10/2026 da spec)
+-- =============================================================
+
+-- ---------- a coluna nasce falsa: OP que já existia continua automática ----------
+select pg_temp.confere(
+  (select count(*) from public.sf_ordens where reaberta_manual is not false) = 0,
+  'a marca de reabertura deveria nascer FALSA em toda OP que já existia (senão a 0148 desliga a '
+  || 'finalização automática de toda a base de uma vez)');
+select pg_temp.confere(
+  (select is_nullable || '/' || coalesce(column_default, '-') from information_schema.columns
+    where table_schema = 'public' and table_name = 'sf_ordens' and column_name = 'reaberta_manual')
+  = 'NO/false', 'reaberta_manual deveria ser not null default false');
+
+-- ---------- o gestor reativa uma OP em 100%: a rotina NUNCA fecha de novo ----------
+insert into public.sf_ordens (pmo, op, qtd, status, finalizada_por) values ('PMO1', 'N', 2, 'ATIVA', null);
+insert into public.sf_ordem_postos (ordem_id, posto, ordem)
+  select id, p.posto, p.ordem from public.sf_ordens, (values ('MONT', 1), ('EMB', 2)) as p(posto, ordem)
+   where op = 'N';
+select pg_temp.pecas('N', 2);   -- 100%
+
+-- primeiro a rotina fecha, como manda a regra dos 100%
+select pg_temp.confere((pg_temp.rodar()->>'finalizadas') = '1', 'N (100%, ativa) deveria fechar');
+select pg_temp.confere((select status || '/' || finalizada_por from public.sf_ordens where op = 'N') = 'FINALIZADA/rotina',
+  'N deveria estar fechada pela rotina');
+
+-- o gestor reativa pela tela de Cadastro de OP: status volta, marca limpa, reabertura registrada
+update public.sf_ordens set status = 'ATIVA', finalizada_por = null, reaberta_manual = true where op = 'N';
+
+-- a peça atrasada chega e é bipada; a conta segue em 100% (é por série distinta)
+insert into public.sf_registros (pmo, op, posto, status, numero_serie_norm)
+  values ('PMO1', 'N', 'EMB', 'aprovado', 'N-SN1');
+select pg_temp.confere((select pct_conclusao from public.sf_ops_com_bipes(null, null) where op = 'N') = 100.0,
+  'a conta de N deveria seguir em 100 (a peça atrasada já estava contada)');
+
+-- NENHUMA rodada fecha N de novo: nem a seguinte, nem nenhuma depois
+create temp table dn as select pg_temp.digital() as d;
+select pg_temp.confere(pg_temp.rodar() = '{"finalizadas": 0, "reabertas": 0}'::jsonb,
+  'a rodada seguinte à reativação mexeu em alguma OP');
+select pg_temp.confere((select status || '/' || coalesce(finalizada_por, '-') from public.sf_ordens where op = 'N') = 'ATIVA/-',
+  'N foi fechada de novo pelas costas de quem a reativou');
+select pg_temp.rodar(); select pg_temp.rodar(); select pg_temp.rodar();
+select pg_temp.confere((select status from public.sf_ordens where op = 'N') = 'ATIVA',
+  'N foi fechada por uma rodada posterior: reativar na mão tem de valer PARA SEMPRE');
+select pg_temp.confere(pg_temp.digital() = (select d from dn), 'as rodadas depois da reativação mexeram no banco');
+select pg_temp.confere((select reaberta_manual from public.sf_ordens where op = 'N'),
+  'a rotina não pode apagar a marca de reabertura');
+
+-- ---------- a marca sozinha já basta: OP em 100% nunca fechada, mas marcada ----------
+insert into public.sf_ordens (pmo, op, qtd, status, reaberta_manual) values ('PMO1', 'O', 1, 'ATIVA', true);
+insert into public.sf_ordem_postos (ordem_id, posto, ordem)
+  select id, p.posto, p.ordem from public.sf_ordens, (values ('MONT', 1), ('EMB', 2)) as p(posto, ordem)
+   where op = 'O';
+select pg_temp.pecas('O', 1);   -- 100%
+select pg_temp.confere((pg_temp.rodar()->>'finalizadas') = '0', 'O (marcada, 100%) foi finalizada pela rotina');
+select pg_temp.confere((select status from public.sf_ordens where op = 'O') = 'ATIVA', 'O deveria seguir ATIVA');
+
+-- ---------- quem reabriu pode fechar: fecha na mão e a rotina não desfaz ----------
+update public.sf_ordens set status = 'FINALIZADA', finalizada_por = 'manual' where op = 'N';
+select pg_temp.rodar(); select pg_temp.rodar();
+select pg_temp.confere((select status || '/' || finalizada_por || '/' || reaberta_manual from public.sf_ordens where op = 'N')
+  = 'FINALIZADA/manual/true', 'N fechada na mão depois de reaberta foi mexida pela rotina');
+
+-- ---------- a marca NÃO atrapalha a reabertura automática de quem a rotina fechou ----------
+-- (reabrir não é fechar: a 0148 só interfere no FECHAR)
+update public.sf_ordens set qtd = 5 where op = 'M';   -- M está FINALIZADA/rotina; 3/5 = 60%
+select pg_temp.confere((pg_temp.rodar()->>'reabertas') = '1', 'M deveria reabrir mesmo com a 0148 aplicada');
+
+-- ---------- convergência depois do bloco da 0148 ----------
+create temp table d3 as select pg_temp.digital() as d;
+select pg_temp.confere(pg_temp.rodar() = '{"finalizadas": 0, "reabertas": 0}'::jsonb, 'estado não convergiu depois da 0148');
+select pg_temp.confere(pg_temp.digital() = (select d from d3), 'rodada final mexeu no banco');
 
 -- ---------- permissões: só service_role executa ----------
 set role authenticated;
