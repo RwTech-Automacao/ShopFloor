@@ -60,6 +60,7 @@ select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 \i /tmp/0142.sql
 \i /tmp/0143.sql
 \i /tmp/0144.sql
+\i /tmp/0147.sql
 
 -- ---------- massa de teste ----------
 -- EMB390: um item em cada caixa (um deles divergente), mais um sem histórico nenhum.
@@ -647,6 +648,123 @@ begin
      or r.divergencia_justificada_em is not null then
     raise exception 'FALHOU: item sem justificativa tem que vir vazio'; end if;
   raise notice 'itens da caixa trazem a justificativa (0144): ok';
+end $t$;
+
+-- ---------- 10. Divergência em número (0147) ----------
+-- A coluna gerada `divergencia_num` é o que os filtros rápidos (Divergências/positivas/negativas)
+-- consultam no banco. Ela TEM que concordar com temDivergencia() do domínio, caso a caso: nulo e
+-- zero não são divergência; texto que não é número não é divergência; vírgula decimal é número.
+do $t$
+declare
+  v_casos text[][] := array[
+    -- [entrada, esperado ('<nulo>' quando a regra diz "não é divergência por falta de número")]
+    array['0',          '0'],
+    array['10',         '10'],
+    array['-10',        '-10'],
+    array['1,5',        '1.5'],
+    array['-1,5',       '-1.5'],
+    array['  7  ',      '7'],
+    array['0,0',        '0.0'],
+    array['',           '<nulo>'],
+    array['   ',        '<nulo>'],
+    array['ok',         '<nulo>'],
+    array['-',          '<nulo>'],
+    array['NaN',        '<nulo>'],
+    array['Infinity',   '<nulo>'],
+    array['-Infinity',  '<nulo>']
+  ];
+  v_caso text[];
+  v_obtido numeric;
+  v_texto text;
+begin
+  foreach v_caso slice 1 in array v_casos loop
+    v_obtido := public.rec_divergencia_num(v_caso[1]);
+    v_texto := coalesce(v_obtido::text, '<nulo>');
+    if v_caso[2] = '<nulo>' then
+      if v_obtido is not null then
+        raise exception 'FALHOU: rec_divergencia_num(%) devia ser nulo e veio %', v_caso[1], v_texto; end if;
+    else
+      if v_obtido is distinct from v_caso[2]::numeric then
+        raise exception 'FALHOU: rec_divergencia_num(%) devia ser % e veio %', v_caso[1], v_caso[2], v_texto; end if;
+    end if;
+  end loop;
+  if public.rec_divergencia_num(null) is not null then
+    raise exception 'FALHOU: rec_divergencia_num(null) devia ser nulo'; end if;
+  raise notice 'rec_divergencia_num, caso a caso (0147): ok';
+end $t$;
+
+-- A coluna gerada acompanha a coluna de texto, inclusive quando a quantidade é corrigida depois.
+do $t$
+declare v_id uuid; v_num numeric;
+begin
+  insert into public.processos_recebimento (numero_emb, codigo_material, divergencia)
+  values ('EMB147', 'NUM147', '-4,5') returning id into v_id;
+  select divergencia_num into v_num from public.processos_recebimento where id = v_id;
+  if v_num is distinct from -4.5 then
+    raise exception 'FALHOU: divergencia_num devia ser -4.5 e veio %', coalesce(v_num::text,'<nulo>'); end if;
+
+  -- Divergência corrigida: a marca some sozinha (é o que o domínio promete).
+  update public.processos_recebimento set divergencia = '0' where id = v_id;
+  select divergencia_num into v_num from public.processos_recebimento where id = v_id;
+  if v_num is distinct from 0 then
+    raise exception 'FALHOU: depois de corrigir, divergencia_num devia ser 0 e veio %', coalesce(v_num::text,'<nulo>'); end if;
+
+  -- Célula apagada: volta a "não conferido", que NÃO é divergência.
+  update public.processos_recebimento set divergencia = '' where id = v_id;
+  select divergencia_num into v_num from public.processos_recebimento where id = v_id;
+  if v_num is not null then
+    raise exception 'FALHOU: divergencia vazia devia dar divergencia_num nulo e veio %', v_num; end if;
+  raise notice 'coluna gerada acompanha a correção da quantidade (0147): ok';
+end $t$;
+
+-- Os TRÊS filtros, como o grid os manda pro banco. É aqui que se vê o erro que a 0147 existe para
+-- evitar: comparando como TEXTO, '9' seria maior que '10' e '-5' maior que '0'.
+do $t$
+declare
+  v_divergentes int; v_positivas int; v_negativas int;
+begin
+  delete from public.processos_recebimento where numero_emb = 'EMB148';
+  insert into public.processos_recebimento (numero_emb, codigo_material, divergencia) values
+    ('EMB148', 'A', '9'),    -- positiva
+    ('EMB148', 'B', '10'),   -- positiva (em texto, '10' < '9')
+    ('EMB148', 'C', '-5'),   -- negativa (em texto, '-5' > '0')
+    ('EMB148', 'D', '0'),    -- sem divergência
+    ('EMB148', 'E', ''),     -- não conferido
+    ('EMB148', 'F', 'ok');   -- texto: sem significado
+
+  select count(*) into v_divergentes from public.processos_recebimento
+   where numero_emb = 'EMB148' and divergencia_num <> 0;
+  select count(*) into v_positivas from public.processos_recebimento
+   where numero_emb = 'EMB148' and divergencia_num > 0;
+  select count(*) into v_negativas from public.processos_recebimento
+   where numero_emb = 'EMB148' and divergencia_num < 0;
+
+  if v_divergentes <> 3 then
+    raise exception 'FALHOU: Divergências devia achar 3 e achou %', v_divergentes; end if;
+  if v_positivas <> 2 then
+    raise exception 'FALHOU: positivas devia achar 2 e achou %', v_positivas; end if;
+  if v_negativas <> 1 then
+    raise exception 'FALHOU: negativas devia achar 1 e achou %', v_negativas; end if;
+  -- positivas + negativas tem que fechar com Divergências: nenhuma linha divergente sem sinal.
+  if v_positivas + v_negativas <> v_divergentes then
+    raise exception 'FALHOU: positivas (%) + negativas (%) não fecham com Divergências (%)',
+      v_positivas, v_negativas, v_divergentes; end if;
+  raise notice 'os três filtros rápidos no banco (0147): ok';
+end $t$;
+
+-- Não se escreve na coluna gerada: se alguém tentar, o Postgres recusa. Isso protege a regra de
+-- um UPDATE distraído que faria a lista filtrada discordar do selo da linha.
+do $t$
+declare v_recusou boolean := false;
+begin
+  begin
+    update public.processos_recebimento set divergencia_num = 999 where numero_emb = 'EMB148';
+  exception when others then
+    v_recusou := true;
+  end;
+  if not v_recusou then
+    raise exception 'FALHOU: o banco deixou escrever na coluna gerada divergencia_num'; end if;
+  raise notice 'coluna gerada é só de leitura (0147): ok';
 end $t$;
 
 select 'RECEBIMENTO FLUXO/REGISTROS OK' as resultado;
