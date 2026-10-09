@@ -14,6 +14,7 @@ insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim) values
 select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 \i /tmp/0111.sql
 \i /tmp/0112.sql
+\i /tmp/0146.sql
 
 -- Atalho dos testes: id do equipamento cadastrado (maquina null = PTH).
 create function public.eqid(p_processo text, p_linha text, p_bloco text, p_maquina text default null)
@@ -366,6 +367,90 @@ do $t$ declare s uuid; r jsonb; begin
   r := st_liberar_setup(s, 'qualquer-1');
   if (r->>'sem_faixa')::boolean is not true then raise exception 'FALHOU: liberar sem faixa %', r; end if;
   if (select estado || '|' || sn_abertura from st_setups where id = s) <> 'liberado|qualquer1' then raise exception 'FALHOU: SN sem faixa gravado'; end if;
+end $t$;
+
+-- 12. criado_em: nasce na inclusão, NÃO muda ao editar nem ao rebipar o rolo
+insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values ('PMOG13', '9008', '2690080001', '2690080100');
+select set_config('teste.perms', 'setup.visualizar,setup.lancar,setup.administrar', false);
+-- Cada passo é um DO próprio: now() é o instante da transação, então só transações separadas
+-- (como no uso real, uma chamada por bipe) dão criado_em diferentes.
+create temp table t12 (chave text primary key, id uuid, c timestamptz);
+do $t$ declare s uuid; begin
+  s := (st_abrir_setup('PMOG13', '9008', eqid('SMD', '1', 'A', 'MG5'), 'TOP')->>'setup_id')::uuid;
+  insert into t12 values ('setup', s, null);
+end $t$;
+do $t$ begin
+  insert into t12 values ('i1', (st_incluir_item((select id from t12 where chave = 'setup'), '1', 'F1', 'CAPJ41-1201')->>'item_id')::uuid, null);
+end $t$;
+select pg_sleep(0.05);
+do $t$ begin
+  insert into t12 values ('i2', (st_incluir_item((select id from t12 where chave = 'setup'), '2', 'F2', 'CAPJ41-1202')->>'item_id')::uuid, null);
+  update t12 set c = (select criado_em from st_setup_itens where id = t12.id) where chave in ('i1', 'i2');
+  if exists (select 1 from t12 where chave in ('i1', 'i2') and c is null) then raise exception 'FALHOU: criado_em nulo na inclusão'; end if;
+  if (select c from t12 where chave = 'i2') <= (select c from t12 where chave = 'i1') then
+    raise exception 'FALHOU: o item incluído depois não tem criado_em maior';
+  end if;
+end $t$;
+select pg_sleep(0.05);
+-- EDITAR o item mais antigo: atualizado_em avança, criado_em NÃO
+do $t$ begin
+  perform st_editar_item((select id from t12 where chave = 'i1'), '1', 'F1-NOVO');
+end $t$;
+do $t$ declare r record; begin
+  select * into r from st_setup_itens where id = (select id from t12 where chave = 'i1');
+  if r.feeder <> 'F1-NOVO' then raise exception 'FALHOU: premissa, a edição não foi aplicada'; end if;
+  if r.criado_em <> (select c from t12 where chave = 'i1') then raise exception 'FALHOU: editar mexeu no criado_em'; end if;
+  if r.atualizado_em <= r.criado_em then raise exception 'FALHOU: editar deveria avançar atualizado_em (premissa do teste)'; end if;
+end $t$;
+select pg_sleep(0.05);
+-- REBIPAR o rolo de um item que já existe: é o caminho "atualizou" do st_incluir_item, que só acontece
+-- numa posição copiada de outra OP (nasce sem rolo). Copia a 9008 para a 9009 e bipa uma das posições.
+insert into public.sf_ordens (pmo, op, sn_ini, sn_fim) values ('PMOG13', '9009', '', '');
+do $t$ declare n uuid; begin
+  n := (st_abrir_setup('PMOG13', '9009', eqid('SMD', '1', 'A', 'MG5'), 'TOP', (select id from t12 where chave = 'setup'))->>'setup_id')::uuid;
+  insert into t12 values ('copia', n, null);
+  insert into t12 select 'i3', id, criado_em from st_setup_itens where setup_id = n and posicao = '2';
+  if not exists (select 1 from t12 where chave = 'i3') then raise exception 'FALHOU: premissa, a cópia não trouxe a posição 2'; end if;
+end $t$;
+select pg_sleep(0.05);
+do $t$ begin
+  if (st_incluir_item((select id from t12 where chave = 'copia'), '2', 'F2', 'CAPJ41-1299')->>'atualizou')::boolean is not true then
+    raise exception 'FALHOU: premissa, deveria ser atualização';
+  end if;
+end $t$;
+do $t$ declare r record; begin
+  select * into r from st_setup_itens where id = (select id from t12 where chave = 'i3');
+  if r.rolo <> 'CAPJ41-1299' then raise exception 'FALHOU: premissa, o rolo não foi gravado'; end if;
+  if r.criado_em <> (select c from t12 where chave = 'i3') then raise exception 'FALHOU: rebipar rolo mexeu no criado_em'; end if;
+  if r.atualizado_em <= r.criado_em then raise exception 'FALHOU: rebipar deveria avançar atualizado_em (premissa do teste)'; end if;
+end $t$;
+
+-- 12b. Backfill numa tabela JÁ POPULADA, como o Dev/Prod na hora de aplicar: some a coluna, deixa cada linha
+-- com um atualizado_em antigo e distinto, e aplica a 0146 (duas vezes). Cada linha tem de ficar com
+-- criado_em = o seu atualizado_em, e não com a hora da migração (a armadilha do "add column ... default now()").
+alter table st_setup_itens drop column criado_em;
+update st_setup_itens set atualizado_em = now() - interval '30 days' + (random() * interval '10 days');
+create temp table t_backfill as select id, atualizado_em from st_setup_itens;
+\i /tmp/0146.sql
+\i /tmp/0146.sql
+do $t$ begin
+  if (select count(*) from t_backfill) < 5 then raise exception 'FALHOU: premissa, poucas linhas para provar o backfill'; end if;
+  if exists (select 1 from st_setup_itens where criado_em is null) then raise exception 'FALHOU: backfill deixou criado_em nulo'; end if;
+  if exists (select 1 from st_setup_itens i join t_backfill b using (id) where i.criado_em <> b.atualizado_em) then
+    raise exception 'FALHOU: backfill não copiou o atualizado_em de cada linha';
+  end if;
+  if (select is_nullable from information_schema.columns where table_name = 'st_setup_itens' and column_name = 'criado_em') <> 'NO' then
+    raise exception 'FALHOU: criado_em deveria ser NOT NULL';
+  end if;
+  if (select column_default from information_schema.columns where table_name = 'st_setup_itens' and column_name = 'criado_em') is null then
+    raise exception 'FALHOU: criado_em deveria ter default';
+  end if;
+end $t$;
+-- Depois da migração, a linha nova nasce com a hora de agora (default now()).
+do $t$ declare s uuid; i uuid; begin
+  s := (select id from t12 where chave = 'setup');
+  i := (st_incluir_item(s, '3', 'F3', 'CAPJ41-1303')->>'item_id')::uuid;
+  if (select criado_em from st_setup_itens where id = i) < now() - interval '1 minute' then raise exception 'FALHOU: default now() não vale para linha nova'; end if;
 end $t$;
 
 select 'TODOS OS TESTES DO SETUP PASSARAM' as resultado;
