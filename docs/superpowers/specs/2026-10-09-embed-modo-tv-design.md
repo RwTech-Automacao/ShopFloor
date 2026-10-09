@@ -46,8 +46,17 @@ Confirmados por print, com as posições reais (a descrição inicial estava esp
 | Zoom (`− 100 +`) | inferior **esquerdo** |
 | Defeitos | inferior **direito** |
 
-Eles passam a aparecer **só no hover**, e isso vale **no embed e no Modo TV** — decisão do usuário
-em 08/10.
+Eles passam a aparecer **só no hover**, e isso vale **em todo o embed** (com ou sem `?modo=tv`) **e
+no Modo TV** da tela normal — decisão do usuário, confirmada em 09/10 quando eu apontei que a minha
+própria lista de verificação se contradizia.
+
+**A regra, nas três situações:**
+
+| Onde | Os três controles |
+|---|---|
+| Embed, **com ou sem** `?modo=tv` | **só no hover** |
+| Tela normal em Modo TV (tela cheia do navegador) | **só no hover** |
+| Tela normal fora do Modo TV | **sempre visíveis** |
 
 ⚠️ **Fora do Modo TV a tela normal não muda.** O Fluxo é usado em **tablet** pelos supervisores, e
 tablet não tem hover: esconder em todo lugar deixaria filtro, defeitos e zoom **inalcançáveis** para
@@ -78,7 +87,9 @@ entrar/sair da tela cheia, basta trocar o `src`. Se preferirem não recarregar, 
 
 ## Como saber que funcionou
 
-1. Abrir o embed **sem** o parâmetro: tela normal, os três botões visíveis.
+1. Abrir o embed **sem** o parâmetro: layout normal (não apresentação), mas os três botões **já
+   escondidos**, aparecendo no hover. ⚠️ A primeira versão desta spec dizia "botões visíveis" aqui,
+   contradizendo a decisão do usuário — corrigido em 09/10.
 2. Abrir **com** `?modo=tv`: layout de apresentação ocupando o iframe, três botões escondidos,
    reaparecendo no hover.
 3. **Com `?modo=tv`, o navegador não entra em tela cheia.** É o teste que prova que o conflito
