@@ -77,9 +77,7 @@ vi.mock('@/shared/lib/supabase/server', () => ({
   createServerSupabase: async () => ({ from: () => consulta() }),
 }))
 
-const { listarOrdensParaLancamento, listarClientes, listarPmos, listarOps } = await import(
-  '../lancamento-repository'
-)
+const { listarOrdensParaLancamento } = await import('../lancamento-repository')
 
 function ordem(
   pmo: string,
@@ -201,11 +199,4 @@ describe('OP finalizada na tela de Lançamento', () => {
     expect(!r.ok && r.erro === 'OP_FINALIZADA' && r.ordem.op).toBe('8802')
   })
 
-  it('o seletor em cascata continua escondendo a OP FINALIZADA', async () => {
-    // Não poluir a lista de escolha do operador é o comportamento desejado da cascata.
-    expect(await listarClientes()).toEqual(['Enterplak'])
-    expect(await listarPmos('Enterplak')).toEqual(['PMOA'])
-    expect((await listarOps('Enterplak', 'PMOB')).map((r) => r.op)).toEqual([])
-    expect((await listarOps('Enterplak', 'PMOA')).map((r) => r.op)).toEqual(['8801'])
-  })
 })

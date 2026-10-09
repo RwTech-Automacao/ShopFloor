@@ -35,18 +35,6 @@ export interface SfLancarArgs {
   p_observacao: string
 }
 
-/** Clientes distintos das OPs ativas (status ≠ FINALIZADA). */
-export async function listarClientes(): Promise<string[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select('cliente')
-    .neq('status', 'FINALIZADA')
-    .order('cliente')
-  if (error) throw error
-  return [...new Set((data as { cliente: string }[]).map((r) => r.cliente).filter(Boolean))]
-}
-
 /** Nº de peças DISTINTAS (SN único) já lançadas nesse posto pra essa OP. Rebipe/reteste não soma. */
 /**
  * Peças DISTINTAS "aprovadas/passadas" no posto = SNs cujo ÚLTIMO registro no posto NÃO é 'reprovado'.
@@ -80,31 +68,6 @@ export async function contarLancadosNoPosto(pmo: string, op: string, posto: stri
   let n = 0
   for (const v of ultimo.values()) if ((v.status ?? '').trim().toLowerCase() !== 'reprovado') n++
   return n
-}
-
-export async function listarPmos(cliente: string): Promise<string[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select('pmo')
-    .eq('cliente', cliente)
-    .neq('status', 'FINALIZADA')
-    .order('pmo')
-  if (error) throw error
-  return [...new Set((data as { pmo: string }[]).map((r) => r.pmo).filter(Boolean))]
-}
-
-export async function listarOps(cliente: string, pmo: string): Promise<{ op: string }[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select('op')
-    .eq('cliente', cliente)
-    .eq('pmo', pmo)
-    .neq('status', 'FINALIZADA')
-    .order('op')
-  if (error) throw error
-  return data as { op: string }[]
 }
 
 export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLancamento | null> {
@@ -185,9 +148,13 @@ export interface OrdemLancamentoLista {
  * Filtrar `status <> 'FINALIZADA'` aqui tirava do ar as OPs recém-finalizadas: o operador bipava um
  * SN válido e levava "SN não encontrado em nenhuma OP", a Integração respondia "OP do produto não
  * encontrada", e quem estava com a tela aberta quando a OP finalizou perdia o contexto no meio do
- * posto. Aconteceu em produção (7 OPs finalizadas à mão em 08/10/2026). Esconder a OP finalizada é
- * assunto de LISTA DE ESCOLHA — quem a monta é a cascata (`listarClientes`/`listarPmos`/`listarOps`),
- * e lá o filtro continua.
+ * posto. Aconteceu em produção (7 OPs finalizadas à mão em 08/10/2026).
+ *
+ * E não existe nenhuma OUTRA lista que proteja a escolha: a tela de Lançamento não tem mais cascata
+ * de seleção — Cliente, PMO e OP são campos travados (`readOnly disabled`), preenchidos só pelo
+ * bipe. Quem decide o que fazer com a OP finalizada é a busca do cabeçalho (`resolverOpPorSn`), que
+ * a reconhece e recusa com mensagem. Se um dia voltar a seleção manual de OP (backlog: "combobox do
+ * Código"), o filtro de status tem de ser feito LÁ, em cima desta lista — aqui não tem nenhum.
  *
  * Paginado porque sem o filtro de status a consulta varre a tabela inteira, e o PostgREST corta em
  * 1000 linhas (max_rows): sem paginar, a partir da milésima OP começariam a sumir OPs — ATIVAS
