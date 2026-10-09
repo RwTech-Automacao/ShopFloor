@@ -11,13 +11,10 @@ import {
   STATUS_ABERTO,
   STATUS_EM_CONFERENCIA,
 } from '../domain/ciclo-vida'
+import { caminhoProcesso } from '../domain/rotas'
 import { atualizarProcesso, buscarProcesso, carregarCamposFormulario } from '../infra/processo-detalhe-repository'
 
 export type ResultadoTransicaoProcesso = { ok: true } | { ok: false; erro: string }
-
-function caminhoProcesso(id: string): string {
-  return `/recebimento/processos/${id}`
-}
 
 /**
  * Finaliza um processo de recebimento (`em_conferencia` → `finalizado`).

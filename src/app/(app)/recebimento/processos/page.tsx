@@ -24,6 +24,8 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
     listarColunasLista(),
   ])
   const podeCriar = podeNoModulo(sessao?.perfil ?? null, 'recebimento', 'editar')
+  // Justificar divergência é de quem administra o Recebimento (não de quem só edita).
+  const podeJustificar = podeNoModulo(sessao?.perfil ?? null, 'recebimento', 'administrar')
 
   // Estado vem da URL e é validado contra o catálogo (nada dele é confiável).
   const estado = decodificarEstadoGrid(
@@ -73,7 +75,7 @@ export default async function ProcessosPage({ searchParams }: ProcessosPageProps
       </div>
 
       {erro && <p className="text-sm text-red-600">{erro}</p>}
-      <ProcessosGrid colunas={colunas} linhas={linhas} total={total} estado={estado} />
+      <ProcessosGrid colunas={colunas} linhas={linhas} total={total} estado={estado} podeJustificar={podeJustificar} />
     </div>
   )
 }

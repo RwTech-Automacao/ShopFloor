@@ -20,12 +20,32 @@ export function rotulosOrdenacao(tipo: TipoColuna): { asc: string; desc: string 
   return { asc: 'Ordenar de A a Z', desc: 'Ordenar de Z a A' }
 }
 
+/**
+ * Filtros rápidos de divergência da grade de Processos. É UM só estado (não três marcações
+ * independentes): "Divergências" é toda divergência, justificada ou não, e as outras duas são
+ * recortes dela pelo sinal — "positivas + negativas" não existe, isso é "Divergências".
+ *
+ * Não é um `FiltroColuna`: `FiltroColuna` só sabe igualdade e `ilike`, não sabe comparar sinal.
+ * E a coluna onde a condição cai (`divergencia_num`) não é coluna do catálogo da grade — não pode
+ * ser escolhida como visível nem aceitar nome vindo da URL.
+ */
+export const FILTROS_RAPIDOS = ['divergencias', 'positivas', 'negativas'] as const
+
+export type FiltroRapido = (typeof FILTROS_RAPIDOS)[number]
+
+/** Conjunto FECHADO: só estes três valores passam do `?g=` para a consulta. */
+export function ehFiltroRapido(valor: unknown): valor is FiltroRapido {
+  return typeof valor === 'string' && (FILTROS_RAPIDOS as readonly string[]).includes(valor)
+}
+
 export interface EstadoGrid {
   ordenar: string
   direcao: 'asc' | 'desc'
   pagina: number // 0-based
   tamanho: number // linhas por página (seletor da UI)
   filtros: Record<string, FiltroColuna>
+  /** Filtro rápido de divergência; ausente = sem filtro rápido (mostra tudo). */
+  rapido?: FiltroRapido
 }
 
 export const TAMANHOS_PAGINA = [25, 50, 100, 200] as const
@@ -94,7 +114,12 @@ export function decodificarEstadoGrid(
     }
   }
 
-  return { ordenar, direcao, pagina, tamanho, filtros }
+  const estado: EstadoGrid = { ordenar, direcao, pagina, tamanho, filtros }
+  // Conjunto fechado: qualquer outra coisa (outro texto, número, objeto, nulo) degrada para
+  // "sem filtro rápido". A chave fica AUSENTE em vez de `undefined` para que
+  // `codificarEstadoGrid` não a emita — os links já existentes seguem byte a byte iguais.
+  if (ehFiltroRapido(o.rapido)) estado.rapido = o.rapido
+  return estado
 }
 
 /** Faixa semiaberta de datas de um mês: `>= inicio` e `< fim`. */
