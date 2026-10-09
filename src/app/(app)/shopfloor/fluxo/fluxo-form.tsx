@@ -1235,7 +1235,7 @@ export function FluxoForm({
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
         )}
 
-        <div ref={canvasRef} className={`fluxo-canvas group/canvas w-full overflow-hidden bg-neutral-100 ${
+        <div ref={canvasRef} className={`fluxo-canvas w-full overflow-hidden bg-neutral-100 ${
           modoTv ? 'fixed inset-0 z-50 h-dvh' : 'relative h-[70vh] rounded-lg border border-border'
         }`}>
           {/* Transição entre fluxos: borra o canvas atual + spinner enquanto carrega a OP nova. */}

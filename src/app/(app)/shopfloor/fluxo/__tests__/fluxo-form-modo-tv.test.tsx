@@ -198,7 +198,7 @@ describe('os três controles de operação (hover)', () => {
     it('já só no hover, com layout normal', async () => {
       const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />)
       await esperarCarregar()
-      expect(controles()[nome]).toHaveClass('opacity-0', 'group-hover/canvas:opacity-100')
+      expect(controles()[nome]).toHaveClass('opacity-0', 'hover:opacity-100')
       expect(container.querySelector('.fluxo-canvas')).not.toHaveClass('fixed')
     })
   })
@@ -224,7 +224,7 @@ describe('os três controles de operação (hover)', () => {
     it('só no hover', async () => {
       render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor modoTv />)
       await esperarCarregar()
-      expect(controles()[nome]).toHaveClass('opacity-0', 'group-hover/canvas:opacity-100')
+      expect(controles()[nome]).toHaveClass('opacity-0', 'hover:opacity-100')
     })
   })
 
@@ -232,13 +232,19 @@ describe('os três controles de operação (hover)', () => {
     it('só no hover', async () => {
       render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed modoTv />)
       await esperarCarregar()
-      expect(controles()[nome]).toHaveClass('opacity-0', 'group-hover/canvas:opacity-100')
+      expect(controles()[nome]).toHaveClass('opacity-0', 'hover:opacity-100')
     })
   })
 
-  it('o canvas é o `group/canvas` (o hover é dele, não do botão invisível)', async () => {
+  // A regressão vista em produção (09/10): o gatilho era o canvas, que em Modo TV é a tela toda —
+  // com o mouse em qualquer lugar os três reapareciam. Agora cada controle é o próprio alvo, e o
+  // canvas não carrega mais marca de grupo nenhuma.
+  it('o canvas NÃO é mais o gatilho do hover', async () => {
     const { container } = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor modoTv />)
     await esperarCarregar()
-    expect(container.querySelector('.fluxo-canvas')).toHaveClass('group/canvas')
+    expect(container.querySelector('.fluxo-canvas')).not.toHaveClass('group/canvas')
+    for (const [nome, el] of Object.entries(controles())) {
+      expect(el.className, nome).not.toMatch(/group-hover/)
+    }
   })
 })

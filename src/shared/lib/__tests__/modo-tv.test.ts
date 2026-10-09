@@ -42,11 +42,24 @@ describe('classeSoNoHover', () => {
   it('desligado: string vazia (a tela normal não ganha classe nenhuma)', () => {
     expect(classeSoNoHover(false)).toBe('')
   })
-  it('ligado: opacity-0 + volta no hover do canvas e no foco', () => {
+  it('ligado: opacity-0 + volta no hover DO PRÓPRIO controle e no foco', () => {
     const c = classeSoNoHover(true)
     expect(c).toBe(CLASSE_SO_NO_HOVER)
     expect(c).toContain('opacity-0')
-    expect(c).toContain('group-hover/canvas:opacity-100')
+    expect(c).toContain('hover:opacity-100')
     expect(c).toContain('focus-within:opacity-100')
+  })
+  // A regressão que o usuário pegou em produção (09/10): com o hover no canvas inteiro, em Modo
+  // TV o canvas ocupa a tela toda e os três ficavam SEMPRE visíveis. Este teste morre se alguém
+  // devolver o gatilho para o canvas.
+  it('o gatilho NÃO é o canvas (senão o mouse em qualquer lugar da tela mostra os três)', () => {
+    expect(classeSoNoHover(true)).not.toContain('group-hover/canvas')
+  })
+  // Sem isto o controle invisível não receberia o ponteiro e o hover nunca aconteceria — os três
+  // sumiriam de vez no Modo TV, inalcançáveis até no PC.
+  it('ligado: o invisível volta a receber o ponteiro onde existe hover', () => {
+    const c = classeSoNoHover(true)
+    expect(c).toContain('pointer-events-none')
+    expect(c).toContain('[@media(hover:hover)]:pointer-events-auto')
   })
 })
