@@ -9,6 +9,7 @@ trap 'docker rm -f "$NOME" >/dev/null 2>&1 || true' EXIT
 for _ in $(seq 1 30); do docker exec "$NOME" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
 docker cp supabase/migrations/0111_setup_tabelas.sql "$NOME":/tmp/0111.sql
 docker cp supabase/migrations/0112_setup_funcoes.sql "$NOME":/tmp/0112.sql
+docker cp supabase/migrations/0146_setup_itens_criado_em.sql "$NOME":/tmp/0146.sql
 docker cp supabase/tests/setup_st_test.sql "$NOME":/tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 
