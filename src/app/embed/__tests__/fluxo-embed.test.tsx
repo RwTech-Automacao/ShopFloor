@@ -15,6 +15,8 @@ interface PropsFluxoForm {
   ordensDashboard: unknown[]
   opFixa?: { pmo: string; op: string }
   ocultarSeletor?: boolean
+  modoTv?: boolean
+  embed?: boolean
 }
 const { FluxoForm, getSessao, listarOrdens, listarTodasOrdens } = vi.hoisted(() => ({
   FluxoForm: vi.fn<(props: PropsFluxoForm) => null>(() => null),
@@ -45,8 +47,11 @@ function sessao(permissoes: Record<string, boolean>) {
 }
 
 /** A página recebe `params` como Promise (Next 16) e os segmentos vêm CODIFICADOS da URL. */
-const abrir = (pmo = 'PMOC13', op = '2340%2F26') =>
-  FluxoEmbedPage({ params: Promise.resolve({ pmo, op }) })
+const abrir = (pmo = 'PMOC13', op = '2340%2F26', modo?: string | string[]) =>
+  FluxoEmbedPage({
+    params: Promise.resolve({ pmo, op }),
+    searchParams: Promise.resolve(modo === undefined ? {} : { modo }),
+  })
 
 // No jsdom `window.parent === window`; trocar o método cobre as duas pontas.
 const avisarPai = vi.fn<(mensagem: MensagemEmbed, origem?: string) => void>()
@@ -167,6 +172,56 @@ describe('/embed/fluxo/[pmo]/[op] — a ponte com o pai', () => {
 
     expect(screen.getByText(/Conectando…/)).toBeInTheDocument()
     expect(avisarPai).not.toHaveBeenCalled()
+  })
+})
+
+describe('/embed/fluxo/[pmo]/[op] — ?modo=tv', () => {
+  const props = () => FluxoForm.mock.calls[0]![0]
+
+  it('lê ?modo=tv e liga o Modo TV no fluxo', async () => {
+    render(await abrir('PMOC13', '2340%2F26', 'tv'))
+    expect(props().modoTv).toBe(true)
+    expect(props().embed).toBe(true)
+    expect(props().opFixa).toEqual({ pmo: 'PMOC13', op: '2340/26' })
+    expect(props().ocultarSeletor).toBe(true) // o embed continua sem seletor
+  })
+
+  it('sem o parâmetro: Modo TV desligado (tela normal)', async () => {
+    render(await abrir())
+    expect(props().modoTv).toBe(false)
+  })
+
+  // Decisão do usuário (09/10): o embed esconde os três controles SEMPRE. A página tem de passar
+  // `embed` mesmo sem o parâmetro (e com valor desconhecido).
+  it('passa embed mesmo sem o parâmetro (esconder no hover não depende de ?modo=tv)', async () => {
+    render(await abrir())
+    expect(props().embed).toBe(true)
+    expect(props().modoTv).toBe(false)
+  })
+
+  it('valor desconhecido não liga (?modo=foo) e o embed segue ligado', async () => {
+    render(await abrir('PMOC13', '2340%2F26', 'foo'))
+    expect(props().modoTv).toBe(false)
+    expect(props().embed).toBe(true)
+  })
+
+  it('parâmetro repetido: vale o primeiro', async () => {
+    render(await abrir('PMOC13', '2340%2F26', ['tv', 'foo']))
+    expect(props().modoTv).toBe(true)
+  })
+
+  it('sf-embed:ready continua saindo nos dois casos', async () => {
+    render(await abrir('PMOC13', '2340%2F26', 'tv'))
+    expect(avisarPai).toHaveBeenCalledWith({ type: 'sf-embed:ready' }, ORIGEM)
+    avisarPai.mockClear()
+    render(await abrir())
+    expect(avisarPai).toHaveBeenCalledWith({ type: 'sf-embed:ready' }, ORIGEM)
+  })
+
+  it('?modo=tv não afrouxa nada: sem sessão ainda não monta o fluxo', async () => {
+    getSessao.mockResolvedValue(null)
+    render(await abrir('PMOC13', '2340%2F26', 'tv'))
+    expect(FluxoForm).not.toHaveBeenCalled()
   })
 })
 
