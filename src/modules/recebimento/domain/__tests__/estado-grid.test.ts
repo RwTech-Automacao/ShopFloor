@@ -72,6 +72,49 @@ describe('codificar/decodificarEstadoGrid', () => {
   })
 })
 
+describe('filtro rápido de divergência', () => {
+  it.each(['divergencias', 'positivas', 'negativas'])('aceita %s', (valor) => {
+    const param = JSON.stringify({ ...ESTADO_GRID_PADRAO, rapido: valor })
+    expect(decodificarEstadoGrid(param, COLUNAS).rapido).toBe(valor)
+  })
+
+  // O `?g=` é digitável: qualquer coisa fora do conjunto fechado tem de virar "sem filtro
+  // rápido" — nunca chegar à consulta nem derrubar a tela.
+  it.each([
+    ['valor fora do conjunto', 'tudo'],
+    ['nome de coluna', 'divergencia_num'],
+    ['sinal cru', '>0'],
+    ['número', 7],
+    ['objeto', { rapido: 'positivas' }],
+    ['array', ['positivas']],
+    ['nulo', null],
+    ['booleano', true],
+  ])('descarta %s, degradando para sem filtro rápido', (_nome, valor) => {
+    const param = JSON.stringify({ ...ESTADO_GRID_PADRAO, rapido: valor })
+    const estado = decodificarEstadoGrid(param, COLUNAS)
+    expect(estado.rapido).toBeUndefined()
+    // O resto do estado continua de pé: descartar o lixo não pode zerar a tela.
+    expect(estado.ordenar).toBe(ESTADO_GRID_PADRAO.ordenar)
+    expect(estado.tamanho).toBe(ESTADO_GRID_PADRAO.tamanho)
+  })
+
+  it('faz ida e volta preservando o filtro rápido junto com filtro de coluna e ordenação', () => {
+    const estado: EstadoGrid = {
+      ordenar: 'fornecedor',
+      direcao: 'asc',
+      pagina: 2,
+      tamanho: 100,
+      filtros: { fornecedor: { texto: 'ACME' } },
+      rapido: 'negativas',
+    }
+    expect(decodificarEstadoGrid(codificarEstadoGrid(estado), COLUNAS)).toEqual(estado)
+  })
+
+  it('sem filtro rápido a chave não entra na URL (os links já existentes seguem idênticos)', () => {
+    expect(codificarEstadoGrid(ESTADO_GRID_PADRAO)).not.toContain('rapido')
+  })
+})
+
 describe('faixaDoMes', () => {
   it('mês vira a faixa [primeiro dia, primeiro dia do mês seguinte)', () => {
     expect(faixaDoMes('2026-07')).toEqual({ inicio: '2026-07-01', fim: '2026-08-01' })
