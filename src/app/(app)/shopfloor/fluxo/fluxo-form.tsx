@@ -901,7 +901,7 @@ export function FluxoForm({
   // Navegação por setas Fluxo ↔ Defeitos (→ abre Defeitos, ← volta pro Fluxo). Fora da apresentação
   // (que usa as setas pros slides) e ignorando quando o foco está num campo de texto ou num diálogo.
   useEffect(() => {
-    if (apresentando) return
+    if (apresentando || embed) return // no embed Defeitos não existe: a seta também não pode abrir
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
       if (!buscou || opAberto || snAberto) return
@@ -911,7 +911,7 @@ export function FluxoForm({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [apresentando, buscou, opAberto, snAberto])
+  }, [apresentando, buscou, embed, opAberto, snAberto])
   // Não iniciadas (fila do 1º posto): vêm do nó Entrada; mostradas no detalhe do 1º posto pra explicar o badge
   // (essas peças ainda não têm SN bipado, então não aparecem na lista "Pendentes no posto").
   const naoIniciadasPrimeiro = aberto && aberto === postosOP[0] ? (dom.find((n) => n.id === ENTRADA)?.data.wip ?? 0) : 0
@@ -945,8 +945,9 @@ export function FluxoForm({
   const [zoomPct, setZoomPct] = useState(100)
   const [telaCheiaApi, setTelaCheiaApi] = useState(false) // espelho do `fullscreenchange`
   const telaCheia = telaCheiaApi || modoTv // `modoTv` = ligado por fora, sem API
-  // Filtro, Zoom e Defeitos: só no hover no embed e no Modo TV; na tela normal ficam sempre
-  // visíveis (tablet não tem hover).
+  // Controles de operação só no hover no embed e no Modo TV; na tela normal ficam sempre visíveis
+  // (tablet não tem hover). São Filtro + Zoom + Defeitos na tela normal e no Modo TV dela; no
+  // EMBED são só Filtro + Zoom, porque lá Defeitos não existe (decisão de 09/10).
   const soNoHover = classeSoNoHover(controlesSoNoHover(embed, telaCheia))
 
   // ===== Enquadrar (fitView) reservando a barra do Modo TV =====
@@ -1362,8 +1363,9 @@ export function FluxoForm({
             <HelperLines horizontal={guiaH} vertical={guiaV} />
           </ReactFlow>
 
-          {/* Botão de canto "Defeitos" — no canvas (canto inferior-direito); alcança no Modo TV também. */}
-          {buscou && !defeitosAberto && (
+          {/* Botão de canto "Defeitos" — no canvas (canto inferior-direito); alcança no Modo TV também.
+              FORA DO EMBED (09/10): no Dashboard o embutido é tela de Fluxo e mais nada. */}
+          {buscou && !embed && !defeitosAberto && (
             <button
               type="button"
               onClick={() => setDefeitosAberto(true)}
@@ -1373,8 +1375,9 @@ export function FluxoForm({
               <Bug className="size-4" /> Defeitos <ChevronRight className="size-4 opacity-60" />
             </button>
           )}
-          {/* Painel de Defeitos da OP — dentro do Fluxo (cobre o canvas); funciona no Modo TV/apresentação. */}
-          {defeitosAberto && (
+          {/* Painel de Defeitos da OP — dentro do Fluxo (cobre o canvas); funciona no Modo TV/apresentação.
+              Não é só esconder o botão: no embed o painel não pode nem ser renderizado. */}
+          {!embed && defeitosAberto && (
             <div className="absolute inset-0 z-50 flex flex-col gap-2 bg-card p-3">
               <div className="flex shrink-0 items-center justify-between">
                 <div className="flex items-center gap-2">
