@@ -115,6 +115,16 @@ function montarQueryGrid(
     }
   }
 
+  // Filtro rápido de divergência: SOMA-SE aos filtros de coluna acima (não substitui nenhum).
+  // A condição cai em `divergencia_num` — a coluna GERADA da 0147 —, nunca em `divergencia`, que
+  // é `text` e faria o Postgres comparar como TEXTO ('9' > '10', '-5' > '0'): o filtro sairia
+  // silenciosamente errado e os botões discordariam dos selos da mesma tela.
+  // Linha sem número (não conferida, texto, NaN) tem `divergencia_num` nulo e não entra em
+  // nenhum dos três — em SQL `null <> 0` é desconhecido, e é o comportamento certo.
+  if (estado.rapido === 'divergencias') query = query.neq('divergencia_num', 0)
+  else if (estado.rapido === 'positivas') query = query.gt('divergencia_num', 0)
+  else if (estado.rapido === 'negativas') query = query.lt('divergencia_num', 0)
+
   const ordenada = query.order(estado.ordenar, { ascending: estado.direcao === 'asc' })
   // `numero` desempata. Sem isto, colunas com valores repetidos (status, fornecedor,
   // data_chegada) saem em ordem NÃO-determinística: a consulta paginada (top-N) e a de
