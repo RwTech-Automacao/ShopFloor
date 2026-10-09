@@ -5,19 +5,42 @@ import { resolverOpPorSn } from '../../domain/cabecalho-lancamento'
 vi.mock('server-only', () => ({}))
 
 /**
- * Supabase de mentira para `sf_ordens`: aplica DE VERDADE os `eq`/`neq` pedidos e corta em 1000
- * linhas por consulta, como o PostgREST (max_rows). Aplicar o filtro de verdade é o que faz o teste
- * morrer se o `.neq('status','FINALIZADA')` voltar pra fonte de dados da tela de Lançamento.
+ * Supabase de mentira para `sf_ordens`: aplica DE VERDADE os `eq`/`neq` pedidos, devolve SÓ as
+ * colunas do `select` e corta em 1000 linhas por consulta, como o PostgREST (max_rows).
+ *
+ * Aplicar o filtro de verdade é o que faz o teste morrer se o `.neq('status','FINALIZADA')` voltar
+ * pra fonte de dados da tela de Lançamento. Recortar as colunas é o que faz o teste morrer se
+ * `status` sair do `select`: sem ele toda OP volta parecendo ATIVA e a busca em duas etapas do
+ * cabeçalho carregaria a OP finalizada calada, como antes do adendo de 09/10/2026.
  */
 const MAX_ROWS = 1000
 let ordens: Record<string, unknown>[] = []
 
+/** Nomes de coluna de topo do `select` do PostgREST ("a,b,rel(x,y)" -> [a, b, rel]). */
+function colunasDoSelect(cols: string): string[] {
+  const nomes: string[] = []
+  let profundidade = 0
+  let atual = ''
+  for (const ch of cols) {
+    if (ch === '(') { profundidade++; continue }
+    if (ch === ')') { profundidade--; continue }
+    if (ch === ',' && profundidade === 0) { nomes.push(atual); atual = ''; continue }
+    if (profundidade === 0) atual += ch
+  }
+  nomes.push(atual)
+  return nomes.map((n) => n.trim()).filter((n) => n !== '')
+}
+
 function consulta() {
   const filtros: { tipo: 'eq' | 'neq'; coluna: string; valor: string }[] = []
+  let colunas: string[] | null = null
   let de = 0
   let ate = Number.POSITIVE_INFINITY
   const q = {
-    select: () => q,
+    select(cols?: string) {
+      colunas = typeof cols === 'string' ? colunasDoSelect(cols) : null
+      return q
+    },
     eq(coluna: string, valor: string) {
       filtros.push({ tipo: 'eq', coluna, valor })
       return q
@@ -40,7 +63,11 @@ function consulta() {
         )
       }
       const fim = Math.min(ate + 1, de + MAX_ROWS)
-      return Promise.resolve({ data: fonte.slice(de, fim), error: null }).then(ok, falhou)
+      const cols = colunas
+      const pagina = fonte
+        .slice(de, fim)
+        .map((r) => (cols === null ? r : Object.fromEntries(cols.map((c) => [c, r[c]]))))
+      return Promise.resolve({ data: pagina, error: null }).then(ok, falhou)
     },
   }
   return q
@@ -97,13 +124,47 @@ beforeEach(() => {
 })
 
 describe('OP finalizada na tela de Lançamento', () => {
-  it('o cabeçalho por bipe resolve a OP mesmo FINALIZADA (SN dentro da faixa dela)', async () => {
+  it('a OP FINALIZADA continua na lista, e o cabeçalho a reconhece como finalizada', async () => {
+    // A lista é a fonte de dados da tela inteira: a OP finalizada TEM de vir (senão a tela perde o
+    // contexto). Quem decide o que fazer com ela é a busca do cabeçalho, que agora bloqueia em vez
+    // de responder "SN não encontrado".
     const lista = await listarOrdensParaLancamento()
 
     const r = resolverOpPorSn(lista, 'B150')
 
+    expect(r).toMatchObject({ ok: false, erro: 'OP_FINALIZADA' })
+    expect(!r.ok && r.erro === 'OP_FINALIZADA' && { pmo: r.ordem.pmo, op: r.ordem.op }).toEqual({
+      pmo: 'PMOB',
+      op: '8802',
+    })
+  })
+
+  it('o status de cada OP vem do banco na lista (sem ele, finalizada passaria por ativa)', async () => {
+    const lista = await listarOrdensParaLancamento()
+
+    expect(lista.map((o) => [o.op, o.status])).toEqual([
+      ['8801', 'ATIVA'],
+      ['8802', 'FINALIZADA'],
+    ])
+  })
+
+  it('SN de OP ATIVA carrega como sempre (a etapa 2 não atrapalha o caminho normal)', async () => {
+    const lista = await listarOrdensParaLancamento()
+
+    const r = resolverOpPorSn(lista, 'A150')
+
     expect(r.ok).toBe(true)
-    expect(r.ok && { pmo: r.ordem.pmo, op: r.ordem.op }).toEqual({ pmo: 'PMOB', op: '8802' })
+    expect(r.ok && { pmo: r.ordem.pmo, op: r.ordem.op }).toEqual({ pmo: 'PMOA', op: '8801' })
+  })
+
+  it('SN que cai na FINALIZADA e numa ATIVA carrega a ATIVA, sem ambiguidade', async () => {
+    // Faixa cadastrada errada (caso 1 do adendo): a etapa 1 acha a ativa e para ali.
+    ordens = [ordem('PMOA', '8801', 'ATIVA', 'B100', 'B199'), FINALIZADA]
+    const lista = await listarOrdensParaLancamento()
+
+    const r = resolverOpPorSn(lista, 'B150')
+
+    expect(r.ok && { pmo: r.ordem.pmo, op: r.ordem.op }).toEqual({ pmo: 'PMOA', op: '8801' })
   })
 
   it('a OP FINALIZADA volta COMPLETA: postos na ordem, receita, burn-in e quantidade', async () => {
@@ -136,7 +197,8 @@ describe('OP finalizada na tela de Lançamento', () => {
 
     expect(lista).toHaveLength(1201)
     const r = resolverOpPorSn(lista, 'B150')
-    expect(r.ok && r.ordem.op).toBe('8802')
+    expect(r).toMatchObject({ ok: false, erro: 'OP_FINALIZADA' })
+    expect(!r.ok && r.erro === 'OP_FINALIZADA' && r.ordem.op).toBe('8802')
   })
 
   it('o seletor em cascata continua escondendo a OP FINALIZADA', async () => {

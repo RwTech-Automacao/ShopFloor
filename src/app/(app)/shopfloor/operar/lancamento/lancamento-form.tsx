@@ -305,7 +305,15 @@ export function LancamentoForm({
     if (bipeCab.trim() === '') return
     const r = resolverOpPorSn(ordens, bipeCab)
     if (!r.ok) {
-      toast.error(r.erro === 'SEM_OP' ? 'SN não encontrado em nenhuma OP.' : 'SN cai em mais de uma OP.')
+      // OP finalizada: a peça existe, só a OP está encerrada. Diz QUAL OP reativar — mandar
+      // "reative a OP" sem PMO/OP não ajuda quem está no posto.
+      toast.error(
+        r.erro === 'OP_FINALIZADA'
+          ? `OP ${r.ordem.pmo}/${r.ordem.op} está finalizada. Reative a OP no cadastro para lançar esta peça.`
+          : r.erro === 'SEM_OP'
+            ? 'SN não encontrado em nenhuma OP.'
+            : 'SN cai em mais de uma OP.',
+      )
       bipeCabRef.current?.select()
       return
     }

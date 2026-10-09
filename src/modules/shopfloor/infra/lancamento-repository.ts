@@ -163,6 +163,12 @@ export interface OrdemLancamentoLista {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  /**
+   * Status cru da OP, como está no banco. Vem junto porque a busca do cabeçalho por bipe
+   * (`resolverOpPorSn`) procura em duas etapas — ativas primeiro, finalizadas depois — e precisa
+   * saber de qual grupo é cada OP. Não é filtro: a lista continua trazendo as duas.
+   */
+  status: string
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
@@ -199,6 +205,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_ini: string
     sn_fim: string
     embalagem_individual: boolean
+    status: string | null
     sf_ordem_postos: { posto: string; ordem: number }[]
     sf_ordem_componentes: { posto: string; pmo_componente: string }[]
     sf_ordem_burnin: { posto: string; tempo_min: number }[]
@@ -207,7 +214,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     const { data, error } = await supabase
       .from('sf_ordens')
       .select(
-        'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
+        'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
       )
       .order('cliente')
       .order('pmo')
@@ -227,6 +234,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
     embalagem_individual: r.embalagem_individual,
+    status: r.status ?? '',
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
     receitaPorPosto: agruparReceitaPorPosto(r.sf_ordem_componentes),
     tempoBurninPorPosto: agruparTempoBurninPorPosto(r.sf_ordem_burnin),
