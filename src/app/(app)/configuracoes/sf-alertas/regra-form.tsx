@@ -425,7 +425,7 @@ export function RegraForm({
             </Explica>
           </legend>
           <div className="flex flex-col gap-2 sm:max-w-xs">
-            <Label htmlFor="hora-resumo">Hora do resumo</Label>
+            <Label htmlFor="hora-resumo">A mensagem sai às</Label>
             <Input
               id="hora-resumo"
               type="time"
@@ -435,7 +435,12 @@ export function RegraForm({
               onChange={(e) => setHoraResumo(e.target.value)}
             />
           </div>
-          <IntervalosEditor intervalos={intervalos} passoMin={Number.NaN} onChange={setIntervalos} />
+          {/* Sem rótulo, os dois campos de horário ficavam soltos embaixo da hora do envio e
+              ninguém sabia o que eram (visto no smoke de 09/10). */}
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium">O dia de trabalho dos postos</span>
+            <IntervalosEditor intervalos={intervalos} passoMin={Number.NaN} onChange={setIntervalos} />
+          </div>
         </fieldset>
       )}
 

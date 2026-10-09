@@ -48,7 +48,7 @@ const erroMostrado = () => String((toastErro.mock.calls[0] as unknown[])[0])
 
 /** Prova que o formulário do resumo MONTOU: as negativas só valem depois disto. */
 function provarQueMontou() {
-  expect(screen.getByLabelText('Hora do resumo')).toBeInTheDocument()
+  expect(screen.getByLabelText('A mensagem sai às')).toBeInTheDocument()
   expect(screen.getByLabelText('Início do intervalo 1')).toBeInTheDocument()
   expect(screen.getByLabelText('Nome')).toBeInTheDocument()
   expect(screen.getByLabelText('Teste')).toBeInTheDocument()
@@ -64,7 +64,7 @@ function preencher(hora?: string, turno = { inicio: '07:00', fim: '17:00' }) {
   fireEvent.click(screen.getByLabelText('Ana Gestora'))
   fireEvent.change(screen.getByLabelText('Início do intervalo 1'), { target: { value: turno.inicio } })
   fireEvent.change(screen.getByLabelText('Fim do intervalo 1'), { target: { value: turno.fim } })
-  if (hora !== undefined) fireEvent.change(screen.getByLabelText('Hora do resumo'), { target: { value: hora } })
+  if (hora !== undefined) fireEvent.change(screen.getByLabelText('A mensagem sai às'), { target: { value: hora } })
 }
 
 beforeEach(() => {
@@ -76,8 +76,8 @@ describe('RegraForm — resumo diário: o que a tela mostra', () => {
   it('traz a hora (padrão 18:00) e o editor de intervalos', () => {
     montar()
     provarQueMontou()
-    expect(screen.getByLabelText('Hora do resumo')).toHaveValue('18:00')
-    expect(screen.getByLabelText('Hora do resumo')).toHaveAttribute('type', 'time')
+    expect(screen.getByLabelText('A mensagem sai às')).toHaveValue('18:00')
+    expect(screen.getByLabelText('A mensagem sai às')).toHaveAttribute('type', 'time')
   })
 
   it('esconde os campos que o resumo não usa', () => {
@@ -112,7 +112,7 @@ describe('RegraForm — resumo diário: o que a tela mostra', () => {
     expect(screen.getByRole('button', { name: 'Ver prévia' })).toBeInTheDocument()
     expect(screen.getByLabelText('Taxa mínima de aprovação (%)')).toBeInTheDocument()
     expect(screen.getByLabelText('Janela por tempo')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Hora do resumo')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('A mensagem sai às')).not.toBeInTheDocument()
   })
 
   it('mantém nome, postos, responsáveis e canais', () => {
@@ -148,7 +148,7 @@ describe('RegraForm — resumo diário: o que a tela mostra', () => {
         ativa: true,
       },
     })
-    expect(screen.getByLabelText('Hora do resumo')).toHaveValue('17:30')
+    expect(screen.getByLabelText('A mensagem sai às')).toHaveValue('17:30')
     expect(screen.getByLabelText('Início do intervalo 1')).toHaveValue('07:00')
     expect(screen.getByLabelText('Fim do intervalo 1')).toHaveValue('12:00')
   })
