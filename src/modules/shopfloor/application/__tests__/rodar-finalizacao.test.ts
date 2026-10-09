@@ -88,8 +88,8 @@ describe('rodarFinalizacaoContida', () => {
     expect((await pendente).ok).toBe(false)
   })
 
-  it('o teto padrão é 15 s e não dispara antes', async () => {
-    expect(LIMITE_FINALIZACAO_MS).toBe(15_000)
+  it('o teto padrão é 8 s e não dispara antes', async () => {
+    expect(LIMITE_FINALIZACAO_MS).toBe(8_000)
     vi.useFakeTimers()
     let terminou = false
     const pendente = rodarFinalizacaoContida(() => new Promise(() => {}), { logErro: vi.fn() }).then((r) => { terminou = true; return r })

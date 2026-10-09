@@ -1,10 +1,16 @@
 import type { ResumoFinalizacao } from '../domain/finalizacao'
 
 /**
- * Teto de tempo da rotina. O cron chama com `curl -m 60` e os alertas já podem ter gasto até 40 s
- * entregando a fila: a finalização não pode ser o que estoura a chamada.
+ * Teto de tempo da rotina. O cron chama com `curl -m 60` e os alertas rodam antes, com orçamento
+ * de 40 s (`ORCAMENTO_ENTREGA_MS`). Conta: 40 s dos alertas + 8 s daqui = 48 s, com 12 s de folga
+ * nos 60 s do curl.
+ *
+ * Os 40 s não são um teto duro: eles só limitam o INÍCIO de um lote novo, e um lote em andamento
+ * não é interrompido (até 30 envios, cada um com teto de 10 s). Por isso a folga é maior.
+ * A rotina é idempotente e convergente; perder um ciclo custa 5 min de atraso no encerramento da
+ * OP, enquanto um curl estourando todo dia mascararia uma falha de verdade.
  */
-export const LIMITE_FINALIZACAO_MS = 15_000
+export const LIMITE_FINALIZACAO_MS = 8_000
 
 export type ResultadoFinalizacao = ({ ok: true } & ResumoFinalizacao) | { ok: false; erro: string }
 
