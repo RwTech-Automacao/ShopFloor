@@ -3,7 +3,7 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { ehCanal, ehJanelaTipo, ehTipoRegra, type EstadoOcorrencia } from '../domain/tipos'
 import type { DestinatarioDisponivel, PreviaValida, RegraAlerta, RegraValida } from '../domain/regra'
 import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/ocorrencia'
-import { formatarHhMm, lerHhMm, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
+import { lerHoraDoBanco, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
 import { periodoOcorrencias } from '../domain/ocorrencia'
 import { lerResolucao } from '../domain/resolucao'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
@@ -68,15 +68,17 @@ function erroDeBanco(error: { code?: string; message: string }): string {
 function lerHoraResumo(l: LinhaRegra): string | null {
   if (l.tipo !== 'resumo') return null
   const bruto = l.hora_resumo
-  const minutos = lerHhMm(typeof bruto === 'string' ? bruto.slice(0, 5) : bruto)
-  if (minutos === null) {
+  // Mesma conversão do cron (`lerHoraDoBanco`): era uma cópia à mão aqui e NENHUMA lá, e foi
+  // essa divergência que segurou o resumo em produção em 09/10/2026.
+  const hora = lerHoraDoBanco(bruto)
+  if (hora === null) {
     console.error(
       `[alertas] regra ${l.id}: hora_resumo não chegou como hora legível ('HH:MM:SS') — ` +
         `o resumo desta regra NÃO vai sair. Recebido: ${JSON.stringify(bruto)} (${typeof bruto})`,
     )
     return null
   }
-  return formatarHhMm(minutos)
+  return hora
 }
 
 function paraRegra(l: LinhaRegra, intervalos: Intervalo[]): RegraAlerta {
