@@ -46,6 +46,22 @@ export function formatarHhMm(minutosDoDia: number): string {
  * leem `alerta_regra_intervalos` (a tela do gestor e o cron) têm que converter do mesmo jeito, e
  * duas cópias da regra divergiriam em silêncio.
  */
+/**
+ * UMA hora como o BANCO entrega, normalizada para 'HH:MM'. Vale para qualquer coluna `time` lida
+ * pelo PostgREST (`alerta_regras.hora_resumo`, os dois lados de `alerta_regra_intervalos`): chega
+ * 'HH:MM:SS', às vezes com fração, e o resto do módulo fala 'HH:MM'.
+ *
+ * ⚠️ Existe porque a conversão estava DUPLICADA e as duas cópias divergiram. Em 09/10/2026 o
+ * resumo diário subiu para produção e não saiu nenhuma vez: a tela cortava os segundos da
+ * `hora_resumo`, o cron não, e `lerHhMm('12:45:00')` devolve null. A regra ficava fora da lista de
+ * devidas em silêncio. Quem ler hora do banco usa ESTA função — não `lerHhMm` direto.
+ */
+export function lerHoraDoBanco(valor: unknown): string | null {
+  if (typeof valor !== 'string') return null
+  const minutos = lerHhMm(valor.slice(0, 5))
+  return minutos === null ? null : formatarHhMm(minutos)
+}
+
 export function lerIntervaloDoBanco(inicio: unknown, fim: unknown): Intervalo | null {
   const i = lerHhMm(typeof inicio === 'string' ? inicio.slice(0, 5) : inicio)
   const f = lerHhMm(typeof fim === 'string' ? fim.slice(0, 5) : fim)
