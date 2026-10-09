@@ -18,8 +18,10 @@ import {
   textoNormalizouDefeito,
   textoNormalizouTempo,
   textoReabertura,
+  textoResumo,
   textoResolvido,
   textoTeste,
+  type LinhaResumo,
   type ParOp,
   type RefOp,
 } from './mensagens'
@@ -44,7 +46,7 @@ export interface EnvioReservado {
   tentativas: number
 }
 
-const TIPOS: readonly TipoEnvio[] = ['alerta', 'lembrete', 'resolvido', 'normalizou', 'teste']
+const TIPOS: readonly TipoEnvio[] = ['alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo']
 
 function ehTipoEnvio(v: unknown): v is TipoEnvio {
   return typeof v === 'string' && (TIPOS as readonly string[]).includes(v)
@@ -118,7 +120,7 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
 }
 
 /** Envios que nascem de uma ocorrência — os únicos cujo texto depende do tipo da regra. */
-type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido'>
+type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo'>
 
 /**
  * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
@@ -148,6 +150,34 @@ function listaTextos(d: Record<string, unknown>, campo: string): string[] {
   const v = d[campo]
   if (!Array.isArray(v)) return []
   return v.map((x) => (x === null || x === undefined ? '' : String(x)))
+}
+
+/** Contagem de um posto no resumo: inteiro >= 0. Qualquer outra coisa é dado corrompido. */
+function contagem(d: Record<string, unknown>, campo: string): number {
+  const n = numero(d, campo)
+  if (!Number.isInteger(n) || n < 0) throw new DadosEnvioInvalidos(campo)
+  return n
+}
+
+/**
+ * Lê o `dados` do resumo diário como a 0141 o grava: `dia` ('AAAA-MM-DD'), `regra_nome` e `linhas`
+ * (array de {posto, aprovados, reprovados}). Formato diferente do esperado LANÇA — nunca devolve um
+ * resumo vazio calado: o despachante registra o erro com o id do envio e os outros envios seguem.
+ */
+function textoResumoDe(dados: Record<string, unknown>): string {
+  const diaBruto = texto(dados, 'dia')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(diaBruto)) throw new DadosEnvioInvalidos('dia')
+  // Ao MEIO-DIA UTC: `new Date('2026-10-08')` é meia-noite UTC, que em São Paulo ainda é dia 07 e
+  // o resumo sairia com o dia errado. Meio-dia cai no mesmo dia em qualquer fuso do Brasil.
+  const dia = new Date(`${diaBruto}T12:00:00Z`)
+  if (Number.isNaN(dia.getTime())) throw new DadosEnvioInvalidos('dia')
+  if (!Array.isArray(dados.linhas)) throw new DadosEnvioInvalidos('linhas')
+  const linhas: LinhaResumo[] = dados.linhas.map((item) => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) throw new DadosEnvioInvalidos('linhas')
+    const l = item as Record<string, unknown>
+    return { posto: texto(l, 'posto'), aprovados: contagem(l, 'aprovados'), reprovados: contagem(l, 'reprovados') }
+  })
+  return textoResumo(texto(dados, 'regra_nome'), dia, linhas)
 }
 
 function janelaDe(d: Record<string, unknown>): Janela {
@@ -247,12 +277,14 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome
+ *   resumo: regra_tipo, regra_nome, dia ('AAAA-MM-DD'), linhas (array de {posto, aprovados, reprovados}; 0141)
  *   reabertura (só no 'alerta' que nasce de uma reabertura, 0122): reabertura = true,
  *              resolvida_por_nome, resolvida_em, reaberturas
  * `regra_tipo` ausente = 'aprovacao' (linhas enfileiradas antes da 0115).
  */
 export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): string {
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
+  if (tipo === 'resumo') return textoResumoDe(dados)
   if (tipo === 'resolvido') {
     return textoResolvido({
       ...refOpDe(dados),

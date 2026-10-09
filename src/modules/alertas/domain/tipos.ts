@@ -7,7 +7,7 @@ export const NOME_CANAL: Record<Canal, string> = { telegram: 'Telegram', discord
 export type JanelaTipo = 'tempo' | 'bipes' | 'op' | 'intervalos'
 
 /** Tipos de mensagem gravados em `alerta_envios.tipo`. */
-export type TipoEnvio = 'alerta' | 'lembrete' | 'resolvido' | 'normalizou' | 'teste'
+export type TipoEnvio = 'alerta' | 'lembrete' | 'resolvido' | 'normalizou' | 'teste' | 'resumo'
 
 /** Estados de uma ocorrência (`alerta_ocorrencias.estado`). */
 export type EstadoOcorrencia = 'aberta' | 'resolvida' | 'normalizada'
@@ -56,13 +56,14 @@ export interface ContaVinculada {
 }
 
 /** Tipo da regra (spec 2026-09-18). O tipo não muda depois de criado. */
-export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito'
-export const TIPOS_REGRA: readonly TipoRegra[] = ['aprovacao', 'tempo', 'defeito']
+export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito' | 'resumo'
+export const TIPOS_REGRA: readonly TipoRegra[] = ['aprovacao', 'tempo', 'defeito', 'resumo']
 
 export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
   aprovacao: 'Taxa de aprovação',
   tempo: 'Tempo médio por peça',
   defeito: 'Defeito repetido',
+  resumo: 'Resumo diário',
 }
 
 /** A frase de cada cartão da escolha do tipo. */
@@ -70,9 +71,10 @@ export const DESCRICAO_TIPO_REGRA: Record<TipoRegra, string> = {
   aprovacao: 'Avisa quando a taxa de aprovação do posto cai abaixo da meta.',
   tempo: 'Avisa quando o tempo médio entre um bipe e o próximo passa do limite.',
   defeito: 'Avisa quando o mesmo defeito se repete várias vezes no posto em pouco tempo.',
+  resumo: 'Manda, na hora escolhida, a taxa de aprovação do dia de cada posto.',
 }
 
 /** É um tipo de regra conhecido? */
 export function ehTipoRegra(valor: unknown): valor is TipoRegra {
-  return valor === 'aprovacao' || valor === 'tempo' || valor === 'defeito'
+  return valor === 'aprovacao' || valor === 'tempo' || valor === 'defeito' || valor === 'resumo'
 }

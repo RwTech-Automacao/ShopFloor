@@ -15,6 +15,7 @@ import {
   type EntradaRegra,
   type RegraAlerta,
 } from '@/modules/alertas/domain/regra'
+import { HORA_RESUMO_MAX, HORA_RESUMO_MIN, HORA_RESUMO_PADRAO } from '@/modules/alertas/domain/resumo'
 import { postosOferecidos, type PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { formatarMmSs } from '@/modules/alertas/domain/tempo'
 import type { Intervalo } from '@/modules/alertas/domain/intervalos'
@@ -33,12 +34,16 @@ const JANELAS: Record<TipoRegra, JanelaTipo[]> = {
   aprovacao: ['tempo', 'bipes', 'op', 'intervalos'],
   tempo: ['tempo', 'op'],
   defeito: ['tempo'],
+  // O resumo não tem janela a escolher: sai sempre pelos intervalos (o "dia" de cada posto).
+  resumo: ['intervalos'],
 }
 
 const TITULO_PREVIA: Record<TipoRegra, string> = {
   aprovacao: 'Taxa de agora',
   tempo: 'Tempo médio de agora',
   defeito: 'Defeitos repetidos agora',
+  // Sem uso: a prévia não existe no resumo (não há janela a antecipar). A chave só fecha o Record.
+  resumo: 'Resumo diário',
 }
 
 const EXPLICA_POSTOS: Record<TipoRegra, string> = {
@@ -48,12 +53,16 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
     'O tempo médio é calculado separado para cada posto marcado. Cada posto que passar do limite abre o seu próprio alerta.',
   defeito:
     'Os defeitos são contados separados para cada posto marcado. Cada defeito que se repetir num posto abre o seu próprio alerta.',
+  resumo:
+    'O resumo traz a taxa de aprovação do dia, separada para cada posto marcado.',
 }
 
 /** Por que a lista de postos é mais curta neste tipo. Tempo médio serve em qualquer posto. */
 const EXPLICA_FILTRO: Partial<Record<TipoRegra, string>> = {
   aprovacao:
     'Só aparecem os postos que dão Aprovado ou Reprovado. Num posto que só registra a passagem da peça a taxa é sempre 100% e o alerta nunca sairia.',
+  resumo:
+    'Só aparecem os postos que dão Aprovado ou Reprovado. Posto que só registra a passagem da peça não tem taxa e ficaria fora do relatório, sem aviso.',
   defeito:
     'Só aparecem os postos que registram o código do defeito na reprova. Sem código não há defeito para se repetir, e o alerta nunca sairia.',
 }
@@ -64,6 +73,7 @@ const EXPLICA_FILTRO: Partial<Record<TipoRegra, string>> = {
  */
 const AVISO_FORA_DO_TIPO: Partial<Record<TipoRegra, string>> = {
   aprovacao: 'não dá Aprovado/Reprovado, então a taxa fica sempre em 100% e o alerta não sai',
+  resumo: 'não dá Aprovado/Reprovado, então não tem taxa e fica fora do resumo',
   defeito: 'não registra código de defeito, então não há o que repetir e o alerta não sai',
 }
 
@@ -88,13 +98,14 @@ function alterna<T>(lista: T[], item: T): T[] {
 }
 
 function janelaInicial(tipo: TipoRegra, regra: RegraAlerta | null): JanelaTipo {
+  if (tipo === 'resumo') return 'intervalos'
   const salva = regra?.janelaTipo ?? 'tempo'
   return JANELAS[tipo].includes(salva) ? salva : 'tempo'
 }
 
 function minutosIniciais(tipo: TipoRegra, regra: RegraAlerta | null): string {
   if (regra && regra.janelaTipo === 'tempo' && regra.janelaValor !== null) return String(regra.janelaValor)
-  return String(tipo === 'aprovacao' ? PADROES_REGRA.janelaTempo : PADROES_TIPO[tipo].janelaTempo)
+  return String(tipo === 'aprovacao' || tipo === 'resumo' ? PADROES_REGRA.janelaTempo : PADROES_TIPO[tipo].janelaTempo)
 }
 
 /** O passo do bloco na janela por blocos: 1 hora, a cadência que a fábrica já usa no turno. */
@@ -179,6 +190,7 @@ export function RegraForm({
   )
   const [passo, setPasso] = useState(passoInicial(regra))
   const [intervalos, setIntervalos] = useState<Intervalo[]>(() => intervalosIniciais(regra))
+  const [horaResumo, setHoraResumo] = useState(regra?.horaResumo ?? HORA_RESUMO_PADRAO)
   const [minimo, setMinimo] = useState(minimoInicial(tipo, regra))
   const [lembrete, setLembrete] = useState(regra?.lembreteMin === null || regra === null ? '' : String(regra.lembreteMin))
   const [canaisSel, setCanaisSel] = useState<Canal[]>(regra?.canais ?? [])
@@ -196,7 +208,7 @@ export function RegraForm({
   const avisos = avisarPessoas ? destinatariosSemCanal(destinatarios, destSel, canaisSel) : []
   // Na janela por blocos o `janelaValor` é o PASSO em minutos (outra grandeza, mesmo campo do banco).
   const janelaValor =
-    janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
+    tipo === 'resumo' ? null : janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
 
   const oferecidos = postosOferecidos(tipo, postos, postosDaRegra)
   // Só avisa sobre o que está de fato MARCADO: desmarcado, o posto não atrapalha mais.
@@ -210,13 +222,13 @@ export function RegraForm({
       taxaMinima: tipo === 'aprovacao' ? taxa : '',
       janelaTipo,
       janelaValor,
-      minimoBipes: tipo === 'defeito' ? '' : minimo,
+      minimoBipes: tipo === 'defeito' || tipo === 'resumo' ? '' : minimo,
       limiteTempo: tipo === 'tempo' ? limiteTempo : '',
       pausaMaxMin: tipo === 'tempo' ? pausa : '',
       limiteOcorrencias: tipo === 'defeito' ? repeticoes : '',
       // O campo do lembrete não aparece na janela por blocos (quem comanda a insistência é o bloco):
       // um campo escondido não manda valor nenhum.
-      lembreteMin: janelaTipo === 'intervalos' ? '' : lembrete,
+      lembreteMin: tipo === 'resumo' || janelaTipo === 'intervalos' ? '' : lembrete,
       canais: canaisSel,
       destinatarios: destSel,
       avisarPessoas,
@@ -224,6 +236,7 @@ export function RegraForm({
       pmos: pmosSel,
       // Só a janela que os usa manda os horários: nas outras a chave nem vai.
       ...(janelaTipo === 'intervalos' ? { intervalos } : {}),
+      ...(tipo === 'resumo' ? { horaResumo } : {}),
       ativa: regra?.ativa ?? true,
     }
   }
@@ -277,7 +290,7 @@ export function RegraForm({
           id="nome"
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          placeholder={tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : 'Teste abaixo de 90'}
+          placeholder={tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : 'Teste abaixo de 90'}
           autoComplete="off"
         />
       </div>
@@ -402,6 +415,37 @@ export function RegraForm({
         </div>
       )}
 
+      {tipo === 'resumo' && (
+        <fieldset className="flex flex-col gap-3">
+          <legend className="flex items-center gap-1.5 text-sm font-medium">
+            Horário do resumo
+            <Explica titulo="Horário do resumo">
+              <p>Os <strong>intervalos</strong> dizem o que é o dia de trabalho de cada posto (ex.: 07:00–12:00 e 13:00–17:00). O resumo conta só os bipes dentro deles.</p>
+              <p>A <strong>hora do resumo</strong> é quando a mensagem sai, de {HORA_RESUMO_MIN} a {HORA_RESUMO_MAX}. Vale o horário da fábrica.</p>
+            </Explica>
+          </legend>
+          <div className="flex flex-col gap-2 sm:max-w-xs">
+            <Label htmlFor="hora-resumo">A mensagem sai às</Label>
+            <Input
+              id="hora-resumo"
+              type="time"
+              value={horaResumo}
+              min={HORA_RESUMO_MIN}
+              max={HORA_RESUMO_MAX}
+              onChange={(e) => setHoraResumo(e.target.value)}
+            />
+          </div>
+          {/* Sem rótulo, os dois campos de horário ficavam soltos embaixo da hora do envio e
+              ninguém sabia o que eram (visto no smoke de 09/10). */}
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium">O dia de trabalho dos postos</span>
+            <IntervalosEditor intervalos={intervalos} passoMin={Number.NaN} onChange={setIntervalos} />
+          </div>
+        </fieldset>
+      )}
+
+      {/* O resumo não tem janela a escolher: o bloco acima já traz os intervalos. */}
+      {tipo !== 'resumo' && (
       <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Janela
@@ -526,11 +570,12 @@ export function RegraForm({
           </>
         )}
       </fieldset>
+      )}
 
       {/* O lembrete é IGNORADO na janela por blocos (sai null na validação): quem comanda a
           insistência é o fechamento do próximo bloco. Campo que não faz nada é pior que campo
           nenhum, então ele some. */}
-      {janelaTipo !== 'intervalos' && (
+      {tipo !== 'resumo' && janelaTipo !== 'intervalos' && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
             <Label htmlFor="lembrete">Lembrar a cada (min)</Label>
@@ -642,7 +687,7 @@ export function RegraForm({
 
       <PmosSelecao disponiveis={pmosDisponiveis} selecionadas={pmosSel} onChange={setPmosSel} />
 
-      {previa && (
+      {tipo !== 'resumo' && previa && (
         <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-3 text-sm">
           <span className="font-medium">{TITULO_PREVIA[tipo]}</span>
           {previa.linhas.map((p) => (
@@ -666,7 +711,7 @@ export function RegraForm({
             do banco levanta JANELA_INVALIDA em qualquer janela fora de tempo/bipes/op, então o
             botão quebraria. É decisão consciente e REVERSÍVEL — ensinar a `alerta_previa` a receber
             o bloco é tarefa própria, e o botão volta. */}
-        {janelaTipo !== 'intervalos' && (
+        {tipo !== 'resumo' && janelaTipo !== 'intervalos' && (
           <Button variant="outline" onClick={verPrevia} disabled={pendente}>
             Ver prévia
           </Button>
