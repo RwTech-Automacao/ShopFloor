@@ -5,7 +5,7 @@ import { canalDiscordDoSistema } from './canais'
 import { ehCanal, type Canal, type ResultadoEnvio } from '../domain/tipos'
 import { lerResultadoAvaliacao, type ContaDestino } from '../domain/avaliacao'
 import { lerEnvioReservado, type EnvioReservado } from '../domain/envio'
-import { blocoCandidato, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
+import { blocoCandidato, lerHoraDoBanco, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
 import { horaDeEnviarResumo, resumoDaRodada, type ResumoDaRodada } from '../domain/resumo'
 import { lerResolucao } from '../domain/resolucao'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
@@ -209,15 +209,19 @@ export function criarRepositorioServico(
     const devidas = ((data ?? []) as LinhaRegraResumo[]).filter((r) => {
       // Mesmo grito do caminho da tela (regras-repository): hora que não chega como texto faria o
       // resumo deixar de sair SEM nenhum rastro. Aqui é onde ele ENVIA, então aqui não pode ser mudo.
-      if (typeof r.hora_resumo !== 'string') {
+      // `hora_resumo` é `time`: o PostgREST entrega 'HH:MM:SS'. `lerHoraDoBanco` é a conversão
+      // única — passar o valor cru para `lerHhMm` (ancorado em 'HH:MM') devolvia null e deixava a
+      // regra fora da rodada EM SILÊNCIO. Foi o que segurou o resumo em produção em 09/10/2026.
+      const hora = lerHoraDoBanco(r.hora_resumo)
+      if (hora === null) {
         console.error(
-          `[alertas] regra ${r.id}: hora_resumo não chegou como texto — o resumo desta regra NÃO vai sair. ` +
-            `Recebido: ${JSON.stringify(r.hora_resumo)} (${typeof r.hora_resumo})`,
+          `[alertas] regra ${r.id}: hora_resumo não chegou como hora legível — o resumo desta regra ` +
+            `NÃO vai sair. Recebido: ${JSON.stringify(r.hora_resumo)} (${typeof r.hora_resumo})`,
         )
         return false
       }
       return horaDeEnviarResumo(
-        r.hora_resumo,
+        hora,
         typeof r.resumo_enviado_em === 'string' ? r.resumo_enviado_em : null,
         agora,
       )
