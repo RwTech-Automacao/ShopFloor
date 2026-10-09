@@ -576,7 +576,9 @@ export function FluxoForm({
   }, [nodes, onNodesChange])
 
   // Salva o layout (posição de cada nó) da OP no localStorage desta máquina.
+  // NO EMBED NÃO GRAVA: um arrasto acidental na TV viraria o "padrão" daquele aparelho pra sempre.
   const salvarLayout = useCallback(() => {
+    if (embed) return
     const { pmo, op } = ctx.current
     if (!pmo || !op) return
     setNodes((cur) => {
@@ -586,7 +588,7 @@ export function FluxoForm({
       try { localStorage.setItem(chaveLayout(pmo, op), JSON.stringify(mapa)) } catch { /* storage cheio/off */ }
       return cur
     })
-  }, [setNodes])
+  }, [embed, setNodes])
 
   const onNodeDragStop = useCallback(() => { setGuiaH(undefined); setGuiaV(undefined); salvarLayout() }, [salvarLayout])
 
@@ -596,7 +598,9 @@ export function FluxoForm({
     const [pmo, op] = v.split('||')
     if (!pmo || !op) return
     ctx.current = { pmo, op }
-    layoutRef.current = lerLayout(pmo, op) // recupera o arranjo salvo desta OP nesta máquina
+    // NO EMBED IGNORA O ARRANJO SALVO: o que vale na TV é a melhor visualização possível (arranjo
+    // padrão do domínio + enquadramento automático), não o que alguém arrastou naquela máquina.
+    layoutRef.current = embed ? new Map() : lerLayout(pmo, op)
     startCarregar(async () => {
       const r = await carregarFluxo(pmo, op)
       if (!r.ok) { toast.error(r.erro); return }
@@ -606,7 +610,7 @@ export function FluxoForm({
       setAtualizadoMs(Date.now())
       setBuscou(true)
     })
-  }, [])
+  }, [embed])
 
   const escolher = useCallback((v: string) => {
     setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
@@ -933,7 +937,9 @@ export function FluxoForm({
   // Redefinir: descarta o layout salvo desta OP e volta os cards pra posição padrão do domínio.
   const redefinirLayout = useCallback(() => {
     const { pmo, op } = ctx.current
-    if (pmo && op) { try { localStorage.removeItem(chaveLayout(pmo, op)) } catch { /* storage off */ } }
+    // O embed não é dono desse arranjo (não lê e não grava): também não apaga o de quem usa a tela
+    // normal no mesmo navegador. Lá ele só reaplica a serpentina e re-enquadra.
+    if (!embed && pmo && op) { try { localStorage.removeItem(chaveLayout(pmo, op)) } catch { /* storage off */ } }
     layoutRef.current = new Map()
     setGuiaH(undefined)
     setGuiaV(undefined)
@@ -942,7 +948,7 @@ export function FluxoForm({
       return d ? { ...n, position: { x: d.x, y: d.y } } : n
     }))
     setTimeout(() => rfRef.current?.fitView(), 0)
-  }, [dom, setNodes])
+  }, [dom, embed, setNodes])
   useEffect(() => {
     if (modoTv) return // o modo é por prop; evento de tela cheia (do Dashboard) não decide nada aqui
     const onFs = () => {
