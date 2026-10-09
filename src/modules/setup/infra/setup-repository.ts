@@ -1,6 +1,7 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import type { Face } from '../domain/face'
+import { compararPorPosicao } from '../domain/ordenacao-itens'
 import type { EstadoSetup, Processo } from '../domain/tipos'
 
 export interface OrdemSetup { pmo: string; op: string; cliente: string; descricao: string; status: string; snIni: string; snFim: string }
@@ -11,7 +12,7 @@ export interface SetupResumo {
   linha: string; bloco: string; maquina: string | null; face: Face
   snAbertura: string | null; colaborador: string; estado: EstadoSetup; criadoEm: string; liberadoEm: string | null; totalItens: number; semRolo: number
 }
-export interface ItemSetup { id: string; posicao: string; feeder: string; componente: string; rolo: string | null; colaborador: string; atualizadoEm: string }
+export interface ItemSetup { id: string; posicao: string; feeder: string; componente: string; rolo: string | null; colaborador: string; atualizadoEm: string; criadoEm: string }
 export interface Troca {
   id: string; setupId: string; pmo: string; op: string; processo: Processo; equipamentoId: string
   linha: string; bloco: string; maquina: string | null; face: Face
@@ -42,6 +43,7 @@ function mapSetup(r: Row): SetupResumo {
 const mapItem = (r: Row): ItemSetup => ({
   id: r.id as string, posicao: r.posicao as string, feeder: r.feeder as string, componente: r.componente as string,
   rolo: (r.rolo as string | null) ?? null, colaborador: (r.colaborador as string) ?? '', atualizadoEm: r.atualizado_em as string,
+  criadoEm: r.criado_em as string,
 })
 const mapTroca = (r: Row): Troca => {
   const s = (r.st_setups ?? {}) as Row
@@ -110,14 +112,15 @@ export async function carregarSetup(id: string): Promise<{ setup: SetupResumo; i
   const supabase = await createServerSupabase()
   const [{ data: s, error: e1 }, { data: itens, error: e2 }] = await Promise.all([
     supabase.from('st_setups').select(SETUP_COLS).eq('id', id).maybeSingle(),
-    supabase.from('st_setup_itens').select('id,posicao,feeder,componente,rolo,colaborador,atualizado_em').eq('setup_id', id),
+    supabase.from('st_setup_itens').select('id,posicao,feeder,componente,rolo,colaborador,atualizado_em,criado_em').eq('setup_id', id),
   ])
   if (e1) throw e1
   if (e2) throw e2
   if (!s) return null
   const lista = ((itens ?? []) as Row[]).map(mapItem)
-  // Ordena posição numérica quando dá ("2" antes de "10"), senão texto.
-  lista.sort((a, b) => a.posicao.localeCompare(b.posicao, 'pt-BR', { numeric: true }) || a.feeder.localeCompare(b.feeder, 'pt-BR', { numeric: true }))
+  // Ordem canônica: por posição (ver compararPorPosicao). Abastecimento e Consultas dependem dela;
+  // só a tela de Montar reordena por criadoEm, no cliente.
+  lista.sort(compararPorPosicao)
   return { setup: mapSetup(s as Row), itens: lista }
 }
 
