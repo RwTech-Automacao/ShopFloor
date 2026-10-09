@@ -50,6 +50,7 @@ describe('RegraConteudo', () => {
       pausaMaxMin: null,
       lembreteMin: null,
       intervalos: [],
+      horaResumo: null,
       canais: ['telegram'],
       avisarPessoas: true,
     avisarCanal: false,
