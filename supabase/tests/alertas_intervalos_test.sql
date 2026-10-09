@@ -219,14 +219,19 @@ begin
                     and pronargs = 6) then
     raise exception 'FALHOU: alerta_taxas nova (6 parâmetros) não existe';
   end if;
+  -- ⚠️ Só uma assinatura do alerta_avaliar, e com os dois primeiros parâmetros (canal, blocos). O
+  -- número de parâmetros NÃO é afirmado aqui: a 0141 acrescentou o terceiro (p_resumos) e este
+  -- teste tem de continuar verdadeiro numa base onde ela já está aplicada. A assinatura exata da
+  -- 0141 é do alertas_resumo_test.sql.
   if (select count(*) from pg_proc
        where proname = 'alerta_avaliar' and pronamespace = 'public'::regnamespace) <> 1 then
     raise exception 'FALHOU: a assinatura antiga do alerta_avaliar (1 parâmetro) continua lá';
   end if;
   if not exists (select 1 from pg_proc
                   where proname = 'alerta_avaliar' and pronamespace = 'public'::regnamespace
-                    and pronargs = 2) then
-    raise exception 'FALHOU: alerta_avaliar nova (2 parâmetros) não existe';
+                    and pronargs >= 2
+                    and proargtypes::oid[] @> array['text'::regtype::oid, 'jsonb'::regtype::oid]) then
+    raise exception 'FALHOU: alerta_avaliar nova (canal text, blocos jsonb, ...) não existe';
   end if;
 
   -- A assinatura NOVA é outra função para o Postgres e nasce com EXECUTE para o PUBLIC: é o
@@ -240,11 +245,15 @@ begin
        'public.alerta_taxas(text[],text,int,text[],timestamptz,timestamptz)', 'EXECUTE') then
     raise exception 'FALHOU: alerta_taxas de 6 parâmetros está aberta';
   end if;
-  if has_function_privilege('anon', 'public.alerta_avaliar(text,jsonb)', 'EXECUTE')
-     or has_function_privilege('authenticated', 'public.alerta_avaliar(text,jsonb)', 'EXECUTE') then
+  -- Os grants são lidos pelo oid da função (a assinatura em texto muda com a 0141).
+  if has_function_privilege('anon', (select oid from pg_proc where proname = 'alerta_avaliar'
+                                        and pronamespace = 'public'::regnamespace), 'EXECUTE')
+     or has_function_privilege('authenticated', (select oid from pg_proc where proname = 'alerta_avaliar'
+                                        and pronamespace = 'public'::regnamespace), 'EXECUTE') then
     raise exception 'FALHOU: alerta_avaliar está aberta para anon/authenticated';
   end if;
-  if not has_function_privilege('service_role', 'public.alerta_avaliar(text,jsonb)', 'EXECUTE') then
+  if not has_function_privilege('service_role', (select oid from pg_proc where proname = 'alerta_avaliar'
+                                        and pronamespace = 'public'::regnamespace), 'EXECUTE') then
     raise exception 'FALHOU: o service_role (o cron) perdeu o alerta_avaliar';
   end if;
 

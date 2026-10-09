@@ -9,7 +9,9 @@
 # Mesma receita para a 0122 (reabertura) e a 0123 (canal do Discord), cada uma por cima de tudo,
 # com alertas_reabertura_test.sql e alertas_canal_test.sql. Depois a 0136 (PMO/OP e posições), com
 # alertas_op_posicoes_test.sql, a 0137 (explicação de quem resolve) com alertas_explicacao_test.sql
-# e, fechando a fila, a 0139 (janela por blocos de turno) com alertas_intervalos_test.sql.
+# a 0139 (janela por blocos de turno) com alertas_intervalos_test.sql e, fechando a fila, a 0141
+# (resumo diário por posto) com alertas_resumo_test.sql — aplicada TRÊS vezes, e é o teste dela que
+# prova a guarda contra reenvio (o relatório não pode sair duas vezes no dia).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 NOME=pg-alertas-test
@@ -194,5 +196,18 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0139.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0139.sql   # de novo: idempotente
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_interv.sql
 echo "0139 (janela por blocos de turno): ok"
+
+# ---------- 0141: resumo diário por posto ('resumo') ----------
+# Fecha a fila. Recria o alerta_avaliar (3º parâmetro, p_resumos) e DERRUBA a assinatura de 2: por isso
+# vem DEPOIS do teste da 0139, que ainda fala da assinatura de 2 (e foi escrito para valer nas duas).
+# Três aplicações seguidas, cada uma como transação única (-1), provam a idempotência e a ordem dos
+# checks (o novo entra antes de o antigo cair).
+docker cp supabase/migrations/0141_alertas_resumo_diario.sql "$NOME":/tmp/0141.sql
+docker cp supabase/tests/alertas_resumo_test.sql "$NOME":/tmp/teste_resumo.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0141.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0141.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0141.sql   # e mais uma, por paranoia
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_resumo.sql
+echo "0141 (resumo diário): ok"
 
 echo "ALERTAS SQL OK"
