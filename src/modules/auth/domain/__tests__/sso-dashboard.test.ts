@@ -40,6 +40,17 @@ describe('validarClaimsDashboard', () => {
 })
 
 describe('validarNextEmbed', () => {
+  it('aceita query string: o ?modo=tv atravessa o SSO cru', () => {
+    expect(validarNextEmbed('/embed/fluxo/PMOC13/2340%2F26?modo=tv')).toEqual({
+      ok: true, next: '/embed/fluxo/PMOC13/2340%2F26?modo=tv',
+    })
+  })
+
+  it('a query não destrava o /embed/sso nem a travessia', () => {
+    expect(validarNextEmbed('/embed/sso?modo=tv').ok).toBe(false)
+    expect(validarNextEmbed('/embed/../home?modo=tv').ok).toBe(false)
+  })
+
   it('aceita caminho dentro de /embed/', () => {
     expect(validarNextEmbed('/embed/fluxo/PMOC13/2340%2F26')).toEqual({
       ok: true, next: '/embed/fluxo/PMOC13/2340%2F26',
