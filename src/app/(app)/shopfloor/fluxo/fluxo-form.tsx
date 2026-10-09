@@ -437,11 +437,15 @@ export function FluxoForm({
   ordensDashboard,
   opFixa,
   ocultarSeletor,
+  modoTv = false,
 }: {
   ops: OpItem[]
   ordensDashboard: OrdemPesquisa[]
   opFixa?: { pmo: string; op: string }
   ocultarSeletor?: boolean
+  /** Liga o layout do Modo TV POR FORA (embed `?modo=tv`) — sem a API de tela cheia do navegador:
+   *  a tela cheia, aí, é do Dashboard, e disputá-la derrubava a dele. */
+  modoTv?: boolean
 }) {
   // `sel` = "pmo||op" (a chave da OP escolhida). Com `opFixa`, já nasce escolhida.
   const [sel, setSel] = useState(opFixa ? `${opFixa.pmo}||${opFixa.op}` : '')
@@ -641,9 +645,9 @@ export function FluxoForm({
   const iniciarApresentacao = () => {
     if (playlist.length === 0) { toast.error('Monte a playlist antes de apresentar.'); return }
     setApresPainel(false); setSlideIdx(0); setApresentando(true)
-    void canvasRef.current?.requestFullscreen?.() // tela cheia (Esc sai)
+    if (!modoTv) void canvasRef.current?.requestFullscreen?.() // tela cheia (Esc sai); com modoTv a tela cheia é do Dashboard
   }
-  const sairApresentacao = () => { setApresentando(false); if (document.fullscreenElement) void document.exitFullscreen() }
+  const sairApresentacao = () => { setApresentando(false); if (!modoTv && document.fullscreenElement) void document.exitFullscreen() }
   const slideAtual = apresentando ? playlist[slideIdx] : undefined
 
   // Slide de FLUXO → carrega a OP no canvas (defeitos/dashboard usam overlay, não precisam do canvas).
@@ -907,9 +911,11 @@ export function FluxoForm({
   const canvasRef = useRef<HTMLDivElement>(null)
   const rfRef = useRef<ReactFlowInstance | null>(null)
   const [zoomPct, setZoomPct] = useState(100)
-  const [telaCheia, setTelaCheia] = useState(false)
+  const [telaCheiaApi, setTelaCheiaApi] = useState(false) // espelho do `fullscreenchange`
+  const telaCheia = telaCheiaApi || modoTv // `modoTv` = ligado por fora, sem API
   const [containerTv, setContainerTv] = useState<HTMLElement | null>(null) // alvo do portal do diálogo no Modo TV
   const alternarTv = () => {
+    if (modoTv) return // não há o que alternar: a tela cheia (se houver) é do Dashboard
     if (document.fullscreenElement) void document.exitFullscreen()
     else void canvasRef.current?.requestFullscreen?.()
   }
@@ -928,16 +934,27 @@ export function FluxoForm({
     setTimeout(() => rfRef.current?.fitView(), 0)
   }, [dom, setNodes])
   useEffect(() => {
+    if (modoTv) return // o modo é por prop; evento de tela cheia (do Dashboard) não decide nada aqui
     const onFs = () => {
       const emTv = document.fullscreenElement === canvasRef.current
-      setTelaCheia(emTv)
+      setTelaCheiaApi(emTv)
       setContainerTv(emTv ? canvasRef.current : null) // captura o alvo do portal fora do render (regra dos refs)
       if (!emTv) setApresentando(false) // saiu da tela cheia (Esc/botão) → encerra a apresentação
       setTimeout(() => rfRef.current?.fitView(), 120)
     }
     document.addEventListener('fullscreenchange', onFs)
     return () => document.removeEventListener('fullscreenchange', onFs)
-  }, [])
+  }, [modoTv])
+
+  // Com `modoTv` não há `fullscreenElement`: o diálogo do SN (HistoricoSnDialog) precisa renderizar
+  // DENTRO do canvas (que aqui é `fixed inset-0 z-50` e cria o próprio contexto de empilhamento),
+  // senão cairia no `body` por trás dele. Também re-encaixa o fluxo: o canvas mudou de tamanho.
+  useEffect(() => {
+    if (!modoTv) return
+    setContainerTv(canvasRef.current)
+    const t = setTimeout(() => rfRef.current?.fitView(), 120)
+    return () => { clearTimeout(t); setContainerTv(null) }
+  }, [modoTv])
 
   // Lista de OPs: busca no banco quantos BIPES cada OP teve no período (0120) — com período, só
   // aparecem as OPs com bipe; em "Tudo" (período vazio) ninguém some, a contagem só ORDENA a lista
@@ -1208,7 +1225,9 @@ export function FluxoForm({
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
         )}
 
-        <div ref={canvasRef} className="fluxo-canvas relative h-[70vh] w-full overflow-hidden rounded-lg border border-border bg-neutral-100">
+        <div ref={canvasRef} className={`fluxo-canvas group/canvas w-full overflow-hidden bg-neutral-100 ${
+          modoTv ? 'fixed inset-0 z-50 h-dvh' : 'relative h-[70vh] rounded-lg border border-border'
+        }`}>
           {/* Transição entre fluxos: borra o canvas atual + spinner enquanto carrega a OP nova. */}
           {carregando && (
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/40 backdrop-blur-sm">
@@ -1409,13 +1428,15 @@ export function FluxoForm({
                   <p className="text-3xl font-bold leading-none text-enterplak tabular-nums">{pctProcesso !== null ? `${pctProcesso}%` : '—'}</p>
                   <p className="text-xs text-muted-foreground">progresso</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={alternarTv}
-                  className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
-                >
-                  <Minimize2 className="size-4" /> Sair (Esc)
-                </button>
+                {!modoTv && (
+                  <button
+                    type="button"
+                    onClick={alternarTv}
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
+                  >
+                    <Minimize2 className="size-4" /> Sair (Esc)
+                  </button>
+                )}
               </div>
             </div>
           )}
