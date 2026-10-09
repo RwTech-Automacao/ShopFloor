@@ -100,6 +100,7 @@ const TEMPO: RegraValida = {
   limiteOcorrencias: null,
   pausaMaxMin: 30,
   lembreteMin: null,
+  horaResumo: null,
   intervalos: [],
   canais: ['telegram'],
   avisarPessoas: true,
@@ -356,6 +357,179 @@ describe('resolverOcorrenciaComoAdmin — nome do parâmetro p_explicacao (0137)
       chamadas.length = 0
       await resolverOcorrenciaComoAdmin('oc1', expl)
       expect(chamadas[0]!.args).toEqual({ p_ocorrencia_id: 'oc1' })
+    }
+  })
+})
+
+/** Resumo: a hora do envio viaja para o banco e volta como 'HH:MM'. */
+const RESUMO: RegraValida = {
+  ...TEMPO,
+  tipo: 'resumo',
+  nome: 'Resumo do dia',
+  taxaMinima: null,
+  janelaTipo: 'intervalos',
+  janelaValor: null,
+  minimoBipes: null,
+  limiteTempoSeg: null,
+  pausaMaxMin: null,
+  pmos: [],
+  horaResumo: '18:00',
+}
+
+/** Supabase que devolve ERRO em toda gravação (insert/update). */
+function sbGravacaoComErro(error: { code?: string; message: string }) {
+  const q = {
+    insert: () => q,
+    update: () => q,
+    delete: () => q,
+    eq: () => q,
+    select: () => q,
+    single: () => q,
+    then(ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) {
+      return Promise.resolve({ data: null, error }).then(ok, erro)
+    },
+  }
+  return { from: () => q } as unknown as SupabaseClient
+}
+
+function linhaResumo(extra: Record<string, unknown>) {
+  return {
+    id: 'rr1',
+    tipo: 'resumo',
+    nome: 'Resumo do dia',
+    postos: ['Teste'],
+    taxa_minima: null,
+    janela_tipo: 'intervalos',
+    janela_valor: null,
+    minimo_bipes: null,
+    limite_tempo_seg: null,
+    limite_ocorrencias: null,
+    pausa_max_min: null,
+    pmos: null,
+    lembrete_min: null,
+    canais: ['telegram'],
+    destinatarios: [],
+    avisar_pessoas: false,
+    avisar_canal: true,
+    ativa: true,
+    atualizado_em: '2026-10-08T12:00:00Z',
+    ...extra,
+  }
+}
+
+/** Lista de regras + a tabela filha de intervalos (a regra de resumo nasce com janela 'intervalos'). */
+function sbListaResumo(linhas: unknown[], colunas: string[] = []) {
+  const consulta = (dados: unknown[]) => {
+    const q = {
+      select(c: string) {
+        colunas.push(c)
+        return q
+      },
+      is: () => q,
+      order: () => q,
+      in: () => q,
+      then(ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) {
+        return Promise.resolve({ data: dados, error: null }).then(ok, erro)
+      },
+    }
+    return q
+  }
+  return {
+    from: (tabela: string) => consulta(tabela === 'alerta_regra_intervalos' ? [] : linhas),
+  } as unknown as SupabaseClient
+}
+
+describe('resumo diário: hora_resumo', () => {
+  it('inserirRegra manda hora_resumo, e NUNCA resumo_enviado_em (só o banco escreve a marca)', async () => {
+    const { sb, gravado } = sbGravacao()
+    const { inserirRegra } = await repositorioCom(sb)
+    expect(await inserirRegra(RESUMO)).toEqual({ ok: true, id: 'nova' })
+    expect(gravado.insert).toMatchObject({ tipo: 'resumo', hora_resumo: '18:00' })
+    expect(gravado.insert).not.toHaveProperty('resumo_enviado_em')
+  })
+
+  it('atualizarRegra manda hora_resumo, e NUNCA resumo_enviado_em', async () => {
+    const { sb, gravado } = sbGravacao()
+    const { atualizarRegra } = await repositorioCom(sb)
+    expect(await atualizarRegra('r1', { ...RESUMO, horaResumo: '07:30' })).toEqual({ ok: true })
+    expect(gravado.update).toMatchObject({ hora_resumo: '07:30' })
+    expect(gravado.update).not.toHaveProperty('resumo_enviado_em')
+  })
+
+  it('regra de outro tipo grava hora_resumo nulo EXPLÍCITO', async () => {
+    const { sb, gravado } = sbGravacao()
+    const { inserirRegra } = await repositorioCom(sb)
+    await inserirRegra(TEMPO)
+    expect(gravado.insert).toHaveProperty('hora_resumo', null)
+  })
+
+  it('⚠️ erro do banco na gravação vira ok:false (o mock com erro FAZ o teste falhar se ignorado)', async () => {
+    const { inserirRegra, atualizarRegra } = await repositorioCom(
+      sbGravacaoComErro({ code: '23514', message: 'violates check constraint "alerta_regras_resumo_hora"' }),
+    )
+    const ins = await inserirRegra(RESUMO)
+    expect(ins.ok).toBe(false)
+    const upd = await atualizarRegra('r1', RESUMO)
+    expect(upd.ok).toBe(false)
+    vi.resetModules()
+    const sem = await repositorioCom(sbGravacaoComErro({ code: '42501', message: 'x' }))
+    expect(await sem.inserirRegra(RESUMO)).toEqual({
+      ok: false,
+      erro: 'Você não tem permissão para configurar alertas.',
+    })
+  })
+
+  it("listarRegras lê hora_resumo ('HH:MM:SS' vira 'HH:MM') e pede a coluna ao banco", async () => {
+    const colunas: string[] = []
+    const { listarRegras } = await repositorioCom(
+      sbListaResumo([linhaResumo({ hora_resumo: '18:00:00' })], colunas),
+    )
+    const [r] = await listarRegras()
+    expect(r).toMatchObject({ id: 'rr1', tipo: 'resumo', horaResumo: '18:00' })
+    expect(colunas[0]).toMatch(/\bhora_resumo\b/)
+    expect(colunas[0]).not.toMatch(/resumo_enviado_em/)
+  })
+
+  it('⚠️ hora_resumo de tipo errado (número) numa regra de resumo GRITA no log com o id e vira null', async () => {
+    const espiao = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { listarRegras } = await repositorioCom(sbListaResumo([linhaResumo({ hora_resumo: 64800 })]))
+      const [r] = await listarRegras()
+      expect(r!.horaResumo).toBeNull()
+      expect(espiao).toHaveBeenCalledTimes(1)
+      const texto = String(espiao.mock.calls[0]![0])
+      expect(texto).toMatch(/rr1/)
+      expect(texto).toMatch(/hora_resumo/)
+    } finally {
+      espiao.mockRestore()
+    }
+  })
+
+  it('hora ilegível ou ausente numa regra de resumo também grita', async () => {
+    const espiao = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { listarRegras } = await repositorioCom(
+        sbListaResumo([linhaResumo({ id: 'a', hora_resumo: 'xx:yy:zz' }), linhaResumo({ id: 'b', hora_resumo: null })]),
+      )
+      const regras = await listarRegras()
+      expect(regras.map((r) => r.horaResumo)).toEqual([null, null])
+      expect(espiao.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/regra a[\s\S]*regra b/)
+    } finally {
+      espiao.mockRestore()
+    }
+  })
+
+  it('regra de outro tipo com hora_resumo nulo NÃO faz barulho', async () => {
+    const espiao = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { listarRegras } = await repositorioCom(
+        sbListaResumo([linhaResumo({ id: 't', tipo: 'tempo', janela_tipo: 'tempo', hora_resumo: null })]),
+      )
+      const [r] = await listarRegras()
+      expect(r!.horaResumo).toBeNull()
+      expect(espiao).not.toHaveBeenCalled()
+    } finally {
+      espiao.mockRestore()
     }
   })
 })

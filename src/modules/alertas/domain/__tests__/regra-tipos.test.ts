@@ -39,12 +39,13 @@ const DEFEITO: EntradaRegra = {
 }
 
 describe('tipos de regra', () => {
-  it('três tipos, com nome de tela', () => {
-    expect(TIPOS_REGRA).toEqual(['aprovacao', 'tempo', 'defeito'])
+  it('quatro tipos, com nome de tela', () => {
+    expect(TIPOS_REGRA).toEqual(['aprovacao', 'tempo', 'defeito', 'resumo'])
     expect(NOME_TIPO_REGRA).toEqual({
       aprovacao: 'Taxa de aprovação',
       tempo: 'Tempo médio por peça',
       defeito: 'Defeito repetido',
+      resumo: 'Resumo diário',
     })
     expect(ehTipoRegra('tempo')).toBe(true)
     expect(ehTipoRegra('lua')).toBe(false)
@@ -68,6 +69,7 @@ describe('validarRegra — tempo médio por peça', () => {
         pausaMaxMin: 30,
         lembreteMin: null,
         intervalos: [],
+        horaResumo: null,
         canais: ['telegram'],
         destinatarios: ['u1'],
         avisarPessoas: true,
@@ -163,6 +165,7 @@ describe('validarRegra — defeito repetido', () => {
         pausaMaxMin: null,
         lembreteMin: null,
         intervalos: [],
+        horaResumo: null,
         canais: ['telegram'],
         destinatarios: ['u1'],
         avisarPessoas: true,

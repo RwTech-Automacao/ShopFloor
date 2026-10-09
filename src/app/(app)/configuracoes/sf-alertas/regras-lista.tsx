@@ -8,10 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
-import { resumoJanela } from '@/modules/alertas/domain/janela'
 import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { NOME_CANAL, NOME_TIPO_REGRA, type Canal } from '@/modules/alertas/domain/tipos'
 import {
+  resumoJanelaRegra,
   resumoLimite,
   resumoPmos,
   type DestinatarioDisponivel,
@@ -113,7 +113,7 @@ export function RegrasLista({
                 <TableCell>{NOME_TIPO_REGRA[r.tipo]}</TableCell>
                 <TableCell>{r.postos.join(', ')}</TableCell>
                 <TableCell>{resumoLimite(r)}</TableCell>
-                <TableCell>{resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })}</TableCell>
+                <TableCell>{resumoJanelaRegra(r)}</TableCell>
                 <TableCell>{resumoPmos(r.pmos)}</TableCell>
                 <TableCell>{r.destinatarios.map((id) => nomes.get(id) ?? '—').join(', ')}</TableCell>
                 <TableCell>{r.canais.map((c) => NOME_CANAL[c]).join(', ')}</TableCell>
@@ -162,7 +162,7 @@ export function RegrasLista({
             </div>
             <span className="text-sm text-muted-foreground">
               {NOME_TIPO_REGRA[r.tipo]} · {resumoLimite(r)} · {r.postos.join(', ')} ·{' '}
-              {resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })} · PMOs: {resumoPmos(r.pmos)}
+              {resumoJanelaRegra(r)} · PMOs: {resumoPmos(r.pmos)}
             </span>
             <span className="text-xs text-muted-foreground">
               {r.canais.map((c) => NOME_CANAL[c]).join(', ')} ·{' '}

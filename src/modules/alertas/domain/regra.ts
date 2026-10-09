@@ -8,8 +8,10 @@ import {
   type TipoRegra,
 } from './tipos'
 import { formatarMeta } from './taxa'
-import { validarIntervalos, type Intervalo } from './intervalos'
+import { lerHhMm, validarIntervalos, type Intervalo } from './intervalos'
 import { formatarMmSs, lerMmSs } from './tempo'
+import { HORA_RESUMO_MAX, HORA_RESUMO_MIN } from './resumo'
+import { resumoJanela } from './janela'
 
 /** O que vem do formulário (tudo pode chegar como texto). Campos de outro tipo são ignorados. */
 export interface EntradaRegra {
@@ -41,6 +43,8 @@ export interface EntradaRegra {
   pmos?: string[]
   /** Janela `intervalos`: os horários do turno ({ inicio, fim } 'HH:MM'). Nas outras, é ignorado. */
   intervalos?: unknown
+  /** Resumo diário: a hora do envio ('HH:MM', hora da fábrica). Nos outros tipos, é ignorado. */
+  horaResumo?: string | null
   ativa: boolean
 }
 
@@ -59,6 +63,8 @@ export interface RegraValida {
   lembreteMin: number | null
   /** Janela `intervalos`: os horários do turno, ordenados. Vazio nas outras janelas. */
   intervalos: Intervalo[]
+  /** Resumo diário: a hora do envio ('HH:MM'). Nos outros tipos, null. */
+  horaResumo: string | null
   canais: Canal[]
   destinatarios: string[]
   avisarPessoas: boolean
@@ -121,6 +127,13 @@ export const PADROES_TIPO = {
  * 0115); vazia = não descarta nenhum intervalo (todas as pausas entram na média). */
 export const PAUSA_MAX_MIN = { min: 1, max: 240 } as const
 
+const MSG_RESUMO_CAMPO = 'O resumo diário não usa este campo.'
+const MSG_RESUMO_HORA =
+  'A hora do resumo deve ficar entre 06:00 e 19:00 (fora disso o banco está desligado e o relatório não sairia).'
+
+const MSG_RESUMO_APOS_TURNO =
+  'O resumo do dia tem de sair depois que o último intervalo fecha. Antes disso ele sairia com os números do começo do turno e o relatório do dia inteiro se perderia.'
+
 const RE_DECIMAL = /^\d{1,3}([.,]\d{1,2})?$/
 
 type Resultado<T> = { ok: true; valor: T } | { ok: false; erro: string }
@@ -175,6 +188,29 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   const postos = unicos(e.postos)
   if (postos.length === 0) return erro('Escolha pelo menos 1 posto.')
 
+  // Resumo diário: segue um caminho próprio até os destinatários (não usa taxa, janela em minutos,
+  // bipes, lembrete nem limites) e RECUSA o campo que não é dele em vez de ignorá-lo em silêncio.
+  let horaResumo: string | null = null
+  let intervalosResumo: Intervalo[] = []
+  if (tipo === 'resumo') {
+    const naoUsados = [e.taxaMinima, e.janelaValor, e.minimoBipes, e.lembreteMin, e.limiteTempo, e.limiteOcorrencias, e.pausaMaxMin]
+    if (naoUsados.some((v) => textoLimpo(v) !== '')) return erro(MSG_RESUMO_CAMPO)
+    // Sem passo: o resumo usa os intervalos só para saber o que é "o dia" de cada posto.
+    const ri = validarIntervalos(e.intervalos, null)
+    if (!ri.ok) return erro(ri.erro)
+    intervalosResumo = ri.valor
+    const hora = lerHhMm(textoLimpo(e.horaResumo))
+    if (hora === null) return erro('Informe a hora do resumo no formato HH:MM (ex.: 18:00).')
+    // A fronteira mora em `resumo.ts`; aqui só se compara, nunca se reescreve o número.
+    if (hora < (lerHhMm(HORA_RESUMO_MIN) as number) || hora > (lerHhMm(HORA_RESUMO_MAX) as number)) {
+      return erro(MSG_RESUMO_HORA)
+    }
+    // O fim do último intervalo é o MAIOR fim da lista, não o do último item do array.
+    const fimDoTurno = Math.max(...intervalosResumo.map((i) => lerHhMm(i.fim) as number))
+    if (hora < fimDoTurno) return erro(MSG_RESUMO_APOS_TURNO)
+    horaResumo = textoLimpo(e.horaResumo)
+  }
+
   let taxaMinima: number | null = null
   if (tipo === 'aprovacao') {
     const taxaTexto = textoLimpo(e.taxaMinima)
@@ -187,9 +223,10 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     taxaMinima = taxa
   }
 
-  if (!ehJanelaTipo(e.janelaTipo)) return erro('Escolha a janela da regra.')
-  const janelaTipo: JanelaTipo = e.janelaTipo
-  if (tipo !== 'aprovacao' && janelaTipo === 'intervalos') {
+  if (tipo !== 'resumo' && !ehJanelaTipo(e.janelaTipo)) return erro('Escolha a janela da regra.')
+  // O resumo sai SEMPRE como 'intervalos' (ele usa os intervalos), seja o que o formulário mandar.
+  const janelaTipo: JanelaTipo = tipo === 'resumo' ? 'intervalos' : (e.janelaTipo as JanelaTipo)
+  if (tipo !== 'aprovacao' && tipo !== 'resumo' && janelaTipo === 'intervalos') {
     return erro('Só a taxa de aprovação usa a janela por blocos de turno.')
   }
   if (tipo === 'tempo' && janelaTipo === 'bipes') {
@@ -198,7 +235,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   if (tipo === 'defeito' && janelaTipo !== 'tempo') return erro('Defeito repetido usa só a janela por minutos.')
 
   let janelaValor: number | null = null
-  if (janelaTipo !== 'op') {
+  if (tipo !== 'resumo' && janelaTipo !== 'op') {
     const v = inteiro(e.janelaValor)
     if (v === null || Number.isNaN(v) || v <= 0) {
       if (janelaTipo === 'intervalos') return erro('Informe o passo do bloco em minutos.')
@@ -212,15 +249,15 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
 
   // Janela por blocos: `janelaValor` é o PASSO em minutos. As faixas do passo e os horários são
   // conferidas por `validarIntervalos`, e o erro dela sobe como erro da regra, sem reescrever.
-  let intervalos: Intervalo[] = []
-  if (janelaTipo === 'intervalos') {
+  let intervalos: Intervalo[] = intervalosResumo
+  if (tipo !== 'resumo' && janelaTipo === 'intervalos') {
     const ri = validarIntervalos(e.intervalos, janelaValor)
     if (!ri.ok) return erro(ri.erro)
     intervalos = ri.valor
   }
 
   let minimoBipes: number | null = null
-  if (tipo !== 'defeito') {
+  if (tipo === 'aprovacao' || tipo === 'tempo') {
     const m = inteiro(e.minimoBipes)
     if (m === null || Number.isNaN(m) || m <= 0) {
       return erro('O mínimo de bipes deve ser um número inteiro maior que zero.')
@@ -265,7 +302,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // Na janela por blocos quem comanda a insistência é o bloco, não os minutos: o lembrete é
   // ignorado (sai null), mesmo preenchido.
   let lembrete: number | null = null
-  if (janelaTipo !== 'intervalos') {
+  if (tipo !== 'resumo' && janelaTipo !== 'intervalos') {
     lembrete = inteiro(e.lembreteMin)
     if (lembrete !== null && (Number.isNaN(lembrete) || lembrete <= 0)) {
       return erro('O lembrete deve ser um número inteiro de minutos (ou vazio).')
@@ -321,6 +358,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
       pausaMaxMin,
       lembreteMin: lembrete,
       intervalos,
+      horaResumo,
       canais,
       destinatarios,
       avisarPessoas,
@@ -378,6 +416,17 @@ export function resumoLimite(
   if (r.tipo === 'tempo') return r.limiteTempoSeg === null ? '—' : `≤ ${formatarMmSs(r.limiteTempoSeg)}/peça`
   if (r.tipo === 'defeito') return r.limiteOcorrencias === null ? '—' : `≥ ${r.limiteOcorrencias} vezes`
   return r.taxaMinima === null ? '—' : `≥ ${formatarMeta(r.taxaMinima)}%`
+}
+
+/**
+ * Coluna "Janela" da lista. O resumo diário guarda `janelaTipo = 'intervalos'` só para saber o que é
+ * "o dia" de cada posto: mostrar "Blocos de 1h" diria uma janela que ele não tem. Ele mostra a hora.
+ */
+export function resumoJanelaRegra(
+  r: Pick<RegraValida, 'tipo' | 'janelaTipo' | 'janelaValor' | 'horaResumo'>,
+): string {
+  if (r.tipo === 'resumo') return r.horaResumo ? `Dia inteiro, às ${r.horaResumo}` : '—'
+  return resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })
 }
 
 /** Coluna "PMOs": nenhuma = todas. */

@@ -1,6 +1,8 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { agruparReceitaPorPosto, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
+import type { PerfilPosto } from '../domain/perfil-posto'
+import type { ConsertoConfirmavel } from '../domain/rota-reteste'
 import { agruparTempoBurninPorPosto, type TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 
 export interface OrdemLancamento {
@@ -342,9 +344,52 @@ export async function buscarUltimaReprovaDoPosto(
   return defeitos.length > 0 ? defeitos : null
 }
 
-/** Grava a auditoria de conserto confirmado (uma linha por defeito). Respeita RLS (insert = 'lancar'). */
+/**
+ * O último registro da peça (em QUALQUER posto) é um reparo da Manutenção? Então devolve os
+ * consertos daquele evento. Senão, null.
+ *
+ * Irmã da `buscarUltimaReprovaDoPosto` acima, com duas diferenças que importam:
+ *
+ *  - NÃO filtra por posto. A peça está chegando na Inspeção vinda da Manutenção, possivelmente pela
+ *    primeira vez, e perguntar "o que aconteceu NESTE posto" não encontraria nada.
+ *
+ *  - Reconhece a Manutenção pelo PERFIL (`recurso === 'manutencao'`), não pelo texto 'Manutenção'
+ *    que a `sf_manutencao_registrar` (0033) grava. Comparar texto funcionaria hoje e quebraria no
+ *    dia em que alguém renomeasse o posto, sem erro, apenas parando de perguntar.
+ *
+ * O "evento" são todas as linhas com o mesmo `data_hora` do topo, porque a Manutenção grava UMA
+ * LINHA POR CONSERTO, todas no mesmo instante.
+ */
+export async function buscarUltimoReparo(
+  pmo: string, op: string, snNorm: string,
+  perfilDoPosto: (posto: string) => PerfilPosto,
+): Promise<ConsertoConfirmavel[] | null> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_registros')
+    .select('posto,data_hora,reparo_conserto,reparo_posicao')
+    .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', snNorm)
+    .order('data_hora', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(50)
+  if (error) throw error
+  const linhas = (data ?? []) as { posto: string; data_hora: string; reparo_conserto: string; reparo_posicao: string }[]
+  const topo = linhas[0]
+  if (!topo) return null
+  if (perfilDoPosto(topo.posto).recurso !== 'manutencao') return null
+  const consertos = linhas
+    .filter((l) => l.data_hora === topo.data_hora && (l.reparo_conserto ?? '').trim() !== '')
+    .map((l) => ({ conserto: (l.reparo_conserto ?? '').trim(), posicao: (l.reparo_posicao ?? '').trim() }))
+  return consertos.length > 0 ? consertos : null
+}
+
+/** Grava a auditoria de conserto confirmado (uma linha por item). Respeita RLS (insert = 'lancar'). */
 export async function inserirConservoConfirmado(
-  linhas: { colaborador: string; pmo: string; op: string; numeroSerie: string; numeroSerieNorm: string; posto: string; codigo: string; posicao: string; tipo: string }[],
+  linhas: {
+    colaborador: string; pmo: string; op: string; numeroSerie: string; numeroSerieNorm: string
+    posto: string; codigo: string; posicao: string; tipo: string
+    origem: 'posto' | 'manutencao'; conserto: string
+  }[],
 ): Promise<void> {
   if (linhas.length === 0) return
   const supabase = await createServerSupabase()
@@ -353,6 +398,7 @@ export async function inserirConservoConfirmado(
       colaborador: l.colaborador, pmo: l.pmo, op: l.op,
       numero_serie: l.numeroSerie, numero_serie_norm: l.numeroSerieNorm, posto: l.posto,
       codigo_defeito: l.codigo, posicao: l.posicao, tipo_defeito: l.tipo,
+      origem: l.origem, conserto: l.conserto,
     })),
   )
   if (error) throw error

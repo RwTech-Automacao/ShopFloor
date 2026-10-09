@@ -212,4 +212,14 @@ describe('OcorrenciasLista — resolver pergunta o que foi feito', () => {
     montar(resolvida)
     expect(screen.queryByText('Recalibrei a máquina')).not.toBeInTheDocument()
   })
+
+  it('com regras de resumo existindo, a tela continua coerente: o resumo não gera linha nem filtro', async () => {
+    // Quem manda é o banco (0141 mantém o resumo fora de alerta_ocorrencia): a lista só mostra o que veio.
+    render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={{ de: '', ate: '', estado: '' }} />)
+    expect(screen.getByText('Defeito 3x')).toBeTruthy() // a tela montou com dados
+    expect(screen.queryByText('Resumo diário')).toBeNull()
+    // Não há filtro por regra/tipo para listar um resumo que sempre voltaria vazio.
+    expect(screen.queryByLabelText(/regra|tipo/i)).toBeNull()
+    expect(screen.getAllByLabelText(/^(De|Até|Estado)$/)).toHaveLength(3)
+  })
 })
