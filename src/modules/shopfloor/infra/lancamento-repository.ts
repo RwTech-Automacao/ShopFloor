@@ -168,20 +168,29 @@ export interface OrdemLancamentoLista {
   tempoBurninPorPosto: TempoBurninPorPosto
 }
 
-/** Todas as OPs ativas com config + fluxo ordenado, para a cascata da tela de Lançamento. */
+/**
+ * TODAS as OPs (ativas E finalizadas) com config + fluxo ordenado, para a tela de Lançamento.
+ *
+ * O status NÃO é filtrado aqui de propósito. Esta lista não é uma lista de ESCOLHA: é a fonte de
+ * dados da tela inteira. É dela que o cabeçalho por bipe resolve a OP pela faixa de SN
+ * (`resolverOpPorSn`), é dela que sai o contexto da peça (postos, receita da Integração, tempo de
+ * Burn-in, quantidade) e é dela que a Integração por bipe acha a receita do produto.
+ *
+ * Filtrar `status <> 'FINALIZADA'` aqui tirava do ar as OPs recém-finalizadas: o operador bipava um
+ * SN válido e levava "SN não encontrado em nenhuma OP", a Integração respondia "OP do produto não
+ * encontrada", e quem estava com a tela aberta quando a OP finalizou perdia o contexto no meio do
+ * posto. Aconteceu em produção (7 OPs finalizadas à mão em 08/10/2026). Esconder a OP finalizada é
+ * assunto de LISTA DE ESCOLHA — quem a monta é a cascata (`listarClientes`/`listarPmos`/`listarOps`),
+ * e lá o filtro continua.
+ *
+ * Paginado porque sem o filtro de status a consulta varre a tabela inteira, e o PostgREST corta em
+ * 1000 linhas (max_rows): sem paginar, a partir da milésima OP começariam a sumir OPs — ATIVAS
+ * inclusive — em silêncio.
+ */
 export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select(
-      'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
-    )
-    .neq('status', 'FINALIZADA')
-    .order('cliente')
-    .order('pmo')
-    .order('op')
-  if (error) throw error
-  const rows = data as unknown as {
+  const PAGINA = 1000
+  const rows: {
     cliente: string
     pmo: string
     op: string
@@ -193,7 +202,22 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sf_ordem_postos: { posto: string; ordem: number }[]
     sf_ordem_componentes: { posto: string; pmo_componente: string }[]
     sf_ordem_burnin: { posto: string; tempo_min: number }[]
-  }[]
+  }[] = []
+  for (let i = 0; ; i++) {
+    const { data, error } = await supabase
+      .from('sf_ordens')
+      .select(
+        'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
+      )
+      .order('cliente')
+      .order('pmo')
+      .order('op')
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (error) throw error
+    const lote = (data ?? []) as unknown as typeof rows
+    rows.push(...lote)
+    if (lote.length < PAGINA) break
+  }
   return rows.map((r) => ({
     cliente: r.cliente,
     pmo: r.pmo,
