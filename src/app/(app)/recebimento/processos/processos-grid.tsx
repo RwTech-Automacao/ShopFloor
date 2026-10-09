@@ -186,7 +186,11 @@ export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, 
       <div className="hidden lg:block">
         <ScrollHorizontalTopo>
           <Table containerClassName="max-h-[70vh] overflow-auto rounded-lg border border-border" className="text-xs [&_:is(th,td)]:px-2.5 [&_:is(th,td)]:whitespace-nowrap">
-            <TableHeader className="sticky top-0 z-10 bg-card">
+            {/* z-20: o selo de divergência da linha é `relative z-10` (precisa disso no card do Fluxo,
+    para receber o toque por cima do link que cobre o card). Empatados em z-10, a linha
+    vencia por vir depois no DOM e o selo aparecia por cima da palavra "Divergência" ao
+    rolar. Visto em produção em 09/10/2026. */}
+            <TableHeader className="sticky top-0 z-20 bg-card">
               <TableRow>
                 {colunas.map((coluna) => (
                   <TableHead key={coluna.campo}>
