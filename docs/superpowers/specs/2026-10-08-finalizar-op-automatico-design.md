@@ -124,3 +124,99 @@ em produção.
 4. Reabrir quando **a conta cai abaixo de 100%**, não a qualquer bipe.
 
 Ver [[../../../docs/operacao/]] para o cron, e a migração `0121` para a conta de conclusão.
+
+---
+
+# Adendo de 09/10/2026 — o bipe em OP finalizada
+
+Este adendo nasceu de um erro meu na versão original desta spec, e é bom que ele fique escrito.
+
+## O que a spec afirmava, e estava errado
+
+A primeira versão dizia que `FINALIZADA` era **só um rótulo**, sem efeito operacional, e que isso
+tinha sido *"conferido em todo o código e em todas as migrações"*. Não tinha.
+
+`src/modules/shopfloor/infra/lancamento-repository.ts` trazia quatro `.neq('status','FINALIZADA')`,
+e o das OPs do Lançamento (`listarOrdensParaLancamento`) cortava a lista de onde o **cabeçalho por
+bipe** resolve a OP (`resolverOpPorSn`). OP finalizada = SN não encontrado.
+
+Como o erro passou: procurei pela **forma** que eu esperava (comparações `status === 'FINALIZADA'`)
+em vez de procurar pela **palavra**. Um `grep FINALIZADA` teria achado os quatro.
+
+O custo não foi na branch. Em 08/10 o gestor fechou 7 OPs à mão, confiando na afirmação, e elas
+ficaram **sem aceitar bipe em produção** até a correção.
+
+## Os três casos, separados
+
+Medidos em produção em 09/10 com a consulta de faixas sobrepostas:
+
+| | situação | hoje | depois |
+|---|---|---|---|
+| **1** | SN cai numa finalizada **e** numa ativa | puxa a ativa, calado | puxa a ativa, calado (igual) |
+| **2** | SN cai **só** numa finalizada | "SN não encontrado" | avisa que a OP está finalizada |
+| **3** | SN cai em **duas ativas** | "SN cai em mais de uma OP" | igual |
+
+O caso 1 só existe com **faixa cadastrada errada** e é raro. O caso 3 já acontece hoje (as OPs 8235
+e 8480 têm faixa idêntica). **A raiz dos dois é o cadastro da OP, não o bipe** — tratar isso lá é
+assunto próprio, e fica para depois (decisão do usuário, 09/10).
+
+O caso 2 **não depende de erro nenhum**: é só uma peça que volta depois que a OP fechou. Hoje é
+raro porque só 7 OPs estão finalizadas; com a finalização automática, toda OP que bate 100% fecha
+sozinha e o caso 2 vira rotina.
+
+## A busca em duas etapas
+
+**Decisão do usuário (09/10).** O cabeçalho procura o SN:
+
+1. **só nas OPs ativas**, exatamente como hoje. Achou uma → carrega, fim.
+2. **não achou → procura nas finalizadas.** Achou → **bloqueia**, com a mensagem de que a OP está
+   finalizada e precisa ser reativada no cadastro da OP.
+
+Duas propriedades que caem de graça desse desenho:
+
+- **O caso 1 não muda de comportamento.** Como a etapa 1 acha a ativa e para ali, a finalizada nunca
+  entra na conta — não aparece ambiguidade nova. Era o preço que eu havia previsto, e ele some.
+- **Não custa nada no caminho normal.** A segunda busca só roda quando a primeira falha.
+
+## Reativar tira a OP do automático
+
+Sem isto, o fluxo acima se morde: o gestor reativa a OP, ela continua em 100%, e **a rotina a fecha
+de novo em até 5 minutos** — às vezes antes de o operador conseguir bipar.
+
+A rotina já sabe respeitar "uma pessoa **fechou** isto" (`finalizada_por = 'manual'`). Falta saber
+respeitar "uma pessoa **reabriu** isto".
+
+**Decisão do usuário (09/10): nunca mais sozinha.** Reativar na mão passa a OP para controle
+manual em definitivo; a partir daí só fecha quem reabriu.
+
+⚠️ **O preço, aceito:** cada peça atrasada tira aquela OP do controle automático para sempre, e ela
+volta a aparecer no Dashboard até alguém fechá-la na mão. Com o tempo isso reconstrói parte do
+problema que a feature veio resolver. Foi escolhido assim por ser o comportamento que **nunca
+surpreende** quem usa; revisitar se incomodar na prática.
+
+## Uma premissa que se mostrou falsa (e ajuda)
+
+Na conversa supôs-se que uma OP em 100% não aceitaria bipe nem reaberta. **Não existe trava de
+quantidade no lançamento**: `0031_sf_lancar.sql` só limita a **caixa** (`qtd_por_caixa`) na
+Embalagem; o que se confere é a faixa de SN, não a `qtd` da OP.
+
+Então a OP reativada aceita a peça atrasada normalmente. E como a conclusão conta **séries
+distintas não-reprovadas no último posto**, relançar uma peça já contada não move a porcentagem: a
+OP fica em 100%, sem passar disso.
+
+É por isso que a alternativa "volta a fechar quando a conta passar de 100 de novo" foi descartada —
+para peça de reparo ela seria letra morta.
+
+## Como saber que funcionou
+
+1. SN de uma OP **ativa** → carrega como sempre. Nada mudou no caminho normal.
+2. SN de uma OP **finalizada**, sem ativa que o contenha → mensagem de OP finalizada, e **não**
+   carrega o cabeçalho.
+3. SN que cai numa finalizada **e** numa ativa → carrega a **ativa**, sem mensagem de ambiguidade.
+4. SN que cai em **duas ativas** → continua "SN cai em mais de uma OP".
+5. Gestor reativa uma OP em 100% → **a rotina não a fecha de novo**, nem na rodada seguinte nem em
+   nenhuma depois.
+6. As 7 OPs de 08/10 (`finalizada_por` nulo) continuam fora do alcance da rotina.
+
+O caso 3 é o que prova que a busca em duas etapas protege o caminho normal, e o 5 é o que prova que
+a reativação não é desfeita pelas costas de quem a fez.
