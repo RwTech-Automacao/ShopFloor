@@ -201,6 +201,15 @@ function ItensDaEtapa({
                             texto: i.justificativa,
                             autor: i.justificadaPorNome,
                             quando: i.justificadaEm,
+                            // De que item é a divergência: a `rec_fluxo_emb_itens` (0144) já
+                            // traz tudo; o diálogo formata igual à grade.
+                            contexto: {
+                              codigo: i.item,
+                              descricao: i.descricao,
+                              quantidadePedido: i.quantidadePedido,
+                              quantidadeRecebida: i.quantidadeRecebida,
+                              divergencia: i.divergencia,
+                            },
                           })
                         }
                       />
