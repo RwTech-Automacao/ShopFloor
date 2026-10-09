@@ -87,11 +87,29 @@ ali, a OP passa a ser marcada como **`manual`** — é isso que a protege da rot
 
 Nenhuma tela nova. Nenhum botão novo.
 
+⚠️ **Desatualizado pelo adendo de 09/10** (no fim deste arquivo): continua sem tela nova e sem botão
+novo, mas duas telas mudaram de comportamento. O **Lançamento** passou a recusar o bipe em OP
+finalizada, e o **Cadastro de OP** passou a marcar `reaberta_manual` ao reativar (com aviso de que
+reativar é definitivo).
+
 ## O que esta feature NÃO faz
 
-- **Não bloqueia nada.** `FINALIZADA` continua sendo só um rótulo: não impede bipe, lançamento nem
-  embalagem. Foi conferido em todo o código e em todas as migrações — nada recusa por causa dele.
-  Isso é o que torna a automação segura: ela não consegue travar um operador.
+- ⚠️ **CORRIGIDO EM 09/10 — hoje `FINALIZADA` BLOQUEIA o bipe do cabeçalho do Lançamento.** Este
+  bullet dizia o contrário: *"Não bloqueia nada. `FINALIZADA` continua sendo só um rótulo: não impede
+  bipe, lançamento nem embalagem. Foi conferido em todo o código e em todas as migrações... ela não
+  consegue travar um operador."* **Era falso**, e o custo foi real: 7 OPs ficaram sem aceitar bipe em
+  produção em 08/10. A frase fica registrada aqui de propósito — o erro está narrado no **adendo de
+  09/10/2026, no fim deste arquivo**, que é a parte válida desta spec sobre o assunto. O que vale
+  hoje:
+  - **Bloqueia o bipe do cabeçalho do Lançamento.** SN que cai **só** numa OP finalizada é
+    reconhecido e **recusado com mensagem** (a busca em duas etapas do adendo). Ou seja: a automação
+    **consegue** travar um operador, e travar é o comportamento escolhido. A saída é reativar a OP —
+    e quem reativa é quem tem `administrar` no módulo shopfloor, não quem está no posto.
+  - **Não bloqueia o resto.** O lançamento em si (`sf_lancar`), a Embalagem (`sf_fechar_caixa`) e a
+    Integração por bipe seguem aceitando OP finalizada; nenhuma migração recusa por `status`
+    (reconferido com `grep FINALIZADA supabase/migrations/`: só a 0101 e a 0105 comparam o status, e
+    é para filtrar o Dashboard; a 0145 e a 0148 são a própria rotina, que **grava** o status). **Quem mexer no Lançamento tem de reconferir isto na mão** — foi
+    exatamente a confiança nesta seção que deixou o defeito passar.
 - **Não mexe nas seis de 97–99%.** Elas continuam ativas até alguém decidir no chão.
 - **Não cria trilha de auditoria por enquanto.** A rotina escreve direto no banco, como o cron dos
   alertas já faz. Se um dia for preciso saber *quando* cada OP foi encerrada, uma coluna de data
@@ -169,8 +187,12 @@ sozinha e o caso 2 vira rotina.
 **Decisão do usuário (09/10).** O cabeçalho procura o SN:
 
 1. **só nas OPs ativas**, exatamente como hoje. Achou uma → carrega, fim.
-2. **não achou → procura nas finalizadas.** Achou → **bloqueia**, com a mensagem de que a OP está
-   finalizada e precisa ser reativada no cadastro da OP.
+2. **não achou → procura nas finalizadas.** Achou → **bloqueia**, com a mensagem de que aquela OP
+   (PMO/OP nomeados) está finalizada e de que é preciso **falar com um administrador do ShopFloor**
+   para reativá-la — o Cadastro de OP exige `administrar` no módulo, que quem bipa não tem. Depois
+   do aviso a tela pede ao Next os dados novos do servidor (`router.refresh()`), para que o bipe
+   seguinte já veja a OP reativada: a lista de OPs é prop resolvida uma vez no carregamento, e a tela
+   do posto fica aberta o turno inteiro.
 
 Duas propriedades que caem de graça desse desenho:
 
