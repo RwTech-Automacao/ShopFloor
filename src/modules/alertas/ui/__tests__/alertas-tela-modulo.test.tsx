@@ -40,7 +40,7 @@ function montar(modulo: 'shopfloor' | 'recebimento', regras: RegraAlerta[]) {
       regras={regras}
       postos={modulo === 'shopfloor' ? [{ chave: 'Teste', temStatus: true, coletaDefeito: true }] : []}
       pmos={[]}
-      destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true }]}
+      destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true, emailOk: true }]}
       configurados={{ telegram: true, discord: true, email: true }}
       canalConfigurado
       ocorrenciasIniciais={[]}

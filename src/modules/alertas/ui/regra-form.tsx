@@ -183,7 +183,7 @@ export function RegraForm({
   configurados: Record<Canal, boolean>
   /**
    * O aviso EM CANAL está pronto (token do bot + DISCORD_CANAL_ID). Separado de
-   * `configurados.discord`, que só olha o token e vale para a conversa privada.
+   * `configurados.discord`, que só olha o token e vale para a mensagem direta.
    */
   canalConfigurado: boolean
   onSalvo: () => void
@@ -670,9 +670,10 @@ export function RegraForm({
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Como avisar
           <Explica titulo="Como avisar">
-            <p><strong>Conversa privada do responsável</strong>: é o comportamento de sempre — cada um recebe a mensagem na conversa dele. Marcando, escolha por onde: <strong>Telegram</strong>, <strong>Discord</strong> ou os dois.</p>
+            <p><strong>Mensagem direta ao responsável</strong>: é o comportamento de sempre — cada um recebe a mensagem. Marcando, escolha por onde: <strong>Telegram</strong>, <strong>Discord</strong>, <strong>E-mail</strong> ou os três.</p>
+            <p>O <strong>E-mail</strong> vai para o endereço com que a pessoa entra no sistema. Não há cadastro de endereço, e quem não tem conta no sistema não pode ser avisado.</p>
             <p><strong>No canal do Discord</strong>: uma mensagem só, no canal do sistema, que todo mundo do canal vê.</p>
-            <p>Dá para marcar os dois. Só no canal: ninguém recebe no privado, e os responsáveis continuam podendo apertar <strong>Resolvido</strong> ali mesmo.</p>
+            <p>Dá para marcar os dois. Só no canal: ninguém recebe mensagem direta, e os responsáveis continuam podendo apertar <strong>Resolvido</strong> ali mesmo.</p>
             <p>A mensagem no canal <strong>não marca ninguém</strong> (@here/cargo): quem não estiver com o Discord aberto pode não notar.</p>
           </Explica>
         </legend>
@@ -680,14 +681,14 @@ export function RegraForm({
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              aria-label="Conversa privada do responsável"
+              aria-label="Mensagem direta ao responsável"
               checked={avisarPessoas}
               onChange={() => setAvisarPessoas((a) => !a)}
             />
-            Conversa privada do responsável
+            Mensagem direta ao responsável
           </label>
-          {/* Telegram e Discord são sub-opções DA conversa privada: fora dela não querem dizer nada
-              (o aviso em canal é sempre do Discord). Some quando a conversa privada é desmarcada. */}
+          {/* Telegram, Discord e E-mail são sub-opções DA mensagem direta: fora dela não querem dizer nada
+              (o aviso em canal é sempre do Discord). Some quando a mensagem direta é desmarcada. */}
           {avisarPessoas && (
             <div className="ml-6 flex flex-wrap gap-4 border-l border-border pl-3">
               {CANAIS.map((c) => (
@@ -740,7 +741,8 @@ export function RegraForm({
               />
               {d.nome}
               <span className="text-xs text-muted-foreground">
-                Telegram {d.telegram ? '✓' : '—'} · Discord {d.discord ? '✓' : '—'}
+                Telegram {d.telegram ? '✓' : '—'} · Discord {d.discord ? '✓' : '—'} ·
+                E-mail {d.emailOk ? '✓' : '—'}
               </span>
             </label>
           ))}

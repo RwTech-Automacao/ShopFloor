@@ -86,9 +86,12 @@ export interface RegraAlerta extends RegraValida {
 export interface DestinatarioDisponivel {
   usuarioId: string
   nome: string
+  /** O endereço de login. Mostrado na tela; NÃO é o "tem canal" (ver `emailOk`). */
   email: string
   telegram: boolean
   discord: boolean
+  /** O endereço de login serve para enviar (não está em branco) — o "tem canal" do e-mail. */
+  emailOk: boolean
 }
 
 /** O que a prévia do formulário precisa (nome/canais/destinatários ainda podem faltar). */
@@ -358,10 +361,10 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   const avisarPessoas = e.avisarPessoas ?? true
   const avisarCanal = e.avisarCanal ?? false
   if (!avisarPessoas && !avisarCanal) {
-    return erro('Escolha avisar na conversa privada, no canal do Discord, ou os dois.')
+    return erro('Escolha avisar por mensagem direta, no canal do Discord, ou os dois.')
   }
   if (avisarPessoas && canaisPrivado.length === 0) {
-    return erro('Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.')
+    return erro('Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.')
   }
   // Regra que avisaria SÓ no canal, num ambiente sem canal, some sem deixar rastro: a ocorrência
   // abre, ninguém é avisado, e o lembrete também não salva porque a abertura já renovou o
@@ -369,7 +372,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // qualquer jeito, e a mensagem do canal é o que se perde.
   if (avisarCanal && !avisarPessoas && ambiente.canalConfigurado === false) {
     return erro(
-      'O canal do Discord não está configurado neste ambiente: marque também a conversa privada do responsável, ou peça ao TI para configurar o canal.',
+      'O canal do Discord não está configurado neste ambiente: marque também a mensagem direta ao responsável, ou peça ao TI para configurar o canal.',
     )
   }
 
@@ -480,6 +483,17 @@ export function resumoPmos(pmos: string[]): string {
   return pmos.length === 0 ? 'Todas' : pmos.join(', ')
 }
 
+/**
+ * O "tem canal" de cada canal. O mapa é EXPLÍCITO, e não `d[canal]`: com 'email' em `Canal`, o
+ * `d['email']` leria o ENDEREÇO (uma string) como se fosse o booleano — endereço preenchido daria
+ * "tem canal" mesmo quando não serve.
+ */
+const TEM_CANAL: Record<Canal, (d: DestinatarioDisponivel) => boolean> = {
+  telegram: (d) => d.telegram,
+  discord: (d) => d.discord,
+  email: (d) => d.emailOk,
+}
+
 /** Avisos do diálogo: quem está escolhido mas não recebe por algum canal marcado. */
 export function destinatariosSemCanal(
   disponiveis: DestinatarioDisponivel[],
@@ -488,5 +502,5 @@ export function destinatariosSemCanal(
 ): string[] {
   return disponiveis
     .filter((d) => selecionados.includes(d.usuarioId))
-    .flatMap((d) => canais.filter((c) => !d[c]).map((c) => `${d.nome} sem ${NOME_CANAL[c]}`))
+    .flatMap((d) => canais.filter((c) => !TEM_CANAL[c](d)).map((c) => `${d.nome} sem ${NOME_CANAL[c]}`))
 }

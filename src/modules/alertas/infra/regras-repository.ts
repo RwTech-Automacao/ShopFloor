@@ -374,12 +374,16 @@ export async function listarDestinatarios(modulo: ModuloAlerta): Promise<Destina
     email: string
     telegram: boolean
     discord: boolean
+    email_ok: boolean | null
   }[]).map((l) => ({
     usuarioId: l.usuario_id,
     nome: l.nome,
     email: l.email,
     telegram: l.telegram,
     discord: l.discord,
+    // Banco ainda sem a 0151 (deploy antes da migração): a coluna não vem. Cai no endereço não
+    // estar em branco — a mesma conta que a 0151 faz, só que aqui.
+    emailOk: l.email_ok ?? l.email.trim() !== '',
   }))
 }
 

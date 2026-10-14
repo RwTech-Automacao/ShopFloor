@@ -58,7 +58,7 @@ describe('RegrasLista', () => {
         ]}
         postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
         pmos={['PMOX']}
-        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false, emailOk: true }]}
         configurados={{ telegram: true, discord: true, email: true }}
         canalConfigurado
       />,
@@ -95,7 +95,7 @@ describe('RegrasLista', () => {
         ]}
         postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
         pmos={['PMOX']}
-        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false, emailOk: true }]}
         configurados={{ telegram: true, discord: true, email: true }}
         canalConfigurado
       />,
@@ -126,7 +126,7 @@ describe('RegrasLista', () => {
         ]}
         postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
         pmos={[]}
-        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false, emailOk: true }]}
         configurados={{ telegram: true, discord: true, email: true }}
         canalConfigurado
       />,
@@ -170,7 +170,7 @@ describe('RegrasLista', () => {
         ]}
         postos={[]}
         pmos={[]}
-        destinatarios={[{ usuarioId: 'u1', nome: 'Beto Recebimento', email: 'beto@x', telegram: true, discord: false }]}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Beto Recebimento', email: 'beto@x', telegram: true, discord: false, emailOk: true }]}
         configurados={{ telegram: true, discord: true, email: true }}
         canalConfigurado
       />,

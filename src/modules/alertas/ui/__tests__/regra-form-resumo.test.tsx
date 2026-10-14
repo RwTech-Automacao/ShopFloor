@@ -23,7 +23,7 @@ const POSTOS: PostoRegra[] = [
   { chave: 'Teste', temStatus: true, coletaDefeito: true },
   { chave: 'Embalagem', temStatus: false, coletaDefeito: false },
 ]
-const DESTINATARIOS = [{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true }]
+const DESTINATARIOS = [{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true, emailOk: true }]
 
 function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null } = {}) {
   render(
@@ -119,7 +119,7 @@ describe('RegraForm — resumo diário: o que a tela mostra', () => {
   it('mantém nome, postos, responsáveis e canais', () => {
     montar()
     provarQueMontou()
-    expect(screen.getByLabelText('Conversa privada do responsável')).toBeInTheDocument()
+    expect(screen.getByLabelText('Mensagem direta ao responsável')).toBeInTheDocument()
     expect(screen.getByLabelText('No canal do Discord')).toBeInTheDocument()
   })
 

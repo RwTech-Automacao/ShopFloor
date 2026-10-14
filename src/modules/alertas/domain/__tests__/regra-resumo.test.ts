@@ -129,7 +129,7 @@ describe('validarRegra: resumo continua exigindo o que é dele', () => {
     expect(erroDe({ ...BASE, destinatarios: [] })).toBe('Escolha pelo menos 1 responsável.'))
   it('canais', () =>
     expect(erroDe({ ...BASE, canais: [] })).toBe(
-      'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.',
+      'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.',
     ))
 })
 

@@ -14,7 +14,7 @@ const toastErro = vi.fn()
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (...a: unknown[]) => toastErro(...a) } }))
 
 const DESTINATARIOS = [
-  { usuarioId: 'u1', nome: 'Beto Recebimento', email: 'beto@x', telegram: true, discord: false },
+  { usuarioId: 'u1', nome: 'Beto Recebimento', email: 'beto@x', telegram: true, discord: false, emailOk: true },
 ]
 
 /**
@@ -52,6 +52,17 @@ describe('formulário do fim de EMB', () => {
     expect(screen.getByLabelText('Telegram')).toBeInTheDocument()
     expect(screen.getByLabelText('Beto Recebimento')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Salvar' })).toBeInTheDocument()
+  })
+
+  it('oferece o e-mail como canal e o manda ao servidor', async () => {
+    salvarRegraAction.mockResolvedValue({ ok: true, id: 'g9' })
+    montar()
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Fim de EMB' } })
+    fireEvent.click(screen.getByLabelText('E-mail'))
+    fireEvent.click(screen.getByLabelText('Beto Recebimento'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(enviado().canais).toEqual(['email'])
   })
 
   it('não mostra posto, janela, lembrete, PMO nem prévia', () => {

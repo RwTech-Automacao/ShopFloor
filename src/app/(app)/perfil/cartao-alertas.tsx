@@ -46,12 +46,15 @@ function LinkExterno({ href, children }: { href: string; children: ReactNode }) 
 
 export function CartaoAlertas({
   nome,
+  email,
   contas,
   configurados,
   telegramBot,
   discordConvite = '',
 }: {
   nome: string
+  /** O endereço de LOGIN da própria pessoa (a sessão) — nunca o de outro usuário. */
+  email: string
   contas: ContaVinculada[]
   configurados: Record<Canal, boolean>
   telegramBot: string
@@ -145,11 +148,10 @@ export function CartaoAlertas({
           <BellRing className="size-[18px]" /> Alertas
         </CardTitle>
         <CardDescription>
-          Vincule seu Telegram e/ou Discord para receber os alertas dos postos.
+          Vincule seu Telegram e/ou Discord — ou use o e-mail do seu login — para receber os alertas.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {/* E-mail não se vincula: usa o endereço do login (usuarios.email). */}
         {CANAIS_COM_VINCULO.map((canal) => {
           const conta = lista.find((c) => c.canal === canal) ?? null
           const aberto = codigo?.canal === canal ? codigo : null
@@ -255,6 +257,30 @@ export function CartaoAlertas({
             </div>
           )
         })}
+        {/* O E-MAIL NÃO TEM VÍNCULO: o endereço é o do login (usuarios.email). Não há "Vincular", nem
+            "Desvincular", nem confirmação (decisão 7 da spec). O que cabe aqui é mostrar PARA ONDE vai
+            e deixar provar que chega. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
+          <div className="flex flex-col">
+            <span className="font-medium">{NOME_CANAL.email}</span>
+            <span className="text-xs text-muted-foreground">
+              {email.trim() === ''
+                ? 'Seu cadastro está sem e-mail — avise o TI: você não vai receber alerta por e-mail.'
+                : email}
+            </span>
+            {!configurados.email && (
+              <span className="text-xs text-muted-foreground">Não configurado neste ambiente</span>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pendente || email.trim() === '' || !configurados.email}
+            onClick={() => testar('email')}
+          >
+            <Send /> Enviar teste
+          </Button>
+        </div>
         {dialog}
       </CardContent>
     </Card>

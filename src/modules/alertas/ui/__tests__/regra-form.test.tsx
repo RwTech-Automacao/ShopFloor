@@ -26,8 +26,8 @@ const POSTOS: PostoRegra[] = [
 ]
 const PMOS = ['PMOA', 'PMOB', 'PMOG13']
 const DESTINATARIOS = [
-  { usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true },
-  { usuarioId: 'u3', nome: 'Carla Operadora', email: 'carla@x', telegram: false, discord: false },
+  { usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true, emailOk: true },
+  { usuarioId: 'u3', nome: 'Carla Operadora', email: 'carla@x', telegram: false, discord: false, emailOk: true },
 ]
 const CONFIGURADOS = { telegram: true, discord: true, email: true }
 const TOAST = { position: 'bottom-center' }
@@ -448,11 +448,11 @@ describe('RegraForm — PMOs', () => {
 })
 
 describe('RegraForm — como avisar', () => {
-  it('regra nova nasce na conversa privada, sem canal, com os canais dela à mostra', () => {
+  it('regra nova nasce na mensagem direta, sem canal, com os canais dela à mostra', () => {
     montar()
-    expect(screen.getByLabelText('Conversa privada do responsável')).toBeChecked()
+    expect(screen.getByLabelText('Mensagem direta ao responsável')).toBeChecked()
     expect(screen.getByLabelText('No canal do Discord')).not.toBeChecked()
-    // Telegram/Discord são sub-opções da conversa privada, e ela começa marcada.
+    // Telegram/Discord são sub-opções da mensagem direta, e ela começa marcada.
     expect(screen.getByLabelText('Telegram')).toBeInTheDocument()
     expect(screen.getByLabelText('Discord')).toBeInTheDocument()
   })
@@ -463,12 +463,12 @@ describe('RegraForm — como avisar', () => {
     expect(screen.getByText('Como avisar')).toBeInTheDocument()
   })
 
-  it('desmarcar a conversa privada esconde Telegram e Discord', () => {
+  it('desmarcar a mensagem direta esconde Telegram e Discord', () => {
     montar()
-    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    fireEvent.click(screen.getByLabelText('Mensagem direta ao responsável'))
     expect(screen.queryByLabelText('Telegram')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Discord')).not.toBeInTheDocument()
-    // O aviso em canal continua lá: é irmão da conversa privada, não sub-opção dela.
+    // O aviso em canal continua lá: é irmão da mensagem direta, não sub-opção dela.
     expect(screen.getByLabelText('No canal do Discord')).toBeInTheDocument()
   })
 
@@ -486,13 +486,13 @@ describe('RegraForm — como avisar', () => {
     })
   })
 
-  it('"só no canal": desmarca a conversa privada e salva sem exigir canal dela', async () => {
+  it('"só no canal": desmarca a mensagem direta e salva sem exigir canal dela', async () => {
     montar()
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'So canal' } })
     fireEvent.click(screen.getByLabelText('Teste'))
     fireEvent.click(screen.getByLabelText('Ana Gestora'))
     fireEvent.click(screen.getByLabelText('No canal do Discord'))
-    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    fireEvent.click(screen.getByLabelText('Mensagem direta ao responsável'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
     expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({ avisarPessoas: false, avisarCanal: true })
@@ -501,12 +501,12 @@ describe('RegraForm — como avisar', () => {
 
   it('lê o que está salvo na regra', () => {
     montar({ regra: regraSalva({ canais: ['discord'], avisarPessoas: false, avisarCanal: true }) })
-    expect(screen.getByLabelText('Conversa privada do responsável')).not.toBeChecked()
+    expect(screen.getByLabelText('Mensagem direta ao responsável')).not.toBeChecked()
     expect(screen.getByLabelText('No canal do Discord')).toBeChecked()
     expect(screen.queryByLabelText('Telegram')).not.toBeInTheDocument()
   })
 
-  it('conversa privada marcada sem nenhum canal dela é recusada', () => {
+  it('mensagem direta marcada sem nenhum canal dela é recusada', () => {
     montar()
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Sem canal' } })
     fireEvent.click(screen.getByLabelText('Teste'))
@@ -514,7 +514,7 @@ describe('RegraForm — como avisar', () => {
     fireEvent.click(screen.getByLabelText('No canal do Discord'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(toastErro).toHaveBeenCalledWith(
-      'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.',
+      'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.',
       TOAST,
     )
     expect(salvarRegraAction).not.toHaveBeenCalled()
@@ -523,10 +523,10 @@ describe('RegraForm — como avisar', () => {
   it('as duas formas desligadas é recusado', () => {
     montar()
     preencherObrigatorios('Muda')
-    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    fireEvent.click(screen.getByLabelText('Mensagem direta ao responsável'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(toastErro).toHaveBeenCalledWith(
-      'Escolha avisar na conversa privada, no canal do Discord, ou os dois.',
+      'Escolha avisar por mensagem direta, no canal do Discord, ou os dois.',
       TOAST,
     )
     expect(salvarRegraAction).not.toHaveBeenCalled()
@@ -539,13 +539,13 @@ describe('RegraForm — como avisar', () => {
     expect(screen.getByText('Carla Operadora sem Telegram')).toBeInTheDocument()
     // Só no canal: quem vê no canal não precisa de conta vinculada nenhuma.
     fireEvent.click(screen.getByLabelText('No canal do Discord'))
-    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    fireEvent.click(screen.getByLabelText('Mensagem direta ao responsável'))
     expect(screen.queryByText('Carla Operadora sem Telegram')).not.toBeInTheDocument()
   })
 })
 
 const ERRO_SEM_CANAL =
-  'O canal do Discord não está configurado neste ambiente: marque também a conversa privada do responsável, ou peça ao TI para configurar o canal.'
+  'O canal do Discord não está configurado neste ambiente: marque também a mensagem direta ao responsável, ou peça ao TI para configurar o canal.'
 
 describe('RegraForm — canal do Discord não configurado', () => {
   /** A `<label>` inteira da opção: é nela que o "(não configurado)" aparece. */
@@ -556,7 +556,7 @@ describe('RegraForm — canal do Discord não configurado', () => {
   it('a opção do canal avisa "(não configurado)" quando falta o DISCORD_CANAL_ID', () => {
     montar({ canalConfigurado: false })
     expect(opcao('No canal do Discord')).toHaveTextContent('(não configurado)')
-    // O Discord da conversa privada só precisa do token, que existe: ele continua configurado.
+    // O Discord da mensagem direta só precisa do token, que existe: ele continua configurado.
     expect(opcao('Discord')).not.toHaveTextContent('(não configurado)')
   })
 
@@ -571,13 +571,13 @@ describe('RegraForm — canal do Discord não configurado', () => {
     fireEvent.click(screen.getByLabelText('Teste'))
     fireEvent.click(screen.getByLabelText('Ana Gestora'))
     fireEvent.click(screen.getByLabelText('No canal do Discord'))
-    fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
+    fireEvent.click(screen.getByLabelText('Mensagem direta ao responsável'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(toastErro).toHaveBeenCalledWith(ERRO_SEM_CANAL, TOAST)
     expect(salvarRegraAction).not.toHaveBeenCalled()
   })
 
-  it('canal MAIS conversa privada continua salvando: as pessoas ainda são avisadas', async () => {
+  it('canal MAIS mensagem direta continua salvando: as pessoas ainda são avisadas', async () => {
     montar({ canalConfigurado: false })
     preencherObrigatorios('Canal e pessoas')
     fireEvent.click(screen.getByLabelText('No canal do Discord'))
