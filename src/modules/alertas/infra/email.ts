@@ -1,4 +1,5 @@
 import type { ResultadoEnvio } from '../domain/tipos'
+import { cortarUtf16 } from '../domain/mensagens'
 
 const TEMPO_LIMITE_MS = 20_000
 /** Teto do assunto. Servidor SMTP recusa cabeçalho muito longo, e cliente corta na exibição. */
@@ -54,9 +55,10 @@ export function lerConfigEmail(env: NodeJS.ProcessEnv = process.env): ConfigEmai
   const portaBruta = Number.parseInt((env.SMTP_PORT ?? '').trim(), 10)
   const porta = Number.isInteger(portaBruta) && portaBruta > 0 ? portaBruta : 587
   // 465 é TLS direto; todo o resto (587, 25, 2525) é STARTTLS. SMTP_SEGURO sobrepõe, para o caso
-  // raro de um servidor com TLS direto em porta fora do padrão.
+  // raro de um servidor com TLS direto em porta fora do padrão. Valores aceitos (sem diferenciar
+  // maiúscula): true, 1, sim, yes = TLS direto; qualquer outro (false, 0, não...) = STARTTLS.
   const seguroBruto = (env.SMTP_SEGURO ?? '').trim().toLowerCase()
-  const seguro = seguroBruto === '' ? porta === 465 : seguroBruto === 'true' || seguroBruto === '1'
+  const seguro = seguroBruto === '' ? porta === 465 : ['true', '1', 'sim', 'yes'].includes(seguroBruto)
 
   return { host, porta, usuario, senha, remetente, seguro }
 }
@@ -79,8 +81,10 @@ export function separarAssunto(texto: string): { assunto: string; corpo: string 
   const primeira = (i === -1 ? texto : texto.slice(0, i)).trim()
   // Cabeçalho de e-mail não aceita quebra de linha: um \r sozinho na primeira linha viraria
   // injeção de cabeçalho. Troca por espaço antes de cortar.
-  const assunto = primeira.replace(/[\r\n]+/g, ' ').slice(0, LIMITE_ASSUNTO)
-  const corpo = i === -1 ? texto.trim() : texto.slice(i + 1)
+  // `cortarUtf16` e não `slice`: um emoji na borda do teto não pode sair com meio caractere.
+  const assunto = cortarUtf16(primeira.replace(/[\r\n]+/g, ' '), LIMITE_ASSUNTO).trimEnd()
+  // O \r de um fim de linha \r\n pertence à primeira linha (já aparada), nunca ao começo do corpo.
+  const corpo = i === -1 ? texto.trim() : texto.slice(i + 1).replace(/^\r+/, '')
   return { assunto, corpo }
 }
 
@@ -120,6 +124,7 @@ export function criarEmail(cfg: ConfigEmail, transporte?: TransporteEmail): Emai
       const para = endereco.trim()
       // A fila já filtra endereço em branco (0151), mas falhar aqui é barato e evita abrir conexão.
       if (para === '') return { ok: false, erro: 'E-mail: endereço do destinatário em branco.' }
+      if (texto.trim() === '') return { ok: false, erro: 'E-mail: mensagem em branco.' }
       const { assunto, corpo } = separarAssunto(texto)
       try {
         const t = await obter()

@@ -30,6 +30,19 @@ describe('separarAssunto', () => {
     expect(r.assunto).not.toContain('\n')
   })
 
+  it('não parte um emoji na borda do teto (par substituto inteiro ou fora)', () => {
+    // 199 letras + 📦 (2 unidades UTF-16) estoura o teto de 200 por 1: o emoji sai inteiro.
+    const r = separarAssunto(`${'a'.repeat(199)}📦\ncorpo`)
+    expect(r.assunto).toBe('a'.repeat(199))
+    expect(r.assunto).not.toMatch(/[\uD800-\uDBFF]$/)
+  })
+
+  it('com \\r\\n o corpo não começa com \\r solto', () => {
+    const r = separarAssunto('Assunto\r\nCorpo\r\nlinha 2')
+    expect(r.assunto).toBe('Assunto')
+    expect(r.corpo).toBe('Corpo\r\nlinha 2')
+  })
+
   it('corta assunto gigante (os servidores recusam cabeçalho longo)', () => {
     const r = separarAssunto(`${'a'.repeat(500)}\ncorpo`)
     expect(r.assunto.length).toBeLessThanOrEqual(200)
@@ -50,6 +63,28 @@ describe('lerConfigEmail', () => {
       SMTP_HOST: 'h', SMTP_USER: 'u', SMTP_PASS: 'p', SMTP_REMETENTE: 'a@b',
     } as unknown as NodeJS.ProcessEnv)
     expect(c).toEqual({ host: 'h', porta: 587, usuario: 'u', senha: 'p', remetente: 'a@b', seguro: false })
+  })
+
+  const base = { SMTP_HOST: 'h', SMTP_USER: 'u', SMTP_PASS: 'p', SMTP_REMETENTE: 'a@b' }
+  const env = (extra: Record<string, string>) => ({ ...base, ...extra }) as unknown as NodeJS.ProcessEnv
+
+  it('SMTP_SEGURO=true liga o TLS direto numa porta 587', () => {
+    expect(lerConfigEmail(env({ SMTP_PORT: '587', SMTP_SEGURO: 'true' }))?.seguro).toBe(true)
+  })
+
+  it('SMTP_SEGURO aceita os apelidos 1, sim e yes como verdadeiro', () => {
+    for (const v of ['1', 'sim', 'YES', ' Sim ']) {
+      expect(lerConfigEmail(env({ SMTP_PORT: '587', SMTP_SEGURO: v }))?.seguro).toBe(true)
+    }
+  })
+
+  it('SMTP_SEGURO=false é respeitado mesmo na porta 465', () => {
+    expect(lerConfigEmail(env({ SMTP_PORT: '465', SMTP_SEGURO: 'false' }))?.seguro).toBe(false)
+  })
+
+  it('SMTP_PORT em branco ou não numérica cai em 587', () => {
+    expect(lerConfigEmail(env({ SMTP_PORT: '   ' }))?.porta).toBe(587)
+    expect(lerConfigEmail(env({ SMTP_PORT: 'abc' }))?.porta).toBe(587)
   })
 
   it('porta 465 liga o seguro sozinho', () => {
@@ -83,12 +118,40 @@ describe('criarEmail', () => {
     if (!r.ok) expect(r.erro).toContain('EAUTH')
   })
 
-  it('NUNCA põe a senha no erro', async () => {
-    const enviar = vi.fn().mockRejectedValue(new Error(`falhou com ${CFG.senha}`))
-    const cli = criarEmail({ ...CFG, senha: 'segredo-muito-secreto' }, { enviar })
-    const r = await cli.enviarMensagem('beto@x', 'A\nB')
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.erro).not.toContain('segredo-muito-secreto')
+  describe('NUNCA põe a senha no erro', () => {
+    // A MESMA constante vai na mensagem do erro E na configuração: se só uma das pontas a tivesse,
+    // o teste passaria mesmo sem a limpeza.
+    const SEGREDO = 'segredo-muito-secreto'
+
+    it('troca a senha por *** na mensagem', async () => {
+      const enviar = vi.fn().mockRejectedValue(new Error(`535 falhou com ${SEGREDO}`))
+      const cli = criarEmail({ ...CFG, senha: SEGREDO }, { enviar })
+      const r = await cli.enviarMensagem('beto@x', 'A\nB')
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        expect(r.erro).not.toContain(SEGREDO)
+        expect(r.erro).toContain('***')
+      }
+    })
+
+    it('troca TODAS as ocorrências (replaceAll, não replace)', async () => {
+      const enviar = vi.fn().mockRejectedValue(new Error(`${SEGREDO} recusada; eco: ${SEGREDO}`))
+      const cli = criarEmail({ ...CFG, senha: SEGREDO }, { enviar })
+      const r = await cli.enviarMensagem('beto@x', 'A\nB')
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        expect(r.erro).not.toContain(SEGREDO)
+        expect(r.erro.match(/\*\*\*/g)).toHaveLength(2)
+      }
+    })
+
+    it('senha vazia não vira *** em toda fronteira de caractere', async () => {
+      const enviar = vi.fn().mockRejectedValue(new Error('EAUTH'))
+      const cli = criarEmail({ ...CFG, senha: '' }, { enviar })
+      const r = await cli.enviarMensagem('beto@x', 'A\nB')
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.erro).toBe('E-mail: EAUTH')
+    })
   })
 
   it('endereço em branco falha antes de abrir conexão', async () => {
@@ -96,6 +159,16 @@ describe('criarEmail', () => {
     const cli = criarEmail(CFG, { enviar })
     const r = await cli.enviarMensagem('   ', 'A\nB')
     expect(r.ok).toBe(false)
+    expect(enviar).not.toHaveBeenCalled()
+  })
+
+  it('texto em branco falha antes de abrir conexão', async () => {
+    const enviar = vi.fn()
+    const cli = criarEmail(CFG, { enviar })
+    for (const t of ['', '   ', '\n \r\n']) {
+      const r = await cli.enviarMensagem('beto@x', t)
+      expect(r).toEqual({ ok: false, erro: 'E-mail: mensagem em branco.' })
+    }
     expect(enviar).not.toHaveBeenCalled()
   })
 
