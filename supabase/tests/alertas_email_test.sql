@@ -208,4 +208,60 @@ begin
   end if;
 end $t$;
 \echo 'T7 (Telegram/Discord continuam exigindo vinculo): ok'
+-- ---------- T8: a negação da reserva ----------
+-- A linha de e-mail de uma pessoa que não pode mais receber NÃO pode ser reservada: tem que ficar
+-- pendente (ok = false, tentativas = 0, sem reservado_em), sem gastar tentativa nem virar falha.
+--   Elza (b3): e-mail de login em branco; Fabio (b4): desativado depois de enfileirado;
+--   Carla (c1): ativa e com e-mail, mas só administra o ShopFloor — perdeu o Recebimento.
+insert into public.usuarios (id, nome, email, ativo, perfil_id) values
+  ('00000000-0000-0000-0000-0000000000b4', 'Fabio Desativado', 'fabio@x', false,
+   '00000000-0000-0000-0000-0000000000b0')
+on conflict (id) do update set ativo = false;
+do $t$
+declare v_elza uuid; v_fabio uuid; v_carla uuid; v_dora uuid; v_n int; v_ext text; v_pend int;
+begin
+  insert into public.alerta_envios
+    (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo)
+  values (null, '00000000-0000-0000-0000-0000000000b3', 'email', 'resumo', 'recebimento',
+          '{"t8":"elza"}'::jsonb, false, 'usuario') returning id into v_elza;
+  insert into public.alerta_envios
+    (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo)
+  values (null, '00000000-0000-0000-0000-0000000000b4', 'email', 'resumo', 'recebimento',
+          '{"t8":"fabio"}'::jsonb, false, 'usuario') returning id into v_fabio;
+  insert into public.alerta_envios
+    (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo)
+  values (null, '00000000-0000-0000-0000-0000000000c1', 'email', 'resumo', 'recebimento',
+          '{"t8":"carla"}'::jsonb, false, 'usuario') returning id into v_carla;
+  -- controle: a mesma linha para quem pode (Dora) TEM que ser reservada, senão o teste não prova nada
+  insert into public.alerta_envios
+    (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo)
+  values (null, '00000000-0000-0000-0000-0000000000b2', 'email', 'resumo', 'recebimento',
+          '{"t8":"dora"}'::jsonb, false, 'usuario') returning id into v_dora;
+
+  -- uma única chamada reserva tudo o que pode: o controle (Dora) e os três que não podem
+  set local role service_role;
+  select count(*) filter (where id in (v_elza, v_fabio, v_carla)),
+         max(externo_id) filter (where id = v_dora)
+    into v_n, v_ext
+    from public.alerta_reservar_envios(array['email'], 100);
+  reset role;
+  if coalesce(v_ext, '') <> 'dora@x' then
+    raise exception 'T8 FALHOU: o controle (Dora) nao foi reservado (endereco %), o teste nao prova nada', v_ext;
+  end if;
+  if v_n <> 0 then
+    raise exception 'T8 FALHOU: reservou % linha(s) de e-mail de quem nao pode receber (sem endereco, desativado ou sem permissao)', v_n;
+  end if;
+
+  select count(*) into v_pend from public.alerta_envios
+   where id in (v_elza, v_fabio, v_carla) and not ok and tentativas = 0 and reservado_em is null;
+  if v_pend <> 3 then
+    raise exception 'T8 FALHOU: as 3 linhas deviam seguir pendentes e intactas, so % estao', v_pend;
+  end if;
+end $t$;
+\echo 'T8 (negacao da reserva: sem endereco, desativado, sem permissao): ok'
+
+-- ---------- limpeza: os helpers deste arquivo não ficam para quem roda depois ----------
+drop function public.teste_regra_emb_email(text, uuid[], timestamptz);
+drop function public.teste_item_emb_email(text, text, text, numeric, numeric);
+
 \echo '0151 (canal email): ok'

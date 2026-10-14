@@ -437,7 +437,7 @@ begin
         if t.avisar_pessoas then
           insert into public.alerta_envios
             (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo)
-select null, d.usuario_id, d.canal, 'resumo', t.modulo, v_dados, false, 'usuario'
+          select null, d.usuario_id, d.canal, 'resumo', t.modulo, v_dados, false, 'usuario'
             from (
               -- Telegram e Discord: pela conta vinculada de AGORA (quem desvinculou não recebe).
               select c.usuario_id, c.canal
@@ -545,7 +545,7 @@ select null, d.usuario_id, d.canal, 'resumo', t.modulo, v_dados, false, 'usuario
         if t.avisar_pessoas then
           insert into public.alerta_envios
             (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo)
-select null, d.usuario_id, d.canal, 'emb', t.modulo, v_dados, false, 'usuario'
+          select null, d.usuario_id, d.canal, 'emb', t.modulo, v_dados, false, 'usuario'
             from (
               -- Telegram e Discord: pela conta vinculada de AGORA (quem desvinculou não recebe).
               select c.usuario_id, c.canal
@@ -783,10 +783,10 @@ select null, d.usuario_id, d.canal, 'emb', t.modulo, v_dados, false, 'usuario'
              and nullif(btrim(u2.email), '') is not null
         ) d
         join public.usuarios u on u.id = d.usuario_id and u.ativo
-               -- responsável precisa administrar O MÓDULO DA REGRA agora (spec 2026-09-18, decisão 5;
-         -- por módulo desde a 0149)
- where public.usuario_tem_permissao(d.usuario_id, t.modulo, 'administrar')
-       order by d.usuario_id, d.canal;
+        -- responsável precisa administrar O MÓDULO DA REGRA agora (spec 2026-09-18, decisão 5;
+        -- por módulo desde a 0149)
+        where public.usuario_tem_permissao(d.usuario_id, t.modulo, 'administrar')
+        order by d.usuario_id, d.canal;
         get diagnostics v_n = row_count;
         v_enfileirados := v_enfileirados + v_n;
       end if;
