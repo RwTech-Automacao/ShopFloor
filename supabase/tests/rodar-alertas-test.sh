@@ -256,4 +256,14 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0150.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_emb.sql
 echo "0150 (fim de EMB): ok"
 
+# ---------- 0151: canal 'email' ----------
+# O e-mail é o único canal sem vínculo: o endereço sai de usuarios.email. É o teste dela que prova
+# que a reserva acha esse endereço — sem isso a linha ficaria pendente e expiraria em silêncio.
+docker cp supabase/migrations/0151_alertas_canal_email.sql "$NOME":/tmp/0151.sql
+docker cp supabase/tests/alertas_email_test.sql "$NOME":/tmp/teste_email.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0151.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0151.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_email.sql
+echo "0151 (canal email): ok"
+
 echo "ALERTAS SQL OK"
