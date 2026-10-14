@@ -88,34 +88,45 @@ export function separarAssunto(texto: string): { assunto: string; corpo: string 
   return { assunto, corpo }
 }
 
+async function criarTransporteNodemailer(cfg: ConfigEmail): Promise<TransporteEmail> {
+  // Import dinâmico: o nodemailer é Node puro e não pode entrar no bundle do cliente. Também
+  // mantém o custo fora dos ambientes sem SMTP configurado.
+  const { createTransport } = await import('nodemailer')
+  const t = createTransport({
+    host: cfg.host,
+    port: cfg.porta,
+    secure: cfg.seguro,
+    auth: { user: cfg.usuario, pass: cfg.senha },
+    pool: false,
+    connectionTimeout: TEMPO_LIMITE_MS,
+    greetingTimeout: TEMPO_LIMITE_MS,
+    socketTimeout: TEMPO_LIMITE_MS,
+  })
+  return { enviar: (m) => t.sendMail(m) }
+}
+
 function mensagemDe(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
 /**
- * O cliente de e-mail. `transporte` é injetado nos testes; em produção sai do nodemailer, criado
- * UMA vez por cliente (o pool de conexões dele é o que evita um handshake TLS por mensagem).
+ * O cliente de e-mail. `transporte` é injetado nos testes; em produção sai do nodemailer.
+ *
+ * Sem `pool`: `criarDependenciasAlertas()` monta um cliente NOVO a cada requisição/rodada, então um
+ * pool nunca seria reaproveitado — e, como ninguém chama `close()` no transporte, ele deixaria
+ * conexões ociosas abertas até o `socketTimeout`. Sem pool, cada transporte abre e fecha a própria
+ * conexão. O transporte é criado uma vez por cliente (guardamos a Promise, não o transporte, para
+ * dois envios simultâneos não criarem dois).
  */
 export function criarEmail(cfg: ConfigEmail, transporte?: TransporteEmail): EmailClient {
-  let atual = transporte ?? null
+  let atual: Promise<TransporteEmail> | null = transporte ? Promise.resolve(transporte) : null
 
-  async function obter(): Promise<TransporteEmail> {
-    if (atual) return atual
-    // Import dinâmico: o nodemailer é Node puro e não pode entrar no bundle do cliente. Também
-    // mantém o custo fora dos ambientes sem SMTP configurado.
-    const { createTransport } = await import('nodemailer')
-    const t = createTransport({
-      host: cfg.host,
-      port: cfg.porta,
-      secure: cfg.seguro,
-      auth: { user: cfg.usuario, pass: cfg.senha },
-      pool: true,
-      maxConnections: 2,
-      connectionTimeout: TEMPO_LIMITE_MS,
-      greetingTimeout: TEMPO_LIMITE_MS,
-      socketTimeout: TEMPO_LIMITE_MS,
+  function obter(): Promise<TransporteEmail> {
+    atual ??= criarTransporteNodemailer(cfg).catch((e) => {
+      // Falha ao carregar/criar não pode ficar guardada para sempre: a próxima chamada tenta de novo.
+      atual = null
+      throw e
     })
-    atual = { enviar: (m) => t.sendMail(m) }
     return atual
   }
 
