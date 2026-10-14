@@ -24,6 +24,7 @@ import {
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
 import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
+import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 
@@ -92,6 +93,13 @@ export function OrdemForm({
   const [tempoBurnin, setTempoBurnin] = useState<Record<string, string>>(tempoBurninInicial(ordem))
   const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
+  // O status precisa ser controlado só por causa do aviso de reativação: ele depende de comparar o
+  // status ESCOLHIDO com o que veio do banco, e um seletor não-controlado não conta isso.
+  const [status, setStatus] = useState(ordem?.status?.toUpperCase() === 'FINALIZADA' ? 'FINALIZADA' : 'ATIVA')
+  // Reativar liga `reaberta_manual` (0148) e é DEFINITIVO: a rotina dos 100% nunca mais fecha esta
+  // OP, e não há como desfazer pela aplicação. É o único ponto da tela com efeito permanente, e
+  // quem clica não é quem desenhou a regra — por isso o aviso.
+  const avisaReativacao = ehReativacaoManual(ordem?.status, status)
   // Reaproveita a grafia existente se o "novo" bater com um cadastrado (evita LINCE vs Lince).
   const clienteFinal = modoNovoCliente
     ? clientesExistentes.find((c) => c.toLowerCase() === cliente.trim().toLowerCase()) ?? cliente.trim()
@@ -219,6 +227,7 @@ export function OrdemForm({
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
           setTempoBurnin(tempoBurninInicial(ordem))
+          setStatus(ordem?.status?.toUpperCase() === 'FINALIZADA' ? 'FINALIZADA' : 'ATIVA')
           setModoNovoCliente(false)
           setPadraoSelecionado('')
           setInstanciaForm((n) => n + 1)
@@ -301,7 +310,7 @@ export function OrdemForm({
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="status">Status</Label>
-                <Select name="status" defaultValue={ordem?.status?.toUpperCase() === 'FINALIZADA' ? 'FINALIZADA' : 'ATIVA'}>
+                <Select name="status" value={status} onValueChange={(v) => setStatus(v ?? status)}>
                   <SelectTrigger id="status">
                     <SelectValue />
                   </SelectTrigger>
@@ -310,6 +319,12 @@ export function OrdemForm({
                     <SelectItem value="FINALIZADA">Finalizada</SelectItem>
                   </SelectContent>
                 </Select>
+                {avisaReativacao && (
+                  <p className="text-xs text-amber-700 dark:text-amber-500">
+                    Reativar uma OP finalizada tira ela do fechamento automático em definitivo — a
+                    partir daí, só fecha quem reabriu.
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="sn_ini">SN inicial *</Label>
