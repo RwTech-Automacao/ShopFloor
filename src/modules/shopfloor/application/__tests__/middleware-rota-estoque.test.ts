@@ -30,6 +30,18 @@ describe('middleware × rota do cron de estoque', () => {
     expect(res.headers.get('location')).toBeNull()
   })
 
+  it('barra final não tira a rota da saída: /api/shopfloor/estoque/ também não vai pro /login', async () => {
+    const res = await middleware(pedido('/api/shopfloor/estoque/'))
+    expect(updateSession).not.toHaveBeenCalled()
+    expect(res.headers.get('location')).toBeNull()
+  })
+
+  it('caminho que só começa com o mesmo prefixo NÃO ganha a saída (exige sessão)', async () => {
+    await middleware(pedido('/api/shopfloor/estoque-outra'))
+    await middleware(pedido('/api/shopfloor/estoque/outra'))
+    expect(updateSession).toHaveBeenCalledTimes(2)
+  })
+
   it('e continua exigindo sessão no resto do ShopFloor (a saída é só desta rota)', async () => {
     await middleware(pedido('/shopfloor/operar/lancamento'))
     expect(updateSession).toHaveBeenCalledTimes(1)

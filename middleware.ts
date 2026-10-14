@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/shared/lib/supabase/middleware'
 import { ehRotaPublicaDeAlertas } from '@/modules/alertas/domain/rotas'
 import { ehRotaDeDadosDoDashboard } from '@/modules/shopfloor/domain/rotas-dashboard'
+import { ehRotaDaFilaDeEstoque } from '@/modules/shopfloor/domain/rotas-estoque'
 import { cabecalhosComMarcaEmbed } from '@/shared/lib/supabase/embed'
 
 export async function middleware(request: NextRequest) {
@@ -22,7 +23,7 @@ export async function middleware(request: NextRequest) {
   if (
     ehRotaPublicaDeAlertas(request.nextUrl.pathname) ||
     ehRotaDeDadosDoDashboard(request.nextUrl.pathname) ||
-    request.nextUrl.pathname === '/api/shopfloor/estoque'
+    ehRotaDaFilaDeEstoque(request.nextUrl.pathname)
   )
     return NextResponse.next({ request: { headers: cabecalhos } })
 
