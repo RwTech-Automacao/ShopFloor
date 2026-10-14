@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
-import { CANAIS, NOME_CANAL, type Canal, type ContaVinculada } from '@/modules/alertas/domain/tipos'
+import { CANAIS_COM_VINCULO, NOME_CANAL, type Canal, type ContaVinculada } from '@/modules/alertas/domain/tipos'
 import {
   desvincularAction,
   enviarTesteAction,
@@ -150,7 +150,7 @@ export function CartaoAlertas({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {/* E-mail não se vincula: usa o endereço do login (usuarios.email). */}
-        {CANAIS.filter((c) => c !== 'email').map((canal) => {
+        {CANAIS_COM_VINCULO.map((canal) => {
           const conta = lista.find((c) => c.canal === canal) ?? null
           const aberto = codigo?.canal === canal ? codigo : null
           return (

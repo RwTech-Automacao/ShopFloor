@@ -36,6 +36,22 @@ describe('actions de Meu perfil — erro ao consultar a sessão vira mensagem am
     vi.resetModules()
   })
 
+  it('desvincularAction e enviarTesteAction recusam e-mail (não tem vínculo): canal fora de CANAIS_COM_VINCULO', async () => {
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),
+    }))
+    const { desvincularAction, enviarTesteAction } = await import('../perfil-alertas-actions')
+    expect(await desvincularAction('email')).toEqual({ ok: false, erro: 'Canal inválido.' })
+    expect(await enviarTesteAction('email')).toEqual({ ok: false, erro: 'Canal inválido.' })
+    vi.doUnmock('@/modules/auth/application/get-sessao')
+    vi.resetModules()
+  })
+
+  it('CANAIS_COM_VINCULO é telegram e discord (e-mail usa o login)', async () => {
+    const { CANAIS_COM_VINCULO } = await import('../../domain/tipos')
+    expect([...CANAIS_COM_VINCULO]).toEqual(['telegram', 'discord'])
+  })
+
   it('enviarTesteAction: erro ao montar as dependências (client) vira ok:false amigável', async () => {
     vi.doMock('@/modules/auth/application/get-sessao', () => ({
       getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),

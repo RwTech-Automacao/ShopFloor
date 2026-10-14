@@ -7,6 +7,12 @@ export const NOME_CANAL: Record<Canal, string> = {
   email: 'E-mail',
 }
 
+/**
+ * Canais em que a pessoa precisa VINCULAR uma conta (código de vínculo). O e-mail fica de fora de
+ * propósito: usa o endereço do login (`usuarios.email`), não há o que vincular nem desvincular.
+ */
+export const CANAIS_COM_VINCULO: readonly Canal[] = ['telegram', 'discord']
+
 /** Como a janela de avaliação é medida (ver seção 3 da spec). */
 export type JanelaTipo = 'tempo' | 'bipes' | 'op' | 'intervalos'
 
