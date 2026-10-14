@@ -2,13 +2,55 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Quando todos os processos de uma EMB chegam ao fim do fluxo, mandar por e-mail, Discord e Telegram a lista das divergências de quantidade daquela EMB com as justificativas de cada uma (ou a marca de que ninguém justificou), como um tipo de regra do módulo de Alertas.
+**Goal:** Quando todos os processos de uma EMB chegam ao fim do fluxo, mandar por e-mail, Discord e Telegram a lista das divergências de quantidade daquela EMB com as justificativas de cada uma (ou a marca de que ninguém justificou) — e, quando a EMB fecha sem nenhuma divergência, avisar que ela terminou e que terminou **sem divergência** —, como um tipo de regra do módulo de Alertas.
 
 **Architecture:** Nada de sistema de notificação novo. A feature entra em três camadas do módulo de Alertas que já roda em produção: (1) `alerta_regras` ganha a coluna `modulo`, a tela de Alertas passa a existir em duas rotas (`/configuracoes/sf-alertas` e `/configuracoes/rec-alertas`) servidas pelo **mesmo componente**, que recebe `modulo` por prop, e o RBAC sai de graça do mecanismo declarativo do menu; (2) um `TipoRegra` novo, `'emb'`, avaliado no cron de 5 minutos, com uma marca de "já avisei" por `(regra, EMB)` na tabela `alerta_emb_avisada`; (3) `Canal` ganha `'email'`, entregue por SMTP, com o endereço vindo de `usuarios.email`.
 
 **Tech Stack:** Next.js 16 (App Router, Server Components + server actions), TypeScript, Supabase/Postgres (RLS + funções `security definer` + fila `alerta_envios`), Vitest + @testing-library/react, Tailwind v4, nodemailer (dependência nova, só no servidor), harness SQL em Docker (`supabase/tests/`).
 
 **Spec (fonte da verdade):** `docs/superpowers/specs/2026-10-09-aviso-fim-de-emb-design.md`
+
+---
+
+## ⚠️ Corrigido em 14/10/2026 — a decisão 5 da spec foi revertida pelo usuário
+
+A versão original deste plano (09/10) carregava a decisão 5 **antiga**: *"EMB que fecha sem nenhuma
+divergência não manda nada"*. O usuário reverteu antes da implementação começar:
+
+> **Toda EMB que fecha manda mensagem.** Com divergência, a mensagem lista as divergências e as
+> justificativas. Sem divergência, ela avisa que a EMB terminou **e que terminou sem divergência**.
+
+A spec está corrigida no lugar — ver o bloco "⚠️ **CORRIGIDO EM 14/10/2026**" dela e os itens 4 e 5
+das listas do fim. Este plano foi corrigido no lugar também, nos 15 lugares abaixo; nenhuma frase
+da versão antiga ficou de pé:
+
+| Onde | O que mudou |
+|---|---|
+| Goal | a EMB limpa passa a mandar |
+| Estrutura de arquivos, tabela dos testes SQL | o caso 4 deixou de ser "EMB limpa não manda" |
+| "Decisões de desenho", item 5 | era *"EMB limpa também recebe a marca (sem enviar)"*; virou *"a marca tem um critério só: algo entrou na fila"* |
+| Pedaço 2, apresentação | o conteúdo inclui o aviso de EMB limpa |
+| Task 4, Interfaces (contrato do `dados`) | fica escrito que a EMB limpa enfileira com `divergencias: []` |
+| Task 4, mapa dos testes (cabeçalho do arquivo de teste) | a linha do T4 |
+| Task 4, teste T4 | era "não manda e recebe a marca"; virou "manda a mensagem de EMB limpa e recebe a marca", com o `dados` conferido |
+| Task 4, cabeçalho da 0150 | o comentário dizia que EMB limpa não manda nada |
+| Task 4, Step 5 (comentário da coluna `divergencias` da marca) | a auditoria não responde mais "por que esta EMB não gerou mensagem?" — toda EMB fechada gera |
+| Task 4, Step 7 (bloco de diferenças declaradas) | a marca tinha DOIS casos; agora tem UM |
+| Task 4, Step 7 (laço do `alerta_avaliar`) | o `if jsonb_array_length(v_divs) > 0` que **pulava** a EMB limpa saiu; o `dados` e o fan-out agora valem para toda EMB fechada, e a gravação da marca virou `if v_emb_n > 0` |
+| Task 4, Step 10 (mensagem de commit) | duas frases |
+| Task 5, `textoEmb` (contrato, docstring, implementação) + teste | ganha a mensagem própria da EMB limpa (antes a lista vazia só devolvia o cabeçalho, como defesa de um caso que o banco nunca enfileirava) |
+| Task 6, texto da tela | dizia ao gestor que EMB sem divergência não manda nada |
+| Autorrevisão (cobertura da spec) | as três linhas que citavam a decisão antiga |
+
+**Efeito colateral bom, já registrado na spec:** a decisão **dissolve a pergunta da marca de "já
+avisei"**. Se toda EMB fechada manda mensagem, toda EMB fechada (e com alguém alcançável) recebe a
+marca — não existe mais o caso ambíguo de uma EMB que fecha, não manda nada, e depois ganha uma
+divergência por uma edição de quantidade.
+
+⚠️ **Para quem for implementar:** se encontrar neste plano, no código ou num teste qualquer frase
+dizendo que EMB sem divergência não manda nada, é a decisão antiga ressurgindo — **pare e confira a
+spec**. Este repositório já teve um defeito em produção causado por um documento que continuou
+afirmando o que deixou de ser verdade.
 
 ---
 
@@ -48,7 +90,7 @@ Valem para **todas** as tarefas. Os requisitos de cada tarefa incluem esta seç�
 | Arquivo | Responsabilidade |
 |---|---|
 | `supabase/tests/alertas_modulo_test.sql` | Caso 6 e caso 7 no banco: regra de um módulo não aparece no outro; quem administra só o Recebimento lê/grava as regras dele e não as do ShopFloor. |
-| `supabase/tests/alertas_emb_test.sql` | Casos 1–5: EMB aberta não manda; EMB fechada manda; segunda rodada não manda (a marca); EMB limpa não manda; EMB fechada por reprova manda. |
+| `supabase/tests/alertas_emb_test.sql` | Casos 1–5: EMB aberta não manda; EMB fechada manda; segunda rodada não manda (a marca); EMB limpa manda a mensagem de EMB limpa; EMB fechada por reprova manda. |
 | `supabase/tests/alertas_email_test.sql` | Fan-out de e-mail sem `alerta_contas`; endereço vindo de `usuarios.email`; responsável sem e-mail fica fora. |
 
 ### TypeScript (novos)
@@ -90,7 +132,7 @@ A spec travou 8 decisões; nenhuma é reaberta aqui. Estas são consequências d
 2. **`alerta_envios.modulo`.** A linha da fila de uma regra de fim de EMB nasce **sem ocorrência** (como o resumo diário), então o `alerta_reservar_envios` não tem como descobrir o módulo pela ocorrência. O módulo é **congelado na linha**, no mesmo espírito do `destino_externo_id` da 0123. Sem isso o e-mail do Recebimento ficaria pendente 24 h e expiraria **em silêncio**.
 3. **A marca de "já avisei" é uma tabela, não uma coluna.** O resumo diário guarda uma data por regra (`resumo_enviado_em`) porque o evento é "o dia". Aqui o evento é "esta EMB", e são muitas por regra: `alerta_emb_avisada (regra_id, emb)`. É o **mesmo mecanismo** (estado gravado no banco, na mesma transação do enfileiramento, só depois de enfileirar) na forma que o grão exige.
 4. **Piso `rg.criado_em`.** Na primeira rodada, *todas* as EMBs históricas já fechadas atenderiam ao gatilho e sairia uma avalanche. Só entram as EMBs cuja última finalização é **igual ou posterior à criação da regra** — a mesma ideia do `criado_em` que o resto do módulo já usa. Mais um teto de 50 EMBs por rodada, como cinto e suspensório.
-5. **EMB limpa também recebe a marca.** A spec diz que EMB sem divergência "não manda nada" (decisão 5) e não diz o que fazer com a marca. Ela é gravada: o evento ("a EMB fechou") foi tratado, e não gravar faria o cron reavaliar aquela EMB para sempre e, pior, mandar um aviso semanas depois se uma divergência aparecesse numa edição de quantidade. Divergência **com ninguém alcançável** continua **sem** marca (volta na próxima rodada) — isso sim é o padrão do resumo.
+5. **A marca de "já avisei" tem um critério só: algo entrou na fila.** A decisão 5 da spec (corrigida em 14/10/2026) é que **toda EMB que fecha manda mensagem** — sem divergência, dizendo que fechou limpa. Isso **dissolve** a pergunta que este item existia para responder: como toda EMB fechada enfileira, toda EMB fechada recebe a marca, e o critério volta a ser exatamente o do resumo diário (gravar depois de enfileirar, e só se algo foi enfileirado). EMB **com ninguém alcançável** — responsável sem conta vinculada — continua **sem** marca e volta na próxima rodada, agora com ou sem divergência. ⚠️ A versão de 09/10 deste item dizia o contrário: *"EMB limpa também recebe a marca"*, **mesmo sem enviar nada**, porque partia da decisão antiga de que a EMB limpa não mandava mensagem. Essa exceção não existe mais. ⚠️ Consequência a conferir no smoke: uma regra cujos responsáveis nunca vincularam conta nunca marca nada, e o log do `raise log` passa a sair também para EMB limpa (é o mesmo rastro, com `divergencias = 0`).
 6. **A regra de fim de EMB não tem janela: ela guarda `janela_tipo = 'op'` com `janela_valor` nulo.** É o padrão explícito que a spec manda seguir ("o resumo diário já abriu esse caminho... força `janelaTipo = 'intervalos'` mesmo que o formulário mande outra coisa"). O ramo `'op'` dos dois checks de `janela_valor` já aceita valor nulo, então **nenhum** deles é mexido — acrescentar um 5º `janela_tipo` obrigaria a reescrever os dois checks e o `JanelaTipo` do domínio por um valor que ninguém mede. A coluna "Janela" da lista mostra a frase própria **"Quando a EMB fecha"** (`resumoJanelaRegra`), nunca o valor cru.
 7. **O assunto do e-mail é a primeira linha do texto.** `PortaCanal.enviar` entrega um texto só, igual para os três canais (0123). O cliente de e-mail parte o texto na primeira quebra de linha: a primeira linha vira o assunto, o resto vira o corpo. Zero mudança de assinatura, zero texto específico de canal.
 8. **`nodemailer` como cliente SMTP.** Não há cliente SMTP no projeto. Escrever um à mão (STARTTLS, AUTH, dot-stuffing, codificação de cabeçalho) é muito mais código sem teste do que vale. ⚠️ **Antes de começar o Pedaço 3, confirmar no servidor as credenciais SMTP do GoTrue** (a própria spec pede isso).
@@ -1853,7 +1895,8 @@ Recebimento ainda não oferece tipo de regra — é o Pedaço 2.
 # PEDAÇO 2 — Tipo de regra "Fim de EMB"
 
 Entregável do pedaço: a feature **funciona**, por Discord e Telegram. O gatilho (todos os processos
-da EMB terminais), o conteúdo (só as divergências e suas justificativas) e a marca de "já avisei".
+da EMB terminais), o conteúdo (as divergências e suas justificativas — ou o aviso de que a EMB
+fechou sem nenhuma divergência) e a marca de "já avisei".
 
 ---
 
@@ -1882,6 +1925,10 @@ da EMB terminais), o conteúdo (só as divergências e suas justificativas) e a 
                           "divergencia": "-10", "justificativa": "...",
                           "justificada_por_nome": "Ana Gestora" } ] }
     ```
+    ⚠️ Na EMB que fecha **sem nenhuma divergência**, a linha de fila existe do mesmo jeito e
+    `"divergencias"` é a lista **vazia** (`[]`) — nunca ausente. É assim que a Task 5 distingue
+    "EMB limpa" (mensagem própria) de "dado corrompido" (lança). Decisão 5 da spec, corrigida em
+    14/10/2026.
 
 - [ ] **Step 1: Ler as fontes**
 
@@ -1959,7 +2006,8 @@ estes testes, um a um** — é o arquivo mais importante do pedaço.
 --   T2  (caso 2) o último item chega ao Almoxarifado: SAI a mensagem, com as divergências e as
 --       justificativas, e a marca é gravada;
 --   T3  (caso 3) ⚠️ a MESMA EMB na rodada seguinte: ZERO linhas novas na fila;
---   T4  (caso 4) EMB que fecha SEM divergência: nada na fila, mas a marca É gravada;
+--   T4  (caso 4) EMB que fecha SEM divergência: MANDA a mensagem de EMB limpa (lista vazia no
+--       `dados`) e a marca É gravada — decisão 5 corrigida em 14/10/2026;
 --   T5  (caso 5) EMB cujo último item foi REPROVADO na Qualidade: MANDA (reprovado também é fim);
 --   T6  ⚠️ o piso rg.criado_em: EMB fechada ANTES de a regra existir não manda nada;
 --   T7  ⚠️ divergência com ninguém alcançável: nada na fila e a marca NÃO é gravada (volta depois);
@@ -2153,25 +2201,46 @@ begin
 end $t$;
 \echo 'T3 (caso 3: a marca impede o reenvio): ok'
 
--- ---------- T4 (caso 4): EMB limpa não manda, mas recebe a marca ----------
+-- ---------- T4 (caso 4): EMB limpa MANDA a mensagem de EMB limpa, e recebe a marca ----------
+-- ⚠️ DECISAO REVERTIDA EM 14/10/2026: ate 09/10 este teste exigia o CONTRARIO (EMB sem divergencia
+-- nao mandava nada e so recebia a marca). Hoje toda EMB que fecha manda mensagem; sem divergencia,
+-- a lista vai VAZIA e o texto diz que fechou limpa. Se este teste voltar a exigir silencio, e a
+-- decisao antiga ressurgindo — confira a spec antes de "consertar" a migracao.
 select public.teste_item_emb('EMB200', 'RES-1', 'Aprovado', 100, 100);
 select public.teste_item_emb('EMB200', 'RES-2', 'Aprovado', 200, 200);
 do $t$
+declare v_dados jsonb;
 begin
   set local role service_role;
   perform public.teste_avaliar();
   reset role;
-  if public.teste_envios_emb('Fim de EMB', 'EMB200') <> 0 then
-    raise exception 'T4 FALHOU: EMB sem divergencia mandou aviso';
+  if public.teste_envios_emb('Fim de EMB', 'EMB200') <> 1 then
+    raise exception 'T4 FALHOU: EMB limpa nao mandou aviso (esperava 1 linha, achei %)',
+      public.teste_envios_emb('Fim de EMB', 'EMB200');
   end if;
-  -- ⚠️ A MARCA É GRAVADA MESMO SEM ENVIAR (ver a decisão 5 da secao de desenho do plano): o evento
-  -- "a EMB fechou" foi tratado. Sem isto o cron reavaliaria esta EMB para sempre e, se uma
-  -- divergencia aparecesse numa edicao de quantidade semanas depois, sairia um aviso tardio.
+  select dados into v_dados from public.alerta_envios
+   where tipo = 'emb' and dados->>'emb' = 'EMB200' limit 1;
+  -- A lista vem VAZIA, e nao ausente: quem escolhe a frase da EMB limpa e o TS (domain/emb.ts), e
+  -- ele precisa distinguir "nenhuma divergencia" de "dado corrompido".
+  if v_dados->'divergencias' is null then
+    raise exception 'T4 FALHOU: o dados da EMB limpa saiu sem a chave divergencias';
+  end if;
+  if jsonb_array_length(v_dados->'divergencias') <> 0 then
+    raise exception 'T4 FALHOU: EMB limpa mandou divergencia (%)', v_dados->'divergencias';
+  end if;
+  -- A marca segue a MESMA regra de todo mundo: gravada depois de enfileirar.
   if not public.teste_marca_emb('Fim de EMB', 'EMB200') then
     raise exception 'T4 FALHOU: EMB limpa ficou sem marca e vai ser reavaliada para sempre';
   end if;
+  -- E o contador da auditoria anota ZERO divergencia, que e o que responde depois "por que esta
+  -- EMB mandou uma mensagem sem lista?".
+  if (select a.divergencias from public.alerta_emb_avisada a
+        join public.alerta_regras r on r.id = a.regra_id
+       where r.nome = 'Fim de EMB' and a.emb = 'EMB200') <> 0 then
+    raise exception 'T4 FALHOU: a marca da EMB limpa anotou divergencia';
+  end if;
 end $t$;
-\echo 'T4 (caso 4: EMB limpa nao manda e recebe marca): ok'
+\echo 'T4 (caso 4: EMB limpa manda a mensagem de EMB limpa e recebe marca): ok'
 
 -- ---------- T5 (caso 5): reprovado também é fim ----------
 select public.teste_item_emb('EMB300', 'IND-1', 'Reprovado', 50, 45);
@@ -2337,7 +2406,10 @@ Expected: FALHA no `docker cp` da 0150 (arquivo inexistente).
 -- Um tipo de regra novo, 'emb', do módulo RECEBIMENTO: quando TODOS os processos de uma EMB chegam
 -- ao fim do fluxo (Almoxarifado ou Reprovado na Qualidade — as duas saídas terminais), sai UMA
 -- mensagem com as divergências de quantidade daquela EMB e, em cada uma, a justificativa ou o vazio
--- de quem não justificou. EMB sem nenhuma divergência NÃO manda nada (decisão 5 da spec).
+-- de quem não justificou. EMB sem nenhuma divergência TAMBÉM manda: a mensagem diz que a EMB
+-- fechou e que fechou SEM divergência (decisão 5 da spec, corrigida em 14/10/2026 — a versão
+-- original dizia que EMB limpa não mandava nada). Quem escreve a frase é o TS, não esta migração:
+-- aqui a EMB limpa enfileira com `divergencias` VAZIA.
 --
 -- Não abre ocorrência, não tem botão "Resolvido", não insiste e não normaliza — igual ao resumo
 -- diário da 0141, de quem este trecho é cópia estrutural.
@@ -2465,7 +2537,9 @@ create table if not exists public.alerta_emb_avisada (
   -- ' EMB390 ' serem a MESMA EMB para a marca (o Recebimento compara EMB assim desde a 0124).
   emb          text not null check (btrim(emb) <> '' and emb = upper(btrim(emb))),
   avisada_em   timestamptz not null default now(),
-  -- Para a auditoria responder "por que esta EMB não gerou mensagem?" sem reconstituir nada.
+  -- Para a auditoria responder "quantas divergências esta EMB tinha e para quantas pessoas a
+  -- mensagem saiu?" sem reconstituir nada. `divergencias = 0` é a EMB que fechou limpa — e que
+  -- TAMBÉM mandou mensagem (decisão 5 da spec, corrigida em 14/10/2026).
   divergencias int not null default 0 check (divergencias >= 0),
   enviados     int not null default 0 check (enviados >= 0),
   primary key (regra_id, emb)
@@ -2582,13 +2656,14 @@ Escreva o bloco de diferenças declaradas antes do `create`:
 -- cada 5 minutos. A linha do cursor ainda sai com avaliavel = false: se o bloco do topo for
 -- removido por engano, a primeira guarda do caminho antigo pula a linha em vez de abrir ocorrência.
 --
--- ⚠️ A MARCA (alerta_emb_avisada) É GRAVADA EM UM LUGAR SÓ, e em DOIS casos:
---     (a) algo entrou na fila, ou
---     (b) a EMB fechou SEM NENHUMA divergência (decisão 5 da spec: não manda nada).
---   Divergência COM ninguém alcançável (responsável sem conta vinculada) NÃO grava: quando a pessoa
---   vincular a conta, o aviso sai; o custo de esperar é uma consulta a cada 5 min, e não há envio
---   duplicado. É o mesmo critério do resumo diário, com o caso (b) acrescentado porque aqui "nada
---   a avisar" é um resultado final, e não "ainda sem dado" como no relatório vazio.
+-- ⚠️ A MARCA (alerta_emb_avisada) É GRAVADA EM UM LUGAR SÓ, e por UM critério só: algo entrou na
+--   fila. Ninguém alcançável (responsável sem conta vinculada) NÃO grava: quando a pessoa vincular
+--   a conta, o aviso sai; o custo de esperar é uma consulta a cada 5 min, e não há envio duplicado.
+--   É exatamente o critério do resumo diário, sem exceção nenhuma.
+--   ⚠️ CORRIGIDO EM 14/10/2026: havia aqui um segundo caso — "a EMB fechou sem nenhuma divergência"
+--   —, necessário porque a EMB limpa não mandava mensagem e precisava ser marcada de algum jeito.
+--   Com a decisão 5 corrigida (toda EMB que fecha manda mensagem), esse caso DESAPARECEU: toda EMB
+--   fechada enfileira, logo toda EMB fechada e alcançável recebe a marca pelo caminho normal.
 -- ---------------------------------------------------------------------------------------------
 ```
 
@@ -2665,57 +2740,61 @@ O bloco no laço, **depois** do bloco do resumo e antes do `v_avaliadas := v_ava
 
         v_emb_n := 0;
 
-        -- EMB que fecha SEM nenhuma divergência não manda nada (decisão 5 da spec): toda mensagem
-        -- que chega exige atenção.
-        if jsonb_array_length(v_divs) > 0 then
-          v_dados := jsonb_build_object(
-                       'regra_tipo',   t.tipo,
-                       'regra_nome',   t.nome,
-                       'emb',          v_emb.emb,
-                       'fechada_em',   v_emb.fechada_em,
-                       'divergencias', v_divs,
-                       'agora',        v_agora);
+        -- ⚠️ TODA EMB QUE FECHA MANDA MENSAGEM (decisão 5 da spec, corrigida em 14/10/2026). Com
+        -- divergência, a lista viaja no `dados`; SEM divergência, `divergencias` viaja VAZIA (`[]`)
+        -- e quem escreve a frase "fechou sem divergência" é o TS (domain/emb.ts) — esta migração
+        -- não decide texto nenhum. Por isso NÃO há aqui nenhum `if` em volta do `jsonb_build_object`
+        -- e do fan-out: a EMB limpa percorre exatamente o mesmo caminho da EMB divergente.
+        -- ⚠️ Até 09/10 este bloco começava com `if jsonb_array_length(v_divs) > 0 then` e PULAVA a
+        -- EMB limpa. Se esse `if` reaparecer, é a decisão antiga ressurgindo: confira a spec.
+        v_dados := jsonb_build_object(
+                     'regra_tipo',   t.tipo,
+                     'regra_nome',   t.nome,
+                     'emb',          v_emb.emb,
+                     'fechada_em',   v_emb.fechada_em,
+                     'divergencias', v_divs,
+                     'agora',        v_agora);
 
-          -- Mesmas duas filas do resumo, SEM ocorrência, sem botão, com o tipo de envio 'emb' e o
-          -- módulo da regra congelado na linha (0149).
-          if t.avisar_pessoas then
-            insert into public.alerta_envios
-              (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo)
-            select null, c.usuario_id, c.canal, 'emb', t.modulo, v_dados, false, 'usuario'
-              from public.alerta_contas c
-              join public.usuarios u on u.id = c.usuario_id and u.ativo
-             where c.usuario_id = any (t.destinatarios) and c.canal = any (t.canais)
-               and public.usuario_tem_permissao(c.usuario_id, t.modulo, 'administrar')
-             order by c.usuario_id, c.canal;
-            get diagnostics v_n = row_count;
-            v_emb_n := v_emb_n + v_n;
-          end if;
-
-          if t.avisar_canal and v_canal is not null then
-            insert into public.alerta_envios
-              (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo,
-               destino_externo_id)
-            select null, null, 'discord', 'emb', t.modulo, v_dados, false, 'canal', v_canal;
-            get diagnostics v_n = row_count;
-            v_emb_n := v_emb_n + v_n;
-          end if;
-
-          v_enfileirados := v_enfileirados + v_emb_n;
+        -- Mesmas duas filas do resumo, SEM ocorrência, sem botão, com o tipo de envio 'emb' e o
+        -- módulo da regra congelado na linha (0149).
+        if t.avisar_pessoas then
+          insert into public.alerta_envios
+            (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo)
+          select null, c.usuario_id, c.canal, 'emb', t.modulo, v_dados, false, 'usuario'
+            from public.alerta_contas c
+            join public.usuarios u on u.id = c.usuario_id and u.ativo
+           where c.usuario_id = any (t.destinatarios) and c.canal = any (t.canais)
+             and public.usuario_tem_permissao(c.usuario_id, t.modulo, 'administrar')
+           order by c.usuario_id, c.canal;
+          get diagnostics v_n = row_count;
+          v_emb_n := v_emb_n + v_n;
         end if;
 
-        -- A MARCA (ver o aviso do cabeçalho): grava quando algo foi para a fila, OU quando a EMB
-        -- fechou limpa (nada a avisar é um resultado final). Divergência com ninguém alcançável
-        -- NÃO grava: volta na próxima rodada.
-        if v_emb_n > 0 or jsonb_array_length(v_divs) = 0 then
+        if t.avisar_canal and v_canal is not null then
+          insert into public.alerta_envios
+            (ocorrencia_id, usuario_id, canal, tipo, modulo, dados, com_botao, destino_tipo,
+             destino_externo_id)
+          select null, null, 'discord', 'emb', t.modulo, v_dados, false, 'canal', v_canal;
+          get diagnostics v_n = row_count;
+          v_emb_n := v_emb_n + v_n;
+        end if;
+
+        v_enfileirados := v_enfileirados + v_emb_n;
+
+        -- A MARCA (ver o aviso do cabeçalho): UM critério só, igual ao do resumo diário — grava
+        -- depois de enfileirar, e só se algo foi para a fila. Ninguém alcançável NÃO grava: volta
+        -- na próxima rodada, com ou sem divergência.
+        if v_emb_n > 0 then
           insert into public.alerta_emb_avisada (regra_id, emb, avisada_em, divergencias, enviados)
           values (t.regra_id, v_emb.emb, v_agora, jsonb_array_length(v_divs), v_emb_n)
           -- Corrida (cron atrasado + "Avaliar agora"): a trava advisory já impede, e o `do nothing`
           -- é a terceira linha de defesa. Nunca sobrescreve a marca que já existe.
           on conflict (regra_id, emb) do nothing;
-        elsif jsonb_array_length(v_divs) > 0 then
-          -- Havia o que avisar e ninguém alcançável. Sem este rastro, uma regra cujos responsáveis
-          -- nunca vincularam conta deixaria o aviso sem sair toda rodada, sem log e sem contador.
-          raise log 'alerta_avaliar: EMB % da regra % (%) tem % divergencia(s) e ninguem alcancavel',
+        else
+          -- Havia o que avisar (ainda que fosse só "a EMB fechou limpa") e ninguém alcançável. Sem
+          -- este rastro, uma regra cujos responsáveis nunca vincularam conta deixaria o aviso sem
+          -- sair toda rodada, sem log e sem contador.
+          raise log 'alerta_avaliar: EMB % da regra % (%) nao foi avisada (% divergencia(s)): ninguem alcancavel',
             v_emb.emb, t.regra_id, t.nome, jsonb_array_length(v_divs);
         end if;
       end loop;
@@ -2753,12 +2832,14 @@ git commit -m "feat(alertas): tipo de regra Fim de EMB no banco
 
 Quando TODOS os processos de uma EMB chegam a um terminal (Almoxarifado ou Reprovado na
 Qualidade), o cron enfileira UMA mensagem com as divergencias de quantidade daquela EMB
-e a justificativa de cada uma. EMB sem divergencia nao manda nada.
+e a justificativa de cada uma. EMB que fecha SEM divergencia tambem manda: a lista vai
+vazia e o texto diz que ela fechou sem divergencia (decisao 5 da spec, corrigida em
+14/10/2026; a versao de 09/10 dizia que EMB limpa nao mandava nada).
 
 A marca de 'ja avisei' e a tabela alerta_emb_avisada, com PK (regra_id, emb): o resumo
 diario guarda uma data por regra porque o evento dele e o dia; aqui o evento e a EMB.
-Gravada depois de enfileirar, ou quando a EMB fecha limpa; divergencia com ninguem
-alcancavel nao grava e volta na proxima rodada.
+Gravada depois de enfileirar, por um criterio so (algo entrou na fila); EMB cujos
+responsaveis nao tem conta vinculada nao grava e volta na proxima rodada.
 
 O piso criado_em da regra impede que a primeira rodada avise toda EMB historicamente
 fechada. O fim de EMB sai do laco por um bloco unico no topo, como o resumo diario: o
@@ -2801,6 +2882,8 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     justificativa: string
     justificadaPorNome: string
   }
+  // Lista VAZIA = EMB limpa: devolve a mensagem própria de "fechou sem divergência" (decisão 5
+  // da spec, corrigida em 14/10/2026 — toda EMB que fecha manda mensagem).
   export function textoEmb(nomeRegra: string, emb: string, divergencias: readonly DivergenciaEmb[]): string
   export const JANELA_EMB: string      // 'Quando a EMB fecha'
   export const LIMITE_EMB: string      // 'Divergências sem justificativa'
@@ -2878,10 +2961,19 @@ describe('textoEmb', () => {
     expect(t).toMatch(/e mais \d+ (divergência|divergências)/)
   })
 
-  it('sem divergência nenhuma devolve só o cabeçalho (defesa: o banco não enfileira esse caso)', () => {
+  // ⚠️ Decisão 5 da spec, CORRIGIDA EM 14/10/2026: toda EMB que fecha manda mensagem. A versão de
+  // 09/10 deste teste só exigia "devolve só o cabeçalho", como defesa de um caso que o banco nunca
+  // enfileirava. Hoje o banco enfileira a EMB limpa, e esta é a mensagem que a pessoa recebe.
+  it('EMB sem divergência nenhuma avisa que fechou SEM divergência', () => {
     const t = textoEmb('Fim de EMB', 'EMB390', [])
     expect(t).toContain('EMB390')
+    expect(t).toContain('sem divergência')
+    expect(t).toContain('Fim de EMB')
+    // Uma linha só: ela é o assunto do e-mail e não há lista para mostrar.
     expect(t.split('\n').length).toBe(1)
+    // E NÃO sai pelo cabeçalho das divergências, que diria "0 divergências de quantidade" —
+    // mensagem que soa como alerta de nada.
+    expect(t).not.toContain('0 divergências')
   })
 })
 ```
@@ -2927,11 +3019,19 @@ function numeroOuTraco(v: number | null): string {
 }
 
 /**
- * A mensagem do fim de EMB: uma linha de cabeçalho e, por divergência, duas linhas — o item com as
- * quantidades e, abaixo, a justificativa ou a marca de que ninguém justificou.
+ * A mensagem do fim de EMB. TODA EMB que fecha manda uma (decisão 5 da spec, corrigida em
+ * 14/10/2026):
+ *
+ *  - com divergência: uma linha de cabeçalho e, por divergência, duas linhas — o item com as
+ *    quantidades e, abaixo, a justificativa ou a marca de que ninguém justificou;
+ *  - sem divergência: UMA linha, dizendo que a EMB fechou e que fechou sem divergência. Ela não é
+ *    o cabeçalho com "0 divergências": quem lê precisa saber na primeira linha que não há nada a
+ *    fazer. ⚠️ Até 09/10 a EMB limpa não mandava mensagem nenhuma, e esta função só devolvia o
+ *    cabeçalho por defesa.
  *
  * ⚠️ A PRIMEIRA LINHA É O ASSUNTO DO E-MAIL (o cliente de e-mail parte o texto na primeira quebra,
- * ver `infra/email.ts`): ela tem de dizer sozinha de que EMB se trata e quantas divergências são.
+ * ver `infra/email.ts`): ela tem de dizer sozinha de que EMB se trata e quantas divergências são
+ * — ou que não houve nenhuma, no caso da EMB limpa.
  * Mexer na ordem das linhas muda o assunto do e-mail.
  *
  * ⚠️ Uma EMB com muitas divergências passaria dos 2000 do Discord, que RECUSA a mensagem inteira.
@@ -2944,12 +3044,19 @@ export function textoEmb(
   emb: string,
   divergencias: readonly DivergenciaEmb[],
 ): string {
+  // A EMB limpa tem texto PRÓPRIO, e sai por aqui antes de qualquer lista.
+  if (divergencias.length === 0) {
+    return cortarUtf16(
+      `✅ ${emb} fechou sem divergência de quantidade · ${nomeRegra}`,
+      LIMITE_MENSAGEM,
+    )
+  }
+
   // Nome de regra absurdo: o próprio cabeçalho cederia o limite, então é ele que é aparado.
   const cabecalho = cortarUtf16(
     `📦 ${emb} fechou — ${n(divergencias.length, 'divergência', 'divergências')} de quantidade · ${nomeRegra}`,
     LIMITE_MENSAGEM,
   )
-  if (divergencias.length === 0) return cabecalho
 
   const itens = divergencias.map((d) => {
     const identidade = [`#${d.numero}`, d.item, d.descricao].filter((p) => p !== '').join(' ')
@@ -3594,7 +3701,8 @@ e o botão "Ver prévia" ganham `tipo !== 'emb'`:
           <p className="mt-2">
             A mensagem traz <strong>só as divergências de quantidade</strong> daquela EMB, com a
             justificativa de cada uma (ou a marca de que ninguém justificou). EMB que fecha sem
-            divergência não manda nada.
+            nenhuma divergência <strong>também avisa</strong>, dizendo que terminou sem
+            divergência.
           </p>
           <p className="mt-2">
             Cada EMB avisa <strong>uma vez só</strong>. A conferência é feita a cada 5 minutos, e
@@ -4894,19 +5002,19 @@ Não é tarefa: é a lista do que ainda falta para isto virar produção, e que 
 | Marca de "já avisei", não reenvia | Task 4, Step 5 (tabela) e Step 7 (gravação) + testes T3 e T4 |
 | Conteúdo: só as divergências e as justificativas (decisão 4) | Task 4, Step 6/7 + Task 5 (`textoEmb`) |
 | "Ninguém justificou" em destaque | Task 5, `textoEmb` + teste |
-| EMB sem divergência não manda nada (decisão 5) | Task 4, Step 7 + teste T4 |
+| Toda EMB que fecha manda; sem divergência, a mensagem diz que fechou limpa (decisão 5, corrigida em 14/10/2026) | Task 4, Step 7 (nenhum `if` pula a EMB limpa) + teste T4 + Task 5 (`textoEmb` com lista vazia) |
 | Destinatários escolhidos na regra (decisão 6) | Task 1 (`alerta_destinatarios(p_modulo)`) + Task 6 |
 | E-mail do login como endereço (decisão 7) | Task 7 (fan-out + reserva) + Task 9 (Meu perfil) |
 | SMTP do GoTrue, sem servidor novo | Task 8 (`lerConfigEmail`) + `.env.example` |
 | Canais: e-mail, Discord e Telegram (decisão 8) | Task 7 + Task 8 |
 | Regra sem posto e sem janela, padrão do resumo | Task 4 (checks) + Task 5 (`validarRegra`, `resumoJanelaRegra`) |
 | `Canal` ganha `'email'`; `TipoRegra` ganha o valor novo | Task 8 e Task 5 |
-| Não trava nada / não reenvia / não é por fornecedor / não avisa EMB limpa | Nenhuma tarefa acrescenta trava, filtro de fornecedor nem aviso de EMB limpa — por construção |
+| Não trava nada / não reenvia / não é por fornecedor | Nenhuma tarefa acrescenta trava nem filtro de fornecedor — por construção |
 | Não mexe no "esqueci a senha" | Task 8 usa só o envio; o aviso está no cabeçalho de `email.ts` |
 | Caso 1 (EMB aberta) | Task 4, teste T1 |
 | Caso 2 (último item fecha → sai) | Task 4, teste T2 |
 | Caso 3 (rodada seguinte → nada) | Task 4, teste T3 + sabotagem no Step 9 |
-| Caso 4 (EMB limpa → nada) | Task 4, teste T4 |
+| Caso 4 (EMB limpa → manda, dizendo que fechou sem divergência) | Task 4, teste T4 + Task 5 (`textoEmb` com lista vazia) |
 | Caso 5 (reprovado também é fim) | Task 4, teste T5 |
 | Caso 6 (regra de um módulo não aparece no outro) | Task 1 teste T3 · Task 2 Step 12 · Task 3 Step 1 · Task 6 Step 5 |
 | Caso 7 (quem administra só o Recebimento consegue usar) | Task 1 testes T3/T4/T5 · Task 2 Step 14 · Task 3 Step 6 |
