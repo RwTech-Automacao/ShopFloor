@@ -57,6 +57,7 @@ const FILTRO = { de: '2026-09-17', ate: '2026-09-23', estado: '' as const }
 function montar(ocorrencias: OcorrenciaLinha[] = [RESOLVIDA]) {
   render(
     <AlertasTela
+      modulo="shopfloor"
       regras={[]}
       postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
       pmos={[]}

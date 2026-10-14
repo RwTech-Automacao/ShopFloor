@@ -10,6 +10,7 @@ vi.mock('@/modules/alertas/application/alertas-actions', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const PROPS = {
+  modulo: 'shopfloor' as const,
   postos: [
     { chave: 'Teste', temStatus: true, coletaDefeito: true },
     { chave: 'Embalagem', temStatus: false, coletaDefeito: false },

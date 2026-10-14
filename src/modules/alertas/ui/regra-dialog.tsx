@@ -5,10 +5,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { NOME_TIPO_REGRA, type Canal, type TipoRegra } from '@/modules/alertas/domain/tipos'
 import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import type { DestinatarioDisponivel, RegraAlerta } from '@/modules/alertas/domain/regra'
+import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { RegraForm } from './regra-form'
 import { TipoEscolha } from './tipo-escolha'
 
 interface PropsRegra {
+  modulo: ModuloAlerta
   regra: RegraAlerta | null
   postos: PostoRegra[]
   pmos: string[]
@@ -20,10 +22,12 @@ interface PropsRegra {
 }
 
 /**
- * Regra nova: primeiro os 3 cartões de tipo, depois o formulário do tipo escolhido ("Trocar tipo"
- * volta). Editar: direto no formulário do tipo da regra — o tipo não muda depois de criado.
+ * Regra nova: primeiro os cartões dos tipos DO MÓDULO, depois o formulário do tipo escolhido
+ * ("Trocar tipo" volta). Editar: direto no formulário do tipo da regra — o tipo não muda depois de
+ * criado.
  */
 export function RegraConteudo({
+  modulo,
   regra,
   postos,
   pmos,
@@ -36,7 +40,7 @@ export function RegraConteudo({
   const [escolhido, setEscolhido] = useState<TipoRegra | null>(null)
   const tipo = regra?.tipo ?? escolhido
 
-  if (!tipo) return <TipoEscolha onEscolher={setEscolhido} />
+  if (!tipo) return <TipoEscolha modulo={modulo} onEscolher={setEscolhido} />
 
   return (
     <div className="flex flex-col gap-4">
@@ -44,6 +48,7 @@ export function RegraConteudo({
         Tipo: <strong className="text-foreground">{NOME_TIPO_REGRA[tipo]}</strong>
       </p>
       <RegraForm
+        modulo={modulo}
         tipo={tipo}
         regra={regra}
         postos={postos}

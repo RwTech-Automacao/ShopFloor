@@ -26,12 +26,6 @@ import { Explica } from './explica'
 import { IntervalosEditor } from './intervalos-editor'
 import { PmosSelecao } from './pmos-selecao'
 
-/**
- * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
- * rotas) que troca esta constante pela prop `modulo` da rota.
- */
-const MODULO: ModuloAlerta = 'shopfloor'
-
 const TOAST = { position: 'bottom-center' } as const
 /** Mensagem do repositório quando a regra já foi excluída (exclusão lógica) por outro gestor. */
 export const ERRO_REGRA_EXCLUIDA = 'Essa regra foi excluída.'
@@ -86,8 +80,8 @@ const AVISO_FORA_DO_TIPO: Partial<Record<TipoRegra, string>> = {
 
 /**
  * Responsáveis salvos que não estão mais entre os disponíveis (usuário desativado, removido ou que
- * perdeu shopfloor.administrar — `alerta_destinatarios` só devolve ativos que administram o
- * ShopFloor). Saem da seleção ao abrir o formulário; o aviso pede para salvar e confirmar. Lista de
+ * perdeu a permissão — `alerta_destinatarios` só devolve ativos que administram o MÓDULO da regra,
+ * desde a 0149). Saem da seleção ao abrir o formulário; o aviso pede para salvar e confirmar. Lista de
  * disponíveis vazia = nada carregou: não descarta ninguém.
  */
 export function separarDestinatarios(
@@ -144,6 +138,7 @@ function pausaInicial(regra: RegraAlerta | null): string {
 }
 
 export function RegraForm({
+  modulo,
   tipo,
   regra,
   postos,
@@ -156,6 +151,8 @@ export function RegraForm({
   onVoltar,
   onRegraExcluida,
 }: {
+  /** O módulo da rota que montou a tela: vai na entrada validada e em cada action. */
+  modulo: ModuloAlerta
   tipo: TipoRegra
   regra: RegraAlerta | null
   /** Todos os postos na ordem do fluxo, com o que o perfil de cada um faz. */
@@ -223,6 +220,9 @@ export function RegraForm({
 
   function entrada(): EntradaRegra {
     return {
+      // O módulo vai na entrada para a validação DO CLIENTE medir o mesmo que a do servidor
+      // (tipo × módulo). Na gravação quem manda é o módulo da rota, que a action repõe.
+      modulo,
       tipo,
       nome,
       postos: postosSel,
@@ -257,7 +257,7 @@ export function RegraForm({
       return
     }
     startTransition(async () => {
-      const r = await salvarRegraAction(MODULO, regra?.id ?? null, dados)
+      const r = await salvarRegraAction(modulo, regra?.id ?? null, dados)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         if (r.erro === ERRO_REGRA_EXCLUIDA) onRegraExcluida?.()
@@ -270,7 +270,7 @@ export function RegraForm({
 
   function verPrevia() {
     startTransition(async () => {
-      const r = await previaRegraAction(MODULO, {
+      const r = await previaRegraAction(modulo, {
         tipo,
         postos: postosSel,
         janelaTipo,

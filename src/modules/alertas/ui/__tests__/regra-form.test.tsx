@@ -87,6 +87,7 @@ function montar(
   const onSalvo = o.onSalvo ?? vi.fn()
   render(
     <RegraForm
+      modulo="shopfloor"
       tipo={o.tipo ?? 'aprovacao'}
       regra={o.regra ?? null}
       postos={o.postos ?? POSTOS}
@@ -152,6 +153,9 @@ describe('RegraForm — taxa de aprovação', () => {
 
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalledTimes(1))
     expect(salvarRegraAction).toHaveBeenCalledWith('shopfloor', null, {
+      // A entrada carrega o módulo desde a Task 3: a validação do cliente mede tipo × módulo com
+      // ele, e o servidor repõe o módulo da rota por cima.
+      modulo: 'shopfloor',
       tipo: 'aprovacao',
       nome: 'Teste 90',
       postos: ['Teste'],

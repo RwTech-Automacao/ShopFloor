@@ -28,6 +28,7 @@ const DESTINATARIOS = [{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', t
 function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null } = {}) {
   render(
     <RegraForm
+      modulo="shopfloor"
       tipo={o.tipo ?? 'resumo'}
       regra={o.regra ?? null}
       postos={POSTOS}
@@ -184,6 +185,7 @@ describe('RegraForm — resumo diário: o que sai ao salvar', () => {
       salvarRegraAction.mockClear()
       const { unmount } = render(
         <RegraForm
+          modulo="shopfloor"
           tipo="resumo"
           regra={null}
           postos={POSTOS}

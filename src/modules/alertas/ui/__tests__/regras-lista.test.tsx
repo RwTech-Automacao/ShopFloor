@@ -41,6 +41,7 @@ describe('RegrasLista', () => {
   it('mostra o tipo, o limite formatado por tipo e as PMOs', () => {
     render(
       <RegrasLista
+        modulo="shopfloor"
         regras={[
           BASE,
           {
@@ -74,6 +75,7 @@ describe('RegrasLista', () => {
   it('regra de janela "intervalos": a coluna Janela mostra "Blocos de 1 h" e o limite sai como taxa', () => {
     render(
       <RegrasLista
+        modulo="shopfloor"
         regras={[
           {
             ...BASE,
@@ -106,6 +108,7 @@ describe('RegrasLista', () => {
   it('resumo diário: Limite vira traço, Janela mostra a hora (nunca "Blocos de") e sem null/undefined/NaN', () => {
     const { container } = render(
       <RegrasLista
+        modulo="shopfloor"
         regras={[
           BASE,
           {

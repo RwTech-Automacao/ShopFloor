@@ -16,14 +16,19 @@ import { RegrasLista } from './regras-lista'
 import { OcorrenciasLista } from './ocorrencias-lista'
 
 /**
- * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
- * rotas) que troca esta constante pela prop `modulo` da rota.
+ * A tela de Alertas. Mora no MÓDULO, e não na pasta de uma rota, porque ela serve DUAS rotas
+ * (`/configuracoes/sf-alertas` e `/configuracoes/rec-alertas`, spec de 2026-10-09, decisão 2): a
+ * pasta de uma rota não pode ser a casa da tela da outra.
+ *
+ * O que a tela sabe do módulo vem SÓ da prop `modulo` — nunca do `usePathname()`. É ela que decide
+ * quais tipos de regra existem, para qual rota as actions revalidam e qual permissão o servidor
+ * confere. As duas `page.tsx` carregam o que é do módulo delas e montam este componente.
  */
-const MODULO: ModuloAlerta = 'shopfloor'
 
 const TOAST = { position: 'bottom-center' } as const
 
 export function AlertasTela({
+  modulo,
   regras,
   postos,
   pmos,
@@ -33,6 +38,8 @@ export function AlertasTela({
   ocorrenciasIniciais,
   filtroInicial,
 }: {
+  /** Qual módulo esta instância da tela está servindo. Desce inteira até o formulário. */
+  modulo: ModuloAlerta
   regras: RegraAlerta[]
   postos: PostoRegra[]
   pmos: string[]
@@ -53,7 +60,7 @@ export function AlertasTela({
 
   function avaliarAgora() {
     startTransition(async () => {
-      const r = await avaliarAgoraAction(MODULO)
+      const r = await avaliarAgoraAction(modulo)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         return
@@ -111,6 +118,7 @@ export function AlertasTela({
 
       {aba === 'regras' ? (
         <RegrasLista
+          modulo={modulo}
           regras={regras}
           postos={postos}
           pmos={pmos}
@@ -120,6 +128,7 @@ export function AlertasTela({
         />
       ) : (
         <OcorrenciasLista
+          modulo={modulo}
           ocorrenciasIniciais={ocorrenciasIniciais}
           filtroInicial={filtroInicial}
           recarregar={recarga}

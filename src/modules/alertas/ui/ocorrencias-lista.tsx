@@ -28,12 +28,6 @@ import {
 import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { listarOcorrenciasAction, resolverOcorrenciaAction } from '@/modules/alertas/application/alertas-actions'
 
-/**
- * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
- * rotas) que troca esta constante pela prop `modulo` da rota.
- */
-const MODULO: ModuloAlerta = 'shopfloor'
-
 const TOAST = { position: 'bottom-center' } as const
 
 function quando(iso: string | null): string {
@@ -50,10 +44,12 @@ function Estado({ o }: { o: OcorrenciaLinha }) {
 }
 
 export function OcorrenciasLista({
+  modulo,
   ocorrenciasIniciais,
   filtroInicial,
   recarregar = 0,
 }: {
+  modulo: ModuloAlerta
   ocorrenciasIniciais: OcorrenciaLinha[]
   filtroInicial: FiltroOcorrencias
   /**
@@ -75,11 +71,11 @@ export function OcorrenciasLista({
 
   const carregar = useCallback((f: FiltroOcorrencias) => {
     startTransition(async () => {
-      const r = await listarOcorrenciasAction(MODULO, f)
+      const r = await listarOcorrenciasAction(modulo, f)
       if (!r.ok) toast.error(r.erro, TOAST)
       else setLista(r.ocorrencias)
     })
-  }, [])
+  }, [modulo])
 
   function buscar(novo: FiltroOcorrencias) {
     setFiltro(novo)
@@ -106,13 +102,13 @@ export function OcorrenciasLista({
     setResolvendo(null)
     startTransition(async () => {
       // A explicação é OPCIONAL: vazia, resolve do mesmo jeito (o banco apara e decide).
-      const r = await resolverOcorrenciaAction(MODULO, o.id, texto)
+      const r = await resolverOcorrenciaAction(modulo, o.id, texto)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         return
       }
       toast.success(`${o.posto}: marcada como resolvida`, TOAST)
-      const atualizada = await listarOcorrenciasAction(MODULO, filtro)
+      const atualizada = await listarOcorrenciasAction(modulo, filtro)
       if (atualizada.ok) setLista(atualizada.ocorrencias)
     })
   }

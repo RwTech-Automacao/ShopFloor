@@ -13,16 +13,13 @@ import {
   listarPmosAlerta,
   listarRegras,
 } from '@/modules/alertas/infra/regras-repository'
-import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
-import { AlertasTela } from './alertas-tela'
+import { AlertasTela } from '@/modules/alertas/ui/alertas-tela'
 
 /**
- * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
- * rotas) que troca esta constante pela prop `modulo` da rota.
+ * Alertas do ShopFloor. A tela mora em `@/modules/alertas/ui` porque serve DUAS rotas (spec de
+ * 2026-10-09, decisão 2); esta página só carrega o que é do ShopFloor e passa `modulo="shopfloor"`.
  */
-const MODULO: ModuloAlerta = 'shopfloor'
-
-export default async function AlertasPage() {
+export default async function AlertasShopFloorPage() {
   const sessao = await getSessao()
   if (
     !sessao ||
@@ -34,12 +31,12 @@ export default async function AlertasPage() {
 
   const filtro = filtroOcorrenciasPadrao(new Date())
   const [regras, postos, perfis, pmos, destinatarios, ocorrencias] = await Promise.all([
-    listarRegras(MODULO),
+    listarRegras('shopfloor'),
     listarPostos(),
     mapaPostoPerfil(),
     listarPmosAlerta(),
-    listarDestinatarios(MODULO),
-    listarOcorrencias(MODULO, filtro),
+    listarDestinatarios('shopfloor'),
+    listarOcorrencias('shopfloor', filtro),
   ])
 
   // O perfil do posto decide quais tipos de regra fazem sentido nele. `listarPostos` já vem na ordem
@@ -48,6 +45,7 @@ export default async function AlertasPage() {
 
   return (
     <AlertasTela
+      modulo="shopfloor"
       regras={regras}
       postos={postosRegra}
       pmos={pmos}

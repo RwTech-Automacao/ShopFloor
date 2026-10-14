@@ -60,6 +60,7 @@ function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null } = {}) {
   const onSalvo = vi.fn()
   render(
     <RegraForm
+      modulo="shopfloor"
       tipo={o.tipo ?? 'aprovacao'}
       regra={o.regra ?? null}
       postos={POSTOS}
@@ -269,6 +270,9 @@ describe('RegraForm — salvar na janela por blocos', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
     expect(salvarRegraAction).toHaveBeenCalledWith('shopfloor', null, {
+      // A entrada carrega o módulo desde a Task 3: a validação do cliente mede tipo × módulo com
+      // ele, e o servidor repõe o módulo da rota por cima.
+      modulo: 'shopfloor',
       tipo: 'aprovacao',
       nome: 'Turno em blocos',
       postos: ['Teste'],

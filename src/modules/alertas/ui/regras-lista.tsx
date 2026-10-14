@@ -17,20 +17,15 @@ import {
   type DestinatarioDisponivel,
   type RegraAlerta,
 } from '@/modules/alertas/domain/regra'
-import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
+import { TIPOS_REGRA_POR_MODULO, type ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { alternarRegraAtivaAction, excluirRegraAction } from '@/modules/alertas/application/alertas-actions'
 import { RegraDialog } from './regra-dialog'
 import { ERRO_REGRA_EXCLUIDA } from './regra-form'
 
-/**
- * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
- * rotas) que troca esta constante pela prop `modulo` da rota.
- */
-const MODULO: ModuloAlerta = 'shopfloor'
-
 const TOAST = { position: 'bottom-center' } as const
 
 export function RegrasLista({
+  modulo,
   regras,
   postos,
   pmos,
@@ -38,6 +33,7 @@ export function RegrasLista({
   configurados,
   canalConfigurado,
 }: {
+  modulo: ModuloAlerta
   regras: RegraAlerta[]
   postos: PostoRegra[]
   pmos: string[]
@@ -58,9 +54,13 @@ export function RegrasLista({
 
   const nomes = new Map(destinatarios.map((d) => [d.usuarioId, d.nome]))
 
+  // Enquanto o módulo não tiver nenhum tipo de regra, "Nova regra" abriria um diálogo com zero
+  // cartões para escolher — um beco sem saída. Melhor o botão desligado e a frase do porquê.
+  const semTipos = TIPOS_REGRA_POR_MODULO[modulo].length === 0
+
   function alternar(regra: RegraAlerta, ativa: boolean) {
     startTransition(async () => {
-      const r = await alternarRegraAtivaAction(MODULO, regra.id, ativa)
+      const r = await alternarRegraAtivaAction(modulo, regra.id, ativa)
       if (!r.ok) falhou(r.erro)
       else toast.success(ativa ? 'Regra ativada' : 'Regra desativada', TOAST)
     })
@@ -73,7 +73,7 @@ export function RegrasLista({
     })
     if (!ok) return
     startTransition(async () => {
-      const r = await excluirRegraAction(MODULO, regra.id)
+      const r = await excluirRegraAction(modulo, regra.id)
       if (!r.ok) falhou(r.erro)
       else toast.success('Regra excluída', TOAST)
     })
@@ -81,9 +81,15 @@ export function RegrasLista({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {semTipos && (
+          <p className="text-sm text-muted-foreground">
+            Nenhum tipo de regra disponível neste módulo ainda.
+          </p>
+        )}
         <Button
           className="bg-enterplak hover:bg-enterplak-700"
+          disabled={semTipos}
           onClick={() => setDialogo({ aberto: true, regra: null })}
         >
           <PlusIcon /> Nova regra
@@ -196,6 +202,7 @@ export function RegrasLista({
 
       <RegraDialog
         aberto={dialogo.aberto}
+        modulo={modulo}
         regra={dialogo.regra}
         postos={postos}
         pmos={pmos}
