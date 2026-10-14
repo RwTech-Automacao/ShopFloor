@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { canalDiscordConfigurado, canalDiscordDoSistema, criarPortasCanais } from '../canais'
+import { canaisConfigurados, canalDiscordConfigurado, canalDiscordDoSistema, criarPortasCanais } from '../canais'
 import { criarDiscord } from '../discord'
 
 function fetchFalso(respostas: { corpo: unknown; status?: number }[]) {
@@ -116,5 +116,32 @@ describe('criarPortasCanais — destino da linha da fila', () => {
     const portas = criarPortasCanais({ DISCORD_BOT_TOKEN: 'D' } as unknown as NodeJS.ProcessEnv)
     expect(portas.discord).toBeDefined()
     expect(portas.telegram).toBeUndefined()
+  })
+})
+
+describe('canal de e-mail', () => {
+  const SMTP = {
+    SMTP_HOST: 'h', SMTP_USER: 'u', SMTP_PASS: 'p', SMTP_REMETENTE: 'a@b',
+  } as unknown as NodeJS.ProcessEnv
+
+  it('canaisConfigurados.email só liga com a configuração SMTP completa', () => {
+    expect(canaisConfigurados({} as NodeJS.ProcessEnv).email).toBe(false)
+    expect(canaisConfigurados(SMTP).email).toBe(true)
+  })
+
+  it('sem SMTP não monta a porta de e-mail', () => {
+    expect(criarPortasCanais({} as NodeJS.ProcessEnv).email).toBeUndefined()
+  })
+
+  it('a porta de e-mail recusa destino de canal, sem abrir conexão', async () => {
+    const porta = criarPortasCanais(SMTP).email
+    expect(porta).toBeDefined()
+    const r = await porta!.enviar({ tipo: 'canal', externoId: 'C9' }, 'A\nB', null)
+    expect(r.ok).toBe(false)
+  })
+
+  it('a porta de e-mail aceita remover botões (nada a remover)', async () => {
+    const r = await criarPortasCanais(SMTP).email!.removerBotoes('qualquer')
+    expect(r.ok).toBe(true)
   })
 })

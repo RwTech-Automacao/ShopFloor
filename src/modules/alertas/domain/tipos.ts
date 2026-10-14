@@ -1,7 +1,11 @@
 /** Canais de envio suportados nesta versão. */
-export type Canal = 'telegram' | 'discord'
-export const CANAIS: readonly Canal[] = ['telegram', 'discord']
-export const NOME_CANAL: Record<Canal, string> = { telegram: 'Telegram', discord: 'Discord' }
+export type Canal = 'telegram' | 'discord' | 'email'
+export const CANAIS: readonly Canal[] = ['telegram', 'discord', 'email']
+export const NOME_CANAL: Record<Canal, string> = {
+  telegram: 'Telegram',
+  discord: 'Discord',
+  email: 'E-mail',
+}
 
 /** Como a janela de avaliação é medida (ver seção 3 da spec). */
 export type JanelaTipo = 'tempo' | 'bipes' | 'op' | 'intervalos'
@@ -49,7 +53,7 @@ export type ResultadoSimples = { ok: true } | { ok: false; erro: string }
 
 /** É um canal conhecido? (entrada vinda de formulário/banco) */
 export function ehCanal(valor: unknown): valor is Canal {
-  return valor === 'telegram' || valor === 'discord'
+  return valor === 'telegram' || valor === 'discord' || valor === 'email'
 }
 
 /** É um tipo de janela conhecido? */

@@ -29,7 +29,7 @@ beforeEach(() => {
   enviarTesteAction.mockResolvedValue({ ok: true })
 })
 
-const TODOS_CONFIGURADOS = { telegram: true, discord: true }
+const TODOS_CONFIGURADOS = { telegram: true, discord: true, email: true }
 
 describe('CartaoAlertas', () => {
   it('canal sem token aparece como não configurado', () => {
@@ -37,7 +37,7 @@ describe('CartaoAlertas', () => {
       <CartaoAlertas
         nome="Ana Gestora"
         contas={[]}
-        configurados={{ telegram: true, discord: false }}
+        configurados={{ telegram: true, discord: false, email: true }}
         telegramBot="shopfloor_bot"
       />,
     )

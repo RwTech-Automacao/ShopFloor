@@ -29,7 +29,7 @@ const DESTINATARIOS = [
   { usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true },
   { usuarioId: 'u3', nome: 'Carla Operadora', email: 'carla@x', telegram: false, discord: false },
 ]
-const CONFIGURADOS = { telegram: true, discord: true }
+const CONFIGURADOS = { telegram: true, discord: true, email: true }
 const TOAST = { position: 'bottom-center' }
 
 const LINHA = {

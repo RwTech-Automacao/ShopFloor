@@ -34,7 +34,7 @@ function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null } = {}) {
       postos={POSTOS}
       pmosDisponiveis={['PMOA']}
       destinatarios={DESTINATARIOS}
-      configurados={{ telegram: true, discord: true }}
+      configurados={{ telegram: true, discord: true, email: true }}
       canalConfigurado
       onSalvo={vi.fn()}
       onCancelar={vi.fn()}
@@ -191,7 +191,7 @@ describe('RegraForm — resumo diário: o que sai ao salvar', () => {
           postos={POSTOS}
           pmosDisponiveis={[]}
           destinatarios={DESTINATARIOS}
-          configurados={{ telegram: true, discord: true }}
+          configurados={{ telegram: true, discord: true, email: true }}
           canalConfigurado
           onSalvo={vi.fn()}
           onCancelar={vi.fn()}

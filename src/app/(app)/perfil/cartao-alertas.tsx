@@ -149,7 +149,8 @@ export function CartaoAlertas({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {CANAIS.map((canal) => {
+        {/* E-mail não se vincula: usa o endereço do login (usuarios.email). */}
+        {CANAIS.filter((c) => c !== 'email').map((canal) => {
           const conta = lista.find((c) => c.canal === canal) ?? null
           const aberto = codigo?.canal === canal ? codigo : null
           return (

@@ -25,7 +25,7 @@ const POSTOS: PostoRegra[] = [
 ]
 const PMOS = ['PMOA', 'PMOB']
 const DESTINATARIOS = [{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true }]
-const CONFIGURADOS = { telegram: true, discord: true }
+const CONFIGURADOS = { telegram: true, discord: true, email: true }
 const TOAST = { position: 'bottom-center' }
 
 function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {

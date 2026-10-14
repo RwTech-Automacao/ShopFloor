@@ -30,7 +30,7 @@ function montar(regra: RegraAlerta | null = null) {
       postos={[]}
       pmosDisponiveis={[]}
       destinatarios={DESTINATARIOS}
-      configurados={{ telegram: true, discord: true }}
+      configurados={{ telegram: true, discord: true, email: true }}
       canalConfigurado
       onSalvo={vi.fn()}
       onCancelar={vi.fn()}
