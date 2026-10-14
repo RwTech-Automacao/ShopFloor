@@ -1,4 +1,5 @@
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
+import { MODULOS_ALERTA } from '../domain/modulo'
 
 export interface Ambiente {
   vercel?: string // VERCEL_ENV: 'preview' | 'development' | 'production' (só existe na Vercel)
@@ -39,13 +40,18 @@ export function alertasLiberados(
 }
 
 /**
- * Pode usar os Alertas (menu, Meu perfil e vínculo Telegram/Discord)? Só quem ADMINISTRA o
- * ShopFloor — os únicos que podem ser destinatários — e, em produção, está na liberação acima.
- * Sem o admin, a pessoa conseguiria vincular a conta mas nunca receberia nada.
+ * Pode usar os Alertas (menu, Meu perfil e vínculo Telegram/Discord)? Quem administra QUALQUER
+ * módulo com alertas — são essas as pessoas que podem ser responsáveis — e, em produção, está na
+ * liberação acima. Sem o admin, a pessoa conseguiria vincular a conta mas nunca receberia nada.
+ *
+ * ⚠️ Era `'shopfloor'` fixo. Com as regras do Recebimento (spec, decisão 6), quem administra só o
+ * Recebimento tem de poder vincular o Telegram/Discord em Meu perfil — senão é escolhido como
+ * responsável e não recebe nada, sem nenhum aviso.
  */
 export function alertasDisponiveis(
   sessao: { email: string | null | undefined; perfil: Parameters<typeof podeNoModulo>[0] } | null,
 ): boolean {
   if (!sessao) return false
-  return podeNoModulo(sessao.perfil, 'shopfloor', 'administrar') && alertasLiberados(sessao.email)
+  const admin = MODULOS_ALERTA.some((m) => podeNoModulo(sessao.perfil, m, 'administrar'))
+  return admin && alertasLiberados(sessao.email)
 }

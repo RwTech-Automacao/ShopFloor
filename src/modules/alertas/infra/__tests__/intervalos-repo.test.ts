@@ -99,6 +99,7 @@ async function repoRegras(sb: SupabaseClient) {
 }
 
 const TURNO: RegraValida = {
+  modulo: 'shopfloor',
   tipo: 'aprovacao',
   nome: 'Taxa do turno',
   postos: ['Teste'],
@@ -169,7 +170,7 @@ describe('listarRegras — os intervalos do turno', () => {
           },
     )
     const { listarRegras } = await repoRegras(sb)
-    const regras = await listarRegras()
+    const regras = await listarRegras('shopfloor')
 
     expect(chamadas.map((c) => c.tabela)).toEqual(['alerta_regras', 'alerta_regra_intervalos'])
     expect(chamadas[1]!.filtros).toEqual([['regra_id', ['r1', 'r2']]])
@@ -198,14 +199,14 @@ describe('listarRegras — os intervalos do turno', () => {
           },
     )
     const { listarRegras } = await repoRegras(sb)
-    const [r1] = await listarRegras()
+    const [r1] = await listarRegras('shopfloor')
     expect(r1!.intervalos).toEqual([{ inicio: '08:15', fim: '12:00' }])
   })
 
   it('nenhuma regra de janela intervalos: a segunda consulta nem acontece', async () => {
     const { sb, chamadas } = sbFake(() => ({ data: [linhaRegra('r1', 'tempo')], ...SEM_ERRO }))
     const { listarRegras } = await repoRegras(sb)
-    await listarRegras()
+    await listarRegras('shopfloor')
     expect(chamadas.map((c) => c.tabela)).toEqual(['alerta_regras'])
   })
 
@@ -217,7 +218,7 @@ describe('listarRegras — os intervalos do turno', () => {
         : { data: null, error: { message: 'permission denied for table alerta_regra_intervalos' } },
     )
     const { listarRegras } = await repoRegras(sb)
-    await expect(listarRegras()).rejects.toThrow(/alerta_regra_intervalos/)
+    await expect(listarRegras('shopfloor')).rejects.toThrow(/alerta_regra_intervalos/)
   })
 })
 

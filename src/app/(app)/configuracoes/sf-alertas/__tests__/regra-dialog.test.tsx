@@ -38,6 +38,7 @@ describe('RegraConteudo', () => {
     const regra: RegraAlerta = {
       id: 'r1',
       atualizadoEm: '2026-09-18T12:00:00Z',
+      modulo: 'shopfloor',
       tipo: 'defeito',
       nome: 'Defeito 3x',
       postos: ['Teste'],

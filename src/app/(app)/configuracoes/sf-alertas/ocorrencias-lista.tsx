@@ -25,7 +25,14 @@ import {
   type FiltroOcorrencias,
   type OcorrenciaLinha,
 } from '@/modules/alertas/domain/ocorrencia'
+import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { listarOcorrenciasAction, resolverOcorrenciaAction } from '@/modules/alertas/application/alertas-actions'
+
+/**
+ * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
+ * rotas) que troca esta constante pela prop `modulo` da rota.
+ */
+const MODULO: ModuloAlerta = 'shopfloor'
 
 const TOAST = { position: 'bottom-center' } as const
 
@@ -68,7 +75,7 @@ export function OcorrenciasLista({
 
   const carregar = useCallback((f: FiltroOcorrencias) => {
     startTransition(async () => {
-      const r = await listarOcorrenciasAction(f)
+      const r = await listarOcorrenciasAction(MODULO, f)
       if (!r.ok) toast.error(r.erro, TOAST)
       else setLista(r.ocorrencias)
     })
@@ -99,13 +106,13 @@ export function OcorrenciasLista({
     setResolvendo(null)
     startTransition(async () => {
       // A explicação é OPCIONAL: vazia, resolve do mesmo jeito (o banco apara e decide).
-      const r = await resolverOcorrenciaAction(o.id, texto)
+      const r = await resolverOcorrenciaAction(MODULO, o.id, texto)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         return
       }
       toast.success(`${o.posto}: marcada como resolvida`, TOAST)
-      const atualizada = await listarOcorrenciasAction(filtro)
+      const atualizada = await listarOcorrenciasAction(MODULO, filtro)
       if (atualizada.ok) setLista(atualizada.ocorrencias)
     })
   }

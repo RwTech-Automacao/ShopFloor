@@ -20,10 +20,17 @@ import { postosOferecidos, type PostoRegra } from '@/modules/alertas/domain/post
 import { formatarMmSs } from '@/modules/alertas/domain/tempo'
 import type { Intervalo } from '@/modules/alertas/domain/intervalos'
 import { textoPreviaPosto, type PreviaPosto } from '@/modules/alertas/domain/ocorrencia'
+import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { previaRegraAction, salvarRegraAction } from '@/modules/alertas/application/alertas-actions'
 import { Explica } from './explica'
 import { IntervalosEditor } from './intervalos-editor'
 import { PmosSelecao } from './pmos-selecao'
+
+/**
+ * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
+ * rotas) que troca esta constante pela prop `modulo` da rota.
+ */
+const MODULO: ModuloAlerta = 'shopfloor'
 
 const TOAST = { position: 'bottom-center' } as const
 /** Mensagem do repositório quando a regra já foi excluída (exclusão lógica) por outro gestor. */
@@ -250,7 +257,7 @@ export function RegraForm({
       return
     }
     startTransition(async () => {
-      const r = await salvarRegraAction(regra?.id ?? null, dados)
+      const r = await salvarRegraAction(MODULO, regra?.id ?? null, dados)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         if (r.erro === ERRO_REGRA_EXCLUIDA) onRegraExcluida?.()
@@ -263,7 +270,7 @@ export function RegraForm({
 
   function verPrevia() {
     startTransition(async () => {
-      const r = await previaRegraAction({
+      const r = await previaRegraAction(MODULO, {
         tipo,
         postos: postosSel,
         janelaTipo,

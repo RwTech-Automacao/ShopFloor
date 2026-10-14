@@ -105,7 +105,7 @@ describe('AlertasTela — "Avaliar agora"', () => {
     await waitFor(() => expect(screen.getByRole('cell', { name: 'Reaberta' })).toBeInTheDocument())
     expect(screen.queryByRole('cell', { name: 'Resolvida' })).not.toBeInTheDocument()
     // A lista foi buscada de novo com o filtro da tela.
-    expect(listarOcorrenciasAction).toHaveBeenCalledWith(FILTRO)
+    expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', FILTRO)
   })
 
   it('renova também o que vem do servidor (mesmo par do setup-estrutura)', async () => {
@@ -127,7 +127,7 @@ describe('AlertasTela — "Avaliar agora"', () => {
         position: 'bottom-center',
       }),
     )
-    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith(FILTRO))
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', FILTRO))
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 

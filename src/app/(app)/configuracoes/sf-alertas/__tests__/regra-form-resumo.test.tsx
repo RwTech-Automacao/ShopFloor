@@ -42,7 +42,7 @@ function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null } = {}) {
 }
 
 /** O que foi mandado ao servidor na primeira chamada de salvar. */
-const enviado = () => (salvarRegraAction.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+const enviado = () => (salvarRegraAction.mock.calls[0] as unknown[])[2] as Record<string, unknown>
 /** A mensagem do primeiro toast de erro. */
 const erroMostrado = () => String((toastErro.mock.calls[0] as unknown[])[0])
 
@@ -127,6 +127,7 @@ describe('RegraForm — resumo diário: o que a tela mostra', () => {
       regra: {
         id: 'r1',
         atualizadoEm: '2026-10-08T12:00:00Z',
+        modulo: 'shopfloor',
         tipo: 'resumo',
         nome: 'Resumo',
         postos: ['Teste'],

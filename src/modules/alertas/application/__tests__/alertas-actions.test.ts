@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import type { Perfil } from '@/modules/auth/domain/perfil'
+import type { EntradaRegra } from '../../domain/regra'
 
 vi.mock('server-only', () => ({}))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
@@ -17,6 +18,22 @@ vi.mock('@/modules/auth/application/get-sessao', () => ({
 }))
 vi.mock('@/modules/logs/application/registrar-log', () => ({ registrarLog: async () => {} }))
 
+/** A entrada válida de sempre (taxa de aprovação), com o que o caso quiser trocar. */
+const ENTRADA: EntradaRegra = {
+  tipo: 'aprovacao',
+  nome: 'Teste abaixo de 90',
+  postos: ['Teste'],
+  taxaMinima: '90',
+  janelaTipo: 'tempo',
+  janelaValor: '60',
+  minimoBipes: '20',
+  lembreteMin: null,
+  canais: ['telegram'],
+  destinatarios: ['u1'],
+  ativa: true,
+}
+const entradaValida = (extra: Partial<EntradaRegra> = {}): EntradaRegra => ({ ...ENTRADA, ...extra })
+
 
 // Lançamento escondido: sem a variável ninguém é liberado. Aqui liberamos todos por padrão;
 // o teste de recusa troca a lista dentro do próprio caso.
@@ -26,14 +43,17 @@ afterEach(() => { vi.unstubAllEnvs() })
 describe('actions de alertas — payload malformado não lança exceção', () => {
   it('salvarRegraAction: entrada nula vira erro amigável, não exceção', async () => {
     const { salvarRegraAction } = await import('../alertas-actions')
-    const r = await salvarRegraAction(null, null as unknown as Parameters<typeof salvarRegraAction>[1])
+    const r = await salvarRegraAction('shopfloor', null, null as unknown as Parameters<typeof salvarRegraAction>[2])
     expect(r.ok).toBe(false)
-    expect(r).toEqual({ ok: false, erro: 'Não foi possível salvar a regra agora.' })
+    // Desde o módulo, a action monta `{ ...entrada, modulo }` — e `{ ...null }` é `{}`. Continua
+    // SEM exceção (é o que este caso mede); o erro agora é o da validação, mais preciso que o
+    // genérico do catch.
+    expect(r).toEqual({ ok: false, erro: 'Informe o nome da regra.' })
   })
 
   it('previaRegraAction: entrada nula vira erro amigável, não exceção', async () => {
     const { previaRegraAction } = await import('../alertas-actions')
-    const r = await previaRegraAction(null as unknown as Parameters<typeof previaRegraAction>[0])
+    const r = await previaRegraAction('shopfloor', null as unknown as Parameters<typeof previaRegraAction>[1])
     expect(r).toEqual({ ok: false, erro: 'Não foi possível calcular a prévia agora.' })
   })
 
@@ -41,7 +61,7 @@ describe('actions de alertas — payload malformado não lança exceção', () =
     vi.doMock('@/modules/auth/application/get-sessao', () => ({ getSessao: async () => null }))
     vi.resetModules()
     const { excluirRegraAction } = await import('../alertas-actions')
-    const r = await excluirRegraAction('id1')
+    const r = await excluirRegraAction('shopfloor', 'id1')
     expect(r).toEqual({ ok: false, erro: 'Você não tem permissão para configurar alertas.' })
     vi.doUnmock('@/modules/auth/application/get-sessao')
     vi.resetModules()
@@ -54,7 +74,7 @@ describe('actions de alertas — payload malformado não lança exceção', () =
     vi.stubEnv('ALERTAS_LIBERADO_PARA', 'outra@rwtech.com.br')
     vi.resetModules()
     const { excluirRegraAction } = await import('../alertas-actions')
-    const r = await excluirRegraAction('id1')
+    const r = await excluirRegraAction('shopfloor', 'id1')
     expect(r).toEqual({ ok: false, erro: 'Recurso indisponível.' })
     vi.doUnmock('@/modules/auth/application/get-sessao')
     vi.unstubAllEnvs()
@@ -92,7 +112,7 @@ describe('actions de alertas — payload malformado não lança exceção', () =
     comoGestor()
     vi.resetModules()
     const { salvarRegraAction } = await import('../alertas-actions')
-    const r = await salvarRegraAction(null, {
+    const r = await salvarRegraAction('shopfloor', null, {
       tipo: 'lua',
       nome: 'X',
       postos: ['Teste'],
@@ -115,7 +135,7 @@ describe('actions de alertas — payload malformado não lança exceção', () =
     repositorioFalso({ previaRegra })
     vi.resetModules()
     const { previaRegraAction } = await import('../alertas-actions')
-    const r = await previaRegraAction({
+    const r = await previaRegraAction('shopfloor', {
       tipo: 'tempo',
       postos: ['Teste'],
       janelaTipo: 'op',
@@ -147,7 +167,7 @@ describe('actions de alertas — payload malformado não lança exceção', () =
     vi.doMock('@/modules/logs/application/registrar-log', () => ({ registrarLog }))
     vi.resetModules()
     const { salvarRegraAction } = await import('../alertas-actions')
-    const r = await salvarRegraAction(null, {
+    const r = await salvarRegraAction('shopfloor', null, {
       tipo: 'defeito',
       nome: 'Defeito 3x',
       postos: ['Teste'],
@@ -163,7 +183,7 @@ describe('actions de alertas — payload malformado não lança exceção', () =
       ativa: true,
     })
     expect(r).toEqual({ ok: true, id: 'nova' })
-    expect(inserirRegra.mock.calls[0]![0]).toMatchObject({ tipo: 'defeito', limiteOcorrencias: 3, minimoBipes: null })
+    expect(inserirRegra.mock.calls[0]![0]).toMatchObject({ modulo: 'shopfloor', tipo: 'defeito', limiteOcorrencias: 3, minimoBipes: null })
     expect(registrarLog.mock.calls[0]![0].descricao).toBe(
       'Regra de alerta "Defeito 3x" criada (Defeito repetido; Teste; Últimos 60 min; limite ≥ 3 vezes; PMOs: Todas)',
     )
@@ -191,7 +211,7 @@ describe('actions de alertas — payload malformado não lança exceção', () =
       }))
       vi.resetModules()
       const { resolverOcorrenciaAction } = await import('../alertas-actions')
-      const r = await resolverOcorrenciaAction('o1', explicacao as string | undefined)
+      const r = await resolverOcorrenciaAction('shopfloor', 'o1', explicacao as string | undefined)
       vi.doUnmock('../../infra/fabrica')
       vi.doUnmock('../enviar-alertas')
       limparMocks()
@@ -216,5 +236,88 @@ describe('actions de alertas — payload malformado não lança exceção', () =
       const { resolverOcorrenciaComoAdmin } = await chamar('z'.repeat(3000))
       expect(resolverOcorrenciaComoAdmin.mock.calls[0]![1]).toHaveLength(500)
     })
+  })
+})
+
+describe('as actions respeitam o módulo', () => {
+  /** Sessão de quem administra SÓ o módulo informado (o resto do perfil é o GESTOR de cima). */
+  function comoAdminDe(modulo: 'shopfloor' | 'recebimento') {
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({
+        usuarioId: 'u1',
+        nome: 'Gestor',
+        email: 'beto@x',
+        perfil: { ...GESTOR, porModulo: { [modulo]: { administrar: true } } as Perfil['porModulo'] },
+      }),
+    }))
+  }
+
+  function limpar() {
+    vi.doUnmock('@/modules/auth/application/get-sessao')
+    vi.doUnmock('../../infra/regras-repository')
+    vi.doUnmock('@/modules/logs/application/registrar-log')
+    vi.doUnmock('next/cache')
+    vi.resetModules()
+  }
+
+  it('nega quem não administra o módulo pedido', async () => {
+    comoAdminDe('recebimento')
+    vi.resetModules()
+    const { salvarRegraAction } = await import('../alertas-actions')
+    const r = await salvarRegraAction('shopfloor', null, entradaValida())
+    expect(r).toEqual({ ok: false, erro: 'Você não tem permissão para configurar alertas.' })
+    limpar()
+  })
+
+  it('aceita quem administra o módulo pedido', async () => {
+    const inserirRegra = vi.fn().mockResolvedValue({ ok: true, id: 'g9' })
+    comoAdminDe('recebimento')
+    vi.doMock('../../infra/regras-repository', () => ({
+      previaRegra: vi.fn(),
+      atualizarRegra: vi.fn(),
+      definirRegraAtiva: vi.fn(),
+      excluirRegra: vi.fn(),
+      inserirRegra,
+      listarOcorrencias: vi.fn(),
+      resolverOcorrenciaComoAdmin: vi.fn(),
+    }))
+    vi.resetModules()
+    const { salvarRegraAction } = await import('../alertas-actions')
+    const r = await salvarRegraAction('recebimento', null, entradaValida({ modulo: 'recebimento', tipo: 'aprovacao' }))
+    // O tipo não é do Recebimento: a validação do domínio recusa ANTES de ir ao banco.
+    expect(r.ok).toBe(false)
+    expect(inserirRegra).not.toHaveBeenCalled()
+    limpar()
+  })
+
+  it('recusa módulo forjado que não existe', async () => {
+    comoAdminDe('shopfloor')
+    vi.resetModules()
+    const { salvarRegraAction } = await import('../alertas-actions')
+    const r = await salvarRegraAction('financeiro' as never, null, entradaValida())
+    expect(r).toEqual({ ok: false, erro: 'Você não tem permissão para configurar alertas.' })
+    limpar()
+  })
+
+  it('revalida a rota DO MÓDULO, não a do ShopFloor', async () => {
+    const inserirRegra = vi.fn().mockResolvedValue({ ok: true, id: 'g9' })
+    const revalidatePath = vi.fn()
+    comoAdminDe('shopfloor')
+    vi.doMock('../../infra/regras-repository', () => ({
+      previaRegra: vi.fn(),
+      atualizarRegra: vi.fn(),
+      definirRegraAtiva: vi.fn(),
+      excluirRegra: vi.fn(),
+      inserirRegra,
+      listarOcorrencias: vi.fn(),
+      resolverOcorrenciaComoAdmin: vi.fn(),
+    }))
+    vi.doMock('@/modules/logs/application/registrar-log', () => ({ registrarLog: vi.fn() }))
+    vi.doMock('next/cache', () => ({ revalidatePath }))
+    vi.resetModules()
+    const { salvarRegraAction } = await import('../alertas-actions')
+    await salvarRegraAction('shopfloor', null, entradaValida())
+    expect(revalidatePath).toHaveBeenCalledWith('/configuracoes/sf-alertas')
+    limpar()
   })
 })

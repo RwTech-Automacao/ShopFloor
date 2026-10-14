@@ -17,9 +17,16 @@ import {
   type DestinatarioDisponivel,
   type RegraAlerta,
 } from '@/modules/alertas/domain/regra'
+import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { alternarRegraAtivaAction, excluirRegraAction } from '@/modules/alertas/application/alertas-actions'
 import { RegraDialog } from './regra-dialog'
 import { ERRO_REGRA_EXCLUIDA } from './regra-form'
+
+/**
+ * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
+ * rotas) que troca esta constante pela prop `modulo` da rota.
+ */
+const MODULO: ModuloAlerta = 'shopfloor'
 
 const TOAST = { position: 'bottom-center' } as const
 
@@ -53,7 +60,7 @@ export function RegrasLista({
 
   function alternar(regra: RegraAlerta, ativa: boolean) {
     startTransition(async () => {
-      const r = await alternarRegraAtivaAction(regra.id, ativa)
+      const r = await alternarRegraAtivaAction(MODULO, regra.id, ativa)
       if (!r.ok) falhou(r.erro)
       else toast.success(ativa ? 'Regra ativada' : 'Regra desativada', TOAST)
     })
@@ -66,7 +73,7 @@ export function RegrasLista({
     })
     if (!ok) return
     startTransition(async () => {
-      const r = await excluirRegraAction(regra.id)
+      const r = await excluirRegraAction(MODULO, regra.id)
       if (!r.ok) falhou(r.erro)
       else toast.success('Regra excluída', TOAST)
     })

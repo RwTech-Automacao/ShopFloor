@@ -131,7 +131,7 @@ describe('OcorrenciasLista — recarga vinda de fora (depois de "Avaliar agora")
         recarregar={1}
       />,
     )
-    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith(FILTRO))
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', FILTRO))
     await waitFor(() => expect(screen.getByRole('cell', { name: 'Reaberta' })).toBeInTheDocument())
     expect(screen.queryByRole('cell', { name: 'Resolvida' })).not.toBeInTheDocument()
   })
@@ -139,12 +139,12 @@ describe('OcorrenciasLista — recarga vinda de fora (depois de "Avaliar agora")
   it('recarrega com o filtro que está na tela, não com o inicial', async () => {
     const tela = render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
     fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'aberta' } })
-    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith({ ...FILTRO, estado: 'aberta' }))
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', { ...FILTRO, estado: 'aberta' }))
     listarOcorrenciasAction.mockClear()
 
     tela.rerender(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={1} />)
     await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledTimes(1))
-    expect(listarOcorrenciasAction).toHaveBeenCalledWith({ ...FILTRO, estado: 'aberta' })
+    expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', { ...FILTRO, estado: 'aberta' })
   })
 
   it('trocar o filtro busca UMA vez (a recarga de fora não duplica)', async () => {
@@ -183,7 +183,7 @@ describe('OcorrenciasLista — resolver pergunta o que foi feito', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resolver' }))
     fireEvent.change(await screen.findByLabelText('O que foi feito'), { target: { value: 'Troquei o feeder' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
-    await waitFor(() => expect(resolverOcorrenciaAction).toHaveBeenCalledWith('o1', 'Troquei o feeder'))
+    await waitFor(() => expect(resolverOcorrenciaAction).toHaveBeenCalledWith('shopfloor', 'o1', 'Troquei o feeder'))
   })
 
   it('confirmar VAZIO também resolve (a explicação é opcional)', async () => {
@@ -191,7 +191,7 @@ describe('OcorrenciasLista — resolver pergunta o que foi feito', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resolver' }))
     await screen.findByLabelText('O que foi feito')
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
-    await waitFor(() => expect(resolverOcorrenciaAction).toHaveBeenCalledWith('o1', ''))
+    await waitFor(() => expect(resolverOcorrenciaAction).toHaveBeenCalledWith('shopfloor', 'o1', ''))
   })
 
   it('cancelar não resolve, e reabrir começa com a caixa limpa', async () => {

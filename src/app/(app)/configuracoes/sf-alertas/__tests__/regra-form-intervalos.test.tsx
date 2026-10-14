@@ -32,6 +32,7 @@ function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {
   return {
     id: 'r1',
     atualizadoEm: '2026-09-17T12:00:00Z',
+    modulo: 'shopfloor',
     tipo: 'aprovacao',
     nome: 'Teste 90',
     postos: ['Teste'],
@@ -267,7 +268,7 @@ describe('RegraForm — salvar na janela por blocos', () => {
     fireEvent.change(screen.getByLabelText('Fim do intervalo 2'), { target: { value: '17:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction).toHaveBeenCalledWith(null, {
+    expect(salvarRegraAction).toHaveBeenCalledWith('shopfloor', null, {
       tipo: 'aprovacao',
       nome: 'Turno em blocos',
       postos: ['Teste'],
@@ -350,7 +351,7 @@ describe('RegraForm — abrir uma regra salva na janela por blocos', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({
       janelaTipo: 'intervalos',
       janelaValor: '90',
       intervalos: [{ inicio: '07:00', fim: '12:00' }],

@@ -10,9 +10,16 @@ import { NOME_CANAL, CANAIS, type Canal } from '@/modules/alertas/domain/tipos'
 import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import type { DestinatarioDisponivel, RegraAlerta } from '@/modules/alertas/domain/regra'
 import type { FiltroOcorrencias, OcorrenciaLinha } from '@/modules/alertas/domain/ocorrencia'
+import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { avaliarAgoraAction } from '@/modules/alertas/application/alertas-actions'
 import { RegrasLista } from './regras-lista'
 import { OcorrenciasLista } from './ocorrencias-lista'
+
+/**
+ * A tela de hoje é só a do ShopFloor, então o módulo vai FIXO aqui. É a Task 3 (uma tela, duas
+ * rotas) que troca esta constante pela prop `modulo` da rota.
+ */
+const MODULO: ModuloAlerta = 'shopfloor'
 
 const TOAST = { position: 'bottom-center' } as const
 
@@ -46,7 +53,7 @@ export function AlertasTela({
 
   function avaliarAgora() {
     startTransition(async () => {
-      const r = await avaliarAgoraAction()
+      const r = await avaliarAgoraAction(MODULO)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         return

@@ -17,6 +17,7 @@ import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/
 import { resumoJanela } from '../domain/janela'
 import { cortarExplicacao } from '../domain/mensagens'
 import { NOME_TIPO_REGRA } from '../domain/tipos'
+import { ROTA_ALERTAS, ehModuloAlerta, type ModuloAlerta } from '../domain/modulo'
 import {
   atualizarRegra,
   definirRegraAtiva,
@@ -32,16 +33,22 @@ import { avaliarEEnviar, entregarPendentes, removerBotoesDaOcorrencia, type Resu
 
 const SEM_PERMISSAO = 'Você não tem permissão para configurar alertas.'
 const RECURSO_INDISPONIVEL = 'Recurso indisponível.'
-const ROTA = '/configuracoes/sf-alertas'
 
 /**
- * Além da permissão `shopfloor.administrar`, respeita o lançamento escondido dos Alertas
+ * Além da permissão `<modulo>.administrar`, respeita o lançamento escondido dos Alertas
  * (ALERTAS_LIBERADO_PARA): fora da lista liberada, a ação some mesmo pra quem tem permissão —
  * mesma mensagem genérica das rotas de API, sem entregar que a feature existe.
+ *
+ * ⚠️ O `modulo` vem do CLIENTE (é a prop da tela), e por isso é conferido duas vezes: aqui, se não
+ * é um módulo conhecido, a ação nega com a mensagem genérica; e logo a seguir, pela permissão
+ * daquele módulo. Um módulo forjado não dá acesso a nada que a pessoa já não tivesse.
  */
-async function gestor(): Promise<{ ok: true; usuarioId: string } | { ok: false; erro: string }> {
+async function gestor(
+  modulo: ModuloAlerta,
+): Promise<{ ok: true; usuarioId: string } | { ok: false; erro: string }> {
+  if (!ehModuloAlerta(modulo)) return { ok: false, erro: SEM_PERMISSAO }
   const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, modulo, 'administrar')) {
     return { ok: false, erro: SEM_PERMISSAO }
   }
   if (!alertasLiberados(sessao.email)) return { ok: false, erro: RECURSO_INDISPONIVEL }
@@ -49,14 +56,17 @@ async function gestor(): Promise<{ ok: true; usuarioId: string } | { ok: false; 
 }
 
 export async function salvarRegraAction(
+  modulo: ModuloAlerta,
   id: string | null,
   entrada: EntradaRegra,
 ): Promise<{ ok: true; id: string } | { ok: false; erro: string }> {
   try {
-    const g = await gestor()
+    const g = await gestor(modulo)
     if (!g.ok) return { ok: false, erro: g.erro }
 
-    const v = validarRegra(entrada, { canalConfigurado: canalDiscordConfigurado() })
+    // O módulo é o da ROTA, nunca o que o formulário mandar: é o que impede uma tela de gravar
+    // regra no módulo do vizinho.
+    const v = validarRegra({ ...entrada, modulo }, { canalConfigurado: canalDiscordConfigurado() })
     if (!v.ok) return { ok: false, erro: v.erro }
 
     if (id) {
@@ -69,7 +79,7 @@ export async function salvarRegraAction(
         descricao: `Regra de alerta "${v.valor.nome}" alterada`,
         dados: v.valor,
       })
-      revalidatePath(ROTA)
+      revalidatePath(ROTA_ALERTAS[modulo])
       return { ok: true, id }
     }
 
@@ -85,7 +95,7 @@ export async function salvarRegraAction(
         `PMOs: ${resumoPmos(v.valor.pmos)})`,
       dados: v.valor,
     })
-    revalidatePath(ROTA)
+    revalidatePath(ROTA_ALERTAS[modulo])
     return { ok: true, id: r.id }
   } catch (e) {
     console.error('[alertas] salvar regra:', e instanceof Error ? e.message : e)
@@ -93,9 +103,12 @@ export async function salvarRegraAction(
   }
 }
 
-export async function excluirRegraAction(id: string): Promise<{ ok: true } | { ok: false; erro: string }> {
+export async function excluirRegraAction(
+  modulo: ModuloAlerta,
+  id: string,
+): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
-    const g = await gestor()
+    const g = await gestor(modulo)
     if (!g.ok) return { ok: false, erro: g.erro }
     const r = await excluirRegra(id)
     if (!r.ok) return { ok: false, erro: r.erro }
@@ -105,7 +118,7 @@ export async function excluirRegraAction(id: string): Promise<{ ok: true } | { o
       acao: 'excluir',
       descricao: 'Regra de alerta excluída (exclusão lógica — o histórico de ocorrências continua)',
     })
-    revalidatePath(ROTA)
+    revalidatePath(ROTA_ALERTAS[modulo])
     return { ok: true }
   } catch (e) {
     console.error('[alertas] excluir regra:', e instanceof Error ? e.message : e)
@@ -114,11 +127,12 @@ export async function excluirRegraAction(id: string): Promise<{ ok: true } | { o
 }
 
 export async function alternarRegraAtivaAction(
+  modulo: ModuloAlerta,
   id: string,
   ativa: boolean,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
-    const g = await gestor()
+    const g = await gestor(modulo)
     if (!g.ok) return { ok: false, erro: g.erro }
     const r = await definirRegraAtiva(id, ativa)
     if (!r.ok) return { ok: false, erro: r.erro }
@@ -129,7 +143,7 @@ export async function alternarRegraAtivaAction(
       descricao: `Regra de alerta ${ativa ? 'ativada' : 'desativada'}`,
       dados: { ativa },
     })
-    revalidatePath(ROTA)
+    revalidatePath(ROTA_ALERTAS[modulo])
     return { ok: true }
   } catch (e) {
     console.error('[alertas] alternar regra ativa:', e instanceof Error ? e.message : e)
@@ -138,10 +152,11 @@ export async function alternarRegraAtivaAction(
 }
 
 export async function previaRegraAction(
+  modulo: ModuloAlerta,
   entrada: EntradaPrevia,
 ): Promise<{ ok: true; postos: PreviaPosto[] } | { ok: false; erro: string }> {
   try {
-    const g = await gestor()
+    const g = await gestor(modulo)
     if (!g.ok) return { ok: false, erro: g.erro }
     const v = validarPrevia(entrada)
     if (!v.ok) return { ok: false, erro: v.erro }
@@ -153,23 +168,25 @@ export async function previaRegraAction(
 }
 
 export async function listarOcorrenciasAction(
+  modulo: ModuloAlerta,
   filtro: FiltroOcorrencias,
 ): Promise<{ ok: true; ocorrencias: OcorrenciaLinha[] } | { ok: false; erro: string }> {
-  const g = await gestor()
+  const g = await gestor(modulo)
   if (!g.ok) return { ok: false, erro: g.erro }
   try {
-    return { ok: true, ocorrencias: await listarOcorrencias(filtro) }
+    return { ok: true, ocorrencias: await listarOcorrencias(modulo, filtro) }
   } catch {
     return { ok: false, erro: 'Não foi possível carregar as ocorrências agora.' }
   }
 }
 
 export async function resolverOcorrenciaAction(
+  modulo: ModuloAlerta,
   id: string,
   explicacao?: string,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
-    const g = await gestor()
+    const g = await gestor(modulo)
     if (!g.ok) return { ok: false, erro: g.erro }
 
     // alerta_resolver_admin resolve E enfileira o "✅ resolvido por" para os destinatários (menos
@@ -193,7 +210,7 @@ export async function resolverOcorrenciaAction(
       acao: 'mudar_status',
       descricao: `Ocorrência de alerta (${r.resolucao.posto}) marcada como resolvida`,
     })
-    revalidatePath(ROTA)
+    revalidatePath(ROTA_ALERTAS[modulo])
     return { ok: true }
   } catch (e) {
     console.error('[alertas] resolver ocorrência:', e instanceof Error ? e.message : e)
@@ -206,16 +223,20 @@ export async function resolverOcorrenciaAction(
  * Rodar junto com o cron é seguro: a avaliação tem trava (a segunda volta `ocupado`) e a ENTREGA
  * sai da fila por reserva atômica (`alerta_reservar_envios`, `for update skip locked` + reserva de
  * 15 min) — duas rodadas nunca pegam a mesma linha, então não há envio em dobro.
+ *
+ * ⚠️ Avalia TODAS as regras de TODOS os módulos: `alerta_avaliar` é uma só, e é a mesma que o cron
+ * chama. O `modulo` aqui é só a régua de permissão (quem aperta o botão) e a rota a revalidar — não
+ * limita a avaliação ao módulo da tela.
  */
-export async function avaliarAgoraAction(): Promise<
-  { ok: true; resumo: ResumoAvaliacao } | { ok: false; erro: string }
-> {
-  const g = await gestor()
+export async function avaliarAgoraAction(
+  modulo: ModuloAlerta,
+): Promise<{ ok: true; resumo: ResumoAvaliacao } | { ok: false; erro: string }> {
+  const g = await gestor(modulo)
   if (!g.ok) return { ok: false, erro: g.erro }
   try {
     const { portas, repo } = criarDependenciasAlertas()
     const resumo = await avaliarEEnviar(portas, repo)
-    revalidatePath(ROTA)
+    revalidatePath(ROTA_ALERTAS[modulo])
     return { ok: true, resumo }
   } catch (e) {
     console.error('[alertas] avaliar agora:', e instanceof Error ? e.message : e)

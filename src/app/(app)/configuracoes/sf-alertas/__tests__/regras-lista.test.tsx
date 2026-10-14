@@ -13,6 +13,7 @@ vi.mock('@/modules/alertas/application/alertas-actions', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const BASE: RegraAlerta = {
+  modulo: 'shopfloor',
   id: 'r1',
   atualizadoEm: '2026-09-18T12:00:00Z',
   tipo: 'tempo',

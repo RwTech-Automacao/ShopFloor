@@ -51,6 +51,7 @@ function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {
   return {
     id: 'r1',
     atualizadoEm: '2026-09-17T12:00:00Z',
+    modulo: 'shopfloor',
     tipo: 'aprovacao',
     nome: 'Teste 90',
     postos: ['Teste'],
@@ -150,7 +151,7 @@ describe('RegraForm — taxa de aprovação', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalledTimes(1))
-    expect(salvarRegraAction).toHaveBeenCalledWith(null, {
+    expect(salvarRegraAction).toHaveBeenCalledWith('shopfloor', null, {
       tipo: 'aprovacao',
       nome: 'Teste 90',
       postos: ['Teste'],
@@ -178,7 +179,7 @@ describe('RegraForm — taxa de aprovação', () => {
     fireEvent.click(screen.getByLabelText('OP em andamento'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ janelaTipo: 'op', janelaValor: null })
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({ janelaTipo: 'op', janelaValor: null })
   })
 
   it('prévia mostra a taxa de agora de cada posto', async () => {
@@ -201,8 +202,8 @@ describe('RegraForm — taxa de aprovação', () => {
     expect(screen.getByLabelText('Ana Gestora')).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalledTimes(1))
-    expect(salvarRegraAction.mock.calls[0]![0]).toBe('r1')
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ tipo: 'aprovacao', destinatarios: ['u1'] })
+    expect(salvarRegraAction.mock.calls[0]![1]).toBe('r1')
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({ tipo: 'aprovacao', destinatarios: ['u1'] })
     await waitFor(() => expect(onSalvo).toHaveBeenCalled())
   })
 
@@ -232,7 +233,7 @@ describe('RegraForm — tempo médio por peça', () => {
     fireEvent.click(screen.getByLabelText('OP em andamento'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({
       tipo: 'tempo',
       limiteTempo: '2:30',
       pausaMaxMin: '45',
@@ -296,7 +297,7 @@ describe('RegraForm — tempo médio por peça', () => {
     fireEvent.change(screen.getByLabelText('Ignorar pausas acima de (min)'), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ tipo: 'tempo', pausaMaxMin: '' })
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({ tipo: 'tempo', pausaMaxMin: '' })
   })
 
   it('prévia mostra o tempo médio de cada posto', async () => {
@@ -308,7 +309,7 @@ describe('RegraForm — tempo médio por peça', () => {
     fireEvent.click(screen.getByLabelText('Teste'))
     fireEvent.click(screen.getByRole('button', { name: 'Ver prévia' }))
     expect(await screen.findByText('Teste: 1:09 por peça (29 intervalos, 30 peças)')).toBeInTheDocument()
-    expect(previaRegraAction.mock.calls[0]![0]).toMatchObject({ tipo: 'tempo', pausaMaxMin: '30', minimoBipes: '10' })
+    expect(previaRegraAction.mock.calls[0]![1]).toMatchObject({ tipo: 'tempo', pausaMaxMin: '30', minimoBipes: '10' })
   })
 })
 
@@ -329,7 +330,7 @@ describe('RegraForm — defeito repetido', () => {
     fireEvent.change(screen.getByLabelText('Repetições para alertar'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({
       tipo: 'defeito',
       janelaTipo: 'tempo',
       janelaValor: '60',
@@ -353,7 +354,7 @@ describe('RegraForm — defeito repetido', () => {
     expect(await screen.findByText('Teste: 2040 (Componente Faltando) — 6 vezes')).toBeInTheDocument()
     expect(screen.getByText('Embalagem: nenhum defeito repetido 5 vezes ou mais')).toBeInTheDocument()
     expect(screen.getByText('Defeitos repetidos agora')).toBeInTheDocument()
-    expect(previaRegraAction.mock.calls[0]![0]).toMatchObject({
+    expect(previaRegraAction.mock.calls[0]![1]).toMatchObject({
       tipo: 'defeito',
       janelaTipo: 'tempo',
       janelaValor: '60',
@@ -405,7 +406,7 @@ describe('RegraForm — postos por tipo de regra', () => {
     montar({ regra: regraSalva({ postos: ['Teste', 'Embalagem'] }) })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ postos: ['Teste', 'Embalagem'] })
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({ postos: ['Teste', 'Embalagem'] })
   })
 
   it('desmarcado, o posto fica na lista mas o aviso sai', () => {
@@ -432,7 +433,7 @@ describe('RegraForm — PMOs', () => {
     preencherObrigatorios('Só a G13')
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ pmos: ['PMOG13'] })
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({ pmos: ['PMOG13'] })
   })
 
   it('PMO salva que sumiu da lista continua aparecendo marcada', () => {
@@ -473,7 +474,7 @@ describe('RegraForm — como avisar', () => {
     fireEvent.click(screen.getByLabelText('No canal do Discord'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({
       avisarPessoas: true,
       avisarCanal: true,
       // Privado só no Telegram: o aviso em canal NÃO acrescenta Discord ao fan-out de pessoa.
@@ -490,7 +491,7 @@ describe('RegraForm — como avisar', () => {
     fireEvent.click(screen.getByLabelText('Conversa privada do responsável'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ avisarPessoas: false, avisarCanal: true })
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({ avisarPessoas: false, avisarCanal: true })
     expect(toastErro).not.toHaveBeenCalled()
   })
 
@@ -578,7 +579,7 @@ describe('RegraForm — canal do Discord não configurado', () => {
     fireEvent.click(screen.getByLabelText('No canal do Discord'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({ avisarPessoas: true, avisarCanal: true })
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({ avisarPessoas: true, avisarCanal: true })
     expect(toastErro).not.toHaveBeenCalled()
   })
 })
