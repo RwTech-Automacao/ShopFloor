@@ -49,7 +49,6 @@ function linhaTravada(over: Partial<LinhaParaReenvio> = {}): LinhaParaReenvio {
     canceladoEm: null,
     tentativas: TETO_TENTATIVAS,
     reservadoEm: null,
-    quantidade: 3,
     estornado: 0,
     ...over,
   }
@@ -115,7 +114,7 @@ describe('o Reenviar não apaga a marca de "linha tocada"', () => {
   })
 
   it('linha PARCIALMENTE REVERTIDA (estornado > 0) é reenviada sem mexer no estornado nem na quantidade', async () => {
-    lerLinhaParaReenvio.mockResolvedValue(linhaTravada({ quantidade: 3, estornado: 2 }))
+    lerLinhaParaReenvio.mockResolvedValue(linhaTravada({ estornado: 2 }))
     const r = await reenviarEstoqueAction('l1')
     expect(r.ok).toBe(true)
     // a ação não manda número nenhum: quem escreve o 1 é o repositório, a partir da constante

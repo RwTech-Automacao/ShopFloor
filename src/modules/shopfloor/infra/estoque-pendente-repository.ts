@@ -206,7 +206,6 @@ export interface LinhaParaReenvio {
   canceladoEm: string | null
   tentativas: number
   reservadoEm: string | null
-  quantidade: number
   estornado: number
 }
 
@@ -221,7 +220,7 @@ export async function lerLinhaParaReenvio(id: string): Promise<LinhaParaReenvio 
   const sb = createServiceSupabase()
   const { data, error } = await sb
     .from('sf_estoque_envios')
-    .select('id, chave, operacao, pmo, op, ok, cancelado_em, tentativas, reservado_em, quantidade, estornado')
+    .select('id, chave, operacao, pmo, op, ok, cancelado_em, tentativas, reservado_em, estornado')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
@@ -229,7 +228,7 @@ export async function lerLinhaParaReenvio(id: string): Promise<LinhaParaReenvio 
   const l = data as {
     id: string; chave: string; operacao: string; pmo: string; op: string; ok: boolean
     cancelado_em: string | null; tentativas: number; reservado_em: string | null
-    quantidade: number; estornado: number
+    estornado: number
   }
   return {
     id: l.id,
@@ -241,7 +240,6 @@ export async function lerLinhaParaReenvio(id: string): Promise<LinhaParaReenvio 
     canceladoEm: l.cancelado_em,
     tentativas: Number(l.tentativas ?? 0),
     reservadoEm: l.reservado_em,
-    quantidade: Number(l.quantidade ?? 0),
     estornado: Number(l.estornado ?? 0),
   }
 }
