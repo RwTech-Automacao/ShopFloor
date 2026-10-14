@@ -35,12 +35,12 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 # A 0130 e a 0131 entram na conta pelo mesmo motivo: `create or replace` + revoke/grant, reaplicar não
 # muda nada. (A 0087 não entra: ela tem `create policy`, que não é idempotente — e não é editável,
 # está em produção.)
-docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0128.sql
-docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0129.sql
-docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0130.sql
-docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0131.sql
-docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0132.sql
-docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0133.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0128.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0129.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0130.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0131.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0132.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0133.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','shopfloor.lancar',false)" \
   -c "select sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','Ana','CX[7][14]8498-PMOC14','caixa',14,'')->>'motivo'" \
