@@ -22,6 +22,8 @@ vi.mock('@/modules/shopfloor/application/lancar-action', () => ({
 vi.mock('server-only', () => ({}))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/shared/lib/som-erro', () => ({ tocarErro: vi.fn() }))
+// Router do App Router: a tela usa `useRouter().refresh()` no bipe em OP finalizada.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 
 // Select nativo no lugar do Base UI (portal/floating-ui não funcionam em jsdom).
 vi.mock('@/components/ui/select', () => ({
@@ -50,7 +52,7 @@ import { LancamentoForm } from '../lancamento-form'
 
 const ORDEM: OrdemLancamentoLista = {
   cliente: 'ACME', pmo: 'PMO1', op: 'OP1', descricao: 'Placa', qtd: 10, sn_ini: 'SN100', sn_fim: 'SN199',
-  embalagem_individual: false, postos: ['Inspeção PTH', 'Montagem'], receitaPorPosto: {}, tempoBurninPorPosto: {},
+  embalagem_individual: false, status: 'ATIVA', postos: ['Inspeção PTH', 'Montagem'], receitaPorPosto: {}, tempoBurninPorPosto: {},
 }
 const PERFIL_SCANNER: PerfilPosto = { chave: 'inspecao', nome: 'Inspeção', temStatus: true, reprova: 'defeitos', gate: 'registrado', exigeManutencao: false, recurso: 'nenhum' }
 // Perfil com Status manual (sem scanner de defeito) → cai no caminho do FORMULÁRIO (onEnviar).
