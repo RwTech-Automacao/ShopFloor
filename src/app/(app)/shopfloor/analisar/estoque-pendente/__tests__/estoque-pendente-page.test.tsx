@@ -150,6 +150,33 @@ describe('o que a tela diz sem contexto', () => {
     expect(screen.getByText(/precisam de alguém vêm primeiro/)).toBeInTheDocument()
   })
 
+  it('a frase "Mostrando" diz a verdade quando a conclusão do par passa do limite', async () => {
+    // 200 linhas do corte + 1 entrada que o repositório puxou só para completar um par: são 201 na
+    // tela, e dizer "Mostrando 200" seria falso.
+    const muitas = Array.from({ length: 201 }, (_, i) =>
+      linha({
+        id: `e${i}`,
+        chave: `ALMOX/PMOA01/9100/Almoxarifado/CX[${i}][3]9100-PMOA01/E1`,
+        bipe: `CX[${i}][3]9100-PMOA01`,
+        alvo: `CX[${i}][3]9100-PMOA01`,
+        seqChave: i,
+      }),
+    )
+    listarEstoquePendente.mockResolvedValue(fila(muitas, new Map(), true))
+    render(await EstoquePendentePage())
+    expect(screen.getAllByText(/Compels: envio ao ERP ainda não implementado/)).toHaveLength(201)
+    expect(screen.queryByText(/Mostrando 200 —/)).toBeNull()
+    expect(
+      screen.getByText(/Mostrando as 200 mais acionáveis, mais 1 para completar os pares/),
+    ).toBeInTheDocument()
+  })
+
+  it('sem pares a mais, a frase "Mostrando" usa o número real de linhas', async () => {
+    listarEstoquePendente.mockResolvedValue(fila([linha()], new Map(), true))
+    render(await EstoquePendentePage())
+    expect(screen.getByText(/Mostrando 1 —/)).toBeInTheDocument()
+  })
+
   it('o estorno retido diz que NÃO falhou, e não "ainda não foi tentada"', async () => {
     const entrada = linha({ id: 'e1', tentativas: TETO_TENTATIVAS })
     const estorno = linha({

@@ -56,8 +56,16 @@ export default async function EstoquePendentePage() {
               + `${saidasPendentes.length} saída${plural(saidasPendentes.length)} `
               + `(${pecasSaidas} peça${plural(pecasSaidas)}) esperando para ir ao Compels, `
               + `em ${grupos.length} bipe${plural(grupos.length)}.`}
+          {/*
+            O repositório completa o par de um estorno com a entrada dele mesmo passando do LIMITE
+            (o grupo do bipe vale mais que o número redondo), então a tela pode ter mais linhas que
+            o limite. A frase conta o que está de fato na tela.
+          */}
           {cortada
-            && ` Mostrando ${LIMITE} — as que precisam de alguém vêm primeiro; há mais na fila.`}
+            && (linhas.length > LIMITE
+              ? ` Mostrando as ${LIMITE} mais acionáveis, mais ${linhas.length - LIMITE} para completar os pares delas`
+                + ' — as que precisam de alguém vêm primeiro; há mais na fila.'
+              : ` Mostrando ${linhas.length} — as que precisam de alguém vêm primeiro; há mais na fila.`)}
         </p>
       </div>
 
