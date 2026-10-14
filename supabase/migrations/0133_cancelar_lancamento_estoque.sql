@@ -1,6 +1,10 @@
 -- =============================================================
 -- Cancelar lançamento passa a REVERTER NA FILA DE ESTOQUE quando a linha é de Almoxarifado.
 --
+--   Dev e demo (SQL Editor do Supabase): cola o arquivo inteiro e roda.
+--   RDS:  PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "<conexão>" \
+--           -1 -v ON_ERROR_STOP=1 -f supabase/migrations/0133_cancelar_lancamento_estoque.sql
+--
 -- POR QUE UMA MIGRAÇÃO NOVA: a sf_cancelar_lancamento nasceu na 0087 e foi trocada pela 0106, e as
 -- DUAS estão em produção — migração aplicada não se edita. Então a mudança vem aqui, como
 -- `create or replace`, com o corpo da 0106 inteiro mais o trecho novo no fim. Quem quiser ler o

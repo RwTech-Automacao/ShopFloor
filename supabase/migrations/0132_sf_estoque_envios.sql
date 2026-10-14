@@ -2,6 +2,13 @@
 -- Posto Almoxarifado, Fase 2 — A FILA DE ENVIO DE ESTOQUE AO COMPELS (outbox)
 -- Plano: docs/superpowers/plans/2026-09-29-almoxarifado-fase-2.md (Task 1)
 --
+-- ⚠️ APLIQUE ESTA ANTES DA 0129 E DA 0131: elas chamam funções que nascem aqui, apesar do número
+-- menor (os cabeçalhos delas dizem o mesmo).
+--
+--   Dev e demo (SQL Editor do Supabase): cola o arquivo inteiro e roda.
+--   RDS:  PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "<conexão>" \
+--           -1 -v ON_ERROR_STOP=1 -f supabase/migrations/0132_sf_estoque_envios.sql
+--
 -- O bipe do Almoxarifado grava a entrada em sf_registros (0129) e, na MESMA transação, põe uma linha
 -- nesta fila. Ele NÃO espera o ERP: grava, enfileira e libera o operador. Quem entrega é o servidor,
 -- chamado pelo crontab da instância — reserva um lote (sf_estoque_reservar), manda um a um e atualiza
