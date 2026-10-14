@@ -194,5 +194,4 @@ carrega a data, e é aqui que está o **motivo**:
   variável (ou faltou o `pm2 restart --update-env`).
 
 O que **não** está no log: a lista do que continua pendente. Isso é a tela de pendências
-(**Análise → Estoque pendente**), que mostra linha por linha com o motivo da última tentativa — ela é
-a Task 5 desta fase; enquanto não existir, a fila se consulta por SQL em `sf_estoque_envios`.
+(**Análise → Estoque pendente**), que mostra linha por linha com o motivo da última tentativa.
