@@ -210,4 +210,14 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0141.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_resumo.sql
 echo "0141 (resumo diário): ok"
 
+# ---------- 0149: módulo da regra (Alertas do Recebimento) ----------
+# Duas aplicações seguidas, cada uma como transação única (-1), provam a idempotência e a ordem dos
+# checks. Vem DEPOIS do teste do resumo: a 0149 recria o alerta_avaliar sobre o corpo da 0141.
+docker cp supabase/migrations/0149_alertas_modulo.sql "$NOME":/tmp/0149.sql
+docker cp supabase/tests/alertas_modulo_test.sql "$NOME":/tmp/teste_modulo.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0149.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0149.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_modulo.sql
+echo "0149 (módulo da regra): ok"
+
 echo "ALERTAS SQL OK"
