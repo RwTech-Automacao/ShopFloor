@@ -141,4 +141,38 @@ describe('RegrasLista', () => {
     expect(texto).not.toMatch(/null|undefined|NaN/)
     expect(texto).not.toContain('Blocos de')
   })
+
+  // A coluna "Postos" imprimia a lista inteira e esticava a linha da tabela (pedido do usuário,
+  // 14/10/2026). Estes dois testes amarram a TELA ao resumo: sem eles, alguém pode devolver o
+  // `join(', ')` e o domínio continuaria certo enquanto a tela voltaria a inchar, em silêncio.
+  const DOZE = ['Inspeção SPI', 'Inspeção SMD', 'Inspeção PTH', 'Teste', 'Burn-in', 'Teste Final',
+    'Inspeção Final', 'Inspeção NQA', 'Inspeção SPI BOT', 'Inspeção SPI TOP', 'Inspeção AOI BOT',
+    'Inspeção AOI TOP']
+
+  function montarComPostos(daRegra: string[]) {
+    return render(
+      <RegrasLista
+        regras={[{ ...BASE, postos: daRegra }]}
+        postos={DOZE.map((chave) => ({ chave, temStatus: true, coletaDefeito: true }))}
+        pmos={['PMOX']}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
+        configurados={{ telegram: true, discord: true }}
+        canalConfigurado
+      />,
+    )
+  }
+
+  it('a regra com todos os postos mostra "Todos os postos", não os doze nomes', () => {
+    const { container } = montarComPostos(DOZE)
+    expect(screen.getAllByText('Todos os postos').length).toBeGreaterThan(0)
+    // O 12º nome não pode aparecer solto na linha — se aparecer, a célula voltou a listar tudo.
+    expect(container.textContent).not.toContain('Inspeção AOI TOP,')
+  })
+
+  it('mais de dois postos resumem, e a lista completa fica no title', () => {
+    montarComPostos(['Teste', 'Burn-in', 'Inspeção NQA', 'Teste Final'])
+    expect(screen.getAllByText('Teste, Burn-in +2').length).toBeGreaterThan(0)
+    const celula = screen.getAllByTitle('Teste, Burn-in, Inspeção NQA, Teste Final')
+    expect(celula.length).toBeGreaterThan(0)
+  })
 })

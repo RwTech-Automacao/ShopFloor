@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
-import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
+import { resumoPostos, type PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { NOME_CANAL, NOME_TIPO_REGRA, type Canal } from '@/modules/alertas/domain/tipos'
 import {
   resumoJanelaRegra,
@@ -50,6 +50,8 @@ export function RegrasLista({
   }
 
   const nomes = new Map(destinatarios.map((d) => [d.usuarioId, d.nome]))
+  // O catalogo de postos, so as chaves: e com ele que o resumo decide se a regra tem TODOS.
+  const chavesPostos = postos.map((p) => p.chave)
 
   function alternar(regra: RegraAlerta, ativa: boolean) {
     startTransition(async () => {
@@ -111,7 +113,9 @@ export function RegrasLista({
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.nome}</TableCell>
                 <TableCell>{NOME_TIPO_REGRA[r.tipo]}</TableCell>
-                <TableCell>{r.postos.join(', ')}</TableCell>
+                {/* Resumido: com os 12 postos marcados a celula virava um paragrafo e esticava a
+                    linha inteira. A lista completa fica no `title`, ao parar o mouse. */}
+                <TableCell title={r.postos.join(', ')}>{resumoPostos(r.postos, chavesPostos)}</TableCell>
                 <TableCell>{resumoLimite(r)}</TableCell>
                 <TableCell>{resumoJanelaRegra(r)}</TableCell>
                 <TableCell>{resumoPmos(r.pmos)}</TableCell>
@@ -161,7 +165,7 @@ export function RegrasLista({
               <Switch checked={r.ativa} disabled={pendente} onCheckedChange={(valor) => alternar(r, valor)} />
             </div>
             <span className="text-sm text-muted-foreground">
-              {NOME_TIPO_REGRA[r.tipo]} · {resumoLimite(r)} · {r.postos.join(', ')} ·{' '}
+              {NOME_TIPO_REGRA[r.tipo]} · {resumoLimite(r)} · {resumoPostos(r.postos, chavesPostos)} ·{' '}
               {resumoJanelaRegra(r)} · PMOs: {resumoPmos(r.pmos)}
             </span>
             <span className="text-xs text-muted-foreground">
