@@ -124,7 +124,11 @@ export function RegrasLista({
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.nome}</TableCell>
                 <TableCell>{NOME_TIPO_REGRA[r.tipo]}</TableCell>
-                <TableCell>{r.postos.join(', ')}</TableCell>
+                {/* O fim de EMB não tem posto (`postos: []`): a célula ficaria em branco, parecendo
+                    dado que não carregou. Um travessão é o "não se aplica" que o resto da tela já usa
+                    — e a coluna Limite ao lado já diz o gatilho ("Todos os processos no fim"), então
+                    repetir a frase aqui seria ruído. */}
+                <TableCell>{r.postos.length === 0 ? '—' : r.postos.join(', ')}</TableCell>
                 <TableCell>{resumoLimite(r)}</TableCell>
                 <TableCell>{resumoJanelaRegra(r)}</TableCell>
                 <TableCell>{resumoPmos(r.pmos)}</TableCell>
@@ -173,9 +177,19 @@ export function RegrasLista({
               <span className="font-semibold">{r.nome}</span>
               <Switch checked={r.ativa} disabled={pendente} onCheckedChange={(valor) => alternar(r, valor)} />
             </div>
+            {/* No cartão do celular os pedaços são separados por ' · '. A regra de fim de EMB não
+                tem posto, e imprimir a lista vazia pendurava um ' ·  · ' no meio da linha: pedaço
+                vazio não entra. */}
             <span className="text-sm text-muted-foreground">
-              {NOME_TIPO_REGRA[r.tipo]} · {resumoLimite(r)} · {r.postos.join(', ')} ·{' '}
-              {resumoJanelaRegra(r)} · PMOs: {resumoPmos(r.pmos)}
+              {[
+                NOME_TIPO_REGRA[r.tipo],
+                resumoLimite(r),
+                r.postos.join(', '),
+                resumoJanelaRegra(r),
+                `PMOs: ${resumoPmos(r.pmos)}`,
+              ]
+                .filter((pedaco) => pedaco !== '')
+                .join(' · ')}
             </span>
             <span className="text-xs text-muted-foreground">
               {r.canais.map((c) => NOME_CANAL[c]).join(', ')} ·{' '}

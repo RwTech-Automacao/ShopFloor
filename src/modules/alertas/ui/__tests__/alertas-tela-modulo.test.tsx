@@ -85,10 +85,16 @@ describe('a tela de Alertas servindo dois módulos', () => {
   // regra, e "Nova regra" abriria um diálogo com zero cartões. Com o fim de EMB (0150) o Recebimento
   // tem um tipo, e o beco sem saída desapareceu. O `semTipos` de regras-lista.tsx continua no lugar
   // como defesa do módulo que venha a ser criado sem tipo, mas hoje nenhum módulo cai nele.
-  it('no Recebimento, com o fim de EMB, Nova regra está disponível', () => {
+  it('no Recebimento, Nova regra abre a escolha com o cartão de Fim de EMB', async () => {
     montar('recebimento', [])
-    expect(screen.getByRole('button', { name: /nova regra/i })).not.toBeDisabled()
+    const botao = screen.getByRole('button', { name: /nova regra/i })
+    expect(botao).not.toBeDisabled()
     expect(screen.queryByText(/nenhum tipo de regra/i)).not.toBeInTheDocument()
+    fireEvent.click(botao)
+    expect(await screen.findByRole('button', { name: /Fim de EMB/ })).toBeInTheDocument()
+    // E só ele: os tipos do ShopFloor não aparecem aqui (caso 6 da spec, do lado do cartão).
+    expect(screen.queryByText('Taxa de aprovação')).not.toBeInTheDocument()
+    expect(screen.queryByText('Resumo diário')).not.toBeInTheDocument()
   })
 
   it('no ShopFloor, Nova regra continua disponível', () => {

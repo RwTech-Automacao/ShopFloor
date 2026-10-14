@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { validarRegra, validarPrevia, resumoLimite, resumoPmos, PADROES_TIPO, type EntradaRegra } from '../regra'
-import { NOME_TIPO_REGRA, TIPOS_REGRA, ehTipoRegra } from '../tipos'
+import { DESCRICAO_TIPO_REGRA, NOME_TIPO_REGRA, TIPOS_REGRA, ehTipoRegra } from '../tipos'
 import { mensagemErroAlerta } from '../erros'
 
 const COMUM = {
@@ -50,6 +50,15 @@ describe('tipos de regra', () => {
     })
     expect(ehTipoRegra('tempo')).toBe(true)
     expect(ehTipoRegra('lua')).toBe(false)
+  })
+
+  // O cartão da escolha do tipo é a primeira frase que o gestor lê. A do fim de EMB tem de dizer
+  // que a EMB sem divergência TAMBÉM avisa (decisão 5 da spec, revertida em 14/10/2026) — senão a
+  // tela repete a decisão antiga, que é justamente o defeito que este repositório já teve.
+  it('o cartão do fim de EMB diz que a EMB limpa também avisa', () => {
+    expect(DESCRICAO_TIPO_REGRA.emb).toMatch(/todos os processos de uma EMB/)
+    expect(DESCRICAO_TIPO_REGRA.emb).toMatch(/divergências de quantidade/)
+    expect(DESCRICAO_TIPO_REGRA.emb).toMatch(/não houve nenhuma/)
   })
 })
 

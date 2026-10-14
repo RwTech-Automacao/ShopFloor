@@ -81,7 +81,10 @@ export const DESCRICAO_TIPO_REGRA: Record<TipoRegra, string> = {
   tempo: 'Avisa quando o tempo médio entre um bipe e o próximo passa do limite.',
   defeito: 'Avisa quando o mesmo defeito se repete várias vezes no posto em pouco tempo.',
   resumo: 'Manda, na hora escolhida, a taxa de aprovação do dia de cada posto.',
-  emb: 'Quando todos os processos de uma EMB terminam, lista as divergências de quantidade dela e as justificativas.',
+  // ⚠️ A segunda metade da frase não é enfeite: TODA EMB que fecha manda mensagem, inclusive a que
+  // fecha limpa (decisão 5 da spec, revertida em 14/10/2026). Sem ela o cartão deixaria o gestor
+  // achar que a regra só fala quando há problema.
+  emb: 'Avisa quando todos os processos de uma EMB terminam, com as divergências de quantidade e as justificativas (ou dizendo que não houve nenhuma).',
 }
 
 /** É um tipo de regra conhecido? */

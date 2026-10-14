@@ -145,4 +145,49 @@ describe('RegrasLista', () => {
     expect(texto).not.toMatch(/null|undefined|NaN/)
     expect(texto).not.toContain('Blocos de')
   })
+
+  // A regra de fim de EMB é a primeira sem posto nenhum (`postos: []`): na tabela a célula ficaria
+  // em branco, e no cartão do celular saía um ' ·  · ' pendurado no meio da linha.
+  it('fim de EMB: a coluna Postos mostra travessão e o cartão não pendura separador vazio', () => {
+    const { container } = render(
+      <RegrasLista
+        modulo="recebimento"
+        regras={[
+          {
+            ...BASE,
+            modulo: 'recebimento',
+            id: 'r4',
+            tipo: 'emb',
+            nome: 'Divergências de EMB',
+            postos: [],
+            janelaTipo: 'op',
+            janelaValor: null,
+            minimoBipes: null,
+            limiteTempoSeg: null,
+            pausaMaxMin: null,
+            pmos: [],
+          },
+        ]}
+        postos={[]}
+        pmos={[]}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Beto Recebimento', email: 'beto@x', telegram: true, discord: false }]}
+        configurados={{ telegram: true, discord: true }}
+        canalConfigurado
+      />,
+    )
+    // Positivo antes do negativo: a linha montou.
+    expect(screen.getAllByText('Divergências de EMB').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Fim de EMB').length).toBeGreaterThan(0)
+
+    const linha = screen.getAllByText('Divergências de EMB')[0]!.closest('tr') as HTMLElement
+    const celulas = Array.from(linha.querySelectorAll('td')).map((c) => c.textContent)
+    expect(celulas[2]).toBe('—') // Postos
+    expect(celulas[3]).toBe('Todos os processos no fim') // Limite
+    expect(celulas[4]).toBe('Quando a EMB fecha') // Janela
+
+    const cartao = container.querySelector('.lg\\:hidden') as HTMLElement
+    expect(cartao.textContent).toContain('Fim de EMB · Todos os processos no fim · Quando a EMB fecha · PMOs: Todas')
+    expect(cartao.textContent).not.toContain(' ·  · ')
+    expect(container.textContent ?? '').not.toMatch(/null|undefined|NaN/)
+  })
 })

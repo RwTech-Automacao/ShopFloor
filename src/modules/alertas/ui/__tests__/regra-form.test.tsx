@@ -200,7 +200,7 @@ describe('RegraForm — taxa de aprovação', () => {
     montar({ regra: regraSalva({ destinatarios: ['u1', 'u-inativo', 'u-sem-permissao'] }), onSalvo })
     expect(
       screen.getByText(
-        '2 responsável(is) inativo(s) ou sem permissão de administrar o ShopFloor removido(s) da regra — salve para confirmar.',
+        '2 responsável(is) inativo(s) ou sem permissão de administrar o Fluxo de Processos removido(s) da regra — salve para confirmar.',
       ),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Ana Gestora')).toBeChecked()
