@@ -99,9 +99,19 @@ mudou", e reavisar a cada ida e volta transformaria a caixa de entrada em ruído
 A mensagem traz, para cada item divergente da EMB: o que é o item, qual a divergência, e o texto
 da justificativa — ou a marca de que ninguém justificou, que é justamente a que precisa de ação.
 
-**EMB que fecha sem nenhuma divergência não manda nada.** Foi a escolha explícita do usuário
-("por enquanto"). O ganho é que toda mensagem que chega exige atenção; o preço é que ninguém é
-avisado de um fechamento limpo. Revisitar se alguém sentir falta.
+⚠️ **CORRIGIDO EM 14/10/2026 — a decisão era o contrário e foi revertida pelo usuário.**
+
+A primeira versão desta spec dizia: *"EMB que fecha sem nenhuma divergência não manda nada... o
+preço é que ninguém é avisado de um fechamento limpo. Revisitar se alguém sentir falta."* Não
+esperou nem a implementação: ao ser perguntado sobre a marca de "já avisei", o usuário respondeu
+que **a EMB sem divergência deve avisar que terminou, dizendo que terminou sem divergência**.
+
+**Toda EMB que fecha manda mensagem.** Com divergência, a mensagem lista as divergências e as
+justificativas; sem divergência, ela diz que a EMB fechou limpa.
+
+Isso **dissolve a pergunta da marca**: se toda EMB fechada recebe mensagem, toda EMB fechada recebe
+a marca de "já avisei". Não existe mais o caso ambíguo de uma EMB que fecha, não manda nada, e
+depois ganha uma divergência por edição de quantidade.
 
 ---
 
@@ -180,8 +190,6 @@ da justificativa: o fim do processo é onde menos se quer atrito.
 **Não é por fornecedor nem por tipo de material.** A regra vale para todas as EMBs. Se um dia
 precisar recortar, é campo novo na regra.
 
-**Não avisa EMB limpa.** Decisão do usuário, revisitável.
-
 **Não mexe no "esqueci a senha".** Ele usa o SMTP do GoTrue e está quebrado por outro motivo
 (template e `origin`); consertar isso é assunto próprio, mesmo que o SMTP seja o mesmo.
 
@@ -193,7 +201,7 @@ precisar recortar, é campo novo na regra.
 2. O último item chega ao Almoxarifado → na próxima rodada do cron **sai a mensagem**, com as
    divergências e as justificativas.
 3. A mesma EMB, rodada seguinte → **nada sai**. É o teste da marca de "já avisei".
-4. EMB que fecha **sem divergência** → nada sai.
+4. EMB que fecha **sem divergência** → **manda**, dizendo que fechou sem divergência.
 5. EMB cujo último item foi **reprovado** na Qualidade → **manda**, porque reprovado também é fim.
 6. A regra criada em Ajustes do Recebimento **não aparece** na tela de Alertas do ShopFloor, e
    vice-versa.
@@ -228,7 +236,7 @@ deploy, não de implementação.
 2. A tela existe em **duas rotas**, uma por módulo; os Alertas **não** saem de Ajustes do ShopFloor.
 3. Dispara quando **todos os processos da EMB** estiverem finalizados.
 4. Conteúdo: **só as divergências e suas justificativas**.
-5. **EMB sem divergência não manda nada** ("por enquanto").
+5. **Toda EMB que fecha manda mensagem** — sem divergência, dizendo que fechou limpa (corrigido em 14/10; a versão original dizia o contrário).
 6. Destinatários **escolhidos na regra**, como no ShopFloor.
 7. Endereço de e-mail: **o do login** (`usuarios.email`).
 8. Canais: e-mail é a prioridade do usuário, com Discord junto; Telegram vem de graça.
