@@ -57,6 +57,7 @@ describe('validarRegra — tempo médio por peça', () => {
     expect(validarRegra(TEMPO)).toEqual({
       ok: true,
       valor: {
+        modulo: 'shopfloor',
         tipo: 'tempo',
         nome: 'Teste lento',
         postos: ['Teste'],
@@ -153,6 +154,7 @@ describe('validarRegra — defeito repetido', () => {
     expect(validarRegra(DEFEITO)).toEqual({
       ok: true,
       valor: {
+        modulo: 'shopfloor',
         tipo: 'defeito',
         nome: 'Teste lento',
         postos: ['Teste'],

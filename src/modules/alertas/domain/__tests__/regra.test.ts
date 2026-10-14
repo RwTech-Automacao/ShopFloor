@@ -20,6 +20,7 @@ describe('validarRegra', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.valor).toEqual({
+      modulo: 'shopfloor',
       tipo: 'aprovacao',
       nome: 'Teste abaixo de 90',
       postos: ['Teste'],
@@ -168,6 +169,27 @@ describe('validarRegra', () => {
 
   it('os padrões da spec', () => {
     expect(PADROES_REGRA).toEqual({ taxaMinima: 90, janelaTempo: 60, janelaBipes: 50, minimoBipes: 20 })
+  })
+})
+
+describe('módulo da regra', () => {
+  // A entrada válida de sempre (BASE) com o que o caso quiser trocar.
+  const entradaValida = (extra: Partial<EntradaRegra> = {}): EntradaRegra => ({ ...BASE, ...extra })
+
+  it('ausente vale shopfloor (as chamadas de antes do módulo)', () => {
+    const r = validarRegra(entradaValida({ modulo: undefined }))
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.valor.modulo).toBe('shopfloor')
+  })
+
+  it('recusa módulo desconhecido', () => {
+    const r = validarRegra(entradaValida({ modulo: 'financeiro' }))
+    expect(r).toEqual({ ok: false, erro: 'Escolha o módulo da regra.' })
+  })
+
+  it('recusa o tipo que não é do módulo', () => {
+    const r = validarRegra(entradaValida({ modulo: 'recebimento', tipo: 'aprovacao' }))
+    expect(r).toEqual({ ok: false, erro: 'Este tipo de regra não existe no Recebimento.' })
   })
 })
 

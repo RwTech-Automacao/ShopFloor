@@ -8,6 +8,7 @@ import {
   type TipoRegra,
 } from './tipos'
 import { formatarMeta } from './taxa'
+import { NOME_MODULO_ALERTA, ehModuloAlerta, tipoPertenceAoModulo, type ModuloAlerta } from './modulo'
 import { lerHhMm, validarIntervalos, type Intervalo } from './intervalos'
 import { formatarMmSs, lerMmSs } from './tempo'
 import { HORA_RESUMO_MAX, HORA_RESUMO_MIN } from './resumo'
@@ -15,6 +16,8 @@ import { resumoJanela } from './janela'
 
 /** O que vem do formulário (tudo pode chegar como texto). Campos de outro tipo são ignorados. */
 export interface EntradaRegra {
+  /** Ausente = 'shopfloor' (chamadas de antes de a regra ter módulo). */
+  modulo?: string
   /** Ausente = 'aprovacao' (chamadas de antes dos tipos). */
   tipo?: string
   nome: string
@@ -50,6 +53,7 @@ export interface EntradaRegra {
 
 /** A regra já conferida, pronta para o banco. Campo que não é do tipo = null. */
 export interface RegraValida {
+  modulo: ModuloAlerta
   tipo: TipoRegra
   nome: string
   postos: string[]
@@ -178,9 +182,20 @@ export interface AmbienteRegra {
 }
 
 export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Resultado<RegraValida> {
+  const moduloBruto =
+    e.modulo === undefined || e.modulo === null || e.modulo === '' ? 'shopfloor' : e.modulo
+  if (!ehModuloAlerta(moduloBruto)) return erro('Escolha o módulo da regra.')
+  const modulo: ModuloAlerta = moduloBruto
+
   const tipoBruto = e.tipo === undefined || e.tipo === null || e.tipo === '' ? 'aprovacao' : e.tipo
   if (!ehTipoRegra(tipoBruto)) return erro('Escolha o tipo da regra.')
   const tipo: TipoRegra = tipoBruto
+
+  // O tipo tem de ser um dos que o módulo oferece. Sem isto, o cliente mandaria uma regra de taxa
+  // de aprovação para o Recebimento — e ela mediria postos que o Recebimento não tem.
+  if (!tipoPertenceAoModulo(tipo, modulo)) {
+    return erro(`Este tipo de regra não existe no ${NOME_MODULO_ALERTA[modulo]}.`)
+  }
 
   const nome = textoLimpo(e.nome).replace(/\s+/g, ' ')
   if (nome === '') return erro('Informe o nome da regra.')
@@ -346,6 +361,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   return {
     ok: true,
     valor: {
+      modulo,
       tipo,
       nome,
       postos,
