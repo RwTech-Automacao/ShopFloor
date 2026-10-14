@@ -30,8 +30,12 @@ export function postoRegraDe(chave: string, perfil: PerfilPosto): PostoRegra {
  *  - defeito: só quem registra o código. `alerta_defeitos` exige status reprovado E
  *    `codigo_defeito` preenchido — sem código não há o que repetir.
  *  - tempo médio: qualquer posto, que todo posto tem intervalo entre um bipe e o próximo.
+ *  - fim de EMB: nenhum posto. A regra não tem posto nenhum (o gatilho é a EMB fechar, e EMB não é
+ *    posto), e a lista de postos não aparece no formulário dele. É o único tipo que devolve false
+ *    para TODO posto — por isso o teste "todo tipo aceita pelo menos o posto de teste" o exclui.
  */
 export function postoServeAoTipo(tipo: TipoRegra, posto: PostoRegra): boolean {
+  if (tipo === 'emb') return false
   // O resumo traz a taxa de aprovação: posto sem status não tem linha Aprovado/Reprovado e sumiria.
   if (tipo === 'aprovacao' || tipo === 'resumo') return posto.temStatus
   if (tipo === 'defeito') return posto.coletaDefeito

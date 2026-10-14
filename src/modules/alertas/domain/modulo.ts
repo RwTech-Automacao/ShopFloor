@@ -31,12 +31,12 @@ export const NOME_MODULO_ALERTA: Record<ModuloAlerta, string> = {
  * ⚠️ Cada tipo pertence a UM módulo só, e o teste de `modulo.test.ts` cobra a cobertura completa de
  * `TIPOS_REGRA`: tipo novo sem módulo derruba o teste em vez de aparecer nas duas telas.
  *
- * O Recebimento ainda não tem tipo nenhum — é a 0150 que traz o 'emb'. A tela dele existe e lista
- * (vazia), e o check `alerta_regras_modulo_tipo` da 0149 recusa qualquer regra lá. É de propósito.
+ * O Recebimento tem UM tipo, o fim de EMB (0150). O check `alerta_regras_modulo_tipo` cobra o mesmo
+ * no banco: `recebimento -> tipo in ('emb')`.
  */
 export const TIPOS_REGRA_POR_MODULO: Record<ModuloAlerta, readonly TipoRegra[]> = {
   shopfloor: ['aprovacao', 'tempo', 'defeito', 'resumo'],
-  recebimento: [],
+  recebimento: ['emb'],
 }
 
 export function tipoPertenceAoModulo(tipo: TipoRegra, modulo: ModuloAlerta): boolean {

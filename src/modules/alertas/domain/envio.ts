@@ -25,6 +25,7 @@ import {
   type ParOp,
   type RefOp,
 } from './mensagens'
+import { textoEmb, type DivergenciaEmb } from './emb'
 
 /**
  * Uma linha da fila (`alerta_envios`) já RESERVADA por esta rodada (`alerta_reservar_envios`):
@@ -46,7 +47,9 @@ export interface EnvioReservado {
   tentativas: number
 }
 
-const TIPOS: readonly TipoEnvio[] = ['alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo']
+const TIPOS: readonly TipoEnvio[] = [
+  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb',
+]
 
 function ehTipoEnvio(v: unknown): v is TipoEnvio {
   return typeof v === 'string' && (TIPOS as readonly string[]).includes(v)
@@ -99,10 +102,28 @@ function textoOuNulo(d: Record<string, unknown>, campo: string): string | null {
   return v === null || v === undefined ? null : String(v)
 }
 
+/**
+ * Texto que PODE vir vazio e isso é dado LEGÍTIMO, não corrompido. `texto` acima lança quando o
+ * campo é '' — é o certo para `posto` ou `emb`, e o ERRADO para a justificativa de uma divergência:
+ * `rec_emb_divergencias` faz `coalesce(..., '')` em item, descrição, divergência, justificativa e
+ * no nome de quem justificou, e a divergência SEM justificativa é justamente o caso que a feature
+ * existe para avisar. Usar `texto` ali derrubaria a mensagem inteira dessa EMB.
+ */
+function textoOuVazio(d: Record<string, unknown>, campo: string): string {
+  return textoOuNulo(d, campo) ?? ''
+}
+
 function numero(d: Record<string, unknown>, campo: string): number {
   const n = Number(d[campo])
   if (d[campo] === null || d[campo] === undefined || !Number.isFinite(n)) throw new DadosEnvioInvalidos(campo)
   return n
+}
+
+/** Número que PODE faltar: nulo/ausente vale null; qualquer outra coisa é dado corrompido. */
+function numeroOuNulo(d: Record<string, unknown>, campo: string): number | null {
+  const v = d[campo]
+  if (v === null || v === undefined) return null
+  return numero(d, campo)
 }
 
 function data(d: Record<string, unknown>, campo: string): Date {
@@ -119,8 +140,12 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
   return Number.isNaN(v.getTime()) ? null : v
 }
 
-/** Envios que nascem de uma ocorrência — os únicos cujo texto depende do tipo da regra. */
-type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo'>
+/**
+ * Envios que nascem de uma ocorrência — os únicos cujo texto depende do tipo da regra. O fim de
+ * EMB (0150) entra na lista dos excluídos pelo mesmo motivo do resumo: ele nasce SEM ocorrência,
+ * tem texto próprio e nunca chega a `textoAprovacao`/`textoTempo`/`textoDefeito`.
+ */
+type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb'>
 
 /**
  * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
@@ -178,6 +203,42 @@ function textoResumoDe(dados: Record<string, unknown>): string {
     return { posto: texto(l, 'posto'), aprovados: contagem(l, 'aprovados'), reprovados: contagem(l, 'reprovados') }
   })
   return textoResumo(texto(dados, 'regra_nome'), dia, linhas)
+}
+
+/**
+ * Lê o `dados` do fim de EMB como a 0150 o grava: `emb`, `regra_nome` e `divergencias` (array de
+ * {numero, item, descricao, quantidade_pedido, quantidade_recebida, divergencia, justificativa,
+ * justificada_por_nome}). Formato diferente do esperado LANÇA — nunca devolve uma mensagem vazia
+ * calada: o despachante registra o erro com o id do envio e os outros envios seguem.
+ *
+ * ⚠️ A LISTA VAZIA NÃO É ERRO: é a EMB que fechou sem divergência nenhuma, e ela TAMBÉM manda
+ * mensagem (decisão 5 da spec, corrigida em 14/10/2026). Quem escreve essa frase é o `textoEmb`.
+ */
+function textoEmbDe(dados: Record<string, unknown>): string {
+  const emb = texto(dados, 'emb')
+  if (emb.trim() === '') throw new DadosEnvioInvalidos('emb')
+  if (!Array.isArray(dados.divergencias)) throw new DadosEnvioInvalidos('divergencias')
+  const divergencias: DivergenciaEmb[] = dados.divergencias.map((item) => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      throw new DadosEnvioInvalidos('divergencias')
+    }
+    const d = item as Record<string, unknown>
+    return {
+      numero: numero(d, 'numero'),
+      // Item, descrição, divergência, justificativa e nome vêm `coalesce(..., '')` do banco: vazio
+      // é dado legítimo (campo em branco no Recebimento), e o texto decide o que mostrar.
+      item: textoOuVazio(d, 'item'),
+      descricao: textoOuVazio(d, 'descricao'),
+      // Quantidade é campo livre no Recebimento e pode estar em branco: nulo é legítimo e a
+      // mensagem mostra '—'. Só o que NÃO é número nem nulo é dado corrompido.
+      quantidadePedido: numeroOuNulo(d, 'quantidade_pedido'),
+      quantidadeRecebida: numeroOuNulo(d, 'quantidade_recebida'),
+      divergencia: textoOuVazio(d, 'divergencia'),
+      justificativa: textoOuVazio(d, 'justificativa'),
+      justificadaPorNome: textoOuVazio(d, 'justificada_por_nome'),
+    }
+  })
+  return textoEmb(texto(dados, 'regra_nome'), emb, divergencias)
 }
 
 function janelaDe(d: Record<string, unknown>): Janela {
@@ -278,6 +339,8 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome
  *   resumo: regra_tipo, regra_nome, dia ('AAAA-MM-DD'), linhas (array de {posto, aprovados, reprovados}; 0141)
+ *   emb: regra_tipo, regra_nome, emb, fechada_em, divergencias (array de {numero, item, descricao,
+ *        quantidade_pedido, quantidade_recebida, divergencia, justificativa, justificada_por_nome}; 0150)
  *   reabertura (só no 'alerta' que nasce de uma reabertura, 0122): reabertura = true,
  *              resolvida_por_nome, resolvida_em, reaberturas
  * `regra_tipo` ausente = 'aprovacao' (linhas enfileiradas antes da 0115).
@@ -285,6 +348,7 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
 export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): string {
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
   if (tipo === 'resumo') return textoResumoDe(dados)
+  if (tipo === 'emb') return textoEmbDe(dados)
   if (tipo === 'resolvido') {
     return textoResolvido({
       ...refOpDe(dados),

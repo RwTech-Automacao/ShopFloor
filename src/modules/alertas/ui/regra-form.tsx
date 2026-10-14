@@ -37,6 +37,9 @@ const JANELAS: Record<TipoRegra, JanelaTipo[]> = {
   defeito: ['tempo'],
   // O resumo não tem janela a escolher: sai sempre pelos intervalos (o "dia" de cada posto).
   resumo: ['intervalos'],
+  // O fim de EMB não tem janela NENHUMA a escolher: o gatilho é a EMB fechar. Lista vazia = nenhum
+  // campo de janela aparece (o `janela_tipo = 'op'` que ele grava é valor de fachada, ver regra.ts).
+  emb: [],
 }
 
 const TITULO_PREVIA: Record<TipoRegra, string> = {
@@ -45,6 +48,8 @@ const TITULO_PREVIA: Record<TipoRegra, string> = {
   defeito: 'Defeitos repetidos agora',
   // Sem uso: a prévia não existe no resumo (não há janela a antecipar). A chave só fecha o Record.
   resumo: 'Resumo diário',
+  // Sem uso, pelo mesmo motivo: não há janela a antecipar no fim de EMB.
+  emb: 'Fim de EMB',
 }
 
 const EXPLICA_POSTOS: Record<TipoRegra, string> = {
@@ -56,6 +61,9 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
     'Os defeitos são contados separados para cada posto marcado. Cada defeito que se repetir num posto abre o seu próprio alerta.',
   resumo:
     'O resumo traz a taxa de aprovação do dia, separada para cada posto marcado.',
+  // Sem uso: o fim de EMB não tem lista de postos (a Task 6 esconde a seção inteira neste tipo).
+  emb:
+    'O aviso de fim de EMB não usa posto: ele sai quando todos os processos de uma EMB terminam.',
 }
 
 /** Por que a lista de postos é mais curta neste tipo. Tempo médio serve em qualquer posto. */
@@ -106,7 +114,12 @@ function janelaInicial(tipo: TipoRegra, regra: RegraAlerta | null): JanelaTipo {
 
 function minutosIniciais(tipo: TipoRegra, regra: RegraAlerta | null): string {
   if (regra && regra.janelaTipo === 'tempo' && regra.janelaValor !== null) return String(regra.janelaValor)
-  return String(tipo === 'aprovacao' || tipo === 'resumo' ? PADROES_REGRA.janelaTempo : PADROES_TIPO[tipo].janelaTempo)
+  // Só `tempo` e `defeito` têm padrão próprio em PADROES_TIPO. Os outros (aprovação, resumo e fim
+  // de EMB) caem no padrão geral — e no resumo e no fim de EMB o valor nem é usado, porque eles não
+  // têm campo de janela em minutos. A lista é dos que TÊM entrada, para um tipo novo não quebrar aqui.
+  const padrao =
+    tipo === 'tempo' || tipo === 'defeito' ? PADROES_TIPO[tipo].janelaTempo : PADROES_REGRA.janelaTempo
+  return String(padrao)
 }
 
 /** O passo do bloco na janela por blocos: 1 hora, a cadência que a fábrica já usa no turno. */

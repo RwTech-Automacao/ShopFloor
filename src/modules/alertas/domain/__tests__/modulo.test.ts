@@ -33,8 +33,14 @@ describe('módulo da regra de alerta', () => {
     expect(new Set(vistos).size).toBe(vistos.length)
   })
 
-  it('os quatro tipos de hoje são do ShopFloor', () => {
+  it('os quatro tipos de posto são do ShopFloor', () => {
     expect(TIPOS_REGRA_POR_MODULO.shopfloor).toEqual(['aprovacao', 'tempo', 'defeito', 'resumo'])
+  })
+
+  it('o fim de EMB é do Recebimento, e só dele', () => {
+    expect(TIPOS_REGRA_POR_MODULO.recebimento).toEqual(['emb'])
+    expect(tipoPertenceAoModulo('emb', 'shopfloor')).toBe(false)
+    expect(tipoPertenceAoModulo('emb', 'recebimento')).toBe(true)
   })
 
   it('tipoPertenceAoModulo recusa o tipo do outro módulo', () => {

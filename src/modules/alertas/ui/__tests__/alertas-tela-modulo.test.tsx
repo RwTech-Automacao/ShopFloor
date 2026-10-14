@@ -81,10 +81,14 @@ describe('a tela de Alertas servindo dois módulos', () => {
     await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith('recebimento', expect.anything()))
   })
 
-  it('no Recebimento, enquanto não há tipo de regra, não oferece Nova regra', () => {
+  // ⚠️ Este teste media o estado TEMPORÁRIO do Pedaço 1: o Recebimento existia sem nenhum tipo de
+  // regra, e "Nova regra" abriria um diálogo com zero cartões. Com o fim de EMB (0150) o Recebimento
+  // tem um tipo, e o beco sem saída desapareceu. O `semTipos` de regras-lista.tsx continua no lugar
+  // como defesa do módulo que venha a ser criado sem tipo, mas hoje nenhum módulo cai nele.
+  it('no Recebimento, com o fim de EMB, Nova regra está disponível', () => {
     montar('recebimento', [])
-    expect(screen.getByRole('button', { name: /nova regra/i })).toBeDisabled()
-    expect(screen.getByText(/nenhum tipo de regra/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /nova regra/i })).not.toBeDisabled()
+    expect(screen.queryByText(/nenhum tipo de regra/i)).not.toBeInTheDocument()
   })
 
   it('no ShopFloor, Nova regra continua disponível', () => {
