@@ -4,7 +4,7 @@ import { render, screen, within, fireEvent } from '@testing-library/react'
 vi.mock('server-only', () => ({}))
 
 /**
- * Os três filtros rápidos são UM só estado, não três marcações: clicar no que já está ligado
+ * Os cinco filtros rápidos são UM só estado, não três marcações: clicar no que já está ligado
  * desliga, clicar noutro troca. O que se observa aqui é a URL para onde a grade navega (o estado
  * mora nela), decodificada pelo MESMO decodificador que a página usa.
  */
@@ -41,16 +41,18 @@ const LIMPO = decodificarEstadoGrid(undefined, CAMPOS)
 
 /** Rótulo de cada botão → valor que ele põe no estado. */
 const BOTOES = [
-  ['Divergências', 'divergencias'],
-  ['positivas', 'positivas'],
-  ['negativas', 'negativas'],
+  ['Todas Divergências', 'divergencias'],
+  ['Divergências Positivas', 'positivas'],
+  ['Divergências Negativas', 'negativas'],
+  ['Divergências Resolvidas', 'resolvidas'],
+  ['Divergências Não Resolvidas', 'nao_resolvidas'],
 ] as const
 
 function montar(estado: EstadoGrid = LIMPO) {
   render(<ProcessosGrid colunas={colunas} linhas={[]} total={0} estado={estado} podeJustificar />)
 }
 
-/** Os três botões, isolados do resto da tela (o cabeçalho da coluna também se chama "Divergência"). */
+/** Os cinco botões, isolados do resto da tela (o cabeçalho da coluna também se chama "Divergência"). */
 function grupo() {
   return within(screen.getByRole('group', { name: 'Filtros rápidos de divergência' }))
 }
@@ -73,34 +75,66 @@ beforeEach(() => {
 })
 
 describe('filtros rápidos de divergência', () => {
-  it.each(BOTOES)('clicar em "%s" liga o filtro %s', (rotulo, valor) => {
+  it('renderiza os cinco botões, com estes rótulos exatos e nesta ordem', () => {
+    montar()
+    const nomes = grupo().getAllByRole('button').map((b) => b.textContent)
+    expect(nomes).toEqual(BOTOES.map(([rotulo]) => rotulo))
+  })
+
+  it('na primeira renderização (estado vindo sem parâmetro) "Divergências Não Resolvidas" já aparece ligado', () => {
+    montar()
+    const g = grupo()
+    for (const [rotulo, valor] of BOTOES) {
+      expect(g.getByRole('button', { name: rotulo })).toHaveAttribute(
+        'aria-pressed',
+        String(valor === 'nao_resolvidas'),
+      )
+    }
+  })
+
+  it.each(BOTOES.filter(([, v]) => v !== 'nao_resolvidas'))('clicar em "%s" liga o filtro %s', (rotulo, valor) => {
     montar()
     clicar(rotulo)
     expect(estadoNavegado().rapido).toBe(valor)
   })
 
+  it('clicar no ativo (o padrão) desliga: vai para "nenhum", que NÃO volta a ser o padrão ao decodificar', () => {
+    montar()
+    clicar('Divergências Não Resolvidas')
+    expect(estadoNavegado().rapido).toBe('nenhum')
+  })
+
   it.each(BOTOES)('clicar de novo em "%s" desliga (volta a mostrar tudo)', (rotulo, valor) => {
     montar({ ...LIMPO, rapido: valor })
     clicar(rotulo)
-    expect(estadoNavegado().rapido).toBeUndefined()
+    expect(estadoNavegado().rapido).toBe('nenhum')
+  })
+
+  it('desligado: nenhum botão marcado, inclusive o padrão', () => {
+    montar({ ...LIMPO, rapido: 'nenhum' })
+    for (const [rotulo] of BOTOES) {
+      expect(grupo().getByRole('button', { name: rotulo })).toHaveAttribute('aria-pressed', 'false')
+    }
   })
 
   it('clicar noutro TROCA em vez de somar (não existe "positivas + negativas")', () => {
     montar({ ...LIMPO, rapido: 'divergencias' })
-    clicar('positivas')
+    clicar('Divergências Positivas')
     expect(estadoNavegado().rapido).toBe('positivas')
   })
 
-  it('o botão ligado aparece marcado e os outros dois não', () => {
+  it('o botão ligado aparece marcado e os outros quatro não', () => {
     montar({ ...LIMPO, rapido: 'positivas' })
     const g = grupo()
-    expect(g.getByRole('button', { name: 'positivas' })).toHaveAttribute('aria-pressed', 'true')
-    expect(g.getByRole('button', { name: 'Divergências' })).toHaveAttribute('aria-pressed', 'false')
-    expect(g.getByRole('button', { name: 'negativas' })).toHaveAttribute('aria-pressed', 'false')
+    expect(g.getByRole('button', { name: 'Divergências Positivas' })).toHaveAttribute('aria-pressed', 'true')
+    for (const [rotulo, valor] of BOTOES) {
+      if (valor === 'positivas') continue
+      expect(g.getByRole('button', { name: rotulo })).toHaveAttribute('aria-pressed', 'false')
+    }
   })
 
-  it('com nenhum ligado, nenhum dos três aparece marcado', () => {
-    montar()
+  it('com nenhum ligado, nenhum dos cinco aparece marcado', () => {
+    montar({ ...LIMPO, rapido: 'nenhum' })
     const g = grupo()
     for (const [rotulo] of BOTOES) {
       expect(g.getByRole('button', { name: rotulo })).toHaveAttribute('aria-pressed', 'false')
@@ -109,7 +143,7 @@ describe('filtros rápidos de divergência', () => {
 
   it('trocar de filtro rápido volta para a primeira página', () => {
     montar({ ...LIMPO, pagina: 7 })
-    clicar('negativas')
+    clicar('Divergências Negativas')
     expect(estadoNavegado().pagina).toBe(0)
   })
 
@@ -120,8 +154,9 @@ describe('filtros rápidos de divergência', () => {
       pagina: 0,
       tamanho: 100,
       filtros: { fornecedor: { texto: 'ACME' } },
+      rapido: 'nenhum',
     })
-    clicar('positivas')
+    clicar('Divergências Positivas')
     expect(estadoNavegado()).toEqual({
       ordenar: 'fornecedor',
       direcao: 'asc',

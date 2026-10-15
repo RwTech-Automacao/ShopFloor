@@ -21,19 +21,32 @@ export function rotulosOrdenacao(tipo: TipoColuna): { asc: string; desc: string 
 }
 
 /**
- * Filtros rápidos de divergência da grade de Processos. É UM só estado (não três marcações
- * independentes): "Divergências" é toda divergência, justificada ou não, e as outras duas são
- * recortes dela pelo sinal — "positivas + negativas" não existe, isso é "Divergências".
+ * Filtros rápidos de divergência da grade de Processos. É UM só estado (não marcações
+ * independentes): "Todas Divergências" é toda divergência, e os outros quatro são recortes dela
+ * — pelo sinal (positivas/negativas) ou pela justificativa (resolvidas/não resolvidas).
  *
  * Não é um `FiltroColuna`: `FiltroColuna` só sabe igualdade e `ilike`, não sabe comparar sinal.
  * E a coluna onde a condição cai (`divergencia_num`) não é coluna do catálogo da grade — não pode
  * ser escolhida como visível nem aceitar nome vindo da URL.
  */
-export const FILTROS_RAPIDOS = ['divergencias', 'positivas', 'negativas'] as const
+export const FILTROS_RAPIDOS = [
+  'divergencias',
+  'positivas',
+  'negativas',
+  'resolvidas',
+  'nao_resolvidas',
+] as const
 
 export type FiltroRapido = (typeof FILTROS_RAPIDOS)[number]
 
-/** Conjunto FECHADO: só estes três valores passam do `?g=` para a consulta. */
+/** Filtro rápido DESLIGADO de propósito (o usuário clicou no ativo): mostra todos os processos.
+ *  Precisa de valor próprio porque a AUSÊNCIA do parâmetro significa "vale o padrão". */
+export const RAPIDO_NENHUM = 'nenhum'
+
+/** Padrão ao abrir a tela: o que ainda está pendente de justificativa. */
+export const FILTRO_RAPIDO_PADRAO: FiltroRapido = 'nao_resolvidas'
+
+/** Conjunto FECHADO: só estes valores passam do `?g=` para a consulta. */
 export function ehFiltroRapido(valor: unknown): valor is FiltroRapido {
   return typeof valor === 'string' && (FILTROS_RAPIDOS as readonly string[]).includes(valor)
 }
@@ -44,8 +57,9 @@ export interface EstadoGrid {
   pagina: number // 0-based
   tamanho: number // linhas por página (seletor da UI)
   filtros: Record<string, FiltroColuna>
-  /** Filtro rápido de divergência; ausente = sem filtro rápido (mostra tudo). */
-  rapido?: FiltroRapido
+  /** Filtro rápido de divergência. `'nenhum'` = desligado (mostra tudo). Vindo da URL, a
+   *  ausência vira o padrão (`decodificarEstadoGrid`); numa consulta montada à mão, ausente = sem filtro. */
+  rapido?: FiltroRapido | typeof RAPIDO_NENHUM
 }
 
 export const TAMANHOS_PAGINA = [25, 50, 100, 200] as const
@@ -56,6 +70,7 @@ export const ESTADO_GRID_PADRAO: EstadoGrid = {
   pagina: 0,
   tamanho: 50,
   filtros: {},
+  rapido: FILTRO_RAPIDO_PADRAO,
 }
 
 /** Serializa o estado para caber num parâmetro de URL. NÃO faz percent-encoding:
@@ -115,10 +130,10 @@ export function decodificarEstadoGrid(
   }
 
   const estado: EstadoGrid = { ordenar, direcao, pagina, tamanho, filtros }
-  // Conjunto fechado: qualquer outra coisa (outro texto, número, objeto, nulo) degrada para
-  // "sem filtro rápido". A chave fica AUSENTE em vez de `undefined` para que
-  // `codificarEstadoGrid` não a emita — os links já existentes seguem byte a byte iguais.
-  if (ehFiltroRapido(o.rapido)) estado.rapido = o.rapido
+  // Conjunto fechado: um dos cinco, ou 'nenhum' (desligado explícito). Qualquer outra coisa —
+  // inclusive a chave ausente, como nos links antigos — cai no padrão.
+  estado.rapido =
+    ehFiltroRapido(o.rapido) || o.rapido === RAPIDO_NENHUM ? o.rapido : FILTRO_RAPIDO_PADRAO
   return estado
 }
 

@@ -1,6 +1,6 @@
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { sanitizarTermoBusca } from '../domain/busca-processo'
-import { faixaDoMes, type EstadoGrid } from '../domain/estado-grid'
+import { RAPIDO_NENHUM, faixaDoMes, type EstadoGrid } from '../domain/estado-grid'
 import type { ColunaLayout } from '../domain/layout-colunas'
 import { carregarCamposFormulario } from './processo-detalhe-repository'
 
@@ -120,10 +120,35 @@ function montarQueryGrid(
   // é `text` e faria o Postgres comparar como TEXTO ('9' > '10', '-5' > '0'): o filtro sairia
   // silenciosamente errado e os botões discordariam dos selos da mesma tela.
   // Linha sem número (não conferida, texto, NaN) tem `divergencia_num` nulo e não entra em
-  // nenhum dos três — em SQL `null <> 0` é desconhecido, e é o comportamento certo.
-  if (estado.rapido === 'divergencias') query = query.neq('divergencia_num', 0)
-  else if (estado.rapido === 'positivas') query = query.gt('divergencia_num', 0)
-  else if (estado.rapido === 'negativas') query = query.lt('divergencia_num', 0)
+  // nenhum deles — em SQL `null <> 0` é desconhecido, e é o comportamento certo.
+  if (estado.rapido && estado.rapido !== RAPIDO_NENHUM) {
+    // Processo cancelado fica FORA de todos os cinco filtros (decisão de 15/10/2026: cancelado
+    // não entra nos números de divergência, na grade nem no painel). Mora aqui, num lugar só,
+    // para os cinco não poderem divergir.
+    query = query.neq('status', 'cancelado')
+
+    switch (estado.rapido) {
+      case 'divergencias':
+        query = query.neq('divergencia_num', 0)
+        break
+      case 'positivas':
+        query = query.gt('divergencia_num', 0)
+        break
+      case 'negativas':
+        query = query.lt('divergencia_num', 0)
+        break
+      // Resolvida = tem divergência E justificativa preenchida; a mesma regra de
+      // `estadoDaDivergencia`. A justificativa sozinha NÃO basta: ela sobrevive quando a
+      // divergência some (quantidade corrigida), e aí o processo não tem o que resolver.
+      // `''` equivale ao `trim() === ''` do TS porque a gravação sempre apara (ver relatório).
+      case 'resolvidas':
+        query = query.neq('divergencia_num', 0).neq('divergencia_justificativa', '')
+        break
+      case 'nao_resolvidas':
+        query = query.neq('divergencia_num', 0).eq('divergencia_justificativa', '')
+        break
+    }
+  }
 
   const ordenada = query.order(estado.ordenar, { ascending: estado.direcao === 'asc' })
   // `numero` desempata. Sem isto, colunas com valores repetidos (status, fornecedor,
