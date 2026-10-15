@@ -177,8 +177,14 @@ begin
     -- errado) sem janela faria milhares de colunas de 1 px. Passou do teto, a série COMEÇA em
     -- (última semana − 519 semanas) e termina onde terminava; só a série é cortada — totais,
     -- ranking e cartões contam tudo.
+    -- O FIM também tem teto quando o usuário não dá o Até: uma chegada mais de 52 semanas à frente de
+    -- hoje (ano digitado errado, 2062) é tratada como data suja SÓ no gráfico, senão a série terminaria
+    -- no futuro e mostraria dez anos vazios; com Até informado, vale exatamente o que o usuário pediu.
     select coalesce(p_de,  min(r.data_chegada), p_ate) as ini,
-           coalesce(p_ate, max(r.data_chegada), p_de)  as fim
+           coalesce(p_ate,
+                    case when max(r.data_chegada) is not null
+                         then least(max(r.data_chegada), current_date + 52 * 7) end,
+                    p_de) as fim
       from recorte r
   ),
   serie as (

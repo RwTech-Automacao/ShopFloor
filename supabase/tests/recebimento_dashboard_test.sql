@@ -511,4 +511,42 @@ begin
   raise notice 'teto de 520 semanas: ok';
 end $t$;
 
+-- ---------- 17. o FIM da série também tem teto (data suja no futuro) ----------
+-- Uma chegada em 2062 sem janela fazia a série terminar em 2062 e mostrar dez anos vazios, sem nenhuma
+-- semana atual. Sem Até, o fim é no máximo hoje + 52 semanas; com Até, vale o do usuário.
+insert into public.processos_recebimento (fornecedor, comprador, numero_emb, codigo_material, data_chegada, divergencia, divergencia_justificativa)
+values ('FuturoForn', 'FuturoComp', 'EMBFUT', 'F1', '2062-01-01', '1', ''),
+       ('FuturoForn', 'FuturoComp', 'EMBFUT', 'F2', current_date - 14, '1', ''),
+       ('FuturoForn', 'FuturoComp', 'EMBFUT', 'F3', current_date - 7, '1', 'ok');
+do $t$
+declare
+  v jsonb := rec_dashboard(p_comprador => 'FuturoComp');
+  v_ultima date := (v->'semanas'->(jsonb_array_length(v->'semanas') - 1)->>'inicio')::date;
+  v_atual int;
+begin
+  if v_ultima > current_date + 52 * 7 then
+    raise exception 'FALHOU: a série passa de hoje + 52 semanas (termina em %)', v_ultima; end if;
+  select count(*) into v_atual
+    from jsonb_array_elements(v->'semanas') s
+   where (s->>'inicio')::date >= current_date - 14 - 6
+     and (s->>'justificadas')::int + (s->>'sem_justificativa')::int > 0;
+  if v_atual < 1 then raise exception 'FALHOU: a série não contém as semanas atuais com divergência'; end if;
+  perform pg_temp.confere('futuro: itens contam a linha de 2062', (v->'totais'->>'itens')::bigint, 3);
+  perform pg_temp.confere('futuro: com divergência conta a linha de 2062', (v->'totais'->>'com_divergencia')::bigint, 3);
+  perform pg_temp.confere('futuro: ranking conta a linha de 2062', (v->'fornecedores'->0->>'divergentes')::bigint, 3);
+  raise notice 'teto do fim da série: ok';
+end $t$;
+
+-- Com o Até dado pelo usuário, a série o respeita exatamente, mesmo em 2062.
+do $t$
+declare
+  v jsonb := rec_dashboard(p_comprador => 'FuturoComp', p_ate => date '2062-01-07');
+  v_ultima date := (v->'semanas'->(jsonb_array_length(v->'semanas') - 1)->>'inicio')::date;
+begin
+  if v_ultima <> date '2062-01-07' - (extract(isodow from date '2062-01-07')::int - 1) then
+    raise exception 'FALHOU: com Até em 2062-01-07 a série tem que terminar na segunda dessa semana (veio %)', v_ultima; end if;
+  perform pg_temp.confere('janela do usuário: 520 semanas', jsonb_array_length(v->'semanas'), 520);
+  raise notice 'Até do usuário vence o teto: ok';
+end $t$;
+
 select 'RECEBIMENTO DASHBOARD OK' as resultado;
