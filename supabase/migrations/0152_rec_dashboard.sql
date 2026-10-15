@@ -3,6 +3,8 @@
 -- Spec: docs/superpowers/specs/2026-10-14-dashboard-recebimento-design.md
 --
 -- O QUÊ
+--   0. rec_norm_texto(text)    → text: o aparo de texto (igual ao trim() do JavaScript) usado em todo
+--                                filtro e agrupamento por fornecedor, comprador, EMB e código.
 --   1. rec_dashboard(...)      → jsonb: os totais, o top 10 de fornecedores e a série semanal de
 --                                itens divergentes, NUMA chamada só (a tela /recebimento/dashboard).
 --   2. rec_dashboard_opcoes()  → jsonb: fornecedores e compradores distintos, para as duas listas.
@@ -42,11 +44,31 @@
 -- comentário); tem_permissao SEMPRE com dois argumentos (a de um argumento anula o RBAC).
 -- =============================================================
 
+-- ---------- 0. a normalização do texto ----------
+-- UMA régua só para fornecedor, comprador, EMB e código: tira das PONTAS o mesmo que o trim() do
+-- JavaScript (espaço, tab, \r, \n, \f, \v e o NBSP, U+00A0). O btrim do Postgres tira só espaço:
+-- com ele, a lista de opções oferecia "ACME<tab>", a URL levava ACME, o trim() do app aparava, o
+-- SQL comparava btrim(...) = 'ACME' e os cartões zeravam para um fornecedor que a própria lista
+-- oferece. O NBSP vem explícito (\u00a0) porque o \s do Postgres não o cobre em todo locale.
+-- Imutável e SEM `set search_path` (que impediria o Postgres de embutir a função na consulta):
+-- só usa regexp_replace, do pg_catalog.
+-- Diferença que fica de propósito: a JUSTIFICATIVA (btrim(divergencia_justificativa), mais abaixo)
+-- continua com btrim, que só tira espaço — o app apara com trim() antes de gravar, então só uma
+-- escrita direta no banco deixa tab ou quebra de linha lá.
+create or replace function public.rec_norm_texto(p_texto text)
+returns text
+language sql
+immutable
+as $func$
+  select regexp_replace(p_texto, '^[\s\u00a0]+|[\s\u00a0]+$', '', 'g')
+$func$;
+
 -- ---------- 1. o dashboard ----------
 -- Texto vazio (ou nulo) = sem filtro. Datas nulas = sem recorte por data. Os 90 dias são padrão
 -- da TELA, não daqui.
---   Fornecedor e comprador: comparação exata depois de aparar ("ACME" e "Acme" são dois).
---   EMB e código do material: exata, sem diferenciar maiúsculas.
+--   Fornecedor e comprador: comparação exata depois de aparar com rec_norm_texto ("ACME" e "Acme"
+--   são dois; tab, quebra de linha e NBSP nas pontas não contam).
+--   EMB e código do material: exata, sem diferenciar maiúsculas, também aparados com rec_norm_texto.
 --   De / Até: sobre data_chegada, inclusivos. Linha sem data_chegada fica fora de qualquer
 --   recorte por data e é contada em totais.fora_do_recorte_por_data (só quando há recorte).
 create or replace function public.rec_dashboard(
@@ -65,10 +87,10 @@ security definer
 set search_path = public
 as $func$
 declare
-  v_forn     text := btrim(coalesce(p_fornecedor, ''));
-  v_comp     text := btrim(coalesce(p_comprador, ''));
-  v_emb      text := upper(btrim(coalesce(p_emb, '')));
-  v_cod      text := upper(btrim(coalesce(p_codigo, '')));
+  v_forn     text := rec_norm_texto(coalesce(p_fornecedor, ''));
+  v_comp     text := rec_norm_texto(coalesce(p_comprador, ''));
+  v_emb      text := upper(rec_norm_texto(coalesce(p_emb, '')));
+  v_cod      text := upper(rec_norm_texto(coalesce(p_codigo, '')));
   v_sinal    text := lower(btrim(coalesce(p_sinal, '')));
   v_com_data boolean := p_de is not null or p_ate is not null;
   v_resultado jsonb;
@@ -81,17 +103,17 @@ begin
   -- harness com 300 mil linhas: 324 ms → 109 ms no recorte de 90 dias.
   with base as not materialized (
     -- Os filtros que NÃO são de data. Daqui sai também a contagem de quem ficou fora do período.
-    select btrim(coalesce(p.fornecedor, '')) as fornecedor,
-           upper(btrim(coalesce(p.numero_emb, ''))) as emb,
+    select rec_norm_texto(coalesce(p.fornecedor, '')) as fornecedor,
+           upper(rec_norm_texto(coalesce(p.numero_emb, ''))) as emb,
            p.data_chegada,
            p.divergencia_num,
            btrim(coalesce(p.divergencia_justificativa, '')) = '' as sem_texto
       from public.processos_recebimento p
      where p.status <> 'cancelado'
-       and (v_forn = '' or btrim(coalesce(p.fornecedor, '')) = v_forn)
-       and (v_comp = '' or btrim(coalesce(p.comprador, '')) = v_comp)
-       and (v_emb  = '' or upper(btrim(coalesce(p.numero_emb, ''))) = v_emb)
-       and (v_cod  = '' or upper(btrim(coalesce(p.codigo_material, ''))) = v_cod)
+       and (v_forn = '' or rec_norm_texto(coalesce(p.fornecedor, '')) = v_forn)
+       and (v_comp = '' or rec_norm_texto(coalesce(p.comprador, '')) = v_comp)
+       and (v_emb  = '' or upper(rec_norm_texto(coalesce(p.numero_emb, ''))) = v_emb)
+       and (v_cod  = '' or upper(rec_norm_texto(coalesce(p.codigo_material, ''))) = v_cod)
   ),
   recorte as (
     -- divergencia_num nulo (não conferido, texto) dá nulo na comparação: o coalesce o põe em
@@ -147,6 +169,10 @@ begin
     -- existe, por exemplo) devolve as semanas da janela zeradas — é o eixo da janela, de propósito.
     -- `semanas` só vem vazio quando não há data nenhuma (sem De, sem Até e sem linha com data) ou
     -- quando De > Até.
+    -- TETO de 520 semanas (cerca de 10 anos): uma data suja (serial 0 do Excel = 1899, ano digitado
+    -- errado) sem janela faria milhares de colunas de 1 px. Passou do teto, a série COMEÇA em
+    -- (última semana − 519 semanas) e termina onde terminava; só a série é cortada — totais,
+    -- ranking e cartões contam tudo.
     select coalesce(p_de,  min(r.data_chegada), p_ate) as ini,
            coalesce(p_ate, max(r.data_chegada), p_de)  as fim
       from recorte r
@@ -156,7 +182,8 @@ begin
     select g.semana::date as inicio
       from limites l,
            generate_series(
-             (l.ini - (extract(isodow from l.ini)::int - 1))::timestamp,
+             greatest(l.ini - (extract(isodow from l.ini)::int - 1),
+                      l.fim - (extract(isodow from l.fim)::int - 1) - 519 * 7)::timestamp,
              (l.fim - (extract(isodow from l.fim)::int - 1))::timestamp,
              interval '7 days') as g(semana)
      where l.ini is not null and l.fim is not null and l.ini <= l.fim
@@ -186,7 +213,7 @@ begin
 end $func$;
 
 -- ---------- 2. as opções das listas suspensas ----------
--- Valores distintos, aparados, não vazios, em ordem. Inclui os de processos cancelados: a lista
+-- Valores distintos, aparados com rec_norm_texto (a mesma régua do filtro), não vazios, em ordem. Inclui os de processos cancelados: a lista
 -- mostra o que existe no banco (spec §4), e o número de um fornecedor só-cancelado sai zero.
 create or replace function public.rec_dashboard_opcoes()
 returns jsonb
@@ -203,14 +230,14 @@ begin
   select jsonb_build_object(
            'fornecedores', coalesce((
              select jsonb_agg(x.valor order by x.valor)
-               from (select distinct btrim(p.fornecedor) as valor
+               from (select distinct rec_norm_texto(p.fornecedor) as valor
                        from public.processos_recebimento p
-                      where btrim(coalesce(p.fornecedor, '')) <> '') x), '[]'::jsonb),
+                      where rec_norm_texto(coalesce(p.fornecedor, '')) <> '') x), '[]'::jsonb),
            'compradores', coalesce((
              select jsonb_agg(x.valor order by x.valor)
-               from (select distinct btrim(p.comprador) as valor
+               from (select distinct rec_norm_texto(p.comprador) as valor
                        from public.processos_recebimento p
-                      where btrim(coalesce(p.comprador, '')) <> '') x), '[]'::jsonb)
+                      where rec_norm_texto(coalesce(p.comprador, '')) <> '') x), '[]'::jsonb)
          )
     into v_resultado;
 
@@ -220,6 +247,8 @@ end $func$;
 -- ---------- 3. a justificativa aparada ----------
 -- Mesma assinatura da 0143 (por isso NÃO tem drop function), mesma porta (recebimento.administrar),
 -- mesmo security definer, mesmos grants. A única diferença é o btrim no texto gravado.
+-- O btrim daqui tira só espaço (não tab nem quebra de linha) — diferente de rec_norm_texto, usada nos
+-- filtros; é limite documentado e de baixo risco, porque o app apara com trim() antes de gravar.
 create or replace function public.rec_justificar_divergencia(p_id uuid, p_texto text)
 returns void
 language plpgsql
@@ -250,8 +279,10 @@ begin
 end;
 $func$;
 
--- Normalização única do que já está gravado: só linhas só-de-espaços. Autor e instante ficam como
--- estão (é limpeza, não é alguém justificando). Rodar de novo atualiza 0 linhas.
+-- Normalização única do que já está gravado: só linhas só-de-espaços. Autor e instante da
+-- justificativa (justificada_por/_em/_por_nome) ficam como estão (é limpeza, não é alguém
+-- justificando), mas o gatilho processos_updated_at (migração 0004) mexe no updated_at dessas
+-- linhas, como em qualquer update. Rodar de novo atualiza 0 linhas.
 update public.processos_recebimento
    set divergencia_justificativa = ''
  where divergencia_justificativa <> ''
@@ -260,10 +291,12 @@ update public.processos_recebimento
 -- ---------- permissões ----------
 -- O Postgres dá EXECUTE a PUBLIC em toda função nova; sem o revoke, a anon key (pública, está no
 -- JavaScript do navegador) chamaria a função direto no PostgREST, sem login.
-revoke all on function public.rec_dashboard(text, text, text, text, date, date, text) from public, anon;
-revoke all on function public.rec_dashboard_opcoes() from public, anon;
-revoke all on function public.rec_justificar_divergencia(uuid, text) from public, anon;
+revoke all on function public.rec_norm_texto(text) from public, anon, authenticated;
+revoke all on function public.rec_dashboard(text, text, text, text, date, date, text) from public, anon, authenticated;
+revoke all on function public.rec_dashboard_opcoes() from public, anon, authenticated;
+revoke all on function public.rec_justificar_divergencia(uuid, text) from public, anon, authenticated;
 
+grant execute on function public.rec_norm_texto(text) to authenticated;
 grant execute on function public.rec_dashboard(text, text, text, text, date, date, text) to authenticated;
 grant execute on function public.rec_dashboard_opcoes() to authenticated;
 grant execute on function public.rec_justificar_divergencia(uuid, text) to authenticated;

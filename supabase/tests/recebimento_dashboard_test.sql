@@ -412,7 +412,7 @@ begin
   raise notice 'janela com recorte vazio: ok';
 end $t$;
 
--- ---------- 14. btrim NÃO tira tabulação nem quebra de linha (limite conhecido) ----------
+-- ---------- 14. a JUSTIFICATIVA continua com btrim: não tira tabulação nem quebra de linha (limite conhecido) ----------
 -- O app apara com trim() do JavaScript (tira tab e quebra de linha); o btrim do SQL tira só
 -- espaço. Uma justificativa só de E'\t' continua "justificada" no SQL e a tela a trataria como
 -- vazia. É CONHECIDO: o texto passa pelo app antes de gravar (trim), então só uma escrita direta
@@ -429,6 +429,86 @@ begin
   -- Só os espaços viram "sem justificativa"; o \t e o \n ficam "justificados" (limite do btrim).
   perform pg_temp.confere('tab e quebra de linha ficam justificados no SQL', (v->'totais'->>'sem_justificativa')::bigint, 1);
   raise notice 'limite do btrim documentado: ok';
+end $t$;
+
+-- ---------- 15. fornecedor / comprador / EMB com tab, quebra de linha ou NBSP nas pontas ----------
+-- O app apara com trim() do JavaScript (tira espaço, tab, \r \n \f \x0b e NBSP); o filtro e o ranking
+-- usam rec_norm_texto no banco, que faz o MESMO. Sem isso: a lista de opções oferece "NormForn<tab>",
+-- a URL leva NormForn, o JS apara, o SQL não casa e os cartões zeram para um fornecedor que a
+-- própria lista oferece.
+insert into public.processos_recebimento (fornecedor, comprador, numero_emb, codigo_material, data_chegada, divergencia, divergencia_justificativa)
+values (E'NormForn\t',        E'NormComp\n',     E'EMBN\t',  'N1', '2026-02-02', '1', ''),
+       (E'NormForn\n',        E'NormComp',       'EMBN',     'N2', '2026-02-02', '1', ''),
+       (E' NormForn',         E' NormComp', 'EMBN',     'N3', '2026-02-02', '1', ''),
+       ('NormForn',           E'NormComp\r',     E' EMBN', 'N4', '2026-02-02', '1', ''),
+       (E' NormForn ', E'\fNormComp\x0b', 'EMBN',    'N5', '2026-02-02', '1', '');
+do $t$
+declare
+  v jsonb;
+  v_norm int;
+begin
+  -- A função em si: o que o trim() do JavaScript tira.
+  if rec_norm_texto(E' \t\r\n\f\x0b ACME \x0b\f\n\r\t ') is distinct from 'ACME' then
+    raise exception 'FALHOU: rec_norm_texto não tirou todo o espaço das pontas'; end if;
+  if rec_norm_texto(E'AC ME') is distinct from 'AC ME' then
+    raise exception 'FALHOU: rec_norm_texto mexeu no meio do texto'; end if;
+  if rec_norm_texto(null) is not null then raise exception 'FALHOU: rec_norm_texto(null) devia ser nulo'; end if;
+
+  -- Filtrar por 'NormForn' conta as cinco variantes.
+  v := rec_dashboard(p_fornecedor => 'NormForn');
+  perform pg_temp.confere('filtro por fornecedor conta as 5 variantes', (v->'totais'->>'itens')::bigint, 5);
+  -- Comprador: idem.
+  v := rec_dashboard(p_comprador => 'NormComp');
+  perform pg_temp.confere('filtro por comprador conta as 5 variantes', (v->'totais'->>'itens')::bigint, 5);
+  -- O mesmo valor que a lista oferece, com as pontas sujas, também casa (o servidor apara; o banco também).
+  v := rec_dashboard(p_fornecedor => E'\tNormForn ');
+  perform pg_temp.confere('filtro com as pontas sujas', (v->'totais'->>'itens')::bigint, 5);
+  -- EMB: idem (as 5 linhas têm EMBN, uma com tab e uma com NBSP).
+  v := rec_dashboard(p_comprador => 'NormComp', p_emb => 'embn');
+  perform pg_temp.confere('filtro por EMB com tab/NBSP nas pontas', (v->'totais'->>'itens')::bigint, 5);
+  perform pg_temp.confere('EMBs distintas das 5 variantes', (v->'totais'->>'embs')::bigint, 1);
+
+  -- O ranking junta as variantes numa entrada só.
+  v := rec_dashboard(p_comprador => 'NormComp');
+  perform pg_temp.confere('ranking: uma entrada só', jsonb_array_length(v->'fornecedores'), 1);
+  if v->'fornecedores'->0->>'fornecedor' <> 'NormForn' then
+    raise exception 'FALHOU: o nome no ranking tem que vir normalizado (veio %)', v->'fornecedores'->0->>'fornecedor'; end if;
+  perform pg_temp.confere('ranking: divergentes da entrada', (v->'fornecedores'->0->>'divergentes')::bigint, 5);
+
+  -- As opções: UM "NormForn" e UM "NormComp", nada com tab/NBSP.
+  v := rec_dashboard_opcoes();
+  select count(*) into v_norm from jsonb_array_elements_text(v->'fornecedores') x where x = 'NormForn';
+  perform pg_temp.confere('opções: NormForn aparece uma vez', v_norm, 1);
+  select count(*) into v_norm from jsonb_array_elements_text(v->'fornecedores') x where x like '%NormForn%';
+  perform pg_temp.confere('opções: nenhuma variante suja de NormForn', v_norm, 1);
+  select count(*) into v_norm from jsonb_array_elements_text(v->'compradores') x where x like '%NormComp%';
+  perform pg_temp.confere('opções: NormComp aparece uma vez', v_norm, 1);
+  raise notice 'texto com pontas sujas: ok';
+end $t$;
+
+-- ---------- 16. a série semanal tem teto de 520 semanas ----------
+-- Uma data suja (serial do Excel 0 = 1899-12-30) sem janela faria milhares de semanas. O teto corta
+-- o COMEÇO da série; os totais, o ranking e os cartões continuam contando tudo.
+insert into public.processos_recebimento (fornecedor, comprador, numero_emb, codigo_material, data_chegada, divergencia, divergencia_justificativa)
+values ('CapForn', 'CapComp', 'EMBCAP', 'C1', '1899-12-30', '1', ''),
+       ('CapForn', 'CapComp', 'EMBCAP', 'C2', '2026-09-08', '1', ''),
+       ('CapForn', 'CapComp', 'EMBCAP', 'C3', '2026-10-05', '1', '');
+do $t$
+declare v jsonb := rec_dashboard(p_comprador => 'CapComp');
+begin
+  perform pg_temp.confere('teto: exatamente 520 semanas', jsonb_array_length(v->'semanas'), 520);
+  if v->'semanas'->519->>'inicio' <> '2026-10-05' then
+    raise exception 'FALHOU: a série tem que terminar na última semana (veio %)', v->'semanas'->519->>'inicio'; end if;
+  if v->'semanas'->0->>'inicio' <> to_char(date '2026-10-05' - 519 * 7, 'YYYY-MM-DD') then
+    raise exception 'FALHOU: a série tem que começar 519 semanas antes da última (veio %)', v->'semanas'->0->>'inicio'; end if;
+  -- A linha de 1899 não está na série, mas conta nos totais e no ranking.
+  perform pg_temp.confere('teto: itens contam a linha de 1899', (v->'totais'->>'itens')::bigint, 3);
+  perform pg_temp.confere('teto: com divergência conta a linha de 1899', (v->'totais'->>'com_divergencia')::bigint, 3);
+  perform pg_temp.confere('teto: ranking conta a linha de 1899', (v->'fornecedores'->0->>'divergentes')::bigint, 3);
+  -- Janela curta não é afetada: a mesma série de antes.
+  perform pg_temp.confere('janela curta continua inteira',
+    jsonb_array_length(rec_dashboard(p_comprador => 'CapComp', p_de => '2026-09-07', p_ate => '2026-10-11')->'semanas'), 5);
+  raise notice 'teto de 520 semanas: ok';
 end $t$;
 
 select 'RECEBIMENTO DASHBOARD OK' as resultado;
