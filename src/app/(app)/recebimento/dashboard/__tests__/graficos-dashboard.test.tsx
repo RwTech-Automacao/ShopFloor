@@ -56,9 +56,9 @@ describe('divergências por semana', () => {
     expect(colunas[1]!.querySelectorAll('rect[data-serie]')).toHaveLength(0)
     expect(colunas[2]!.querySelectorAll('rect[data-serie]')).toHaveLength(2)
   })
-  it('todo retângulo tem cor explícita (classe de fill)', () => {
+  it('todo retângulo tem cor explícita (classe de fill; o anel de foco usa stroke + fill="none")', () => {
     const { container } = render(<GraficoSemanas semanas={semanas} ativo="" onClique={vi.fn()} />)
-    for (const r of container.querySelectorAll('rect')) expect(r.getAttribute('class') ?? '').toMatch(/fill-/)
+    for (const r of container.querySelectorAll('rect:not([data-foco])')) expect(r.getAttribute('class') ?? '').toMatch(/fill-/)
   })
   it('clique e Enter filtram pela semana', () => {
     const onClique = vi.fn()
@@ -90,6 +90,21 @@ describe('divergências por semana', () => {
     const topo = Number(container.querySelectorAll('g[role="button"]')[2]!.querySelector('rect[data-serie="sem-justificativa"]')!.getAttribute('y'))
     const rotulo4 = [...container.querySelectorAll('text')].find((t) => t.textContent === '4')!
     expect(Number(rotulo4.getAttribute('y'))).toBeCloseTo(topo, 6)
+  })
+  it('cada coluna tem um anel de foco visível por teclado (não só um fundo fraco)', () => {
+    const { container } = render(<GraficoSemanas semanas={semanas} ativo="" onClique={vi.fn()} />)
+    const colunas = container.querySelectorAll('g[role="button"]')
+    expect(colunas).toHaveLength(3)
+    for (const coluna of colunas) {
+      const anel = coluna.querySelector('rect[data-foco]')
+      expect(anel).not.toBeNull()
+      // Contorno explícito (stroke), sem preenchimento, que só aparece com foco de teclado.
+      expect(anel!.getAttribute('fill')).toBe('none')
+      expect(anel!.getAttribute('class')).toContain('stroke-ring')
+      expect(anel!.getAttribute('class')).toContain('group-focus-visible:opacity-100')
+      expect(anel!.getAttribute('class')).toContain('opacity-0')
+      expect(Number(anel!.getAttribute('stroke-width'))).toBeGreaterThanOrEqual(2)
+    }
   })
   it('uma semana só: uma coluna', () => {
     render(<GraficoSemanas semanas={[semanas[2]!]} ativo="2026-09-21" onClique={vi.fn()} />)

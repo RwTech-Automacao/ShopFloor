@@ -189,6 +189,11 @@ export function GraficoSemanas({ semanas, ativo, onClique }: {
               {b.alturaSem > 0 && (
                 <rect data-serie="sem-justificativa" x={b.x} y={b.ySem} width={b.largura} height={b.alturaSem} className={COR_SEM_SVG} />
               )}
+              {/* Anel de foco por teclado: um contorno explícito (stroke) em volta da coluna — o fundo
+                  fraco sozinho some no tema claro. Só aparece com :focus-visible do <g>. */}
+              <rect data-foco="" x={b.xFaixa + 1} y={g.topoPlot + 1} width={Math.max(b.larguraFaixa - 2, 0)}
+                height={Math.max(g.basePlot - g.topoPlot - 2, 0)} rx={3} fill="none" strokeWidth={2}
+                className="pointer-events-none stroke-ring opacity-0 group-focus-visible:opacity-100" />
               {b.rotulo && (
                 <text x={b.centro} y={g.altura - 8} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>{b.rotulo}</text>
               )}
