@@ -125,12 +125,18 @@ Exportar para planilha · gráfico por comprador · soma de **peças** faltantes
 item, não quantidade) · abrir a grade de Processos já filtrada a partir de um número · alertas.
 Qualquer um entra depois, em branch própria, se o uso pedir.
 
-## 10. Decisões a confirmar pelo usuário
+## 10. Decisões — resolvidas pelo usuário em 15/10/2026
 
-1. **Menu:** item novo "Dashboard" entre Fluxo e Registros (§2) — ou outro nome/lugar?
-2. **`cancelado` fora dos números** (§3). A grade de Processos hoje **não** o tira do filtro
-   "Divergências"; se for tirado só aqui, os dois deixam de bater para o mesmo recorte. Opção: tirar
-   dos dois, ou manter fora só no dashboard e dizer isso no ⓘ.
-3. **Padrão de 90 dias** (§4).
+O usuário aceitou todas as recomendações:
+
+1. **Menu:** item novo **"Dashboard"**, entre Fluxo e Registros (§2).
+2. **`cancelado` fora dos números, nos DOIS lugares:** o dashboard **e** os filtros de divergência da
+   grade de Processos (a branch `feat/recebimento-filtros-divergencia` aplica a mesma exclusão).
+   Assim os números dos dois continuam batendo para o mesmo recorte.
+3. **Recorte padrão de 90 dias** (§4).
 4. **Top 10** fornecedores (§5).
 5. **Semana de segunda a domingo** (§5).
+
+**Dependência entre branches:** o teste de "os números batem com o filtro da grade" (§8) só passa
+depois que a branch dos filtros estiver na `main` (ou for trazida para esta). Até lá, o teste SQL
+compara contra a CONDIÇÃO (`divergencia_num <> 0 and status <> 'cancelado'`), não contra a tela.
