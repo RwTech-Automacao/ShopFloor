@@ -24,8 +24,9 @@
 -- sinal, "divergente" passa a ser "divergente daquele sinal" nos totais, no ranking e na série;
 -- os contadores positivas/negativas continuam mostrando os dois sinais (para dar para trocar).
 --
--- Índice em data_chegada: DECIDIDO PELA MEDIÇÃO (Task 1 do plano). Esta linha é trocada
--- pelo resultado: "não entra — medido em <data>, <n> ms com set role" ou o create index abaixo.
+-- Índice em data_chegada: NÃO entra. Medido em 15/10/2026 no harness (300 mil linhas, set role
+-- authenticated, EXPLAIN ANALYZE, mediana de 3): recorte de 90 dias em 103 ms sem índice e 83 ms
+-- com — abaixo do teto de 150 ms. O usuário repete a medição no Dev com dados reais (plano, Task 6).
 --
 --   Dev e demo (SQL Editor do Supabase): cola o arquivo inteiro e roda.
 --   RDS:  PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "<conexão>" \
