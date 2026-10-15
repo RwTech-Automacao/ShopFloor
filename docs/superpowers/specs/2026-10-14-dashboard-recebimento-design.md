@@ -94,6 +94,25 @@ qualquer módulo e anula o RBAC (achado da revisão de segurança de 21/09).
 - **`rec_dashboard_opcoes()` → `jsonb`** `{ fornecedores: [...], compradores: [...] }` — os valores
   distintos, não vazios, ordenados, para as duas listas suspensas.
 
+### 6.1 A mesma migração fecha um furo da justificativa (aprovado em 15/10/2026)
+
+O app apara a justificativa antes de gravar (`cortarJustificativa`), mas a função
+`rec_justificar_divergencia` (0143) grava `coalesce(p_texto, '')` **sem aparar**. Uma chamada direta
+com `"   "` (só espaços) ficaria "justificada" no SQL e "pendente" na tela — e o dashboard e os
+filtros de Processos (`= ''`) discordariam do selo. A 0152 inclui:
+
+- **`create or replace function public.rec_justificar_divergencia(uuid, text)`** com
+  `coalesce(btrim(p_texto), '')`. Mesma assinatura, então **sem `drop function`**; mantém o
+  `security definer`, a permissão `recebimento.administrar` e os grants da 0143.
+- **Normalização única do que já está gravado:**
+  `update processos_recebimento set divergencia_justificativa = '' where divergencia_justificativa <> '' and btrim(divergencia_justificativa) = ''`.
+  Só toca linhas só-de-espaços; idempotente (a segunda rodada atualiza 0 linhas).
+  ⚠️ Linha assim hoje aparece como "justificada" no SQL e passa a "pendente" — que é o que a tela
+  já mostrava. **Antes de aplicar no Prod, contar quantas linhas isso atinge** (consulta só de
+  leitura, no Dev e no Prod) e dizer o número ao usuário. Se for 0, o `update` é inofensivo.
+- **Teste SQL com dentes:** gravar `"   "` pela função e conferir que a coluna vira `''`; sabotar
+  (voltar ao `coalesce(p_texto, '')`) e ver o teste falhar.
+
 **Desempenho:** medir no Dev **com `set role`** (não como superusuário) e com `EXPLAIN (ANALYZE)`
 antes de decidir por índice (lição da 0096: medir com a role errada esconde o problema). A 0147 já
 tem o índice parcial em `divergencia_num <> 0`. Se `data_chegada` precisar de índice, ele entra na
