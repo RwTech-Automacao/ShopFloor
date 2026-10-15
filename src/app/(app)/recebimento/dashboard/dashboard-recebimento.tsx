@@ -3,13 +3,23 @@
 import { useTransition } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
+  aplicarClique,
+  fimDaSemana,
   urlDosFiltros,
+  EXPLICA,
   type DadosDashboard,
   type FiltrosDashboard,
   type OpcoesDashboard,
 } from '@/modules/recebimento/domain/dashboard'
 import { CartoesDashboard } from './cartoes-dashboard'
 import { FiltrosDashboardBarra } from './filtros-dashboard'
+import {
+  CartaoGrafico,
+  GraficoSemanas,
+  LegendaSemanas,
+  PositivasNegativas,
+  RankingFornecedores,
+} from './graficos-dashboard'
 
 interface DashboardRecebimentoProps {
   filtros: FiltrosDashboard
@@ -45,7 +55,21 @@ export function DashboardRecebimento({ filtros, dados, opcoes, erro }: Dashboard
         // Recalculando: segura a foto anterior esmaecida, sem pular o layout nem piscar em branco.
         <div className={`flex min-w-0 flex-col gap-4 transition-opacity ${pendente ? 'opacity-60' : ''}`}>
           <CartoesDashboard totais={dados.totais} sinal={filtros.sinal} />
-          {/* Os três gráficos entram aqui (Task 5). */}
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+            <CartaoGrafico titulo="Ranking por fornecedor" explica={EXPLICA.fornecedores}>
+              <RankingFornecedores fornecedores={dados.fornecedores} ativo={filtros.fornecedor}
+                onClique={(fornecedor) => navegar(aplicarClique(filtros, { fornecedor }))} />
+            </CartaoGrafico>
+            <CartaoGrafico titulo="Positivas × negativas" explica={EXPLICA.sinal}>
+              <PositivasNegativas positivas={dados.totais.positivas} negativas={dados.totais.negativas}
+                ativo={filtros.sinal} onClique={(sinal) => navegar(aplicarClique(filtros, { sinal }))} />
+            </CartaoGrafico>
+          </div>
+          <CartaoGrafico titulo="Divergências por semana" explica={EXPLICA.semanas} acao={<LegendaSemanas />}>
+            <GraficoSemanas semanas={dados.semanas}
+              ativo={filtros.de !== '' && filtros.ate === fimDaSemana(filtros.de) ? filtros.de : ''}
+              onClique={(semana) => navegar(aplicarClique(filtros, { semana }))} />
+          </CartaoGrafico>
         </div>
       )}
     </div>
