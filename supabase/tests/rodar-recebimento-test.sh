@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes SQL do Fluxo e dos Registros do Recebimento (0124/0125/0127/0142/0143/0144/0147) num Postgres descartável.
+# Testes SQL do Recebimento (0124/0125/0127/0142/0143/0144/0147 e o dashboard da 0152) num Postgres descartável.
 # Uso: supabase/tests/rodar-recebimento-test.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -48,3 +48,23 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select sum(itens) from rec_fluxo_emb('EMB390')" | tail -1 | grep -qx 9 \
   && echo "idempotência da 0124/0125/0127/0142/0143/0144/0147: ok" \
   || { echo "idempotência da 0124/0125/0127/0142/0143/0144/0147 FALHOU"; exit 1; }
+
+# ---------- Dashboard (0152) num banco PRÓPRIO ----------
+# O dashboard conta a TABELA INTEIRA: a massa do recebimento_fluxo_test.sql mudaria todos os totais.
+# Ordem: esquema → 0142/0143/0147 → massa (com justificativa só de espaços, ANTES da 0152, para a
+# normalização ter o que normalizar) → 0152 DUAS vezes (idempotência; -1 = cada aplicação numa
+# transação, como no SQL Editor) → teste.
+docker cp supabase/migrations/0152_rec_dashboard.sql "$NOME":/tmp/0152.sql
+docker cp supabase/tests/recebimento_dashboard_esquema.sql "$NOME":/tmp/dash_esquema.sql
+docker cp supabase/tests/recebimento_dashboard_massa.sql "$NOME":/tmp/dash_massa.sql
+docker cp supabase/tests/recebimento_dashboard_test.sql "$NOME":/tmp/dash_teste.sql
+docker exec "$NOME" createdb -U postgres dashboard
+docker exec "$NOME" psql -U postgres -d dashboard -v ON_ERROR_STOP=1 -q -f /tmp/dash_esquema.sql
+for m in 0142 0143 0147; do
+  docker exec "$NOME" psql -U postgres -d dashboard -1 -v ON_ERROR_STOP=1 -q -f "/tmp/$m.sql"
+done
+docker exec "$NOME" psql -U postgres -d dashboard -v ON_ERROR_STOP=1 -q -f /tmp/dash_massa.sql
+for _ in 1 2; do
+  docker exec "$NOME" psql -U postgres -d dashboard -1 -v ON_ERROR_STOP=1 -q -f /tmp/0152.sql
+done
+docker exec "$NOME" psql -U postgres -d dashboard -v ON_ERROR_STOP=1 -q -f /tmp/dash_teste.sql
