@@ -98,6 +98,13 @@ export function janelaPadrao(agora: Date): { de: string; ate: string } {
   return { de: somarDias(ate, -(DIAS_JANELA_PADRAO - 1)), ate }
 }
 
+/** 'AAAA-MM-DD' que existe no calendário E cai numa segunda-feira. */
+export function ehSegunda(dia: string): boolean {
+  if (!diaValido(dia)) return false
+  const [a, m, d] = dia.split('-').map(Number)
+  return new Date(Date.UTC(a!, m! - 1, d!)).getUTCDay() === 1
+}
+
 /** Domingo da semana que começa nessa segunda. */
 export function fimDaSemana(inicio: string): string {
   return somarDias(inicio, 6)
@@ -105,14 +112,18 @@ export function fimDaSemana(inicio: string): string {
 
 type ParamsUrl = Record<string, string | string[] | undefined>
 
+/** Tamanho máximo de um texto livre vindo da URL (nada da URL é confiável). */
+export const MAX_TEXTO_URL = 200
+
 function primeiro(sp: ParamsUrl, chave: string): string {
   const v = sp[chave]
-  return (Array.isArray(v) ? v[0] : v)?.trim() ?? ''
+  return (Array.isArray(v) ? v[0] : v)?.trim().slice(0, MAX_TEXTO_URL) ?? ''
 }
 
 /**
  * Os filtros a partir da URL (searchParams). Nada da URL é confiável: data inválida e sinal
- * desconhecido são ignorados.
+ * desconhecido são ignorados, e texto livre acima de 200 caracteres é cortado. `de` depois de `ate`
+ * (digitado ao contrário) troca os dois lados.
  *   - `periodo=tudo`            → sem recorte de data (ignora de/ate).
  *   - sem `de` e sem `ate`      → os últimos 90 dias (o padrão).
  *   - com `de` e/ou `ate`       → o que veio (um lado só = aberto do outro).
@@ -134,6 +145,8 @@ export function filtrosDaUrl(sp: ParamsUrl, agora: Date): FiltrosDashboard {
   const deOk = diaValido(de) ? de : ''
   const ateOk = diaValido(ate) ? ate : ''
   if (deOk === '' && ateOk === '') return { ...f, ...janelaPadrao(agora) }
+  // Os dois lados válidos e invertidos: o usuário digitou ao contrário, vale o intervalo que ele quis.
+  if (deOk !== '' && ateOk !== '' && deOk > ateOk) return { ...f, de: ateOk, ate: deOk }
   return { ...f, de: deOk, ate: ateOk }
 }
 
@@ -161,10 +174,15 @@ export function urlDosFiltros(f: FiltrosDashboard, agora: Date): string {
 /** O que um clique num gráfico faz com os filtros: APLICA (não alterna). Tirar é pela etiqueta. */
 export function aplicarClique(f: FiltrosDashboard, clique: CliqueDashboard): FiltrosDashboard {
   if ('fornecedor' in clique) {
-    // Fornecedor em branco não vira filtro: texto vazio, no banco, é "sem filtro".
-    return clique.fornecedor === '' ? f : { ...f, fornecedor: clique.fornecedor }
+    // Fornecedor em branco (inclusive só espaço/tab) não vira filtro: texto vazio, no banco, é
+    // "sem filtro". O valor entra APARADO, igual ao que volta da URL (primeiro() apara).
+    const fornecedor = clique.fornecedor.trim()
+    return fornecedor === '' ? f : { ...f, fornecedor }
   }
-  if ('semana' in clique) return { ...f, de: clique.semana, ate: fimDaSemana(clique.semana) }
+  if ('semana' in clique) {
+    // Só uma segunda-feira que existe no calendário abre uma semana de segunda a domingo.
+    return ehSegunda(clique.semana) ? { ...f, de: clique.semana, ate: fimDaSemana(clique.semana) } : f
+  }
   return { ...f, sinal: clique.sinal }
 }
 
@@ -208,6 +226,9 @@ export function semFiltro(f: FiltrosDashboard, chave: ChaveEtiqueta): FiltrosDas
 export function percentual(parte: number, total: number): number | null {
   if (!(total > 0)) return null
   const arredondado = Math.round((parte * 1000) / total) / 10
+  // Tem divergência, mas menos de 0,05%: o valor exato (positivo, abaixo de 0,1) em vez de 0 —
+  // formatarPercentual escreve "<0,1%". Mostrar "0%" com uma divergência esconderia o item.
+  if (parte > 0 && arredondado === 0) return (parte * 100) / total
   if (arredondado >= 100 && parte < total) return 99.9
   return arredondado
 }
@@ -219,9 +240,11 @@ export function formatarNumero(n: number): string {
   return fmtNumero.format(n)
 }
 
-/** 10.7 → '10,7%' · 100 → '100%' · null → '—'. */
+/** 10.7 → '10,7%' · 100 → '100%' · 0,03 → '<0,1%' (existe, mas é menos que uma casa) · null → '—'. */
 export function formatarPercentual(p: number | null): string {
-  return p === null ? '—' : `${fmtPct.format(p)}%`
+  if (p === null) return '—'
+  if (p > 0 && p < 0.1) return '<0,1%'
+  return `${fmtPct.format(p)}%`
 }
 
 /** '' → '(sem fornecedor)'. */
