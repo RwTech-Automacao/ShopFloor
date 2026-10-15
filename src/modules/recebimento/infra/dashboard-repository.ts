@@ -38,6 +38,8 @@ export async function carregarDashboard(filtros: FiltrosDashboard): Promise<Dado
     p_sinal: filtros.sinal,
   })
   if (error) throw error
+  // Sem erro e sem dados não é "dashboard vazio" (isso seria um zero mentiroso na tela): é falha.
+  if (data === null || data === undefined) throw new Error('rec_dashboard não devolveu dados')
   const r = data as DashboardRpc
   return {
     totais: {

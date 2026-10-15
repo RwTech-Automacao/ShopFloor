@@ -49,9 +49,19 @@ describe('carregarDashboard', () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'SEM_PERMISSAO' } })
     await expect(carregarDashboard(FILTROS_LIMPOS)).rejects.toEqual({ message: 'SEM_PERMISSAO' })
   })
+
+  it('data nulo SEM erro lança erro explícito, nunca um dashboard vazio', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await expect(carregarDashboard(FILTROS_LIMPOS)).rejects.toThrow(/rec_dashboard/)
+  })
 })
 
 describe('carregarOpcoesDashboard', () => {
+  it('erro do banco sobe', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'SEM_PERMISSAO' } })
+    await expect(carregarOpcoesDashboard()).rejects.toEqual({ message: 'SEM_PERMISSAO' })
+  })
+
   it('devolve as duas listas, vazias quando o banco não tem nada', async () => {
     rpc.mockResolvedValue({ data: { fornecedores: ['ACME', 'Vishay'], compradores: null }, error: null })
     expect(await carregarOpcoesDashboard()).toEqual({ fornecedores: ['ACME', 'Vishay'], compradores: [] })
