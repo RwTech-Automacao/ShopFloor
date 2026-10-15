@@ -27,8 +27,12 @@
 -- os contadores positivas/negativas continuam mostrando os dois sinais (para dar para trocar).
 --
 -- Índice em data_chegada: NÃO entra. Medido em 15/10/2026 no harness (300 mil linhas, set role
--- authenticated, EXPLAIN ANALYZE, mediana de 3): recorte de 90 dias em 103 ms sem índice e 83 ms
--- com — abaixo do teto de 150 ms. O usuário repete a medição no Dev com dados reais (plano, Task 6).
+-- authenticated, EXPLAIN ANALYZE, mediana de 3) COM a normalização por rec_norm_texto (regexp_replace):
+-- recorte de 90 dias em 112 ms sem índice e 48 ms com — abaixo do teto de 150 ms. (Com btrim, antes
+-- da rec_norm_texto, eram 104 ms; a regex custa uns 7 ms no recorte padrão.) Fora da carga padrão:
+-- tabela inteira ~864 ms e rec_dashboard_opcoes ~644 ms nessas 300 mil linhas — o índice não ajuda
+-- nenhuma das duas (varrem tudo). O volume real do Recebimento é bem menor que 300 mil linhas. O
+-- usuário repete a medição no Dev com dados reais (plano, Task 6).
 --
 --   Dev e demo (SQL Editor do Supabase): cola o arquivo inteiro e roda.
 --   RDS:  PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "<conexão>" \
