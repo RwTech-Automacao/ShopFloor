@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ESTADO_GRID_PADRAO,
+  FILTROS_RAPIDOS,
   codificarEstadoGrid,
   decodificarEstadoGrid,
   faixaDoMes,
@@ -73,13 +74,32 @@ describe('codificar/decodificarEstadoGrid', () => {
 })
 
 describe('filtro rápido de divergência', () => {
-  it.each(['divergencias', 'positivas', 'negativas'])('aceita %s', (valor) => {
+  it.each(['divergencias', 'positivas', 'negativas', 'resolvidas', 'nao_resolvidas'])('aceita %s', (valor) => {
     const param = JSON.stringify({ ...ESTADO_GRID_PADRAO, rapido: valor })
     expect(decodificarEstadoGrid(param, COLUNAS).rapido).toBe(valor)
   })
 
-  // O `?g=` é digitável: qualquer coisa fora do conjunto fechado tem de virar "sem filtro
-  // rápido" — nunca chegar à consulta nem derrubar a tela.
+  it('o conjunto fechado tem os cinco valores, na ordem da tela', () => {
+    expect([...FILTROS_RAPIDOS]).toEqual(['divergencias', 'positivas', 'negativas', 'resolvidas', 'nao_resolvidas'])
+  })
+
+  it('não há filtro pré-selecionado: estado padrão e param ausente abrem sem filtro rápido', () => {
+    expect(ESTADO_GRID_PADRAO.rapido).toBeUndefined()
+    expect(decodificarEstadoGrid(undefined, COLUNAS).rapido).toBeUndefined()
+  })
+
+  it('link antigo (com `g`, mas sem a chave rapido) abre sem filtro rápido', () => {
+    const param = JSON.stringify({ ordenar: 'numero', direcao: 'desc', pagina: 0, tamanho: 50, filtros: {} })
+    expect(decodificarEstadoGrid(param, COLUNAS).rapido).toBeUndefined()
+  })
+
+  it("o antigo 'nenhum' salvo por alguém é tratado como ausente, sem erro", () => {
+    const param = JSON.stringify({ ...ESTADO_GRID_PADRAO, rapido: 'nenhum' })
+    expect(decodificarEstadoGrid(param, COLUNAS).rapido).toBeUndefined()
+  })
+
+  // O `?g=` é digitável: qualquer coisa fora do conjunto fechado cai no padrão — nunca chega
+  // à consulta nem derruba a tela.
   it.each([
     ['valor fora do conjunto', 'tudo'],
     ['nome de coluna', 'divergencia_num'],
@@ -89,13 +109,17 @@ describe('filtro rápido de divergência', () => {
     ['array', ['positivas']],
     ['nulo', null],
     ['booleano', true],
-  ])('descarta %s, degradando para sem filtro rápido', (_nome, valor) => {
+  ])('descarta %s, tratado como ausente', (_nome, valor) => {
     const param = JSON.stringify({ ...ESTADO_GRID_PADRAO, rapido: valor })
     const estado = decodificarEstadoGrid(param, COLUNAS)
     expect(estado.rapido).toBeUndefined()
     // O resto do estado continua de pé: descartar o lixo não pode zerar a tela.
     expect(estado.ordenar).toBe(ESTADO_GRID_PADRAO.ordenar)
     expect(estado.tamanho).toBe(ESTADO_GRID_PADRAO.tamanho)
+  })
+
+  it('sem filtro rápido a chave não entra na URL', () => {
+    expect(codificarEstadoGrid(ESTADO_GRID_PADRAO)).not.toContain('rapido')
   })
 
   it('faz ida e volta preservando o filtro rápido junto com filtro de coluna e ordenação', () => {
@@ -108,10 +132,6 @@ describe('filtro rápido de divergência', () => {
       rapido: 'negativas',
     }
     expect(decodificarEstadoGrid(codificarEstadoGrid(estado), COLUNAS)).toEqual(estado)
-  })
-
-  it('sem filtro rápido a chave não entra na URL (os links já existentes seguem idênticos)', () => {
-    expect(codificarEstadoGrid(ESTADO_GRID_PADRAO)).not.toContain('rapido')
   })
 })
 

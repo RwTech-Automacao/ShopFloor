@@ -4,7 +4,7 @@ import type { EstadoGrid } from '../../domain/estado-grid'
 vi.mock('server-only', () => ({}))
 
 /**
- * Os filtros rápidos (Divergências / positivas / negativas) filtram NO BANCO, e têm de filtrar
+ * Os filtros rápidos (Todas / Positivas / Negativas / Resolvidas / Não Resolvidas) filtram NO BANCO, e têm de filtrar
  * pela coluna GERADA `divergencia_num` (0147) — nunca pela `divergencia`, que é `text` e compara
  * como texto ('9' > '10', '-5' > '0'). Estes testes olham a consulta que sai: o operador e a
  * coluna exatos. Trocar `gt` por `gte`, ou `divergencia_num` por `divergencia`, derruba o arquivo.
@@ -69,10 +69,20 @@ describe('montarQueryGrid: filtro rápido de divergência', () => {
     ['divergencias', 'neq'],
     ['positivas', 'gt'],
     ['negativas', 'lt'],
-  ] as const)('%s vira exatamente %s em divergencia_num', async (rapido, operador) => {
+    ['resolvidas', 'neq'],
+    ['nao_resolvidas', 'neq'],
+  ] as const)('%s tem como PRIMEIRA condição de divergência %s em divergencia_num', async (rapido, operador) => {
     await listar({ ...BASE, rapido })
-    expect(condicoesDeDivergencia()).toEqual([[operador, ['divergencia_num', 0]]])
+    expect(condicoesDeDivergencia()[0]).toEqual([operador, ['divergencia_num', 0]])
   })
+
+  it.each(['divergencias', 'positivas', 'negativas', 'resolvidas', 'nao_resolvidas'] as const)(
+    '%s exclui processo cancelado (uma única regra para os cinco)',
+    async (rapido) => {
+      await listar({ ...BASE, rapido })
+      expect(chamadas.filter(([, a]) => a[0] === 'status')).toEqual([['neq', ['status', 'cancelado']]])
+    },
+  )
 
   it('sem filtro rápido não aplica condição nenhuma de divergência', async () => {
     await listar(BASE)
@@ -80,6 +90,8 @@ describe('montarQueryGrid: filtro rápido de divergência', () => {
     expect(tabelas).toEqual(['processos_recebimento'])
     expect(chamadas.map(([m]) => m)).toContain('order')
     expect(condicoesDeDivergencia()).toEqual([])
+    // A exclusão do cancelado só vale QUANDO um dos cinco filtros está ativo.
+    expect(chamadas.filter(([, a]) => a[0] === 'status')).toEqual([])
   })
 
   it('o filtro rápido se soma ao filtro de coluna e à ordenação, numa só consulta', async () => {
@@ -93,6 +105,7 @@ describe('montarQueryGrid: filtro rápido de divergência', () => {
     })
     expect(chamadas).toEqual([
       ['ilike', ['fornecedor', '%ACME%']],
+      ['neq', ['status', 'cancelado']],
       ['gt', ['divergencia_num', 0]],
       ['order', ['fornecedor', { ascending: true }]],
       ['order', ['numero', { ascending: false }]],
@@ -103,6 +116,7 @@ describe('montarQueryGrid: filtro rápido de divergência', () => {
   it('ordenar PELA divergência não é filtrar: a ordem vai na coluna text, a condição na gerada', async () => {
     await listar({ ...BASE, ordenar: 'divergencia', rapido: 'negativas' })
     expect(chamadas).toEqual([
+      ['neq', ['status', 'cancelado']],
       ['lt', ['divergencia_num', 0]],
       ['order', ['divergencia', { ascending: false }]],
       ['order', ['numero', { ascending: false }]],
@@ -113,5 +127,83 @@ describe('montarQueryGrid: filtro rápido de divergência', () => {
   it('as setas ‹ › andam na mesma lista: listarIdsGrid também aplica o filtro rápido', async () => {
     await listarIdsGrid({ ...BASE, rapido: 'divergencias' }, {})
     expect(condicoesDeDivergencia()).toEqual([['neq', ['divergencia_num', 0]]])
+    expect(chamadas).toContainEqual(['neq', ['status', 'cancelado']])
+  })
+})
+
+/**
+ * Semântica LINHA A LINHA: aplica as condições que saíram na consulta (eq/neq/gt/lt) a linhas
+ * de exemplo, com a lógica do SQL — comparação com nulo nunca é verdadeira. Cada filtro tem um
+ * controle positivo (linha que tem de entrar) e vários negativos (linhas que têm de ficar de fora).
+ */
+type Linha = { nome: string; divergencia_num: number | null; divergencia_justificativa: string; status: string }
+
+const LINHAS: Linha[] = [
+  { nome: 'pos-pendente', divergencia_num: 5, divergencia_justificativa: '', status: 'aberto' },
+  { nome: 'pos-justificada', divergencia_num: 5, divergencia_justificativa: 'caiu da paleta', status: 'aberto' },
+  { nome: 'neg-pendente', divergencia_num: -3, divergencia_justificativa: '', status: 'em_conferencia' },
+  { nome: 'neg-justificada', divergencia_num: -3, divergencia_justificativa: 'faltou na NF', status: 'finalizado' },
+  // A justificativa SOBREVIVE ao desaparecimento da divergência — e isso NÃO é "resolvida".
+  { nome: 'sem-divergencia-justificada', divergencia_num: 0, divergencia_justificativa: 'texto antigo', status: 'aberto' },
+  { nome: 'sem-divergencia', divergencia_num: 0, divergencia_justificativa: '', status: 'aberto' },
+  { nome: 'nao-conferida', divergencia_num: null, divergencia_justificativa: '', status: 'aberto' },
+  { nome: 'cancelada-pendente', divergencia_num: 5, divergencia_justificativa: '', status: 'cancelado' },
+  { nome: 'cancelada-justificada', divergencia_num: -3, divergencia_justificativa: 'x', status: 'cancelado' },
+]
+
+async function nomesQueEntram(rapido: EstadoGrid['rapido']) {
+  chamadas.length = 0
+  await listar({ ...BASE, rapido })
+  const condicoes = chamadas.filter(([m]) => ['eq', 'neq', 'gt', 'lt'].includes(m))
+  return LINHAS.filter((linha) =>
+    condicoes.every(([metodo, [campo, valor]]) => {
+      const atual = (linha as Record<string, unknown>)[campo as string] as number | string | null
+      if (atual === null) return false
+      if (metodo === 'eq') return atual === valor
+      if (metodo === 'neq') return atual !== valor
+      if (metodo === 'gt') return (atual as number) > (valor as number)
+      return (atual as number) < (valor as number)
+    }),
+  ).map((l) => l.nome)
+}
+
+describe('filtro rápido: quais linhas entram', () => {
+  it('Todas Divergências: toda divergência, justificada ou não; cancelada e sem divergência ficam fora', async () => {
+    expect(await nomesQueEntram('divergencias')).toEqual([
+      'pos-pendente', 'pos-justificada', 'neg-pendente', 'neg-justificada',
+    ])
+  })
+
+  it('Positivas', async () => {
+    expect(await nomesQueEntram('positivas')).toEqual(['pos-pendente', 'pos-justificada'])
+  })
+
+  it('Negativas', async () => {
+    expect(await nomesQueEntram('negativas')).toEqual(['neg-pendente', 'neg-justificada'])
+  })
+
+  it('Resolvidas: divergência COM justificativa — a justificativa solta de quem não tem divergência não conta', async () => {
+    const entram = await nomesQueEntram('resolvidas')
+    expect(entram).toEqual(['pos-justificada', 'neg-justificada'])
+    expect(entram).not.toContain('sem-divergencia-justificada')
+    expect(entram).not.toContain('cancelada-justificada')
+  })
+
+  it('Não Resolvidas: divergência SEM justificativa; a cancelada fica de fora', async () => {
+    const entram = await nomesQueEntram('nao_resolvidas')
+    expect(entram).toEqual(['pos-pendente', 'neg-pendente'])
+    expect(entram).not.toContain('cancelada-pendente')
+    expect(entram).not.toContain('nao-conferida')
+  })
+
+  it('Resolvidas e Não Resolvidas particionam as divergências não canceladas', async () => {
+    const r = await nomesQueEntram('resolvidas')
+    const n = await nomesQueEntram('nao_resolvidas')
+    const todas = await nomesQueEntram('divergencias')
+    expect([...r, ...n].sort()).toEqual([...todas].sort())
+  })
+
+  it('Sem filtro rápido: todas as linhas, inclusive cancelada e sem divergência', async () => {
+    expect(await nomesQueEntram(undefined)).toHaveLength(LINHAS.length)
   })
 })

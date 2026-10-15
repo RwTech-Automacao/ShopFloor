@@ -45,6 +45,7 @@ import {
   PackageSearch,
   Boxes,
   Server,
+  ChartColumn,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -71,10 +72,11 @@ interface FolhaModular extends Folha {
 
 const HOME: Folha = { chave: 'home', rotulo: 'Home', href: '/home', icone: Home, perm: 'visualizar' }
 
-const RECEBIMENTO: FolhaModular[] = [
+export const RECEBIMENTO: FolhaModular[] = [
   { chave: 'importar', rotulo: 'Importar Planilha', href: '/recebimento/importar', icone: Upload, modulo: 'recebimento', perm: 'importar' },
   { chave: 'processos', rotulo: 'Processos', href: '/recebimento/processos', icone: ClipboardList, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'rec-fluxo', rotulo: 'Fluxo', href: '/recebimento/fluxo', icone: Workflow, modulo: 'recebimento', perm: 'visualizar' },
+  { chave: 'rec-dashboard', rotulo: 'Dashboard', href: '/recebimento/dashboard', icone: ChartColumn, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'rec-registros', rotulo: 'Registros', href: '/recebimento/registros', icone: History, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'etiquetas', rotulo: 'Etiquetas', href: '/recebimento/etiquetas', icone: Tags, modulo: 'recebimento', perm: 'gerar_etiqueta' },

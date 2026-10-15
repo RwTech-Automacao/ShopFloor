@@ -54,12 +54,14 @@ interface Otimista {
 
 type AoAbrirJustificativa = (linha: Record<string, unknown>) => void
 
-/** Rótulo de cada filtro rápido, como o usuário pediu em 09/10/2026. "Divergências" é TODA
- *  divergência (justificada ou não); as outras duas são o recorte pelo sinal. */
+/** Rótulo de cada filtro rápido, como o usuário pediu em 15/10/2026. "Todas Divergências" é TODA
+ *  divergência (justificada ou não); as outras são recortes dela pelo sinal ou pela justificativa. */
 const ROTULOS_RAPIDOS: Record<FiltroRapido, string> = {
-  divergencias: 'Divergências',
-  positivas: 'positivas',
-  negativas: 'negativas',
+  divergencias: 'Todas Divergências',
+  positivas: 'Divergências Positivas',
+  negativas: 'Divergências Negativas',
+  resolvidas: 'Divergências Resolvidas',
+  nao_resolvidas: 'Divergências Não Resolvidas',
 }
 
 function textoJustificativa(linha: Record<string, unknown>): string {
@@ -160,8 +162,7 @@ export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, 
     })
   }
 
-  /** Um só estado: clicar no que já está ligado desliga (volta a mostrar tudo); clicar noutro
-   *  troca. Zera a página, como os filtros de coluna — a página 8 do conjunto de antes não
+  /** Um só estado: clicar no que já está ligado desliga (volta a mostrar tudo); clicar noutro troca. Zera a página, como os filtros de coluna — a página 8 do conjunto de antes não
    *  existe no conjunto de agora. */
   function alternarRapido(valor: FiltroRapido) {
     aplicar({ ...estado, rapido: estado.rapido === valor ? undefined : valor, pagina: 0 })
