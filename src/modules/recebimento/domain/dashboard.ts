@@ -304,8 +304,8 @@ export const EXPLICA = {
   semanas:
     'Itens divergentes por semana de chegada (segunda a domingo), separados em justificados e sem ' +
     'justificativa. Semana sem divergência aparece com altura zero. Itens sem data de chegada não ' +
-    'entram aqui. O gráfico mostra, no máximo, as últimas 520 semanas do recorte (os totais e o ' +
-    'ranking contam tudo). Clique numa semana para filtrar por ela.',
+    'entram aqui. O gráfico mostra, no máximo, as últimas 520 semanas do recorte e ignora datas de ' +
+    'chegada mais de um ano no futuro (os totais e o ranking contam tudo). Clique numa semana para filtrar por ela.',
   sinal:
     'Itens que chegaram a mais (divergência maior que zero) e a menos (menor que zero). Clique numa ' +
     'barra para ver só aquele sinal.',

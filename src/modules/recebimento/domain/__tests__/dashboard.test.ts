@@ -274,7 +274,8 @@ describe('textos dos ⓘ (ressalvas da revisão final)', () => {
     expect(EXPLICA.fornecedores).toMatch(/ACME/)
     expect(EXPLICA.fornecedores).toMatch(/pontas/i)
   })
-  it('o gráfico semanal avisa do limite de 520 semanas', () => {
+  it('o gráfico semanal avisa do limite de 520 semanas e das datas futuras', () => {
     expect(EXPLICA.semanas).toContain('no máximo, as últimas 520 semanas do recorte')
+    expect(EXPLICA.semanas).toContain('ignora datas de chegada mais de um ano no futuro')
   })
 })
