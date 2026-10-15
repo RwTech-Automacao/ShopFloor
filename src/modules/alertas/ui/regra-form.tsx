@@ -287,7 +287,7 @@ export function RegraForm({
   function salvar() {
     // Mesma validação do servidor, antes de ir ao banco: o gestor vê o erro na hora.
     const dados = entrada()
-    const v = validarRegra(dados, { canalConfigurado })
+    const v = validarRegra(dados, { canalConfigurado, canaisConfigurados: configurados })
     if (!v.ok) {
       toast.error(v.erro, TOAST)
       return

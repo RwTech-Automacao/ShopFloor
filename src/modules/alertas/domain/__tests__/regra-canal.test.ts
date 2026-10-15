@@ -115,3 +115,68 @@ describe('validarRegra — canal do Discord não configurado no ambiente', () =>
     expect(r.ok).toBe(true)
   })
 })
+
+describe('validarRegra — canais marcados que o ambiente não tem', () => {
+  const TODOS = { telegram: true, discord: true, email: true }
+
+  it('só o e-mail marcado e sem SMTP: recusado, com o nome do canal', () => {
+    expect(
+      validarRegra({ ...BASE, canais: ['email'] }, { canaisConfigurados: { ...TODOS, email: false } }),
+    ).toEqual({ ok: false, erro: 'O E-mail não está configurado neste ambiente; marque outro canal.' })
+  })
+
+  it('vários canais marcados, nenhum configurado: a mensagem nomeia todos', () => {
+    expect(
+      validarRegra(
+        { ...BASE, canais: ['email', 'telegram'] },
+        { canaisConfigurados: { telegram: false, discord: true, email: false } },
+      ),
+    ).toEqual({
+      ok: false,
+      erro: 'Nenhum dos canais marcados (Telegram, E-mail) está configurado neste ambiente; marque outro canal.',
+    })
+  })
+
+  it('um configurado e outro não: salva como antes', () => {
+    const r = validarRegra(
+      { ...BASE, canais: ['telegram', 'email'] },
+      { canaisConfigurados: { ...TODOS, email: false } },
+    )
+    expect(r.ok).toBe(true)
+  })
+
+  it('sem o mapa no ambiente, a checagem é pulada (o comportamento de antes)', () => {
+    expect(validarRegra({ ...BASE, canais: ['email'] }, {}).ok).toBe(true)
+    expect(validarRegra({ ...BASE, canais: ['email'] }).ok).toBe(true)
+  })
+
+  it('nenhum canal marcado continua com o erro de sempre', () => {
+    expect(
+      validarRegra(
+        { ...BASE, canais: [] },
+        { canaisConfigurados: { telegram: false, discord: false, email: false } },
+      ),
+    ).toEqual({
+      ok: false,
+      erro: 'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.',
+    })
+  })
+
+  it('vale para os outros tipos também (fim de EMB)', () => {
+    const r = validarRegra(
+      {
+        ...BASE,
+        modulo: 'recebimento',
+        tipo: 'emb',
+        postos: [],
+        taxaMinima: '',
+        janelaTipo: '',
+        janelaValor: null,
+        minimoBipes: '',
+        canais: ['email'],
+      },
+      { canaisConfigurados: { ...TODOS, email: false } },
+    )
+    expect(r).toEqual({ ok: false, erro: 'O E-mail não está configurado neste ambiente; marque outro canal.' })
+  })
+})

@@ -184,6 +184,11 @@ function unicos(lista: unknown): string[] {
 export interface AmbienteRegra {
   /** O canal do Discord do sistema está pronto (token do bot + DISCORD_CANAL_ID)? */
   canalConfigurado?: boolean
+  /**
+   * Quais canais da mensagem direta este ambiente tem (Telegram, Discord, E-mail). Ausente = não
+   * confere. Quem SALVA a regra informa o mapa real: o servidor o calcula, nunca o cliente.
+   */
+  canaisConfigurados?: Record<Canal, boolean>
 }
 
 export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Resultado<RegraValida> {
@@ -374,6 +379,20 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     return erro(
       'O canal do Discord não está configurado neste ambiente: marque também a mensagem direta ao responsável, ou peça ao TI para configurar o canal.',
     )
+  }
+
+  // Regra cujos canais marcados estão TODOS sem credencial neste ambiente é um beco sem saída: o
+  // banco enfileira, ninguém entrega, a mensagem vence em 24 h e (no fim de EMB) a marca "já
+  // avisada" impede um segundo aviso. Basta UM canal marcado e configurado para salvar.
+  if (avisarPessoas && ambiente.canaisConfigurados) {
+    const mapa = ambiente.canaisConfigurados
+    if (canaisPrivado.every((c) => !mapa[c])) {
+      return erro(
+        canaisPrivado.length === 1
+          ? `O ${NOME_CANAL[canaisPrivado[0]!]} não está configurado neste ambiente; marque outro canal.`
+          : `Nenhum dos canais marcados (${canaisPrivado.map((c) => NOME_CANAL[c]).join(', ')}) está configurado neste ambiente; marque outro canal.`,
+      )
+    }
   }
 
   /**

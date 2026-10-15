@@ -81,6 +81,7 @@ function montar(
     regra?: RegraAlerta | null
     onSalvo?: () => void
     canalConfigurado?: boolean
+    configurados?: Record<'telegram' | 'discord' | 'email', boolean>
     postos?: PostoRegra[]
   } = {},
 ) {
@@ -93,7 +94,7 @@ function montar(
       postos={o.postos ?? POSTOS}
       pmosDisponiveis={PMOS}
       destinatarios={DESTINATARIOS}
-      configurados={CONFIGURADOS}
+      configurados={o.configurados ?? CONFIGURADOS}
       canalConfigurado={o.canalConfigurado ?? true}
       onSalvo={onSalvo}
       onCancelar={vi.fn()}
@@ -515,6 +516,20 @@ describe('RegraForm — como avisar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(toastErro).toHaveBeenCalledWith(
       'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.',
+      TOAST,
+    )
+    expect(salvarRegraAction).not.toHaveBeenCalled()
+  })
+
+  it('só canal sem credencial no ambiente: mostra o erro ao salvar e não chama a action', () => {
+    montar({ configurados: { telegram: true, discord: true, email: false } })
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'So email' } })
+    fireEvent.click(screen.getByLabelText('Teste'))
+    fireEvent.click(screen.getByLabelText('Ana Gestora'))
+    fireEvent.click(screen.getByLabelText(/^E-mail/))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(toastErro).toHaveBeenCalledWith(
+      'O E-mail não está configurado neste ambiente; marque outro canal.',
       TOAST,
     )
     expect(salvarRegraAction).not.toHaveBeenCalled()

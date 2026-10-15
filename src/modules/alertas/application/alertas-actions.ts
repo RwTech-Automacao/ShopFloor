@@ -27,7 +27,7 @@ import {
   previaRegra,
   resolverOcorrenciaComoAdmin,
 } from '../infra/regras-repository'
-import { canalDiscordConfigurado } from '../infra/canais'
+import { canaisConfigurados, canalDiscordConfigurado } from '../infra/canais'
 import { criarDependenciasAlertas } from '../infra/fabrica'
 import { avaliarEEnviar, entregarPendentes, removerBotoesDaOcorrencia, type ResumoAvaliacao } from './enviar-alertas'
 
@@ -66,7 +66,11 @@ export async function salvarRegraAction(
 
     // O módulo é o da ROTA, nunca o que o formulário mandar: é o que impede uma tela de gravar
     // regra no módulo do vizinho.
-    const v = validarRegra({ ...entrada, modulo }, { canalConfigurado: canalDiscordConfigurado() })
+    const v = validarRegra({ ...entrada, modulo }, {
+      canalConfigurado: canalDiscordConfigurado(),
+      // Calculado AQUI, no servidor: o que o formulário viu não vale como autoridade.
+      canaisConfigurados: canaisConfigurados(),
+    })
     if (!v.ok) return { ok: false, erro: v.erro }
 
     if (id) {

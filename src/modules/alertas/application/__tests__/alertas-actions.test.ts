@@ -37,7 +37,12 @@ const entradaValida = (extra: Partial<EntradaRegra> = {}): EntradaRegra => ({ ..
 
 // Lançamento escondido: sem a variável ninguém é liberado. Aqui liberamos todos por padrão;
 // o teste de recusa troca a lista dentro do próprio caso.
-beforeEach(() => { vi.stubEnv('ALERTAS_LIBERADO_PARA', '*') })
+// O ambiente de teste tem o Telegram configurado: as regras de ENTRADA usam esse canal, e a ação
+// recusa regra cujos canais marcados não existem no ambiente.
+beforeEach(() => {
+  vi.stubEnv('ALERTAS_LIBERADO_PARA', '*')
+  vi.stubEnv('TELEGRAM_BOT_TOKEN', 'token')
+})
 afterEach(() => { vi.unstubAllEnvs() })
 
 describe('actions de alertas — payload malformado não lança exceção', () => {
@@ -126,6 +131,39 @@ describe('actions de alertas — payload malformado não lança exceção', () =
       ativa: true,
     })
     expect(r).toEqual({ ok: false, erro: 'Escolha o tipo da regra.' })
+    limparMocks()
+  })
+
+  it('salvarRegraAction: o servidor mede os canais do ambiente; regra só com canal sem credencial é recusada e nada é gravado', async () => {
+    const inserirRegra = vi.fn()
+    const atualizarRegra = vi.fn()
+    comoGestor()
+    repositorioFalso({ inserirRegra, atualizarRegra })
+    // O ambiente tem Telegram, mas não tem SMTP: o cliente não manda mapa nenhum — o servidor o calcula.
+    vi.stubEnv('TELEGRAM_BOT_TOKEN', 'token')
+    vi.stubEnv('SMTP_HOST', '')
+    vi.resetModules()
+    const { salvarRegraAction } = await import('../alertas-actions')
+    const msg = 'O E-mail não está configurado neste ambiente; marque outro canal.'
+    expect(await salvarRegraAction('shopfloor', null, entradaValida({ canais: ['email'] }))).toEqual({ ok: false, erro: msg })
+    expect(await salvarRegraAction('shopfloor', 'r1', entradaValida({ canais: ['email'] }))).toEqual({ ok: false, erro: msg })
+    expect(inserirRegra).not.toHaveBeenCalled()
+    expect(atualizarRegra).not.toHaveBeenCalled()
+    limparMocks()
+  })
+
+  it('salvarRegraAction: com ao menos um canal configurado entre os marcados, grava', async () => {
+    const inserirRegra = vi.fn().mockResolvedValue({ ok: true, id: 'nova' })
+    comoGestor()
+    repositorioFalso({ inserirRegra })
+    vi.doMock('@/modules/logs/application/registrar-log', () => ({ registrarLog: async () => {} }))
+    vi.stubEnv('TELEGRAM_BOT_TOKEN', 'token')
+    vi.stubEnv('SMTP_HOST', '')
+    vi.resetModules()
+    const { salvarRegraAction } = await import('../alertas-actions')
+    const r = await salvarRegraAction('shopfloor', null, entradaValida({ canais: ['telegram', 'email'] }))
+    expect(r).toEqual({ ok: true, id: 'nova' })
+    expect(inserirRegra).toHaveBeenCalledTimes(1)
     limparMocks()
   })
 
