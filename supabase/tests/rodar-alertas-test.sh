@@ -254,6 +254,17 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0150.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0150.sql   # de novo: idempotente
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_emb.sql
+
+# ---------- teto de idade de 3 dias do fim de EMB: apos a 0150 E apos a 0151 ----------
+# Em producao a funcao viva e a da 0151, entao a copia do teto la tambem precisa de prova. Cada
+# passada troca @P@ por um sufixo proprio e se limpa. TETO_RUN_AB / TETO_RUN_C (1/0) deixam rodar
+# um caso so (usado para provar que cada um tem dentes sozinho).
+docker cp supabase/tests/alertas_emb_teto_test.sql "$NOME":/tmp/teto_base.sql
+teto_passada() {
+  docker exec "$NOME" sh -c "sed 's/@P@/$1/g' /tmp/teto_base.sql > /tmp/teto_$1.sql"
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -v run_ab="${TETO_RUN_AB:-1}" -v run_c="${TETO_RUN_C:-1}" -f /tmp/teto_$1.sql
+}
+teto_passada pos0150
 echo "0150 (fim de EMB): ok"
 
 # ---------- 0151: canal 'email' ----------
@@ -265,5 +276,7 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0151.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0151.sql   # de novo: idempotente
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_email.sql
 echo "0151 (canal email): ok"
+teto_passada pos0151
+echo "teto de 3 dias pos-0151: ok"
 
 echo "ALERTAS SQL OK"

@@ -22,9 +22,9 @@
 --   T8  ⚠️ o fim de EMB não encosta no caminho da ocorrência: alerta_ocorrencias não ganha linha,
 --       e `avaliadas` não sobe por causa dele;
 --   T9  o filtro por EMB não vaza: a divergência da EMB vizinha não entra na mensagem;
---   T10 os tipos antigos continuam avaliando na MESMA rodada;
---   T11 ⚠️ o teto de idade (3 dias): EMB fechada ha mais tempo nao avisa nem e marcada, inclusive
---       quando uma regra travada/reativada volta a alcancar alguem.
+--   T10 os tipos antigos continuam avaliando na MESMA rodada.
+-- (O teto de idade de 3 dias tem arquivo proprio, alertas_emb_teto_test.sql: roda apos a 0150 E
+-- apos a 0151, porque em producao a funcao viva e a da 0151.)
 -- (A idempotência da 0150 é do runner: ela é aplicada duas vezes.)
 
 select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
@@ -399,78 +399,6 @@ begin
   end if;
 end $t$;
 \echo 'T10 (tipos antigos intactos): ok'
-
--- ---------- T11: o TETO DE IDADE (3 dias) ----------
--- O piso criado_em sozinho nao cobre regra reativada depois de semanas nem regra que passou dias
--- sem ninguem alcancavel: a marca so e gravada quando algo entra na fila, entao todas as EMBs
--- fechadas desde a criacao da regra viravam aviso "atrasado" de uma vez. O teto: EMB fechada ha
--- mais de 3 dias nao avisa e nao e marcada.
-create function public.teste_fechar_ha(p_emb text, p_intervalo interval) returns void language sql as $f$
-  update public.processos_recebimento
-     set finalizado_em = now() - p_intervalo, created_at = now() - p_intervalo - interval '1 day'
-   where numero_emb = p_emb
-$f$;
-
--- (a) + (b): regra alcancavel criada ha 10 dias; EMB de 4 dias NAO avisa e NAO marca; EMB de 2 dias
--- avisa e marca (controle positivo no mesmo teste: nao passa por "nao fazer nada").
-select public.teste_regra_emb('Teto 3 dias', array['00000000-0000-0000-0000-0000000000b1']::uuid[],
-                              now() - interval '10 days');
-select public.teste_item_emb('EMB810', 'T-1', 'Aprovado', 10, 9);
-select public.teste_item_emb('EMB811', 'T-2', 'Aprovado', 10, 9);
-select public.teste_fechar_ha('EMB810', interval '4 days');
-select public.teste_fechar_ha('EMB811', interval '2 days');
-do $t$
-begin
-  set local role service_role;
-  perform public.teste_avaliar();
-  reset role;
-  if public.teste_envios_emb('Teto 3 dias', 'EMB810') <> 0 then
-    raise exception 'T11a FALHOU: EMB fechada ha 4 dias foi avisada (passou do teto)';
-  end if;
-  if public.teste_marca_emb('Teto 3 dias', 'EMB810') then
-    raise exception 'T11a FALHOU: EMB fora do teto recebeu marca';
-  end if;
-  if public.teste_envios_emb('Teto 3 dias', 'EMB811') <> 1 then
-    raise exception 'T11b FALHOU: EMB fechada ha 2 dias nao foi avisada (controle positivo)';
-  end if;
-  if not public.teste_marca_emb('Teto 3 dias', 'EMB811') then
-    raise exception 'T11b FALHOU: EMB dentro do teto nao foi marcada';
-  end if;
-end $t$;
-\echo 'T11a/b (teto de 3 dias: 4 dias nao avisa, 2 dias avisa): ok'
-
--- (c) a regra "travada": ninguem alcancavel enquanto uma EMB de 5 dias e uma de ontem fecham;
--- depois a regra passa a ter quem receba. A velha continua sem aviso; a de ontem avisa.
-select public.teste_regra_emb('Teto travada', array['00000000-0000-0000-0000-0000000000b2']::uuid[],
-                              now() - interval '10 days');
-select public.teste_item_emb('EMB820', 'T-3', 'Aprovado', 10, 9);
-select public.teste_item_emb('EMB821', 'T-4', 'Aprovado', 10, 9);
-select public.teste_fechar_ha('EMB820', interval '5 days');
-select public.teste_fechar_ha('EMB821', interval '1 day');
-do $t$
-begin
-  set local role service_role;
-  perform public.teste_avaliar();
-  reset role;
-  if public.teste_envios_emb('Teto travada', 'EMB820') + public.teste_envios_emb('Teto travada', 'EMB821') <> 0 then
-    raise exception 'T11c FALHOU: enfileirou enquanto ninguem era alcancavel';
-  end if;
-  -- Alguem passa a ser alcancavel (a conta foi vinculada / a permissao voltou).
-  update public.alerta_regras set destinatarios = array['00000000-0000-0000-0000-0000000000b1']::uuid[]
-   where nome = 'Teto travada';
-  set local role service_role;
-  perform public.teste_avaliar();
-  reset role;
-  if public.teste_envios_emb('Teto travada', 'EMB820') <> 0 or public.teste_marca_emb('Teto travada', 'EMB820') then
-    raise exception 'T11c FALHOU: a EMB de 5 dias foi avisada/marcada quando a regra voltou a alcancar';
-  end if;
-  if public.teste_envios_emb('Teto travada', 'EMB821') <> 1 then
-    raise exception 'T11c FALHOU: a EMB de ontem nao foi avisada quando a regra voltou a alcancar';
-  end if;
-end $t$;
-\echo 'T11c (regra travada que volta a alcancar: so a recente avisa): ok'
-
-drop function public.teste_fechar_ha(text, interval);
 
 drop function public.teste_regra_emb(text, uuid[], timestamptz);
 drop function public.teste_item_emb(text, text, text, numeric, numeric, text, text);
