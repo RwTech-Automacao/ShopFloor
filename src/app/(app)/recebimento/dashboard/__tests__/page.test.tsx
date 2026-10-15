@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 
 vi.mock('server-only', () => ({}))
 // Os componentes da tela são clientes e usam o router do App Router, que não existe no teste.
+// push e pathname ESTÁVEIS (mesma referência em toda chamada): o teste inspeciona a navegação.
+const { push } = vi.hoisted(() => ({ push: vi.fn() }))
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push, refresh: vi.fn() }),
   usePathname: () => '/recebimento/dashboard',
 }))
 
@@ -90,5 +92,35 @@ describe('página do dashboard do Recebimento — os filtros da URL', () => {
     render(await DashboardRecebimentoPage({ searchParams: Promise.resolve({}) }))
     expect(screen.getByText(/Não foi possível carregar o dashboard/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Limpar filtros' })).toBeInTheDocument()
+  })
+})
+
+describe('página do dashboard do Recebimento — aplicar filtro é navegar (estado na URL)', () => {
+
+  async function telaCom(params: Record<string, string> = {}) {
+    getSessao.mockResolvedValue(sessao({ recebimento: { visualizar: true } }))
+    render(await DashboardRecebimentoPage({ searchParams: Promise.resolve(params) }))
+  }
+
+  it('Filtrar com uma EMB navega para a URL com a EMB (o recorte padrão não vai na URL)', async () => {
+    await telaCom()
+    fireEvent.change(screen.getByLabelText('EMB'), { target: { value: 'EMB2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar' }))
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledWith('/recebimento/dashboard?emb=EMB2')
+  })
+
+  it('Limpar filtros navega para periodo=tudo', async () => {
+    await telaCom()
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }))
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledWith('/recebimento/dashboard?periodo=tudo')
+  })
+
+  it('tirar uma etiqueta navega para a URL sem aquele filtro', async () => {
+    await telaCom({ fornecedor: 'Vishay', emb: 'EMB2' })
+    fireEvent.click(screen.getByRole('button', { name: 'Tirar o filtro Fornecedor: Vishay' }))
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledWith('/recebimento/dashboard?emb=EMB2')
   })
 })
