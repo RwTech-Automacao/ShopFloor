@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
-import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
+import { resumoPostos, type PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { NOME_CANAL, NOME_TIPO_REGRA, type Canal } from '@/modules/alertas/domain/tipos'
 import {
   resumoJanelaRegra,
@@ -53,6 +53,8 @@ export function RegrasLista({
   }
 
   const nomes = new Map(destinatarios.map((d) => [d.usuarioId, d.nome]))
+  // O catalogo de postos, so as chaves: e com ele que o resumo decide se a regra tem TODOS.
+  const chavesPostos = postos.map((p) => p.chave)
 
   // Enquanto o módulo não tiver nenhum tipo de regra, "Nova regra" abriria um diálogo com zero
   // cartões para escolher — um beco sem saída. Melhor o botão desligado e a frase do porquê.
@@ -127,8 +129,11 @@ export function RegrasLista({
                 {/* O fim de EMB não tem posto (`postos: []`): a célula ficaria em branco, parecendo
                     dado que não carregou. Um travessão é o "não se aplica" que o resto da tela já usa
                     — e a coluna Limite ao lado já diz o gatilho ("Todos os processos no fim"), então
-                    repetir a frase aqui seria ruído. */}
-                <TableCell>{r.postos.length === 0 ? '—' : r.postos.join(', ')}</TableCell>
+                    repetir a frase aqui seria ruído. Com postos, a célula é RESUMIDA (com os 12 marcados virava um
+                    parágrafo e esticava a linha); a lista inteira fica no `title`, ao parar o mouse. */}
+                <TableCell title={r.postos.join(', ')}>
+                  {r.postos.length === 0 ? '—' : resumoPostos(r.postos, chavesPostos)}
+                </TableCell>
                 <TableCell>{resumoLimite(r)}</TableCell>
                 <TableCell>{resumoJanelaRegra(r)}</TableCell>
                 <TableCell>{resumoPmos(r.pmos)}</TableCell>
@@ -184,7 +189,7 @@ export function RegrasLista({
               {[
                 NOME_TIPO_REGRA[r.tipo],
                 resumoLimite(r),
-                r.postos.join(', '),
+                resumoPostos(r.postos, chavesPostos),
                 resumoJanelaRegra(r),
                 `PMOs: ${resumoPmos(r.pmos)}`,
               ]
