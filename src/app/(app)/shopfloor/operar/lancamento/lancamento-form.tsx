@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, X, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -113,6 +114,7 @@ export function LancamentoForm({
   const grupoSeqRef = useRef(0) // contador de envios em lote → pente (peças lançadas juntas) no histórico
   const bloqueioRef = useRef<HTMLInputElement>(null) // sumidouro: engole o bipe durante a gravação (não cai em outro campo)
   const { confirmar, dialog } = useConfirmacao()
+  const router = useRouter() // refresh() quando o bipe cai em OP finalizada: re-busca a lista `ordens`
 
   const ordemSel = useMemo(
     () => ordens.find((o) => o.cliente === cliente && o.pmo === pmo && o.op === op) ?? null,
@@ -307,7 +309,22 @@ export function LancamentoForm({
     if (bipeCab.trim() === '') return
     const r = resolverOpPorSn(ordens, bipeCab)
     if (!r.ok) {
-      toast.error(r.erro === 'SEM_OP' ? 'SN não encontrado em nenhuma OP.' : 'SN cai em mais de uma OP.')
+      // OP finalizada: a peça existe, só a OP está encerrada. Diz QUAL OP é (mandar "reative a OP"
+      // sem PMO/OP não ajuda quem está no posto) e manda falar com quem PODE reativar: o Cadastro
+      // de OP exige `administrar` no módulo shopfloor, e quem bipa não tem essa permissão.
+      toast.error(
+        r.erro === 'OP_FINALIZADA'
+          ? `OP ${r.ordem.pmo}/${r.ordem.op} está finalizada. Fale com um administrador do ShopFloor para reativá-la e bipe de novo.`
+          : r.erro === 'SEM_OP'
+            ? 'SN não encontrado em nenhuma OP.'
+            : 'SN cai em mais de uma OP.',
+      )
+      // `ordens` é prop de Server Component, resolvida UMA vez no carregamento — e a tela do posto
+      // fica aberta o turno inteiro. Sem isto, o gestor reativa a OP e o MESMO bipe repete a MESMA
+      // mensagem para sempre, até alguém apertar F5. `router.refresh()` re-roda a página no
+      // servidor e troca a prop sem perder o estado do cliente (lote, histórico, foco), então o
+      // PRÓXIMO bipe já usa a lista nova.
+      if (r.erro === 'OP_FINALIZADA') router.refresh()
       bipeCabRef.current?.select()
       return
     }

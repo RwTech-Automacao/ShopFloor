@@ -1,6 +1,8 @@
 import { avaliarEEnviar } from '@/modules/alertas/application/enviar-alertas'
 import { criarDependenciasAlertas } from '@/modules/alertas/infra/fabrica'
 import { segredoConfere } from '@/modules/alertas/infra/assinatura'
+import { sincronizarFinalizacaoDasOps } from '@/modules/shopfloor/infra/finalizacao-repository'
+import { rodarFinalizacaoContida } from '@/modules/shopfloor/application/rodar-finalizacao'
 
 /** Depende do cabeçalho e escreve no banco: nunca pode ser servida de cache. */
 export const dynamic = 'force-dynamic'
@@ -10,6 +12,10 @@ export const dynamic = 'force-dynamic'
  * no argv — ver tools/alertas/README.md §5):
  *   curl -fsS -m 60 -X POST -H @$HOME/.alertas-cron-header http://127.0.0.1:3000/api/alertas/avaliar
  * Com o RDS desligado (plano de economia), responde 503 e registra no log — nada mais.
+ *
+ * Depois de os alertas saírem, o mesmo cron mantém o status das OPs em sincronia com a % de conclusão
+ * (finalização automática, migração 0145). Isso é SECUNDÁRIO: roda contido (nunca lança, tem teto de
+ * tempo) e não altera a resposta — um defeito ali atrasa o encerramento de uma OP, nunca cala um alerta.
  */
 export async function POST(request: Request): Promise<Response> {
   const esperado = process.env.ALERTAS_CRON_SECRET ?? ''
@@ -26,6 +32,8 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const { portas, repo } = criarDependenciasAlertas()
     const resumo = await avaliarEEnviar(portas, repo)
+    // Depois do envio, de propósito. Contido: não lança, não muda a resposta.
+    await rodarFinalizacaoContida(() => sincronizarFinalizacaoDasOps())
     return Response.json(resumo)
   } catch (e) {
     console.error('[alertas] avaliar falhou:', e instanceof Error ? e.message : e)

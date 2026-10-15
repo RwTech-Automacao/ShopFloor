@@ -38,18 +38,6 @@ export interface SfLancarArgs {
   p_observacao: string
 }
 
-/** Clientes distintos das OPs ativas (status ≠ FINALIZADA). */
-export async function listarClientes(): Promise<string[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select('cliente')
-    .neq('status', 'FINALIZADA')
-    .order('cliente')
-  if (error) throw error
-  return [...new Set((data as { cliente: string }[]).map((r) => r.cliente).filter(Boolean))]
-}
-
 /** Nº de peças DISTINTAS (SN único) já lançadas nesse posto pra essa OP. Rebipe/reteste não soma. */
 /**
  * Peças DISTINTAS "aprovadas/passadas" no posto = SNs cujo ÚLTIMO registro no posto NÃO é 'reprovado'.
@@ -83,31 +71,6 @@ export async function contarLancadosNoPosto(pmo: string, op: string, posto: stri
   let n = 0
   for (const v of ultimo.values()) if ((v.status ?? '').trim().toLowerCase() !== 'reprovado') n++
   return n
-}
-
-export async function listarPmos(cliente: string): Promise<string[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select('pmo')
-    .eq('cliente', cliente)
-    .neq('status', 'FINALIZADA')
-    .order('pmo')
-  if (error) throw error
-  return [...new Set((data as { pmo: string }[]).map((r) => r.pmo).filter(Boolean))]
-}
-
-export async function listarOps(cliente: string, pmo: string): Promise<{ op: string }[]> {
-  const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select('op')
-    .eq('cliente', cliente)
-    .eq('pmo', pmo)
-    .neq('status', 'FINALIZADA')
-    .order('op')
-  if (error) throw error
-  return data as { op: string }[]
 }
 
 export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLancamento | null> {
@@ -168,25 +131,44 @@ export interface OrdemLancamentoLista {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  /**
+   * Status cru da OP, como está no banco. Vem junto porque a busca do cabeçalho por bipe
+   * (`resolverOpPorSn`) procura em duas etapas — ativas primeiro, finalizadas depois — e precisa
+   * saber de qual grupo é cada OP. Não é filtro: a lista continua trazendo as duas.
+   */
+  status: string
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
 }
 
-/** Todas as OPs ativas com config + fluxo ordenado, para a cascata da tela de Lançamento. */
+/**
+ * TODAS as OPs (ativas E finalizadas) com config + fluxo ordenado, para a tela de Lançamento.
+ *
+ * O status NÃO é filtrado aqui de propósito. Esta lista não é uma lista de ESCOLHA: é a fonte de
+ * dados da tela inteira. É dela que o cabeçalho por bipe resolve a OP pela faixa de SN
+ * (`resolverOpPorSn`), é dela que sai o contexto da peça (postos, receita da Integração, tempo de
+ * Burn-in, quantidade) e é dela que a Integração por bipe acha a receita do produto.
+ *
+ * Filtrar `status <> 'FINALIZADA'` aqui tirava do ar as OPs recém-finalizadas: o operador bipava um
+ * SN válido e levava "SN não encontrado em nenhuma OP", a Integração respondia "OP do produto não
+ * encontrada", e quem estava com a tela aberta quando a OP finalizou perdia o contexto no meio do
+ * posto. Aconteceu em produção (7 OPs finalizadas à mão em 08/10/2026).
+ *
+ * E não existe nenhuma OUTRA lista que proteja a escolha: a tela de Lançamento não tem mais cascata
+ * de seleção — Cliente, PMO e OP são campos travados (`readOnly disabled`), preenchidos só pelo
+ * bipe. Quem decide o que fazer com a OP finalizada é a busca do cabeçalho (`resolverOpPorSn`), que
+ * a reconhece e recusa com mensagem. Se um dia voltar a seleção manual de OP (backlog: "combobox do
+ * Código"), o filtro de status tem de ser feito LÁ, em cima desta lista — aqui não tem nenhum.
+ *
+ * Paginado porque sem o filtro de status a consulta varre a tabela inteira, e o PostgREST corta em
+ * 1000 linhas (max_rows): sem paginar, a partir da milésima OP começariam a sumir OPs — ATIVAS
+ * inclusive — em silêncio.
+ */
 export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase
-    .from('sf_ordens')
-    .select(
-      'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
-    )
-    .neq('status', 'FINALIZADA')
-    .order('cliente')
-    .order('pmo')
-    .order('op')
-  if (error) throw error
-  const rows = data as unknown as {
+  const PAGINA = 1000
+  const rows: {
     cliente: string
     pmo: string
     op: string
@@ -195,10 +177,26 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_ini: string
     sn_fim: string
     embalagem_individual: boolean
+    status: string | null
     sf_ordem_postos: { posto: string; ordem: number }[]
     sf_ordem_componentes: { posto: string; pmo_componente: string }[]
     sf_ordem_burnin: { posto: string; tempo_min: number }[]
-  }[]
+  }[] = []
+  for (let i = 0; ; i++) {
+    const { data, error } = await supabase
+      .from('sf_ordens')
+      .select(
+        'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
+      )
+      .order('cliente')
+      .order('pmo')
+      .order('op')
+      .range(i * PAGINA, i * PAGINA + PAGINA - 1)
+    if (error) throw error
+    const lote = (data ?? []) as unknown as typeof rows
+    rows.push(...lote)
+    if (lote.length < PAGINA) break
+  }
   return rows.map((r) => ({
     cliente: r.cliente,
     pmo: r.pmo,
@@ -208,6 +206,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
     embalagem_individual: r.embalagem_individual,
+    status: r.status ?? '',
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
     receitaPorPosto: agruparReceitaPorPosto(r.sf_ordem_componentes),
     tempoBurninPorPosto: agruparTempoBurninPorPosto(r.sf_ordem_burnin),
