@@ -23,6 +23,7 @@
 --       e `avaliadas` não sobe por causa dele;
 --   T9  o filtro por EMB não vaza: a divergência da EMB vizinha não entra na mensagem;
 --   T10 os tipos antigos continuam avaliando na MESMA rodada.
+--   T12 item CANCELADO fora de toda conta: nao entra na lista, nao bloqueia, EMB so de cancelados nao fecha;
 -- (O teto de idade de 3 dias tem arquivo proprio, alertas_emb_teto_test.sql: roda apos a 0150 E
 -- apos a 0151, porque em producao a funcao viva e a da 0151.)
 -- (A idempotência da 0150 é do runner: ela é aplicada duas vezes.)
@@ -399,6 +400,84 @@ begin
   end if;
 end $t$;
 \echo 'T10 (tipos antigos intactos): ok'
+
+-- ---------- T12: item CANCELADO esta fora de toda conta de divergencia (decisao de 15/10/2026) ----------
+-- Achado no ensaio local: rec_etapa_por_status('cancelado') devolve 'almoxarifado', entao o item
+-- cancelado contava como terminado e a divergencia dele ia na mensagem; uma EMB so de cancelados
+-- "fechava". O criterio e o mesmo do dashboard (0152) e dos filtros de Processos: status <> 'cancelado'.
+-- (a) 2 itens terminados (um com divergencia) + 1 cancelado com +7: so a divergencia do vivo entra.
+select public.teste_item_emb('EMB801', 'V-1', 'Aprovado', 10, 8);
+select public.teste_item_emb('EMB801', 'V-2', 'Aprovado', 10, 10);
+select public.teste_item_emb('EMB801', 'V-3', 'cancelado', 30, 37);
+-- (b) EMB cujo UNICO item e cancelado (com divergencia): nao e EMB para avisar, nunca fecha.
+select public.teste_item_emb('EMB802', 'X-1', 'cancelado', 30, 37);
+-- (c) 1 item terminado + 1 cancelado: o cancelado nao impede o fechamento, e a lista sai vazia.
+select public.teste_item_emb('EMB803', 'Y-1', 'Aprovado', 10, 10);
+select public.teste_item_emb('EMB803', 'Y-2', 'cancelado', 30, 37);
+-- (d) 1 item ainda na Qualidade + 1 cancelado: NAO fecha.
+select public.teste_item_emb('EMB804', 'Z-1', 'em_conferencia', 10, 10);
+select public.teste_item_emb('EMB804', 'Z-2', 'cancelado', 30, 37);
+-- (e) item vivo terminado ha 90 dias (abaixo do piso) + cancelado RECENTE: o instante do fechamento
+-- vem so dos itens vivos, entao NAO avisa (o cancelado recente nao arrasta a EMB para cima do piso).
+select public.teste_item_emb('EMB805', 'W-1', 'Aprovado', 10, 8);
+update public.processos_recebimento
+   set finalizado_em = now() - interval '90 days', created_at = now() - interval '91 days'
+ where numero_emb = 'EMB805';
+select public.teste_item_emb('EMB805', 'W-2', 'cancelado', 30, 37);
+-- Os cancelados nascem com created_at antigo e sem finalizado_em, ou seja, ABAIXO do piso da regra:
+-- sem isto o teste seria vazio (nada avisaria nem sem o filtro). Eles ficam RECENTES de proposito.
+update public.processos_recebimento
+   set created_at = now() - interval '1 minute', finalizado_em = now() - interval '1 minute'
+ where status = 'cancelado' and numero_emb in ('EMB801', 'EMB802', 'EMB803', 'EMB804', 'EMB805');
+do $t$
+declare v_divs jsonb;
+begin
+  set local role service_role;
+  perform public.teste_avaliar();
+  reset role;
+  -- (a)
+  if public.teste_envios_emb('Fim de EMB', 'EMB801') <> 1 then
+    raise exception 'T12a FALHOU: esperava 1 linha para a EMB801, achei %',
+      public.teste_envios_emb('Fim de EMB', 'EMB801');
+  end if;
+  select dados->'divergencias' into v_divs from public.alerta_envios
+   where tipo = 'emb' and dados->>'emb' = 'EMB801' limit 1;
+  if jsonb_array_length(v_divs) <> 1 or v_divs->0->>'item' <> 'V-1' then
+    raise exception 'T12a FALHOU: a lista deveria ter so o V-1, veio %', v_divs;
+  end if;
+  if exists (select 1 from jsonb_array_elements(v_divs) d where d->>'item' = 'V-3') then
+    raise exception 'T12a FALHOU: a divergencia do item cancelado entrou na mensagem';
+  end if;
+  if (select a.divergencias from public.alerta_emb_avisada a
+        join public.alerta_regras r on r.id = a.regra_id
+       where r.nome = 'Fim de EMB' and a.emb = 'EMB801') <> 1 then
+    raise exception 'T12a FALHOU: a marca contou a divergencia do item cancelado';
+  end if;
+  -- (b)
+  if public.teste_envios_emb('Fim de EMB', 'EMB802') <> 0 then
+    raise exception 'T12b FALHOU: EMB so de itens cancelados mandou aviso';
+  end if;
+  if public.teste_marca_emb('Fim de EMB', 'EMB802') then
+    raise exception 'T12b FALHOU: EMB so de itens cancelados recebeu marca';
+  end if;
+  -- (c)
+  if public.teste_envios_emb('Fim de EMB', 'EMB803') <> 1 then
+    raise exception 'T12c FALHOU: o item cancelado impediu o fechamento da EMB803';
+  end if;
+  if jsonb_array_length((select dados->'divergencias' from public.alerta_envios
+                          where tipo = 'emb' and dados->>'emb' = 'EMB803' limit 1)) <> 0 then
+    raise exception 'T12c FALHOU: a EMB803 devia fechar sem divergencia';
+  end if;
+  -- (e)
+  if public.teste_envios_emb('Fim de EMB', 'EMB805') <> 0 or public.teste_marca_emb('Fim de EMB', 'EMB805') then
+    raise exception 'T12e FALHOU: o instante do cancelado recente tirou a EMB805 do piso';
+  end if;
+  -- (d)
+  if public.teste_envios_emb('Fim de EMB', 'EMB804') <> 0 or public.teste_marca_emb('Fim de EMB', 'EMB804') then
+    raise exception 'T12d FALHOU: EMB com item vivo na Qualidade fechou por causa do cancelado';
+  end if;
+end $t$;
+\echo 'T12 (item cancelado fora de toda conta de divergencia): ok'
 
 drop function public.teste_regra_emb(text, uuid[], timestamptz);
 drop function public.teste_item_emb(text, text, text, numeric, numeric, text, text);

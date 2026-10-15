@@ -11,6 +11,9 @@
 -- fechou e que fechou SEM divergência (decisão 5 da spec, corrigida em 14/10/2026 — a versão
 -- original dizia que EMB limpa não mandava nada). Quem escreve a frase é o TS, não esta migração:
 -- aqui a EMB limpa enfileira com `divergencias` VAZIA.
+-- Item CANCELADO (status = 'cancelado') está fora de tudo isso — não bloqueia o fechamento, não
+-- fecha EMB sozinho e não entra na lista —, porque cancelado não entra em nenhum número de
+-- divergência do sistema (decisão de 15/10/2026; é o mesmo teste do dashboard 0152).
 --
 -- Não abre ocorrência, não tem botão "Resolvido", não insiste e não normaliza — igual ao resumo
 -- diário da 0141, de quem este trecho é cópia estrutural.
@@ -176,7 +179,7 @@ comment on table public.alerta_emb_avisada is
   'A marca de "já avisei" do aviso de fim de EMB: uma linha por (regra, EMB). Escrita SÓ pelo banco, dentro da alerta_avaliar, depois de enfileirar. Duas fontes nela = aviso duas vezes.';
 
 -- ---------- o GATILHO: quais EMBs estão fechadas ----------
--- Uma EMB está fechada quando tem pelo menos 1 processo e TODOS eles estão num terminal. Terminal =
+-- Uma EMB está fechada quando tem pelo menos 1 processo NÃO cancelado e TODOS eles estão num terminal. Terminal =
 -- rec_etapa_por_status() em ('almoxarifado', 'reprovado'): o item reprovado também terminou, só que
 -- pelo outro lado (spec: "não é 'saiu da Qualidade'").
 --
@@ -186,6 +189,12 @@ comment on table public.alerta_emb_avisada is
 --
 -- ⚠️ p_desde é o PISO (o criado_em da regra). Sem ele, a primeira rodada em produção avisaria toda
 -- EMB historicamente fechada.
+--
+-- ⚠️ ITEM CANCELADO (status = 'cancelado') NÃO CONTA (decisão de 15/10/2026, achada no ensaio local):
+-- rec_etapa_por_status('cancelado') devolve 'almoxarifado', então sem este filtro o cancelado valia
+-- como terminado, a divergência dele ia na mensagem e uma EMB só de cancelados "fechava". Fora dele
+-- a EMB fecha pelos itens vivos, e uma EMB sem nenhum item vivo nunca fecha. É o mesmo teste do
+-- dashboard (0152) e dos filtros de Processos: status <> 'cancelado'.
 --
 -- Função INTERNA: só a alerta_avaliar (security definer, do owner) a chama. Sem tem_permissao
 -- próprio e revogada de todos — ninguém a alcança de fora.
@@ -200,6 +209,7 @@ as $func$
          max(coalesce(p.finalizado_em, p.created_at)) as fechada_em
     from public.processos_recebimento p
    where coalesce(btrim(p.numero_emb), '') <> ''
+     and p.status <> 'cancelado'   -- cancelado esta fora: nao bloqueia, nao fecha e nao da o instante
    group by upper(btrim(p.numero_emb))
   having bool_and(public.rec_etapa_por_status(p.status) in ('almoxarifado', 'reprovado'))
      and max(coalesce(p.finalizado_em, p.created_at)) >= p_desde
@@ -235,6 +245,7 @@ as $func$
          p.divergencia_justificada_em
     from public.processos_recebimento p
    where upper(btrim(coalesce(p.numero_emb, ''))) = upper(btrim(coalesce(p_emb, '')))
+     and p.status <> 'cancelado'   -- a divergencia de item cancelado nao entra (decisao de 15/10/2026)
      and public.rec_divergente(p.divergencia)
    order by p.numero
 $func$;
