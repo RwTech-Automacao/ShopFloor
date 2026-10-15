@@ -26,7 +26,7 @@ export function CartoesDashboard({ totais, sinal }: { totais: TotaisDashboard; s
           explica={EXPLICA.comDivergencia}
         />
         <Cartao
-          rotulo="Sem justificativa"
+          rotulo={`Sem justificativa${sufixo}`}
           valor={totais.semJustificativa}
           detalhe={`de ${formatarNumero(totais.comDivergencia)} com divergência`}
           explica={EXPLICA.semJustificativa}

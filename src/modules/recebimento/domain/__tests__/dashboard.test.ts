@@ -3,6 +3,7 @@ import {
   FILTROS_LIMPOS,
   aplicarClique,
   diaValido,
+  EXPLICA,
   etiquetasDosFiltros,
   filtrosDaUrl,
   formatarPercentual,
@@ -116,6 +117,12 @@ describe('filtros ↔ URL', () => {
     // Dia igual não é invertido.
     expect(filtrosDaUrl({ de: '2026-09-05', ate: '2026-09-05' }, AGORA)).toMatchObject({ de: '2026-09-05', ate: '2026-09-05' })
   })
+  it('fornecedor e comprador da URL com tab, quebra de linha ou NBSP nas pontas viram o mesmo valor aparado', () => {
+    const f = filtrosDaUrl({ fornecedor: 'ACME\t', comprador: '\u00a0Joana\n' }, AGORA)
+    expect(f.fornecedor).toBe('ACME')
+    expect(f.comprador).toBe('Joana')
+    expect(aplicarClique(FILTROS_LIMPOS, { fornecedor: 'ACME\u00a0' }).fornecedor).toBe('ACME')
+  })
   it('texto livre da URL tem no máximo 200 caracteres', () => {
     const longo = 'x'.repeat(500)
     const f = filtrosDaUrl({ emb: longo, codigo: longo, fornecedor: longo, comprador: longo }, AGORA)
@@ -148,6 +155,17 @@ describe('filtros ↔ URL', () => {
     expect(diaValido('2026-02-29')).toBe(false)
     expect(diaValido('2026-9-3')).toBe(false)
     expect(diaValido('')).toBe(false)
+  })
+  it('diaValido só aceita anos de 2000 a 2100 (a série semanal tem limite)', () => {
+    expect(diaValido('1999-12-31')).toBe(false)
+    expect(diaValido('2000-01-01')).toBe(true)
+    expect(diaValido('2100-12-31')).toBe(true)
+    expect(diaValido('2101-01-01')).toBe(false)
+    expect(diaValido('0100-01-01')).toBe(false)
+    expect(diaValido('9999-12-31')).toBe(false)
+  })
+  it('data fora de 2000–2100 na URL é ignorada, como data que não existe', () => {
+    expect(filtrosDaUrl({ de: '0100-01-01', ate: '9999-12-31' }, AGORA)).toEqual({ ...FILTROS_LIMPOS, ...PADRAO })
   })
 })
 
@@ -243,5 +261,20 @@ describe('rodapé e rótulos', () => {
   it('fornecedor em branco tem nome na tela', () => {
     expect(rotuloFornecedor('')).toBe('(sem fornecedor)')
     expect(rotuloFornecedor('Vishay')).toBe('Vishay')
+  })
+})
+
+describe('textos dos ⓘ (ressalvas da revisão final)', () => {
+  it('"Com divergência" avisa que a grade ainda conta cancelados até o ramo chegar à main', () => {
+    expect(EXPLICA.comDivergencia).toMatch(/grade ainda conta/i)
+    expect(EXPLICA.comDivergencia).toMatch(/cancelad/i)
+  })
+  it('o ranking diz que fornecedor é comparado pelo texto exato', () => {
+    expect(EXPLICA.fornecedores).toMatch(/texto exato/i)
+    expect(EXPLICA.fornecedores).toMatch(/ACME/)
+    expect(EXPLICA.fornecedores).toMatch(/pontas/i)
+  })
+  it('o gráfico semanal avisa do limite de 520 semanas', () => {
+    expect(EXPLICA.semanas).toContain('no máximo, as últimas 520 semanas do recorte')
   })
 })

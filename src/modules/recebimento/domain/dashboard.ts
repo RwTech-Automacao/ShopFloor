@@ -69,10 +69,15 @@ export const PERIODO_TUDO = 'tudo'
 
 const RE_DIA = /^\d{4}-\d{2}-\d{2}$/
 
-/** 'AAAA-MM-DD' de um dia que existe no calendário; qualquer outra coisa é inválida. */
+/** Anos aceitos nas datas da URL: a série semanal do banco tem limite (520 semanas), e datas fora disso são lixo. */
+export const ANO_MIN = 2000
+export const ANO_MAX = 2100
+
+/** 'AAAA-MM-DD' de um dia que existe no calendário, entre os anos 2000 e 2100; o resto é inválido. */
 export function diaValido(valor: string): boolean {
   if (!RE_DIA.test(valor)) return false
   const [a, m, d] = valor.split('-').map(Number)
+  if (a! < ANO_MIN || a! > ANO_MAX) return false
   const data = new Date(Date.UTC(a!, m! - 1, d!))
   return data.getUTCFullYear() === a && data.getUTCMonth() === m! - 1 && data.getUTCDate() === d
 }
@@ -283,7 +288,9 @@ export const EXPLICA = {
   comDivergencia:
     'Dos itens, os que têm divergência de quantidade diferente de zero — a mesma regra do filtro ' +
     '"Divergências" da grade de Processos. Item ainda não conferido (divergência vazia ou que não ' +
-    'é número) não conta. Com "Só positivas" ou "Só negativas", conta só aquele sinal.',
+    'é número) não conta. Com "Só positivas" ou "Só negativas", conta só aquele sinal. Este painel ' +
+    'deixa de fora os processos cancelados; enquanto essa exclusão não chegar à grade, a grade ainda ' +
+    'conta os cancelados e os números podem diferir.',
   semJustificativa:
     'Dos itens com divergência, os que ninguém justificou ainda (justificativa vazia ou só com ' +
     'espaços). Justificar é na grade de Processos.',
@@ -291,11 +298,14 @@ export const EXPLICA = {
     'EMBs distintas entre os itens do recorte (com ou sem divergência).',
   fornecedores:
     'Os 10 fornecedores com mais itens divergentes no recorte. Ao lado, quanto isso é dos itens ' +
-    'daquele fornecedor. Clique numa barra para filtrar a tela por ele.',
+    'daquele fornecedor. Fornecedores são comparados pelo texto exato ("ACME" e "Acme" contam ' +
+    'separados); só espaço, tabulação ou quebra de linha nas pontas é ignorado. Clique numa barra ' +
+    'para filtrar a tela por ele.',
   semanas:
     'Itens divergentes por semana de chegada (segunda a domingo), separados em justificados e sem ' +
     'justificativa. Semana sem divergência aparece com altura zero. Itens sem data de chegada não ' +
-    'entram aqui. Clique numa semana para filtrar por ela.',
+    'entram aqui. O gráfico mostra, no máximo, as últimas 520 semanas do recorte (os totais e o ' +
+    'ranking contam tudo). Clique numa semana para filtrar por ela.',
   sinal:
     'Itens que chegaram a mais (divergência maior que zero) e a menos (menor que zero). Clique numa ' +
     'barra para ver só aquele sinal.',

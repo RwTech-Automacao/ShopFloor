@@ -73,6 +73,12 @@ describe('cartões e rodapé', () => {
   it('com sinal, o cartão diz qual', () => {
     render(<CartoesDashboard totais={t} sinal="negativa" />)
     expect(screen.getByText('Com divergência (só negativas)')).toBeInTheDocument()
+    // "Sem justificativa" também é filtrado pelo sinal: leva o mesmo sufixo.
+    expect(screen.getByText('Sem justificativa (só negativas)')).toBeInTheDocument()
+  })
+  it('sem sinal, "Sem justificativa" não leva sufixo', () => {
+    render(<CartoesDashboard totais={t} sinal="" />)
+    expect(screen.getByText('Sem justificativa')).toBeInTheDocument()
   })
   it('cada número tem o seu ⓘ', () => {
     render(<CartoesDashboard totais={t} sinal="" />)

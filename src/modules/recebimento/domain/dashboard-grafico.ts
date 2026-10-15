@@ -37,7 +37,7 @@ export interface BarraSemana {
   /** Segmento de cima: sem justificativa. */
   ySem: number
   alturaSem: number
-  /** Rótulo do eixo X ('DD/MM') ou null quando é pulado para não encavalar. */
+  /** Rótulo do eixo X ('DD/MM'; 'DD/MM/AA' no primeiro e a cada ano novo quando o recorte atravessa anos) ou null quando é pulado para não encavalar. */
   rotulo: string | null
   /** Centro da coluna (onde o rótulo é ancorado). */
   centro: number
@@ -61,6 +61,7 @@ const BASE = 28          // faixa dos rótulos do eixo X
 const DIREITA = 24       // metade de um 'DD/MM' (10 px de fonte ≈ 32 px de largura) + folga
 const LARGURA_MAX_BARRA = 32
 const ESPACO_ROTULO = 44 // distância mínima entre dois rótulos do eixo X, em px
+const ESPACO_ROTULO_ANO = 56 // idem, quando algum rótulo leva o ano ('DD/MM/AA')
 const LARGURA_DIGITO = 7 // largura aproximada de um algarismo a 11 px
 
 /**
@@ -81,7 +82,20 @@ export function geometriaSemanas(semanas: SemanaDashboard[], larguraContainer: n
   const n = semanas.length
   const coluna = n > 0 ? larguraPlot / n : larguraPlot
   const larguraBarra = Math.max(1, Math.min(LARGURA_MAX_BARRA, coluna * 0.7))
-  const passoRotulo = Math.max(1, Math.ceil(ESPACO_ROTULO / coluna))
+  // Recorte que atravessa a virada do ano: 'DD/MM' fica ambíguo, então o primeiro rótulo e o
+  // primeiro de cada ano novo levam o ano ('DD/MM/AA'), e o espaçamento sobe para caber.
+  const anoDe = (inicio: string) => inicio.slice(0, 4)
+  const variosAnos = n > 0 && anoDe(semanas[0]!.inicio) !== anoDe(semanas[n - 1]!.inicio)
+  const passoRotulo = Math.max(1, Math.ceil((variosAnos ? ESPACO_ROTULO_ANO : ESPACO_ROTULO) / coluna))
+  let anoDoUltimoRotulo = ''
+
+  const rotular = (i: number, inicio: string, dia: string, mes: string): string | null => {
+    if (i % passoRotulo !== 0) return null
+    const ano = anoDe(inicio)
+    const comAno = variosAnos && ano !== anoDoUltimoRotulo
+    anoDoUltimoRotulo = ano
+    return comAno ? `${dia}/${mes}/${ano.slice(2)}` : `${dia}/${mes}`
+  }
 
   const barras = semanas.map((s, i): BarraSemana => {
     const xFaixa = esquerda + i * coluna
@@ -98,7 +112,7 @@ export function geometriaSemanas(semanas: SemanaDashboard[], larguraContainer: n
       alturaJustificadas: basePlot - yJ,
       ySem: yS,
       alturaSem: yJ - yS,
-      rotulo: i % passoRotulo === 0 ? `${dia}/${mes}` : null,
+      rotulo: rotular(i, s.inicio, dia!, mes!),
       centro: xFaixa + coluna / 2,
     }
   })

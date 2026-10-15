@@ -69,6 +69,17 @@ describe('geometriaSemanas', () => {
       expect(comRotulo[i]!.centro - comRotulo[i - 1]!.centro).toBeGreaterThanOrEqual(44 - 1e-6)
     }
   })
+  it('um recorte que atravessa a virada do ano põe o ano no primeiro rótulo e na primeira semana de janeiro', () => {
+    const g2 = geometriaSemanas(
+      [s('2025-12-15', 1, 0), s('2025-12-22', 1, 0), s('2025-12-29', 1, 0), s('2026-01-05', 1, 0), s('2026-01-12', 1, 0)],
+      1200,
+    )
+    expect(g2.barras.map((b) => b.rotulo)).toEqual(['15/12/25', '22/12', '29/12', '05/01/26', '12/01'])
+  })
+  it('no mesmo ano os rótulos continuam DD/MM, sem ano', () => {
+    const g1 = geometriaSemanas([s('2026-01-05', 1, 0), s('2026-01-12', 1, 0)], 1200)
+    expect(g1.barras.map((b) => b.rotulo)).toEqual(['05/01', '12/01'])
+  })
   it('a margem esquerda cresce com o tamanho do maior rótulo do eixo', () => {
     const pequeno = geometriaSemanas([s('2026-09-21', 3, 0)], 640)
     const grande = geometriaSemanas([s('2026-09-21', 1400, 0)], 640)
