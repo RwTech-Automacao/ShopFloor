@@ -3386,6 +3386,30 @@ Copie este bloco para o relatório:
 > 5. **0152 no Prod ANTES do deploy do app** (RDS: `PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W` com a conexão do RDS, `-1 -v ON_ERROR_STOP=1 -f supabase/migrations/0152_rec_dashboard.sql`). App novo contra banco velho não quebra a rota (a página degrada para o aviso), mas o menu já mostraria o item.
 > 6. Deploy do app.
 
+> **Verificações no Prod antes do merge (consultas só de leitura, para o usuário rodar)**
+> Cada bloco abaixo cola e roda como está no SQL Editor (Studio da AWS ou `psql` no RDS); nenhum altera dado. Diga os resultados antes do merge.
+> - **(i) Existe processo "cancelado"?** A regra do dashboard (e do ramo dos filtros) é `status <> 'cancelado'`, literal. Desde a migração 0015 o status é dinâmico e nada em `src/` grava `'cancelado'` hoje:
+>   ```sql
+>   select status, count(*) from public.processos_recebimento group by 1 order by 2 desc;
+>   ```
+>   Se NÃO aparecer nenhuma variante de "cancelado": a regra não exclui nada hoje e é inofensiva. Se aparecer qualquer variante (maiúscula, minúscula, com espaço nas pontas, "Cancelado"…): a regra tem que virar `lower(btrim(status)) <> 'cancelado'` nos DOIS lugares — no dashboard (0152) e no ramo dos filtros (`feat/recebimento-filtros-divergencia`) — antes do merge.
+> - **(ii) Fornecedor ou comprador com espaço/tab/quebra de linha nas pontas?** A 0152 agora apara com `rec_norm_texto` (igual ao `trim()` do app), então isto é só para dimensionar o efeito: quantas linhas vão passar a agrupar junto com a versão limpa.
+>   ```sql
+>   select count(*) filter (where fornecedor ~ '^\s|\s$') as fornecedor_com_pontas,
+>          count(*) filter (where comprador ~ '^\s|\s$') as comprador_com_pontas
+>     from public.processos_recebimento;
+>   ```
+>   Zero: nada muda. Maior que zero: no ranking e nas listas essas linhas se juntam ao fornecedor/comprador limpo (era um nome duplicado na lista); nenhuma ação necessária.
+> - **(iii) Datas de chegada sujas?** A tela só aceita datas de 2000 a 2100 na URL e a série semanal mostra no máximo as últimas 520 semanas do recorte:
+>   ```sql
+>   select min(data_chegada) as primeira, max(data_chegada) as ultima, count(*) as linhas,
+>          count(*) filter (where data_chegada < date '2000-01-01' or data_chegada > date '2100-12-31') as fora_de_2000_2100
+>     from public.processos_recebimento;
+>   ```
+>   `fora_de_2000_2100` = zero: nada a fazer. Maior que zero: são datas digitadas/importadas erradas (serial 0 do Excel = 1899, ano com typo); contam nos totais e no ranking, ficam fora do gráfico semanal quando passam do teto, e valem uma limpeza de dados pelo usuário.
+> - **(iv) Justificativas só de espaços** (a normalização da 0152 as muda): é a consulta do item 1 de "Ordem de deploy da 0152", acima.
+> - **No smoke**, compare "Com divergência × Divergências" usando **meses inteiros** no dashboard (de dia 1 a último dia do mês): a grade filtra a data só por mês inteiro, então um recorte de dias soltos não é comparável.
+
 - [ ] **Passo 6: relatório**
 
 Diga: a decisão do índice e os números (Task 1, passo 12), o resultado do `next build`, e cole o bloco do passo 5.
