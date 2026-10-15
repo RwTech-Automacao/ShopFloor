@@ -39,13 +39,6 @@ export const FILTROS_RAPIDOS = [
 
 export type FiltroRapido = (typeof FILTROS_RAPIDOS)[number]
 
-/** Filtro rápido DESLIGADO de propósito (o usuário clicou no ativo): mostra todos os processos.
- *  Precisa de valor próprio porque a AUSÊNCIA do parâmetro significa "vale o padrão". */
-export const RAPIDO_NENHUM = 'nenhum'
-
-/** Padrão ao abrir a tela: o que ainda está pendente de justificativa. */
-export const FILTRO_RAPIDO_PADRAO: FiltroRapido = 'nao_resolvidas'
-
 /** Conjunto FECHADO: só estes valores passam do `?g=` para a consulta. */
 export function ehFiltroRapido(valor: unknown): valor is FiltroRapido {
   return typeof valor === 'string' && (FILTROS_RAPIDOS as readonly string[]).includes(valor)
@@ -57,9 +50,8 @@ export interface EstadoGrid {
   pagina: number // 0-based
   tamanho: number // linhas por página (seletor da UI)
   filtros: Record<string, FiltroColuna>
-  /** Filtro rápido de divergência. `'nenhum'` = desligado (mostra tudo). Vindo da URL, a
-   *  ausência vira o padrão (`decodificarEstadoGrid`); numa consulta montada à mão, ausente = sem filtro. */
-  rapido?: FiltroRapido | typeof RAPIDO_NENHUM
+  /** Filtro rápido de divergência; ausente = sem filtro rápido (mostra tudo). */
+  rapido?: FiltroRapido
 }
 
 export const TAMANHOS_PAGINA = [25, 50, 100, 200] as const
@@ -70,7 +62,6 @@ export const ESTADO_GRID_PADRAO: EstadoGrid = {
   pagina: 0,
   tamanho: 50,
   filtros: {},
-  rapido: FILTRO_RAPIDO_PADRAO,
 }
 
 /** Serializa o estado para caber num parâmetro de URL. NÃO faz percent-encoding:
@@ -130,10 +121,10 @@ export function decodificarEstadoGrid(
   }
 
   const estado: EstadoGrid = { ordenar, direcao, pagina, tamanho, filtros }
-  // Conjunto fechado: um dos cinco, ou 'nenhum' (desligado explícito). Qualquer outra coisa —
-  // inclusive a chave ausente, como nos links antigos — cai no padrão.
-  estado.rapido =
-    ehFiltroRapido(o.rapido) || o.rapido === RAPIDO_NENHUM ? o.rapido : FILTRO_RAPIDO_PADRAO
+  // Conjunto fechado: um dos cinco. Qualquer outra coisa (ausente, inválido, o antigo 'nenhum')
+  // é tratada como ausente. A chave fica AUSENTE em vez de `undefined` para que
+  // `codificarEstadoGrid` não a emita.
+  if (ehFiltroRapido(o.rapido)) estado.rapido = o.rapido
   return estado
 }
 

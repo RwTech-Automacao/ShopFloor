@@ -22,7 +22,6 @@ import { rotuloMes } from '@/modules/recebimento/domain/agrupamento-mes'
 import { estadoDaDivergencia } from '@/modules/recebimento/domain/divergencia'
 import {
   FILTROS_RAPIDOS,
-  RAPIDO_NENHUM,
   TAMANHOS_PAGINA,
   codificarEstadoGrid,
   rotulosOrdenacao,
@@ -163,11 +162,10 @@ export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, 
     })
   }
 
-  /** Um só estado: clicar no que já está ligado desliga (volta a mostrar tudo — `'nenhum'`
-   *  explícito, porque a chave ausente na URL significa "vale o padrão"); clicar noutro troca. Zera a página, como os filtros de coluna — a página 8 do conjunto de antes não
+  /** Um só estado: clicar no que já está ligado desliga (volta a mostrar tudo); clicar noutro troca. Zera a página, como os filtros de coluna — a página 8 do conjunto de antes não
    *  existe no conjunto de agora. */
   function alternarRapido(valor: FiltroRapido) {
-    aplicar({ ...estado, rapido: estado.rapido === valor ? RAPIDO_NENHUM : valor, pagina: 0 })
+    aplicar({ ...estado, rapido: estado.rapido === valor ? undefined : valor, pagina: 0 })
   }
 
   const primeira = total === 0 ? 0 : estado.pagina * estado.tamanho + 1

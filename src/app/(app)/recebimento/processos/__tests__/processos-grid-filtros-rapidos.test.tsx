@@ -81,40 +81,23 @@ describe('filtros rápidos de divergência', () => {
     expect(nomes).toEqual(BOTOES.map(([rotulo]) => rotulo))
   })
 
-  it('na primeira renderização (estado vindo sem parâmetro) "Divergências Não Resolvidas" já aparece ligado', () => {
+  it('abre sem chip marcado (sem filtro pré-selecionado)', () => {
     montar()
-    const g = grupo()
-    for (const [rotulo, valor] of BOTOES) {
-      expect(g.getByRole('button', { name: rotulo })).toHaveAttribute(
-        'aria-pressed',
-        String(valor === 'nao_resolvidas'),
-      )
+    for (const [rotulo] of BOTOES) {
+      expect(grupo().getByRole('button', { name: rotulo })).toHaveAttribute('aria-pressed', 'false')
     }
   })
 
-  it.each(BOTOES.filter(([, v]) => v !== 'nao_resolvidas'))('clicar em "%s" liga o filtro %s', (rotulo, valor) => {
+  it.each(BOTOES)('clicar em "%s" liga o filtro %s', (rotulo, valor) => {
     montar()
     clicar(rotulo)
     expect(estadoNavegado().rapido).toBe(valor)
   })
 
-  it('clicar no ativo (o padrão) desliga: vai para "nenhum", que NÃO volta a ser o padrão ao decodificar', () => {
-    montar()
-    clicar('Divergências Não Resolvidas')
-    expect(estadoNavegado().rapido).toBe('nenhum')
-  })
-
   it.each(BOTOES)('clicar de novo em "%s" desliga (volta a mostrar tudo)', (rotulo, valor) => {
     montar({ ...LIMPO, rapido: valor })
     clicar(rotulo)
-    expect(estadoNavegado().rapido).toBe('nenhum')
-  })
-
-  it('desligado: nenhum botão marcado, inclusive o padrão', () => {
-    montar({ ...LIMPO, rapido: 'nenhum' })
-    for (const [rotulo] of BOTOES) {
-      expect(grupo().getByRole('button', { name: rotulo })).toHaveAttribute('aria-pressed', 'false')
-    }
+    expect(estadoNavegado().rapido).toBeUndefined()
   })
 
   it('clicar noutro TROCA em vez de somar (não existe "positivas + negativas")', () => {
@@ -134,7 +117,7 @@ describe('filtros rápidos de divergência', () => {
   })
 
   it('com nenhum ligado, nenhum dos cinco aparece marcado', () => {
-    montar({ ...LIMPO, rapido: 'nenhum' })
+    montar()
     const g = grupo()
     for (const [rotulo] of BOTOES) {
       expect(g.getByRole('button', { name: rotulo })).toHaveAttribute('aria-pressed', 'false')
@@ -154,7 +137,6 @@ describe('filtros rápidos de divergência', () => {
       pagina: 0,
       tamanho: 100,
       filtros: { fornecedor: { texto: 'ACME' } },
-      rapido: 'nenhum',
     })
     clicar('Divergências Positivas')
     expect(estadoNavegado()).toEqual({

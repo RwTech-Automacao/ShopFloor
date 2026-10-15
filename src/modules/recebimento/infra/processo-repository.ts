@@ -1,6 +1,6 @@
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { sanitizarTermoBusca } from '../domain/busca-processo'
-import { RAPIDO_NENHUM, faixaDoMes, type EstadoGrid } from '../domain/estado-grid'
+import { faixaDoMes, type EstadoGrid } from '../domain/estado-grid'
 import type { ColunaLayout } from '../domain/layout-colunas'
 import { carregarCamposFormulario } from './processo-detalhe-repository'
 
@@ -121,7 +121,7 @@ function montarQueryGrid(
   // silenciosamente errado e os botões discordariam dos selos da mesma tela.
   // Linha sem número (não conferida, texto, NaN) tem `divergencia_num` nulo e não entra em
   // nenhum deles — em SQL `null <> 0` é desconhecido, e é o comportamento certo.
-  if (estado.rapido && estado.rapido !== RAPIDO_NENHUM) {
+  if (estado.rapido) {
     // Processo cancelado fica FORA de todos os cinco filtros (decisão de 15/10/2026: cancelado
     // não entra nos números de divergência, na grade nem no painel). Mora aqui, num lugar só,
     // para os cinco não poderem divergir.

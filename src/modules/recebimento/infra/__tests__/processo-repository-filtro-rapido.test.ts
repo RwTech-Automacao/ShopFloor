@@ -76,13 +76,6 @@ describe('montarQueryGrid: filtro rápido de divergência', () => {
     expect(condicoesDeDivergencia()[0]).toEqual([operador, ['divergencia_num', 0]])
   })
 
-  it('"nenhum" (desligado) não aplica condição nenhuma — nem a do cancelado', async () => {
-    await listar({ ...BASE, rapido: 'nenhum' })
-    expect(chamadas.map(([m]) => m)).toContain('order')
-    expect(condicoesDeDivergencia()).toEqual([])
-    expect(chamadas.filter(([, a]) => a[0] === 'status')).toEqual([])
-  })
-
   it.each(['divergencias', 'positivas', 'negativas', 'resolvidas', 'nao_resolvidas'] as const)(
     '%s exclui processo cancelado (uma única regra para os cinco)',
     async (rapido) => {
@@ -97,6 +90,8 @@ describe('montarQueryGrid: filtro rápido de divergência', () => {
     expect(tabelas).toEqual(['processos_recebimento'])
     expect(chamadas.map(([m]) => m)).toContain('order')
     expect(condicoesDeDivergencia()).toEqual([])
+    // A exclusão do cancelado só vale QUANDO um dos cinco filtros está ativo.
+    expect(chamadas.filter(([, a]) => a[0] === 'status')).toEqual([])
   })
 
   it('o filtro rápido se soma ao filtro de coluna e à ordenação, numa só consulta', async () => {
@@ -208,7 +203,7 @@ describe('filtro rápido: quais linhas entram', () => {
     expect([...r, ...n].sort()).toEqual([...todas].sort())
   })
 
-  it('Desligado: todas as linhas, inclusive cancelada e sem divergência', async () => {
-    expect(await nomesQueEntram('nenhum')).toHaveLength(LINHAS.length)
+  it('Sem filtro rápido: todas as linhas, inclusive cancelada e sem divergência', async () => {
+    expect(await nomesQueEntram(undefined)).toHaveLength(LINHAS.length)
   })
 })
