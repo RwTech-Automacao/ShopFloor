@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
+import { ehReativacaoManual, finalizadaPorDoCadastro } from '../domain/finalizacao'
 import { validarOrdem } from '../domain/validar-ordem'
 import { mensagemOpDuplicada } from '../domain/op-unica'
 import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto'
@@ -26,6 +27,7 @@ const SEM_PERMISSAO = 'Você não tem permissão para gerenciar ordens de produ�
 
 function lerDados(fd: FormData): DadosOrdem {
   const qtdBruto = String(fd.get('qtd') ?? '').trim()
+  const status = String(fd.get('status') ?? '').trim() || 'ATIVA'
   return {
     pmo: String(fd.get('pmo') ?? '').trim(),
     op: String(fd.get('op') ?? '').trim(),
@@ -33,10 +35,13 @@ function lerDados(fd: FormData): DadosOrdem {
     qtd: qtdBruto === '' || Number.isNaN(Number(qtdBruto)) ? null : Number(qtdBruto),
     descricao: String(fd.get('descricao') ?? '').trim(),
     acp: String(fd.get('acp') ?? '').trim(),
-    status: String(fd.get('status') ?? '').trim() || 'ATIVA',
+    status,
     sn_ini: String(fd.get('sn_ini') ?? '').trim(),
     sn_fim: String(fd.get('sn_fim') ?? '').trim(),
     embalagem_individual: fd.get('embalagem_individual') === 'on', // checkbox: 1 produto por caixa
+    // Salvar pela tela é decisão de pessoa: FINALIZADA vira 'manual' (a rotina não desfaz); outro
+    // status limpa a marca. Nunca lido do formulário, para o cliente não forjar 'rotina'.
+    finalizada_por: finalizadaPorDoCadastro(status),
   }
 }
 
@@ -126,6 +131,11 @@ export async function editarOrdemAction(
   const id = String(formData.get('id') ?? '').trim()
   if (id === '') return { ok: false, erro: 'OP inválida.' }
   const dados = lerDados(formData)
+  // Reativar na mão (FINALIZADA -> outro status) tira a OP do controle automático para sempre, ou a
+  // rotina dos 100% a fecharia de novo em até 5 minutos. O status ANTERIOR vem do banco: o do
+  // formulário é do cliente, e a marca é definitiva demais para depender dele.
+  const base = await buscarOrdemBase(id)
+  if (ehReativacaoManual(base?.status, dados.status)) dados.reaberta_manual = true
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd })
   if (!v.ok) return v
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).

@@ -21,19 +21,25 @@ export function rotulosOrdenacao(tipo: TipoColuna): { asc: string; desc: string 
 }
 
 /**
- * Filtros rápidos de divergência da grade de Processos. É UM só estado (não três marcações
- * independentes): "Divergências" é toda divergência, justificada ou não, e as outras duas são
- * recortes dela pelo sinal — "positivas + negativas" não existe, isso é "Divergências".
+ * Filtros rápidos de divergência da grade de Processos. É UM só estado (não marcações
+ * independentes): "Todas Divergências" é toda divergência, e os outros quatro são recortes dela
+ * — pelo sinal (positivas/negativas) ou pela justificativa (resolvidas/não resolvidas).
  *
  * Não é um `FiltroColuna`: `FiltroColuna` só sabe igualdade e `ilike`, não sabe comparar sinal.
  * E a coluna onde a condição cai (`divergencia_num`) não é coluna do catálogo da grade — não pode
  * ser escolhida como visível nem aceitar nome vindo da URL.
  */
-export const FILTROS_RAPIDOS = ['divergencias', 'positivas', 'negativas'] as const
+export const FILTROS_RAPIDOS = [
+  'divergencias',
+  'positivas',
+  'negativas',
+  'resolvidas',
+  'nao_resolvidas',
+] as const
 
 export type FiltroRapido = (typeof FILTROS_RAPIDOS)[number]
 
-/** Conjunto FECHADO: só estes três valores passam do `?g=` para a consulta. */
+/** Conjunto FECHADO: só estes valores passam do `?g=` para a consulta. */
 export function ehFiltroRapido(valor: unknown): valor is FiltroRapido {
   return typeof valor === 'string' && (FILTROS_RAPIDOS as readonly string[]).includes(valor)
 }
@@ -115,9 +121,9 @@ export function decodificarEstadoGrid(
   }
 
   const estado: EstadoGrid = { ordenar, direcao, pagina, tamanho, filtros }
-  // Conjunto fechado: qualquer outra coisa (outro texto, número, objeto, nulo) degrada para
-  // "sem filtro rápido". A chave fica AUSENTE em vez de `undefined` para que
-  // `codificarEstadoGrid` não a emita — os links já existentes seguem byte a byte iguais.
+  // Conjunto fechado: um dos cinco. Qualquer outra coisa (ausente, inválido, o antigo 'nenhum')
+  // é tratada como ausente. A chave fica AUSENTE em vez de `undefined` para que
+  // `codificarEstadoGrid` não a emita.
   if (ehFiltroRapido(o.rapido)) estado.rapido = o.rapido
   return estado
 }
