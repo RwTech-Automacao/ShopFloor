@@ -340,4 +340,95 @@ begin
   raise notice 'top 10: ok';
 end $t$;
 
+-- ---------- 11. o domingo fecha a semana da segunda anterior ----------
+-- A massa não tem linha de domingo: trocar isodow por dow (domingo = 0) passaria na segunda e na
+-- quarta e erraria só aqui. 27/09/2026 é domingo -> a semana começa em 21/09 (e a segunda 28/09
+-- começa a seguinte, sem ser engolida).
+insert into public.processos_recebimento (fornecedor, comprador, numero_emb, codigo_material, data_chegada, divergencia)
+values ('DomTeste', 'DomComprador', 'EMBDOM', 'DOM1', '2026-09-27', '1'),
+       ('DomTeste', 'DomComprador', 'EMBDOM', 'DOM2', '2026-09-28', '1');
+do $t$
+declare v jsonb := rec_dashboard(p_comprador => 'DomComprador');
+begin
+  perform pg_temp.confere('semanas do domingo (quantidade)', jsonb_array_length(v->'semanas'), 2);
+  if v->'semanas'->0->>'inicio' <> '2026-09-21' then
+    raise exception 'FALHOU: domingo 27/09 tem que cair na semana de 21/09 (veio %)', v->'semanas'->0->>'inicio'; end if;
+  if v->'semanas'->1->>'inicio' <> '2026-09-28' then
+    raise exception 'FALHOU: segunda 28/09 abre a semana seguinte (veio %)', v->'semanas'->1->>'inicio'; end if;
+  perform pg_temp.confere('domingo conta na semana de 21/09', (v->'semanas'->0->>'sem_justificativa')::bigint, 1);
+  perform pg_temp.confere('segunda conta na semana de 28/09', (v->'semanas'->1->>'sem_justificativa')::bigint, 1);
+  -- O recorte que TERMINA no domingo também tem que terminar a série na semana dele.
+  v := rec_dashboard(p_comprador => 'DomComprador', p_de => '2026-09-27', p_ate => '2026-09-27');
+  perform pg_temp.confere('recorte de um domingo: uma semana', jsonb_array_length(v->'semanas'), 1);
+  if v->'semanas'->0->>'inicio' <> '2026-09-21' then
+    raise exception 'FALHOU: recorte só de domingo (veio %)', v->'semanas'; end if;
+  raise notice 'domingo na semana certa: ok';
+end $t$;
+
+-- ---------- 12. desempate do ranking, com empate na FRONTEIRA do top 10 ----------
+-- Comprador 'Empate': G01..G07 com 20..14 divergentes (7 claros) e SEIS empatados em 3 (Uniform,
+-- Victor, Whisky, Xray, Yankee, Zulu) disputando as 3 vagas que sobram. A ordem é
+-- divergentes desc, fornecedor: ficam Uniform, Victor e Whisky; Xray, Yankee e Zulu são cortados.
+-- Os empatados entram em ordem alfabética DECRESCENTE (Zulu primeiro): sem o desempate pelo nome,
+-- a ordem física não conserta o resultado.
+insert into public.processos_recebimento (fornecedor, comprador, numero_emb, codigo_material, data_chegada, divergencia)
+select t.f, 'Empate', 'EMBEMP', 'E-' || t.f || '-' || i, '2026-01-05', '1'
+  from (values ('Zulu'), ('Yankee'), ('Xray'), ('Whisky'), ('Victor'), ('Uniform')) t(f), generate_series(1, 3) i;
+insert into public.processos_recebimento (fornecedor, comprador, numero_emb, codigo_material, data_chegada, divergencia)
+select 'G' || lpad(k::text, 2, '0'), 'Empate', 'EMBEMP', 'EG' || k || '-' || i, '2026-01-05', '1'
+  from generate_series(1, 7) k, generate_series(1, 21 - k) i;
+do $t$
+declare
+  v jsonb := rec_dashboard(p_comprador => 'Empate');
+begin
+  perform pg_temp.confere('top 10 com empate: tamanho', jsonb_array_length(v->'fornecedores'), 10);
+  if (select jsonb_agg(e->>'fornecedor' order by ord) from jsonb_array_elements(v->'fornecedores') with ordinality x(e, ord) where ord > 7)
+       <> '["Uniform", "Victor", "Whisky"]'::jsonb then
+    raise exception 'FALHOU: as 3 vagas do empate são de Uniform, Victor e Whisky, nessa ordem (veio %)', v->'fornecedores'; end if;
+  if exists (select 1 from jsonb_array_elements(v->'fornecedores') e where e->>'fornecedor' in ('Xray', 'Yankee', 'Zulu')) then
+    raise exception 'FALHOU: Xray, Yankee e Zulu empatam e têm que ser cortados (veio %)', v->'fornecedores'; end if;
+  -- A ordem não varia entre duas cargas iguais.
+  if rec_dashboard(p_comprador => 'Empate')->'fornecedores' <> v->'fornecedores' then
+    raise exception 'FALHOU: ordem do ranking mudou entre duas chamadas'; end if;
+  raise notice 'desempate do ranking: ok';
+end $t$;
+
+-- ---------- 13. janela de datas com recorte VAZIO ----------
+-- Decisão: a série é o EIXO DA JANELA pedida, não do que existe. Fornecedor que não existe + De/Até
+-- => zero itens, mas as semanas da janela aparecem zeradas (a tela mostra o eixo e a frase de vazio).
+-- `semanas` só vem vazio quando NÃO há data nenhuma (nem De, nem Até, nem linha com data).
+do $t$
+declare v jsonb := rec_dashboard(p_fornecedor => 'Ninguém', p_de => '2026-09-07', p_ate => '2026-09-27');
+begin
+  perform pg_temp.confere('janela com recorte vazio: itens', (v->'totais'->>'itens')::bigint, 0);
+  perform pg_temp.confere('janela com recorte vazio: semanas da janela', jsonb_array_length(v->'semanas'), 3);
+  if exists (select 1 from jsonb_array_elements(v->'semanas') s
+              where (s->>'justificadas')::int <> 0 or (s->>'sem_justificativa')::int <> 0) then
+    raise exception 'FALHOU: semanas do recorte vazio têm que vir zeradas (veio %)', v->'semanas'; end if;
+  if v->'fornecedores' <> '[]'::jsonb then raise exception 'FALHOU: ranking do recorte vazio'; end if;
+  -- Só um lado da janela e nada no recorte: a série é a do lado que existe (uma semana).
+  v := rec_dashboard(p_fornecedor => 'Ninguém', p_de => '2026-09-07');
+  perform pg_temp.confere('só De, recorte vazio: uma semana', jsonb_array_length(v->'semanas'), 1);
+  raise notice 'janela com recorte vazio: ok';
+end $t$;
+
+-- ---------- 14. btrim NÃO tira tabulação nem quebra de linha (limite conhecido) ----------
+-- O app apara com trim() do JavaScript (tira tab e quebra de linha); o btrim do SQL tira só
+-- espaço. Uma justificativa só de E'\t' continua "justificada" no SQL e a tela a trataria como
+-- vazia. É CONHECIDO: o texto passa pelo app antes de gravar (trim), então só uma escrita direta
+-- no banco produz isso — o que a contagem pré-Prod das notas de deploy mede. Este teste DOCUMENTA
+-- o comportamento; se alguém trocar o btrim por regex, ele avisa que o contrato mudou.
+insert into public.processos_recebimento (fornecedor, comprador, numero_emb, codigo_material, data_chegada, divergencia, divergencia_justificativa)
+values ('TabTeste', 'TabComprador', 'EMBTAB', 'TAB1', '2026-01-05', '1', E'\t'),
+       ('TabTeste', 'TabComprador', 'EMBTAB', 'TAB2', '2026-01-05', '1', E'\n'),
+       ('TabTeste', 'TabComprador', 'EMBTAB', 'TAB3', '2026-01-05', '1', '   ');
+do $t$
+declare v jsonb := rec_dashboard(p_comprador => 'TabComprador');
+begin
+  perform pg_temp.confere('tab e quebra de linha: com divergência', (v->'totais'->>'com_divergencia')::bigint, 3);
+  -- Só os espaços viram "sem justificativa"; o \t e o \n ficam "justificados" (limite do btrim).
+  perform pg_temp.confere('tab e quebra de linha ficam justificados no SQL', (v->'totais'->>'sem_justificativa')::bigint, 1);
+  raise notice 'limite do btrim documentado: ok';
+end $t$;
+
 select 'RECEBIMENTO DASHBOARD OK' as resultado;

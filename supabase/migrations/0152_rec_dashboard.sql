@@ -142,7 +142,11 @@ begin
              limit 10) f
   ),
   limites as (
-    -- A série vai do começo ao fim do recorte; sem recorte, da primeira à última chegada.
+    -- A série vai do começo ao fim da JANELA pedida (De / Até); o lado que falta vem da primeira
+    -- ou da última chegada do recorte. Por isso uma janela com recorte VAZIO (fornecedor que não
+    -- existe, por exemplo) devolve as semanas da janela zeradas — é o eixo da janela, de propósito.
+    -- `semanas` só vem vazio quando não há data nenhuma (sem De, sem Até e sem linha com data) ou
+    -- quando De > Até.
     select coalesce(p_de,  min(r.data_chegada), p_ate) as ini,
            coalesce(p_ate, max(r.data_chegada), p_de)  as fim
       from recorte r
