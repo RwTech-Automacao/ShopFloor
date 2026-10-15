@@ -40,7 +40,13 @@
 --
 -- ⚠️ O PISO rg.criado_em NÃO É DETALHE: sem ele, na PRIMEIRA rodada depois do deploy toda EMB
 -- historicamente fechada atenderia ao gatilho e sairia uma avalanche de avisos. Só entram as EMBs
--- cuja última finalização é >= criado_em da regra. Mais um teto de EMBS_POR_RODADA por rodada.
+-- cuja última finalização é >= criado_em da regra. Mais um limite de EMBS_POR_RODADA por rodada.
+--
+-- ⚠️ O TETO DE IDADE (15/10/2026): o piso sozinho não cobre regra desativada por semanas e depois
+-- reativada, nem regra sem ninguém alcançável por dias (a marca só é gravada quando algo entra na
+-- fila): toda EMB fechada desde a criação avisaria de uma vez, 50 por rodada. Por isso EMB fechada
+-- há mais de 3 dias NÃO avisa e NÃO é marcada (v_teto_idade, uma linha no alerta_avaliar).
+-- Regra do aviso: fechada_em >= o MAIS TARDIO entre criado_em da regra (piso) e agora - 3 dias.
 --
 -- Convenções (as mesmas da 0113): corpo de função com $func$ (o SQL Editor não aceita dois
 -- cifrões, nem em comentário); grants e revokes explícitos; notify pgrst na última linha.
@@ -282,6 +288,11 @@ as $func$
 #variable_conflict use_column
 declare
   v_agora        timestamptz := now();
+  -- TETO DE IDADE do aviso de fim de EMB (uma linha para mudar). Só o piso `criado_em` não bastava:
+  -- regra desativada por semanas e reativada, ou sem ninguém alcançável por dias, avisaria de uma
+  -- vez TODA EMB fechada desde a criação (50 por rodada, a cada 5 min) — mensagem "atrasada" em
+  -- massa. EMB fechada há mais que isto não avisa e NÃO é marcada. Vale o mais tardio dos dois.
+  v_teto_idade   interval := interval '3 days';
   v_avaliadas    int := 0;
   v_enfileirados int := 0;
   v_resumos_vazios int := 0;
@@ -605,12 +616,13 @@ begin
     if t.tipo = 'emb' then
       for v_emb in
         -- O PISO é o criado_em DA REGRA (ver o cabeçalho): EMB fechada antes de a regra existir
-        -- não avisa. O teto de 50 por rodada (EMBS_POR_RODADA) é cinto e suspensório — com 200
+        -- não avisa; e EMB fechada há mais de v_teto_idade (3 dias) também não — nem é marcada. O teto de 50 por rodada (EMBS_POR_RODADA) é cinto e suspensório — com 200
         -- pendentes, saem em quatro rodadas (20 min) em vez de 200 mensagens de uma vez. Mais
         -- antigas primeiro.
         select f.emb, f.fechada_em
           from public.rec_embs_fechadas(t.criado_em) f
-         where not exists (select 1
+         where f.fechada_em >= v_agora - v_teto_idade   -- o TETO (ver v_teto_idade, no topo)
+           and not exists (select 1
                              from public.alerta_emb_avisada a
                             where a.regra_id = t.regra_id and a.emb = f.emb)
          order by f.fechada_em, f.emb

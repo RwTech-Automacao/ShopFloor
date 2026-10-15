@@ -208,6 +208,7 @@ precisar recortar, é campo novo na regra.
 7. Quem administra **só** o Recebimento abre Ajustes do Recebimento > Alertas e **consegue usar**.
    Quem não administra nenhum dos dois não vê item nenhum.
 8. Botão de testar da regra → chega nos três canais, sem depender de EMB nenhuma.
+9. EMB fechada há **mais de 3 dias** → **não avisa e não é marcada**, mesmo que a regra seja mais antiga. *(Acrescentado em 15/10/2026: o piso "só EMB fechada depois da criação da regra" sozinho não cobria regra reativada depois de semanas nem regra sem ninguém alcançável por dias — tudo fechado desde a criação avisava de uma vez. Vale o mais tardio entre o piso e o teto de 3 dias.)*
 
 O caso 3 é o que separa esta implementação de uma que inundaria a caixa de entrada, e o 7 é o
 motivo de a tela existir em duas rotas.

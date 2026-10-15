@@ -127,7 +127,9 @@ grant execute on function public.alerta_destinatarios(text) to authenticated, se
 --   nos TRÊS fan-outs de pessoa (o do caminho da ocorrência, o do resumo e o do fim de EMB):
 --   o `from public.alerta_contas c` vira uma subconsulta `d` que UNE duas fontes de destino —
 --   as contas vinculadas (Telegram/Discord, como sempre) e, quando 'email' está nos canais da
---   regra, uma linha por responsável COM e-mail de login. Tudo o mais fica igual.
+--   regra, uma linha por responsável COM e-mail de login. Tudo o mais fica igual — EXCETO que ela
+--   carrega o teto de idade de 3 dias (v_teto_idade) do fim de EMB, acrescentado à 0150 em
+--   15/10/2026: como a 0151 reproduz o corpo inteiro, o teto tem de estar nas DUAS cópias.
 --
 -- public.alerta_resolver_interno(uuid, uuid, boolean, text) — a versão viva é a da 0149 — a MESMA
 --   diferença, no fan-out do "resolvido por X". Sem ela, uma regra que avisa SÓ por e-mail nunca
@@ -161,6 +163,11 @@ as $func$
 #variable_conflict use_column
 declare
   v_agora        timestamptz := now();
+  -- TETO DE IDADE do aviso de fim de EMB (uma linha para mudar). Só o piso `criado_em` não bastava:
+  -- regra desativada por semanas e reativada, ou sem ninguém alcançável por dias, avisaria de uma
+  -- vez TODA EMB fechada desde a criação (50 por rodada, a cada 5 min) — mensagem "atrasada" em
+  -- massa. EMB fechada há mais que isto não avisa e NÃO é marcada. Vale o mais tardio dos dois.
+  v_teto_idade   interval := interval '3 days';
   v_avaliadas    int := 0;
   v_enfileirados int := 0;
   v_resumos_vazios int := 0;
@@ -497,12 +504,13 @@ begin
     if t.tipo = 'emb' then
       for v_emb in
         -- O PISO é o criado_em DA REGRA (ver o cabeçalho): EMB fechada antes de a regra existir
-        -- não avisa. O teto de 50 por rodada (EMBS_POR_RODADA) é cinto e suspensório — com 200
+        -- não avisa; e EMB fechada há mais de v_teto_idade (3 dias) também não — nem é marcada. O teto de 50 por rodada (EMBS_POR_RODADA) é cinto e suspensório — com 200
         -- pendentes, saem em quatro rodadas (20 min) em vez de 200 mensagens de uma vez. Mais
         -- antigas primeiro.
         select f.emb, f.fechada_em
           from public.rec_embs_fechadas(t.criado_em) f
-         where not exists (select 1
+         where f.fechada_em >= v_agora - v_teto_idade   -- o TETO (ver v_teto_idade, no topo)
+           and not exists (select 1
                              from public.alerta_emb_avisada a
                             where a.regra_id = t.regra_id and a.emb = f.emb)
          order by f.fechada_em, f.emb
