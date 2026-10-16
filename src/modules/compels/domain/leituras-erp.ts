@@ -75,6 +75,7 @@ export function leiturasDeRespostas(r: RespostasCruas): LeiturasOp {
     apontamentos: listaDe(r.apontamentos, 'apontamentos').map((a) => ({
       quantidadeProduzida: numero(a, 'quantidadeProduzida', 'apontamento'),
       quantidadeCancelada: numero(a, 'quantidadeCancelada', 'apontamento'),
+      ...(typeof a.dataInicio === 'string' ? { dataInicio: a.dataInicio } : {}),
     })),
   }
 }

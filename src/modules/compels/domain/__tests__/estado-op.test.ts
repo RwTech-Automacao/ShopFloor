@@ -37,6 +37,7 @@ describe('estadoDaOp', () => {
       apontada: 10,
       temEstorno: false,
       temPendencia: false,
+      inicioApontamento: null,
     })
   })
 
@@ -73,6 +74,19 @@ describe('pendência de material', () => {
     expect(estadoDaOp(empenho).temPendencia).toBe(true)
     expect(estadoDaOp(requisicao).temPendencia).toBe(true)
     expect(estadoDaOp(OP_8697).temPendencia).toBe(false)
+  })
+})
+
+describe('início do primeiro apontamento', () => {
+  it('usa o dia mais antigo entre os apontamentos (OP 8697: sempre 30/09)', () => {
+    const l = {
+      ...OP_8697,
+      apontamentos: [
+        { quantidadeProduzida: 1, quantidadeCancelada: 0, dataInicio: '2026-09-30T00:00:00.000-03:00' },
+        { quantidadeProduzida: 1, quantidadeCancelada: 0, dataInicio: '2026-09-29T00:00:00.000-03:00' },
+      ],
+    }
+    expect(estadoDaOp(l).inicioApontamento).toBe('2026-09-29T00:00:00')
   })
 })
 

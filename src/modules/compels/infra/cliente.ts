@@ -1,3 +1,11 @@
+import {
+  componentesDeApontamento,
+  componentesDeRequisicao,
+  consultaDisponibilidade,
+  consultaRequisitada,
+  type ComponenteApontamento,
+  type ComponenteRequisicao,
+} from '../domain/corpos'
 import { leiturasDeRespostas, listaDe, RespostaInesperada } from '../domain/leituras-erp'
 import type { LeiturasOp } from '../domain/estado-op'
 import { resultadoDaGravacao, type ResultadoGravacao } from '../domain/resposta-erp'
@@ -12,6 +20,10 @@ export interface DadosOp {
   status: string
   tipoPropriedade: number
   quantidade: number
+  /** Id interno do produto da OP. */
+  produtoId: number
+  /** Id do negociante da OP (vai nas consultas de requisição). */
+  negocianteId: number
   /** Código do produto (a nossa PMO). */
   codigoItem: string
   /** Unidade do produto; a integração só atende `UN` no começo. */
@@ -95,15 +107,17 @@ export class ClienteCompels {
     const d = ((detalhe as { data?: unknown } | null)?.data ?? detalhe) as Record<string, unknown>
     const item = (d.composicaoProduto as { item?: Record<string, unknown> } | undefined)?.item
     const unidade = (item?.unidade as { codigo?: unknown } | undefined)?.codigo
+    const negociante = (d.negociante as { id?: unknown } | undefined)?.id
     if (
       typeof d.status !== 'string' || typeof d.tipoPropriedade !== 'number' || typeof d.quantidade !== 'number' ||
-      typeof item?.codigo !== 'string' || typeof unidade !== 'string'
+      typeof item?.codigo !== 'string' || typeof item.id !== 'number' || typeof unidade !== 'string' ||
+      typeof negociante !== 'number'
     ) {
       throw new RespostaInesperada('cadastro da OP')
     }
     return {
       id: achada.id, numero, status: d.status, tipoPropriedade: d.tipoPropriedade,
-      quantidade: d.quantidade, codigoItem: item.codigo, unidade,
+      quantidade: d.quantidade, produtoId: item.id, negocianteId: negociante, codigoItem: item.codigo, unidade,
     }
   }
 
@@ -131,5 +145,46 @@ export class ClienteCompels {
 
   async liberarTrava(idOp: number): Promise<void> {
     await this.enviar(`/lock/release/eng.ordemproducaosimples/${idOp}`, { method: 'DELETE' })
+  }
+
+  /** Consulta que a tela faz antes de requisitar: componentes, saldo e custo. Só leitura. */
+  async consultarRequisicao(op: DadosOp, quantidade: number): Promise<ComponenteRequisicao[]> {
+    const resposta = await this.json(
+      '/requisicaoOrdemProducao/verificaQuantidadeRequisitada',
+      this.formulario({
+        jsonData: JSON.stringify(consultaRequisitada({
+          opId: op.id, tipoPropriedade: op.tipoPropriedade, produtoId: op.produtoId,
+          negocianteId: op.negocianteId, quantidade,
+        })),
+        page: '1', start: '0', limit: '50',
+      }),
+    )
+    return componentesDeRequisicao(resposta)
+  }
+
+  /** Consulta que a tela faz antes de apontar: consumo e saldo de cada componente. Só leitura. */
+  async consultarDisponibilidade(op: DadosOp, quantidade: number): Promise<ComponenteApontamento[]> {
+    const resposta = await this.json(
+      '/apontamentoOrdemProducao/verificaDisponibilidade',
+      this.formulario(consultaDisponibilidade({ opId: op.id, quantidade, produtoId: op.produtoId })),
+    )
+    return componentesDeApontamento(resposta)
+  }
+
+  private async gravar(caminho: string, corpo: Record<string, unknown>): Promise<ResultadoGravacao> {
+    const r = await this.enviar(caminho, this.formulario({ jsonData: JSON.stringify(corpo) }))
+    let resposta: unknown = null
+    try { resposta = await r.json() } catch { /* sem corpo JSON */ }
+    return resultadoDaGravacao(r.status, resposta)
+  }
+
+  /** `requisicaoOrdemProducao/save`. GRAVA no Compels. */
+  requisitar(corpo: Record<string, unknown>): Promise<ResultadoGravacao> {
+    return this.gravar('/requisicaoOrdemProducao/save', corpo)
+  }
+
+  /** `apontamentoOrdemProducao/save`. GRAVA no Compels e dá entrada no estoque. */
+  apontar(corpo: Record<string, unknown>): Promise<ResultadoGravacao> {
+    return this.gravar('/apontamentoOrdemProducao/save', corpo)
   }
 }

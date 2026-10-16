@@ -17,8 +17,8 @@ const tokenFixo = (): GerenciadorToken => {
 
 const OP_8697_DETALHE = {
   data: {
-    id: 13075, numero: 8697, status: 'Produzida', tipoPropriedade: 0, quantidade: 10,
-    composicaoProduto: { item: { codigo: 'PMOC57', unidade: { codigo: 'UN' } } },
+    id: 13075, numero: 8697, status: 'Produzida', tipoPropriedade: 0, quantidade: 10, negociante: { id: 1679 },
+    composicaoProduto: { item: { id: 22690, codigo: 'PMOC57', unidade: { codigo: 'UN' } } },
   },
 }
 const emp = (q: number) => ({ quantidade: q, quantidadeEstornar: 0, situacao: 'Empenhada' })
@@ -52,7 +52,8 @@ describe('ClienteCompels', () => {
     const c = new ClienteCompels(config, tokenFixo(), buscar)
     const op = await c.buscarOp(8697)
     expect(op).toEqual({
-      id: 13075, numero: 8697, status: 'Produzida', tipoPropriedade: 0, quantidade: 10, codigoItem: 'PMOC57', unidade: 'UN',
+      id: 13075, numero: 8697, status: 'Produzida', tipoPropriedade: 0, quantidade: 10, produtoId: 22690,
+      negocianteId: 1679, codigoItem: 'PMOC57', unidade: 'UN',
     })
     // o detalhe foi pedido pelo id certo, não pelo da outra OP parecida
     const detalhe = chamadas.find((x) => x.url.startsWith('/ordemProducaoSimples/findById'))

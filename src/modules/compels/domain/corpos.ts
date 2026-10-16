@@ -95,6 +95,7 @@ export function corpoRequisicao(p: {
 /** Linha de `apontamentoOrdemProducao/verificaDisponibilidade`. */
 export interface ComponenteApontamento {
   itemId: number
+  codigo: string
   quantidadeUtilizada: number
   quantidadeComposicao: number
   itemOrdemProducaoId: number
@@ -108,6 +109,7 @@ export function componentesDeApontamento(resposta: unknown): ComponenteApontamen
     const vinculo = objeto(linha.itemOrdemProducaoSimples, 'componente.itemOrdemProducaoSimples')
     return {
       itemId: numero(item, 'id', 'componente.item'),
+      codigo: texto(item, 'codigo', 'componente.item'),
       quantidadeUtilizada: numero(linha, 'quantidadeUtilizada', 'componente'),
       quantidadeComposicao: numero(linha, 'quantidadeComposicao', 'componente'),
       itemOrdemProducaoId: numero(vinculo, 'id', 'componente.itemOrdemProducaoSimples'),

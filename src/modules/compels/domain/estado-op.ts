@@ -26,6 +26,8 @@ export interface LinhaRequisicao {
 export interface LinhaApontamento {
   quantidadeProduzida: number
   quantidadeCancelada: number
+  /** `dataInicio` do apontamento, quando a lista traz (ISO). A tela repete a do primeiro apontamento da OP. */
+  dataInicio?: string
 }
 
 export interface LeiturasOp {
@@ -50,6 +52,8 @@ export interface EstadoOpErp {
   temEstorno: boolean
   /** Empenho ou requisição 'Pendente': falta saldo de componente no ERP (precisa de "Pagar Pendência"). */
   temPendencia: boolean
+  /** Meia-noite (`AAAA-MM-DDT00:00:00`) do dia do primeiro apontamento da OP, ou null se ainda não há. */
+  inicioApontamento: string | null
 }
 
 const ESCALA = 1_000_000
@@ -73,6 +77,9 @@ export function estadoDaOp(leituras: LeiturasOp): EstadoOpErp {
     leituras.empenhos.some((e) => e.situacao === 'Pendente') ||
     leituras.requisicoes.some((r) => r.situacao === 'Pendente')
 
+  const inicios = leituras.apontamentos.flatMap((a) => (a.dataInicio ? [a.dataInicio.slice(0, 10)] : []))
+  const inicioApontamento = inicios.length > 0 ? `${[...inicios].sort()[0]}T00:00:00` : null
+
   return {
     status: leituras.status,
     tipoPropriedade: leituras.tipoPropriedade,
@@ -82,5 +89,6 @@ export function estadoDaOp(leituras: LeiturasOp): EstadoOpErp {
     apontada: soma(leituras.apontamentos.map((a) => a.quantidadeProduzida)),
     temEstorno,
     temPendencia,
+    inicioApontamento,
   }
 }

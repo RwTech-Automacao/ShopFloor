@@ -34,3 +34,24 @@ export function configDoAmbiente(env: Record<string, string | undefined> = proce
     apiUrl: (env.COMPELS_API_URL?.trim() || 'https://api.erpeasy.compels.net').replace(/\/$/, ''),
   }
 }
+
+/** Estoque e locação onde o apontamento dá entrada do produto acabado (estoque 217 `PA`, locação 5314 `Padrão`). */
+export interface DestinoConfig {
+  estoqueId: number
+  locacaoId: number
+}
+
+function inteiroPositivo(valor: string | undefined, padrao: number, nome: string): number {
+  const texto = valor?.trim()
+  if (!texto) return padrao
+  const n = Number(texto)
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`${nome} precisa ser um número inteiro positivo.`)
+  return n
+}
+
+export function destinoDoAmbiente(env: Record<string, string | undefined> = process.env): DestinoConfig {
+  return {
+    estoqueId: inteiroPositivo(env.COMPELS_ESTOQUE_ID, 217, 'COMPELS_ESTOQUE_ID'),
+    locacaoId: inteiroPositivo(env.COMPELS_LOCACAO_ID, 5314, 'COMPELS_LOCACAO_ID'),
+  }
+}

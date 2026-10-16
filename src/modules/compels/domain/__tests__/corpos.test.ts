@@ -35,7 +35,7 @@ const RESPOSTA_REQUISITADA = {
   success: true,
 }
 const linhaDisponibilidade = (id: number, ordemItem: number, saldo = 1000) => ({
-  item: { id }, quantidadeUtilizada: 55, quantidadeComposicao: 1,
+  item: { id, codigo: `ITEM${id}` }, quantidadeUtilizada: 55, quantidadeComposicao: 1,
   itemOrdemProducaoSimples: { id: ordemItem }, itemFantasma: false, saldoDisponivel: saldo,
 })
 const RESPOSTA_DISPONIBILIDADE = {
@@ -92,7 +92,7 @@ describe('leitura das consultas', () => {
   it('campo ausente nas consultas vira RespostaInesperada (não monta corpo com valor inventado)', () => {
     const semCusto = { data: [{ ...linhaRequisicao(1, 'X', 1, 1), item: { id: 1, codigo: 'X', rastreavel: false } }] }
     expect(() => componentesDeRequisicao(semCusto)).toThrow(RespostaInesperada)
-    const semVinculo = { data: [{ item: { id: 1 }, quantidadeUtilizada: 1, quantidadeComposicao: 1, itemFantasma: false, saldoDisponivel: 1 }] }
+    const semVinculo = { data: [{ item: { id: 1, codigo: 'X' }, quantidadeUtilizada: 1, quantidadeComposicao: 1, itemFantasma: false, saldoDisponivel: 1 }] }
     expect(() => componentesDeApontamento(semVinculo)).toThrow(RespostaInesperada)
   })
 

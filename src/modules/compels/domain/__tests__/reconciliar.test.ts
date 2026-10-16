@@ -11,6 +11,7 @@ const base: EstadoOpErp = {
   apontada: 0,
   temEstorno: false,
   temPendencia: false,
+  inicioApontamento: null,
 }
 const com = (parcial: Partial<EstadoOpErp>): EstadoOpErp => ({ ...base, ...parcial })
 

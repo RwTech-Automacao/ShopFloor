@@ -217,6 +217,12 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
 - Liga **OP por OP** (lista de OPs liberadas). Enquanto uma OP estiver ligada, **ninguém aponta à mão** na mesma OP (duplicaria); isso precisa de aviso aos usuários.
 - Fase 2 (fora deste escopo): **estorno**, em ordem inversa (apontamento antes da requisição). Confirmado na tela (OP 8191, 16/10): estornar a **requisição** com tudo já apontado é recusado pelo ERP ("Quantidade Estornar excede a quantidade permitida"); com quantidade 0 também ("Quantidade Estornar deve ser maior que 0"). Ou seja, o ERP impõe a ordem e valida a quantidade.
 
+### 3.6 Estado da implementação (16/10, noite)
+
+Em `src/modules/compels` (92 testes): estado da OP, decisão por entrada, corpos conferidos com a captura, cliente (token, leituras, trava, consultas, Requisitar e Apontar) e o **enviador por entrada** (`application/enviar-entrada.ts`), com a ordem: conferir (OP numérica, PMO igual, `UN`) → trava → ler → decidir → consultar componentes → Requisitar → Apontar → reler → liberar a trava. O **ensaio** (`ensaiarEntrada`) faz tudo menos gravar e menos pegar a trava; `tools/compels/ensaiar-entrada.mjs` roda no servidor e mostra os corpos que seriam enviados.
+
+**Falta ligar:** a fila do Almoxarifado (adaptador da porta `PortaCompels` + soma já enviada por OP), o estorno (fase 2), a lista de OPs liberadas e o cron. Nada disto grava no ERP até a primeira OP escolhida.
+
 ## 4. Riscos
 
 1. **API interna sem contrato.** Pode mudar sem aviso (o cabeçalho `vr` ajuda a detectar). Mitigação: fixtures + alerta quando a resposta mudar de forma.
