@@ -16,18 +16,18 @@ export class RespostaInesperada extends Error {
 
 type Json = unknown
 
-function objeto(valor: Json, onde: string): Record<string, Json> {
+export function objeto(valor: Json, onde: string): Record<string, Json> {
   if (typeof valor !== 'object' || valor === null || Array.isArray(valor)) throw new RespostaInesperada(onde)
   return valor as Record<string, Json>
 }
 
-function texto(o: Record<string, Json>, campo: string, onde: string): string {
+export function texto(o: Record<string, Json>, campo: string, onde: string): string {
   const v = o[campo]
   if (typeof v !== 'string') throw new RespostaInesperada(`${onde}.${campo}`)
   return v
 }
 
-function numero(o: Record<string, Json>, campo: string, onde: string): number {
+export function numero(o: Record<string, Json>, campo: string, onde: string): number {
   const v = o[campo]
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new RespostaInesperada(`${onde}.${campo}`)
   return v

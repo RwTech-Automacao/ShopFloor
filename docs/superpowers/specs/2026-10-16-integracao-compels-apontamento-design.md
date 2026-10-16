@@ -114,7 +114,7 @@ Um ciclo de verdade foi feito e desfeito na tela, com captura. **Nenhuma chamada
 3. **Estorno remove a linha das listas.** Depois de estornar, as listas de apontamentos, requisições e empenhos voltam **vazias** e a OP volta a "Aberta". Por isso a soma das linhas já reflete o estorno, e o ERP deixou de ter marca de estorno para nós.
 4. **Status da OP muda sozinho:** Aberta → Empenhada → Em Processo → (estornando tudo) Aberta.
 5. **"Pendente":** nesta OP o empenho e a requisição ficaram com `situacao: "Pendente"` porque um componente (RWPC99) não tinha saldo (só 79 de 1000). Isso é a "falta de saldo" que o Almoxarifado citou; a OP precisa de "Pagar Pendência". A integração para com erro legível (`pendencia_no_erp`).
-6. **A requisição envia `precoCusto` por item.** Hipótese do usuário (Almoxarifado/ERP): vem do **cadastro do item** e a tela só repassa. Consistente com o que vimos: os itens que o Compels devolve (ex.: o produto da OP) já trazem `precoCusto`. A integração deve **repassar o custo que o Compels devolveu**, nunca calcular nem inventar. A confirmar na primeira gravação em OP de teste (comparar com o custo do cadastro).
+6. **A requisição envia `precoCusto` por item.** **Confirmado (§2.10):** vem do cadastro do item, na própria resposta de `verificaQuantidadeRequisitada`, e a tela só repassa. (Hipótese original do usuário.) Consistente com o que vimos: os itens que o Compels devolve (ex.: o produto da OP) já trazem `precoCusto`. A integração deve **repassar o custo que o Compels devolveu**, nunca calcular nem inventar. A confirmar na primeira gravação em OP de teste (comparar com o custo do cadastro).
 7. O apontamento pode ser parcial (aqui 55 de 1000) com a requisição de 1000 já feita, como a OP 8697.
 
 ### 2.7 Consulta de estoque por item (PMO) — leitura, sem risco
@@ -148,6 +148,17 @@ Erro = **HTTP 400** com `{ code, message, detail, hint, cause }`; `message` já 
 **Trava (decisão):** com a OP travada por outra pessoa, nem a tela abre a OP (a aquisição da trava é recusada), então **não dá para testar pela interface** se o servidor também recusaria o gesto de gravar sem a trava. A pergunta deixa de importar: a integração **segue o mesmo protocolo da tela**. Para cada OP: `POST /lock/eng.ordemproducaosimples/{id}` (sem corpo, 201) → se 400 "está sendo acessado pelo usuário", erro `op_em_uso` e tenta de novo depois → grava (Requisitar/Apontar) → `DELETE /lock/release/eng.ordemproducaosimples/{id}` sempre, inclusive em caso de erro. Se o trabalho de uma OP passar de ~20 s, renovar com `PUT /lock/keep/...`.
 
 Implementado: `resultadoDaGravacao(status, corpo)` (`domain/resposta-erp.ts`) classifica sucesso, `op_em_uso` (tenta de novo), `quantidade_acima`, `sem_saldo`, `sessao_expirada`, `sem_permissao`, `indisponivel` e `desconhecido`.
+
+### 2.10 Consultas que a tela faz antes de gravar (sonda de leitura no servidor, 16/10, OP 8697)
+
+- `requisicaoOrdemProducao/getQuantidadeRequisitar` → `{data: <número>, success}` (quanto ainda cabe requisitar).
+- `requisicaoOrdemProducao/verificaQuantidadeRequisitada` → `{data: [componentes], success}`. Cada componente traz `item` (com **`precoCusto`**, `codigo`, `rastreavel`), `quantidadeRequisitar`, `quantidadeComposicao`, `quantidadeRequisitadaDisponivel`, `saldo`, `itemOrdemProducaoId`, `itemFantasma`. **O `precoCusto` da requisição vem desta resposta** (do cadastro do item): a integração repassa, não calcula. Pergunta fechada.
+- `apontamentoOrdemProducao/getQuantidadeApontar` → `{data: <número>, quantidadeCancelar, success}`.
+- `apontamentoOrdemProducao/verificaDisponibilidade` → `{data: [componentes], success}`. Cada componente traz `item.id`, `quantidadeUtilizada` (consumo calculado), `quantidadeComposicao` (por unidade), `saldoDisponivel`, `itemOrdemProducaoSimples.id`, `itemFantasma`. Aqui aparece a **falta de saldo**: `saldoDisponivel < quantidadeUtilizada`.
+
+Implementado em `domain/corpos.ts`: lê essas respostas e monta os corpos de Requisitar e Apontar. Os testes comparam o JSON montado, byte a byte, com os corpos **capturados** da tela (ensaio sem gravar), e passam.
+
+Pendente no `dataInicio`: a tela usa a meia-noite do dia do **primeiro apontamento da OP** (nos quatro apontamentos da OP 8697 foi sempre 30/09). A integração usa essa data quando já há apontamento e a de hoje quando é o primeiro.
 
 ## 3. Desenho da integração
 
