@@ -1,7 +1,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
-import { alertasLiberados } from '@/modules/alertas/application/liberacao'
+import { alertasRecebimentoLiberados } from '@/modules/alertas/application/liberacao'
 import { filtroOcorrenciasPadrao } from '@/modules/alertas/domain/ocorrencia'
 import { canaisConfigurados, canalDiscordConfigurado } from '@/modules/alertas/infra/canais'
 import {
@@ -26,7 +26,7 @@ export default async function AlertasRecebimentoPage() {
   if (
     !sessao ||
     !podeNoModulo(sessao.perfil, 'recebimento', 'administrar') ||
-    !alertasLiberados(sessao.email)
+    !alertasRecebimentoLiberados(sessao.email)
   ) {
     return <SemPermissao descricao="Você não tem permissão para configurar alertas." />
   }

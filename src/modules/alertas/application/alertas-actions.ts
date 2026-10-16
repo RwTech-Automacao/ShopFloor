@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { alertasLiberados } from './liberacao'
+import { alertasLiberadosDoModulo } from './liberacao'
 import {
   resumoLimite,
   resumoPmos,
@@ -36,7 +36,7 @@ const RECURSO_INDISPONIVEL = 'Recurso indisponível.'
 
 /**
  * Além da permissão `<modulo>.administrar`, respeita o lançamento escondido dos Alertas
- * (ALERTAS_LIBERADO_PARA): fora da lista liberada, a ação some mesmo pra quem tem permissão —
+ * (ALERTAS_LIBERADO_PARA no ShopFloor, ALERTAS_RECEBIMENTO_LIBERADO_PARA no Recebimento): fora da lista liberada, a ação some mesmo pra quem tem permissão —
  * mesma mensagem genérica das rotas de API, sem entregar que a feature existe.
  *
  * ⚠️ O `modulo` vem do CLIENTE (é a prop da tela), e por isso é conferido duas vezes: aqui, se não
@@ -51,7 +51,7 @@ async function gestor(
   if (!sessao || !podeNoModulo(sessao.perfil, modulo, 'administrar')) {
     return { ok: false, erro: SEM_PERMISSAO }
   }
-  if (!alertasLiberados(sessao.email)) return { ok: false, erro: RECURSO_INDISPONIVEL }
+  if (!alertasLiberadosDoModulo(modulo, sessao.email)) return { ok: false, erro: RECURSO_INDISPONIVEL }
   return { ok: true, usuarioId: sessao.usuarioId }
 }
 
