@@ -108,7 +108,8 @@ Um ciclo de verdade foi feito e desfeito na tela, com captura. **Nenhuma chamada
 
 1. **O destino do estoque NÃO é automático.** O corpo manda estoque e locação. Aqui foi estoque **224** e locação 5314; as OPs 8669 e 8697 tinham entrado no estoque **217** e locação 5314. Falta saber qual o Almoxarifado usa e se é sempre o mesmo ou varia por produto. A integração terá de ter essa configuração.
 
-   **Decisão (16/10, usuário):** o destino da entrada pelo bipe do Almoxarifado é o estoque **"Produto Acabado"**, o mesmo para todos os produtos. Hipótese de ids: estoque **217** e locação **5314**, porque foi o que as apontamentos reais (OPs 8669 e 8697, cinco lotes) usaram. No teste de 16/10 foi enviado estoque 224 com a locação 5314, combinação que pode nem ser válida (a lista de locações do 224 começava em outra locação); o ERP a aceitou, o que merece conferência. **A confirmar:** nome e código do estoque 217 e da locação 5314, lendo um apontamento real (OP 8697, apontamento nº 1, campos Estoque e Locação). O destino fica em **configuração** (não fixo no código).
+   **CONFIRMADO (16/10, HAR + tela):** o destino é o estoque **id 217, código `PA`, "PRODUTO ACABADO"** e a locação **id 5314, código `0`, "Padrão"** (a locação padrão do ERP, `padrao: true`, sem estoque amarrado). É o par que o Almoxarifado usa e o que as OPs 8669 e 8697 receberam. No teste anterior foi enviado estoque 224 (`EINTER`, "ESTOQUE INTERMEDIARIO") com locação 5314, por engano de seleção. O mesmo estoque 217 tem outras locações de prateleira (13.D.B.01 etc.); a integração usa só a Padrão. Ambos vão em **configuração** (não fixos no código), com o id e o código para conferência.
+
 2. **O campo Observação existe no envio.** Dá para tentar marcar a entrada com nossa chave e conferir depois; falta provar que a leitura devolve o texto.
 3. **Estorno remove a linha das listas.** Depois de estornar, as listas de apontamentos, requisições e empenhos voltam **vazias** e a OP volta a "Aberta". Por isso a soma das linhas já reflete o estorno, e o ERP deixou de ter marca de estorno para nós.
 4. **Status da OP muda sozinho:** Aberta → Empenhada → Em Processo → (estornando tudo) Aberta.
@@ -204,7 +205,7 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
 3. **Trava de edição** pode bloquear gravações em horário de uso. Mitigação: retentativa com backoff.
 4. **Gesto de gravar:** capturado em 16/10 (§2.6), com as respostas de erro principais (§2.9). Trava: a integração segue o protocolo da tela (§2.9).
 5. **Apontamento manual concorrente** na mesma OP. Mitigação: o passo 3 do algoritmo para em vez de duplicar.
-6. **Destino do estoque** não é automático: vai em configuração, decidido como "Produto Acabado" (§2.6); ids a confirmar.
+6. **Destino do estoque** não é automático: vai em configuração, confirmado como estoque 217 `PA` e locação 5314 `Padrão` (§2.6).
 7. **Idempotência** sem chave nossa: depende do algoritmo por contadores. A ideia de gravar nossa chave na Observação não está provada (nenhum apontamento visto tem Observação preenchida).
 
 ### 4.1 O que o Almoxarifado disse sobre o dia a dia (Gilvânia, 16/10, 14:07)
