@@ -1,6 +1,6 @@
 /**
  * GRAVA DE VERDADE no Compels uma entrada de TESTE (Requisitar + Apontar), com a trava da OP.
- * Ferramenta só para os primeiros testes: limitada a 5 peças e exige `--confirmo-gravar`.
+ * Ferramenta só para os primeiros testes: limitada a 100 peças e exige `--confirmo-gravar`.
  * Rode ANTES o ensaio (`ensaiar-entrada.mjs`) e confira os corpos.
  *
  * Uso: node tools/compels/enviar-entrada.mjs NUMERO_DA_OP PMO QUANTIDADE ACUMULADO_ANTERIOR --confirmo-gravar
@@ -17,7 +17,7 @@ import { estadoDaOp } from '../../src/modules/compels/domain/estado-op'
 import { ClienteCompels } from '../../src/modules/compels/infra/cliente'
 import { configDoAmbiente, destinoDoAmbiente } from '../../src/modules/compels/infra/config'
 
-const TETO_DO_TESTE = 5
+const TETO_DO_TESTE = 100
 const args = process.argv.slice(2)
 const confirmou = args.includes('--confirmo-gravar')
 const [numeroOp, pmo, quantidadeTexto, anteriorTexto] = args.filter((a) => !a.startsWith('--'))

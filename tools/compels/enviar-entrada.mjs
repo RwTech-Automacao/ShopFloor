@@ -819,7 +819,7 @@ function destinoDoAmbiente(env = process.env) {
 //#region tools/compels/enviar-entrada.ts
 /**
 * GRAVA DE VERDADE no Compels uma entrada de TESTE (Requisitar + Apontar), com a trava da OP.
-* Ferramenta só para os primeiros testes: limitada a 5 peças e exige `--confirmo-gravar`.
+* Ferramenta só para os primeiros testes: limitada a 100 peças e exige `--confirmo-gravar`.
 * Rode ANTES o ensaio (`ensaiar-entrada.mjs`) e confira os corpos.
 *
 * Uso: node tools/compels/enviar-entrada.mjs NUMERO_DA_OP PMO QUANTIDADE ACUMULADO_ANTERIOR --confirmo-gravar
@@ -831,7 +831,7 @@ function destinoDoAmbiente(env = process.env) {
 * O `.mjs` ao lado é GERADO. Para gerar de novo:
 *   npx rolldown tools/compels/enviar-entrada.ts --file tools/compels/enviar-entrada.mjs --format esm --platform node
 */
-const TETO_DO_TESTE = 5;
+const TETO_DO_TESTE = 100;
 const args = process.argv.slice(2);
 const confirmou = args.includes("--confirmo-gravar");
 const [numeroOp, pmo, quantidadeTexto, anteriorTexto] = args.filter((a) => !a.startsWith("--"));
