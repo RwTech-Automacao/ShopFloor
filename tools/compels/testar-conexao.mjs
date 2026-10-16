@@ -46,8 +46,8 @@ function minutosDeValidade(jwt) {
 // 1) login no ezpointweb
 const login = await chamar('1. login ezpointweb', `${urlEzpoint}/login`, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  body: new URLSearchParams({ usuario, senha }),
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ usuario, senha }),
 })
 const tokenEzpoint = login.corpo?.token
 if (login.status !== 200 || typeof tokenEzpoint !== 'string') falha('login do ezpointweb não devolveu token.')
