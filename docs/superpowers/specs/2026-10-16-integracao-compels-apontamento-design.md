@@ -188,12 +188,13 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
 ### 3.4 Autenticação e segurança
 
 - Usuário de **serviço** dedicado, com permissão nas telas de Requisição, Apontamento e Movimento de Item. **Nunca** o token de uma pessoa.
-- **Login (capturado em 16/10, sem ler segredos):** `POST https://api.erpeasy.compels.net/oauth/token`, form `application/x-www-form-urlencoded` com `grant_type=password`, `email`, `password`, `company` (CNPJ formatado) e `companyId` (133). A chamada leva também um cabeçalho `Authorization: Basic ...`, que é a credencial do **cliente** OAuth (a da tela web). Resposta: token `bearer`, **`expires_in` 14400 (4 h)**, escopo `read write`, **sem refresh token**: ao expirar ou receber 401, a integração faz login de novo.
-- **Pendente:** a credencial de cliente (`Authorization: Basic`). O ideal é o Compels fornecer um cliente próprio da integração; reaproveitar o da tela web só com a autorização deles. Ela entra por variável de ambiente, nunca vista em chat.
-- Variáveis previstas (nomes): `COMPELS_API_USUARIO` (e-mail), `COMPELS_API_SENHA`, `COMPELS_API_EMPRESA` (CNPJ), `COMPELS_API_EMPRESA_ID`, `COMPELS_API_CLIENTE` (valor do `Authorization`).
-- Credenciais só em variáveis de ambiente do servidor; nunca em código, log, memória ou chat.
-- Não ler nem registrar as respostas de `parametrizacao` e `getUsuarioEEmpresaSessao`.
-- **Nunca gravar direto no banco do Compels.** Acesso ao banco, se vier, é só de leitura.
+- **Token: rota do ezpointweb (a que a automação do n8n já usa; decisão do usuário, 16/10).** Três passos:
+  1. `POST https://admin.ezpointweb.com.br/admin-ws/login` (form `usuario`, `senha`) → `{ token }` do ezpointweb.
+  2. `GET .../admin-ws/getCompelsToken?empresa=enterplak` com `Authorization: Bearer <token do ezpointweb>` → `{ token }` **do Compels**. (A automação do n8n usa `http://` neste passo; a integração usa **https** e, se o https falhar, para e avisa, em vez de mandar o token em texto puro.)
+  3. As chamadas ao Compels levam `Authorization: Bearer <token do Compels>`. A automação já usa esse token na API pública (`/v1/negociante`, leitura e PATCH).
+  - **Ainda não sabemos** se esse token também vale na **API interna da tela** (a de requisitar, apontar e consultar estoque, sem `/v1`). O script `tools/compels/testar-conexao.mjs` responde isso com leituras apenas.
+  - Variáveis: `COMPELS_EZPOINT_USUARIO`, `COMPELS_EZPOINT_SENHA`, `COMPELS_EZPOINT_EMPRESA` (padrão `enterplak`).
+  - Plano B, se o token do ezpointweb não valer na API interna: o login direto `POST /oauth/token` (e-mail, senha, empresa, companyId e o cabeçalho de cliente `Authorization: Basic`, cuja credencial ainda falta). Token de 4 h, sem refresh.
 
 ### 3.5 Implantação gradual
 
