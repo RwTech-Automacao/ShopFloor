@@ -114,6 +114,20 @@ Um ciclo de verdade foi feito e desfeito na tela, com captura. **Nenhuma chamada
 6. **A requisição envia `precoCusto` por item.** De onde ele vem na tela ainda não vimos; pode ser ignorado pelo servidor.
 7. O apontamento pode ser parcial (aqui 55 de 1000) com a requisição de 1000 já feita, como a OP 8697.
 
+### 2.7 Consulta de estoque por item (PMO) — leitura, sem risco
+
+`POST /itemMovimento/findFilter` (tela Movimento de Item). Corpo (form): `filter` = JSON `{codigo, descricao, data, exibeItensComSaldoZerado}`, mais `page`, `start`, `limit`. Cada linha traz o item e os saldos: `saldoItemEstoqueProprio` (o que interessa), `saldoItemPendencia`, `saldoItemEstoqueEmTerceiros`, `saldoItemEstoqueDeTerceiros`, e `saldoLote`, `saldoLoteEstoque`, `saldoLoteLocacao`. Exemplo: item PRT446 devolveu 28 em estoque próprio.
+
+- A busca por `codigo` não garante casamento exato: o cliente confere o código **exato** (sem diferenciar maiúsculas).
+- Mandar `exibeItensComSaldoZerado: true`, senão o item de saldo zero some da resposta e "não existe" fica igual a "zero".
+- `data` é a data do saldo (hoje).
+- **Não temos** a quebra por estoque/locação (217 × 224 × ...). Os campos `saldoLoteEstoque` e `saldoLoteLocacao` sugerem uma consulta mais detalhada; precisaria de outra captura (abrir a linha do item na tela Movimento de Item).
+- Implementado: `saldoDoItem(resposta, codigo)` (`src/modules/compels/domain/saldo-item.ts`).
+
+### 2.8 Trava de edição da OP (completa)
+
+A tela adquire (`POST /lock/eng.ordemproducaosimples/{id}`, 201), renova (`PUT /lock/keep/...` a cada 20–30 s) e libera (`DELETE /lock/release/...`). Ainda **não sabemos** se os gestos de gravar (§2.6) exigem a trava ou se o servidor a ignora; só um teste (gravar com a OP aberta por outra pessoa) responde.
+
 ## 3. Desenho da integração
 
 ### 3.1 Fonte da verdade e fila
