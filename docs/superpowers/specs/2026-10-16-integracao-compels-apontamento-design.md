@@ -113,7 +113,7 @@ Um ciclo de verdade foi feito e desfeito na tela, com captura. **Nenhuma chamada
 3. **Estorno remove a linha das listas.** Depois de estornar, as listas de apontamentos, requisições e empenhos voltam **vazias** e a OP volta a "Aberta". Por isso a soma das linhas já reflete o estorno, e o ERP deixou de ter marca de estorno para nós.
 4. **Status da OP muda sozinho:** Aberta → Empenhada → Em Processo → (estornando tudo) Aberta.
 5. **"Pendente":** nesta OP o empenho e a requisição ficaram com `situacao: "Pendente"` porque um componente (RWPC99) não tinha saldo (só 79 de 1000). Isso é a "falta de saldo" que o Almoxarifado citou; a OP precisa de "Pagar Pendência". A integração para com erro legível (`pendencia_no_erp`).
-6. **A requisição envia `precoCusto` por item.** De onde ele vem na tela ainda não vimos; pode ser ignorado pelo servidor.
+6. **A requisição envia `precoCusto` por item.** Hipótese do usuário (Almoxarifado/ERP): vem do **cadastro do item** e a tela só repassa. Consistente com o que vimos: os itens que o Compels devolve (ex.: o produto da OP) já trazem `precoCusto`. A integração deve **repassar o custo que o Compels devolveu**, nunca calcular nem inventar. A confirmar na primeira gravação em OP de teste (comparar com o custo do cadastro).
 7. O apontamento pode ser parcial (aqui 55 de 1000) com a requisição de 1000 já feita, como a OP 8697.
 
 ### 2.7 Consulta de estoque por item (PMO) — leitura, sem risco
@@ -129,6 +129,22 @@ Um ciclo de verdade foi feito e desfeito na tela, com captura. **Nenhuma chamada
 ### 2.8 Trava de edição da OP (completa)
 
 A tela adquire (`POST /lock/eng.ordemproducaosimples/{id}`, 201), renova (`PUT /lock/keep/...` a cada 20–30 s) e libera (`DELETE /lock/release/...`). Ainda **não sabemos** se os gestos de gravar (§2.6) exigem a trava ou se o servidor a ignora; só um teste (gravar com a OP aberta por outra pessoa) responde.
+
+### 2.9 Respostas de erro capturadas (16/10)
+
+Erro = **HTTP 400** com `{ code, message, detail, hint, cause }`; `message` já vem em português (às vezes com HTML). Sucesso = 200 (§2.6).
+
+| Situação | Chamada | Mensagem |
+|---|---|---|
+| **OP travada** (já aberta por alguém, aqui o mesmo usuário em outra janela) | `POST /lock/eng.ordemproducaosimples/{id}` → 400 | "Este registro está sendo acessado pelo usuário *e-mail*!" (o e-mail de quem segura vem no texto) |
+| **Quantidade acima do permitido** (aqui, empenhar 2.000.000 de um componente de composição 1000) | `POST /empenho` → 400 | "Quantidade Empenhada é maior que a Quantidade da Composição. Item: RWPC99" |
+| Estornar mais do que existe | (tela, OP 8191) | "Quantidade Estornar excede a quantidade permitida." / "...deve ser maior que 0." |
+
+**Falta de saldo não é erro de gravação.** Nesta captura ela apareceu de dois jeitos, ambos sem erro HTTP: o empenho e a requisição são aceitos com `situacao: "Pendente"` (componente sem saldo, §2.6 item 5); e no Apontar a tela chama `apontamentoOrdemProducao/verificaDisponibilidade` antes de gravar, que devolve por componente `saldoDisponivel` × `quantidadeUtilizada` (o usuário foi baixando a quantidade, 1000 → 800 → 55, até caber). Logo a integração **confere a disponibilidade antes de apontar** e não depende de um erro do ERP.
+
+**Ainda não vimos** se os gestos de gravar (Requisitar/Apontar) são recusados com a OP travada: a captura mostrou só a tentativa de **adquirir a trava** sendo recusada.
+
+Implementado: `resultadoDaGravacao(status, corpo)` (`domain/resposta-erp.ts`) classifica sucesso, `op_em_uso` (tenta de novo), `quantidade_acima`, `sem_saldo`, `sessao_expirada`, `sem_permissao`, `indisponivel` e `desconhecido`.
 
 ## 3. Desenho da integração
 
@@ -184,7 +200,7 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
 1. **API interna sem contrato.** Pode mudar sem aviso (o cabeçalho `vr` ajuda a detectar). Mitigação: fixtures + alerta quando a resposta mudar de forma.
 2. **Autorização.** Usar a API interna com usuário de serviço exige o aval do Compels. O usuário consegue obter.
 3. **Trava de edição** pode bloquear gravações em horário de uso. Mitigação: retentativa com backoff.
-4. **Gesto de gravar:** capturado em 16/10 (§2.6). Faltam as respostas de **erro** (falta de saldo, OP travada, entrega acima da OP).
+4. **Gesto de gravar:** capturado em 16/10 (§2.6), com as respostas de erro principais (§2.9). Falta: gravar com a OP travada por outra pessoa.
 5. **Apontamento manual concorrente** na mesma OP. Mitigação: o passo 3 do algoritmo para em vez de duplicar.
 6. **Destino do estoque** não é automático: vai em configuração, decidido como "Produto Acabado" (§2.6); ids a confirmar.
 7. **Idempotência** sem chave nossa: depende do algoritmo por contadores. A ideia de gravar nossa chave na Observação não está provada (nenhum apontamento visto tem Observação preenchida).
@@ -225,7 +241,7 @@ Ver §7 (leituras restantes) e §8 (gesto de gravar, por último).
 
 ## 8. Captura da escrita
 
-Feita em 16/10 (§2.6). **Faltam** as respostas de **erro**: falta de saldo, OP travada por outra pessoa, entrega acima da OP. Pedir só as telas e mensagens que o ERP mostra, sem forçar o erro em OP real.
+Feita em 16/10 (§2.6 e §2.9). **Falta** só: Requisitar/Apontar com a OP aberta por outra pessoa (a trava recusa o gesto de gravar ou só a aquisição?).
 
 ## 9. Fora de escopo
 
