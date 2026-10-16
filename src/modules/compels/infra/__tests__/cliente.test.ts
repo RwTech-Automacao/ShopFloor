@@ -47,6 +47,17 @@ function fingirCompels(extra: Record<string, () => Response> = {}) {
 }
 
 describe('ClienteCompels', () => {
+  it('GET e chamadas sem corpo levam Content-Type JSON (o Compels responde 415 sem ele); formulário mantém o seu', async () => {
+    const { buscar, chamadas } = fingirCompels()
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    const op = await c.buscarOp(8697)
+    await c.lerOp(op!)
+    const cabecalho = (inicio: string) =>
+      chamadas.find((x) => x.url.startsWith(inicio))?.init.headers as Record<string, string>
+    expect(cabecalho('/empenho/findByOrdemProducaoId')).toMatchObject({ 'Content-Type': 'application/json', Accept: 'application/json' })
+    expect(cabecalho('/ordemProducaoSimples/findAllFilter')['Content-Type']).toBe('application/x-www-form-urlencoded')
+  })
+
   it('acha a OP pelo número EXATO e lê o cadastro (unidade, produto, tipo de propriedade)', async () => {
     const { buscar, chamadas } = fingirCompels()
     const c = new ClienteCompels(config, tokenFixo(), buscar)

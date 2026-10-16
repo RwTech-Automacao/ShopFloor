@@ -561,10 +561,13 @@ var ClienteCompels = class {
 	}
 	async enviar(caminho, init = {}, tentouRenovar = false) {
 		const bearer = await this.token.obter();
+		const proprios = init.headers ?? {};
 		const r = await this.buscar(`${this.config.apiUrl}${caminho}`, {
 			...init,
 			headers: {
-				...init.headers,
+				Accept: "application/json",
+				"Content-Type": "application/json",
+				...proprios,
 				Authorization: `Bearer ${bearer}`
 			},
 			signal: AbortSignal.timeout(3e4)

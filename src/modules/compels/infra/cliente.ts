@@ -51,9 +51,12 @@ export class ClienteCompels {
 
   private async enviar(caminho: string, init: RequestInit = {}, tentouRenovar = false): Promise<Response> {
     const bearer = await this.token.obter()
+    // O Compels responde 415 a GET sem `Content-Type` (a tela web sempre manda JSON): o padrão é JSON, e
+    // os envios de formulário trazem o próprio `Content-Type`.
+    const proprios = (init.headers as Record<string, string> | undefined) ?? {}
     const r = await this.buscar(`${this.config.apiUrl}${caminho}`, {
       ...init,
-      headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${bearer}` },
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...proprios, Authorization: `Bearer ${bearer}` },
       signal: AbortSignal.timeout(30_000),
     })
     if (r.status === 401 && !tentouRenovar) {
