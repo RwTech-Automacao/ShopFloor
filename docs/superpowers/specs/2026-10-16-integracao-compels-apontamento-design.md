@@ -1,6 +1,6 @@
 # Integração ShopFloor → Compels: entrada de produto acabado (Requisitar + Apontar)
 
-**Data:** 16/10/2026 · **Estado:** rascunho de spec — a escrita no Compels ainda não foi capturada nem testada.
+**Data:** 16/10/2026 (atualizada no fim do dia) · **Estado:** gravação **validada em produção do ERP** com a OP 8649 (§2.11); falta ligar à fila do Almoxarifado, o estorno automático, a lista de OPs liberadas e o cron (§10).
 **Escrito para:** quem for implementar a integração e para a conversa com o Valdeí (Compels).
 **Relacionado:** posto Almoxarifado (migrações 0128–0133, fila `sf_estoque_envios`, branch `feat/posto-almoxarifado`, ainda não mergeada).
 
@@ -248,28 +248,33 @@ Consequências para o desenho:
 - **Unidade de medida diferente** entre a OP e a entrada (embalagens, colas, silicones): a quantidade que o ShopFloor conta pode não ser a que o Compels espera. **Decisão (16/10, usuário):** no começo a integração só atende produtos em **`UN`**; os demais ficam manuais. Se for preciso, troca-se depois.
 - Ela não respondeu sobre Observação nem sobre estorno.
 
-## 5. Perguntas ao Valdeí (Compels)
+## 5. Perguntas ao Valdeí e ao Compels (estado de 16/10)
 
-1. Contrato/autorização para usar a API interna e criação do usuário de serviço com as permissões necessárias.
-2. De onde vem o estoque/locação de destino do produto apontado e o que acontece se o item não tiver destino padrão.
-3. Em que casos o Apontar é recusado numa OP "Produzida".
-4. O estorno tem custo/efeito contábil?
-5. Como funciona a trava (tempo de expiração, quem a segura, como ver quem está usando).
-6. Limites (taxa de chamadas, vida do token, restrição de IP).
+O Valdeí **não responde pergunta técnica**; só contrato e administração. Quase todas as perguntas técnicas foram respondidas pelas capturas e pelos testes.
 
-## 6. Pendências de captura
+**Ao Valdeí (administração):**
+1. Podemos usar o usuário de serviço do Compels (hoje a rota do ezpointweb, usuário "Engenharia Integração") para dar entrada de produto acabado a partir do ShopFloor? Permissão só em Requisição, Apontamento e consulta de Movimento de Item.
+2. Quem é o contato técnico no suporte do Compels?
+3. **Aviso de segurança, à parte:** a tela de parametrização devolve dados sensíveis da empresa a qualquer usuário logado; repassar ao suporte, **sem valores**.
 
-Ver §7 (leituras restantes) e §8 (gesto de gravar, por último).
+**Ao suporte do Compels (por escrito, quando houver contato):** existe endpoint oficial e suportado de requisitar e apontar? Como avisam mudanças na API? (Baixa prioridade: o endpoint já foi achado pelo gesto da tela.)
 
-## 7. Leituras
+**Respondidas por captura ou teste:** destino do estoque (217 `PA`, locação 5314), como autentica (§3.4), trava (§2.9), erros (§2.9), estorno (§2.6), `precoCusto` (§2.10), mãe × filhas, datas, observação no envio, unidade (só `UN`), falta de saldo.
 
-**Feitas em 16/10:** OP 8669 (entrada total) e OP 8697 (quatro apontamentos parciais, três empenhos, três requisições; ver §2.5). Respondem: empenho parcial, requisição × apontamento, destino do estoque, datas, mãe × filhas.
+## 6. Decisões do usuário (16/10)
 
-**Ainda faltam (sem gravar nada):**
-- Apontamento com **Observação preenchida** (o campo existe no envio, mas nenhum dos apontamentos lidos tinha valor).
-- Apontamento **estornado/cancelado** (como aparece na lista e nos contadores; também o `quantidadeEstornar` com valor).
-- Conferir o destino do estoque em **outro produto** (cadastro do item, sem salvar).
-- Opcional: leitura de **banco** (só SELECT) para conferir os contadores.
+- Cada entrada = **uma requisição + um apontamento**; OPs requisitadas à frente ficam manuais.
+- Só produtos em **`UN`** no começo.
+- Estoque por PMO: **consulta na hora**, sem cópia no ShopFloor.
+- Destino fixo: **estoque 217 `PA`, locação 5314 `Padrão`**, em configuração.
+- Token pela **rota do ezpointweb** (a mesma da automação do n8n).
+- **Estorno automático fica para depois**; na v1 o estorno é manual e a linha de estorno da fila aparece como pendente.
+
+## 7. Leituras ainda abertas (sem gravar nada)
+
+- **Observação:** a marca "ShopFloor teste de integracao" foi gravada no apontamento da OP 8649; **falta ver se a tela mostra e se a leitura devolve** (decide a idempotência por marca).
+- **Lote criado** e **saldo dos componentes** antes e depois do estorno.
+- **Apontar acima da OP:** o usuário confirmou ser a mesma família de erro do empenho; sem captura própria.
 
 ## 8. Captura da escrita
 
@@ -278,3 +283,27 @@ Feita em 16/10 (§2.6 e §2.9). **Nada mais falta aqui.** A trava será adquirid
 ## 9. Fora de escopo
 
 Empenhar automático, estorno (fase 2), OPs filhas, número de série peça a peça, qualquer escrita direta no banco do Compels.
+
+## 10. O que falta para fechar a feature
+
+**Já pronto** (branch `feat/compels-integracao`, 94 testes, em `src/modules/compels` e `tools/compels`): estado da OP, decisão por entrada, corpos conferidos com a captura, token pela rota do ezpointweb, cliente (leituras, trava, consultas, Requisitar e Apontar), enviador por entrada, ensaio (um e em lote) e a ferramenta de gravação de teste.
+
+**Para fechar, em ordem:**
+
+1. **Fechar o teste da OP 8649.** Estorno feito à mão (apontamento, requisição, empenho); conferir Observação, lote e saldo dos componentes (§7).
+2. **Ensaio em lote** em uma lista de OPs reais do último mês, para medir quantas a integração atende e por que as outras ficam manuais. É o número que falta para saber o valor real.
+3. **Autorização do Valdeí** (§5) e contato técnico. Sem a autorização formal, não ligar o cron.
+4. **Fechar a branch do Almoxarifado** (`feat/posto-almoxarifado`, migrações 0128–0133, aplicar a 0132 antes da 0129 e da 0131) e mergeá-la: é um deploy próprio e maior que a integração.
+5. **Adaptador da fila:** ligar a porta `PortaCompels` do consumidor ao `enviarEntrada`, com a consulta da **soma já enviada por OP** (acumulado anterior). Linhas de **estorno** devolvem "Estorno no Compels ainda é manual".
+6. **Lista de OPs liberadas** (variável de ambiente) e a decisão do destino das linhas de OPs fora dela (ficam pendentes com aviso, sem gastar as 5 tentativas).
+7. **Variáveis no servidor:** `COMPELS_EZPOINT_USUARIO`, `COMPELS_EZPOINT_SENHA`, `COMPELS_EZPOINT_EMPRESA` (padrão `enterplak`), `COMPELS_ESTOQUE_ID` e `COMPELS_LOCACAO_ID` (padrão 217 e 5314), lista de OPs. Guardar com leitura silenciosa, nunca em chat.
+8. **Cron** do consumidor no servidor, só depois dos itens 3 a 7.
+9. **Tela de pendências:** conferir que as mensagens do enviador aparecem legíveis (já existe na branch do Almoxarifado).
+10. **Liberar OP por OP:** primeira OP real com bipe do Almoxarifado, acompanhando; depois ampliar a lista.
+11. **Consulta de estoque por PMO na tela** (`saldoDoItem`, cache de ~1 min em memória) quando houver a tela que a usa.
+12. **Fase 2:** estorno automático (ordem: apontamento, requisição, empenho), cancelamento de lançamento já enviado.
+13. **Limpeza:** a ferramenta de gravação de teste (`enviar-entrada.mjs`) e os `.mjs` gerados saem do repositório ou ficam documentados; revisar antes do merge na `main`.
+14. **Revisão da branch** (`feat/compels-integracao`) e merge na `main`. Os `.mjs` são gerados com `rolldown`.
+
+**Riscos que continuam abertos:** a API interna do Compels pode mudar sem aviso; a fração de OPs que ficam manuais é desconhecida (item 2 mede); a autorização formal ainda não existe.
+
