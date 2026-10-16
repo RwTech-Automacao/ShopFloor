@@ -24,14 +24,15 @@ const POSTOS: PostoRegra[] = [
   { chave: 'Embalagem', temStatus: false, coletaDefeito: false },
 ]
 const PMOS = ['PMOA', 'PMOB']
-const DESTINATARIOS = [{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true }]
-const CONFIGURADOS = { telegram: true, discord: true }
+const DESTINATARIOS = [{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true, emailOk: true }]
+const CONFIGURADOS = { telegram: true, discord: true, email: true }
 const TOAST = { position: 'bottom-center' }
 
 function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {
   return {
     id: 'r1',
     atualizadoEm: '2026-09-17T12:00:00Z',
+    modulo: 'shopfloor',
     tipo: 'aprovacao',
     nome: 'Teste 90',
     postos: ['Teste'],
@@ -59,6 +60,7 @@ function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null } = {}) {
   const onSalvo = vi.fn()
   render(
     <RegraForm
+      modulo="shopfloor"
       tipo={o.tipo ?? 'aprovacao'}
       regra={o.regra ?? null}
       postos={POSTOS}
@@ -267,7 +269,10 @@ describe('RegraForm — salvar na janela por blocos', () => {
     fireEvent.change(screen.getByLabelText('Fim do intervalo 2'), { target: { value: '17:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction).toHaveBeenCalledWith(null, {
+    expect(salvarRegraAction).toHaveBeenCalledWith('shopfloor', null, {
+      // A entrada carrega o módulo desde a Task 3: a validação do cliente mede tipo × módulo com
+      // ele, e o servidor repõe o módulo da rota por cima.
+      modulo: 'shopfloor',
       tipo: 'aprovacao',
       nome: 'Turno em blocos',
       postos: ['Teste'],
@@ -350,7 +355,7 @@ describe('RegraForm — abrir uma regra salva na janela por blocos', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
-    expect(salvarRegraAction.mock.calls[0]![1]).toMatchObject({
+    expect(salvarRegraAction.mock.calls[0]![2]).toMatchObject({
       janelaTipo: 'intervalos',
       janelaValor: '90',
       intervalos: [{ inicio: '07:00', fim: '12:00' }],

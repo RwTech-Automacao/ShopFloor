@@ -13,6 +13,7 @@ vi.mock('@/modules/alertas/application/alertas-actions', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const BASE: RegraAlerta = {
+  modulo: 'shopfloor',
   id: 'r1',
   atualizadoEm: '2026-09-18T12:00:00Z',
   tipo: 'tempo',
@@ -40,6 +41,7 @@ describe('RegrasLista', () => {
   it('mostra o tipo, o limite formatado por tipo e as PMOs', () => {
     render(
       <RegrasLista
+        modulo="shopfloor"
         regras={[
           BASE,
           {
@@ -56,8 +58,8 @@ describe('RegrasLista', () => {
         ]}
         postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
         pmos={['PMOX']}
-        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
-        configurados={{ telegram: true, discord: true }}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false, emailOk: true }]}
+        configurados={{ telegram: true, discord: true, email: true }}
         canalConfigurado
       />,
     )
@@ -73,6 +75,7 @@ describe('RegrasLista', () => {
   it('regra de janela "intervalos": a coluna Janela mostra "Blocos de 1 h" e o limite sai como taxa', () => {
     render(
       <RegrasLista
+        modulo="shopfloor"
         regras={[
           {
             ...BASE,
@@ -92,8 +95,8 @@ describe('RegrasLista', () => {
         ]}
         postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
         pmos={['PMOX']}
-        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
-        configurados={{ telegram: true, discord: true }}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false, emailOk: true }]}
+        configurados={{ telegram: true, discord: true, email: true }}
         canalConfigurado
       />,
     )
@@ -105,6 +108,7 @@ describe('RegrasLista', () => {
   it('resumo diário: Limite vira traço, Janela mostra a hora (nunca "Blocos de") e sem null/undefined/NaN', () => {
     const { container } = render(
       <RegrasLista
+        modulo="shopfloor"
         regras={[
           BASE,
           {
@@ -122,8 +126,8 @@ describe('RegrasLista', () => {
         ]}
         postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
         pmos={[]}
-        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false }]}
-        configurados={{ telegram: true, discord: true }}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false, emailOk: true }]}
+        configurados={{ telegram: true, discord: true, email: true }}
         canalConfigurado
       />,
     )
@@ -140,5 +144,85 @@ describe('RegrasLista', () => {
     const texto = container.textContent ?? ''
     expect(texto).not.toMatch(/null|undefined|NaN/)
     expect(texto).not.toContain('Blocos de')
+  })
+
+  // A regra de fim de EMB é a primeira sem posto nenhum (`postos: []`): na tabela a célula ficaria
+  // em branco, e no cartão do celular saía um ' ·  · ' pendurado no meio da linha.
+  it('fim de EMB: a coluna Postos mostra travessão e o cartão não pendura separador vazio', () => {
+    const { container } = render(
+      <RegrasLista
+        modulo="recebimento"
+        regras={[
+          {
+            ...BASE,
+            modulo: 'recebimento',
+            id: 'r4',
+            tipo: 'emb',
+            nome: 'Divergências de EMB',
+            postos: [],
+            janelaTipo: 'op',
+            janelaValor: null,
+            minimoBipes: null,
+            limiteTempoSeg: null,
+            pausaMaxMin: null,
+            pmos: [],
+          },
+        ]}
+        postos={[]}
+        pmos={[]}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Beto Recebimento', email: 'beto@x', telegram: true, discord: false, emailOk: true }]}
+        configurados={{ telegram: true, discord: true, email: true }}
+        canalConfigurado
+      />,
+    )
+    // Positivo antes do negativo: a linha montou.
+    expect(screen.getAllByText('Divergências de EMB').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Fim de EMB').length).toBeGreaterThan(0)
+
+    const linha = screen.getAllByText('Divergências de EMB')[0]!.closest('tr') as HTMLElement
+    const celulas = Array.from(linha.querySelectorAll('td')).map((c) => c.textContent)
+    expect(celulas[2]).toBe('—') // Postos
+    expect(celulas[3]).toBe('Todos os processos no fim') // Limite
+    expect(celulas[4]).toBe('Quando a EMB fecha') // Janela
+
+    const cartao = container.querySelector('.lg\\:hidden') as HTMLElement
+    expect(cartao.textContent).toContain('Fim de EMB · Todos os processos no fim · Quando a EMB fecha · PMOs: Todas')
+    expect(cartao.textContent).not.toContain(' ·  · ')
+    expect(container.textContent ?? '').not.toMatch(/null|undefined|NaN/)
+  })
+
+  // A coluna "Postos" imprimia a lista inteira e esticava a linha da tabela (pedido do usuário,
+  // 14/10/2026). Estes dois testes amarram a TELA ao resumo: sem eles, alguém pode devolver o
+  // `join(', ')` e o domínio continuaria certo enquanto a tela voltaria a inchar, em silêncio.
+  const DOZE = ['Inspeção SPI', 'Inspeção SMD', 'Inspeção PTH', 'Teste', 'Burn-in', 'Teste Final',
+    'Inspeção Final', 'Inspeção NQA', 'Inspeção SPI BOT', 'Inspeção SPI TOP', 'Inspeção AOI BOT',
+    'Inspeção AOI TOP']
+
+  function montarComPostos(daRegra: string[]) {
+    return render(
+      <RegrasLista
+        modulo="shopfloor"
+        regras={[{ ...BASE, postos: daRegra }]}
+        postos={DOZE.map((chave) => ({ chave, temStatus: true, coletaDefeito: true }))}
+        pmos={['PMOX']}
+        destinatarios={[{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: false, emailOk: true }]}
+        configurados={{ telegram: true, discord: true, email: true }}
+        canalConfigurado
+      />,
+    )
+  }
+
+  it('a regra com todos os postos mostra "Todos os postos", não os doze nomes', () => {
+    const { container } = montarComPostos(DOZE)
+    expect(screen.getAllByText('Todos os postos').length).toBeGreaterThan(0)
+    // O 12º nome não pode aparecer solto na linha — se aparecer, a célula voltou a listar tudo.
+    expect(container.textContent).not.toContain('Inspeção AOI TOP,')
+  })
+
+  it('mais de dois postos resumem, e a lista completa fica no title', () => {
+    montarComPostos(['Teste', 'Burn-in', 'Inspeção NQA', 'Teste Final'])
+    expect(screen.getAllByText('Teste, Burn-in +2').length).toBeGreaterThan(0)
+    const celula = screen.getAllByTitle('Teste, Burn-in, Inspeção NQA, Teste Final')
+    expect(celula.length).toBeGreaterThan(0)
   })
 })

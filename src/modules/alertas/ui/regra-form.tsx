@@ -20,6 +20,7 @@ import { postosOferecidos, type PostoRegra } from '@/modules/alertas/domain/post
 import { formatarMmSs } from '@/modules/alertas/domain/tempo'
 import type { Intervalo } from '@/modules/alertas/domain/intervalos'
 import { textoPreviaPosto, type PreviaPosto } from '@/modules/alertas/domain/ocorrencia'
+import { NOME_MODULO_ALERTA, type ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { previaRegraAction, salvarRegraAction } from '@/modules/alertas/application/alertas-actions'
 import { Explica } from './explica'
 import { IntervalosEditor } from './intervalos-editor'
@@ -36,6 +37,11 @@ const JANELAS: Record<TipoRegra, JanelaTipo[]> = {
   defeito: ['tempo'],
   // O resumo não tem janela a escolher: sai sempre pelos intervalos (o "dia" de cada posto).
   resumo: ['intervalos'],
+  // O fim de EMB não tem janela a escolher: o gatilho é a EMB fechar, e a seção inteira de Janela
+  // some neste tipo (ver o render). O 'op' aqui é o valor de FACHADA que `validarRegra` força — está
+  // escrito para o formulário mandar ao servidor a MESMA janela que ele vai gravar, e não os minutos
+  // de um campo que não aparece. A coluna "Janela" da lista nunca mostra este valor (`JANELA_EMB`).
+  emb: ['op'],
 }
 
 const TITULO_PREVIA: Record<TipoRegra, string> = {
@@ -44,6 +50,9 @@ const TITULO_PREVIA: Record<TipoRegra, string> = {
   defeito: 'Defeitos repetidos agora',
   // Sem uso: a prévia não existe no resumo (não há janela a antecipar). A chave só fecha o Record.
   resumo: 'Resumo diário',
+  // Sem uso, pelo mesmo motivo: não há janela a antecipar no fim de EMB, e o botão "Ver prévia" não
+  // aparece neste tipo. A chave fecha o Record e dá um título honesto se a prévia um dia existir.
+  emb: 'Fim de EMB',
 }
 
 const EXPLICA_POSTOS: Record<TipoRegra, string> = {
@@ -55,6 +64,11 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
     'Os defeitos são contados separados para cada posto marcado. Cada defeito que se repetir num posto abre o seu próprio alerta.',
   resumo:
     'O resumo traz a taxa de aprovação do dia, separada para cada posto marcado.',
+  // Sem uso: a seção de Postos NÃO É RENDERIZADA no fim de EMB (ver o render) — quem explica o
+  // gatilho dele é o quadro de texto que entra no lugar da seção. A frase fica verdadeira de
+  // propósito: se algum dia a seção voltar para este tipo, ela não mente.
+  emb:
+    'O aviso de fim de EMB não usa posto: ele sai quando todos os processos de uma EMB terminam.',
 }
 
 /** Por que a lista de postos é mais curta neste tipo. Tempo médio serve em qualquer posto. */
@@ -79,8 +93,8 @@ const AVISO_FORA_DO_TIPO: Partial<Record<TipoRegra, string>> = {
 
 /**
  * Responsáveis salvos que não estão mais entre os disponíveis (usuário desativado, removido ou que
- * perdeu shopfloor.administrar — `alerta_destinatarios` só devolve ativos que administram o
- * ShopFloor). Saem da seleção ao abrir o formulário; o aviso pede para salvar e confirmar. Lista de
+ * perdeu a permissão — `alerta_destinatarios` só devolve ativos que administram o MÓDULO da regra,
+ * desde a 0149). Saem da seleção ao abrir o formulário; o aviso pede para salvar e confirmar. Lista de
  * disponíveis vazia = nada carregou: não descarta ninguém.
  */
 export function separarDestinatarios(
@@ -99,13 +113,21 @@ function alterna<T>(lista: T[], item: T): T[] {
 
 function janelaInicial(tipo: TipoRegra, regra: RegraAlerta | null): JanelaTipo {
   if (tipo === 'resumo') return 'intervalos'
+  // Fachada, a mesma da validação: o fim de EMB não tem campo de janela, e o estado começa já no
+  // valor que vai ser gravado. Sem isto o estado nasceria em 'tempo' e o formulário mandaria minutos.
+  if (tipo === 'emb') return 'op'
   const salva = regra?.janelaTipo ?? 'tempo'
   return JANELAS[tipo].includes(salva) ? salva : 'tempo'
 }
 
 function minutosIniciais(tipo: TipoRegra, regra: RegraAlerta | null): string {
   if (regra && regra.janelaTipo === 'tempo' && regra.janelaValor !== null) return String(regra.janelaValor)
-  return String(tipo === 'aprovacao' || tipo === 'resumo' ? PADROES_REGRA.janelaTempo : PADROES_TIPO[tipo].janelaTempo)
+  // Só `tempo` e `defeito` têm padrão próprio em PADROES_TIPO. Os outros (aprovação, resumo e fim
+  // de EMB) caem no padrão geral — e no resumo e no fim de EMB o valor nem é usado, porque eles não
+  // têm campo de janela em minutos. A lista é dos que TÊM entrada, para um tipo novo não quebrar aqui.
+  const padrao =
+    tipo === 'tempo' || tipo === 'defeito' ? PADROES_TIPO[tipo].janelaTempo : PADROES_REGRA.janelaTempo
+  return String(padrao)
 }
 
 /** O passo do bloco na janela por blocos: 1 hora, a cadência que a fábrica já usa no turno. */
@@ -137,6 +159,7 @@ function pausaInicial(regra: RegraAlerta | null): string {
 }
 
 export function RegraForm({
+  modulo,
   tipo,
   regra,
   postos,
@@ -149,6 +172,8 @@ export function RegraForm({
   onVoltar,
   onRegraExcluida,
 }: {
+  /** O módulo da rota que montou a tela: vai na entrada validada e em cada action. */
+  modulo: ModuloAlerta
   tipo: TipoRegra
   regra: RegraAlerta | null
   /** Todos os postos na ordem do fluxo, com o que o perfil de cada um faz. */
@@ -158,7 +183,7 @@ export function RegraForm({
   configurados: Record<Canal, boolean>
   /**
    * O aviso EM CANAL está pronto (token do bot + DISCORD_CANAL_ID). Separado de
-   * `configurados.discord`, que só olha o token e vale para a conversa privada.
+   * `configurados.discord`, que só olha o token e vale para a mensagem direta.
    */
   canalConfigurado: boolean
   onSalvo: () => void
@@ -207,8 +232,12 @@ export function RegraForm({
   // conta vinculada nenhuma.
   const avisos = avisarPessoas ? destinatariosSemCanal(destinatarios, destSel, canaisSel) : []
   // Na janela por blocos o `janelaValor` é o PASSO em minutos (outra grandeza, mesmo campo do banco).
+  // O fim de EMB sai com valor nulo, como o resumo: a janela dele é só fachada. (Hoje o `janelaTipo`
+  // dele já é 'op' e cairia no `null` do fim da cadeia; a condição explícita é o que impede que um
+  // valor de fachada diferente, amanhã, mande minutos ao servidor — e `validarRegra` RECUSA a regra
+  // de EMB com `janelaValor` preenchido, então isto não é zelo: é a gravação funcionando.)
   const janelaValor =
-    tipo === 'resumo' ? null : janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
+    tipo === 'resumo' || tipo === 'emb' ? null : janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
 
   const oferecidos = postosOferecidos(tipo, postos, postosDaRegra)
   // Só avisa sobre o que está de fato MARCADO: desmarcado, o posto não atrapalha mais.
@@ -216,24 +245,38 @@ export function RegraForm({
 
   function entrada(): EntradaRegra {
     return {
+      // O módulo vai na entrada para a validação DO CLIENTE medir o mesmo que a do servidor
+      // (tipo × módulo). Na gravação quem manda é o módulo da rota, que a action repõe.
+      modulo,
       tipo,
       nome,
-      postos: postosSel,
+      // O fim de EMB não tem posto: o gatilho é a EMB fechar, e EMB não é posto. A seção nem
+      // aparece, mas a entrada manda a lista vazia de forma EXPLÍCITA — uma regra salva antes com
+      // posto, reaberta, não devolveria posto nenhum ao servidor.
+      postos: tipo === 'emb' ? [] : postosSel,
       taxaMinima: tipo === 'aprovacao' ? taxa : '',
       janelaTipo,
       janelaValor,
-      minimoBipes: tipo === 'defeito' || tipo === 'resumo' ? '' : minimo,
+      // A lista é dos tipos que TÊM mínimo de bipes, para um tipo novo não cair aqui por descuido:
+      // o fim de EMB não mede bipe nenhum, e `validarRegra` RECUSA a regra de EMB com este campo
+      // preenchido (o estado nasce com o padrão 20, não vazio).
+      minimoBipes: tipo === 'aprovacao' || tipo === 'tempo' ? minimo : '',
       limiteTempo: tipo === 'tempo' ? limiteTempo : '',
       pausaMaxMin: tipo === 'tempo' ? pausa : '',
       limiteOcorrencias: tipo === 'defeito' ? repeticoes : '',
       // O campo do lembrete não aparece na janela por blocos (quem comanda a insistência é o bloco):
       // um campo escondido não manda valor nenhum.
-      lembreteMin: tipo === 'resumo' || janelaTipo === 'intervalos' ? '' : lembrete,
+      // O fim de EMB também não tem lembrete: o aviso de cada EMB sai UMA vez (a marca de "já
+      // avisei" por (regra, EMB) na 0150), então não há o que insistir.
+      lembreteMin: tipo === 'resumo' || tipo === 'emb' || janelaTipo === 'intervalos' ? '' : lembrete,
       canais: canaisSel,
       destinatarios: destSel,
       avisarPessoas,
       avisarCanal,
-      pmos: pmosSel,
+      // O fim de EMB não filtra por PMO: a EMB é do Recebimento e não pertence a uma PMO (a seção
+      // de PMOs nem aparece neste tipo). O `verPrevia` abaixo manda `pmosSel` como sempre: o botão
+      // "Ver prévia" não existe no fim de EMB, então aquele caminho não é alcançável aqui.
+      pmos: tipo === 'emb' ? [] : pmosSel,
       // Só a janela que os usa manda os horários: nas outras a chave nem vai.
       ...(janelaTipo === 'intervalos' ? { intervalos } : {}),
       ...(tipo === 'resumo' ? { horaResumo } : {}),
@@ -244,13 +287,13 @@ export function RegraForm({
   function salvar() {
     // Mesma validação do servidor, antes de ir ao banco: o gestor vê o erro na hora.
     const dados = entrada()
-    const v = validarRegra(dados, { canalConfigurado })
+    const v = validarRegra(dados, { canalConfigurado, canaisConfigurados: configurados })
     if (!v.ok) {
       toast.error(v.erro, TOAST)
       return
     }
     startTransition(async () => {
-      const r = await salvarRegraAction(regra?.id ?? null, dados)
+      const r = await salvarRegraAction(modulo, regra?.id ?? null, dados)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         if (r.erro === ERRO_REGRA_EXCLUIDA) onRegraExcluida?.()
@@ -263,7 +306,7 @@ export function RegraForm({
 
   function verPrevia() {
     startTransition(async () => {
-      const r = await previaRegraAction({
+      const r = await previaRegraAction(modulo, {
         tipo,
         postos: postosSel,
         janelaTipo,
@@ -290,11 +333,14 @@ export function RegraForm({
           id="nome"
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          placeholder={tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : 'Teste abaixo de 90'}
+          placeholder={tipo === 'emb' ? 'Divergências de EMB' : tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : 'Teste abaixo de 90'}
           autoComplete="off"
         />
       </div>
 
+      {/* O fim de EMB não tem posto: o gatilho é a EMB fechar, e EMB não é posto. Campo morto é
+          pior que campo nenhum — a seção some, e no lugar dela entra o quadro que EXPLICA o gatilho. */}
+      {tipo !== 'emb' && (
       <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Postos
@@ -326,6 +372,30 @@ export function RegraForm({
           </p>
         )}
       </fieldset>
+      )}
+
+      {/* O gatilho do fim de EMB não se configura: ou todos os processos da EMB terminaram, ou não.
+          Mas tem de estar ESCRITO na tela — senão o gestor salva a regra sem saber quando ela sai,
+          o que ela traz e que cada EMB avisa uma vez só. Cada frase aqui foi conferida contra a
+          0150: o terminal é `rec_etapa_por_status in ('almoxarifado','reprovado')`, o piso é o
+          `criado_em` da regra, e a marca de "já avisei" é a `alerta_emb_avisada (regra_id, emb)`. */}
+      {tipo === 'emb' && (
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
+          <p>
+            O aviso sai quando <strong>todos os processos de uma EMB</strong> chegam ao fim do
+            fluxo — Almoxarifado ou Reprovado na Qualidade. Item reprovado também terminou.
+          </p>
+          <p>
+            A mensagem traz <strong>as divergências de quantidade</strong> daquela EMB, com a
+            justificativa de cada uma (ou a marca de que ninguém justificou). A EMB que fecha sem
+            nenhuma divergência <strong>também avisa</strong>, dizendo que terminou sem divergência.
+          </p>
+          <p>
+            Cada EMB avisa <strong>uma vez só</strong>. A conferência é feita a cada 5 minutos, e
+            EMBs que fecharam antes de a regra ser criada não são avisadas.
+          </p>
+        </div>
+      )}
 
       {tipo === 'aprovacao' && (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -444,8 +514,9 @@ export function RegraForm({
         </fieldset>
       )}
 
-      {/* O resumo não tem janela a escolher: o bloco acima já traz os intervalos. */}
-      {tipo !== 'resumo' && (
+      {/* O resumo não tem janela a escolher: o bloco acima já traz os intervalos. O fim de EMB não
+          tem janela NENHUMA: o gatilho é a EMB fechar (o quadro acima explica). */}
+      {tipo !== 'resumo' && tipo !== 'emb' && (
       <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Janela
@@ -574,8 +645,9 @@ export function RegraForm({
 
       {/* O lembrete é IGNORADO na janela por blocos (sai null na validação): quem comanda a
           insistência é o fechamento do próximo bloco. Campo que não faz nada é pior que campo
-          nenhum, então ele some. */}
-      {tipo !== 'resumo' && janelaTipo !== 'intervalos' && (
+          nenhum, então ele some. No fim de EMB some pelo mesmo motivo: cada EMB avisa UMA vez (a
+          marca de "já avisei" por (regra, EMB) na 0150), e não há alerta aberto para insistir. */}
+      {tipo !== 'resumo' && tipo !== 'emb' && janelaTipo !== 'intervalos' && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
             <Label htmlFor="lembrete">Lembrar a cada (min)</Label>
@@ -598,9 +670,10 @@ export function RegraForm({
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Como avisar
           <Explica titulo="Como avisar">
-            <p><strong>Conversa privada do responsável</strong>: é o comportamento de sempre — cada um recebe a mensagem na conversa dele. Marcando, escolha por onde: <strong>Telegram</strong>, <strong>Discord</strong> ou os dois.</p>
+            <p><strong>Mensagem direta ao responsável</strong>: é o comportamento de sempre — cada um recebe a mensagem. Marcando, escolha por onde: <strong>Telegram</strong>, <strong>Discord</strong>, <strong>E-mail</strong> ou os três.</p>
+            <p>O <strong>E-mail</strong> vai para o endereço com que a pessoa entra no sistema. Não há cadastro de endereço, e quem não tem conta no sistema não pode ser avisado.</p>
             <p><strong>No canal do Discord</strong>: uma mensagem só, no canal do sistema, que todo mundo do canal vê.</p>
-            <p>Dá para marcar os dois. Só no canal: ninguém recebe no privado, e os responsáveis continuam podendo apertar <strong>Resolvido</strong> ali mesmo.</p>
+            <p>Dá para marcar os dois. Só no canal: ninguém recebe mensagem direta, e os responsáveis continuam podendo apertar <strong>Resolvido</strong> ali mesmo.</p>
             <p>A mensagem no canal <strong>não marca ninguém</strong> (@here/cargo): quem não estiver com o Discord aberto pode não notar.</p>
           </Explica>
         </legend>
@@ -608,14 +681,14 @@ export function RegraForm({
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              aria-label="Conversa privada do responsável"
+              aria-label="Mensagem direta ao responsável"
               checked={avisarPessoas}
               onChange={() => setAvisarPessoas((a) => !a)}
             />
-            Conversa privada do responsável
+            Mensagem direta ao responsável
           </label>
-          {/* Telegram e Discord são sub-opções DA conversa privada: fora dela não querem dizer nada
-              (o aviso em canal é sempre do Discord). Some quando a conversa privada é desmarcada. */}
+          {/* Telegram, Discord e E-mail são sub-opções DA mensagem direta: fora dela não querem dizer nada
+              (o aviso em canal é sempre do Discord). Some quando a mensagem direta é desmarcada. */}
           {avisarPessoas && (
             <div className="ml-6 flex flex-wrap gap-4 border-l border-border pl-3">
               {CANAIS.map((c) => (
@@ -650,8 +723,11 @@ export function RegraForm({
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Responsáveis
           <Explica titulo="Responsáveis">
-            <p>Quem responde por este alerta. São eles que podem apertar <strong>Resolvido</strong> — junto com quem administra o ShopFloor pela tela.</p>
-            <p>Só aparecem usuários ativos que podem <strong>administrar o ShopFloor</strong>. Quem perder essa permissão para de receber e de poder encerrar, mesmo continuando na regra.</p>
+            <p>Quem responde por este alerta. São eles que podem apertar <strong>Resolvido</strong> — junto com quem administra o {NOME_MODULO_ALERTA[modulo]} pela tela.</p>
+            {/* ⚠️ A permissão é POR MÓDULO desde a 0149: `alerta_destinatarios(p_modulo)` só devolve
+                quem tem `usuario_tem_permissao(usuário, <módulo da regra>, 'administrar')`. O texto
+                dizia "o ShopFloor" fixo — numa regra do Recebimento isso afirmava a permissão errada. */}
+            <p>Só aparecem usuários ativos que podem <strong>administrar o {NOME_MODULO_ALERTA[modulo]}</strong>. Quem perder essa permissão para de receber e de poder encerrar, mesmo continuando na regra.</p>
           </Explica>
         </legend>
         <div className="flex max-h-40 flex-col gap-2 overflow-y-auto rounded-md border border-border p-3">
@@ -665,15 +741,16 @@ export function RegraForm({
               />
               {d.nome}
               <span className="text-xs text-muted-foreground">
-                Telegram {d.telegram ? '✓' : '—'} · Discord {d.discord ? '✓' : '—'}
+                Telegram {d.telegram ? '✓' : '—'} · Discord {d.discord ? '✓' : '—'} ·
+                E-mail {d.emailOk ? '✓' : '—'}
               </span>
             </label>
           ))}
         </div>
         {inicioDest.descartados > 0 && (
           <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
-            {inicioDest.descartados} responsável(is) inativo(s) ou sem permissão de administrar o ShopFloor removido(s)
-            da regra — salve para confirmar.
+            {inicioDest.descartados} responsável(is) inativo(s) ou sem permissão de administrar o{' '}
+            {NOME_MODULO_ALERTA[modulo]} removido(s) da regra — salve para confirmar.
           </p>
         )}
         {avisos.length > 0 && (
@@ -685,9 +762,12 @@ export function RegraForm({
         )}
       </fieldset>
 
-      <PmosSelecao disponiveis={pmosDisponiveis} selecionadas={pmosSel} onChange={setPmosSel} />
+      {/* A EMB é do Recebimento e não pertence a uma PMO: não há o que filtrar. */}
+      {tipo !== 'emb' && (
+        <PmosSelecao disponiveis={pmosDisponiveis} selecionadas={pmosSel} onChange={setPmosSel} />
+      )}
 
-      {tipo !== 'resumo' && previa && (
+      {tipo !== 'resumo' && tipo !== 'emb' && previa && (
         <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-3 text-sm">
           <span className="font-medium">{TITULO_PREVIA[tipo]}</span>
           {previa.linhas.map((p) => (
@@ -710,8 +790,9 @@ export function RegraForm({
         {/* A prévia NÃO aparece na janela por blocos, e isso não é esquecimento: a `alerta_previa`
             do banco levanta JANELA_INVALIDA em qualquer janela fora de tempo/bipes/op, então o
             botão quebraria. É decisão consciente e REVERSÍVEL — ensinar a `alerta_previa` a receber
-            o bloco é tarefa própria, e o botão volta. */}
-        {tipo !== 'resumo' && janelaTipo !== 'intervalos' && (
+            o bloco é tarefa própria, e o botão volta. No fim de EMB não há prévia por outro
+            motivo: não há janela a antecipar, nem medida a mostrar — só o gatilho. */}
+        {tipo !== 'resumo' && tipo !== 'emb' && janelaTipo !== 'intervalos' && (
           <Button variant="outline" onClick={verPrevia} disabled={pendente}>
             Ver prévia
           </Button>

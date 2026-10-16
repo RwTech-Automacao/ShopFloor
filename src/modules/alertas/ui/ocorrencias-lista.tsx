@@ -25,6 +25,7 @@ import {
   type FiltroOcorrencias,
   type OcorrenciaLinha,
 } from '@/modules/alertas/domain/ocorrencia'
+import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { listarOcorrenciasAction, resolverOcorrenciaAction } from '@/modules/alertas/application/alertas-actions'
 
 const TOAST = { position: 'bottom-center' } as const
@@ -43,10 +44,12 @@ function Estado({ o }: { o: OcorrenciaLinha }) {
 }
 
 export function OcorrenciasLista({
+  modulo,
   ocorrenciasIniciais,
   filtroInicial,
   recarregar = 0,
 }: {
+  modulo: ModuloAlerta
   ocorrenciasIniciais: OcorrenciaLinha[]
   filtroInicial: FiltroOcorrencias
   /**
@@ -68,11 +71,11 @@ export function OcorrenciasLista({
 
   const carregar = useCallback((f: FiltroOcorrencias) => {
     startTransition(async () => {
-      const r = await listarOcorrenciasAction(f)
+      const r = await listarOcorrenciasAction(modulo, f)
       if (!r.ok) toast.error(r.erro, TOAST)
       else setLista(r.ocorrencias)
     })
-  }, [])
+  }, [modulo])
 
   function buscar(novo: FiltroOcorrencias) {
     setFiltro(novo)
@@ -99,13 +102,13 @@ export function OcorrenciasLista({
     setResolvendo(null)
     startTransition(async () => {
       // A explicação é OPCIONAL: vazia, resolve do mesmo jeito (o banco apara e decide).
-      const r = await resolverOcorrenciaAction(o.id, texto)
+      const r = await resolverOcorrenciaAction(modulo, o.id, texto)
       if (!r.ok) {
         toast.error(r.erro, TOAST)
         return
       }
       toast.success(`${o.posto}: marcada como resolvida`, TOAST)
-      const atualizada = await listarOcorrenciasAction(filtro)
+      const atualizada = await listarOcorrenciasAction(modulo, filtro)
       if (atualizada.ok) setLista(atualizada.ocorrencias)
     })
   }

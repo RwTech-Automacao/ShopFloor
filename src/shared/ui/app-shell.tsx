@@ -115,6 +115,7 @@ const CONFIG_RECEBIMENTO: FolhaModular[] = [
   { chave: 'colunas', rotulo: 'Colunas da Lista', href: '/configuracoes/colunas', icone: Columns3, modulo: 'recebimento', perm: 'administrar' },
   { chave: 'criticidade', rotulo: 'Criticidade', href: '/configuracoes/criticidade', icone: TriangleAlert, modulo: 'recebimento', perm: 'administrar' },
   { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, modulo: 'recebimento', perm: 'administrar' },
+  { chave: 'rec-alertas', rotulo: 'Alertas', href: '/configuracoes/rec-alertas', icone: BellRing, modulo: 'recebimento', perm: 'administrar' },
 ]
 
 // Configurações específicas do módulo ShopFloor, agrupadas num accordion.
@@ -198,9 +199,13 @@ export function AppShell({
   // itens internos filtram fino por módulo logo abaixo.
   const podeConfig = perfil.permissoes.administrar === true
   const configTopo = podeConfig ? CONFIG_TOPO.filter(pode) : []
-  const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter(pode) : []
+  // Lançamento escondido dos Alertas: vale para os DOIS itens (é a mesma feature escondida).
+  const ehAlertas = (chave: string) => chave === 'sf-alertas' || chave === 'rec-alertas'
+  const configRec = podeConfig
+    ? CONFIG_RECEBIMENTO.filter(pode).filter((i) => !ehAlertas(i.chave) || alertasLiberado)
+    : []
   const configSf = podeConfig
-    ? CONFIG_SHOPFLOOR.filter(pode).filter((i) => i.chave !== 'sf-alertas' || alertasLiberado)
+    ? CONFIG_SHOPFLOOR.filter(pode).filter((i) => !ehAlertas(i.chave) || alertasLiberado)
     : []
   const configSetup = podeConfig ? CONFIG_SETUP.filter(pode) : []
   const configBase = podeConfig ? CONFIG_BASE.filter(pode) : []

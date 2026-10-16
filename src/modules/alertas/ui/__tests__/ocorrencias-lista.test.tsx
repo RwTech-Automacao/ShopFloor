@@ -49,6 +49,7 @@ describe('OcorrenciasLista', () => {
   it('mostra o defeito (código + descrição) e o valor medido na régua de cada tipo', () => {
     render(
       <OcorrenciasLista
+        modulo="shopfloor"
         ocorrenciasIniciais={[
           BASE,
           { ...BASE, id: 'o2', regraNome: 'Lento', regraTipo: 'tempo', defeito: null, valorAbertura: 180, valorUltimo: 200 },
@@ -80,6 +81,7 @@ describe('OcorrenciasLista', () => {
   it('ocorrência que voltou aparece como "Reaberta", com o encerramento antigo marcado', () => {
     render(
       <OcorrenciasLista
+        modulo="shopfloor"
         ocorrenciasIniciais={[
           {
             ...BASE,
@@ -104,7 +106,7 @@ describe('OcorrenciasLista — recarga vinda de fora (depois de "Avaliar agora")
   const FILTRO = { de: '2026-09-12', ate: '2026-09-18', estado: '' as const }
 
   it('não busca nada no primeiro render (a lista já veio do servidor)', () => {
-    render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
+    render(<OcorrenciasLista modulo="shopfloor" ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
     expect(listarOcorrenciasAction).not.toHaveBeenCalled()
   })
 
@@ -116,6 +118,7 @@ describe('OcorrenciasLista — recarga vinda de fora (depois de "Avaliar agora")
     })
     const tela = render(
       <OcorrenciasLista
+        modulo="shopfloor"
         ocorrenciasIniciais={[{ ...BASE, estado: 'resolvida' }]}
         filtroInicial={FILTRO}
         recarregar={0}
@@ -126,29 +129,30 @@ describe('OcorrenciasLista — recarga vinda de fora (depois de "Avaliar agora")
 
     tela.rerender(
       <OcorrenciasLista
+        modulo="shopfloor"
         ocorrenciasIniciais={[{ ...BASE, estado: 'resolvida' }]}
         filtroInicial={FILTRO}
         recarregar={1}
       />,
     )
-    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith(FILTRO))
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', FILTRO))
     await waitFor(() => expect(screen.getByRole('cell', { name: 'Reaberta' })).toBeInTheDocument())
     expect(screen.queryByRole('cell', { name: 'Resolvida' })).not.toBeInTheDocument()
   })
 
   it('recarrega com o filtro que está na tela, não com o inicial', async () => {
-    const tela = render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
+    const tela = render(<OcorrenciasLista modulo="shopfloor" ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
     fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'aberta' } })
-    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith({ ...FILTRO, estado: 'aberta' }))
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', { ...FILTRO, estado: 'aberta' }))
     listarOcorrenciasAction.mockClear()
 
-    tela.rerender(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={1} />)
+    tela.rerender(<OcorrenciasLista modulo="shopfloor" ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={1} />)
     await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledTimes(1))
-    expect(listarOcorrenciasAction).toHaveBeenCalledWith({ ...FILTRO, estado: 'aberta' })
+    expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', { ...FILTRO, estado: 'aberta' })
   })
 
   it('trocar o filtro busca UMA vez (a recarga de fora não duplica)', async () => {
-    render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
+    render(<OcorrenciasLista modulo="shopfloor" ocorrenciasIniciais={[BASE]} filtroInicial={FILTRO} recarregar={0} />)
     fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'normalizada' } })
     await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledTimes(1))
   })
@@ -157,7 +161,7 @@ describe('OcorrenciasLista — recarga vinda de fora (depois de "Avaliar agora")
 describe('OcorrenciasLista — resolver pergunta o que foi feito', () => {
   const FILTRO = { de: '2026-09-12', ate: '2026-09-18', estado: '' as const }
   const montar = (o: OcorrenciaLinha = BASE) =>
-    render(<OcorrenciasLista ocorrenciasIniciais={[o]} filtroInicial={FILTRO} />)
+    render(<OcorrenciasLista modulo="shopfloor" ocorrenciasIniciais={[o]} filtroInicial={FILTRO} />)
 
   it('o botão é "Resolver" (ação), não "Resolvido"/"Marcar resolvida", e é amarelo', () => {
     montar()
@@ -183,7 +187,7 @@ describe('OcorrenciasLista — resolver pergunta o que foi feito', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resolver' }))
     fireEvent.change(await screen.findByLabelText('O que foi feito'), { target: { value: 'Troquei o feeder' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
-    await waitFor(() => expect(resolverOcorrenciaAction).toHaveBeenCalledWith('o1', 'Troquei o feeder'))
+    await waitFor(() => expect(resolverOcorrenciaAction).toHaveBeenCalledWith('shopfloor', 'o1', 'Troquei o feeder'))
   })
 
   it('confirmar VAZIO também resolve (a explicação é opcional)', async () => {
@@ -191,7 +195,7 @@ describe('OcorrenciasLista — resolver pergunta o que foi feito', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resolver' }))
     await screen.findByLabelText('O que foi feito')
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
-    await waitFor(() => expect(resolverOcorrenciaAction).toHaveBeenCalledWith('o1', ''))
+    await waitFor(() => expect(resolverOcorrenciaAction).toHaveBeenCalledWith('shopfloor', 'o1', ''))
   })
 
   it('cancelar não resolve, e reabrir começa com a caixa limpa', async () => {
@@ -215,7 +219,7 @@ describe('OcorrenciasLista — resolver pergunta o que foi feito', () => {
 
   it('com regras de resumo existindo, a tela continua coerente: o resumo não gera linha nem filtro', async () => {
     // Quem manda é o banco (0141 mantém o resumo fora de alerta_ocorrencia): a lista só mostra o que veio.
-    render(<OcorrenciasLista ocorrenciasIniciais={[BASE]} filtroInicial={{ de: '', ate: '', estado: '' }} />)
+    render(<OcorrenciasLista modulo="shopfloor" ocorrenciasIniciais={[BASE]} filtroInicial={{ de: '', ate: '', estado: '' }} />)
     expect(screen.getByText('Defeito 3x')).toBeTruthy() // a tela montou com dados
     expect(screen.queryByText('Resumo diário')).toBeNull()
     // Não há filtro por regra/tipo para listar um resumo que sempre voltaria vazio.

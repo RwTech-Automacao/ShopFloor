@@ -23,17 +23,18 @@ const POSTOS: PostoRegra[] = [
   { chave: 'Teste', temStatus: true, coletaDefeito: true },
   { chave: 'Embalagem', temStatus: false, coletaDefeito: false },
 ]
-const DESTINATARIOS = [{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true }]
+const DESTINATARIOS = [{ usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true, emailOk: true }]
 
 function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null } = {}) {
   render(
     <RegraForm
+      modulo="shopfloor"
       tipo={o.tipo ?? 'resumo'}
       regra={o.regra ?? null}
       postos={POSTOS}
       pmosDisponiveis={['PMOA']}
       destinatarios={DESTINATARIOS}
-      configurados={{ telegram: true, discord: true }}
+      configurados={{ telegram: true, discord: true, email: true }}
       canalConfigurado
       onSalvo={vi.fn()}
       onCancelar={vi.fn()}
@@ -42,7 +43,7 @@ function montar(o: { tipo?: TipoRegra; regra?: RegraAlerta | null } = {}) {
 }
 
 /** O que foi mandado ao servidor na primeira chamada de salvar. */
-const enviado = () => (salvarRegraAction.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+const enviado = () => (salvarRegraAction.mock.calls[0] as unknown[])[2] as Record<string, unknown>
 /** A mensagem do primeiro toast de erro. */
 const erroMostrado = () => String((toastErro.mock.calls[0] as unknown[])[0])
 
@@ -118,7 +119,7 @@ describe('RegraForm — resumo diário: o que a tela mostra', () => {
   it('mantém nome, postos, responsáveis e canais', () => {
     montar()
     provarQueMontou()
-    expect(screen.getByLabelText('Conversa privada do responsável')).toBeInTheDocument()
+    expect(screen.getByLabelText('Mensagem direta ao responsável')).toBeInTheDocument()
     expect(screen.getByLabelText('No canal do Discord')).toBeInTheDocument()
   })
 
@@ -127,6 +128,7 @@ describe('RegraForm — resumo diário: o que a tela mostra', () => {
       regra: {
         id: 'r1',
         atualizadoEm: '2026-10-08T12:00:00Z',
+        modulo: 'shopfloor',
         tipo: 'resumo',
         nome: 'Resumo',
         postos: ['Teste'],
@@ -183,12 +185,13 @@ describe('RegraForm — resumo diário: o que sai ao salvar', () => {
       salvarRegraAction.mockClear()
       const { unmount } = render(
         <RegraForm
+          modulo="shopfloor"
           tipo="resumo"
           regra={null}
           postos={POSTOS}
           pmosDisponiveis={[]}
           destinatarios={DESTINATARIOS}
-          configurados={{ telegram: true, discord: true }}
+          configurados={{ telegram: true, discord: true, email: true }}
           canalConfigurado
           onSalvo={vi.fn()}
           onCancelar={vi.fn()}

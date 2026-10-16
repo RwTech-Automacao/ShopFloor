@@ -57,11 +57,12 @@ const FILTRO = { de: '2026-09-17', ate: '2026-09-23', estado: '' as const }
 function montar(ocorrencias: OcorrenciaLinha[] = [RESOLVIDA]) {
   render(
     <AlertasTela
+      modulo="shopfloor"
       regras={[]}
       postos={[{ chave: 'Teste', temStatus: true, coletaDefeito: true }]}
       pmos={[]}
       destinatarios={[]}
-      configurados={{ telegram: true, discord: true }}
+      configurados={{ telegram: true, discord: true, email: true }}
       canalConfigurado
       ocorrenciasIniciais={ocorrencias}
       filtroInicial={FILTRO}
@@ -105,7 +106,7 @@ describe('AlertasTela — "Avaliar agora"', () => {
     await waitFor(() => expect(screen.getByRole('cell', { name: 'Reaberta' })).toBeInTheDocument())
     expect(screen.queryByRole('cell', { name: 'Resolvida' })).not.toBeInTheDocument()
     // A lista foi buscada de novo com o filtro da tela.
-    expect(listarOcorrenciasAction).toHaveBeenCalledWith(FILTRO)
+    expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', FILTRO)
   })
 
   it('renova também o que vem do servidor (mesmo par do setup-estrutura)', async () => {
@@ -127,7 +128,7 @@ describe('AlertasTela — "Avaliar agora"', () => {
         position: 'bottom-center',
       }),
     )
-    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith(FILTRO))
+    await waitFor(() => expect(listarOcorrenciasAction).toHaveBeenCalledWith('shopfloor', FILTRO))
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 

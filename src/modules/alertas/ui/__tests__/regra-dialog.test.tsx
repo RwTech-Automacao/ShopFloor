@@ -10,13 +10,14 @@ vi.mock('@/modules/alertas/application/alertas-actions', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const PROPS = {
+  modulo: 'shopfloor' as const,
   postos: [
     { chave: 'Teste', temStatus: true, coletaDefeito: true },
     { chave: 'Embalagem', temStatus: false, coletaDefeito: false },
   ],
   pmos: ['PMOA'],
   destinatarios: [],
-  configurados: { telegram: true, discord: true },
+  configurados: { telegram: true, discord: true, email: true },
   canalConfigurado: true,
   onFechar: vi.fn(),
 }
@@ -38,6 +39,7 @@ describe('RegraConteudo', () => {
     const regra: RegraAlerta = {
       id: 'r1',
       atualizadoEm: '2026-09-18T12:00:00Z',
+      modulo: 'shopfloor',
       tipo: 'defeito',
       nome: 'Defeito 3x',
       postos: ['Teste'],

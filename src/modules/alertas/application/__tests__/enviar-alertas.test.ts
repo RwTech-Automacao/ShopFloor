@@ -443,6 +443,34 @@ describe('enviarTeste (entrega direta, fora da fila)', () => {
     expect(r).toEqual({ ok: false, erro: 'Vincule o Telegram antes de enviar o teste.' })
   })
 
+  it('e-mail: não precisa de vínculo, manda para o endereço informado e grava a linha final', async () => {
+    const mail = portaFalsa()
+    const { repo, diretos } = repoFalso({ conta: null })
+    const r = await enviarTeste({ email: mail.porta }, repo, {
+      usuarioId: 'u1', canal: 'email', nome: 'Ana Gestora', email: ' ana@x ',
+    })
+    expect(r).toEqual({ ok: true })
+    expect(mail.enviados[0]).toMatchObject({ externoId: 'ana@x', destino: 'usuario' })
+    expect(diretos[0]).toMatchObject({ tipo: 'teste', canal: 'email', usuarioId: 'u1' })
+  })
+
+  it('e-mail: cadastro sem endereço avisa e não chama a porta', async () => {
+    const mail = portaFalsa()
+    const { repo, diretos } = repoFalso({ conta: null })
+    for (const email of [undefined, '   ']) {
+      const r = await enviarTeste({ email: mail.porta }, repo, { usuarioId: 'u1', canal: 'email', nome: 'Ana', email })
+      expect(r).toEqual({ ok: false, erro: 'Seu cadastro está sem e-mail.' })
+    }
+    expect(mail.enviados).toHaveLength(0)
+    expect(diretos).toHaveLength(0)
+  })
+
+  it('e-mail: ambiente sem SMTP avisa que não está configurado', async () => {
+    const { repo } = repoFalso({ conta: null })
+    const r = await enviarTeste({}, repo, { usuarioId: 'u1', canal: 'email', nome: 'Ana', email: 'ana@x' })
+    expect(r).toEqual({ ok: false, erro: 'E-mail não está configurado neste ambiente.' })
+  })
+
   it('falha do canal volta como erro', async () => {
     const tg = portaFalsa({ falharPara: ['111'] })
     const { repo, diretos } = repoFalso({ conta: { usuarioId: 'u1', canal: 'telegram', externoId: '111' } })

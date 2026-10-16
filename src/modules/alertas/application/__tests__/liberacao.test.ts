@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { alertasDisponiveis, alertasLiberados } from '../liberacao'
 
 describe('alertasLiberados', () => {
@@ -86,5 +86,28 @@ describe('alertasDisponiveis (menu, Meu perfil e vínculo)', () => {
 
   it('sem sessão, nada', () => {
     expect(alertasDisponiveis(null)).toBe(false)
+  })
+})
+
+describe('alertasDisponiveis em mais de um módulo', () => {
+  // O assunto daqui é a RÉGUA DE PERMISSÃO, não o lançamento escondido: sem fixar a liberação,
+  // `alertasLiberados` devolveria false (NODE_ENV=test não é 'development' e a lista está vazia) e
+  // os casos passariam a medir a variável de ambiente em vez do módulo.
+  beforeEach(() => { vi.stubEnv('ALERTAS_LIBERADO_PARA', '*') })
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  const perfilCom = (modulo: 'shopfloor' | 'recebimento') =>
+    ({ porModulo: { [modulo]: { administrar: true } } }) as never
+
+  it('libera quem administra só o Recebimento', () => {
+    expect(alertasDisponiveis({ email: 'beto@x', perfil: perfilCom('recebimento') })).toBe(true)
+  })
+
+  it('libera quem administra só o ShopFloor', () => {
+    expect(alertasDisponiveis({ email: 'carla@x', perfil: perfilCom('shopfloor') })).toBe(true)
+  })
+
+  it('não libera quem não administra nenhum dos dois (caso 7 da spec)', () => {
+    expect(alertasDisponiveis({ email: 'zé@x', perfil: { porModulo: { setup: { administrar: true } } } as never })).toBe(false)
   })
 })

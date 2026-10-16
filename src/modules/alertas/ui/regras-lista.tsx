@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
-import type { PostoRegra } from '@/modules/alertas/domain/postos-regra'
+import { resumoPostos, type PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { NOME_CANAL, NOME_TIPO_REGRA, type Canal } from '@/modules/alertas/domain/tipos'
 import {
   resumoJanelaRegra,
@@ -17,6 +17,7 @@ import {
   type DestinatarioDisponivel,
   type RegraAlerta,
 } from '@/modules/alertas/domain/regra'
+import { TIPOS_REGRA_POR_MODULO, type ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { alternarRegraAtivaAction, excluirRegraAction } from '@/modules/alertas/application/alertas-actions'
 import { RegraDialog } from './regra-dialog'
 import { ERRO_REGRA_EXCLUIDA } from './regra-form'
@@ -24,6 +25,7 @@ import { ERRO_REGRA_EXCLUIDA } from './regra-form'
 const TOAST = { position: 'bottom-center' } as const
 
 export function RegrasLista({
+  modulo,
   regras,
   postos,
   pmos,
@@ -31,6 +33,7 @@ export function RegrasLista({
   configurados,
   canalConfigurado,
 }: {
+  modulo: ModuloAlerta
   regras: RegraAlerta[]
   postos: PostoRegra[]
   pmos: string[]
@@ -50,10 +53,16 @@ export function RegrasLista({
   }
 
   const nomes = new Map(destinatarios.map((d) => [d.usuarioId, d.nome]))
+  // O catalogo de postos, so as chaves: e com ele que o resumo decide se a regra tem TODOS.
+  const chavesPostos = postos.map((p) => p.chave)
+
+  // Enquanto o módulo não tiver nenhum tipo de regra, "Nova regra" abriria um diálogo com zero
+  // cartões para escolher — um beco sem saída. Melhor o botão desligado e a frase do porquê.
+  const semTipos = TIPOS_REGRA_POR_MODULO[modulo].length === 0
 
   function alternar(regra: RegraAlerta, ativa: boolean) {
     startTransition(async () => {
-      const r = await alternarRegraAtivaAction(regra.id, ativa)
+      const r = await alternarRegraAtivaAction(modulo, regra.id, ativa)
       if (!r.ok) falhou(r.erro)
       else toast.success(ativa ? 'Regra ativada' : 'Regra desativada', TOAST)
     })
@@ -66,7 +75,7 @@ export function RegrasLista({
     })
     if (!ok) return
     startTransition(async () => {
-      const r = await excluirRegraAction(regra.id)
+      const r = await excluirRegraAction(modulo, regra.id)
       if (!r.ok) falhou(r.erro)
       else toast.success('Regra excluída', TOAST)
     })
@@ -74,9 +83,15 @@ export function RegrasLista({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {semTipos && (
+          <p className="text-sm text-muted-foreground">
+            Nenhum tipo de regra disponível neste módulo ainda.
+          </p>
+        )}
         <Button
           className="bg-enterplak hover:bg-enterplak-700"
+          disabled={semTipos}
           onClick={() => setDialogo({ aberto: true, regra: null })}
         >
           <PlusIcon /> Nova regra
@@ -111,7 +126,14 @@ export function RegrasLista({
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.nome}</TableCell>
                 <TableCell>{NOME_TIPO_REGRA[r.tipo]}</TableCell>
-                <TableCell>{r.postos.join(', ')}</TableCell>
+                {/* O fim de EMB não tem posto (`postos: []`): a célula ficaria em branco, parecendo
+                    dado que não carregou. Um travessão é o "não se aplica" que o resto da tela já usa
+                    — e a coluna Limite ao lado já diz o gatilho ("Todos os processos no fim"), então
+                    repetir a frase aqui seria ruído. Com postos, a célula é RESUMIDA (com os 12 marcados virava um
+                    parágrafo e esticava a linha); a lista inteira fica no `title`, ao parar o mouse. */}
+                <TableCell title={r.postos.join(', ')}>
+                  {r.postos.length === 0 ? '—' : resumoPostos(r.postos, chavesPostos)}
+                </TableCell>
                 <TableCell>{resumoLimite(r)}</TableCell>
                 <TableCell>{resumoJanelaRegra(r)}</TableCell>
                 <TableCell>{resumoPmos(r.pmos)}</TableCell>
@@ -160,9 +182,19 @@ export function RegrasLista({
               <span className="font-semibold">{r.nome}</span>
               <Switch checked={r.ativa} disabled={pendente} onCheckedChange={(valor) => alternar(r, valor)} />
             </div>
+            {/* No cartão do celular os pedaços são separados por ' · '. A regra de fim de EMB não
+                tem posto, e imprimir a lista vazia pendurava um ' ·  · ' no meio da linha: pedaço
+                vazio não entra. */}
             <span className="text-sm text-muted-foreground">
-              {NOME_TIPO_REGRA[r.tipo]} · {resumoLimite(r)} · {r.postos.join(', ')} ·{' '}
-              {resumoJanelaRegra(r)} · PMOs: {resumoPmos(r.pmos)}
+              {[
+                NOME_TIPO_REGRA[r.tipo],
+                resumoLimite(r),
+                resumoPostos(r.postos, chavesPostos),
+                resumoJanelaRegra(r),
+                `PMOs: ${resumoPmos(r.pmos)}`,
+              ]
+                .filter((pedaco) => pedaco !== '')
+                .join(' · ')}
             </span>
             <span className="text-xs text-muted-foreground">
               {r.canais.map((c) => NOME_CANAL[c]).join(', ')} ·{' '}
@@ -189,6 +221,7 @@ export function RegrasLista({
 
       <RegraDialog
         aberto={dialogo.aberto}
+        modulo={modulo}
         regra={dialogo.regra}
         postos={postos}
         pmos={pmos}

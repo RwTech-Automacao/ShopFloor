@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { alertasDisponiveis } from './liberacao'
-import { ehCanal, type ContaVinculada } from '../domain/tipos'
+import { ehCanal, CANAIS_COM_VINCULO, type ContaVinculada } from '../domain/tipos'
 import { gerarCodigoVinculo, listarMinhasContas, desvincularConta } from '../infra/contas-repository'
 import { criarDependenciasAlertas } from '../infra/fabrica'
 import { enviarTeste } from './enviar-alertas'
@@ -45,7 +45,7 @@ export async function desvincularAction(canal: string): Promise<{ ok: true } | {
     const sessao = await getSessao()
     if (!sessao) return { ok: false, erro: SEM_SESSAO }
     if (!alertasDisponiveis(sessao)) return { ok: false, erro: RECURSO_INDISPONIVEL }
-    if (!ehCanal(canal)) return { ok: false, erro: 'Canal inválido.' }
+    if (!ehCanal(canal) || !CANAIS_COM_VINCULO.includes(canal)) return { ok: false, erro: 'Canal inválido.' }
     await desvincularConta(canal)
     revalidatePath(ROTA)
     return { ok: true }
@@ -63,12 +63,14 @@ export async function enviarTesteAction(canal: string): Promise<{ ok: true } | {
     const sessao = await getSessao()
     if (!sessao) return { ok: false, erro: SEM_SESSAO }
     if (!alertasDisponiveis(sessao)) return { ok: false, erro: RECURSO_INDISPONIVEL }
+    // Qualquer canal: o e-mail testa sem vínculo (o destino é o login). Só `desvincular` exige vínculo.
     if (!ehCanal(canal)) return { ok: false, erro: 'Canal inválido.' }
     const { portas, repo } = criarDependenciasAlertas()
     return await enviarTeste(portas, repo, {
       usuarioId: sessao.usuarioId,
       canal,
       nome: sessao.nome || sessao.email,
+      email: sessao.email,
     })
   } catch (e) {
     console.error('[alertas] enviar teste:', e instanceof Error ? e.message : e)
