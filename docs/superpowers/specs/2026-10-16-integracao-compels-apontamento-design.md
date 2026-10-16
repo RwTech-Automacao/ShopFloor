@@ -220,7 +220,7 @@ Unidade de medida na ordem diferente da entrada do item (embalagens, colas, sili
 Consequências para o desenho:
 - **O Compels vai recusar com frequência** (falta de saldo, estrutura mudada). A mensagem do ERP tem de chegar **inteira** à tela de pendências, e a entrada fica pendente até alguém resolver; nunca é descartada.
 - **Estoque em terceiros** não é tratado (`propriedade_nao_suportada`): entrada à mão.
-- **Unidade de medida diferente** entre a OP e a entrada (embalagens, colas, silicones): a quantidade que o ShopFloor conta pode não ser a que o Compels espera. **Ainda sem tratamento**; primeiro ver quais produtos têm isso (decidir se a integração só atende produtos em `UN` e deixa o resto manual).
+- **Unidade de medida diferente** entre a OP e a entrada (embalagens, colas, silicones): a quantidade que o ShopFloor conta pode não ser a que o Compels espera. **Decisão (16/10, usuário):** no começo a integração só atende produtos em **`UN`**; os demais ficam manuais. Se for preciso, troca-se depois.
 - Ela não respondeu sobre Observação nem sobre estorno.
 
 ## 5. Perguntas ao Valdeí (Compels)
