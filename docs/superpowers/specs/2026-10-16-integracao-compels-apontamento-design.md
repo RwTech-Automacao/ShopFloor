@@ -160,6 +160,10 @@ Implementado em `domain/corpos.ts`: lê essas respostas e monta os corpos de Req
 
 Pendente no `dataInicio`: a tela usa a meia-noite do dia do **primeiro apontamento da OP** (nos quatro apontamentos da OP 8697 foi sempre 30/09). A integração usa essa data quando já há apontamento e a de hoje quando é o primeiro.
 
+### 2.11 Primeira gravação feita pela integração (16/10, 17:52, OP 8649, 70 un.)
+
+Rodada no servidor com o enviador de teste (`tools/compels/enviar-entrada.mjs`, com confirmação explícita). Resultado: **OK**. Requisição nº 1 (70, "Requisitada") e apontamento nº 1 (70, tipo "Comum") criados no mesmo segundo, com `responsável` **"Engenharia Integração"** (o usuário de serviço), e o Compels refletiu 70 empenhadas, 70 requisitadas e 70 apontadas na releitura. A trava foi pega e liberada. Os corpos montados pela integração foram aceitos sem ajuste. Estorno feito à mão na tela (apontamento, requisição, empenho).
+
 ## 3. Desenho da integração
 
 ### 3.1 Fonte da verdade e fila
