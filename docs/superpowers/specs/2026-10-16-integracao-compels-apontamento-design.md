@@ -124,6 +124,8 @@ Um ciclo de verdade foi feito e desfeito na tela, com captura. **Nenhuma chamada
 - Mandar `exibeItensComSaldoZerado: true`, senão o item de saldo zero some da resposta e "não existe" fica igual a "zero".
 - `data` é a data do saldo (hoje).
 - **Não temos** a quebra por estoque/locação (217 × 224 × ...). Os campos `saldoLoteEstoque` e `saldoLoteLocacao` sugerem uma consulta mais detalhada; precisaria de outra captura (abrir a linha do item na tela Movimento de Item).
+- **Decisão (16/10, usuário): consultar na hora, sem guardar cópia do estoque no ShopFloor.** O saldo muda por fora (vendas, remessas, outras OPs); uma cópia ficaria velha. Cache só em memória, cerca de 1 minuto, por PMO. Se o Compels estiver fora, a tela mostra "indisponível", nunca um número antigo. Sem tabela nem migração. Histórico por dia só se pedirem depois.
+- **Régua da comparação:** por OP, entradas do Almoxarifado (ShopFloor) × soma dos apontamentos (Compels). O saldo por PMO é informação ao lado, não régua (inclui todo movimento do item).
 - Implementado: `saldoDoItem(resposta, codigo)` (`src/modules/compels/domain/saldo-item.ts`).
 
 ### 2.8 Trava de edição da OP (completa)
