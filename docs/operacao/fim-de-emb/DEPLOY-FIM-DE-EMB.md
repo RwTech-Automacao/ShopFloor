@@ -184,6 +184,12 @@ cd ~/ShopFloor && ./deploy/aws/deploy.sh
 
 **Olhar:** termina com `==> deploy OK -> <commit da main>`.
 
+⚠️ **Desta vez a saída é diferente da última:** entrou uma dependência nova (`nodemailer`, para o e-mail),
+então o `package-lock.json` mudou e o script imprime **`==> dependências mudaram -> npm ci`** antes do
+build. O `npm ci` reinstala as dependências e **demora mais** (alguns minutos a mais que o deploy de
+sempre); a instância chega perto de 90% de memória durante o build, é normal. Não interrompa. Se o
+`npm ci` ou o build falharem, o app antigo continua no ar (o `pm2` só reinicia depois de o build passar).
+
 Se aparecer **`Nada novo na main. Deploy não necessário.`**, alguém deu `git pull` antes e o script pulou
 o build — o app velho continua no ar (e sem as variáveis de SMTP carregadas). Rode o build e o restart à mão:
 
