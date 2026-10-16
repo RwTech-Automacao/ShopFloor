@@ -3,7 +3,7 @@ import { estadoDaOp } from '../estado-op'
 import { leiturasDeRespostas, listaDe, RespostaInesperada } from '../leituras-erp'
 
 // Formato real observado em 16/10/2026 (OP 8697, 10 un.), só com os campos que a integração lê.
-const emp = (quantidade: number) => ({ quantidade, quantidadeEstornar: 0, quantidadeEmpenhada: 0 })
+const emp = (quantidade: number) => ({ quantidade, quantidadeEstornar: 0, quantidadeEmpenhada: 0, situacao: 'Empenhada' })
 const apont = (quantidadeProduzida: number) => ({ quantidadeProduzida, quantidadeCancelada: 0 })
 
 const OP_8697 = {
@@ -35,7 +35,7 @@ describe('leiturasDeRespostas', () => {
   })
 
   it('campo numérico como texto vira RespostaInesperada', () => {
-    const texto = { ...OP_8697, empenhos: [{ quantidade: '4', quantidadeEstornar: 0 }] }
+    const texto = { ...OP_8697, empenhos: [{ quantidade: '4', quantidadeEstornar: 0, situacao: 'Empenhada' }] }
     expect(() => leiturasDeRespostas(texto)).toThrow(RespostaInesperada)
   })
 

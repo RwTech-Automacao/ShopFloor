@@ -87,6 +87,33 @@ O que isso ensina:
 8. **Responsável** do apontamento é o usuário que fez; um usuário de serviço aparecerá como tal.
 9. O JSON do apontamento **não tem campo `observacao`** nem marca de estorno em nenhum dos 5 apontamentos vistos. O campo é omitido quando vazio ou não existe: continua sem prova para idempotência.
 
+### 2.6 Gravação capturada (16/10, ciclo completo na OP 8649, 1000 un.)
+
+Um ciclo de verdade foi feito e desfeito na tela, com captura. **Nenhuma chamada foi feita por nós.** Todas as gravações respondem 200 com JSON; os de form são `application/x-www-form-urlencoded` com o corpo dentro de `jsonData`, exceto onde indicado.
+
+| Gesto | Chamada | Corpo | Resposta de sucesso |
+|---|---|---|---|
+| Empenhar | `POST /empenho` (**JSON**) | OP (id, número), `quantidade`, lista de itens (`item.id`, `quantidadeEmpenhar`, `itemOrdemProducaoId`) | `{message:"Empenho realizado com sucesso!"}` |
+| Requisitar | `POST /requisicaoOrdemProducao/save` (form `jsonData`) | `ordemProducao.id`, `quantidade`, lista de itens com `quantidade`, `itemOrdemProducaoId`, `precoCusto` | `{success:true, msg:"Requisição de Nº 1 realizada com sucesso!"}` (HTML dentro de `msg`) |
+| Apontar | `POST /apontamentoOrdemProducao/save` (form `jsonData`) | ver abaixo | `{success:true, msg:"Apontamento de Nº 1 realizada com sucesso!"}` |
+| Estornar apontamento | `POST /apontamentoOrdemProducao/estornar` (form) | `quantidadeEstornar`, `apontamentoId`, `ordemProducaoId` | `{success:true, msg:"Apontamento estornado com sucesso!"}` |
+| Excluir requisição | `POST /requisicaoOrdemProducao/excluir` (form `jsonData`) | `id`, itens com `quantidadeEstornar`, `quantidadeApontada` | `{success:true, msg:"Requisição de mercadoria excluída com sucesso!"}` |
+| Estornar empenho | `PUT /empenho/estornar` (JSON) | `id`, itens com `quantidadeEstornar` | 200 |
+
+**Corpo do Apontar** (campos que importam): `ordemProducao.id`, `item.id` (produto), `quantidadeProduzida`, `refugo: 0`, `quantidadeCancelada: 0`, `dataInicio` (hoje 00:00:00), `dataFim` (agora), `itemApontamentoOrdemProducaoList` (um item por componente: `item.id`, `quantidadeUtilizada` = BOM × quantidade, `quantidadeComposicao`, `itemOrdemProducaoSimples.id`), `tipoApontamento: 0`, **`observacao: ""`** (o campo existe no envio), `classificacaoApontamento: {id: null}`, **`itemLote.itemLoteEstoque.estoque.id` e `...itemLoteEstoqueLocacao.locacao.id` (destino enviado pelo cliente)**, `empenhar: true`.
+
+**Chamadas auxiliares** que a tela faz antes de gravar (a integração terá de repetir): `empenho/quantidadeEmpenhar/{id}`, `requisicaoOrdemProducao/getQuantidadeRequisitar` e `verificaQuantidadeRequisitada` (devolvem a lista de componentes com o saldo e a quantidade a requisitar), `apontamentoOrdemProducao/getQuantidadeApontar` e `verificaDisponibilidade` (`idOrdemProducao`, `quantidadeApontar`, `itemPaiId` → lista de componentes com `quantidadeUtilizada`), `estoque/findApontamento` e `locacao/findFilter` (listas de destino).
+
+**O que isso corrige ou acrescenta:**
+
+1. **O destino do estoque NÃO é automático.** O corpo manda estoque e locação. Aqui foi estoque **224** e locação 5314; as OPs 8669 e 8697 tinham entrado no estoque **217** e locação 5314. Falta saber qual o Almoxarifado usa e se é sempre o mesmo ou varia por produto. A integração terá de ter essa configuração. **Pergunta aberta mais importante.**
+2. **O campo Observação existe no envio.** Dá para tentar marcar a entrada com nossa chave e conferir depois; falta provar que a leitura devolve o texto.
+3. **Estorno remove a linha das listas.** Depois de estornar, as listas de apontamentos, requisições e empenhos voltam **vazias** e a OP volta a "Aberta". Por isso a soma das linhas já reflete o estorno, e o ERP deixou de ter marca de estorno para nós.
+4. **Status da OP muda sozinho:** Aberta → Empenhada → Em Processo → (estornando tudo) Aberta.
+5. **"Pendente":** nesta OP o empenho e a requisição ficaram com `situacao: "Pendente"` porque um componente (RWPC99) não tinha saldo (só 79 de 1000). Isso é a "falta de saldo" que o Almoxarifado citou; a OP precisa de "Pagar Pendência". A integração para com erro legível (`pendencia_no_erp`).
+6. **A requisição envia `precoCusto` por item.** De onde ele vem na tela ainda não vimos; pode ser ignorado pelo servidor.
+7. O apontamento pode ser parcial (aqui 55 de 1000) com a requisição de 1000 já feita, como a OP 8697.
+
 ## 3. Desenho da integração
 
 ### 3.1 Fonte da verdade e fila
@@ -141,9 +168,9 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
 1. **API interna sem contrato.** Pode mudar sem aviso (o cabeçalho `vr` ajuda a detectar). Mitigação: fixtures + alerta quando a resposta mudar de forma.
 2. **Autorização.** Usar a API interna com usuário de serviço exige o aval do Compels. O usuário consegue obter.
 3. **Trava de edição** pode bloquear gravações em horário de uso. Mitigação: retentativa com backoff.
-4. **Gesto de gravar ainda desconhecido** (URL, corpo, resposta de sucesso/erro). É o maior bloqueio técnico.
+4. **Gesto de gravar:** capturado em 16/10 (§2.6). Faltam as respostas de **erro** (falta de saldo, OP travada, entrega acima da OP).
 5. **Apontamento manual concorrente** na mesma OP. Mitigação: o passo 3 do algoritmo para em vez de duplicar.
-6. **Destino do estoque** presumido automático (a confirmar).
+6. **Destino do estoque** não é automático: precisa de configuração (§2.6).
 7. **Idempotência** sem chave nossa: depende do algoritmo por contadores. A ideia de gravar nossa chave na Observação não está provada (nenhum apontamento visto tem Observação preenchida).
 
 ### 4.1 O que o Almoxarifado disse sobre o dia a dia (Gilvânia, 16/10, 14:07)
@@ -175,14 +202,14 @@ Ver §7 (leituras restantes) e §8 (gesto de gravar, por último).
 **Feitas em 16/10:** OP 8669 (entrada total) e OP 8697 (quatro apontamentos parciais, três empenhos, três requisições; ver §2.5). Respondem: empenho parcial, requisição × apontamento, destino do estoque, datas, mãe × filhas.
 
 **Ainda faltam (sem gravar nada):**
-- Apontamento com **Observação preenchida** (o campo não apareceu em nenhum dos 5 vistos).
+- Apontamento com **Observação preenchida** (o campo existe no envio, mas nenhum dos apontamentos lidos tinha valor).
 - Apontamento **estornado/cancelado** (como aparece na lista e nos contadores; também o `quantidadeEstornar` com valor).
 - Conferir o destino do estoque em **outro produto** (cadastro do item, sem salvar).
 - Opcional: leitura de **banco** (só SELECT) para conferir os contadores.
 
-## 8. Captura da escrita (por último)
+## 8. Captura da escrita
 
-Gesto de Requisitar/Apontar numa OP real ou de teste: URL, corpo e resposta de sucesso e de erro. Só depois disso o `compels.ts` pode ser escrito. Protocolo a combinar com o usuário.
+Feita em 16/10 (§2.6). **Faltam** as respostas de **erro**: falta de saldo, OP travada por outra pessoa, entrega acima da OP. Pedir só as telas e mensagens que o ERP mostra, sem forçar o erro em OP real.
 
 ## 9. Fora de escopo
 

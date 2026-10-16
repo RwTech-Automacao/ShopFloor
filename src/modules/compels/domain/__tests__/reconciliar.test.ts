@@ -10,6 +10,7 @@ const base: EstadoOpErp = {
   requisitada: 0,
   apontada: 0,
   temEstorno: false,
+  temPendencia: false,
 }
 const com = (parcial: Partial<EstadoOpErp>): EstadoOpErp => ({ ...base, ...parcial })
 
@@ -57,6 +58,16 @@ describe('decidirEntrada', () => {
     const estado = com({ apontada: 3, requisitada: 3 })
     expect(decidirEntrada(estado, { anterior: 4, novo: 6 })).toMatchObject({ tipo: 'erro', codigo: 'abaixo_do_enviado' })
     expect(decidirEntrada(estado, { anterior: 1, novo: 6 })).toMatchObject({ tipo: 'erro', codigo: 'fora_do_esperado' })
+  })
+
+  it('pendência de material no ERP para a integração (e entrada já enviada continua "já enviada")', () => {
+    expect(decidirEntrada(com({ temPendencia: true }), { anterior: 0, novo: 4 })).toMatchObject({
+      tipo: 'erro',
+      codigo: 'pendencia_no_erp',
+    })
+    expect(decidirEntrada(com({ temPendencia: true, apontada: 4 }), { anterior: 0, novo: 4 })).toEqual({
+      tipo: 'ja_enviada',
+    })
   })
 
   it('entrega acima da OP', () => {

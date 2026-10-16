@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { estadoDaOp, q6, type LeiturasOp } from '../estado-op'
 
-const SEM_ESTORNO = { quantidadeEstornar: 0 }
+const SEM_ESTORNO = { quantidadeEstornar: 0, situacao: 'Empenhada' }
 
 // OP 8697 do Compels (10 un.), lida em 16/10/2026: só números, sem dado da empresa.
 const OP_8697: LeiturasOp = {
@@ -36,6 +36,7 @@ describe('estadoDaOp', () => {
       requisitada: 10,
       apontada: 10,
       temEstorno: false,
+      temPendencia: false,
     })
   })
 
@@ -56,12 +57,22 @@ describe('estadoDaOp', () => {
   })
 
   it('marca estorno quando há quantidadeEstornar em empenho ou requisição, ou cancelamento no apontamento', () => {
-    const comEmpenho = { ...OP_8697, empenhos: [{ quantidade: 10, quantidadeEstornar: 2 }] }
-    const comRequisicao = { ...OP_8697, requisicoes: [{ quantidade: 10, quantidadeEstornar: 1 }] }
+    const comEmpenho = { ...OP_8697, empenhos: [{ quantidade: 10, quantidadeEstornar: 2, situacao: 'Empenhada' }] }
+    const comRequisicao = { ...OP_8697, requisicoes: [{ quantidade: 10, quantidadeEstornar: 1, situacao: 'Requisitada' }] }
     const comCancelamento = { ...OP_8697, apontamentos: [{ quantidadeProduzida: 10, quantidadeCancelada: 1 }] }
     expect(estadoDaOp(comEmpenho).temEstorno).toBe(true)
     expect(estadoDaOp(comRequisicao).temEstorno).toBe(true)
     expect(estadoDaOp(comCancelamento).temEstorno).toBe(true)
+  })
+})
+
+describe('pendência de material', () => {
+  it('empenho ou requisição "Pendente" (falta saldo de componente) marca temPendencia', () => {
+    const empenho = { ...OP_8697, empenhos: [{ quantidade: 1000, quantidadeEstornar: 0, situacao: 'Pendente' }] }
+    const requisicao = { ...OP_8697, requisicoes: [{ quantidade: 1000, quantidadeEstornar: 0, situacao: 'Pendente' }] }
+    expect(estadoDaOp(empenho).temPendencia).toBe(true)
+    expect(estadoDaOp(requisicao).temPendencia).toBe(true)
+    expect(estadoDaOp(OP_8697).temPendencia).toBe(false)
   })
 })
 

@@ -4,16 +4,23 @@
  * ZERADOS mesmo quando tudo foi feito (OP 8669: 149 apontados, contador 0). O campo `quantidade`
  * de cada linha da lista, ao contrário, vem certo (OP 8697: empenhos 4+1+5, requisições 4+1+5,
  * apontamentos 4+1+3+2). Ver a spec de 16/10/2026, seção 2.4.
+ *
+ * Estorno REMOVE a linha da lista (visto em 16/10: depois de estornar, as três listas voltam vazias e
+ * a OP volta a 'Aberta'), então a soma das linhas já reflete o estorno.
  */
 
 export interface LinhaEmpenho {
   quantidade: number
   quantidadeEstornar: number
+  /** 'Empenhada' quando completo; 'Pendente' quando falta saldo de algum componente. */
+  situacao: string
 }
 
 export interface LinhaRequisicao {
   quantidade: number
   quantidadeEstornar: number
+  /** 'Requisitada' quando completa; 'Pendente' quando falta saldo de algum componente. */
+  situacao: string
 }
 
 export interface LinhaApontamento {
@@ -41,6 +48,8 @@ export interface EstadoOpErp {
   apontada: number
   /** Há estorno ou cancelamento na OP: ainda não sabemos como o ERP o representa nas listas. */
   temEstorno: boolean
+  /** Empenho ou requisição 'Pendente': falta saldo de componente no ERP (precisa de "Pagar Pendência"). */
+  temPendencia: boolean
 }
 
 const ESCALA = 1_000_000
@@ -60,6 +69,10 @@ export function estadoDaOp(leituras: LeiturasOp): EstadoOpErp {
     leituras.requisicoes.some((r) => q6(r.quantidadeEstornar) !== 0) ||
     leituras.apontamentos.some((a) => q6(a.quantidadeCancelada) !== 0)
 
+  const temPendencia =
+    leituras.empenhos.some((e) => e.situacao === 'Pendente') ||
+    leituras.requisicoes.some((r) => r.situacao === 'Pendente')
+
   return {
     status: leituras.status,
     tipoPropriedade: leituras.tipoPropriedade,
@@ -68,5 +81,6 @@ export function estadoDaOp(leituras: LeiturasOp): EstadoOpErp {
     requisitada: soma(leituras.requisicoes.map((r) => r.quantidade)),
     apontada: soma(leituras.apontamentos.map((a) => a.quantidadeProduzida)),
     temEstorno,
+    temPendencia,
   }
 }

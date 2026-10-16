@@ -14,6 +14,7 @@ export type CodigoErro =
   | 'abaixo_do_enviado'
   | 'fora_do_esperado'
   | 'sem_empenho'
+  | 'pendencia_no_erp'
 
 export type Decisao =
   | { tipo: 'ja_enviada' }
@@ -29,6 +30,7 @@ export const MENSAGEM_ERRO: Record<CodigoErro, string> = {
   abaixo_do_enviado: 'Leitura inconsistente: o Compels mostra menos apontado do que já enviamos.',
   fora_do_esperado: 'OP com apontamento fora do esperado no Compels. Confira antes de reenviar.',
   sem_empenho: 'OP sem empenho suficiente no Compels.',
+  pendencia_no_erp: 'Há pendência de material no Compels (falta saldo de componente). Resolva lá e reenvie.',
 }
 
 function erro(codigo: CodigoErro): Decisao {
@@ -56,6 +58,7 @@ export function decidirEntrada(
   if (estado.apontada < anterior) return erro('abaixo_do_enviado')
   if (estado.apontada !== anterior) return erro('fora_do_esperado')
 
+  if (estado.temPendencia) return erro('pendencia_no_erp')
   if (estado.empenhada < novo) return erro('sem_empenho')
 
   // Requisitar só o que falta cobrir; se uma requisição anterior já cobre, só apontar.

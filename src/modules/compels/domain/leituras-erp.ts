@@ -21,6 +21,12 @@ function objeto(valor: Json, onde: string): Record<string, Json> {
   return valor as Record<string, Json>
 }
 
+function texto(o: Record<string, Json>, campo: string, onde: string): string {
+  const v = o[campo]
+  if (typeof v !== 'string') throw new RespostaInesperada(`${onde}.${campo}`)
+  return v
+}
+
 function numero(o: Record<string, Json>, campo: string, onde: string): number {
   const v = o[campo]
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new RespostaInesperada(`${onde}.${campo}`)
@@ -59,10 +65,12 @@ export function leiturasDeRespostas(r: RespostasCruas): LeiturasOp {
     empenhos: listaDe(r.empenhos, 'empenhos').map((e) => ({
       quantidade: numero(e, 'quantidade', 'empenho'),
       quantidadeEstornar: numero(e, 'quantidadeEstornar', 'empenho'),
+      situacao: texto(e, 'situacao', 'empenho'),
     })),
     requisicoes: listaDe(r.requisicoes, 'requisicoes').map((q) => ({
       quantidade: numero(q, 'quantidade', 'requisicao'),
       quantidadeEstornar: numero(q, 'quantidadeEstornar', 'requisicao'),
+      situacao: texto(q, 'situacao', 'requisicao'),
     })),
     apontamentos: listaDe(r.apontamentos, 'apontamentos').map((a) => ({
       quantidadeProduzida: numero(a, 'quantidadeProduzida', 'apontamento'),
