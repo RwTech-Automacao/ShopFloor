@@ -166,11 +166,14 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
    - `apontada ≥ C(k)` → já enviada, marca como enviada e segue;
    - `apontada == C(k-1)` → confere o **empenho** (empenhada ≥ `C(k)`; senão erro legível **"OP sem empenho suficiente"**, a integração **não empenha**: o empenho está ligado ao pagamento do material) e **envia** (passo 4);
    - qualquer outro valor (ex.: alguém apontou à mão) → **PARA** com **"OP com apontamento fora do esperado"**. Não conta em dobro.
-4. **Requisitar só se faltar cobertura:** se `requisitada < C(k)`, Requisitar a diferença (`C(k) − requisitada`). Depois, **Apontar `q_k`**. Isso reproduz os dois jeitos que o Almoxarifado já usa (OP 8697): requisição nova para cada entrada, e apontamento extra dentro de uma requisição que já cobria.
+4. **Cada entrada = UMA requisição + UM apontamento, da mesma quantidade** (decisão do usuário, 16/10). O ERP tem de estar no ponto certo:
+   - `requisitada == C(k-1)`: caminho normal, **requisita `q_k` e aponta `q_k`**;
+   - `requisitada == C(k)`: a requisição desta entrada já foi feita e o apontamento falhou (retomada), então **só aponta** (requisitar de novo duplicaria);
+   - qualquer outro valor (ex.: alguém requisitou à mão ou à frente, como na OP 8697): **para** com "OP com requisição fora do esperado".
 5. Falha no meio (requisitou e não apontou) retoma sozinha: lê de novo e manda só o que falta.
 6. Depois de gravar, **reler** e conferir que o ERP refletiu `C(k)`; só então marca enviado.
 
-**Decisão a revisar (precisa do usuário):** a decisão de 16/10 era "uma requisição + um apontamento por entrada". A OP 8697 mostra que o jeito real é mais flexível. A proposta acima (um apontamento por entrada; requisição só quando falta cobertura) mantém um apontamento por entrada e evita requisições redundantes.
+**Decisão (16/10, usuário):** requisição + apontamento por entrada, sempre. OPs em que o Almoxarifado requisita à frente e aponta em partes (como a 8697) ficam manuais, e a integração para com erro legível.
 
 ### 3.3 Erros legíveis (aparecem na tela de pendências)
 
@@ -179,7 +182,7 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
 | OP aberta/travada por alguém | "OP em uso no Compels" | Sim |
 | Sem empenho suficiente | "OP sem empenho suficiente" | Quando o empenho existir |
 | Falta saldo de componente | texto do ERP | Quando houver saldo |
-| Entrega acima da OP | texto do ERP | Não |
+| Entrega acima da OP | texto do ERP (a mesma família de mensagem "Quantidade ... maior que ..." já capturada no empenho, confirmado pelo usuário; classificada como `quantidade_acima`) | Não |
 | ERP diverge do esperado | "OP com apontamento fora do esperado" | Não, exige gestor |
 | Contadores incoerentes com o histórico | "Leitura inconsistente" | Não |
 | Token expirado / 401 | renova e tenta de novo | Sim |

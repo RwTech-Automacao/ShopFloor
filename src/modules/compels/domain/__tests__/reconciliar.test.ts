@@ -19,14 +19,17 @@ describe('decidirEntrada', () => {
     expect(decidirEntrada(base, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', requisitar: 4, apontar: 4 })
   })
 
-  it('entrada seguinte com requisição que já cobre: só aponta (OP 8697, apontamento 4)', () => {
-    const estado = com({ requisitada: 10, apontada: 8 })
-    expect(decidirEntrada(estado, { anterior: 8, novo: 10 })).toEqual({ tipo: 'enviar', requisitar: 0, apontar: 2 })
-  })
-
-  it('entrada seguinte com requisição insuficiente: requisita só a diferença', () => {
+  it('toda entrada é uma requisição + um apontamento da mesma quantidade', () => {
     const estado = com({ requisitada: 4, apontada: 4 })
     expect(decidirEntrada(estado, { anterior: 4, novo: 5 })).toEqual({ tipo: 'enviar', requisitar: 1, apontar: 1 })
+  })
+
+  it('requisição feita à frente (OP 8697: 5 requisitadas, apontadas em 3 + 2) não é tratada: para', () => {
+    const estado = com({ requisitada: 10, apontada: 5 })
+    expect(decidirEntrada(estado, { anterior: 5, novo: 8 })).toMatchObject({
+      tipo: 'erro',
+      codigo: 'requisicao_fora_do_esperado',
+    })
   })
 
   it('já enviada: o ERP cobre a entrada (retomada depois de falha no meio)', () => {
@@ -39,7 +42,7 @@ describe('decidirEntrada', () => {
     expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'ja_enviada' })
   })
 
-  it('falha no meio: requisitou e não apontou, então só falta apontar', () => {
+  it('falha no meio: a requisição desta entrada já foi feita e o apontamento não, então só falta apontar', () => {
     const estado = com({ requisitada: 4, apontada: 0 })
     expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', requisitar: 0, apontar: 4 })
   })

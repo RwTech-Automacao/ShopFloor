@@ -13,6 +13,7 @@ export type CodigoErro =
   | 'estorno_na_op'
   | 'abaixo_do_enviado'
   | 'fora_do_esperado'
+  | 'requisicao_fora_do_esperado'
   | 'sem_empenho'
   | 'pendencia_no_erp'
 
@@ -29,6 +30,7 @@ export const MENSAGEM_ERRO: Record<CodigoErro, string> = {
   estorno_na_op: 'A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar.',
   abaixo_do_enviado: 'Leitura inconsistente: o Compels mostra menos apontado do que já enviamos.',
   fora_do_esperado: 'OP com apontamento fora do esperado no Compels. Confira antes de reenviar.',
+  requisicao_fora_do_esperado: 'OP com requisição fora do esperado no Compels (alguém requisitou à mão). Confira antes de reenviar.',
   sem_empenho: 'OP sem empenho suficiente no Compels.',
   pendencia_no_erp: 'Há pendência de material no Compels (falta saldo de componente). Resolva lá e reenvie.',
 }
@@ -61,7 +63,16 @@ export function decidirEntrada(
   if (estado.temPendencia) return erro('pendencia_no_erp')
   if (estado.empenhada < novo) return erro('sem_empenho')
 
-  // Requisitar só o que falta cobrir; se uma requisição anterior já cobre, só apontar.
-  const requisitar = q6(Math.max(0, novo - estado.requisitada))
-  return { tipo: 'enviar', requisitar, apontar: quantidade }
+  // Cada entrada é UMA requisição + UM apontamento. O ERP precisa estar no ponto certo:
+  // - requisitada == anterior: caminho normal, requisita e aponta a quantidade da entrada;
+  // - requisitada == novo: a requisição desta entrada já foi feita e o apontamento falhou (retomada),
+  //   então só falta apontar. Requisitar de novo duplicaria;
+  // - qualquer outro valor (ex.: alguém requisitou à frente ou à mão): para.
+  if (estado.requisitada === anterior) {
+    return { tipo: 'enviar', requisitar: quantidade, apontar: quantidade }
+  }
+  if (estado.requisitada === novo) {
+    return { tipo: 'enviar', requisitar: 0, apontar: quantidade }
+  }
+  return erro('requisicao_fora_do_esperado')
 }
