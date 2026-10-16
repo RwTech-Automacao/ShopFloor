@@ -162,6 +162,7 @@ export function AppShell({
   perfil,
   exportarFotosVisivel,
   alertasLiberado,
+  alertasMenu,
   children,
 }: {
   nome: string
@@ -169,10 +170,11 @@ export function AppShell({
   perfilNome: string
   perfil: Perfil
   exportarFotosVisivel: boolean
-  /** Lançamento escondido dos Alertas (ALERTAS_LIBERADO_PARA): calculado no servidor, nunca a
-   *  lista de e-mails em si. Enquanto false, some o item Alertas e o link Meu perfil do menu —
-   *  hoje Meu perfil só tem o cartão de Alertas. */
+  /** Lançamento escondido dos Alertas: calculado no servidor, nunca a lista de e-mails em si.
+   *  Enquanto false, some o link Meu perfil do menu (hoje só tem o cartão de Alertas). */
   alertasLiberado: boolean
+  /** O item Alertas de cada módulo tem a própria liberação (ShopFloor × Recebimento). */
+  alertasMenu: { shopfloor: boolean; recebimento: boolean }
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -199,13 +201,14 @@ export function AppShell({
   // itens internos filtram fino por módulo logo abaixo.
   const podeConfig = perfil.permissoes.administrar === true
   const configTopo = podeConfig ? CONFIG_TOPO.filter(pode) : []
-  // Lançamento escondido dos Alertas: vale para os DOIS itens (é a mesma feature escondida).
-  const ehAlertas = (chave: string) => chave === 'sf-alertas' || chave === 'rec-alertas'
+  // Lançamento escondido dos Alertas: cada módulo tem a própria liberação.
+  const alertasVisivel = (chave: string) =>
+    chave === 'sf-alertas' ? alertasMenu.shopfloor : chave === 'rec-alertas' ? alertasMenu.recebimento : true
   const configRec = podeConfig
-    ? CONFIG_RECEBIMENTO.filter(pode).filter((i) => !ehAlertas(i.chave) || alertasLiberado)
+    ? CONFIG_RECEBIMENTO.filter(pode).filter((i) => alertasVisivel(i.chave))
     : []
   const configSf = podeConfig
-    ? CONFIG_SHOPFLOOR.filter(pode).filter((i) => !ehAlertas(i.chave) || alertasLiberado)
+    ? CONFIG_SHOPFLOOR.filter(pode).filter((i) => alertasVisivel(i.chave))
     : []
   const configSetup = podeConfig ? CONFIG_SETUP.filter(pode) : []
   const configBase = podeConfig ? CONFIG_BASE.filter(pode) : []

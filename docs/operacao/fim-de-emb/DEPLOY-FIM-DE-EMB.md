@@ -48,6 +48,12 @@ ela também foi posta direto no processo do pm2 (o que manda, se existir). O arq
   nem os Alertas do ShopFloor. Em qualquer desses casos a decisão (mudar a lista ou pôr uma trava própria
   do Recebimento no código) é tomada antes do deploy, não durante.
 
+> **Atualização 16/10:** o Recebimento passou a ter trava própria, `ALERTAS_RECEBIMENTO_LIBERADO_PARA`
+> (branch `feat/alertas-trava-recebimento`). Com ela, `ALERTAS_LIBERADO_PARA=*` (ShopFloor aberto) **não**
+> abre mais o Recebimento, e o resultado do passo 1 deixa de bloquear o deploy. Antes do `deploy.sh`,
+> acrescente ao `.env.production` a linha `ALERTAS_RECEBIMENTO_LIBERADO_PARA=gptropa@rwtech.com.br`
+> (ausente ou vazia = ninguém vê). Para liberar de vez depois: troque por `*` e reinicie o app.
+
 ## Passo 2 — anotar o commit que está no ar e baixar a main
 
 Guarda o commit atual (é para onde o app volta se algo der errado) e busca a main **sem** mexer no código
