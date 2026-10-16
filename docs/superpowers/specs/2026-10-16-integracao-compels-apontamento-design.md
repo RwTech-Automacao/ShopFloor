@@ -187,7 +187,10 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
 
 ### 3.4 Autenticação e segurança
 
-- Usuário e cliente de **serviço** dedicados, criados pelo Valdeí, com permissão nas telas de Requisição e Apontamento. **Nunca** o token de uma pessoa.
+- Usuário de **serviço** dedicado, com permissão nas telas de Requisição, Apontamento e Movimento de Item. **Nunca** o token de uma pessoa.
+- **Login (capturado em 16/10, sem ler segredos):** `POST https://api.erpeasy.compels.net/oauth/token`, form `application/x-www-form-urlencoded` com `grant_type=password`, `email`, `password`, `company` (CNPJ formatado) e `companyId` (133). A chamada leva também um cabeçalho `Authorization: Basic ...`, que é a credencial do **cliente** OAuth (a da tela web). Resposta: token `bearer`, **`expires_in` 14400 (4 h)**, escopo `read write`, **sem refresh token**: ao expirar ou receber 401, a integração faz login de novo.
+- **Pendente:** a credencial de cliente (`Authorization: Basic`). O ideal é o Compels fornecer um cliente próprio da integração; reaproveitar o da tela web só com a autorização deles. Ela entra por variável de ambiente, nunca vista em chat.
+- Variáveis previstas (nomes): `COMPELS_API_USUARIO` (e-mail), `COMPELS_API_SENHA`, `COMPELS_API_EMPRESA` (CNPJ), `COMPELS_API_EMPRESA_ID`, `COMPELS_API_CLIENTE` (valor do `Authorization`).
 - Credenciais só em variáveis de ambiente do servidor; nunca em código, log, memória ou chat.
 - Não ler nem registrar as respostas de `parametrizacao` e `getUsuarioEEmpresaSessao`.
 - **Nunca gravar direto no banco do Compels.** Acesso ao banco, se vier, é só de leitura.
