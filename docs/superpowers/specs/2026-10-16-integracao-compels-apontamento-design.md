@@ -195,7 +195,8 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
   1. `POST https://admin.ezpointweb.com.br/admin-ws/login` (form `usuario`, `senha`) → `{ token }` do ezpointweb.
   2. `GET .../admin-ws/getCompelsToken?empresa=enterplak` com `Authorization: Bearer <token do ezpointweb>` → `{ token }` **do Compels**. (A automação do n8n usa `http://` neste passo; a integração usa **https** e, se o https falhar, para e avisa, em vez de mandar o token em texto puro.)
   3. As chamadas ao Compels levam `Authorization: Bearer <token do Compels>`. A automação já usa esse token na API pública (`/v1/negociante`, leitura e PATCH).
-  - **Ainda não sabemos** se esse token também vale na **API interna da tela** (a de requisitar, apontar e consultar estoque, sem `/v1`). O script `tools/compels/testar-conexao.mjs` responde isso com leituras apenas.
+  - **CONFIRMADO em 16/10 (servidor, só leitura):** o token do Compels obtido por essa rota **vale na API interna da tela**. O login do ezpointweb exige corpo **JSON** (com formulário responde 415). Validade medida: ~7 h (o JWT diz). A integração guarda o token em memória e renova 5 min antes de vencer ou ao receber 401.
+  - (Antes do teste:) não sabíamos se esse token também valia na **API interna da tela** (a de requisitar, apontar e consultar estoque, sem `/v1`). O script `tools/compels/testar-conexao.mjs` responde isso com leituras apenas.
   - Variáveis: `COMPELS_EZPOINT_USUARIO`, `COMPELS_EZPOINT_SENHA`, `COMPELS_EZPOINT_EMPRESA` (padrão `enterplak`).
   - Plano B, se o token do ezpointweb não valer na API interna: o login direto `POST /oauth/token` (e-mail, senha, empresa, companyId e o cabeçalho de cliente `Authorization: Basic`, cuja credencial ainda falta). Token de 4 h, sem refresh.
 
