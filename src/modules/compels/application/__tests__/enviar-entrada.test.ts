@@ -119,11 +119,22 @@ describe('enviarEntrada', () => {
     expect(chamadas).toEqual(['buscarOp'])
   })
 
+  it('antes do Requisitar o saldoDisponivel do apontar é 0 e isso NÃO é falta de saldo (o que será requisitado conta)', async () => {
+    // Bug visto no ensaio real da OP 8649: empenho de 70 ok, e a consulta de apontar devolvia 0 por não haver requisição ainda.
+    const { erp } = fingir({}, { consultarDisponibilidade: async (_o, q) => [linhaDisp(q, 0)] })
+    expect((await ensaiarEntrada(erp, ENTRADA, opcoes)).tipo).toBe('enviar')
+    expect((await enviarEntrada(erp, ENTRADA, opcoes)).ok).toBe(true)
+  })
+
   it('falta de saldo de componente no apontar: não grava, mostra o componente e libera a trava', async () => {
-    const { erp, chamadas } = fingir({}, { consultarDisponibilidade: async (_o, q) => [linhaDisp(q, 40)] })
+    // Requisitaria 30 de um componente que o apontar consome 55: não cobre.
+    const { erp, chamadas } = fingir({}, {
+      consultarRequisicao: async () => [linhaReq(30, 1000)],
+      consultarDisponibilidade: async (_o, q) => [linhaDisp(q, 0)],
+    })
     const r = await enviarEntrada(erp, ENTRADA, opcoes)
     expect(r).toMatchObject({ ok: false, tentarDeNovo: true })
-    expect(r.ok === false && r.erro).toContain('RWCI57 (precisa 55, tem 40)')
+    expect(r.ok === false && r.erro).toContain('para apontar: RWCI57 (precisa 55, tem 30)')
     expect(chamadas).not.toContain('requisitar')
     expect(chamadas.at(-1)).toBe('liberarTrava')
   })
@@ -131,7 +142,7 @@ describe('enviarEntrada', () => {
   it('falta de saldo na requisição: não grava', async () => {
     const { erp, chamadas } = fingir({}, { consultarRequisicao: async (_o, q) => [linhaReq(q, 10)] })
     const r = await enviarEntrada(erp, ENTRADA, opcoes)
-    expect(r.ok === false && r.erro).toContain('RWCI57 (precisa 55, tem 10)')
+    expect(r.ok === false && r.erro).toContain('para requisitar: RWCI57 (precisa 55, tem 10)')
     expect(chamadas).not.toContain('apontar')
   })
 

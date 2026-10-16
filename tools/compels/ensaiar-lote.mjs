@@ -386,8 +386,8 @@ const recusa = (erro, tentarDeNovo = false) => ({
 function numeroDaOp(texto) {
 	return /^\d+$/.test(texto.trim()) ? Number(texto.trim()) : null;
 }
-function faltas(componentes) {
-	return `Falta saldo de componente no Compels: ${componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, tem ${c.tem})`).join("; ")}.`;
+function faltas(etapa, componentes) {
+	return `Falta saldo de componente no Compels para ${etapa}: ${componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, tem ${c.tem})`).join("; ")}.`;
 }
 /** Conferências que não precisam da trava: a OP existe, é desta PMO, em UN e de estoque próprio. */
 async function conferir(erp, e) {
@@ -411,14 +411,16 @@ async function planejar(erp, op, e, opcoes) {
 	if (decisao.tipo === "erro") return recusa(decisao.mensagem, decisao.codigo === "sem_empenho" || decisao.codigo === "pendencia_no_erp");
 	if (decisao.tipo === "ja_enviada") return { tipo: "ja_enviada" };
 	let requisitar = null;
+	let requisitarComponentes = [];
 	if (decisao.requisitar > 0) {
 		const componentes = await erp.consultarRequisicao(op, decisao.requisitar);
+		requisitarComponentes = componentes;
 		const sem = componentes.filter((c) => !c.itemFantasma && c.saldo < c.quantidadeRequisitar).map((c) => ({
 			codigo: c.codigo,
 			precisa: c.quantidadeRequisitar,
 			tem: c.saldo
 		}));
-		if (sem.length > 0) return recusa(faltas(sem), true);
+		if (sem.length > 0) return recusa(faltas("requisitar", sem), true);
 		requisitar = corpoRequisicao({
 			opId: op.id,
 			tipoPropriedade: op.tipoPropriedade,
@@ -427,12 +429,16 @@ async function planejar(erp, op, e, opcoes) {
 		});
 	}
 	const componentes = await erp.consultarDisponibilidade(op, decisao.apontar);
-	const sem = componentesSemSaldo(componentes).map((c) => ({
+	const aRequisitar = new Map(requisitarComponentes.map((c) => [c.itemId, c.quantidadeRequisitar]));
+	const sem = componentesSemSaldo(componentes.map((c) => ({
+		...c,
+		saldoDisponivel: c.saldoDisponivel + (aRequisitar.get(c.itemId) ?? 0)
+	}))).map((c) => ({
 		codigo: c.codigo,
 		precisa: c.quantidadeUtilizada,
 		tem: c.saldoDisponivel
 	}));
-	if (sem.length > 0) return recusa(faltas(sem), true);
+	if (sem.length > 0) return recusa(faltas("apontar", sem), true);
 	const apontar = corpoApontamento({
 		opId: op.id,
 		produtoId: op.produtoId,

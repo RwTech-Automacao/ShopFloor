@@ -65,9 +65,9 @@ function numeroDaOp(texto: string): number | null {
   return /^\d+$/.test(texto.trim()) ? Number(texto.trim()) : null
 }
 
-function faltas(componentes: { codigo: string; precisa: number; tem: number }[]): string {
+function faltas(etapa: 'requisitar' | 'apontar', componentes: { codigo: string; precisa: number; tem: number }[]): string {
   const lista = componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, tem ${c.tem})`).join('; ')
-  return `Falta saldo de componente no Compels: ${lista}.`
+  return `Falta saldo de componente no Compels para ${etapa}: ${lista}.`
 }
 
 /** Conferências que não precisam da trava: a OP existe, é desta PMO, em UN e de estoque próprio. */
@@ -99,18 +99,26 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
   if (decisao.tipo === 'ja_enviada') return { tipo: 'ja_enviada' }
 
   let requisitar: Record<string, unknown> | null = null
+  let requisitarComponentes: ComponenteRequisicao[] = []
   if (decisao.requisitar > 0) {
     const componentes = await erp.consultarRequisicao(op, decisao.requisitar)
+    requisitarComponentes = componentes
     const sem = componentes
       .filter((c) => !c.itemFantasma && c.saldo < c.quantidadeRequisitar)
       .map((c) => ({ codigo: c.codigo, precisa: c.quantidadeRequisitar, tem: c.saldo }))
-    if (sem.length > 0) return recusa(faltas(sem), true)
+    if (sem.length > 0) return recusa(faltas('requisitar', sem), true)
     requisitar = corpoRequisicao({ opId: op.id, tipoPropriedade: op.tipoPropriedade, quantidade: decisao.requisitar, componentes })
   }
 
   const componentes = await erp.consultarDisponibilidade(op, decisao.apontar)
-  const sem = componentesSemSaldo(componentes).map((c) => ({ codigo: c.codigo, precisa: c.quantidadeUtilizada, tem: c.saldoDisponivel }))
-  if (sem.length > 0) return recusa(faltas(sem), true)
+  // `saldoDisponivel` é o material JÁ REQUISITADO e ainda não consumido por apontamento (não é o estoque
+  // livre da prateleira). Antes do Requisitar ele é 0: o que esta entrada vai requisitar conta como
+  // disponível, senão toda primeira entrada pareceria sem saldo.
+  const aRequisitar = new Map(requisitarComponentes.map((c) => [c.itemId, c.quantidadeRequisitar]))
+  const sem = componentesSemSaldo(
+    componentes.map((c) => ({ ...c, saldoDisponivel: c.saldoDisponivel + (aRequisitar.get(c.itemId) ?? 0) })),
+  ).map((c) => ({ codigo: c.codigo, precisa: c.quantidadeUtilizada, tem: c.saldoDisponivel }))
+  if (sem.length > 0) return recusa(faltas('apontar', sem), true)
 
   const apontar = corpoApontamento({
     opId: op.id,
