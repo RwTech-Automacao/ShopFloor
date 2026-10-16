@@ -142,7 +142,7 @@ Erro = **HTTP 400** com `{ code, message, detail, hint, cause }`; `message` já 
 
 **Falta de saldo não é erro de gravação.** Nesta captura ela apareceu de dois jeitos, ambos sem erro HTTP: o empenho e a requisição são aceitos com `situacao: "Pendente"` (componente sem saldo, §2.6 item 5); e no Apontar a tela chama `apontamentoOrdemProducao/verificaDisponibilidade` antes de gravar, que devolve por componente `saldoDisponivel` × `quantidadeUtilizada` (o usuário foi baixando a quantidade, 1000 → 800 → 55, até caber). Logo a integração **confere a disponibilidade antes de apontar** e não depende de um erro do ERP.
 
-**Ainda não vimos** se os gestos de gravar (Requisitar/Apontar) são recusados com a OP travada: a captura mostrou só a tentativa de **adquirir a trava** sendo recusada.
+**Trava (decisão):** com a OP travada por outra pessoa, nem a tela abre a OP (a aquisição da trava é recusada), então **não dá para testar pela interface** se o servidor também recusaria o gesto de gravar sem a trava. A pergunta deixa de importar: a integração **segue o mesmo protocolo da tela**. Para cada OP: `POST /lock/eng.ordemproducaosimples/{id}` (sem corpo, 201) → se 400 "está sendo acessado pelo usuário", erro `op_em_uso` e tenta de novo depois → grava (Requisitar/Apontar) → `DELETE /lock/release/eng.ordemproducaosimples/{id}` sempre, inclusive em caso de erro. Se o trabalho de uma OP passar de ~20 s, renovar com `PUT /lock/keep/...`.
 
 Implementado: `resultadoDaGravacao(status, corpo)` (`domain/resposta-erp.ts`) classifica sucesso, `op_em_uso` (tenta de novo), `quantidade_acima`, `sem_saldo`, `sessao_expirada`, `sem_permissao`, `indisponivel` e `desconhecido`.
 
@@ -200,7 +200,7 @@ Para a entrada `k` (quantidade `q_k`, acumulado anterior `C(k-1)`, novo `C(k) = 
 1. **API interna sem contrato.** Pode mudar sem aviso (o cabeçalho `vr` ajuda a detectar). Mitigação: fixtures + alerta quando a resposta mudar de forma.
 2. **Autorização.** Usar a API interna com usuário de serviço exige o aval do Compels. O usuário consegue obter.
 3. **Trava de edição** pode bloquear gravações em horário de uso. Mitigação: retentativa com backoff.
-4. **Gesto de gravar:** capturado em 16/10 (§2.6), com as respostas de erro principais (§2.9). Falta: gravar com a OP travada por outra pessoa.
+4. **Gesto de gravar:** capturado em 16/10 (§2.6), com as respostas de erro principais (§2.9). Trava: a integração segue o protocolo da tela (§2.9).
 5. **Apontamento manual concorrente** na mesma OP. Mitigação: o passo 3 do algoritmo para em vez de duplicar.
 6. **Destino do estoque** não é automático: vai em configuração, decidido como "Produto Acabado" (§2.6); ids a confirmar.
 7. **Idempotência** sem chave nossa: depende do algoritmo por contadores. A ideia de gravar nossa chave na Observação não está provada (nenhum apontamento visto tem Observação preenchida).
@@ -241,7 +241,7 @@ Ver §7 (leituras restantes) e §8 (gesto de gravar, por último).
 
 ## 8. Captura da escrita
 
-Feita em 16/10 (§2.6 e §2.9). **Falta** só: Requisitar/Apontar com a OP aberta por outra pessoa (a trava recusa o gesto de gravar ou só a aquisição?).
+Feita em 16/10 (§2.6 e §2.9). **Nada mais falta aqui.** A trava será adquirida e liberada pela integração, como a tela faz.
 
 ## 9. Fora de escopo
 
