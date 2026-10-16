@@ -1,4 +1,31 @@
 // GERADO por rolldown a partir de ensaiar-entrada.ts. Nao edite: veja o cabecalho do .ts.
+//#region src/modules/compels/domain/estado-op.ts
+const ESCALA = 1e6;
+/** Quantidades do ERP têm até 6 casas: compara em inteiros para não tropeçar em ponto flutuante. */
+function q6(valor) {
+	return Math.round(valor * ESCALA) / ESCALA;
+}
+function soma(valores) {
+	return q6(valores.reduce((total, v) => total + v, 0));
+}
+function estadoDaOp(leituras) {
+	const temEstorno = leituras.empenhos.some((e) => q6(e.quantidadeEstornar) !== 0) || leituras.requisicoes.some((r) => q6(r.quantidadeEstornar) !== 0) || leituras.apontamentos.some((a) => q6(a.quantidadeCancelada) !== 0);
+	const temPendencia = leituras.empenhos.some((e) => e.situacao === "Pendente") || leituras.requisicoes.some((r) => r.situacao === "Pendente");
+	const inicios = leituras.apontamentos.flatMap((a) => a.dataInicio ? [a.dataInicio.slice(0, 10)] : []);
+	const inicioApontamento = inicios.length > 0 ? `${[...inicios].sort()[0]}T00:00:00` : null;
+	return {
+		status: leituras.status,
+		tipoPropriedade: leituras.tipoPropriedade,
+		quantidadeOp: q6(leituras.quantidadeOp),
+		empenhada: soma(leituras.empenhos.map((e) => e.quantidade)),
+		requisitada: soma(leituras.requisicoes.map((r) => r.quantidade)),
+		apontada: soma(leituras.apontamentos.map((a) => a.quantidadeProduzida)),
+		temEstorno,
+		temPendencia,
+		inicioApontamento
+	};
+}
+//#endregion
 //#region src/modules/compels/domain/leituras-erp.ts
 /**
 * Converte as respostas CRUAS do Compels em `LeiturasOp`. As respostas vêm em formatos diferentes
@@ -222,33 +249,6 @@ function dataHoraLocal(instante) {
 /** Meia-noite do dia local de `instante` (é o `dataInicio` quando o apontamento é o primeiro da OP). */
 function inicioDoDia(instante) {
 	return `${dataHoraLocal(instante).slice(0, 10)}T00:00:00`;
-}
-//#endregion
-//#region src/modules/compels/domain/estado-op.ts
-const ESCALA = 1e6;
-/** Quantidades do ERP têm até 6 casas: compara em inteiros para não tropeçar em ponto flutuante. */
-function q6(valor) {
-	return Math.round(valor * ESCALA) / ESCALA;
-}
-function soma(valores) {
-	return q6(valores.reduce((total, v) => total + v, 0));
-}
-function estadoDaOp(leituras) {
-	const temEstorno = leituras.empenhos.some((e) => q6(e.quantidadeEstornar) !== 0) || leituras.requisicoes.some((r) => q6(r.quantidadeEstornar) !== 0) || leituras.apontamentos.some((a) => q6(a.quantidadeCancelada) !== 0);
-	const temPendencia = leituras.empenhos.some((e) => e.situacao === "Pendente") || leituras.requisicoes.some((r) => r.situacao === "Pendente");
-	const inicios = leituras.apontamentos.flatMap((a) => a.dataInicio ? [a.dataInicio.slice(0, 10)] : []);
-	const inicioApontamento = inicios.length > 0 ? `${[...inicios].sort()[0]}T00:00:00` : null;
-	return {
-		status: leituras.status,
-		tipoPropriedade: leituras.tipoPropriedade,
-		quantidadeOp: q6(leituras.quantidadeOp),
-		empenhada: soma(leituras.empenhos.map((e) => e.quantidade)),
-		requisitada: soma(leituras.requisicoes.map((r) => r.quantidade)),
-		apontada: soma(leituras.apontamentos.map((a) => a.quantidadeProduzida)),
-		temEstorno,
-		temPendencia,
-		inicioApontamento
-	};
 }
 //#endregion
 //#region src/modules/compels/domain/reconciliar.ts
@@ -774,7 +774,9 @@ function destinoDoAmbiente(env = process.env) {
 * componentes e mostra os corpos que SERIAM enviados no Requisitar e no Apontar.
 *
 * Uso: node tools/compels/ensaiar-entrada.mjs NUMERO_DA_OP PMO QUANTIDADE [ACUMULADO_ANTERIOR]
-*   ACUMULADO_ANTERIOR = peças desta OP já enviadas antes (padrão 0).
+*   PMO = o código do produto, ou `-` para usar o que o Compels mostra na OP (a PMO é impressa).
+*   ACUMULADO_ANTERIOR = peças desta OP já enviadas antes (padrão 0), ou `auto` para assumir que tudo
+*   o que o Compels já mostra apontado foi enviado por nós (a quantidade apontada é impressa).
 * Variáveis: COMPELS_EZPOINT_USUARIO, COMPELS_EZPOINT_SENHA (obrigatórias); COMPELS_EZPOINT_EMPRESA,
 *   COMPELS_EZPOINT_URL, COMPELS_API_URL, COMPELS_ESTOQUE_ID, COMPELS_LOCACAO_ID (opcionais).
 * Nunca imprime senha nem token. O custo dos componentes sai mascarado.
@@ -785,7 +787,8 @@ function destinoDoAmbiente(env = process.env) {
 */
 const [numeroOp, pmo, quantidadeTexto, anteriorTexto] = process.argv.slice(2);
 const quantidade = Number(quantidadeTexto);
-const acumuladoAnterior = Number(anteriorTexto ?? 0);
+const automatico = anteriorTexto === "auto";
+let acumuladoAnterior = automatico ? 0 : Number(anteriorTexto ?? 0);
 if (!numeroOp || !pmo || !(quantidade > 0) || !(acumuladoAnterior >= 0)) {
 	console.log("uso: node tools/compels/ensaiar-entrada.mjs NUMERO_DA_OP PMO QUANTIDADE [ACUMULADO_ANTERIOR]");
 	process.exit(1);
@@ -794,8 +797,22 @@ function mascarar(valor) {
 	return JSON.parse(JSON.stringify(valor, (chave, v) => chave === "precoCusto" ? "[custo]" : v));
 }
 try {
-	const plano = await ensaiarEntrada(new ClienteCompels(configDoAmbiente()), {
-		pmo,
+	const cliente = new ClienteCompels(configDoAmbiente());
+	let pmoUsada = pmo;
+	if (pmo === "-" || automatico) {
+		const op = /^\d+$/.test(numeroOp) ? await cliente.buscarOp(Number(numeroOp)) : null;
+		if (!op) throw new Error(`OP ${numeroOp} não encontrada no Compels.`);
+		if (pmo === "-") {
+			pmoUsada = op.codigoItem;
+			console.log(`PMO usada (lida do Compels): ${pmoUsada}`);
+		}
+		if (automatico) {
+			acumuladoAnterior = estadoDaOp(await cliente.lerOp(op)).apontada;
+			console.log(`Acumulado anterior assumido (apontado no Compels): ${acumuladoAnterior}`);
+		}
+	}
+	const plano = await ensaiarEntrada(cliente, {
+		pmo: pmoUsada,
 		op: numeroOp,
 		quantidade,
 		acumuladoAnterior

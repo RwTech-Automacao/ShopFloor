@@ -3,7 +3,9 @@
  * componentes e mostra os corpos que SERIAM enviados no Requisitar e no Apontar.
  *
  * Uso: node tools/compels/ensaiar-entrada.mjs NUMERO_DA_OP PMO QUANTIDADE [ACUMULADO_ANTERIOR]
- *   ACUMULADO_ANTERIOR = peças desta OP já enviadas antes (padrão 0).
+ *   PMO = o código do produto, ou `-` para usar o que o Compels mostra na OP (a PMO é impressa).
+ *   ACUMULADO_ANTERIOR = peças desta OP já enviadas antes (padrão 0), ou `auto` para assumir que tudo
+ *   o que o Compels já mostra apontado foi enviado por nós (a quantidade apontada é impressa).
  * Variáveis: COMPELS_EZPOINT_USUARIO, COMPELS_EZPOINT_SENHA (obrigatórias); COMPELS_EZPOINT_EMPRESA,
  *   COMPELS_EZPOINT_URL, COMPELS_API_URL, COMPELS_ESTOQUE_ID, COMPELS_LOCACAO_ID (opcionais).
  * Nunca imprime senha nem token. O custo dos componentes sai mascarado.
@@ -12,13 +14,15 @@
  *   npx esbuild tools/compels/ensaiar-entrada.ts --bundle --platform=node --format=esm --target=node20 \
  *     --outfile=tools/compels/ensaiar-entrada.mjs
  */
+import { estadoDaOp } from '../../src/modules/compels/domain/estado-op'
 import { ensaiarEntrada } from '../../src/modules/compels/application/enviar-entrada'
 import { ClienteCompels } from '../../src/modules/compels/infra/cliente'
 import { configDoAmbiente, destinoDoAmbiente } from '../../src/modules/compels/infra/config'
 
 const [numeroOp, pmo, quantidadeTexto, anteriorTexto] = process.argv.slice(2)
 const quantidade = Number(quantidadeTexto)
-const acumuladoAnterior = Number(anteriorTexto ?? 0)
+const automatico = anteriorTexto === 'auto'
+let acumuladoAnterior = automatico ? 0 : Number(anteriorTexto ?? 0)
 
 if (!numeroOp || !pmo || !(quantidade > 0) || !(acumuladoAnterior >= 0)) {
   console.log('uso: node tools/compels/ensaiar-entrada.mjs NUMERO_DA_OP PMO QUANTIDADE [ACUMULADO_ANTERIOR]')
@@ -31,9 +35,22 @@ function mascarar(valor: unknown): unknown {
 
 try {
   const cliente = new ClienteCompels(configDoAmbiente())
+  let pmoUsada = pmo
+  if (pmo === '-' || automatico) {
+    const op = /^\d+$/.test(numeroOp) ? await cliente.buscarOp(Number(numeroOp)) : null
+    if (!op) throw new Error(`OP ${numeroOp} não encontrada no Compels.`)
+    if (pmo === '-') {
+      pmoUsada = op.codigoItem
+      console.log(`PMO usada (lida do Compels): ${pmoUsada}`)
+    }
+    if (automatico) {
+      acumuladoAnterior = estadoDaOp(await cliente.lerOp(op)).apontada
+      console.log(`Acumulado anterior assumido (apontado no Compels): ${acumuladoAnterior}`)
+    }
+  }
   const plano = await ensaiarEntrada(
     cliente,
-    { pmo, op: numeroOp, quantidade, acumuladoAnterior },
+    { pmo: pmoUsada, op: numeroOp, quantidade, acumuladoAnterior },
     { destino: destinoDoAmbiente() },
   )
 
