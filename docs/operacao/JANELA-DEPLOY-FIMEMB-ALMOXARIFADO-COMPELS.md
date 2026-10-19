@@ -35,6 +35,19 @@ até as migrações dele entrarem.
 7. **Permissões:** na tela de Perfis, dê ao **seu** perfil `recebimento.lancar` (Recebimento) e confira que ele tem `shopfloor.visualizar`.
 8. **Teste da OP 8649:** siga o `TESTE-OP-8649.md`.
 
+## Se algo der errado: o atalho (script de rollback)
+
+O script `docs/operacao/rollback-janela.sh` faz o rollback na ordem certa, com os mesmos comandos dos runbooks.
+Instalação, uma vez, na Lightsail:
+
+```bash
+cd ~/ShopFloor && git fetch origin main && git show origin/main:docs/operacao/rollback-janela.sh > ~/rollback-janela.sh
+```
+
+Uso: `bash ~/rollback-janela.sh estado` (só olha), `app` (volta o app ao commit de `~/antes-almox.txt`; resolve quase
+tudo, sem senha), `banco` (depois do app: desfaz Almoxarifado e Fim de EMB, pede a senha do banco duas vezes) ou
+`tudo`. O modo `banco` recusa rodar se o app ainda não voltou. Ensaiado com servidor simulado em 19/10/2026.
+
 ## Se algo der errado (ordem inversa)
 
 1. **O app primeiro:** volte ao commit anotado em `~/antes-almox.txt` (e rode o `deploy.sh` nele).
