@@ -90,8 +90,8 @@ const POSICAO: Record<CaixaFluxoId, { x: number; y: number }> = {
 
 /** O que cada caixa é, em uma linha (o subtítulo do card). */
 const SUBTITULO: Record<CaixaFluxoId, string> = {
-  recebimento: 'esperando conferência',
-  qualidade: 'em conferência',
+  recebimento: 'pendentes de conferência',
+  qualidade: 'aguardando finalização',
   almoxarifado: 'concluído',
   reprovado: 'ramo · fim de linha',
   // A diferença que o subtítulo tem que carregar: aqui o item NÃO parou — ele está marcado e
@@ -258,23 +258,25 @@ function ItensDaEtapa({
 }
 
 /**
- * Quantos itens da EMB já CHEGARAM a uma etapa: os que estão nela agora mais os que já seguiram.
+ * Quantos itens da EMB já CONCLUÍRAM uma etapa.
  *
- * Não precisa de histórico: o fluxo é linear (Recebimento → Qualidade → Almoxarifado), então quem
- * está no Almoxarifado necessariamente passou pela Qualidade, e quem foi reprovado também passou.
- * É o equivalente ao "aprovadas ÷ devem passar" do card do Fluxo do ShopFloor.
+ * - Recebimento concluído = salvou a conferência: está na Qualidade ou já passou dela (status ≠ aberto).
+ * - Qualidade concluída = Finalizar: está no Almoxarifado ou foi Reprovado.
  *
- * O Reprovado devolve `null`: é ramo, fim de linha, e "quantos já passaram por ele" não quer dizer
+ * Não precisa de histórico: o fluxo é linear (Recebimento → Qualidade → Almoxarifado), então o
+ * status atual já diz até onde o item foi. O selo do card continua sendo o PENDENTE agora na caixa.
+ *
+ * O Reprovado devolve `null`: é ramo, fim de linha, e "quantos já concluíram" não quer dizer
  * nada — por isso o card dele não tem barra (a Manutenção do ShopFloor também não tem).
  */
-function jaChegaram(caixas: CaixaFluxo[], etapa: CaixaFluxoId): number | null {
+function concluidos(caixas: CaixaFluxo[], etapa: CaixaFluxoId): number | null {
   // Os dois ramos ficam sem barra: nenhum é etapa da fila.
   if (etapa === 'reprovado' || etapa === CAIXA_DIVERGENCIA) return null
   const de = (e: CaixaFluxoId) => caixas.find((c) => c.etapa === e)?.itens ?? 0
-  const depoisDaQualidade = de('almoxarifado') + de('reprovado')
+  const finalizados = de('almoxarifado') + de('reprovado')
   if (etapa === 'almoxarifado') return de('almoxarifado')
-  if (etapa === 'qualidade') return de('qualidade') + depoisDaQualidade
-  return de('recebimento') + de('qualidade') + depoisDaQualidade
+  if (etapa === 'qualidade') return finalizados
+  return de('qualidade') + finalizados
 }
 
 /**
@@ -498,7 +500,7 @@ export function FluxoForm({ embs, podeJustificar = false }: { embs: string[]; po
             subtitulo: SUBTITULO[c.etapa],
             itens: c.itens,
             divergentes: c.divergentes,
-            passaram: jaChegaram(caixas, c.etapa),
+            passaram: concluidos(caixas, c.etapa),
             total,
             selecionado: etapaSel === c.etapa,
           } satisfies FluxoRecebimentoNodeData,
