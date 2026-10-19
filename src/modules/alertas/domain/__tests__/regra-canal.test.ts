@@ -20,7 +20,7 @@ const BASE: EntradaRegra = {
 }
 
 describe('validarRegra — como avisar', () => {
-  it('sem dizer nada, avisa na conversa privada e não avisa canal (o comportamento de antes)', () => {
+  it('sem dizer nada, avisa na mensagem direta e não avisa canal (o comportamento de antes)', () => {
     const r = validarRegra(BASE)
     expect(r.ok && r.valor.avisarPessoas).toBe(true)
     expect(r.ok && r.valor.avisarCanal).toBe(false)
@@ -30,14 +30,14 @@ describe('validarRegra — como avisar', () => {
   it('os dois desligados: a regra não avisaria ninguém', () => {
     expect(validarRegra({ ...BASE, avisarPessoas: false, avisarCanal: false })).toEqual({
       ok: false,
-      erro: 'Escolha avisar na conversa privada, no canal do Discord, ou os dois.',
+      erro: 'Escolha avisar por mensagem direta, no canal do Discord, ou os dois.',
     })
   })
 
-  it('conversa privada marcada exige pelo menos 1 canal dela', () => {
+  it('mensagem direta marcada exige pelo menos 1 canal dela', () => {
     expect(validarRegra({ ...BASE, canais: [], avisarPessoas: true, avisarCanal: true })).toEqual({
       ok: false,
-      erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.',
+      erro: 'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.',
     })
   })
 
@@ -50,8 +50,8 @@ describe('validarRegra — como avisar', () => {
   })
 })
 
-describe('validarRegra — os canais gravados são os da conversa privada', () => {
-  it('avisar no canal NÃO exige nada dos canais da conversa privada', () => {
+describe('validarRegra — os canais gravados são os da mensagem direta', () => {
+  it('avisar no canal NÃO exige nada dos canais da mensagem direta', () => {
     // Privado só no Telegram + canal do Discord: `canais` fica {telegram}, e o fan-out de pessoa
     // continua saindo só pelo Telegram (nada de DM de Discord que ninguém pediu).
     const r = validarRegra({ ...BASE, canais: ['telegram'], avisarPessoas: true, avisarCanal: true })
@@ -66,7 +66,7 @@ describe('validarRegra — os canais gravados são os da conversa privada', () =
   })
 
   it('só no canal: grava canais = {discord} (o cardinality > 0 da 0113) sem o gestor saber disso', () => {
-    // O que o gestor marcou: só "No canal do Discord". Os canais da conversa privada, que ele nem
+    // O que o gestor marcou: só "No canal do Discord". Os canais da mensagem direta, que ele nem
     // viu (a sub-lista some), não podem fazer o insert ser recusado.
     const r = validarRegra({ ...BASE, canais: [], avisarPessoas: false, avisarCanal: true })
     expect(r.ok).toBe(true)
@@ -82,7 +82,7 @@ describe('validarRegra — os canais gravados são os da conversa privada', () =
 
 describe('validarRegra — canal do Discord não configurado no ambiente', () => {
   const ERRO =
-    'O canal do Discord não está configurado neste ambiente: marque também a conversa privada do responsável, ou peça ao TI para configurar o canal.'
+    'O canal do Discord não está configurado neste ambiente: marque também a mensagem direta ao responsável, ou peça ao TI para configurar o canal.'
 
   it('SÓ no canal é recusado: a ocorrência abriria sem avisar ninguém, e nem o lembrete salvaria', () => {
     // Sem o DISCORD_CANAL_ID nada sai no canal, e a abertura já renova o `ultimo_envio_em` —
@@ -113,5 +113,70 @@ describe('validarRegra — canal do Discord não configurado no ambiente', () =>
   it('não avisar no canal nenhum: o ambiente sem canal não estorva', () => {
     const r = validarRegra({ ...BASE, avisarPessoas: true, avisarCanal: false }, { canalConfigurado: false })
     expect(r.ok).toBe(true)
+  })
+})
+
+describe('validarRegra — canais marcados que o ambiente não tem', () => {
+  const TODOS = { telegram: true, discord: true, email: true }
+
+  it('só o e-mail marcado e sem SMTP: recusado, com o nome do canal', () => {
+    expect(
+      validarRegra({ ...BASE, canais: ['email'] }, { canaisConfigurados: { ...TODOS, email: false } }),
+    ).toEqual({ ok: false, erro: 'O E-mail não está configurado neste ambiente; marque outro canal.' })
+  })
+
+  it('vários canais marcados, nenhum configurado: a mensagem nomeia todos', () => {
+    expect(
+      validarRegra(
+        { ...BASE, canais: ['email', 'telegram'] },
+        { canaisConfigurados: { telegram: false, discord: true, email: false } },
+      ),
+    ).toEqual({
+      ok: false,
+      erro: 'Nenhum dos canais marcados (Telegram, E-mail) está configurado neste ambiente; marque outro canal.',
+    })
+  })
+
+  it('um configurado e outro não: salva como antes', () => {
+    const r = validarRegra(
+      { ...BASE, canais: ['telegram', 'email'] },
+      { canaisConfigurados: { ...TODOS, email: false } },
+    )
+    expect(r.ok).toBe(true)
+  })
+
+  it('sem o mapa no ambiente, a checagem é pulada (o comportamento de antes)', () => {
+    expect(validarRegra({ ...BASE, canais: ['email'] }, {}).ok).toBe(true)
+    expect(validarRegra({ ...BASE, canais: ['email'] }).ok).toBe(true)
+  })
+
+  it('nenhum canal marcado continua com o erro de sempre', () => {
+    expect(
+      validarRegra(
+        { ...BASE, canais: [] },
+        { canaisConfigurados: { telegram: false, discord: false, email: false } },
+      ),
+    ).toEqual({
+      ok: false,
+      erro: 'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.',
+    })
+  })
+
+  it('vale para os outros tipos também (fim de EMB)', () => {
+    const r = validarRegra(
+      {
+        ...BASE,
+        modulo: 'recebimento',
+        tipo: 'emb',
+        postos: [],
+        taxaMinima: '',
+        janelaTipo: '',
+        janelaValor: null,
+        minimoBipes: '',
+        canais: ['email'],
+      },
+      { canaisConfigurados: { ...TODOS, email: false } },
+    )
+    expect(r).toEqual({ ok: false, erro: 'O E-mail não está configurado neste ambiente; marque outro canal.' })
   })
 })

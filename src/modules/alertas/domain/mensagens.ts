@@ -197,8 +197,13 @@ export function rotulosPosicoes(posicoes: readonly (string | null | undefined)[]
  *
  * Orçamento que não cabe nem um item com o aviso → devolve '' e a linha inteira sai da mensagem (o
  * resto do alerta vale mais que meia lista).
+ *
+ * Usada pelas POSIÇÕES do defeito (separador ', '), pelas OPs da janela, pelas linhas do RESUMO
+ * diário e pelas divergências do FIM DE EMB (`domain/emb.ts`, separador '\n'). É exportada por
+ * causa do fim de EMB: ele monta a lista num arquivo próprio e precisa do MESMO corte com aviso —
+ * duas versões do corte seriam duas chances de uma delas estourar os 2000 do Discord.
  */
-function listaComCorte(
+export function listaComCorte(
   itens: readonly string[], orcamento: number, singular: string, plural: string, separador = ', ',
 ): string {
   if (itens.length === 0) return ''

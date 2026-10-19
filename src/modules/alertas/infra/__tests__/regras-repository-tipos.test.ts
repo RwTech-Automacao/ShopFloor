@@ -52,10 +52,13 @@ function sbGravacao() {
   return { sb: { from: () => q } as unknown as SupabaseClient, gravado }
 }
 
-/** Supabase de mentira para `.from(...).select(...).is(...).order(...)` (lista de regras). */
+/** Supabase de mentira para `.from(...).select(...).eq(...).is(...).order(...)` (lista de regras). */
 function sbLista(linhas: unknown[]) {
   const q = {
     select() {
+      return q
+    },
+    eq() {
       return q
     },
     is() {
@@ -89,6 +92,7 @@ async function repositorioCom(sb: SupabaseClient) {
 }
 
 const TEMPO: RegraValida = {
+  modulo: 'shopfloor',
   tipo: 'tempo',
   nome: 'Teste lento',
   postos: ['Teste'],
@@ -202,7 +206,7 @@ describe('listarRegras', () => {
         },
       ]),
     )
-    const [tempo, antiga] = await listarRegras()
+    const [tempo, antiga] = await listarRegras('shopfloor')
     expect(tempo).toMatchObject({
       id: 'r1',
       tipo: 'tempo',
@@ -313,7 +317,7 @@ describe('listarOcorrencias', () => {
       },
     ])
     const { listarOcorrencias } = await repositorioCom(sb)
-    const [o] = await listarOcorrencias({ de: '2026-09-18', ate: '2026-09-18', estado: '' })
+    const [o] = await listarOcorrencias('shopfloor', { de: '2026-09-18', ate: '2026-09-18', estado: '' })
     expect(o).toMatchObject({
       regraTipo: 'defeito',
       defeito: '2040 COMPONENTE FALTANDO',
@@ -425,6 +429,7 @@ function sbListaResumo(linhas: unknown[], colunas: string[] = []) {
         colunas.push(c)
         return q
       },
+      eq: () => q,
       is: () => q,
       order: () => q,
       in: () => q,
@@ -484,7 +489,7 @@ describe('resumo diário: hora_resumo', () => {
     const { listarRegras } = await repositorioCom(
       sbListaResumo([linhaResumo({ hora_resumo: '18:00:00' })], colunas),
     )
-    const [r] = await listarRegras()
+    const [r] = await listarRegras('shopfloor')
     expect(r).toMatchObject({ id: 'rr1', tipo: 'resumo', horaResumo: '18:00' })
     expect(colunas[0]).toMatch(/\bhora_resumo\b/)
     expect(colunas[0]).not.toMatch(/resumo_enviado_em/)
@@ -494,7 +499,7 @@ describe('resumo diário: hora_resumo', () => {
     const espiao = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       const { listarRegras } = await repositorioCom(sbListaResumo([linhaResumo({ hora_resumo: 64800 })]))
-      const [r] = await listarRegras()
+      const [r] = await listarRegras('shopfloor')
       expect(r!.horaResumo).toBeNull()
       expect(espiao).toHaveBeenCalledTimes(1)
       const texto = String(espiao.mock.calls[0]![0])
@@ -511,7 +516,7 @@ describe('resumo diário: hora_resumo', () => {
       const { listarRegras } = await repositorioCom(
         sbListaResumo([linhaResumo({ id: 'a', hora_resumo: 'xx:yy:zz' }), linhaResumo({ id: 'b', hora_resumo: null })]),
       )
-      const regras = await listarRegras()
+      const regras = await listarRegras('shopfloor')
       expect(regras.map((r) => r.horaResumo)).toEqual([null, null])
       expect(espiao.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/regra a[\s\S]*regra b/)
     } finally {
@@ -525,7 +530,7 @@ describe('resumo diário: hora_resumo', () => {
       const { listarRegras } = await repositorioCom(
         sbListaResumo([linhaResumo({ id: 't', tipo: 'tempo', janela_tipo: 'tempo', hora_resumo: null })]),
       )
-      const [r] = await listarRegras()
+      const [r] = await listarRegras('shopfloor')
       expect(r!.horaResumo).toBeNull()
       expect(espiao).not.toHaveBeenCalled()
     } finally {

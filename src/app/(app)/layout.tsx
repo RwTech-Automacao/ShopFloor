@@ -4,7 +4,7 @@ import { AppShell } from '@/shared/ui/app-shell'
 import { KioskProvider } from '@/shared/ui/kiosk/kiosk-context'
 import { TecladoProvider } from '@/shared/ui/teclado-provider'
 import { modoStorageFotos } from '@/modules/recebimento/infra/armazenamento'
-import { alertasDisponiveis } from '@/modules/alertas/application/liberacao'
+import { alertasDisponiveis, alertasMenuPorModulo } from '@/modules/alertas/application/liberacao'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const sessao = await getSessao()
@@ -20,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         perfil={sessao.perfil}
         exportarFotosVisivel={modoStorageFotos() === 'supabase'}
         alertasLiberado={alertasDisponiveis(sessao)}
+        alertasMenu={alertasMenuPorModulo(sessao.email)}
       >
         {children}
       </AppShell>

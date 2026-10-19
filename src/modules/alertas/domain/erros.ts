@@ -16,6 +16,8 @@ const MENSAGENS: Record<string, string> = {
   JANELA_INVALIDA: 'Informe um valor de janela maior que zero.',
   TIPO_FIXO: 'O tipo da regra não muda depois de criado.',
   TIPO_INVALIDO: 'Escolha o tipo da regra.',
+  MODULO_FIXO: 'O módulo da regra não muda depois de criado.',
+  MODULO_INVALIDO: 'Módulo inválido.',
   PAUSA_INVALIDA: 'Ignorar pausas acima de: informe um número inteiro de 1 a 240 minutos.',
   LIMITE_INVALIDO: 'Informe quantas repetições disparam o alerta (número inteiro, 2 ou mais).',
 }
