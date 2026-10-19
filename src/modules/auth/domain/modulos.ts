@@ -9,7 +9,8 @@ export const MODULOS: { chave: Modulo; rotulo: string }[] = [
 
 /** Permissões que cada módulo expõe (define os accordions e a migração). */
 export const PERMISSOES_POR_MODULO: Record<Modulo, Permissao[]> = {
-  recebimento: ['visualizar', 'importar', 'editar', 'finalizar', 'editar_finalizado', 'excluir', 'gerar_etiqueta', 'administrar'],
+  // `lancar` no Recebimento = dar entrada de produto acabado na tela do Almoxarifado (bipe).
+  recebimento: ['visualizar', 'importar', 'editar', 'finalizar', 'editar_finalizado', 'excluir', 'gerar_etiqueta', 'administrar', 'lancar'],
   shopfloor: ['visualizar', 'lancar', 'administrar'],
   setup: ['visualizar', 'lancar', 'administrar'],
   sistema: ['administrar'],

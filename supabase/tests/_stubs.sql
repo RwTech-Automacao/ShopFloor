@@ -64,3 +64,41 @@ insert into public.usuarios (id, nome, email) values
   ('00000000-0000-0000-0000-000000000001', 'Ana Gestora',     'ana@enterplak.com.br'),
   ('00000000-0000-0000-0000-000000000002', 'Bruno Líder',     'bruno@enterplak.com.br'),
   ('00000000-0000-0000-0000-000000000003', 'Carla Operadora', 'carla@enterplak.com.br');
+
+-- ---------- Recebimento (0124/0142): o fim de EMB da 0150 lê estas duas ----------
+-- Só as colunas que a 0150 usa. Reduzido de propósito: o teste do Fluxo do Recebimento
+-- (recebimento_fluxo_test.sql) tem o stub completo; aqui o que importa é EMB, status, divergência
+-- e justificativa.
+--
+-- ⚠️ `configuracao_campos` não é lida pela 0150 — é lida pela `rec_secao_do_diff` da 0124, que o
+-- runner aplica antes da 0150 para ter as funções `rec_etapa_por_status` e `rec_divergente` de
+-- verdade (e não uma cópia). Funções `language sql` têm o corpo planejado na criação, então sem
+-- esta tabela a 0124 nem é aceita. As funções da 0124 que leem `public.logs` são todas plpgsql
+-- (corpo não planejado na criação) e nunca são chamadas aqui, então `logs` não precisa de stub.
+create table public.configuracao_campos (
+  campo text primary key,
+  grupo text not null
+);
+
+create sequence public.processos_numero_seq;
+create table public.processos_recebimento (
+  id                               uuid primary key default gen_random_uuid(),
+  numero                           bigint not null default nextval('public.processos_numero_seq') unique,
+  numero_emb                       text,
+  status                           text not null default 'aberto',
+  codigo_material                  text,
+  descricao_material               text,
+  quantidade_pedido                numeric,
+  quantidade_recebida              numeric,
+  divergencia                      text,
+  resultado                        text,
+  divergencia_justificativa        text not null default '',
+  divergencia_justificada_por      uuid references public.usuarios(id),
+  divergencia_justificada_em       timestamptz,
+  divergencia_justificada_por_nome text not null default '',
+  finalizado_em                    timestamptz,
+  created_at                       timestamptz not null default now()
+);
+
+grant select on public.processos_recebimento, public.configuracao_campos
+  to anon, authenticated, service_role;

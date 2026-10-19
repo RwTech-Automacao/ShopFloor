@@ -159,8 +159,8 @@ que permite testar as regras sem subir Postgres, e é onde a regra fica legível
 - Testar: `src/modules/shopfloor/domain/__tests__/almoxarifado.test.ts`
 
 **Interfaces:**
-- Consome: `separarCodigoCaixa` e `marcadorCaixaAberta` de `./caixa`, `normalizarSerie` de
-  `./serie`.
+- Consome: `separarCodigoCaixa` de `./caixa` (se não existir, acrescente-a lá, com teste — é lá
+  que mora o formato do código).
 - Produz:
 
 ```ts
@@ -253,9 +253,18 @@ Crie `src/modules/shopfloor/domain/almoxarifado.ts` com a decisão em três degr
 `vazio`; começa com `CX[` → é caixa (sem quantidade no código → `caixa_aberta`; OP individual →
 `caixa_em_op_individual`); senão → é série (OP coletiva → `serie_em_op_coletiva`).
 
-A série passa por `normalizarSerie`. A quantidade da caixa sai do próprio código — **nunca de um
-`select` na tabela**: o código impresso é o que está colado na caixa física, e é ele que o operador
+**A série sai do domínio como foi bipada**, só com `trim` — e o teste acima manda exatamente isso.
+Eu tinha escrito aqui "passa por `normalizarSerie`" e estava errado: `normalizarSerie` come o
+prefixo de revenda (`00043-00462-0015718` vira `43004620015718`, porque ela lê o `00043` como zero
+à esquerda de enchimento, e ele é código de revenda). O que a tela mostra tem de ser o que a pessoa
 bipou.
+
+Normalizar é assunto da Task 3, no banco, e lá vale a regra oposta: a comparação de duplicidade tem
+de usar **a mesma normalização que o resto do sistema já usa** para gravar `numero_serie_norm`,
+senão o "já lançado" não casa com as linhas que a Embalagem gravou.
+
+A quantidade da caixa sai do próprio código — **nunca de um `select` na tabela**: o código impresso
+é o que está colado na caixa física, e é ele que o operador bipou.
 
 - [ ] **Passo 5: rodar e ver passar**
 
@@ -283,8 +292,15 @@ caixa ao mesmo tempo de dar entrada em dobro.
 
 **Interfaces:**
 - Produz: `sf_almoxarifado_entrada(p_pmo text, p_op text, p_posto text, p_colaborador text,
-  p_bipe text, p_tipo text, p_quantidade int) returns jsonb` — devolve
+  p_bipe text, p_tipo text, p_quantidade int, p_serie_norm text) returns jsonb` — devolve
   `{"ok": true, "quantidade": 10}` ou `{"ok": false, "motivo": "<chave>", "detalhe": "<texto>"}`.
+
+⚠️ **`p_serie_norm` vem pronto do aplicativo, e isso não é escolha:** **não existe função de
+normalização de série no banco.** O `sf_lancar` (migração `0031_sf_lancar.sql`) já funciona assim —
+recebe `p_numero_serie_norm` de fora. Se a RPC nova normalizasse por conta própria, a comparação de
+duplicidade não casaria com as linhas que a Embalagem gravou, e o "já lançado" nunca pegaria nada.
+**Leia a `0031_sf_lancar.sql` antes de escrever: ela é a irmã mais próxima desta função.**
+Nas chamadas de tipo `caixa`, `p_serie_norm` vai vazio.
 
 **Motivos que a RPC devolve** (a tela traduz cada um numa frase):
 `sem_permissao` · `ordem_nao_encontrada` · `posto_invalido` · `caixa_nao_encontrada` ·
@@ -346,11 +362,9 @@ values
   (p_colaborador, p_posto, p_pmo, p_op, v_cliente,
    case when p_tipo = 'caixa' then p_bipe else '' end,
    case when p_tipo = 'serie' then p_bipe else '' end,
-   case when p_tipo = 'serie' then sf_serie_norm(p_bipe) else '' end);
+   case when p_tipo = 'serie' then p_serie_norm else '' end);
 ```
 
-  (confira o nome real da função de normalização de série nas migrações antes de usar — é a mesma
-  que o Lançamento usa para gravar `numero_serie_norm`);
 - o `status` fica **vazio**: o perfil não tem status, o bipe não julga a peça;
 - **tudo numa transação só**, com `select ... for update` na caixa antes de gravar: é o que resolve
   dois operadores bipando junto.

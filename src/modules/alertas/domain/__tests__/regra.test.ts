@@ -20,6 +20,7 @@ describe('validarRegra', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.valor).toEqual({
+      modulo: 'shopfloor',
       tipo: 'aprovacao',
       nome: 'Teste abaixo de 90',
       postos: ['Teste'],
@@ -56,9 +57,9 @@ describe('validarRegra', () => {
     expect(validarRegra({ ...BASE, nome: '   ' })).toEqual({ ok: false, erro: 'Informe o nome da regra.' })
   })
 
-  it('exige pelo menos 1 posto, 1 canal da conversa privada e 1 responsável', () => {
+  it('exige pelo menos 1 posto, 1 canal da mensagem direta e 1 responsável', () => {
     expect(validarRegra({ ...BASE, postos: [] })).toEqual({ ok: false, erro: 'Escolha pelo menos 1 posto.' })
-    expect(validarRegra({ ...BASE, canais: [] })).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
+    expect(validarRegra({ ...BASE, canais: [] })).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.' })
     expect(validarRegra({ ...BASE, destinatarios: [] })).toEqual({
       ok: false,
       erro: 'Escolha pelo menos 1 responsável.',
@@ -66,7 +67,7 @@ describe('validarRegra', () => {
   })
 
   it('recusa canal desconhecido', () => {
-    expect(validarRegra({ ...BASE, canais: ['whatsapp'] })).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
+    expect(validarRegra({ ...BASE, canais: ['whatsapp'] })).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.' })
   })
 
   it('taxa mínima entre 0 e 100, com até 2 casas', () => {
@@ -156,7 +157,7 @@ describe('validarRegra', () => {
     ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 posto.' })
     expect(
       validarRegra({ ...BASE, canais: null as unknown as string[] }),
-    ).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.' })
+    ).toEqual({ ok: false, erro: 'Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.' })
     expect(
       validarRegra({ ...BASE, destinatarios: undefined as unknown as string[] }),
     ).toEqual({ ok: false, erro: 'Escolha pelo menos 1 responsável.' })
@@ -168,6 +169,27 @@ describe('validarRegra', () => {
 
   it('os padrões da spec', () => {
     expect(PADROES_REGRA).toEqual({ taxaMinima: 90, janelaTempo: 60, janelaBipes: 50, minimoBipes: 20 })
+  })
+})
+
+describe('módulo da regra', () => {
+  // A entrada válida de sempre (BASE) com o que o caso quiser trocar.
+  const entradaValida = (extra: Partial<EntradaRegra> = {}): EntradaRegra => ({ ...BASE, ...extra })
+
+  it('ausente vale shopfloor (as chamadas de antes do módulo)', () => {
+    const r = validarRegra(entradaValida({ modulo: undefined }))
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.valor.modulo).toBe('shopfloor')
+  })
+
+  it('recusa módulo desconhecido', () => {
+    const r = validarRegra(entradaValida({ modulo: 'financeiro' }))
+    expect(r).toEqual({ ok: false, erro: 'Escolha o módulo da regra.' })
+  })
+
+  it('recusa o tipo que não é do módulo', () => {
+    const r = validarRegra(entradaValida({ modulo: 'recebimento', tipo: 'aprovacao' }))
+    expect(r).toEqual({ ok: false, erro: 'Este tipo de regra não existe no Recebimento.' })
   })
 })
 
@@ -199,9 +221,9 @@ describe('validarPrevia', () => {
 
 describe('destinatariosSemCanal', () => {
   const disponiveis = [
-    { usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true },
-    { usuarioId: 'u2', nome: 'Bruno Líder', email: 'bruno@x', telegram: true, discord: false },
-    { usuarioId: 'u3', nome: 'Carla Operadora', email: 'carla@x', telegram: false, discord: false },
+    { usuarioId: 'u1', nome: 'Ana Gestora', email: 'ana@x', telegram: true, discord: true, emailOk: true },
+    { usuarioId: 'u2', nome: 'Bruno Líder', email: 'bruno@x', telegram: true, discord: false, emailOk: true },
+    { usuarioId: 'u3', nome: 'Carla Operadora', email: 'carla@x', telegram: false, discord: false, emailOk: true },
   ]
   it('lista quem não recebe pelos canais escolhidos', () => {
     expect(destinatariosSemCanal(disponiveis, ['u1', 'u2', 'u3'], ['telegram', 'discord'])).toEqual([

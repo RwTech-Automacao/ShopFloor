@@ -178,7 +178,11 @@ export async function qrDaCaixa(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
   try {
     const caixas = await carregarCaixasDaOp(pmo.trim(), op.trim())
-    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq)
+    // Uma caixa reprovada no NQA e remontada tem DUAS linhas pro mesmo (posto,seq): a aposentada
+    // (revisao > 0) e a vigente (revisao 0). `carregarCaixasDaOp` ordena revisao desc, então sem
+    // este filtro o `find` pegava a aposentada — a folha saía com o QR da montagem que não existe
+    // mais. O QR de SNs é sempre da caixa vigente.
+    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq && c.revisao === 0)
     if (!caixa) return { ok: false, erro: 'Caixa não encontrada.' }
     if (caixa.sns.length === 0) return { ok: false, erro: 'Esta caixa não tem peças.' }
 
@@ -196,5 +200,39 @@ export async function qrDaCaixa(
       ok: false,
       erro: `Não foi possível gerar o QR Code — a caixa pode ter peças demais para um QR (teto ~230).`,
     }
+  }
+}
+
+/**
+ * QR Code do CÓDIGO da caixa (ex.: 'CX[3][10]12345-PMO973'), pequeno e ao lado do QR de SNs na
+ * folha. É o que o leitor de mão do Almoxarifado bipa na entrada — bipar o QR de cima daria dez
+ * linhas de número de série, não o código da caixa. Os dois QRs convivem: este não substitui o
+ * `qrDaCaixa`, que continua sendo a conferência pelo celular que a fábrica já usa.
+ *
+ * Caixa aberta não tem código final (ele só existe depois do "Fechar caixa") — sem código não há
+ * o que imprimir, então devolve erro em vez de um QR vazio ou com o marcador de "aberta".
+ */
+export async function qrCodigoDaCaixa(
+  pmo: string, op: string, posto: string, seq: number,
+): Promise<{ ok: true; svg: string; codigo: string } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')) return { ok: false, erro: SEM_PERMISSAO }
+  try {
+    const caixas = await carregarCaixasDaOp(pmo.trim(), op.trim())
+    // Mesmo motivo do `qrDaCaixa`: sem o filtro de revisao, uma caixa remontada pegava o código
+    // da montagem aposentada — o Almoxarifado bipava um QR de uma caixa que não existe mais.
+    const caixa = caixas.find((c) => c.posto === posto && c.seq === seq && c.revisao === 0)
+    if (!caixa) return { ok: false, erro: 'Caixa não encontrada.' }
+    if (!caixa.fechada) return { ok: false, erro: 'Esta caixa ainda está aberta — feche a caixa para gerar o código.' }
+
+    const svg = await QRCode.toString(caixa.codigo, {
+      type: 'svg',
+      errorCorrectionLevel: 'M',
+      // Mesma zona de silêncio do QR de SNs, pelo mesmo motivo: sem ela o leitor erra a detecção.
+      margin: 4,
+    })
+    return { ok: true, svg, codigo: caixa.codigo }
+  } catch {
+    return { ok: false, erro: 'Não foi possível gerar o QR Code do código da caixa.' }
   }
 }

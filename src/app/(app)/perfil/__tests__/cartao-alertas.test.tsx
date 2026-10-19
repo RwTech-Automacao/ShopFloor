@@ -29,15 +29,51 @@ beforeEach(() => {
   enviarTesteAction.mockResolvedValue({ ok: true })
 })
 
-const TODOS_CONFIGURADOS = { telegram: true, discord: true }
+const TODOS_CONFIGURADOS = { telegram: true, discord: true, email: true }
+
+function montar({ email = 'ana@x', configurados = TODOS_CONFIGURADOS }: { email?: string; configurados?: Record<'telegram' | 'discord' | 'email', boolean> } = {}) {
+  render(<CartaoAlertas nome="Ana Gestora" email={email} contas={[]} configurados={configurados} telegramBot="shopfloor_bot" />)
+}
+
+describe('CartaoAlertas — e-mail', () => {
+  it('o e-mail não oferece vincular nem desvincular — mostra o endereço e só o teste', () => {
+    montar({ email: 'ana@x' })
+    expect(screen.getByText('ana@x')).toBeInTheDocument()
+    const cartaoEmail = screen.getByText('E-mail').closest('div')!.parentElement!
+    const botoes = cartaoEmail.querySelectorAll('button')
+    expect(botoes).toHaveLength(1)
+    expect(botoes[0]!.textContent).toContain('Enviar teste')
+    expect(screen.queryByRole('button', { name: 'Desvincular' })).not.toBeInTheDocument()
+  })
+
+  it('Enviar teste do e-mail chama a action do e-mail', async () => {
+    montar()
+    fireEvent.click(screen.getByText('E-mail').closest('div')!.parentElement!.querySelector('button')!)
+    await waitFor(() => expect(enviarTesteAction).toHaveBeenCalledWith('email'))
+    await waitFor(() => expect(toastSucesso).toHaveBeenCalled())
+  })
+
+  it('cadastro sem e-mail: avisa e desliga o teste', () => {
+    montar({ email: '   ' })
+    expect(screen.getByText(/cadastro está sem e-mail/i)).toBeInTheDocument()
+    const botao = screen.getByText('E-mail').closest('div')!.parentElement!.querySelector('button')!
+    expect(botao).toBeDisabled()
+  })
+
+  it('e-mail não configurado no ambiente: desliga o teste e avisa', () => {
+    montar({ configurados: { telegram: true, discord: true, email: false } })
+    expect(screen.getByText('Não configurado neste ambiente')).toBeInTheDocument()
+    expect(screen.getByText('E-mail').closest('div')!.parentElement!.querySelector('button')).toBeDisabled()
+  })
+})
 
 describe('CartaoAlertas', () => {
   it('canal sem token aparece como não configurado', () => {
     render(
       <CartaoAlertas
-        nome="Ana Gestora"
+        nome="Ana Gestora" email="ana@x"
         contas={[]}
-        configurados={{ telegram: true, discord: false }}
+        configurados={{ telegram: true, discord: false, email: true }}
         telegramBot="shopfloor_bot"
       />,
     )
@@ -50,20 +86,21 @@ describe('CartaoAlertas', () => {
   it('canal vinculado mostra a data e as ações', () => {
     render(
       <CartaoAlertas
-        nome="Ana Gestora"
+        nome="Ana Gestora" email="ana@x"
         contas={[{ canal: 'telegram', vinculadoEm: '2026-09-16T12:00:00Z' }]}
         configurados={TODOS_CONFIGURADOS}
         telegramBot="shopfloor_bot"
       />,
     )
     expect(screen.getByText('Vinculado em 16/09')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Enviar teste' })).toBeInTheDocument()
+    // Um "Enviar teste" do Telegram vinculado + o do e-mail (que não precisa de vínculo).
+    expect(screen.getAllByRole('button', { name: 'Enviar teste' })).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'Desvincular' })).toBeInTheDocument()
   })
 
   it('Vincular mostra o código e a instrução do bot', async () => {
     render(
-      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+      <CartaoAlertas nome="Ana Gestora" email="ana@x" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
     expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
@@ -74,7 +111,7 @@ describe('CartaoAlertas', () => {
 
   it('oferece o Telegram Web para quem não tem o aplicativo no computador', async () => {
     render(
-      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+      <CartaoAlertas nome="Ana Gestora" email="ana@x" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
     expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
@@ -85,7 +122,7 @@ describe('CartaoAlertas', () => {
   })
 
   it('sem o nome do bot a instrução do Telegram não vira link', async () => {
-    render(<CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="" />)
+    render(<CartaoAlertas nome="Ana Gestora" email="ana@x" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="" />)
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
     expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
     expect(screen.getByText('t.me/seu_bot')).toBeInTheDocument()
@@ -94,7 +131,7 @@ describe('CartaoAlertas', () => {
 
   it('Vincular no Discord instrui o comando /vincular', async () => {
     render(
-      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+      <CartaoAlertas nome="Ana Gestora" email="ana@x" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[1]!)
     expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
@@ -105,7 +142,7 @@ describe('CartaoAlertas', () => {
   it('com o convite configurado o Discord ganha o link do servidor do bot', async () => {
     render(
       <CartaoAlertas
-        nome="Ana Gestora"
+        nome="Ana Gestora" email="ana@x"
         contas={[]}
         configurados={TODOS_CONFIGURADOS}
         telegramBot="shopfloor_bot"
@@ -122,7 +159,7 @@ describe('CartaoAlertas', () => {
 
   it('sem o convite o Discord não mostra link nenhum', async () => {
     render(
-      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+      <CartaoAlertas nome="Ana Gestora" email="ana@x" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[1]!)
     expect(await screen.findByText('ALERTA-7K3M')).toBeInTheDocument()
@@ -134,7 +171,7 @@ describe('CartaoAlertas', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     render(
-      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+      <CartaoAlertas nome="Ana Gestora" email="ana@x" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[1]!)
     fireEvent.click(await screen.findByRole('button', { name: 'Copiar' }))
@@ -144,13 +181,13 @@ describe('CartaoAlertas', () => {
   it('Enviar teste avisa sucesso', async () => {
     render(
       <CartaoAlertas
-        nome="Ana Gestora"
+        nome="Ana Gestora" email="ana@x"
         contas={[{ canal: 'telegram', vinculadoEm: '2026-09-16T12:00:00Z' }]}
         configurados={TODOS_CONFIGURADOS}
         telegramBot="shopfloor_bot"
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar teste' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Enviar teste' })[0]!) // o do Telegram vem antes do e-mail
     await waitFor(() => expect(enviarTesteAction).toHaveBeenCalledWith('telegram'))
     await waitFor(() => expect(toastSucesso).toHaveBeenCalled())
   })
@@ -158,7 +195,7 @@ describe('CartaoAlertas', () => {
   it('erro ao gerar o código vira toast de erro', async () => {
     gerarCodigoAction.mockResolvedValueOnce({ ok: false, erro: 'Sessão inválida. Entre de novo no sistema.' })
     render(
-      <CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
+      <CartaoAlertas nome="Ana Gestora" email="ana@x" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="shopfloor_bot" />,
     )
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
     await waitFor(() => expect(toastErro).toHaveBeenCalledWith('Sessão inválida. Entre de novo no sistema.', {
@@ -174,7 +211,7 @@ describe('CartaoAlertas', () => {
         codigo: 'ALERTA-7K3M',
         expiraEm: new Date(Date.now() + 5_000).toISOString(),
       })
-      render(<CartaoAlertas nome="Ana Gestora" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="ShopFloorBot" />)
+      render(<CartaoAlertas nome="Ana Gestora" email="ana@x" contas={[]} configurados={TODOS_CONFIGURADOS} telegramBot="ShopFloorBot" />)
       fireEvent.click(screen.getAllByRole('button', { name: 'Vincular' })[0]!)
       await screen.findByText('ALERTA-7K3M')
       await vi.advanceTimersByTimeAsync(10_000) // passa do vencimento (5 s)

@@ -2,6 +2,7 @@ import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { ehCanal, ehJanelaTipo, ehTipoRegra, type EstadoOcorrencia } from '../domain/tipos'
 import type { DestinatarioDisponivel, PreviaValida, RegraAlerta, RegraValida } from '../domain/regra'
+import { ehModuloAlerta, type ModuloAlerta } from '../domain/modulo'
 import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/ocorrencia'
 import { lerHoraDoBanco, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
 import { periodoOcorrencias } from '../domain/ocorrencia'
@@ -10,12 +11,13 @@ import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
 import type { ResultadoResolver } from '../application/portas'
 
 const CAMPOS_REGRA =
-  'id, tipo, nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes, limite_tempo_seg, ' +
-  'limite_ocorrencias, pausa_max_min, pmos, lembrete_min, hora_resumo, canais, destinatarios, ' +
-  'avisar_pessoas, avisar_canal, ativa, atualizado_em'
+  'id, modulo, tipo, nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes, ' +
+  'limite_tempo_seg, limite_ocorrencias, pausa_max_min, pmos, lembrete_min, hora_resumo, canais, ' +
+  'destinatarios, avisar_pessoas, avisar_canal, ativa, atualizado_em'
 
 interface LinhaRegra {
   id: string
+  modulo: string
   tipo: string
   nome: string
   postos: string[] | null
@@ -84,6 +86,9 @@ function lerHoraResumo(l: LinhaRegra): string | null {
 function paraRegra(l: LinhaRegra, intervalos: Intervalo[]): RegraAlerta {
   return {
     id: l.id,
+    // Módulo desconhecido (banco mais novo que o app) cai em 'shopfloor', como o tipo cai em
+    // 'aprovacao': a lista mostra a regra em vez de quebrar.
+    modulo: ehModuloAlerta(l.modulo) ? l.modulo : 'shopfloor',
     // Tipo desconhecido (banco mais novo que o app) cai em 'aprovacao' em vez de quebrar a lista.
     tipo: ehTipoRegra(l.tipo) ? l.tipo : 'aprovacao',
     nome: l.nome,
@@ -113,8 +118,9 @@ function paraRegra(l: LinhaRegra, intervalos: Intervalo[]): RegraAlerta {
 
 /**
  * Colunas gravadas. Os campos que não são do tipo vão como null EXPLÍCITO (o check da 0115 recusa,
- * por exemplo, o default 20 de minimo_bipes numa regra de defeito). O `tipo` só vai no INSERT:
- * depois de criada, a regra não muda de tipo (trigger TIPO_FIXO da 0115).
+ * por exemplo, o default 20 de minimo_bipes numa regra de defeito). O `tipo` e o `modulo` só vão no
+ * INSERT: depois de criada, a regra não muda de tipo (trigger TIPO_FIXO da 0115) nem de módulo
+ * (trigger MODULO_FIXO da 0149).
  */
 function paraLinha(r: RegraValida, comTipo: boolean): Record<string, unknown> {
   const linha: Record<string, unknown> = {
@@ -138,7 +144,10 @@ function paraLinha(r: RegraValida, comTipo: boolean): Record<string, unknown> {
     avisar_canal: r.avisarCanal,
     ativa: r.ativa,
   }
-  if (comTipo) linha.tipo = r.tipo
+  if (comTipo) {
+    linha.tipo = r.tipo
+    linha.modulo = r.modulo
+  }
   return linha
 }
 
@@ -210,12 +219,19 @@ async function trocarIntervalos(
   return { ok: true }
 }
 
-export async function listarRegras(): Promise<RegraAlerta[]> {
+/**
+ * As regras DE UM MÓDULO. O filtro `.eq('modulo', modulo)` é a primeira das duas barreiras do caso
+ * 6 da spec; a segunda é o RLS por módulo da 0149, que nega mesmo se este filtro sumir. As duas
+ * são independentes de propósito: este erra mostrando lista vazia, o RLS erra negando — nenhum dos
+ * dois erra mostrando a regra do outro módulo.
+ */
+export async function listarRegras(modulo: ModuloAlerta): Promise<RegraAlerta[]> {
   const sb = await createServerSupabase()
   // Regra excluída (exclusão lógica) some da lista; as ocorrências dela continuam na aba Ocorrências.
   const { data, error } = await sb
     .from('alerta_regras')
     .select(CAMPOS_REGRA)
+    .eq('modulo', modulo)
     .is('excluida_em', null)
     .order('nome')
   if (error) throw error
@@ -347,9 +363,10 @@ export async function listarPmosAlerta(): Promise<string[]> {
   return [...new Set(lista.map((p) => String(p ?? '').trim()).filter((p) => p !== ''))]
 }
 
-export async function listarDestinatarios(): Promise<DestinatarioDisponivel[]> {
+/** Quem pode ser responsável por uma regra DESTE módulo (quem administra o módulo, 0149). */
+export async function listarDestinatarios(modulo: ModuloAlerta): Promise<DestinatarioDisponivel[]> {
   const sb = await createServerSupabase()
-  const { data, error } = await sb.rpc('alerta_destinatarios')
+  const { data, error } = await sb.rpc('alerta_destinatarios', { p_modulo: modulo })
   if (error) throw error
   return ((data ?? []) as {
     usuario_id: string
@@ -357,16 +374,24 @@ export async function listarDestinatarios(): Promise<DestinatarioDisponivel[]> {
     email: string
     telegram: boolean
     discord: boolean
+    email_ok: boolean | null
   }[]).map((l) => ({
     usuarioId: l.usuario_id,
     nome: l.nome,
     email: l.email,
     telegram: l.telegram,
     discord: l.discord,
+    // Banco ainda sem a 0151 (deploy antes da migração): a coluna não vem. Cai no endereço não
+    // estar em branco — a mesma conta que a 0151 faz, só que aqui.
+    emailOk: l.email_ok ?? l.email.trim() !== '',
   }))
 }
 
-export async function listarOcorrencias(f: FiltroOcorrencias): Promise<OcorrenciaLinha[]> {
+/** As ocorrências das regras DESTE módulo (a RPC da 0149 filtra e confere a permissão do módulo). */
+export async function listarOcorrencias(
+  modulo: ModuloAlerta,
+  f: FiltroOcorrencias,
+): Promise<OcorrenciaLinha[]> {
   const periodo = periodoOcorrencias(f.de, f.ate)
   if (!periodo) return []
   const sb = await createServerSupabase()
@@ -374,6 +399,7 @@ export async function listarOcorrencias(f: FiltroOcorrencias): Promise<Ocorrenci
     p_de: periodo.de,
     p_ate: periodo.ate,
     p_estado: f.estado,
+    p_modulo: modulo,
   })
   if (error) throw error
   return ((data ?? []) as {

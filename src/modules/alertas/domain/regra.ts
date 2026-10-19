@@ -8,13 +8,17 @@ import {
   type TipoRegra,
 } from './tipos'
 import { formatarMeta } from './taxa'
+import { NOME_MODULO_ALERTA, ehModuloAlerta, tipoPertenceAoModulo, type ModuloAlerta } from './modulo'
 import { lerHhMm, validarIntervalos, type Intervalo } from './intervalos'
 import { formatarMmSs, lerMmSs } from './tempo'
 import { HORA_RESUMO_MAX, HORA_RESUMO_MIN } from './resumo'
 import { resumoJanela } from './janela'
+import { JANELA_EMB, LIMITE_EMB } from './emb'
 
 /** O que vem do formulário (tudo pode chegar como texto). Campos de outro tipo são ignorados. */
 export interface EntradaRegra {
+  /** Ausente = 'shopfloor' (chamadas de antes de a regra ter módulo). */
+  modulo?: string
   /** Ausente = 'aprovacao' (chamadas de antes dos tipos). */
   tipo?: string
   nome: string
@@ -50,6 +54,7 @@ export interface EntradaRegra {
 
 /** A regra já conferida, pronta para o banco. Campo que não é do tipo = null. */
 export interface RegraValida {
+  modulo: ModuloAlerta
   tipo: TipoRegra
   nome: string
   postos: string[]
@@ -81,9 +86,12 @@ export interface RegraAlerta extends RegraValida {
 export interface DestinatarioDisponivel {
   usuarioId: string
   nome: string
+  /** O endereço de login. Mostrado na tela; NÃO é o "tem canal" (ver `emailOk`). */
   email: string
   telegram: boolean
   discord: boolean
+  /** O endereço de login serve para enviar (não está em branco) — o "tem canal" do e-mail. */
+  emailOk: boolean
 }
 
 /** O que a prévia do formulário precisa (nome/canais/destinatários ainda podem faltar). */
@@ -128,6 +136,7 @@ export const PADROES_TIPO = {
 export const PAUSA_MAX_MIN = { min: 1, max: 240 } as const
 
 const MSG_RESUMO_CAMPO = 'O resumo diário não usa este campo.'
+const MSG_EMB_CAMPO = 'O aviso de fim de EMB não usa este campo.'
 const MSG_RESUMO_HORA =
   'A hora do resumo deve ficar entre 06:00 e 19:00 (fora disso o banco está desligado e o relatório não sairia).'
 
@@ -175,18 +184,49 @@ function unicos(lista: unknown): string[] {
 export interface AmbienteRegra {
   /** O canal do Discord do sistema está pronto (token do bot + DISCORD_CANAL_ID)? */
   canalConfigurado?: boolean
+  /**
+   * Quais canais da mensagem direta este ambiente tem (Telegram, Discord, E-mail). Ausente = não
+   * confere. Quem SALVA a regra informa o mapa real: o servidor o calcula, nunca o cliente.
+   */
+  canaisConfigurados?: Record<Canal, boolean>
 }
 
 export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Resultado<RegraValida> {
+  const moduloBruto =
+    e.modulo === undefined || e.modulo === null || e.modulo === '' ? 'shopfloor' : e.modulo
+  if (!ehModuloAlerta(moduloBruto)) return erro('Escolha o módulo da regra.')
+  const modulo: ModuloAlerta = moduloBruto
+
   const tipoBruto = e.tipo === undefined || e.tipo === null || e.tipo === '' ? 'aprovacao' : e.tipo
   if (!ehTipoRegra(tipoBruto)) return erro('Escolha o tipo da regra.')
   const tipo: TipoRegra = tipoBruto
 
+  // O tipo tem de ser um dos que o módulo oferece. Sem isto, o cliente mandaria uma regra de taxa
+  // de aprovação para o Recebimento — e ela mediria postos que o Recebimento não tem.
+  if (!tipoPertenceAoModulo(tipo, modulo)) {
+    return erro(`Este tipo de regra não existe no ${NOME_MODULO_ALERTA[modulo]}.`)
+  }
+
   const nome = textoLimpo(e.nome).replace(/\s+/g, ' ')
   if (nome === '') return erro('Informe o nome da regra.')
 
-  const postos = unicos(e.postos)
-  if (postos.length === 0) return erro('Escolha pelo menos 1 posto.')
+  // O fim de EMB não tem posto: o gatilho é a EMB fechar, e EMB não é posto. Os outros tipos
+  // continuam exigindo pelo menos um. O banco cobra o mesmo (`alerta_regras_postos_por_tipo`, 0150).
+  const postos = tipo === 'emb' ? [] : unicos(e.postos)
+  if (tipo !== 'emb' && postos.length === 0) return erro('Escolha pelo menos 1 posto.')
+
+  // Fim de EMB: caminho próprio até os destinatários, como o resumo diário. Não usa taxa, janela,
+  // bipes, lembrete, limites nem hora, e RECUSA o campo que não é dele em vez de ignorá-lo em
+  // silêncio. A janela SAI como 'op' com valor nulo, seja o que o formulário mandar — é valor de
+  // fachada (o 'op' é o único janela_tipo que o banco aceita com valor nulo sem mexer nos dois
+  // checks de janela_valor), e a coluna "Janela" da lista mostra `JANELA_EMB`, nunca este valor.
+  if (tipo === 'emb') {
+    const naoUsados = [
+      e.taxaMinima, e.janelaValor, e.minimoBipes, e.lembreteMin,
+      e.limiteTempo, e.limiteOcorrencias, e.pausaMaxMin, e.horaResumo,
+    ]
+    if (naoUsados.some((v) => textoLimpo(v) !== '')) return erro(MSG_EMB_CAMPO)
+  }
 
   // Resumo diário: segue um caminho próprio até os destinatários (não usa taxa, janela em minutos,
   // bipes, lembrete nem limites) e RECUSA o campo que não é dele em vez de ignorá-lo em silêncio.
@@ -223,9 +263,13 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     taxaMinima = taxa
   }
 
-  if (tipo !== 'resumo' && !ehJanelaTipo(e.janelaTipo)) return erro('Escolha a janela da regra.')
-  // O resumo sai SEMPRE como 'intervalos' (ele usa os intervalos), seja o que o formulário mandar.
-  const janelaTipo: JanelaTipo = tipo === 'resumo' ? 'intervalos' : (e.janelaTipo as JanelaTipo)
+  if (tipo !== 'resumo' && tipo !== 'emb' && !ehJanelaTipo(e.janelaTipo)) {
+    return erro('Escolha a janela da regra.')
+  }
+  // O resumo sai SEMPRE como 'intervalos' (ele usa os intervalos) e o fim de EMB SEMPRE como 'op'
+  // (valor de fachada, ver acima), seja o que o formulário mandar.
+  const janelaTipo: JanelaTipo =
+    tipo === 'resumo' ? 'intervalos' : tipo === 'emb' ? 'op' : (e.janelaTipo as JanelaTipo)
   if (tipo !== 'aprovacao' && tipo !== 'resumo' && janelaTipo === 'intervalos') {
     return erro('Só a taxa de aprovação usa a janela por blocos de turno.')
   }
@@ -235,7 +279,9 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   if (tipo === 'defeito' && janelaTipo !== 'tempo') return erro('Defeito repetido usa só a janela por minutos.')
 
   let janelaValor: number | null = null
-  if (tipo !== 'resumo' && janelaTipo !== 'op') {
+  // O `tipo !== 'emb'` é redundante hoje (a janela dele é 'op'), e está escrito para o dia em que
+  // o valor de fachada mudar: o fim de EMB não tem janela em grandeza nenhuma.
+  if (tipo !== 'resumo' && tipo !== 'emb' && janelaTipo !== 'op') {
     const v = inteiro(e.janelaValor)
     if (v === null || Number.isNaN(v) || v <= 0) {
       if (janelaTipo === 'intervalos') return erro('Informe o passo do bloco em minutos.')
@@ -250,7 +296,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // Janela por blocos: `janelaValor` é o PASSO em minutos. As faixas do passo e os horários são
   // conferidas por `validarIntervalos`, e o erro dela sobe como erro da regra, sem reescrever.
   let intervalos: Intervalo[] = intervalosResumo
-  if (tipo !== 'resumo' && janelaTipo === 'intervalos') {
+  if (tipo !== 'resumo' && tipo !== 'emb' && janelaTipo === 'intervalos') {
     const ri = validarIntervalos(e.intervalos, janelaValor)
     if (!ri.ok) return erro(ri.erro)
     intervalos = ri.valor
@@ -302,7 +348,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // Na janela por blocos quem comanda a insistência é o bloco, não os minutos: o lembrete é
   // ignorado (sai null), mesmo preenchido.
   let lembrete: number | null = null
-  if (tipo !== 'resumo' && janelaTipo !== 'intervalos') {
+  if (tipo !== 'resumo' && tipo !== 'emb' && janelaTipo !== 'intervalos') {
     lembrete = inteiro(e.lembreteMin)
     if (lembrete !== null && (Number.isNaN(lembrete) || lembrete <= 0)) {
       return erro('O lembrete deve ser um número inteiro de minutos (ou vazio).')
@@ -320,10 +366,10 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   const avisarPessoas = e.avisarPessoas ?? true
   const avisarCanal = e.avisarCanal ?? false
   if (!avisarPessoas && !avisarCanal) {
-    return erro('Escolha avisar na conversa privada, no canal do Discord, ou os dois.')
+    return erro('Escolha avisar por mensagem direta, no canal do Discord, ou os dois.')
   }
   if (avisarPessoas && canaisPrivado.length === 0) {
-    return erro('Marque pelo menos 1 canal da conversa privada: Telegram ou Discord.')
+    return erro('Marque pelo menos 1 canal da mensagem direta: Telegram, Discord ou E-mail.')
   }
   // Regra que avisaria SÓ no canal, num ambiente sem canal, some sem deixar rastro: a ocorrência
   // abre, ninguém é avisado, e o lembrete também não salva porque a abertura já renovou o
@@ -331,8 +377,22 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // qualquer jeito, e a mensagem do canal é o que se perde.
   if (avisarCanal && !avisarPessoas && ambiente.canalConfigurado === false) {
     return erro(
-      'O canal do Discord não está configurado neste ambiente: marque também a conversa privada do responsável, ou peça ao TI para configurar o canal.',
+      'O canal do Discord não está configurado neste ambiente: marque também a mensagem direta ao responsável, ou peça ao TI para configurar o canal.',
     )
+  }
+
+  // Regra cujos canais marcados estão TODOS sem credencial neste ambiente é um beco sem saída: o
+  // banco enfileira, ninguém entrega, a mensagem vence em 24 h e (no fim de EMB) a marca "já
+  // avisada" impede um segundo aviso. Basta UM canal marcado e configurado para salvar.
+  if (avisarPessoas && ambiente.canaisConfigurados) {
+    const mapa = ambiente.canaisConfigurados
+    if (canaisPrivado.every((c) => !mapa[c])) {
+      return erro(
+        canaisPrivado.length === 1
+          ? `O ${NOME_CANAL[canaisPrivado[0]!]} não está configurado neste ambiente; marque outro canal.`
+          : `Nenhum dos canais marcados (${canaisPrivado.map((c) => NOME_CANAL[c]).join(', ')}) está configurado neste ambiente; marque outro canal.`,
+      )
+    }
   }
 
   /**
@@ -346,6 +406,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   return {
     ok: true,
     valor: {
+      modulo,
       tipo,
       nome,
       postos,
@@ -363,7 +424,8 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
       destinatarios,
       avisarPessoas,
       avisarCanal,
-      pmos: unicos(e.pmos),
+      // O fim de EMB não filtra por PMO: o gatilho é a EMB, e o check da 0150 exige `pmos` vazio.
+      pmos: tipo === 'emb' ? [] : unicos(e.pmos),
       ativa: e.ativa,
     },
   }
@@ -413,6 +475,8 @@ export function validarPrevia(e: EntradaPrevia): Resultado<PreviaValida> {
 export function resumoLimite(
   r: Pick<RegraValida, 'tipo' | 'taxaMinima' | 'limiteTempoSeg' | 'limiteOcorrencias'>,
 ): string {
+  // O fim de EMB não tem limite: tem gatilho. Mostrar '—' deixaria a coluna parecendo defeito.
+  if (r.tipo === 'emb') return LIMITE_EMB
   if (r.tipo === 'tempo') return r.limiteTempoSeg === null ? '—' : `≤ ${formatarMmSs(r.limiteTempoSeg)}/peça`
   if (r.tipo === 'defeito') return r.limiteOcorrencias === null ? '—' : `≥ ${r.limiteOcorrencias} vezes`
   return r.taxaMinima === null ? '—' : `≥ ${formatarMeta(r.taxaMinima)}%`
@@ -425,6 +489,10 @@ export function resumoLimite(
 export function resumoJanelaRegra(
   r: Pick<RegraValida, 'tipo' | 'janelaTipo' | 'janelaValor' | 'horaResumo'>,
 ): string {
+  // ⚠️ O fim de EMB guarda janela_tipo = 'op' por FACHADA (ver validarRegra): mostrar "na OP em
+  // andamento" diria uma janela que ele não tem — o mesmo motivo que fez o resumo mostrar a hora
+  // em vez de "Blocos de 1h".
+  if (r.tipo === 'emb') return JANELA_EMB
   if (r.tipo === 'resumo') return r.horaResumo ? `Dia inteiro, às ${r.horaResumo}` : '—'
   return resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })
 }
@@ -432,6 +500,17 @@ export function resumoJanelaRegra(
 /** Coluna "PMOs": nenhuma = todas. */
 export function resumoPmos(pmos: string[]): string {
   return pmos.length === 0 ? 'Todas' : pmos.join(', ')
+}
+
+/**
+ * O "tem canal" de cada canal. O mapa é EXPLÍCITO, e não `d[canal]`: com 'email' em `Canal`, o
+ * `d['email']` leria o ENDEREÇO (uma string) como se fosse o booleano — endereço preenchido daria
+ * "tem canal" mesmo quando não serve.
+ */
+const TEM_CANAL: Record<Canal, (d: DestinatarioDisponivel) => boolean> = {
+  telegram: (d) => d.telegram,
+  discord: (d) => d.discord,
+  email: (d) => d.emailOk,
 }
 
 /** Avisos do diálogo: quem está escolhido mas não recebe por algum canal marcado. */
@@ -442,5 +521,5 @@ export function destinatariosSemCanal(
 ): string[] {
   return disponiveis
     .filter((d) => selecionados.includes(d.usuarioId))
-    .flatMap((d) => canais.filter((c) => !d[c]).map((c) => `${d.nome} sem ${NOME_CANAL[c]}`))
+    .flatMap((d) => canais.filter((c) => !TEM_CANAL[c](d)).map((c) => `${d.nome} sem ${NOME_CANAL[c]}`))
 }

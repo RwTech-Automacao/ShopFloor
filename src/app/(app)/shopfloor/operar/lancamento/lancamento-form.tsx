@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
 import { serieDentroDaFaixa, normalizarSerie, MAX_SERIE } from '@/modules/shopfloor/domain/serie'
-import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
+import { resolverOpPorCaixa, resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
+import { postosSelecionaveis } from '@/modules/shopfloor/domain/postos-lancamento'
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { postoEhDestinoDeRota, type ConsertoConfirmavel } from '@/modules/shopfloor/domain/rota-reteste'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
@@ -22,6 +23,7 @@ import { MAX_LOTE, acharPendente, jaResolvido, contarResolvidos, temPendentes, e
 import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-repository'
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
+import { AlmoxarifadoPanel } from './almoxarifado-panel'
 import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { NqaCaixaPanel } from './nqa-caixa-panel'
@@ -68,18 +70,25 @@ export function LancamentoForm({
   postosPerfil,
   postosColetivo,
   postosRotaDestino,
+  modoAlmoxarifado,
 }: {
   ordens: OrdemLancamentoLista[]
   defeitos: { codigo: string; tipo: number }[]
   postosPerfil: Record<string, PerfilPosto>
   postosColetivo: Record<string, boolean>
   postosRotaDestino: string[]
+  /**
+   * Tela do Almoxarifado (`/recebimento/almoxarifado`): o mesmo formulário com o POSTO FIXO e o
+   * COLABORADOR vindo do usuário logado (só leitura, mostrado na tela). Sem isto é o Lançamento comum,
+   * que não oferece o posto Almoxarifado.
+   */
+  modoAlmoxarifado?: { colaborador: string; posto: string }
 }) {
-  const [colaborador, setColaborador] = useState('')
+  const [colaborador, setColaborador] = useState(modoAlmoxarifado?.colaborador ?? '')
   const [cliente, setCliente] = useState('')
   const [pmo, setPmo] = useState('')
   const [op, setOp] = useState('')
-  const [posto, setPosto] = useState('')
+  const [posto, setPosto] = useState(modoAlmoxarifado?.posto ?? '')
   const [numeroSerie, setNumeroSerie] = useState('')
   const [status, setStatus] = useState('')
   const [nqaVisual, setNqaVisual] = useState('')
@@ -204,7 +213,7 @@ export function LancamentoForm({
     setNqaRetomavel(null)
   }
 
-  const postosDaOp = ordemSel?.postos ?? []
+  const postosDaOp = postosSelecionaveis(ordemSel?.postos ?? [], perfilDo, modoAlmoxarifado)
 
   const comStatus = posto !== '' && perfilTemStatus(perfilDo(posto))
   const ehNqa = perfilDo(posto).recurso === 'nqa'
@@ -219,6 +228,7 @@ export function LancamentoForm({
   const ehEmbalagem = perfilDo(posto).recurso === 'caixa'
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
   const ehIntegracao = posto !== '' && perfilDo(posto).recurso === 'integracao'
+  const ehAlmoxarifado = posto !== '' && perfilDo(posto).recurso === 'almoxarifado'
   // Postos de teste/inspeção com defeito: status implícito pelo que se bipa (SN→aprova, defeito→reprova).
   // SPI (migração 0075) também é reprova==='defeitos' → entra aqui (usa lista fixa de solda via defeitosPosto).
   // Burn-in entra só na SAÍDA (entrada é neutra: grava direto, sem classificar SN/defeito).
@@ -305,7 +315,10 @@ export function LancamentoForm({
   }
   async function onBiparCabecalho() {
     if (bipeCab.trim() === '') return
-    const r = resolverOpPorSn(ordens, bipeCab)
+    // Almoxarifado em OP COLETIVA: o operador só tem a caixa na mão (sem Nº de Série), e o código dela já diz a
+    // OP e a PMO. No modo Almoxarifado o cabeçalho aceita os dois: o código da caixa ou o Nº de Série.
+    const porCaixa = modoAlmoxarifado !== undefined && bipeCab.trim().startsWith('CX[')
+    const r = porCaixa ? resolverOpPorCaixa(ordens, bipeCab) : resolverOpPorSn(ordens, bipeCab)
     if (!r.ok) {
       // OP finalizada: a peça existe, só a OP está encerrada. Diz QUAL OP é (mandar "reative a OP"
       // sem PMO/OP não ajuda quem está no posto) e manda falar com quem PODE reativar: o Cadastro
@@ -313,9 +326,11 @@ export function LancamentoForm({
       toast.error(
         r.erro === 'OP_FINALIZADA'
           ? `OP ${r.ordem.pmo}/${r.ordem.op} está finalizada. Fale com um administrador do ShopFloor para reativá-la e bipe de novo.`
-          : r.erro === 'SEM_OP'
-            ? 'SN não encontrado em nenhuma OP.'
-            : 'SN cai em mais de uma OP.',
+          : r.erro === 'CAIXA_INVALIDA'
+            ? 'Código de caixa inválido, ou a caixa ainda está aberta. Feche a caixa na Embalagem.'
+            : r.erro === 'SEM_OP'
+              ? (porCaixa ? 'Esta caixa não é de nenhuma OP que passe pelo Almoxarifado.' : 'SN não encontrado em nenhuma OP.')
+              : 'SN cai em mais de uma OP.',
       )
       // `ordens` é prop de Server Component, resolvida UMA vez no carregamento — e a tela do posto
       // fica aberta o turno inteiro. Sem isto, o gestor reativa a OP e o MESMO bipe repete a MESMA
@@ -334,14 +349,16 @@ export function LancamentoForm({
     if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
     resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // nova OP → histórico + total zeram
     setBipeCab('')
-    setTimeout(() => colaboradorRef.current?.focus(), 0)
+    // Almoxarifado: colaborador é fixo, então o foco vai direto para o campo do bipe da entrada.
+    setTimeout(() => (modoAlmoxarifado ? document.getElementById('bipeAlmoxarifado') : colaboradorRef.current)?.focus(), 0)
   }
   async function atualizarCabecalho() {
     if (!(await podeTrocarContexto())) return
     limparLoteLocal(pmo, op, posto) // defensivo: garante que não sobra lote salvo do contexto anterior
     setLotesPuxados(new Set())
     setCliente(''); setPmo(''); setOp('')
-    setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
+    // trocar de cabeçalho zera também quem e onde (no modo Almoxarifado quem e onde são fixos)
+    setColaborador(modoAlmoxarifado?.colaborador ?? ''); setPosto(modoAlmoxarifado?.posto ?? '')
     setNumeroSerie(''); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // reset total → histórico + total zeram
     setBipeCab('')
     setTimeout(() => bipeCabRef.current?.focus(), 0)
@@ -857,14 +874,16 @@ export function LancamentoForm({
       </CardHeader>
       {op === '' ? (
         <CardContent className="flex flex-col gap-2">
-          <Label htmlFor="bipeCab">Bipe o Nº de Série para carregar a OP</Label>
+          <Label htmlFor="bipeCab">
+            {modoAlmoxarifado ? 'Bipe a caixa (OP coletiva) ou o Nº de Série (OP individual) para carregar a OP' : 'Bipe o Nº de Série para carregar a OP'}
+          </Label>
           <Input
             id="bipeCab"
             ref={bipeCabRef}
             value={bipeCab}
             onChange={(e) => setBipeCab(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBiparCabecalho() } }}
-            placeholder="Bipe ou digite o SN e Enter"
+            placeholder={modoAlmoxarifado ? 'Bipe a caixa ou o SN e Enter' : 'Bipe ou digite o SN e Enter'}
             autoComplete="off"
             autoFocus
             className="h-12 text-lg"
@@ -874,7 +893,7 @@ export function LancamentoForm({
       ) : (
         <CardContent className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3 [&_label]:text-xs [&_input]:h-8 [&_input]:text-sm [&_button]:h-8 [&_button]:text-sm">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="colaborador">Colaborador</Label>
+            <Label htmlFor="colaborador">{modoAlmoxarifado ? 'Colaborador (usuário logado)' : 'Colaborador'}</Label>
             <Input
               id="colaborador"
               ref={colaboradorRef}
@@ -882,7 +901,8 @@ export function LancamentoForm({
               onChange={(e) => setColaborador(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); postoTriggerRef.current?.focus() } }}
               autoComplete="off"
-              disabled={enviandoLote}
+              disabled={enviandoLote || Boolean(modoAlmoxarifado)}
+              readOnly={Boolean(modoAlmoxarifado)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -899,7 +919,7 @@ export function LancamentoForm({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Posto</Label>
-            <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviando || processando || enviandoLote}>
+            <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviando || processando || enviandoLote || Boolean(modoAlmoxarifado)}>
               <SelectTrigger ref={postoTriggerRef}><SelectValue placeholder="Selecione" /></SelectTrigger>
               <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
             </Select>
@@ -924,7 +944,7 @@ export function LancamentoForm({
   const loteCheio = ehColetivo && lote.length >= MAX_LOTE && !temPendentes(lote)
 
   return (
-    <div className={`flex flex-col gap-3 ${ehIntegracao ? 'min-h-full' : 'h-full min-h-0'}`}>
+    <div className={`flex flex-col gap-3 ${ehIntegracao || ehAlmoxarifado ? 'min-h-full' : 'h-full min-h-0'}`}>
       {/* Retomar inspeção NQA salva (localStorage) após refresh — só quando ainda não há contexto na tela. */}
       {grupoRetomado !== null && (
         <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
@@ -966,6 +986,10 @@ export function LancamentoForm({
           componentes={ordemSel?.receitaPorPosto?.[posto] ?? []}
           contexto={renderContexto()}
         />
+      ) : ehAlmoxarifado ? (
+        // Almoxarifado: último posto da linha — bipa o que acabou de ser embalado (peça ou caixa
+        // fechada). Igual às demais: o painel monta o próprio topo (Peça | Contexto).
+        <AlmoxarifadoPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} contexto={renderContexto()} />
       ) : ehEmbalagem ? (
         // Embalagem: o painel monta o PRÓPRIO topo (Peça | Contexto) e deixa o acompanhamento em
         // largura cheia embaixo — por isso recebe o Contexto por prop em vez de dividir a linha aqui.

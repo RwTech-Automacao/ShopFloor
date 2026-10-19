@@ -50,7 +50,7 @@ export async function carregarFluxoOp(
 
   const { data: ordem, error: e1 } = await supabase
     .from('sf_ordens')
-    .select('qtd,sf_ordem_postos(posto,ordem)')
+    .select('qtd,embalagem_individual,sf_ordem_postos(posto,ordem)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
@@ -58,6 +58,9 @@ export async function carregarFluxoOp(
   const lista = ((ordem?.sf_ordem_postos ?? []) as { posto: string; ordem: number }[])
   const postos = [...lista].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto)
   const qtd = (ordem?.qtd ?? null) as number | null
+  // Embalagem individual = um produto por caixa, sem código CX[...]: nessa OP não existe caixa pra
+  // contar, e o card do Almoxarifado mostra só peças.
+  const embalagemIndividual = ((ordem as { embalagem_individual?: boolean } | null)?.embalagem_individual ?? false)
 
   const { data: agg, error: e2 } = await supabase.rpc('sf_fluxo_op', { p_pmo: pmo, p_op: op })
   if (e2) throw e2
@@ -75,13 +78,19 @@ export async function carregarFluxoOp(
     exigeManutencao[p] = perfis[p]?.exigeManutencao ?? false
   }
 
+  // Caixa só interessa quando a OP TEM posto de almoxarifado e embala em caixa. Decidido ANTES do
+  // scan: sem isso, toda OP do Fluxo (a imensa maioria não tem almoxarifado) passaria a trazer uma
+  // coluna a mais em milhares de linhas sem ninguém usar.
+  const contarCaixas = postos.some((p) => (recurso[p] ?? 'nenhum') === 'almoxarifado') && !embalagemIndividual
+
   // WIP de cada nó = "pendentes no posto" (a fila): peça aprovada avança pro próximo posto.
-  const { pendentes, iniciadas, finalizadas } = await contarPendentesPorPosto(
+  const { pendentes, iniciadas, finalizadas, caixasPorPosto } = await contarPendentesPorPosto(
     pmo,
     op,
     postos,
     (p) => exigeManutencao[p] ?? false,
     (p) => recurso[p] ?? 'nenhum',
+    contarCaixas,
   )
   // Caixa de Entrada = peças que ainda não começaram (qtd − peças com algum registro). Só se a OP tem qtd.
   const naoIniciadas = qtd != null ? Math.max(0, qtd - iniciadas) : null
@@ -91,8 +100,15 @@ export async function carregarFluxoOp(
     pendentes[k] = (pendentes[k] ?? 0) + naoIniciadas
   }
 
+  // O denominador são as caixas FECHADAS da OP — caixa aberta não tem quantidade definida e nem pode
+  // ser bipada (0129).
+  const caixasFechadas = contarCaixas ? await contarCaixasFechadas(pmo, op) : null
+
   const agregadosComPendentes: FluxoAgregado[] = [...postos, MANUTENCAO].map((posto) => {
     const a = agregados.find((x) => x.posto.toLowerCase() === posto.toLowerCase())
+    // As caixas são métrica do Almoxarifado e de mais nenhum posto: a Embalagem também grava
+    // numero_caixa nos registros dela, e o card dela conta peças.
+    const ehAlmoxarifado = (recurso[posto] ?? 'nenhum') === 'almoxarifado'
     return {
       posto,
       wip: pendentes[posto.toLowerCase()] ?? 0, // override: a fila (era último-bipe-aqui, da RPC)
@@ -105,6 +121,9 @@ export async function carregarFluxoOp(
       passouDistinto: a?.passou_distinto ?? 0,
       primeiroEm: a?.primeiro_em ?? null,
       ultimoEm: a?.ultimo_em ?? null,
+      ...(ehAlmoxarifado && caixasFechadas != null
+        ? { caixasBipadas: caixasPorPosto[posto.toLowerCase()] ?? 0, caixasFechadas }
+        : {}),
     }
   })
 
@@ -113,7 +132,9 @@ export async function carregarFluxoOp(
 
 /**
  * Conta as peças pendentes (aguardando) em cada posto da OP — a "fila" (chave = posto minúsculo) —
- * mais `iniciadas` (peças com ≥1 registro) e `finalizadas` (concluíram todo o fluxo).
+ * mais `iniciadas` (peças com ≥1 registro), `finalizadas` (concluíram todo o fluxo) e
+ * `caixasPorPosto` (códigos de caixa DISTINTOS bipados em cada posto). As caixas saem daqui porque
+ * este scan já lê todos os registros da OP: contá-las junto não custa consulta nenhuma.
  */
 async function contarPendentesPorPosto(
   pmo: string,
@@ -121,14 +142,17 @@ async function contarPendentesPorPosto(
   postos: string[],
   exige: (p: string) => boolean,
   recurso: (p: string) => string,
-): Promise<{ pendentes: Record<string, number>; iniciadas: number; finalizadas: number }> {
+  // `false` (o caso comum) nem pede a coluna numero_caixa: OP sem almoxarifado não paga por ela.
+  contarCaixas = false,
+): Promise<{ pendentes: Record<string, number>; iniciadas: number; finalizadas: number; caixasPorPosto: Record<string, number> }> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; data_hora: string; id: number }[] = []
+  const COLUNAS = `numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id${contarCaixas ? ',numero_caixa' : ''}`
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; numero_caixa?: string | null; data_hora: string; id: number }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id')
+      .select(COLUNAS)
       .eq('pmo', pmo)
       .eq('op', op)
       .neq('numero_serie_norm', '')
@@ -136,16 +160,27 @@ async function contarPendentesPorPosto(
       .order('id', { ascending: true })
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (error) throw error
-    const lote = (data ?? []) as typeof linhas
+    // A lista de colunas é montada em runtime (numero_caixa entra só quando precisa), então o
+    // PostgREST não consegue inferir o tipo da linha — daí o cast.
+    const lote = (data ?? []) as unknown as typeof linhas
     linhas.push(...lote)
     if (lote.length < PAGINA) break
   }
   const porPeca = new Map<string, BipePeca[]>()
+  const caixasDoPosto = new Map<string, Set<string>>()
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
     const e = porPeca.get(chave)
     if (e) e.push({ posto: l.posto, status: l.status })
     else porPeca.set(chave, [{ posto: l.posto, status: l.status }])
+    // O bipe de caixa no Almoxarifado grava UMA LINHA POR PEÇA, todas com o mesmo código em
+    // numero_caixa (0129) → a contagem é de códigos DISTINTOS, senão 8 caixas de 14 viriam 112.
+    if (l.numero_caixa) {
+      const k = l.posto.toLowerCase()
+      const set = caixasDoPosto.get(k) ?? new Set<string>()
+      set.add(l.numero_caixa)
+      caixasDoPosto.set(k, set)
+    }
   }
   const cont: Record<string, number> = {}
   let finalizadas = 0
@@ -154,8 +189,30 @@ async function contarPendentesPorPosto(
     if (pend) cont[pend.toLowerCase()] = (cont[pend.toLowerCase()] ?? 0) + 1
     else finalizadas += 1 // pend === null → peça concluiu todo o fluxo
   }
+  const caixasPorPosto: Record<string, number> = {}
+  for (const [k, set] of caixasDoPosto) caixasPorPosto[k] = set.size
   // iniciadas = peças com ≥1 registro (as sem registro nenhum nem aparecem em sf_registros).
-  return { pendentes: cont, iniciadas: porPeca.size, finalizadas }
+  return { pendentes: cont, iniciadas: porPeca.size, finalizadas, caixasPorPosto }
+}
+
+/**
+ * Caixas FECHADAS da OP — o denominador das caixas no card do Almoxarifado.
+ *
+ * `revisao = 0` fica de fora de propósito: a caixa reprovada no NQA é aposentada com revisao > 0 e a
+ * remontagem herda o número (0100). Contar as duas inflaria o denominador com uma caixa que já não
+ * existe fisicamente, e o card passaria a dizer que falta bipar uma caixa que voltou pra linha.
+ */
+async function contarCaixasFechadas(pmo: string, op: string): Promise<number> {
+  const supabase = await createServerSupabase()
+  const { count, error } = await supabase
+    .from('sf_caixas')
+    .select('*', { count: 'exact', head: true })
+    .eq('pmo', pmo)
+    .eq('op', op)
+    .eq('fechada', true)
+    .eq('revisao', 0)
+  if (error) throw error
+  return count ?? 0
 }
 
 /**

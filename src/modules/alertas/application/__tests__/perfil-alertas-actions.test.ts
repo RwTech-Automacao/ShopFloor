@@ -36,6 +36,60 @@ describe('actions de Meu perfil — erro ao consultar a sessão vira mensagem am
     vi.resetModules()
   })
 
+  it('desvincularAction recusa e-mail: não tem vínculo para remover', async () => {
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),
+    }))
+    const { desvincularAction } = await import('../perfil-alertas-actions')
+    expect(await desvincularAction('email')).toEqual({ ok: false, erro: 'Canal inválido.' })
+    vi.doUnmock('@/modules/auth/application/get-sessao')
+    vi.resetModules()
+  })
+
+  it('enviarTesteAction aceita e-mail e manda para o endereço de LOGIN da sessão', async () => {
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),
+    }))
+    const enviados: { externoId: string }[] = []
+    const diretos: unknown[] = []
+    vi.doMock('../../infra/fabrica', () => ({
+      criarDependenciasAlertas: () => ({
+        portas: {
+          email: {
+            enviar: async (destino: { externoId: string }) => {
+              enviados.push(destino)
+              return { ok: true, mensagemExternaId: 'm1' }
+            },
+            removerBotoes: async () => ({ ok: true }),
+          },
+        },
+        repo: { registrarEnvioDireto: async (d: unknown) => void diretos.push(d) },
+      }),
+    }))
+    const { enviarTesteAction } = await import('../perfil-alertas-actions')
+    expect(await enviarTesteAction('email')).toEqual({ ok: true })
+    expect(enviados).toEqual([{ tipo: 'usuario', externoId: 'ana@x' }])
+    expect(diretos).toHaveLength(1)
+    vi.doUnmock('@/modules/auth/application/get-sessao')
+    vi.doUnmock('../../infra/fabrica')
+    vi.resetModules()
+  })
+
+  it('enviarTesteAction ainda recusa canal que não existe', async () => {
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),
+    }))
+    const { enviarTesteAction } = await import('../perfil-alertas-actions')
+    expect(await enviarTesteAction('whatsapp')).toEqual({ ok: false, erro: 'Canal inválido.' })
+    vi.doUnmock('@/modules/auth/application/get-sessao')
+    vi.resetModules()
+  })
+
+  it('CANAIS_COM_VINCULO é telegram e discord (e-mail usa o login)', async () => {
+    const { CANAIS_COM_VINCULO } = await import('../../domain/tipos')
+    expect([...CANAIS_COM_VINCULO]).toEqual(['telegram', 'discord'])
+  })
+
   it('enviarTesteAction: erro ao montar as dependências (client) vira ok:false amigável', async () => {
     vi.doMock('@/modules/auth/application/get-sessao', () => ({
       getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: ADMIN_SHOPFLOOR }),

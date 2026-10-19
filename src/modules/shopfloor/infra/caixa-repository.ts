@@ -2,6 +2,7 @@ import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { caixaDaVez, marcadorCaixaAberta, seqDoMarcadorCaixa, seqsEmRemontagem, seqsReabertas } from '@/modules/shopfloor/domain/caixa'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
+import { mapaPostoPerfil } from './postos-repository'
 
 export interface RemontagemCaixa {
   codigoAnterior: string    // código já aposentado, com o R: 'CX[7]R[14]8498-PMOC14'
@@ -396,11 +397,31 @@ export async function resolverCaixaPorSn(
   const supabase = await createServerSupabase()
   const norm = normalizarSerie(sn)
 
+  // SÓ posto de EMBALAGEM entra nesta busca. Antes bastava o filtro `CX%`, porque só a Embalagem
+  // gravava `numero_caixa`; desde que o bipe de caixa no Almoxarifado passou a gravar UMA LINHA POR
+  // PEÇA (0129) — com a série da peça E o código da caixa —, a linha do Almoxarifado também casa, e
+  // é a MAIS RECENTE: ela venceria o `order by data_hora desc`, o `select` em sf_caixas por
+  // (posto, codigo) não acharia nada, `fechada` viria false e o NQA responderia "feche a caixa na
+  // Embalagem antes do NQA" pra uma caixa fechada e já embarcada — mensagem falsa, e a caixa nunca
+  // mais seria inspecionável.
+  //
+  // O filtro é pelo PERFIL do posto (recurso 'caixa'), nunca pelo nome: quem cadastra posto escolhe
+  // a chave e o perfil, e é o recurso que diz quem forma caixa. A outra saída possível — exigir que
+  // o par (posto, numero_caixa) exista em sf_caixas — foi recusada porque a caixa ABERTA carrega o
+  // marcador CX[seq] e ainda não tem `codigo` gravado em sf_caixas: ela deixaria de ser encontrada,
+  // e é justamente dela que sai o aviso legítimo "a caixa ainda não foi fechada".
+  const perfis = await mapaPostoPerfil()
+  const postosCaixa = Object.entries(perfis).filter(([, pf]) => pf.recurso === 'caixa').map(([p]) => p)
+  // Nenhum posto de embalagem cadastrado: não existe caixa nenhuma pra achar (e `.in([])` no
+  // PostgREST não filtra nada — devolveria a linha do Almoxarifado de volta).
+  if (postosCaixa.length === 0) return null
+
   const { data: r1, error: e1 } = await supabase
     .from('sf_registros')
     .select('numero_caixa,posto')
     .eq('pmo', pmo).eq('op', op).eq('numero_serie_norm', norm)
     .like('numero_caixa', 'CX%')
+    .in('posto', postosCaixa)
     .order('data_hora', { ascending: false })
     .limit(1).maybeSingle()
   if (e1) throw e1

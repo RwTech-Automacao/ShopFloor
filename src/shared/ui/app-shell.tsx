@@ -43,6 +43,7 @@ import {
   MonitorCog,
   Cpu,
   PackageSearch,
+  PackageCheck,
   Boxes,
   Server,
   ChartColumn,
@@ -86,6 +87,7 @@ export const RECEBIMENTO: FolhaModular[] = [
   // A rota da planilha continua DE PÉ, com o gate que já tem — só saiu do menu. Se um dia servir
   // para conferir a recontagem contra o saldo do ERP, é uma linha para devolver aqui.
   { chave: 'etiquetar-rolo', rotulo: 'Etiquetar rolo', href: '/recebimento/etiquetar-rolo', icone: Tags, modulo: 'recebimento', perm: 'gerar_etiqueta' },
+  { chave: 'rec-almoxarifado', rotulo: 'Almoxarifado', href: '/recebimento/almoxarifado', icone: PackageCheck, modulo: 'recebimento', perm: 'lancar' },
   { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, modulo: 'recebimento', perm: 'administrar' },
 ]
 
@@ -115,6 +117,7 @@ const CONFIG_RECEBIMENTO: FolhaModular[] = [
   { chave: 'colunas', rotulo: 'Colunas da Lista', href: '/configuracoes/colunas', icone: Columns3, modulo: 'recebimento', perm: 'administrar' },
   { chave: 'criticidade', rotulo: 'Criticidade', href: '/configuracoes/criticidade', icone: TriangleAlert, modulo: 'recebimento', perm: 'administrar' },
   { chave: 'nqa', rotulo: 'Tabela NQA', href: '/configuracoes/nqa', icone: Table2, modulo: 'recebimento', perm: 'administrar' },
+  { chave: 'rec-alertas', rotulo: 'Alertas', href: '/configuracoes/rec-alertas', icone: BellRing, modulo: 'recebimento', perm: 'administrar' },
 ]
 
 // Configurações específicas do módulo ShopFloor, agrupadas num accordion.
@@ -161,6 +164,7 @@ export function AppShell({
   perfil,
   exportarFotosVisivel,
   alertasLiberado,
+  alertasMenu,
   children,
 }: {
   nome: string
@@ -168,10 +172,11 @@ export function AppShell({
   perfilNome: string
   perfil: Perfil
   exportarFotosVisivel: boolean
-  /** Lançamento escondido dos Alertas (ALERTAS_LIBERADO_PARA): calculado no servidor, nunca a
-   *  lista de e-mails em si. Enquanto false, some o item Alertas e o link Meu perfil do menu —
-   *  hoje Meu perfil só tem o cartão de Alertas. */
+  /** Lançamento escondido dos Alertas: calculado no servidor, nunca a lista de e-mails em si.
+   *  Enquanto false, some o link Meu perfil do menu (hoje só tem o cartão de Alertas). */
   alertasLiberado: boolean
+  /** O item Alertas de cada módulo tem a própria liberação (ShopFloor × Recebimento). */
+  alertasMenu: { shopfloor: boolean; recebimento: boolean }
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -198,9 +203,14 @@ export function AppShell({
   // itens internos filtram fino por módulo logo abaixo.
   const podeConfig = perfil.permissoes.administrar === true
   const configTopo = podeConfig ? CONFIG_TOPO.filter(pode) : []
-  const configRec = podeConfig ? CONFIG_RECEBIMENTO.filter(pode) : []
+  // Lançamento escondido dos Alertas: cada módulo tem a própria liberação.
+  const alertasVisivel = (chave: string) =>
+    chave === 'sf-alertas' ? alertasMenu.shopfloor : chave === 'rec-alertas' ? alertasMenu.recebimento : true
+  const configRec = podeConfig
+    ? CONFIG_RECEBIMENTO.filter(pode).filter((i) => alertasVisivel(i.chave))
+    : []
   const configSf = podeConfig
-    ? CONFIG_SHOPFLOOR.filter(pode).filter((i) => i.chave !== 'sf-alertas' || alertasLiberado)
+    ? CONFIG_SHOPFLOOR.filter(pode).filter((i) => alertasVisivel(i.chave))
     : []
   const configSetup = podeConfig ? CONFIG_SETUP.filter(pode) : []
   const configBase = podeConfig ? CONFIG_BASE.filter(pode) : []

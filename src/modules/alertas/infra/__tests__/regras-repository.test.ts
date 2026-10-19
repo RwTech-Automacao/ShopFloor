@@ -90,6 +90,7 @@ function sbComErro(mensagem: string) {
 }
 
 const REGRA: RegraValida = {
+  modulo: 'shopfloor',
   tipo: 'aprovacao',
   nome: 'Teste',
   postos: ['P1'],

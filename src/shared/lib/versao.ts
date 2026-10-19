@@ -5,10 +5,16 @@
  *  - mudança de patamar      → sobe o primeiro (3.0.0)
  * A versão nunca volta. Esconder uma função é papel do lançamento escondido, não do número.
  */
-export const VERSAO = '2.2.0'
+export const VERSAO = '2.3.0'
 
 /** Marcos principais, do mais novo pro mais antigo (tela Sobre). */
 export const HISTORICO_VERSOES: { versao: string; data: string; resumo: string }[] = [
+  {
+    versao: '2.3.0',
+    data: '19/10/2026',
+    resumo:
+      'Recebimento: justificativa de divergência, filtros rápidos de divergência na grade de Processos (Positivas, Negativas, Resolvidas e Não resolvidas) e Dashboard de divergências; Fluxo com o card de início da EMB e a caixa de Divergência de quantidade; ShopFloor: finalização automática de OP e aviso ao bipar em OP já finalizada; Alertas: resumo diário por posto, alerta por horário em blocos do turno, e quem resolve um alerta diz o que fez; Setup: a linha nova entra no topo do Montar setup.',
+  },
   {
     versao: '2.2.0',
     data: '28/09/2026',

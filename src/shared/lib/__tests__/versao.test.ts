@@ -30,9 +30,17 @@ describe('versão do sistema', () => {
   it('a 2.2.0 é a do deploy de 28/09 e fala do que entrou', () => {
     const entrada = HISTORICO_VERSOES.find((v) => v.versao === '2.2.0')
     expect(entrada?.data).toBe('28/09/2026')
-    // Função nova sobe o número do meio (2.1.0 → 2.2.0), nunca só o último.
-    expect(VERSAO).toBe('2.2.0')
     for (const assunto of ['Recebimento', 'Abastecimento', 'Alertas', 'Telegram']) {
+      expect(entrada?.resumo).toContain(assunto)
+    }
+  })
+
+  it('a 2.3.0 é a do deploy de 19/10 e fala do que entrou', () => {
+    const entrada = HISTORICO_VERSOES.find((v) => v.versao === '2.3.0')
+    expect(entrada?.data).toBe('19/10/2026')
+    // Função nova sobe o número do meio (2.2.0 → 2.3.0), nunca só o último.
+    expect(VERSAO).toBe('2.3.0')
+    for (const assunto of ['Recebimento', 'Alertas', 'Setup', 'ShopFloor']) {
       expect(entrada?.resumo).toContain(assunto)
     }
   })

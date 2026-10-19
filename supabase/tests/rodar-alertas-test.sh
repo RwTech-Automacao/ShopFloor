@@ -210,4 +210,73 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0141.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_resumo.sql
 echo "0141 (resumo diário): ok"
 
+# ---------- 0149: módulo da regra (Alertas do Recebimento) ----------
+# Duas aplicações seguidas, cada uma como transação única (-1), provam a idempotência e a ordem dos
+# checks. Vem DEPOIS do teste do resumo: a 0149 recria o alerta_avaliar sobre o corpo da 0141.
+docker cp supabase/migrations/0149_alertas_modulo.sql "$NOME":/tmp/0149.sql
+docker cp supabase/tests/alertas_modulo_test.sql "$NOME":/tmp/teste_modulo.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0149.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0149.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_modulo.sql
+echo "0149 (módulo da regra): ok"
+
+# ---------- 0150: tipo de regra 'emb' (aviso de fim de EMB) ----------
+# Recria o alerta_avaliar sobre o corpo da 0149, com um QUINTO ramo no cursor e um bloco próprio no
+# topo do laço. É o teste dela que prova a marca de "já avisei" (o aviso não pode sair duas vezes)
+# e o piso criado_em (a primeira rodada não pode avisar toda EMB histórica).
+#
+# Antes dela, DUAS preparações que não são da migração:
+#
+# (1) A 0124 do Recebimento, pelas funções `rec_etapa_por_status` e `rec_divergente` — o gatilho e o
+#     conteúdo da 0150 as chamam, e o teste tem de medir as de VERDADE (se o terminal mudar lá, o
+#     aviso de EMB muda aqui). As tabelas que ela lê estão no _stubs.sql; `public.logs` não precisa
+#     de stub porque só funções plpgsql dela a leem, e plpgsql não planeja o corpo na criação.
+#     Duas aplicações: a 0124 é idempotente (só `create or replace function` + grants).
+#
+# (2) A linha 'REC modulo' sai da base. Ela é massa do alertas_modulo_test.sql, que a inseriu À
+#     FORÇA com o check `alerta_regras_modulo_tipo` derrubado (é tipo 'aprovacao' no módulo
+#     'recebimento', combinação que nenhum caminho do app produz). A 0150 reescreve esse check para
+#     `recebimento -> tipo in ('emb')` e o `add constraint` VALIDA as linhas que já existem, então
+#     essa linha forçada derrubaria a migração aqui — e só aqui: em produção não existe nenhuma
+#     regra de 'recebimento' (a 0149 nem subiu ainda). Apagar é o certo; relaxar o check para
+#     `not valid` enfraqueceria produção para acomodar massa de teste.
+#     As ocorrências dela saem antes: o T7 do alertas_modulo_test.sql avaliou a regra e abriu uma,
+#     e a FK alerta_ocorrencias_regra_id_fkey é `on delete restrict` (os envios dessa ocorrência
+#     caem em cascata, pela FK da 0113).
+docker cp supabase/migrations/0124_recebimento_fluxo_registros.sql "$NOME":/tmp/0124.sql
+docker cp supabase/migrations/0150_alertas_fim_de_emb.sql "$NOME":/tmp/0150.sql
+docker cp supabase/tests/alertas_emb_test.sql "$NOME":/tmp/teste_emb.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0124.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0124.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+  -c "delete from public.alerta_ocorrencias where regra_id in (select id from public.alerta_regras where nome = 'REC modulo')" \
+  -c "delete from public.alerta_regras where nome = 'REC modulo'"
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0150.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0150.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_emb.sql
+
+# ---------- teto de idade de 3 dias do fim de EMB: apos a 0150 E apos a 0151 ----------
+# Em producao a funcao viva e a da 0151, entao a copia do teto la tambem precisa de prova. Cada
+# passada troca @P@ por um sufixo proprio e se limpa. TETO_RUN_AB / TETO_RUN_C (1/0) deixam rodar
+# um caso so (usado para provar que cada um tem dentes sozinho).
+docker cp supabase/tests/alertas_emb_teto_test.sql "$NOME":/tmp/teto_base.sql
+teto_passada() {
+  docker exec "$NOME" sh -c "sed 's/@P@/$1/g' /tmp/teto_base.sql > /tmp/teto_$1.sql"
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -v run_ab="${TETO_RUN_AB:-1}" -v run_c="${TETO_RUN_C:-1}" -f /tmp/teto_$1.sql
+}
+teto_passada pos0150
+echo "0150 (fim de EMB): ok"
+
+# ---------- 0151: canal 'email' ----------
+# O e-mail é o único canal sem vínculo: o endereço sai de usuarios.email. É o teste dela que prova
+# que a reserva acha esse endereço — sem isso a linha ficaria pendente e expiraria em silêncio.
+docker cp supabase/migrations/0151_alertas_canal_email.sql "$NOME":/tmp/0151.sql
+docker cp supabase/tests/alertas_email_test.sql "$NOME":/tmp/teste_email.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0151.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0151.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_email.sql
+echo "0151 (canal email): ok"
+teto_passada pos0151
+echo "teto de 3 dias pos-0151: ok"
+
 echo "ALERTAS SQL OK"

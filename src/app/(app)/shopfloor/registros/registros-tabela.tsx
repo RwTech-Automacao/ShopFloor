@@ -22,7 +22,12 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { RegistroRow } from '@/modules/shopfloor/infra/registros-repository'
-import { cancelavelInfo, cancelarLancamento } from '@/modules/shopfloor/application/cancelamento-actions'
+import {
+  cancelavelInfo,
+  cancelarLancamento,
+  cancelarCaixaAlmoxarifado,
+  type CancelavelInfo,
+} from '@/modules/shopfloor/application/cancelamento-actions'
 
 const formatadorData = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short',
@@ -90,10 +95,15 @@ interface RegistrosTabelaProps {
   podeAdministrar: boolean
 }
 
+/** "1 peça" / "14 peças" — o número é o que o gestor confere antes de confirmar. */
+function contarPecas(n: number): string {
+  return n === 1 ? '1 peça' : `${n} peças`
+}
+
 export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProps) {
   const [sel, setSel] = useState<RegistroRow | null>(null)
   const [checando, setChecando] = useState(false)
-  const [cancelavel, setCancelavel] = useState<{ podeCancelar: boolean; motivo?: string; aviso?: string } | null>(null)
+  const [cancelavel, setCancelavel] = useState<CancelavelInfo | null>(null)
   const [confirmAberto, setConfirmAberto] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [cancelando, setCancelando] = useState(false)
@@ -120,14 +130,21 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
   function abrirConfirm() {
     setMotivo(''); setErroCancel(''); setConfirmAberto(true)
   }
+  // Entrada de CAIXA do Almoxarifado: um bipe do código da caixa gravou uma linha por peça, então o
+  // que se oferece é cancelar a caixa INTEIRA — um motivo só, as N linhas de uma vez. As N linhas são
+  // detalhe de como a entrada é registrada; o gestor não precisa saber disso pra desfazer.
+  const caixa = cancelavel?.caixa
+
   async function confirmarCancelamento() {
     if (!sel || motivo.trim() === '' || cancelando) return
     setCancelando(true); setErroCancel('')
-    const r = await cancelarLancamento(sel.id, motivo)
+    const r = caixa
+      ? await cancelarCaixaAlmoxarifado(sel.id, motivo)
+      : await cancelarLancamento(sel.id, motivo)
     setCancelando(false)
     if (r.ok) {
       setConfirmAberto(false); setSel(null)
-      router.refresh() // re-busca a lista (o bipe some)
+      router.refresh() // re-busca a lista (os bipes somem)
     } else {
       setErroCancel(r.erro)
     }
@@ -244,7 +261,14 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
                     disabled={checando || !cancelavel?.podeCancelar}
                     onClick={abrirConfirm}
                   >
-                    {checando ? 'Verificando…' : 'Cancelar lançamento'}
+                    {checando
+                      ? 'Verificando…'
+                      : caixa
+                        // A contagem entra no rótulo pra o gestor ver o alcance antes de abrir o
+                        // diálogo. Vazia (0) só se a contagem falhou — aí o rótulo fica sem número em
+                        // vez de dizer "0 peças", e a RPC devolve o número certo no fim.
+                        ? `Cancelar a caixa inteira${caixa.pecas > 0 ? ` (${contarPecas(caixa.pecas)})` : ''}`
+                        : 'Cancelar lançamento'}
                   </Button>
                   {!checando && cancelavel && !cancelavel.podeCancelar && cancelavel.motivo && (
                     <p className="mt-1.5 text-xs text-muted-foreground">{cancelavel.motivo}</p>
@@ -262,20 +286,35 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
       <Dialog open={confirmAberto} onOpenChange={(o) => { if (!o && !cancelando) setConfirmAberto(false) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Cancelar lançamento</DialogTitle>
+            <DialogTitle>{caixa ? 'Cancelar a caixa inteira' : 'Cancelar lançamento'}</DialogTitle>
           </DialogHeader>
           {sel && (
             <div className="flex flex-col gap-3 text-sm">
-              <p className="text-muted-foreground">
-                Vai cancelar o bipe <strong>{sel.numero_serie}</strong> em <strong>{sel.posto}</strong>{' '}
-                (<strong>{rotuloStatus(sel.status)}</strong>) de {formatarDataHora(sel.data_hora)}. O bipe
-                é removido e a peça volta ao posto anterior. Esta ação fica registrada na auditoria.
-              </p>
+              {caixa ? (
+                // O gestor precisa ver QUANTAS peças saem antes de confirmar: o clique foi numa linha,
+                // mas o alcance é a caixa. Sem o número, "cancelar a caixa inteira" seria um cheque em
+                // branco.
+                <p className="text-muted-foreground">
+                  Vai cancelar a entrada da caixa <strong>{caixa.numeroCaixa}</strong> em{' '}
+                  <strong>{sel.posto}</strong> de {formatarDataHora(sel.data_hora)}:{' '}
+                  <strong>{caixa.pecas > 0 ? contarPecas(caixa.pecas) : 'todas as peças'} da caixa</strong>{' '}
+                  {caixa.pecas === 1 ? 'sai' : 'saem'} do estoque de uma vez, com este mesmo motivo. A
+                  caixa volta a poder ser bipada. Esta ação fica registrada na auditoria, peça por peça.
+                </p>
+              ) : (
+                <p className="text-muted-foreground">
+                  Vai cancelar o bipe <strong>{sel.numero_serie}</strong> em <strong>{sel.posto}</strong>{' '}
+                  (<strong>{rotuloStatus(sel.status)}</strong>) de {formatarDataHora(sel.data_hora)}. O bipe
+                  é removido e a peça volta ao posto anterior. Esta ação fica registrada na auditoria.
+                </p>
+              )}
               <div className="flex flex-col gap-1.5">
+                {/* Um motivo só, mesmo cancelando N peças — é o que faz o desfazer ser um gesto. Ele
+                    vai gravado em todas as linhas da auditoria. */}
                 <Label htmlFor="motivo-cancel">Motivo (obrigatório)</Label>
                 <Input id="motivo-cancel" value={motivo} autoFocus
                   onChange={(e) => { setMotivo(e.target.value); if (erroCancel) setErroCancel('') }}
-                  placeholder="Ex.: aprovado por engano" />
+                  placeholder={caixa ? 'Ex.: caixa bipada por engano' : 'Ex.: aprovado por engano'} />
               </div>
               {/* Consequência específica do posto (hoje: embalagem reabre a caixa). Repetida aqui
                   porque é no diálogo que o gestor confirma — e a folha impressa depende disso. */}

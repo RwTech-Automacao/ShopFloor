@@ -28,6 +28,7 @@ export default async function PerfilPage() {
 
       <CartaoAlertas
         nome={sessao.nome || sessao.email}
+        email={sessao.email}
         contas={contas}
         configurados={canaisConfigurados()}
         telegramBot={process.env.TELEGRAM_BOT_USERNAME ?? ''}

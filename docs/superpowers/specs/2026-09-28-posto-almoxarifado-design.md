@@ -108,6 +108,51 @@ digitar o código à mão (`CX[3][10]…` tem colchete, e colchete em teclado de
 convite a erro) · listar as caixas na tela para o operador escolher (some a garantia de que a caixa
 está fisicamente ali, que é a razão de existir o posto).
 
+## As métricas do posto (decididas em 29/09)
+
+O card deste posto no Fluxo da OP mostra coisas que nenhum outro posto mostra, porque ele é o único
+cujo trabalho continua **depois** do bipe.
+
+**Disponível Produção** — peças que passaram por todos os postos **menos** este. É a fila na porta
+do almoxarifado: pronto, embalado, esperando dar entrada. Cada bipe subtrai daqui.
+
+**Estoque do Compels** — puxado em paralelo do ERP. ⚠️ É o estoque da **PMO inteira**, não desta OP:
+outra ordem da mesma PMO dando entrada, ou a produção consumindo, mexem nele sem ter relação com o
+bipe. Por isso ele é **contexto** — "quanto tem desse produto lá" —, **não conferência**. A pergunta
+"o ERP recebeu a minha entrada?" é respondida pela fila, nunca por comparar os dois números.
+
+**Peças e caixas, as duas unidades.** Numa OP coletiva o operador está olhando para dez caixas
+empilhadas, não para 140 peças: o card mostra `112/140 peças · 8/10 caixas`.
+
+**O denominador é o que chegou embalado**, não a quantidade da OP. Peça sucateada ou em manutenção
+nunca chega aqui, então os números não fecham com o total da ordem — e isso está certo. O card diz
+isso, para ninguém perguntar depois.
+
+### Como a espera pelo ERP aparece
+
+O princípio: **o estado normal tem de ser invisível.** Se toda entrada acende um aviso enquanto a
+fila não roda, em uma semana ninguém enxerga aviso nenhum — e o dia em que for de verdade, passa
+batido.
+
+| Estado | Como aparece |
+|---|---|
+| tudo enviado | **nada no card** |
+| dentro da janela normal | *"3 aguardando o ERP"*, em cinza, peso de legenda |
+| passou da janela | *"3 não chegaram ao ERP há 40 min"*, em âmbar, **com o tempo** |
+| o ERP recusou | vermelho — é erro de dado, não de transporte, e quem resolve faz outra coisa |
+
+O tempo é o que separa "está indo" de "está parado", e é o que deixa alguém julgar sem abrir nada.
+**A janela sai do período da fila**, não de palpite: se ela roda de 5 em 5 minutos, atrasado começa
+em uns 15 — três ciclos.
+
+**Onde cada coisa aparece, e para quem:**
+
+- **no card do Fluxo**, o número agregado — é o painel que o gestor olha de longe;
+- **na tela de pendências**, a lista com o motivo de cada uma **e um botão de reenviar**. Sem o
+  botão, o gestor vê o problema e não tem o que fazer além de chamar o desenvolvedor;
+- **no painel do operador, nada.** O bipe dele deu certo e a peça está registrada. Se a fila
+  emperrou, não é problema dele nem ele que resolve — avisar ali só ensina a ignorar avisos.
+
 ## O que dá para construir agora
 
 Tudo, menos o envio:

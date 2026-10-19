@@ -1,5 +1,6 @@
 import { serieDentroDaFaixa, limparSerie } from './serie'
 import { ehOpFinalizada } from './ops-ativas'
+import { separarCodigoCaixa } from './caixa'
 
 /**
  * O que a busca do cabeçalho devolve. `OP_FINALIZADA` carrega a OP porque a tela precisa dizer
@@ -49,3 +50,34 @@ export function resolverOpPorSn<T extends { sn_ini: string; sn_fim: string; stat
 
   return { ok: false, erro: 'SEM_OP' }
 }
+
+/** O que a busca do cabeçalho por CÓDIGO DE CAIXA devolve (mesma ideia da busca por SN). */
+export type ResolucaoOpPorCaixa<T> =
+  | { ok: true; ordem: T }
+  | { ok: false; erro: 'CAIXA_INVALIDA' | 'SEM_OP' }
+  | { ok: false; erro: 'OP_FINALIZADA'; ordem: T }
+
+/**
+ * Resolve a OP pelo CÓDIGO DA CAIXA bipado (`CX[seq][qtd]OP-PMO`). Em OP coletiva o operador do Almoxarifado só
+ * tem a caixa na mão, sem nenhum Nº de Série para bipar, e o código já diz de qual OP e PMO ela é.
+ *
+ * Só aceita código de caixa FECHADA (com quantidade): `CX[3]` sozinho é caixa aberta e devolve CAIXA_INVALIDA.
+ * A OP é achada por (OP, PMO) exatos, sem diferenciar maiúsculas; entre as ATIVAS primeiro e, se não houver,
+ * entre as FINALIZADAS (mesma regra de duas etapas da busca por SN).
+ */
+export function resolverOpPorCaixa<T extends { pmo: string; op: string; status: string | null }>(
+  ordens: T[],
+  codigo: string,
+): ResolucaoOpPorCaixa<T> {
+  const separada = separarCodigoCaixa(codigo)
+  if (!separada) return { ok: false, erro: 'CAIXA_INVALIDA' }
+  const igual = (a: string, b: string) => a.trim().toUpperCase() === b.trim().toUpperCase()
+  const dela = ordens.filter((o) => igual(o.op, separada.op) && igual(o.pmo, separada.pmo))
+
+  const ativa = dela.find((o) => !ehOpFinalizada(o.status))
+  if (ativa) return { ok: true, ordem: ativa }
+  const finalizada = dela.find((o) => ehOpFinalizada(o.status))
+  if (finalizada) return { ok: false, erro: 'OP_FINALIZADA', ordem: finalizada }
+  return { ok: false, erro: 'SEM_OP' }
+}
+

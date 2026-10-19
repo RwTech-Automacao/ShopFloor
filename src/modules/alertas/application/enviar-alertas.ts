@@ -167,16 +167,27 @@ export async function avaliarEEnviar(portas: PortasCanais, repo: RepositorioEnvi
 export async function enviarTeste(
   portas: PortasCanais,
   repo: RepositorioEnvios,
-  p: { usuarioId: string; canal: Canal; nome: string },
+  p: { usuarioId: string; canal: Canal; nome: string; email?: string },
 ): Promise<ResultadoSimples> {
   const porta = portas[p.canal]
   if (!porta) return { ok: false, erro: `${NOME_CANAL[p.canal]} não está configurado neste ambiente.` }
-  const conta = await repo.contaDoUsuario(p.usuarioId, p.canal)
-  if (!conta) return { ok: false, erro: `Vincule o ${NOME_CANAL[p.canal]} antes de enviar o teste.` }
+
+  // O e-mail NÃO tem vínculo: o destino é o endereço de login, que quem chama informa (a action
+  // pega da sessão). Telegram e Discord continuam exigindo a conta vinculada.
+  let externoId: string
+  if (p.canal === 'email') {
+    externoId = (p.email ?? '').trim()
+    if (externoId === '') return { ok: false, erro: 'Seu cadastro está sem e-mail.' }
+  } else {
+    const conta = await repo.contaDoUsuario(p.usuarioId, p.canal)
+    if (!conta) return { ok: false, erro: `Vincule o ${NOME_CANAL[p.canal]} antes de enviar o teste.` }
+    externoId = conta.externoId
+  }
 
   const dados = { nome: p.nome }
   const texto = textoDoEnvio('teste', dados)
-  const resultado = await porta.enviar({ tipo: 'usuario', externoId: conta.externoId }, texto, null)
+  const resultado = await porta.enviar({ tipo: 'usuario', externoId }, texto, null)
+  // `alerta_envios.modulo` fica no default 'shopfloor' (0149): teste é linha já final, nunca reservada.
   await repo.registrarEnvioDireto({
     usuarioId: p.usuarioId,
     canal: p.canal,

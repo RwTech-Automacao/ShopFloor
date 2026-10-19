@@ -1,6 +1,7 @@
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import type { PerfilRow } from '@/modules/auth/domain/mapear-perfil'
 import type { Modulo, Permissao } from '@/modules/auth/domain/perfil'
+import { grantsParaRemover } from '@/modules/perfis/domain/regras-perfil'
 
 export interface DadosPerfil {
   nome: string
@@ -73,24 +74,41 @@ export async function excluirPerfil(id: string): Promise<void> {
   }
 }
 
-// Ressincroniza os grants granulares (perfil_permissao) do perfil: apaga
-// tudo que existia e reinsere só os marcados. Sem transação real (o supabase-js
-// não expõe uma), mas é chamada logo após gravar os pode_* — ver salvarPerfil.
+// Ressincroniza os grants granulares (perfil_permissao) do perfil. NUNCA apaga tudo e regrava:
+// primeiro grava o que falta (upsert que ignora o que já existe) e só depois remove o que foi
+// desmarcado. A regra de segurança do banco exige `sistema.administrar` para gravar nesta tabela;
+// editando o PRÓPRIO perfil, o "apaga tudo" tirava essa permissão e a regravação era barrada, e a
+// pessoa ficava sem nenhuma permissão (19/10/2026). Nesta ordem, uma falha no meio nunca tira
+// permissão que deveria ficar: o pior caso é sobrar uma permissão a mais, que a próxima gravação remove.
 export async function sincronizarGrants(
   perfilId: string,
   grants: { modulo: Modulo; permissao: Permissao }[],
 ): Promise<void> {
   const supabase = await createServerSupabase()
-  const { error: erroDelete } = await supabase
+
+  if (grants.length > 0) {
+    const { error: erroUpsert } = await supabase
+      .from('perfil_permissao')
+      .upsert(
+        grants.map((g) => ({ perfil_id: perfilId, modulo: g.modulo, permissao: g.permissao })),
+        { onConflict: 'perfil_id,modulo,permissao', ignoreDuplicates: true },
+      )
+    if (erroUpsert) throw erroUpsert
+  }
+
+  const { data: atuais, error: erroLeitura } = await supabase
     .from('perfil_permissao')
-    .delete()
+    .select('modulo,permissao')
     .eq('perfil_id', perfilId)
-  if (erroDelete) throw erroDelete
+  if (erroLeitura) throw erroLeitura
 
-  if (grants.length === 0) return
-
-  const { error: erroInsert } = await supabase
-    .from('perfil_permissao')
-    .insert(grants.map((g) => ({ perfil_id: perfilId, modulo: g.modulo, permissao: g.permissao })))
-  if (erroInsert) throw erroInsert
+  for (const [modulo, permissoes] of grantsParaRemover(atuais ?? [], grants)) {
+    const { error: erroDelete } = await supabase
+      .from('perfil_permissao')
+      .delete()
+      .eq('perfil_id', perfilId)
+      .eq('modulo', modulo)
+      .in('permissao', permissoes)
+    if (erroDelete) throw erroDelete
+  }
 }
