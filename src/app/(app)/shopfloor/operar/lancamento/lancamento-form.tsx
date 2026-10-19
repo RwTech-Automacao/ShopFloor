@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
 import { serieDentroDaFaixa, normalizarSerie, MAX_SERIE } from '@/modules/shopfloor/domain/serie'
-import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
+import { resolverOpPorCaixa, resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { postosSelecionaveis } from '@/modules/shopfloor/domain/postos-lancamento'
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { postoEhDestinoDeRota, type ConsertoConfirmavel } from '@/modules/shopfloor/domain/rota-reteste'
@@ -315,7 +315,10 @@ export function LancamentoForm({
   }
   async function onBiparCabecalho() {
     if (bipeCab.trim() === '') return
-    const r = resolverOpPorSn(ordens, bipeCab)
+    // Almoxarifado em OP COLETIVA: o operador só tem a caixa na mão (sem Nº de Série), e o código dela já diz a
+    // OP e a PMO. No modo Almoxarifado o cabeçalho aceita os dois: o código da caixa ou o Nº de Série.
+    const porCaixa = modoAlmoxarifado !== undefined && bipeCab.trim().startsWith('CX[')
+    const r = porCaixa ? resolverOpPorCaixa(ordens, bipeCab) : resolverOpPorSn(ordens, bipeCab)
     if (!r.ok) {
       // OP finalizada: a peça existe, só a OP está encerrada. Diz QUAL OP é (mandar "reative a OP"
       // sem PMO/OP não ajuda quem está no posto) e manda falar com quem PODE reativar: o Cadastro
@@ -323,9 +326,11 @@ export function LancamentoForm({
       toast.error(
         r.erro === 'OP_FINALIZADA'
           ? `OP ${r.ordem.pmo}/${r.ordem.op} está finalizada. Fale com um administrador do ShopFloor para reativá-la e bipe de novo.`
-          : r.erro === 'SEM_OP'
-            ? 'SN não encontrado em nenhuma OP.'
-            : 'SN cai em mais de uma OP.',
+          : r.erro === 'CAIXA_INVALIDA'
+            ? 'Código de caixa inválido, ou a caixa ainda está aberta. Feche a caixa na Embalagem.'
+            : r.erro === 'SEM_OP'
+              ? (porCaixa ? 'Esta caixa não é de nenhuma OP que passe pelo Almoxarifado.' : 'SN não encontrado em nenhuma OP.')
+              : 'SN cai em mais de uma OP.',
       )
       // `ordens` é prop de Server Component, resolvida UMA vez no carregamento — e a tela do posto
       // fica aberta o turno inteiro. Sem isto, o gestor reativa a OP e o MESMO bipe repete a MESMA
@@ -869,14 +874,16 @@ export function LancamentoForm({
       </CardHeader>
       {op === '' ? (
         <CardContent className="flex flex-col gap-2">
-          <Label htmlFor="bipeCab">Bipe o Nº de Série para carregar a OP</Label>
+          <Label htmlFor="bipeCab">
+            {modoAlmoxarifado ? 'Bipe a caixa (OP coletiva) ou o Nº de Série (OP individual) para carregar a OP' : 'Bipe o Nº de Série para carregar a OP'}
+          </Label>
           <Input
             id="bipeCab"
             ref={bipeCabRef}
             value={bipeCab}
             onChange={(e) => setBipeCab(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBiparCabecalho() } }}
-            placeholder="Bipe ou digite o SN e Enter"
+            placeholder={modoAlmoxarifado ? 'Bipe a caixa ou o SN e Enter' : 'Bipe ou digite o SN e Enter'}
             autoComplete="off"
             autoFocus
             className="h-12 text-lg"

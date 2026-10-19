@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolverOpPorSn } from '../cabecalho-lancamento'
+import { resolverOpPorCaixa, resolverOpPorSn } from '../cabecalho-lancamento'
 
 const O = (
   cliente: string,
@@ -88,3 +88,45 @@ describe('resolverOpPorSn: etapa 2, as OPs finalizadas', () => {
     expect(resolverOpPorSn(duas, 'F150')).toEqual({ ok: false, erro: 'AMBIGUO' })
   })
 })
+
+describe('resolverOpPorCaixa (cabeçalho do Almoxarifado em OP coletiva: só a caixa, sem Nº de Série)', () => {
+  const COLETIVAS = [
+    O('C1', 'PMOT02', '9901', '', '', 'ATIVA'),
+    O('C1', 'PMOT03', '9902', '', '', 'FINALIZADA'),
+    O('C1', 'PMOT04', '9903', '', '', 'ATIVA'),
+  ]
+
+  it('o código da caixa diz a OP e a PMO: carrega a OP certa', () => {
+    const r = resolverOpPorCaixa(COLETIVAS, 'CX[1][3]9901-PMOT02')
+    expect(r).toEqual({ ok: true, ordem: COLETIVAS[0] })
+  })
+
+  it('ignora maiúsculas e espaços nas pontas', () => {
+    const r = resolverOpPorCaixa(COLETIVAS, '  cx[1][3]9901-pmot02 '.replace('cx', 'CX'))
+    expect(r.ok).toBe(true)
+  })
+
+  it('exige OP e PMO juntas: a mesma OP com outra PMO não vale', () => {
+    expect(resolverOpPorCaixa(COLETIVAS, 'CX[1][3]9901-PMOT03')).toEqual({ ok: false, erro: 'SEM_OP' })
+  })
+
+  it('caixa de OP finalizada: devolve a OP para a tela mandar reativar', () => {
+    const r = resolverOpPorCaixa(COLETIVAS, 'CX[2][5]9902-PMOT03')
+    expect(r).toEqual({ ok: false, erro: 'OP_FINALIZADA', ordem: COLETIVAS[1] })
+  })
+
+  it('OP desconhecida: SEM_OP', () => {
+    expect(resolverOpPorCaixa(COLETIVAS, 'CX[1][3]7777-PMOX')).toEqual({ ok: false, erro: 'SEM_OP' })
+  })
+
+  it('caixa ainda aberta (CX[3]) ou código que não é de caixa: CAIXA_INVALIDA', () => {
+    expect(resolverOpPorCaixa(COLETIVAS, 'CX[3]')).toEqual({ ok: false, erro: 'CAIXA_INVALIDA' })
+    expect(resolverOpPorCaixa(COLETIVAS, 'SN99010001')).toEqual({ ok: false, erro: 'CAIXA_INVALIDA' })
+    expect(resolverOpPorCaixa(COLETIVAS, '')).toEqual({ ok: false, erro: 'CAIXA_INVALIDA' })
+  })
+
+  it('caixa reaberta/remontada (CX[7]R[14]...) também resolve a OP', () => {
+    expect(resolverOpPorCaixa(COLETIVAS, 'CX[7]R[14]9901-PMOT02').ok).toBe(true)
+  })
+})
+
