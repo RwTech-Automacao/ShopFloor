@@ -307,3 +307,9 @@ Empenhar automático, estorno (fase 2), OPs filhas, número de série peça a pe
 
 **Riscos que continuam abertos:** a API interna do Compels pode mudar sem aviso; a fração de OPs que ficam manuais é desconhecida (item 2 mede); a autorização formal ainda não existe.
 
+## 11. Decisões de 19/10 sobre o posto e a montagem da OP
+
+- **Montagem da OP fica como está por enquanto:** o posto Almoxarifado **não** vem pré-definido; entra na rota de cada OP pela escolha dos postos (ou pelo padrão de fluxo da PMO). O usuário quer **mudar isso mais adiante** (ex.: o Almoxarifado entrar sozinho no fim da rota). Não fazer agora.
+- **OPs antigas e finalizadas não mudam.** O % de conclusão e a finalização automática contam as peças que passaram pelo **último posto da rota**: adicionar o Almoxarifado a uma OP finalizada pela rotina pode reabri-la. Regra de operação: não adicionar o Almoxarifado a OPs já finalizadas; usar só nas OPs novas.
+- Integração numa OP antiga: se o Compels já mostra o apontado, a linha é marcada "já tinha a entrada" e nada é gravado de novo (só vale para OPs na lista de liberadas, que vem vazia).
+
