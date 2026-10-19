@@ -12,6 +12,11 @@ vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right' },
 }))
 
+// O card Concluído consulta o estoque do Compels por uma server action; aqui ela não importa.
+vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({
+  lerEstoqueCompelsAction: vi.fn(async () => ({ tipo: 'nao_configurado' })),
+}))
+
 const { FluxoNode } = await import('../fluxo-node')
 
 /** Payload mínimo de um posto comum (passagem, sem status) — a base de cada caso. */

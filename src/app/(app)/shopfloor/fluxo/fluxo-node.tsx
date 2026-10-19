@@ -1,11 +1,13 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
   Wrench, Package, GitMerge, ThermometerSun, ShieldCheck, ClipboardCheck, CircleDot, Check, Inbox, PackageCheck, AlertTriangle,
 } from 'lucide-react'
 import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
+import { formatarQuantidade, type EstoqueCompels } from '@/modules/shopfloor/domain/estoque-compels'
+import { lerEstoqueCompelsAction } from '@/modules/shopfloor/application/estoque-compels-actions'
 
 export interface FluxoNodePayload extends FluxoNodeData {
   selecionado: boolean
@@ -32,6 +34,67 @@ export function iconePorRecurso(recurso: string, temStatus: boolean, className =
     case 'almoxarifado': return <PackageCheck className={className} />
     default: return temStatus ? <ClipboardCheck className={className} /> : <CircleDot className={className} />
   }
+}
+
+
+/** Cache do navegador (1 min por PMO): o nó re-renderiza e remonta com frequência (zoom, arrasto, modo TV). */
+const CACHE_ESTOQUE_MS = 60_000
+const cacheEstoque = new Map<string, { ate: number; resultado: EstoqueCompels }>()
+
+/**
+ * Estoque do Compels, ABAIXO do card Concluído (solto, sem aumentar o nó: as arestas continuam apontando para o
+ * card). Consulta na hora, uma vez por PMO por minuto. É o estoque PRÓPRIO do item em TODOS os estoques do
+ * Compels: contexto, não a conferência do que esta OP deu entrada. Sem o login do Compels neste ambiente, não
+ * mostra nada.
+ */
+export function EstoqueCompelsCard({ pmo }: { pmo: string }) {
+  const [estado, setEstado] = useState<EstoqueCompels | 'carregando'>(() => {
+    const guardado = cacheEstoque.get(pmo)
+    return guardado && guardado.ate > Date.now() ? guardado.resultado : 'carregando'
+  })
+
+  useEffect(() => {
+    const guardado = cacheEstoque.get(pmo)
+    if (guardado && guardado.ate > Date.now()) return
+    let vivo = true
+    lerEstoqueCompelsAction(pmo)
+      .then((r) => {
+        cacheEstoque.set(pmo, { ate: Date.now() + (r.tipo === 'indisponivel' ? 15_000 : CACHE_ESTOQUE_MS), resultado: r })
+        if (vivo) setEstado(r)
+      })
+      .catch(() => { if (vivo) setEstado({ tipo: 'indisponivel' }) })
+    return () => { vivo = false }
+  }, [pmo])
+
+  if (estado !== 'carregando' && estado.tipo === 'nao_configurado') return null
+
+  let corpo: React.ReactNode
+  let dica = ''
+  if (estado === 'carregando') {
+    corpo = <span className="text-muted-foreground">consultando…</span>
+  } else if (estado.tipo === 'ok') {
+    corpo = (
+      <span className="font-semibold tabular-nums text-foreground">
+        {formatarQuantidade(estado.proprio)} {estado.unidade}
+      </span>
+    )
+    dica = `Estoque próprio de ${pmo} no Compels, somando todos os estoques. Em pendência: ${formatarQuantidade(estado.pendencia)} · em terceiros: ${formatarQuantidade(estado.emTerceiros)} · de terceiros: ${formatarQuantidade(estado.deTerceiros)}. Consultado agora há pouco; não é só o que esta OP deu entrada.`
+  } else if (estado.tipo === 'nao_encontrado') {
+    corpo = <span className="text-muted-foreground">item não encontrado</span>
+  } else {
+    corpo = <span className="text-amber-600">indisponível</span>
+    dica = 'Não foi possível consultar o Compels agora. Tente de novo em instantes.'
+  }
+
+  return (
+    <div
+      title={dica || undefined}
+      className="absolute left-0 top-full mt-2 flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-sm"
+    >
+      <span className="truncate">Estoque no Compels · {pmo}</span>
+      {corpo}
+    </div>
+  )
 }
 
 function iconeDo(d: FluxoNodePayload) {
@@ -78,6 +141,7 @@ function FluxoNodeBase({ data }: NodeProps) {
           </span>
         </div>
         {d.ehEntrada && <Handle type="source" position={Position.Right} />}
+        {d.ehSaida && d.pmo && <EstoqueCompelsCard pmo={d.pmo} />}
       </div>
     )
   }

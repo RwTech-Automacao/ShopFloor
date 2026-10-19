@@ -7,6 +7,7 @@ import {
   type ComponenteRequisicao,
 } from '../domain/corpos'
 import { leiturasDeRespostas, listaDe, RespostaInesperada } from '../domain/leituras-erp'
+import { saldoDoItem, type SaldoItem } from '../domain/saldo-item'
 import type { LeiturasOp } from '../domain/estado-op'
 import { resultadoDaGravacao, type ResultadoGravacao } from '../domain/resposta-erp'
 import type { ConfigCompels } from './config'
@@ -190,4 +191,24 @@ export class ClienteCompels {
   apontar(corpo: Record<string, unknown>): Promise<ResultadoGravacao> {
     return this.gravar('/apontamentoOrdemProducao/save', corpo)
   }
+
+  /**
+   * Saldo de estoque de UM item (a PMO) pela tela Movimento de Item. Só leitura. `null` = o item não veio
+   * na resposta (código exato). Pede os itens de saldo zero também, senão "não existe" e "zero" se
+   * confundiriam.
+   */
+  async consultarSaldoItem(codigo: string): Promise<SaldoItem | null> {
+    const filtro = {
+      codigo: codigo.trim(),
+      descricao: '',
+      data: dataIso(this.agora()),
+      exibeItensComSaldoZerado: true,
+    }
+    const resposta = await this.json(
+      '/itemMovimento/findFilter',
+      this.formulario({ filter: JSON.stringify(filtro), page: '1', start: '0', limit: '50' }),
+    )
+    return saldoDoItem(resposta, codigo)
+  }
 }
+
