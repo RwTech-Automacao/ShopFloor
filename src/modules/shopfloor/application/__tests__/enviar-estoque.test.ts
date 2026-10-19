@@ -4,11 +4,11 @@ vi.mock('server-only', () => ({}))
 
 import type {
   EnvioEstoqueReservado,
+  PortaCompels,
   RepositorioEstoqueEnvios,
   ResultadoEnvioEstoque,
 } from '../enviar-estoque'
 import { entregarEstoquePendente } from '../enviar-estoque'
-import { enviarMovimentacaoCompels } from '../../infra/compels'
 
 /**
  * Uma linha da fila de mentira. `ordem` faz o papel de `criado_em` (menor = mais antiga), e
@@ -130,7 +130,7 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     const { repo, reservas } = repoFalso([])
     const { compels, enviados } = compelsFalso()
     const resumo = await entregarEstoquePendente(compels, repo)
-    expect(resumo).toEqual({ enviados: 0, falhas: 0 })
+    expect(resumo).toEqual({ enviados: 0, falhas: 0, aguardando: 0 })
     expect(enviados).toEqual([])
     // reservou uma vez (e parou: lote vazio não é lote cheio)
     expect(reservas).toHaveLength(1)
@@ -141,7 +141,7 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     const { repo } = repoFalso(fila)
     const { compels, enviados } = compelsFalso()
     const resumo = await entregarEstoquePendente(compels, repo)
-    expect(resumo).toEqual({ enviados: 2, falhas: 0 })
+    expect(resumo).toEqual({ enviados: 2, falhas: 0, aguardando: 0 })
     expect(enviados).toEqual(['A/E1', 'A/E2'])
     expect(fila.every((l) => l.ok && l.erro === null && !l.reservada)).toBe(true)
   })
@@ -151,12 +151,12 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     const { repo } = repoFalso(fila)
     const { compels } = compelsFalso({ falharPara: ['A/E1'] })
 
-    expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 0, falhas: 1 })
+    expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 0, falhas: 1, aguardando: 0 })
     expect(fila[0]!).toMatchObject({ ok: false, tentativas: 1, erro: 'ERP 500: fora do ar', reservada: false })
 
     // e volta na rodada seguinte, contando a segunda tentativa (até o teto de 5 da 0132)
     const segunda = compelsFalso()
-    expect(await entregarEstoquePendente(segunda.compels, repo)).toEqual({ enviados: 1, falhas: 0 })
+    expect(await entregarEstoquePendente(segunda.compels, repo)).toEqual({ enviados: 1, falhas: 0, aguardando: 0 })
     expect(segunda.enviados).toEqual(['A/E1'])
     expect(fila[0]!).toMatchObject({ ok: true, tentativas: 2, erro: null })
   })
@@ -168,7 +168,7 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     const erros = vi.spyOn(console, 'error').mockImplementation(() => {})
     let linhasDoMotivo: string[]
     try {
-      expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 1, falhas: 1 })
+      expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 1, falhas: 1, aguardando: 0 })
       // lido aqui dentro: `mockRestore()` limpa o `mock.calls` junto com o espão
       linhasDoMotivo = erros.mock.calls
         .map((c) => c.map(String).join(' '))
@@ -197,7 +197,7 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     // limite 2: o primeiro lote vem CHEIO e o laço reserva o próximo — é a volta do lote que
     // poderia repetir uma linha, se a reserva não a tivesse escondido
     const resumo = await entregarEstoquePendente(compels, repo, { limite: 2 })
-    expect(resumo).toEqual({ enviados: 3, falhas: 0 })
+    expect(resumo).toEqual({ enviados: 3, falhas: 0, aguardando: 0 })
     expect(enviados).toEqual(['A/E1', 'A/E2', 'A/E3'])
     expect(new Set(enviados).size).toBe(enviados.length)
     expect(reservas.length).toBeGreaterThan(1)
@@ -210,7 +210,7 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     const { repo } = repoFalso(fila)
     const { compels, enviados } = compelsFalso({ falharPara: ['A/E1'] })
     const resumo = await entregarEstoquePendente(compels, repo, { limite: 1 })
-    expect(resumo).toEqual({ enviados: 0, falhas: 1 })
+    expect(resumo).toEqual({ enviados: 0, falhas: 1, aguardando: 0 })
     expect(enviados).toEqual(['A/E1'])
     expect(fila[0]!.tentativas).toBe(1)
     expect(fila[1]!.tentativas).toBe(0)
@@ -229,7 +229,7 @@ describe('entregarEstoquePendente — o laço da fila de estoque', () => {
     ]
     const { repo } = repoFalso(fila)
     const { compels, enviados } = compelsFalso()
-    expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 3, falhas: 0 })
+    expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 3, falhas: 0, aguardando: 0 })
     expect(enviados).toEqual(['A/S1', 'A/E1', 'A/E2'])
   })
 
@@ -308,53 +308,99 @@ describe('a linha que o banco devolveu e o código não entendeu', () => {
     ])
     const { compels, enviados } = compelsFalso()
     const resumo = await entregarEstoquePendente(compels, repo, { limite: 2 })
-    expect(resumo).toEqual({ enviados: 2, falhas: 1 })
+    expect(resumo).toEqual({ enviados: 2, falhas: 1, aguardando: 0 })
     expect(enviados).toEqual(['A/E1', 'A/E2'])
   })
 })
 
-describe('o último metro não implementado, visto pelo laço', () => {
-  it('a falha do "não configurado" é uma falha de envio como qualquer outra', async () => {
-    // É o requisito central da Task 3: NENHUM caminho especial para "não configurado". A linha conta
-    // tentativa, guarda o motivo em português e FICA na fila — é isso que faz a fila acumular e não
-    // esvaziar enquanto o compels.ts não existir, e é esperado.
+describe('uma falha DEVOLVIDA pelo último metro, vista pelo laço', () => {
+  // O último metro devolve a falha (não lança): é assim que o ERP recusar uma carga chega ao laço.
+  const portaQueRecusa: PortaCompels = async () => ({ ok: false, erro: 'O Compels recusou a gravação (HTTP 400).' })
+
+  it('é uma falha de envio como qualquer outra: tentativa contada, motivo guardado, a linha fica na fila', async () => {
     const fila = [linha({ chave: 'A/E1', ordem: 1 })]
     const { repo } = repoFalso(fila)
-    const resumo = await entregarEstoquePendente(enviarMovimentacaoCompels, repo)
-    expect(resumo).toEqual({ enviados: 0, falhas: 1 })
+    const erros = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(await entregarEstoquePendente(portaQueRecusa, repo)).toEqual({ enviados: 0, falhas: 1, aguardando: 0 })
+    } finally {
+      erros.mockRestore()
+    }
     expect(fila[0]!).toMatchObject({ ok: false, tentativas: 1, reservada: false })
-    expect(fila[0]!.erro).toContain('Integração com o Compels ainda não configurada')
+    expect(fila[0]!.erro).toContain('O Compels recusou a gravação')
   })
 
-  it('o MOTIVO da falha DEVOLVIDA sai no log — é dele que o cron diz "saiu acima"', async () => {
-    // A rodada com falha escreve no log do pm2 que o motivo de cada falha saiu acima (route.ts). No
-    // CAMINHO NORMAL o último metro DEVOLVE a falha, não lança — hoje o "não configurado", amanhã o
-    // "o ERP recusou a carga". Se só a exceção logasse, essa promessa seria falsa justamente no
-    // estado esperado de hoje, em que TODAS as linhas falham assim: o pm2 mostraria a contagem com
-    // nada acima, e o motivo existiria só na coluna `erro` da linha.
+  it('o MOTIVO da falha devolvida sai no log: é dele que o cron diz "saiu acima"', async () => {
     const fila = [linha({ chave: 'A/E1', ordem: 1 })]
     const { repo } = repoFalso(fila)
     const erros = vi.spyOn(console, 'error').mockImplementation(() => {})
     let log: string
     try {
-      expect(await entregarEstoquePendente(enviarMovimentacaoCompels, repo)).toEqual({ enviados: 0, falhas: 1 })
+      await entregarEstoquePendente(portaQueRecusa, repo)
       // lido aqui dentro: `mockRestore()` limpa o `mock.calls` junto com o espão
       log = erros.mock.calls.map((c) => c.map(String).join(' ')).join('\n')
     } finally {
       erros.mockRestore()
     }
     expect(log).toContain('[estoque] envio A/E1 falhou:')
-    expect(log).toContain('Integração com o Compels ainda não configurada')
+    expect(log).toContain('O Compels recusou a gravação')
+  })
+})
+
+describe('a espera (aguardar): nada chegou ao ERP e a linha não gasta tentativa', () => {
+  it('conta como aguardando, não como falha, e o motivo sai no log', async () => {
+    const lote = { envios: [envio('A1'), envio('A2')], ilegiveis: 0 }
+    const concluidos: { chave: string; resultado: ResultadoEnvioEstoque }[] = []
+    const repo: RepositorioEstoqueEnvios = {
+      async reservarPendentes() { return concluidos.length === 0 ? lote : { envios: [], ilegiveis: 0 } },
+      async concluirEnvio(e, resultado) { concluidos.push({ chave: e.chave, resultado }) },
+    }
+    const compels: PortaCompels = async () => ({ ok: false, erro: 'OP sem empenho suficiente no Compels.', aguardar: true })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      expect(await entregarEstoquePendente(compels, repo)).toEqual({ enviados: 0, falhas: 0, aguardando: 2 })
+      expect(log.mock.calls.map((c) => c.join(' ')).join('\n')).toContain('2 linha(s) aguardando: OP sem empenho suficiente no Compels.')
+    } finally {
+      log.mockRestore()
+    }
+    // o resultado chega inteiro ao repositório, com a marca de espera
+    expect(concluidos.map((c) => c.resultado)).toEqual([
+      { ok: false, erro: 'OP sem empenho suficiente no Compels.', aguardar: true },
+      { ok: false, erro: 'OP sem empenho suficiente no Compels.', aguardar: true },
+    ])
   })
 
-  it('o não-implementado diz a operação em português, e o texto vai inteiro para a tela', async () => {
-    const entrada = await enviarMovimentacaoCompels({
-      id: 'x', chave: 'ALMOX/PMOT01/9900/Almoxarifado/CX[1][3]9900-PMOT01/E1', operacao: 'entrada',
-      pmo: 'PMOT01', op: '9900', posto: 'Almoxarifado', tipo: 'caixa',
-      bipe: 'CX[1][3]9900-PMOT01', serieNorm: '', quantidade: 3, tentativas: 1,
-      criadoEm: '2026-09-29T10:00:00Z',
-    })
-    expect(entrada.ok).toBe(false)
-    if (!entrada.ok) expect(entrada.erro).toContain('A entrada continua na fila')
+  it('lote só de espera NÃO para a rodada: o próximo lote traz as linhas de outras OPs', async () => {
+    const cheio = (prefixo: string) => ({ envios: [envio(`${prefixo}1`, 1), envio(`${prefixo}2`, 1)], ilegiveis: 0 })
+    const repo = repoRoteirizado([cheio('A'), cheio('B'), { envios: [], ilegiveis: 0 }])
+    const vistos: string[] = []
+    const compels: PortaCompels = async (e) => {
+      vistos.push(e.chave)
+      return e.chave.startsWith('A') ? { ok: false, erro: 'espera', aguardar: true } : { ok: true }
+    }
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const resumo = await entregarEstoquePendente(compels, repo, { limite: 2 })
+      expect(resumo).toEqual({ enviados: 2, falhas: 0, aguardando: 2 })
+      expect(vistos).toEqual(['A1', 'A2', 'B1', 'B2'])
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('lote em que NADA andou e nada foi adiado (ERP fora do ar) ainda para a rodada', async () => {
+    const repo = repoRoteirizado([
+      { envios: [envio('C1'), envio('C2')], ilegiveis: 0 },
+      { envios: [envio('C3'), envio('C4')], ilegiveis: 0 },
+    ])
+    const vistos: string[] = []
+    const compels: PortaCompels = async (e) => { vistos.push(e.chave); return { ok: false, erro: 'ERP 500' } }
+    const erros = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(await entregarEstoquePendente(compels, repo, { limite: 2 })).toEqual({ enviados: 0, falhas: 2, aguardando: 0 })
+      expect(vistos).toEqual(['C1', 'C2'])
+    } finally {
+      erros.mockRestore()
+    }
   })
 })

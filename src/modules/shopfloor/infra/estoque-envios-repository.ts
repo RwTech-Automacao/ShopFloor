@@ -18,6 +18,12 @@ import type {
  * SÓ ao `service_role`, porque reservar conta tentativa e esconde a linha por 15 min.
  */
 
+/**
+ * Quanto "no passado" fica o `reservado_em` de uma linha adiada por espera. A reserva só vence após 15
+ * min, então 10 min atrás = a linha volta a ser elegível em ~5 min.
+ */
+const ESPERA_ADIADA_MS = 10 * 60 * 1000
+
 /** Erro grande não ajuda ninguém na tela e incha a linha: guarda o começo, que é onde está o motivo. */
 const LIMITE_ERRO = 500
 
@@ -125,7 +131,17 @@ export function criarRepositorioEstoqueEnvios(
           // Solta a reserva: se falhou (e ainda tem tentativa), a próxima rodada pega de novo. Isso
           // NÃO "destoca" a linha para a sf_estoque_reverter — a marca que decide lá é
           // `tentativas > 0`, que nunca volta atrás (a reserva viva é só a outra metade dela).
-          reservado_em: null,
+          //
+          // EXCEÇÃO, a espera (`aguardar`): NADA chegou ao ERP (a recusa veio antes de qualquer
+          // gravação), então a linha continua "intocada" de verdade: devolve a tentativa cobrada na
+          // reserva e a esconde por ~5 min (elegível quando `reservado_em` passa de 15 min atrás, e
+          // aqui ele fica 10 min no passado). Sem isso, esperar o empenho gastaria as 5 tentativas.
+          ...(!resultado.ok && resultado.aguardar
+            ? {
+                tentativas: Math.max(envio.tentativas - 1, 0),
+                reservado_em: new Date(Date.now() - ESPERA_ADIADA_MS).toISOString(),
+              }
+            : { reservado_em: null }),
         })
         .eq('id', envio.id)
         // Cerca: se a reserva desta rodada venceu e outra rodada re-reservou a linha (tentativas
@@ -147,3 +163,21 @@ export function criarRepositorioEstoqueEnvios(
     },
   }
 }
+
+/**
+ * Quantas peças desta OP JÁ CHEGARAM ao Compels (`sf_estoque_enviado`, 0153): entradas entregues menos
+ * estornos entregues, sem contar a própria linha que está sendo enviada. É o "o que mandamos antes" que a
+ * integração compara com o que o ERP mostra apontado.
+ */
+export function criarSomaEnviada(
+  sb: SupabaseClient = createServiceSupabase(),
+): (pmo: string, op: string, excetoId: string) => Promise<number> {
+  return async (pmo, op, excetoId) => {
+    const { data, error } = await sb.rpc('sf_estoque_enviado', { p_pmo: pmo, p_op: op, p_exceto: excetoId })
+    if (error) throw new Error(`sf_estoque_enviado: ${error.message}`)
+    const n = Number(data ?? 0)
+    if (!Number.isFinite(n) || n < 0) throw new Error(`sf_estoque_enviado devolveu um valor inválido: ${String(data)}`)
+    return n
+  }
+}
+

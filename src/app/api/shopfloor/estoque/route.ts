@@ -1,5 +1,5 @@
 import { entregarEstoquePendente } from '@/modules/shopfloor/application/enviar-estoque'
-import { enviarMovimentacaoCompels } from '@/modules/shopfloor/infra/compels'
+import { criarPortaCompels } from '@/modules/shopfloor/infra/compels'
 import { criarRepositorioEstoqueEnvios } from '@/modules/shopfloor/infra/estoque-envios-repository'
 /**
  * A comparação em tempo constante do cron dos Alertas, reaproveitada de propósito: é exatamente a
@@ -88,8 +88,8 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const repo = criarRepositorioEstoqueEnvios()
-    const resumo = await entregarEstoquePendente(enviarMovimentacaoCompels, repo)
-    const linha = `${TAG} ${agoraLegivel()} rodada: ${resumo.enviados} enviado(s), ${resumo.falhas} falha(s)`
+    const resumo = await entregarEstoquePendente(criarPortaCompels(), repo)
+    const linha = `${TAG} ${agoraLegivel()} rodada: ${resumo.enviados} enviado(s), ${resumo.falhas} falha(s), ${resumo.aguardando} aguardando`
     // A rodada COM falha sai na mesma saída (stderr) em que o motivo de cada falha acabou de ser
     // escrito: quem abre o log de erro às 7h lê os motivos e, logo abaixo, de quantas rodadas eles
     // são. A rodada limpa vai pro stdout para não encher o log de erro de linha boa.

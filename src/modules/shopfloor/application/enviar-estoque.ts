@@ -56,7 +56,13 @@ export interface EnvioEstoqueReservado {
 }
 
 /** Sucesso, ou o motivo da falha em português — é ele que a tela de pendências mostra. */
-export type ResultadoEnvioEstoque = { ok: true } | { ok: false; erro: string }
+/**
+ * `aguardar`: a falha é uma CONDIÇÃO DE ESPERA e NADA chegou ao ERP (OP em uso, sem empenho, pendência
+ * de material, falta de saldo de componente). Quem conclui a linha devolve a tentativa cobrada na
+ * reserva e adia a linha uns minutos: esperar o Almoxarifado empenhar não pode gastar as 5 tentativas
+ * e jogar centenas de linhas para o Reenviar manual.
+ */
+export type ResultadoEnvioEstoque = { ok: true } | { ok: false; erro: string; aguardar?: boolean }
 
 /**
  * O último metro, como PORTA: uma função que recebe uma linha da fila e devolve sucesso ou o motivo
@@ -99,6 +105,8 @@ export interface ResumoEnvioEstoque {
   enviados: number
   /** Linhas que não chegaram ao ERP nesta rodada — inclusive as que o código não conseguiu ler. */
   falhas: number
+  /** Linhas adiadas por condição de espera (não gastaram tentativa). Não são falha. */
+  aguardando: number
 }
 
 function mensagemDe(e: unknown): string {
@@ -150,8 +158,13 @@ export async function entregarEstoquePendente(
 
   let enviados = 0
   let falhas = 0
+  let aguardando = 0
+  // Motivo → quantas linhas: o log diz UMA vez por motivo, e não uma linha por peça (149 bipes à espera do
+  // mesmo empenho seriam 149 linhas de log a cada rodada).
+  const motivosDeEspera = new Map<string, number>()
   for (;;) {
     let enviadosNoLote = 0
+    let aguardandoNoLote = 0
     const { envios: lote, ilegiveis } = await repo.reservarPendentes(limite)
     // A linha que o repositório não entendeu já foi concluída como falha lá, mas a FALHA é da rodada:
     // sem isto o resumo diria `falhas: 0` e o log do cron mentiria sobre a única coisa que alguém lê.
@@ -172,6 +185,11 @@ export async function entregarEstoquePendente(
       if (resultado.ok) {
         enviados += 1
         enviadosNoLote += 1
+      } else if (resultado.aguardar) {
+        // Espera, não falha: nada chegou ao ERP e a linha volta daqui a pouco sem gastar tentativa.
+        aguardando += 1
+        aguardandoNoLote += 1
+        motivosDeEspera.set(resultado.erro, (motivosDeEspera.get(resultado.erro) ?? 0) + 1)
       } else {
         // O MOTIVO TEM QUE SAIR NO LOG, e no CAMINHO NORMAL o último metro DEVOLVE a falha — não lança:
         // é assim que o `compels.ts` de hoje diz "não configurado" e é assim que o "o ERP recusou a carga"
@@ -194,7 +212,14 @@ export async function entregarEstoquePendente(
     // hora, deixando na fila o que caberia nesta rodada.
     const cheio = lote.length + ilegiveis >= limite
     const soNovas = lote.every((e) => e.tentativas <= 1)
-    if (!cheio || !soNovas || enviadosNoLote === 0 || agora() - inicio >= orcamento) break
+    // Um lote em que NADA andou e nada foi adiado (ERP fora do ar, por exemplo) para a rodada: insistir só
+    // queimaria tentativas. Se houve linhas adiadas por espera, elas já saíram da fila por alguns minutos
+    // e o próximo lote traz linhas diferentes (de outras OPs): continuar é o que evita uma OP à espera
+    // travar as demais.
+    if (!cheio || !soNovas || (enviadosNoLote === 0 && aguardandoNoLote === 0) || agora() - inicio >= orcamento) break
   }
-  return { enviados, falhas }
+  for (const [motivo, quantas] of motivosDeEspera) {
+    console.log(`[estoque] ${quantas} linha(s) aguardando: ${motivo}`)
+  }
+  return { enviados, falhas, aguardando }
 }

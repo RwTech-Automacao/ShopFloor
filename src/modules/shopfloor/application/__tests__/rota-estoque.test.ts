@@ -4,21 +4,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('server-only', () => ({}))
 
 // vi.mock é içado para o topo do arquivo: os mocks precisam nascer num vi.hoisted.
-const { entregarEstoquePendente, criarRepositorioEstoqueEnvios, repoFalso } = vi.hoisted(() => {
+const { entregarEstoquePendente, criarRepositorioEstoqueEnvios, repoFalso, portaFalsa, criarPortaCompels } = vi.hoisted(() => {
   const repoFalso = { reservarPendentes: vi.fn(), concluirEnvio: vi.fn() }
+  const portaFalsa = vi.fn()
   return {
     repoFalso,
+    portaFalsa,
+    criarPortaCompels: vi.fn(() => portaFalsa),
     criarRepositorioEstoqueEnvios: vi.fn(() => repoFalso),
-    entregarEstoquePendente: vi.fn(async () => ({ enviados: 4, falhas: 1 })),
+    entregarEstoquePendente: vi.fn(async () => ({ enviados: 4, falhas: 1, aguardando: 0 })),
   }
 })
 vi.mock('@/modules/shopfloor/application/enviar-estoque', () => ({ entregarEstoquePendente }))
 vi.mock('@/modules/shopfloor/infra/estoque-envios-repository', () => ({ criarRepositorioEstoqueEnvios }))
+// A porta do Compels é montada POR RODADA (o cache de "OP esperando" vale só dentro dela): a rota tem de
+// pedir uma nova a cada chamada e ligá-la ao laço junto com o repositório.
+vi.mock('@/modules/shopfloor/infra/compels', () => ({ criarPortaCompels }))
 
-// O último metro e a comparação em tempo constante entram DE VERDADE: é o que o teste tem para
-// afirmar que a rota liga o laço no envio real ao Compels (sem modo seco) e que o segredo é
+// A comparação em tempo constante entra DE VERDADE: é o que o teste tem para afirmar que o segredo é
 // comparado pela função que já existe.
-import { enviarMovimentacaoCompels } from '@/modules/shopfloor/infra/compels'
 import { POST } from '@/app/api/shopfloor/estoque/route'
 
 const SEGREDO = 'segredo-de-mentira-do-cron'
@@ -32,7 +36,7 @@ function pedido(cabecalhos: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  entregarEstoquePendente.mockResolvedValue({ enviados: 4, falhas: 1 })
+  entregarEstoquePendente.mockResolvedValue({ enviados: 4, falhas: 1, aguardando: 0 })
   vi.stubEnv('ESTOQUE_CRON_SECRET', SEGREDO)
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -94,10 +98,10 @@ describe('POST /api/shopfloor/estoque', () => {
   it('segredo certo entrega a fila pelo envio REAL ao Compels e devolve o resumo', async () => {
     const res = await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ enviados: 4, falhas: 1 })
+    expect(await res.json()).toEqual({ enviados: 4, falhas: 1, aguardando: 0 })
     expect(entregarEstoquePendente).toHaveBeenCalledTimes(1)
-    // A porta é a função de verdade (hoje um não-implementado honesto): nenhum modo seco no meio.
-    expect(entregarEstoquePendente).toHaveBeenCalledWith(enviarMovimentacaoCompels, repoFalso)
+    // A porta vem de `criarPortaCompels()`, montada a cada rodada: nenhum modo seco no meio.
+    expect(entregarEstoquePendente).toHaveBeenCalledWith(portaFalsa, repoFalso)
   })
 
   it('rodada com falha registra as contagens no log de erro, junto dos motivos do laço', async () => {
@@ -109,8 +113,21 @@ describe('POST /api/shopfloor/estoque', () => {
     expect(linha).toContain('cada falha escreveu o motivo dela acima')
   })
 
+  it('cada rodada pede uma porta NOVA (o cache de OP esperando não pode vazar entre rodadas)', async () => {
+    await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
+    await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
+    expect(criarPortaCompels).toHaveBeenCalledTimes(2)
+  })
+
+  it('linhas aguardando aparecem no log da rodada, e não contam como falha', async () => {
+    entregarEstoquePendente.mockResolvedValueOnce({ enviados: 1, falhas: 0, aguardando: 7 })
+    await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
+    expect(console.error).not.toHaveBeenCalled()
+    expect(String(vi.mocked(console.log).mock.calls[0]?.[0])).toContain('1 enviado(s), 0 falha(s), 7 aguardando')
+  })
+
   it('rodada limpa não suja o log de erro', async () => {
-    entregarEstoquePendente.mockResolvedValueOnce({ enviados: 2, falhas: 0 })
+    entregarEstoquePendente.mockResolvedValueOnce({ enviados: 2, falhas: 0, aguardando: 0 })
     await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
     expect(console.error).not.toHaveBeenCalled()
     expect(String(vi.mocked(console.log).mock.calls[0]?.[0])).toContain('2 enviado(s), 0 falha(s)')

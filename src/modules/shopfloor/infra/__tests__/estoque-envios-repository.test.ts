@@ -163,6 +163,32 @@ describe('concluirEnvio', () => {
     })
   })
 
+  it('espera (aguardar): devolve a tentativa cobrada e adia a linha ~5 min, sem enviado_em', async () => {
+    const { sb, chamadas } = sbFalso()
+    const antes = Date.now()
+    await criarRepositorioEstoqueEnvios(sb).concluirEnvio(
+      { ...ENVIO, tentativas: 3 },
+      { ok: false, erro: 'OP sem empenho suficiente no Compels.', aguardar: true },
+    )
+    const u = chamadas[0]!.update!
+    expect(u).toMatchObject({ ok: false, erro: 'OP sem empenho suficiente no Compels.', enviado_em: null, tentativas: 2 })
+    // 10 min no passado: a reserva só vence após 15 min, então a linha volta daqui a ~5 min
+    const reservadoEm = new Date(String(u.reservado_em)).getTime()
+    expect(antes - reservadoEm).toBeGreaterThanOrEqual(10 * 60 * 1000 - 1000)
+    expect(antes - reservadoEm).toBeLessThan(10 * 60 * 1000 + 5000)
+    // a cerca continua sendo a tentativa lida na reserva (3), não a devolvida
+    expect(chamadas[0]!.filtros).toContainEqual(['tentativas', 3])
+  })
+
+  it('espera na primeira tentativa não deixa a contagem negativa', async () => {
+    const { sb, chamadas } = sbFalso()
+    await criarRepositorioEstoqueEnvios(sb).concluirEnvio(
+      { ...ENVIO, tentativas: 0 },
+      { ok: false, erro: 'x', aguardar: true },
+    )
+    expect(chamadas[0]!.update!.tentativas).toBe(0)
+  })
+
   it('as três cercas da escrita: a linha, a tentativa desta reserva e o cancelamento no meio', async () => {
     // `tentativas` impede uma escrita atrasada de sobrescrever o resultado de outra rodada que já
     // re-reservou a linha. `cancelado_em is null` é exigência da 0132: o CHECK

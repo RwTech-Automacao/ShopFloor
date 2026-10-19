@@ -60,6 +60,7 @@ function fingir(inicial: Partial<LeiturasOp> = {}, desvios: Partial<PortaErp> = 
 }
 
 const opcoes = { destino: DESTINO, agora: () => AGORA }
+const leituras0 = () => leituras()
 
 describe('enviarEntrada', () => {
   it('primeira entrada: confere, trava, lê, consulta, requisita, aponta, relê e libera a trava (nesta ordem)', async () => {
@@ -114,7 +115,7 @@ describe('enviarEntrada', () => {
       adquirirTrava: async () => ({ ok: false, codigo: 'op_em_uso', mensagem: 'Este registro está sendo acessado pelo usuário fulano !', tentarDeNovo: true }),
     })
     expect(await enviarEntrada(erp, ENTRADA, opcoes)).toEqual({
-      ok: false, erro: 'Este registro está sendo acessado pelo usuário fulano !', tentarDeNovo: true,
+      ok: false, erro: 'Este registro está sendo acessado pelo usuário fulano !', tentarDeNovo: true, aguardar: true,
     })
     expect(chamadas).toEqual(['buscarOp'])
   })
@@ -133,10 +134,19 @@ describe('enviarEntrada', () => {
       consultarDisponibilidade: async (_o, q) => [linhaDisp(q, 0)],
     })
     const r = await enviarEntrada(erp, ENTRADA, opcoes)
-    expect(r).toMatchObject({ ok: false, tentarDeNovo: true })
+    expect(r).toMatchObject({ ok: false, tentarDeNovo: true, aguardar: true })
     expect(r.ok === false && r.erro).toContain('para apontar: RWCI57 (precisa 55, tem 30)')
     expect(chamadas).not.toContain('requisitar')
     expect(chamadas.at(-1)).toBe('liberarTrava')
+  })
+
+  it('erro de rede na leitura (antes de gravar) é só esperar; depois de gravar não é', async () => {
+    const antes = fingir({}, { lerOp: async () => { throw new Error('ECONNRESET') } })
+    expect(await enviarEntrada(antes.erp, ENTRADA, opcoes)).toMatchObject({ ok: false, tentarDeNovo: true, aguardar: true })
+    // cai só na releitura, depois do Apontar
+    let leituras = 0
+    const depois = fingir({}, { lerOp: async () => { if (++leituras >= 2) throw new Error('ECONNRESET'); return leituras0() } })
+    expect(await enviarEntrada(depois.erp, ENTRADA, opcoes)).toMatchObject({ ok: false, tentarDeNovo: true, aguardar: false })
   })
 
   it('falta de saldo na requisição: não grava', async () => {
@@ -150,7 +160,7 @@ describe('enviarEntrada', () => {
     const { erp, chamadas } = fingir({}, {
       requisitar: async () => ({ ok: false, codigo: 'quantidade_acima', mensagem: 'Quantidade acima.', tentarDeNovo: false }),
     })
-    expect(await enviarEntrada(erp, ENTRADA, opcoes)).toEqual({ ok: false, erro: 'Quantidade acima.', tentarDeNovo: false })
+    expect(await enviarEntrada(erp, ENTRADA, opcoes)).toEqual({ ok: false, erro: 'Quantidade acima.', tentarDeNovo: false, aguardar: false })
     expect(chamadas).not.toContain('apontar')
     expect(chamadas.at(-1)).toBe('liberarTrava')
   })
@@ -160,21 +170,22 @@ describe('enviarEntrada', () => {
       apontar: async () => ({ ok: false, codigo: 'indisponivel', mensagem: 'Compels fora do ar.', tentarDeNovo: true }),
     })
     const r = await enviarEntrada(erp, ENTRADA, opcoes)
-    expect(r).toMatchObject({ ok: false, tentarDeNovo: true })
+    // o ERP pode ter recebido a requisição: NÃO é "só esperar" (gasta tentativa)
+    expect(r).toMatchObject({ ok: false, tentarDeNovo: true, aguardar: false })
     expect(r.ok === false && r.erro).toContain('A requisição já foi feita; a próxima tentativa só aponta.')
   })
 
   it('o ERP aceita mas a releitura não mostra o acumulado novo: não marca como enviado', async () => {
     const { erp } = fingir({}, { apontar: async () => OK }) // aceita sem alterar o estado
     const r = await enviarEntrada(erp, ENTRADA, opcoes)
-    expect(r).toMatchObject({ ok: false, tentarDeNovo: false })
+    expect(r).toMatchObject({ ok: false, tentarDeNovo: false, aguardar: false })
     expect(r.ok === false && r.erro).toContain('mostra 0 apontadas (esperado 55)')
   })
 
   it('exceção no meio vira falha legível, libera a trava e RespostaInesperada não tenta de novo', async () => {
     const { erp, chamadas } = fingir({}, { consultarDisponibilidade: async () => { throw new RespostaInesperada('x') } })
     const r = await enviarEntrada(erp, ENTRADA, opcoes)
-    expect(r).toMatchObject({ ok: false, tentarDeNovo: false })
+    expect(r).toMatchObject({ ok: false, tentarDeNovo: false, aguardar: false })
     expect(chamadas.at(-1)).toBe('liberarTrava')
   })
 
