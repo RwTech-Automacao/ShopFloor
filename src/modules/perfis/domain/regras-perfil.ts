@@ -28,3 +28,24 @@ export function validarEdicaoPerfil(input: {
   }
   return { ok: true }
 }
+
+/**
+ * O que sobra no banco depois de gravar os grants desejados: as permissões que o perfil TEM e que
+ * a tela desmarcou. Agrupado por módulo (uma remoção por módulo, com a lista de permissões).
+ *
+ * Existe para a sincronização nunca apagar tudo e regravar: a regra de segurança do banco exige
+ * `sistema.administrar` para gravar em `perfil_permissao`, e quem editava o PRÓPRIO perfil perdia essa
+ * permissão no apagamento e ficava sem poder regravar nada (19/10/2026).
+ */
+export function grantsParaRemover(
+  atuais: readonly { modulo: string; permissao: string }[],
+  desejados: readonly { modulo: string; permissao: string }[],
+): [modulo: string, permissoes: string[]][] {
+  const querer = new Set(desejados.map((g) => `${g.modulo}\u0000${g.permissao}`))
+  const porModulo = new Map<string, string[]>()
+  for (const g of atuais) {
+    if (querer.has(`${g.modulo}\u0000${g.permissao}`)) continue
+    porModulo.set(g.modulo, [...(porModulo.get(g.modulo) ?? []), g.permissao])
+  }
+  return [...porModulo.entries()]
+}
