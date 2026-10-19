@@ -33,6 +33,7 @@ const CLASSE_SITUACAO: Record<SituacaoEstoque, string> = {
   enviando: 'border-blue-500 text-blue-700 dark:text-blue-300',
   fora_da_fila: 'border-red-500 text-red-700 dark:text-red-300',
   esperando_entrada: 'border-amber-500 text-amber-700 dark:text-amber-300',
+  esperando_erp: 'border-amber-500 text-amber-700 dark:text-amber-300',
   vai_tentar: 'border-amber-500 text-amber-700 dark:text-amber-300',
   na_fila: 'border-border text-muted-foreground',
 }

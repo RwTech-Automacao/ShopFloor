@@ -104,8 +104,8 @@ Imprime o saldo (estoque próprio, pendência, em terceiros) e uma linha JSON. *
 ## 9. Variações (opcionais, uma por vez)
 
 - **OP aberta por alguém no Compels:** abra a OP 8649 na tela do Compels, bipe outra peça e rode a rodada. Esperado: `aguardando` sobe, nada é gravado, e a tela de
-  pendências mostra "Este registro está sendo acessado pelo usuário...". Feche a tela e rode de novo **depois de uns 5 minutos** (a linha em espera
-  volta sozinha; Reenviar na tela de pendências tira o adiamento na hora).
+  pendências mostra a situação "Esperando o Compels" com o motivo "Este registro está sendo acessado pelo usuário...". Feche a tela e rode de novo **depois de uns 5 minutos** (a linha em espera
+  volta sozinha na hora marcada, que a tela de pendências mostra; o botão Reenviar só serve para linha que gastou as 5 tentativas).
 - **Cancelar um lançamento já enviado:** em `Registros` (gestor), cancele a peça. Na tela de pendências aparece a "Saída (estorno)" com
   "O estorno no Compels ainda é manual".
 

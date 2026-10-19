@@ -28,6 +28,7 @@ function linha(over: Partial<LinhaFilaEstoque> = {}): LinhaFilaEstoque {
     estornado: 0,
     tentativas: 0,
     reservadoEm: null,
+    adiadoAte: null,
     erro: null,
     criadoEm: '2026-09-29T11:00:00.000Z',
     entradaId: null,
@@ -253,3 +254,39 @@ describe('agrupamento por bipe (pmo/op/posto/alvo)', () => {
     expect(g.linhas.map((l) => l.id)).toEqual(['e1', 's1', 's2'])
   })
 })
+
+describe('esperando_erp: a linha que o Compels ainda não pôde receber (adiada, sem gastar tentativa)', () => {
+  const FUTURO = '2026-09-29T12:05:00.000Z'
+  const PASSADO = '2026-09-29T11:55:00.000Z'
+
+  it('adiada para o futuro (com erro e tentativas 0): "Esperando o Compels", sem Reenviar', () => {
+    const l = traduzirParaTeste(linha({ erro: 'OP sem empenho suficiente no Compels.', adiadoAte: FUTURO }))
+    expect(l.situacao).toBe('esperando_erp')
+    expect(l.rotulo).toBe('Esperando o Compels')
+    expect(l.podeReenviar).toBe(false)
+    expect(l.oQueFazer).toContain('NÃO gastou tentativa')
+    expect(l.oQueFazer).toContain('tenta de novo sozinha')
+  })
+
+  it('o texto diz a hora de volta, no fuso de São Paulo', () => {
+    const l = traduzirParaTeste(linha({ adiadoAte: FUTURO }))
+    expect(l.oQueFazer).toContain('por volta das 09:05')
+  })
+
+  it('adiamento vencido volta a ser linha comum (na fila / vai tentar)', () => {
+    expect(traduzirParaTeste(linha({ adiadoAte: PASSADO })).situacao).toBe('na_fila')
+    expect(traduzirParaTeste(linha({ adiadoAte: PASSADO, tentativas: 2, erro: 'x' })).situacao).toBe('vai_tentar')
+  })
+
+  it('reserva viva e teto de tentativas vencem a espera (mexer errado é pior)', () => {
+    const viva = linha({ adiadoAte: FUTURO, reservadoEm: '2026-09-29T11:58:00.000Z' })
+    expect(traduzirParaTeste(viva).situacao).toBe('enviando')
+    expect(traduzirParaTeste(linha({ adiadoAte: FUTURO, tentativas: 5 })).situacao).toBe('fora_da_fila')
+  })
+})
+
+function traduzirParaTeste(l: LinhaFilaEstoque): LinhaEstoquePendente {
+  const grupos = agruparEstoquePendente([l], new Map(), AGORA)
+  return grupos[0]!.linhas[0]!
+}
+

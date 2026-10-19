@@ -48,6 +48,7 @@ function linha(over: Partial<LinhaFilaEstoque> = {}): LinhaFilaEstoque {
     estornado: 0,
     tentativas: TETO_TENTATIVAS,
     reservadoEm: null,
+    adiadoAte: null,
     erro: 'Compels: envio ao ERP ainda não implementado',
     criadoEm: '2026-09-29T11:00:00.000Z',
     entradaId: null,

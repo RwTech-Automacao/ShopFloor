@@ -59,6 +59,11 @@ export interface LinhaFilaEstoque {
   reservadoEm: string | null
   /** O motivo do ÚLTIMO erro, em português. Nulo na linha que nunca foi tentada. */
   erro: string | null
+  /**
+   * A linha está ESPERANDO o Compels (OP em uso, sem empenho, OP não liberada...): ela foi tentada, nada chegou ao
+   * ERP e a tentativa foi devolvida. Enquanto esta hora não passa, a reserva não a pega (migração 0132).
+   */
+  adiadoAte: string | null
   criadoEm: string
   /** De quem este estorno sai (o par GRAVADO pela `sf_estoque_reverter`). Nulo na entrada. */
   entradaId: string | null
@@ -89,6 +94,9 @@ export interface EntradaDoEstorno {
  *                           (senão o Compels receberia a saída antes da entrada). Não falhou: tem
  *                           `tentativas = 0` e `erro` nulo, e é justamente por ser indistinguível de
  *                           uma linha nova que dois defeitos passaram pelas revisões das Tasks 2-4.
+ *   • `esperando_erp`     — a integração tentou e o Compels ainda não podia receber (OP em uso, sem empenho,
+ *                           OP não liberada, ERP fora): nada chegou lá, a tentativa foi DEVOLVIDA e a linha
+ *                           volta sozinha na hora marcada (`adiadoAte`). Não é falha e não pede gesto.
  *   • `vai_tentar`        — já falhou, ainda tem tentativa: a próxima rodada insiste sozinha.
  *   • `na_fila`           — nunca foi tentada.
  */
@@ -96,6 +104,7 @@ export type SituacaoEstoque =
   | 'enviando'
   | 'fora_da_fila'
   | 'esperando_entrada'
+  | 'esperando_erp'
   | 'vai_tentar'
   | 'na_fila'
 
@@ -163,6 +172,7 @@ const ROTULOS: Record<SituacaoEstoque, string> = {
   enviando: 'Enviando agora',
   fora_da_fila: 'Fora da fila',
   esperando_entrada: 'Esperando a entrada',
+  esperando_erp: 'Esperando o Compels',
   vai_tentar: 'Vai tentar de novo',
   na_fila: 'Na fila',
 }
@@ -213,6 +223,14 @@ function oQueFazer(
         + `precisa ser resolvido antes.`
     case 'esperando_entrada':
       return oQueFazerEsperandoAEntrada(entrada)
+    case 'esperando_erp': {
+      const hora = linha.adiadoAte
+        ? new Date(linha.adiadoAte).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+        : null
+      return 'Nada: o Compels ainda não pôde receber esta linha (o motivo está ao lado) e ela NÃO gastou tentativa. '
+        + `A integração tenta de novo sozinha${hora ? `, por volta das ${hora}` : ' em poucos minutos'}. `
+        + 'O que resolve é o que o motivo diz (liberar a OP, empenhar, fechar a OP no Compels).'
+    }
     case 'vai_tentar': {
       const faltam = TETO_TENTATIVAS - linha.tentativas
       return `Nada: a próxima rodada tenta de novo (${faltam} de ${TETO_TENTATIVAS} tentativas `
@@ -252,6 +270,7 @@ export function situacaoDaLinha(
   if (temReservaViva(linha, agora)) return 'enviando'
   if (linha.tentativas >= TETO_TENTATIVAS) return 'fora_da_fila'
   if (esperaAEntrada(linha, entradas)) return 'esperando_entrada'
+  if (linha.adiadoAte && new Date(linha.adiadoAte).getTime() > agora.getTime()) return 'esperando_erp'
   if (linha.tentativas > 0) return 'vai_tentar'
   return 'na_fila'
 }

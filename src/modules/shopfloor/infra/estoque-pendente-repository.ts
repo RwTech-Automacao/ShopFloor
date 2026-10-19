@@ -32,7 +32,7 @@ import {
 /** Colunas da fila que a tela usa. `alvo` e `seq_chave` são colunas GERADAS — lidas, nunca escritas. */
 const COLUNAS =
   'id, chave, operacao, pmo, op, posto, tipo, bipe, alvo, quantidade, estornado, tentativas,'
-  + ' reservado_em, erro, criado_em, entrada_id, seq_chave'
+  + ' reservado_em, adiado_ate, erro, criado_em, entrada_id, seq_chave'
 
 /**
  * A segunda leitura traz a linha INTEIRA da entrada, e não só o estado dela, porque agora ela pode
@@ -69,6 +69,7 @@ interface LinhaBruta {
   estornado: number
   tentativas: number
   reservado_em: string | null
+  adiado_ate?: string | null
   erro: string | null
   criado_em: string
   entrada_id: string | null
@@ -103,6 +104,7 @@ function converter(l: LinhaBruta): LinhaFilaEstoque {
     estornado: Number(l.estornado ?? 0),
     tentativas: Number(l.tentativas ?? 0),
     reservadoEm: l.reservado_em,
+    adiadoAte: l.adiado_ate ?? null,
     erro: l.erro,
     criadoEm: l.criado_em,
     entradaId: l.entrada_id,
