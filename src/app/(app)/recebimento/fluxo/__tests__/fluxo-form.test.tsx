@@ -260,18 +260,19 @@ describe('FluxoForm', () => {
     expect(screen.getByTestId('canvas').dataset.arrastavel).toBe('true')
   })
 
-  it('cada nó mostra quantos estão nele agora e quantos da EMB já chegaram até ali', async () => {
+  it('cada nó mostra quantos estão pendentes nele agora e quantos da EMB já concluíram a etapa', async () => {
     await escolherEmb()
     // 4 + 3 + 2 + 1 = 10 itens na EMB.
     const recebimento = within(no('recebimento'))
     expect(recebimento.getByText('4')).toBeInTheDocument() // na caixa agora
     expect(recebimento.getByText('/ 10')).toBeInTheDocument()
-    expect(recebimento.getByText('100%')).toBeInTheDocument() // todos passaram pelo Recebimento
+    expect(recebimento.getByText('6')).toBeInTheDocument()
+    expect(recebimento.getByText('60%')).toBeInTheDocument() // concluíram o Recebimento: 3 + 2 + 1
 
-    // Pela Qualidade já passaram os 3 que estão nela + 2 no Almoxarifado + 1 reprovado.
+    // Concluíram a Qualidade (Finalizar): 2 no Almoxarifado + 1 reprovado. Os 3 da caixa são pendentes.
     const qualidade = within(no('qualidade'))
-    expect(qualidade.getByText('6')).toBeInTheDocument()
-    expect(qualidade.getByText('60%')).toBeInTheDocument()
+    expect(qualidade.getAllByText('3')).toHaveLength(2) // selo (pendentes) e concluídos
+    expect(qualidade.getByText('30%')).toBeInTheDocument()
   })
 
   it('o Almoxarifado é card cheio como o Concluído do ShopFloor: contagem, sem barra', async () => {
@@ -310,7 +311,7 @@ describe('FluxoForm', () => {
     await waitFor(() => expect(carregarItensCaixaAction).toHaveBeenCalledWith('EMB390', 'qualidade'))
     const p = painel()
     expect(p.getByText('Qualidade')).toBeInTheDocument()
-    expect(p.getByText('em conferência')).toBeInTheDocument()
+    expect(p.getByText('aguardando finalização')).toBeInTheDocument()
     expect(p.getByText('Agora:')).toBeInTheDocument()
     expect(p.getByText('Sem tempo: 1')).toBeInTheDocument()
     // "Agora" = os itens que estão na etapa, com há quanto tempo estão nela.

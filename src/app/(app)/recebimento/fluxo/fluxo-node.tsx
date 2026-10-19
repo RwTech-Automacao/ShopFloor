@@ -26,7 +26,7 @@ export interface FluxoRecebimentoNodeData {
   /** Quantos deles carregam a marca de divergência. */
   divergentes: number
   /**
-   * Quantos itens da EMB já chegaram a esta etapa — os que estão aqui mais os que já seguiram.
+   * Quantos itens da EMB já concluíram esta etapa.
    * É o equivalente ao "aprovadas" do card do ShopFloor, e sai das contagens: o fluxo é linear,
    * então quem está no Almoxarifado já passou pela Qualidade. `null` no ramo Reprovado, que não é
    * etapa da fila e por isso não tem barra.
@@ -100,7 +100,7 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
 
       {/* Mini-card da contagem — centrado no cabeçalho (top 28px = metade do h-14), como o WIP. */}
       <div
-        title={`Itens nesta etapa agora: ${d.itens}`}
+        title={`Itens pendentes nesta etapa agora: ${d.itens}`}
         className={`absolute left-0 top-7 z-10 flex h-7 min-w-7 -translate-x-1/2 -translate-y-1/2 cursor-help items-center justify-center rounded-[10px] border-2 px-1.5 text-sm font-bold shadow-sm ${
           d.itens > 0 ? 'border-enterplak bg-enterplak text-white' : 'border-border bg-muted text-muted-foreground'
         }`}
@@ -127,13 +127,13 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
           </div>
         </div>
 
-        {/* Subdivisão: quantos da EMB já chegaram a esta etapa, na mesma barra verde do card do
+        {/* Subdivisão: quantos da EMB já concluíram esta etapa, na mesma barra verde do card do
             ShopFloor. Substituiu o par de relógios (média e mais antigo), que o usuário tirou. */}
         {temBarra && (
           <div className="flex flex-col gap-1.5 rounded-b-xl border-x-2 border-b-2 border-border bg-muted px-2.5 py-2">
             <div
               className="relative h-5 overflow-hidden rounded-full bg-black/5 dark:bg-white/10"
-              title={`Itens que já chegaram a esta etapa: ${d.passaram} de ${d.total}`}
+              title={`Itens concluídos nesta etapa: ${d.passaram} de ${d.total}`}
             >
               <div className="absolute inset-y-0 left-0 rounded-full bg-green-600" style={{ width: `${pct}%` }} />
               <span
@@ -144,7 +144,7 @@ function FluxoRecebimentoNodeBase({ data }: NodeProps) {
               </span>
             </div>
             <div className="flex items-center justify-center gap-3 text-[11px] font-semibold leading-none tabular-nums">
-              <span title={`Itens que já chegaram a esta etapa: ${d.passaram} de ${d.total}`}>
+              <span title={`Itens concluídos nesta etapa: ${d.passaram} de ${d.total}`}>
                 <span className="text-green-700">{d.passaram}</span>
                 <span className="text-muted-foreground"> / {d.total}</span>
               </span>
