@@ -50,6 +50,35 @@ export function seqDoMarcadorCaixa(numeroCaixa: string): number | null {
   return m ? Number(m[1]) : null
 }
 
+export interface CaixaSeparada {
+  seq: number
+  /** 0 = montagem vigente; ≥1 = remontagem (R, R2, R3…), o número da revisão. */
+  revisao: number
+  qtd: number
+  op: string
+  pmo: string
+}
+
+/**
+ * Separa um código de caixa FECHADA — CX[seq][qtd]OP-PMO, ou CX[seq]R[qtd]OP-PMO / R2, R3… na
+ * remontagem — nos seus campos. A quantidade vem do PRÓPRIO código bipado, nunca de consulta ao
+ * banco: é o que está impresso na etiqueta colada na caixa física.
+ *
+ * `null` quando o código não tem quantidade fechada — inclui o marcador de caixa ainda aberta
+ * (CX[seq], sem o segundo colchete) e qualquer outra string que não seja código de caixa.
+ */
+export function separarCodigoCaixa(codigo: string): CaixaSeparada | null {
+  const m = /^CX\[(\d+)\](?:R(\d*))?\[(\d+)\](.+)-([^-]+)$/.exec(codigo.trim())
+  if (!m) return null
+  return {
+    seq: Number(m[1]),
+    revisao: m[2] === undefined ? 0 : m[2] === '' ? 1 : Number(m[2]),
+    qtd: Number(m[3]),
+    op: m[4]!,
+    pmo: m[5]!,
+  }
+}
+
 /**
  * Caixas REABERTAS por cancelamento: vigentes (revisao 0), abertas, que não são a caixa da vez.
  *

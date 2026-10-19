@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   perfilTemStatus, perfilPrecisaAprovado, perfilExigeManutencao, perfilPedeConfirmacaoConserto,
-  montarLinhasPerfil, obrigatoriosPorPerfil, PERFIL_PADRAO, perfilSuportaColetivo, type PerfilPosto,
+  montarLinhasPerfil, obrigatoriosPorPerfil, PERFIL_PADRAO, perfilSuportaColetivo, perfilAtribuivel, type PerfilPosto,
 } from '../perfil-posto'
 
 const P = (o: Partial<PerfilPosto>): PerfilPosto => ({
@@ -77,5 +77,25 @@ describe('obrigatoriosPorPerfil', () => {
   it('reprova=posicoes (SPI) exige posição na reprova', () => {
     expect(obrigatoriosPorPerfil(P({ temStatus: true, reprova: 'posicoes' }), { ...base, status: 'reprovado' }).ok).toBe(false)
     expect(obrigatoriosPorPerfil(P({ temStatus: true, reprova: 'posicoes' }), { ...base, status: 'reprovado', pos: 'A1' }).ok).toBe(true)
+  })
+})
+
+describe('perfil almoxarifado', () => {
+  const almoxarifado: PerfilPosto = {
+    chave: 'almoxarifado', nome: 'Almoxarifado', temStatus: false, reprova: 'nenhum',
+    gate: 'registrado', exigeManutencao: false, recurso: 'almoxarifado',
+  }
+
+  it('pode ser atribuído a um posto novo — não é singleton como a Manutenção', () => {
+    expect(perfilAtribuivel(almoxarifado)).toBe(true)
+  })
+
+  it('não coleta status nem defeito: o bipe registra a entrada, não julga a peça', () => {
+    expect(perfilTemStatus(almoxarifado)).toBe(false)
+    expect(perfilPedeConfirmacaoConserto(almoxarifado)).toBe(false)
+  })
+
+  it('não entra no lançamento coletivo: a entrada é por peça ou por caixa, não por lista', () => {
+    expect(perfilSuportaColetivo('almoxarifado')).toBe(false)
   })
 })

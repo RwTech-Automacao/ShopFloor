@@ -121,4 +121,28 @@ describe('ClienteCompels', () => {
     expect(chamadas[0]?.url).toBe('/lock/release/eng.ordemproducaosimples/13075')
     expect(chamadas[0]?.init.method).toBe('DELETE')
   })
+
+  it('consulta o saldo do item pela tela Movimento de Item: pede os itens zerados e só aceita o código exato', async () => {
+    const { buscar, chamadas } = fingirCompels({
+      '/itemMovimento/findFilter': () => json({
+        data: [
+          { item: { codigo: 'PRT4461', descricao: 'OUTRO', unidade: { codigo: 'UN' } }, saldoItemEstoqueProprio: 99, saldoItemPendencia: 0, saldoItemEstoqueEmTerceiros: 0, saldoItemEstoqueDeTerceiros: 0 },
+          { item: { codigo: 'PRT446', descricao: ' PLACA ', unidade: { codigo: 'UN' } }, saldoItemEstoqueProprio: 28, saldoItemPendencia: 1, saldoItemEstoqueEmTerceiros: 2, saldoItemEstoqueDeTerceiros: 3 },
+        ],
+      }),
+    })
+    const saldo = await new ClienteCompels(config, tokenFixo(), buscar).consultarSaldoItem(' prt446 ')
+    expect(saldo).toEqual({ codigo: 'PRT446', descricao: 'PLACA', unidade: 'UN', proprio: 28, pendencia: 1, emTerceiros: 2, deTerceiros: 3 })
+
+    const corpo = chamadas.find((c) => c.url.startsWith('/itemMovimento/findFilter'))!.init.body as URLSearchParams
+    const filtro = JSON.parse(corpo.get('filter')!) as { codigo: string; exibeItensComSaldoZerado: boolean }
+    expect(filtro.codigo).toBe('prt446')
+    expect(filtro.exibeItensComSaldoZerado).toBe(true)
+  })
+
+  it('item que não veio na resposta: null (não zero)', async () => {
+    const { buscar } = fingirCompels({ '/itemMovimento/findFilter': () => json({ data: [] }) })
+    expect(await new ClienteCompels(config, tokenFixo(), buscar).consultarSaldoItem('ZZZ')).toBeNull()
+  })
 })
+

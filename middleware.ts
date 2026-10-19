@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/shared/lib/supabase/middleware'
 import { ehRotaPublicaDeAlertas } from '@/modules/alertas/domain/rotas'
 import { ehRotaDeDadosDoDashboard } from '@/modules/shopfloor/domain/rotas-dashboard'
+import { ehRotaDaFilaDeEstoque } from '@/modules/shopfloor/domain/rotas-estoque'
 import { cabecalhosComMarcaEmbed } from '@/shared/lib/supabase/embed'
 
 export async function middleware(request: NextRequest) {
@@ -10,17 +11,20 @@ export async function middleware(request: NextRequest) {
   // cliente a tenha mandado (ver cabecalhosComMarcaEmbed).
   const cabecalhos = cabecalhosComMarcaEmbed(request.headers, request.nextUrl.pathname)
 
-  // Cron e webhooks dos alertas não têm sessão: quem autoriza é o segredo (cron/Telegram) ou a
-  // assinatura Ed25519 (Discord), dentro da própria rota. Sem esta saída o middleware responderia
-  // um redirect pro /login — e o Telegram trataria isso como entrega bem-sucedida.
+  // Rotas que não têm sessão: quem autoriza é o segredo (cron/Telegram), a assinatura Ed25519
+  // (Discord) ou o Bearer, dentro da própria rota. Sem esta saída o middleware responderia um
+  // redirect pro /login — e o Telegram trataria isso como entrega bem-sucedida, enquanto o `curl -f`
+  // de um cron veria um 3xx, que não é erro: a tarefa falharia toda vez sem ninguém perceber.
+  // A fila de estoque do Compels (/api/shopfloor/estoque) é o mesmo caso — ver tools/estoque/README.md.
   //
-  // A API de dados do dashboard (/api/dashboard/*) é o mesmo caso: quem autoriza é o segredo
-  // DASHBOARD_API_SECRET, dentro da rota. O matcher abaixo cobre /api/*, então sem esta saída
-  // `GET /api/dashboard/ops-ativas?dias=30` responderia 307 pro /login e a rota NUNCA executaria.
-  //
-  // Os dois ramos passam pelos `cabecalhos` — a marca de embed que o cliente tenha mandado sai
-  // apagada aqui também.
-  if (ehRotaPublicaDeAlertas(request.nextUrl.pathname) || ehRotaDeDadosDoDashboard(request.nextUrl.pathname))
+  // ⚠️ TODAS passam pelos `cabecalhos`, nunca por um NextResponse.next() pelado: é aqui que a marca
+  // de embed mandada pelo cliente é apagada. Uma rota que saia sem eles aceita a marca forjada e
+  // deixa o createServerSupabase usar o cookie da conta compartilhada do dashboard.
+  if (
+    ehRotaPublicaDeAlertas(request.nextUrl.pathname) ||
+    ehRotaDeDadosDoDashboard(request.nextUrl.pathname) ||
+    ehRotaDaFilaDeEstoque(request.nextUrl.pathname)
+  )
     return NextResponse.next({ request: { headers: cabecalhos } })
 
   return updateSession(request, cabecalhos)

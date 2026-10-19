@@ -46,7 +46,11 @@ export interface EntradaParaEnviar {
 
 export type ResultadoEntrada =
   | { ok: true; detalhe: string }
-  | { ok: false; erro: string; tentarDeNovo: boolean }
+  /**
+   * `aguardar`: falhou ANTES de qualquer gravação no ERP e vale tentar de novo (OP em uso, sem empenho,
+   * pendência, falta de saldo, ERP fora do ar na leitura). A fila usa isso para não gastar tentativa.
+   */
+  | { ok: false; erro: string; tentarDeNovo: boolean; aguardar: boolean }
 
 export interface OpcoesEnvio {
   destino: DestinoEstoque
@@ -140,6 +144,11 @@ function erroDeExcecao(e: unknown): { ok: false; erro: string; tentarDeNovo: boo
   return { ok: false, erro: `Erro ao falar com o Compels: ${e instanceof Error ? e.message : String(e)}`, tentarDeNovo: true }
 }
 
+/** Falha da entrega; `gravou` = já chamou algum gesto que GRAVA no ERP (aí não é "só esperar"). */
+function falha(erro: string, tentarDeNovo: boolean, gravou: boolean): ResultadoEntrada {
+  return { ok: false, erro, tentarDeNovo, aguardar: tentarDeNovo && !gravou }
+}
+
 /**
  * ENSAIO: faz tudo menos gravar e menos pegar a trava. Devolve o plano com os corpos que SERIAM
  * enviados, para conferir contra a captura da tela antes da primeira gravação real.
@@ -158,42 +167,46 @@ export async function ensaiarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes
 /** Entrega a entrada: trava → ler → decidir → consultar → requisitar → apontar → reler → liberar a trava. */
 export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes: OpcoesEnvio): Promise<ResultadoEntrada> {
   let travada: number | null = null
+  let gravou = false
   try {
     const c = await conferir(erp, e)
-    if ('erro' in c) return { ok: false, erro: c.erro.erro, tentarDeNovo: c.erro.tentarDeNovo }
+    if ('erro' in c) return falha(c.erro.erro, c.erro.tentarDeNovo, false)
     const op = c.op
 
     const trava = await erp.adquirirTrava(op.id)
-    if (!trava.ok) return { ok: false, erro: trava.mensagem, tentarDeNovo: trava.tentarDeNovo }
+    if (!trava.ok) return falha(trava.mensagem, trava.tentarDeNovo, false)
     travada = op.id
 
     // O estado é lido DEPOIS da trava: ninguém muda a OP entre a leitura e a gravação.
     const plano = await planejar(erp, op, e, opcoes)
-    if (plano.tipo === 'erro') return { ok: false, erro: plano.erro, tentarDeNovo: plano.tentarDeNovo }
+    if (plano.tipo === 'erro') return falha(plano.erro, plano.tentarDeNovo, false)
     if (plano.tipo === 'ja_enviada') return { ok: true, detalhe: 'O Compels já tinha esta entrada.' }
 
+    // A partir daqui o ERP pode ter recebido algo: falha deixa de ser "só esperar".
+    gravou = true
     if (plano.requisitar) {
       const r = await erp.requisitar(plano.requisitar)
-      if (!r.ok) return { ok: false, erro: r.mensagem, tentarDeNovo: r.tentarDeNovo }
+      if (!r.ok) return falha(r.mensagem, r.tentarDeNovo, gravou)
     }
     const a = await erp.apontar(plano.apontar)
     if (!a.ok) {
       const aviso = plano.requisitar ? ' A requisição já foi feita; a próxima tentativa só aponta.' : ''
-      return { ok: false, erro: `${a.mensagem}${aviso}`, tentarDeNovo: a.tentarDeNovo }
+      return falha(`${a.mensagem}${aviso}`, a.tentarDeNovo, gravou)
     }
 
     // Conferência final: só vale como enviado se o ERP mostra o acumulado novo.
     const depois = estadoDaOp(await erp.lerOp(op))
     if (depois.apontada < plano.novoAcumulado) {
-      return {
-        ok: false,
-        erro: `O Compels aceitou a gravação, mas mostra ${depois.apontada} apontadas (esperado ${plano.novoAcumulado}). Confira antes de reenviar.`,
-        tentarDeNovo: false,
-      }
+      return falha(
+        `O Compels aceitou a gravação, mas mostra ${depois.apontada} apontadas (esperado ${plano.novoAcumulado}). Confira antes de reenviar.`,
+        false,
+        gravou,
+      )
     }
     return { ok: true, detalhe: plano.requisitar ? 'Requisitado e apontado.' : 'Apontado.' }
   } catch (erro) {
-    return erroDeExcecao(erro)
+    const r = erroDeExcecao(erro)
+    return falha(r.erro, r.tentarDeNovo, gravou)
   } finally {
     if (travada !== null) {
       try { await erp.liberarTrava(travada) } catch { /* a trava expira sozinha; não esconde o resultado */ }
