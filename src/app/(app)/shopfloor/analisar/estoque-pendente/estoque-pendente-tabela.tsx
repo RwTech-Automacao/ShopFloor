@@ -92,7 +92,7 @@ function LinhaDaFila({
       <TableCell className="whitespace-nowrap">
         {linha.tentativas} de {TETO_TENTATIVAS}
       </TableCell>
-      <TableCell className="min-w-[18rem] text-sm">
+      <TableCell className="min-w-[18rem] max-w-[34rem] whitespace-normal text-sm">
         {/*
           O MOTIVO DO ÚLTIMO ERRO É OBRIGATÓRIO NA LINHA: "falhou" não serve para quem abre a tela às
           7h. Quando não há erro, o texto diz POR QUE não há — uma linha nunca tentada e uma linha
