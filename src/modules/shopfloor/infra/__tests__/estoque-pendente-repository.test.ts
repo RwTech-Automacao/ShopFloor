@@ -123,7 +123,7 @@ beforeEach(() => {
 })
 
 describe('o Reenviar escreve tentativas = 1, e nunca 0', () => {
-  it('o payload do update é exatamente { tentativas: 1, reservado_em: null }', async () => {
+  it('o payload do update é exatamente { tentativas: 1, reservado_em: null, adiado_ate: null }', async () => {
     const { sb, chamadas } = sbFalso(() => ({ data: [{ id: 'e1' }], error: null }))
     createServiceSupabase.mockReturnValue(sb)
 
@@ -132,12 +132,12 @@ describe('o Reenviar escreve tentativas = 1, e nunca 0', () => {
     expect(c.tabela).toBe('sf_estoque_envios')
     // O NÚMERO, cravado: `tentativas = 0` apagaria a marca de LINHA TOCADA e reabriria o caminho do
     // ajuste/cancelamento numa linha que pode já estar no Compels. Ver A DECISÃO na Server Action.
-    expect(c.update).toEqual({ tentativas: 1, reservado_em: null })
+    expect(c.update).toEqual({ tentativas: 1, reservado_em: null, adiado_ate: null })
     expect(c.update?.tentativas).toBe(TENTATIVAS_APOS_REENVIO)
     expect(c.update?.tentativas).not.toBe(0)
     // e nada além disso é tocado: `erro` (o motivo que a tela mostra), `chave` (a idempotência do
     // ERP), `quantidade` e `estornado` (o que o ERP recebeu e o que já foi devolvido) ficam.
-    expect(Object.keys(c.update ?? {}).sort()).toEqual(['reservado_em', 'tentativas'])
+    expect(Object.keys(c.update ?? {}).sort()).toEqual(['adiado_ate', 'reservado_em', 'tentativas'])
   })
 
   it('a cerca do update repete as QUATRO condições, inclusive o teto de tentativas', async () => {

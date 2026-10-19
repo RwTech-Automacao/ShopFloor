@@ -832,4 +832,44 @@ begin
   raise notice '22. Reenviar devolve à fila com tentativas = 1: o par não é afrouxado e o ajuste/cancelamento segue fechado: ok';
 end $t$;
 
+-- 23. A ESPERA (`adiado_ate`): a linha adiada não é reservada até a hora, e é CANCELÁVEL de verdade.
+--     Achado no smoke local de 19/10/2026: adiar com um `reservado_em` forjado no passado fazia a linha
+--     parecer "em voo" para o cancelamento, que então criava um ESTORNO manual indevido de uma entrada
+--     que nunca chegou ao ERP. Com a coluna própria, a linha em espera continua intocada.
+do $t$
+declare v_e uuid; v_n int; v_res text; r public.sf_estoque_envios;
+begin
+  update sf_estoque_envios set cancelado_em = now() where cancelado_em is null and not ok;
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, tentativas, adiado_ate)
+  values ('ESP/9930/E1', 'entrada', 'PMOT01', '9930', 'Almoxarifado', 'caixa',
+          'CX[1][3]9930-PMOT01', 3, 0, now() + interval '5 minutes')
+  returning id into v_e;
+
+  -- (a) adiada no futuro: a reserva não pega
+  select count(*) into v_n from sf_estoque_reservar(30);
+  if v_n <> 0 then raise exception 'FALHOU (a): linha adiada foi reservada (%)', v_n; end if;
+
+  -- (b) adiada, e a reserva NÃO a tocou: continua intocada (tentativas 0, sem reserva)
+  select * into r from sf_estoque_envios where id = v_e;
+  if r.tentativas <> 0 or r.reservado_em is not null then
+    raise exception 'FALHOU (b): a linha adiada não devia ter sido tocada: %', to_jsonb(r);
+  end if;
+
+  -- (c) cancelar a entrada adiada CANCELA a linha (não vira estorno)
+  v_res := sf_estoque_reverter('PMOT01', '9930', 'Almoxarifado', 'CX[1][3]9930-PMOT01', null);
+  if v_res <> 'cancelado' then
+    raise exception 'FALHOU (c): cancelar uma entrada em espera tinha que CANCELAR a linha, veio %', v_res;
+  end if;
+
+  -- (d) vencido o adiamento, a reserva volta a pegar a linha (e a tentativa passa a contar)
+  insert into sf_estoque_envios (chave, operacao, pmo, op, posto, tipo, bipe, quantidade, tentativas, adiado_ate)
+  values ('ESP/9931/E1', 'entrada', 'PMOT01', '9931', 'Almoxarifado', 'caixa',
+          'CX[1][3]9931-PMOT01', 3, 0, now() - interval '1 second')
+  returning id into v_e;
+  select count(*) into v_n from sf_estoque_reservar(30);
+  if v_n <> 1 then raise exception 'FALHOU (d): adiamento vencido tinha que voltar à fila (%)', v_n; end if;
+
+  raise notice '23. Espera por adiado_ate: não é reservada, continua cancelável e volta ao vencer: ok';
+end $t$;
+
 select 'ESTOQUE ENVIOS SQL OK' as fim;

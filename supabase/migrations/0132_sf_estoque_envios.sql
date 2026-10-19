@@ -79,6 +79,7 @@
 -- Estados (sem coluna de estado; tudo sai de ok/tentativas/reservado_em/cancelado_em):
 --   PENDENTE  = ok = false, cancelado_em nulo e tentativas < 5 (nova: tentativas = 0);
 --   RESERVADA = pendente com reservado_em nos últimos 15 min (uma rodada está entregando);
+--   ADIADA    = pendente com adiado_ate no futuro (esperando o ERP; não gasta tentativa);
 --   ENVIADA   = ok = true (enviado_em preenchido);
 --   DESISTIU  = ok = false e tentativas >= 5 (aparece na tela de pendências como falha, com o erro);
 --   CANCELADA = cancelado_em preenchido — a entrada foi cancelada no ShopFloor ANTES de chegar ao
@@ -218,6 +219,17 @@ end $chk2$;
 -- o `delete` do lado referenciado — e nesta tabela nada é apagado (ver abaixo).
 alter table public.sf_estoque_envios
   add column if not exists entrada_id uuid;
+
+-- ADIADO ATÉ: a linha está ESPERANDO uma condição do ERP (OP em uso por alguém, sem empenho, falta de
+-- saldo de componente, OP ainda não liberada para a integração, ERP fora do ar) e nada chegou a ele.
+-- A reserva só pega linhas com `adiado_ate` nulo ou já passado, então a espera não gasta tentativa e
+-- também não martela o ERP a cada rodada. É coluna PRÓPRIA, e não um `reservado_em` forjado no passado,
+-- porque `reservado_em` tem leitores com outro significado — o cancelamento (`sf_estoque_reverter`,
+-- que trata reserva recente como "uma rodada está entregando") e a tela de pendências ("Enviando agora"):
+-- uma linha só esperando apareceria como em voo, e cancelá-la viraria estorno manual. Achado no smoke
+-- local de 19/10/2026. Fora do `create table` pelo mesmo motivo de `entrada_id`.
+alter table public.sf_estoque_envios
+  add column if not exists adiado_ate timestamptz;
 
 -- A chave estrangeira é pra própria tabela (a fila guarda entradas e estornos na mesma). Em do-block
 -- guardado porque `add constraint` não tem `if not exists` e reaplicar a migração não pode falhar —
@@ -747,6 +759,7 @@ begin
          and e.cancelado_em is null
          and e.tentativas < 5
          and (e.reservado_em is null or e.reservado_em < now() - interval '15 minutes')
+         and (e.adiado_ate is null or e.adiado_ate <= now())
          -- A ORDEM DO PAR (ver o ⚠️ acima): estorno só é elegível depois que A ENTRADA DELE virou
          -- `ok`. E a entrada dele não é inferida aqui: é a linha apontada pelo `entrada_id`, que a
          -- sf_estoque_reverter gravou com o id da entrada que ela travou e DEBITOU ao criar o estorno.

@@ -163,7 +163,7 @@ describe('concluirEnvio', () => {
     })
   })
 
-  it('espera (aguardar): devolve a tentativa cobrada e adia a linha ~5 min, sem enviado_em', async () => {
+  it('espera (aguardar): devolve a tentativa e adia a linha ~5 min em `adiado_ate`, sem tocar em reservado_em', async () => {
     const { sb, chamadas } = sbFalso()
     const antes = Date.now()
     await criarRepositorioEstoqueEnvios(sb).concluirEnvio(
@@ -171,13 +171,21 @@ describe('concluirEnvio', () => {
       { ok: false, erro: 'OP sem empenho suficiente no Compels.', aguardar: true },
     )
     const u = chamadas[0]!.update!
-    expect(u).toMatchObject({ ok: false, erro: 'OP sem empenho suficiente no Compels.', enviado_em: null, tentativas: 2 })
-    // 10 min no passado: a reserva só vence após 15 min, então a linha volta daqui a ~5 min
-    const reservadoEm = new Date(String(u.reservado_em)).getTime()
-    expect(antes - reservadoEm).toBeGreaterThanOrEqual(10 * 60 * 1000 - 1000)
-    expect(antes - reservadoEm).toBeLessThan(10 * 60 * 1000 + 5000)
+    expect(u).toMatchObject({ ok: false, erro: 'OP sem empenho suficiente no Compels.', enviado_em: null, tentativas: 2, reservado_em: null })
+    // reservado_em fica nulo: o cancelamento e a tela leem reserva viva como "uma rodada está entregando"
+    const adiadoAte = new Date(String(u.adiado_ate)).getTime()
+    expect(adiadoAte - antes).toBeGreaterThanOrEqual(5 * 60 * 1000 - 1000)
+    expect(adiadoAte - antes).toBeLessThan(5 * 60 * 1000 + 5000)
     // a cerca continua sendo a tentativa lida na reserva (3), não a devolvida
     expect(chamadas[0]!.filtros).toContainEqual(['tentativas', 3])
+  })
+
+  it('sucesso e falha comum LIMPAM o adiamento', async () => {
+    const { sb, chamadas } = sbFalso()
+    await criarRepositorioEstoqueEnvios(sb).concluirEnvio(ENVIO, { ok: true })
+    await criarRepositorioEstoqueEnvios(sb).concluirEnvio(ENVIO, { ok: false, erro: 'ERP 500' })
+    expect(chamadas[0]!.update).toMatchObject({ adiado_ate: null })
+    expect(chamadas[1]!.update).toMatchObject({ adiado_ate: null })
   })
 
   it('espera na primeira tentativa não deixa a contagem negativa', async () => {

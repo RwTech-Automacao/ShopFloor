@@ -18,11 +18,8 @@ import type {
  * SÓ ao `service_role`, porque reservar conta tentativa e esconde a linha por 15 min.
  */
 
-/**
- * Quanto "no passado" fica o `reservado_em` de uma linha adiada por espera. A reserva só vence após 15
- * min, então 10 min atrás = a linha volta a ser elegível em ~5 min.
- */
-const ESPERA_ADIADA_MS = 10 * 60 * 1000
+/** Quanto tempo uma linha em espera fica fora da fila (`adiado_ate`) antes de tentar de novo. */
+const ESPERA_ADIADA_MS = 5 * 60 * 1000
 
 /** Erro grande não ajuda ninguém na tela e incha a linha: guarda o começo, que é onde está o motivo. */
 const LIMITE_ERRO = 500
@@ -132,16 +129,19 @@ export function criarRepositorioEstoqueEnvios(
           // NÃO "destoca" a linha para a sf_estoque_reverter — a marca que decide lá é
           // `tentativas > 0`, que nunca volta atrás (a reserva viva é só a outra metade dela).
           //
+          //
           // EXCEÇÃO, a espera (`aguardar`): NADA chegou ao ERP (a recusa veio antes de qualquer
           // gravação), então a linha continua "intocada" de verdade: devolve a tentativa cobrada na
-          // reserva e a esconde por ~5 min (elegível quando `reservado_em` passa de 15 min atrás, e
-          // aqui ele fica 10 min no passado). Sem isso, esperar o empenho gastaria as 5 tentativas.
+          // reserva e a adia por ~5 min na coluna `adiado_ate` (a reserva só pega linha com adiado_ate
+          // vencido). Sem isso, esperar o empenho gastaria as 5 tentativas. Não se usa `reservado_em`
+          // para adiar: ele é lido pelo cancelamento e pela tela como "uma rodada está entregando".
           ...(!resultado.ok && resultado.aguardar
             ? {
                 tentativas: Math.max(envio.tentativas - 1, 0),
-                reservado_em: new Date(Date.now() - ESPERA_ADIADA_MS).toISOString(),
+                reservado_em: null,
+                adiado_ate: new Date(Date.now() + ESPERA_ADIADA_MS).toISOString(),
               }
-            : { reservado_em: null }),
+            : { reservado_em: null, adiado_ate: null }),
         })
         .eq('id', envio.id)
         // Cerca: se a reserva desta rodada venceu e outra rodada re-reservou a linha (tentativas

@@ -264,7 +264,7 @@ export async function liberarParaReenvio(id: string): Promise<boolean> {
   const sb = createServiceSupabase()
   const { data, error } = await sb
     .from('sf_estoque_envios')
-    .update({ tentativas: TENTATIVAS_APOS_REENVIO, reservado_em: null })
+    .update({ tentativas: TENTATIVAS_APOS_REENVIO, reservado_em: null, adiado_ate: null })
     .eq('id', id)
     .eq('ok', false)
     .is('cancelado_em', null)
