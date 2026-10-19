@@ -313,3 +313,9 @@ Empenhar automático, estorno (fase 2), OPs filhas, número de série peça a pe
 - **OPs antigas e finalizadas não mudam.** O % de conclusão e a finalização automática contam as peças que passaram pelo **último posto da rota**: adicionar o Almoxarifado a uma OP finalizada pela rotina pode reabri-la. Regra de operação: não adicionar o Almoxarifado a OPs já finalizadas; usar só nas OPs novas.
 - Integração numa OP antiga: se o Compels já mostra o apontado, a linha é marcada "já tinha a entrada" e nada é gravado de novo (só vale para OPs na lista de liberadas, que vem vazia).
 
+## 12. Decisões de 19/10 (tarde/noite): sem mensagem ao Valdeí agora; parte 2 = empenho
+
+- **Não se envia a mensagem ao Valdeí por ora.** O usuário acompanha de perto a **primeira OP em produção** que passar pelo posto Almoxarifado, comenta o que vir e decide o resto depois. Fica registrado que a **autorização formal do Compels** e o **aviso do volume de lotes** (um lote por peça) continuam em aberto e podem ser retomados a qualquer momento (rascunho da mensagem no histórico da conversa de 19/10).
+- **Parte 2 (depois do acompanhamento):** **puxar os empenhos** do Compels para ver se é possível **empenhar** automaticamente (hoje a integração só confere o empenho e espera o Almoxarifado empenhar, por decisão de 16/10: o empenho está ligado ao pagamento do material). Primeiro passo é só leitura: listar os empenhos da OP e comparar com o que já foi apontado. O gesto de empenhar já está capturado (`POST /empenho`, §2.6); falta decidir a regra de negócio.
+- **Estorno automático:** continua para a fase 2 (a linha de estorno fica "Esperando o Compels" até lá; sem botão "já estornei").
+
