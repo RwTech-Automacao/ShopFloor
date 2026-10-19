@@ -24,6 +24,8 @@ export default async function EstoquePendentePage() {
     return <SemPermissao descricao="Você não tem permissão para ver a fila de estoque do Compels." />
   }
   const podeAdministrar = podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')
+  // Só diz SE existe (nunca o valor): sem o login do ezpointweb no servidor, a integração não envia nada.
+  const integracaoConfigurada = Boolean(process.env.COMPELS_EZPOINT_USUARIO && process.env.COMPELS_EZPOINT_SENHA)
 
   const { linhas, entradas, cortada } = await listarEstoquePendente(LIMITE)
   const grupos = agruparEstoquePendente(linhas, entradas)
@@ -70,21 +72,37 @@ export default async function EstoquePendentePage() {
       </div>
 
       {/*
-        O AVISO FIXO É REQUISITO, NÃO ENFEITE. O último metro (a chamada que fala com o Compels)
-        ainda não existe — endpoint, autenticação e formato dependem do fornecedor —, então a fila
-        ACUMULA E NÃO ESVAZIA, e isso é esperado. Sem esta frase, a primeira pessoa que abrir a tela
-        abre um chamado dizendo que a integração quebrou.
+        O AVISO FIXO É REQUISITO, NÃO ENFEITE: a primeira pessoa que abrir esta tela precisa saber o que
+        ela mostra e o que NÃO é defeito. Ele depende de a integração estar configurada neste ambiente
+        (variáveis do ezpointweb no servidor): sem elas a fila acumula e não esvazia, e a frase diz isso.
       */}
       <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40">
-        <p className="font-medium">
-          A integração com o Compels ainda não foi configurada: as entradas ficam guardadas aqui até
-          isso acontecer.
-        </p>
-        <p className="mt-1 text-muted-foreground">
-          Nada foi perdido e nada precisa ser bipado de novo — cada linha desta tela é uma
-          movimentação guardada, com a chave que o ERP vai usar. Enquanto o envio não existir, é
-          normal esta lista só crescer.
-        </p>
+        {integracaoConfigurada ? (
+          <>
+            <p className="font-medium">
+              Estas são as entradas que ainda não chegaram ao Compels. Nada foi perdido e nada precisa ser
+              bipado de novo.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Algumas esperam sozinhas e voltam a cada poucos minutos: OP ainda não liberada para a
+              integração, OP aberta por alguém no Compels, falta de empenho ou de saldo de componente.
+              Resolva no Compels e a linha segue. As que falharam de verdade (motivo no fim da linha)
+              pedem o botão Reenviar. Estornos ainda são feitos à mão no ERP.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="font-medium">
+              A integração com o Compels não está configurada neste ambiente: as entradas ficam guardadas
+              aqui até isso acontecer.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Nada foi perdido e nada precisa ser bipado de novo — cada linha desta tela é uma
+              movimentação guardada, com a chave que o ERP vai usar. Enquanto o envio não estiver
+              configurado, é normal esta lista só crescer.
+            </p>
+          </>
+        )}
       </div>
 
       <EstoquePendenteTabela grupos={grupos} podeAdministrar={podeAdministrar} />

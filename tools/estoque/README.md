@@ -10,41 +10,38 @@ quando o banco está fora** — que não é erro, é o RDS desligado pelo plano 
 
 ---
 
-## ⚠️ 0. NÃO ARME ESTA LINHA AINDA
+## ⚠️ 0. QUANDO ARMAR ESTA LINHA
 
-**A linha do crontab só deve entrar no crontab depois de o `compels.ts` existir.** Hoje
-`src/modules/shopfloor/infra/compels.ts` — o último metro, a chamada que fala com o ERP — **não está
-implementado**: ele devolve falha, porque endpoint, autenticação e formato da carga dependem de uma
-resposta do fornecedor (as seis perguntas abertas estão no cabeçalho daquele arquivo).
+O último metro existe: `src/modules/shopfloor/infra/compels.ts` entrega cada linha da fila ao
+**Compels** (Requisitar + Apontar, uma linha = um apontamento), usando o módulo
+`src/modules/compels`. Spec: `docs/superpowers/specs/2026-10-16-integracao-compels-apontamento-design.md`.
 
-O motivo de não armar é o **teto de tentativas**: cada rodada do cron cobra **uma tentativa de cada
-linha** que ela pega, e o teto é **5**. Com o último metro devolvendo falha, a linha que chega ao
-teto **sai da fila** — a volta dela passa a ser uma por vez, no botão **Reenviar** da tela de
-pendências.
+**Só arme a linha depois de TODOS estes pontos:**
 
-Quanto tempo isso leva, com a conta na mão. Cada rodada gasta **no máximo 30 tentativas**, e os dois
-números vêm de `src/modules/shopfloor/application/enviar-estoque.ts`: o lote é de 30 (`LIMITE_LOTE`)
-e o laço **para depois do primeiro lote quando nada foi entregue** (`enviadosNoLote === 0`) — que é
-exatamente o caso de hoje, com o último metro devolvendo falha. Então, com **N** linhas pendentes,
-zerar as 5 tentativas de todas leva
+1. As migrações da fila estão no banco: **0132** (a fila), **0153** (a soma "já enviado por OP") e as
+   da Fase 1 do posto (0128–0131, 0133), na ordem do cabeçalho de cada uma (a 0132 antes da 0129).
+2. As variáveis da seção 1 estão no `.env.production` e o app foi reiniciado com `--update-env`.
+3. A **autorização do Compels/Valdeí** para o usuário de serviço existe.
+4. O **ensaio** (`tools/compels/ensaiar-entrada.mjs`) e a **primeira gravação real** (já feita com a OP
+   8649) passaram no servidor.
+5. `COMPELS_OPS_LIBERADAS` tem a(s) OP(s) que você quer ligar. **Vazia = nenhuma OP é enviada.**
 
-```
-⌈5N / 30⌉ = ⌈N / 6⌉ rodadas
-```
+**O que acontece com cada situação (importa para ler a tela de pendências):**
 
-A linha da seção 3 (`7 9-21 * * 1-5`, uma rodada por hora) dá **13 rodadas por dia útil**. Logo: 30
-linhas → 5 rodadas, das 09:07 às 13:07 (**4 h** de expediente); **100 linhas → 17 rodadas ≈ 1,3 dia
-útil**; 600 linhas → 100 rodadas ≈ uma semana e meia. Numa cadência de 5 minutos (`*/5`, a da linha
-dos Alertas), 5 rodadas são **20 min** (quatro intervalos) e 17 rodadas, 1h20.
+| Situação | O que a fila faz | Gasta tentativa? |
+|---|---|---|
+| OP não está em `COMPELS_OPS_LIBERADAS` | linha fica pendente com o motivo | **não** |
+| OP aberta por alguém no Compels, sem empenho suficiente, pendência de material, falta de saldo de componente, Compels fora do ar (na leitura) | adia a linha ~5 min e tenta de novo sozinha | **não** |
+| Estorno | fica pendente: "o estorno no Compels ainda é manual" | **não** |
+| O Compels recusou a gravação, ou mostra um apontado diferente do que mandamos | falha, e a linha vai ao teto de 5 | **sim** |
 
-Ou seja: armar o cron antes da resposta do fornecedor não adianta nada e gasta as cinco tentativas
-de tudo o que estiver na fila. **Deixe a linha comentada, ou fora do crontab, até o `compels.ts`
-falar com o ERP de verdade.** Nada mais precisa mudar no dia em que ele existir — a rota, a fila e a
-tela já estão prontas.
+Só as falhas **reais** chegam ao teto de **5** e saem da fila (botão **Reenviar** na tela de
+pendências). Esperar empenho de um dia inteiro não derruba as linhas. Um lote de 30 só de linhas
+"esperando" não trava as outras OPs: elas ganham ~5 min de espera e o laço segue para o lote seguinte.
 
-Enquanto o cron não está armado, a fila **acumula e não esvazia**. Isso é esperado, e é o ganho de
-ter construído a fila antes do último metro: a peça fica registrada e visível, em vez de sumir entre
-os dois sistemas.
+**Ritmo:** cada linha faz ~12 chamadas ao Compels (≈ 2–4 s). A rodada anda até uns 40 s de
+trabalho, então o fluxo é de dezenas de linhas por minuto: uma OP de 149 peças bipadas de uma vez
+leva alguns minutos para chegar ao ERP. "Tempo real" aqui quer dizer **minutos**, não segundos.
 
 ---
 
@@ -54,7 +51,18 @@ No `.env.production` da Lightsail (e, para testar, no `.env.local`):
 
 ```
 ESTOQUE_CRON_SECRET=
+COMPELS_EZPOINT_USUARIO=
+COMPELS_EZPOINT_SENHA=
+COMPELS_EZPOINT_EMPRESA=enterplak
+COMPELS_ESTOQUE_ID=217
+COMPELS_LOCACAO_ID=5314
+COMPELS_OPS_LIBERADAS=
 ```
+
+`COMPELS_EZPOINT_USUARIO` e `COMPELS_EZPOINT_SENHA` são o login do ezpointweb que gera o token do Compels
+(**segredos: digite no servidor, nunca em chat nem no repositório**). `COMPELS_ESTOQUE_ID`/`COMPELS_LOCACAO_ID`
+são o destino do produto acabado (estoque **PA**, locação **Padrão**). `COMPELS_OPS_LIBERADAS` é a lista de OPs
+que a integração pode enviar, separadas por vírgula, ou `*` para todas; **vazia = nenhuma**.
 
 Invente um segredo grande: `openssl rand -hex 24`. `SUPABASE_SERVICE_ROLE_KEY` já existe e é a
 credencial com que a rota lê e escreve na fila (a `sf_estoque_reservar` é concedida **só** ao
@@ -103,16 +111,15 @@ grep -c 'Bearer .' ~/.estoque-cron-header   # 1 = tem segredo; 0 = nasceu vazio,
 crontab -e
 ```
 
-Linha a acrescentar — ela vem **comentada**, e é assim que ela deve entrar no crontab hoje. Só tire
-o `#` depois de ler a seção 0:
+Linha a acrescentar — ela vem **comentada**; tire o `#` só depois de cumprir a seção 0:
 
 ```
 # Fila de estoque do ShopFloor → Compels. O cron da Lightsail roda em UTC: aqui as rodadas vão de
-# 09:07 a 21:07 UTC = 06:07–18:07 BRT, seg–sex — dentro do período em que o RDS fica ligado (plano
-# de economia). Uma rodada por hora, no minuto 7 (fora dos minutos redondos, onde moram os outros
-# crons). Chama o app direto na própria máquina (127.0.0.1:3000), sem passar por DNS/nginx/TLS.
-# ⚠️ NÃO ARME AINDA: o `#` da linha abaixo é de propósito (seção 0 — o teto de tentativas).
-#7 9-21 * * 1-5 curl -fsS -m 90 -X POST -H @$HOME/.estoque-cron-header http://127.0.0.1:3000/api/shopfloor/estoque >> $HOME/estoque.log 2>&1
+# 09:00 a 21:59 UTC = 06:00–18:59 BRT, seg–sex — dentro do período em que o RDS fica ligado (plano
+# de economia). Uma rodada por MINUTO, para a entrada chegar ao ERP em poucos minutos. O `flock -n`
+# impede duas rodadas de se sobreporem na mesma máquina (a rodada pode passar de 60 s). Chama o app
+# direto na própria máquina (127.0.0.1:3000), sem passar por DNS/nginx/TLS.
+#* 9-21 * * 1-5 flock -n $HOME/.estoque-cron.lock curl -fsS -m 90 -X POST -H @$HOME/.estoque-cron-header http://127.0.0.1:3000/api/shopfloor/estoque >> $HOME/estoque.log 2>&1
 ```
 
 Por que `-m 90` (e não os 60 dos Alertas): uma rodada reserva lotes de 30 enquanto o lote vier
