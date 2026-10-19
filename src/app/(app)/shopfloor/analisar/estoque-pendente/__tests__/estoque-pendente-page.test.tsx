@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import type { Perfil } from '@/modules/auth/domain/perfil'
 import type { LinhaFilaEstoque } from '@/modules/shopfloor/domain/estoque-pendente'
@@ -95,19 +95,34 @@ describe('gate da tela de estoque pendente', () => {
 })
 
 describe('o que a tela diz sem contexto', () => {
-  it('o aviso de que a integração ainda não existe é fixo no topo', async () => {
+  const NAO_CONFIGURADA = /A integração com o Compels não está configurada neste ambiente/
+  const CONFIGURADA = /Estas são as entradas que ainda não chegaram ao Compels/
+
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  it('sem o login do ezpointweb no servidor, o aviso fixo diz que a integração não está configurada', async () => {
+    vi.stubEnv('COMPELS_EZPOINT_USUARIO', '')
+    vi.stubEnv('COMPELS_EZPOINT_SENHA', '')
     render(await EstoquePendentePage())
-    expect(
-      screen.getByText(/A integração com o Compels ainda não foi configurada/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(NAO_CONFIGURADA)).toBeInTheDocument()
+    expect(screen.queryByText(CONFIGURADA)).not.toBeInTheDocument()
+  })
+
+  it('com a integração configurada, o aviso explica o que a tela mostra (e que estorno é manual)', async () => {
+    vi.stubEnv('COMPELS_EZPOINT_USUARIO', 'u')
+    vi.stubEnv('COMPELS_EZPOINT_SENHA', 's')
+    render(await EstoquePendentePage())
+    expect(screen.getByText(CONFIGURADA)).toBeInTheDocument()
+    expect(screen.getByText(/Estornos ainda são feitos à mão no ERP/)).toBeInTheDocument()
+    expect(screen.queryByText(NAO_CONFIGURADA)).not.toBeInTheDocument()
   })
 
   it('o aviso aparece TAMBÉM com a fila vazia (é ele que explica o vazio)', async () => {
+    vi.stubEnv('COMPELS_EZPOINT_USUARIO', '')
+    vi.stubEnv('COMPELS_EZPOINT_SENHA', '')
     listarEstoquePendente.mockResolvedValue(fila([]))
     render(await EstoquePendentePage())
-    expect(
-      screen.getByText(/A integração com o Compels ainda não foi configurada/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(NAO_CONFIGURADA)).toBeInTheDocument()
     // O resumo do topo e o corpo da tabela dizem a mesma coisa, e nenhum dos dois afirma entrega.
     expect(screen.getAllByText(/Nenhuma movimentação esperando na fila/)).toHaveLength(2)
   })

@@ -4,7 +4,7 @@ vi.mock('server-only', () => ({}))
 
 const SESSAO_OK = {
   usuarioId: 'u1', nome: 'Ana', email: 'ana@x',
-  perfil: { porModulo: { shopfloor: { lancar: true } }, permissoes: {} },
+  perfil: { porModulo: { recebimento: { lancar: true } }, permissoes: {} },
 }
 
 // OP coletiva: o bipe é o código da caixa.
@@ -98,3 +98,30 @@ describe('registrarEntradaAlmoxarifado — etiqueta × contagem real', () => {
     expect(r.erro).toContain('Cadastrar OP')
   })
 })
+
+describe('registrarEntradaAlmoxarifado — permissão (a tela é do Recebimento)', () => {
+  function comPerfil(porModulo: Record<string, Record<string, boolean>>) {
+    const rpc = vi.fn(async () => ({ data: { ok: true, quantidade: 1 }, error: null }))
+    vi.doMock('@/modules/auth/application/get-sessao', () => ({
+      getSessao: async () => ({ usuarioId: 'u1', nome: 'Ana', email: 'ana@x', perfil: { porModulo, permissoes: {} } }),
+    }))
+    vi.doMock('@/modules/shopfloor/infra/lancamento-repository', () => ({ carregarOrdem: async () => ORDEM_COLETIVA }))
+    vi.doMock('@/shared/lib/supabase/server', () => ({ createServerSupabase: async () => ({ rpc }) }))
+    return rpc
+  }
+
+  it('lançar do ShopFloor SOZINHO não basta: recusa antes de falar com o banco', async () => {
+    const rpc = comPerfil({ shopfloor: { lancar: true } })
+    const { registrarEntradaAlmoxarifado } = await import('../almoxarifado-actions')
+    expect(await registrarEntradaAlmoxarifado(BIPE)).toEqual({ ok: false, erro: 'Você não tem permissão para esta ação.' })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('lançar do Recebimento basta', async () => {
+    const rpc = comPerfil({ recebimento: { lancar: true } })
+    const { registrarEntradaAlmoxarifado } = await import('../almoxarifado-actions')
+    expect((await registrarEntradaAlmoxarifado(BIPE)).ok).toBe(true)
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+})
+

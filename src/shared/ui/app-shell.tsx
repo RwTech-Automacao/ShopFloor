@@ -43,6 +43,7 @@ import {
   MonitorCog,
   Cpu,
   PackageSearch,
+  PackageCheck,
   Boxes,
   Server,
   ChartColumn,
@@ -86,6 +87,7 @@ export const RECEBIMENTO: FolhaModular[] = [
   // A rota da planilha continua DE PÉ, com o gate que já tem — só saiu do menu. Se um dia servir
   // para conferir a recontagem contra o saldo do ERP, é uma linha para devolver aqui.
   { chave: 'etiquetar-rolo', rotulo: 'Etiquetar rolo', href: '/recebimento/etiquetar-rolo', icone: Tags, modulo: 'recebimento', perm: 'gerar_etiqueta' },
+  { chave: 'rec-almoxarifado', rotulo: 'Almoxarifado', href: '/recebimento/almoxarifado', icone: PackageCheck, modulo: 'recebimento', perm: 'lancar' },
   { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, modulo: 'recebimento', perm: 'administrar' },
 ]
 

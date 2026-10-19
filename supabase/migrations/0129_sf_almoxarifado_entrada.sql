@@ -11,7 +11,8 @@
 -- inteira). O que o FORMATO resolve já foi resolvido em TS (classificarBipeAlmoxarifado); aqui fica
 -- só o que depende de DADO — e é por isso que tudo mora numa transação só:
 --
---   sem_permissao        o gate é shopfloor.lancar, na função de DOIS argumentos: a de um argumento
+--   sem_permissao        o gate é recebimento.lancar (a tela do Almoxarifado mora no módulo Recebimento;
+--                        decidido em 19/10/2026), na função de DOIS argumentos: a de um argumento
 --                        anula o RBAC (revisão de segurança de 21/09/2026).
 --   ordem_nao_encontrada (pmo, op) tem que existir em sf_ordens — é de lá que sai o cliente.
 --   posto_invalido       o posto tem que existir com perfil de recurso 'almoxarifado' (0128). Sem
@@ -164,7 +165,7 @@ declare
   v_serie_fila text;
   v_alvo       text;
 begin
-  if not tem_permissao('shopfloor','lancar') then
+  if not tem_permissao('recebimento','lancar') then
     return jsonb_build_object('ok', false, 'motivo', 'sem_permissao');
   end if;
 

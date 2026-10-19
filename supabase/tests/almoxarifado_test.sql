@@ -96,7 +96,7 @@ insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exig
 -- resolve o nome na hora de executar.
 \i /tmp/0132.sql
 
-select set_config('teste.perms', 'shopfloor.lancar', false);
+select set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
 
 -- ---------- massa de teste ----------
 -- Dois postos de embalagem NÃO entram aqui: o que interessa é que o perfil (recurso 'caixa') é o
@@ -329,14 +329,23 @@ begin
                                'CX[8][14]8498-PMOC14', 'caixa', 14, '');
   if r->>'motivo' <> 'sem_permissao' then raise exception 'FALHOU: sem permissão passou: %', r; end if;
 
-  -- Permissão do módulo errado não serve (é o que a função de UM argumento deixava passar).
-  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.visualizar', false);
+  -- Permissão do módulo errado não serve (é o que a função de UM argumento deixava passar): o gate é
+  -- recebimento.lancar (a tela do Almoxarifado mora no Recebimento). shopfloor.lancar sozinho NÃO basta.
+  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.visualizar', false);
   r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana',
                                'CX[8][14]8498-PMOC14', 'caixa', 14, '');
   if r->>'motivo' <> 'sem_permissao' then
-    raise exception 'FALHOU: lancar de outro módulo passou: %', r; end if;
+    raise exception 'FALHOU: lancar do ShopFloor passou: %', r; end if;
 
-  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  -- E recebimento.lancar sozinho (mais o visualizar de quem lê a tela) ENTRA: o motivo deixa de ser
+  -- sem_permissao (a caixa de teste pode ser recusada por outra regra, mas não por permissão).
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.visualizar', false);
+  r := sf_almoxarifado_entrada('PMOC14', '8498', 'Almoxarifado', 'Ana',
+                               'CX[8][14]8498-PMOC14', 'caixa', 14, '');
+  if r->>'motivo' = 'sem_permissao' then
+    raise exception 'FALHOU: recebimento.lancar tinha que passar o gate: %', r; end if;
+
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,recebimento.lancar', false);
   raise notice '9. gate de permissão (recusa como dado, e por módulo): ok';
 end $t$;
 
@@ -738,7 +747,7 @@ declare r jsonb; v record;
 begin
   -- 'lancar' (global) alimenta o gate de UM argumento da sf_nqa_caixa; 'shopfloor.lancar' é o da RPC
   -- do Almoxarifado. Os dois juntos porque o teste roda as duas funções em sequência.
-  perform set_config('teste.perms', 'shopfloor.lancar,lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,lancar', false);
 
   -- O que faz o `max(posto)` errar: as linhas do código estão em DOIS postos, e o maior deles não é
   -- o posto da caixa que a qualidade vai mandar remontar.
@@ -768,7 +777,7 @@ begin
   if v.posto <> 'Embalagem' then
     raise exception 'FALHOU (a): aposentou no posto errado (%) — o posto da caixa é da Embalagem', v.posto; end if;
 
-  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
   raise notice '23(a). NQA reprova: aposenta no posto da CAIXA, e não no max(posto) dos registros: ok';
 end $t$;
 
@@ -784,7 +793,7 @@ from generate_series(1, 3) i;
 do $t$
 declare r jsonb; v_erro text; v_regs int; v_codigo text; v_revisao int;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,lancar', false);
 
   -- A entrada no Almoxarifado ACONTECE de verdade: 3 linhas no posto 'Estoque', cada uma com a série
   -- da peça e o código da caixa. É esse estado que a recusa existe pra defender.
@@ -838,7 +847,7 @@ begin
   if v_regs <> 3 then
     raise exception 'FALHOU (b): as 3 linhas do Almoxarifado viraram %', v_regs; end if;
 
-  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
   raise notice '23(b). caixa que já deu entrada no Almoxarifado: NQA recusado (reprova e aprova), sem rastro: ok';
 end $t$;
 
@@ -855,7 +864,7 @@ from generate_series(1, 3) i;
 do $t$
 declare r jsonb;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,lancar', false);
 
   r := sf_nqa_caixa('PMOC23', '8507', 'Inspeção NQA', 'Qualidade', 'CX[1][3]8507-PMOC23',
                     'Reprovado', 'Embalagem',
@@ -866,7 +875,7 @@ begin
        where numero_caixa = 'CX[1][3]8507-PMOC23' and posto = 'Embalagem') <> 1 then
     raise exception 'FALHOU (c): a montagem não foi aposentada na Embalagem'; end if;
 
-  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
   raise notice '23(c). OP sem posto de almoxarifado: NQA aprova/reprova como sempre: ok';
 end $t$;
 
@@ -925,7 +934,7 @@ select 'Marcos', 'Embalagem', 'PMOC18', '8501', 'Cliente Cancelar', 'CX[3][4]850
 do $t$
 declare r jsonb;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Ana', 'CX[1][4]8501-PMOC18', 'caixa', 4, '');
   if (r->>'quantidade')::int <> 4 then raise exception 'FALHOU (massa): caixa 1 não entrou: %', r; end if;
   r := sf_almoxarifado_entrada('PMOC18', '8501', 'Almoxarifado', 'Ana', 'CX[2][3]8501-PMOC18', 'caixa', 3, '');
@@ -946,7 +955,7 @@ do $t$
 declare v_passou boolean := false; v_erro text; v_id uuid;
 begin
   select id into v_id from teste_caixa_ids where chave = 'cx1';
-  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
   begin
     perform sf_cancelar_caixa_almoxarifado(v_id, 'teste');
     v_passou := true;  -- marca aqui: um `raise` dentro do bloco seria pego pelo próprio handler
@@ -968,7 +977,7 @@ begin
 
   if (select count(*) from sf_registros where numero_caixa = 'CX[1][4]8501-PMOC18' and posto = 'Almoxarifado') <> 4 then
     raise exception 'FALHOU: a recusa apagou linha'; end if;
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   raise notice '24. cancelar a caixa sem permissão de gestor → SEM_PERMISSAO: ok';
 end $t$;
 
@@ -1407,7 +1416,7 @@ select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[3][3]8503
 do $t$
 declare e public.sf_estoque_envios; v_id uuid; v_n int;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
                               'CX[1][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
     raise exception 'FALHOU (massa): a caixa 1 não entrou'; end if;
@@ -1518,7 +1527,7 @@ values ('Marcos', 'Embalagem', 'PMOI03', '9002', 'Cliente Avulso', '2001', 1, '2
 do $t$
 declare e public.sf_estoque_envios; v_id uuid; v_n int;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
 
   -- (a) peça individual, envio PENDENTE: é a entrada do teste 5 (peça 1042), que nunca saiu.
   select id into v_id from sf_registros
@@ -1621,7 +1630,7 @@ select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[5][3]8503
 do $t$
 declare v_id uuid; v_soma int; v_n int; v_est int; v_qtd int;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
                               'CX[4][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
     raise exception 'FALHOU (massa): a caixa 4 não entrou'; end if;
@@ -1741,7 +1750,7 @@ select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[7][3]8503
 do $t$
 declare e public.sf_estoque_envios; v_r text;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
 
   -- (a) uma rodada tentou e a reserva já venceu (a linha está de volta na fila, mas tocada).
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
@@ -1838,7 +1847,7 @@ select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[10][3]850
 do $t$
 declare e public.sf_estoque_envios; v_id uuid; v_soma int; v_n int;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
 
   -- 1. a caixa entra: E1 de 3 peças.
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
@@ -1891,7 +1900,7 @@ end $t$;
 do $t$
 declare e public.sf_estoque_envios; v_n int;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Bruno',
                               'CX[9][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
     raise exception 'FALHOU: o rebipe depois do cancelamento tinha que ser aceito'; end if;
@@ -1922,7 +1931,7 @@ end $t$;
 do $t$
 declare e public.sf_estoque_envios; v_id uuid; v_soma int; v_n int;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
                               'CX[10][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
     raise exception 'FALHOU (massa): a caixa 10 não entrou'; end if;
@@ -1969,7 +1978,7 @@ select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[11][3]850
 do $t$
 declare e public.sf_estoque_envios; v_id uuid; v_r text;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
                               'CX[11][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
     raise exception 'FALHOU (massa): a caixa 11 não entrou'; end if;
@@ -2101,7 +2110,7 @@ do $t$
 declare e1 public.sf_estoque_envios; e2 public.sf_estoque_envios; v_id uuid; v_r text;
   c_chave text := 'ALMOX/PMOC20/8503/Almoxarifado/CX[12][3]8503-PMOC20/';
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
 
   -- E1: entrada de 3 peças com uma rodada já TOCADA (a carga de 3 saiu), cancelada por inteiro em
   -- Registros — o que a estorna e a deixa VIVA na fila com saldo zero (é o resultado do teste 44).
@@ -2207,7 +2216,7 @@ select 'Marcos', 'Embalagem', 'PMOC20', '8503', 'Cliente Estorno', 'CX[13][3]850
 do $t$
 declare e public.sf_estoque_envios; v_id uuid;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Ana',
                               'CX[13][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
     raise exception 'FALHOU (massa): a caixa 13 não entrou'; end if;
@@ -2227,7 +2236,7 @@ end $t$;
 do $t$
 declare e public.sf_estoque_envios;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   if (sf_almoxarifado_entrada('PMOC20', '8503', 'Almoxarifado', 'Bruno',
                               'CX[13][3]8503-PMOC20', 'caixa', 3, '')->>'quantidade')::int <> 3 then
     raise exception 'FALHOU (massa): o rebipe da caixa 13 tinha que ser aceito'; end if;
@@ -2246,7 +2255,7 @@ update public.sf_estoque_envios set ok = true, enviado_em = now(), tentativas = 
 do $t$
 declare e public.sf_estoque_envios; v_id uuid;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   select id into v_id from sf_registros
    where posto = 'Almoxarifado' and numero_caixa = 'CX[13][3]8503-PMOC20' limit 1;
   if sf_cancelar_caixa_almoxarifado(v_id, 'caixa voltou do cliente') <> 3 then
@@ -2339,7 +2348,7 @@ do $t$
 declare e1 public.sf_estoque_envios; e2 public.sf_estoque_envios; v_id uuid;
   c_chave text := 'ALMOX/PMOC20/8503/Almoxarifado/CX[12][3]8503-PMOC20/';
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar,shopfloor.administrar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,shopfloor.administrar', false);
   select id into v_id from sf_registros
    where posto = 'Almoxarifado' and numero_caixa = 'CX[12][3]8503-PMOC20'
    order by numero_serie_norm limit 1;
@@ -2418,7 +2427,7 @@ values ('Marcos', 'Embalagem', 'PMOI04', '9005', 'Cliente Fora Individual', '300
 do $t$
 declare r jsonb; v_regs int; v_fila int;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
 
   -- (a) CAIXA, na OP que não tem o posto.
   r := sf_almoxarifado_entrada('PMOC21', '8505', 'Almoxarifado', 'Ana',
@@ -2454,7 +2463,7 @@ do $t$ begin perform public.teste_op_postos('PMOI04', '9005', array['Almoxarifad
 do $t$
 declare r jsonb;
 begin
-  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
 
   -- (c) O CAMINHO LEGÍTIMO NÃO QUEBROU: mesma caixa, mesma massa, só o posto agora está na OP.
   r := sf_almoxarifado_entrada('PMOC21', '8505', 'Almoxarifado', 'Ana',
@@ -2507,7 +2516,7 @@ begin
     raise exception 'FALHOU: sobraram % linha(s) no Almoxarifado depois do cancelamento', v_regs; end if;
 
   -- E agora a inspeção passa: sem entrada em estoque, a guarda nova não tem o que ver.
-  perform set_config('teste.perms', 'shopfloor.lancar,lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar,lancar', false);
   r := sf_nqa_caixa('PMOC22', '8506', 'Inspeção NQA', 'Qualidade', 'CX[1][3]8506-PMOC22',
                     'Reprovado', 'Embalagem',
                     '[{"sn_norm":"9901","visual":"Reprovado","funcional":"Aprovado","observacao":"riscada"}]'::jsonb);
@@ -2517,7 +2526,7 @@ begin
        where numero_caixa = 'CX[1][3]8506-PMOC22' and posto = 'Embalagem') <> 1 then
     raise exception 'FALHOU: a montagem não foi aposentada na Embalagem depois da reprova'; end if;
 
-  perform set_config('teste.perms', 'shopfloor.lancar', false);
+  perform set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
   raise notice '49. cancelar a entrada devolve a caixa pro NQA (a recusa do 23(b) tem saída): ok';
 end $t$;
 

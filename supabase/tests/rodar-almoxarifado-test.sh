@@ -42,7 +42,7 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0131.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0132.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0133.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
-  -c "select set_config('teste.perms','shopfloor.lancar',false)" \
+  -c "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false)" \
   -c "select sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','Ana','CX[7][14]8498-PMOC14','caixa',14,'')->>'motivo'" \
   | tail -1 | grep -qx ja_lancado \
   && echo "idempotência da 0128/0129: ok" \
@@ -60,7 +60,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
           'SN-' || (8300 + i)::text, (8300 + i)::text from generate_series(1, 14) i"
 BIPE="sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','%s','CX[20][14]8498-PMOC14','caixa',14,'')"
 printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "begin;" \
   "select $(printf "$BIPE" Ana)->>'ok';" \
   "select pg_sleep(3);" \
@@ -69,7 +69,7 @@ printf "%s\n" \
 A=$!
 # A B entra 1s depois (já com a A dentro da transação) e não pode passar na frente.
 B=$(printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "select pg_sleep(1);" \
   "select $(printf "$BIPE" Bruno)->>'motivo';" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
@@ -87,7 +87,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
    values ('Marcos', 'Embalagem', 'PMOI01', '9000', 'Cliente Individual', '1077', 1, '1077', '1077')"
 BIPE="sf_almoxarifado_entrada('PMOI01','9000','Almoxarifado','%s','1077','serie',1,'1077')"
 printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "begin;" \
   "select $(printf "$BIPE" Ana)->>'ok';" \
   "select pg_sleep(3);" \
@@ -95,7 +95,7 @@ printf "%s\n" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq >/dev/null &
 A=$!
 B=$(printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "select pg_sleep(1);" \
   "select $(printf "$BIPE" Bruno)->>'motivo';" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
@@ -117,7 +117,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
 BIPE_A="sf_almoxarifado_entrada('PMOI02','9001','Almoxarifado','%s','00043-00462-0015718','serie',1,'430046200015718')"
 BIPE_B="sf_almoxarifado_entrada('PMOI02','9001','Almoxarifado','%s','000043-00462-0015718','serie',1,'430046200015718')"
 printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "begin;" \
   "select $(printf "$BIPE_A" Ana)->>'ok';" \
   "select pg_sleep(3);" \
@@ -125,7 +125,7 @@ printf "%s\n" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq >/dev/null &
 A=$!
 B=$(printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "select pg_sleep(1);" \
   "select $(printf "$BIPE_B" Bruno)->>'motivo';" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
@@ -148,7 +148,7 @@ QTD=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
   "insert into sf_registros (colaborador, posto, pmo, op, cliente, numero_caixa, numero_serie, numero_serie_norm)
    select 'Marcos', 'Embalagem', 'PMOC14', '8498', 'Cliente Coletiva', 'CX[21][4]8498-PMOC14',
           'SN-' || (8400 + i)::text, (8400 + i)::text from generate_series(1, 4) i" -c \
-  "select set_config('teste.perms','shopfloor.lancar',false)" -c \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false)" -c \
   "select sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','Ana','CX[21][4]8498-PMOC14','caixa',4,'')->>'quantidade'" \
   | tail -1)
 [ "$QTD" = 4 ] || { echo "corrida do cancelamento: a entrada de partida falhou (qtd=$QTD)"; exit 1; }
@@ -161,7 +161,7 @@ printf "%s\n" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq >/dev/null &
 A=$!
 B=$(printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "select pg_sleep(1);" \
   "select sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','Bruno','CX[21][4]8498-PMOC14','caixa',4,'')::text;" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
@@ -186,7 +186,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
      for each row when (new.bipe = 'CX[3][2]8502-PMOC19') execute function public.teste_explode()"
 set +e
 ERRO=$(printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "select $BIPE3;" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq 2>&1)
 set -e
@@ -203,7 +203,7 @@ echo "$ERRO" | grep -q EXPLODIU && [ "$SOBROU" = 0/0 ] \
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
   "drop trigger teste_explode_fila_3 on sf_estoque_envios"
 ENTROU=$(printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "select $BIPE3->>'quantidade';" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
 SOBROU=$(docker exec "$NOME" psql -U postgres -tAq -c \
@@ -228,7 +228,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
      execute function public.teste_explode()"
 set +e
 ERRO=$(printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "select $BIPE4;" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq 2>&1)
 set -e
@@ -245,7 +245,7 @@ echo "$ERRO" | grep -q EXPLODIU && [ "$SOBROU" = 0/0 ] \
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c \
   "drop trigger teste_explode_registro_4 on sf_registros"
 ENTROU=$(printf "%s\n" \
-  "select set_config('teste.perms','shopfloor.lancar',false);" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "select $BIPE4->>'quantidade';" \
   | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
 SOBROU=$(docker exec "$NOME" psql -U postgres -tAq -c \

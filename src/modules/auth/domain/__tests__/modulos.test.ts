@@ -21,10 +21,10 @@ describe('PERMISSOES_POR_MODULO', () => {
     expect(PERMISSOES_POR_MODULO.sistema).toEqual(['administrar'])
   })
 
-  it('recebimento expõe o conjunto completo de permissões', () => {
+  it('recebimento expõe o conjunto completo de permissões (inclui lançar, do Almoxarifado)', () => {
     expect(PERMISSOES_POR_MODULO.recebimento).toEqual([
       'visualizar', 'importar', 'editar', 'finalizar',
-      'editar_finalizado', 'excluir', 'gerar_etiqueta', 'administrar',
+      'editar_finalizado', 'excluir', 'gerar_etiqueta', 'administrar', 'lancar',
     ])
   })
 })

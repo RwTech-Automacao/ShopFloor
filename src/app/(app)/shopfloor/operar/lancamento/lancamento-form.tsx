@@ -13,6 +13,7 @@ import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resu
 import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
 import { serieDentroDaFaixa, normalizarSerie, MAX_SERIE } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
+import { postosSelecionaveis } from '@/modules/shopfloor/domain/postos-lancamento'
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { postoEhDestinoDeRota, type ConsertoConfirmavel } from '@/modules/shopfloor/domain/rota-reteste'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
@@ -69,18 +70,25 @@ export function LancamentoForm({
   postosPerfil,
   postosColetivo,
   postosRotaDestino,
+  modoAlmoxarifado,
 }: {
   ordens: OrdemLancamentoLista[]
   defeitos: { codigo: string; tipo: number }[]
   postosPerfil: Record<string, PerfilPosto>
   postosColetivo: Record<string, boolean>
   postosRotaDestino: string[]
+  /**
+   * Tela do Almoxarifado (`/recebimento/almoxarifado`): o mesmo formulário com o POSTO FIXO e o
+   * COLABORADOR vindo do usuário logado (só leitura, mostrado na tela). Sem isto é o Lançamento comum,
+   * que não oferece o posto Almoxarifado.
+   */
+  modoAlmoxarifado?: { colaborador: string; posto: string }
 }) {
-  const [colaborador, setColaborador] = useState('')
+  const [colaborador, setColaborador] = useState(modoAlmoxarifado?.colaborador ?? '')
   const [cliente, setCliente] = useState('')
   const [pmo, setPmo] = useState('')
   const [op, setOp] = useState('')
-  const [posto, setPosto] = useState('')
+  const [posto, setPosto] = useState(modoAlmoxarifado?.posto ?? '')
   const [numeroSerie, setNumeroSerie] = useState('')
   const [status, setStatus] = useState('')
   const [nqaVisual, setNqaVisual] = useState('')
@@ -205,7 +213,7 @@ export function LancamentoForm({
     setNqaRetomavel(null)
   }
 
-  const postosDaOp = ordemSel?.postos ?? []
+  const postosDaOp = postosSelecionaveis(ordemSel?.postos ?? [], perfilDo, modoAlmoxarifado)
 
   const comStatus = posto !== '' && perfilTemStatus(perfilDo(posto))
   const ehNqa = perfilDo(posto).recurso === 'nqa'
@@ -336,14 +344,16 @@ export function LancamentoForm({
     if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
     resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // nova OP → histórico + total zeram
     setBipeCab('')
-    setTimeout(() => colaboradorRef.current?.focus(), 0)
+    // Almoxarifado: colaborador é fixo, então o foco vai direto para o campo do bipe da entrada.
+    setTimeout(() => (modoAlmoxarifado ? document.getElementById('bipeAlmoxarifado') : colaboradorRef.current)?.focus(), 0)
   }
   async function atualizarCabecalho() {
     if (!(await podeTrocarContexto())) return
     limparLoteLocal(pmo, op, posto) // defensivo: garante que não sobra lote salvo do contexto anterior
     setLotesPuxados(new Set())
     setCliente(''); setPmo(''); setOp('')
-    setColaborador(''); setPosto('') // trocar de cabeçalho zera também quem e onde
+    // trocar de cabeçalho zera também quem e onde (no modo Almoxarifado quem e onde são fixos)
+    setColaborador(modoAlmoxarifado?.colaborador ?? ''); setPosto(modoAlmoxarifado?.posto ?? '')
     setNumeroSerie(''); resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // reset total → histórico + total zeram
     setBipeCab('')
     setTimeout(() => bipeCabRef.current?.focus(), 0)
@@ -876,7 +886,7 @@ export function LancamentoForm({
       ) : (
         <CardContent className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3 [&_label]:text-xs [&_input]:h-8 [&_input]:text-sm [&_button]:h-8 [&_button]:text-sm">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="colaborador">Colaborador</Label>
+            <Label htmlFor="colaborador">{modoAlmoxarifado ? 'Colaborador (usuário logado)' : 'Colaborador'}</Label>
             <Input
               id="colaborador"
               ref={colaboradorRef}
@@ -884,7 +894,8 @@ export function LancamentoForm({
               onChange={(e) => setColaborador(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); postoTriggerRef.current?.focus() } }}
               autoComplete="off"
-              disabled={enviandoLote}
+              disabled={enviandoLote || Boolean(modoAlmoxarifado)}
+              readOnly={Boolean(modoAlmoxarifado)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -901,7 +912,7 @@ export function LancamentoForm({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Posto</Label>
-            <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviando || processando || enviandoLote}>
+            <Select value={posto} onValueChange={(v) => mudarPosto(v ?? '')} disabled={enviando || processando || enviandoLote || Boolean(modoAlmoxarifado)}>
               <SelectTrigger ref={postoTriggerRef}><SelectValue placeholder="Selecione" /></SelectTrigger>
               <SelectContent>{postosDaOp.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
             </Select>

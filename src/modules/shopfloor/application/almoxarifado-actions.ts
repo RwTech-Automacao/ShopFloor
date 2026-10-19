@@ -120,7 +120,7 @@ export async function registrarEntradaAlmoxarifado(
   | { ok: false; erro: string }
 > {
   const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'lancar')) {
     return { ok: false, erro: SEM_PERMISSAO }
   }
 
