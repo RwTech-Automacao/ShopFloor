@@ -24,7 +24,7 @@ Embalagem).
 5. **Uma linha no Compels por lote** (e por caixa na coletiva), não por OP.
 6. O lote é **um envio** no ShopFloor, que guarda a lista dos SNs; ao Compels vai a quantidade e uma chave. **Cada SN do lote ganha entrada própria
    no histórico**, apontando para o envio (o % de conclusão e a finalização automática contam SN distinto no último posto).
-7. SNs do lote que **já entraram bipe a bipe são descontados**: só o restante é confirmado e enviado.
+7. **Não há desconto.** Com NQA individual no posto anterior o bipe peça a peça deixa de existir (só pelo lote), então nenhum SN do lote pode ter entrado antes. Como defesa, a RPC do lote **recusa**, com mensagem clara, se achar algum SN do lote já com entrada no Almoxarifado; nunca desconta em silêncio.
 8. Cancelar é sempre o **lote ou a caixa inteira**.
 
 ## O que já existe e se reaproveita
@@ -53,12 +53,12 @@ Embalagem).
   `sns text[]`. A chave idempotente do Compels usa o rótulo do lote como `alvo`.
 - Em `sf_registros`, coluna opcional `envio_id` para cada SN apontar para o envio.
 - `sf_estoque_enviado` (0153) continua certa, porque N do lote já é a soma. O estorno do lote usa `sf_estoque_reverter` por alvo.
-- Desconto: `quantidade = |lote| − |SNs já com registro no Almoxarifado|`, e `sns` = só o restante.
+- Sem desconto: `quantidade = |lote|` e `sns` = todos os SNs do lote (a recusa defensiva da decisão 7 cobre o caso impossível de um SN já ter entrado).
 
 ### RPCs e telas
 
 - Caixa: `sf_almoxarifado_entrada` continua, mas passa a exigir que a necessidade exista (posto anterior concluído).
-- Lote: nova RPC `sf_almoxarifado_lote` (recebe `nqa_lote_id` e a amostra; valida SN ∈ lote, distintos, tamanho = Tabela NQA; grava 1 registro por SN restante e 1 envio).
+- Lote: nova RPC `sf_almoxarifado_lote` (recebe `nqa_lote_id` e a amostra; valida SN ∈ lote, distintos, tamanho = Tabela NQA; grava 1 registro por SN do lote e 1 envio).
 - Tela: lista de necessidades por OP (selo pendente ou parcial X de N); coletiva = bipar o código da caixa e Confirmar; lote = "bipe K amostras" e Confirmar lote.
   Proteções recomendadas: **sortear** quais SNs bipar e pedir a **quantidade contada**.
 
@@ -77,15 +77,15 @@ Primeiro validar o Compels com o fluxo atual. Depois a **coletiva** (RPC + lista
 
 - Paridade do "concluído": a trava de sequência de hoje usa "existe registro Aprovado", não o último status; divergir cria necessidades fantasma.
 - Caixa remontada depois de reprova (revisão): o join depende da Embalagem íntegra.
-- Peças já lançadas no Almoxarifado sem necessidade: tratar como "já satisfeito" para não duplicar o envio.
+- OP de teste que já tenha entrada bipe a bipe: recusar o lote ou a caixa com mensagem clara; não existe OP real nessa situação, porque nenhuma OP vai rodar antes da mudança.
 - Mexer no CHECK e em `sf_estoque_reservar` (retorna tabela) exige cuidado com o worker em produção.
 - Cancelar o lote precisa estornar e remover os registros de todos os SNs do envio.
 
-## Perguntas em aberto (com a minha sugestão)
+## Respostas do usuário (20/10) — todas fechadas
 
-1. Com NQA individual no posto anterior, o **bipe peça a peça deve ser bloqueado**? *Sugestão: sim, com orientação para usar o lote.*
-2. SN reprovado e depois reaprovado: vale **"existe Aprovado"** (como hoje) ou o **último status**? *Sugestão: manter a paridade na primeira versão.*
-3. A amostra do Almoxarifado vem da Tabela NQA pelo **tamanho total** do lote ou pelo **restante** após o desconto? *Sugestão: tamanho total.*
-4. Quem cancela um lote (hoje `shopfloor.administrar`) e o que acontece se já foi enviado ao Compels (estorno, manual até a fase automática)? *Sugestão: manter.*
-5. Na coletiva com posto anterior genérico, a necessidade só vale para **caixa fechada**? *Sugestão: sim.*
-6. Mais de um posto com perfil Almoxarifado na mesma OP: há alguma regra? *Sugestão: não suportar, uma por OP.*
+1. **Bipe peça a peça com NQA individual:** o lote vira necessidade com **todos os SNs listados**, e a pessoa bipa **a quantidade de SNs da amostra do lote**. Não há bipe avulso nesse caso (bloqueado).
+2. **SN reprovado e reaprovado:** vale **"existe Aprovado"**, igual ao Lançamento de hoje (paridade na primeira versão).
+3. **Amostra pelo tamanho total do lote.** O cenário do desconto não existe (nenhuma OP vai rodar antes da mudança), então não há "restante".
+4. **Quem cancela:** os SNs do lote ficam em **Registros** (cada um tem entrada própria, decisão 6). O cancelamento do lote aparece lá como **"Cancelar o lote inteiro (N peças)"**, no mesmo molde do "Cancelar a caixa inteira", com a **mesma permissão de hoje (`shopfloor.administrar`)**. Quem só tem `recebimento.lancar` não cancela. Se já foi ao Compels, gera a linha de estorno (manual até a fase automática).
+5. **Caixa aberta:** a necessidade só nasce para **caixa fechada**.
+6. **Um posto Almoxarifado por OP:** é **um só e pré-definido para todas as OPs** (ver a spec do card único). Consequência: o **Cadastrar Posto** deve impedir criar um segundo posto com perfil Almoxarifado.
