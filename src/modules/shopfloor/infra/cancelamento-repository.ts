@@ -3,22 +3,32 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 
 export async function lerRegistroParaCancelar(
   id: string,
-): Promise<{ pmo: string; op: string; numeroSerieNorm: string; posto: string; numeroCaixa: string } | null> {
+): Promise<{
+  pmo: string; op: string; numeroSerieNorm: string; posto: string; numeroCaixa: string; envioId: string
+} | null> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_registros')
-    .select('pmo,op,numero_serie_norm,posto,numero_caixa')
+    .select('pmo,op,numero_serie_norm,posto,numero_caixa,envio_id')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
   if (!data) return null
-  const r = data as { pmo: string; op: string; numero_serie_norm: string; posto: string; numero_caixa: string | null }
+  const r = data as {
+    pmo: string; op: string; numero_serie_norm: string; posto: string; numero_caixa: string | null
+    envio_id?: string | null
+  }
   // numero_caixa: é por ele que se acha a caixa a reabrir no cancelamento. Não é mais só a embalagem
   // que preenche — o bipe de caixa no Almoxarifado grava uma linha por peça com o código da caixa
   // (0129), então existe linha com numero_caixa fora da Embalagem. Quem decide reabrir é o RECURSO do
   // perfil do posto ('caixa'), conferido dentro da sf_cancelar_lancamento (0106): cancelar uma linha
   // de almoxarifado não mexe em caixa nenhuma.
-  return { pmo: r.pmo, op: r.op, numeroSerieNorm: r.numero_serie_norm, posto: r.posto, numeroCaixa: r.numero_caixa ?? '' }
+  // envio_id (0156): a entrada de LOTE do NQA individual aponta pro envio do lote; o desfazer dela é o
+  // lote inteiro. Vazio em todo o resto.
+  return {
+    pmo: r.pmo, op: r.op, numeroSerieNorm: r.numero_serie_norm, posto: r.posto,
+    numeroCaixa: r.numero_caixa ?? '', envioId: r.envio_id ?? '',
+  }
 }
 
 /** É o bipe mais recente (maior data_hora, depois id) do SN nesta OP? */
@@ -76,6 +86,42 @@ export async function chamarSfCancelarCaixa(
 ): Promise<{ ok: true; canceladas: number } | { ok: false; erro: string }> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_cancelar_caixa_almoxarifado', {
+    p_id: id, p_motivo: motivo,
+  })
+  if (error) return { ok: false, erro: error.message }
+  return { ok: true, canceladas: Number(data ?? 0) }
+}
+
+/**
+ * O lote da entrada (0156): o rótulo do envio e quantas linhas apontam pra ele — o conjunto exato que a
+ * sf_cancelar_lote_almoxarifado vai apagar. `null` quando o envio não é de lote. Best-effort de UX: o
+ * número que vale é o que a RPC devolve depois de apagar.
+ */
+export async function lerLoteDaEntrada(envioId: string): Promise<{ rotulo: string; pecas: number } | null> {
+  if (envioId.trim() === '') return null
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_estoque_envios')
+    .select('bipe,tipo')
+    .eq('id', envioId)
+    .maybeSingle()
+  if (error) throw error
+  const envio = data as { bipe: string; tipo: string } | null
+  if (!envio || envio.tipo !== 'lote') return null
+  const { count, error: e2 } = await supabase
+    .from('sf_registros')
+    .select('*', { count: 'exact', head: true })
+    .eq('envio_id', envioId)
+  if (e2) throw e2
+  return { rotulo: envio.bipe, pecas: count ?? 0 }
+}
+
+/** Cancela o LOTE INTEIRO (0156). Devolve quantas linhas saíram ("5 peças canceladas"). */
+export async function chamarSfCancelarLote(
+  id: string, motivo: string,
+): Promise<{ ok: true; canceladas: number } | { ok: false; erro: string }> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_cancelar_lote_almoxarifado', {
     p_id: id, p_motivo: motivo,
   })
   if (error) return { ok: false, erro: error.message }
