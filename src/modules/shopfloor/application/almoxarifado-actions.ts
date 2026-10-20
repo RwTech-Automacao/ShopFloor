@@ -3,7 +3,13 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { classificarBipeAlmoxarifado, type RecusaBipeAlmoxarifado } from '../domain/almoxarifado'
+import {
+  classificarBipeAlmoxarifado,
+  mensagemPostoAnteriorNaoConcluido,
+  type NecessidadeAlmoxarifado,
+  type RecusaBipeAlmoxarifado,
+  type TipoBipeAlmoxarifado,
+} from '../domain/almoxarifado'
 import { normalizarSerie } from '../domain/serie'
 import { carregarOrdem } from '../infra/lancamento-repository'
 
@@ -43,7 +49,11 @@ const RECUSAS_FORMATO: Record<RecusaBipeAlmoxarifado, string> = {
  * `classificarBipeAlmoxarifado` já fez em TS (a flag `embalagem_individual` é editável numa OP em
  * andamento — ver 0129), então a frase é a MESMA de `RECUSAS_FORMATO`, não uma redação nova.
  */
-function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
+function mensagemRecusaBanco(
+  motivo: string,
+  detalhe?: string,
+  anterior?: { tipo: TipoBipeAlmoxarifado; postoAnterior?: string; precisaAprovado?: boolean },
+): string {
   switch (motivo) {
     case 'sem_permissao':
       return SEM_PERMISSAO
@@ -83,6 +93,18 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
       return detalhe || 'Esta série está fora da faixa desta OP.'
     case 'serie_sem_embalagem':
       return 'Esta peça ainda não passou pela Embalagem.'
+    case 'posto_anterior_nao_concluido':
+      // 0155: o posto imediatamente antes do Almoxarifado na rota ainda não concluiu a peça/caixa. A
+      // RPC devolve QUAL posto e se ele exige aprovação; a frase do operador sai do domínio. Sem esses
+      // campos (RPC de outra versão), vale o `detalhe` pronto da RPC.
+      if (anterior?.postoAnterior) {
+        return mensagemPostoAnteriorNaoConcluido({
+          tipo: anterior.tipo,
+          postoAnterior: anterior.postoAnterior,
+          precisaAprovado: anterior.precisaAprovado === true,
+        })
+      }
+      return detalhe || 'O posto anterior ainda não concluiu este bipe.'
     default:
       return 'Não foi possível registrar a entrada.'
   }
@@ -169,8 +191,18 @@ export async function registrarEntradaAlmoxarifado(
 
   const r = data as {
     ok: boolean; motivo?: string; detalhe?: string; quantidade?: number; qtd_etiqueta?: number
+    posto_anterior?: string; precisa_aprovado?: boolean
   }
-  if (!r.ok) return { ok: false, erro: mensagemRecusaBanco(r.motivo ?? '', r.detalhe) }
+  if (!r.ok) {
+    return {
+      ok: false,
+      erro: mensagemRecusaBanco(r.motivo ?? '', r.detalhe, {
+        tipo,
+        postoAnterior: r.posto_anterior,
+        precisaAprovado: r.precisa_aprovado,
+      }),
+    }
+  }
   const gravadas = r.quantidade ?? quantidade
   // `qtd_etiqueta` só vem quando a etiqueta promete um número diferente do que entrou (ver 0129).
   const divergencia =
@@ -178,4 +210,52 @@ export async function registrarEntradaAlmoxarifado(
       ? mensagemDivergenciaEtiqueta(r.qtd_etiqueta, gravadas)
       : undefined
   return { ok: true, quantidade: gravadas, tipo, divergencia }
+}
+
+const FALHA_NECESSIDADES = 'Não foi possível carregar as caixas esperando confirmação.'
+
+/**
+ * As caixas que o Almoxarifado tem que confirmar nesta OP (sf_almox_necessidades, 0155): fechadas,
+ * concluídas no posto anterior da rota e ainda sem entrada. Confirmar continua sendo o bipe do código
+ * da caixa (registrarEntradaAlmoxarifado) — esta lista só mostra o que está esperando.
+ *
+ * Mesmos gates da tela: `recebimento.lancar` (quem dá entrada) e `shopfloor.visualizar` (as OPs são
+ * do ShopFloor). Falha do banco volta como ERRO, nunca como lista vazia: "nenhuma caixa esperando"
+ * quando na verdade a leitura falhou faria o operador achar que não há nada a confirmar.
+ */
+export async function listarNecessidadesAlmoxarifado(
+  pmo: string,
+  op: string,
+): Promise<{ ok: true; necessidades: NecessidadeAlmoxarifado[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'lancar') ||
+    !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')
+  ) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+
+  const p = (pmo ?? '').trim()
+  const o = (op ?? '').trim()
+  // Sem OP no cabeçalho ainda (ele é carregado pelo primeiro bipe): não há o que perguntar.
+  if (!p || !o) return { ok: true, necessidades: [] }
+
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almox_necessidades', { p_pmo: p, p_op: o })
+  if (error) {
+    return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_NECESSIDADES }
+  }
+  if (!Array.isArray(data)) return { ok: false, erro: FALHA_NECESSIDADES }
+
+  const linhas = data as { codigo: string; seq: number; pecas: number; fechada_em: string | null }[]
+  return {
+    ok: true,
+    necessidades: linhas.map((l) => ({
+      codigo: l.codigo,
+      seq: Number(l.seq),
+      pecas: Number(l.pecas),
+      fechadaEm: l.fechada_em ?? null,
+    })),
+  }
 }

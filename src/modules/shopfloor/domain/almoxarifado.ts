@@ -58,3 +58,37 @@ export function classificarBipeAlmoxarifado(
     bipe: { tipo: 'serie', serie: lido, codigoCaixa: '', quantidade: 1 },
   }
 }
+
+/**
+ * Uma caixa que o Almoxarifado tem que confirmar (sf_almox_necessidades, 0155): fechada, concluída no
+ * posto anterior da rota e ainda sem entrada. Confirmar é o bipe de hoje (o código da caixa).
+ */
+export interface NecessidadeAlmoxarifado {
+  codigo: string
+  seq: number
+  /** Peças da caixa, contadas nas linhas da Embalagem — o número que a entrada vai gravar. */
+  pecas: number
+  fechadaEm: string | null
+}
+
+/**
+ * A frase da recusa `posto_anterior_nao_concluido` (0155): o posto imediatamente antes do
+ * Almoxarifado na rota ainda não concluiu a peça/caixa. Diz QUAL posto e o que falta — aprovar (posto
+ * com status, gate 'aprovado') ou só passar por ele (gate 'registrado') —, que é o que o operador
+ * precisa pra saber pra onde levar a peça.
+ */
+export function mensagemPostoAnteriorNaoConcluido(args: {
+  tipo: TipoBipeAlmoxarifado
+  postoAnterior: string
+  precisaAprovado: boolean
+}): string {
+  const { tipo, postoAnterior, precisaAprovado } = args
+  if (tipo === 'caixa') {
+    return `Esta caixa ainda não foi concluída no posto anterior (${postoAnterior}): todas as peças precisam estar ${
+      precisaAprovado ? 'aprovadas' : 'registradas'
+    } lá.`
+  }
+  return precisaAprovado
+    ? `Esta peça ainda não foi aprovada no posto anterior (${postoAnterior}). Aprove a peça lá antes de dar entrada.`
+    : `Esta peça ainda não passou pelo posto anterior (${postoAnterior}). Registre a peça lá antes de dar entrada.`
+}

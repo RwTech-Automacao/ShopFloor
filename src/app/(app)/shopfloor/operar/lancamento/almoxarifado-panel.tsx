@@ -1,11 +1,23 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
-import { registrarEntradaAlmoxarifado } from '@/modules/shopfloor/application/almoxarifado-actions'
+import {
+  listarNecessidadesAlmoxarifado,
+  registrarEntradaAlmoxarifado,
+} from '@/modules/shopfloor/application/almoxarifado-actions'
+import type { NecessidadeAlmoxarifado } from '@/modules/shopfloor/domain/almoxarifado'
+
+/** Estado da lista de necessidades: a falha é um estado PRÓPRIO, nunca uma lista vazia. */
+type EstadoNecessidades =
+  | { tipo: 'carregando' }
+  | { tipo: 'ok'; itens: NecessidadeAlmoxarifado[] }
+  | { tipo: 'erro'; erro: string }
+
+const pecas = (n: number) => (n === 1 ? '1 peça' : `${n} peças`)
 
 interface EntradaSessao {
   bipe: string
@@ -26,6 +38,11 @@ interface EntradaSessao {
  * e o bipe que caísse nessa fresta era apagado em silêncio. Com `useState` comum, tudo o que o
  * envio muda (resultado, campo, trava) assenta junto. O ref cobre o caso do leitor mandando dois
  * Enter tão rápido que o segundo chega antes de o React sequer aplicar o primeiro `setState`.
+ *
+ * CAIXAS ESPERANDO CONFIRMAÇÃO (0155): acima do campo, a lista das caixas fechadas que o posto
+ * anterior da rota já concluiu e que ainda não deram entrada. Confirmar é o MESMO bipe de sempre (o
+ * código da caixa); depois de cada bipe aceito a lista é recarregada e a caixa confirmada some. A lista
+ * só informa — o bipe não depende dela e continua funcionando igual se ela falhar.
  */
 export function AlmoxarifadoPanel({
   colaborador,
@@ -46,6 +63,34 @@ export function AlmoxarifadoPanel({
   const [enviando, setEnviando] = useState(false)
   const enviandoRef = useRef(false) // espelha `enviando` de forma síncrona — trava o 2º Enter do leitor
   const bipeRef = useRef<HTMLInputElement>(null)
+  // A última resposta, com a OP a que ela pertence: enquanto a OP do painel não tem resposta, a lista
+  // está "carregando" (derivado, sem setState no corpo do efeito).
+  const [respostaNec, setRespostaNec] = useState<{ chave: string; estado: EstadoNecessidades } | null>(null)
+  // Só a resposta da ÚLTIMA consulta vale: trocar de OP no meio de uma consulta não pode deixar a
+  // lista da OP anterior na tela.
+  const consultaRef = useRef(0)
+  const temOp = pmo.trim() !== '' && op.trim() !== ''
+  const chaveOp = `${pmo}/${op}`
+  const necessidades: EstadoNecessidades =
+    respostaNec && respostaNec.chave === chaveOp ? respostaNec.estado : { tipo: 'carregando' }
+
+  const carregarNecessidades = useCallback(async () => {
+    const minha = ++consultaRef.current
+    const chave = `${pmo}/${op}`
+    let estado: EstadoNecessidades
+    try {
+      const r = await listarNecessidadesAlmoxarifado(pmo, op)
+      estado = r.ok ? { tipo: 'ok', itens: r.necessidades } : { tipo: 'erro', erro: r.erro }
+    } catch {
+      estado = { tipo: 'erro', erro: 'Não foi possível carregar as caixas esperando confirmação.' }
+    }
+    if (minha === consultaRef.current) setRespostaNec({ chave, estado })
+  }, [pmo, op])
+
+  useEffect(() => {
+    if (!temOp) return
+    void carregarNecessidades()
+  }, [temOp, carregarNecessidades])
 
   // Refoca assim que o envio termina — aceito (campo já limpo) ou recusado (texto fica, pro
   // operador ver o que bipou e decidir se bipa de novo ou corrige).
@@ -87,6 +132,8 @@ export function AlmoxarifadoPanel({
         })
         setRecentes((prev) => [{ bipe: alvo.trim(), quantidade: r.quantidade, tipo: r.tipo }, ...prev].slice(0, 30))
         setBipe('') // aceito → limpa pro próximo bipe
+        // A caixa confirmada sai da lista: recarrega (fora do caminho do bipe — não espera).
+        if (temOp) void carregarNecessidades()
       } finally {
         enviandoRef.current = false
         setEnviando(false)
@@ -105,6 +152,34 @@ export function AlmoxarifadoPanel({
             <CardTitle>Peça</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-1.5">
+            {temOp && (
+              <div className="mb-2 flex flex-col rounded-lg border border-border p-2">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
+                  Caixas esperando confirmação
+                  {necessidades.tipo === 'ok' && necessidades.itens.length > 0 ? ` (${necessidades.itens.length})` : ''}
+                </p>
+                {necessidades.tipo === 'carregando' && <p className="text-sm text-muted-foreground">Carregando…</p>}
+                {necessidades.tipo === 'erro' && (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">{necessidades.erro}</p>
+                )}
+                {necessidades.tipo === 'ok' && necessidades.itens.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Nenhuma caixa esperando confirmação nesta OP.</p>
+                )}
+                {necessidades.tipo === 'ok' && necessidades.itens.length > 0 && (
+                  <ul
+                    aria-label="Caixas esperando confirmação"
+                    className="flex max-h-[8rem] flex-col gap-0.5 overflow-y-auto text-sm"
+                  >
+                    {necessidades.itens.map((n) => (
+                      <li key={n.codigo} className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono">{n.codigo}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{pecas(n.pecas)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             <Label htmlFor="bipeAlmoxarifado">Bipe a peça ou a caixa</Label>
             <Input
               id="bipeAlmoxarifado"
