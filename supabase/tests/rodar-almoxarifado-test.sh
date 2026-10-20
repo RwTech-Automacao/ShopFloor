@@ -26,8 +26,14 @@ docker cp supabase/migrations/0131_sf_cancelar_caixa_almoxarifado.sql "$NOME":/t
 # sf_cancelar_lancamento revertendo na fila quando a linha cancelada é uma entrada de Almoxarifado.
 docker cp supabase/migrations/0132_sf_estoque_envios.sql "$NOME":/tmp/0132.sql
 docker cp supabase/migrations/0133_cancelar_lancamento_estoque.sql "$NOME":/tmp/0133.sql
+# A 0155 recria a entrada com a trava do POSTO ANTERIOR e cria a lista de necessidades. O arquivo
+# antigo a aplica antes do primeiro bipe (todos os casos de lá rodam contra ela); os casos NOVOS ficam
+# no almoxarifado_necessidade_test.sql, que roda depois, na mesma base.
+docker cp supabase/migrations/0155_sf_almox_posto_anterior.sql "$NOME":/tmp/0155.sql
 docker cp supabase/tests/almoxarifado_test.sql "$NOME":/tmp/teste.sql
+docker cp supabase/tests/almoxarifado_necessidade_test.sql "$NOME":/tmp/teste_necessidade.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_necessidade.sql
 
 # Idempotência: o usuário reaplica migração quando fica na dúvida, então rodar as migrações duas
 # vezes na mesma base não pode falhar nem mudar o resultado. O caso conhecido é a caixa 7, que o
@@ -41,6 +47,10 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0130.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0131.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0132.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0133.sql
+# A 0155 por último (é ela que vale em cima da 0129 reaplicada), e DUAS vezes: reaplicar não pode
+# falhar nem mudar o resultado.
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0155.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0155.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false)" \
   -c "select sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','Ana','CX[7][14]8498-PMOC14','caixa',14,'')->>'motivo'" \
