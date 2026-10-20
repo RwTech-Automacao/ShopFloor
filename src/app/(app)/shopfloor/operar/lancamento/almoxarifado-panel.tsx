@@ -1,15 +1,23 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import {
+  confirmarLoteAlmoxarifado,
+  listarLotesAlmoxarifado,
   listarNecessidadesAlmoxarifado,
   registrarEntradaAlmoxarifado,
 } from '@/modules/shopfloor/application/almoxarifado-actions'
-import type { NecessidadeAlmoxarifado } from '@/modules/shopfloor/domain/almoxarifado'
+import {
+  amostraCompleta,
+  conferirBipeAmostra,
+  type NecessidadeAlmoxarifado,
+  type NecessidadeLote,
+} from '@/modules/shopfloor/domain/almoxarifado'
 
 /** Estado da lista de necessidades: a falha é um estado PRÓPRIO, nunca uma lista vazia. */
 type EstadoNecessidades =
@@ -17,12 +25,20 @@ type EstadoNecessidades =
   | { tipo: 'ok'; itens: NecessidadeAlmoxarifado[] }
   | { tipo: 'erro'; erro: string }
 
+/** Estado da lista de LOTES (0156), no mesmo molde: falha é estado próprio, nunca lista vazia. */
+type EstadoLotes =
+  | { tipo: 'carregando' }
+  | { tipo: 'ok'; itens: NecessidadeLote[] }
+  | { tipo: 'erro'; erro: string }
+
+const FALHA_LOTES = 'Não foi possível carregar os lotes esperando confirmação.'
+
 const pecas = (n: number) => (n === 1 ? '1 peça' : `${n} peças`)
 
 interface EntradaSessao {
   bipe: string
   quantidade: number
-  tipo: 'serie' | 'caixa'
+  tipo: 'serie' | 'caixa' | 'lote'
 }
 
 /**
@@ -43,6 +59,12 @@ interface EntradaSessao {
  * anterior da rota já concluiu e que ainda não deram entrada. Confirmar é o MESMO bipe de sempre (o
  * código da caixa); depois de cada bipe aceito a lista é recarregada e a caixa confirmada some. A lista
  * só informa — o bipe não depende dela e continua funcionando igual se ela falhar.
+ *
+ * LOTES DO NQA INDIVIDUAL (0156): na OP individual cujo posto anterior é de perfil NQA (`loteNqa`), o
+ * lugar das caixas é a lista dos LOTES aprovados no NQA. Abrir um lote mostra TODOS os SNs dele; com o
+ * lote aberto, o campo de bipe passa a receber a AMOSTRA (só SN do lote, repetido não conta) e "Confirmar
+ * lote" habilita com exatamente K SNs (Tabela NQA). Sem lote aberto o campo continua indo à entrada de
+ * sempre — que, nesse caso, recusa a peça avulsa com a frase do lote (serie_exige_lote).
  */
 export function AlmoxarifadoPanel({
   colaborador,
@@ -51,9 +73,12 @@ export function AlmoxarifadoPanel({
   posto,
   contexto,
   individual = false,
+  loteNqa = false,
 }: {
   /** OP de embalagem individual: a unidade é a peça, não há caixa para confirmar (esconde a lista). */
   individual?: boolean
+  /** OP individual com posto anterior de perfil NQA (0156): a entrada é pelo LOTE aprovado no NQA. */
+  loteNqa?: boolean
   colaborador: string
   pmo: string
   op: string
@@ -77,6 +102,97 @@ export function AlmoxarifadoPanel({
   const chaveOp = `${pmo}/${op}`
   const necessidades: EstadoNecessidades =
     respostaNec && respostaNec.chave === chaveOp ? respostaNec.estado : { tipo: 'carregando' }
+
+  // ---- lotes do NQA individual (0156) ----
+  const mostrarLotes = temOp && individual && loteNqa
+  const [respostaLotes, setRespostaLotes] = useState<{ chave: string; estado: EstadoLotes } | null>(null)
+  const consultaLotesRef = useRef(0)
+  const lotes: EstadoLotes =
+    respostaLotes && respostaLotes.chave === chaveOp ? respostaLotes.estado : { tipo: 'carregando' }
+  // O lote aberto (com a OP a que ele pertence: trocar de OP fecha o lote) e a amostra bipada nele.
+  const [aberto, setAberto] = useState<{ chave: string; lote: NecessidadeLote } | null>(null)
+  const [amostra, setAmostra] = useState<string[]>([])
+  const loteAberto = aberto && aberto.chave === chaveOp && mostrarLotes ? aberto.lote : null
+
+  const carregarLotes = useCallback(async () => {
+    const minha = ++consultaLotesRef.current
+    const chave = `${pmo}/${op}`
+    let estado: EstadoLotes
+    try {
+      const r = await listarLotesAlmoxarifado(pmo, op)
+      estado = r.ok ? { tipo: 'ok', itens: r.lotes } : { tipo: 'erro', erro: r.erro }
+    } catch {
+      estado = { tipo: 'erro', erro: FALHA_LOTES }
+    }
+    if (minha === consultaLotesRef.current) setRespostaLotes({ chave, estado })
+  }, [pmo, op])
+
+  useEffect(() => {
+    if (!mostrarLotes) return
+    void carregarLotes()
+  }, [mostrarLotes, carregarLotes])
+
+  function abrirLote(lote: NecessidadeLote) {
+    setAberto({ chave: chaveOp, lote })
+    setAmostra([])
+    setResultado(null)
+    bipeRef.current?.focus()
+  }
+  function fecharLote() {
+    setAberto(null)
+    setAmostra([])
+    bipeRef.current?.focus()
+  }
+
+  /** Um bipe com o lote aberto: entra (ou não) na amostra. Nada vai ao banco aqui. */
+  function biparAmostra(lote: NecessidadeLote) {
+    const r = conferirBipeAmostra(lote, amostra, bipe)
+    if (r.ok) {
+      setAmostra(r.bipados)
+      setResultado(null)
+      setBipe('')
+      return
+    }
+    if (r.motivo === 'vazio') return
+    setResultado({
+      tipo: 'aviso',
+      titulo: r.motivo === 'fora_do_lote'
+        ? `A peça ${r.sn} não é deste lote.`
+        : r.motivo === 'repetido'
+          ? `A peça ${r.sn} já está na amostra.`
+          : 'A amostra já está completa: confirme o lote.',
+    })
+  }
+
+  function onConfirmarLote() {
+    const lote = loteAberto
+    if (!lote || !amostraCompleta(lote, amostra)) return
+    if (enviandoRef.current) return
+    enviandoRef.current = true
+    setEnviando(true)
+    const bipados = amostra
+    void (async () => {
+      try {
+        const r = await confirmarLoteAlmoxarifado({ pmo, op, posto, colaborador, loteId: lote.loteId, amostra: bipados })
+        if (!r.ok) {
+          // Recusado: o lote continua aberto, com a amostra, pro operador ver o que caiu.
+          setResultado({ tipo: 'aviso', titulo: r.erro })
+          return
+        }
+        const rotulo = r.lote || lote.rotulo
+        setResultado({ tipo: 'ok', titulo: pecas(r.quantidade), chips: [{ rotulo: 'Lote', valor: rotulo, mono: true }] })
+        setRecentes((prev) => [{ bipe: rotulo, quantidade: r.quantidade, tipo: 'lote' as const }, ...prev].slice(0, 30))
+        setAberto(null)
+        setAmostra([])
+        void carregarLotes()
+      } catch {
+        setResultado({ tipo: 'aviso', titulo: 'Não foi possível confirmar o lote.' })
+      } finally {
+        enviandoRef.current = false
+        setEnviando(false)
+      }
+    })()
+  }
 
   const carregarNecessidades = useCallback(async () => {
     const minha = ++consultaRef.current
@@ -111,6 +227,11 @@ export function AlmoxarifadoPanel({
       return
     }
     if (bipe.trim() === '') return
+    // Lote aberto (0156): o bipe é da AMOSTRA, conferido na tela; quem grava é o "Confirmar lote".
+    if (loteAberto) {
+      biparAmostra(loteAberto)
+      return
+    }
     const alvo = bipe
     enviandoRef.current = true
     setEnviando(true)
@@ -184,14 +305,87 @@ export function AlmoxarifadoPanel({
                 )}
               </div>
             )}
-            <Label htmlFor="bipeAlmoxarifado">Bipe a peça ou a caixa</Label>
+            {mostrarLotes && !loteAberto && (
+              <div className="mb-2 flex flex-col rounded-lg border border-border p-2">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
+                  Lotes esperando confirmação
+                  {lotes.tipo === 'ok' && lotes.itens.length > 0 ? ` (${lotes.itens.length})` : ''}
+                </p>
+                {lotes.tipo === 'carregando' && <p className="text-sm text-muted-foreground">Carregando…</p>}
+                {lotes.tipo === 'erro' && <p className="text-sm text-amber-700 dark:text-amber-400">{lotes.erro}</p>}
+                {lotes.tipo === 'ok' && lotes.itens.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Nenhum lote esperando confirmação nesta OP.</p>
+                )}
+                {lotes.tipo === 'ok' && lotes.itens.length > 0 && (
+                  <ul aria-label="Lotes esperando confirmação" className="flex max-h-[8rem] flex-col gap-0.5 overflow-y-auto text-sm">
+                    {lotes.itens.map((l) => (
+                      <li key={l.loteId}>
+                        <button
+                          type="button"
+                          onClick={() => abrirLote(l)}
+                          className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-muted"
+                        >
+                          <span className="truncate font-mono">{l.rotulo}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {pecas(l.pecas)}
+                            {l.amostra && l.amostra > 0 ? ` · amostra ${l.amostra}` : ''}
+                            {l.jaLancadas > 0 ? ` · ${l.jaLancadas} já lançada${l.jaLancadas === 1 ? '' : 's'}` : ''}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {loteAberto && (
+              <div className="mb-2 flex flex-col gap-1.5 rounded-lg border border-border p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    <span className="font-mono">{loteAberto.rotulo}</span>
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">· {pecas(loteAberto.pecas)}</span>
+                  </p>
+                  <Button type="button" variant="outline" size="sm" onClick={fecharLote} disabled={enviando}>
+                    Fechar lote
+                  </Button>
+                </div>
+                {loteAberto.amostra && loteAberto.amostra > 0 ? (
+                  <p className="text-xs text-muted-foreground">Amostra: {amostra.length} de {loteAberto.amostra}</p>
+                ) : (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    A Tabela NQA não tem amostra para um lote deste tamanho. Peça ao gestor para conferir a Tabela NQA.
+                  </p>
+                )}
+                {loteAberto.jaLancadas > 0 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    {loteAberto.jaLancadas === 1
+                      ? '1 peça deste lote já tem entrada no Almoxarifado: a confirmação vai ser recusada.'
+                      : `${loteAberto.jaLancadas} peças deste lote já têm entrada no Almoxarifado: a confirmação vai ser recusada.`}
+                  </p>
+                )}
+                <ul aria-label="SNs do lote" className="flex max-h-[8rem] flex-col gap-0.5 overflow-y-auto text-sm">
+                  {loteAberto.sns.map((sn) => (
+                    <li key={sn} className="flex items-center justify-between gap-2">
+                      <span className="truncate font-mono">{sn}</span>
+                      {amostra.includes(sn) && <span className="shrink-0 text-xs text-green-700 dark:text-green-400">na amostra</span>}
+                    </li>
+                  ))}
+                </ul>
+                <Button type="button" onClick={onConfirmarLote} disabled={enviando || !amostraCompleta(loteAberto, amostra)}>
+                  Confirmar lote
+                </Button>
+              </div>
+            )}
+            <Label htmlFor="bipeAlmoxarifado">
+              {loteAberto ? 'Bipe os SNs da amostra' : 'Bipe a peça ou a caixa'}
+            </Label>
             <Input
               id="bipeAlmoxarifado"
               ref={bipeRef}
               value={bipe}
               onChange={(e) => setBipe(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onBipar() } }}
-              placeholder="Bipe o Nº de Série ou o código da caixa"
+              placeholder={loteAberto ? 'Bipe um Nº de Série do lote' : 'Bipe o Nº de Série ou o código da caixa'}
               autoComplete="off"
               autoFocus
               className="h-12 text-lg"
