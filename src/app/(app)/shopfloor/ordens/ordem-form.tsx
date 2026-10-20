@@ -70,6 +70,7 @@ export function OrdemForm({
   pmosExistentes,
   clientesExistentes,
   dadosPorPmo,
+  almoxarifadoAutomatico,
 }: {
   postos: string[]
   postosPerfil: Record<string, PerfilPosto>
@@ -78,8 +79,13 @@ export function OrdemForm({
   pmosExistentes: string[]
   clientesExistentes: string[]
   dadosPorPmo: Record<string, { cliente: string; descricao: string }>
+  /** Chave do posto Almoxarifado que entra sozinho no fim da rota de OP NOVA (etapa 2 do card único,
+   *  vinda do servidor só com a variável ligada). Ausente/null = formulário idêntico ao de sempre. */
+  almoxarifadoAutomatico?: string | null
 }) {
   const ehEdicao = ordem !== undefined
+  // Só OP nova: a edição nunca recebe o posto sozinho.
+  const fixo = !ehEdicao ? (almoxarifadoAutomatico ?? null) : null
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
   const [open, setOpen] = useState(false)
@@ -123,7 +129,11 @@ export function OrdemForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
-  const disponiveis = postos.filter((p) => !fluxo.includes(p))
+  // Rota editável = sem o posto fixo (ele fica sempre no fim, fora do alcance de mover/remover/adicionar).
+  // Sem posto fixo `lista` é o próprio `fluxo`: nada muda.
+  const lista = fixo ? fluxo.filter((p) => p !== fixo) : fluxo
+  const fluxoEnviado = fixo ? [...lista, fixo] : fluxo
+  const disponiveis = postos.filter((p) => !fluxo.includes(p) && p !== fixo)
   const padroesDoPmo = padroesExistentes.filter((p) => p.pmo === pmo)
 
   const [salvarAberto, setSalvarAberto] = useState(false)
@@ -164,7 +174,7 @@ export function OrdemForm({
         pmo: pmoAlvo,
         nome,
         descricao: '',
-        postos: fluxo,
+        postos: lista,
         componentes: receitaFiltrada,
       })
       if (r.ok) {
@@ -189,18 +199,18 @@ export function OrdemForm({
 
   function mover(i: number, delta: number) {
     const j = i + delta
-    if (j < 0 || j >= fluxo.length) return
-    const copia = [...fluxo]
+    if (j < 0 || j >= lista.length) return
+    const copia = [...lista]
     const [item] = copia.splice(i, 1)
     copia.splice(j, 0, item!)
     setFluxo(copia)
   }
   function remover(i: number) {
-    setFluxo(fluxo.filter((_, idx) => idx !== i))
+    setFluxo(lista.filter((_, idx) => idx !== i))
   }
   function adicionar(posto: string) {
-    if (fluxo.includes(posto)) return
-    setFluxo([...fluxo, posto])
+    if (fluxo.includes(posto) || posto === fixo) return
+    setFluxo([...lista, posto])
     if (perfilDo(posto).recurso === 'burnin' && (tempoBurnin[posto] ?? '') === '') {
       setTempoBurnin((prev) => ({ ...prev, [posto]: '6:00' }))
     }
@@ -252,7 +262,7 @@ export function OrdemForm({
           </DialogHeader>
           <form key={instanciaForm} action={formAction} className="flex flex-col gap-4">
             {ehEdicao && <input type="hidden" name="id" value={ordem.id} />}
-            <input type="hidden" name="fluxo" value={JSON.stringify(fluxo)} />
+            <input type="hidden" name="fluxo" value={JSON.stringify(fluxoEnviado)} />
             <input type="hidden" name="componentes" value={JSON.stringify(receitaFiltrada)} />
             <input type="hidden" name="tempo_burnin" value={JSON.stringify(tempoFiltrado)} />
 
@@ -383,7 +393,7 @@ export function OrdemForm({
                       )}
                     </div>
                   )}
-                  {pmo.trim() !== '' && fluxo.length > 0 && (
+                  {pmo.trim() !== '' && lista.length > 0 && (
                     <Button type="button" size="sm" variant="outline" onClick={abrirSalvarPadrao}>
                       Salvar como padrão
                     </Button>
@@ -392,7 +402,7 @@ export function OrdemForm({
               </div>
 
               <ol className="flex flex-col gap-1">
-                {fluxo.map((posto, i) => (
+                {lista.map((posto, i) => (
                   <li key={posto} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm">
                     <span className="w-5 text-center text-xs font-medium text-enterplak">{i + 1}</span>
                     <span className="flex-1">{posto}</span>
@@ -412,7 +422,7 @@ export function OrdemForm({
                     <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
                       <ArrowUp className="size-4" />
                     </button>
-                    <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === fluxo.length - 1} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                    <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === lista.length - 1} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
                       <ArrowDown className="size-4" />
                     </button>
                     <button type="button" aria-label="Remover" onClick={() => remover(i)} className="text-muted-foreground hover:text-red-600">
@@ -420,7 +430,14 @@ export function OrdemForm({
                     </button>
                   </li>
                 ))}
-                {fluxo.length === 0 && (
+                {fixo && (
+                  <li className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-sm">
+                    <span className="w-5 text-center text-xs font-medium text-enterplak">{lista.length + 1}</span>
+                    <span className="flex-1">{fixo}</span>
+                    <span className="text-xs text-muted-foreground">automático · sempre no fim</span>
+                  </li>
+                )}
+                {lista.length === 0 && !fixo && (
                   <li className="rounded-lg border border-dashed border-border px-2.5 py-3 text-center text-xs text-muted-foreground">
                     Nenhum posto no fluxo. Adicione abaixo.
                   </li>
