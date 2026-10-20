@@ -15,6 +15,8 @@ num card só, e deixar o posto Almoxarifado **pré-definido nas OPs novas**.
 2. O card único vale **também no Fluxo embutido no Dashboard Enterplak**.
 3. Nas OPs novas a **finalização automática passa a esperar a entrada no estoque** (o Almoxarifado, como último posto, manda no 100%).
 4. **OPs de placa intermediária:** em aberto de propósito (elas deveriam entrar no estoque, mas não entram; o processo não está definido). Só prever um ponto de extensão.
+5. **O nome do card é "Almoxarifado"** (sem linha "Concluído" extra). A OP **individual** usa o mesmo card. **OP sem quantidade:** o card do Almoxarifado aparece sempre, só sem a porcentagem.
+6. **O posto Almoxarifado vem pré-definido em TODA OP nova, como o card Concluído** (nenhum usuário marca nada). OPs e Padrões **antigos ficam como estão** ("travar as antigas"): continuam com o Concluído e nunca recebem o posto sozinhos.
 
 ## Achado central do mapeamento
 
@@ -33,11 +35,14 @@ chamam `sf_ops_com_bipes` e fecham com `pct >= 100`). Se uma OP nova nascer com 
 - Layout: a serpentina termina no Almoxarifado (um slot a menos). A Manutenção não muda de lugar (depende só do número de postos). O estoque do Compels é `absolute` e não altera a altura do nó.
 - Busca de SN em `fluxo-form.tsx:802`: sem `SAIDA`, o "atual" cai no último posto, que é o Almoxarifado. Comportamento já certo; ajustar comentário e teste.
 
-### Etapa 2: posto automático só nas OPs novas
+### Etapa 2: posto automático em TODA OP nova (decidido em 20/10)
 
-- `ordens/ordem-form.tsx`: hoje `fluxo` começa com `ordem?.postos ?? []` (criar e editar são a mesma tela). Em **OP nova**, oferecer o Almoxarifado como último passo (caixa de seleção marcada), sempre **fixo no fim**; na edição não aparece.
-- **Padrões** (`sf_padroes_fluxo`): padrões novos já salvam com o Almoxarifado; ao puxar um padrão **antigo** numa OP nova, acrescentar o Almoxarifado, visível e removível, **nunca por banco**. Sem migração.
-- Ponto de extensão para as placas: uma função `almoxarifadoPadrao(contexto)` que hoje devolve sempre `true`; trocar por uma flag em `sf_ordens` ou uma regra por tipo quando o processo estiver definido.
+- O **servidor** (criar OP, `ordens-actions.ts`) acrescenta o posto de perfil `almoxarifado` como **último** da rota, e o formulário (`ordens/ordem-form.tsx`) o mostra como linha **fixa, no fim, sem botão de remover**,
+  igual ao Concluído, que não depende de ninguém marcar. Sem caixa de seleção e sem botão.
+- **Padrões não mudam e não precisam ser reescritos:** como o posto é automático, um Padrão antigo (sem Almoxarifado) puxado numa OP nova já sai com ele no fim.
+- **OP existente e edição de OP existente:** **nunca** recebem o posto automaticamente; ficam como estão, com o card Concluído. Sem backfill, sem migração.
+- Se **não existir** posto com perfil Almoxarifado, a OP nova é criada sem ele; se existir **mais de um**, criar a OP recusa com mensagem clara (um por OP; ver a spec do Almoxarifado por necessidade).
+- **Ponto de extensão para as placas:** uma função `almoxarifadoAutomatico(ordem)` que hoje devolve sempre `true`. Quando o processo das placas estiver definido, ela passa a ler uma flag da OP ou uma regra por tipo.
 
 ## Como provar que nada mudou
 
@@ -56,13 +61,11 @@ casos de Saída intactos), `fluxo-node.test.tsx`, `fluxo-node-estoque.test.tsx`,
 - OP nova com Almoxarifado em último muda o significado de "finalizada": peça embalada e não bipada deixa a OP ativa (era a intenção, mas gera OPs que "não fecham" até alguém bipar). Afeta o Dashboard e os alertas de OPs ativas.
 - Embed e Modo TV: reenquadrar (uma coluna a menos).
 - Padrão antigo puxado ganha o Almoxarifado sem o usuário notar: tem de ficar visível.
+- **Placas intermediárias:** sem opção de tirar, uma OP de placa já nasce com o Almoxarifado e **não fecha sozinha** até alguém dar entrada. Por isso a **etapa 2 só deve ir para produção depois da decisão das placas** (ou com uma saída manual para o gestor). A etapa 1 é segura sozinha.
 - Enquanto `COMPELS_OPS_LIBERADAS` existir, ela é só uma trava extra; quando o posto virar automático, passa a ser a única (decidir então se mantém ou muda para `*`).
 
-## Perguntas em aberto (com a minha sugestão)
+## Respostas do usuário (20/10) e o que continua em aberto
 
-1. O número "Concluído" aparece no card do Almoxarifado ou basta o estoque do Compels e as métricas atuais (porque ≈ aprovadas)? *Sugestão: só o estoque e as métricas.*
-2. OP com Almoxarifado em último e **sem caixas** (embalagem individual) usa o mesmo card único? *Sugestão: sim.*
-3. O Almoxarifado automático nas OPs novas é uma **caixa marcada por padrão** ou um **botão explícito**? *Sugestão: caixa marcada.*
-4. Padrões antigos puxados numa OP nova: acrescentar automaticamente ou só sugerir? *Sugestão: acrescentar, visível e removível.*
-5. Placas intermediárias: **flag por OP** ou **regra por tipo/PMO**? *Em aberto até o processo ser definido; hoje não existe campo que as distinga.*
-6. OP nova **sem `qtd`** ainda mostra o Concluído antigo? *Hoje o nó Saída some sem `qtd`; sugestão: manter.*
+- Nome do card: **Almoxarifado**. OP individual: **mesmo card**. OP sem quantidade: **card sempre, sem porcentagem**.
+- Pré-definido em **toda OP nova**, como o Concluído (sem caixa de seleção nem botão). Antigas **travadas como estão**. Padrões antigos: nada a fazer, o posto entra sozinho na OP nova.
+- **Em aberto (de propósito):** as **placas intermediárias** (ver o risco acima) e o **momento** de levar a etapa 2 para produção.
