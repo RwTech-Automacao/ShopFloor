@@ -141,7 +141,7 @@ function FluxoNodeBase({ data }: NodeProps) {
           </span>
         </div>
         {d.ehEntrada && <Handle type="source" position={Position.Right} />}
-        {d.ehSaida && d.pmo && <EstoqueCompelsCard pmo={d.pmo} />}
+        {(d.ehSaida || d.mostrarEstoque) && d.pmo && <EstoqueCompelsCard pmo={d.pmo} />}
       </div>
     )
   }
@@ -289,6 +289,8 @@ function FluxoNodeBase({ data }: NodeProps) {
       </div>
 
       {!d.ehManutencao && <Handle type="source" position={Position.Right} />}
+      {/* Card único: o Almoxarifado, sendo o fim da rota, carrega a faixa do estoque (absolute: não muda a altura do nó). */}
+      {d.mostrarEstoque && d.pmo && <EstoqueCompelsCard pmo={d.pmo} />}
     </div>
   )
 }

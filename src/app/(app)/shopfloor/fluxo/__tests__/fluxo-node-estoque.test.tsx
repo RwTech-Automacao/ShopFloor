@@ -94,3 +94,28 @@ describe('estoque do Compels abaixo do card Concluído', () => {
     expect(lerEstoqueCompelsAction).not.toHaveBeenCalled()
   })
 })
+
+describe('card único: estoque do Compels abaixo do card do Almoxarifado', () => {
+  const almox = (over: Record<string, unknown> = {}) => ({
+    posto: 'Almoxarifado', wip: 14, registros: 112, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0,
+    reprovadosSemReteste: 0, temStatus: false, ehManutencao: false, recurso: 'almoxarifado', concluido: false,
+    passou: 112, devemPassar: 126, selecionado: false, ...over,
+  })
+
+  it('com mostrarEstoque e PMO, renderiza a faixa abaixo e o título segue "Almoxarifado" (sem "Concluído")', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue(OK)
+    const { container } = render(createElement(FluxoNode, { data: almox({ mostrarEstoque: true, concluidas: 3, pmo: 'PMO-ALMOX' }) } as never))
+    expect(await screen.findByText(/1\.234,5 UN/)).toBeInTheDocument()
+    expect(screen.getByText(/Estoque no Compels · PMO-ALMOX/)).toBeInTheDocument()
+    expect(lerEstoqueCompelsAction).toHaveBeenCalledWith('PMO-ALMOX')
+    expect(container.textContent).toContain('Almoxarifado')
+    expect(container.textContent).not.toContain('Concluído')
+  })
+
+  it('sem mostrarEstoque (ou sem PMO) não consulta nem renderiza a faixa', () => {
+    render(createElement(FluxoNode, { data: almox({ pmo: 'PMO-ALMOX' }) } as never))
+    render(createElement(FluxoNode, { data: almox({ mostrarEstoque: true }) } as never))
+    expect(lerEstoqueCompelsAction).not.toHaveBeenCalled()
+    expect(screen.queryByText(/Estoque no Compels/)).toBeNull()
+  })
+})
