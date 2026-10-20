@@ -1,4 +1,5 @@
 import { separarCodigoCaixa } from './caixa'
+import { normalizarSerie } from './serie'
 
 export type TipoBipeAlmoxarifado = 'serie' | 'caixa'
 
@@ -99,4 +100,91 @@ export function mensagemPostoAnteriorNaoConcluido(args: {
   return precisaAprovado
     ? `Esta peça ainda não foi aprovada no posto anterior (${postoAnterior}). Aprove a peça lá antes de dar entrada.`
     : `Esta peça ainda não passou pelo posto anterior (${postoAnterior}). Registre a peça lá antes de dar entrada.`
+}
+
+// ---------------------------------------------------------------------------------------------------
+// FASE 2 (0156): o LOTE aprovado no NQA individual vira necessidade e é confirmado por AMOSTRA.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * Um lote do NQA individual que o Almoxarifado tem que confirmar (sf_almox_lotes, 0156): aprovado no
+ * posto NQA anterior da rota, com SN ainda sem entrada. A pessoa bipa `amostra` SNs distintos do lote e
+ * confirma; o ShopFloor grava uma entrada por SN e UM envio ao Compels.
+ */
+export interface NecessidadeLote {
+  loteId: string
+  /** 'LOTE[<8 hex>][<N>]' — o mesmo texto que vai ao Compels como bipe do envio. */
+  rotulo: string
+  /** SNs distintos do lote (o tamanho que decide a amostra). */
+  pecas: number
+  /** K da Tabela NQA pelo tamanho do lote. Nulo ou <= 0: a Tabela não tem amostra pra esse tamanho. */
+  amostra: number | null
+  /** TODOS os SNs do lote (normalizados), em ordem. */
+  sns: string[]
+  /** Quantos SNs do lote já entraram por fora (o normal é 0; > 0 a confirmação recusa). */
+  jaLancadas: number
+  aprovadoEm: string | null
+}
+
+/** A recusa `serie_exige_lote` (0156): na OP individual com NQA no anterior, a entrada é pelo lote. */
+export const MENSAGEM_SERIE_EXIGE_LOTE = 'Esta peça faz parte de um lote do NQA: confirme o lote inteiro.'
+
+export type ConferenciaAmostra =
+  | { ok: true; bipados: string[] }
+  | { ok: false; motivo: 'vazio' | 'fora_do_lote' | 'repetido' | 'completa'; sn: string }
+
+/**
+ * Um bipe da AMOSTRA, conferido na tela antes de ir ao banco (que confere tudo de novo): só SN do lote,
+ * o mesmo SN não conta duas vezes, e a amostra não passa de K. A comparação é pela série NORMALIZADA,
+ * a mesma forma que o NQA gravou em numero_serie_norm (e que vai à RPC).
+ */
+export function conferirBipeAmostra(lote: NecessidadeLote, bipados: string[], bipe: string): ConferenciaAmostra {
+  const sn = normalizarSerie(bipe)
+  if (sn === '') return { ok: false, motivo: 'vazio', sn: '' }
+  if (bipados.includes(sn)) return { ok: false, motivo: 'repetido', sn }
+  if (!lote.sns.includes(sn)) return { ok: false, motivo: 'fora_do_lote', sn }
+  if (amostraCompleta(lote, bipados)) return { ok: false, motivo: 'completa', sn }
+  return { ok: true, bipados: [...bipados, sn] }
+}
+
+/** "Confirmar lote" só habilita com EXATAMENTE K SNs distintos (e K válido). */
+export function amostraCompleta(lote: NecessidadeLote, bipados: string[]): boolean {
+  return lote.amostra !== null && lote.amostra > 0 && bipados.length === lote.amostra
+}
+
+/**
+ * A frase de cada recusa da `sf_almoxarifado_lote` (0156). Quando a RPC manda `detalhe`, ele é a frase
+ * pronta (com os SNs, quantos faltam, quando e por quem) e vale; sem ele, um texto fixo que ainda diz o
+ * que aconteceu e o que fazer — nunca só "erro".
+ */
+export function mensagemRecusaLote(motivo: string, detalhe?: string): string {
+  switch (motivo) {
+    case 'sem_permissao':
+      return 'Você não tem permissão para esta ação.'
+    case 'ja_lancado':
+      return detalhe || 'Este lote já foi confirmado.'
+    case 'lote_com_sn_lancado':
+      return detalhe
+        || 'Alguma peça deste lote já tem entrada no Almoxarifado. Cancele essa entrada em Registros e confirme o lote outra vez.'
+    case 'amostra_fora_do_lote':
+      return detalhe || 'Uma das peças bipadas não é deste lote.'
+    case 'amostra_tamanho_errado':
+      return detalhe || 'A quantidade de peças da amostra não confere com a Tabela NQA.'
+    case 'amostra_nqa_invalida':
+      return detalhe || 'A Tabela NQA não tem amostra para o tamanho deste lote. Peça ao gestor para conferir a Tabela NQA.'
+    case 'lote_nao_aprovado':
+      return detalhe || 'Este lote não foi aprovado no NQA.'
+    case 'lote_nao_encontrado':
+      return detalhe || 'Lote não encontrado nesta OP.'
+    case 'lote_nao_se_aplica':
+      return detalhe || 'Nesta OP a entrada não é por lote do NQA.'
+    case 'ordem_nao_encontrada':
+      return detalhe || 'Ordem não encontrada.'
+    case 'posto_invalido':
+      return detalhe || 'Este posto não é um posto de Almoxarifado.'
+    case 'posto_fora_da_op':
+      return detalhe || 'Este posto não está nos postos desta OP. Acrescente-o em Cadastrar OP.'
+    default:
+      return 'Não foi possível confirmar o lote.'
+  }
 }

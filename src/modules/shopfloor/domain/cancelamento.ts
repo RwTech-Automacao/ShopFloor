@@ -28,3 +28,17 @@ export function ehEntradaDeCaixaAlmoxarifado(
 ): boolean {
   return (recurso ?? '').trim() === 'almoxarifado' && (numeroCaixa ?? '').trim() !== ''
 }
+
+/**
+ * Este registro é uma ENTRADA DE LOTE no Almoxarifado (0156)? O lote do NQA individual foi confirmado
+ * num gesto só, que gravou uma linha por SN com `envio_id` apontando pro envio do lote — então o
+ * desfazer também é um gesto: "Cancelar o lote inteiro", e nunca a linha avulsa (a RPC recusa com
+ * CANCELE_O_LOTE). Pelo RECURSO do perfil do posto, nunca pelo nome. Quem confirma que o envio é mesmo
+ * de lote é o servidor (lê sf_estoque_envios.tipo); isto aqui é a condição de perguntar.
+ */
+export function ehEntradaDeLoteAlmoxarifado(
+  recurso: string | null | undefined,
+  envioId: string | null | undefined,
+): boolean {
+  return (recurso ?? '').trim() === 'almoxarifado' && (envioId ?? '').trim() !== ''
+}
