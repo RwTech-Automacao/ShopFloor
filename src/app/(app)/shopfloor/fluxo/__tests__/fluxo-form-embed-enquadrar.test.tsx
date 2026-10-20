@@ -326,3 +326,37 @@ describe('a barra do Modo TV reserva espaço no topo ao enquadrar', () => {
     expect(topoReservado(opcoesDoUltimoFit())).toBe('118px')
   })
 })
+
+describe('card único (Almoxarifado no fim da rota, sem nó Saída)', () => {
+  const comEstoque = (id: string, x: number, y: number): FluxoNodePos => {
+    const n = no(id, x, y)
+    return { ...n, data: { ...n.data, recurso: 'almoxarifado', mostrarEstoque: true, concluidas: 3 } }
+  }
+  const saida = (x: number): FluxoNodePos => ({ ...no('Saída', x, 0), data: { ...no('Saída', x, 0).data, ehSaida: true } })
+
+  it('o PMO da OP vai ao nó do Almoxarifado (e a um nó Saída, como sempre), não aos demais', async () => {
+    carregarFluxo.mockResolvedValue({ ok: true, nodes: [no('MONTAGEM', 0, 0), comEstoque('ALMOX', 400, 0)], edges: [], qtd: 10 })
+    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />)
+    await esperarCarregar()
+    await waitFor(() => expect(nosDoCanvas()).toHaveLength(2))
+    const dados = (id: string) => nosDoCanvas().find((n) => n.id === id)!.data as Record<string, unknown>
+    expect(dados('ALMOX').pmo).toBe('PMOC13')
+    expect(dados('MONTAGEM').pmo).toBeUndefined()
+  })
+
+  it('embed enquadra tanto sem Saída (card único) quanto com Saída (OP antiga)', async () => {
+    carregarFluxo.mockResolvedValue({ ok: true, nodes: [no('MONTAGEM', 0, 0), comEstoque('ALMOX', 400, 0)], edges: [], qtd: 10 })
+    const a = render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />)
+    await esperarCarregar()
+    await waitFor(() => expect(fitView).toHaveBeenCalled())
+    a.unmount()
+
+    fitView.mockClear()
+    carregarFluxo.mockResolvedValue({ ok: true, nodes: [no('MONTAGEM', 0, 0), no('EMBALAGEM', 400, 0), saida(800)], edges: [], qtd: 10 })
+    render(<FluxoForm ops={OPS} ordensDashboard={[]} opFixa={OP_FIXA} ocultarSeletor embed />)
+    await esperarCarregar()
+    await waitFor(() => expect(fitView).toHaveBeenCalled())
+    const dadosSaida = nosDoCanvas().find((n) => n.id === 'Saída')!.data as Record<string, unknown>
+    expect(dadosSaida.pmo).toBe('PMOC13')
+  })
+})

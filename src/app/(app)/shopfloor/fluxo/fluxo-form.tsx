@@ -798,7 +798,8 @@ export function FluxoForm({
       if (!r.ok) { toast.error(r.erro); return }
       if (r.postos.length === 0) { toast.error('Este SN não passou por esta OP.'); setRota(null); return }
       // Concluiu (r.atual null) → destaca a caixa "Concluído" (SAÍDA) SE ela existe (OP com qtd);
-      // OP sem qtd não tem esse nó → posição atual = último posto visitado (senão o realce cairia no vácuo).
+      // sem esse nó (OP sem qtd, ou card único com o Almoxarifado no fim da rota) a posição atual =
+      // último posto visitado, que no card único é o próprio Almoxarifado (senão o realce cairia no vácuo).
       const temSaida = dom.some((n) => n.id === SAIDA)
       const atual = r.atual ?? (temSaida ? SAIDA : (r.postos[r.postos.length - 1] ?? null))
       const ordem = [...r.postos]
@@ -857,7 +858,8 @@ export function FluxoForm({
           // Só a Entrada carrega PMO/OP + descrição da OP (o card mostra; o domínio não tem esse dado).
           ...(n.id === ENTRADA ? { pmo: opSel?.pmo, op: opSel?.op, descricao: opSel?.descricao } : {}),
           // A Saída (card Concluído) leva só o PMO: é com ele que o card consulta o estoque do Compels.
-          ...(n.id === SAIDA ? { pmo: opSel?.pmo } : {}),
+          // Card único: quando o Almoxarifado é o fim da rota (sem nó Saída), é ELE que leva o PMO.
+          ...(n.id === SAIDA || n.data.mostrarEstoque ? { pmo: opSel?.pmo } : {}),
           // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
           ...(rota ? (() => {
             const idx = rota.ordem.indexOf(n.id)

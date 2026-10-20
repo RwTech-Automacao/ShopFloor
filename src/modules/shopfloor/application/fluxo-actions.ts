@@ -26,6 +26,7 @@ export async function carregarFluxo(
       (p) => exigeManutencao[p] ?? false,
       naoIniciadas,
       finalizadas,
+      true, // card único: Almoxarifado no fim da rota substitui o Concluído (OP sem Almoxarifado em último: igual a antes)
     )
     // Onda 3: o tempo na aresta agora é a CADÊNCIA (min/peça), calculada no cliente a partir do período.
     return { ok: true, nodes, edges, qtd }
