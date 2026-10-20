@@ -10,6 +10,7 @@ import {
   mensagemRecusaLote,
   type NecessidadeAlmoxarifado,
   type NecessidadeLote,
+  type PendenciaAlmoxarifado,
   type RecusaBipeAlmoxarifado,
   type TipoBipeAlmoxarifado,
 } from '../domain/almoxarifado'
@@ -372,4 +373,42 @@ export async function confirmarLoteAlmoxarifado(
   const r = (data ?? {}) as { ok?: boolean; motivo?: string; detalhe?: string; quantidade?: number; lote?: string }
   if (!r.ok) return { ok: false, erro: mensagemRecusaLote(r.motivo ?? '', r.detalhe) }
   return { ok: true, quantidade: Number(r.quantidade ?? 0), lote: r.lote ?? '' }
+}
+
+const FALHA_PENDENCIAS = 'Não foi possível carregar o que está esperando confirmação no Almoxarifado.'
+
+/**
+ * Tudo o que espera confirmação no Almoxarifado, de TODAS as OPs ativas (0158): a tela abre com a lista
+ * e a pessoa escolhe por onde começar. Falha de leitura é erro, nunca lista vazia: "nada esperando"
+ * quando na verdade não leu faria o operador parar de procurar.
+ */
+export async function listarPendenciasAlmoxarifado(): Promise<
+  { ok: true; pendencias: PendenciaAlmoxarifado[] } | { ok: false; erro: string }
+> {
+  const sessao = await getSessao()
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'lancar') ||
+    !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')
+  ) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almox_pendencias')
+  if (error) {
+    return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_PENDENCIAS }
+  }
+  if (!Array.isArray(data)) return { ok: false, erro: FALHA_PENDENCIAS }
+  const linhas = data as { pmo: string; op: string; tipo: string; codigo: string; pecas: number; amostra: number | null }[]
+  return {
+    ok: true,
+    pendencias: linhas.map((l) => ({
+      pmo: l.pmo,
+      op: l.op,
+      tipo: l.tipo === 'lote' ? 'lote' : 'caixa',
+      codigo: l.codigo,
+      pecas: Number(l.pecas),
+      amostra: l.amostra === null || l.amostra === undefined ? null : Number(l.amostra),
+    })),
+  }
 }

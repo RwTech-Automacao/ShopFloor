@@ -188,3 +188,15 @@ export function mensagemRecusaLote(motivo: string, detalhe?: string): string {
       return 'Não foi possível confirmar o lote.'
   }
 }
+
+/** Uma pendência do Almoxarifado de QUALQUER OP (0158): uma caixa (OP coletiva) ou um lote do NQA (OP individual). */
+export interface PendenciaAlmoxarifado {
+  pmo: string
+  op: string
+  tipo: 'caixa' | 'lote'
+  /** Código da caixa, ou o rótulo do lote ('LOTE[<8 hex>][<N>]'). */
+  codigo: string
+  pecas: number
+  /** Só lote: K da Tabela NQA (nulo quando a Tabela não cobre o tamanho). */
+  amostra: number | null
+}

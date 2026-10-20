@@ -25,6 +25,7 @@ import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
 import { AlmoxarifadoPanel } from './almoxarifado-panel'
+import { PendenciasAlmoxarifado } from './pendencias-almoxarifado'
 import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { NqaCaixaPanel } from './nqa-caixa-panel'
@@ -347,16 +348,25 @@ export function LancamentoForm({
       bipeCabRef.current?.select()
       return
     }
+    await carregarOrdemNoCabecalho(r.ordem)
+  }
+  async function carregarOrdemNoCabecalho(ordem: { cliente: string; pmo: string; op: string; postos: string[] }) {
     if (!(await podeTrocarContexto())) return
     setLotesPuxados(new Set())
-    setCliente(r.ordem.cliente)
-    setPmo(r.ordem.pmo)
-    setOp(r.ordem.op)
-    if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
+    setCliente(ordem.cliente)
+    setPmo(ordem.pmo)
+    setOp(ordem.op)
+    if (!ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
     resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // nova OP → histórico + total zeram
     setBipeCab('')
     // Almoxarifado: colaborador é fixo, então o foco vai direto para o campo do bipe da entrada.
     setTimeout(() => (modoAlmoxarifado ? document.getElementById('bipeAlmoxarifado') : colaboradorRef.current)?.focus(), 0)
+  }
+  // Almoxarifado: escolher uma pendência da lista carrega a OP dela, sem bipe de cabeçalho.
+  async function escolherPendenciaAlmoxarifado(pmoEsc: string, opEsc: string) {
+    const ordem = ordens.find((o) => o.pmo === pmoEsc && o.op === opEsc)
+    if (!ordem) { toast.error(`OP ${opEsc}/${pmoEsc} não está disponível. Atualize a página.`); return }
+    await carregarOrdemNoCabecalho(ordem)
   }
   async function atualizarCabecalho() {
     if (!(await podeTrocarContexto())) return
@@ -978,8 +988,14 @@ export function LancamentoForm({
       )}
 
       {op === '' ? (
-        // Sem OP: só o Contexto (campo de bipe do cabeçalho).
-        renderContexto()
+        // Sem OP: o Contexto (campo de bipe do cabeçalho) e, no Almoxarifado, a lista do que espera
+        // confirmação em todas as OPs — a pessoa escolhe por onde começar.
+        modoAlmoxarifado ? (
+          <div className="flex flex-col gap-3">
+            {renderContexto()}
+            <PendenciasAlmoxarifado onEscolher={escolherPendenciaAlmoxarifado} />
+          </div>
+        ) : renderContexto()
       ) : ehIntegracao ? (
         // Integração: igual às demais — o painel monta o próprio topo (Peça | Contexto) e deixa a
         // receita, que é uma tabela larga, em largura cheia embaixo.
