@@ -4,9 +4,12 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import {
+  MENSAGEM_SERIE_EXIGE_LOTE,
   classificarBipeAlmoxarifado,
   mensagemPostoAnteriorNaoConcluido,
+  mensagemRecusaLote,
   type NecessidadeAlmoxarifado,
+  type NecessidadeLote,
   type RecusaBipeAlmoxarifado,
   type TipoBipeAlmoxarifado,
 } from '../domain/almoxarifado'
@@ -110,6 +113,9 @@ function mensagemRecusaBanco(
         })
       }
       return detalhe || 'O posto anterior ainda não concluiu este bipe.'
+    case 'serie_exige_lote':
+      // 0156: na OP individual com NQA no posto anterior, a entrada é pelo LOTE (Confirmar lote).
+      return MENSAGEM_SERIE_EXIGE_LOTE
     default:
       return 'Não foi possível registrar a entrada.'
   }
@@ -265,4 +271,105 @@ export async function listarNecessidadesAlmoxarifado(
       fechadaEm: l.fechada_em ?? null,
     })),
   }
+}
+
+const FALHA_LOTES = 'Não foi possível carregar os lotes esperando confirmação.'
+
+/**
+ * Os lotes do NQA individual que o Almoxarifado tem que confirmar nesta OP (sf_almox_lotes, 0156):
+ * aprovados no posto NQA anterior da rota, com SN ainda sem entrada, cada um com TODOS os SNs e a
+ * amostra da Tabela NQA. Uma action à parte da lista de caixas (e não a mesma devolvendo os dois): a
+ * OP coletiva só tem caixa, a individual com NQA só tem lote, e a tela já sabe qual é o caso.
+ *
+ * Mesmos gates e a mesma regra da lista de caixas: falha do banco é ERRO, nunca lista vazia.
+ */
+export async function listarLotesAlmoxarifado(
+  pmo: string,
+  op: string,
+): Promise<{ ok: true; lotes: NecessidadeLote[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'lancar') ||
+    !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')
+  ) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+
+  const p = (pmo ?? '').trim()
+  const o = (op ?? '').trim()
+  if (!p || !o) return { ok: true, lotes: [] }
+
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almox_lotes', { p_pmo: p, p_op: o })
+  if (error) {
+    return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_LOTES }
+  }
+  if (!Array.isArray(data)) return { ok: false, erro: FALHA_LOTES }
+
+  const linhas = data as {
+    lote_id: string; rotulo: string; pecas: number; amostra: number | null; sns: string[] | null
+    ja_lancadas: number; aprovado_em: string | null
+  }[]
+  return {
+    ok: true,
+    lotes: linhas.map((l) => ({
+      loteId: l.lote_id,
+      rotulo: l.rotulo,
+      pecas: Number(l.pecas),
+      amostra: l.amostra === null || l.amostra === undefined ? null : Number(l.amostra),
+      sns: Array.isArray(l.sns) ? l.sns : [],
+      jaLancadas: Number(l.ja_lancadas ?? 0),
+      aprovadoEm: l.aprovado_em ?? null,
+    })),
+  }
+}
+
+export interface ConfirmacaoLote {
+  pmo: string
+  op: string
+  posto: string
+  colaborador: string
+  loteId: string
+  /** Os SNs bipados da amostra, como vieram do coletor. */
+  amostra: string[]
+}
+
+/**
+ * Confirma o LOTE com a amostra bipada (sf_almoxarifado_lote, 0156). A amostra vai NORMALIZADA (a mesma
+ * forma que o NQA gravou em numero_serie_norm) e sem repetido; quem confere de verdade — SN do lote,
+ * tamanho pela Tabela NQA, lote aprovado, nada lançado antes — é a RPC, numa transação, sob a trava do
+ * lote. Ela grava uma entrada por SN e UM envio ao Compels; `quantidade` são as peças que entraram.
+ */
+export async function confirmarLoteAlmoxarifado(
+  c: ConfirmacaoLote,
+): Promise<{ ok: true; quantidade: number; lote: string } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'lancar')) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  const pmo = (c.pmo ?? '').trim()
+  const op = (c.op ?? '').trim()
+  const posto = (c.posto ?? '').trim()
+  const colaborador = (c.colaborador ?? '').trim()
+  const loteId = (c.loteId ?? '').trim()
+  if (!colaborador || !pmo || !op || !posto) {
+    return { ok: false, erro: 'Preencha Colaborador, contexto (OP) e Posto antes de confirmar.' }
+  }
+  if (!loteId) return { ok: false, erro: 'Escolha o lote a confirmar.' }
+  const amostra = [...new Set((c.amostra ?? []).map((s) => normalizarSerie(s)).filter((s) => s !== ''))]
+
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almoxarifado_lote', {
+    p_pmo: pmo,
+    p_op: op,
+    p_posto: posto,
+    p_colaborador: colaborador,
+    p_lote_id: loteId,
+    p_amostra: amostra,
+  })
+  if (error) return { ok: false, erro: 'Não foi possível confirmar o lote.' }
+  const r = (data ?? {}) as { ok?: boolean; motivo?: string; detalhe?: string; quantidade?: number; lote?: string }
+  if (!r.ok) return { ok: false, erro: mensagemRecusaLote(r.motivo ?? '', r.detalhe) }
+  return { ok: true, quantidade: Number(r.quantidade ?? 0), lote: r.lote ?? '' }
 }
