@@ -18,6 +18,23 @@ export type ResultadoAcaoPosto = { ok: true; nome?: string } | { erro: string }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar postos.'
 
+const UM_ALMOXARIFADO = 'Já existe um posto Almoxarifado; só pode haver um.'
+
+/**
+ * UM POSTO ALMOXARIFADO SÓ (decisão de 20/10/2026): o Almoxarifado é um posto único, pré-definido
+ * para todas as OPs, e é a partir dele que a lista de necessidades e a entrada em estoque (0155) se
+ * orientam. Pelo PERFIL (recurso 'almoxarifado'), nunca pelo nome. `chaveIgnorada` é o próprio posto
+ * sendo editado: editá-lo sem mudar o perfil continua permitido.
+ */
+function existeOutroAlmoxarifado(
+  postos: { chave: string; perfil: string | null }[],
+  perfis: { chave: string; recurso: string }[],
+  chaveIgnorada?: string,
+): boolean {
+  const almox = new Set(perfis.filter((p) => p.recurso === 'almoxarifado').map((p) => p.chave))
+  return postos.some((p) => p.chave !== chaveIgnorada && p.perfil !== null && almox.has(p.perfil))
+}
+
 /** Só marca coletivo=true se o perfil escolhido permitir (gate server-side). */
 function coletivoPermitido(perfilChave: string, coletivo: boolean): boolean {
   return coletivo && perfilSuportaColetivo(perfilChave)
@@ -48,8 +65,12 @@ export async function cadastrarPostoAction(
     ? String(formData.get('retorno_pos_manutencao') ?? '').trim()
     : ''
 
-  // Ordem de catálogo é automática: entra no fim da lista (não é a sequência da OP).
   const postos = await listarPostos()
+  if (perfilEscolhido.recurso === 'almoxarifado' && existeOutroAlmoxarifado(postos, perfis)) {
+    return { erro: UM_ALMOXARIFADO }
+  }
+
+  // Ordem de catálogo é automática: entra no fim da lista (não é a sequência da OP).
   const ordem = postos.reduce((maior, p) => Math.max(maior, p.ordem), 0) + 1
 
   try {
@@ -96,6 +117,10 @@ export async function atualizarPostoAction(
   const postosAtuais = await listarPostos()
   const atual = postosAtuais.find((p) => p.chave === chave)
   const trocandoPerfil = !!atual && atual.perfil !== dados.perfil
+  const perfilNovo = perfis.find((p) => p.chave === dados.perfil)
+  if (perfilNovo?.recurso === 'almoxarifado' && existeOutroAlmoxarifado(postosAtuais, perfis, chave)) {
+    return { erro: UM_ALMOXARIFADO }
+  }
   if (trocandoPerfil && (await postoEmUsoEmOrdem(chave))) {
     return { erro: 'Posto em uso em uma OP — não é possível trocar o perfil.' }
   }
