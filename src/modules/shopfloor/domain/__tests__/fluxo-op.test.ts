@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca, faixaDoRotulo, ordenarOpsPorBipes } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca, faixaDoRotulo, ordenarOpsPorBipes, ultimoPostoEhAlmoxarifado } from '../fluxo-op'
 
 const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0, reprovadosSemReteste: 0 })
 
@@ -449,8 +449,8 @@ describe('construirFluxo: contrato do grafo de OPs sem Almoxarifado em último',
     { ...zero('Burn-in'), wip: 1, registros: 4, passouDistinto: 3 },
     { ...zero(MANUTENCAO), wip: 3 },
   ]
-  const grafo = (postos: string[], ...resto: [number | null?, number | null?, number | null?]) =>
-    construirFluxo(postos, agg, (p) => p === 'P1', recursoDe, resto[0] ?? null, () => true, resto[1] ?? null, resto[2] ?? null)
+  const grafo = (postos: string[], qtd: number | null = null, naoIniciadas: number | null = null, finalizadas: number | null = null) =>
+    construirFluxo(postos, agg, (p) => p === 'P1', recursoDe, qtd, () => true, naoIniciadas, finalizadas)
 
   it('rota de 1 posto', () => {
     expect(grafo(['P1'], 10, 2, 3)).toMatchInlineSnapshot(`
@@ -1432,5 +1432,60 @@ describe('construirFluxo: contrato do grafo de OPs sem Almoxarifado em último',
         ],
       }
     `)
+  })
+})
+
+describe('ultimoPostoEhAlmoxarifado', () => {
+  const rec = (p: string) => (p === 'Almox' ? 'almoxarifado' : p === 'Estranho' ? undefined : 'nenhum')
+  it('lista vazia: false', () => expect(ultimoPostoEhAlmoxarifado([], rec)).toBe(false))
+  it('um posto', () => {
+    expect(ultimoPostoEhAlmoxarifado(['Almox'], rec)).toBe(true)
+    expect(ultimoPostoEhAlmoxarifado(['Teste'], rec)).toBe(false)
+  })
+  it('almoxarifado no meio: false', () => expect(ultimoPostoEhAlmoxarifado(['Teste', 'Almox', 'Embalagem'], rec)).toBe(false))
+  it('almoxarifado no fim: true', () => expect(ultimoPostoEhAlmoxarifado(['Teste', 'Embalagem', 'Almox'], rec)).toBe(true))
+  it('recurso desconhecido: false', () => expect(ultimoPostoEhAlmoxarifado(['Teste', 'Estranho'], rec)).toBe(false))
+})
+
+describe('construirFluxo: card único (Almoxarifado em último, opt-in)', () => {
+  const recursoDe = (p: string) => (p === 'Almoxarifado' ? 'almoxarifado' : 'nenhum')
+  const montar = (postos: string[], fin: number | null = 3, unificar = true) =>
+    construirFluxo(postos, [], () => false, recursoDe, 10, () => true, 2, fin, unificar)
+
+  it('último é Almoxarifado: sem nó Saída, sem aresta para a Saída, e o nó leva mostrarEstoque e concluidas', () => {
+    const { nodes, edges } = montar(['Teste', 'Embalagem', 'Almoxarifado'])
+    expect(nodes.some((n) => n.id === SAIDA)).toBe(false)
+    expect(edges.some((e) => e.target === SAIDA)).toBe(false)
+    const alm = nodes.find((n) => n.id === 'Almoxarifado')!.data
+    expect(alm.mostrarEstoque).toBe(true)
+    expect(alm.concluidas).toBe(3)
+    expect(nodes.find((n) => n.id === 'Embalagem')!.data.mostrarEstoque).toBeUndefined()
+  })
+  it('Entrada e Manutenção continuam onde estavam', () => {
+    const com = montar(['Teste', 'Embalagem', 'Almoxarifado'])
+    const sem = construirFluxo(['Teste', 'Embalagem', 'Almoxarifado'], [], () => false, recursoDe, 10, () => true, 2, 3)
+    for (const id of [ENTRADA, MANUTENCAO]) {
+      const a = com.nodes.find((n) => n.id === id)!
+      const b = sem.nodes.find((n) => n.id === id)!
+      expect([a.x, a.y]).toEqual([b.x, b.y])
+    }
+  })
+  it('Almoxarifado no MEIO: mantém a Saída', () => {
+    const { nodes, edges } = montar(['Almoxarifado', 'Embalagem'])
+    expect(nodes.some((n) => n.id === SAIDA)).toBe(true)
+    expect(edges).toContainEqual({ id: `f:Embalagem->${SAIDA}`, source: 'Embalagem', target: SAIDA, tipo: 'fluxo' })
+    expect(nodes.find((n) => n.id === 'Almoxarifado')!.data.mostrarEstoque).toBeUndefined()
+  })
+  it('sem finalizadas: o card existe, sem Saída, sem estoque nem contagem, sem quebrar', () => {
+    const { nodes } = montar(['Teste', 'Almoxarifado'], null)
+    const alm = nodes.find((n) => n.id === 'Almoxarifado')!.data
+    expect(nodes.some((n) => n.id === SAIDA)).toBe(false)
+    expect(alm.mostrarEstoque).toBeUndefined()
+    expect(alm.concluidas).toBeUndefined()
+  })
+  it('sem o opt-in (padrão) o resultado é o de sempre, mesmo com Almoxarifado em último', () => {
+    const { nodes } = montar(['Teste', 'Almoxarifado'], 3, false)
+    expect(nodes.some((n) => n.id === SAIDA)).toBe(true)
+    expect(nodes.find((n) => n.id === 'Almoxarifado')!.data.mostrarEstoque).toBeUndefined()
   })
 })

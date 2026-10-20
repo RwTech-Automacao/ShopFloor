@@ -70,6 +70,11 @@ export interface FluxoNodeData extends FluxoAgregado {
    *  operador conta CAIXAS empilhadas, não peças. undefined nos dois = o card não mostra a linha. */
   caixasBipadas?: number
   caixasFechadas?: number
+  /** Card único: este é o ÚLTIMO posto da rota e é o Almoxarifado, então ele mostra a faixa do estoque
+   *  do Compels (antes no nó Concluído, que nesse caso nem existe). Ausente em todo o resto. */
+  mostrarEstoque?: boolean
+  /** Peças que concluíram a rota (o que o nó Concluído mostraria). Só junto de `mostrarEstoque`. */
+  concluidas?: number
 }
 
 export interface FluxoNodePos {
@@ -262,6 +267,18 @@ export function postoPendenteDePeca(
   return postosOrdenados[idx + 1] ?? null
 }
 
+/**
+ * O ÚLTIMO posto da rota é o Almoxarifado (perfil de recurso `almoxarifado`)? Decide pelo perfil, nunca
+ * pelo nome do posto. Almoxarifado no meio da rota, lista vazia ou recurso desconhecido: false.
+ */
+export function ultimoPostoEhAlmoxarifado(
+  postosOrdenados: string[],
+  recursoDe: (posto: string) => string | undefined,
+): boolean {
+  const ultimo = postosOrdenados[postosOrdenados.length - 1]
+  return ultimo != null && recursoDe(ultimo) === 'almoxarifado'
+}
+
 /** Monta nós/arestas do canvas a partir da ordem do fluxo + agregados da RPC. Puro. */
 export function construirFluxo(
   postosOrdenados: string[],
@@ -276,6 +293,9 @@ export function construirFluxo(
   // Caixas de Entrada (peças que não começaram) e Saída (peças que concluíram o fluxo). null = não mostra.
   naoIniciadas: number | null = null,
   finalizadas: number | null = null,
+  // Card único (opt-in, a tela liga): se o último posto é o Almoxarifado, ele vira o fim da rota —
+  // sem nó/aresta "Concluído" — e leva a faixa do estoque. Desligado = comportamento de sempre.
+  unificarAlmoxarifado = false,
 ): { nodes: FluxoNodePos[]; edges: FluxoEdge[] } {
   const nodes: FluxoNodePos[] = postosOrdenados.map((posto, i) => ({
     id: posto,
@@ -297,10 +317,16 @@ export function construirFluxo(
   // Caixas de Entrada/Saída (só quando há postos e a contagem foi informada).
   // Entrada fica ANTES do 1º posto; Saída continua a serpentina (posição do índice seguinte ao último).
   const temCaixas = postosOrdenados.length > 0
+  const cardUnico =
+    unificarAlmoxarifado && temCaixas && finalizadas != null && ultimoPostoEhAlmoxarifado(postosOrdenados, recursoDe)
+  if (cardUnico) {
+    const noUltimo = nodes.find((n) => n.id === postosOrdenados[postosOrdenados.length - 1])
+    if (noUltimo) noUltimo.data = { ...noUltimo.data, mostrarEstoque: true, concluidas: finalizadas }
+  }
   if (temCaixas && naoIniciadas != null) {
     nodes.push({ id: ENTRADA, x: -ESPACO_X, y: 0, data: dadosCaixa(ENTRADA, naoIniciadas, 'entrada') })
   }
-  if (temCaixas && finalizadas != null) {
+  if (temCaixas && finalizadas != null && !cardUnico) {
     nodes.push({ id: SAIDA, ...posSerpentina(postosOrdenados.length), data: dadosCaixa(SAIDA, finalizadas, 'saida') })
   }
 
@@ -313,7 +339,7 @@ export function construirFluxo(
     const target = postosOrdenados[i + 1]!
     edges.push({ id: `f:${source}->${target}`, source, target, tipo: 'fluxo' })
   }
-  if (temCaixas && finalizadas != null) {
+  if (temCaixas && finalizadas != null && !cardUnico) {
     const ultimo = postosOrdenados[postosOrdenados.length - 1]!
     edges.push({ id: `f:${ultimo}->${SAIDA}`, source: ultimo, target: SAIDA, tipo: 'fluxo' })
   }
