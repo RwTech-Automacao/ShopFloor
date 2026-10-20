@@ -27,7 +27,7 @@ Item = uma linha de `processos_recebimento`; `cancelado` fica de fora (mesma ré
 | **Pendências** | Itens **ainda não chegados**, por faixa de atraso e por fornecedor | status `aberto` **sem `data_chegada`**; atraso = hoje − `data_prevista`; faixas: no prazo, 1 a 7, 8 a 30, mais de 30 dias; "sem data prevista" à parte |
 
 Regras de recorte:
-- De/Até valem para Volume, Qualidade, Atraso e Tempo (pela `data_chegada`). **Pendências ignoram De/Até**, porque por definição não têm `data_chegada`.
+- De/Até valem para Volume, Qualidade, Atraso e as **durações** do Tempo (pela `data_chegada`). **Pendências e Parados ignoram De/Até**: são o estado de agora (pendência não tem `data_chegada`, e um item parado há meses sumiria do filtro padrão de 90 dias).
 - **Tempo no Recebimento** só conta itens com `data_chegada`; o item aberto sem chegada não está "parado no Recebimento", está em Pendências.
 - Item sem histórico que permita saber o tempo (processos antigos) entra em "sem tempo", e a tela mostra "—", nunca zero (mesma convenção do Fluxo).
 
@@ -59,6 +59,6 @@ faixas) e componentes (cartões e gráficos novos). Medir o tempo da função co
 
 ## Em aberto (pequenos; assumi o que está em itálico)
 
-1. Reprovado = `resultado` "Reprovado" e o denominador só conta itens **com resultado** (*sim*).
+1. Reprovado e "com resultado": `resultado` pode vir vazio em item já finalizado (o `status` terminal espelha o resultado), então reprovado = `status` **ou** `resultado` igual a "Reprovado", e "com resultado" = `status` terminal **ou** `resultado` preenchido (*sim; confirmar com a consulta nos dados de produção*).
 2. Pendências ignoram De/Até (*sim*).
 3. Mês no eixo do Volume em ordem cronológica, mais antigo à esquerda (*sim*).
