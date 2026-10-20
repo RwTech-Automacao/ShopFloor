@@ -81,9 +81,17 @@ export function mensagemPostoAnteriorNaoConcluido(args: {
   tipo: TipoBipeAlmoxarifado
   postoAnterior: string
   precisaAprovado: boolean
+  /** Só na caixa: quantas peças ainda não cumprem o posto anterior, e quantas a caixa tem. */
+  faltam?: number
+  pecas?: number
 }): string {
-  const { tipo, postoAnterior, precisaAprovado } = args
+  const { tipo, postoAnterior, precisaAprovado, faltam, pecas } = args
   if (tipo === 'caixa') {
+    if (faltam !== undefined && pecas !== undefined && pecas > 0 && faltam > 0) {
+      return `Esta caixa ainda não foi concluída no posto anterior (${postoAnterior}): ${faltam} de ${pecas} ${
+        pecas === 1 ? 'peça' : 'peças'
+      } ainda sem ${precisaAprovado ? 'aprovação' : 'registro'} lá.`
+    }
     return `Esta caixa ainda não foi concluída no posto anterior (${postoAnterior}): todas as peças precisam estar ${
       precisaAprovado ? 'aprovadas' : 'registradas'
     } lá.`

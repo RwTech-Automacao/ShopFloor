@@ -185,3 +185,27 @@ describe('AlmoxarifadoPanel — caixas esperando confirmação (0155)', () => {
     await waitFor(() => expect(campo().value).toBe(''))
   })
 })
+
+describe('AlmoxarifadoPanel: OP individual', () => {
+  it('não mostra a lista de caixas nem a consulta (a unidade é a peça)', async () => {
+    render(<AlmoxarifadoPanel {...PROPS} individual />)
+    // Dá tempo de um efeito indevido disparar a consulta.
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByText(/Caixas esperando confirmação/)).toBeNull()
+    expect(screen.queryByText(/Nenhuma caixa esperando/)).toBeNull()
+    expect(listarNecessidadesAlmoxarifado).not.toHaveBeenCalled()
+  })
+
+  it('o bipe da peça continua funcionando', async () => {
+    registrarEntradaAlmoxarifado.mockResolvedValue({ ok: true, quantidade: 1, tipo: 'serie' })
+    render(<AlmoxarifadoPanel {...PROPS} individual />)
+    bipar('SN00123')
+    await waitFor(() => expect(registrarEntradaAlmoxarifado).toHaveBeenCalled())
+  })
+
+  it('OP coletiva (padrão) continua listando as caixas', async () => {
+    render(<AlmoxarifadoPanel {...PROPS} />)
+    expect(await screen.findByText(/Nenhuma caixa esperando/)).toBeTruthy()
+    expect(listarNecessidadesAlmoxarifado).toHaveBeenCalledWith('PMO1', '12345')
+  })
+})

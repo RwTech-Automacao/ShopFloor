@@ -63,4 +63,24 @@ describe('mensagemPostoAnteriorNaoConcluido', () => {
     const m = mensagemPostoAnteriorNaoConcluido({ tipo: 'caixa', postoAnterior: 'Inspeção Final', precisaAprovado: false })
     expect(m).toBe('Esta caixa ainda não foi concluída no posto anterior (Inspeção Final): todas as peças precisam estar registradas lá.')
   })
+
+  it('caixa com a contagem: diz quantas peças faltam de quantas', () => {
+    const m = mensagemPostoAnteriorNaoConcluido({
+      tipo: 'caixa', postoAnterior: 'Inspeção NQA', precisaAprovado: true, faltam: 4, pecas: 25,
+    })
+    expect(m).toBe('Esta caixa ainda não foi concluída no posto anterior (Inspeção NQA): 4 de 25 peças ainda sem aprovação lá.')
+  })
+
+  it('caixa de uma peça só, sem status: singular e "registro"', () => {
+    const m = mensagemPostoAnteriorNaoConcluido({
+      tipo: 'caixa', postoAnterior: 'Inspeção Final', precisaAprovado: false, faltam: 1, pecas: 1,
+    })
+    expect(m).toBe('Esta caixa ainda não foi concluída no posto anterior (Inspeção Final): 1 de 1 peça ainda sem registro lá.')
+  })
+
+  it('caixa com contagem inconsistente (faltam 0 ou caixa sem peças): volta à frase geral', () => {
+    const geral = 'Esta caixa ainda não foi concluída no posto anterior (Inspeção NQA): todas as peças precisam estar aprovadas lá.'
+    expect(mensagemPostoAnteriorNaoConcluido({ tipo: 'caixa', postoAnterior: 'Inspeção NQA', precisaAprovado: true, faltam: 0, pecas: 25 })).toBe(geral)
+    expect(mensagemPostoAnteriorNaoConcluido({ tipo: 'caixa', postoAnterior: 'Inspeção NQA', precisaAprovado: true, faltam: 3, pecas: 0 })).toBe(geral)
+  })
 })

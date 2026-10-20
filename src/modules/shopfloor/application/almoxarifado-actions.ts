@@ -52,7 +52,10 @@ const RECUSAS_FORMATO: Record<RecusaBipeAlmoxarifado, string> = {
 function mensagemRecusaBanco(
   motivo: string,
   detalhe?: string,
-  anterior?: { tipo: TipoBipeAlmoxarifado; postoAnterior?: string; precisaAprovado?: boolean },
+  anterior?: {
+    tipo: TipoBipeAlmoxarifado; postoAnterior?: string; precisaAprovado?: boolean
+    faltam?: number; pecas?: number
+  },
 ): string {
   switch (motivo) {
     case 'sem_permissao':
@@ -102,6 +105,8 @@ function mensagemRecusaBanco(
           tipo: anterior.tipo,
           postoAnterior: anterior.postoAnterior,
           precisaAprovado: anterior.precisaAprovado === true,
+          faltam: anterior.faltam,
+          pecas: anterior.pecas,
         })
       }
       return detalhe || 'O posto anterior ainda não concluiu este bipe.'
@@ -191,7 +196,7 @@ export async function registrarEntradaAlmoxarifado(
 
   const r = data as {
     ok: boolean; motivo?: string; detalhe?: string; quantidade?: number; qtd_etiqueta?: number
-    posto_anterior?: string; precisa_aprovado?: boolean
+    posto_anterior?: string; precisa_aprovado?: boolean; faltam?: number; pecas?: number
   }
   if (!r.ok) {
     return {
@@ -200,6 +205,8 @@ export async function registrarEntradaAlmoxarifado(
         tipo,
         postoAnterior: r.posto_anterior,
         precisaAprovado: r.precisa_aprovado,
+        faltam: r.faltam,
+        pecas: r.pecas,
       }),
     }
   }

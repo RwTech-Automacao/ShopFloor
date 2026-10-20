@@ -50,7 +50,10 @@ export function AlmoxarifadoPanel({
   op,
   posto,
   contexto,
+  individual = false,
 }: {
+  /** OP de embalagem individual: a unidade é a peça, não há caixa para confirmar (esconde a lista). */
+  individual?: boolean
   colaborador: string
   pmo: string
   op: string
@@ -70,6 +73,7 @@ export function AlmoxarifadoPanel({
   // lista da OP anterior na tela.
   const consultaRef = useRef(0)
   const temOp = pmo.trim() !== '' && op.trim() !== ''
+  const mostrarNecessidades = temOp && !individual
   const chaveOp = `${pmo}/${op}`
   const necessidades: EstadoNecessidades =
     respostaNec && respostaNec.chave === chaveOp ? respostaNec.estado : { tipo: 'carregando' }
@@ -88,9 +92,9 @@ export function AlmoxarifadoPanel({
   }, [pmo, op])
 
   useEffect(() => {
-    if (!temOp) return
+    if (!mostrarNecessidades) return
     void carregarNecessidades()
-  }, [temOp, carregarNecessidades])
+  }, [mostrarNecessidades, carregarNecessidades])
 
   // Refoca assim que o envio termina — aceito (campo já limpo) ou recusado (texto fica, pro
   // operador ver o que bipou e decidir se bipa de novo ou corrige).
@@ -133,7 +137,7 @@ export function AlmoxarifadoPanel({
         setRecentes((prev) => [{ bipe: alvo.trim(), quantidade: r.quantidade, tipo: r.tipo }, ...prev].slice(0, 30))
         setBipe('') // aceito → limpa pro próximo bipe
         // A caixa confirmada sai da lista: recarrega (fora do caminho do bipe — não espera).
-        if (temOp) void carregarNecessidades()
+        if (mostrarNecessidades) void carregarNecessidades()
       } finally {
         enviandoRef.current = false
         setEnviando(false)
@@ -152,7 +156,7 @@ export function AlmoxarifadoPanel({
             <CardTitle>Peça</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-1.5">
-            {temOp && (
+            {mostrarNecessidades && (
               <div className="mb-2 flex flex-col rounded-lg border border-border p-2">
                 <p className="mb-1 text-xs font-medium text-muted-foreground">
                   Caixas esperando confirmação

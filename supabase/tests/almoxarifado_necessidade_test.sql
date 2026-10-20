@@ -225,6 +225,9 @@ begin
   perform teste_recusa_sem_rastro(r, 'posto_anterior_nao_concluido', 'PMON12', 'N12 uma peça sem NQA');
   if r->>'detalhe' not like '%Inspeção NQA%' or r->>'detalhe' not like '%1 de 3%' then
     raise exception 'FALHOU (N12): o detalhe tem que nomear o posto e quantas faltam (1 de 3): %', r; end if;
+  -- A contagem também vem em campos próprios (a tela monta a frase do operador com eles).
+  if (r->>'faltam')::int <> 1 or (r->>'pecas')::int <> 3 then
+    raise exception 'FALHOU (N12): faltam/pecas tinham que ser 1 e 3: %', r; end if;
   if (select count(*) from sf_registros where pmo = 'PMON12' and posto = 'Almoxarifado' and numero_caixa = c2) <> 0
      or exists (select 1 from sf_estoque_envios where bipe = c2) then
     raise exception 'FALHOU (N12): a recusa da caixa gravou alguma coisa'; end if;

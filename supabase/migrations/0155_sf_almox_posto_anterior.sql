@@ -365,6 +365,7 @@ begin
       if v_prev_falta > 0 then
         return jsonb_build_object('ok', false, 'motivo', 'posto_anterior_nao_concluido',
           'posto_anterior', v_prev.posto, 'precisa_aprovado', v_prev.precisa_aprovado,
+          'faltam', v_prev_falta, 'pecas', v_pecas,
           'detalhe', 'A caixa ' || v_caixa.seq || ' ainda não foi concluída no posto anterior ('
             || v_prev.posto || '): ' || v_prev_falta || ' de ' || v_pecas
             || case when v_pecas = 1 then ' peça' else ' peças' end

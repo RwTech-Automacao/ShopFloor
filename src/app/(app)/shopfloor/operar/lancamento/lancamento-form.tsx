@@ -989,7 +989,8 @@ export function LancamentoForm({
       ) : ehAlmoxarifado ? (
         // Almoxarifado: último posto da linha — bipa o que acabou de ser embalado (peça ou caixa
         // fechada). Igual às demais: o painel monta o próprio topo (Peça | Contexto).
-        <AlmoxarifadoPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} contexto={renderContexto()} />
+        <AlmoxarifadoPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto}
+          individual={ordemSel?.embalagem_individual === true} contexto={renderContexto()} />
       ) : ehEmbalagem ? (
         // Embalagem: o painel monta o PRÓPRIO topo (Peça | Contexto) e deixa o acompanhamento em
         // largura cheia embaixo — por isso recebe o Contexto por prop em vez de dividir a linha aqui.
