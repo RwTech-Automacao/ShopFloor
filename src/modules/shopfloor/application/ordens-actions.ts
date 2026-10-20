@@ -9,6 +9,7 @@ import { validarOrdem } from '../domain/validar-ordem'
 import { mensagemOpDuplicada } from '../domain/op-unica'
 import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-posto'
+import { almoxarifadoAutomaticoLigado, postoAlmoxarifadoDaOp, rotaComAlmoxarifadoNoFim, MSG_VARIOS_ALMOXARIFADOS } from '../domain/almoxarifado-automatico'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import {
   criarOrdem,
@@ -103,7 +104,14 @@ export async function criarOrdemAction(
   // OP única global: o número da OP não pode existir em nenhum outro PMO.
   const emUso = await buscarOpEmUso(dados.op)
   if (emUso) return { ok: false, erro: mensagemOpDuplicada(emUso) }
-  const postos = await lerPostos(formData)
+  let postos = await lerPostos(formData)
+  // Posto Almoxarifado automático: SÓ em OP nova (nunca na edição) e DESLIGADO por padrão. Sem a
+  // variável de servidor = "1", nada aqui muda a rota que o form mandou.
+  if (almoxarifadoAutomaticoLigado(process.env.ALMOXARIFADO_AUTOMATICO_NAS_OPS_NOVAS)) {
+    const almox = postoAlmoxarifadoDaOp(await mapaPostoPerfil())
+    if (!almox.ok) return { ok: false, erro: MSG_VARIOS_ALMOXARIFADOS }
+    postos = rotaComAlmoxarifadoNoFim(postos, almox.posto)
+  }
   const receita = await lerReceita(formData, postos)
   const burnin = await lerBurnin(formData, postos)
   if (!burnin.ok) return { ok: false, erro: burnin.erro }
