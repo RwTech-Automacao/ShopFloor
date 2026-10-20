@@ -177,8 +177,11 @@ begin
   perform teste_reg('PMON04', '9104', 'Embalagem', s::text, '', s::text) from generate_series(5301, 5303) s;
   perform teste_reg('PMON04', '9104', 'Inspeção NQA', '5301', 'Aprovado');
   perform teste_reg('PMON04', '9104', 'Inspeção NQA', '5302', 'Reprovado');
+  -- Desde a 0156 a peça APROVADA no NQA passa pelo posto anterior e esbarra na recusa seguinte: na OP
+  -- individual com NQA no anterior a entrada é pelo LOTE (almoxarifado_lote_test.sql). A trava do posto
+  -- anterior, que é o que este caso mede, continua provada: a aprovada não ouve posto_anterior_nao_concluido.
   r := sf_almoxarifado_entrada('PMON04', '9104', 'Almoxarifado', 'Ana', '5301', 'serie', 1, '5301');
-  perform teste_aceito(r, 1, 'N4 NQA aprovado');
+  perform teste_recusa_sem_rastro(r, 'serie_exige_lote', 'PMON04', 'N4 NQA aprovado');
   r := sf_almoxarifado_entrada('PMON04', '9104', 'Almoxarifado', 'Ana', '5302', 'serie', 1, '5302');
   perform teste_recusa_sem_rastro(r, 'posto_anterior_nao_concluido', 'PMON04', 'N4 NQA reprovado');
   r := sf_almoxarifado_entrada('PMON04', '9104', 'Almoxarifado', 'Ana', '5303', 'serie', 1, '5303');

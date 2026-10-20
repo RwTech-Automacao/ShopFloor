@@ -104,6 +104,9 @@ insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exig
 -- TODOS os testes deste arquivo rodem contra a versão nova: são eles que provam que ela não mudou nada
 -- do que já existia (os novos casos ficam em almoxarifado_necessidade_test.sql).
 \i /tmp/0155.sql
+-- A 0156 (fase 2: lote do NQA individual) recria a entrada de novo, com a recusa serie_exige_lote. Entra
+-- aqui pelo mesmo motivo da 0155: todos os testes deste arquivo rodam contra a versão vigente.
+\i /tmp/0156.sql
 
 select set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
 
@@ -918,6 +921,9 @@ $f$;
 -- A 0133 troca a sf_cancelar_lancamento (create or replace) pra ela também reverter na fila de estoque
 -- quando a linha cancelada é uma entrada de Almoxarifado. Depois da 0106, que é a versão de produção.
 \i /tmp/0133.sql
+-- A 0156 recria a sf_cancelar_lancamento (corpo da 0133 + a recusa CANCELE_O_LOTE): reaplicada aqui
+-- pra os testes de cancelamento abaixo rodarem contra a versão vigente, e não contra a da 0133.
+\i /tmp/0156.sql
 
 -- Guarda ids entre blocos: cada `do $t$` é um escopo próprio, e o teste 28 precisa do id que o
 -- teste 26 já apagou.
