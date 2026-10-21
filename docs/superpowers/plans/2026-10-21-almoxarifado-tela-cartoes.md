@@ -35,7 +35,7 @@
 
 ---
 
-## Tarefa 1: SQL (a hora na 0158 e a função de detalhe 0159)
+## Task 1: SQL (a hora na 0158 e a função de detalhe 0159)
 
 **Contexto a ler antes (inteiro):** `supabase/migrations/0158_sf_almox_pendencias.sql`, `0155_sf_almox_posto_anterior.sql` (`sf_almox_posto_anterior`, `sf_almox_necessidades`), `0156_sf_almox_lote.sql` (`sf_almox_lotes`), `supabase/tests/rodar-almoxarifado-test.sh`, `almoxarifado_lote_test.sql` (como a massa dos lotes nasce pela `sf_nqa_individual`) e `almoxarifado_necessidade_test.sql` (como a massa de caixa nasce).
 
@@ -125,7 +125,7 @@ notify pgrst, 'reload schema';
 
 ---
 
-## Tarefa 2: domínio e actions
+## Task 2: domínio e actions
 
 **Arquivos:** `src/modules/shopfloor/domain/almoxarifado.ts`, `src/modules/shopfloor/application/almoxarifado-actions.ts`; testes em `src/modules/shopfloor/domain/__tests__/almoxarifado-cartoes.test.ts` e `src/modules/shopfloor/application/__tests__/almoxarifado-detalhe-actions.test.ts` (siga o molde de mock de `getSessao` e `createServerSupabase` dos testes de actions já existentes ao lado, por exemplo os de `listarPendenciasAlmoxarifado`/`listarLotesAlmoxarifado`).
 
@@ -167,7 +167,7 @@ export async function detalharPendenciaAlmoxarifado(p: { pmo: string; op: string
 
 ---
 
-## Tarefa 3: a tela (cartões, caixa aberta, lote aberto)
+## Task 3: a tela (cartões, caixa aberta, lote aberto)
 
 **Arquivos (todos novos, em `src/app/(app)/recebimento/almoxarifado/`):** `almoxarifado-tela.tsx`, `lista-cartoes.tsx`, `caixa-aberta.tsx`, `lote-aberto.tsx`, e `__tests__/` com um teste por componente. **Ler antes:** `src/app/(app)/shopfloor/operar/lancamento/almoxarifado-panel.tsx` (como o bipe, a trava `enviandoRef`, o foco e o `PainelResultado` são usados), `src/components/ui/painel-resultado.tsx` (`ResultadoAcao`), `pendencias-almoxarifado.tsx` (a lista de hoje) e os componentes `Card`, `Button`, `Input` de `@/components/ui`.
 
@@ -190,7 +190,7 @@ Comportamento (da spec; use exatamente estes textos):
 
 ---
 
-## Tarefa 4: ligar a rota e limpar o que ficou sem uso
+## Task 4: ligar a rota e limpar o que ficou sem uso
 
 **Arquivos:** `src/app/(app)/recebimento/almoxarifado/page.tsx`; remover `src/app/(app)/shopfloor/operar/lancamento/pendencias-almoxarifado.tsx` e `__tests__/pendencias-almoxarifado.test.tsx`; `lancamento-form.tsx` (tirar só o import e o uso do `PendenciasAlmoxarifado` e a função `escolherPendenciaAlmoxarifado`; **manter** `carregarOrdemNoCabecalho`, que é a extração do fim de `onBiparCabecalho`).
 
@@ -201,7 +201,7 @@ Comportamento (da spec; use exatamente estes textos):
 
 ---
 
-## Tarefa 5: verificação (por quem executa, antes de reportar)
+## Task 5: verificação (por quem executa, antes de reportar)
 
 - [ ] `npx tsc --noEmit` limpo; `npx vitest run --maxWorkers=2` **inteiro** verde (se algum teste de timeout falhar só sob carga, rode-o isolado e relate); os três runners SQL (`rodar-almoxarifado-test.sh`, `rodar-estoque-envios-test.sh`, `rodar-estoque-enviado-test.sh`) verdes; `NODE_OPTIONS="--max-old-space-size=4096" npx next build` sem erro (em worktree, o `node_modules` precisa estar acessível: veja a memória `worktree-next-build`, `cp -al`, não symlink; se o build não rodar por isso, relate em vez de pular).
 - [ ] **Banco local para o usuário testar:** aplicar `0158` e `0159` no Postgres local do Supabase (`docker exec -i supabase_db_shopfloor-filtros-local psql -U postgres -v ON_ERROR_STOP=1 -q -1 < supabase/migrations/0158_sf_almox_pendencias.sql`, e o mesmo para a 0159; a 0158 tem `drop function` e deve rodar duas vezes sem erro). Só essas duas.
