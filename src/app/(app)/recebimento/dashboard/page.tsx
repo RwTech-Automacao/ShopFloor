@@ -10,6 +10,8 @@ import {
   carregarDashboard,
   carregarOpcoesDashboard,
 } from '@/modules/recebimento/infra/dashboard-repository'
+import { paradoDaUrl, type MetricasDashboard } from '@/modules/recebimento/domain/dashboard-metricas'
+import { carregarMetricas } from '@/modules/recebimento/infra/dashboard-metricas-repository'
 import { DashboardRecebimento } from './dashboard-recebimento'
 
 export const dynamic = 'force-dynamic'
@@ -25,10 +27,15 @@ export default async function DashboardRecebimentoPage({ searchParams }: Dashboa
   }
 
   // Estado vem da URL e é validado no domínio (nada dele é confiável). Sem datas na URL = 90 dias.
-  const filtros = filtrosDaUrl(await searchParams, new Date())
+  const params = await searchParams
+  const filtros = filtrosDaUrl(params, new Date())
+  const paradoDias = paradoDaUrl(params)
 
   // Sem isto, um erro do banco derrubaria a rota inteira — e o link ficaria quebrado, já que o
   // estado mora na URL. Degrada para a mensagem, com os filtros ainda na tela.
+  // Dispara já, em paralelo com o resto; o erro é tratado só mais abaixo (catch próprio).
+  const metricasPromise = carregarMetricas(filtros, paradoDias)
+  metricasPromise.catch(() => {})
   let dados: DadosDashboard | null = null
   let opcoes: OpcoesDashboard = { fornecedores: [], compradores: [] }
   let erro: string | null = null
@@ -36,6 +43,16 @@ export default async function DashboardRecebimentoPage({ searchParams }: Dashboa
     ;[dados, opcoes] = await Promise.all([carregarDashboard(filtros), carregarOpcoesDashboard()])
   } catch {
     erro = 'Não foi possível carregar o dashboard. Tente de novo ou limpe os filtros.'
+  }
+
+  // As métricas falham SEPARADO: se só elas caírem, os blocos antigos continuam e o aviso fica na
+  // seção nova. Nunca zeros no lugar de uma falha.
+  let metricas: MetricasDashboard | null = null
+  let erroMetricas: string | null = null
+  try {
+    metricas = await metricasPromise
+  } catch {
+    erroMetricas = 'Não foi possível carregar as métricas. Os números acima continuam valendo.'
   }
 
   return (
@@ -47,7 +64,8 @@ export default async function DashboardRecebimentoPage({ searchParams }: Dashboa
           ninguém explicou. Clique num gráfico para filtrar a tela.
         </p>
       </div>
-      <DashboardRecebimento filtros={filtros} dados={dados} opcoes={opcoes} erro={erro} />
+      <DashboardRecebimento filtros={filtros} dados={dados} opcoes={opcoes} erro={erro}
+        metricas={metricas} erroMetricas={erroMetricas} paradoDias={paradoDias} />
     </div>
   )
 }
