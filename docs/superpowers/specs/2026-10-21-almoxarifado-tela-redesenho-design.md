@@ -22,14 +22,14 @@ Rota e permissões não mudam: `/recebimento/almoxarifado`, `recebimento.lancar`
 
 **1. Lista (estado inicial).** Cabeçalho "Esperando confirmação (N)", filtro de OP (padrão "Todas as OPs"; as opções são as OPs que têm pendência) e botão Atualizar. Os cartões ficam em grade que quebra linha:
 - caixa: etiqueta "CAIXA · OP x · PMO", **código da caixa** em destaque, "N peças · fechada hoje HH:MM";
-- lote: etiqueta "LOTE · OP x · PMO", **rótulo do lote** em destaque, "N peças · bipar K · aprovado HH:MM".
+- lote: etiqueta "LOTE · OP x · PMO", **rótulo do lote** em destaque, "N peças · bipar todas · aprovado HH:MM".
 Lista vazia: "Nada esperando confirmação no Almoxarifado agora." Falha de leitura é um estado de erro próprio, **nunca** lista vazia.
 
 **2. Caixa aberta.** Linha de contexto (OP, PMO, coletiva, fechada em tal hora por tal pessoa), o **código da caixa em letra grande**, "Bipe este código para confirmar a entrada de N peças", o campo de bipe (foco automático)
 e, em segundo plano: os números de série dentro da caixa, o posto anterior e seu estado, quanto a OP já recebeu ("80 de 200 peças já no Almoxarifado"). Botão "Voltar à lista".
 
 **3. Lote aberto.** Linha de contexto (OP, PMO, individual, aprovado no NQA em tal hora), "Lote xxxx · N peças", "Bipe K números de série quaisquer deste lote (amostra do NQA)", os **números de série do lote como etiquetas**
-(as bipadas marcadas; com muitos, mostra parte e "+N"), campo de bipe, "Bipadas: X de K", **Confirmar lote** (habilitado só com exatamente K distintos) e "Voltar à lista".
+(as bipadas marcadas; todos aparecem, com rolagem interna quando são muitos), campo de bipe, "Bipadas: X de N", **Confirmar lote** (habilitado só com os N números de série do lote bipados) e "Voltar à lista".
 
 Ao confirmar com sucesso: painel de resultado (o `PainelResultado` das telas de bipe), o cartão some e volta para a lista atualizada. Recusa do banco (posto anterior não concluído, peça já lançada etc.) aparece no mesmo painel, com a frase em
 PT-BR que as actions já devolvem, e o cartão **permanece**.
@@ -58,7 +58,7 @@ Os detalhes do cartão aberto não vêm da 0158. Uma função nova, `sf_almox_de
 ## Testes
 
 - Domínio: filtro por OP e agrupamento dos cartões; contagem e estado do botão Confirmar lote (já coberto em `conferirBipeAmostra`/`amostraCompleta`, reaproveitar).
-- Componentes: lista (cartões, filtro, vazio, erro), caixa aberta (bipe certo confirma, bipe errado recusa, recusa do banco mantém o cartão), lote aberto (progresso, confirmar só com K, SN fora do lote).
+- Componentes: lista (cartões, filtro, vazio, erro), caixa aberta (bipe certo confirma, bipe errado recusa, recusa do banco mantém o cartão), lote aberto (progresso, confirmar só com todos os SNs, SN fora do lote).
 - SQL: `sf_almox_detalhe` no harness (`rodar-almoxarifado-test.sh`): caixa e lote, permissão negada é erro, OP/código inexistente. A `sf_almox_pendencias` (0158) ganha teste no harness nesta entrega (hoje só tem conferência manual).
 
 ## Fora do escopo
