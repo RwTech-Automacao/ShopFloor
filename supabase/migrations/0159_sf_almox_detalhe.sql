@@ -7,6 +7,7 @@
 --   sempre: {ok:true, qtd_op, recebidas_op, posto_anterior:{posto, recurso, precisa_aprovado}|null}
 --   caixa:  tipo 'caixa', codigo, pecas, sns, fechada_em, fechada_por (colaborador do ÚLTIMO registro da Embalagem)
 --   lote:   tipo 'lote', rotulo, pecas, amostra, sns, aprovado_em, ja_lancadas  (a OP individual usa p_lote_id)
+--           `amostra` = quantidade a bipar = TODAS as peças do lote (decisão de 21/10; antes era o K da Tabela NQA)
 --   falha COMO DADO: {ok:false, motivo: op_inexistente | sem_almoxarifado | item_inexistente}
 -- Sem permissão é ERRO (SEM_PERMISSAO), nunca resposta vazia.
 --

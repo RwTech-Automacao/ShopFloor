@@ -1,5 +1,5 @@
 -- Testes da 0156: Almoxarifado por necessidade, FASE 2 — o LOTE aprovado no NQA individual vira
--- necessidade (sf_almox_lotes), a pessoa confirma com uma AMOSTRA (sf_almoxarifado_lote), o bipe avulso
+-- necessidade (sf_almox_lotes), a pessoa confirma bipando TODOS os SNs do lote (sf_almoxarifado_lote), o bipe avulso
 -- é recusado nesse caso (serie_exige_lote) e o cancelamento é do lote inteiro
 -- (sf_cancelar_lote_almoxarifado).
 -- Roda DEPOIS do almoxarifado_test.sql e do almoxarifado_necessidade_test.sql, na mesma base (reaproveita
@@ -18,8 +18,9 @@
 \i /tmp/0156.sql
 
 -- A Tabela NQA: o almoxarifado_test.sql já criou um stub dela (ordem, faixas, amostra) com uma faixa
--- única 1–100 → 2. As faixas daqui entram com `ordem` NEGATIVA pra vir antes (a consulta pega a
--- primeira por ordem), e a amostra passa a aceitar nulo, como na tabela de produção (0010).
+-- única 1–100 → 2. O Almoxarifado NÃO a consulta mais (decisão de 21/10: confirma-se bipando todos os
+-- SNs); ela segue aqui porque a sf_nqa_individual (0097) a usa para aprovar o lote. As faixas daqui
+-- entram com `ordem` NEGATIVA pra vir antes, e a amostra passa a aceitar nulo, como na produção (0010).
 alter table public.tabela_nqa alter column tamanho_amostra drop not null;
 insert into public.tabela_nqa (ordem, quantidade_min, quantidade_max, tamanho_amostra) values
   (-40, 1, 1, 1), (-30, 2, 8, 2), (-20, 9, 15, 3), (-10, 16, null, 5);
@@ -31,12 +32,14 @@ insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_indivi
   ('PMOL01', '9201', 'Cliente L', '7000', '7100', true),   -- individual, anterior = Inspeção NQA
   ('PMOL02', '9202', 'Cliente L', '7100', '7200', false),  -- coletiva, anterior = Inspeção NQA
   ('PMOL03', '9203', 'Cliente L', '7200', '7300', true),   -- individual, anterior = Embalagem (sem NQA)
-  ('PMOL04', '9204', 'Cliente L', '7300', '7400', true);   -- individual, NQA na rota mas NÃO é o anterior
+  ('PMOL04', '9204', 'Cliente L', '7300', '7400', true),   -- individual, NQA na rota mas NÃO é o anterior
+  ('PMOL05', '9205', 'Cliente L', '7400', '7500', true);   -- individual, anterior = Inspeção NQA (L4)
 do $t$ begin
   perform public.teste_op_postos('PMOL01', '9201', array['Embalagem', 'Inspeção NQA', 'Almoxarifado']);
   perform public.teste_op_postos('PMOL02', '9202', array['Embalagem', 'Inspeção NQA', 'Almoxarifado']);
   perform public.teste_op_postos('PMOL03', '9203', array['Inspeção NQA', 'Embalagem', 'Almoxarifado']);
   perform public.teste_op_postos('PMOL04', '9204', array['Inspeção NQA', 'Embalagem', 'Almoxarifado']);
+  perform public.teste_op_postos('PMOL05', '9205', array['Embalagem', 'Inspeção NQA', 'Almoxarifado']);
 end $t$;
 
 -- Um lote do NQA individual pela função de produção. Devolve o nqa_lote_id gravado.
@@ -91,12 +94,12 @@ begin
   select count(*) into n from sf_almox_lotes('PMOL01', '9201');
   if n <> 1 then raise exception 'FALHOU (L1): esperava só o lote aprovado, veio % lote(s)', n; end if;
   select * into v from sf_almox_lotes('PMOL01', '9201');
-  if v.lote_id <> l1 or v.pecas <> 5 or v.amostra <> 2 or v.ja_lancadas <> 0
+  if v.lote_id <> l1 or v.pecas <> 5 or v.amostra <> 5 or v.ja_lancadas <> 0
      or v.sns <> array['7001','7002','7003','7004','7005'] or v.aprovado_em is null then
     raise exception 'FALHOU (L1): lote listado errado: %', row_to_json(v); end if;
   if v.rotulo <> 'LOTE[' || left(replace(l1::text, '-', ''), 8) || '][5]' then
     raise exception 'FALHOU (L1): rótulo do lote: %', v.rotulo; end if;
-  raise notice 'L1. sf_almox_lotes: só o aprovado, com todos os SNs, amostra pela Tabela NQA: ok';
+  raise notice 'L1. sf_almox_lotes: só o aprovado, com todos os SNs, amostra = todas as peças (5): ok';
 end $t$;
 
 -- =============================================================
@@ -123,7 +126,7 @@ begin
 end $t$;
 
 -- =============================================================
--- L3. Confirmar com a AMOSTRA ERRADA recusa SEM GRAVAR NADA
+-- L3. Confirmar com o conjunto ERRADO de SNs recusa SEM GRAVAR NADA
 -- =============================================================
 do $t$
 declare r jsonb; l1 uuid; l2 uuid;
@@ -131,18 +134,27 @@ begin
   select lote_id into l1 from sf_almox_lotes('PMOL01', '9201');
   select distinct nqa_lote_id into l2 from sf_registros where numero_serie_norm = '7006' and nqa_lote_id is not null;
 
-  -- Tamanho errado (K = 2): 1 e 3 SNs.
+  -- Faltando SNs (o lote tem 5): 1 e 4 SNs recusam com lote_incompleto, e o detalhe diz N e F.
   r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7001']);
-  perform teste_recusa_sem_rastro(r, 'amostra_tamanho_errado', 'PMOL01', 'L3 amostra curta');
-  if (r->>'amostra')::int <> 2 or (r->>'bipados')::int <> 1 then
-    raise exception 'FALHOU (L3): amostra/bipados no jsonb: %', r; end if;
-  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7001','7002','7003']);
-  perform teste_recusa_sem_rastro(r, 'amostra_tamanho_errado', 'PMOL01', 'L3 amostra longa');
-  -- Repetido conta UMA vez: dois bipes do mesmo SN = 1 → falta amostra.
-  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7001','7001']);
-  perform teste_recusa_sem_rastro(r, 'amostra_tamanho_errado', 'PMOL01', 'L3 SN repetido');
+  perform teste_recusa_sem_rastro(r, 'lote_incompleto', 'PMOL01', 'L3 faltam 4');
+  if r->>'detalhe' is distinct from 'Bipe todas as 5 peças do lote: faltam 4.' then
+    raise exception 'FALHOU (L3): detalhe do lote incompleto: %', r; end if;
+  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7001','7002','7003','7004']);
+  perform teste_recusa_sem_rastro(r, 'lote_incompleto', 'PMOL01', 'L3 falta 1');
+  if r->>'detalhe' is distinct from 'Bipe todas as 5 peças do lote: faltam 1.' then
+    raise exception 'FALHOU (L3): detalhe (falta 1): %', r; end if;
+  -- Nenhum SN: também incompleto (vazio e nulo).
+  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array[]::text[]);
+  perform teste_recusa_sem_rastro(r, 'lote_incompleto', 'PMOL01', 'L3 vazio');
+  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, null);
+  perform teste_recusa_sem_rastro(r, 'lote_incompleto', 'PMOL01', 'L3 nulo');
+  -- Repetido conta UMA vez: 5 bipes com só 4 distintos continuam incompletos (falta 1).
+  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7001','7001','7002','7003','7004']);
+  perform teste_recusa_sem_rastro(r, 'lote_incompleto', 'PMOL01', 'L3 SN repetido');
+  if r->>'detalhe' is distinct from 'Bipe todas as 5 peças do lote: faltam 1.' then
+    raise exception 'FALHOU (L3): repetido conta uma vez: %', r; end if;
   -- SN de fora do lote (7006 é de outro lote) recusa, e diz qual.
-  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7001','7006']);
+  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7001','7002','7003','7004','7005','7006']);
   perform teste_recusa_sem_rastro(r, 'amostra_fora_do_lote', 'PMOL01', 'L3 SN de fora');
   if r->>'detalhe' not like '%7006%' then
     raise exception 'FALHOU (L3): o detalhe tem que dizer o SN de fora: %', r; end if;
@@ -163,41 +175,51 @@ begin
   if exists (select 1 from sf_registros where pmo = 'PMOL01' and posto = 'Almoxarifado')
      or exists (select 1 from sf_estoque_envios where pmo = 'PMOL01') then
     raise exception 'FALHOU (L3): alguma recusa gravou registro ou envio'; end if;
-  raise notice 'L3. amostra errada (curta, longa, repetida, de fora), lote reprovado/inexistente, posto e OP fora: recusam sem rastro: ok';
+  raise notice 'L3. conjunto errado (faltando, vazio, repetido, de fora), lote reprovado/inexistente, posto e OP fora: recusam sem rastro: ok';
 end $t$;
 
 -- =============================================================
--- L4. amostra_nqa_invalida: a Tabela NQA sem amostra para o tamanho do lote
+-- L4. A Tabela NQA NÃO influencia o Almoxarifado: lote sem faixa/amostra na tabela confirma normalmente
 -- =============================================================
 do $t$
-declare r jsonb; l4 uuid; v record;
+declare r jsonb; l4 uuid; v record; e public.sf_estoque_envios;
 begin
-  perform teste_reg('PMOL01', '9201', 'Embalagem', s::text, '', s::text) from generate_series(7020, 7028) s;
-  l4 := teste_lote('PMOL01', '9201', array['7020','7021','7022','7023','7024','7025','7026','7027','7028'], 'Aprovado');
-  -- Alguém editou a faixa 9–15 DEPOIS do NQA aprovar o lote.
-  update tabela_nqa set tamanho_amostra = 0 where quantidade_min = 9;
-  select * into v from sf_almox_lotes('PMOL01', '9201') where lote_id = l4;
-  if v.amostra is distinct from 0 then
-    raise exception 'FALHOU (L4): a lista tinha que mostrar a amostra inválida (0): %', row_to_json(v); end if;
-  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l4, array['7020','7021','7022']);
-  perform teste_recusa_sem_rastro(r, 'amostra_nqa_invalida', 'PMOL01', 'L4 amostra 0');
-  update tabela_nqa set tamanho_amostra = null where quantidade_min = 9;
-  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l4, array['7020','7021','7022']);
-  perform teste_recusa_sem_rastro(r, 'amostra_nqa_invalida', 'PMOL01', 'L4 amostra nula');
-  update tabela_nqa set tamanho_amostra = 3 where quantidade_min = 9;
-  perform teste_lote_sem_rastro('PMOL01', l4, 'L4');
-  raise notice 'L4. amostra_nqa_invalida (0 e nula) recusa sem rastro: ok';
+  perform teste_reg('PMOL05', '9205', 'Embalagem', s::text, '', s::text) from generate_series(7401, 7409) s;
+  l4 := teste_lote('PMOL05', '9205', array['7401','7402','7403','7404','7405','7406','7407','7408','7409'], 'Aprovado');
+  -- Alguém esvaziou a Tabela NQA DEPOIS do NQA aprovar o lote (sem faixa nenhuma para 9 peças).
+  create temp table tabela_nqa_bkp as select * from tabela_nqa;
+  delete from tabela_nqa;
+  select * into v from sf_almox_lotes('PMOL05', '9205') where lote_id = l4;
+  if v.amostra is distinct from 9 or v.pecas <> 9 then
+    raise exception 'FALHOU (L4): amostra = quantidade a bipar = todas as peças (9): %', row_to_json(v); end if;
+  -- Falta uma: recusa; completo: confirma, com UM envio de N=9 e todos os sns.
+  r := sf_almoxarifado_lote('PMOL05', '9205', 'Almoxarifado', 'Ana', l4,
+         array['7401','7402','7403','7404','7405','7406','7407','7408']);
+  perform teste_recusa_sem_rastro(r, 'lote_incompleto', 'PMOL05', 'L4 falta 1');
+  perform teste_lote_sem_rastro('PMOL05', l4, 'L4');
+  r := sf_almoxarifado_lote('PMOL05', '9205', 'Almoxarifado', 'Ana', l4,
+         array['7409','7401','7402','7403','7404','7405','7406','7407','7408']);
+  perform teste_aceito(r, 9, 'L4 lote completo sem faixa na Tabela NQA');
+  select * into e from sf_estoque_envios where lote_id = l4;
+  if e.tipo <> 'lote' or e.quantidade <> 9 or cardinality(e.sns) <> 9 then
+    raise exception 'FALHOU (L4): envio do lote: %', to_jsonb(e); end if;
+  if (select count(*) from sf_estoque_envios where pmo = 'PMOL05') <> 1 then
+    raise exception 'FALHOU (L4): esperava UM envio'; end if;
+  insert into tabela_nqa select * from tabela_nqa_bkp;
+  drop table tabela_nqa_bkp;
+  raise notice 'L4. Tabela NQA vazia: o lote completo confirma, 1 envio com N=9 e todos os sns: ok';
 end $t$;
 
 -- =============================================================
--- L5. Confirmar com a amostra CERTA: N registros (com envio_id) e UM envio tipo lote
+-- L5. Confirmar com TODOS os SNs: N registros (com envio_id) e UM envio tipo lote
 -- =============================================================
 do $t$
 declare r jsonb; l1 uuid; e public.sf_estoque_envios; n int; v_rot text;
 begin
   select lote_id, rotulo into l1, v_rot from sf_almox_lotes('PMOL01', '9201') where pecas = 5;
-  -- Bipe com espaço em volta e um repetido a mais: conta como 2 distintos (o repetido não soma).
-  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7003', ' 7001 ', '7003']);
+  -- Bipe com espaço em volta e um repetido a mais: o repetido não soma, e o conjunto completo confirma.
+  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1,
+         array['7003', ' 7001 ', '7003', '7002', '7004', '7005']);
   perform teste_aceito(r, 5, 'L5 confirmação');
   if r->>'lote' is distinct from v_rot then
     raise exception 'FALHOU (L5): a resposta tinha que trazer o rótulo do lote: %', r; end if;
@@ -391,7 +413,7 @@ do $t$
 declare r jsonb; l1 uuid; e public.sf_estoque_envios; s public.sf_estoque_envios; v_id uuid; n int;
 begin
   select lote_id into l1 from sf_almox_lotes('PMOL01', '9201') where pecas = 5;
-  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7002','7005']);
+  r := sf_almoxarifado_lote('PMOL01', '9201', 'Almoxarifado', 'Ana', l1, array['7001','7002','7003','7004','7005']);
   perform teste_aceito(r, 5, 'L10 reconfirmação depois do cancelamento');
   select * into e from sf_estoque_envios where lote_id = l1 and cancelado_em is null and operacao = 'entrada';
   if e.chave not like '%/E2' then raise exception 'FALHOU (L10): reconfirmação tinha que ser E2: %', e.chave; end if;

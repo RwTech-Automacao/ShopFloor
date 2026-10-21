@@ -110,7 +110,7 @@ begin
   select max(data_hora) into v_aprov from sf_registros where nqa_lote_id = v_lote;
   r := sf_almox_detalhe('PMOQ02', '9402', null, v_lote);
   if r->>'ok' <> 'true' or r->>'tipo' <> 'lote' or (r->>'pecas')::int <> 5
-     or (r->>'amostra')::int <> sf_almox_lote_amostra(5)
+     or (r->>'amostra')::int <> 5 or sf_almox_lote_amostra(5) <> 5
      or r->'sns' <> '["8101","8102","8103","8104","8105"]'::jsonb
      or (r->>'aprovado_em')::timestamptz is distinct from v_aprov
      or (r->>'ja_lancadas')::int <> 0
@@ -119,7 +119,7 @@ begin
   if (r->>'qtd_op')::int <> 10 or (r->>'recebidas_op')::int <> 0
      or r->'posto_anterior'->>'recurso' <> 'nqa' or (r->'posto_anterior'->>'precisa_aprovado')::boolean is not true then
     raise exception 'FALHOU (Q3): campos comuns: %', r; end if;
-  raise notice 'Q3. sf_almox_detalhe de lote: sns, amostra, aprovado_em, ja_lancadas, rótulo: ok';
+  raise notice 'Q3. sf_almox_detalhe de lote: sns, amostra (= todas as peças), aprovado_em, ja_lancadas, rótulo: ok';
 end $t$;
 
 -- =============================================================

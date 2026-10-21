@@ -1,6 +1,10 @@
 -- =============================================================
 -- Almoxarifado por necessidade, FASE 2 — o LOTE APROVADO NO NQA INDIVIDUAL vira necessidade, a
--- confirmação é por AMOSTRA, o Compels recebe UMA linha por lote e o cancelamento é do lote inteiro.
+-- confirmação é bipando TODOS os números de série do lote, o Compels recebe UMA linha por lote e o
+-- cancelamento é do lote inteiro.
+-- NOTA (decisão de 21/10, tarde): `amostra`, nos retornos, agora significa "quantidade a bipar = TODAS as
+-- peças do lote" (antes era o K da Tabela NQA). O nome foi mantido para não espalhar renomeação; a
+-- Tabela NQA deixou de valer no Almoxarifado (segue valendo no posto NQA).
 -- Plano: docs/superpowers/plans/2026-10-20-almoxarifado-necessidade-fase2.md
 -- Spec:  docs/superpowers/specs/2026-10-20-almoxarifado-por-necessidade-design.md
 --
@@ -30,10 +34,11 @@
 --      com status Aprovado. TAMANHO = SNs distintos. Lote reprovado não vira necessidade.
 --   3. NECESSIDADE = lote aprovado com SN sem entrada no Almoxarifado (sf_almox_lotes). A lista mostra
 --      TODOS os SNs do lote, e `ja_lancadas` (quantos já entraram por fora; o normal é 0 — ver a regra 5).
---   4. CONFIRMAR (sf_almoxarifado_lote): uma amostra de K SNs DISTINTOS que pertencem ao lote, com K =
---      tamanho_amostra da tabela_nqa pelo tamanho TOTAL do lote (a mesma consulta da 0097; nulo ou <= 0
---      → amostra_nqa_invalida). Repetido conta UMA vez; SN de fora do lote recusa. É conferência física:
---      sem sorteio e sem "quantidade contada" (as duas foram sugestões e NÃO foram aprovadas).
+--   4. CONFIRMAR (sf_almoxarifado_lote): é preciso bipar TODOS os SNs do lote (os N distintos): o conjunto
+--      bipado (distintos, normalizados; repetido conta UMA vez) tem de ser exatamente o conjunto de SNs do
+--      lote. SN de fora do lote recusa (amostra_fora_do_lote); faltando algum recusa com `lote_incompleto`
+--      ("Bipe todas as N peças do lote: faltam F."). A Tabela NQA NÃO é consultada (a regra antiga era uma
+--      amostra de K SNs; mudou em 21/10). É conferência física: sem sorteio e sem "quantidade contada".
 --   5. SEM DESCONTO: se algum SN do lote já tem entrada no Almoxarifado, recusa com mensagem clara
 --      (lote_com_sn_lancado). Nunca desconta em silêncio.
 --   6. EFEITO, numa transação, sob a trava do lote: UMA linha em sf_registros por SN do lote (o molde da
@@ -153,24 +158,17 @@ as $func$
   select 'LOTE[' || left(replace(p_lote_id::text, '-', ''), 8) || '][' || p_n || ']'
 $func$;
 
--- ---------- a amostra da Tabela NQA pelo tamanho do lote ----------
--- A mesma consulta da sf_nqa_individual (0097). ceil: a 0097 compara `count < tamanho` (numeric), que
--- é o mesmo que exigir o teto. Nulo = sem faixa ou faixa sem amostra.
--- plpgsql (e não sql) de propósito: o corpo só é resolvido na execução, então a migração não depende de
--- a tabela_nqa existir na hora de ser aplicada (nas bases de teste ela é criada depois).
+-- ---------- a quantidade a bipar no lote ----------
+-- Desde 21/10 (tarde) o lote é confirmado bipando TODAS as peças: a "amostra" é o próprio tamanho do
+-- lote. Não consulta mais a tabela_nqa (antes: ceil(tamanho_amostra) pelo tamanho do lote). O NOME da
+-- função e das colunas `amostra` dos retornos foi mantido de propósito, para não espalhar renomeação.
 create or replace function public.sf_almox_lote_amostra(p_n int)
 returns int
-language plpgsql stable
+language sql immutable
 set search_path = public
 as $func$
-begin
-  return (
-    select ceil(t.tamanho_amostra)::int
-      from tabela_nqa t
-     where t.quantidade_min <= p_n and (t.quantidade_max is null or p_n <= t.quantidade_max)
-     order by t.ordem
-     limit 1);
-end $func$;
+  select p_n
+$func$;
 
 -- ---------- a entrada ----------
 -- p_serie_norm vem PRONTO do aplicativo (vazio quando p_tipo = 'caixa'). Não existe função de
@@ -766,8 +764,8 @@ $func$;
 -- nqa_lote_id; só os aprovados (todas as linhas Aprovado); some quando TODOS os SNs entraram. Um lote
 -- com ALGUNS SNs já lançados (o caso que a regra 5 recusa) continua na lista, com `ja_lancadas` > 0, pra
 -- tela mostrar o problema em vez de esconder um lote que nunca vai entrar.
--- `amostra` = K da Tabela NQA pelo tamanho do lote (nulo ou <= 0: a confirmação vai recusar com
--- amostra_nqa_invalida, e a tela já pode dizer isso). Sem permissão é ERRO, nunca lista vazia.
+-- `amostra` = quantidade a bipar = TODAS as peças do lote (igual a `pecas`; ver sf_almox_lote_amostra).
+-- Sem permissão é ERRO, nunca lista vazia.
 create or replace function public.sf_almox_lotes(p_pmo text, p_op text)
 returns table (lote_id uuid, rotulo text, pecas int, amostra int, sns text[], ja_lancadas int,
                aprovado_em timestamptz)
@@ -865,7 +863,6 @@ declare
   v_lote     record;
   v_ja       record;
   v_lancadas text[];
-  v_k        int;
   v_bipados  text[];
   v_fora     text[];
   v_rotulo   text;
@@ -938,7 +935,7 @@ begin
   v_rotulo := sf_almox_lote_rotulo(p_lote_id, v_lote.n);
 
   -- Já lançado: o lote INTEIRO (ja_lancado, o mesmo motivo do rebipe) ou PARTE dele (regra 5, sem
-  -- desconto). Antes da amostra, pelo mesmo motivo da entrada: a quem reconfirma, "amostra errada" seria
+  -- desconto). Antes da conferência do conjunto, pelo mesmo motivo da entrada: a quem reconfirma, "lote incompleto" seria
   -- pista falsa.
   v_lancadas := array(
     select distinct a.numero_serie_norm from sf_registros a
@@ -968,14 +965,7 @@ begin
         || '). Cancele essas entradas em Registros e confirme o lote outra vez.');
   end if;
 
-  -- A amostra (regra 4).
-  v_k := sf_almox_lote_amostra(v_lote.n);
-  if v_k is null or v_k <= 0 then
-    return jsonb_build_object('ok', false, 'motivo', 'amostra_nqa_invalida',
-      'detalhe', 'A Tabela NQA não tem amostra para um lote de ' || v_lote.n
-        || case when v_lote.n = 1 then ' peça' else ' peças' end || '.');
-  end if;
-  -- Distintos e sem vazio: o mesmo SN bipado duas vezes conta uma.
+  -- O conjunto completo (regra 4). Distintos e sem vazio: o mesmo SN bipado duas vezes conta uma.
   v_bipados := array(
     select distinct btrim(s) from unnest(coalesce(p_amostra, '{}'::text[])) s
      where btrim(coalesce(s, '')) <> ''
@@ -989,12 +979,15 @@ begin
         || case when cardinality(v_fora) > 10 then ', …' else '' end
         || case when cardinality(v_fora) = 1 then ' não é' else ' não são' end || ' deste lote.');
   end if;
-  if cardinality(v_bipados) <> v_k then
-    return jsonb_build_object('ok', false, 'motivo', 'amostra_tamanho_errado',
-      'amostra', v_k, 'bipados', cardinality(v_bipados),
-      'detalhe', 'A amostra deste lote é de ' || v_k
-        || case when v_k = 1 then ' peça' else ' peças' end
-        || '; vieram ' || cardinality(v_bipados) || '.');
+  -- Sem SN de fora, os bipados são um subconjunto do lote: completo = mesma contagem (o lote tem N SNs
+  -- distintos, v_lote.n).
+  if cardinality(v_bipados) <> v_lote.n then
+    return jsonb_build_object('ok', false, 'motivo', 'lote_incompleto',
+      'pecas', v_lote.n, 'bipados', cardinality(v_bipados),
+      'faltam', v_lote.n - cardinality(v_bipados),
+      'detalhe', 'Bipe todas as ' || v_lote.n
+        || case when v_lote.n = 1 then ' peça' else ' peças' end
+        || ' do lote: faltam ' || (v_lote.n - cardinality(v_bipados)) || '.');
   end if;
 
   -- Defesa do rótulo: são só 8 hex do lote. Se outro lote desta OP/posto já usou o MESMO rótulo, a

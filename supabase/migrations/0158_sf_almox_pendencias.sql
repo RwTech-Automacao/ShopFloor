@@ -8,6 +8,7 @@
 -- Almoxarifado na rota (pelo PERFIL, nunca pelo nome), devolve o que a sf_almox_necessidades (caixa) ou
 -- a sf_almox_lotes (lote) devolveriam — as mesmas regras, o mesmo posto anterior, nada duplicado aqui.
 -- Sem permissão é ERRO (SEM_PERMISSAO), nunca lista vazia.
+-- `amostra` (lote) = quantidade a bipar = TODAS as peças do lote (decisão de 21/10; antes era o K da Tabela NQA).
 -- `em` = desde quando o item espera: o fechada_em da caixa (tipo caixa) ou o aprovado_em do lote (tipo
 -- lote), pra tela ordenar e mostrar a idade do cartão. Como o tipo de retorno ganhou a coluna e a 0158
 -- ainda não estava em produção, a função é recriada (drop + create), o que também a deixa idempotente.

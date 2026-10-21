@@ -31,7 +31,7 @@ docker cp supabase/migrations/0133_cancelar_lancamento_estoque.sql "$NOME":/tmp/
 # antigo a aplica antes do primeiro bipe (todos os casos de lá rodam contra ela); os casos NOVOS ficam
 # no almoxarifado_necessidade_test.sql, que roda depois, na mesma base.
 docker cp supabase/migrations/0155_sf_almox_posto_anterior.sql "$NOME":/tmp/0155.sql
-# A 0156 (fase 2): o lote do NQA individual vira necessidade, confirmação por amostra, bipe avulso
+# A 0156 (fase 2): o lote do NQA individual vira necessidade, confirmação bipando todos os SNs, bipe avulso
 # recusado nesse caso e cancelamento do lote inteiro. Entra no arquivo antigo logo depois da 0155 (e de
 # novo depois da 0133, que recria a sf_cancelar_lancamento) e no começo do almoxarifado_lote_test.sql.
 # A 0097 (sf_nqa_individual, em produção) entra porque os lotes da massa nascem pela função real.
@@ -306,7 +306,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
   -c "select teste_lote('PMOL01','9201',array['7040','7041','7042','7043'],'Aprovado')" >/dev/null
 LOTE=$(docker exec "$NOME" psql -U postgres -tAq -c \
   "select distinct nqa_lote_id from sf_registros where numero_serie_norm = '7040' and nqa_lote_id is not null")
-CONF="sf_almoxarifado_lote('PMOL01','9201','Almoxarifado','%s','$LOTE'::uuid,array['7040','7043'])"
+CONF="sf_almoxarifado_lote('PMOL01','9201','Almoxarifado','%s','$LOTE'::uuid,array['7040','7041','7042','7043'])"
 printf "%s\n" \
   "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
   "begin;" \
