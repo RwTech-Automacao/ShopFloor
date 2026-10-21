@@ -8,7 +8,7 @@ import { confirmarLoteAlmoxarifado } from '@/modules/shopfloor/application/almox
 import {
   amostraCompleta,
   conferirBipeAmostra,
-  horaCurta,
+  quandoCurto,
   pecasTexto,
   type NecessidadeLote,
   type PendenciaAlmoxarifado,
@@ -52,7 +52,7 @@ export function LoteAberto({
   if (estado.tipo === 'erro') {
     return (
       <div className="flex flex-col items-start gap-3">
-        <p className="text-sm text-amber-700 dark:text-amber-400">{estado.erro}</p>
+        <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">{estado.erro}</p>
         <Button type="button" variant="outline" onClick={onVoltar}>Voltar à lista</Button>
       </div>
     )
@@ -69,7 +69,7 @@ export function LoteAberto({
     aprovadoEm: d.em,
   }
   const k = d.amostra !== null && d.amostra > 0 ? d.amostra : null
-  const hora = horaCurta(d.em)
+  const hora = quandoCurto(d.em)
   const completa = amostraCompleta(lote, amostra)
 
   // As bipadas sempre aparecem; o resto completa até o limite.

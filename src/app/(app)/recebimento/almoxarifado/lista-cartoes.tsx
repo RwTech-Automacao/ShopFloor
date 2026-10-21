@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import {
   chaveDaOp,
   filtrarPorOp,
-  horaCurta,
+  quandoCurto,
   opsComPendencia,
   pecasTexto,
   type PendenciaAlmoxarifado,
@@ -65,7 +65,7 @@ export function ListaCartoes({
       {estado.tipo === 'ok' && visiveis.length > 0 && (
         <div className="flex flex-wrap gap-3">
           {visiveis.map((i) => {
-            const hora = horaCurta(i.em)
+            const hora = quandoCurto(i.em)
             const caixa = i.tipo === 'caixa'
             const partes = [pecasTexto(i.pecas)]
             if (!caixa && i.amostra !== null && i.amostra > 0) partes.push(`bipar ${i.amostra}`)

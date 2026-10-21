@@ -5,6 +5,7 @@ import {
   codigoConfere,
   filtrarPorOp,
   horaCurta,
+  quandoCurto,
   opsComPendencia,
   type PendenciaAlmoxarifado,
 } from '../almoxarifado'
@@ -38,6 +39,20 @@ describe('horaCurta', () => {
   it('nulo ou inválido vira vazio', () => {
     expect(horaCurta(null)).toBe('')
     expect(horaCurta('lixo')).toBe('')
+  })
+})
+
+describe('quandoCurto', () => {
+  const agora = new Date('2026-10-21T18:00:00Z') // 15:00 em São Paulo
+  it('do dia: "hoje HH:MM"', () => expect(quandoCurto('2026-10-21T15:30:00Z', agora)).toBe('hoje 12:30'))
+  it('de ontem: "dd/mm HH:MM"', () => expect(quandoCurto('2026-10-20T18:30:00Z', agora)).toBe('20/10 15:30'))
+  it('vira o dia em São Paulo, não em UTC', () => {
+    // 21/10 01:00Z ainda é 20/10 22:00 em São Paulo
+    expect(quandoCurto('2026-10-21T01:00:00Z', agora)).toBe('20/10 22:00')
+  })
+  it('nulo ou inválido vira vazio', () => {
+    expect(quandoCurto(null, agora)).toBe('')
+    expect(quandoCurto('lixo', agora)).toBe('')
   })
 })
 

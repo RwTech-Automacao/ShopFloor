@@ -37,6 +37,8 @@ async function bipar(v: string) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-21T18:00:00Z'))
   vi.clearAllMocks()
   detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: DETALHE })
 })
@@ -44,7 +46,7 @@ beforeEach(() => {
 describe('LoteAberto', () => {
   it('mostra contexto, progresso 0 de 3 e Confirmar desabilitado', async () => {
     montar()
-    expect(await screen.findByText('OP 200 · PMO2 · individual · aprovado 10:05')).toBeInTheDocument()
+    expect(await screen.findByText('OP 200 · PMO2 · individual · aprovado hoje 10:05')).toBeInTheDocument()
     expect(screen.getByText('Lote LOTE[ab12cd34][5] · 5 peças')).toBeInTheDocument()
     expect(screen.getByText('Bipe 3 números de série quaisquer deste lote (amostra do NQA):')).toBeInTheDocument()
     expect(screen.getByText('Bipadas: 0 de 3')).toBeInTheDocument()
@@ -104,6 +106,18 @@ describe('LoteAberto', () => {
     expect(await screen.findByText('A Tabela NQA não tem amostra para este tamanho de lote.')).toBeInTheDocument()
     expect(await campo()).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
+  })
+
+  it('item de outro dia mostra a data junto da hora', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, em: '2026-10-20T18:30:00Z' } })
+    montar()
+    expect(await screen.findByText('OP 200 · PMO2 · individual · aprovado 20/10 15:30')).toBeInTheDocument()
+  })
+
+  it('erro do detalhe é anunciado com role=alert', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: false, erro: 'Falhou ao ler.' })
+    montar()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Falhou ao ler.')
   })
 
   it('detalhe com erro mostra a frase e o Voltar', async () => {

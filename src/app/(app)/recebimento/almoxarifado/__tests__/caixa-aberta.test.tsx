@@ -39,6 +39,8 @@ async function bipar(valor: string) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-21T18:00:00Z'))
   vi.clearAllMocks()
   detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: DETALHE })
 })
@@ -48,7 +50,7 @@ describe('CaixaAberta', () => {
     montar()
     const cod = await screen.findByText('CX[1][40]100-PMO1')
     expect(cod).toHaveClass('text-3xl', 'font-bold', 'font-mono')
-    expect(screen.getByText('OP 100 · PMO1 · coletiva · fechada 12:30 por Ana')).toBeInTheDocument()
+    expect(screen.getByText('OP 100 · PMO1 · coletiva · fechada hoje 12:30 por Ana')).toBeInTheDocument()
     expect(screen.getByText('Bipe este código para confirmar a entrada de 40 peças.')).toBeInTheDocument()
     expect(screen.getByText('Dentro da caixa: SN1, SN2')).toBeInTheDocument()
     expect(screen.getByText('Posto anterior: Embalagem concluído')).toBeInTheDocument()
@@ -79,7 +81,7 @@ describe('CaixaAberta', () => {
     await bipar('  cx[1][40]100-pmo1 ')
     await waitFor(() => expect(p.onConfirmado).toHaveBeenCalledWith({ quantidade: 40, codigo: 'CX[1][40]100-PMO1', divergencia: undefined }))
     expect(registrarEntradaAlmoxarifado).toHaveBeenCalledWith({
-      pmo: 'PMO1', op: '100', posto: 'Almoxarifado', colaborador: 'Maria', bipe: '  cx[1][40]100-pmo1 ',
+      pmo: 'PMO1', op: '100', posto: 'Almoxarifado', colaborador: 'Maria', bipe: 'CX[1][40]100-PMO1',
     })
   })
 
@@ -120,6 +122,18 @@ describe('CaixaAberta', () => {
     expect(await screen.findByText(/não está mais esperando confirmação/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Voltar à lista' }))
     expect(p.onVoltar).toHaveBeenCalled()
+  })
+
+  it('item de outro dia mostra a data junto da hora', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, em: '2026-10-20T18:30:00Z' } })
+    montar()
+    expect(await screen.findByText('OP 100 · PMO1 · coletiva · fechada 20/10 15:30 por Ana')).toBeInTheDocument()
+  })
+
+  it('erro do detalhe é anunciado com role=alert', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: false, erro: 'Falhou ao ler.' })
+    montar()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Falhou ao ler.')
   })
 
   it('caixa de 1 peça usa o singular', async () => {

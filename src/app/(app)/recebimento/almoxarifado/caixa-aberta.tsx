@@ -8,7 +8,7 @@ import { registrarEntradaAlmoxarifado } from '@/modules/shopfloor/application/al
 import {
   codigoConfere,
   FRASE_CAIXA_ERRADA,
-  horaCurta,
+  quandoCurto,
   pecasTexto,
   type PendenciaAlmoxarifado,
 } from '@/modules/shopfloor/domain/almoxarifado'
@@ -54,14 +54,14 @@ export function CaixaAberta({
   if (estado.tipo === 'erro') {
     return (
       <div className="flex flex-col items-start gap-3">
-        <p className="text-sm text-amber-700 dark:text-amber-400">{estado.erro}</p>
+        <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">{estado.erro}</p>
         <Button type="button" variant="outline" onClick={onVoltar}>Voltar à lista</Button>
       </div>
     )
   }
 
   const d = estado.detalhe
-  const hora = horaCurta(d.em)
+  const hora = quandoCurto(d.em)
 
   function onBipar() {
     if (enviandoRef.current) {
@@ -73,7 +73,7 @@ export function CaixaAberta({
       onResultado({ tipo: 'aviso', titulo: FRASE_CAIXA_ERRADA })
       return
     }
-    const alvo = bipe
+    const alvo = item.codigo // canônico: o texto digitado pode vir em minúsculas e o banco não normaliza
     enviandoRef.current = true
     setEnviando(true)
     void (async () => {

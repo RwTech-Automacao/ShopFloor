@@ -265,6 +265,19 @@ export function horaCurta(iso: string | null): string {
   }).format(d)
 }
 
+const diaSP = (d: Date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+
+/** "hoje HH:MM" se for do dia (America/Sao_Paulo), senão "dd/mm HH:MM"; vazio se nulo ou inválido. */
+export function quandoCurto(iso: string | null, agora: Date = new Date()): string {
+  const hora = horaCurta(iso)
+  if (!hora) return ''
+  const d = new Date(iso as string)
+  if (diaSP(d) === diaSP(agora)) return `hoje ${hora}`
+  const dm = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }).format(d)
+  return `${dm} ${hora}`
+}
+
 /** O código bipado confere com o da caixa (sem espaço nas pontas, sem diferença de maiúscula). */
 export function codigoConfere(bipado: string, codigoDaCaixa: string): boolean {
   return (bipado ?? '').trim().toUpperCase() === (codigoDaCaixa ?? '').trim().toUpperCase()
