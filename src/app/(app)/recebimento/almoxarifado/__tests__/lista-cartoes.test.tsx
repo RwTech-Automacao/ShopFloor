@@ -61,6 +61,7 @@ describe('ListaCartoes', () => {
 
   it('erro mostra a frase e nunca o vazio', () => {
     montar({ tipo: 'erro', erro: 'Falhou a leitura.' })
+    expect(screen.getByRole('alert')).toHaveTextContent('Falhou a leitura.')
     expect(screen.getByText('Falhou a leitura.')).toBeInTheDocument()
     expect(screen.queryByText('Nada esperando confirmação no Almoxarifado agora.')).not.toBeInTheDocument()
   })

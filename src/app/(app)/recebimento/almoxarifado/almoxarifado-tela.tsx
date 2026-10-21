@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { listarPendenciasAlmoxarifado } from '@/modules/shopfloor/application/almoxarifado-actions'
-import type { PendenciaAlmoxarifado } from '@/modules/shopfloor/domain/almoxarifado'
+import { FRASE_ITEM_NAO_PENDENTE, pecasTexto, type PendenciaAlmoxarifado } from '@/modules/shopfloor/domain/almoxarifado'
 import { CaixaAberta, type ConfirmacaoCartao } from './caixa-aberta'
 import { ListaCartoes, type EstadoLista } from './lista-cartoes'
 import { LoteAberto } from './lote-aberto'
@@ -20,7 +20,10 @@ export function AlmoxarifadoTela({ colaborador, posto }: { colaborador: string; 
   const [selecionado, setSelecionado] = useState<PendenciaAlmoxarifado | null>(null)
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
 
+  const seq = useRef(0)
+
   const carregar = useCallback(async () => {
+    const minha = ++seq.current
     let novo: EstadoLista
     try {
       const r = await listarPendenciasAlmoxarifado()
@@ -28,7 +31,7 @@ export function AlmoxarifadoTela({ colaborador, posto }: { colaborador: string; 
     } catch {
       novo = { tipo: 'erro', erro: FALHA_LISTA }
     }
-    setItens(novo)
+    if (minha === seq.current) setItens(novo) // só a última recarga vale
   }, [])
 
   useEffect(() => {
@@ -39,13 +42,22 @@ export function AlmoxarifadoTela({ colaborador, posto }: { colaborador: string; 
     const caixa = selecionado?.tipo === 'caixa'
     setResultado({
       tipo: 'ok',
-      titulo: c.quantidade === 1 ? '1 peça' : `${c.quantidade} peças`,
+      titulo: pecasTexto(c.quantidade),
       detalhe: c.divergencia,
       chips: [{ rotulo: caixa ? 'Caixa' : 'Lote', valor: c.codigo, mono: true }],
       dica: c.divergencia ? 'Confira a caixa física e avise o gestor: a diferença não deu entrada.' : undefined,
     })
     setSelecionado(null)
     void carregar()
+  }
+
+  // Recusa de "não está mais esperando": o cartão não faz mais sentido; avisa, volta e recarrega.
+  function onResultadoCartao(r: ResultadoAcao) {
+    setResultado(r)
+    if (r.titulo === FRASE_ITEM_NAO_PENDENTE) {
+      setSelecionado(null)
+      void carregar()
+    }
   }
 
   function onVoltar() {
@@ -59,7 +71,7 @@ export function AlmoxarifadoTela({ colaborador, posto }: { colaborador: string; 
       {selecionado === null && (
         <ListaCartoes
           estado={itens}
-          onEscolher={(i) => { setResultado(null); setSelecionado(i) }}
+          onEscolher={setSelecionado}
           onAtualizar={() => void carregar()}
         />
       )}
@@ -69,7 +81,7 @@ export function AlmoxarifadoTela({ colaborador, posto }: { colaborador: string; 
           item={selecionado}
           colaborador={colaborador}
           posto={posto}
-          onResultado={setResultado}
+          onResultado={onResultadoCartao}
           onConfirmado={onConfirmado}
           onVoltar={onVoltar}
         />
@@ -80,7 +92,7 @@ export function AlmoxarifadoTela({ colaborador, posto }: { colaborador: string; 
           item={selecionado}
           colaborador={colaborador}
           posto={posto}
-          onResultado={setResultado}
+          onResultado={onResultadoCartao}
           onConfirmado={onConfirmado}
           onVoltar={onVoltar}
         />

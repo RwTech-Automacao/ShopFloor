@@ -9,6 +9,7 @@ import {
   amostraCompleta,
   conferirBipeAmostra,
   horaCurta,
+  pecasTexto,
   type NecessidadeLote,
   type PendenciaAlmoxarifado,
 } from '@/modules/shopfloor/domain/almoxarifado'
@@ -128,7 +129,7 @@ export function LoteAberto({
       <p className="text-xs text-muted-foreground">
         {`OP ${item.op} · ${item.pmo} · individual${hora ? ` · aprovado ${hora}` : ''}`}
       </p>
-      <p className="break-all font-mono text-xl font-bold">{`Lote ${item.codigo} · ${d.pecas} peças`}</p>
+      <p className="break-all font-mono text-xl font-bold">{`Lote ${item.codigo} · ${pecasTexto(d.pecas)}`}</p>
       {k === null ? (
         <p className="text-sm text-amber-700 dark:text-amber-400">A Tabela NQA não tem amostra para este tamanho de lote.</p>
       ) : (

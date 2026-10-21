@@ -270,4 +270,10 @@ export function codigoConfere(bipado: string, codigoDaCaixa: string): boolean {
   return (bipado ?? '').trim().toUpperCase() === (codigoDaCaixa ?? '').trim().toUpperCase()
 }
 
+/** A frase do banco quando a caixa/lote já não espera confirmação (a mesma das actions). */
+export const FRASE_ITEM_NAO_PENDENTE = 'Esta caixa ou lote não está mais esperando confirmação. Atualize a lista.'
+
+/** "1 peça" / "N peças". */
+export const pecasTexto = (n: number) => (n === 1 ? '1 peça' : `${n} peças`)
+
 export const FRASE_CAIXA_ERRADA = 'Este não é o código desta caixa. Confira a caixa na mão.'

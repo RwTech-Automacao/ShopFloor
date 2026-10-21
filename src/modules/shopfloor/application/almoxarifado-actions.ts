@@ -4,6 +4,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import {
+  FRASE_ITEM_NAO_PENDENTE,
   MENSAGEM_SERIE_EXIGE_LOTE,
   classificarBipeAlmoxarifado,
   mensagemPostoAnteriorNaoConcluido,
@@ -423,7 +424,7 @@ const FALHA_DETALHE = 'Não foi possível carregar os detalhes.'
 const RECUSAS_DETALHE: Record<string, string> = {
   op_inexistente: 'OP não encontrada.',
   sem_almoxarifado: 'Esta OP não passa pelo Almoxarifado.',
-  item_inexistente: 'Esta caixa ou lote não está mais esperando confirmação. Atualize a lista.',
+  item_inexistente: FRASE_ITEM_NAO_PENDENTE,
 }
 
 /**

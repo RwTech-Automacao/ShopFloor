@@ -113,4 +113,26 @@ describe('LoteAberto', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Voltar à lista' }))
     expect(p.onVoltar).toHaveBeenCalled()
   })
+
+  it('lote de 1 peça usa o singular', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, pecas: 1, sns: ['a1'], amostra: 1 } })
+    montar({ ...ITEM, pecas: 1, amostra: 1 })
+    expect(await screen.findByText('Lote LOTE[ab12cd34][5] · 1 peça')).toBeInTheDocument()
+  })
+
+  it('Enter durante o envio chama o confirmar uma única vez', async () => {
+    let liberar: (v: unknown) => void = () => {}
+    confirmarLoteAlmoxarifado.mockReturnValue(new Promise((r) => { liberar = r }))
+    const p = montar()
+    for (const s of ['A1', 'A2', 'A3']) await bipar(s)
+    const botao = screen.getByRole('button', { name: 'Confirmar lote' })
+    fireEvent.click(botao)
+    fireEvent.click(botao)
+    const c = await campo()
+    fireEvent.keyDown(c, { key: 'Enter' })
+    fireEvent.keyDown(c, { key: 'Enter' })
+    expect(confirmarLoteAlmoxarifado).toHaveBeenCalledTimes(1)
+    liberar({ ok: true, quantidade: 5, lote: 'LOTE[ab12cd34][5]' })
+    await waitFor(() => expect(p.onConfirmado).toHaveBeenCalledTimes(1))
+  })
 })

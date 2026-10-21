@@ -7,6 +7,7 @@ import {
   filtrarPorOp,
   horaCurta,
   opsComPendencia,
+  pecasTexto,
   type PendenciaAlmoxarifado,
 } from '@/modules/shopfloor/domain/almoxarifado'
 
@@ -14,8 +15,6 @@ export type EstadoLista =
   | { tipo: 'carregando' }
   | { tipo: 'erro'; erro: string }
   | { tipo: 'ok'; itens: PendenciaAlmoxarifado[] }
-
-const pecas = (n: number) => (n === 1 ? '1 peça' : `${n} peças`)
 
 /** A lista de pendências do Almoxarifado: um cartão por caixa (OP coletiva) ou lote do NQA (OP individual). */
 export function ListaCartoes({
@@ -57,7 +56,7 @@ export function ListaCartoes({
       </div>
 
       {estado.tipo === 'carregando' && <p className="text-sm text-muted-foreground">Carregando…</p>}
-      {estado.tipo === 'erro' && <p className="text-sm text-amber-700 dark:text-amber-400">{estado.erro}</p>}
+      {estado.tipo === 'erro' && <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">{estado.erro}</p>}
       {estado.tipo === 'ok' && visiveis.length === 0 && (
         <p className="text-sm text-muted-foreground">
           {filtro === '' ? 'Nada esperando confirmação no Almoxarifado agora.' : 'Nada esperando confirmação nesta OP.'}
@@ -68,7 +67,7 @@ export function ListaCartoes({
           {visiveis.map((i) => {
             const hora = horaCurta(i.em)
             const caixa = i.tipo === 'caixa'
-            const partes = [pecas(i.pecas)]
+            const partes = [pecasTexto(i.pecas)]
             if (!caixa && i.amostra !== null && i.amostra > 0) partes.push(`bipar ${i.amostra}`)
             if (hora) partes.push(`${caixa ? 'fechada' : 'aprovado'} ${hora}`)
             return (

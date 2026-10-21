@@ -9,6 +9,7 @@ import {
   codigoConfere,
   FRASE_CAIXA_ERRADA,
   horaCurta,
+  pecasTexto,
   type PendenciaAlmoxarifado,
 } from '@/modules/shopfloor/domain/almoxarifado'
 import { useDetalhe } from './use-detalhe'
@@ -98,7 +99,7 @@ export function CaixaAberta({
         {`OP ${item.op} · ${item.pmo} · coletiva${hora ? ` · fechada ${hora}` : ''}${d.fechadaPor ? ` por ${d.fechadaPor}` : ''}`}
       </p>
       <p className="break-all font-mono text-3xl font-bold">{item.codigo}</p>
-      <p className="text-base">Bipe este código para confirmar a entrada de {d.pecas} peças.</p>
+      <p className="text-base">Bipe este código para confirmar a entrada de {pecasTexto(d.pecas)}.</p>
       <Input
         ref={bipeRef}
         value={bipe}
@@ -113,7 +114,7 @@ export function CaixaAberta({
       />
       <div className="flex flex-col gap-0.5 text-sm text-muted-foreground">
         {d.sns.length > 0 && <p>Dentro da caixa: {d.sns.join(', ')}</p>}
-        <p>{d.postoAnterior ? `Posto anterior: ${d.postoAnterior.posto} concluído` : 'Posto anterior: sem posto anterior'}</p>
+        <p>{d.postoAnterior ? `Posto anterior: ${d.postoAnterior.posto} concluído` : 'Sem posto anterior'}</p>
         <p>
           OP {item.op}: {d.recebidasOp}
           {d.qtdOp !== null ? ` de ${d.qtdOp}` : ''} peças já no Almoxarifado

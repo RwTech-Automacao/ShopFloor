@@ -121,4 +121,22 @@ describe('CaixaAberta', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Voltar à lista' }))
     expect(p.onVoltar).toHaveBeenCalled()
   })
+
+  it('caixa de 1 peça usa o singular', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, pecas: 1, sns: ['SN1'] } })
+    montar()
+    expect(await screen.findByText('Bipe este código para confirmar a entrada de 1 peça.')).toBeInTheDocument()
+  })
+
+  it('posto anterior: com posto e sem posto, sem repetir', async () => {
+    montar()
+    expect(await screen.findByText('Posto anterior: Embalagem concluído')).toBeInTheDocument()
+  })
+
+  it('sem posto anterior mostra só "Sem posto anterior"', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, postoAnterior: null } })
+    montar()
+    expect(await screen.findByText('Sem posto anterior')).toBeInTheDocument()
+    expect(screen.queryByText(/Posto anterior:/)).not.toBeInTheDocument()
+  })
 })
