@@ -25,7 +25,6 @@ import type { OrdemLancamentoLista } from '@/modules/shopfloor/infra/lancamento-
 import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { IntegracaoPanel } from './integracao-panel'
 import { AlmoxarifadoPanel } from './almoxarifado-panel'
-import { PendenciasAlmoxarifado } from './pendencias-almoxarifado'
 import { EmbalagemPanel } from './embalagem-panel'
 import { EmbalagemIndividualPanel } from './embalagem-individual-panel'
 import { NqaCaixaPanel } from './nqa-caixa-panel'
@@ -361,12 +360,6 @@ export function LancamentoForm({
     setBipeCab('')
     // Almoxarifado: colaborador é fixo, então o foco vai direto para o campo do bipe da entrada.
     setTimeout(() => (modoAlmoxarifado ? document.getElementById('bipeAlmoxarifado') : colaboradorRef.current)?.focus(), 0)
-  }
-  // Almoxarifado: escolher uma pendência da lista carrega a OP dela, sem bipe de cabeçalho.
-  async function escolherPendenciaAlmoxarifado(pmoEsc: string, opEsc: string) {
-    const ordem = ordens.find((o) => o.pmo === pmoEsc && o.op === opEsc)
-    if (!ordem) { toast.error(`OP ${opEsc}/${pmoEsc} não está disponível. Atualize a página.`); return }
-    await carregarOrdemNoCabecalho(ordem)
   }
   async function atualizarCabecalho() {
     if (!(await podeTrocarContexto())) return
@@ -988,14 +981,8 @@ export function LancamentoForm({
       )}
 
       {op === '' ? (
-        // Sem OP: o Contexto (campo de bipe do cabeçalho) e, no Almoxarifado, a lista do que espera
-        // confirmação em todas as OPs — a pessoa escolhe por onde começar.
-        modoAlmoxarifado ? (
-          <div className="flex flex-col gap-3">
-            {renderContexto()}
-            <PendenciasAlmoxarifado onEscolher={escolherPendenciaAlmoxarifado} />
-          </div>
-        ) : renderContexto()
+        // Sem OP: só o Contexto (campo de bipe do cabeçalho).
+        renderContexto()
       ) : ehIntegracao ? (
         // Integração: igual às demais — o painel monta o próprio topo (Peça | Contexto) e deixa a
         // receita, que é uma tabela larga, em largura cheia embaixo.

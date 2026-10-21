@@ -1,15 +1,13 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
-import { listarOrdensParaLancamento } from '@/modules/shopfloor/infra/lancamento-repository'
-import { mapaPostoPerfil, mapaPostoColetivo, mapaPostoRotaDestino } from '@/modules/shopfloor/infra/postos-repository'
-import { LancamentoForm } from '@/app/(app)/shopfloor/operar/lancamento/lancamento-form'
+import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
+import { AlmoxarifadoTela } from './almoxarifado-tela'
 
 /**
- * Almoxarifado: entrada de produto acabado no estoque (bipe da peça ou da caixa). Tela PRÓPRIA do
- * módulo Recebimento — saiu do Lançamento do ShopFloor em 19/10/2026 — com a mesma lógica dele
- * (cabeçalho carregado pelo primeiro bipe, Contexto, painel de resultado, as mesmas recusas): é o
- * mesmo formulário, em "modo Almoxarifado", com o posto fixo e o colaborador vindo do usuário logado.
+ * Almoxarifado: entrada de produto acabado no estoque. Tela PRÓPRIA do módulo Recebimento, em cartões
+ * (pendências por OP/caixa/lote, detalhe e confirmação), com o posto fixo e o colaborador vindo do
+ * usuário logado. Ver docs/superpowers/specs/2026-10-21-almoxarifado-tela-redesenho-design.md.
  *
  * Permissão: `recebimento.lancar`. Além dela, o perfil precisa de `shopfloor.visualizar`: as OPs e os
  * postos que a tela lê continuam protegidos por essa permissão no banco.
@@ -25,12 +23,7 @@ export default async function AlmoxarifadoPage() {
     )
   }
 
-  const [ordens, postosPerfil, postosColetivo, postosRotaDestino] = await Promise.all([
-    listarOrdensParaLancamento(),
-    mapaPostoPerfil(),
-    mapaPostoColetivo(),
-    mapaPostoRotaDestino(),
-  ])
+  const postosPerfil = await mapaPostoPerfil()
 
   const postosAlmoxarifado = Object.entries(postosPerfil)
     .filter(([, perfil]) => perfil.recurso === 'almoxarifado')
@@ -57,15 +50,7 @@ export default async function AlmoxarifadoPage() {
           Há {postosAlmoxarifado.length} postos com o perfil Almoxarifado; esta tela usa &quot;{posto}&quot;.
         </p>
       )}
-      <LancamentoForm
-        // Só as OPs que têm o posto na rota: o bipe do cabeçalho não carrega OP que não passa por aqui.
-        ordens={ordens.filter((o) => o.postos.includes(posto))}
-        defeitos={[]}
-        postosPerfil={postosPerfil}
-        postosColetivo={postosColetivo}
-        postosRotaDestino={[...postosRotaDestino]} // array: Set não é serializável servidor→cliente
-        modoAlmoxarifado={{ colaborador: sessao.nome, posto }}
-      />
+      <AlmoxarifadoTela colaborador={sessao.nome} posto={posto} />
     </div>
   )
 }
