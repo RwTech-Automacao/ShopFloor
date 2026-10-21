@@ -9,7 +9,7 @@ import {
 import { ehEntradaDeLoteAlmoxarifado } from '../cancelamento'
 
 const LOTE: NecessidadeLote = {
-  loteId: 'l1', rotulo: 'LOTE[abcd1234][5]', pecas: 5, amostra: 2,
+  loteId: 'l1', rotulo: 'LOTE[abcd1234][5]', pecas: 5, amostra: 5,
   sns: ['7001', '7002', '7003', '7004', '7005'], jaLancadas: 0, aprovadoEm: null,
 }
 
@@ -20,11 +20,11 @@ describe('serie_exige_lote (0156)', () => {
 })
 
 describe('conferirBipeAmostra', () => {
-  it('aceita SN do lote e devolve a amostra com ele (normalizado)', () => {
+  it('aceita SN do lote e devolve os bipados com ele (normalizado)', () => {
     expect(conferirBipeAmostra(LOTE, [], ' 0007-001 ')).toEqual({ ok: true, bipados: ['7001'] })
   })
 
-  it('SN de fora do lote é recusado e não entra na amostra', () => {
+  it('SN de fora do lote é recusado e não entra nos bipados', () => {
     expect(conferirBipeAmostra(LOTE, ['7001'], '7099')).toEqual({ ok: false, motivo: 'fora_do_lote', sn: '7099' })
   })
 
@@ -32,8 +32,20 @@ describe('conferirBipeAmostra', () => {
     expect(conferirBipeAmostra(LOTE, ['7001'], '7001')).toEqual({ ok: false, motivo: 'repetido', sn: '7001' })
   })
 
-  it('amostra já completa não aceita mais SN', () => {
-    expect(conferirBipeAmostra(LOTE, ['7001', '7002'], '7003')).toEqual({ ok: false, motivo: 'completa', sn: '7003' })
+  it('com todos os SNs já bipados, qualquer outro bipe é repetido ou de fora (nunca "completa")', () => {
+    const todos = LOTE.sns
+    expect(conferirBipeAmostra(LOTE, todos, '7003')).toEqual({ ok: false, motivo: 'repetido', sn: '7003' })
+    expect(conferirBipeAmostra(LOTE, todos, '7099')).toEqual({ ok: false, motivo: 'fora_do_lote', sn: '7099' })
+  })
+
+  it('os SNs entram um a um até o lote todo', () => {
+    let bipados: string[] = []
+    for (const sn of LOTE.sns) {
+      const r = conferirBipeAmostra(LOTE, bipados, sn)
+      expect(r.ok).toBe(true)
+      if (r.ok) bipados = r.bipados
+    }
+    expect(bipados).toEqual(LOTE.sns)
   })
 
   it('bipe vazio não faz nada', () => {
@@ -42,14 +54,22 @@ describe('conferirBipeAmostra', () => {
 })
 
 describe('amostraCompleta', () => {
-  it('só com exatamente K SNs distintos', () => {
-    expect(amostraCompleta(LOTE, ['7001'])).toBe(false)
-    expect(amostraCompleta(LOTE, ['7001', '7002'])).toBe(true)
+  it('só com TODOS os SNs do lote bipados', () => {
+    expect(amostraCompleta(LOTE, [])).toBe(false)
+    expect(amostraCompleta(LOTE, ['7001', '7002'])).toBe(false)
+    expect(amostraCompleta(LOTE, ['7001', '7002', '7003', '7004'])).toBe(false)
+    expect(amostraCompleta(LOTE, ['7005', '7004', '7003', '7002', '7001'])).toBe(true)
   })
 
-  it('amostra inválida (nula ou 0) nunca completa', () => {
-    expect(amostraCompleta({ ...LOTE, amostra: null }, [])).toBe(false)
-    expect(amostraCompleta({ ...LOTE, amostra: 0 }, [])).toBe(false)
+  it('vale sns.length, mesmo que lote.amostra diga outra coisa (nulo, 0, 2)', () => {
+    for (const amostra of [null, 0, 2]) {
+      expect(amostraCompleta({ ...LOTE, amostra }, ['7001', '7002'])).toBe(false)
+      expect(amostraCompleta({ ...LOTE, amostra }, LOTE.sns)).toBe(true)
+    }
+  })
+
+  it('lote sem SN nunca completa', () => {
+    expect(amostraCompleta({ ...LOTE, sns: [] }, [])).toBe(false)
   })
 })
 
@@ -60,11 +80,21 @@ describe('mensagemRecusaLote', () => {
 
   it('motivos com frase pronta da RPC usam o detalhe', () => {
     for (const motivo of [
-      'ja_lancado', 'lote_com_sn_lancado', 'amostra_fora_do_lote', 'amostra_tamanho_errado',
-      'amostra_nqa_invalida', 'lote_nao_aprovado', 'lote_nao_encontrado', 'posto_fora_da_op',
+      'ja_lancado', 'lote_com_sn_lancado', 'amostra_fora_do_lote', 'lote_incompleto',
+      'lote_nao_aprovado', 'lote_nao_encontrado', 'posto_fora_da_op',
     ]) {
       expect(mensagemRecusaLote(motivo, 'Frase da RPC.')).toBe('Frase da RPC.')
     }
+  })
+
+  it('lote_incompleto usa o detalhe do banco (N e F reais)', () => {
+    expect(mensagemRecusaLote('lote_incompleto', 'Bipe todas as 5 peças do lote: faltam 3.'))
+      .toBe('Bipe todas as 5 peças do lote: faltam 3.')
+  })
+
+  it('os motivos que sumiram do banco caem na frase genérica', () => {
+    expect(mensagemRecusaLote('amostra_tamanho_errado')).toBe('Não foi possível confirmar o lote.')
+    expect(mensagemRecusaLote('amostra_nqa_invalida')).toBe('Não foi possível confirmar o lote.')
   })
 
   it('sem detalhe, cada motivo tem uma frase própria (nunca só "erro")', () => {
@@ -73,10 +103,7 @@ describe('mensagemRecusaLote', () => {
       'Alguma peça deste lote já tem entrada no Almoxarifado. Cancele essa entrada em Registros e confirme o lote outra vez.',
     )
     expect(mensagemRecusaLote('amostra_fora_do_lote')).toBe('Uma das peças bipadas não é deste lote.')
-    expect(mensagemRecusaLote('amostra_tamanho_errado')).toBe('A quantidade de peças da amostra não confere com a Tabela NQA.')
-    expect(mensagemRecusaLote('amostra_nqa_invalida')).toBe(
-      'A Tabela NQA não tem amostra para o tamanho deste lote. Peça ao gestor para conferir a Tabela NQA.',
-    )
+    expect(mensagemRecusaLote('lote_incompleto')).toBe('Bipe todas as peças do lote antes de confirmar.')
     expect(mensagemRecusaLote('lote_nao_aprovado')).toBe('Este lote não foi aprovado no NQA.')
     expect(mensagemRecusaLote('lote_nao_encontrado')).toBe('Lote não encontrado nesta OP.')
     expect(mensagemRecusaLote('lote_nao_se_aplica')).toBe('Nesta OP a entrada não é por lote do NQA.')

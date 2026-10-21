@@ -14,12 +14,12 @@ import { LoteAberto } from '../lote-aberto'
 import type { PendenciaAlmoxarifado } from '@/modules/shopfloor/domain/almoxarifado'
 
 const ITEM: PendenciaAlmoxarifado = {
-  pmo: 'PMO2', op: '200', tipo: 'lote', codigo: 'LOTE[ab12cd34][5]', pecas: 5, amostra: 3, loteId: 'l1',
+  pmo: 'PMO2', op: '200', tipo: 'lote', codigo: 'LOTE[ab12cd34][5]', pecas: 5, amostra: 5, loteId: 'l1',
   em: '2026-10-21T13:05:00Z',
 }
 const DETALHE = {
   tipo: 'lote' as const, qtdOp: 50, recebidasOp: 0, postoAnterior: null, pecas: 5,
-  sns: ['a1', 'a2', 'a3', 'a4', 'a5'], em: '2026-10-21T13:05:00Z', fechadaPor: null, amostra: 3, jaLancadas: 0,
+  sns: ['a1', 'a2', 'a3', 'a4', 'a5'], em: '2026-10-21T13:05:00Z', fechadaPor: null, amostra: 5, jaLancadas: 0,
 }
 
 function montar(item = ITEM) {
@@ -44,68 +44,77 @@ beforeEach(() => {
 })
 
 describe('LoteAberto', () => {
-  it('mostra contexto, progresso 0 de 3 e Confirmar desabilitado', async () => {
+  it('mostra contexto, instrução com N, progresso 0 de 5 e Confirmar desabilitado', async () => {
     montar()
     expect(await screen.findByText('OP 200 · PMO2 · individual · aprovado hoje 10:05')).toBeInTheDocument()
     expect(screen.getByText('Lote LOTE[ab12cd34][5] · 5 peças')).toBeInTheDocument()
-    expect(screen.getByText('Bipe 3 números de série quaisquer deste lote (amostra do NQA):')).toBeInTheDocument()
-    expect(screen.getByText('Bipadas: 0 de 3')).toBeInTheDocument()
+    expect(screen.getByText('Bipe os 5 números de série do lote:')).toBeInTheDocument()
+    expect(screen.getByText('Bipadas: 0 de 5')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
   })
 
-  it('progresso 2 de 3, recusa fora do lote e repetido, confirma só com 3', async () => {
+  it('progresso, recusa fora do lote e repetido, confirma só com TODOS (5 de 5)', async () => {
     const p = montar()
     await bipar('a1')
     await bipar('A2')
-    expect(screen.getByText('Bipadas: 2 de 3')).toBeInTheDocument()
+    expect(screen.getByText('Bipadas: 2 de 5')).toBeInTheDocument()
     await bipar('ZZ')
     expect(p.onResultado).toHaveBeenLastCalledWith({ tipo: 'aviso', titulo: 'A peça zz não é deste lote.' })
     await bipar('A1')
-    expect(p.onResultado).toHaveBeenLastCalledWith({ tipo: 'aviso', titulo: 'A peça a1 já está na amostra.' })
-    expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
+    expect(p.onResultado).toHaveBeenLastCalledWith({ tipo: 'aviso', titulo: 'A peça a1 já foi bipada neste lote.' })
     await bipar('A3')
-    expect(screen.getByText('Bipadas: 3 de 3')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeEnabled()
     await bipar('A4')
-    expect(p.onResultado).toHaveBeenLastCalledWith({ tipo: 'aviso', titulo: 'A amostra já está completa: confirme o lote.' })
+    expect(screen.getByText('Bipadas: 4 de 5')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
+    await bipar('A5')
+    expect(screen.getByText('Bipadas: 5 de 5')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeEnabled()
   })
 
-  it('confirma com a amostra bipada', async () => {
+  it('confirma com todos os SNs bipados', async () => {
     confirmarLoteAlmoxarifado.mockResolvedValue({ ok: true, quantidade: 5, lote: 'LOTE[ab12cd34][5]' })
     const p = montar()
-    for (const s of ['A1', 'A2', 'A3']) await bipar(s)
+    for (const s of ['A1', 'A2', 'A3', 'A4', 'A5']) await bipar(s)
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar lote' }))
     await waitFor(() => expect(p.onConfirmado).toHaveBeenCalledWith({ quantidade: 5, codigo: 'LOTE[ab12cd34][5]' }))
     expect(confirmarLoteAlmoxarifado).toHaveBeenCalledWith({
-      pmo: 'PMO2', op: '200', posto: 'Almoxarifado', colaborador: 'Maria', loteId: 'l1', amostra: ['a1', 'a2', 'a3'],
+      pmo: 'PMO2', op: '200', posto: 'Almoxarifado', colaborador: 'Maria', loteId: 'l1', amostra: ['a1', 'a2', 'a3', 'a4', 'a5'],
     })
   })
 
   it('recusa do banco avisa e o cartão permanece', async () => {
     confirmarLoteAlmoxarifado.mockResolvedValue({ ok: false, erro: 'Já lançadas.' })
     const p = montar()
-    for (const s of ['A1', 'A2', 'A3']) await bipar(s)
+    for (const s of ['A1', 'A2', 'A3', 'A4', 'A5']) await bipar(s)
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar lote' }))
     await waitFor(() => expect(p.onResultado).toHaveBeenLastCalledWith({ tipo: 'aviso', titulo: 'Já lançadas.' }))
     expect(p.onConfirmado).not.toHaveBeenCalled()
-    expect(screen.getByText('Bipadas: 3 de 3')).toBeInTheDocument()
+    expect(screen.getByText('Bipadas: 5 de 5')).toBeInTheDocument()
   })
 
-  it('com mais de 12 SNs mostra 12 e "+N"; as bipadas sempre aparecem', async () => {
+  it('com 20 SNs mostra TODOS (sem "+N"), numa lista com rolagem interna; as bipadas levam ✔', async () => {
     const sns = Array.from({ length: 20 }, (_, i) => `s${String(i + 1).padStart(2, '0')}`)
-    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, pecas: 20, sns } })
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, pecas: 20, amostra: 20, sns } })
     montar({ ...ITEM, pecas: 20 })
     await bipar('S20')
-    expect(screen.getByText(/s20/, { selector: 'li' })).toBeInTheDocument()
-    expect(screen.getByText('… +8')).toBeInTheDocument()
+    const lista = await screen.findByRole('list', { name: 'Números de série do lote' })
+    expect(lista.querySelectorAll('li')).toHaveLength(20)
+    expect(screen.queryByText(/… \+/)).toBeNull()
+    expect(screen.getByText('✔ s20', { selector: 'li' })).toBeInTheDocument()
+    expect(screen.getByText('s01', { selector: 'li' })).toBeInTheDocument()
+    expect(lista).toHaveClass('overflow-y-auto')
+    expect(screen.getByText('Bipe os 20 números de série do lote:')).toBeInTheDocument()
+    expect(screen.getByText('Bipadas: 1 de 20')).toBeInTheDocument()
   })
 
-  it('amostra nula bloqueia bipe e confirmar', async () => {
+  it('a Tabela NQA não entra: amostra nula no detalhe não bloqueia, vale o total de SNs', async () => {
     detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, amostra: null } })
     montar({ ...ITEM, amostra: null })
-    expect(await screen.findByText('A Tabela NQA não tem amostra para este tamanho de lote.')).toBeInTheDocument()
-    expect(await campo()).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
+    expect(await screen.findByText('Bipe os 5 números de série do lote:')).toBeInTheDocument()
+    expect(screen.queryByText(/Tabela NQA/)).toBeNull()
+    expect(await campo()).toBeEnabled()
+    await bipar('A1')
+    expect(screen.getByText('Bipadas: 1 de 5')).toBeInTheDocument()
   })
 
   it('item de outro dia mostra a data junto da hora', async () => {
@@ -138,7 +147,7 @@ describe('LoteAberto', () => {
     let liberar: (v: unknown) => void = () => {}
     confirmarLoteAlmoxarifado.mockReturnValue(new Promise((r) => { liberar = r }))
     const p = montar()
-    for (const s of ['A1', 'A2', 'A3']) await bipar(s)
+    for (const s of ['A1', 'A2', 'A3', 'A4', 'A5']) await bipar(s)
     const botao = screen.getByRole('button', { name: 'Confirmar lote' })
     fireEvent.click(botao)
     fireEvent.click(botao)

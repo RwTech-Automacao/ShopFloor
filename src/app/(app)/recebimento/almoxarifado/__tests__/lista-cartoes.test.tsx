@@ -8,7 +8,7 @@ const CAIXA: PendenciaAlmoxarifado = {
   em: '2026-10-21T15:30:00Z',
 }
 const LOTE: PendenciaAlmoxarifado = {
-  pmo: 'PMO2', op: '200', tipo: 'lote', codigo: 'LOTE[ab12cd34][50]', pecas: 50, amostra: 3, loteId: 'l1',
+  pmo: 'PMO2', op: '200', tipo: 'lote', codigo: 'LOTE[ab12cd34][50]', pecas: 50, amostra: 50, loteId: 'l1',
   em: '2026-10-21T13:05:00Z',
 }
 
@@ -26,7 +26,7 @@ describe('ListaCartoes', () => {
   it('item de outro dia mostra dd/mm HH:MM em vez de "hoje"', () => {
     montar({ tipo: 'ok', itens: [{ ...CAIXA, em: '2026-10-20T18:30:00Z' }, { ...LOTE, em: '2026-10-19T13:05:00Z' }] })
     expect(screen.getByText('40 peças · fechada 20/10 15:30')).toBeInTheDocument()
-    expect(screen.getByText('50 peças · bipar 3 · aprovado 19/10 10:05')).toBeInTheDocument()
+    expect(screen.getByText('50 peças · bipar todas · aprovado 19/10 10:05')).toBeInTheDocument()
   })
 
   it('renderiza cartões de caixa e de lote com o texto da spec', () => {
@@ -36,13 +36,13 @@ describe('ListaCartoes', () => {
     expect(screen.getByText('CX[1][40]100-PMO1')).toHaveClass('font-bold')
     expect(screen.getByText('40 peças · fechada hoje 12:30')).toBeInTheDocument()
     expect(screen.getByText('LOTE · OP 200 · PMO2')).toBeInTheDocument()
-    expect(screen.getByText('50 peças · bipar 3 · aprovado hoje 10:05')).toBeInTheDocument()
+    expect(screen.getByText('50 peças · bipar todas · aprovado hoje 10:05')).toBeInTheDocument()
   })
 
-  it('omite a hora vazia e o "bipar K" sem amostra', () => {
+  it('omite a hora vazia; o lote diz "bipar todas" mesmo com amostra nula, e a caixa nunca', () => {
     montar({ tipo: 'ok', itens: [{ ...CAIXA, em: null }, { ...LOTE, amostra: null }] })
     expect(screen.getByText('40 peças')).toBeInTheDocument()
-    expect(screen.getByText(/^50 peças · aprovado/)).toBeInTheDocument()
+    expect(screen.getByText(/^50 peças · bipar todas · aprovado/)).toBeInTheDocument()
   })
 
   it('o filtro por OP esconde as outras', () => {

@@ -102,7 +102,7 @@ const CONF = {
 }
 
 describe('confirmarLoteAlmoxarifado (0156)', () => {
-  it('manda a amostra NORMALIZADA e sem repetido, e devolve as peças e o rótulo', async () => {
+  it('manda os SNs NORMALIZADOS e sem repetido, e devolve as peças e o rótulo', async () => {
     const rpc = mocks({ rpcData: { ok: true, quantidade: 5, lote: 'LOTE[abcd1234][5]' } })
     const { confirmarLoteAlmoxarifado } = await import('../almoxarifado-actions')
 

@@ -20,10 +20,10 @@ import { AlmoxarifadoPanel } from '../almoxarifado-panel'
 const PROPS = { colaborador: 'Maria', pmo: 'PMOL01', op: '9201', posto: 'Almoxarifado', individual: true, loteNqa: true }
 
 const L1 = {
-  loteId: 'l1', rotulo: 'LOTE[abcd1234][5]', pecas: 5, amostra: 2,
+  loteId: 'l1', rotulo: 'LOTE[abcd1234][5]', pecas: 5, amostra: 5,
   sns: ['7001', '7002', '7003', '7004', '7005'], jaLancadas: 0, aprovadoEm: null,
 }
-const L2 = { ...L1, loteId: 'l2', rotulo: 'LOTE[ffff0000][3]', pecas: 3, amostra: 2, sns: ['7011', '7012', '7013'] }
+const L2 = { ...L1, loteId: 'l2', rotulo: 'LOTE[ffff0000][3]', pecas: 3, amostra: 3, sns: ['7011', '7012', '7013'] }
 
 function campo() {
   return screen.getByRole('textbox') as HTMLInputElement
@@ -53,52 +53,56 @@ describe('AlmoxarifadoPanel — lotes do NQA individual (0156)', () => {
     expect(listarNecessidadesAlmoxarifado).not.toHaveBeenCalled()
   })
 
-  it('abrir um lote mostra TODOS os SNs dele e a amostra a bipar', async () => {
+  it('abrir um lote mostra TODOS os SNs dele e quantas a bipar (todas)', async () => {
     render(<AlmoxarifadoPanel {...PROPS} />)
     await abrirLote('LOTE[abcd1234][5]')
     const sns = within(screen.getByRole('list', { name: 'SNs do lote' }))
     for (const sn of L1.sns) expect(sns.getByText(sn)).toBeInTheDocument()
-    expect(screen.getByText('Amostra: 0 de 2')).toBeInTheDocument()
+    expect(screen.getByText('Bipadas: 0 de 5')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
   })
 
-  it('aceita só SN do lote, repetido não conta, e só habilita Confirmar com K', async () => {
+  it('aceita só SN do lote, repetido não conta, e só habilita Confirmar com TODOS', async () => {
     render(<AlmoxarifadoPanel {...PROPS} />)
     await abrirLote('LOTE[abcd1234][5]')
 
     bipar('7099')
     expect(await screen.findByText('A peça 7099 não é deste lote.')).toBeInTheDocument()
-    expect(screen.getByText('Amostra: 0 de 2')).toBeInTheDocument()
+    expect(screen.getByText('Bipadas: 0 de 5')).toBeInTheDocument()
 
     bipar('7001')
-    expect(await screen.findByText('Amostra: 1 de 2')).toBeInTheDocument()
+    expect(await screen.findByText('Bipadas: 1 de 5')).toBeInTheDocument()
     bipar('7001')
-    expect(await screen.findByText('A peça 7001 já está na amostra.')).toBeInTheDocument()
-    expect(screen.getByText('Amostra: 1 de 2')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
+    expect(await screen.findByText('A peça 7001 já foi bipada neste lote.')).toBeInTheDocument()
+    expect(screen.getByText('Bipadas: 1 de 5')).toBeInTheDocument()
 
-    bipar('7004')
-    expect(await screen.findByText('Amostra: 2 de 2')).toBeInTheDocument()
+    for (const [i, sn] of ['7002', '7003', '7004'].entries()) {
+      bipar(sn)
+      expect(await screen.findByText(`Bipadas: ${i + 2} de 5`)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
+    }
+    bipar('7005')
+    expect(await screen.findByText('Bipadas: 5 de 5')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeEnabled()
-    // Nenhum bipe da amostra foi ao banco como entrada avulsa.
+    // Nenhum bipe do lote foi ao banco como entrada avulsa.
     expect(registrarEntradaAlmoxarifado).not.toHaveBeenCalled()
   })
 
-  it('Confirmar lote manda a amostra, mostra as peças e recarrega a lista', async () => {
+  it('Confirmar lote manda todos os SNs, mostra as peças e recarrega a lista', async () => {
     confirmarLoteAlmoxarifado.mockResolvedValue({ ok: true, quantidade: 5, lote: 'LOTE[abcd1234][5]' })
     render(<AlmoxarifadoPanel {...PROPS} />)
     await abrirLote('LOTE[abcd1234][5]')
-    bipar('7001')
-    await screen.findByText('Amostra: 1 de 2')
-    bipar('7003')
-    await screen.findByText('Amostra: 2 de 2')
+    for (const [i, sn] of L1.sns.entries()) {
+      bipar(sn)
+      await screen.findByText(`Bipadas: ${i + 1} de 5`)
+    }
 
     listarLotesAlmoxarifado.mockResolvedValue({ ok: true, lotes: [L2] })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar lote' }))
 
     await waitFor(() =>
       expect(confirmarLoteAlmoxarifado).toHaveBeenCalledWith({
-        pmo: 'PMOL01', op: '9201', posto: 'Almoxarifado', colaborador: 'Maria', loteId: 'l1', amostra: ['7001', '7003'],
+        pmo: 'PMOL01', op: '9201', posto: 'Almoxarifado', colaborador: 'Maria', loteId: 'l1', amostra: L1.sns,
       }),
     )
     expect(within(await screen.findByRole('status')).getByText('5 peças')).toBeInTheDocument()
@@ -108,25 +112,36 @@ describe('AlmoxarifadoPanel — lotes do NQA individual (0156)', () => {
     await waitFor(() => expect(lista.queryByText('LOTE[abcd1234][5]')).toBeNull())
   })
 
-  it('recusa da confirmação aparece e o lote continua aberto com a amostra', async () => {
+  it('recusa da confirmação aparece e o lote continua aberto com os bipados', async () => {
     confirmarLoteAlmoxarifado.mockResolvedValue({ ok: false, erro: 'Lote já confirmado em 20/10/2026 09:00 por Ana.' })
     render(<AlmoxarifadoPanel {...PROPS} />)
     await abrirLote('LOTE[abcd1234][5]')
-    bipar('7001')
-    await screen.findByText('Amostra: 1 de 2')
-    bipar('7002')
-    await screen.findByText('Amostra: 2 de 2')
+    for (const [i, sn] of L1.sns.entries()) {
+      bipar(sn)
+      await screen.findByText(`Bipadas: ${i + 1} de 5`)
+    }
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar lote' }))
     expect(await screen.findByText('Lote já confirmado em 20/10/2026 09:00 por Ana.')).toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'SNs do lote' })).toBeInTheDocument()
   })
 
-  it('amostra inválida na Tabela NQA: diz isso e não deixa confirmar', async () => {
+  it('a Tabela NQA não entra: amostra nula do banco não bloqueia, vale o total de SNs do lote', async () => {
     listarLotesAlmoxarifado.mockResolvedValue({ ok: true, lotes: [{ ...L1, amostra: null }] })
     render(<AlmoxarifadoPanel {...PROPS} />)
     await abrirLote('LOTE[abcd1234][5]')
-    expect(screen.getByText(/A Tabela NQA não tem amostra/)).toBeInTheDocument()
+    expect(screen.queryByText(/Tabela NQA/)).toBeNull()
+    expect(screen.getByText('Bipadas: 0 de 5')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()
+    for (const sn of L1.sns) bipar(sn)
+    await screen.findByText('Bipadas: 5 de 5')
+    expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeEnabled()
+  })
+
+  it('a lista diz "bipar todas" (sem amostra K)', async () => {
+    render(<AlmoxarifadoPanel {...PROPS} />)
+    const lista = within(await screen.findByRole('list', { name: 'Lotes esperando confirmação' }))
+    expect(lista.getByText('5 peças · bipar todas')).toBeInTheDocument()
+    expect(screen.queryByText(/amostra/i)).toBeNull()
   })
 
   it('sem lote aberto, o bipe avulso vai à entrada e mostra a frase do serie_exige_lote', async () => {

@@ -103,21 +103,24 @@ export function mensagemPostoAnteriorNaoConcluido(args: {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// FASE 2 (0156): o LOTE aprovado no NQA individual vira necessidade e é confirmado por AMOSTRA.
+// FASE 2 (0156): o LOTE aprovado no NQA individual vira necessidade e é confirmado bipando TODOS os seus SNs.
 // ---------------------------------------------------------------------------------------------------
 
 /**
  * Um lote do NQA individual que o Almoxarifado tem que confirmar (sf_almox_lotes, 0156): aprovado no
- * posto NQA anterior da rota, com SN ainda sem entrada. A pessoa bipa `amostra` SNs distintos do lote e
+ * posto NQA anterior da rota, com SN ainda sem entrada. A pessoa bipa todos os SNs do lote (os N distintos) e
  * confirma; o ShopFloor grava uma entrada por SN e UM envio ao Compels.
  */
 export interface NecessidadeLote {
   loteId: string
   /** 'LOTE[<8 hex>][<N>]' — o mesmo texto que vai ao Compels como bipe do envio. */
   rotulo: string
-  /** SNs distintos do lote (o tamanho que decide a amostra). */
+  /** SNs distintos do lote (N: a quantidade a bipar). */
   pecas: number
-  /** K da Tabela NQA pelo tamanho do lote. Nulo ou <= 0: a Tabela não tem amostra pra esse tamanho. */
+  /**
+   * Quantidade a bipar = TODAS as peças do lote (decisão de 21/10; antes era o K da Tabela NQA, que o
+   * Almoxarifado não usa mais). O nome ficou para não renomear o banco; quem manda é `sns.length`.
+   */
   amostra: number | null
   /** TODOS os SNs do lote (normalizados), em ordem. */
   sns: string[]
@@ -131,11 +134,11 @@ export const MENSAGEM_SERIE_EXIGE_LOTE = 'Esta peça faz parte de um lote do NQA
 
 export type ConferenciaAmostra =
   | { ok: true; bipados: string[] }
-  | { ok: false; motivo: 'vazio' | 'fora_do_lote' | 'repetido' | 'completa'; sn: string }
+  | { ok: false; motivo: 'vazio' | 'fora_do_lote' | 'repetido'; sn: string }
 
 /**
- * Um bipe da AMOSTRA, conferido na tela antes de ir ao banco (que confere tudo de novo): só SN do lote,
- * o mesmo SN não conta duas vezes, e a amostra não passa de K. A comparação é pela série NORMALIZADA,
+ * Um bipe do lote (os SNs são bipados um a um até completar), conferido na tela antes de ir ao banco (que
+ * confere tudo de novo): só SN do lote e o mesmo SN não conta duas vezes. A comparação é pela série NORMALIZADA,
  * a mesma forma que o NQA gravou em numero_serie_norm (e que vai à RPC).
  */
 export function conferirBipeAmostra(lote: NecessidadeLote, bipados: string[], bipe: string): ConferenciaAmostra {
@@ -143,13 +146,17 @@ export function conferirBipeAmostra(lote: NecessidadeLote, bipados: string[], bi
   if (sn === '') return { ok: false, motivo: 'vazio', sn: '' }
   if (bipados.includes(sn)) return { ok: false, motivo: 'repetido', sn }
   if (!lote.sns.includes(sn)) return { ok: false, motivo: 'fora_do_lote', sn }
-  if (amostraCompleta(lote, bipados)) return { ok: false, motivo: 'completa', sn }
   return { ok: true, bipados: [...bipados, sn] }
 }
 
-/** "Confirmar lote" só habilita com EXATAMENTE K SNs distintos (e K válido). */
+/**
+ * "Confirmar lote" só habilita com TODOS os SNs do lote bipados (o conjunto completo; vale `lote.sns.length`,
+ * mesmo que `lote.amostra` diga outra coisa).
+ */
 export function amostraCompleta(lote: NecessidadeLote, bipados: string[]): boolean {
-  return lote.amostra !== null && lote.amostra > 0 && bipados.length === lote.amostra
+  if (lote.sns.length === 0) return false
+  const feitos = new Set(bipados)
+  return lote.sns.every((sn) => feitos.has(sn))
 }
 
 /**
@@ -168,10 +175,8 @@ export function mensagemRecusaLote(motivo: string, detalhe?: string): string {
         || 'Alguma peça deste lote já tem entrada no Almoxarifado. Cancele essa entrada em Registros e confirme o lote outra vez.'
     case 'amostra_fora_do_lote':
       return detalhe || 'Uma das peças bipadas não é deste lote.'
-    case 'amostra_tamanho_errado':
-      return detalhe || 'A quantidade de peças da amostra não confere com a Tabela NQA.'
-    case 'amostra_nqa_invalida':
-      return detalhe || 'A Tabela NQA não tem amostra para o tamanho deste lote. Peça ao gestor para conferir a Tabela NQA.'
+    case 'lote_incompleto':
+      return detalhe || 'Bipe todas as peças do lote antes de confirmar.'
     case 'lote_nao_aprovado':
       return detalhe || 'Este lote não foi aprovado no NQA.'
     case 'lote_nao_encontrado':

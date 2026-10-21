@@ -62,8 +62,8 @@ interface EntradaSessao {
  *
  * LOTES DO NQA INDIVIDUAL (0156): na OP individual cujo posto anterior é de perfil NQA (`loteNqa`), o
  * lugar das caixas é a lista dos LOTES aprovados no NQA. Abrir um lote mostra TODOS os SNs dele; com o
- * lote aberto, o campo de bipe passa a receber a AMOSTRA (só SN do lote, repetido não conta) e "Confirmar
- * lote" habilita com exatamente K SNs (Tabela NQA). Sem lote aberto o campo continua indo à entrada de
+ * lote aberto, o campo de bipe passa a receber os SNs do lote (só SN do lote, repetido não conta) e "Confirmar
+ * lote" habilita só com TODOS eles bipados (a Tabela NQA não vale mais aqui). Sem lote aberto o campo continua indo à entrada de
  * sempre — que, nesse caso, recusa a peça avulsa com a frase do lote (serie_exige_lote).
  */
 export function AlmoxarifadoPanel({
@@ -144,7 +144,7 @@ export function AlmoxarifadoPanel({
     bipeRef.current?.focus()
   }
 
-  /** Um bipe com o lote aberto: entra (ou não) na amostra. Nada vai ao banco aqui. */
+  /** Um bipe com o lote aberto: entra (ou não) nos bipados do lote. Nada vai ao banco aqui. */
   function biparAmostra(lote: NecessidadeLote) {
     const r = conferirBipeAmostra(lote, amostra, bipe)
     if (r.ok) {
@@ -158,9 +158,7 @@ export function AlmoxarifadoPanel({
       tipo: 'aviso',
       titulo: r.motivo === 'fora_do_lote'
         ? `A peça ${r.sn} não é deste lote.`
-        : r.motivo === 'repetido'
-          ? `A peça ${r.sn} já está na amostra.`
-          : 'A amostra já está completa: confirme o lote.',
+        : `A peça ${r.sn} já foi bipada neste lote.`,
     })
   }
 
@@ -328,7 +326,7 @@ export function AlmoxarifadoPanel({
                           <span className="truncate font-mono">{l.rotulo}</span>
                           <span className="shrink-0 text-xs text-muted-foreground">
                             {pecas(l.pecas)}
-                            {l.amostra && l.amostra > 0 ? ` · amostra ${l.amostra}` : ''}
+                            {' · bipar todas'}
                             {l.jaLancadas > 0 ? ` · ${l.jaLancadas} já lançada${l.jaLancadas === 1 ? '' : 's'}` : ''}
                           </span>
                         </button>
@@ -349,13 +347,7 @@ export function AlmoxarifadoPanel({
                     Fechar lote
                   </Button>
                 </div>
-                {loteAberto.amostra && loteAberto.amostra > 0 ? (
-                  <p className="text-xs text-muted-foreground">Amostra: {amostra.length} de {loteAberto.amostra}</p>
-                ) : (
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    A Tabela NQA não tem amostra para um lote deste tamanho. Peça ao gestor para conferir a Tabela NQA.
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">Bipadas: {amostra.length} de {loteAberto.sns.length}</p>
                 {loteAberto.jaLancadas > 0 && (
                   <p className="text-xs text-amber-700 dark:text-amber-400">
                     {loteAberto.jaLancadas === 1
@@ -367,7 +359,7 @@ export function AlmoxarifadoPanel({
                   {loteAberto.sns.map((sn) => (
                     <li key={sn} className="flex items-center justify-between gap-2">
                       <span className="truncate font-mono">{sn}</span>
-                      {amostra.includes(sn) && <span className="shrink-0 text-xs text-green-700 dark:text-green-400">na amostra</span>}
+                      {amostra.includes(sn) && <span className="shrink-0 text-xs text-green-700 dark:text-green-400">bipada</span>}
                     </li>
                   ))}
                 </ul>
@@ -377,7 +369,7 @@ export function AlmoxarifadoPanel({
               </div>
             )}
             <Label htmlFor="bipeAlmoxarifado">
-              {loteAberto ? 'Bipe os SNs da amostra' : 'Bipe a peça ou a caixa'}
+              {loteAberto ? 'Bipe os SNs do lote' : 'Bipe a peça ou a caixa'}
             </Label>
             <Input
               id="bipeAlmoxarifado"

@@ -281,8 +281,8 @@ const FALHA_LOTES = 'Não foi possível carregar os lotes esperando confirmaçã
 /**
  * Os lotes do NQA individual que o Almoxarifado tem que confirmar nesta OP (sf_almox_lotes, 0156):
  * aprovados no posto NQA anterior da rota, com SN ainda sem entrada, cada um com TODOS os SNs e a
- * amostra da Tabela NQA. Uma action à parte da lista de caixas (e não a mesma devolvendo os dois): a
- * OP coletiva só tem caixa, a individual com NQA só tem lote, e a tela já sabe qual é o caso.
+ * `amostra` (= quantidade a bipar = todas as peças do lote). Uma action à parte da lista de caixas (e não a
+ * mesma devolvendo os dois): a OP coletiva só tem caixa, a individual com NQA só tem lote, e a tela já sabe qual é o caso.
  *
  * Mesmos gates e a mesma regra da lista de caixas: falha do banco é ERRO, nunca lista vazia.
  */
@@ -334,14 +334,14 @@ export interface ConfirmacaoLote {
   posto: string
   colaborador: string
   loteId: string
-  /** Os SNs bipados da amostra, como vieram do coletor. */
+  /** Os SNs bipados do lote (todos, desde 21/10), como vieram do coletor. */
   amostra: string[]
 }
 
 /**
- * Confirma o LOTE com a amostra bipada (sf_almoxarifado_lote, 0156). A amostra vai NORMALIZADA (a mesma
- * forma que o NQA gravou em numero_serie_norm) e sem repetido; quem confere de verdade — SN do lote,
- * tamanho pela Tabela NQA, lote aprovado, nada lançado antes — é a RPC, numa transação, sob a trava do
+ * Confirma o LOTE com todos os SNs bipados (sf_almoxarifado_lote, 0156). Os SNs vão NORMALIZADOS (a mesma
+ * forma que o NQA gravou em numero_serie_norm) e sem repetido; quem confere de verdade — conjunto completo de SNs do lote,
+ * lote aprovado, nada lançado antes — é a RPC, numa transação, sob a trava do
  * lote. Ela grava uma entrada por SN e UM envio ao Compels; `quantidade` são as peças que entraram.
  */
 export async function confirmarLoteAlmoxarifado(

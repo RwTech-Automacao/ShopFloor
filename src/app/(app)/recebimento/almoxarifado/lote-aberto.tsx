@@ -16,11 +16,9 @@ import {
 import type { ConfirmacaoCartao } from './caixa-aberta'
 import { useDetalhe } from './use-detalhe'
 
-const LIMITE_SNS = 12
-
 /**
- * Lote aberto (OP individual): os SNs do lote como etiquetas; o operador bipa K quaisquer (amostra do
- * NQA) e confirma. Nada vai ao banco até o "Confirmar lote".
+ * Lote aberto (OP individual): TODOS os SNs do lote como etiquetas; o operador bipa cada um deles (os N
+ * distintos) e confirma. A Tabela NQA não vale aqui (decisão de 21/10). Nada vai ao banco até o "Confirmar lote".
  */
 export function LoteAberto({
   item,
@@ -68,21 +66,12 @@ export function LoteAberto({
     jaLancadas: d.jaLancadas,
     aprovadoEm: d.em,
   }
-  const k = d.amostra !== null && d.amostra > 0 ? d.amostra : null
+  const total = lote.sns.length
   const hora = quandoCurto(d.em)
   const completa = amostraCompleta(lote, amostra)
 
-  // As bipadas sempre aparecem; o resto completa até o limite.
-  const bipadas = lote.sns.filter((s) => amostra.includes(s))
-  const demais = lote.sns.filter((s) => !amostra.includes(s))
-  const visiveis = lote.sns.length > LIMITE_SNS
-    ? new Set([...bipadas, ...demais.slice(0, Math.max(0, LIMITE_SNS - bipadas.length))])
-    : new Set(lote.sns)
-  const mostrar = lote.sns.filter((s) => visiveis.has(s))
-  const ocultas = lote.sns.length - mostrar.length
-
   function onBipar() {
-    if (k === null || enviandoRef.current) return
+    if (enviandoRef.current) return
     const r = conferirBipeAmostra(lote, amostra, bipe)
     if (r.ok) {
       setAmostra(r.bipados)
@@ -94,9 +83,7 @@ export function LoteAberto({
       tipo: 'aviso',
       titulo: r.motivo === 'fora_do_lote'
         ? `A peça ${r.sn} não é deste lote.`
-        : r.motivo === 'repetido'
-          ? `A peça ${r.sn} já está na amostra.`
-          : 'A amostra já está completa: confirme o lote.',
+        : `A peça ${r.sn} já foi bipada neste lote.`,
     })
   }
 
@@ -130,13 +117,9 @@ export function LoteAberto({
         {`OP ${item.op} · ${item.pmo} · individual${hora ? ` · aprovado ${hora}` : ''}`}
       </p>
       <p className="break-all font-mono text-xl font-bold">{`Lote ${item.codigo} · ${pecasTexto(d.pecas)}`}</p>
-      {k === null ? (
-        <p className="text-sm text-amber-700 dark:text-amber-400">A Tabela NQA não tem amostra para este tamanho de lote.</p>
-      ) : (
-        <p className="text-base">Bipe {k} números de série quaisquer deste lote (amostra do NQA):</p>
-      )}
-      <ul aria-label="Números de série do lote" className="flex flex-wrap gap-2">
-        {mostrar.map((sn) => {
+      <p className="text-base">{`Bipe os ${total} números de série do lote:`}</p>
+      <ul aria-label="Números de série do lote" className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
+        {lote.sns.map((sn) => {
           const bip = amostra.includes(sn)
           return (
             <li
@@ -151,7 +134,6 @@ export function LoteAberto({
             </li>
           )
         })}
-        {ocultas > 0 && <li className="px-1 py-1 text-sm text-muted-foreground">{`… +${ocultas}`}</li>}
       </ul>
       <Input
         ref={bipeRef}
@@ -163,9 +145,9 @@ export function LoteAberto({
         autoComplete="off"
         autoFocus
         className="h-12 max-w-md text-lg"
-        disabled={enviando || k === null}
+        disabled={enviando}
       />
-      {k !== null && <p className="text-sm text-muted-foreground">Bipadas: {amostra.length} de {k}</p>}
+      <p className="text-sm text-muted-foreground">Bipadas: {amostra.length} de {total}</p>
       <div className="flex flex-wrap gap-2">
         <Button type="button" onClick={onConfirmar} disabled={enviando || !completa}>Confirmar lote</Button>
         <Button type="button" variant="outline" onClick={onVoltar} disabled={enviando}>‹ Voltar à lista</Button>

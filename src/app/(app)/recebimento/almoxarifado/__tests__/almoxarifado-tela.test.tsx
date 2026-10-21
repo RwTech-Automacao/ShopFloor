@@ -23,10 +23,10 @@ const DETALHE = {
   em: '2026-10-21T15:30:00Z', fechadaPor: null, amostra: null, jaLancadas: 0,
 }
 
-const LOTE = { pmo: 'PMO2', op: '200', tipo: 'lote' as const, codigo: 'LOTE[ab12cd34][5]', pecas: 5, amostra: 3, loteId: 'l1', em: '2026-10-21T13:05:00Z' }
+const LOTE = { pmo: 'PMO2', op: '200', tipo: 'lote' as const, codigo: 'LOTE[ab12cd34][5]', pecas: 5, amostra: 5, loteId: 'l1', em: '2026-10-21T13:05:00Z' }
 const DETALHE_LOTE = {
   tipo: 'lote' as const, qtdOp: 50, recebidasOp: 0, postoAnterior: null, pecas: 5,
-  sns: ['a1', 'a2', 'a3', 'a4', 'a5'], em: '2026-10-21T13:05:00Z', fechadaPor: null, amostra: 3, jaLancadas: 0,
+  sns: ['a1', 'a2', 'a3', 'a4', 'a5'], em: '2026-10-21T13:05:00Z', fechadaPor: null, amostra: 5, jaLancadas: 0,
 }
 
 async function abrirCaixa() {
@@ -135,7 +135,7 @@ describe('AlmoxarifadoTela', () => {
     expect(listarPendenciasAlmoxarifado).toHaveBeenCalledTimes(2)
   })
 
-  it('lote: escolher abre o lote; confirmar com amostra completa volta à lista e mostra o resultado', async () => {
+  it('lote: escolher abre o lote; confirmar com todos os SNs bipados volta à lista e mostra o resultado', async () => {
     listarPendenciasAlmoxarifado.mockResolvedValue({ ok: true, pendencias: [LOTE] })
     detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: DETALHE_LOTE })
     confirmarLoteAlmoxarifado.mockImplementation(async () => {
@@ -145,7 +145,7 @@ describe('AlmoxarifadoTela', () => {
     render(<AlmoxarifadoTela colaborador="Maria" posto="Almoxarifado" />)
     fireEvent.click(await screen.findByRole('button', { name: /LOTE\[ab12cd34\]\[5\]/ }))
     const c = await screen.findByPlaceholderText('Bipe um número de série do lote')
-    for (const sn of ['a1', 'a2', 'a3']) {
+    for (const sn of ['a1', 'a2', 'a3', 'a4', 'a5']) {
       fireEvent.change(c, { target: { value: sn } })
       fireEvent.keyDown(c, { key: 'Enter' })
     }

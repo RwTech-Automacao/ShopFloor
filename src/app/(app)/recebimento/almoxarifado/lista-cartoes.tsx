@@ -68,7 +68,7 @@ export function ListaCartoes({
             const hora = quandoCurto(i.em)
             const caixa = i.tipo === 'caixa'
             const partes = [pecasTexto(i.pecas)]
-            if (!caixa && i.amostra !== null && i.amostra > 0) partes.push(`bipar ${i.amostra}`)
+            if (!caixa) partes.push('bipar todas')
             if (hora) partes.push(`${caixa ? 'fechada' : 'aprovado'} ${hora}`)
             return (
               <button
