@@ -8,12 +8,16 @@
 -- Almoxarifado na rota (pelo PERFIL, nunca pelo nome), devolve o que a sf_almox_necessidades (caixa) ou
 -- a sf_almox_lotes (lote) devolveriam — as mesmas regras, o mesmo posto anterior, nada duplicado aqui.
 -- Sem permissão é ERRO (SEM_PERMISSAO), nunca lista vazia.
+-- `em` = desde quando o item espera: o fechada_em da caixa (tipo caixa) ou o aprovado_em do lote (tipo
+-- lote), pra tela ordenar e mostrar a idade do cartão. Como o tipo de retorno ganhou a coluna e a 0158
+-- ainda não estava em produção, a função é recriada (drop + create), o que também a deixa idempotente.
 --
 -- Corpo com $func$ (o SQL Editor não aceita dois cifrões). Aditiva e idempotente. Depende da 0155 e 0156.
 -- =============================================================
+drop function if exists public.sf_almox_pendencias();
 create or replace function public.sf_almox_pendencias()
 returns table (pmo text, op text, tipo text, codigo text, seq int, pecas int,
-               lote_id uuid, amostra int, ja_lancadas int)
+               lote_id uuid, amostra int, ja_lancadas int, em timestamptz)
 language plpgsql stable
 security definer
 set search_path = public
@@ -40,12 +44,12 @@ begin
     if v_o.individual then
       return query
       select v_o.o_pmo, v_o.o_op, 'lote'::text, l.rotulo, null::int, l.pecas,
-             l.lote_id, l.amostra, l.ja_lancadas
+             l.lote_id, l.amostra, l.ja_lancadas, l.aprovado_em
         from sf_almox_lotes(v_o.o_pmo, v_o.o_op) l;
     else
       return query
       select v_o.o_pmo, v_o.o_op, 'caixa'::text, n.codigo, n.seq, n.pecas,
-             null::uuid, null::int, 0
+             null::uuid, null::int, 0, n.fechada_em
         from sf_almox_necessidades(v_o.o_pmo, v_o.o_op) n;
     end if;
   end loop;

@@ -37,12 +37,17 @@ docker cp supabase/migrations/0155_sf_almox_posto_anterior.sql "$NOME":/tmp/0155
 # A 0097 (sf_nqa_individual, em produção) entra porque os lotes da massa nascem pela função real.
 docker cp supabase/migrations/0156_sf_almox_lote.sql "$NOME":/tmp/0156.sql
 docker cp supabase/migrations/0097_sf_nqa_individual.sql "$NOME":/tmp/0097.sql
+# A hora na lista de pendências (0158) e o detalhe do cartão (0159): leitura pura em cima da 0155/0156.
+docker cp supabase/migrations/0158_sf_almox_pendencias.sql "$NOME":/tmp/0158.sql
+docker cp supabase/migrations/0159_sf_almox_detalhe.sql "$NOME":/tmp/0159.sql
 docker cp supabase/tests/almoxarifado_test.sql "$NOME":/tmp/teste.sql
 docker cp supabase/tests/almoxarifado_necessidade_test.sql "$NOME":/tmp/teste_necessidade.sql
 docker cp supabase/tests/almoxarifado_lote_test.sql "$NOME":/tmp/teste_lote.sql
+docker cp supabase/tests/almoxarifado_pendencias_test.sql "$NOME":/tmp/teste_pendencias.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_necessidade.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_lote.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pendencias.sql
 
 # Idempotência: o usuário reaplica migração quando fica na dúvida, então rodar as migrações duas
 # vezes na mesma base não pode falhar nem mudar o resultado. O caso conhecido é a caixa 7, que o
@@ -63,6 +68,11 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0155.sql
 # E a 0156 por cima, também DUAS vezes (é ela que vale em cima da 0155 reaplicada).
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0156.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0156.sql
+# A 0158 e a 0159 por cima, DUAS vezes cada (a 0158 tem drop function + create; reaplicar não pode falhar).
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0158.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0158.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0159.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0159.sql
 # Idempotência da 0156: o lote já confirmado (L10 reconfirmou e cancelou; o L1 está livre) continua
 # sendo necessidade UMA vez, e a peça de lote continua recusada avulsa.
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
