@@ -8,6 +8,7 @@ import {
   classificarBipeAlmoxarifado,
   mensagemPostoAnteriorNaoConcluido,
   mensagemRecusaLote,
+  type DetalheAlmoxarifado,
   type NecessidadeAlmoxarifado,
   type NecessidadeLote,
   type PendenciaAlmoxarifado,
@@ -399,7 +400,9 @@ export async function listarPendenciasAlmoxarifado(): Promise<
     return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_PENDENCIAS }
   }
   if (!Array.isArray(data)) return { ok: false, erro: FALHA_PENDENCIAS }
-  const linhas = data as { pmo: string; op: string; tipo: string; codigo: string; pecas: number; amostra: number | null }[]
+  const linhas = data as { pmo: string; op: string; tipo: string; codigo: string; pecas: number; amostra: number | null
+    lote_id?: string | null; em?: string | null
+  }[]
   return {
     ok: true,
     pendencias: linhas.map((l) => ({
@@ -409,6 +412,82 @@ export async function listarPendenciasAlmoxarifado(): Promise<
       codigo: l.codigo,
       pecas: Number(l.pecas),
       amostra: l.amostra === null || l.amostra === undefined ? null : Number(l.amostra),
+      loteId: l.lote_id ?? null,
+      em: l.em ?? null,
     })),
   }
 }
+
+const FALHA_DETALHE = 'Não foi possível carregar os detalhes.'
+
+const RECUSAS_DETALHE: Record<string, string> = {
+  op_inexistente: 'OP não encontrada.',
+  sem_almoxarifado: 'Esta OP não passa pelo Almoxarifado.',
+  item_inexistente: 'Esta caixa ou lote não está mais esperando confirmação. Atualize a lista.',
+}
+
+/**
+ * O detalhe de um cartão de pendência (sf_almox_detalhe, 0159): SNs, quem/quando, andamento da OP e o
+ * posto anterior. Mesmos gates da lista. Falha de leitura é erro — nunca um detalhe vazio.
+ */
+export async function detalharPendenciaAlmoxarifado(p: {
+  pmo: string
+  op: string
+  tipo: 'caixa' | 'lote'
+  codigo: string
+  loteId: string | null
+}): Promise<{ ok: true; detalhe: DetalheAlmoxarifado } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'lancar') ||
+    !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')
+  ) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almox_detalhe', {
+    p_pmo: p.pmo,
+    p_op: p.op,
+    p_codigo: p.codigo,
+    p_lote_id: p.loteId,
+  })
+  if (error) {
+    return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_DETALHE }
+  }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return { ok: false, erro: FALHA_DETALHE }
+
+  const r = data as {
+    ok?: boolean; motivo?: string; tipo?: string
+    qtd_op?: number | null; recebidas_op?: number
+    posto_anterior?: { posto: string; recurso: string; precisa_aprovado: boolean } | null
+    pecas?: number; sns?: string[] | null
+    fechada_em?: string | null; fechada_por?: string | null
+    aprovado_em?: string | null; amostra?: number | null; ja_lancadas?: number
+  }
+  if (r.ok !== true) return { ok: false, erro: RECUSAS_DETALHE[r.motivo ?? ''] ?? FALHA_DETALHE }
+
+  const lote = r.tipo === 'lote'
+  return {
+    ok: true,
+    detalhe: {
+      tipo: lote ? 'lote' : 'caixa',
+      qtdOp: r.qtd_op === null || r.qtd_op === undefined ? null : Number(r.qtd_op),
+      recebidasOp: Number(r.recebidas_op ?? 0),
+      postoAnterior: r.posto_anterior
+        ? {
+            posto: r.posto_anterior.posto,
+            recurso: r.posto_anterior.recurso,
+            precisaAprovado: r.posto_anterior.precisa_aprovado === true,
+          }
+        : null,
+      pecas: Number(r.pecas ?? 0),
+      sns: Array.isArray(r.sns) ? r.sns : [],
+      em: (lote ? r.aprovado_em : r.fechada_em) ?? null,
+      fechadaPor: lote ? null : (r.fechada_por ?? null),
+      amostra: lote && r.amostra !== null && r.amostra !== undefined ? Number(r.amostra) : null,
+      jaLancadas: lote ? Number(r.ja_lancadas ?? 0) : 0,
+    },
+  }
+}
+

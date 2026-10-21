@@ -199,4 +199,75 @@ export interface PendenciaAlmoxarifado {
   pecas: number
   /** Só lote: K da Tabela NQA (nulo quando a Tabela não cobre o tamanho). */
   amostra: number | null
+  /** Só lote: id do lote (p_lote_id do detalhe). */
+  loteId: string | null
+  /** Quando ficou pendente: fechada_em (caixa) ou aprovado_em (lote). */
+  em: string | null
 }
+
+/** O detalhe de um cartão de pendência (sf_almox_detalhe, 0159). */
+export interface DetalheAlmoxarifado {
+  tipo: 'caixa' | 'lote'
+  qtdOp: number | null
+  recebidasOp: number
+  postoAnterior: { posto: string; recurso: string; precisaAprovado: boolean } | null
+  pecas: number
+  sns: string[]
+  /** fechada_em (caixa) ou aprovado_em (lote). */
+  em: string | null
+  /** Só caixa. */
+  fechadaPor: string | null
+  /** Só lote. */
+  amostra: number | null
+  /** Só lote. */
+  jaLancadas: number
+}
+
+export interface OpComPendencia {
+  chave: string
+  pmo: string
+  op: string
+}
+
+export function chaveDaOp(p: { pmo: string; op: string }): string {
+  return `${p.op} · ${p.pmo}`
+}
+
+function compararOp(a: string, b: string): number {
+  const na = Number(a)
+  const nb = Number(b)
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb
+  return a.localeCompare(b, 'pt-BR', { numeric: true })
+}
+
+/** As OPs que têm pendência, uma entrada por (op, pmo), ordenadas por OP (numérica) e depois PMO. */
+export function opsComPendencia(itens: PendenciaAlmoxarifado[]): OpComPendencia[] {
+  const vistas = new Map<string, OpComPendencia>()
+  for (const i of itens) {
+    const chave = chaveDaOp(i)
+    if (!vistas.has(chave)) vistas.set(chave, { chave, pmo: i.pmo, op: i.op })
+  }
+  return [...vistas.values()].sort((a, b) => compararOp(a.op, b.op) || a.pmo.localeCompare(b.pmo, 'pt-BR'))
+}
+
+/** `null` = todas as OPs. */
+export function filtrarPorOp(itens: PendenciaAlmoxarifado[], chave: string | null): PendenciaAlmoxarifado[] {
+  return chave === null ? itens : itens.filter((i) => chaveDaOp(i) === chave)
+}
+
+/** 'HH:MM' em America/Sao_Paulo; vazio se nulo ou inválido. */
+export function horaCurta(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(d)
+}
+
+/** O código bipado confere com o da caixa (sem espaço nas pontas, sem diferença de maiúscula). */
+export function codigoConfere(bipado: string, codigoDaCaixa: string): boolean {
+  return (bipado ?? '').trim().toUpperCase() === (codigoDaCaixa ?? '').trim().toUpperCase()
+}
+
+export const FRASE_CAIXA_ERRADA = 'Este não é o código desta caixa. Confira a caixa na mão.'
