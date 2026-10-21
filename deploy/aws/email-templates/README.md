@@ -15,14 +15,13 @@ Observação: o `deploy/aws/docker-compose.override.yml` e o `nginx-shopfloor-aw
 
 ## Passo a passo (na Lightsail)
 
-1. Copie o template para o servidor (rode no seu computador, na raiz do projeto, e troque nada: o usuário e o host são os mesmos que você já usa para acessar a Lightsail; se o seu `ssh` usa outro alias, use o seu):
+1. Traga o template da main para a pasta do docker (rode na própria Lightsail; só funciona depois do merge na main):
 
 ```bash
-scp deploy/aws/email-templates/recuperar-senha.html lightsail:~/supabase/docker/email-templates/recuperar-senha.html
+mkdir -p ~/supabase/docker/email-templates && cd ~/ShopFloor && git fetch origin main && git show origin/main:deploy/aws/email-templates/recuperar-senha.html > ~/supabase/docker/email-templates/recuperar-senha.html && head -c 200 ~/supabase/docker/email-templates/recuperar-senha.html
 ```
 
-Se a pasta ainda não existir no servidor, crie antes: `ssh lightsail 'mkdir -p ~/supabase/docker/email-templates'`.
-(Dado que eu não tenho: o nome/alias do seu acesso SSH. `lightsail` acima é um alias; se o seu for outro, use o seu.)
+Deve aparecer o início do HTML (`<!doctype html>`). Se aparecer erro de "path does not exist", o merge ainda não foi feito.
 
 2. No servidor, crie o override do e-mail (arquivo novo, não altera o seu override atual):
 
