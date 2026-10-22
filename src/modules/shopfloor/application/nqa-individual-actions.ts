@@ -3,6 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
+import { nqaJaGravado } from './nqa-gravou'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 // Tabela NQA é referência compartilhada (cadastrada em Config → Tabela NQA); reusa o leitor do Recebimento.
@@ -318,8 +319,22 @@ export async function finalizarNqaIndividual(entrada: {
     entrada.resultado === 'Reprovado'
       ? [...(entrada.postosRetorno ?? []), entrada.posto.trim()].join(',')
       : ''
+  let supabase: Awaited<ReturnType<typeof createServerSupabase>> | null = null
+  const contexto = `pmo=${entrada.pmo.trim()} op=${entrada.op.trim()} posto=${entrada.posto.trim()} lote=${entrada.snsNorm.length}`
+  // Erro que não é recusa de negócio (504, rede...): o banco pode ter gravado. Confere antes de dizer que falhou.
+  const desconhecido = async (detalhe: string): Promise<{ ok: true; total: number } | { ok: false; erro: string }> => {
+    console.error('[nqa-lote] erro ao registrar NQA:', detalhe, contexto)
+    const achados = supabase
+      ? await nqaJaGravado(supabase, { posto: entrada.posto.trim(), pmo: entrada.pmo.trim(), op: entrada.op.trim(), resultado: entrada.resultado, snsNorm: entrada.snsNorm })
+      : null
+    if (achados !== null) {
+      console.error('[nqa-lote] resposta perdida mas gravado; tratado como sucesso', contexto)
+      return { ok: true, total: entrada.snsNorm.length }
+    }
+    return { ok: false, erro: 'Não foi possível registrar o NQA do lote. Confira antes de tentar de novo.' }
+  }
   try {
-    const supabase = await createServerSupabase()
+    supabase = await createServerSupabase()
     const { data, error } = await supabase.rpc('sf_nqa_individual', {
       p_pmo: entrada.pmo.trim(),
       p_op: entrada.op.trim(),
@@ -337,6 +352,7 @@ export async function finalizarNqaIndividual(entrada: {
     })
     if (error) {
       const msg = error.message || ''
+      if (msg.includes('SEM_PERMISSAO')) return { ok: false, erro: SEM_PERMISSAO }
       if (msg.includes('LOTE_VAZIO')) return { ok: false, erro: 'Lote sem peças.' }
       if (msg.includes('LOTE_SN_DUPLICADO')) return { ok: false, erro: 'Há Nº de Série repetido no lote.' }
       if (msg.includes('SN_FORA_DA_OP')) return { ok: false, erro: 'Há Nº de Série que não pertence a esta OP.' }
@@ -347,11 +363,11 @@ export async function finalizarNqaIndividual(entrada: {
       if (msg.includes('APROVADO_COM_REPROVA')) return { ok: false, erro: 'Não é possível aprovar: há amostra reprovada.' }
       if (msg.includes('AMOSTRA_NQA_INVALIDA')) return { ok: false, erro: 'Tamanho de amostra inválido na Tabela NQA para este lote.' }
       if (msg.includes('REPROVADO_SEM_REPROVA')) return { ok: false, erro: 'Para reprovar o lote, ao menos uma amostra precisa estar reprovada.' }
-      return { ok: false, erro: 'Não foi possível registrar o NQA do lote.' }
+      return desconhecido(`${error.code ?? ''} ${msg}`.trim())
     }
     const r = data as unknown as { ok: boolean; total: number }
     return { ok: true, total: r.total }
-  } catch {
-    return { ok: false, erro: 'Falha ao registrar o NQA do lote.' }
+  } catch (e) {
+    return desconhecido(e instanceof Error ? e.message : String(e))
   }
 }
