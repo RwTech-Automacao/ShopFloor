@@ -26,8 +26,14 @@ docker cp supabase/migrations/0131_sf_cancelar_caixa_almoxarifado.sql "$NOME":/t
 # sf_cancelar_lancamento revertendo na fila quando a linha cancelada é uma entrada de Almoxarifado.
 docker cp supabase/migrations/0132_sf_estoque_envios.sql "$NOME":/tmp/0132.sql
 docker cp supabase/migrations/0133_cancelar_lancamento_estoque.sql "$NOME":/tmp/0133.sql
+# O plano estável da sf_nqa_caixa (0160, incidente de 22/10/2026): entra DEPOIS da 0130 (o teste
+# aplica a 0160 logo após a 0130 quando o runner passa -v com0160=1), pra o almoxarifado_test.sql
+# inteiro valer contra a função NOVA. SEM_0160=1 roda o RED (função da 0130).
+docker cp supabase/migrations/0160_sf_nqa_caixa_plano_estavel.sql "$NOME":/tmp/0160.sql
 docker cp supabase/tests/almoxarifado_test.sql "$NOME":/tmp/teste.sql
-docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
+docker cp supabase/tests/nqa_caixa_plano_test.sql "$NOME":/tmp/teste_plano.sql
+if [ -z "${SEM_0160:-}" ]; then COM0160="-v com0160=1"; else COM0160=""; fi
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q $COM0160 -f /tmp/teste.sql
 
 # Idempotência: o usuário reaplica migração quando fica na dúvida, então rodar as migrações duas
 # vezes na mesma base não pode falhar nem mudar o resultado. O caso conhecido é a caixa 7, que o
@@ -38,6 +44,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0128.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0129.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0130.sql
+[ -n "${SEM_0160:-}" ] || docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0160.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0131.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0132.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0133.sql
@@ -265,3 +272,9 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
   "select public.teste_fila_invariantes('fim do runner, depois das etapas em bash')" >/dev/null \
   && echo "invariantes da fila depois das etapas em bash: ok" \
   || { echo "invariantes da fila FALHARAM depois das etapas em bash"; exit 1; }
+
+# O PLANO ESTÁVEL DA sf_nqa_caixa (0160): OP nova e grande, sem analyze, tem que passar em < 3 s e
+# manter as recusas. Idempotência da 0160 já foi exercida acima (aplicada duas vezes, psql -1).
+# É a última etapa de propósito: ela cria uma OP de 10 mil registros e não deve sujar as invariantes.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_plano.sql
+echo "plano estável da sf_nqa_caixa (0160): ok"

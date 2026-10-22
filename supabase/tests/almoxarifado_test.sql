@@ -703,6 +703,11 @@ begin
 end $f$;
 
 \i /tmp/0130.sql
+-- 0160: plano estável da mesma função (mesma regra; o runner passa -v com0160=1). Todos os casos
+-- abaixo valem, portanto, contra o corpo novo.
+\if :{?com0160}
+\i /tmp/0160.sql
+\endif
 
 insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exige_manutencao, recurso)
 values ('nqa', 'NQA', true, 'escolhido', 'registrado', false, 'nqa');
