@@ -142,7 +142,7 @@ describe('LoteAberto', () => {
   it('lote de 1 peça usa o singular', async () => {
     detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, pecas: 1, sns: ['a1'], amostra: 1 } })
     montar({ ...ITEM, pecas: 1, amostra: 1 })
-    expect(await screen.findByText('Lote LOTE[ab12cd34][5] · 1 peça')).toBeInTheDocument()
+    expect(await screen.findByText((_c, el) => el?.tagName === 'P' && el.textContent === 'Lote LOTE[ab12cd34][5] · 1 peça')).toBeInTheDocument()
   })
 
   it('Enter durante o envio chama o confirmar uma única vez', async () => {
