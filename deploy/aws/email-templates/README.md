@@ -13,6 +13,16 @@ Assunto sugerido: `Redefinir sua senha do ShopFloor`
 
 Observação: o `deploy/aws/docker-compose.override.yml` e o `nginx-shopfloor-aws.conf` deste repo não definem nada de e-mail. O nginx do host só faz proxy para 3000 e 8000 e não é alcançável de forma confiável de dentro do container auth, por isso a opção abaixo usa um serviço no compose.
 
+## Atalho: um comando
+
+Depois do `deploy.sh` (que traz o template junto com o código):
+
+```bash
+cd ~/ShopFloor && bash deploy/aws/aplicar-email-template.sh
+```
+
+O script confere o `SITE_URL`, copia o template, cria o compose do e-mail, sobe o servidor estático, recria só o `auth` e testa. Pode rodar de novo sem problema. Os passos manuais abaixo fazem a mesma coisa.
+
 ## Passo a passo (na Lightsail)
 
 1. Traga o template da main para a pasta do docker (rode na própria Lightsail; só funciona depois do merge na main):
