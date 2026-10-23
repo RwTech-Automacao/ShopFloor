@@ -34,7 +34,10 @@ declare
   r jsonb; t0 timestamptz; seg numeric; v_amostras jsonb; v_req int; v_erro text;
 begin
   perform set_config('teste.perms', 'lancar', false);
-  select tamanho_amostra::int into v_req from tabela_nqa where 24 between quantidade_min and coalesce(quantidade_max, 24);
+  -- Mesma escolha da função (primeira faixa POR ORDEM): outros arquivos do runner acrescentam faixas à tabela.
+  select tamanho_amostra::int into v_req from tabela_nqa
+   where quantidade_min <= 24 and (quantidade_max is null or 24 <= quantidade_max)
+   order by ordem limit 1;
 
   -- Caixa 1 = peças 20001..20024. Amostra do tamanho exigido, tudo aprovado.
   select jsonb_agg(jsonb_build_object('sn_norm', (20000 + g)::text, 'visual', 'Aprovado', 'funcional', 'Aprovado', 'observacao', ''))
@@ -86,10 +89,12 @@ begin
   raise notice 'NQA-plano 3. amostra fora da caixa na OP grande: AMOSTRA_FORA_DA_CAIXA: ok';
 
   -- E a caixa 2, com amostras corretas, é aceita (a recusa acima não era por outra coisa).
+  -- As amostras da caixa 2 (peças 20025 em diante) na quantidade que a Tabela NQA exige pelo tamanho dela
+  -- (v_req): a tabela do banco de teste muda conforme os outros arquivos do runner, então nada fixo aqui.
+  select jsonb_agg(jsonb_build_object('sn_norm', (20024 + g)::text, 'visual', 'Aprovado', 'funcional', 'Aprovado', 'observacao', ''))
+    into v_amostras from generate_series(1, v_req) g;
   r := sf_nqa_caixa('PMOZZ', '8559', 'Inspeção NQA', 'Qualidade', 'CX[2][24]8559-PMOZZ',
-                    'Aprovado', '',
-                    '[{"sn_norm":"20025","visual":"Aprovado","funcional":"Aprovado","observacao":""},
-                      {"sn_norm":"20026","visual":"Aprovado","funcional":"Aprovado","observacao":""}]'::jsonb);
+                    'Aprovado', '', v_amostras);
   if coalesce((r->>'ok')::boolean, false) is not true or (r->>'total')::int <> 24 then
     raise exception 'FALHOU: a caixa 2 com amostras corretas não passou: %', r; end if;
   raise notice 'NQA-plano 4. caixa 2 com amostras da própria caixa: aceita: ok';

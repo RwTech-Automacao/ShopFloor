@@ -14,6 +14,7 @@ import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancament
 import { serieDentroDaFaixa, normalizarSerie, MAX_SERIE } from '@/modules/shopfloor/domain/serie'
 import { resolverOpPorCaixa, resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { postosSelecionaveis } from '@/modules/shopfloor/domain/postos-lancamento'
+import { postoAnteriorNaSequencia } from '@/modules/shopfloor/domain/postos'
 import { defeitosDoPosto } from '@/modules/shopfloor/domain/acao-lancamento'
 import { postoEhDestinoDeRota, type ConsertoConfirmavel } from '@/modules/shopfloor/domain/rota-reteste'
 import { PERFIL_PADRAO, perfilTemStatus, perfilPedeConfirmacaoConserto, perfilSuportaColetivo, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
@@ -229,6 +230,11 @@ export function LancamentoForm({
   const ehBurnin = perfilDo(posto).recurso === 'burnin'
   const ehIntegracao = posto !== '' && perfilDo(posto).recurso === 'integracao'
   const ehAlmoxarifado = posto !== '' && perfilDo(posto).recurso === 'almoxarifado'
+  // 0156: OP individual cujo posto ANTERIOR ao Almoxarifado na rota é de perfil NQA → a entrada é pelo
+  // LOTE aprovado no NQA (o painel mostra os lotes e a amostra). Pelo perfil, nunca pelo nome.
+  const anteriorAoAlmox = ehAlmoxarifado && ordemSel ? postoAnteriorNaSequencia(posto, ordemSel.postos) : null
+  const almoxPorLoteNqa = ordemSel?.embalagem_individual === true
+    && anteriorAoAlmox !== null && perfilDo(anteriorAoAlmox).recurso === 'nqa'
   // Postos de teste/inspeção com defeito: status implícito pelo que se bipa (SN→aprova, defeito→reprova).
   // SPI (migração 0075) também é reprova==='defeitos' → entra aqui (usa lista fixa de solda via defeitosPosto).
   // Burn-in entra só na SAÍDA (entrada é neutra: grava direto, sem classificar SN/defeito).
@@ -341,12 +347,15 @@ export function LancamentoForm({
       bipeCabRef.current?.select()
       return
     }
+    await carregarOrdemNoCabecalho(r.ordem)
+  }
+  async function carregarOrdemNoCabecalho(ordem: { cliente: string; pmo: string; op: string; postos: string[] }) {
     if (!(await podeTrocarContexto())) return
     setLotesPuxados(new Set())
-    setCliente(r.ordem.cliente)
-    setPmo(r.ordem.pmo)
-    setOp(r.ordem.op)
-    if (!r.ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
+    setCliente(ordem.cliente)
+    setPmo(ordem.pmo)
+    setOp(ordem.op)
+    if (!ordem.postos.includes(posto)) setPosto('') // posto persiste se valer na nova OP; senão, re-escolher
     resetCamposDinamicos(); setHistorico([]); setTotalPosto(null) // nova OP → histórico + total zeram
     setBipeCab('')
     // Almoxarifado: colaborador é fixo, então o foco vai direto para o campo do bipe da entrada.
@@ -989,7 +998,9 @@ export function LancamentoForm({
       ) : ehAlmoxarifado ? (
         // Almoxarifado: último posto da linha — bipa o que acabou de ser embalado (peça ou caixa
         // fechada). Igual às demais: o painel monta o próprio topo (Peça | Contexto).
-        <AlmoxarifadoPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto} contexto={renderContexto()} />
+        <AlmoxarifadoPanel colaborador={colaborador} pmo={pmo} op={op} posto={posto}
+          individual={ordemSel?.embalagem_individual === true} loteNqa={almoxPorLoteNqa}
+          contexto={renderContexto()} />
       ) : ehEmbalagem ? (
         // Embalagem: o painel monta o PRÓPRIO topo (Peça | Contexto) e deixa o acompanhamento em
         // largura cheia embaixo — por isso recebe o Contexto por prop em vez de dividir a linha aqui.

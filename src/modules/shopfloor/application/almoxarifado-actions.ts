@@ -3,7 +3,19 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { classificarBipeAlmoxarifado, type RecusaBipeAlmoxarifado } from '../domain/almoxarifado'
+import {
+  FRASE_ITEM_NAO_PENDENTE,
+  MENSAGEM_SERIE_EXIGE_LOTE,
+  classificarBipeAlmoxarifado,
+  mensagemPostoAnteriorNaoConcluido,
+  mensagemRecusaLote,
+  type DetalheAlmoxarifado,
+  type NecessidadeAlmoxarifado,
+  type NecessidadeLote,
+  type PendenciaAlmoxarifado,
+  type RecusaBipeAlmoxarifado,
+  type TipoBipeAlmoxarifado,
+} from '../domain/almoxarifado'
 import { normalizarSerie } from '../domain/serie'
 import { carregarOrdem } from '../infra/lancamento-repository'
 
@@ -43,7 +55,14 @@ const RECUSAS_FORMATO: Record<RecusaBipeAlmoxarifado, string> = {
  * `classificarBipeAlmoxarifado` já fez em TS (a flag `embalagem_individual` é editável numa OP em
  * andamento — ver 0129), então a frase é a MESMA de `RECUSAS_FORMATO`, não uma redação nova.
  */
-function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
+function mensagemRecusaBanco(
+  motivo: string,
+  detalhe?: string,
+  anterior?: {
+    tipo: TipoBipeAlmoxarifado; postoAnterior?: string; precisaAprovado?: boolean
+    faltam?: number; pecas?: number
+  },
+): string {
   switch (motivo) {
     case 'sem_permissao':
       return SEM_PERMISSAO
@@ -83,6 +102,23 @@ function mensagemRecusaBanco(motivo: string, detalhe?: string): string {
       return detalhe || 'Esta série está fora da faixa desta OP.'
     case 'serie_sem_embalagem':
       return 'Esta peça ainda não passou pela Embalagem.'
+    case 'posto_anterior_nao_concluido':
+      // 0155: o posto imediatamente antes do Almoxarifado na rota ainda não concluiu a peça/caixa. A
+      // RPC devolve QUAL posto e se ele exige aprovação; a frase do operador sai do domínio. Sem esses
+      // campos (RPC de outra versão), vale o `detalhe` pronto da RPC.
+      if (anterior?.postoAnterior) {
+        return mensagemPostoAnteriorNaoConcluido({
+          tipo: anterior.tipo,
+          postoAnterior: anterior.postoAnterior,
+          precisaAprovado: anterior.precisaAprovado === true,
+          faltam: anterior.faltam,
+          pecas: anterior.pecas,
+        })
+      }
+      return detalhe || 'O posto anterior ainda não concluiu este bipe.'
+    case 'serie_exige_lote':
+      // 0156: na OP individual com NQA no posto anterior, a entrada é pelo LOTE (Confirmar lote).
+      return MENSAGEM_SERIE_EXIGE_LOTE
     default:
       return 'Não foi possível registrar a entrada.'
   }
@@ -169,8 +205,20 @@ export async function registrarEntradaAlmoxarifado(
 
   const r = data as {
     ok: boolean; motivo?: string; detalhe?: string; quantidade?: number; qtd_etiqueta?: number
+    posto_anterior?: string; precisa_aprovado?: boolean; faltam?: number; pecas?: number
   }
-  if (!r.ok) return { ok: false, erro: mensagemRecusaBanco(r.motivo ?? '', r.detalhe) }
+  if (!r.ok) {
+    return {
+      ok: false,
+      erro: mensagemRecusaBanco(r.motivo ?? '', r.detalhe, {
+        tipo,
+        postoAnterior: r.posto_anterior,
+        precisaAprovado: r.precisa_aprovado,
+        faltam: r.faltam,
+        pecas: r.pecas,
+      }),
+    }
+  }
   const gravadas = r.quantidade ?? quantidade
   // `qtd_etiqueta` só vem quando a etiqueta promete um número diferente do que entrou (ver 0129).
   const divergencia =
@@ -179,3 +227,270 @@ export async function registrarEntradaAlmoxarifado(
       : undefined
   return { ok: true, quantidade: gravadas, tipo, divergencia }
 }
+
+const FALHA_NECESSIDADES = 'Não foi possível carregar as caixas esperando confirmação.'
+
+/**
+ * As caixas que o Almoxarifado tem que confirmar nesta OP (sf_almox_necessidades, 0155): fechadas,
+ * concluídas no posto anterior da rota e ainda sem entrada. Confirmar continua sendo o bipe do código
+ * da caixa (registrarEntradaAlmoxarifado) — esta lista só mostra o que está esperando.
+ *
+ * Mesmos gates da tela: `recebimento.lancar` (quem dá entrada) e `shopfloor.visualizar` (as OPs são
+ * do ShopFloor). Falha do banco volta como ERRO, nunca como lista vazia: "nenhuma caixa esperando"
+ * quando na verdade a leitura falhou faria o operador achar que não há nada a confirmar.
+ */
+export async function listarNecessidadesAlmoxarifado(
+  pmo: string,
+  op: string,
+): Promise<{ ok: true; necessidades: NecessidadeAlmoxarifado[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'lancar') ||
+    !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')
+  ) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+
+  const p = (pmo ?? '').trim()
+  const o = (op ?? '').trim()
+  // Sem OP no cabeçalho ainda (ele é carregado pelo primeiro bipe): não há o que perguntar.
+  if (!p || !o) return { ok: true, necessidades: [] }
+
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almox_necessidades', { p_pmo: p, p_op: o })
+  if (error) {
+    return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_NECESSIDADES }
+  }
+  if (!Array.isArray(data)) return { ok: false, erro: FALHA_NECESSIDADES }
+
+  const linhas = data as { codigo: string; seq: number; pecas: number; fechada_em: string | null }[]
+  return {
+    ok: true,
+    necessidades: linhas.map((l) => ({
+      codigo: l.codigo,
+      seq: Number(l.seq),
+      pecas: Number(l.pecas),
+      fechadaEm: l.fechada_em ?? null,
+    })),
+  }
+}
+
+const FALHA_LOTES = 'Não foi possível carregar os lotes esperando confirmação.'
+
+/**
+ * Os lotes do NQA individual que o Almoxarifado tem que confirmar nesta OP (sf_almox_lotes, 0156):
+ * aprovados no posto NQA anterior da rota, com SN ainda sem entrada, cada um com TODOS os SNs e a
+ * `amostra` (= quantidade a bipar = todas as peças do lote). Uma action à parte da lista de caixas (e não a
+ * mesma devolvendo os dois): a OP coletiva só tem caixa, a individual com NQA só tem lote, e a tela já sabe qual é o caso.
+ *
+ * Mesmos gates e a mesma regra da lista de caixas: falha do banco é ERRO, nunca lista vazia.
+ */
+export async function listarLotesAlmoxarifado(
+  pmo: string,
+  op: string,
+): Promise<{ ok: true; lotes: NecessidadeLote[] } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'lancar') ||
+    !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')
+  ) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+
+  const p = (pmo ?? '').trim()
+  const o = (op ?? '').trim()
+  if (!p || !o) return { ok: true, lotes: [] }
+
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almox_lotes', { p_pmo: p, p_op: o })
+  if (error) {
+    return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_LOTES }
+  }
+  if (!Array.isArray(data)) return { ok: false, erro: FALHA_LOTES }
+
+  const linhas = data as {
+    lote_id: string; rotulo: string; pecas: number; amostra: number | null; sns: string[] | null
+    ja_lancadas: number; aprovado_em: string | null
+  }[]
+  return {
+    ok: true,
+    lotes: linhas.map((l) => ({
+      loteId: l.lote_id,
+      rotulo: l.rotulo,
+      pecas: Number(l.pecas),
+      amostra: l.amostra === null || l.amostra === undefined ? null : Number(l.amostra),
+      sns: Array.isArray(l.sns) ? l.sns : [],
+      jaLancadas: Number(l.ja_lancadas ?? 0),
+      aprovadoEm: l.aprovado_em ?? null,
+    })),
+  }
+}
+
+export interface ConfirmacaoLote {
+  pmo: string
+  op: string
+  posto: string
+  colaborador: string
+  loteId: string
+  /** Os SNs bipados do lote (todos, desde 21/10), como vieram do coletor. */
+  amostra: string[]
+}
+
+/**
+ * Confirma o LOTE com todos os SNs bipados (sf_almoxarifado_lote, 0156). Os SNs vão NORMALIZADOS (a mesma
+ * forma que o NQA gravou em numero_serie_norm) e sem repetido; quem confere de verdade — conjunto completo de SNs do lote,
+ * lote aprovado, nada lançado antes — é a RPC, numa transação, sob a trava do
+ * lote. Ela grava uma entrada por SN e UM envio ao Compels; `quantidade` são as peças que entraram.
+ */
+export async function confirmarLoteAlmoxarifado(
+  c: ConfirmacaoLote,
+): Promise<{ ok: true; quantidade: number; lote: string } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'lancar')) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  const pmo = (c.pmo ?? '').trim()
+  const op = (c.op ?? '').trim()
+  const posto = (c.posto ?? '').trim()
+  const colaborador = (c.colaborador ?? '').trim()
+  const loteId = (c.loteId ?? '').trim()
+  if (!colaborador || !pmo || !op || !posto) {
+    return { ok: false, erro: 'Preencha Colaborador, contexto (OP) e Posto antes de confirmar.' }
+  }
+  if (!loteId) return { ok: false, erro: 'Escolha o lote a confirmar.' }
+  const amostra = [...new Set((c.amostra ?? []).map((s) => normalizarSerie(s)).filter((s) => s !== ''))]
+
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almoxarifado_lote', {
+    p_pmo: pmo,
+    p_op: op,
+    p_posto: posto,
+    p_colaborador: colaborador,
+    p_lote_id: loteId,
+    p_amostra: amostra,
+  })
+  if (error) return { ok: false, erro: 'Não foi possível confirmar o lote.' }
+  const r = (data ?? {}) as { ok?: boolean; motivo?: string; detalhe?: string; quantidade?: number; lote?: string }
+  if (!r.ok) return { ok: false, erro: mensagemRecusaLote(r.motivo ?? '', r.detalhe) }
+  return { ok: true, quantidade: Number(r.quantidade ?? 0), lote: r.lote ?? '' }
+}
+
+const FALHA_PENDENCIAS = 'Não foi possível carregar o que está esperando confirmação no Almoxarifado.'
+
+/**
+ * Tudo o que espera confirmação no Almoxarifado, de TODAS as OPs ativas (0158): a tela abre com a lista
+ * e a pessoa escolhe por onde começar. Falha de leitura é erro, nunca lista vazia: "nada esperando"
+ * quando na verdade não leu faria o operador parar de procurar.
+ */
+export async function listarPendenciasAlmoxarifado(): Promise<
+  { ok: true; pendencias: PendenciaAlmoxarifado[] } | { ok: false; erro: string }
+> {
+  const sessao = await getSessao()
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'lancar') ||
+    !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')
+  ) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almox_pendencias')
+  if (error) {
+    return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_PENDENCIAS }
+  }
+  if (!Array.isArray(data)) return { ok: false, erro: FALHA_PENDENCIAS }
+  const linhas = data as { pmo: string; op: string; tipo: string; codigo: string; pecas: number; amostra: number | null
+    lote_id?: string | null; em?: string | null
+  }[]
+  return {
+    ok: true,
+    pendencias: linhas.map((l) => ({
+      pmo: l.pmo,
+      op: l.op,
+      tipo: l.tipo === 'lote' ? 'lote' : l.tipo === 'peca' ? 'peca' : 'caixa',
+      codigo: l.codigo,
+      pecas: Number(l.pecas),
+      amostra: l.amostra === null || l.amostra === undefined ? null : Number(l.amostra),
+      loteId: l.lote_id ?? null,
+      em: l.em ?? null,
+    })),
+  }
+}
+
+const FALHA_DETALHE = 'Não foi possível carregar os detalhes.'
+
+const RECUSAS_DETALHE: Record<string, string> = {
+  op_inexistente: 'OP não encontrada.',
+  sem_almoxarifado: 'Esta OP não passa pelo Almoxarifado.',
+  item_inexistente: FRASE_ITEM_NAO_PENDENTE,
+}
+
+/**
+ * O detalhe de um cartão de pendência (sf_almox_detalhe, 0159): SNs, quem/quando, andamento da OP e o
+ * posto anterior. Mesmos gates da lista. Falha de leitura é erro — nunca um detalhe vazio.
+ */
+export async function detalharPendenciaAlmoxarifado(p: {
+  pmo: string
+  op: string
+  tipo: 'caixa' | 'lote' | 'peca'
+  codigo: string
+  loteId: string | null
+}): Promise<{ ok: true; detalhe: DetalheAlmoxarifado } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (
+    !sessao ||
+    !podeNoModulo(sessao.perfil, 'recebimento', 'lancar') ||
+    !podeNoModulo(sessao.perfil, 'shopfloor', 'visualizar')
+  ) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_almox_detalhe', {
+    p_pmo: p.pmo,
+    p_op: p.op,
+    p_codigo: p.codigo,
+    p_lote_id: p.loteId,
+  })
+  if (error) {
+    return { ok: false, erro: error.message?.includes('SEM_PERMISSAO') ? SEM_PERMISSAO : FALHA_DETALHE }
+  }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return { ok: false, erro: FALHA_DETALHE }
+
+  const r = data as {
+    ok?: boolean; motivo?: string; tipo?: string
+    qtd_op?: number | null; recebidas_op?: number
+    posto_anterior?: { posto: string; recurso: string; precisa_aprovado: boolean } | null
+    pecas?: number; sns?: string[] | null
+    fechada_em?: string | null; fechada_por?: string | null
+    em?: string | null
+    aprovado_em?: string | null; amostra?: number | null; ja_lancadas?: number
+  }
+  if (r.ok !== true) return { ok: false, erro: RECUSAS_DETALHE[r.motivo ?? ''] ?? FALHA_DETALHE }
+
+  const lote = r.tipo === 'lote'
+  const peca = r.tipo === 'peca'
+  return {
+    ok: true,
+    detalhe: {
+      tipo: lote ? 'lote' : peca ? 'peca' : 'caixa',
+      qtdOp: r.qtd_op === null || r.qtd_op === undefined ? null : Number(r.qtd_op),
+      recebidasOp: Number(r.recebidas_op ?? 0),
+      postoAnterior: r.posto_anterior
+        ? {
+            posto: r.posto_anterior.posto,
+            recurso: r.posto_anterior.recurso,
+            precisaAprovado: r.posto_anterior.precisa_aprovado === true,
+          }
+        : null,
+      pecas: Number(r.pecas ?? 0),
+      sns: Array.isArray(r.sns) ? r.sns : [],
+      em: (lote ? r.aprovado_em : peca ? r.em : r.fechada_em) ?? null,
+      fechadaPor: lote || peca ? null : (r.fechada_por ?? null),
+      amostra: lote && r.amostra !== null && r.amostra !== undefined ? Number(r.amostra) : null,
+      jaLancadas: lote ? Number(r.ja_lancadas ?? 0) : 0,
+    },
+  }
+}
+

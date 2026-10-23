@@ -39,21 +39,26 @@ create table public.sf_ordens (
 );
 -- OS POSTOS DE CADA OP. É por aqui que o resto do ShopFloor responde "este posto está nesta OP?"
 -- (fluxo-repository, lancamento-repository, pesquisa-repository, todos por ordem_id), e é a tabela
--- que a recusa `posto_fora_da_op` da 0129 consulta. Entra no stub sem a coluna `ordem` (0030): a RPC
--- da entrada só pergunta se o par existe, não em que posição ele está.
+-- que a recusa `posto_fora_da_op` da 0129 consulta. A coluna `ordem` (0030) entrou no stub com a 0155:
+-- desde ela a entrada olha o posto ANTERIOR ao Almoxarifado na rota, e é a `ordem` que diz qual é.
 create table public.sf_ordem_postos (
   ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
   posto text not null references public.sf_postos(chave),
+  ordem int not null default 0,
   primary key (ordem_id, posto)
 );
 -- "esta OP passa por estes postos", pra massa. Cada OP deste arquivo precisa dos postos dela desde
 -- que a entrada passou a recusar `posto_fora_da_op`; sem o açúcar, cada uma repetiria o mesmo insert
 -- com o subselect do ordem_id e a massa afogaria o teste.
+-- A ORDEM da rota é a ordem do array, CONTINUANDO depois dos postos que a OP já tem (o teste 48
+-- acrescenta o Almoxarifado numa segunda chamada, como o gestor faz em Cadastrar OP): é o que faz o
+-- posto anterior ao Almoxarifado (0155) ser o que vem antes dele no array.
 create function public.teste_op_postos(p_pmo text, p_op text, p_postos text[])
 returns void language sql as $f$
-  insert into public.sf_ordem_postos (ordem_id, posto)
-  select o.id, p.posto
-    from public.sf_ordens o, unnest(p_postos) as p(posto)
+  insert into public.sf_ordem_postos (ordem_id, posto, ordem)
+  select o.id, p.posto,
+         coalesce((select max(x.ordem) from public.sf_ordem_postos x where x.ordem_id = o.id), 0) + p.n
+    from public.sf_ordens o, unnest(p_postos) with ordinality as p(posto, n)
    where o.pmo = p_pmo and o.op = p_op
   on conflict do nothing;
 $f$;
@@ -95,6 +100,13 @@ insert into public.sf_posto_perfis (chave, nome, tem_status, reprova, gate, exig
 -- as migrações desta branch nunca foram aplicadas em banco nenhum e vão juntas; o corpo plpgsql só
 -- resolve o nome na hora de executar.
 \i /tmp/0132.sql
+-- A 0155 recria a entrada com a trava do POSTO ANTERIOR. Entra aqui, antes do primeiro bipe, pra que
+-- TODOS os testes deste arquivo rodem contra a versão nova: são eles que provam que ela não mudou nada
+-- do que já existia (os novos casos ficam em almoxarifado_necessidade_test.sql).
+\i /tmp/0155.sql
+-- A 0156 (fase 2: lote do NQA individual) recria a entrada de novo, com a recusa serie_exige_lote. Entra
+-- aqui pelo mesmo motivo da 0155: todos os testes deste arquivo rodam contra a versão vigente.
+\i /tmp/0156.sql
 
 select set_config('teste.perms', 'recebimento.lancar,shopfloor.lancar', false);
 
@@ -725,7 +737,11 @@ insert into public.sf_ordens (pmo, op, cliente, sn_ini, sn_fim, embalagem_indivi
 -- que faz o caso (a) provar que a recusa nova olha a ENTRADA, e não a mera existência do posto.
 do $t$ begin
   perform public.teste_op_postos('PMOC17', '8500', array['Embalagem', 'Embalagem SMD', 'Inspeção NQA', 'Estoque']);
-  perform public.teste_op_postos('PMOC22', '8506', array['Embalagem', 'Inspeção NQA', 'Estoque']);
+  -- A PMOC22 tem a Embalagem IMEDIATAMENTE antes do 'Estoque' (desde a 0155 a entrada exige o posto
+  -- anterior concluído; com o NQA logo antes, o 23(b) precisaria de NQA Aprovado nas 3 peças e o 49
+  -- não conseguiria mais reprovar a caixa depois de cancelar a entrada). A sf_nqa_caixa não olha a
+  -- rota, então a ordem aqui só decide o posto anterior do Estoque — nada do que o 23 mede.
+  perform public.teste_op_postos('PMOC22', '8506', array['Inspeção NQA', 'Embalagem', 'Estoque']);
   -- A (c) não tem posto de almoxarifado nenhum: é o retrato de toda OP cadastrada antes de o posto existir.
   perform public.teste_op_postos('PMOC23', '8507', array['Embalagem', 'Inspeção NQA']);
 end $t$;
@@ -910,6 +926,9 @@ $f$;
 -- A 0133 troca a sf_cancelar_lancamento (create or replace) pra ela também reverter na fila de estoque
 -- quando a linha cancelada é uma entrada de Almoxarifado. Depois da 0106, que é a versão de produção.
 \i /tmp/0133.sql
+-- A 0156 recria a sf_cancelar_lancamento (corpo da 0133 + a recusa CANCELE_O_LOTE): reaplicada aqui
+-- pra os testes de cancelamento abaixo rodarem contra a versão vigente, e não contra a da 0133.
+\i /tmp/0156.sql
 
 -- Guarda ids entre blocos: cada `do $t$` é um escopo próprio, e o teste 28 precisa do id que o
 -- teste 26 já apagou.

@@ -86,7 +86,8 @@ function lerOperacao(v: string): LinhaFilaEstoque['operacao'] {
   return v === 'estorno' ? 'estorno' : 'entrada'
 }
 function lerTipo(v: string): LinhaFilaEstoque['tipo'] {
-  return v === 'serie' ? 'serie' : 'caixa'
+  // 'lote' (0156): o envio do lote do NQA individual.
+  return v === 'serie' ? 'serie' : v === 'lote' ? 'lote' : 'caixa'
 }
 
 function converter(l: LinhaBruta): LinhaFilaEstoque {
