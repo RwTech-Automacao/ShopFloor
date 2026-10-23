@@ -81,7 +81,7 @@ export function ListaCartoes({
                   {caixa ? 'CAIXA' : 'LOTE'} · OP {i.op} · {i.pmo}
                 </span>
                 <span className="break-all font-mono text-base font-bold">{i.codigo}</span>
-                <span className="text-xs text-muted-foreground">{partes.join(' · ')}</span>
+                <span className="text-xs font-medium text-primary">{partes.join(' · ')}</span>
               </button>
             )
           })}
