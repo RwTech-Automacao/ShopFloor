@@ -108,9 +108,14 @@ begin
   if r->>'ok' <> 'true' or r->>'tipo' <> 'peca' or (r->>'pecas')::int <> 3
      or (r->>'recebidas_op')::int <> 2 or (r->>'qtd_op')::int <> 12
      or r->'posto_anterior'->>'posto' <> 'Embalagem'
-     or (r->>'em')::timestamptz is distinct from v_max
-     or coalesce(r->'sns', '[]'::jsonb) <> '[]'::jsonb then
+     or (r->>'em')::timestamptz is distinct from v_max then
     raise exception 'FALHOU (P4h): detalhe: %', r; end if;
+  -- os números de série que ESPERAM entrada (têm Embalagem, ainda não têm Almoxarifado): 3, e só eles
+  if jsonb_array_length(coalesce(r->'sns', '[]'::jsonb)) <> 3
+     or (select count(*) from jsonb_array_elements_text(r->'sns') s
+          where exists (select 1 from sf_registros e where e.pmo = 'PMOP01' and e.op = '9501' and e.posto = 'Embalagem' and e.numero_serie_norm = s)
+            and not exists (select 1 from sf_registros a where a.pmo = 'PMOP01' and a.op = '9501' and a.posto = 'Almoxarifado' and a.numero_serie_norm = s)) <> 3 then
+    raise exception 'FALHOU (P4h): sns do detalhe não são os 3 que esperam: %', r->'sns'; end if;
 
   r := sf_almox_detalhe('PMOP07', '9507', 'AVULSAS', null);
   if r <> '{"ok": false, "motivo": "item_inexistente"}'::jsonb then raise exception 'FALHOU (P4h) zero: %', r; end if;
@@ -155,7 +160,7 @@ select 'Massa', p, 'PMOP90', '9590', 'Cliente P', '', s::text, s::text, now() - 
 insert into public.sf_registros (colaborador, posto, pmo, op, cliente, status, numero_serie, numero_serie_norm)
 select 'Massa', 'Almoxarifado', 'PMOP90', '9590', 'Cliente P', '', s::text, s::text from generate_series(100000, 100399) s;
 do $t$
-declare v record; t0 timestamptz; ms numeric;
+declare v record; t0 timestamptz; ms numeric; r jsonb;
 begin
   t0 := clock_timestamp();
   select * into v from sf_almox_pendencias() p where p.pmo = 'PMOP90';
@@ -164,8 +169,11 @@ begin
   if v.tipo <> 'peca' or v.pecas <> 850 then raise exception 'FALHOU (P5): linha errada %', row_to_json(v); end if;
   if ms > 2000 then raise exception 'FALHOU (P5): % ms (limite 2000)', round(ms); end if;
   t0 := clock_timestamp();
-  perform sf_almox_detalhe('PMOP90', '9590', 'AVULSAS', null);
+  select sf_almox_detalhe('PMOP90', '9590', 'AVULSAS', null) into r;
   ms := extract(epoch from clock_timestamp() - t0) * 1000;
+  -- 850 esperam, mas a lista de números de série vem limitada a 200 (os mais antigos); `pecas` segue com o total
+  if (r->>'pecas')::int <> 850 or jsonb_array_length(r->'sns') <> 200 then
+    raise exception 'FALHOU (P5): detalhe esperava pecas=850 e 200 sns, veio pecas=% sns=%', r->>'pecas', jsonb_array_length(r->'sns'); end if;
   raise notice 'P5. sf_almox_detalhe AVULSAS na OP grande: % ms', round(ms);
   if ms > 2000 then raise exception 'FALHOU (P5): detalhe % ms', round(ms); end if;
 end $t$;
