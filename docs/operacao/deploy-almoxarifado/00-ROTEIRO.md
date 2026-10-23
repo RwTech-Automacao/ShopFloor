@@ -1,6 +1,6 @@
 # Deploy do Almoxarifado em cartões (roteiro)
 
-Main de referência: `fd52957` (tela em cartões com caixa, lote com todos os números de série e peças avulsas).
+Tela em cartões do Almoxarifado: caixa, lote com todos os números de série e peças avulsas (com a lista dos números de série que esperam). Use sempre o último commit da `main`.
 Tudo na **Lightsail**, um bloco de cada vez. A senha do banco é digitada no `Password:`. Nada de senha no chat.
 
 ## O que este deploy faz
@@ -31,7 +31,7 @@ Devem aparecer os 6 arquivos com linhas (a 0156 é a maior, mais de mil).
 ```bash
 cd ~/ShopFloor && bash deploy/aws/deploy.sh
 ```
-Termina com `deploy OK -> fd52957...`. Se o build falhar, o script **para antes de reiniciar**: me mande o final da saída.
+Termina com `deploy OK -> <código do último commit da main>`. Se o build falhar, o script **para antes de reiniciar**: me mande o final da saída.
 Até as migrações serem aplicadas, a tela do Almoxarifado mostra um erro ao carregar a lista (esperado, dura poucos minutos). As outras telas não são afetadas.
 
 ## Passo 3: migrações, na ordem (uma de cada vez; senha no `Password:`)
