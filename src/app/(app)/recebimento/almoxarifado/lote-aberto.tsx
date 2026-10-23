@@ -116,7 +116,9 @@ export function LoteAberto({
       <p className="text-xs text-muted-foreground">
         {`OP ${item.op} · ${item.pmo} · individual${hora ? ` · aprovado ${hora}` : ''}`}
       </p>
-      <p className="break-all font-mono text-xl font-bold">{`Lote ${item.codigo} · ${pecasTexto(d.pecas)}`}</p>
+      <p className="break-all font-mono text-xl font-bold">
+        Lote {item.codigo} · <span className="text-primary">{pecasTexto(d.pecas)}</span>
+      </p>
       <p className="text-base">{`Bipe os ${total} números de série do lote:`}</p>
       <ul aria-label="Números de série do lote" className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
         {lote.sns.map((sn) => {

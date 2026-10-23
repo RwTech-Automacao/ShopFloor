@@ -47,7 +47,9 @@ describe('LoteAberto', () => {
   it('mostra contexto, instrução com N, progresso 0 de 5 e Confirmar desabilitado', async () => {
     montar()
     expect(await screen.findByText('OP 200 · PMO2 · individual · aprovado hoje 10:05')).toBeInTheDocument()
-    expect(screen.getByText('Lote LOTE[ab12cd34][5] · 5 peças')).toBeInTheDocument()
+    expect(screen.getByText((_c, el) => el?.tagName === 'P' && el.textContent === 'Lote LOTE[ab12cd34][5] · 5 peças')).toBeInTheDocument()
+    // só o número de peças fica em vinho
+    expect(screen.getByText('5 peças')).toHaveClass('text-primary')
     expect(screen.getByText('Bipe os 5 números de série do lote:')).toBeInTheDocument()
     expect(screen.getByText('Bipadas: 0 de 5')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirmar lote' })).toBeDisabled()

@@ -154,7 +154,7 @@ describe('AlmoxarifadoTela', () => {
       fireEvent.keyDown(c, { key: 'Enter' })
     }
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar lote' }))
-    expect(await screen.findByText('5 peças')).toBeInTheDocument()
+    expect(within(await screen.findByRole('status')).getByText('5 peças')).toBeInTheDocument()
     expect(await screen.findByText('Nada esperando confirmação no Almoxarifado agora.')).toBeInTheDocument()
     expect(screen.getByText('LOTE[ab12cd34][5]')).toBeInTheDocument()
   })
