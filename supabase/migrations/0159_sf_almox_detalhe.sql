@@ -9,7 +9,8 @@
 --   lote:   tipo 'lote', rotulo, pecas, amostra, sns, aprovado_em, ja_lancadas  (a OP individual usa p_lote_id)
 --           `amostra` = quantidade a bipar = TODAS as peças do lote (decisão de 21/10; antes era o K da Tabela NQA)
 --   peça:   tipo 'peca' (p_codigo = 'AVULSAS', OP individual cujo posto anterior não é NQA): pecas (as que esperam
---           entrada), em (a conclusão mais recente no posto anterior), sns vazio — a entrada é bipe a bipe
+--           entrada), em (a conclusão mais recente no posto anterior), sns (os números de série que esperam, os 200
+--           mais antigos; `pecas` segue com o TOTAL) — a entrada é bipe a bipe
 --   falha COMO DADO: {ok:false, motivo: op_inexistente | sem_almoxarifado | item_inexistente}
 -- Sem permissão é ERRO (SEM_PERMISSAO), nunca resposta vazia.
 --
@@ -77,13 +78,15 @@ begin
          and (not v_prev.precisa_aprovado or lower(r.status) = 'aprovado')
        group by r.numero_serie_norm
     )
-    select count(*)::int as n, max(e.conc) as em into v_pec
+    select count(*)::int as n, max(e.conc) as em,
+           (array_agg(e.sn order by e.conc, e.sn))[1:200] as sns
+      into v_pec
       from esp e where not exists (select 1 from ja where ja.sn = e.sn);
     if v_pec.n = 0 then
       return jsonb_build_object('ok', false, 'motivo', 'item_inexistente');
     end if;
     return v_base || jsonb_build_object('tipo', 'peca', 'pecas', v_pec.n, 'em', v_pec.em,
-                                        'sns', '[]'::jsonb);
+                                        'sns', to_jsonb(coalesce(v_pec.sns, '{}'::text[])));
   end if;
 
   if v_ordem.individual then

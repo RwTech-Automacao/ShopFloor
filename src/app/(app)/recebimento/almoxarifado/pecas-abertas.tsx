@@ -100,6 +100,16 @@ export function PecasAbertas({
       {d.pecas > 0 ? (
         <>
           <p className="text-base">Bipe o número de série de cada peça que chegou.</p>
+          {d.sns.length > 0 && (
+            <ul aria-label="Números de série esperando entrada" className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
+              {d.sns.map((sn) => (
+                <li key={sn} className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-sm">{sn}</li>
+              ))}
+              {d.pecas > d.sns.length && (
+                <li className="px-1 py-1 text-sm text-muted-foreground">{`… +${d.pecas - d.sns.length} outras`}</li>
+              )}
+            </ul>
+          )}
           <Input
             ref={bipeRef}
             value={bipe}

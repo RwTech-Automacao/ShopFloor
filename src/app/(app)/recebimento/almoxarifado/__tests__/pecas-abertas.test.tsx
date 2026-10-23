@@ -45,6 +45,23 @@ beforeEach(() => {
 })
 
 describe('PecasAbertas', () => {
+  it('lista os números de série que esperam entrada, e diz quantas outras há além da lista', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...detalhe(5), sns: ['sn001', 'sn002', 'sn003'] } })
+    montar()
+    const lista = await screen.findByRole('list', { name: 'Números de série esperando entrada' })
+    expect(lista).toHaveTextContent('sn001')
+    expect(lista).toHaveTextContent('sn002')
+    expect(lista).toHaveTextContent('sn003')
+    expect(lista).toHaveTextContent('… +2 outras')
+  })
+
+  it('quando a lista é completa, não diz "outras"', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...detalhe(2), sns: ['sn001', 'sn002'] } })
+    montar()
+    const lista = await screen.findByRole('list', { name: 'Números de série esperando entrada' })
+    expect(lista).not.toHaveTextContent('outras')
+  })
+
   it('mostra contexto, título com N em vinho, instrução, andamento da OP e posto anterior', async () => {
     montar()
     expect(await screen.findByText('OP 300 · PMO3 · individual · sem NQA no posto anterior')).toBeInTheDocument()
