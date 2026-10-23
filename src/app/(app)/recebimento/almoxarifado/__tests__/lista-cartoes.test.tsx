@@ -17,6 +17,15 @@ function montar(estado: Parameters<typeof ListaCartoes>[0]['estado'], onEscolher
   return onEscolher
 }
 
+/** A linha "N peças · ..." tem o número de peças em destaque (vinho) dentro de um span cinza: o texto inteiro vem dos dois. */
+function linha(texto: string | RegExp) {
+  return screen.getByText((_, el) => {
+    if (!el || el.tagName !== 'SPAN' || !el.className.includes('text-muted-foreground')) return false
+    const t = el.textContent ?? ''
+    return typeof texto === 'string' ? t === texto : texto.test(t)
+  })
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-21T18:00:00Z'))
@@ -25,8 +34,8 @@ beforeEach(() => {
 describe('ListaCartoes', () => {
   it('item de outro dia mostra dd/mm HH:MM em vez de "hoje"', () => {
     montar({ tipo: 'ok', itens: [{ ...CAIXA, em: '2026-10-20T18:30:00Z' }, { ...LOTE, em: '2026-10-19T13:05:00Z' }] })
-    expect(screen.getByText('40 peças · fechada 20/10 15:30')).toBeInTheDocument()
-    expect(screen.getByText('50 peças · bipar todas · aprovado 19/10 10:05')).toBeInTheDocument()
+    expect(linha('40 peças · fechada 20/10 15:30')).toBeInTheDocument()
+    expect(linha('50 peças · bipar todas · aprovado 19/10 10:05')).toBeInTheDocument()
   })
 
   it('renderiza cartões de caixa e de lote com o texto da spec', () => {
@@ -34,15 +43,18 @@ describe('ListaCartoes', () => {
     expect(screen.getByText('Esperando confirmação (2)')).toBeInTheDocument()
     expect(screen.getByText('CAIXA · OP 100 · PMO1')).toBeInTheDocument()
     expect(screen.getByText('CX[1][40]100-PMO1')).toHaveClass('font-bold')
-    expect(screen.getByText('40 peças · fechada hoje 12:30')).toBeInTheDocument()
+    expect(linha('40 peças · fechada hoje 12:30')).toBeInTheDocument()
+    // só o número de peças fica em vinho; a hora segue cinza
+    expect(screen.getByText('40 peças')).toHaveClass('text-primary')
+    expect(linha('40 peças · fechada hoje 12:30')).not.toHaveClass('text-primary')
     expect(screen.getByText('LOTE · OP 200 · PMO2')).toBeInTheDocument()
-    expect(screen.getByText('50 peças · bipar todas · aprovado hoje 10:05')).toBeInTheDocument()
+    expect(linha('50 peças · bipar todas · aprovado hoje 10:05')).toBeInTheDocument()
   })
 
   it('omite a hora vazia; o lote diz "bipar todas" mesmo com amostra nula, e a caixa nunca', () => {
     montar({ tipo: 'ok', itens: [{ ...CAIXA, em: null }, { ...LOTE, amostra: null }] })
     expect(screen.getByText('40 peças')).toBeInTheDocument()
-    expect(screen.getByText(/^50 peças · bipar todas · aprovado/)).toBeInTheDocument()
+    expect(linha(/^50 peças · bipar todas · aprovado/)).toBeInTheDocument()
   })
 
   it('o filtro por OP esconde as outras', () => {
