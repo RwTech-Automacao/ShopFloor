@@ -61,3 +61,11 @@ describe('codigoConfere', () => {
   it('códigos diferentes não conferem', () => expect(codigoConfere('CX[3][2]9901-PMOT02', 'CX[2][2]9901-PMOT02')).toBe(false))
   it('frase da caixa errada', () => expect(FRASE_CAIXA_ERRADA).toBe('Este não é o código desta caixa. Confira a caixa na mão.'))
 })
+
+describe('pendência de peças avulsas', () => {
+  it('entra no agrupamento por OP e no filtro como qualquer cartão', () => {
+    const avulsas: PendenciaAlmoxarifado = { pmo: 'PMOP', op: '9501', tipo: 'peca', codigo: 'AVULSAS', pecas: 5, amostra: null, loteId: null, em: null }
+    expect(opsComPendencia([avulsas])).toEqual([{ chave: '9501 · PMOP', pmo: 'PMOP', op: '9501' }])
+    expect(filtrarPorOp([avulsas, pend('1', 'X')], '9501 · PMOP')).toEqual([avulsas])
+  })
+})

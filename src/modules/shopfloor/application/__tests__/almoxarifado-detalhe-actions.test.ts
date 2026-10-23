@@ -131,3 +131,37 @@ describe('detalharPendenciaAlmoxarifado', () => {
     expect(await detalharPendenciaAlmoxarifado(ARGS_CAIXA)).toEqual({ ok: false, erro: 'Você não tem permissão para esta ação.' })
   })
 })
+
+describe('peças avulsas (tipo peca)', () => {
+  it('lista: converte a linha AVULSAS como tipo peca', async () => {
+    mocks({
+      rpcData: [
+        { pmo: 'P', op: '1', tipo: 'peca', codigo: 'AVULSAS', pecas: 7, amostra: null, lote_id: null, em: '2026-10-21T13:42:00Z', seq: null, ja_lancadas: 0 },
+      ],
+    })
+    const { listarPendenciasAlmoxarifado } = await import('../almoxarifado-actions')
+    expect(await listarPendenciasAlmoxarifado()).toEqual({
+      ok: true,
+      pendencias: [
+        { pmo: 'P', op: '1', tipo: 'peca', codigo: 'AVULSAS', pecas: 7, amostra: null, loteId: null, em: '2026-10-21T13:42:00Z' },
+      ],
+    })
+  })
+
+  it('detalhe: converte tipo peca, sns vazio e a hora de em', async () => {
+    const rpc = mocks({
+      rpcData: { ok: true, tipo: 'peca', ...BASE, pecas: 7, em: '2026-10-21T13:42:00Z' },
+    })
+    const { detalharPendenciaAlmoxarifado } = await import('../almoxarifado-actions')
+    const r = await detalharPendenciaAlmoxarifado({ pmo: 'P', op: '1', tipo: 'peca', codigo: 'AVULSAS', loteId: null })
+    expect(rpc).toHaveBeenCalledWith('sf_almox_detalhe', { p_pmo: 'P', p_op: '1', p_codigo: 'AVULSAS', p_lote_id: null })
+    expect(r).toEqual({
+      ok: true,
+      detalhe: {
+        tipo: 'peca', qtdOp: 100, recebidasOp: 40,
+        postoAnterior: { posto: 'NQA', recurso: 'R1', precisaAprovado: true },
+        pecas: 7, sns: [], em: '2026-10-21T13:42:00Z', fechadaPor: null, amostra: null, jaLancadas: 0,
+      },
+    })
+  })
+})

@@ -67,9 +67,11 @@ export function ListaCartoes({
           {visiveis.map((i) => {
             const hora = quandoCurto(i.em)
             const caixa = i.tipo === 'caixa'
+            const avulsa = i.tipo === 'peca'
             const partes = [pecasTexto(i.pecas)]
-            if (!caixa) partes.push('bipar todas')
-            if (hora) partes.push(`${caixa ? 'fechada' : 'aprovado'} ${hora}`)
+            if (avulsa) partes.push('bipar uma a uma')
+            else if (!caixa) partes.push('bipar todas')
+            if (hora) partes.push(avulsa ? hora : `${caixa ? 'fechada' : 'aprovado'} ${hora}`)
             return (
               <button
                 key={`${i.tipo}-${chaveDaOp(i)}-${i.codigo}`}
@@ -78,9 +80,13 @@ export function ListaCartoes({
                 className="flex min-w-[15rem] flex-col gap-1 rounded-lg border border-border bg-card p-3 text-left hover:bg-muted"
               >
                 <span className="text-xs font-medium text-muted-foreground">
-                  {caixa ? 'CAIXA' : 'LOTE'} · OP {i.op} · {i.pmo}
+                  {caixa ? 'CAIXA' : avulsa ? 'AVULSAS' : 'LOTE'} · OP {i.op} · {i.pmo}
                 </span>
-                <span className="break-all font-mono text-base font-bold">{i.codigo}</span>
+                {avulsa ? (
+                  <span className="text-base font-bold">Peças avulsas</span>
+                ) : (
+                  <span className="break-all font-mono text-base font-bold">{i.codigo}</span>
+                )}
                 <span className="text-xs text-muted-foreground">
                   <span className="font-medium text-primary">{partes[0]}</span>
                   {partes.length > 1 ? ` · ${partes.slice(1).join(' · ')}` : ''}

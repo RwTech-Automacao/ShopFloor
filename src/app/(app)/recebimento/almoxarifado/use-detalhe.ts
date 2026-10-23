@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { detalharPendenciaAlmoxarifado } from '@/modules/shopfloor/application/almoxarifado-actions'
 import type { DetalheAlmoxarifado, PendenciaAlmoxarifado } from '@/modules/shopfloor/domain/almoxarifado'
 
@@ -32,4 +32,32 @@ export function useDetalhe(item: PendenciaAlmoxarifado): EstadoDetalhe {
     return () => { vivo = false }
   }, [item.pmo, item.op, item.tipo, item.codigo, item.loteId])
   return estado
+}
+
+/**
+ * Como o useDetalhe, mas com `recarregar`: o cartão de peças avulsas muda a cada bipe aceito (o número
+ * esperando cai). A recarga NÃO volta ao "carregando" (o campo de bipe não pode piscar); só a última vale.
+ */
+export function useDetalheRecarregavel(item: PendenciaAlmoxarifado): { estado: EstadoDetalhe; recarregar: () => Promise<void> } {
+  const [estado, setEstado] = useState<EstadoDetalhe>({ tipo: 'carregando' })
+  const seq = useRef(0)
+  const vivo = useRef(true)
+  const { pmo, op, tipo, codigo, loteId } = item
+  const recarregar = useCallback(async () => {
+    const minha = ++seq.current
+    let novo: EstadoDetalhe
+    try {
+      const r = await detalharPendenciaAlmoxarifado({ pmo, op, tipo, codigo, loteId })
+      novo = r.ok ? { tipo: 'ok', detalhe: r.detalhe } : { tipo: 'erro', erro: r.erro }
+    } catch {
+      novo = { tipo: 'erro', erro: FALHA }
+    }
+    if (vivo.current && minha === seq.current) setEstado(novo)
+  }, [pmo, op, tipo, codigo, loteId])
+  useEffect(() => {
+    vivo.current = true
+    void recarregar()
+    return () => { vivo.current = false }
+  }, [recarregar])
+  return { estado, recarregar }
 }

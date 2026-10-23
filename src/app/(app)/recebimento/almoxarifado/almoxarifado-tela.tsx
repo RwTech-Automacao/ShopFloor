@@ -7,6 +7,7 @@ import { FRASE_ITEM_NAO_PENDENTE, pecasTexto, type PendenciaAlmoxarifado } from 
 import { CaixaAberta, type ConfirmacaoCartao } from './caixa-aberta'
 import { ListaCartoes, type EstadoLista } from './lista-cartoes'
 import { LoteAberto } from './lote-aberto'
+import { PecasAbertas } from './pecas-abertas'
 
 const FALHA_LISTA = 'Não foi possível carregar o que está esperando confirmação.'
 
@@ -89,6 +90,17 @@ export function AlmoxarifadoTela({ colaborador, posto }: { colaborador: string; 
       {selecionado?.tipo === 'lote' && (
         <LoteAberto
           key={selecionado.codigo}
+          item={selecionado}
+          colaborador={colaborador}
+          posto={posto}
+          onResultado={onResultadoCartao}
+          onConfirmado={onConfirmado}
+          onVoltar={onVoltar}
+        />
+      )}
+      {selecionado?.tipo === 'peca' && (
+        <PecasAbertas
+          key={`${selecionado.pmo}-${selecionado.op}`}
           item={selecionado}
           colaborador={colaborador}
           posto={posto}

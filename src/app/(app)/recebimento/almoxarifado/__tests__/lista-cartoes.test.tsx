@@ -12,6 +12,11 @@ const LOTE: PendenciaAlmoxarifado = {
   em: '2026-10-21T13:05:00Z',
 }
 
+const AVULSAS: PendenciaAlmoxarifado = {
+  pmo: 'PMO3', op: '300', tipo: 'peca', codigo: 'AVULSAS', pecas: 12, amostra: null, loteId: null,
+  em: '2026-10-21T15:30:00Z',
+}
+
 function montar(estado: Parameters<typeof ListaCartoes>[0]['estado'], onEscolher = vi.fn()) {
   render(<ListaCartoes estado={estado} onEscolher={onEscolher} onAtualizar={vi.fn()} />)
   return onEscolher
@@ -87,5 +92,24 @@ describe('ListaCartoes', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Falhou a leitura.')
     expect(screen.getByText('Falhou a leitura.')).toBeInTheDocument()
     expect(screen.queryByText('Nada esperando confirmação no Almoxarifado agora.')).not.toBeInTheDocument()
+  })
+})
+
+describe('ListaCartoes: peças avulsas', () => {
+  it('mostra etiqueta, título, linha com vinho só no N e a hora; clicar escolhe', () => {
+    const onEscolher = montar({ tipo: 'ok', itens: [AVULSAS] })
+    expect(screen.getByText('AVULSAS · OP 300 · PMO3')).toBeInTheDocument()
+    expect(screen.getByText('Peças avulsas')).toBeInTheDocument()
+    expect(linha('12 peças · bipar uma a uma · hoje 12:30')).toBeInTheDocument()
+    expect(screen.getByText('12 peças')).toHaveClass('text-primary')
+    fireEvent.click(screen.getByRole('button', { name: /Peças avulsas/ }))
+    expect(onEscolher).toHaveBeenCalledWith(AVULSAS)
+  })
+
+  it('sem hora, a linha não ganha o trecho final; o filtro por OP vale', () => {
+    montar({ tipo: 'ok', itens: [{ ...AVULSAS, em: null }, CAIXA] })
+    expect(linha('12 peças · bipar uma a uma')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Filtrar por OP'), { target: { value: '100 · PMO1' } })
+    expect(screen.queryByText('Peças avulsas')).not.toBeInTheDocument()
   })
 })

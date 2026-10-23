@@ -33,6 +33,12 @@ const DETALHE_LOTE = {
   sns: ['a1', 'a2', 'a3', 'a4', 'a5'], em: '2026-10-21T13:05:00Z', fechadaPor: null, amostra: 5, jaLancadas: 0,
 }
 
+const AVULSAS = { pmo: 'PMO3', op: '300', tipo: 'peca' as const, codigo: 'AVULSAS', pecas: 3, amostra: null, loteId: null, em: '2026-10-21T13:05:00Z' }
+const DETALHE_AVULSAS = {
+  tipo: 'peca' as const, qtdOp: 12, recebidasOp: 2, postoAnterior: null, pecas: 3, sns: [],
+  em: '2026-10-21T13:05:00Z', fechadaPor: null, amostra: null, jaLancadas: 0,
+}
+
 async function abrirCaixa() {
   fireEvent.click(await screen.findByRole('button', { name: /CX\[1\]\[40\]100-PMO1/ }))
   const c = await screen.findByPlaceholderText('Bipe o código da caixa')
@@ -157,5 +163,32 @@ describe('AlmoxarifadoTela', () => {
     expect(within(await screen.findByRole('status')).getByText('5 peças')).toBeInTheDocument()
     expect(await screen.findByText('Nada esperando confirmação no Almoxarifado agora.')).toBeInTheDocument()
     expect(screen.getByText('LOTE[ab12cd34][5]')).toBeInTheDocument()
+  })
+
+  it('abrir o cartão de peças avulsas mostra a tela de peças; voltar recarrega a lista', async () => {
+    listarPendenciasAlmoxarifado.mockResolvedValue({ ok: true, pendencias: [AVULSAS] })
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: DETALHE_AVULSAS })
+    render(<AlmoxarifadoTela colaborador="Maria" posto="Almoxarifado" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Peças avulsas/ }))
+    expect(await screen.findByText('Bipe o número de série de cada peça que chegou.')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Bipe o número de série da peça')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Voltar à lista/ }))
+    expect(await screen.findByText('Esperando confirmação (1)')).toBeInTheDocument()
+    expect(listarPendenciasAlmoxarifado).toHaveBeenCalledTimes(2)
+  })
+
+  it('bipe aceito nas peças avulsas mostra o painel de resultado (1 peça, Nº Série) com o cartão aberto', async () => {
+    listarPendenciasAlmoxarifado.mockResolvedValue({ ok: true, pendencias: [AVULSAS] })
+    detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: DETALHE_AVULSAS })
+    registrarEntradaAlmoxarifado.mockResolvedValue({ ok: true, quantidade: 1, tipo: 'serie' })
+    render(<AlmoxarifadoTela colaborador="Maria" posto="Almoxarifado" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Peças avulsas/ }))
+    const c = await screen.findByPlaceholderText('Bipe o número de série da peça')
+    fireEvent.change(c, { target: { value: 'SN-7' } })
+    fireEvent.keyDown(c, { key: 'Enter' })
+    const painel = await screen.findByRole('status')
+    expect(within(painel).getByText('1 peça')).toBeInTheDocument()
+    expect(within(painel).getByText('SN-7')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Bipe o número de série da peça')).toBeInTheDocument()
   })
 })

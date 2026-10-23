@@ -409,7 +409,7 @@ export async function listarPendenciasAlmoxarifado(): Promise<
     pendencias: linhas.map((l) => ({
       pmo: l.pmo,
       op: l.op,
-      tipo: l.tipo === 'lote' ? 'lote' : 'caixa',
+      tipo: l.tipo === 'lote' ? 'lote' : l.tipo === 'peca' ? 'peca' : 'caixa',
       codigo: l.codigo,
       pecas: Number(l.pecas),
       amostra: l.amostra === null || l.amostra === undefined ? null : Number(l.amostra),
@@ -434,7 +434,7 @@ const RECUSAS_DETALHE: Record<string, string> = {
 export async function detalharPendenciaAlmoxarifado(p: {
   pmo: string
   op: string
-  tipo: 'caixa' | 'lote'
+  tipo: 'caixa' | 'lote' | 'peca'
   codigo: string
   loteId: string | null
 }): Promise<{ ok: true; detalhe: DetalheAlmoxarifado } | { ok: false; erro: string }> {
@@ -464,15 +464,17 @@ export async function detalharPendenciaAlmoxarifado(p: {
     posto_anterior?: { posto: string; recurso: string; precisa_aprovado: boolean } | null
     pecas?: number; sns?: string[] | null
     fechada_em?: string | null; fechada_por?: string | null
+    em?: string | null
     aprovado_em?: string | null; amostra?: number | null; ja_lancadas?: number
   }
   if (r.ok !== true) return { ok: false, erro: RECUSAS_DETALHE[r.motivo ?? ''] ?? FALHA_DETALHE }
 
   const lote = r.tipo === 'lote'
+  const peca = r.tipo === 'peca'
   return {
     ok: true,
     detalhe: {
-      tipo: lote ? 'lote' : 'caixa',
+      tipo: lote ? 'lote' : peca ? 'peca' : 'caixa',
       qtdOp: r.qtd_op === null || r.qtd_op === undefined ? null : Number(r.qtd_op),
       recebidasOp: Number(r.recebidas_op ?? 0),
       postoAnterior: r.posto_anterior
@@ -484,8 +486,8 @@ export async function detalharPendenciaAlmoxarifado(p: {
         : null,
       pecas: Number(r.pecas ?? 0),
       sns: Array.isArray(r.sns) ? r.sns : [],
-      em: (lote ? r.aprovado_em : r.fechada_em) ?? null,
-      fechadaPor: lote ? null : (r.fechada_por ?? null),
+      em: (lote ? r.aprovado_em : peca ? r.em : r.fechada_em) ?? null,
+      fechadaPor: lote || peca ? null : (r.fechada_por ?? null),
       amostra: lote && r.amostra !== null && r.amostra !== undefined ? Number(r.amostra) : null,
       jaLancadas: lote ? Number(r.ja_lancadas ?? 0) : 0,
     },

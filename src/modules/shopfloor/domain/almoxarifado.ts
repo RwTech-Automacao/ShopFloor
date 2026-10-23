@@ -194,11 +194,14 @@ export function mensagemRecusaLote(motivo: string, detalhe?: string): string {
   }
 }
 
-/** Uma pendência do Almoxarifado de QUALQUER OP (0158): uma caixa (OP coletiva) ou um lote do NQA (OP individual). */
+/**
+ * Uma pendência do Almoxarifado de QUALQUER OP (0158): uma caixa (OP coletiva), um lote do NQA (OP individual com
+ * NQA no posto anterior) ou as PEÇAS AVULSAS (OP individual sem NQA no posto anterior, bipe a bipe; codigo 'AVULSAS').
+ */
 export interface PendenciaAlmoxarifado {
   pmo: string
   op: string
-  tipo: 'caixa' | 'lote'
+  tipo: 'caixa' | 'lote' | 'peca'
   /** Código da caixa, ou o rótulo do lote ('LOTE[<8 hex>][<N>]'). */
   codigo: string
   pecas: number
@@ -212,7 +215,7 @@ export interface PendenciaAlmoxarifado {
 
 /** O detalhe de um cartão de pendência (sf_almox_detalhe, 0159). */
 export interface DetalheAlmoxarifado {
-  tipo: 'caixa' | 'lote'
+  tipo: 'caixa' | 'lote' | 'peca'
   qtdOp: number | null
   recebidasOp: number
   postoAnterior: { posto: string; recurso: string; precisaAprovado: boolean } | null
