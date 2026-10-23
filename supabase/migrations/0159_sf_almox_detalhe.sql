@@ -8,6 +8,8 @@
 --   caixa:  tipo 'caixa', codigo, pecas, sns, fechada_em, fechada_por (colaborador do ÚLTIMO registro da Embalagem)
 --   lote:   tipo 'lote', rotulo, pecas, amostra, sns, aprovado_em, ja_lancadas  (a OP individual usa p_lote_id)
 --           `amostra` = quantidade a bipar = TODAS as peças do lote (decisão de 21/10; antes era o K da Tabela NQA)
+--   peça:   tipo 'peca' (p_codigo = 'AVULSAS', OP individual cujo posto anterior não é NQA): pecas (as que esperam
+--           entrada), em (a conclusão mais recente no posto anterior), sns vazio — a entrada é bipe a bipe
 --   falha COMO DADO: {ok:false, motivo: op_inexistente | sem_almoxarifado | item_inexistente}
 -- Sem permissão é ERRO (SEM_PERMISSAO), nunca resposta vazia.
 --
@@ -26,7 +28,7 @@ set search_path = public
 as $func$
 declare
   v_ordem record; v_almox text; v_prev record; v_recebidas int; v_base jsonb;
-  v_cx record; v_sns text[]; v_por text; v_lote record;
+  v_cx record; v_sns text[]; v_por text; v_lote record; v_pec record;
 begin
   if not (tem_permissao('recebimento','lancar') and tem_permissao('shopfloor','visualizar')) then
     raise exception 'SEM_PERMISSAO';
@@ -60,6 +62,29 @@ begin
     'posto_anterior', case when v_prev.posto is null then null
        else jsonb_build_object('posto', v_prev.posto, 'recurso', v_prev.recurso,
                                'precisa_aprovado', v_prev.precisa_aprovado) end);
+
+  -- Peças avulsas: OP individual com posto anterior que não é NQA. Mesma conta da sf_almox_pendencias.
+  if v_ordem.individual and p_codigo = 'AVULSAS' and p_lote_id is null
+     and v_prev.posto is not null and v_prev.recurso <> 'nqa' then
+    with ja as (
+      select distinct a.numero_serie_norm as sn
+        from sf_registros a
+       where a.pmo = p_pmo and a.op = p_op and a.posto = v_almox and a.numero_serie_norm <> ''
+    ), esp as (
+      select r.numero_serie_norm as sn, max(r.data_hora) as conc
+        from sf_registros r
+       where r.pmo = p_pmo and r.op = p_op and r.posto = v_prev.posto and r.numero_serie_norm <> ''
+         and (not v_prev.precisa_aprovado or lower(r.status) = 'aprovado')
+       group by r.numero_serie_norm
+    )
+    select count(*)::int as n, max(e.conc) as em into v_pec
+      from esp e where not exists (select 1 from ja where ja.sn = e.sn);
+    if v_pec.n = 0 then
+      return jsonb_build_object('ok', false, 'motivo', 'item_inexistente');
+    end if;
+    return v_base || jsonb_build_object('tipo', 'peca', 'pecas', v_pec.n, 'em', v_pec.em,
+                                        'sns', '[]'::jsonb);
+  end if;
 
   if v_ordem.individual then
     select l.* into v_lote from sf_almox_lotes(p_pmo, p_op) l where l.lote_id = p_lote_id;

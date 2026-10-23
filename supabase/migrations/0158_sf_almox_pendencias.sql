@@ -13,6 +13,14 @@
 -- lote), pra tela ordenar e mostrar a idade do cartão. Como o tipo de retorno ganhou a coluna e a 0158
 -- ainda não estava em produção, a função é recriada (drop + create), o que também a deixa idempotente.
 --
+-- PEÇAS AVULSAS (OP individual cujo posto anterior NÃO é de recurso 'nqa'): a entrada é peça por peça, bipando
+-- o número de série de cada uma. A OP vira UMA linha `tipo = 'peca'`, codigo 'AVULSAS', `pecas` = SNs que
+-- cumprem o gate do posto anterior e ainda não têm registro no Almoxarifado, `em` = a conclusão mais recente
+-- no posto anterior. Sem posto anterior (Almoxarifado em primeiro lugar) ou com pecas = 0: sem linha. A leitura
+-- é de forma ESTÁVEL (incidente de 22/10): UMA consulta por OP, group by no posto anterior pelo índice
+-- sf_registros_posto_data e anti-join por igualdade contra o conjunto distinto do Almoxarifado — nada
+-- correlacionado por peça, nada que dependa de estatística do planejador.
+--
 -- Corpo com $func$ (o SQL Editor não aceita dois cifrões). Aditiva e idempotente. Depende da 0155 e 0156.
 -- =============================================================
 drop function if exists public.sf_almox_pendencias();
@@ -25,14 +33,14 @@ set search_path = public
 as $func$
 #variable_conflict use_column
 declare
-  v_o record;
+  v_o record; v_almox text; v_prev record;
 begin
   if not (tem_permissao('recebimento','lancar') and tem_permissao('shopfloor','visualizar')) then
     raise exception 'SEM_PERMISSAO';
   end if;
 
   for v_o in
-    select so.pmo as o_pmo, so.op as o_op, coalesce(so.embalagem_individual, false) as individual
+    select so.id as o_id, so.pmo as o_pmo, so.op as o_op, coalesce(so.embalagem_individual, false) as individual
       from sf_ordens so
      where upper(coalesce(so.status, '')) <> 'FINALIZADA'
        and exists (
@@ -47,6 +55,36 @@ begin
       select v_o.o_pmo, v_o.o_op, 'lote'::text, l.rotulo, null::int, l.pecas,
              l.lote_id, l.amostra, l.ja_lancadas, l.aprovado_em
         from sf_almox_lotes(v_o.o_pmo, v_o.o_op) l;
+
+      -- Peças avulsas: o posto Almoxarifado DA ROTA (pelo perfil, o mesmo select do detalhe) e o anterior a ele.
+      select opp.posto into v_almox
+        from sf_ordem_postos opp
+        join sf_postos po       on po.chave = opp.posto
+        join sf_posto_perfis pe on pe.chave = po.perfil
+       where opp.ordem_id = v_o.o_id and pe.recurso = 'almoxarifado'
+       order by opp.ordem, opp.posto
+       limit 1;
+      select * into v_prev from sf_almox_posto_anterior(v_o.o_id, v_almox);
+      if v_prev.posto is not null and v_prev.recurso <> 'nqa' then
+        return query
+        with ja as (
+          select distinct a.numero_serie_norm as sn
+            from sf_registros a
+           where a.pmo = v_o.o_pmo and a.op = v_o.o_op and a.posto = v_almox and a.numero_serie_norm <> ''
+        ), esp as (
+          select r.numero_serie_norm as sn, max(r.data_hora) as conc
+            from sf_registros r
+           where r.pmo = v_o.o_pmo and r.op = v_o.o_op and r.posto = v_prev.posto
+             and r.numero_serie_norm <> ''
+             and (not v_prev.precisa_aprovado or lower(r.status) = 'aprovado')
+           group by r.numero_serie_norm
+        )
+        select v_o.o_pmo, v_o.o_op, 'peca'::text, 'AVULSAS'::text, null::int, count(*)::int,
+               null::uuid, null::int, 0, max(e.conc)
+          from esp e
+         where not exists (select 1 from ja where ja.sn = e.sn)
+        having count(*) > 0;
+      end if;
     else
       return query
       select v_o.o_pmo, v_o.o_op, 'caixa'::text, n.codigo, n.seq, n.pecas,

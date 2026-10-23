@@ -44,10 +44,13 @@ docker cp supabase/tests/almoxarifado_test.sql "$NOME":/tmp/teste.sql
 docker cp supabase/tests/almoxarifado_necessidade_test.sql "$NOME":/tmp/teste_necessidade.sql
 docker cp supabase/tests/almoxarifado_lote_test.sql "$NOME":/tmp/teste_lote.sql
 docker cp supabase/tests/almoxarifado_pendencias_test.sql "$NOME":/tmp/teste_pendencias.sql
+docker cp supabase/tests/almoxarifado_pecas_avulsas_test.sql "$NOME":/tmp/teste_pecas_avulsas.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_necessidade.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_lote.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pendencias.sql
+# Peças avulsas (OP individual sem NQA no posto anterior): roda por cima da 0158/0159 já aplicadas acima.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pecas_avulsas.sql
 
 # Idempotência: o usuário reaplica migração quando fica na dúvida, então rodar as migrações duas
 # vezes na mesma base não pode falhar nem mudar o resultado. O caso conhecido é a caixa 7, que o
