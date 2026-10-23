@@ -13,6 +13,10 @@ vi.mock('@/modules/shopfloor/application/almoxarifado-actions', () => ({
 import { CaixaAberta } from '../caixa-aberta'
 import { FRASE_CAIXA_ERRADA, type PendenciaAlmoxarifado } from '@/modules/shopfloor/domain/almoxarifado'
 
+/** Frase com um trecho em destaque (span): o texto inteiro do parágrafo vem dos dois. */
+const porParagrafo = (texto: string) => (_c: string, el: Element | null) => el?.tagName === 'P' && el.textContent === texto
+
+
 const ITEM: PendenciaAlmoxarifado = {
   pmo: 'PMO1', op: '100', tipo: 'caixa', codigo: 'CX[1][40]100-PMO1', pecas: 40, amostra: null, loteId: null,
   em: '2026-10-21T15:30:00Z',
@@ -51,7 +55,7 @@ describe('CaixaAberta', () => {
     const cod = await screen.findByText('CX[1][40]100-PMO1')
     expect(cod).toHaveClass('text-3xl', 'font-bold', 'font-mono')
     expect(screen.getByText('OP 100 · PMO1 · coletiva · fechada hoje 12:30 por Ana')).toBeInTheDocument()
-    expect(screen.getByText('Bipe este código para confirmar a entrada de 40 peças.')).toBeInTheDocument()
+    expect(screen.getByText(porParagrafo('Bipe este código para confirmar a entrada de 40 peças.'))).toBeInTheDocument()
     expect(screen.getByText('Dentro da caixa: SN1, SN2')).toBeInTheDocument()
     expect(screen.getByText('Posto anterior: Embalagem concluído')).toBeInTheDocument()
     expect(screen.getByText('OP 100: 80 de 200 peças já no Almoxarifado')).toBeInTheDocument()
@@ -139,7 +143,7 @@ describe('CaixaAberta', () => {
   it('caixa de 1 peça usa o singular', async () => {
     detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...DETALHE, pecas: 1, sns: ['SN1'] } })
     montar()
-    expect(await screen.findByText('Bipe este código para confirmar a entrada de 1 peça.')).toBeInTheDocument()
+    expect(await screen.findByText(porParagrafo('Bipe este código para confirmar a entrada de 1 peça.'))).toBeInTheDocument()
   })
 
   it('posto anterior: com posto e sem posto, sem repetir', async () => {

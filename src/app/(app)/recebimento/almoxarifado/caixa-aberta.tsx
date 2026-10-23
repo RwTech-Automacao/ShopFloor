@@ -99,7 +99,9 @@ export function CaixaAberta({
         {`OP ${item.op} · ${item.pmo} · coletiva${hora ? ` · fechada ${hora}` : ''}${d.fechadaPor ? ` por ${d.fechadaPor}` : ''}`}
       </p>
       <p className="break-all font-mono text-3xl font-bold">{item.codigo}</p>
-      <p className="text-base">Bipe este código para confirmar a entrada de {pecasTexto(d.pecas)}.</p>
+      <p className="text-base">
+        Bipe este código para confirmar a entrada de <span className="font-semibold text-primary">{pecasTexto(d.pecas)}</span>.
+      </p>
       <Input
         ref={bipeRef}
         value={bipe}

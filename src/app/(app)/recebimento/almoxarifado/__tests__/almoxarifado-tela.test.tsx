@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 const { listarPendenciasAlmoxarifado, detalharPendenciaAlmoxarifado, registrarEntradaAlmoxarifado, confirmarLoteAlmoxarifado } = vi.hoisted(() => ({
   listarPendenciasAlmoxarifado: vi.fn(),
@@ -16,6 +16,10 @@ vi.mock('@/modules/shopfloor/application/almoxarifado-actions', () => ({
 
 import { AlmoxarifadoTela } from '../almoxarifado-tela'
 import { FRASE_ITEM_NAO_PENDENTE } from '@/modules/shopfloor/domain/almoxarifado'
+
+/** Frase com um trecho em destaque (span): o texto inteiro do parágrafo vem dos dois. */
+const porParagrafo = (texto: string) => (_c: string, el: Element | null) => el?.tagName === 'P' && el.textContent === texto
+
 
 const CAIXA = { pmo: 'PMO1', op: '100', tipo: 'caixa' as const, codigo: 'CX[1][40]100-PMO1', pecas: 40, amostra: null, loteId: null, em: '2026-10-21T15:30:00Z' }
 const DETALHE = {
@@ -53,7 +57,7 @@ describe('AlmoxarifadoTela', () => {
   it('escolher um cartão abre a caixa; Voltar recarrega a lista', async () => {
     render(<AlmoxarifadoTela colaborador="Maria" posto="Almoxarifado" />)
     fireEvent.click(await screen.findByRole('button', { name: /CX\[1\]\[40\]100-PMO1/ }))
-    expect(await screen.findByText('Bipe este código para confirmar a entrada de 40 peças.')).toBeInTheDocument()
+    expect(await screen.findByText(porParagrafo('Bipe este código para confirmar a entrada de 40 peças.'))).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Voltar à lista/ }))
     expect(await screen.findByText('Esperando confirmação (1)')).toBeInTheDocument()
     expect(listarPendenciasAlmoxarifado).toHaveBeenCalledTimes(2)
@@ -66,7 +70,7 @@ describe('AlmoxarifadoTela', () => {
     })
     render(<AlmoxarifadoTela colaborador="Maria" posto="Almoxarifado" />)
     await abrirCaixa()
-    expect(await screen.findByText('40 peças')).toBeInTheDocument()
+    expect(within(await screen.findByRole('status')).getByText('40 peças')).toBeInTheDocument()
     expect(screen.getByText('CX[1][40]100-PMO1')).toBeInTheDocument()
     expect(await screen.findByText('Nada esperando confirmação no Almoxarifado agora.')).toBeInTheDocument()
   })
@@ -76,7 +80,7 @@ describe('AlmoxarifadoTela', () => {
     render(<AlmoxarifadoTela colaborador="Maria" posto="Almoxarifado" />)
     await abrirCaixa()
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Posto anterior não concluído.'))
-    expect(screen.getByText('Bipe este código para confirmar a entrada de 40 peças.')).toBeInTheDocument()
+    expect(screen.getByText(porParagrafo('Bipe este código para confirmar a entrada de 40 peças.'))).toBeInTheDocument()
   })
 
   it('duas recargas em voo: a resposta antiga não sobrescreve a nova', async () => {
@@ -106,10 +110,10 @@ describe('AlmoxarifadoTela', () => {
     })
     render(<AlmoxarifadoTela colaborador="Maria" posto="Almoxarifado" />)
     await abrirCaixa()
-    expect(await screen.findByText('40 peças')).toBeInTheDocument()
+    expect(within(await screen.findByRole('status')).getByText('40 peças')).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: /CX\[2\]\[10\]100-PMO1/ }))
     await screen.findByPlaceholderText('Bipe o código da caixa')
-    expect(screen.getByText('40 peças')).toBeInTheDocument()
+    expect(within(screen.getByRole('status')).getByText('40 peças')).toBeInTheDocument()
   })
 
   it('recusa "não está mais esperando" ao confirmar volta à lista e recarrega', async () => {
