@@ -30,7 +30,7 @@ export async function carregarEmbalagem(
 /** Resultado do bipe. `confirmar` não é erro: é a peça que não era da caixa original numa
  *  remontagem — o painel mostra o motivo e um botão pra incluir mesmo assim. */
 export type ResultadoEmbalar =
-  | { ok: true; caixaCount?: number; seq: number }
+  | { ok: true; caixaCount?: number; seq: number; /** placas do painel bipado */ pecas?: number }
   /** `seq` também vai na FALHA: a peça pode ter sido recusada (duplicata, caixa cheia) e mesmo
    *  assim pertencer a outra caixa — a tela precisa ir pra lá pro operador ver o estado real. */
   | { ok: false; erro: string; seq?: number; confirmar?: { motivo: string; seq: number } }
@@ -115,14 +115,14 @@ export async function embalarPeca(entrada: {
   // duplicata (correto — ela já está lá), mas o operador quer justamente CHEGAR naquela caixa pra
   // fechá-la. Sem devolver o seq, o gesto natural dele não levaria a lugar nenhum.
   if (!r.ok) return { ok: false, erro: r.erro, seq }
-  return { ok: true, caixaCount: r.caixaCount, seq }
+  return { ok: true, caixaCount: r.caixaCount, seq, pecas: r.pecas }
 }
 
 /** Embalagem INDIVIDUAL (1 produto por caixa): confere se o SN da caixa == SN do produto e, se
  *  bater, registra a peça com numero_caixa = o próprio SN (qtd_por_caixa = 1, sem CX coletiva). */
 export async function embalarIndividual(entrada: {
   colaborador: string; pmo: string; op: string; posto: string; numeroSerie: string; numeroSerieCaixa: string
-}): Promise<{ ok: true } | { ok: false; erro: string }> {
+}): Promise<{ ok: true; pecas?: number } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'lancar')) return { ok: false, erro: SEM_PERMISSAO }
   if (normalizarSerie(entrada.numeroSerie) !== normalizarSerie(entrada.numeroSerieCaixa)) {
@@ -138,7 +138,7 @@ export async function embalarIndividual(entrada: {
     qtdPorCaixa: '1',
   })
   if (!r.ok) return { ok: false, erro: r.erro }
-  return { ok: true }
+  return { ok: true, pecas: r.pecas }
 }
 
 export async function fecharCaixa(

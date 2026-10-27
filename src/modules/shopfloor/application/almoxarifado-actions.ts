@@ -142,9 +142,10 @@ function mensagemDivergenciaEtiqueta(qtdEtiqueta: number, quantidade: number): s
  * está fechada, já foi lançada, a peça passou pela Embalagem — é a RPC `sf_almoxarifado_entrada`
  * quem confere, numa transação só (corrida entre dois operadores incluída).
  *
- * `quantidade` volta da RPC e é a contagem das PEÇAS que entraram: o bipe de caixa grava uma linha
- * por peça de dentro dela (ver 0129), então numa caixa de 14 voltam 14. O fallback pra `quantidade`
- * do domínio (a do código da etiqueta) só vale se a RPC não devolver o número.
+ * `quantidade` volta da RPC e é a soma das PLACAS que entraram (0165): o bipe de caixa grava uma linha
+ * por painel de dentro dela (ver 0129), cada uma com o seu `pecas`, então numa caixa de 10 painéis de 50
+ * voltam 500, e a peça avulsa de um painel de 50 volta 50 (com 1 placa por painel, o número de antes). O
+ * fallback pra `quantidade` do domínio (a do código da etiqueta, ou 1) só vale se a RPC não devolver o número.
  *
  * `divergencia` é o aviso de que a etiqueta e a contagem real não batem — a entrada foi aceita, mas
  * o painel tem que dizer as duas quantidades em vez de deixar a diferença só no log do Postgres.
@@ -462,7 +463,7 @@ export async function detalharPendenciaAlmoxarifado(p: {
     ok?: boolean; motivo?: string; tipo?: string
     qtd_op?: number | null; recebidas_op?: number
     posto_anterior?: { posto: string; recurso: string; precisa_aprovado: boolean } | null
-    pecas?: number; sns?: string[] | null
+    pecas?: number; paineis?: number; sns?: string[] | null
     fechada_em?: string | null; fechada_por?: string | null
     em?: string | null
     aprovado_em?: string | null; amostra?: number | null; ja_lancadas?: number
@@ -485,6 +486,8 @@ export async function detalharPendenciaAlmoxarifado(p: {
           }
         : null,
       pecas: Number(r.pecas ?? 0),
+      // 0165: só nas peças avulsas, os SNs (painéis) esperando; `pecas` é em placas.
+      paineis: peca && r.paineis !== null && r.paineis !== undefined ? Number(r.paineis) : undefined,
       sns: Array.isArray(r.sns) ? r.sns : [],
       em: (lote ? r.aprovado_em : peca ? r.em : r.fechada_em) ?? null,
       fechadaPor: lote || peca ? null : (r.fechada_por ?? null),

@@ -20,6 +20,7 @@ import {
   criarOrdemAction,
   editarOrdemAction,
   type ResultadoOrdem,
+  opTemRegistrosAction,
 } from '@/modules/shopfloor/application/ordens-actions'
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
 import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
@@ -27,6 +28,7 @@ import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perf
 import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
+import { placasDosPaineis, paineisDasPlacas } from '@/modules/shopfloor/domain/placas-por-painel'
 
 export interface OrdemView {
   id: string
@@ -40,6 +42,7 @@ export interface OrdemView {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  placas_por_painel: number
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
@@ -55,6 +58,13 @@ export interface PadraoFluxo {
 }
 
 const CLIENTE_NOVO = '__novo_cliente__'
+
+/** Texto do campo auxiliar "Painéis" para uma quantidade em placas ('' se não divide exato). */
+function paineisTexto(qtd: string, n: number): string {
+  if (qtd.trim() === '' || Number.isNaN(Number(qtd))) return ''
+  const p = paineisDasPlacas(Number(qtd), n)
+  return p === null ? '' : String(p)
+}
 
 function tempoBurninInicial(ordem?: OrdemView): Record<string, string> {
   const m: Record<string, string> = {}
@@ -91,6 +101,14 @@ export function OrdemForm({
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
   const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
   const [tempoBurnin, setTempoBurnin] = useState<Record<string, string>>(tempoBurninInicial(ordem))
+  // Quantidade (em placas) e Painéis são controlados: um deriva do outro pelo N. Só `qtd` é enviado.
+  const [placasPorPainel, setPlacasPorPainel] = useState(String(ordem?.placas_por_painel ?? 1))
+  const [qtd, setQtd] = useState(ordem?.qtd != null ? String(ordem.qtd) : '')
+  const [paineis, setPaineis] = useState(paineisTexto(ordem?.qtd != null ? String(ordem.qtd) : '', ordem?.placas_por_painel ?? 1))
+  const nPainel = Number.isInteger(Number(placasPorPainel)) && Number(placasPorPainel) >= 1 ? Number(placasPorPainel) : 1
+  // Consultado ao abrir a edição; até a resposta chegar o campo fica habilitado (o servidor é a trava real).
+  const [temRegistros, setTemRegistros] = useState(false)
+  const bloqueiaPlacas = !!ordem && temRegistros
   const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
   // O status precisa ser controlado só por causa do aviso de reativação: ele depende de comparar o
@@ -227,10 +245,24 @@ export function OrdemForm({
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
           setTempoBurnin(tempoBurninInicial(ordem))
+          setPlacasPorPainel(String(ordem?.placas_por_painel ?? 1))
+          setQtd(ordem?.qtd != null ? String(ordem.qtd) : '')
+          setPaineis(paineisTexto(ordem?.qtd != null ? String(ordem.qtd) : '', ordem?.placas_por_painel ?? 1))
           setStatus(ordem?.status?.toUpperCase() === 'FINALIZADA' ? 'FINALIZADA' : 'ATIVA')
           setModoNovoCliente(false)
           setPadraoSelecionado('')
           setInstanciaForm((n) => n + 1)
+          setTemRegistros(false)
+          if (ordem) {
+            const idOp = ordem.id
+            void (async () => {
+              try {
+                setTemRegistros(await opTemRegistrosAction(idOp))
+              } catch {
+                // falha = trata como sem registros; o servidor recusa ao salvar se houver.
+              }
+            })()
+          }
         }
       }}>
         <DialogTrigger
@@ -298,8 +330,32 @@ export function OrdemForm({
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="qtd">Quantidade</Label>
-                <Input id="qtd" name="qtd" type="number" defaultValue={ordem?.qtd ?? ''} />
+                <Input id="qtd" name="qtd" type="number" value={qtd} onChange={(e) => {
+                  setQtd(e.target.value)
+                  setPaineis(paineisTexto(e.target.value, nPainel))
+                }} />
               </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="placas_por_painel">Placas por painel</Label>
+                {bloqueiaPlacas && <input type="hidden" name="placas_por_painel" value={ordem.placas_por_painel} />}
+                <Input id="placas_por_painel" name={bloqueiaPlacas ? undefined : 'placas_por_painel'} type="number" min={1} value={placasPorPainel} disabled={bloqueiaPlacas} onChange={(e) => {
+                  setPlacasPorPainel(e.target.value)
+                  const n = Number(e.target.value)
+                  setPaineis(Number.isInteger(n) && n >= 1 ? paineisTexto(qtd, n) : '')
+                }} />
+                <p className="text-xs text-muted-foreground">
+                  {bloqueiaPlacas ? 'Bloqueado: esta OP já tem registros.' : 'Use quando a etiqueta é por painel: cada bipe conta como N placas.'}
+                </p>
+              </div>
+              {nPainel > 1 && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="paineis">Painéis</Label>
+                  <Input id="paineis" type="number" min={0} value={paineis} onChange={(e) => {
+                    setPaineis(e.target.value)
+                    setQtd(e.target.value.trim() === '' || Number.isNaN(Number(e.target.value)) ? '' : String(placasDosPaineis(Number(e.target.value), nPainel)))
+                  }} />
+                </div>
+              )}
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="descricao">Descrição</Label>
                 <Input id="descricao" name="descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)} />

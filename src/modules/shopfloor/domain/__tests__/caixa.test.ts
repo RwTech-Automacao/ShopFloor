@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gerarCodigoCaixa, marcadorCaixaAberta, codigoMontagemAposentada, seqDoMarcadorCaixa, separarCodigoCaixa, seqsReabertas, caixaDaVez, seqsEmRemontagem } from '../caixa'
+import { gerarCodigoCaixa, marcadorCaixaAberta, codigoMontagemAposentada, seqDoMarcadorCaixa, separarCodigoCaixa, seqsReabertas, caixaDaVez, seqsEmRemontagem, somarPecasPorSn } from '../caixa'
 
 describe('caixa', () => {
   it('gerarCodigoCaixa monta CX[seq][qtd]OP-PMO com colchetes literais', () => {
@@ -130,5 +130,33 @@ describe('caixaDaVez', () => {
   })
   it('remontagem pendente reabre o trabalho: não está concluída', () => {
     expect(caixaDaVez([cx(1, true), cx(2, true, 0, true), cx(3, true, 1)])).toEqual({ seq: 4, aberta: false })
+  })
+})
+
+describe('somarPecasPorSn', () => {
+  it('soma as peças de cada SN uma vez só', () => {
+    expect(somarPecasPorSn([
+      { numero_serie_norm: 'A', pecas: 50 },
+      { numero_serie_norm: 'B', pecas: 50 },
+    ])).toBe(100)
+  })
+  it('SN repetido (defeito, reparo, rebipe) conta uma vez', () => {
+    expect(somarPecasPorSn([
+      { numero_serie_norm: 'A', pecas: 50 },
+      { numero_serie_norm: 'A', pecas: 50 },
+      { numero_serie_norm: 'B', pecas: 50 },
+    ])).toBe(100)
+  })
+  it('SN repetido com pecas diferentes: vale a primeira linha da lista (a ordem da consulta decide)', () => {
+    expect(somarPecasPorSn([
+      { numero_serie_norm: 'A', pecas: 10 },
+      { numero_serie_norm: 'A', pecas: 50 },
+    ])).toBe(10)
+  })
+  it('N=1 equivale ao número de SNs distintos; vazio = 0', () => {
+    expect(somarPecasPorSn([
+      { numero_serie_norm: 'A', pecas: 1 }, { numero_serie_norm: 'A', pecas: 1 }, { numero_serie_norm: 'B', pecas: 1 },
+    ])).toBe(2)
+    expect(somarPecasPorSn([])).toBe(0)
   })
 })

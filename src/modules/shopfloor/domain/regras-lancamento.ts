@@ -16,8 +16,9 @@ export interface DadosLancamento {
 
 export type ResultadoRegra = { ok: true } | { ok: false; erro: string }
 
-/** A caixa está cheia? (count = peças já na caixa; limite null = sem limite). */
-export function caixaCheia(count: number, limite: number | null): boolean {
+/** O bipe estoura a caixa? (count = placas já na caixa; pecasDoBipe = placas do painel que vai
+ *  entrar, 1 por padrão; limite null = sem limite). Painel é sempre completo, não há parcial. */
+export function caixaCheia(count: number, limite: number | null, pecasDoBipe = 1): boolean {
   if (limite === null || Number.isNaN(limite)) return false
-  return count >= limite
+  return count + pecasDoBipe > limite
 }

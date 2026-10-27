@@ -39,6 +39,8 @@ function lerDados(fd: FormData): DadosOrdem {
     sn_ini: String(fd.get('sn_ini') ?? '').trim(),
     sn_fim: String(fd.get('sn_fim') ?? '').trim(),
     embalagem_individual: fd.get('embalagem_individual') === 'on', // checkbox: 1 produto por caixa
+    // Ausente = 1; presente vale como veio (0, vazio ou inválido são recusados por validarOrdem).
+    placas_por_painel: fd.has('placas_por_painel') ? Number(fd.get('placas_por_painel')) : 1,
     // Salvar pela tela é decisão de pessoa: FINALIZADA vira 'manual' (a rotina não desfaz); outro
     // status limpa a marca. Nunca lido do formulário, para o cliente não forjar 'rotina'.
     finalizada_por: finalizadaPorDoCadastro(status),
@@ -98,7 +100,7 @@ export async function criarOrdemAction(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const dados = lerDados(formData)
-  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd })
+  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel })
   if (!v.ok) return v
   // OP única global: o número da OP não pode existir em nenhum outro PMO.
   const emUso = await buscarOpEmUso(dados.op)
@@ -135,9 +137,22 @@ export async function editarOrdemAction(
   // rotina dos 100% a fecharia de novo em até 5 minutos. O status ANTERIOR vem do banco: o do
   // formulário é do cliente, e a marca é definitiva demais para depender dele.
   const base = await buscarOrdemBase(id)
-  if (ehReativacaoManual(base?.status, dados.status)) dados.reaberta_manual = true
-  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd })
+  // Fail-closed: sem ler a OP gravada não dá para aplicar as travas (buscarOrdemBase devolve null em qualquer erro de leitura).
+  if (!base) return { ok: false, erro: 'OP não encontrada.' }
+  if (ehReativacaoManual(base.status, dados.status)) dados.reaberta_manual = true
+  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel })
   if (!v.ok) return v
+  // Trava: com registros, mudar as placas por painel faria o histórico (`pecas` gravada com o N
+  // antigo) divergir das telas que usam o N atual. O N atual e o par PMO/OP vêm do banco, não do form.
+  if (dados.placas_por_painel !== base.placas_por_painel) {
+    try {
+      if ((await contarRegistros(base.pmo, base.op)) > 0) {
+        return { ok: false, erro: 'Esta OP já tem registros; não é possível alterar as placas por painel.' }
+      }
+    } catch {
+      return { ok: false, erro: 'Não foi possível salvar a OP.' }
+    }
+  }
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).
   const emUso = await buscarOpEmUso(dados.op, id)
   if (emUso) return { ok: false, erro: mensagemOpDuplicada(emUso) }
@@ -156,6 +171,19 @@ export async function editarOrdemAction(
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados })
   revalidatePath('/shopfloor/ordens')
   return { ok: true, id, pmo: dados.pmo, op: dados.op }
+}
+
+/** A OP já tem lançamentos? Consulta leve (um HEAD count) para a tela travar as placas por painel; erro/sem permissão = false (o servidor trava de verdade ao salvar). */
+export async function opTemRegistrosAction(id: string): Promise<boolean> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return false
+  const base = await buscarOrdemBase(id)
+  if (!base) return false
+  try {
+    return (await contarRegistros(base.pmo, base.op)) > 0
+  } catch {
+    return false
+  }
 }
 
 export async function excluirOrdemAction(id: string): Promise<ResultadoOrdem> {

@@ -942,6 +942,8 @@ export function FluxoForm({
     const [pmo, op] = sel.split('||')
     return { pmo: pmo ?? '', op: op ?? '' }
   }, [sel])
+  // Placas por painel da OP aberta (1 se desconhecido): o número de "não iniciadas" é em placas, mas a lista são painéis.
+  const placasPorPainelOp = ordensDashboard.find((o) => o.pmo === opInfo.pmo && o.op === opInfo.op)?.placas_por_painel ?? 1
   // % "macro": soma das passagens (aprovadas p/ posto com status; registros p/ sem) de TODOS os postos
   // normais ÷ (qtd × nº de postos) — equivale à média do % de cada posto; exclui reprovados.
   const totalPassagens = useMemo(
@@ -1648,7 +1650,7 @@ export function FluxoForm({
                       <>
                         {naoIniciadasPrimeiro > 0 && (
                           <p className="mb-2 text-xs text-muted-foreground">
-                            Inclui <span className="font-semibold text-foreground">{naoIniciadasPrimeiro}</span> não iniciada{naoIniciadasPrimeiro > 1 ? 's' : ''} (ainda sem bipe), na lista abaixo.
+                            Inclui <span className="font-semibold text-foreground">{naoIniciadasPrimeiro}</span> não iniciada{naoIniciadasPrimeiro > 1 ? 's' : ''}{placasPorPainelOp > 1 ? ` (${Math.ceil(naoIniciadasPrimeiro / placasPorPainelOp)} painel(éis))` : ''} (ainda sem bipe), na lista abaixo.
                           </p>
                         )}
                         <PendentesPosto titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} defaultOpen />

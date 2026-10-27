@@ -1,6 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { caixaDaVez, marcadorCaixaAberta, seqDoMarcadorCaixa, seqsEmRemontagem, seqsReabertas } from '@/modules/shopfloor/domain/caixa'
+import { caixaDaVez, marcadorCaixaAberta, seqDoMarcadorCaixa, seqsEmRemontagem, seqsReabertas, somarPecasPorSn } from '@/modules/shopfloor/domain/caixa'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { mapaPostoPerfil } from './postos-repository'
 
@@ -23,14 +23,14 @@ export interface CaixaAberta {
   seq: number
   tipo: TipoCaixaAberta
   limite: number | null
-  qtd: number // peças nela agora
+  qtd: number // placas nela agora (pecas somadas uma vez por SN)
 }
 
 export interface EstadoEmbalagem {
   seq: number            // caixa atual (aberta ou próxima a abrir)
   limite: number | null  // null = ainda não definido (operador digita)
-  qtdNaCaixa: number     // peças na caixa atual
-  totalEmbaladas: number // todas as peças embaladas nesta OP+posto
+  qtdNaCaixa: number     // placas na caixa atual (um painel vale N placas)
+  totalEmbaladas: number // todas as placas embaladas nesta OP+posto
   snsNaCaixa: string[]   // todos os SNs da caixa atual (mais recentes primeiro)
   concluida: boolean     // última caixa já foi fechada
   remontagem: RemontagemCaixa | null // preenchido quando esta caixa está refazendo uma reprovada
@@ -46,13 +46,13 @@ async function snsDaCaixa(
   supabase: Awaited<ReturnType<typeof createServerSupabase>>,
   pmo: string, op: string, posto: string, chave: string,
   ordem: 'asc' | 'desc',
-): Promise<{ exibicao: string[]; norm: string[] }> {
+): Promise<{ exibicao: string[]; norm: string[]; pecas: number }> {
   const { data, error } = await supabase
-    .from('sf_registros').select('numero_serie,numero_serie_norm')
+    .from('sf_registros').select('numero_serie,numero_serie_norm,pecas')
     .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', chave)
     .order('data_hora', { ascending: ordem === 'asc' })
   if (error) throw error
-  const rows = (data ?? []) as { numero_serie: string; numero_serie_norm: string }[]
+  const rows = (data ?? []) as { numero_serie: string; numero_serie_norm: string; pecas?: number }[]
   // Uma peça pode ter mais de um registro na mesma caixa (rebipe); a caixa tem a peça UMA vez.
   const vistos = new Set<string>()
   const exibicao: string[] = []
@@ -63,7 +63,24 @@ async function snsDaCaixa(
     exibicao.push(r.numero_serie)
     norm.push(r.numero_serie_norm)
   }
-  return { exibicao, norm }
+  // Placas da caixa: `pecas` uma vez por SN, valendo a linha mais recente (somarPecasPorSn usa a 1ª).
+  const maisRecentePrimeiro = ordem === 'desc' ? rows : [...rows].reverse()
+  const pecas = somarPecasPorSn(maisRecentePrimeiro.map((r) => ({ numero_serie_norm: r.numero_serie_norm, pecas: r.pecas ?? 1 })))
+  return { exibicao, norm, pecas }
+}
+
+/**
+ * Placas embaladas nesta OP+posto (`pecas` uma vez por SN): agregado no banco (sf_placas_embaladas,
+ * 0163) em UMA chamada — antes era um count de linhas, e varrer as linhas aqui custaria várias
+ * requisições paginadas a cada recarga da tela.
+ */
+async function totalPlacasEmbaladas(
+  supabase: Awaited<ReturnType<typeof createServerSupabase>>,
+  pmo: string, op: string, posto: string,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('sf_placas_embaladas', { p_pmo: pmo, p_op: op, p_posto: posto })
+  if (error) throw error
+  return Number(data ?? 0)
 }
 
 /** Montagem aposentada mais recente de um seq (a que está sendo refeita). */
@@ -93,16 +110,17 @@ async function carregarCaixasAbertas(
   const comPecas = opcoes.filter((o) => o.tipo !== 'daVez' || daVez?.aberta)
   if (comPecas.length === 0) return opcoes
   const { data, error } = await supabase
-    .from('sf_registros').select('numero_caixa,numero_serie_norm')
+    .from('sf_registros').select('numero_caixa,numero_serie_norm,pecas')
     .eq('pmo', pmo).eq('op', op).eq('posto', posto).in('numero_caixa', comPecas.map((o) => marcadorCaixaAberta(o.seq)))
+    .order('data_hora', { ascending: false })
   if (error) throw error
-  const pecas = new Map<string, Set<string>>()
-  for (const r of (data ?? []) as { numero_caixa: string; numero_serie_norm: string }[]) {
-    const set = pecas.get(r.numero_caixa) ?? new Set<string>()
-    set.add(r.numero_serie_norm)
-    pecas.set(r.numero_caixa, set)
+  const linhas = new Map<string, { numero_serie_norm: string; pecas: number }[]>()
+  for (const r of (data ?? []) as { numero_caixa: string; numero_serie_norm: string; pecas?: number }[]) {
+    const lista = linhas.get(r.numero_caixa) ?? []
+    lista.push({ numero_serie_norm: r.numero_serie_norm, pecas: r.pecas ?? 1 })
+    linhas.set(r.numero_caixa, lista)
   }
-  return opcoes.map((o) => ({ ...o, qtd: pecas.get(marcadorCaixaAberta(o.seq))?.size ?? 0 }))
+  return opcoes.map((o) => ({ ...o, qtd: somarPecasPorSn(linhas.get(marcadorCaixaAberta(o.seq)) ?? []) }))
 }
 
 /**
@@ -126,11 +144,7 @@ export async function carregarEstadoEmbalagem(
   const vigentes = todas.filter((c) => c.revisao === 0)
   const ultima = vigentes[vigentes.length - 1]
 
-  const { count: total, error: eTot } = await supabase
-    .from('sf_registros').select('*', { count: 'exact', head: true })
-    .eq('pmo', pmo).eq('op', op).eq('posto', posto)
-  if (eTot) throw eTot
-  const totalEmbaladas = total ?? 0
+  const totalEmbaladas = await totalPlacasEmbaladas(supabase, pmo, op, posto)
 
   // Caixas reprovadas ainda sem remontagem fechada. O número delas fica RESERVADO: a embalagem
   // normal não pode reutilizá-lo, senão peças novas cairiam dentro de uma remontagem pendente.
@@ -170,7 +184,7 @@ export async function carregarEstadoEmbalagem(
   let snsAtuaisNorm: string[] = []
   if (abertaExiste) {
     const atual = await snsDaCaixa(supabase, pmo, op, posto, marcadorCaixaAberta(seq), 'desc')
-    qtdNaCaixa = atual.exibicao.length
+    qtdNaCaixa = atual.pecas
     snsNaCaixa = atual.exibicao
     snsAtuaisNorm = atual.norm
   }
@@ -280,7 +294,7 @@ export interface CaixaConsulta {
   fechada: boolean
   limite: number
   codigo: string   // fechada → código final; aberta → 'CX{seq} (aberta)'
-  qtd: number      // nº de peças (contagem real)
+  qtd: number      // nº de placas (contagem real: pecas somadas uma vez por SN); sns.length = painéis
   sns: string[]    // SNs dentro da caixa
   revisao: number  // 0 = montagem vigente; > 0 = montagem reprovada no NQA (código com R)
 }
@@ -327,10 +341,10 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
   // 1000 peças embaladas perdia as últimas caixas (apareciam com 0 peças e sem Imprimir/CSV).
   // Desempate por id pra a ordem ser estável entre as páginas.
   const PAGINA = 1000
-  const regsData: { numero_serie: string; numero_serie_norm: string; numero_caixa: string; posto: string }[] = []
+  const regsData: { numero_serie: string; numero_serie_norm: string; numero_caixa: string; posto: string; pecas?: number }[] = []
   for (let de = 0; ; de += PAGINA) {
     const { data, error: e2 } = await supabase
-      .from('sf_registros').select('numero_serie,numero_serie_norm,numero_caixa,posto,data_hora')
+      .from('sf_registros').select('numero_serie,numero_serie_norm,numero_caixa,posto,pecas,data_hora')
       .eq('pmo', pmo).eq('op', op).like('numero_caixa', 'CX%')
       .order('data_hora', { ascending: true }).order('id', { ascending: true })
       .range(de, de + PAGINA - 1)
@@ -342,10 +356,15 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
   // Agrupa por (posto, numero_caixa): o marcador/código da caixa NÃO carrega o posto, então
   // dois postos de perfil caixa poderiam ter 'CX[1]' e as peças se misturariam sem o posto na chave.
   const grupos = new Map<string, string[]>()
+  const pecasPorGrupo = new Map<string, { numero_serie_norm: string; pecas: number }[]>()
   const vistosPorGrupo = new Map<string, Set<string>>()
   for (const r of regsData) {
     const k = `${r.posto}||${r.numero_caixa}`
     // Uma peça rebipada na mesma caixa tem 2 registros e continua sendo UMA peça na folha.
+    // Todas as linhas entram na lista de pecas (a mais recente de cada SN decide); a dedup é só da lista de SNs.
+    const pcs = pecasPorGrupo.get(k) ?? []
+    pcs.push({ numero_serie_norm: r.numero_serie_norm, pecas: r.pecas ?? 1 })
+    pecasPorGrupo.set(k, pcs)
     const vistos = vistosPorGrupo.get(k) ?? new Set<string>()
     if (vistos.has(r.numero_serie_norm)) continue
     vistos.add(r.numero_serie_norm)
@@ -364,7 +383,9 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
       fechada: c.fechada,
       limite: c.limite,
       codigo: c.revisao > 0 || c.fechada ? c.codigo : `CX${c.seq} (aberta)`,
-      qtd: sns.length,
+      // placas (cada SN uma vez). A lista veio ASCENDENTE e somarPecasPorSn vale a 1ª ocorrência: inverte
+      // pra valer a linha mais recente, como no SQL.
+      qtd: somarPecasPorSn([...(pecasPorGrupo.get(`${c.posto}||${chave}`) ?? [])].reverse()),
       sns,
       revisao: c.revisao,
     }
@@ -374,7 +395,8 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
 export interface CaixaDoSn {
   posto: string        // posto de embalagem onde a caixa foi formada
   numeroCaixa: string  // código/marcador da caixa (numero_caixa)
-  qtd: number          // total de peças (SNs distintos) da caixa
+  qtd: number          // total de peças (SNs distintos = PAINÉIS) da caixa — define a amostra do NQA
+  qtdPlacas: number    // placas da caixa (pecas uma vez por SN); com N = 1 é igual a qtd
   snsNorm: string[]    // SNs (normalizados) da caixa — p/ validar que a amostra é DESTA caixa
   fechada: boolean     // a caixa já foi FECHADA na embalagem (NQA só inspeciona caixa fechada)
   aposentada: boolean  // montagem já reprovada no NQA (revisao > 0) — está sendo remontada na Embalagem
@@ -428,12 +450,16 @@ export async function resolverCaixaPorSn(
   if (!r1) return null
   const { numero_caixa, posto } = r1 as { numero_caixa: string; posto: string }
 
+  // Mais recente primeiro: as placas de cada SN valem a linha mais recente da caixa, como na RPC (0166).
   const { data: regs, error: e2 } = await supabase
     .from('sf_registros')
-    .select('numero_serie_norm')
+    .select('numero_serie_norm,pecas,data_hora,created_at')
     .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', numero_caixa)
+    .order('data_hora', { ascending: false })
+    .order('created_at', { ascending: false })
   if (e2) throw e2
-  const snsNorm = new Set((regs ?? []).map((x) => (x as { numero_serie_norm: string }).numero_serie_norm))
+  const linhasCaixa = (regs ?? []) as { numero_serie_norm: string; pecas?: number | null }[]
+  const snsNorm = new Set(linhasCaixa.map((x) => x.numero_serie_norm))
 
   // Fechada? Ao fechar, a embalagem reescreve o numero_caixa dos registros para o CÓDIGO final e
   // grava sf_caixas.codigo+fechada. Caixa ABERTA carrega o marcador CX[seq] (sem código em sf_caixas).
@@ -492,6 +518,8 @@ export async function resolverCaixaPorSn(
     posto,
     numeroCaixa: numero_caixa,
     qtd: snsNorm.size,
+    // Informativo: placas da caixa (`pecas` uma vez por SN). A amostra do NQA usa `qtd` (painéis).
+    qtdPlacas: somarPecasPorSn(linhasCaixa.map((l) => ({ numero_serie_norm: l.numero_serie_norm, pecas: l.pecas ?? 1 }))),
     snsNorm: [...snsNorm],
     fechada,
     aposentada,

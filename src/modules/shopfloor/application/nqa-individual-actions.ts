@@ -329,7 +329,8 @@ export async function finalizarNqaIndividual(entrada: {
       : null
     if (achados !== null) {
       console.error('[nqa-lote] resposta perdida mas gravado; tratado como sucesso', contexto)
-      return { ok: true, total: entrada.snsNorm.length }
+      // Em PLACAS, como o `total` da RPC (0166): nqaJaGravado soma `pecas` uma vez por SN.
+      return { ok: true, total: achados }
     }
     return { ok: false, erro: 'Não foi possível registrar o NQA do lote. Confira antes de tentar de novo.' }
   }

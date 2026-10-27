@@ -21,7 +21,11 @@ export interface BipeAlmoxarifado {
   serie: string
   /** Código completo da caixa, quando o bipe é de caixa. */
   codigoCaixa: string
-  /** Quantidade que o bipe representa: 1 na peça, a qtd do código na caixa. */
+  /**
+   * Quantidade que o bipe representa, só pelo formato: 1 na peça, a qtd do código na caixa (em PLACAS
+   * desde a 0163). Não é o número que vale: a RPC devolve as placas que entraram (com placas por painel,
+   * a peça vale `pecas` placas — 0165), e é ela que a action e o painel usam.
+   */
   quantidade: number
 }
 
@@ -67,7 +71,7 @@ export function classificarBipeAlmoxarifado(
 export interface NecessidadeAlmoxarifado {
   codigo: string
   seq: number
-  /** Peças da caixa, contadas nas linhas da Embalagem — o número que a entrada vai gravar. */
+  /** Peças (PLACAS, 0165) da caixa, contadas nas linhas da Embalagem — o número que a entrada vai gravar. */
   pecas: number
   fechadaEm: string | null
 }
@@ -115,7 +119,10 @@ export interface NecessidadeLote {
   loteId: string
   /** 'LOTE[<8 hex>][<N>]' — o mesmo texto que vai ao Compels como bipe do envio. */
   rotulo: string
-  /** SNs distintos do lote (N: a quantidade a bipar). */
+  /**
+   * PLACAS do lote (0165: `pecas` somadas uma vez por SN). Com 1 placa por painel é o número de SNs. A
+   * quantidade a BIPAR (painéis) é `sns.length` (e `amostra`).
+   */
   pecas: number
   /**
    * Quantidade a bipar = TODAS as peças do lote (decisão de 21/10; antes era o K da Tabela NQA, que o
@@ -124,7 +131,7 @@ export interface NecessidadeLote {
   amostra: number | null
   /** TODOS os SNs do lote (normalizados), em ordem. */
   sns: string[]
-  /** Quantos SNs do lote já entraram por fora (o normal é 0; > 0 a confirmação recusa). */
+  /** Quantas PLACAS (0165) do lote já entraram por fora (o normal é 0; > 0 a confirmação recusa). */
   jaLancadas: number
   aprovadoEm: string | null
 }
@@ -202,8 +209,9 @@ export interface PendenciaAlmoxarifado {
   pmo: string
   op: string
   tipo: 'caixa' | 'lote' | 'peca'
-  /** Código da caixa, ou o rótulo do lote ('LOTE[<8 hex>][<N>]'). */
+  /** Código da caixa, ou o rótulo do lote ('LOTE[<8 hex>][<N>]', N em painéis). */
   codigo: string
+  /** PLACAS esperando (0165: `pecas` uma vez por SN). */
   pecas: number
   /** Só lote: K da Tabela NQA (nulo quando a Tabela não cobre o tamanho). */
   amostra: number | null
@@ -217,9 +225,16 @@ export interface PendenciaAlmoxarifado {
 export interface DetalheAlmoxarifado {
   tipo: 'caixa' | 'lote' | 'peca'
   qtdOp: number | null
+  /** PLACAS da OP já no Almoxarifado (0165), na mesma unidade de `qtdOp`. */
   recebidasOp: number
   postoAnterior: { posto: string; recurso: string; precisaAprovado: boolean } | null
+  /** PLACAS do item (0165: `pecas` uma vez por SN). */
   pecas: number
+  /**
+   * Só peças avulsas: quantos SNs (painéis) esperam — `sns` traz só os 200 mais antigos, e `pecas` (placas)
+   * deixa de ser esse número quando a OP tem placas por painel. Ausente = igual a `pecas` (RPC antiga).
+   */
+  paineis?: number
   sns: string[]
   /** fechada_em (caixa) ou aprovado_em (lote). */
   em: string | null
