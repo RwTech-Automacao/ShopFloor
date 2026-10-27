@@ -42,6 +42,8 @@ export interface OrdemView {
   sn_fim: string
   embalagem_individual: boolean
   placas_por_painel: number
+  /** A OP já tem lançamentos: as placas por painel ficam bloqueadas (o histórico guarda o N antigo). */
+  tem_registros?: boolean
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
@@ -105,6 +107,7 @@ export function OrdemForm({
   const [qtd, setQtd] = useState(ordem?.qtd != null ? String(ordem.qtd) : '')
   const [paineis, setPaineis] = useState(paineisTexto(ordem?.qtd != null ? String(ordem.qtd) : '', ordem?.placas_por_painel ?? 1))
   const nPainel = Number.isInteger(Number(placasPorPainel)) && Number(placasPorPainel) >= 1 ? Number(placasPorPainel) : 1
+  const bloqueiaPlacas = !!ordem && ordem.tem_registros === true
   const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
   // O status precisa ser controlado só por causa do aviso de reativação: ele depende de comparar o
@@ -322,12 +325,15 @@ export function OrdemForm({
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="placas_por_painel">Placas por painel</Label>
-                <Input id="placas_por_painel" name="placas_por_painel" type="number" min={1} value={placasPorPainel} onChange={(e) => {
+                {bloqueiaPlacas && <input type="hidden" name="placas_por_painel" value={ordem.placas_por_painel} />}
+                <Input id="placas_por_painel" name={bloqueiaPlacas ? undefined : 'placas_por_painel'} type="number" min={1} value={placasPorPainel} disabled={bloqueiaPlacas} onChange={(e) => {
                   setPlacasPorPainel(e.target.value)
                   const n = Number(e.target.value)
                   setPaineis(Number.isInteger(n) && n >= 1 ? paineisTexto(qtd, n) : '')
                 }} />
-                <p className="text-xs text-muted-foreground">Use quando a etiqueta é por painel: cada bipe conta como N placas.</p>
+                <p className="text-xs text-muted-foreground">
+                  {bloqueiaPlacas ? 'Bloqueado: esta OP já tem registros.' : 'Use quando a etiqueta é por painel: cada bipe conta como N placas.'}
+                </p>
               </div>
               {nPainel > 1 && (
                 <div className="flex flex-col gap-1.5">

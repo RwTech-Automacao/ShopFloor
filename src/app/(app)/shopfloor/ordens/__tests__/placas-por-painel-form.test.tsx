@@ -95,3 +95,27 @@ describe('placas por painel no cadastro de OP', () => {
     expect(screen.getByLabelText('Painéis')).toBeTruthy()
   })
 })
+
+describe('trava das placas por painel quando a OP já tem registros', () => {
+  it('com registros, o campo fica desabilitado, com a dica, e o valor atual segue no envio', () => {
+    const { container } = montar({ ...BASE, placas_por_painel: 50, qtd: null, tem_registros: true })
+    const campo = screen.getByLabelText('Placas por painel') as HTMLInputElement
+    expect(campo.disabled).toBe(true)
+    expect(screen.getByText('Bloqueado: esta OP já tem registros.')).toBeTruthy()
+    // desabilitado não vai no FormData: o hidden leva o valor atual.
+    const form = container.querySelector('form') as HTMLFormElement
+    expect(new FormData(form).get('placas_por_painel')).toBe('50')
+  })
+
+  it('sem registros, o campo fica habilitado e sem a dica', () => {
+    montar({ ...BASE, placas_por_painel: 50, qtd: null, tem_registros: false })
+    expect((screen.getByLabelText('Placas por painel') as HTMLInputElement).disabled).toBe(false)
+    expect(screen.queryByText('Bloqueado: esta OP já tem registros.')).toBeNull()
+  })
+
+  it('OP nova não bloqueia e envia o campo normalmente', () => {
+    const { container } = montar(undefined)
+    expect((screen.getByLabelText('Placas por painel') as HTMLInputElement).disabled).toBe(false)
+    expect(new FormData(container.querySelector('form') as HTMLFormElement).get('placas_por_painel')).toBe('1')
+  })
+})

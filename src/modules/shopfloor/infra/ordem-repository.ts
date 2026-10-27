@@ -159,10 +159,10 @@ export async function buscarOpEmUso(op: string, excetoId?: string): Promise<{ id
   return row ? (row as { id: string; pmo: string; op: string }) : null
 }
 
-/** PMO, OP e status atuais da OP. O status vem para o editar saber se a OP está sendo REATIVADA. */
-export async function buscarOrdemBase(id: string): Promise<{ pmo: string; op: string; status: string } | null> {
+/** PMO, OP, status e placas por painel atuais da OP. O status vem para o editar saber se a OP está sendo REATIVADA; o N, para a trava de edição com registros. */
+export async function buscarOrdemBase(id: string): Promise<{ pmo: string; op: string; status: string; placas_por_painel: number } | null> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('sf_ordens').select('pmo,op,status').eq('id', id).single()
+  const { data, error } = await supabase.from('sf_ordens').select('pmo,op,status,placas_por_painel').eq('id', id).single()
   if (error) return null
-  return data as { pmo: string; op: string; status: string }
+  return data as { pmo: string; op: string; status: string; placas_por_painel: number }
 }

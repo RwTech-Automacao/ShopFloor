@@ -139,6 +139,17 @@ export async function editarOrdemAction(
   if (ehReativacaoManual(base?.status, dados.status)) dados.reaberta_manual = true
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel })
   if (!v.ok) return v
+  // Trava: com registros, mudar as placas por painel faria o histórico (`pecas` gravada com o N
+  // antigo) divergir das telas que usam o N atual. O N atual e o par PMO/OP vêm do banco, não do form.
+  if (base && dados.placas_por_painel !== base.placas_por_painel) {
+    try {
+      if ((await contarRegistros(base.pmo, base.op)) > 0) {
+        return { ok: false, erro: 'Esta OP já tem registros; não é possível alterar as placas por painel.' }
+      }
+    } catch {
+      return { ok: false, erro: 'Não foi possível salvar a OP.' }
+    }
+  }
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).
   const emUso = await buscarOpEmUso(dados.op, id)
   if (emUso) return { ok: false, erro: mensagemOpDuplicada(emUso) }
