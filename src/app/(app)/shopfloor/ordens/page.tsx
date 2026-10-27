@@ -2,7 +2,6 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdens, listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
-import { listarOpsComBipes } from '@/modules/shopfloor/infra/fluxo-repository'
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarPadroes } from '@/modules/shopfloor/infra/padroes-fluxo-repository'
 import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
@@ -16,9 +15,7 @@ export default async function OrdensPage() {
     return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
   }
 
-  // Período nulo = histórico todo: uma consulta diz quais OPs já têm registros (trava das placas por painel).
-  const [ordens, postos, padroes, postosPerfil, opsComRegistros] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil(), listarOpsComBipes(null, null)])
-  const comRegistros = new Set(opsComRegistros.map((r) => `${r.pmo}\u0000${r.op}`))
+  const [ordens, postos, padroes, postosPerfil] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil()])
   const chavesPostos = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const views: OrdemView[] = ordens.map((o) => ({
     id: o.id,
@@ -33,7 +30,6 @@ export default async function OrdensPage() {
     sn_fim: o.sn_fim,
     embalagem_individual: o.embalagem_individual,
     placas_por_painel: o.placas_por_painel,
-    tem_registros: comRegistros.has(`${o.pmo}\u0000${o.op}`),
     postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
     receitaPorPosto: agruparReceitaPorPosto(o.sf_ordem_componentes),
     tempoBurninPorPosto: agruparTempoBurninPorPosto(o.sf_ordem_burnin),

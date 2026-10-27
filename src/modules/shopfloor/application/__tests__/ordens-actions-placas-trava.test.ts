@@ -25,7 +25,7 @@ vi.mock('../../infra/ordem-repository', () => ({
   listarPostos: vi.fn(async () => []),
 }))
 
-import { criarOrdemAction, editarOrdemAction } from '../ordens-actions'
+import { criarOrdemAction, editarOrdemAction, opTemRegistrosAction } from '../ordens-actions'
 
 function formulario(n: string): FormData {
   const fd = new FormData()
@@ -83,5 +83,27 @@ describe('trava de "placas por painel" quando a OP já tem registros', () => {
     const r = await criarOrdemAction(undefined, formulario('50'))
     expect(r.ok).toBe(true)
     expect(m.contarRegistros).not.toHaveBeenCalled()
+  })
+})
+
+describe('fail-closed e consulta leve', () => {
+  it('editar sem conseguir ler a OP base: recusa e não grava', async () => {
+    m.buscarOrdemBase.mockResolvedValue(null)
+    const r = await editarOrdemAction(undefined, formulario('1'))
+    expect(r).toEqual({ ok: false, erro: 'OP não encontrada.' })
+    expect(m.atualizarOrdem).not.toHaveBeenCalled()
+  })
+
+  it('opTemRegistrosAction conta pelo par gravado', async () => {
+    m.contarRegistros.mockResolvedValue(2)
+    expect(await opTemRegistrosAction('id-1')).toBe(true)
+    expect(m.contarRegistros).toHaveBeenCalledWith('PMOORIG', '99')
+    m.contarRegistros.mockResolvedValue(0)
+    expect(await opTemRegistrosAction('id-1')).toBe(false)
+  })
+
+  it('opTemRegistrosAction sem permissão ou OP inexistente: false', async () => {
+    m.buscarOrdemBase.mockResolvedValue(null)
+    expect(await opTemRegistrosAction('id-1')).toBe(false)
   })
 })

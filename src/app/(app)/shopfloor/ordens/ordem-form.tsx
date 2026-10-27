@@ -20,6 +20,7 @@ import {
   criarOrdemAction,
   editarOrdemAction,
   type ResultadoOrdem,
+  opTemRegistrosAction,
 } from '@/modules/shopfloor/application/ordens-actions'
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
 import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
@@ -42,8 +43,6 @@ export interface OrdemView {
   sn_fim: string
   embalagem_individual: boolean
   placas_por_painel: number
-  /** A OP já tem lançamentos: as placas por painel ficam bloqueadas (o histórico guarda o N antigo). */
-  tem_registros?: boolean
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
@@ -107,7 +106,9 @@ export function OrdemForm({
   const [qtd, setQtd] = useState(ordem?.qtd != null ? String(ordem.qtd) : '')
   const [paineis, setPaineis] = useState(paineisTexto(ordem?.qtd != null ? String(ordem.qtd) : '', ordem?.placas_por_painel ?? 1))
   const nPainel = Number.isInteger(Number(placasPorPainel)) && Number(placasPorPainel) >= 1 ? Number(placasPorPainel) : 1
-  const bloqueiaPlacas = !!ordem && ordem.tem_registros === true
+  // Consultado ao abrir a edição; até a resposta chegar o campo fica habilitado (o servidor é a trava real).
+  const [temRegistros, setTemRegistros] = useState(false)
+  const bloqueiaPlacas = !!ordem && temRegistros
   const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
   // O status precisa ser controlado só por causa do aviso de reativação: ele depende de comparar o
@@ -251,6 +252,17 @@ export function OrdemForm({
           setModoNovoCliente(false)
           setPadraoSelecionado('')
           setInstanciaForm((n) => n + 1)
+          setTemRegistros(false)
+          if (ordem) {
+            const idOp = ordem.id
+            void (async () => {
+              try {
+                setTemRegistros(await opTemRegistrosAction(idOp))
+              } catch {
+                // falha = trata como sem registros; o servidor recusa ao salvar se houver.
+              }
+            })()
+          }
         }
       }}>
         <DialogTrigger

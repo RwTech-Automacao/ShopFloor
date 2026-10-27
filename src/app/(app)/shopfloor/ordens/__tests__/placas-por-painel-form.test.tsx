@@ -1,6 +1,7 @@
 import type * as React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { opTemRegistrosAction } from '@/modules/shopfloor/application/ordens-actions'
 import { OrdemForm, type OrdemView } from '../ordem-form'
 
 vi.mock('server-only', () => ({}))
@@ -8,6 +9,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/modules/shopfloor/application/ordens-actions', () => ({
   criarOrdemAction: vi.fn(),
   editarOrdemAction: vi.fn(),
+  opTemRegistrosAction: vi.fn(),
 }))
 vi.mock('@/modules/shopfloor/application/padroes-fluxo-actions', () => ({
   salvarPadraoAction: vi.fn(),
@@ -96,25 +98,43 @@ describe('placas por painel no cadastro de OP', () => {
   })
 })
 
+const temRegistros = vi.mocked(opTemRegistrosAction)
+
 describe('trava das placas por painel quando a OP já tem registros', () => {
-  it('com registros, o campo fica desabilitado, com a dica, e o valor atual segue no envio', () => {
-    const { container } = montar({ ...BASE, placas_por_painel: 50, qtd: null, tem_registros: true })
+  it('ao abrir a edição consulta a action; com registros o campo fica desabilitado, com a dica, e o valor atual segue no envio', async () => {
+    temRegistros.mockResolvedValue(true)
+    const { container } = montar({ ...BASE, placas_por_painel: 50, qtd: null })
     const campo = screen.getByLabelText('Placas por painel') as HTMLInputElement
-    expect(campo.disabled).toBe(true)
+    expect(campo.disabled).toBe(false) // enquanto a resposta não chega
+    fireEvent.click(screen.getAllByText('reabrir')[0]!)
+    await waitFor(() => expect((screen.getByLabelText('Placas por painel') as HTMLInputElement).disabled).toBe(true))
+    expect(temRegistros).toHaveBeenCalledWith('id-1')
     expect(screen.getByText('Bloqueado: esta OP já tem registros.')).toBeTruthy()
-    // desabilitado não vai no FormData: o hidden leva o valor atual.
-    const form = container.querySelector('form') as HTMLFormElement
-    expect(new FormData(form).get('placas_por_painel')).toBe('50')
+    expect(new FormData(container.querySelector('form') as HTMLFormElement).get('placas_por_painel')).toBe('50')
   })
 
-  it('sem registros, o campo fica habilitado e sem a dica', () => {
-    montar({ ...BASE, placas_por_painel: 50, qtd: null, tem_registros: false })
+  it('sem registros, o campo fica habilitado e sem a dica', async () => {
+    temRegistros.mockResolvedValue(false)
+    montar({ ...BASE, placas_por_painel: 50, qtd: null })
+    fireEvent.click(screen.getAllByText('reabrir')[0]!)
+    await waitFor(() => expect(temRegistros).toHaveBeenCalled())
     expect((screen.getByLabelText('Placas por painel') as HTMLInputElement).disabled).toBe(false)
     expect(screen.queryByText('Bloqueado: esta OP já tem registros.')).toBeNull()
   })
 
-  it('OP nova não bloqueia e envia o campo normalmente', () => {
+  it('falha da action = campo habilitado, formulário intacto', async () => {
+    temRegistros.mockRejectedValue(new Error('x'))
+    montar({ ...BASE, placas_por_painel: 50, qtd: null })
+    fireEvent.click(screen.getAllByText('reabrir')[0]!)
+    await waitFor(() => expect(temRegistros).toHaveBeenCalled())
+    expect((screen.getByLabelText('Placas por painel') as HTMLInputElement).disabled).toBe(false)
+  })
+
+  it('OP nova não consulta nem bloqueia e envia o campo normalmente', () => {
+    temRegistros.mockClear()
     const { container } = montar(undefined)
+    fireEvent.click(screen.getAllByText('reabrir')[0]!)
+    expect(temRegistros).not.toHaveBeenCalled()
     expect((screen.getByLabelText('Placas por painel') as HTMLInputElement).disabled).toBe(false)
     expect(new FormData(container.querySelector('form') as HTMLFormElement).get('placas_por_painel')).toBe('1')
   })
