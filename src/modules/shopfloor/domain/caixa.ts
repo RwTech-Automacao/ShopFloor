@@ -13,6 +13,25 @@ export function marcadorCaixaAberta(seq: number): string {
 }
 
 /**
+ * Peças (placas) de um conjunto de registros: `pecas` somada UMA vez por SN.
+ * Uma linha de sf_registros NÃO é um bipe — defeito, reparo, rebipe e reteste repetem o SN — então
+ * somar `pecas` direto nas linhas contaria o mesmo painel várias vezes. Com `pecas = 1` em tudo o
+ * resultado é o nº de SNs distintos, o mesmo de antes das placas por painel.
+ * Se o mesmo SN trouxer valores diferentes, vale a PRIMEIRA linha da lista: quem chama ordena da
+ * mais recente para a mais antiga (igual ao `distinct on ... order by data_hora desc` do SQL).
+ */
+export function somarPecasPorSn(linhas: readonly { numero_serie_norm: string; pecas: number }[]): number {
+  const vistos = new Set<string>()
+  let soma = 0
+  for (const l of linhas) {
+    if (vistos.has(l.numero_serie_norm)) continue
+    vistos.add(l.numero_serie_norm)
+    soma += l.pecas
+  }
+  return soma
+}
+
+/**
  * Quantas peças foram embaladas ANTES desta caixa, no mesmo posto. É a base do contador "QTD" da
  * folha impressa: a lista da caixa 6 começa em 61 porque as cinco caixas anteriores somaram 60.
  * A contagem é só sequencial (ordem de embalagem), sem amarração com faixa de SN ou índice da OP.

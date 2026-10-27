@@ -163,7 +163,7 @@ export function EmbalagemPanel({
         tipo: 'aviso',
         titulo: r.erro,
         chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }],
-        dica: /cheia/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
+        dica: /cheia|ultrapassa o limite/i.test(r.erro) ? 'Feche a caixa e continue na próxima.' : undefined,
       })
       setSn('') // bipe errado → limpa o campo pra bipar outro
       acaoAposEmbalar.current = 'focus'
@@ -195,13 +195,19 @@ export function EmbalagemPanel({
       return
     }
 
+    // Um painel vale N placas (OP com placas por painel): o contador soma o que o servidor devolveu.
+    const pecas = r.pecas ?? 1
     setResultado({
       tipo: 'ok',
       titulo: emReaberta ? 'Peça embalada na caixa reaberta' : 'Peça embalada',
-      chips: [{ rotulo: 'Nº Série', valor: alvo.trim(), mono: true }, { rotulo: 'Caixa', valor: `CX${seq} · ${qtdNaCaixa + 1}/${limite}` }],
+      chips: [
+        { rotulo: 'Nº Série', valor: alvo.trim(), mono: true },
+        ...(pecas > 1 ? [{ rotulo: 'Placas', valor: `+${pecas}` }] : []),
+        { rotulo: 'Caixa', valor: `CX${seq} · ${qtdNaCaixa + pecas}/${limite}` },
+      ],
     })
-    setQtdNaCaixa((q) => q + 1)
-    setTotalEmbaladas((t) => t + 1)
+    setQtdNaCaixa((q) => q + pecas)
+    setTotalEmbaladas((t) => t + pecas)
     setSnsNaCaixa((prev) => [alvo.trim(), ...prev])
     if (remontagem) setRemontagem({ ...remontagem, faltando: remontagem.faltando.filter((s) => s !== alvo.trim()) })
   }

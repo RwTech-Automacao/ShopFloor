@@ -15,6 +15,8 @@ export interface OrdemLancamento {
   /** OP de embalagem individual (1 peça = 1 caixa) × coletiva (caixa com N peças) — o Almoxarifado
    *  usa isto pra saber se o bipe esperado é a série da peça ou o código da caixa fechada. */
   embalagem_individual: boolean
+  /** Placas que um bipe de painel vale nesta OP (1 = sem painel). */
+  placas_por_painel?: number
 }
 
 export interface SfLancarArgs {
@@ -77,13 +79,14 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('cliente,descricao,qtd,sn_ini,sn_fim,embalagem_individual,sf_ordem_postos(posto,ordem)')
+    .select('cliente,descricao,qtd,sn_ini,sn_fim,embalagem_individual,placas_por_painel,sf_ordem_postos(posto,ordem)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
   if (error) throw error
   if (!data) return null
   const row = data as unknown as {
+    placas_por_painel: number | null
     cliente: string
     descricao: string
     qtd: number | null
@@ -99,6 +102,7 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
     sn_ini: row.sn_ini,
     sn_fim: row.sn_fim,
     embalagem_individual: row.embalagem_individual,
+    placas_por_painel: row.placas_por_painel ?? 1,
     // postos NA ORDEM da OP (a sequência importa p/ a trava de sequência).
     postos: [...row.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
   }
@@ -114,12 +118,13 @@ export async function listarDefeitos(): Promise<{ codigo: string; tipo: number }
 /** Chama a função atômica sf_lancar. Erros de infra viram { ok:false, erro:'ERRO_INTERNO' }. */
 export async function chamarSfLancar(
   args: SfLancarArgs,
-): Promise<{ ok: boolean; erro?: string; caixa_count?: number; postoPendente?: string }> {
+): Promise<{ ok: boolean; erro?: string; caixa_count?: number; pecas?: number; limite?: number; postoPendente?: string }> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_lancar', args)
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
-  const r = data as { ok: boolean; erro?: string; caixa_count?: number; posto_pendente?: string }
-  return { ok: r.ok, erro: r.erro, caixa_count: r.caixa_count, postoPendente: r.posto_pendente }
+  const r = data as { ok: boolean; erro?: string; caixa_count?: number; pecas?: number; count?: number; limite?: number; posto_pendente?: string }
+  // `count` (placas já na caixa) só vem na recusa CAIXA_CHEIA; `caixa_count` só no sucesso.
+  return { ok: r.ok, erro: r.erro, caixa_count: r.caixa_count ?? r.count, pecas: r.pecas, limite: r.limite, postoPendente: r.posto_pendente }
 }
 
 export interface OrdemLancamentoLista {
