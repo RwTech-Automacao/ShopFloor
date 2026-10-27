@@ -361,6 +361,10 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
   for (const r of regsData) {
     const k = `${r.posto}||${r.numero_caixa}`
     // Uma peça rebipada na mesma caixa tem 2 registros e continua sendo UMA peça na folha.
+    // Todas as linhas entram na lista de pecas (a mais recente de cada SN decide); a dedup é só da lista de SNs.
+    const pcs = pecasPorGrupo.get(k) ?? []
+    pcs.push({ numero_serie_norm: r.numero_serie_norm, pecas: r.pecas ?? 1 })
+    pecasPorGrupo.set(k, pcs)
     const vistos = vistosPorGrupo.get(k) ?? new Set<string>()
     if (vistos.has(r.numero_serie_norm)) continue
     vistos.add(r.numero_serie_norm)
@@ -368,9 +372,6 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
     const arr = grupos.get(k) ?? []
     arr.push(r.numero_serie)
     grupos.set(k, arr)
-    const pcs = pecasPorGrupo.get(k) ?? []
-    pcs.push({ numero_serie_norm: r.numero_serie_norm, pecas: r.pecas ?? 1 })
-    pecasPorGrupo.set(k, pcs)
   }
 
   return caixas.map((c) => {

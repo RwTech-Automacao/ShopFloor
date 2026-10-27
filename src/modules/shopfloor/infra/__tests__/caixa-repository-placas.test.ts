@@ -54,7 +54,8 @@ describe('caixa em placas (repositório)', () => {
     // ordem da consulta = ascendente: a 2ª linha é a mais recente
     registros = [linha('A', 'CX[1][50]1-P', 10), linha('A', 'CX[1][50]1-P', 50)]
     const [c] = await carregarCaixasDaOp('P', '1')
-    expect(c!.qtd).toBe(10)
+    expect(c!.qtd).toBe(50)
+    expect(c!.sns).toHaveLength(1)
   })
 
   it('carregarEstadoEmbalagem: placas na caixa e total, com SN repetido contado uma vez', async () => {
