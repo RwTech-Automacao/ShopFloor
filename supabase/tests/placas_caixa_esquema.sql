@@ -1,5 +1,6 @@
 -- Esquema mínimo para provar a 0163 (caixa e embalagem em placas) com a sf_lancar (0103) e a
 create role authenticated;
+create role anon;
 -- sf_fechar_caixa (0100) REAIS. Só as colunas/tabelas que elas tocam; as migrações 0161 (colunas +
 -- trigger) e 0163 vêm do runner.
 -- `teste.perms` (2 args) = lista 'modulo.permissao' separada por vírgula (a de DOIS argumentos, de propósito).

@@ -247,21 +247,34 @@ begin
 end;
 $$;
 
--- Placas embaladas na OP+posto: `pecas` uma vez por SN (linha mais recente). Mesmo critério do select
--- que o app fazia (todas as linhas da OP+posto). SECURITY INVOKER de propósito: o RLS de sf_registros
--- continua valendo como no select anterior (a função só agrega, não amplia o que o usuário vê).
+-- Placas embaladas na OP+posto. Com N = 1 (nenhuma linha com `pecas > 1`) devolve count(*) das linhas
+-- da OP+posto, EXATAMENTE como o select que o app fazia (inclui SN repetido e linhas legadas com
+-- numero_serie_norm vazio). Só quando existe painel (alguma linha com pecas > 1) soma `pecas` uma vez
+-- por SN (linha mais recente). SECURITY INVOKER de propósito: o RLS de sf_registros continua valendo
+-- como no select anterior (a função só agrega, não amplia o que o usuário vê).
 create or replace function public.sf_placas_embaladas(p_pmo text, p_op text, p_posto text)
 returns bigint
 language sql stable security invoker set search_path = public
 as $func$
-  select coalesce(sum(u.pecas), 0)::bigint
-  from (
-    select distinct on (numero_serie_norm) numero_serie_norm, pecas
-    from sf_registros
-    where pmo = p_pmo and op = p_op and posto = p_posto
-    order by numero_serie_norm, data_hora desc, created_at desc
-  ) u
+  select case
+    when not exists (
+      select 1 from sf_registros
+      where pmo = p_pmo and op = p_op and posto = p_posto and pecas > 1
+    ) then (
+      select count(*) from sf_registros where pmo = p_pmo and op = p_op and posto = p_posto
+    )
+    else (
+      select coalesce(sum(u.pecas), 0)::bigint
+      from (
+        select distinct on (numero_serie_norm) numero_serie_norm, pecas
+        from sf_registros
+        where pmo = p_pmo and op = p_op and posto = p_posto
+        order by numero_serie_norm, data_hora desc, created_at desc
+      ) u
+    )
+  end
 $func$;
+revoke all on function public.sf_placas_embaladas(text, text, text) from public, anon;
 grant execute on function public.sf_placas_embaladas(text, text, text) to authenticated;
 
 notify pgrst, 'reload schema';

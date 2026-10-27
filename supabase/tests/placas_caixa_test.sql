@@ -64,7 +64,7 @@ begin
   r := pg_temp.bipar('PMOT02','2','S4', 3);
   assert r->>'erro' = 'CAIXA_CHEIA', 'N=1: 4º recusado';
   insert into sf_registros (pmo, op, posto, numero_caixa, numero_serie, numero_serie_norm)
-    values ('PMOT02','2','Embalagem','CX[1]','S2','S2');   -- 2ª linha do mesmo SN: continua 3
+    values ('PMOT02','2','Embalagem','CX[1]','S2','S2');   -- 2ª linha do mesmo SN (a contagem da caixa segue 3)
   insert into sf_caixas (pmo, op, posto, seq, limite) values ('PMOT02','2','Embalagem',1,3);
   r := public.sf_fechar_caixa('PMOT02','2','Embalagem',1,false);
   assert r->>'codigo' = 'CX[1][3]2-PMOT02', 'N=1 código: '||(r->>'codigo');
@@ -75,7 +75,14 @@ begin
 
   -- placas embaladas (RPC agregada): N=50 com SN repetido conta uma vez; N=1; OP/posto sem linhas = 0
   assert public.sf_placas_embaladas('PMOT01','1','Embalagem') = 50*10 + 50*10 + 50, 'N=50 total: '||public.sf_placas_embaladas('PMOT01','1','Embalagem');
-  assert public.sf_placas_embaladas('PMOT02','2','Embalagem') = 3, 'N=1 total';
+  -- N=1 idêntico ao count(*) de antes: o SN repetido (S2 duas vezes) conta 4 linhas, não 3 SNs.
+  assert public.sf_placas_embaladas('PMOT02','2','Embalagem') = 4, 'N=1 total (count(*) com SN repetido): '||public.sf_placas_embaladas('PMOT02','2','Embalagem');
+  insert into sf_registros (pmo, op, posto, numero_caixa, numero_serie, numero_serie_norm)
+    values ('PMOT02','2','Embalagem','CX[1]','','');
+  insert into sf_registros (pmo, op, posto, numero_caixa, numero_serie, numero_serie_norm)
+    values ('PMOT02','2','Embalagem','CX[1]','','');
+  assert public.sf_placas_embaladas('PMOT02','2','Embalagem') = 6, 'N=1 com SN vazio conta cada linha: '||public.sf_placas_embaladas('PMOT02','2','Embalagem');
+  assert public.sf_placas_embaladas('PMOT02','2','Embalagem') = (select count(*) from sf_registros where pmo='PMOT02' and op='2' and posto='Embalagem'), 'N=1 = count(*)';
   assert public.sf_placas_embaladas('PMOT02','2','Outro') = 0, 'posto sem linhas';
 
   -- autorização: só a lista legada de 1 arg vale. Só a de 2 args NÃO passa; sem nenhuma, também não.
