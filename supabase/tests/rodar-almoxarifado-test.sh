@@ -52,7 +52,7 @@ docker cp supabase/tests/almoxarifado_pecas_avulsas_test.sql "$NOME":/tmp/teste_
 # Peças avulsas (OP individual sem NQA no posto anterior): roda por cima da 0158/0159 já aplicadas acima.
 docker cp supabase/tests/almoxarifado_test.sql "$NOME":/tmp/teste.sql
 
-# PLACAS=1 — placas por painel (0161 + 0165). A suíte INTEIRA (arquivos SQL e etapas em bash) roda com a
+# PLACAS=1 — placas por painel (0161 + 0165 + 0166). A suíte INTEIRA (arquivos SQL e etapas em bash) roda com a
 # 0161 aplicada antes do primeiro insert (junto com a 0128) e com a 0165 aplicada logo depois de CADA
 # migração que recria uma das funções dela (0131, 0133, 0156, 0158, 0159) — então todo caso antigo, com
 # placas_por_painel = 1, roda contra as funções NOVAS: é a prova de que N = 1 não mudou nada. Por cima, o
@@ -74,6 +74,12 @@ if [ -n "${PLACAS:-}" ]; then
     done
     docker cp $M/0155_sf_almox_posto_anterior.sql "$NOME":/tmp/raw_0155.sql
     docker cp $M/0165_placas_almoxarifado.sql "$NOME":/tmp/0165.sql
+    # A 0166 (NQA com o `total` em placas) recria a sf_nqa_caixa (0160) e a sf_nqa_individual (0097):
+    # entra logo depois de cada uma, então todo caso de NQA da suíte (N = 1) roda contra ela.
+    for m in 0160_sf_nqa_caixa_plano_estavel 0097_sf_nqa_individual; do
+      cat "$M/$m.sql" $M/0166_placas_nqa.sql > "$TMPP/${m%%_*}.sql"
+      docker cp "$TMPP/${m%%_*}.sql" "$NOME":/tmp/"${m%%_*}".sql
+    done
   fi
   docker cp supabase/tests/placas_almoxarifado_test.sql "$NOME":/tmp/teste_placas.sql
   docker cp supabase/tests/placas_almoxarifado_foto.sql "$NOME":/tmp/foto.sql

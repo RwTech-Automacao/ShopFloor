@@ -12,7 +12,6 @@ import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import { carregarLoteNqaIndividual, finalizarNqaIndividual, validarBipeLoteIndividual, type LoteNqaIndividual } from '@/modules/shopfloor/application/nqa-individual-actions'
 import { type AmostraNqa } from '@/modules/shopfloor/application/nqa-caixa-actions'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
-import { placasDasAmostras } from '@/modules/shopfloor/domain/nqa-amostra'
 import { salvarNqaIndividualProgresso, limparNqaIndividualProgresso, lerNqaIndividualProgresso } from './nqa-individual-progresso-local'
 
 const OPCOES_INSPECAO = ['Aprovado', 'Reprovado', 'Não aplicável']
@@ -73,10 +72,7 @@ export function NqaIndividualPanel({
   const postosRetorno = postos.filter((p) => p !== posto)
   const algumReprovado = amostras.some(amostraReprovada)
   const amostraAtualReprova = visual === 'Reprovado' || funcional === 'Reprovado'
-  // A amostra exigida (lote.amostra) é em PLACAS; cada painel amostrado vale as placas dele (0166).
-  // Nunca comparar o nº de SNs bipados com um total em placas. Com N = 1 é amostras.length.
-  const placasAmostradas = lote !== null ? placasDasAmostras(amostras, lote.pecasPorSn) : 0
-  const completa = lote !== null && placasAmostradas >= lote.amostra && !algumReprovado
+  const completa = lote !== null && amostras.length >= lote.amostra && !algumReprovado
 
   // Ao entrar na fase B (lote fechado), foca o campo de bipe da amostra.
   useEffect(() => {
@@ -431,11 +427,11 @@ export function NqaIndividualPanel({
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="shrink-0">
           <div className="mb-1 flex justify-between text-sm">
-            <span className="font-medium">{placasAmostradas} / {lote.amostra} amostras</span>
+            <span className="font-medium">{amostras.length} / {lote.amostra} amostras</span>
             <span className="text-muted-foreground">{algumReprovado ? 'Lote reprovado' : completa ? 'Amostra completa' : 'Inspecionando…'}</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div className={`h-full ${algumReprovado ? 'bg-red-600' : 'bg-enterplak'}`} style={{ width: `${Math.min(100, Math.round((placasAmostradas / Math.max(1, lote.amostra)) * 100))}%` }} />
+            <div className={`h-full ${algumReprovado ? 'bg-red-600' : 'bg-enterplak'}`} style={{ width: `${Math.min(100, Math.round((amostras.length / Math.max(1, lote.amostra)) * 100))}%` }} />
           </div>
         </div>
 

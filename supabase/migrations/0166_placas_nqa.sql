@@ -1,28 +1,20 @@
 -- =============================================================
--- 0166: NQA de caixa e NQA individual contam PLACAS (placas por painel).
+-- 0166: NQA de caixa e NQA individual — o `total` informativo em PLACAS (placas por painel).
 --
--- Decisão do usuário (27/10/2026): a AMOSTRA do NQA conta placas, não painéis. Caixa de 10 painéis com
--- 50 placas cada = 500 placas: a Tabela NQA é consultada com 500 e o `total` devolvido é 500.
+-- Decisão do usuário (27/10/2026, opção C): a AMOSTRA e a APROVAÇÃO do NQA continuam em PAINÉIS,
+-- exatamente como antes (a faixa da Tabela NQA pelo nº de SNs da caixa/lote; 1 amostra bipada = 1).
+-- As placas aparecem SÓ no `total` devolvido (o número exibido "Caixa aprovada — 500 peças").
 --
 -- Regra única de contagem (a mesma da 0163/0165): linha de sf_registros NÃO é bipe — defeito, reparo,
 -- rebipe e reteste repetem o SN —, então as placas são `pecas` somadas UMA vez por SN
 -- (distinct on (numero_serie_norm), a linha mais recente). Nunca sum(pecas) direto nas linhas.
 --
--- As amostras continuam sendo painéis bipados (um SN cada). Para comparar com a amostra exigida (em
--- placas), cada amostra vale o `pecas` do seu SN: com N = 50 e amostra 50, um painel basta. Entrada
--- de amostra cujo SN não é da caixa/lote vale 1 (só acontece com entrada sem `sn_norm`, que as
--- conferências deixam passar hoje) — assim, com N = 1, a soma é exatamente o jsonb_array_length de antes.
---
--- Copia das definições VIGENTES: sf_nqa_caixa (0160) e sf_nqa_individual (0097). Troca só:
---   * sf_nqa_caixa: v_total (era count(distinct sn)) → placas; a comparação das amostras em placas. O
---     cliente sai num select à parte (max de todas as linhas, como antes). Existência, "no NQA agora",
---     Almoxarifado, posto da caixa, aposentadoria e reteste seguem por SN e não mudam. O plano estável
---     da 0160 continua: a lista das peças (v_pecas) sai uma vez e as conferências usam `= any`.
---   * sf_nqa_individual: v_total (era array_length) → placas; o array_length vira v_qtd_sns e segue
---     valendo para LOTE_VAZIO, LOTE_SN_DUPLICADO e SN_FORA_DA_OP. Comparação das amostras em placas.
---     Corpo passa de $$ para $func$ (o SQL Editor do Supabase não aceita o de dois cifrões).
--- Assinaturas, retornos, gate (tem_permissao('lancar'), 1 argumento, o mesmo de antes), security
--- definer, search_path, advisory lock e grants: iguais.
+-- Copia das definições VIGENTES: sf_nqa_caixa (0160) e sf_nqa_individual (0097). A ÚNICA mudança em
+-- cada uma é o `total` do retorno (v_placas, calculado logo depois das conferências de existência e ANTES
+-- das gravações e da aposentadoria, que renomeia o numero_caixa da montagem reprovada). Todo o resto —
+-- assinaturas, gate tem_permissao('lancar') (1 argumento), security definer, search_path, advisory
+-- lock, ordem das verificações, códigos de exceção, plano estável da 0160 e grants — é igual.
+-- A sf_nqa_individual troca o delimitador $$ por $func$ (o SQL Editor do Supabase não aceita o outro).
 --
 -- Aditiva e idempotente (create or replace). Teste: supabase/tests/rodar-placas-nqa-test.sh (foto N = 1
 -- antes × depois idêntica + cenários N = 50).
@@ -50,8 +42,7 @@ declare
   v_amostra_req numeric;
   v_posto_caixa text;
   v_pecas text[];
-  v_pesos jsonb;   -- 0166: placas de cada SN da caixa ({sn_norm: pecas})
-  v_amostradas int; -- 0166: placas das amostras enviadas
+  v_placas int;  -- 0166: placas da caixa (só para o `total` do retorno; a amostra segue em painéis)
 begin
   if not tem_permissao('lancar') then
     raise exception 'SEM_PERMISSAO';
@@ -63,23 +54,25 @@ begin
   -- sf_caixas, lá embaixo, na hora de aposentar a montagem.
   -- 0160: a lista das peças sai UMA vez daqui (array_agg) e as conferências abaixo usam
   -- `= any(v_pecas)` em vez de subconsulta — ver o cabeçalho da 0160.
-  -- 0166: o TOTAL da caixa é em PLACAS — `pecas` UMA vez por SN (a linha mais recente da caixa), nunca
-  -- sum(pecas) nas linhas (rebipe repete o SN na caixa). Com N = 1 é o count(distinct) de antes. A lista
-  -- das peças e o mapa SN → placas saem da mesma passada; o cliente segue o max() de todas as linhas.
-  select coalesce(sum(u.pecas), 0), array_agg(u.numero_serie_norm), jsonb_object_agg(u.numero_serie_norm, u.pecas)
-    into v_total, v_pecas, v_pesos
+  select count(distinct numero_serie_norm), max(cliente), array_agg(distinct numero_serie_norm)
+    into v_total, v_cliente, v_pecas
+  from sf_registros
+  where pmo = p_pmo and op = p_op and numero_caixa = p_numero_caixa and numero_serie_norm <> '';
+  if v_total = 0 then
+    raise exception 'CAIXA_VAZIA';
+  end if;
+
+  -- 0166: o `total` (informativo) é em PLACAS — `pecas` UMA vez por SN (a linha mais recente da caixa),
+  -- nunca sum(pecas) nas linhas (rebipe repete o SN na caixa). Com N = 1 é o v_total de sempre. A faixa
+  -- da Tabela NQA e a contagem das amostras continuam em PAINÉIS (v_total, 1 por amostra).
+  -- Calculado AQUI, antes da aposentadoria (que renomeia o numero_caixa da montagem reprovada).
+  select coalesce(sum(u.pecas), 0) into v_placas
   from (
     select distinct on (numero_serie_norm) numero_serie_norm, pecas
     from sf_registros
     where pmo = p_pmo and op = p_op and numero_caixa = p_numero_caixa and numero_serie_norm <> ''
     order by numero_serie_norm, data_hora desc, created_at desc
   ) u;
-  select max(cliente) into v_cliente
-  from sf_registros
-  where pmo = p_pmo and op = p_op and numero_caixa = p_numero_caixa and numero_serie_norm <> '';
-  if v_total = 0 then
-    raise exception 'CAIXA_VAZIA';
-  end if;
 
   -- Caixa que JÁ DEU ENTRADA no Almoxarifado não se inspeciona mais (ver (2) no cabeçalho): a ordem
   -- física é NQA primeiro, estoque depois. Pelo PERFIL do posto (recurso 'almoxarifado', semeado
@@ -107,9 +100,6 @@ begin
   end if;
 
   -- (b) SÓ p/ APROVAR: qtd de amostras >= tamanho da amostra da Tabela NQA (pela qtd da caixa).
-  -- 0166: as duas pontas em PLACAS — a faixa pelo total em placas e as amostras pelas placas de cada
-  -- painel amostrado (cada entrada vale o `pecas` do seu SN; entrada sem SN da caixa vale 1, como
-  -- antes). Com N = 1 a soma é o jsonb_array_length de antes, entrada por entrada.
   if lower(p_resultado) = 'aprovado' then
     select tamanho_amostra into v_amostra_req
     from tabela_nqa
@@ -119,9 +109,7 @@ begin
     if v_amostra_req is null or v_amostra_req <= 0 then
       raise exception 'AMOSTRA_NQA_INVALIDA';
     end if;
-    select coalesce(sum(coalesce((v_pesos->>(el.v->>'sn_norm'))::int, 1)), 0) into v_amostradas
-    from jsonb_array_elements(coalesce(p_amostras, '[]'::jsonb)) as el(v);
-    if v_amostradas < v_amostra_req then
+    if coalesce(jsonb_array_length(p_amostras), 0) < v_amostra_req then
       raise exception 'AMOSTRAS_INSUFICIENTES';
     end if;
   end if;
@@ -208,7 +196,7 @@ begin
     end if;
   end if;
 
-  return jsonb_build_object('ok', true, 'total', v_total);
+  return jsonb_build_object('ok', true, 'total', v_placas);
 end $func$;
 
 grant execute on function public.sf_nqa_caixa(text,text,text,text,text,text,text,jsonb) to authenticated;
@@ -230,10 +218,8 @@ as $func$
 declare
   v_sn record;
   v_amostra jsonb;
-  v_total int;      -- 0166: placas do lote (era a quantidade de SNs)
-  v_qtd_sns int;    -- 0166: SNs do lote (o v_total de antes: vazio, duplicidade, "SN da OP")
-  v_pesos jsonb;    -- 0166: placas de cada SN do lote ({sn_norm: pecas})
-  v_amostradas int; -- 0166: placas das amostras enviadas
+  v_total int;
+  v_placas int;  -- 0166: placas do lote (só para o `total` do retorno; a amostra segue em painéis)
   v_encontrados int;
   v_cliente text;
   v_amostra_req numeric;
@@ -244,11 +230,11 @@ begin
   end if;
   perform pg_advisory_xact_lock(hashtext(p_pmo || '/' || p_op)::bigint);
 
-  v_qtd_sns := coalesce(array_length(p_sns_norm, 1), 0);
-  if v_qtd_sns = 0 then
+  v_total := coalesce(array_length(p_sns_norm, 1), 0);
+  if v_total = 0 then
     raise exception 'LOTE_VAZIO';
   end if;
-  if v_qtd_sns <> (select count(distinct s) from unnest(p_sns_norm) as s) then
+  if v_total <> (select count(distinct s) from unnest(p_sns_norm) as s) then
     raise exception 'LOTE_SN_DUPLICADO';
   end if;
 
@@ -256,15 +242,15 @@ begin
   select count(distinct numero_serie_norm), max(cliente) into v_encontrados, v_cliente
   from sf_registros
   where pmo = p_pmo and op = p_op and numero_serie_norm = any(p_sns_norm);
-  if v_encontrados < v_qtd_sns then
+  if v_encontrados < v_total then
     raise exception 'SN_FORA_DA_OP';
   end if;
 
-  -- 0166: o TOTAL do lote é em PLACAS — `pecas` UMA vez por SN (a linha mais recente do SN na OP),
-  -- nunca sum(pecas) nas linhas (defeito, reparo, rebipe e reteste repetem o SN). Com N = 1 é a
-  -- quantidade de SNs de antes (todos os SNs existem na OP, conferido logo acima).
-  select coalesce(sum(u.pecas), 0), jsonb_object_agg(u.numero_serie_norm, u.pecas)
-    into v_total, v_pesos
+  -- 0166: o `total` (informativo) é em PLACAS — `pecas` UMA vez por SN (a linha mais recente do SN na
+  -- OP), nunca sum(pecas) nas linhas (defeito, reparo, rebipe e reteste repetem o SN). Com N = 1 é o
+  -- v_total de sempre. A faixa da Tabela NQA e a contagem das amostras continuam em PAINÉIS.
+  -- Calculado antes das gravações do NQA (só lê as linhas que já existiam).
+  select coalesce(sum(u.pecas), 0) into v_placas
   from (
     select distinct on (numero_serie_norm) numero_serie_norm, pecas
     from sf_registros
@@ -313,8 +299,6 @@ begin
   end if;
 
   -- SÓ p/ APROVAR: qtd de amostras >= tamanho da amostra da Tabela NQA (pela qtd do lote).
-  -- 0166: as duas pontas em PLACAS, como na sf_nqa_caixa (cada entrada vale o `pecas` do seu SN;
-  -- entrada sem SN do lote vale 1, como antes).
   if lower(p_resultado) = 'aprovado' then
     select tamanho_amostra into v_amostra_req
     from tabela_nqa
@@ -324,9 +308,7 @@ begin
     if v_amostra_req is null or v_amostra_req <= 0 then
       raise exception 'AMOSTRA_NQA_INVALIDA';
     end if;
-    select coalesce(sum(coalesce((v_pesos->>(el.v->>'sn_norm'))::int, 1)), 0) into v_amostradas
-    from jsonb_array_elements(coalesce(p_amostras, '[]'::jsonb)) as el(v);
-    if v_amostradas < v_amostra_req then
+    if coalesce(jsonb_array_length(p_amostras), 0) < v_amostra_req then
       raise exception 'AMOSTRAS_INSUFICIENTES';
     end if;
   end if;
@@ -371,7 +353,7 @@ begin
       nullif(p_posto_retorno, ''), v_lote_id);
   end loop;
 
-  return jsonb_build_object('ok', true, 'total', v_total);
+  return jsonb_build_object('ok', true, 'total', v_placas);
 end;
 $func$;
 

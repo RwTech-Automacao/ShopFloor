@@ -14,10 +14,10 @@ const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 export interface CaixaNqa {
   numeroCaixa: string
   postoEmbalagem: string
-  qtd: number     // PLACAS da caixa (pecas uma vez por SN); snsNorm.length = painéis
-  amostra: number // tamanho da amostra da Tabela NQA, em PLACAS (pela qtd)
+  qtd: number       // painéis (SNs distintos) da caixa — a amostra da Tabela NQA sai daqui
+  qtdPlacas: number // placas da caixa (informativo; o `total` da RPC também vem em placas)
+  amostra: number
   snsNorm: string[] // SNs (normalizados) da caixa — p/ o painel validar a amostra
-  pecasPorSn: Record<string, number> // placas de cada SN — cada painel amostrado vale isso (0166)
   jaInspecionada: boolean     // caixa finalizada no NQA (todas inspecionadas)
   pendentesReteste: string[]  // SNs que ainda faltam retestar antes de re-inspecionar
   postoReteste: string        // posto onde retestar (vazio se não uniforme)
@@ -50,9 +50,9 @@ export async function carregarNqaCaixa(
         numeroCaixa: caixa.numeroCaixa,
         postoEmbalagem: caixa.posto,
         qtd: caixa.qtd,
+        qtdPlacas: caixa.qtdPlacas,
         amostra,
         snsNorm: caixa.snsNorm,
-        pecasPorSn: caixa.pecasPorSn,
         jaInspecionada: caixa.jaInspecionadaNqa,
         pendentesReteste: caixa.pendentesReteste,
         postoReteste: caixa.postoReteste,

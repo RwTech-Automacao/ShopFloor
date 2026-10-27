@@ -127,25 +127,24 @@ describe('resolverCaixaPorSn — a caixa da peça sai do posto de EMBALAGEM', ()
     expect(caixa!.fechada).toBe(false)
   })
 
-  it('placas por painel: qtd em PLACAS (pecas uma vez por SN) e o peso de cada SN para a amostra', async () => {
+  it('placas por painel: qtd segue em PAINÉIS (amostra do NQA) e qtdPlacas soma pecas uma vez por SN', async () => {
     const codigo = 'CX[8][150]8498-PMOC14'
     tabelas.sf_caixas = [{ pmo: 'PMOC14', op: '8498', posto: 'Embalagem', codigo, fechada: true, revisao: 0 }]
     tabelas.sf_registros = [
       { ...registro('Embalagem', '8001', codigo, '2026-09-29T10:00:00Z'), pecas: 50 },
       { ...registro('Embalagem', '8002', codigo, '2026-09-29T10:01:00Z'), pecas: 50 },
       { ...registro('Embalagem', '8003', codigo, '2026-09-29T10:02:00Z'), pecas: 50 },
-      // Rebipe do mesmo painel na mesma caixa: é uma linha a mais, não 50 placas a mais.
+      // Rebipe do mesmo painel na mesma caixa: é uma linha a mais, não um painel nem 50 placas a mais.
       { ...registro('Embalagem', '8001', codigo, '2026-09-29T10:05:00Z'), pecas: 50 },
     ]
 
     const caixa = await resolverCaixaPorSn('PMOC14', '8498', '8001', 'Inspeção NQA')
 
-    expect(caixa!.qtd).toBe(150)
-    expect(caixa!.snsNorm.sort()).toEqual(['8001', '8002', '8003'])
-    expect(caixa!.pecasPorSn).toEqual({ '8001': 50, '8002': 50, '8003': 50 })
+    expect(caixa!.qtd).toBe(3)
+    expect(caixa!.qtdPlacas).toBe(150)
   })
 
-  it('N = 1 (linhas sem pecas no fake = 1): qtd é o número de SNs, como antes', async () => {
+  it('N = 1 (linhas sem pecas no fake = 1): qtdPlacas = qtd', async () => {
     const codigo = 'CX[9][2]8498-PMOC14'
     tabelas.sf_caixas = [{ pmo: 'PMOC14', op: '8498', posto: 'Embalagem', codigo, fechada: true, revisao: 0 }]
     tabelas.sf_registros = [
@@ -157,7 +156,7 @@ describe('resolverCaixaPorSn — a caixa da peça sai do posto de EMBALAGEM', ()
     const caixa = await resolverCaixaPorSn('PMOC14', '8498', '8001', 'Inspeção NQA')
 
     expect(caixa!.qtd).toBe(2)
-    expect(caixa!.pecasPorSn).toEqual({ '8001': 1, '8002': 1 })
+    expect(caixa!.qtdPlacas).toBe(2)
   })
 
   it('sem nenhum posto de perfil caixa, a peça não está em caixa nenhuma', async () => {

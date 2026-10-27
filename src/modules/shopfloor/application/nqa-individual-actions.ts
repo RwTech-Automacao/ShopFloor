@@ -6,8 +6,6 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { nqaJaGravado } from './nqa-gravou'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
-import { somarPecasPorSn } from '@/modules/shopfloor/domain/caixa'
-import { pecasPorSnMaisRecente } from '@/modules/shopfloor/domain/nqa-amostra'
 // Tabela NQA é referência compartilhada (cadastrada em Config → Tabela NQA); reusa o leitor do Recebimento.
 import { carregarTabelaNqa } from '@/modules/recebimento/infra/referencias-repository'
 import { buscarNqa } from '@/modules/recebimento/domain/calculos'
@@ -25,7 +23,6 @@ interface RegistroDoSn {
   numero_serie_norm: string
   posto: string
   posto_retorno: string | null
-  pecas?: number | null
 }
 
 /**
@@ -58,7 +55,7 @@ async function registrosDosSns(
     for (let de = 0; ; de += BLOCO_POSTGREST) {
       const { data, error } = await supabase
         .from('sf_registros')
-        .select('numero_serie_norm,posto,posto_retorno,pecas,data_hora,created_at')
+        .select('numero_serie_norm,posto,posto_retorno,data_hora,created_at')
         .eq('pmo', pmo)
         .eq('op', op)
         .in('numero_serie_norm', fatia)
@@ -75,10 +72,9 @@ async function registrosDosSns(
 }
 
 export interface LoteNqaIndividual {
-  qtd: number       // PLACAS do lote (pecas uma vez por SN); snsNorm.length = painéis bipados
-  amostra: number   // tamanho da amostra da Tabela NQA, em PLACAS (pela qtd)
+  qtd: number
+  amostra: number
   snsNorm: string[]
-  pecasPorSn: Record<string, number> // placas de cada SN — cada painel amostrado vale isso (0166)
 }
 
 export interface IrmasLoteReprovado {
@@ -285,18 +281,14 @@ export async function carregarLoteNqaIndividual(
       }
     }
 
-    // Placas do lote: `pecas` UMA vez por SN, da linha mais recente (a lista já vem desc) — nunca uma
-    // vez por linha (defeito, reparo, rebipe e reteste repetem o SN). Com N = 1 é snsNorm.length.
-    const pecasPorSn = pecasPorSnMaisRecente(linhas)
-    const qtd = somarPecasPorSn(snsNorm.map((s) => ({ numero_serie_norm: s, pecas: pecasPorSn[s] ?? 1 })))
-    const amostra = buscarNqa(qtd, await carregarTabelaNqa())
+    const amostra = buscarNqa(snsNorm.length, await carregarTabelaNqa())
     if (amostra === null || amostra <= 0) {
       return {
         ok: false,
-        erro: `Tamanho de amostra inválido na Tabela NQA para ${qtd} peça(s). Configure em Config → Tabela NQA.`,
+        erro: `Tamanho de amostra inválido na Tabela NQA para ${snsNorm.length} peça(s). Configure em Config → Tabela NQA.`,
       }
     }
-    return { ok: true, lote: { qtd, amostra, snsNorm, pecasPorSn } }
+    return { ok: true, lote: { qtd: snsNorm.length, amostra, snsNorm } }
   } catch {
     return { ok: false, erro: 'Não foi possível validar o lote.' }
   }
@@ -337,6 +329,7 @@ export async function finalizarNqaIndividual(entrada: {
       : null
     if (achados !== null) {
       console.error('[nqa-lote] resposta perdida mas gravado; tratado como sucesso', contexto)
+      // Em PLACAS, como o `total` da RPC (0166): nqaJaGravado soma `pecas` uma vez por SN.
       return { ok: true, total: achados }
     }
     return { ok: false, erro: 'Não foi possível registrar o NQA do lote. Confira antes de tentar de novo.' }

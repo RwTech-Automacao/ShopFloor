@@ -1,16 +1,18 @@
--- Testes da 0166: NQA de caixa e NQA individual contam PLACAS (placas por painel).
+-- Testes da 0166: NQA de caixa e NQA individual com o `total` em PLACAS (placas por painel).
+-- Decisão do usuário (opção C): a amostra e a aprovação seguem em PAINÉIS, como antes; só o `total`
+-- devolvido é em placas.
 -- Roda depois da massa N = 1 da foto (usa os mesmos atalhos teste_reg/teste_caixa), em OPs próprias
 -- com placas_por_painel = 50 (1 SN = 1 painel = 50 placas).
 -- Runner: supabase/tests/rodar-placas-nqa-test.sh
 --
--- Tabela NQA do esquema: 151–280 → 32, 281–500 → 50, 501–1200 → 80; contando painéis seria
--- 2–8 → 2, 9–15 → 3.
---   C1 caixa de 10 painéis (com rebipe e defeito repetindo SN): total 500, amostra pela faixa de 500
---      (50 placas = 1 painel basta; contando painéis seriam 3 amostras); 10 linhas do NQA, cada uma 50.
---   C2 caixa de 11 painéis = 550 → amostra 80: 1 painel (50) é insuficiente, 2 (100) passam.
+-- Tabela NQA do esquema: 2–8 → 2, 9–15 → 3 (em placas seria 281–500 → 50: impossível com 10 painéis).
+--   C1 caixa de 10 painéis (com rebipe e defeito repetindo SN): amostra pela faixa de 10 (3); 1 painel
+--      amostrado NÃO vale 50 (insuficiente); amostra repetida conta 1 por entrada; com 3 amostras
+--      aprova e o total é 500; 10 linhas do NQA, cada uma com pecas 50.
+--   C2 caixa de 11 painéis: amostra 3, total 550.
 --   C3 reteste da caixa: reprova (500), retesta, reinspeciona → 500 de novo (não infla).
---   I1 lote de 4 painéis: total 200, amostra pela faixa de 200 (32 → 1 painel).
---   I2 lote de 11 painéis = 550 → 80: 1 painel insuficiente, 2 passam.
+--   I1 lote de 4 painéis: amostra pela faixa de 4 (2): 1 é insuficiente, 2 aprovam com total 200.
+--   I2 lote de 11 painéis: amostra 3, total 550.
 --   I3 reteste do lote: reprova (200), retesta, lote novo → 200.
 --   I4 duplicidade e "SN da OP" seguem por SN; sem 'lancar' → SEM_PERMISSAO (gate de 1 argumento).
 \set ON_ERROR_STOP on
@@ -60,12 +62,21 @@ select pg_temp.confere(
   (select count(*) from sf_registros where pmo = 'PMOP1' and pecas <> 50) = 0,
   'massa: toda linha da OP N = 50 nasce com pecas = 50 (trigger da 0161)');
 
--- C1: 1 amostra (1 painel = 50 placas) basta para a faixa de 500 (amostra 50).
+-- C1: amostra pela faixa de 10 PAINÉIS (3). Um painel amostrado conta 1, não 50.
+select pg_temp.confere(
+  pg_temp.erro_de($q$ select sf_nqa_caixa('PMOP1', '7101', 'Inspeção NQA', 'Q', 'CX[1][500]7101-PMOP1',
+                    'Aprovado', '', pg_temp.amostras(array['P003'])) $q$) = 'AMOSTRAS_INSUFICIENTES',
+  'C1-0 1 painel amostrado não vale 50: a amostra é 3 painéis');
+select pg_temp.confere(
+  pg_temp.erro_de($q$ select sf_nqa_caixa('PMOP1', '7101', 'Inspeção NQA', 'Q', 'CX[1][500]7101-PMOP1',
+                    'Aprovado', '', pg_temp.amostras(array['P003','P004'])) $q$) = 'AMOSTRAS_INSUFICIENTES',
+  'C1-1 2 painéis (100 placas) ainda não são os 3 da faixa de 10');
 do $t$
 declare r jsonb;
 begin
+  -- Amostra repetida (P003 duas vezes) conta 1 por entrada, como antes: 3 entradas = 3.
   r := sf_nqa_caixa('PMOP1', '7101', 'Inspeção NQA', 'Q', 'CX[1][500]7101-PMOP1', 'Aprovado', '',
-                    pg_temp.amostras(array['P003']));
+                    pg_temp.amostras(array['P003','P003','P004']));
   perform pg_temp.confere((r->>'ok')::boolean and (r->>'total')::int = 500,
     'C1a caixa de 10 painéis × 50: total 500, veio ' || r::text);
 end $t$;
@@ -81,18 +92,14 @@ select pg_temp.confere(
       and numero_serie_norm = 'P005') = 'Por amostragem',
   'C1d painel não amostrado grava "Por amostragem"');
 
--- C2: caixa de 11 painéis = 550 → amostra 80: 1 painel (50 placas) é pouco, 2 (100) passam.
-select pg_temp.confere(
-  pg_temp.erro_de($q$ select sf_nqa_caixa('PMOP1', '7101', 'Inspeção NQA', 'Q', 'CX[2][550]7101-PMOP1',
-                    'Aprovado', '', pg_temp.amostras(array['P101'])) $q$) = 'AMOSTRAS_INSUFICIENTES',
-  'C2a 550 placas exigem 80: 1 painel (50) é insuficiente');
+-- C2: caixa de 11 painéis → amostra 3 (faixa 9–15), total 550.
 do $t$
 declare r jsonb;
 begin
   r := sf_nqa_caixa('PMOP1', '7101', 'Inspeção NQA', 'Q', 'CX[2][550]7101-PMOP1', 'Aprovado', '',
-                    pg_temp.amostras(array['P101','P102']));
+                    pg_temp.amostras(array['P101','P102','P103']));
   perform pg_temp.confere((r->>'ok')::boolean and (r->>'total')::int = 550,
-    'C2b 2 painéis (100 placas) passam e o total é 550, veio ' || r::text);
+    'C2 3 painéis amostrados, total 550, veio ' || r::text);
 end $t$;
 
 -- C3: reteste da caixa não infla o total.
@@ -115,13 +122,13 @@ do $t$
 declare r jsonb;
 begin
   r := sf_nqa_caixa('PMOP1', '7101', 'Inspeção NQA', 'Q', 'CX[3][500]7101-PMOP1', 'Aprovado', '',
-                    pg_temp.amostras(array['P202']));
+                    pg_temp.amostras(array['P202','P203','P204']));
   perform pg_temp.confere((r->>'ok')::boolean and (r->>'total')::int = 500,
     'C3b reinspeção depois do reteste: total 500 (não 1000), veio ' || r::text);
 end $t$;
 select pg_temp.confere(
   pg_temp.erro_de($q$ select sf_nqa_caixa('PMOP1', '7101', 'Inspeção NQA', 'Q', 'CX[1][500]7101-PMOP1',
-                    'Aprovado', '', pg_temp.amostras(array['P003'])) $q$) = 'CAIXA_JA_INSPECIONADA',
+                    'Aprovado', '', pg_temp.amostras(array['P003','P004','P005'])) $q$) = 'CAIXA_JA_INSPECIONADA',
   'C3c "no NQA agora" segue por SN');
 
 -- =============================================================
@@ -141,12 +148,17 @@ select public.teste_reg('PMOP2', '7102', 'Teste', 'Q01', '', 'Reprovado', 700);
 select public.teste_reg('PMOP2', '7102', 'Manutenção', 'Q01', '', '', 650);
 select public.teste_reg('PMOP2', '7102', 'Embalagem', 'Q01', 'Q01', '', 400);
 
--- I1: lote de 4 painéis = 200 placas → amostra 32 → 1 painel basta (contando painéis, 4 → 2).
+-- I1: lote de 4 painéis → amostra pela faixa de 4 (2): 1 painel não vale 50.
+select pg_temp.confere(
+  pg_temp.erro_de($q$ select sf_nqa_individual('PMOP2', '7102', 'Inspeção NQA', 'Q',
+                    array['Q01','Q02','Q03','Q04'], 'Aprovado', '',
+                    pg_temp.amostras(array['Q02'])) $q$) = 'AMOSTRAS_INSUFICIENTES',
+  'I1-0 1 painel amostrado não vale 50: a amostra é 2 painéis');
 do $t$
 declare r jsonb;
 begin
   r := sf_nqa_individual('PMOP2', '7102', 'Inspeção NQA', 'Q', array['Q01','Q02','Q03','Q04'], 'Aprovado', '',
-                         pg_temp.amostras(array['Q02']));
+                         pg_temp.amostras(array['Q02','Q03']));
   perform pg_temp.confere((r->>'ok')::boolean and (r->>'total')::int = 200,
     'I1a lote de 4 painéis × 50: total 200, veio ' || r::text);
 end $t$;
@@ -154,20 +166,20 @@ select pg_temp.confere(
   (select count(*) from sf_registros where pmo = 'PMOP2' and posto = 'Inspeção NQA') = 4,
   'I1b uma linha do NQA por SN (4)');
 
--- I2: 11 painéis = 550 → amostra 80.
+-- I2: 11 painéis → amostra 3 (faixa 9–15): 2 é pouco, 3 aprovam com total 550.
 select pg_temp.confere(
   pg_temp.erro_de($q$ select sf_nqa_individual('PMOP2', '7102', 'Inspeção NQA', 'Q',
                     array['R01','R02','R03','R04','R05','R06','R07','R08','R09','R10','R11'], 'Aprovado', '',
-                    pg_temp.amostras(array['R01'])) $q$) = 'AMOSTRAS_INSUFICIENTES',
-  'I2a 550 placas exigem 80: 1 painel (50) é insuficiente');
+                    pg_temp.amostras(array['R01','R02'])) $q$) = 'AMOSTRAS_INSUFICIENTES',
+  'I2a 11 painéis exigem 3 amostras: 2 (100 placas) é insuficiente');
 do $t$
 declare r jsonb;
 begin
   r := sf_nqa_individual('PMOP2', '7102', 'Inspeção NQA', 'Q',
                          array['R01','R02','R03','R04','R05','R06','R07','R08','R09','R10','R11'], 'Aprovado', '',
-                         pg_temp.amostras(array['R01','R02']));
+                         pg_temp.amostras(array['R01','R02','R03']));
   perform pg_temp.confere((r->>'ok')::boolean and (r->>'total')::int = 550,
-    'I2b 2 painéis passam e o total é 550, veio ' || r::text);
+    'I2b 3 painéis passam e o total é 550, veio ' || r::text);
 end $t$;
 
 -- I3: reteste do lote não infla.
@@ -189,7 +201,7 @@ do $t$
 declare r jsonb;
 begin
   r := sf_nqa_individual('PMOP2', '7102', 'Inspeção NQA', 'Q', array['Q05','Q06','Q07','Q08'], 'Aprovado', '',
-                         pg_temp.amostras(array['Q06']));
+                         pg_temp.amostras(array['Q06','Q07']));
   perform pg_temp.confere((r->>'ok')::boolean and (r->>'total')::int = 200,
     'I3b lote novo depois do reteste: total 200 (não 400), veio ' || r::text);
 end $t$;
