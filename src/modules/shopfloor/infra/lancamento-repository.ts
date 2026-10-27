@@ -38,38 +38,38 @@ export interface SfLancarArgs {
   p_observacao: string
 }
 
-/** Nº de peças DISTINTAS (SN único) já lançadas nesse posto pra essa OP. Rebipe/reteste não soma. */
 /**
  * Peças DISTINTAS "aprovadas/passadas" no posto = SNs cujo ÚLTIMO registro no posto NÃO é 'reprovado'.
  * Assim: reprovada não conta (ainda não está boa); ao ser retestada e aprovada, o último vira aprovado e
  * passa a contar; posto de passagem (status vazio) sempre conta. Corrige o contador que somava qualquer bipe.
+ * Em PLACAS: cada SN conta `pecas` (placas por painel) UMA vez, a da linha mais recente dele — nunca soma linhas.
  */
 export async function contarLancadosNoPosto(pmo: string, op: string, posto: string): Promise<number> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
   // Último status por SN no posto (desempata por data_hora, depois id).
-  const ultimo = new Map<string, { dh: string; id: number; status: string }>()
+  const ultimo = new Map<string, { dh: string; id: number; status: string; pecas: number }>()
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie_norm,status,data_hora,id')
+      .select('numero_serie_norm,status,data_hora,id,pecas')
       .eq('pmo', pmo)
       .eq('op', op)
       .eq('posto', posto)
       .neq('numero_serie_norm', '')
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (error) throw error
-    const lote = (data ?? []) as { numero_serie_norm: string; status: string; data_hora: string; id: number }[]
+    const lote = (data ?? []) as { numero_serie_norm: string; status: string; data_hora: string; id: number; pecas: number | null }[]
     for (const r of lote) {
       const cur = ultimo.get(r.numero_serie_norm)
       if (!cur || r.data_hora > cur.dh || (r.data_hora === cur.dh && r.id > cur.id)) {
-        ultimo.set(r.numero_serie_norm, { dh: r.data_hora, id: r.id, status: r.status })
+        ultimo.set(r.numero_serie_norm, { dh: r.data_hora, id: r.id, status: r.status, pecas: r.pecas ?? 1 })
       }
     }
     if (lote.length < PAGINA) break
   }
   let n = 0
-  for (const v of ultimo.values()) if ((v.status ?? '').trim().toLowerCase() !== 'reprovado') n++
+  for (const v of ultimo.values()) if ((v.status ?? '').trim().toLowerCase() !== 'reprovado') n += v.pecas
   return n
 }
 
