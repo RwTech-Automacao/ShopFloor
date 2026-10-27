@@ -39,6 +39,7 @@ function lerDados(fd: FormData): DadosOrdem {
     sn_ini: String(fd.get('sn_ini') ?? '').trim(),
     sn_fim: String(fd.get('sn_fim') ?? '').trim(),
     embalagem_individual: fd.get('embalagem_individual') === 'on', // checkbox: 1 produto por caixa
+    placas_por_painel: Number(fd.get('placas_por_painel') ?? 1) || 1,
     // Salvar pela tela é decisão de pessoa: FINALIZADA vira 'manual' (a rotina não desfaz); outro
     // status limpa a marca. Nunca lido do formulário, para o cliente não forjar 'rotina'.
     finalizada_por: finalizadaPorDoCadastro(status),
@@ -98,7 +99,7 @@ export async function criarOrdemAction(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const dados = lerDados(formData)
-  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd })
+  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel })
   if (!v.ok) return v
   // OP única global: o número da OP não pode existir em nenhum outro PMO.
   const emUso = await buscarOpEmUso(dados.op)
@@ -136,7 +137,7 @@ export async function editarOrdemAction(
   // formulário é do cliente, e a marca é definitiva demais para depender dele.
   const base = await buscarOrdemBase(id)
   if (ehReativacaoManual(base?.status, dados.status)) dados.reaberta_manual = true
-  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd })
+  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel })
   if (!v.ok) return v
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).
   const emUso = await buscarOpEmUso(dados.op, id)

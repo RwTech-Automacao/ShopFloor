@@ -22,6 +22,7 @@ export interface OrdemRow {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  placas_por_painel: number
   created_at: string
   sf_ordem_postos: { posto: string; ordem: number }[]
   sf_ordem_componentes: { posto: string; pmo_componente: string }[]
@@ -39,6 +40,8 @@ export interface DadosOrdem {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  /** Placas que cada bipe de painel conta (0161). 1 = bipe por placa. */
+  placas_por_painel: number
   /** Quem encerrou (0145). A tela só grava 'manual' ou null; 'rotina' é exclusivo da rotina SQL. */
   finalizada_por: 'manual' | null
   /**
@@ -59,7 +62,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,placas_por_painel,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)')
     .order('pmo')
     .order('op')
   if (error) throw error
