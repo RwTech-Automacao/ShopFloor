@@ -105,8 +105,9 @@ export function PecasAbertas({
               {d.sns.map((sn) => (
                 <li key={sn} className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-sm">{sn}</li>
               ))}
-              {d.pecas > d.sns.length && (
-                <li className="px-1 py-1 text-sm text-muted-foreground">{`… +${d.pecas - d.sns.length} outras`}</li>
+              {/* "outras" conta SNs (painéis): `pecas` é em placas (0165). */}
+              {(d.paineis ?? d.pecas) > d.sns.length && (
+                <li className="px-1 py-1 text-sm text-muted-foreground">{`… +${(d.paineis ?? d.pecas) - d.sns.length} outras`}</li>
               )}
             </ul>
           )}

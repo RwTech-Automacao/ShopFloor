@@ -55,6 +55,26 @@ describe('PecasAbertas', () => {
     expect(lista).toHaveTextContent('… +2 outras')
   })
 
+  it('placas por painel: "outras" conta PAINÉIS (SNs), não placas', async () => {
+    // 5 painéis de 50 placas esperando (250 placas), a lista trouxe 3 SNs → faltam 2 SNs na lista.
+    detalharPendenciaAlmoxarifado.mockResolvedValue({
+      ok: true, detalhe: { ...detalhe(250), paineis: 5, sns: ['sn001', 'sn002', 'sn003'] },
+    })
+    montar()
+    const lista = await screen.findByRole('list', { name: 'Números de série esperando entrada' })
+    expect(lista).toHaveTextContent('… +2 outras')
+    expect(screen.getByText(porParagrafo('Peças avulsas · 250 peças esperando'))).toBeInTheDocument()
+  })
+
+  it('placas por painel: lista completa de SNs não diz "outras", mesmo com mais placas que SNs', async () => {
+    detalharPendenciaAlmoxarifado.mockResolvedValue({
+      ok: true, detalhe: { ...detalhe(100), paineis: 2, sns: ['sn001', 'sn002'] },
+    })
+    montar()
+    const lista = await screen.findByRole('list', { name: 'Números de série esperando entrada' })
+    expect(lista).not.toHaveTextContent('outras')
+  })
+
   it('quando a lista é completa, não diz "outras"', async () => {
     detalharPendenciaAlmoxarifado.mockResolvedValue({ ok: true, detalhe: { ...detalhe(2), sns: ['sn001', 'sn002'] } })
     montar()
