@@ -17,11 +17,11 @@ Tudo na **Lightsail**, um bloco de cada vez. A senha do banco é digitada no `Pa
 ## Antes de começar
 Opcional: tire um **snapshot manual do RDS** no console da AWS. Dump não é necessário: as migrações só acrescentam colunas e reescrevem funções.
 
-Confirme a última migração aplicada (deve ser a 0160 ou posterior, e **sem** nenhuma 0161+):
+Confirme que o banco está no ponto esperado: **sem** nada da 0161+ e **com** tudo o que os corpos copiados nas migrações 0165/0166 usam (o plpgsql só resolve esses nomes na hora de executar, então uma dependência faltando só estouraria no primeiro bipe):
 ```bash
-HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PAGER=cat PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -c "select exists (select 1 from information_schema.columns where table_schema='public' and table_name='sf_ordens' and column_name='placas_por_painel') as ja_tem_placas_por_painel, (select count(*) from pg_proc where proname='sf_nqa_caixa') as tem_sf_nqa_caixa;"
+HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PAGER=cat PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -c "select item, ok from (values (1, 'AINDA NAO tem sf_ordens.placas_por_painel (0161)', not exists (select 1 from information_schema.columns where table_schema='public' and table_name='sf_ordens' and column_name='placas_por_painel')), (2, 'tabela sf_estoque_envios', to_regclass('public.sf_estoque_envios') is not null), (3, 'sf_estoque_chave', to_regprocedure('public.sf_estoque_chave(text,text,text,text,text)') is not null), (4, 'sf_estoque_reverter', to_regprocedure('public.sf_estoque_reverter(text,text,text,text,integer)') is not null), (5, 'sf_almox_posto_anterior', to_regprocedure('public.sf_almox_posto_anterior(uuid,text)') is not null), (6, 'sf_almox_caixa_pendentes', to_regprocedure('public.sf_almox_caixa_pendentes(text,text,text,text,text,text,boolean)') is not null), (7, 'sf_almox_peca_concluida', to_regprocedure('public.sf_almox_peca_concluida(text,text,text,text,boolean)') is not null), (8, 'sf_aposentar_caixa', to_regprocedure('public.sf_aposentar_caixa(text,text,text,text)') is not null), (9, 'sf_sn_na_faixa', to_regprocedure('public.sf_sn_na_faixa(text,text,text)') is not null), (10, 'coluna sf_registros.nqa_lote_id', exists (select 1 from information_schema.columns where table_schema='public' and table_name='sf_registros' and column_name='nqa_lote_id')), (11, 'coluna sf_registros.envio_id', exists (select 1 from information_schema.columns where table_schema='public' and table_name='sf_registros' and column_name='envio_id')), (12, 'sf_ops_com_bipes devolve pct_conclusao (0121)', coalesce((select pg_get_function_result(p.oid) like '%pct_conclusao%' from pg_proc p where p.oid = to_regprocedure('public.sf_ops_com_bipes(timestamptz,timestamptz)')), false))) as t(n, item, ok) order by n;"
 ```
-`ja_tem_placas_por_painel` deve vir `f` e `tem_sf_nqa_caixa` deve ser `1` (a 0160 já está lá).
+Devem aparecer **12 linhas, todas com `ok = t`** (a linha 1 vale `t` quando a 0161 ainda **não** foi aplicada). Qualquer `f`: **pare** e me mande a saída; significa que o banco não está no ponto de partida esperado.
 
 Confirme que não há transação presa (deve vir vazio):
 ```bash
@@ -111,17 +111,17 @@ Termina com `deploy OK -> <código do último commit da main>`. Se o build falha
 ## Passo 5: smoke guiado numa OP de TESTE
 Use um PMO/OP **claramente de teste** (ex.: PMO `PMOTESTE01`, OP `9901`). Os registros ficam no Prod: anote o PMO/OP para limpar depois. Mantenha o Compels **desligado**.
 
-1. **Criar a OP** (Cadastrar OP): **Placas por painel = 50**, **Qtd = 5000** placas (o campo **Painéis** deve mostrar **100** sozinho). Faixa de SN em painéis (use uma faixa de 100).
+1. **Criar a OP** (menu Ordens de Produção): **Placas por painel = 50**, **Quantidade = 5000** placas (o campo **Painéis** deve mostrar **100** sozinho). Faixa de SN em painéis (use uma faixa de 100).
 2. **Embalagem coletiva, limite 500:** informe o limite 500 e bipe painéis. O contador deve andar de 50 em 50: **50/500, 100/500 ... 500/500**. O **11º bipe é recusado** (caixa cheia).
 3. **Fechar a caixa:** o código gerado deve ser `CX[1][500]` + OP/PMO (formato `CX[seq][qtd]OP-PMO`).
-4. **NQA da caixa:** deve pedir amostra sobre **10 painéis (3)** e mostrar **total 500** (placas).
+4. **NQA da caixa:** deve pedir amostra sobre **10 painéis** (o tamanho de amostra que a Tabela NQA dá para 10 painéis) e mostrar **total 500** (placas).
 5. **Almoxarifado:** a caixa aparece com **500**. Na fila (`sf_estoque_envios`) a quantidade deve ser 500:
 ```bash
 HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PAGER=cat PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -c "select * from public.sf_estoque_envios order by 1 desc limit 3;"
 ```
    A linha da OP de teste deve ter `quantidade = 500` e continuar **na fila** (não enviada, pois o Compels está desligado).
-6. **Dashboard:** total **500** e progresso **500/5000** para a OP de teste. O Fluxo da OP mostra o mesmo.
-7. **Trava de edição:** em Cadastrar OP, tente editar **Placas por painel** da OP de teste (que já tem bipes): deve ser **bloqueado** com mensagem.
+6. **Dashboard** (menu Análise > Dashboard, escolha a OP de teste e clique em Atualizar): o cartão do posto Embalagem mostra **500 / 5000** (contagem / quantidade da OP, em placas). O Fluxo da OP (menu Fluxo) mostra o mesmo progresso.
+7. **Trava de edição:** em Ordens de Produção, abra a edição da OP de teste (que já tem bipes): o campo **Placas por painel** vem desabilitado com a dica "Bloqueado: esta OP já tem registros.". Se forçar a alteração, o salvamento é recusado com "Esta OP já tem registros; não é possível alterar as placas por painel.".
 8. Confira que uma OP **antiga** (qualquer uma em andamento) continua com os mesmos números de antes (peso 1).
 
 Se algo divergir, **pare** e me mande o que apareceu na tela (print) e a hora.
@@ -137,14 +137,16 @@ Onde buscar a definição anterior de cada função (o arquivo está em `supabas
 
 | Função | Definição anterior em |
 |---|---|
-| `sf_ops_com_bipes` | `0120_sf_ops_com_bipes_contagem.sql` |
+| `sf_ops_com_bipes` | `0121_sf_ops_com_bipes_pct_conclusao.sql` (a 0120 tem outro tipo de retorno: não use) |
+| `sf_ordem_resumo` (view) | `0036_sf_ordem_resumo.sql` |
 | `sf_fechar_caixa` | `0100_caixa_reprovada_revisao.sql` |
 | `sf_lancar` | `0103_rota_reteste_obrigatoria.sql` |
 | `sf_dashboard_totais`, `sf_dashboard_grade` | `0105_sf_dashboard_filtro_clique.sql` |
 | `sf_fluxo_op` | `0157_sf_fluxo_op_burnin_primeira.sql` |
 | `sf_fluxo_periodo` | `0090_sf_fluxo_periodo.sql` |
 | `sf_producao_periodo` | `0093_sf_producao_periodo.sql` |
-| `sf_almox_necessidades`, `sf_almoxarifado_entrada` | `0155_sf_almox_posto_anterior.sql` |
+| `sf_almox_necessidades` | `0155_sf_almox_posto_anterior.sql` |
+| `sf_almoxarifado_entrada` | `0156_sf_almox_lote.sql` |
 | `sf_cancelar_lancamento`, `sf_almox_lotes`, `sf_almoxarifado_lote`, `sf_cancelar_lote_almoxarifado` | `0156_sf_almox_lote.sql` |
 | `sf_cancelar_caixa_almoxarifado` | `0131_sf_cancelar_caixa_almoxarifado.sql` |
 | `sf_almox_pendencias` | `0158_sf_almox_pendencias.sql` |
@@ -153,6 +155,13 @@ Onde buscar a definição anterior de cada função (o arquivo está em `supabas
 | `sf_nqa_individual` | `0097_sf_nqa_individual.sql` |
 
 Depois: `cd ~/supabase/docker && docker compose restart rest`. (`sf_placas_embaladas` e as colunas ficam; não atrapalham.) Me peça o rollback preparado se precisar: é mais seguro eu gerar o arquivo único a partir desta tabela.
+
+## Pontos conhecidos
+- O trigger de `pecas` (`sf_registros_pecas`) é só **BEFORE INSERT**: scripts que fazem `UPDATE` de `pmo`/`op` em `sf_registros` (ex.: `docs/operacao/correcao-op-8495`) deixam `pecas` desatualizado se a OP de destino tiver outro N.
+- `sf_integrar` grava a linha da placa com o N da OP **da placa** (não o do produto).
+- A tela do NQA ainda exibe a quantidade da caixa em painéis ("N peças") e o `total` aprovado em placas.
+- O texto da recusa `lote_incompleto` muda com N > 1 ("Bipe todos os N painéis").
+- "Total embaladas" soma placas por SN quando há painel (alguma linha com `pecas > 1`); sem painel continua sendo a contagem de linhas, como antes.
 
 ## Lembretes
 - **Não normalizar** o sufixo `_` das OPs (`PMOC50_`, `8504_` são válidas, segunda leva).
