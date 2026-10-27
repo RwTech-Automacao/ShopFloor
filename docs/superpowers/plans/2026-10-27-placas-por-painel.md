@@ -26,7 +26,7 @@
 - Limite da caixa digitado **em placas**. Painel que estoura o limite é recusado: "Este painel (N placas) ultrapassa o limite da caixa (X/Y)."
 - Painel é sempre completo (N placas); sem painel parcial.
 - Migrações: aditivas e idempotentes, `$func$`, numeradas a partir de `0161` (a branch estacionada `feat/ajustar-limite-caixa` também usa 0161; renumerar a que mergear depois). Cada função reescrita copia a **definição vigente** (migração de maior número, listada por tarefa) e só troca a contagem.
-- `tem_permissao` sempre com 2 argumentos. Decisão por perfil, nunca por nome de posto. Não normalizar sufixo `_` de OP.
+- `tem_permissao`: em código NOVO sempre 2 argumentos; em função REESCRITA mantenha exatamente a assinatura/argumentos da definição vigente (ex.: `tem_permissao('lancar')` de 1 arg nas de 0100/0103/0160) — trocar muda quem pode bipar e está fora do escopo. Decisão por perfil, nunca por nome de posto. Não normalizar sufixo `_` de OP.
 - Commits terminam com `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`. Vitest sempre com `--maxWorkers=2`. Nada vai a Prod nem Dev sem aval do usuário.
 - Mensagens de UI em PT-BR.
 
