@@ -39,7 +39,8 @@ function lerDados(fd: FormData): DadosOrdem {
     sn_ini: String(fd.get('sn_ini') ?? '').trim(),
     sn_fim: String(fd.get('sn_fim') ?? '').trim(),
     embalagem_individual: fd.get('embalagem_individual') === 'on', // checkbox: 1 produto por caixa
-    placas_por_painel: Number(fd.get('placas_por_painel') ?? 1) || 1,
+    // Ausente = 1; presente vale como veio (0, vazio ou inválido são recusados por validarOrdem).
+    placas_por_painel: fd.has('placas_por_painel') ? Number(fd.get('placas_por_painel')) : 1,
     // Salvar pela tela é decisão de pessoa: FINALIZADA vira 'manual' (a rotina não desfaz); outro
     // status limpa a marca. Nunca lido do formulário, para o cliente não forjar 'rotina'.
     finalizada_por: finalizadaPorDoCadastro(status),

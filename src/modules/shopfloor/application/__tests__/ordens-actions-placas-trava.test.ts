@@ -107,3 +107,32 @@ describe('fail-closed e consulta leve', () => {
     expect(await opTemRegistrosAction('id-1')).toBe(false)
   })
 })
+
+describe('leitura do campo "placas por painel" no formulário', () => {
+  const MSG = 'Placas por painel deve ser um número inteiro maior ou igual a 1.'
+
+  it('0 é recusado (não vira 1)', async () => {
+    const r = await criarOrdemAction(undefined, formulario('0'))
+    expect(r).toEqual({ ok: false, erro: MSG })
+    expect(m.criarOrdem).not.toHaveBeenCalled()
+  })
+
+  it('campo vazio é recusado (não vira 1)', async () => {
+    const r = await criarOrdemAction(undefined, formulario(''))
+    expect(r).toEqual({ ok: false, erro: MSG })
+    expect(m.criarOrdem).not.toHaveBeenCalled()
+  })
+
+  it('valor inválido é recusado', async () => {
+    const r = await criarOrdemAction(undefined, formulario('abc'))
+    expect(r).toEqual({ ok: false, erro: MSG })
+  })
+
+  it('campo ausente = 1', async () => {
+    const fd = formulario('1')
+    fd.delete('placas_por_painel')
+    const r = await criarOrdemAction(undefined, fd)
+    expect(r.ok).toBe(true)
+    expect(m.criarOrdem.mock.calls[0]?.[0]).toMatchObject({ placas_por_painel: 1 })
+  })
+})
