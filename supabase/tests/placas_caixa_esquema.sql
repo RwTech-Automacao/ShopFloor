@@ -1,17 +1,19 @@
 -- Esquema mínimo para provar a 0163 (caixa e embalagem em placas) com a sf_lancar (0103) e a
+create role authenticated;
 -- sf_fechar_caixa (0100) REAIS. Só as colunas/tabelas que elas tocam; as migrações 0161 (colunas +
 -- trigger) e 0163 vêm do runner.
--- `teste.perms` = lista 'modulo.permissao' separada por vírgula (a de DOIS argumentos, de propósito).
+-- `teste.perms` (2 args) = lista 'modulo.permissao' separada por vírgula (a de DOIS argumentos, de propósito).
 create function public.tem_permissao(p_modulo text, p_perm text) returns boolean language sql stable as $f$
   select (',' || coalesce(current_setting('teste.perms', true), '') || ',')
          like '%,' || p_modulo || '.' || p_perm || ',%'
 $f$;
 
--- A de UM argumento existe no banco real e é a que as funções antigas (0100/0103) chamam; a 0163 usa
--- a de dois. Lê a mesma lista, sem o prefixo do módulo.
+-- A de UM argumento é a permissão global LEGADA que sf_lancar/sf_fechar_caixa (0100/0103) chamam e
+-- que a 0163 preserva. Lê uma lista DIFERENTE (`teste.perms_legado`), pra o teste distinguir qual
+-- assinatura a função chama.
 create function public.tem_permissao(p_perm text) returns boolean language sql stable as $f$
-  select (',' || coalesce(current_setting('teste.perms', true), '') || ',')
-         like '%,shopfloor.' || p_perm || ',%'
+  select (',' || coalesce(current_setting('teste.perms_legado', true), '') || ',')
+         like '%,' || p_perm || ',%'
 $f$;
 
 create table public.sf_ordens (

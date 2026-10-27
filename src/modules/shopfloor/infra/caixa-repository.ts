@@ -70,28 +70,17 @@ async function snsDaCaixa(
 }
 
 /**
- * Placas embaladas nesta OP+posto: `pecas` uma vez por SN. Paginado (PostgREST trunca em 1000) e do
- * mais recente para o mais antigo; o desempate por id deixa a ordem estável entre as páginas.
- * Antes da placas por painel isto era um count de linhas — com `pecas = 1` e um registro por SN dá o mesmo.
+ * Placas embaladas nesta OP+posto (`pecas` uma vez por SN): agregado no banco (sf_placas_embaladas,
+ * 0163) em UMA chamada — antes era um count de linhas, e varrer as linhas aqui custaria várias
+ * requisições paginadas a cada recarga da tela.
  */
 async function totalPlacasEmbaladas(
   supabase: Awaited<ReturnType<typeof createServerSupabase>>,
   pmo: string, op: string, posto: string,
 ): Promise<number> {
-  const PAGINA = 1000
-  const linhas: { numero_serie_norm: string; pecas: number }[] = []
-  for (let de = 0; ; de += PAGINA) {
-    const { data, error } = await supabase
-      .from('sf_registros').select('numero_serie_norm,pecas')
-      .eq('pmo', pmo).eq('op', op).eq('posto', posto)
-      .order('data_hora', { ascending: false }).order('id', { ascending: false })
-      .range(de, de + PAGINA - 1)
-    if (error) throw error
-    const bloco = (data ?? []) as { numero_serie_norm: string; pecas?: number }[]
-    for (const r of bloco) linhas.push({ numero_serie_norm: r.numero_serie_norm, pecas: r.pecas ?? 1 })
-    if (bloco.length < PAGINA) break
-  }
-  return somarPecasPorSn(linhas)
+  const { data, error } = await supabase.rpc('sf_placas_embaladas', { p_pmo: pmo, p_op: op, p_posto: posto })
+  if (error) throw error
+  return Number(data ?? 0)
 }
 
 /** Montagem aposentada mais recente de um seq (a que está sendo refeita). */
@@ -393,7 +382,9 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
       fechada: c.fechada,
       limite: c.limite,
       codigo: c.revisao > 0 || c.fechada ? c.codigo : `CX${c.seq} (aberta)`,
-      qtd: somarPecasPorSn(pecasPorGrupo.get(`${c.posto}||${chave}`) ?? []), // placas (cada SN uma vez)
+      // placas (cada SN uma vez). A lista veio ASCENDENTE e somarPecasPorSn vale a 1ª ocorrência: inverte
+      // pra valer a linha mais recente, como no SQL.
+      qtd: somarPecasPorSn([...(pecasPorGrupo.get(`${c.posto}||${chave}`) ?? [])].reverse()),
       sns,
       revisao: c.revisao,
     }

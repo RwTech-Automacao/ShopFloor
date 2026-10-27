@@ -20,7 +20,9 @@ function consulta(tabela: string) {
   }
   return q
 }
-vi.mock('@/shared/lib/supabase/server', () => ({ createServerSupabase: async () => ({ from: consulta }) }))
+let totalRpc: unknown = 0
+const rpc = vi.fn(async () => ({ data: totalRpc, error: null }))
+vi.mock('@/shared/lib/supabase/server', () => ({ createServerSupabase: async () => ({ from: consulta, rpc }) }))
 vi.mock('../postos-repository', () => ({ mapaPostoPerfil: async () => ({}) }))
 
 const { carregarCaixasDaOp, carregarEstadoEmbalagem } = await import('../caixa-repository')
@@ -47,12 +49,22 @@ describe('caixa em placas (repositório)', () => {
     expect(c!.qtd).toBe(2)
   })
 
+  it('carregarCaixasDaOp: SN com pecas diferentes vale a linha MAIS RECENTE', async () => {
+    caixas = [{ seq: 1, posto: 'Embalagem', limite: 500, fechada: true, codigo: 'CX[1][50]1-P', revisao: 0 }]
+    // ordem da consulta = ascendente: a 2ª linha é a mais recente
+    registros = [linha('A', 'CX[1][50]1-P', 10), linha('A', 'CX[1][50]1-P', 50)]
+    const [c] = await carregarCaixasDaOp('P', '1')
+    expect(c!.qtd).toBe(10)
+  })
+
   it('carregarEstadoEmbalagem: placas na caixa e total, com SN repetido contado uma vez', async () => {
+    totalRpc = 100
     caixas = [{ seq: 1, limite: 500, fechada: false, ultima: false, revisao: 0, codigo: '' }]
     registros = [linha('A', 'CX[1]', 50), linha('B', 'CX[1]', 50), linha('B', 'CX[1]', 50)]
     const e = await carregarEstadoEmbalagem('P', '1', 'Embalagem')
     expect(e.qtdNaCaixa).toBe(100)
     expect(e.totalEmbaladas).toBe(100)
+    expect(rpc).toHaveBeenCalledWith('sf_placas_embaladas', { p_pmo: 'P', p_op: '1', p_posto: 'Embalagem' })
     expect(e.snsNaCaixa).toHaveLength(2)
     expect(e.caixasAbertas[0]!.qtd).toBe(100)
   })

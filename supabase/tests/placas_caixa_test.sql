@@ -1,5 +1,7 @@
 -- Caixa e embalagem em placas (0163). Roda numa única conexão (a permissão vem de `teste.perms`).
-set teste.perms = 'shopfloor.lancar';
+-- Autorização = a legada de 1 arg (`perms_legado`); a de 2 args fica vazia de propósito.
+set teste.perms_legado = 'lancar';
+set teste.perms = '';
 
 -- OP A: N=50 (PMOT01/1) · OP B: N=1 (PMOT02/2, default)
 insert into sf_ordens (pmo, op, qtd) values ('PMOT01','1', 5000), ('PMOT02','2', 1000);
@@ -71,8 +73,22 @@ begin
   r := public.sf_fechar_caixa('PMOT02','2','Embalagem',9,false);
   assert r->>'erro' = 'CAIXA_VAZIA', 'vazia';
 
-  -- sem permissão
+  -- placas embaladas (RPC agregada): N=50 com SN repetido conta uma vez; N=1; OP/posto sem linhas = 0
+  assert public.sf_placas_embaladas('PMOT01','1','Embalagem') = 50*10 + 50*10 + 50, 'N=50 total: '||public.sf_placas_embaladas('PMOT01','1','Embalagem');
+  assert public.sf_placas_embaladas('PMOT02','2','Embalagem') = 3, 'N=1 total';
+  assert public.sf_placas_embaladas('PMOT02','2','Outro') = 0, 'posto sem linhas';
+
+  -- autorização: só a lista legada de 1 arg vale. Só a de 2 args NÃO passa; sem nenhuma, também não.
+  set teste.perms = 'shopfloor.lancar';
+  set teste.perms_legado = '';
+  r := pg_temp.bipar('PMOT02','2','S9', 3);
+  assert r->>'erro' = 'SEM_PERMISSAO', 'só 2 args não autoriza: '||r::text;
+  r := public.sf_fechar_caixa('PMOT02','2','Embalagem',1,false);
+  assert r->>'erro' = 'SEM_PERMISSAO', 'fechar: só 2 args não autoriza';
   set teste.perms = '';
   r := pg_temp.bipar('PMOT02','2','S9', 3);
   assert r->>'erro' = 'SEM_PERMISSAO', 'sem permissão';
+  set teste.perms_legado = 'lancar';
+  r := pg_temp.bipar('PMOT02','2','S9', 4);
+  assert (r->>'ok')::boolean, 'só a legada autoriza: '||r::text;
 end $$;

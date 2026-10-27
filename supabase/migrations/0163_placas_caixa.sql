@@ -10,7 +10,9 @@
 -- Com N = 1 o resultado é idêntico ao count(distinct numero_serie_norm) de antes.
 --
 -- Copia das definições vigentes: sf_fechar_caixa (0100) e sf_lancar (0103); troca só a contagem,
--- a recusa do limite e o `pecas` no retorno.
+-- a recusa do limite e o `pecas` no retorno. A autorização segue a vigente: tem_permissao('lancar')
+-- (1 arg, permissão global legada dos RPCs de 'lancar').
+-- Novo: sf_placas_embaladas, o total de placas do posto em UMA consulta (substitui a varredura paginada).
 -- =============================================================
 
 -- sf_fechar_caixa: opera na caixa VIGENTE (revisao=0) e conta PEÇAS, não registros
@@ -28,7 +30,7 @@ declare
   v_qtd      int;
   v_codigo   text;
 begin
-  if not tem_permissao('shopfloor', 'lancar') then
+  if not tem_permissao('lancar') then
     return jsonb_build_object('ok', false, 'erro', 'SEM_PERMISSAO');
   end if;
   perform pg_advisory_xact_lock(hashtext(p_pmo||'/'||p_op||'/'||p_posto)::bigint);
@@ -94,7 +96,7 @@ declare
   v_em_reteste    boolean;
   v_novo_retorno  text;
 begin
-  if not tem_permissao('shopfloor', 'lancar') then
+  if not tem_permissao('lancar') then
     return jsonb_build_object('ok', false, 'erro', 'SEM_PERMISSAO');
   end if;
 
@@ -244,5 +246,22 @@ begin
   return jsonb_build_object('ok', true, 'pecas', v_pecas);
 end;
 $$;
+
+-- Placas embaladas na OP+posto: `pecas` uma vez por SN (linha mais recente). Mesmo critério do select
+-- que o app fazia (todas as linhas da OP+posto). SECURITY INVOKER de propósito: o RLS de sf_registros
+-- continua valendo como no select anterior (a função só agrega, não amplia o que o usuário vê).
+create or replace function public.sf_placas_embaladas(p_pmo text, p_op text, p_posto text)
+returns bigint
+language sql stable security invoker set search_path = public
+as $func$
+  select coalesce(sum(u.pecas), 0)::bigint
+  from (
+    select distinct on (numero_serie_norm) numero_serie_norm, pecas
+    from sf_registros
+    where pmo = p_pmo and op = p_op and posto = p_posto
+    order by numero_serie_norm, data_hora desc, created_at desc
+  ) u
+$func$;
+grant execute on function public.sf_placas_embaladas(text, text, text) to authenticated;
 
 notify pgrst, 'reload schema';
