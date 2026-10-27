@@ -12,11 +12,12 @@
 -- (2) Contagens POR LINHA (count(*)): sf_fluxo_op (registros/aprovadas/reprovadas),
 --     sf_fluxo_periodo e sf_producao_periodo. Um bipe grava as suas linhas na mesma transação, logo
 --     com o mesmo data_hora: reprovado com 3 defeitos = 3 linhas, reparo = 1 linha por conserto.
---     Hoje cada uma dessas linhas conta 1. Regra: o BIPE (posto, SN, status, data_hora) vale `pecas`
---     e cada linha EXTRA do mesmo bipe continua valendo 1, como hoje — peso = max(pecas) + count(*) - 1.
---     N=1: peso = count(*) (idêntico). N=50: painel aprovado = 50; painel reprovado com 3 defeitos
---     = 50 + 2. Deduplicar o bipe inteiro (peso = pecas) mudaria o número de hoje das OPs com N=1
---     (3 linhas de defeito passariam a contar 1), por isso as linhas extras ficam como estão.
+--     Hoje cada uma dessas linhas conta 1. Regra, por BIPE (posto, SN, status, data_hora):
+--     peso = case when max(pecas) = 1 then count(*) else max(pecas) end.
+--     N=1: peso = count(*), idêntico ao de hoje (as linhas de defeito continuam contando como hoje).
+--     N>1: o bipe vale exatamente N (painel reprovado com 3 defeitos = 50, reparo de 3 consertos = 50).
+--     Todas as linhas de um bipe têm o mesmo data_hora: sf_lancar/sf_burnin/sf_registrar_reparo não
+--     passam data_hora e o default é now() (instante da transação); nenhuma usa clock_timestamp().
 --
 -- Não mudam: sf_dashboard_totais.bipes/ops, sf_dashboard_graficos, sf_ops_com_bipes.bipes,
 -- sf_fluxo_op.retestes/primeiro_em/ultimo_em, sf_defeitos_resumo, alerta_*.
@@ -217,8 +218,8 @@ begin
     from regs
     group by posto, numero_serie_norm
   ),
-  bipes as ( -- (2): o bipe vale `pecas`; cada linha extra do mesmo bipe vale 1, como hoje
-    select posto, status, data_hora, max(pecas) + count(*) - 1 as peso
+  bipes as ( -- (2): N=1 conta as linhas como hoje; N>1 o bipe vale `pecas`
+    select posto, status, data_hora, case when max(pecas) = 1 then count(*) else max(pecas) end as peso
     from regs
     group by posto, numero_serie_norm, status, data_hora
   ),
@@ -317,7 +318,7 @@ begin
          coalesce(sum(g.peso) filter (where lower(g.status) = 'aprovado'), 0)::int  as aprovadas,
          coalesce(sum(g.peso) filter (where lower(g.status) = 'reprovado'), 0)::int as reprovadas
   from (
-    select posto, status, max(pecas) + count(*) - 1 as peso
+    select posto, status, case when max(pecas) = 1 then count(*) else max(pecas) end as peso
     from sf_registros
     where pmo = p_pmo and op = p_op and numero_serie_norm <> ''
       and data_hora >= p_ini and data_hora < p_fim
@@ -356,7 +357,7 @@ begin
              case when lower(p_bucket) = 'hora' then 'hour' else 'day' end,
              (data_hora at time zone 'America/Sao_Paulo')
            ) as bkt,
-           max(pecas) + count(*) - 1 as peso
+           case when max(pecas) = 1 then count(*) else max(pecas) end as peso
     from sf_registros
     where pmo = p_pmo and op = p_op and posto = p_posto and numero_serie_norm <> ''
       and (p_ini is null or data_hora >= p_ini)

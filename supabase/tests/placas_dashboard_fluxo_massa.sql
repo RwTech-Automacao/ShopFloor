@@ -41,6 +41,8 @@ begin
     -- Q1: painel reprovado com 3 linhas de defeito, sem reteste.
     perform pg_temp.reg(o, 'MONT',  'Q1', '',          '08:00');
     perform pg_temp.reg(o, 'TESTE', 'Q1', 'Reprovado', '09:00', 3);
+    -- Reparo do Q1 com 3 consertos (3 linhas no mesmo instante), sem reteste ainda.
+    perform pg_temp.reg(o, 'Manutenção', 'Q1', '',     '09:15', 3);
     -- Linha sem SN: entra em `bipes`, fica fora das contagens por peça.
     perform pg_temp.reg(o, 'TESTE', '',   'Aprovado',  '09:30');
   end loop;
