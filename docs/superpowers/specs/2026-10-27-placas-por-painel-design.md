@@ -27,8 +27,19 @@ Na OP dessa placa, cada bipe identifica um painel inteiro e deve contar como as 
 
 ## Contagens que passam a somar `pecas`
 
-Regra: onde hoje se conta **bipes como quantidade de peças**, passa a `sum(pecas)`.
-Onde se conta **eventos/razões** (ex.: % de aprovação, passou/reprovou), segue por bipe.
+Achado do inventário (27/10): **linha de `sf_registros` ≠ bipe.** `sf_lancar` e `sf_burnin` gravam uma linha
+por defeito do mesmo bipe reprovado; `sf_registrar_reparo` grava N linhas para um SN; rebipe e reteste repetem
+o SN. Por isso as contagens atuais são quase todas `count(distinct sn)`, não `count(*)`.
+
+Regra: onde hoje se conta **peças distintas** (`count(distinct sn)`), passa a **somar `pecas` uma vez por SN**
+(`sum(pecas)` sobre `distinct on (sn)`). Como o trigger dá o mesmo `pecas` a todas as linhas da mesma OP, qualquer
+linha do SN serve. **Nunca `sum(pecas)` direto sobre as linhas** (inflaria com defeitos/rebipe/reteste).
+Onde se conta **eventos/razões** (% de aprovação, ocorrências de defeito, existência, "faltam peças"), não muda.
+
+Linhas copiadas por SQL (Almoxarifado caixa/peça/lote, NQA caixa/individual, `sf_integrar`) nascem passando pelo
+trigger, que as resolve pela OP da linha nova; em `sf_integrar` (placas em outras OPs) vale o N da OP de destino.
+Quantidades derivadas de `row_count` (`sf_estoque_envios.quantidade`, retorno dos cancelamentos) e o `1` fixo de
+`sf_cancelar_lancamento`/`sf_estoque_reverter` passam a somar `pecas`.
 
 - **Progresso e finalização da OP**: `sf_ordem_resumo`, `sf_ops_com_bipes` (contagem e % de conclusão),
   finalização automática (`0145`) e reabertura (`0148`): "X de qtd da OP" compara placas com `sf_ordens.qtd`.
