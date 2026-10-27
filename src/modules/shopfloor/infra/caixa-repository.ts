@@ -2,6 +2,7 @@ import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { caixaDaVez, marcadorCaixaAberta, seqDoMarcadorCaixa, seqsEmRemontagem, seqsReabertas, somarPecasPorSn } from '@/modules/shopfloor/domain/caixa'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
+import { pecasPorSnMaisRecente } from '@/modules/shopfloor/domain/nqa-amostra'
 import { mapaPostoPerfil } from './postos-repository'
 
 export interface RemontagemCaixa {
@@ -395,10 +396,11 @@ export async function carregarCaixasDaOp(pmo: string, op: string): Promise<Caixa
 export interface CaixaDoSn {
   posto: string        // posto de embalagem onde a caixa foi formada
   numeroCaixa: string  // código/marcador da caixa (numero_caixa)
-  qtd: number          // total de peças (SNs distintos) da caixa
+  qtd: number          // total de PLACAS da caixa (pecas uma vez por SN); snsNorm.length = painéis
   snsNorm: string[]    // SNs (normalizados) da caixa — p/ validar que a amostra é DESTA caixa
   fechada: boolean     // a caixa já foi FECHADA na embalagem (NQA só inspeciona caixa fechada)
   aposentada: boolean  // montagem já reprovada no NQA (revisao > 0) — está sendo remontada na Embalagem
+  pecasPorSn: Record<string, number> // placas de cada SN da caixa (peso de cada painel na amostra do NQA)
   jaInspecionadaNqa: boolean // caixa FINALIZADA no NQA (alguma peça no NQA e NENHUMA pendente de reteste)
   pendentesReteste: string[] // SNs (exibição) que ainda precisam RETESTAR antes de re-inspecionar a caixa
   postoReteste: string       // posto onde essas peças devem retestar (1º da rota; vazio se não uniforme)
@@ -449,12 +451,18 @@ export async function resolverCaixaPorSn(
   if (!r1) return null
   const { numero_caixa, posto } = r1 as { numero_caixa: string; posto: string }
 
+  // Mais recente primeiro: o peso (placas) de cada SN vale a linha mais recente da caixa, como na RPC.
   const { data: regs, error: e2 } = await supabase
     .from('sf_registros')
-    .select('numero_serie_norm')
+    .select('numero_serie_norm,pecas,data_hora,created_at')
     .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', numero_caixa)
+    .order('data_hora', { ascending: false })
+    .order('created_at', { ascending: false })
   if (e2) throw e2
-  const snsNorm = new Set((regs ?? []).map((x) => (x as { numero_serie_norm: string }).numero_serie_norm))
+  const linhasCaixa = (regs ?? []) as { numero_serie_norm: string; pecas?: number | null }[]
+  const snsNorm = new Set(linhasCaixa.map((x) => x.numero_serie_norm))
+  // Placas por SN (amostra do NQA em placas, 0166). A qtd da caixa é a soma: `pecas` uma vez por SN.
+  const pecasPorSn = pecasPorSnMaisRecente(linhasCaixa)
 
   // Fechada? Ao fechar, a embalagem reescreve o numero_caixa dos registros para o CÓDIGO final e
   // grava sf_caixas.codigo+fechada. Caixa ABERTA carrega o marcador CX[seq] (sem código em sf_caixas).
@@ -512,8 +520,9 @@ export async function resolverCaixaPorSn(
   return {
     posto,
     numeroCaixa: numero_caixa,
-    qtd: snsNorm.size,
+    qtd: somarPecasPorSn(linhasCaixa.map((l) => ({ numero_serie_norm: l.numero_serie_norm, pecas: l.pecas ?? 1 }))),
     snsNorm: [...snsNorm],
+    pecasPorSn,
     fechada,
     aposentada,
     jaInspecionadaNqa,

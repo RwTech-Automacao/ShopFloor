@@ -11,6 +11,8 @@ type Cenario = {
   rpc: 'erro-desconhecido' | 'excecao' | { message: string }
   /** SNs que a leitura de verificação devolve; 'erro' = a leitura falha */
   gravados: string[] | 'erro'
+  /** `pecas` das linhas devolvidas (placas por painel); omitido = linha sem a coluna (vale 1) */
+  pecas?: number
 }
 
 /** Mock do cliente: rpc + cadeia from().select().eq()...in().gte() que registra os filtros usados. */
@@ -36,7 +38,7 @@ function mocks(c: Cenario) {
         b.then = (res: (x: unknown) => unknown) =>
           res(c.gravados === 'erro'
             ? { data: null, error: { message: 'falha leitura' } }
-            : { data: c.gravados.map((s) => ({ numero_serie_norm: s })), error: null })
+            : { data: c.gravados.map((s) => (c.pecas === undefined ? { numero_serie_norm: s } : { numero_serie_norm: s, pecas: c.pecas })), error: null })
         return b
       },
     }),
@@ -137,6 +139,13 @@ describe('finalizarNqaCaixa — erro que não é recusa de negócio', () => {
     expect(r).toEqual({ ok: true, total: 2 })
   })
 
+  it('placas por painel: o total recuperado soma as placas dos SNs confirmados (uma vez por SN)', async () => {
+    mocks({ rpc: 'erro-desconhecido', gravados: ['9901', '9902', '9901'], pecas: 50 })
+    const { finalizarNqaCaixa } = await import('../nqa-caixa-actions')
+    const r = await finalizarNqaCaixa({ ...CAIXA, resultado: 'Aprovado' })
+    expect(r).toEqual({ ok: true, total: 100 })
+  })
+
   it('a verificação falhando devolve o erro, nunca sucesso', async () => {
     mocks({ rpc: 'excecao', gravados: 'erro' })
     const { finalizarNqaCaixa } = await import('../nqa-caixa-actions')
@@ -196,6 +205,13 @@ describe('finalizarNqaIndividual — erro que não é recusa de negócio', () =>
     mocks({ rpc: 'excecao', gravados: ['9901', '9902', '9903'] })
     m = await import('../nqa-individual-actions')
     expect(await m.finalizarNqaIndividual({ ...LOTE, resultado: 'Aprovado' })).toEqual({ ok: true, total: 3 })
+  })
+
+  it('placas por painel: o total recuperado do lote é em placas (3 painéis × 50 = 150)', async () => {
+    mocks({ rpc: 'erro-desconhecido', gravados: ['9901', '9902', '9903'], pecas: 50 })
+    const { finalizarNqaIndividual } = await import('../nqa-individual-actions')
+    const r = await finalizarNqaIndividual({ ...LOTE, resultado: 'Aprovado' })
+    expect(r).toEqual({ ok: true, total: 150 })
   })
 
   it('a verificação falhando devolve o erro', async () => {

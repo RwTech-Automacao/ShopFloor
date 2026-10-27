@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { carregarNqaCaixa, finalizarNqaCaixa, type AmostraNqa, type CaixaNqa } from '@/modules/shopfloor/application/nqa-caixa-actions'
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
+import { placasDasAmostras } from '@/modules/shopfloor/domain/nqa-amostra'
 import { salvarNqaProgresso, limparNqaProgresso, lerNqaProgresso } from './nqa-progresso-local'
 
 const OPCOES_INSPECAO = ['Aprovado', 'Reprovado', 'Não aplicável']
@@ -59,7 +60,10 @@ export function NqaCaixaPanel({
   // Alguma amostra reprovada → a caixa inteira reprova (modo REPROVA).
   const algumReprovado = amostras.some(amostraReprovada)
   const amostraAtualReprova = visual === 'Reprovado' || funcional === 'Reprovado'
-  const completa = caixa !== null && amostras.length >= caixa.amostra && !algumReprovado
+  // A amostra exigida (caixa.amostra) é em PLACAS; cada painel amostrado vale as placas dele (0166).
+  // Nunca comparar o nº de SNs bipados com um total em placas. Com N = 1 é amostras.length.
+  const placasAmostradas = caixa !== null ? placasDasAmostras(amostras, caixa.pecasPorSn) : 0
+  const completa = caixa !== null && placasAmostradas >= caixa.amostra && !algumReprovado
 
   // Ao entrar no estado B (caixa resolvida), foca o campo de bipe da amostra.
   useEffect(() => {
@@ -291,11 +295,11 @@ export function NqaCaixaPanel({
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="shrink-0">
           <div className="mb-1 flex justify-between text-sm">
-            <span className="font-medium">{amostras.length} / {caixa.amostra} amostras</span>
+            <span className="font-medium">{placasAmostradas} / {caixa.amostra} amostras</span>
             <span className="text-muted-foreground">{algumReprovado ? 'Caixa reprovada' : completa ? 'Amostra completa' : 'Inspecionando…'}</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div className={`h-full ${algumReprovado ? 'bg-red-600' : 'bg-enterplak'}`} style={{ width: `${Math.min(100, Math.round((amostras.length / Math.max(1, caixa.amostra)) * 100))}%` }} />
+            <div className={`h-full ${algumReprovado ? 'bg-red-600' : 'bg-enterplak'}`} style={{ width: `${Math.min(100, Math.round((placasAmostradas / Math.max(1, caixa.amostra)) * 100))}%` }} />
           </div>
         </div>
 
