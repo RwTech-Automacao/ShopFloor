@@ -273,7 +273,7 @@ begin
     'Z3f lista: ja_lancadas 50 placas: ' || row_to_json(v)::text);
   r := sf_almoxarifado_lote('PMOZ04', '9604', 'Almoxarifado', 'Ana', v_lote_b, array['9805','9806','9807','9808']);
   perform pg_temp.confere(r->>'motivo' = 'lote_com_sn_lancado'
-      and r->>'detalhe' like '50 de 200 peças deste lote já tem entrada no Almoxarifado (9805).%',
+      and r->>'detalhe' like '50 de 200 peças deste lote já têm entrada no Almoxarifado (9805).%',
     'Z3f recusa em placas: ' || r::text);
 end $t$;
 

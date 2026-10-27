@@ -960,7 +960,7 @@ begin
       'lancados', to_jsonb(v_lancadas),
       'detalhe', v_placas_lancadas || ' de ' || v_placas
         || case when v_placas = 1 then ' peça' else ' peças' end
-        || ' deste lote já ' || case when cardinality(v_lancadas) = 1 then 'tem' else 'têm' end
+        || ' deste lote já ' || case when v_placas_lancadas = 1 then 'tem' else 'têm' end
         || ' entrada no Almoxarifado ('
         || array_to_string(v_lancadas[1:10], ', ')
         || case when cardinality(v_lancadas) > 10 then ', …' else '' end
