@@ -13,13 +13,11 @@ let registros: Record<string, unknown>[] = []
 let caixas: Record<string, unknown>[] = []
 let agregados: Record<string, unknown>[] = []
 let perfis: Record<string, { temStatus: boolean; recurso: string; exigeManutencao: boolean }> = {}
-let consultasEmCaixas = 0
-let colunasPedidas: string[] = []
+const colunasPedidas: string[] = []
 
 vi.mock('../postos-repository', () => ({ mapaPostoPerfil: async () => perfis }))
 
 function consulta(tabela: string) {
-  if (tabela === 'sf_caixas') consultasEmCaixas += 1
   const filtros: [string, unknown][] = []
   let head = false
   let de = 0
@@ -74,6 +72,7 @@ function registro(posto: string, sn: string, status: string, pecas: number, minu
 describe('carregarFluxoOp — placas por painel (fila, iniciadas e não iniciadas em placas)', () => {
   beforeEach(() => {
     seq = 0
+    colunasPedidas.length = 0
     perfis = {
       Montagem: { temStatus: false, recurso: 'nenhum', exigeManutencao: false },
       Teste: { temStatus: true, recurso: 'nenhum', exigeManutencao: true },
