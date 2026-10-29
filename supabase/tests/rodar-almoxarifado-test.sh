@@ -418,6 +418,46 @@ if [ -n "${PLACAS:-}" ] && [ -z "${RED:-}" ]; then
     && echo "0165 reaplicada duas vezes, invariantes da fila: ok" \
     || { echo "invariantes da fila FALHARAM depois de reaplicar a 0165"; exit 1; }
   echo "PLACAS ALMOXARIFADO OK"
+
+  # 0167 (alerta de parado): sf_almox_pendencias, sf_almox_necessidades e sf_almox_lotes viram cascas das
+  # respectivas _base (sem gate, para o cron). Entra aqui,
+  # por cima da 0165 reaplicada, porque é o corpo da 0165 que ela copia. Antes dela, guarda a saída da
+  # pública ANTIGA (pend_antes, lida pelo teste) e a foto das leituras; depois, a foto de novo — com a
+  # massa inteira da suíte, as duas fotos têm que ser IDÊNTICAS (a casca não muda contrato nenhum).
+  # Esta base não tem o esquema dos alertas, e a 0167 também mexe em alerta_regras e recria o
+  # alerta_avaliar (que declara variável do tipo alerta_ocorrencias): o stub abaixo tem só as colunas
+  # que os checks da 0167 citam, para a migração INTEIRA aplicar aqui como aplica no RDS. O
+  # comportamento dos alertas é medido no rodar-alertas-test.sh. Duas aplicações, cada uma com -1.
+  docker cp supabase/migrations/0167_alerta_almox_parado.sql "$NOME":/tmp/0167.sql
+  docker cp supabase/tests/almox_pendencias_base_test.sql "$NOME":/tmp/teste_pend_base.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+    -c "create table public.alerta_regras (
+          id uuid primary key default gen_random_uuid(), tipo text not null, modulo text not null,
+          postos text[] not null default '{}', pmos text[], janela_tipo text, janela_valor int,
+          taxa_minima numeric, minimo_bipes int, limite_tempo_seg int, limite_ocorrencias int,
+          pausa_max_min int, hora_resumo time, lembrete_min int)" \
+    -c "create table public.alerta_ocorrencias (id uuid primary key default gen_random_uuid())"
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+    -c "select set_config('teste.perms', 'recebimento.lancar,shopfloor.visualizar', false)" \
+    -c "create table pend_antes as select * from public.sf_almox_pendencias()"
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -v tabela=foto_pre0167 -f /tmp/foto.sql >/dev/null
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0167.sql
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0167.sql   # de novo: idempotente
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -v tabela=foto_pos0167 -f /tmp/foto.sql >/dev/null
+  DIF=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c "
+    select (select count(*) from foto_pre0167) || '/' ||
+           (select count(*) from ((select * from foto_pos0167) except all (select * from foto_pre0167)) x) || '/' ||
+           (select count(*) from ((select * from foto_pre0167) except all (select * from foto_pos0167)) y)")
+  case "$DIF" in
+    0/*) echo "foto da 0167 FALHOU: foto vazia ($DIF)"; exit 1 ;;
+    */0/0) echo "foto das leituras antes x depois da 0167: idênticas ($DIF): ok" ;;
+    *) echo "foto da 0167 FALHOU (linhas/só-depois/só-antes = $DIF)"; exit 1 ;;
+  esac
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pend_base.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select public.teste_fila_invariantes('PLACAS: depois da 0167')" >/dev/null \
+    && echo "0167 (pendências base + casca): ok" \
+    || { echo "invariantes da fila FALHARAM depois da 0167"; exit 1; }
 fi
 
 # O PLANO ESTÁVEL DA sf_nqa_caixa (0160): OP nova e grande, sem analyze, tem que passar em < 3 s e

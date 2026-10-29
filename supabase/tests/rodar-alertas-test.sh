@@ -279,4 +279,18 @@ echo "0151 (canal email): ok"
 teto_passada pos0151
 echo "teto de 3 dias pos-0151: ok"
 
+# ---------- 0167: tipo de regra 'parado' (placas paradas antes do Almoxarifado) ----------
+# Recria o alerta_avaliar sobre o corpo da 0151 com um SEXTO ramo e um 4º parâmetro (p_parados), e
+# DERRUBA a assinatura de 3: por isso vem depois de tudo. Esta base não tem as tabelas sf_* do
+# Almoxarifado (só o _stubs.sql): a sf_almox_pendencias_base e a casca são plpgsql e só resolvem as
+# tabelas quando rodam, então a 0167 inteira aplica aqui sem elas — e é isso que se prova (a parte
+# das pendências é medida no rodar-almoxarifado-test.sh). Duas aplicações, cada uma como transação
+# única (-1): idempotência e a ordem do drop da assinatura antiga.
+docker cp supabase/migrations/0167_alerta_almox_parado.sql "$NOME":/tmp/0167.sql
+docker cp supabase/tests/alertas_parado_test.sql "$NOME":/tmp/teste_parado.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0167.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0167.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_parado.sql
+echo "0167 (parado no Almoxarifado): ok"
+
 echo "ALERTAS SQL OK"
