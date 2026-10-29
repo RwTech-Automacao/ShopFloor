@@ -33,16 +33,27 @@ export function minutosDeExpediente(de: Date, ate: Date, turnos: readonly Interv
   const ultimo = Date.UTC(b.ano, b.mes - 1, b.dia)
 
   let total = 0
-  for (let dia = Date.UTC(a.ano, a.mes - 1, a.dia); dia <= ultimo; dia += 24 * 60 * MINUTO_MS) {
+  const DIA_MS = 24 * 60 * MINUTO_MS
+  // Meia-noite de parede de SP do dia seguinte vira a do dia seguinte da volta: 1 conversão por dia.
+  let meiaNoite: number | null = null
+  for (let dia = Date.UTC(a.ano, a.mes - 1, a.dia); dia <= ultimo; dia += DIA_MS) {
     const d = new Date(dia)
-    const semana = d.getUTCDay()
-    if (semana === 0 || semana === 6) continue
     const ano = d.getUTCFullYear()
     const mes = d.getUTCMonth() + 1
     const diaDoMes = d.getUTCDate()
+    const hoje = meiaNoite ?? instanteSp(ano, mes, diaDoMes, 0).getTime()
+    const amanha = new Date(dia + DIA_MS)
+    meiaNoite = instanteSp(amanha.getUTCFullYear(), amanha.getUTCMonth() + 1, amanha.getUTCDate(), 0).getTime()
+    const semana = d.getUTCDay()
+    if (semana === 0 || semana === 6) continue
+    // Dia de 24 h exatas (sem troca de horário dentro dele): hora de parede = meia-noite + minutos.
+    // Se um dia não tiver 24 h (horário de verão, antes de 2019), converte cada hora de parede.
+    const diaNormal = meiaNoite - hoje === DIA_MS
     for (const f of faixas) {
-      const ini = Math.max(instanteSp(ano, mes, diaDoMes, f.ini).getTime(), inicio)
-      const fim = Math.min(instanteSp(ano, mes, diaDoMes, f.fim).getTime(), t1)
+      const iniDia = diaNormal ? hoje + f.ini * MINUTO_MS : instanteSp(ano, mes, diaDoMes, f.ini).getTime()
+      const fimDia = diaNormal ? hoje + f.fim * MINUTO_MS : instanteSp(ano, mes, diaDoMes, f.fim).getTime()
+      const ini = Math.max(iniDia, inicio)
+      const fim = Math.min(fimDia, t1)
       if (fim > ini) total += (fim - ini) / MINUTO_MS
     }
   }
