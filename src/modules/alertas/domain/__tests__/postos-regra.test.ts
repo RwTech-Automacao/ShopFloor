@@ -15,9 +15,10 @@ function perfil(p: Partial<PerfilPosto>): PerfilPosto {
   }
 }
 
-const TESTE: PostoRegra = { chave: 'Teste', temStatus: true, coletaDefeito: true }
-const NQA: PostoRegra = { chave: 'Inspeção NQA', temStatus: true, coletaDefeito: false }
-const EMBALAGEM: PostoRegra = { chave: 'Embalagem', temStatus: false, coletaDefeito: false }
+const TESTE: PostoRegra = { chave: 'Teste', temStatus: true, coletaDefeito: true, almoxarifado: false }
+const NQA: PostoRegra = { chave: 'Inspeção NQA', temStatus: true, coletaDefeito: false, almoxarifado: false }
+const EMBALAGEM: PostoRegra = { chave: 'Embalagem', temStatus: false, coletaDefeito: false, almoxarifado: false }
+const ALMOX: PostoRegra = { chave: 'Almoxarifado', temStatus: false, coletaDefeito: false, almoxarifado: true }
 /** Ordem do fluxo, como `listarPostos` devolve. */
 const FLUXO = [EMBALAGEM, TESTE, NQA]
 
@@ -25,10 +26,11 @@ describe('postoRegraDe', () => {
   it('lê o perfil: status e coleta de código de defeito', () => {
     expect(postoRegraDe('Teste', perfil({ temStatus: true, reprova: 'defeitos' }))).toEqual(TESTE)
     expect(postoRegraDe('Inspeção SPI', perfil({ temStatus: true, reprova: 'posicoes' }))).toEqual({
-      chave: 'Inspeção SPI', temStatus: true, coletaDefeito: true,
+      chave: 'Inspeção SPI', temStatus: true, coletaDefeito: true, almoxarifado: false,
     })
     expect(postoRegraDe('Inspeção NQA', perfil({ temStatus: true, reprova: 'nenhum' }))).toEqual(NQA)
     expect(postoRegraDe('Embalagem', perfil({ recurso: 'caixa' }))).toEqual(EMBALAGEM)
+    expect(postoRegraDe('Almoxarifado', perfil({ recurso: 'almoxarifado' }))).toEqual(ALMOX)
   })
 })
 
@@ -62,12 +64,19 @@ describe('postoServeAoTipo', () => {
     for (const p of FLUXO) expect(postoServeAoTipo('tempo', p)).toBe(true)
   })
 
+  // O parado também fica fora: só serve ao posto de perfil Almoxarifado (o `it` dele, abaixo).
   // O fim de EMB fica FORA: ele é o único tipo sem posto nenhum (o gatilho é a EMB fechar, e EMB
   // não é posto). O caso dele é o `it` abaixo, para a exclusão ficar medida e não só suposta.
   it('todo tipo de posto aceita pelo menos o posto de teste', () => {
-    for (const tipo of TIPOS_REGRA.filter((t) => t !== 'emb')) {
+    for (const tipo of TIPOS_REGRA.filter((t) => t !== 'emb' && t !== 'parado')) {
       expect(postoServeAoTipo(tipo, TESTE)).toBe(true)
     }
+  })
+
+  it('parado: só o posto de perfil Almoxarifado', () => {
+    expect(postoServeAoTipo('parado', ALMOX)).toBe(true)
+    for (const p of [TESTE, NQA, EMBALAGEM]) expect(postoServeAoTipo('parado', p)).toBe(false)
+    expect(postosOferecidos('parado', [...FLUXO, ALMOX], []).map((p) => p.chave)).toEqual(['Almoxarifado'])
   })
 
   it('fim de EMB não aceita posto nenhum, e não oferece lista de postos', () => {

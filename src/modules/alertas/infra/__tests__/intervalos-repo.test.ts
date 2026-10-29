@@ -112,6 +112,7 @@ const TURNO: RegraValida = {
   pausaMaxMin: null,
   lembreteMin: null,
   horaResumo: null,
+  limiteHoras: null,
   intervalos: [
     { inicio: '07:00', fim: '12:00' },
     { inicio: '13:30', fim: '17:30' },
@@ -330,8 +331,10 @@ function sbAvaliar(intervalos: unknown[], regras?: unknown[]) {
   return sbFake((c) =>
     c.tabela === 'alerta_regras'
       ? {
-          data:
-            regras ?? [
+          // O caminho de parado (tipo='parado') não é o assunto: recebe vazio.
+          data: c.filtros.some(([col, v]) => col === 'tipo' && v === 'parado')
+            ? []
+            : regras ?? [
               { id: 'r1', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
               { id: 'r2', tipo: 'aprovacao', janela_tipo: 'intervalos', janela_valor: 60 },
             ],
@@ -363,12 +366,16 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
             r1: { inicio: '2026-10-06T12:00:00.000Z', fim: '2026-10-06T13:00:00.000Z' },
           },
           p_resumos: {},
+          p_parados: {},
         },
       },
     ])
     // Duas consultas para os blocos (as regras e os intervalos de todas elas) + UMA do resumo
-    // (as regras de resumo; sem nenhuma devida, os intervalos nem são lidos).
-    expect(chamadas.map((c) => c.tabela)).toEqual(['alerta_regras', 'alerta_regra_intervalos', 'alerta_regras'])
+    // (as regras de resumo; sem nenhuma devida, os intervalos nem são lidos) + UMA do parado
+    // (as regras de parado; sem nenhuma, nada mais é lido).
+    expect(chamadas.map((c) => c.tabela)).toEqual([
+      'alerta_regras', 'alerta_regra_intervalos', 'alerta_regras', 'alerta_regras',
+    ])
     expect(chamadas[1]!.filtros).toEqual([['regra_id', ['r1', 'r2']]])
   })
 
@@ -496,7 +503,7 @@ describe('avaliar — monta o p_blocos com os blocos que FECHARAM', () => {
 
     await criarRepositorioServico(sb, { DISCORD_CANAL_ID: 'C9' } as unknown as NodeJS.ProcessEnv).avaliar()
 
-    expect(rpcs[0]!.args).toEqual({ p_canal_discord: 'C9', p_blocos: {}, p_resumos: {} })
+    expect(rpcs[0]!.args).toEqual({ p_canal_discord: 'C9', p_blocos: {}, p_resumos: {}, p_parados: {} })
     expect(erro.mock.calls.length).toBeGreaterThan(0)
     erro.mockRestore()
   })

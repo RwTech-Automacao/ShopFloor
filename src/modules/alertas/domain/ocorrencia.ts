@@ -85,6 +85,8 @@ export function formatarValorOcorrencia(tipo: TipoRegra, valor: number | null): 
   if (valor === null || !Number.isFinite(valor)) return '—'
   if (tipo === 'tempo') return `${formatarMmSs(valor)}/peça`
   if (tipo === 'defeito') return valor === 1 ? '1 vez' : `${valor} vezes`
+  // O parado não mede taxa: mostrar '%' diria uma grandeza que ele não tem.
+  if (tipo === 'parado') return '—'
   return `${formatarTaxaValor(valor)}%`
 }
 

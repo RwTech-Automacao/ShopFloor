@@ -74,8 +74,8 @@ export interface ContaVinculada {
 }
 
 /** Tipo da regra (specs 2026-09-18 e 2026-10-09). O tipo não muda depois de criado. */
-export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito' | 'resumo' | 'emb'
-export const TIPOS_REGRA: readonly TipoRegra[] = ['aprovacao', 'tempo', 'defeito', 'resumo', 'emb']
+export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito' | 'resumo' | 'emb' | 'parado'
+export const TIPOS_REGRA: readonly TipoRegra[] = ['aprovacao', 'tempo', 'defeito', 'resumo', 'emb', 'parado']
 
 export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
   aprovacao: 'Taxa de aprovação',
@@ -83,6 +83,7 @@ export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
   defeito: 'Defeito repetido',
   resumo: 'Resumo diário',
   emb: 'Fim de EMB',
+  parado: 'Parado no Almoxarifado',
 }
 
 /** A frase de cada cartão da escolha do tipo. */
@@ -95,6 +96,7 @@ export const DESCRICAO_TIPO_REGRA: Record<TipoRegra, string> = {
   // fecha limpa (decisão 5 da spec, revertida em 14/10/2026). Sem ela o cartão deixaria o gestor
   // achar que a regra só fala quando há problema.
   emb: 'Avisa quando todos os processos de uma EMB terminam, com as divergências de quantidade e as justificativas (ou dizendo que não houve nenhuma).',
+  parado: 'Avisa quando caixas, lotes ou peças prontas ficam horas sem dar entrada no Almoxarifado.',
 }
 
 /** É um tipo de regra conhecido? */
@@ -104,6 +106,7 @@ export function ehTipoRegra(valor: unknown): valor is TipoRegra {
     valor === 'tempo' ||
     valor === 'defeito' ||
     valor === 'resumo' ||
-    valor === 'emb'
+    valor === 'emb' ||
+    valor === 'parado'
   )
 }

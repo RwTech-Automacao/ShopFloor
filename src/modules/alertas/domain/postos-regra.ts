@@ -11,11 +11,15 @@ export interface PostoRegra {
   temStatus: boolean
   /** O posto registra o CÓDIGO do defeito na reprova (`sf_posto_perfis.reprova` ≠ 'nenhum'). */
   coletaDefeito: boolean
+  /** O perfil do posto é o do Almoxarifado (`recurso = 'almoxarifado'`). Ausente = não é. */
+  almoxarifado?: boolean
 }
 
 /** Traduz o perfil do posto para o que a regra de alerta precisa saber. */
 export function postoRegraDe(chave: string, perfil: PerfilPosto): PostoRegra {
-  return { chave, temStatus: perfil.temStatus, coletaDefeito: perfil.reprova !== 'nenhum' }
+  return { chave, temStatus: perfil.temStatus, coletaDefeito: perfil.reprova !== 'nenhum',
+    almoxarifado: perfil.recurso === 'almoxarifado',
+  }
 }
 
 /**
@@ -30,6 +34,7 @@ export function postoRegraDe(chave: string, perfil: PerfilPosto): PostoRegra {
  *  - defeito: só quem registra o código. `alerta_defeitos` exige status reprovado E
  *    `codigo_defeito` preenchido — sem código não há o que repetir.
  *  - tempo médio: qualquer posto, que todo posto tem intervalo entre um bipe e o próximo.
+ *  - parado: só o posto de perfil Almoxarifado (`recurso = 'almoxarifado'`).
  *  - fim de EMB: nenhum posto. A regra não tem posto nenhum (o gatilho é a EMB fechar, e EMB não é
  *    posto), e a lista de postos não aparece no formulário dele. É o único tipo que devolve false
  *    para TODO posto — por isso o teste "todo tipo aceita pelo menos o posto de teste" o exclui.
@@ -39,6 +44,8 @@ export function postoServeAoTipo(tipo: TipoRegra, posto: PostoRegra): boolean {
   // O resumo traz a taxa de aprovação: posto sem status não tem linha Aprovado/Reprovado e sumiria.
   if (tipo === 'aprovacao' || tipo === 'resumo') return posto.temStatus
   if (tipo === 'defeito') return posto.coletaDefeito
+  // O parado olha a ENTRADA no Almoxarifado: só o posto de perfil almoxarifado serve.
+  if (tipo === 'parado') return posto.almoxarifado === true
   return true
 }
 

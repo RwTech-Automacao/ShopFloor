@@ -228,6 +228,57 @@ describe('actions de alertas — payload malformado não lança exceção', () =
     limparMocks()
   })
 
+  describe('salvarRegraAction — regra parado', () => {
+    const PARADO: EntradaRegra = {
+      tipo: 'parado',
+      nome: 'Parado no Almoxarifado',
+      postos: ['Almoxarifado'],
+      taxaMinima: '',
+      janelaTipo: 'op',
+      janelaValor: null,
+      minimoBipes: '',
+      limiteHoras: '2',
+      lembreteMin: null,
+      canais: ['telegram'],
+      destinatarios: ['u1'],
+      ativa: true,
+    }
+
+    it('regra válida vai ao repositório com o limite em horas e a janela de fachada', async () => {
+      const inserirRegra = vi.fn().mockResolvedValue({ ok: true, id: 'nova' })
+      comoGestor()
+      repositorioFalso({ inserirRegra })
+      vi.doMock('@/modules/logs/application/registrar-log', () => ({ registrarLog: async () => {} }))
+      vi.resetModules()
+      const { salvarRegraAction } = await import('../alertas-actions')
+      expect(await salvarRegraAction('shopfloor', null, PARADO)).toEqual({ ok: true, id: 'nova' })
+      expect(inserirRegra.mock.calls[0]![0]).toMatchObject({
+        modulo: 'shopfloor',
+        tipo: 'parado',
+        limiteHoras: 2,
+        janelaTipo: 'op',
+        janelaValor: null,
+        minimoBipes: null,
+        taxaMinima: null,
+      })
+      limparMocks()
+    })
+
+    it('limite fora de 1 a 72 é recusado e nada é gravado', async () => {
+      const inserirRegra = vi.fn()
+      comoGestor()
+      repositorioFalso({ inserirRegra })
+      vi.resetModules()
+      const { salvarRegraAction } = await import('../alertas-actions')
+      expect(await salvarRegraAction('shopfloor', null, { ...PARADO, limiteHoras: '73' })).toEqual({
+        ok: false,
+        erro: 'Informe o limite em horas (de 1 a 72).',
+      })
+      expect(inserirRegra).not.toHaveBeenCalled()
+      limparMocks()
+    })
+  })
+
   describe('resolverOcorrenciaAction', () => {
     const RESOLUCAO = {
       ok: true,

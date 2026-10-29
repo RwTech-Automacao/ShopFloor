@@ -26,6 +26,8 @@ import {
   type RefOp,
 } from './mensagens'
 import { textoEmb, type DivergenciaEmb } from './emb'
+import { textoAlertaParado, textoNormalizouParado } from './parados-texto'
+import type { ItemParado } from './parados'
 
 /**
  * Uma linha da fila (`alerta_envios`) já RESERVADA por esta rodada (`alerta_reservar_envios`):
@@ -323,6 +325,32 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
   return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
 }
 
+/** Lê o `dados` do parado (0167): `itens` (array de {tipo, codigo, pecas, minutos}) e `limite_horas`. */
+function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
+  const refOp = refOpDe(dados)
+  if (tipo === 'normalizou') return textoNormalizouParado(refOp)
+  if (!Array.isArray(dados.itens)) throw new DadosEnvioInvalidos('itens')
+  const itens: ItemParado[] = dados.itens.map((bruto) => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) {
+      throw new DadosEnvioInvalidos('itens')
+    }
+    const i = bruto as Record<string, unknown>
+    const t = i.tipo
+    if (t !== 'caixa' && t !== 'lote' && t !== 'peca') throw new DadosEnvioInvalidos('itens.tipo')
+    return { tipo: t, codigo: texto(i, 'codigo'), pecas: numero(i, 'pecas'), minutos: numero(i, 'minutos') }
+  })
+  const agora = data(dados, 'agora')
+  const alerta = textoAlertaParado({
+    ...refOp,
+    regraNome: texto(dados, 'regra_nome'),
+    limiteHoras: numero(dados, 'limite_horas'),
+    itens,
+    em: agora,
+  })
+  if (tipo === 'alerta') return alerta
+  return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
+}
+
 /**
  * Monta o texto de uma linha da fila a partir dos `dados` gravados pelo banco. A formatação
  * (fuso de São Paulo, taxa truncada, mm:ss, duração) existe SÓ aqui no TS — o SQL guarda os números.
@@ -335,6 +363,7 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *   aprovacao: taxa, taxa_minima, aprovados, reprovados
  *   tempo:     media_seg, limite_tempo_seg, pecas
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
+ *   parado:    limite_horas, mais_antiga_min, itens (array de {tipo, codigo, pecas, minutos}); 0167
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome
@@ -350,13 +379,18 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
   if (tipo === 'resumo') return textoResumoDe(dados)
   if (tipo === 'emb') return textoEmbDe(dados)
   if (tipo === 'resolvido') {
+    // No parado a 0151 copia a chave "PMO/OP" da ocorrência para `defeito`: não é defeito de verdade.
+    const refResolvido = refOpDe(dados)
+    const defeitoBruto = textoOuNulo(dados, 'defeito')
+    const chaveDeParado = `${(refResolvido.pmo ?? '').trim()}/${refResolvido.op ?? ''}`
+    const defeito = defeitoBruto !== null && defeitoBruto === chaveDeParado ? null : defeitoBruto
     return textoResolvido({
-      ...refOpDe(dados),
+      ...refResolvido,
       posto: texto(dados, 'posto'),
       nome: texto(dados, 'resolvida_por_nome'),
       em: data(dados, 'resolvida_em'),
       // Ausente nas linhas antigas da fila (de antes desta correção) e nos tipos sem defeito.
-      defeito: textoOuNulo(dados, 'defeito'),
+      defeito,
       // Só existe quando a pessoa escreveu algo (o banco omite a chave nos outros casos).
       explicacao: textoOuNulo(dados, 'explicacao'),
     })
@@ -369,7 +403,9 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
       ? textoTempo(tipo, dados)
       : regraTipo === 'defeito'
         ? textoDefeito(tipo, dados)
-        : textoAprovacao(tipo, dados)
+        : regraTipo === 'parado'
+          ? textoParado(tipo, dados)
+          : textoAprovacao(tipo, dados)
 
   // REABERTURA: vale para os três tipos, então o cabeçalho envolve o texto já montado em vez de
   // ser repetido dentro de cada um. Só no 'alerta' — a reabertura sempre enfileira esse tipo.

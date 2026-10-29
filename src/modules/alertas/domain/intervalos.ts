@@ -129,14 +129,24 @@ export function validarIntervalos(lista: unknown, passoMin: number | null): Resu
 const FUSO = 'America/Sao_Paulo'
 
 /**
+ * Formatadores criados UMA vez: construir `Intl.DateTimeFormat` custa caro e `partesSp`/`instanteSp`
+ * rodam milhares de vezes por chamada de `minutosDeExpediente` (síncrono, no processo do bipe).
+ */
+const FORMATADOR_MINUTO = new Intl.DateTimeFormat('en-CA', {
+  timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
+const FORMATADOR_SEGUNDO = new Intl.DateTimeFormat('en-CA', {
+  timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+})
+
+/**
  * Partes da data e da hora no fuso da fábrica (ano, mês, dia, hora 0–23 e minuto), não no do processo. `hourCycle: 'h23'` fica declarado para
  * o dia nunca depender do ciclo de hora que o locale escolher (ver `deslocamentoMin`).
  */
 export function partesSp(d: Date): { ano: number; mes: number; dia: number; hora: number; minuto: number } {
-  const p = new Intl.DateTimeFormat('en-CA', {
-    timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(d)
+  const p = FORMATADOR_MINUTO.formatToParts(d)
   const achar = (t: string) => Number(p.find((x) => x.type === t)?.value ?? '0')
   return { ano: achar('year'), mes: achar('month'), dia: achar('day'), hora: achar('hour'), minuto: achar('minute') }
 }
@@ -148,10 +158,7 @@ export function partesSp(d: Date): { ano: number; mes: number; dia: number; hora
  * nenhum `% 24` para emparelhar hora 24 com o dia certo. `hour12` sobrepõe `hourCycle` — não volte.
  */
 function deslocamentoMin(d: Date): number {
-  const p = new Intl.DateTimeFormat('en-CA', {
-    timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-  }).formatToParts(d)
+  const p = FORMATADOR_SEGUNDO.formatToParts(d)
   const achar = (t: string) => Number(p.find((x) => x.type === t)?.value ?? '0')
   const comoUtc = Date.UTC(achar('year'), achar('month') - 1, achar('day'),
                            achar('hour'), achar('minute'), achar('second'))

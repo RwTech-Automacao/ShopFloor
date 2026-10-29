@@ -46,6 +46,19 @@ const BASE: OcorrenciaLinha = {
 }
 
 describe('OcorrenciasLista', () => {
+  it('ocorrência do parado mostra "OP PMO/OP" na coluna do defeito, sem passar pelo rótulo de defeito', () => {
+    render(
+      <OcorrenciasLista
+        modulo="shopfloor"
+        ocorrenciasIniciais={[
+          { ...BASE, id: 'p1', regraNome: 'Parado', regraTipo: 'parado', posto: 'Almoxarifado', defeito: 'PMOG13/8504', valorAbertura: null, valorUltimo: null },
+        ]}
+        filtroInicial={{ de: '2026-09-12', ate: '2026-09-18', estado: '' }}
+      />,
+    )
+    expect(screen.getByText('OP PMOG13/8504')).toBeInTheDocument()
+  })
+
   it('mostra o defeito (código + descrição) e o valor medido na régua de cada tipo', () => {
     render(
       <OcorrenciasLista

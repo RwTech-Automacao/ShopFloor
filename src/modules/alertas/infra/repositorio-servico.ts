@@ -8,6 +8,7 @@ import { lerEnvioReservado, type EnvioReservado } from '../domain/envio'
 import { blocoCandidato, lerHoraDoBanco, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
 import { horaDeEnviarResumo, resumoDaRodada, type ResumoDaRodada } from '../domain/resumo'
 import { lerResolucao } from '../domain/resolucao'
+import { paradosPorOp, paradosParaBanco, type ItemPendente } from '../domain/parados'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
 import type {
   FiltroReserva,
@@ -40,6 +41,24 @@ interface LinhaIntervaloBloco {
   regra_id: string
   inicio: string | null
   fim: string | null
+}
+
+interface LinhaRegraParado {
+  id: string
+  postos: string[] | null
+  pmos: string[] | null
+  limite_horas: unknown
+}
+
+interface LinhaPendencia {
+  pmo: string
+  op: string
+  tipo: string
+  codigo: string | null
+  pecas: unknown
+  em: string
+  posto: string | null
+  em_mais_antiga: string | null
 }
 
 interface LinhaRegraResumo {
@@ -256,6 +275,101 @@ export function criarRepositorioServico(
     return mapa
   }
 
+  /**
+   * O mapa `p_parados` da rodada: {"<regra_id>": [{pmo, op, posto, mais_antiga_min, itens}]} para cada
+   * regra de parado no Almoxarifado ativa. A conta de horário (turnos, semana útil) mora aqui, em
+   * `domain/horas-de-turno.ts`, testada; o banco só decide abrir/atualizar/normalizar.
+   * ⚠️ A chave de uma regra só entra se TUDO que ela precisa foi lido (pendências e turnos). Regra
+   * ausente do mapa é PULADA pelo banco: erro de leitura nunca vira "não tem nada parado", que
+   * normalizaria a ocorrência viva por engano. Array vazio É informação ("nada parado agora").
+   */
+  async function paradosDaRodada(agora: Date): Promise<Record<string, unknown[]>> {
+    // Um defeito inesperado aqui (dado nulo, rede) não pode derrubar o ciclo dos OUTROS tipos de
+    // regra: as chaves só entram no mapa no fim, então `{}` = "pula todas as regras de parado agora".
+    try {
+      return await calcularParados(agora)
+    } catch (e) {
+      console.error(`[alertas] paradosDaRodada falhou: ${e instanceof Error ? e.message : String(e)}`)
+      return {}
+    }
+  }
+
+  async function calcularParados(agora: Date): Promise<Record<string, unknown[]>> {
+    const mapa: Record<string, unknown[]> = {}
+
+    const { data, error } = await sb
+      .from('alerta_regras')
+      .select('id, postos, pmos, limite_horas')
+      .eq('ativa', true)
+      .is('excluida_em', null)
+      .eq('tipo', 'parado')
+    if (error) {
+      console.error('[alertas] ler as regras de parado no Almoxarifado falhou:', error.message)
+      return mapa
+    }
+    // O limite tem que ser inteiro >= 1 (check do banco); o que não é vira barulho no log, não silêncio.
+    const regras = ((data ?? []) as LinhaRegraParado[]).filter((r) => {
+      const ok = typeof r.limite_horas === 'number' && Number.isInteger(r.limite_horas) && r.limite_horas >= 1
+      if (!ok) console.error(`[alertas] regra ${r.id}: limite_horas ilegível (${String(r.limite_horas)}) — pulada`)
+      return ok
+    })
+    if (regras.length === 0) return mapa
+
+    // As pendências são lidas UMA vez por rodada, para todas as regras.
+    const { data: pend, error: erroPend } = await sb.rpc('sf_almox_pendencias_base')
+    if (erroPend) {
+      console.error('[alertas] ler as pendências do Almoxarifado falhou:', erroPend.message)
+      return mapa
+    }
+
+    const { data: linhas, error: erroTurnos } = await sb
+      .from('alerta_regra_intervalos')
+      .select('regra_id, inicio, fim')
+      .in('regra_id', regras.map((r) => r.id))
+      .order('inicio')
+    if (erroTurnos) {
+      console.error('[alertas] ler os turnos das regras de parado falhou:', erroTurnos.message)
+      return mapa
+    }
+    const turnos = new Map<string, Intervalo[]>()
+    for (const l of (linhas ?? []) as LinhaIntervaloBloco[]) {
+      const intervalo = lerIntervaloDoBanco(l.inicio, l.fim)
+      if (!intervalo) continue
+      const lista = turnos.get(l.regra_id)
+      if (lista) lista.push(intervalo)
+      else turnos.set(l.regra_id, [intervalo])
+    }
+
+    const pendentes: ItemPendente[] = []
+    for (const l of (pend ?? []) as LinhaPendencia[]) {
+      if (l.tipo !== 'caixa' && l.tipo !== 'lote' && l.tipo !== 'peca') continue
+      const posto = typeof l.posto === 'string' ? l.posto : ''
+      if (posto === '') continue
+      // Das peças avulsas `em` é a mais recente; para "parado" vale a mais ANTIGA (em_mais_antiga).
+      const quando = new Date(l.em_mais_antiga ?? l.em)
+      if (Number.isNaN(quando.getTime())) continue
+      const pmoDaLinha = String(l.pmo ?? '').trim()
+      if (pmoDaLinha === '') continue
+      pendentes.push({
+        pmo: pmoDaLinha, op: l.op, posto, tipo: l.tipo,
+        codigo: String(l.codigo ?? ''), pecas: Number(l.pecas) || 0, em: quando,
+      })
+    }
+
+    for (const r of regras) {
+      const postos = r.postos ?? []
+      // Espelha `alerta_pmos_normalizar` (0115): só btrim, SEM maiúsculas.
+      const pmos = (r.pmos ?? []).map((p) => String(p ?? '').trim())
+      const dela = pendentes.filter(
+        (p) => postos.includes(p.posto) && (pmos.length === 0 || pmos.includes(p.pmo)),
+      )
+      mapa[r.id] = paradosParaBanco(
+        paradosPorOp(dela, turnos.get(r.id) ?? [], r.limite_horas as number, agora),
+      )
+    }
+    return mapa
+  }
+
   return {
     async avaliar() {
       // Os parâmetros vêm do SERVIDOR pelo mesmo motivo (ver `blocosDaRodada`):
@@ -268,6 +382,7 @@ export function criarRepositorioServico(
         p_canal_discord: canalDiscordDoSistema(env),
         p_blocos: await blocosDaRodada(agora),
         p_resumos: await resumosDaRodada(agora),
+        p_parados: await paradosDaRodada(agora),
       })
       if (error) throw new Error(`alerta_avaliar: ${error.message}`)
       return lerResultadoAvaliacao(data)

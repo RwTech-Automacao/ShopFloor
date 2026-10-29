@@ -105,6 +105,7 @@ const TEMPO: RegraValida = {
   pausaMaxMin: 30,
   lembreteMin: null,
   horaResumo: null,
+  limiteHoras: null,
   intervalos: [],
   canais: ['telegram'],
   avisarPessoas: true,

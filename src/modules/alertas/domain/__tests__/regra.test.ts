@@ -34,6 +34,7 @@ describe('validarRegra', () => {
       lembreteMin: null,
       intervalos: [],
       horaResumo: null,
+      limiteHoras: null,
       canais: ['telegram'],
       destinatarios: ['u1', 'u2'],
       avisarPessoas: true,
