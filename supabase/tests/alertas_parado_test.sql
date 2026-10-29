@@ -26,7 +26,9 @@
 --   T10 posto fora da regra é ignorado;
 --   T11 os outros tipos seguem avaliando na mesma rodada;
 --   T12 regra desativada encerra a ocorrência viva sem envio;
---   T13 o app antigo (3 parâmetros nomeados, ou posicionais) chama sem ambiguidade.
+--   T13 o app antigo (3 parâmetros nomeados, ou posicionais) chama sem ambiguidade;
+--   T14 normalização PARCIAL: a chave da regra presente com só a OP A: A segue aberta, B normaliza
+--       (uma 'normalizou' só para B).
 -- (A idempotência da 0167 é do runner: ela é aplicada duas vezes.)
 
 select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
@@ -528,6 +530,41 @@ begin
   reset role;
 end $t$;
 \echo 'T13 (3 parametros nomeados, posicionais e nenhum: sem ambiguidade): ok'
+
+-- ---------- T14: normalização parcial (a OP A segue parada, a OP B saiu) ----------
+do $t$
+declare v_regra uuid; v_id_a uuid;
+begin
+  v_regra := public.teste_regra_parado('Parado P');
+  set local role service_role;
+  perform public.teste_avaliar_parado(public.teste_mapa('Parado P', jsonb_build_array(
+            public.teste_op_parada('PRT797', '9001', 200, 2),
+            public.teste_op_parada('PRT797', '9002', 200, 2))));
+  reset role;
+  if (public.teste_oc_parado('Parado P', 'PRT797/9001')).estado <> 'aberta'
+     or (public.teste_oc_parado('Parado P', 'PRT797/9002')).estado <> 'aberta' then
+    raise exception 'T14 FALHOU: as duas OPs deveriam abrir';
+  end if;
+  v_id_a := (public.teste_oc_parado('Parado P', 'PRT797/9001')).id;
+  -- Nova rodada: a chave existe e a lista traz SÓ a OP A.
+  set local role service_role;
+  perform public.teste_avaliar_parado(public.teste_mapa('Parado P', jsonb_build_array(
+            public.teste_op_parada('PRT797', '9001', 210, 2))));
+  reset role;
+  if (public.teste_oc_parado('Parado P', 'PRT797/9001')).estado <> 'aberta'
+     or (public.teste_oc_parado('Parado P', 'PRT797/9001')).id <> v_id_a then
+    raise exception 'T14 FALHOU: a OP A (ainda parada) mudou de estado ou de ocorrencia';
+  end if;
+  if (public.teste_oc_parado('Parado P', 'PRT797/9002')).estado <> 'normalizada' then
+    raise exception 'T14 FALHOU: a OP B (saiu da lista) nao normalizou';
+  end if;
+  if public.teste_fila_parado('Parado P', 'normalizou', '9002') <> 1
+     or public.teste_fila_parado('Parado P', 'normalizou', '9001') <> 0 then
+    raise exception 'T14 FALHOU: esperava 1 normalizou so para a OP B';
+  end if;
+  update public.alerta_regras set ativa = false where id = v_regra;
+end $t$;
+\echo 'T14 (normalizacao parcial: so a OP que saiu normaliza): ok'
 
 drop function public.teste_regra_parado(text, text[]);
 drop function public.teste_op_parada(text, text, numeric, int, text);
