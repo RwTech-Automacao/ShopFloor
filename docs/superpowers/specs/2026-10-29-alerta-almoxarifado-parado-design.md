@@ -115,3 +115,16 @@ o aval do usuário. Compels continua desligado e não é afetado.
 - Semana: contar só segunda a sexta (assumido pela semana da fábrica e do cron); a função de turnos não tem
   hoje noção de dia da semana, então isso é lógica nova.
 - Número do teto de ocorrências por rodada e do teto de itens listados na mensagem.
+
+## Ajustes feitos no plano (29/10, depois de ler o código)
+
+- **Limite em horas inteiras (1 a 72), coluna `limite_horas int`.** O PostgREST entrega `numeric` como
+  string; inteiro evita o problema.
+- **Chave da ocorrência na coluna `defeito` existente** (texto `PMO/OP`), em vez de coluna nova `chave`: o
+  índice único atual já dá "uma ocorrência viva por OP" sem mexer nos cinco ramos do `alerta_avaliar`.
+- **A regra guarda os postos Almoxarifado** em `postos` (o seletor lista só postos de perfil Almoxarifado
+  nesse tipo) e usa janela de fachada `'op'`, como o fim de EMB.
+- **`alerta_avaliar` passa a ter 4 parâmetros** (`p_parados`); a migração apaga a assinatura de 3 antes de
+  criar a de 4, e o app antigo continua funcionando contra ela.
+- **Sem piso `criado_em` nem teto de ocorrências por rodada:** a regra olha o estado atual das pendências e
+  gera uma ocorrência por OP; o primeiro ciclo avisa do que já estiver parado, que é o desejado.
