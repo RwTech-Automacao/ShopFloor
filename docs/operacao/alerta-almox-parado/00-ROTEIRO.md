@@ -33,9 +33,9 @@ HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '
 
 ## Passo 1: trazer os arquivos (só baixa)
 ```bash
-cd ~/ShopFloor && git fetch origin main && for f in supabase/migrations/0167_alerta_almox_parado.sql docs/operacao/alerta-almox-parado/01-medir.sql; do git show origin/main:$f > /tmp/$(basename $f) || echo "FALHOU: $f"; done; wc -l /tmp/0167_alerta_almox_parado.sql /tmp/01-medir.sql
+cd ~/ShopFloor && git fetch origin main && for f in supabase/migrations/0167_alerta_almox_parado.sql docs/operacao/alerta-almox-parado/01-medir.sql docs/operacao/alerta-almox-parado/02-simulacao.sql; do git show origin/main:$f > /tmp/$(basename $f) || echo "FALHOU: $f"; done; wc -l /tmp/0167_alerta_almox_parado.sql /tmp/01-medir.sql /tmp/02-simulacao.sql
 ```
-Devem aparecer os dois arquivos com linhas (a 0167 tem pouco mais de mil).
+Devem aparecer os três arquivos com linhas (a 0167 tem pouco mais de mil).
 
 ## Passo 2: aplicar a migração (senha no `Password:`)
 ```bash
@@ -63,6 +63,8 @@ Mede o custo da leitura nova no banco real (só leitura; rode duas vezes; crité
 HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PAGER=cat PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -f /tmp/01-medir.sql | tail -n 6
 ```
 Se passar de uns 1500 ms, **pare** e me mande o número (a função roda a cada 5 minutos sobre todas as OPs ativas).
+
+**Confira a TELA do Almoxarifado (o app ainda é o antigo).** A 0167 recriou `sf_almox_pendencias`, `sf_almox_necessidades` e `sf_almox_lotes`, e as 14 linhas acima só olham grants, não o resultado. Peça a alguém com a permissão `recebimento.lancar` para abrir **Recebimento > Almoxarifado** e conferir: (a) a lista de pendências é a **mesma de antes** de aplicar (caixas, lotes e peças avulsas das OPs ativas, com as mesmas quantidades); (b) abrir **uma caixa** e **um lote** mostra o detalhe normal (placas e SNs). Compare com o que a pessoa viu antes de aplicar a migração (peça um print da tela antes do Passo 2). Se divergir ou der erro, **pare** e use a seção **Rollback** (banco).
 
 Conferência de que os alertas atuais seguem avaliando (o app ainda é o **antigo**, chamando `alerta_avaliar` com 3 parâmetros): o cron faz isso sozinho a cada 5 minutos. Dispare uma vez e olhe o log (a rotina é a normal do dia a dia; ela pode enviar um alerta real se houver uma ocorrência pendente, como já faria):
 ```bash
@@ -98,14 +100,26 @@ HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '
 
 Se algo divergir, **pare** e me mande o que apareceu (print, hora).
 
+## Passo 6: simulação ANTES da primeira regra de produção
+Sem piso de idade, o primeiro ciclo de uma regra abre **uma ocorrência por OP** para tudo o que já estiver parado. Sobras antigas de OPs que nunca foram finalizadas voltariam a alertar para sempre (a cada `lembrete_min` e, depois de **Resolver**, a cada 60 min). Veja o que a regra enxergaria antes de criá-la (só leitura):
+```bash
+HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PAGER=cat PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -f /tmp/02-simulacao.sql
+```
+Saem duas tabelas: os itens (do mais antigo ao mais novo, com `horas_relogio`) e o resumo por OP (itens, placas, idade do mais antigo). O alerta conta horas de **expediente** (menos que o relógio), então a idade real do alerta é menor que a mostrada. O que olhar: itens de **semanas ou meses** (sobras de OPs abandonadas) e OPs com muitos itens. Para esses, antes de criar a regra: finalize ou cancele a OP/entrada, ou comece a regra com um **filtro de PMO** restrito às OPs vivas. Mande-me a saída se houver dúvida.
+
 ## Rollback
+Ordem importante: o app antigo **não lista** regras `parado` (não dá para apagá-las pela tela) e o `alerta_avaliar` da 0151 **nunca fecha** ocorrência `parado`; ficariam `aberta` para sempre. Por isso, **antes** de voltar o app ou o banco, desative as regras `parado` e normalize as ocorrências vivas (uma transação, só mexe em `parado`):
+```bash
+HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -v ON_ERROR_STOP=1 -1 -c "update public.alerta_ocorrencias oc set estado='normalizada', normalizada_em=now() from public.alerta_regras rg where rg.id=oc.regra_id and rg.tipo='parado' and oc.estado in ('aberta','resolvida'); update public.alerta_regras set ativa=false where tipo='parado';"
+```
+Deve responder `UPDATE n` e `UPDATE m`. Depois:
 - **App:** `bash ~/rollback-janela.sh app` (volta ao commit anterior). O app antigo roda com o banco **novo** sem problema (chama `alerta_avaliar` com 3 parâmetros nomeados; ele não conhece o tipo `parado`, então regras `parado` existentes são ignoradas).
-- **Banco** (só se for preciso voltar o banco): recria `alerta_avaliar` de 3 parâmetros a partir da 0151 e as três funções públicas a partir da 0165, depois remove as três `_base`. A coluna `limite_horas` e as constraints **ficam** (inofensivas). Antes, apague as regras `parado` pela tela (o app antigo não as lista e a constraint antiga do tipo não as impede, mas elas ficam órfãs).
+- **Banco** (só se for preciso voltar o banco): recria `alerta_avaliar` de 3 parâmetros a partir da 0151 e as três funções públicas a partir da 0165, depois remove as três `_base`. A coluna `limite_horas` e as constraints **ficam** (inofensivas). O arquivo gerado abaixo já **começa** pela desativação das regras `parado` (a mesma do bloco acima, repetida por segurança: antes de dropar e recriar funções).
   Monta o arquivo de rollback (só gera o arquivo, não toca o banco) a partir do `origin/main`; cada bloco vai do `create or replace function` ao `$func$;` seguinte:
 ```bash
-cd ~/ShopFloor && git fetch origin main && ext() { git show "origin/main:$1" | awk -v s="$2" 'index($0,s)==1{p=1} p{print} p&&/^(end )?\$func\$;/{exit}'; } && { echo "drop function if exists public.alerta_avaliar(text, jsonb, jsonb, jsonb);"; ext supabase/migrations/0151_alertas_canal_email.sql 'create or replace function public.alerta_avaliar('; echo; ext supabase/migrations/0165_placas_almoxarifado.sql 'create or replace function public.sf_almox_necessidades('; echo; ext supabase/migrations/0165_placas_almoxarifado.sql 'create or replace function public.sf_almox_lotes('; echo; ext supabase/migrations/0165_placas_almoxarifado.sql 'create or replace function public.sf_almox_pendencias('; echo; echo "drop function if exists public.sf_almox_pendencias_base();"; echo "drop function if exists public.sf_almox_necessidades_base(text, text);"; echo "drop function if exists public.sf_almox_lotes_base(text, text);"; echo "revoke all on function public.alerta_avaliar(text, jsonb, jsonb) from public, anon, authenticated;"; echo "grant execute on function public.alerta_avaliar(text, jsonb, jsonb) to service_role;"; echo "notify pgrst, 'reload schema';"; } > /tmp/rollback-0167.sql && grep -c 'create or replace function' /tmp/rollback-0167.sql && wc -l /tmp/rollback-0167.sql
+cd ~/ShopFloor && git fetch origin main && ext() { git show "origin/main:$1" | awk -v s="$2" 'index($0,s)==1{p=1} p{print} p&&/^(end )?\$func\$;/{exit}'; } && { echo "update public.alerta_ocorrencias oc set estado='normalizada', normalizada_em=now() from public.alerta_regras rg where rg.id=oc.regra_id and rg.tipo='parado' and oc.estado in ('aberta','resolvida');"; echo "update public.alerta_regras set ativa=false where tipo='parado';"; echo; echo "drop function if exists public.alerta_avaliar(text, jsonb, jsonb, jsonb);"; ext supabase/migrations/0151_alertas_canal_email.sql 'create or replace function public.alerta_avaliar('; echo; ext supabase/migrations/0165_placas_almoxarifado.sql 'create or replace function public.sf_almox_necessidades('; echo; ext supabase/migrations/0165_placas_almoxarifado.sql 'create or replace function public.sf_almox_lotes('; echo; ext supabase/migrations/0165_placas_almoxarifado.sql 'create or replace function public.sf_almox_pendencias('; echo; echo "drop function if exists public.sf_almox_pendencias_base();"; echo "drop function if exists public.sf_almox_necessidades_base(text, text);"; echo "drop function if exists public.sf_almox_lotes_base(text, text);"; echo "revoke all on function public.alerta_avaliar(text, jsonb, jsonb) from public, anon, authenticated;"; echo "grant execute on function public.alerta_avaliar(text, jsonb, jsonb) to service_role;"; echo "notify pgrst, 'reload schema';"; } > /tmp/rollback-0167.sql && grep -c 'create or replace function' /tmp/rollback-0167.sql && wc -l /tmp/rollback-0167.sql
 ```
-  Deve imprimir `4` (as quatro funções recriadas) e o total de linhas (perto de 900). O arquivo já termina com o `revoke`/`grant` de `alerta_avaliar` de 3 parâmetros (só `service_role`, como na 0151). Aplique:
+  Deve imprimir `4` (as quatro funções recriadas) e o total de linhas (perto de 900). O arquivo termina com o `revoke`/`grant` de `alerta_avaliar` de 3 parâmetros (só `service_role`, como na 0151). Aplique:
 ```bash
 HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PGOPTIONS='-c lock_timeout=5s' PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -v ON_ERROR_STOP=1 -1 -f /tmp/rollback-0167.sql
 ```
@@ -115,7 +129,7 @@ cd ~/supabase/docker && docker compose restart rest
   Me peça o rollback preparado se precisar: é mais seguro eu gerar o arquivo único e conferi-lo antes.
 
 ## Pontos conhecidos
-- O primeiro ciclo depois de criar uma regra `parado` avisa de **tudo** que já estiver parado acima do limite naquele momento (alertar o que está parado agora é o comportamento desejado). Crie a regra de produção depois do smoke, com PMO específico ou em horário calmo.
+- O primeiro ciclo depois de criar uma regra `parado` avisa de **tudo** que já estiver parado acima do limite naquele momento (alertar o que está parado agora é o comportamento desejado). Crie a regra de produção depois do smoke e **depois da simulação do Passo 6**, com PMO específico ou em horário calmo.
 - Regra ausente do cálculo da rodada (erro ao ler as pendências) é **pulada**: nada é aberto nem normalizado por engano.
 - A conta de horas é de **expediente** (turnos da regra, segunda a sexta, fuso de São Paulo); sem turno cadastrado, conta relógio corrido.
 
