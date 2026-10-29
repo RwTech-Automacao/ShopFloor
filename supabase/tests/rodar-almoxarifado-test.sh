@@ -458,6 +458,13 @@ if [ -n "${PLACAS:-}" ] && [ -z "${RED:-}" ]; then
     "select public.teste_fila_invariantes('PLACAS: depois da 0167')" >/dev/null \
     && echo "0167 (pendências base + casca): ok" \
     || { echo "invariantes da fila FALHARAM depois da 0167"; exit 1; }
+  # Custo da base (o cron roda a cada 5 min sobre todas as OPs ativas): OPs novas de 10 mil registros,
+  # sem analyze. Falha acima de 900 ms por OP (3 x o critério de 300 ms: ruído do Docker); imprime o tempo real.
+  docker cp supabase/tests/almox_pendencias_base_massa.sql "$NOME":/tmp/massa_pend_base.sql
+  SAIDA=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/massa_pend_base.sql 2>&1) \
+    || { echo "$SAIDA"; echo "medição de sf_almox_pendencias_base FALHOU"; exit 1; }
+  echo "$SAIDA" | grep -E "TEMPO|PLANO|a base devolve" || true
+  echo "medição de sf_almox_pendencias_base (massa): ok"
 fi
 
 # O PLANO ESTÁVEL DA sf_nqa_caixa (0160): OP nova e grande, sem analyze, tem que passar em < 3 s e

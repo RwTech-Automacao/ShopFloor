@@ -325,10 +325,13 @@ begin
         from sf_almox_lotes_base(v_o.o_pmo, v_o.o_op) l;
 
       -- Peças avulsas: o anterior ao posto Almoxarifado da rota (v_almox, calculado acima).
+      -- O conjunto `ja` é MATERIALIZED de propósito: em OP nova, sem estatística, o planejador estima
+      -- 1 linha, escolhe Nested Loop Anti Join e reexecuta o `ja` (Index Scan) uma vez por SN (10 mil
+      -- registros: ~3 s; materializado: ~30 ms). Mesmo padrão do incidente do NQA (0160).
       select * into v_prev from sf_almox_posto_anterior(v_o.o_id, v_almox);
       if v_prev.posto is not null and v_prev.recurso <> 'nqa' then
         return query
-        with ja as (
+        with ja as materialized (
           select distinct a.numero_serie_norm as sn
             from sf_registros a
            where a.pmo = v_o.o_pmo and a.op = v_o.o_op and a.posto = v_almox and a.numero_serie_norm <> ''
