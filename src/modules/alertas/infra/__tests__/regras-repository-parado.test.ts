@@ -185,7 +185,7 @@ describe('inserirRegra — parado', () => {
 })
 
 describe('inserirRegra — outro tipo', () => {
-  it('não manda limite_horas (um deploy antes da 0167 não derruba o salvar das regras antigas)', async () => {
+  it('não manda limite_horas no INSERT (a 0167 sempre vai ANTES do app: a leitura das regras já pede a coluna)', async () => {
     const { sb, chamadas } = sbFake(() => ({ data: { id: 'nova' }, ...SEM_ERRO }))
     const { inserirRegra } = await repo(sb)
     await inserirRegra({ ...PARADO, tipo: 'aprovacao', limiteHoras: null, janelaTipo: 'tempo', janelaValor: 60, intervalos: [] })

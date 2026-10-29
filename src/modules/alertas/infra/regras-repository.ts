@@ -147,8 +147,9 @@ function paraLinha(r: RegraValida, comTipo: boolean): Record<string, unknown> {
     avisar_canal: r.avisarCanal,
     ativa: r.ativa,
   }
-  // Só o parado grava a coluna: nos outros tipos o valor é null, que é o default da coluna. Assim
-  // um deploy do app antes da 0167 não derruba o salvar das regras que já existem.
+  // Só o parado grava a coluna: nos outros tipos o INSERT/UPDATE omite `limite_horas` (o default da
+  // coluna é null). Isso NÃO torna seguro subir o app antes da migração 0167: o SELECT de leitura
+  // (CAMPOS_REGRA) já lista a coluna e o alerta_avaliar novo exige p_parados. A 0167 sempre vai ANTES do app.
   if (r.tipo === 'parado') linha.limite_horas = r.limiteHoras
   if (comTipo) {
     linha.tipo = r.tipo

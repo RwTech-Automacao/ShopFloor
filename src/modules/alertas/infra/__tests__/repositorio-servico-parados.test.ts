@@ -33,6 +33,8 @@ interface Cenario {
   regras?: Resposta
   turnos?: Resposta
   pendencias?: Resposta
+  /** Faz a leitura das pendências LANÇAR (rede caindo), em vez de devolver { error }. */
+  lancarNasPendencias?: Error
 }
 
 function montar(c: Cenario) {
@@ -66,7 +68,10 @@ function montar(c: Cenario) {
     from,
     async rpc(nome: string, args: Record<string, unknown>) {
       rpcs.push({ nome, args })
-      if (nome === 'sf_almox_pendencias_base') return c.pendencias ?? { data: [], ...OK }
+      if (nome === 'sf_almox_pendencias_base') {
+        if (c.lancarNasPendencias) throw c.lancarNasPendencias
+        return c.pendencias ?? { data: [], ...OK }
+      }
       return { data: null, ...OK }
     },
   } as unknown as SupabaseClient
@@ -198,5 +203,60 @@ describe('avaliar — monta o p_parados', () => {
     expect(p.r1).toHaveLength(1)
     expect(p.r2).toEqual([])
     expect(m.rpcs.filter((r) => r.nome === 'sf_almox_pendencias_base')).toHaveLength(1)
+  })
+})
+
+describe('avaliar — o parado nunca derruba a rodada dos outros tipos', () => {
+  it('exceção inesperada ao ler as pendências: avaliar() ainda chama alerta_avaliar com p_parados {}', async () => {
+    const m = montar({
+      regras: { data: [regra()], ...OK },
+      lancarNasPendencias: new Error('fetch failed'),
+    })
+    await m.avaliar()
+    const chamada = m.rpcs.find((r) => r.nome === 'alerta_avaliar')!
+    expect(chamada.args.p_parados).toEqual({})
+    // os outros mapas continuam no envio
+    expect(chamada.args).toHaveProperty('p_blocos')
+    expect(chamada.args).toHaveProperty('p_resumos')
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('[alertas] paradosDaRodada falhou: fetch failed'))
+  })
+
+  it('pendência com pmo nulo não lança: a linha é descartada e a rodada segue', async () => {
+    const m = montar({
+      regras: { data: [regra()], ...OK },
+      pendencias: { data: [pend({ pmo: null, codigo: 'RUIM' }), pend({ codigo: 'BOA' })], ...OK },
+    })
+    await m.avaliar()
+    const g = m.parados().r1 as { itens: { codigo: string }[] }[]
+    expect(g).toHaveLength(1)
+    expect(g[0]!.itens.map((i) => i.codigo)).toEqual(['BOA'])
+  })
+
+  it('elemento nulo em pmos da regra não lança', async () => {
+    const m = montar({
+      regras: { data: [regra({ pmos: [null, 'PRT797'] })], ...OK },
+      pendencias: { data: [pend()], ...OK },
+    })
+    await m.avaliar()
+    expect(m.parados().r1).toHaveLength(1)
+  })
+
+  it('erro ao ler as regras de parado: p_parados {} e a rodada segue', async () => {
+    const m = montar({ regras: { data: null, error: { message: 'boom' } } })
+    await m.avaliar()
+    expect(m.parados()).toEqual({})
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  it('regra com limite_horas ilegível é pulada e logada; a outra, válida, ganha a chave', async () => {
+    const m = montar({
+      regras: { data: [regra({ id: 'ruim', limite_horas: null }), regra({ id: 'boa' })], ...OK },
+      turnos: { data: [{ ...TURNO, regra_id: 'boa' }], ...OK },
+      pendencias: { data: [pend()], ...OK },
+    })
+    await m.avaliar()
+    const p = m.parados()
+    expect(Object.keys(p)).toEqual(['boa'])
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('regra ruim: limite_horas ilegível'))
   })
 })

@@ -284,6 +284,17 @@ export function criarRepositorioServico(
    * normalizaria a ocorrência viva por engano. Array vazio É informação ("nada parado agora").
    */
   async function paradosDaRodada(agora: Date): Promise<Record<string, unknown[]>> {
+    // Um defeito inesperado aqui (dado nulo, rede) não pode derrubar o ciclo dos OUTROS tipos de
+    // regra: as chaves só entram no mapa no fim, então `{}` = "pula todas as regras de parado agora".
+    try {
+      return await calcularParados(agora)
+    } catch (e) {
+      console.error(`[alertas] paradosDaRodada falhou: ${e instanceof Error ? e.message : String(e)}`)
+      return {}
+    }
+  }
+
+  async function calcularParados(agora: Date): Promise<Record<string, unknown[]>> {
     const mapa: Record<string, unknown[]> = {}
 
     const { data, error } = await sb
@@ -337,8 +348,10 @@ export function criarRepositorioServico(
       // Das peças avulsas `em` é a mais recente; para "parado" vale a mais ANTIGA (em_mais_antiga).
       const quando = new Date(l.em_mais_antiga ?? l.em)
       if (Number.isNaN(quando.getTime())) continue
+      const pmoDaLinha = String(l.pmo ?? '').trim()
+      if (pmoDaLinha === '') continue
       pendentes.push({
-        pmo: l.pmo.trim(), op: l.op, posto, tipo: l.tipo,
+        pmo: pmoDaLinha, op: l.op, posto, tipo: l.tipo,
         codigo: String(l.codigo ?? ''), pecas: Number(l.pecas) || 0, em: quando,
       })
     }
@@ -346,7 +359,7 @@ export function criarRepositorioServico(
     for (const r of regras) {
       const postos = r.postos ?? []
       // Espelha `alerta_pmos_normalizar` (0115): só btrim, SEM maiúsculas.
-      const pmos = (r.pmos ?? []).map((p) => p.trim())
+      const pmos = (r.pmos ?? []).map((p) => String(p ?? '').trim())
       const dela = pendentes.filter(
         (p) => postos.includes(p.posto) && (pmos.length === 0 || pmos.includes(p.pmo)),
       )
