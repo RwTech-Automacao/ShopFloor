@@ -27,7 +27,7 @@ function regra(o: Partial<RegraAlerta>): RegraAlerta {
     id: 'g1', modulo: 'shopfloor', tipo: 'aprovacao', nome: 'Teste abaixo de 90',
     postos: ['Teste'], taxaMinima: 90, janelaTipo: 'tempo', janelaValor: 60, minimoBipes: 20,
     limiteTempoSeg: null, limiteOcorrencias: null, pausaMaxMin: null, lembreteMin: null,
-    intervalos: [], horaResumo: null, canais: ['telegram'], destinatarios: ['u1'],
+    intervalos: [], horaResumo: null, limiteHoras: null, canais: ['telegram'], destinatarios: ['u1'],
     avisarPessoas: true, avisarCanal: false, pmos: [], ativa: true,
     atualizadoEm: '2026-10-09T12:00:00Z', ...o,
   }

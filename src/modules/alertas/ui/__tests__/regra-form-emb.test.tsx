@@ -133,7 +133,7 @@ describe('formulário do fim de EMB', () => {
       id: 'g9', atualizadoEm: '2026-10-14T12:00:00Z', modulo: 'recebimento', tipo: 'emb',
       nome: 'Divergências de EMB', postos: [], taxaMinima: null, janelaTipo: 'op', janelaValor: null,
       minimoBipes: null, limiteTempoSeg: null, limiteOcorrencias: null, pausaMaxMin: null,
-      lembreteMin: null, intervalos: [], horaResumo: null, canais: ['telegram'],
+      lembreteMin: null, intervalos: [], horaResumo: null, limiteHoras: null, canais: ['telegram'],
       destinatarios: ['u1'], avisarPessoas: true, avisarCanal: false, pmos: [], ativa: true,
     })
     expect(screen.getByLabelText('Nome')).toHaveValue('Divergências de EMB')

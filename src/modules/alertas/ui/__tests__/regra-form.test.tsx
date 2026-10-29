@@ -65,6 +65,7 @@ function regraSalva(extra: Partial<RegraAlerta>): RegraAlerta {
     lembreteMin: null,
     intervalos: [],
     horaResumo: null,
+    limiteHoras: null,
     canais: ['telegram'],
     avisarPessoas: true,
     avisarCanal: false,

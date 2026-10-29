@@ -112,6 +112,7 @@ const TURNO: RegraValida = {
   pausaMaxMin: null,
   lembreteMin: null,
   horaResumo: null,
+  limiteHoras: null,
   intervalos: [
     { inicio: '07:00', fim: '12:00' },
     { inicio: '13:30', fim: '17:30' },

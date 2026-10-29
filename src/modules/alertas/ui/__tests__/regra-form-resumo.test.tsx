@@ -142,6 +142,7 @@ describe('RegraForm — resumo diário: o que a tela mostra', () => {
         lembreteMin: null,
         intervalos: [{ inicio: '07:00', fim: '12:00' }],
         horaResumo: '17:30',
+        limiteHoras: null,
         canais: ['telegram'],
         avisarPessoas: true,
         avisarCanal: false,

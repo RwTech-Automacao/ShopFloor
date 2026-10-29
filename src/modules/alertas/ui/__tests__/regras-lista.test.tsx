@@ -29,6 +29,7 @@ const BASE: RegraAlerta = {
   lembreteMin: null,
   intervalos: [],
   horaResumo: null,
+  limiteHoras: null,
   canais: ['telegram'],
   avisarPessoas: true,
   avisarCanal: false,

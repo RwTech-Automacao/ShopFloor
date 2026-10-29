@@ -49,6 +49,8 @@ export interface EntradaRegra {
   intervalos?: unknown
   /** Resumo diário: a hora do envio ('HH:MM', hora da fábrica). Nos outros tipos, é ignorado. */
   horaResumo?: string | null
+  /** Parado no Almoxarifado: horas de expediente sem entrada (inteiro de 1 a 72). Nos outros, é ignorado. */
+  limiteHoras?: string | number | null
   ativa: boolean
 }
 
@@ -70,6 +72,8 @@ export interface RegraValida {
   intervalos: Intervalo[]
   /** Resumo diário: a hora do envio ('HH:MM'). Nos outros tipos, null. */
   horaResumo: string | null
+  /** Parado no Almoxarifado: o limite em horas de expediente. Nos outros tipos, null. */
+  limiteHoras: number | null
   canais: Canal[]
   destinatarios: string[]
   avisarPessoas: boolean
@@ -135,6 +139,12 @@ export const PADROES_TIPO = {
  * 0115); vazia = não descarta nenhum intervalo (todas as pausas entram na média). */
 export const PAUSA_MAX_MIN = { min: 1, max: 240 } as const
 
+/** Teto e padrão do limite do parado (check da 0167: 1..72). */
+export const LIMITE_HORAS_MAX = 72
+export const LIMITE_HORAS_PADRAO = 2
+
+const MSG_LIMITE_HORAS = `Informe o limite em horas (de 1 a ${LIMITE_HORAS_MAX}).`
+const JANELA_PARADO = 'Itens prontos sem entrada no Almoxarifado'
 const MSG_RESUMO_CAMPO = 'O resumo diário não usa este campo.'
 const MSG_EMB_CAMPO = 'O aviso de fim de EMB não usa este campo.'
 const MSG_RESUMO_HORA =
@@ -251,6 +261,24 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     horaResumo = textoLimpo(e.horaResumo)
   }
 
+  // Parado no Almoxarifado: também sem janela (sai 'op' de fachada, como o fim de EMB; o banco exige
+  // janela_valor nulo). Os campos de medida dos outros tipos são IGNORADOS e saem nulos. Os turnos
+  // são opcionais: sem nenhum, o relógio é corrido; com algum, só as horas de expediente contam.
+  let limiteHoras: number | null = null
+  let intervalosParado: Intervalo[] = []
+  if (tipo === 'parado') {
+    const h = inteiro(e.limiteHoras)
+    if (h === null || Number.isNaN(h) || h < 1 || h > LIMITE_HORAS_MAX) return erro(MSG_LIMITE_HORAS)
+    limiteHoras = h
+    const bruto = e.intervalos
+    const semTurno = bruto === undefined || bruto === null || (Array.isArray(bruto) && bruto.length === 0)
+    if (!semTurno) {
+      const ri = validarIntervalos(bruto, null)
+      if (!ri.ok) return erro(ri.erro)
+      intervalosParado = ri.valor
+    }
+  }
+
   let taxaMinima: number | null = null
   if (tipo === 'aprovacao') {
     const taxaTexto = textoLimpo(e.taxaMinima)
@@ -263,13 +291,18 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     taxaMinima = taxa
   }
 
-  if (tipo !== 'resumo' && tipo !== 'emb' && !ehJanelaTipo(e.janelaTipo)) {
+  // O parado não pergunta a janela: ela sai 'op' de fachada, seja o que o formulário mandar.
+  if (tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && !ehJanelaTipo(e.janelaTipo)) {
     return erro('Escolha a janela da regra.')
   }
   // O resumo sai SEMPRE como 'intervalos' (ele usa os intervalos) e o fim de EMB SEMPRE como 'op'
   // (valor de fachada, ver acima), seja o que o formulário mandar.
   const janelaTipo: JanelaTipo =
-    tipo === 'resumo' ? 'intervalos' : tipo === 'emb' ? 'op' : (e.janelaTipo as JanelaTipo)
+    tipo === 'resumo'
+      ? 'intervalos'
+      : tipo === 'emb' || tipo === 'parado'
+        ? 'op'
+        : (e.janelaTipo as JanelaTipo)
   if (tipo !== 'aprovacao' && tipo !== 'resumo' && janelaTipo === 'intervalos') {
     return erro('Só a taxa de aprovação usa a janela por blocos de turno.')
   }
@@ -281,7 +314,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   let janelaValor: number | null = null
   // O `tipo !== 'emb'` é redundante hoje (a janela dele é 'op'), e está escrito para o dia em que
   // o valor de fachada mudar: o fim de EMB não tem janela em grandeza nenhuma.
-  if (tipo !== 'resumo' && tipo !== 'emb' && janelaTipo !== 'op') {
+  if (tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && janelaTipo !== 'op') {
     const v = inteiro(e.janelaValor)
     if (v === null || Number.isNaN(v) || v <= 0) {
       if (janelaTipo === 'intervalos') return erro('Informe o passo do bloco em minutos.')
@@ -295,8 +328,8 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
 
   // Janela por blocos: `janelaValor` é o PASSO em minutos. As faixas do passo e os horários são
   // conferidas por `validarIntervalos`, e o erro dela sobe como erro da regra, sem reescrever.
-  let intervalos: Intervalo[] = intervalosResumo
-  if (tipo !== 'resumo' && tipo !== 'emb' && janelaTipo === 'intervalos') {
+  let intervalos: Intervalo[] = tipo === 'parado' ? intervalosParado : intervalosResumo
+  if (tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && janelaTipo === 'intervalos') {
     const ri = validarIntervalos(e.intervalos, janelaValor)
     if (!ri.ok) return erro(ri.erro)
     intervalos = ri.valor
@@ -420,6 +453,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
       lembreteMin: lembrete,
       intervalos,
       horaResumo,
+      limiteHoras,
       canais,
       destinatarios,
       avisarPessoas,
@@ -473,10 +507,13 @@ export function validarPrevia(e: EntradaPrevia): Resultado<PreviaValida> {
 
 /** Coluna "Limite" da lista de regras: '≥ 90%', '≤ 2:00/peça', '≥ 5 vezes'. */
 export function resumoLimite(
-  r: Pick<RegraValida, 'tipo' | 'taxaMinima' | 'limiteTempoSeg' | 'limiteOcorrencias'>,
+  r: Pick<RegraValida, 'tipo' | 'taxaMinima' | 'limiteTempoSeg' | 'limiteOcorrencias'> & {
+    limiteHoras?: number | null
+  },
 ): string {
   // O fim de EMB não tem limite: tem gatilho. Mostrar '—' deixaria a coluna parecendo defeito.
   if (r.tipo === 'emb') return LIMITE_EMB
+  if (r.tipo === 'parado') return r.limiteHoras == null ? '—' : `Parado há mais de ${r.limiteHoras} h de expediente`
   if (r.tipo === 'tempo') return r.limiteTempoSeg === null ? '—' : `≤ ${formatarMmSs(r.limiteTempoSeg)}/peça`
   if (r.tipo === 'defeito') return r.limiteOcorrencias === null ? '—' : `≥ ${r.limiteOcorrencias} vezes`
   return r.taxaMinima === null ? '—' : `≥ ${formatarMeta(r.taxaMinima)}%`
@@ -493,6 +530,8 @@ export function resumoJanelaRegra(
   // andamento" diria uma janela que ele não tem — o mesmo motivo que fez o resumo mostrar a hora
   // em vez de "Blocos de 1h".
   if (r.tipo === 'emb') return JANELA_EMB
+  // Mesma fachada do fim de EMB: o 'op' guardado não é uma janela de verdade.
+  if (r.tipo === 'parado') return JANELA_PARADO
   if (r.tipo === 'resumo') return r.horaResumo ? `Dia inteiro, às ${r.horaResumo}` : '—'
   return resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })
 }
