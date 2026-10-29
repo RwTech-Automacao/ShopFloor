@@ -379,13 +379,18 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
   if (tipo === 'resumo') return textoResumoDe(dados)
   if (tipo === 'emb') return textoEmbDe(dados)
   if (tipo === 'resolvido') {
+    // No parado a 0151 copia a chave "PMO/OP" da ocorrência para `defeito`: não é defeito de verdade.
+    const refResolvido = refOpDe(dados)
+    const defeitoBruto = textoOuNulo(dados, 'defeito')
+    const chaveDeParado = `${(refResolvido.pmo ?? '').trim()}/${refResolvido.op ?? ''}`
+    const defeito = defeitoBruto !== null && defeitoBruto === chaveDeParado ? null : defeitoBruto
     return textoResolvido({
-      ...refOpDe(dados),
+      ...refResolvido,
       posto: texto(dados, 'posto'),
       nome: texto(dados, 'resolvida_por_nome'),
       em: data(dados, 'resolvida_em'),
       // Ausente nas linhas antigas da fila (de antes desta correção) e nos tipos sem defeito.
-      defeito: textoOuNulo(dados, 'defeito'),
+      defeito,
       // Só existe quando a pessoa escreveu algo (o banco omite a chave nos outros casos).
       explicacao: textoOuNulo(dados, 'explicacao'),
     })

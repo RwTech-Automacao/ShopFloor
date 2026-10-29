@@ -46,7 +46,7 @@ describe('textoAlertaParado', () => {
       ],
     })
     expect(t).toContain('• Lote LOTE 7 · 100 placas · 3 h 20 min')
-    expect(t).toContain('• Peças avulsas · 37 peças · a mais antiga há 3 h')
+    expect(t).toContain('• Peças avulsas · 37 placas · a mais antiga há 3 h')
   })
 
   it('nunca passa de 2000 caracteres, com aviso do que ficou de fora', () => {

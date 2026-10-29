@@ -22,7 +22,7 @@ export interface DadosParado extends ParOp {
 
 function linhaDoItem(i: ItemParado): string {
   if (i.tipo === 'peca') {
-    return `• Peças avulsas · ${i.pecas} peças · a mais antiga há ${formatarMinutos(i.minutos)}`
+    return `• Peças avulsas · ${i.pecas} placas · a mais antiga há ${formatarMinutos(i.minutos)}`
   }
   const nome = i.tipo === 'lote' ? `Lote ${i.codigo}` : i.codigo
   return `• ${nome} · ${i.pecas} placas · ${formatarMinutos(i.minutos)}`
