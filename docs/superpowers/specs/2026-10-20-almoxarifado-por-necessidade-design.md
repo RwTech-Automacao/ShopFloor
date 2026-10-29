@@ -89,3 +89,7 @@ Primeiro validar o Compels com o fluxo atual. Depois a **coletiva** (RPC + lista
 4. **Quem cancela:** os SNs do lote ficam em **Registros** (cada um tem entrada própria, decisão 6). O cancelamento do lote aparece lá como **"Cancelar o lote inteiro (N peças)"**, no mesmo molde do "Cancelar a caixa inteira", com a **mesma permissão de hoje (`shopfloor.administrar`)**. Quem só tem `recebimento.lancar` não cancela. Se já foi ao Compels, gera a linha de estorno (manual até a fase automática).
 5. **Caixa aberta:** a necessidade só nasce para **caixa fechada**.
 6. **Um posto Almoxarifado por OP:** é **um só e pré-definido para todas as OPs** (ver a spec do card único). Consequência: o **Cadastrar Posto** deve impedir criar um segundo posto com perfil Almoxarifado.
+
+## Decisão de 21/10 (tarde): o lote é confirmado bipando TODOS os números de série
+
+O lote do NQA individual é confirmado bipando **todos** os números de série (os N distintos), e não mais uma amostra de K. O "Confirmar lote" só vale com todos. O Compels segue recebendo **um registro `tipo='lote'` por lote**, com todos os `sns` e a quantidade N; o cancelamento do lote inteiro não muda. A **Tabela NQA deixa de valer no Almoxarifado** (continua valendo no posto NQA). Onde esta spec fala em "amostra K", leia "todos os SNs do lote"; a coluna `amostra` do banco foi mantida e significa "quantidade a bipar = todas as peças". Motivos de recusa: sai `amostra_nqa_invalida`/`amostra_tamanho_errado`, entra `lote_incompleto` ("Bipe todas as N peças do lote: faltam F.").

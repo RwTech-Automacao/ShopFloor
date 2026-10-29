@@ -40,8 +40,9 @@ export interface EnvioEstoqueReservado {
   pmo: string
   op: string
   posto: string
-  tipo: 'caixa' | 'serie'
-  /** O que o coletor leu: código da caixa ou a série crua. */
+  /** 'lote' (0156): o lote do NQA individual, uma linha com a quantidade do lote. */
+  tipo: 'caixa' | 'serie' | 'lote'
+  /** O que o coletor leu: código da caixa ou a série crua (no lote, o rótulo LOTE[...][N]). */
   bipe: string
   /** Série normalizada; vazia no bipe de caixa. */
   serieNorm: string

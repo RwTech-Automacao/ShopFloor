@@ -87,6 +87,8 @@ export interface OrdemPesquisa {
   descricao: string
   sn_ini: string
   sn_fim: string
+  /** Placas por painel (sf_ordens.placas_por_painel; 1 = comportamento de sempre). */
+  placas_por_painel: number
   postos: string[]
 }
 
@@ -95,7 +97,7 @@ export async function listarTodasOrdens(): Promise<OrdemPesquisa[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('cliente,pmo,op,descricao,sn_ini,sn_fim,sf_ordem_postos(posto,ordem)')
+    .select('cliente,pmo,op,descricao,sn_ini,sn_fim,placas_por_painel,sf_ordem_postos(posto,ordem)')
     .order('cliente')
     .order('pmo')
     .order('op')
@@ -107,6 +109,7 @@ export async function listarTodasOrdens(): Promise<OrdemPesquisa[]> {
     descricao: string
     sn_ini: string
     sn_fim: string
+    placas_por_painel: number | null
     sf_ordem_postos: { posto: string; ordem: number }[]
   }[]
   return rows.map((r) => ({
@@ -116,6 +119,7 @@ export async function listarTodasOrdens(): Promise<OrdemPesquisa[]> {
     descricao: r.descricao,
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
+    placas_por_painel: r.placas_por_painel ?? 1,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
   }))
 }

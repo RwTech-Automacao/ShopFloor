@@ -6,7 +6,7 @@ vi.mock('server-only', () => ({}))
 const m = vi.hoisted(() => ({
   criarOrdem: vi.fn(async (_dados: Record<string, unknown>) => 'id-novo'),
   atualizarOrdem: vi.fn(async (_id: string, _dados: Record<string, unknown>) => undefined),
-  buscarOrdemBase: vi.fn(async (_id: string) => ({ pmo: 'PMO1', op: '100', status: 'ATIVA' }) as { pmo: string; op: string; status: string } | null),
+  buscarOrdemBase: vi.fn(async (_id: string) => ({ pmo: 'PMO1', op: '100', status: 'ATIVA', placas_por_painel: 1 }) as { pmo: string; op: string; status: string; placas_por_painel: number } | null),
 }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ perfil: {} })) }))
@@ -41,7 +41,7 @@ function formulario(status: string): FormData {
 beforeEach(() => {
   vi.clearAllMocks()
   m.criarOrdem.mockResolvedValue('id-novo')
-  m.buscarOrdemBase.mockResolvedValue({ pmo: 'PMO1', op: '100', status: 'ATIVA' })
+  m.buscarOrdemBase.mockResolvedValue({ pmo: 'PMO1', op: '100', status: 'ATIVA', placas_por_painel: 1 })
 })
 
 describe('o cadastro de OP marca quem finalizou', () => {
@@ -74,7 +74,7 @@ describe('o cadastro de OP marca quem finalizou', () => {
 
 describe('reativar na mão tira a OP do controle automático (0148)', () => {
   it('FINALIZADA -> ATIVA grava reaberta_manual = true', async () => {
-    m.buscarOrdemBase.mockResolvedValue({ pmo: 'PMO1', op: '100', status: 'FINALIZADA' })
+    m.buscarOrdemBase.mockResolvedValue({ pmo: 'PMO1', op: '100', status: 'FINALIZADA', placas_por_painel: 1 })
 
     const r = await editarOrdemAction(undefined, formulario('ATIVA'))
 
@@ -90,7 +90,7 @@ describe('reativar na mão tira a OP do controle automático (0148)', () => {
   })
 
   it('finalizar na mão não mexe na marca (quem protege aí é finalizada_por)', async () => {
-    m.buscarOrdemBase.mockResolvedValue({ pmo: 'PMO1', op: '100', status: 'ATIVA' })
+    m.buscarOrdemBase.mockResolvedValue({ pmo: 'PMO1', op: '100', status: 'ATIVA', placas_por_painel: 1 })
 
     await editarOrdemAction(undefined, formulario('FINALIZADA'))
 
@@ -100,7 +100,7 @@ describe('reativar na mão tira a OP do controle automático (0148)', () => {
   it('a marca é definitiva: nada no cadastro a apaga', async () => {
     // Reativou (marca ligada), depois finalizou, depois reativou nessa ordem -- a tela nunca grava
     // reaberta_manual = false, então a OP não volta ao automático por caminho nenhum.
-    m.buscarOrdemBase.mockResolvedValue({ pmo: 'PMO1', op: '100', status: 'FINALIZADA' })
+    m.buscarOrdemBase.mockResolvedValue({ pmo: 'PMO1', op: '100', status: 'FINALIZADA', placas_por_painel: 1 })
     await editarOrdemAction(undefined, formulario('ATIVA'))
     await editarOrdemAction(undefined, formulario('FINALIZADA'))
 

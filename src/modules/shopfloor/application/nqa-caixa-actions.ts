@@ -3,6 +3,7 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
+import { nqaJaGravado } from './nqa-gravou'
 import { resolverCaixaPorSn } from '@/modules/shopfloor/infra/caixa-repository'
 // Tabela NQA é referência compartilhada (cadastrada em Config → Tabela NQA); reusa o leitor do Recebimento.
 import { carregarTabelaNqa } from '@/modules/recebimento/infra/referencias-repository'
@@ -13,7 +14,8 @@ const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
 export interface CaixaNqa {
   numeroCaixa: string
   postoEmbalagem: string
-  qtd: number
+  qtd: number       // painéis (SNs distintos) da caixa — a amostra da Tabela NQA sai daqui
+  qtdPlacas: number // placas da caixa (informativo; o `total` da RPC também vem em placas)
   amostra: number
   snsNorm: string[] // SNs (normalizados) da caixa — p/ o painel validar a amostra
   jaInspecionada: boolean     // caixa finalizada no NQA (todas inspecionadas)
@@ -48,6 +50,7 @@ export async function carregarNqaCaixa(
         numeroCaixa: caixa.numeroCaixa,
         postoEmbalagem: caixa.posto,
         qtd: caixa.qtd,
+        qtdPlacas: caixa.qtdPlacas,
         amostra,
         snsNorm: caixa.snsNorm,
         jaInspecionada: caixa.jaInspecionadaNqa,
@@ -91,8 +94,22 @@ export async function finalizarNqaCaixa(entrada: {
     entrada.resultado === 'Reprovado'
       ? [...(entrada.postosRetorno ?? []), entrada.posto.trim()].join(',')
       : ''
+  let supabase: Awaited<ReturnType<typeof createServerSupabase>> | null = null
+  const contexto = `pmo=${entrada.pmo.trim()} op=${entrada.op.trim()} posto=${entrada.posto.trim()} caixa=${entrada.numeroCaixa}`
+  // Erro que não é recusa de negócio (504, rede...): o banco pode ter gravado. Confere antes de dizer que falhou.
+  const desconhecido = async (detalhe: string): Promise<{ ok: true; total: number } | { ok: false; erro: string }> => {
+    console.error('[nqa-caixa] erro ao registrar NQA:', detalhe, contexto)
+    const achados = supabase
+      ? await nqaJaGravado(supabase, { posto: entrada.posto.trim(), pmo: entrada.pmo.trim(), op: entrada.op.trim(), resultado: entrada.resultado, snsNorm: entrada.amostras.map((a) => a.snNorm) })
+      : null
+    if (achados !== null) {
+      console.error('[nqa-caixa] resposta perdida mas gravado; tratado como sucesso', contexto)
+      return { ok: true, total: achados }
+    }
+    return { ok: false, erro: 'Não foi possível registrar o NQA da caixa. Confira em Consultar Caixa antes de tentar de novo.' }
+  }
   try {
-    const supabase = await createServerSupabase()
+    supabase = await createServerSupabase()
     const { data, error } = await supabase.rpc('sf_nqa_caixa', {
       p_pmo: entrada.pmo.trim(),
       p_op: entrada.op.trim(),
@@ -110,6 +127,7 @@ export async function finalizarNqaCaixa(entrada: {
     })
     if (error) {
       const msg = error.message || ''
+      if (msg.includes('SEM_PERMISSAO')) return { ok: false, erro: SEM_PERMISSAO }
       if (msg.includes('CAIXA_JA_INSPECIONADA')) return { ok: false, erro: 'Esta caixa já foi inspecionada no NQA.' }
       // Recusa nova da 0130. Sem este `case` a frase cairia no genérico do fim e o inspetor não
       // saberia o que fazer — e o que fazer está em OUTRA tela, com OUTRA pessoa (o gestor é quem
@@ -126,11 +144,11 @@ export async function finalizarNqaCaixa(entrada: {
       if (msg.includes('APROVADO_COM_REPROVA')) return { ok: false, erro: 'Não é possível aprovar: há amostra reprovada.' }
       if (msg.includes('AMOSTRA_NQA_INVALIDA')) return { ok: false, erro: 'Tamanho de amostra inválido na Tabela NQA para esta caixa.' }
       if (msg.includes('REPROVADO_SEM_REPROVA')) return { ok: false, erro: 'Para reprovar a caixa, ao menos uma amostra precisa estar reprovada.' }
-      return { ok: false, erro: 'Não foi possível registrar o NQA da caixa.' }
+      return desconhecido(`${error.code ?? ''} ${msg}`.trim())
     }
     const r = data as unknown as { ok: boolean; total: number }
     return { ok: true, total: r.total }
-  } catch {
-    return { ok: false, erro: 'Falha ao registrar o NQA da caixa.' }
+  } catch (e) {
+    return desconhecido(e instanceof Error ? e.message : String(e))
   }
 }

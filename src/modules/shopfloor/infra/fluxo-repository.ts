@@ -4,6 +4,7 @@ import { mapaPostoPerfil } from './postos-repository'
 import { postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, type PassagemPosto, type BipePeca } from '../domain/fluxo-op'
 import { pareaBurnin, estaAberto, type RegistroBurnin } from '../domain/burnin'
 import { snsNaoIniciados } from '../domain/grade'
+import { somarPecasPorSn } from '../domain/caixa'
 
 export interface OpItem { pmo: string; op: string; cliente: string; descricao: string; criadoEm: string }
 export interface SnDoPosto { sn: string; status: string; vezes: number }
@@ -92,7 +93,7 @@ export async function carregarFluxoOp(
     (p) => recurso[p] ?? 'nenhum',
     contarCaixas,
   )
-  // Caixa de Entrada = peças que ainda não começaram (qtd − peças com algum registro). Só se a OP tem qtd.
+  // Caixa de Entrada = placas que ainda não começaram (qtd, em placas − placas com algum registro). Só se a OP tem qtd.
   const naoIniciadas = qtd != null ? Math.max(0, qtd - iniciadas) : null
   // As não iniciadas também AGUARDAM no 1º posto → entram na fila (pendentes) dele.
   if (naoIniciadas && postos[0]) {
@@ -131,7 +132,7 @@ export async function carregarFluxoOp(
 }
 
 /**
- * Conta as peças pendentes (aguardando) em cada posto da OP — a "fila" (chave = posto minúsculo) —
+ * Conta as peças pendentes (aguardando) em cada posto da OP — a "fila" (chave = posto minúsculo), em placas —
  * mais `iniciadas` (peças com ≥1 registro), `finalizadas` (concluíram todo o fluxo) e
  * `caixasPorPosto` (códigos de caixa DISTINTOS bipados em cada posto). As caixas saem daqui porque
  * este scan já lê todos os registros da OP: contá-las junto não custa consulta nenhuma.
@@ -147,8 +148,8 @@ async function contarPendentesPorPosto(
 ): Promise<{ pendentes: Record<string, number>; iniciadas: number; finalizadas: number; caixasPorPosto: Record<string, number> }> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
-  const COLUNAS = `numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id${contarCaixas ? ',numero_caixa' : ''}`
-  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; numero_caixa?: string | null; data_hora: string; id: number }[] = []
+  const COLUNAS = `numero_serie,numero_serie_norm,status,posto,posto_retorno,data_hora,id,pecas${contarCaixas ? ',numero_caixa' : ''}`
+  const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; numero_caixa?: string | null; data_hora: string; id: number; pecas: number | null }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
@@ -167,9 +168,12 @@ async function contarPendentesPorPosto(
     if (lote.length < PAGINA) break
   }
   const porPeca = new Map<string, BipePeca[]>()
+  // Placas que cada peça (SN = painel) vale: a da linha mais recente (as linhas vêm em ordem cronológica).
+  const pecasDaPeca = new Map<string, number>()
   const caixasDoPosto = new Map<string, Set<string>>()
   for (const l of linhas) {
     const chave = l.numero_serie_norm || l.numero_serie
+    pecasDaPeca.set(chave, l.pecas ?? 1)
     const e = porPeca.get(chave)
     if (e) e.push({ posto: l.posto, status: l.status })
     else porPeca.set(chave, [{ posto: l.posto, status: l.status }])
@@ -182,17 +186,28 @@ async function contarPendentesPorPosto(
       caixasDoPosto.set(k, set)
     }
   }
-  const cont: Record<string, number> = {}
-  let finalizadas = 0
-  for (const regs of porPeca.values()) {
+  // Contagens em PLACAS: cada SN soma `pecas` uma vez (somarPecasPorSn), nunca uma vez por linha.
+  const pendentesDoPosto = new Map<string, { numero_serie_norm: string; pecas: number }[]>()
+  const concluidas: { numero_serie_norm: string; pecas: number }[] = []
+  const todas: { numero_serie_norm: string; pecas: number }[] = []
+  for (const [chave, regs] of porPeca) {
+    const peca = { numero_serie_norm: chave, pecas: pecasDaPeca.get(chave) ?? 1 }
+    todas.push(peca)
     const pend = postoPendenteDePeca(regs, postos, exige, recurso)
-    if (pend) cont[pend.toLowerCase()] = (cont[pend.toLowerCase()] ?? 0) + 1
-    else finalizadas += 1 // pend === null → peça concluiu todo o fluxo
+    if (pend) {
+      const k = pend.toLowerCase()
+      const lista = pendentesDoPosto.get(k)
+      if (lista) lista.push(peca)
+      else pendentesDoPosto.set(k, [peca])
+    } else concluidas.push(peca) // pend === null → peça concluiu todo o fluxo
   }
+  const cont: Record<string, number> = {}
+  for (const [k, lista] of pendentesDoPosto) cont[k] = somarPecasPorSn(lista)
+  const finalizadas = somarPecasPorSn(concluidas)
   const caixasPorPosto: Record<string, number> = {}
   for (const [k, set] of caixasDoPosto) caixasPorPosto[k] = set.size
-  // iniciadas = peças com ≥1 registro (as sem registro nenhum nem aparecem em sf_registros).
-  return { pendentes: cont, iniciadas: porPeca.size, finalizadas, caixasPorPosto }
+  // iniciadas = placas das peças com ≥1 registro (as sem registro nenhum nem aparecem em sf_registros).
+  return { pendentes: cont, iniciadas: somarPecasPorSn(todas), finalizadas, caixasPorPosto }
 }
 
 /**

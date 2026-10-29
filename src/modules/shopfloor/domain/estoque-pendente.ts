@@ -45,7 +45,8 @@ export interface LinhaFilaEstoque {
   pmo: string
   op: string
   posto: string
-  tipo: 'caixa' | 'serie'
+  /** 'lote' = o lote do NQA individual confirmado de uma vez (0156): uma linha pra N peças. */
+  tipo: 'caixa' | 'serie' | 'lote'
   /** O que o coletor leu: código da caixa ou a série crua. */
   bipe: string
   /** A identidade do bipe (coluna GERADA no banco): série normalizada, senão o código da caixa. */
@@ -138,7 +139,8 @@ export interface GrupoEstoquePendente {
   op: string
   posto: string
   alvo: string
-  tipo: 'caixa' | 'serie'
+  /** 'lote' = o lote do NQA individual confirmado de uma vez (0156): uma linha pra N peças. */
+  tipo: 'caixa' | 'serie' | 'lote'
   linhas: LinhaEstoquePendente[]
 }
 
@@ -352,4 +354,17 @@ export function agruparEstoquePendente(
   return [...grupos.values()].sort(
     (a, b) => pedeGesto(a) - pedeGesto(b) || maisNovo(b).localeCompare(maisNovo(a)),
   )
+}
+
+/**
+ * O que o bipe do grupo é, pro cabeçalho da tela de pendências: "caixa", "peça" ou, no envio de LOTE
+ * do NQA individual (0156), "lote do NQA · N peças" — o alvo do lote é um rótulo (LOTE[...][N]) e não
+ * diz sozinho que ali vão N peças numa linha só. N vem da entrada (ou, sem ela na tela, do estorno).
+ */
+export function rotuloTipoGrupo(g: GrupoEstoquePendente): string {
+  if (g.tipo === 'caixa') return 'caixa'
+  if (g.tipo === 'serie') return 'peça'
+  const linha = g.linhas.find((l) => l.operacao === 'entrada') ?? g.linhas[0]
+  if (!linha || !(linha.quantidade > 0)) return 'lote do NQA'
+  return `lote do NQA · ${linha.quantidade === 1 ? '1 peça' : `${linha.quantidade} peças`}`
 }

@@ -199,6 +199,11 @@ export function montarGrade(
   })
 }
 
+/** Unidade das linhas da grade da Pesquisa: cada linha é um SN, ou seja, um PAINEL quando a OP tem N>1. */
+export function rotuloUnidadeFaixa(placasPorPainel?: number): string {
+  return (placasPorPainel ?? 1) > 1 ? 'painel(éis)' : 'peça(s)'
+}
+
 export interface ResumoPosto {
   posto: string
   produzido: number  // peças que passaram pelo posto (têm registro nele)
@@ -216,7 +221,11 @@ export function montarResumoPorPosto(
   postosDaOp: string[],
   registros: RegistroGrade[],
   temStatus: (posto: string) => boolean,
+  placasPorPainel = 1,
 ): ResumoPosto[] {
+  // `total` e as contagens por SN são em PAINÉIS (1 SN = 1 etiqueta); o resumo é exibido em placas:
+  // cada painel vale `placasPorPainel` placas (a mesma unidade de sf_ordens.qtd). Com 1, nada muda.
+  const n = Math.max(1, Math.floor(placasPorPainel) || 1)
   const porSn = new Map<string, RegistroGrade[]>()
   for (const r of registros) {
     const chave = chaveSn(r.snNorm)
@@ -239,6 +248,12 @@ export function montarResumoPorPosto(
         else if (doPosto.some((r) => r.status.toLowerCase() === 'reprovado')) reprovados++
       }
     }
-    return { posto, produzido, pendentes: Math.max(0, total - produzido), aprovados, reprovados }
+    return {
+      posto,
+      produzido: produzido * n,
+      pendentes: Math.max(0, (total - produzido) * n),
+      aprovados: aprovados * n,
+      reprovados: reprovados * n,
+    }
   })
 }

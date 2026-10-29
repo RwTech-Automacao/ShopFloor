@@ -33,6 +33,29 @@ describe('contarPorPosto', () => {
     expect(r).toEqual({ Teste: 1, 'Manutenção': 1 })
   })
 
+  it('placas por painel: cada SN soma `pecas` uma vez, mesmo com linhas de defeito, reparo e reteste', () => {
+    const r = contarPorPosto(['Inicial', 'Teste'], [
+      { posto: 'Inicial', status: '', sn: 'a', pecas: 50 },
+      { posto: 'Inicial', status: '', sn: 'b', pecas: 50 },
+      { posto: 'Teste', status: 'Reprovado', sn: 'a', pecas: 50 },
+      { posto: 'Teste', status: 'Reprovado', sn: 'a', pecas: 50 },
+      { posto: 'Manutenção', status: '', sn: 'a', pecas: 50 },
+      { posto: 'Manutenção', status: '', sn: 'a', pecas: 50 },
+      { posto: 'Teste', status: 'Aprovado', sn: 'a', pecas: 50 },
+      { posto: 'Teste', status: 'Aprovado', sn: 'b', pecas: 50 },
+      { posto: 'Teste', status: 'Aprovado', sn: 'b', pecas: 50 },
+    ], temStatus)
+    expect(r).toEqual({ Inicial: 100, Teste: 100, 'Manutenção': 50 })
+  })
+
+  it('placas por painel: vale o `pecas` da linha mais recente do SN', () => {
+    const r = contarPorPosto(['Inicial'], [
+      { posto: 'Inicial', status: '', sn: 'a', pecas: 10 },
+      { posto: 'Inicial', status: '', sn: 'a', pecas: 50 },
+    ], temStatus)
+    expect(r.Inicial).toBe(50)
+  })
+
   it('zera postos sem registro', () => {
     expect(contarPorPosto(['Inicial'], [], temStatus)).toEqual({ Inicial: 0, 'Manutenção': 0 })
   })

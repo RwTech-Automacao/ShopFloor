@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Testes SQL do posto Almoxarifado (0128/0129 na entrada, 0131 no cancelamento da caixa inteira)
+# Testes SQL do posto Almoxarifado (0128/0129/0155/0156 na entrada, 0131 no cancelamento da caixa inteira,
+# 0156 no lote do NQA individual)
 # num Postgres descartável.
 # Uso: supabase/tests/rodar-almoxarifado-test.sh
 set -euo pipefail
@@ -26,8 +27,73 @@ docker cp supabase/migrations/0131_sf_cancelar_caixa_almoxarifado.sql "$NOME":/t
 # sf_cancelar_lancamento revertendo na fila quando a linha cancelada é uma entrada de Almoxarifado.
 docker cp supabase/migrations/0132_sf_estoque_envios.sql "$NOME":/tmp/0132.sql
 docker cp supabase/migrations/0133_cancelar_lancamento_estoque.sql "$NOME":/tmp/0133.sql
+# O plano estável da sf_nqa_caixa (0160, incidente de 22/10/2026): entra DEPOIS da 0130 (o teste
+# aplica a 0160 logo após a 0130 quando o runner passa -v com0160=1), pra o almoxarifado_test.sql
+# inteiro valer contra a função NOVA. SEM_0160=1 roda o RED (função da 0130).
+docker cp supabase/migrations/0160_sf_nqa_caixa_plano_estavel.sql "$NOME":/tmp/0160.sql
+docker cp supabase/tests/nqa_caixa_plano_test.sql "$NOME":/tmp/teste_plano.sql
+# A 0155 recria a entrada com a trava do POSTO ANTERIOR e cria a lista de necessidades. O arquivo
+# antigo a aplica antes do primeiro bipe (todos os casos de lá rodam contra ela); os casos NOVOS ficam
+# no almoxarifado_necessidade_test.sql, que roda depois, na mesma base.
+docker cp supabase/migrations/0155_sf_almox_posto_anterior.sql "$NOME":/tmp/0155.sql
+# A 0156 (fase 2): o lote do NQA individual vira necessidade, confirmação bipando todos os SNs, bipe avulso
+# recusado nesse caso e cancelamento do lote inteiro. Entra no arquivo antigo logo depois da 0155 (e de
+# novo depois da 0133, que recria a sf_cancelar_lancamento) e no começo do almoxarifado_lote_test.sql.
+# A 0097 (sf_nqa_individual, em produção) entra porque os lotes da massa nascem pela função real.
+docker cp supabase/migrations/0156_sf_almox_lote.sql "$NOME":/tmp/0156.sql
+docker cp supabase/migrations/0097_sf_nqa_individual.sql "$NOME":/tmp/0097.sql
+# A hora na lista de pendências (0158) e o detalhe do cartão (0159): leitura pura em cima da 0155/0156.
+docker cp supabase/migrations/0158_sf_almox_pendencias.sql "$NOME":/tmp/0158.sql
+docker cp supabase/migrations/0159_sf_almox_detalhe.sql "$NOME":/tmp/0159.sql
+docker cp supabase/tests/almoxarifado_necessidade_test.sql "$NOME":/tmp/teste_necessidade.sql
+docker cp supabase/tests/almoxarifado_lote_test.sql "$NOME":/tmp/teste_lote.sql
+docker cp supabase/tests/almoxarifado_pendencias_test.sql "$NOME":/tmp/teste_pendencias.sql
+docker cp supabase/tests/almoxarifado_pecas_avulsas_test.sql "$NOME":/tmp/teste_pecas_avulsas.sql
+# Peças avulsas (OP individual sem NQA no posto anterior): roda por cima da 0158/0159 já aplicadas acima.
 docker cp supabase/tests/almoxarifado_test.sql "$NOME":/tmp/teste.sql
-docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
+
+# PLACAS=1 — placas por painel (0161 + 0165 + 0166). A suíte INTEIRA (arquivos SQL e etapas em bash) roda com a
+# 0161 aplicada antes do primeiro insert (junto com a 0128) e com a 0165 aplicada logo depois de CADA
+# migração que recria uma das funções dela (0131, 0133, 0156, 0158, 0159) — então todo caso antigo, com
+# placas_por_painel = 1, roda contra as funções NOVAS: é a prova de que N = 1 não mudou nada. Por cima, o
+# placas_almoxarifado_test.sql (N = 50) e a foto das leituras (antes × depois) no fim.
+# PLACAS=1 RED=1 aplica a 0161 mas NÃO a 0165: o placas_almoxarifado_test.sql tem que FALHAR.
+# Uso direto: supabase/tests/rodar-placas-almoxarifado-test.sh
+if [ -n "${PLACAS:-}" ]; then
+  TMPP=$(mktemp -d)
+  trap 'rm -rf "$TMPP"; docker rm -f "$NOME" >/dev/null 2>&1 || true' EXIT
+  M=supabase/migrations
+  cat $M/0161_placas_por_painel.sql $M/0128_sf_perfil_almoxarifado.sql > "$TMPP/0128.sql"
+  docker cp "$TMPP/0128.sql" "$NOME":/tmp/0128.sql
+  if [ -z "${RED:-}" ]; then
+    for m in 0131_sf_cancelar_caixa_almoxarifado 0133_cancelar_lancamento_estoque 0156_sf_almox_lote \
+             0158_sf_almox_pendencias 0159_sf_almox_detalhe; do
+      cat "$M/$m.sql" $M/0165_placas_almoxarifado.sql > "$TMPP/${m%%_*}.sql"
+      docker cp "$TMPP/${m%%_*}.sql" "$NOME":/tmp/"${m%%_*}".sql
+      docker cp "$M/$m.sql" "$NOME":/tmp/raw_"${m%%_*}".sql
+    done
+    docker cp $M/0155_sf_almox_posto_anterior.sql "$NOME":/tmp/raw_0155.sql
+    docker cp $M/0165_placas_almoxarifado.sql "$NOME":/tmp/0165.sql
+    # A 0166 (NQA com o `total` em placas) recria a sf_nqa_caixa (0160) e a sf_nqa_individual (0097):
+    # entra logo depois de cada uma, então todo caso de NQA da suíte (N = 1) roda contra ela.
+    for m in 0160_sf_nqa_caixa_plano_estavel 0097_sf_nqa_individual; do
+      cat "$M/$m.sql" $M/0166_placas_nqa.sql > "$TMPP/${m%%_*}.sql"
+      docker cp "$TMPP/${m%%_*}.sql" "$NOME":/tmp/"${m%%_*}".sql
+    done
+  fi
+  docker cp supabase/tests/placas_almoxarifado_test.sql "$NOME":/tmp/teste_placas.sql
+  docker cp supabase/tests/placas_almoxarifado_foto.sql "$NOME":/tmp/foto.sql
+fi
+
+if [ -z "${SEM_0160:-}" ]; then COM0160="-v com0160=1"; else COM0160=""; fi
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q $COM0160 -f /tmp/teste.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_necessidade.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_lote.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pendencias.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pecas_avulsas.sql
+if [ -n "${PLACAS:-}" ]; then
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_placas.sql
+fi
 
 # Idempotência: o usuário reaplica migração quando fica na dúvida, então rodar as migrações duas
 # vezes na mesma base não pode falhar nem mudar o resultado. O caso conhecido é a caixa 7, que o
@@ -38,9 +104,31 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0128.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0129.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0130.sql
+[ -n "${SEM_0160:-}" ] || docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0160.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0131.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0132.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0133.sql
+# A 0155 por último (é ela que vale em cima da 0129 reaplicada), e DUAS vezes: reaplicar não pode
+# falhar nem mudar o resultado.
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0155.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0155.sql
+# E a 0156 por cima, também DUAS vezes (é ela que vale em cima da 0155 reaplicada).
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0156.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0156.sql
+# A 0158 e a 0159 por cima, DUAS vezes cada (a 0158 tem drop function + create; reaplicar não pode falhar).
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0158.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0158.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0159.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0159.sql
+# Idempotência da 0156: o lote já confirmado (L10 reconfirmou e cancelou; o L1 está livre) continua
+# sendo necessidade UMA vez, e a peça de lote continua recusada avulsa.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
+  -c "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar,shopfloor.visualizar',false)" \
+  -c "select (select count(*) from sf_almox_lotes('PMOL01','9201') where pecas = 5)
+          || '/' || (sf_almoxarifado_entrada('PMOL01','9201','Almoxarifado','Ana','7012','serie',1,'7012')->>'motivo')" \
+  | tail -1 | grep -qx '1/serie_exige_lote' \
+  && echo "idempotência da 0156: ok" \
+  || { echo "idempotência da 0156 FALHOU"; exit 1; }
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false)" \
   -c "select sf_almoxarifado_entrada('PMOC14','8498','Almoxarifado','Ana','CX[7][14]8498-PMOC14','caixa',14,'')->>'motivo'" \
@@ -256,6 +344,37 @@ SOBROU=$(docker exec "$NOME" psql -U postgres -tAq -c \
   && echo "controle positivo do lado do registro: ok" \
   || { echo "controle positivo do lado do registro FALHOU (quantidade=$ENTROU, registros/fila=$SOBROU)"; exit 1; }
 
+# CORRIDA: duas confirmações do MESMO LOTE ao mesmo tempo (0156). A sessão A confirma e segura a
+# transação; a B tem que ESPERAR na trava do lote e, quando a A comitar, recusar por ja_lancado. Um
+# lote, UM envio e N linhas — e não 2 envios e 2N linhas.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+  -c "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar,shopfloor.visualizar,lancar',false)" \
+  -c "select teste_reg('PMOL01','9201','Embalagem',s::text,'',s::text) from generate_series(7040,7043) s" \
+  -c "select teste_lote('PMOL01','9201',array['7040','7041','7042','7043'],'Aprovado')" >/dev/null
+LOTE=$(docker exec "$NOME" psql -U postgres -tAq -c \
+  "select distinct nqa_lote_id from sf_registros where numero_serie_norm = '7040' and nqa_lote_id is not null")
+CONF="sf_almoxarifado_lote('PMOL01','9201','Almoxarifado','%s','$LOTE'::uuid,array['7040','7041','7042','7043'])"
+printf "%s\n" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
+  "begin;" \
+  "select $(printf "$CONF" Ana)->>'ok';" \
+  "select pg_sleep(3);" \
+  "commit;" \
+  | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq >/dev/null &
+A=$!
+B=$(printf "%s\n" \
+  "select set_config('teste.perms','recebimento.lancar,shopfloor.lancar',false);" \
+  "select pg_sleep(1);" \
+  "select $(printf "$CONF" Bruno)->>'motivo';" \
+  | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
+wait "$A"
+N=$(docker exec "$NOME" psql -U postgres -tAq -c \
+  "select (select count(*) from sf_registros where posto = 'Almoxarifado' and numero_serie_norm in ('7040','7041','7042','7043'))
+       || '/' || (select count(*) from sf_estoque_envios where lote_id = '$LOTE'::uuid)")
+[ "$B" = ja_lancado ] && [ "$N" = 4/1 ] \
+  && echo "corrida (duas confirmações do mesmo lote): ok" \
+  || { echo "corrida do lote FALHOU (B=$B, registros/envios=$N)"; exit 1; }
+
 # AS INVARIANTES DA FILA, DEPOIS DE TUDO — inclusive das etapas em bash acima. A mesma função que o
 # teste 44(iv) chama dentro do almoxarifado_test.sql (uma definição, dois lugares de chamada): as
 # etapas daqui também dão entrada, cancelam caixa e enfileiram, e elas rodam DEPOIS do arquivo SQL —
@@ -265,3 +384,44 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
   "select public.teste_fila_invariantes('fim do runner, depois das etapas em bash')" >/dev/null \
   && echo "invariantes da fila depois das etapas em bash: ok" \
   || { echo "invariantes da fila FALHARAM depois das etapas em bash"; exit 1; }
+
+# PLACAS=1: A FOTO DAS LEITURAS, N = 1. Com a massa inteira da suíte (todas as OPs com placas_por_painel
+# = 1), as leituras pela 0165 (foto_depois) têm que ser IDÊNTICAS às das definições antigas (foto_antes:
+# reaplica 0155, 0156, 0131, 0158 e 0159 sem a 0165). A única diferença aceita é a chave NOVA `paineis`
+# do detalhe das peças avulsas. Depois a 0165 volta, DUAS vezes (idempotência), e as invariantes da fila
+# são conferidas de novo.
+if [ -n "${PLACAS:-}" ] && [ -z "${RED:-}" ]; then
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -v tabela=foto_depois -f /tmp/foto.sql >/dev/null
+  for m in 0155 0156 0131 0158 0159; do
+    docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/raw_$m.sql
+  done
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -v tabela=foto_antes -f /tmp/foto.sql >/dev/null
+  DIF=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c "
+    with d as (select fonte, pmo, op, chave, case when fonte like 'detalhe%' then v - 'paineis' else v end as v
+                 from foto_depois)
+    select (select count(*) from foto_antes) || '/' ||
+           (select count(*) from ((select * from d) except all (select * from foto_antes)) x) || '/' ||
+           (select count(*) from ((select * from foto_antes) except all (select * from d)) y)")
+  case "$DIF" in
+    0/*) echo "foto N=1 FALHOU: foto vazia ($DIF)"; exit 1 ;;
+    */0/0) echo "foto N=1 das leituras (necessidades, lotes, pendências, detalhe): idênticas ($DIF): ok" ;;
+    *) echo "foto N=1 FALHOU (linhas/só-depois/só-antes = $DIF)"
+       docker exec "$NOME" psql -U postgres -c "
+         (select 'depois' as lado, * from foto_depois except all select 'depois', * from foto_antes)
+         union all (select 'antes', * from foto_antes except all select 'antes', * from foto_depois) limit 20"
+       exit 1 ;;
+  esac
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0165.sql
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0165.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select public.teste_fila_invariantes('PLACAS: depois de reaplicar a 0165')" >/dev/null \
+    && echo "0165 reaplicada duas vezes, invariantes da fila: ok" \
+    || { echo "invariantes da fila FALHARAM depois de reaplicar a 0165"; exit 1; }
+  echo "PLACAS ALMOXARIFADO OK"
+fi
+
+# O PLANO ESTÁVEL DA sf_nqa_caixa (0160): OP nova e grande, sem analyze, tem que passar em < 3 s e
+# manter as recusas. Idempotência da 0160 já foi exercida acima (aplicada duas vezes, psql -1).
+# É a última etapa de propósito: ela cria uma OP de 10 mil registros e não deve sujar as invariantes.
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_plano.sql
+echo "plano estável da sf_nqa_caixa (0160): ok"

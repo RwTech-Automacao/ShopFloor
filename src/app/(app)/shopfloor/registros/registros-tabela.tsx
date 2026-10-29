@@ -26,6 +26,7 @@ import {
   cancelavelInfo,
   cancelarLancamento,
   cancelarCaixaAlmoxarifado,
+  cancelarLoteAlmoxarifado,
   type CancelavelInfo,
 } from '@/modules/shopfloor/application/cancelamento-actions'
 
@@ -134,13 +135,18 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
   // que se oferece é cancelar a caixa INTEIRA — um motivo só, as N linhas de uma vez. As N linhas são
   // detalhe de como a entrada é registrada; o gestor não precisa saber disso pra desfazer.
   const caixa = cancelavel?.caixa
+  // Entrada de LOTE do NQA individual (0156): a confirmação do lote gravou uma linha por SN, e o
+  // desfazer é o lote INTEIRO — um motivo só, as N linhas e a reversão do envio ao Compels.
+  const lote = cancelavel?.lote
 
   async function confirmarCancelamento() {
     if (!sel || motivo.trim() === '' || cancelando) return
     setCancelando(true); setErroCancel('')
-    const r = caixa
-      ? await cancelarCaixaAlmoxarifado(sel.id, motivo)
-      : await cancelarLancamento(sel.id, motivo)
+    const r = lote
+      ? await cancelarLoteAlmoxarifado(sel.id, motivo)
+      : caixa
+        ? await cancelarCaixaAlmoxarifado(sel.id, motivo)
+        : await cancelarLancamento(sel.id, motivo)
     setCancelando(false)
     if (r.ok) {
       setConfirmAberto(false); setSel(null)
@@ -263,6 +269,8 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
                   >
                     {checando
                       ? 'Verificando…'
+                      : lote
+                        ? `Cancelar o lote inteiro${lote.pecas > 0 ? ` (${contarPecas(lote.pecas)})` : ''}`
                       : caixa
                         // A contagem entra no rótulo pra o gestor ver o alcance antes de abrir o
                         // diálogo. Vazia (0) só se a contagem falhou — aí o rótulo fica sem número em
@@ -286,11 +294,23 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
       <Dialog open={confirmAberto} onOpenChange={(o) => { if (!o && !cancelando) setConfirmAberto(false) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{caixa ? 'Cancelar a caixa inteira' : 'Cancelar lançamento'}</DialogTitle>
+            <DialogTitle>
+              {lote ? 'Cancelar o lote inteiro' : caixa ? 'Cancelar a caixa inteira' : 'Cancelar lançamento'}
+            </DialogTitle>
           </DialogHeader>
           {sel && (
             <div className="flex flex-col gap-3 text-sm">
-              {caixa ? (
+              {lote ? (
+                // O mesmo molde da caixa: o clique foi numa linha, o alcance é o lote inteiro.
+                <p className="text-muted-foreground">
+                  Vai cancelar a entrada do lote <strong>{lote.rotulo}</strong> em{' '}
+                  <strong>{sel.posto}</strong> de {formatarDataHora(sel.data_hora)}:{' '}
+                  <strong>{lote.pecas > 0 ? contarPecas(lote.pecas) : 'todas as peças'} do lote</strong>{' '}
+                  {lote.pecas === 1 ? 'sai' : 'saem'} do estoque de uma vez, com este mesmo motivo. Se o lote
+                  já foi ao Compels, o estorno fica na fila (manual). O lote volta a esperar confirmação. Esta
+                  ação fica registrada na auditoria, peça por peça.
+                </p>
+              ) : caixa ? (
                 // O gestor precisa ver QUANTAS peças saem antes de confirmar: o clique foi numa linha,
                 // mas o alcance é a caixa. Sem o número, "cancelar a caixa inteira" seria um cheque em
                 // branco.
@@ -314,7 +334,7 @@ export function RegistrosTabela({ linhas, podeAdministrar }: RegistrosTabelaProp
                 <Label htmlFor="motivo-cancel">Motivo (obrigatório)</Label>
                 <Input id="motivo-cancel" value={motivo} autoFocus
                   onChange={(e) => { setMotivo(e.target.value); if (erroCancel) setErroCancel('') }}
-                  placeholder={caixa ? 'Ex.: caixa bipada por engano' : 'Ex.: aprovado por engano'} />
+                  placeholder={lote ? 'Ex.: lote confirmado por engano' : caixa ? 'Ex.: caixa bipada por engano' : 'Ex.: aprovado por engano'} />
               </div>
               {/* Consequência específica do posto (hoje: embalagem reabre a caixa). Repetida aqui
                   porque é no diálogo que o gestor confirma — e a folha impressa depende disso. */}

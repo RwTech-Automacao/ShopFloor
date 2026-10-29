@@ -25,7 +25,8 @@ const ESPERA_ADIADA_MS = 5 * 60 * 1000
 const LIMITE_ERRO = 500
 
 const OPERACOES: readonly EnvioEstoqueReservado['operacao'][] = ['entrada', 'estorno']
-const TIPOS: readonly EnvioEstoqueReservado['tipo'][] = ['caixa', 'serie']
+// 'lote' (0156): o lote do NQA individual vai ao Compels numa linha só, com a quantidade do lote.
+const TIPOS: readonly EnvioEstoqueReservado['tipo'][] = ['caixa', 'serie', 'lote']
 
 function ehOperacao(v: unknown): v is EnvioEstoqueReservado['operacao'] {
   return typeof v === 'string' && (OPERACOES as readonly string[]).includes(v)

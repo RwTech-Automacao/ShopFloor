@@ -22,6 +22,7 @@ export interface OrdemRow {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  placas_por_painel: number
   created_at: string
   sf_ordem_postos: { posto: string; ordem: number }[]
   sf_ordem_componentes: { posto: string; pmo_componente: string }[]
@@ -39,6 +40,8 @@ export interface DadosOrdem {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  /** Placas que cada bipe de painel conta (0161). 1 = bipe por placa. */
+  placas_por_painel: number
   /** Quem encerrou (0145). A tela só grava 'manual' ou null; 'rotina' é exclusivo da rotina SQL. */
   finalizada_por: 'manual' | null
   /**
@@ -59,7 +62,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,placas_por_painel,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)')
     .order('pmo')
     .order('op')
   if (error) throw error
@@ -156,10 +159,10 @@ export async function buscarOpEmUso(op: string, excetoId?: string): Promise<{ id
   return row ? (row as { id: string; pmo: string; op: string }) : null
 }
 
-/** PMO, OP e status atuais da OP. O status vem para o editar saber se a OP está sendo REATIVADA. */
-export async function buscarOrdemBase(id: string): Promise<{ pmo: string; op: string; status: string } | null> {
+/** PMO, OP, status e placas por painel atuais da OP. O status vem para o editar saber se a OP está sendo REATIVADA; o N, para a trava de edição com registros. */
+export async function buscarOrdemBase(id: string): Promise<{ pmo: string; op: string; status: string; placas_por_painel: number } | null> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('sf_ordens').select('pmo,op,status').eq('id', id).single()
+  const { data, error } = await supabase.from('sf_ordens').select('pmo,op,status,placas_por_painel').eq('id', id).single()
   if (error) return null
-  return data as { pmo: string; op: string; status: string }
+  return data as { pmo: string; op: string; status: string; placas_por_painel: number }
 }
