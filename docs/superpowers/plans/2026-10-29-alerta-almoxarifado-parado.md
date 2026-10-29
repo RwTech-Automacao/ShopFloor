@@ -473,7 +473,7 @@ describe('textoAlertaParado', () => {
       ],
     })
     expect(t).toContain('• Lote LOTE 7 · 100 placas · 3 h 20 min')
-    expect(t).toContain('• Peças avulsas · 37 peças · a mais antiga há 3 h')
+    expect(t).toContain('• Peças avulsas · 37 placas · a mais antiga há 3 h')
   })
 
   it('nunca passa de 2000 caracteres, com aviso do que ficou de fora', () => {
@@ -528,7 +528,7 @@ export interface DadosParado extends ParOp {
 
 function linhaDoItem(i: ItemParado): string {
   if (i.tipo === 'peca') {
-    return `• Peças avulsas · ${i.pecas} peças · a mais antiga há ${formatarMinutos(i.minutos)}`
+    return `• Peças avulsas · ${i.pecas} placas · a mais antiga há ${formatarMinutos(i.minutos)}`
   }
   const nome = i.tipo === 'lote' ? `Lote ${i.codigo}` : i.codigo
   return `• ${nome} · ${i.pecas} placas · ${formatarMinutos(i.minutos)}`

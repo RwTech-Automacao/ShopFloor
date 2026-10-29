@@ -76,7 +76,7 @@ Placas: as quantidades da mensagem são em placas (`pecas`, 0161–0166), como o
   `⚠️ Almoxarifado: OP 8563 / PRT797 com 2 itens parados`
   `• CX[3][500] · 500 placas · 3 h 10 min de expediente`
   `• CX[4][500] · 500 placas · 2 h 05 min de expediente`
-  Lote: código do lote. Peças avulsas: `Peças avulsas · 37 peças · a mais antiga há 3 h`.
+  Lote: código do lote. Peças avulsas: `Peças avulsas · 37 placas · a mais antiga há 3 h`.
 
 ## Erros e bordas
 
