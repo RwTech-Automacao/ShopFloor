@@ -35,7 +35,7 @@ export const NOME_MODULO_ALERTA: Record<ModuloAlerta, string> = {
  * no banco: `recebimento -> tipo in ('emb')`.
  */
 export const TIPOS_REGRA_POR_MODULO: Record<ModuloAlerta, readonly TipoRegra[]> = {
-  shopfloor: ['aprovacao', 'tempo', 'defeito', 'resumo'],
+  shopfloor: ['aprovacao', 'tempo', 'defeito', 'resumo', 'parado'],
   recebimento: ['emb'],
 }
 

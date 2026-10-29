@@ -33,8 +33,10 @@ describe('módulo da regra de alerta', () => {
     expect(new Set(vistos).size).toBe(vistos.length)
   })
 
-  it('os quatro tipos de posto são do ShopFloor', () => {
-    expect(TIPOS_REGRA_POR_MODULO.shopfloor).toEqual(['aprovacao', 'tempo', 'defeito', 'resumo'])
+  it('os tipos de posto (e o parado do Almoxarifado) são do ShopFloor', () => {
+    expect(TIPOS_REGRA_POR_MODULO.shopfloor).toEqual([
+      'aprovacao', 'tempo', 'defeito', 'resumo', 'parado',
+    ])
   })
 
   it('o fim de EMB é do Recebimento, e só dele', () => {

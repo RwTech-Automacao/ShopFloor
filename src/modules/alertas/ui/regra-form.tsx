@@ -42,6 +42,8 @@ const JANELAS: Record<TipoRegra, JanelaTipo[]> = {
   // escrito para o formulário mandar ao servidor a MESMA janela que ele vai gravar, e não os minutos
   // de um campo que não aparece. A coluna "Janela" da lista nunca mostra este valor (`JANELA_EMB`).
   emb: ['op'],
+  // Mínimo para compilar; o formulário do parado é da Tarefa 4.
+  parado: ['op'],
 }
 
 const TITULO_PREVIA: Record<TipoRegra, string> = {
@@ -53,6 +55,7 @@ const TITULO_PREVIA: Record<TipoRegra, string> = {
   // Sem uso, pelo mesmo motivo: não há janela a antecipar no fim de EMB, e o botão "Ver prévia" não
   // aparece neste tipo. A chave fecha o Record e dá um título honesto se a prévia um dia existir.
   emb: 'Fim de EMB',
+  parado: 'Parado no Almoxarifado',
 }
 
 const EXPLICA_POSTOS: Record<TipoRegra, string> = {
@@ -69,6 +72,7 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
   // propósito: se algum dia a seção voltar para este tipo, ela não mente.
   emb:
     'O aviso de fim de EMB não usa posto: ele sai quando todos os processos de uma EMB terminam.',
+  parado: 'O aviso de parado olha os itens prontos que ainda não deram entrada no Almoxarifado.',
 }
 
 /** Por que a lista de postos é mais curta neste tipo. Tempo médio serve em qualquer posto. */
