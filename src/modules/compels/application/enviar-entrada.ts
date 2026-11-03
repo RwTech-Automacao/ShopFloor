@@ -12,6 +12,7 @@ import { estadoDaOp, type LeiturasOp } from '../domain/estado-op'
 import { RespostaInesperada } from '../domain/leituras-erp'
 import { decidirEntrada } from '../domain/reconciliar'
 import type { ResultadoGravacao } from '../domain/resposta-erp'
+import { semSufixo } from '../domain/sem-sufixo'
 import type { DadosOp } from '../infra/cliente'
 import { ErroDeLogin } from '../infra/token'
 
@@ -65,8 +66,10 @@ export type Plano =
 const recusa = (erro: string, tentarDeNovo = false) => ({ tipo: 'erro', erro, tentarDeNovo }) as const
 
 function numeroDaOp(texto: string): number | null {
-  // OPs com sufixo (PMOC50_, 8504_) existem no ShopFloor e não têm número no Compels: ficam manuais.
-  return /^\d+$/.test(texto.trim()) ? Number(texto.trim()) : null
+  // O Compels só conhece a OP pelos dígitos: `8682_F` e `8504_` (segunda leva no ShopFloor) são 8682 e 8504.
+  // O que sobrar não numérico (PMOC50_ → PMOC50) não tem número lá e fica manual.
+  const base = semSufixo(texto)
+  return /^\d+$/.test(base) ? Number(base) : null
 }
 
 function faltas(etapa: 'requisitar' | 'apontar', componentes: { codigo: string; precisa: number; tem: number }[]): string {
@@ -81,7 +84,7 @@ async function conferir(erp: PortaErp, e: EntradaParaEnviar): Promise<{ op: Dado
 
   const op = await erp.buscarOp(numero)
   if (!op) return { erro: recusa(`OP ${numero} não encontrada no Compels.`) }
-  if (op.codigoItem.trim().toUpperCase() !== e.pmo.trim().toUpperCase()) {
+  if (op.codigoItem.trim().toUpperCase() !== semSufixo(e.pmo).toUpperCase()) {
     return { erro: recusa(`O produto da OP ${numero} no Compels (${op.codigoItem}) é diferente da PMO ${e.pmo}.`) }
   }
   if (op.unidade !== 'UN') {

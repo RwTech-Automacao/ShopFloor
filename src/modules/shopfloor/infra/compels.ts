@@ -1,6 +1,7 @@
 import 'server-only'
 import { enviarEntrada, type PortaErp } from '@/modules/compels/application/enviar-entrada'
 import { opLiberada } from '@/modules/compels/domain/liberacao'
+import { semSufixo } from '@/modules/compels/domain/sem-sufixo'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
 import { ConfiguracaoIncompleta, configDoAmbiente, destinoDoAmbiente } from '@/modules/compels/infra/config'
 import type { EnvioEstoqueReservado, PortaCompels, ResultadoEnvioEstoque } from '../application/enviar-estoque'
@@ -71,7 +72,14 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
     try {
       erp ??= new ClienteCompels(configDoAmbiente(env))
       const destino = destinoDoAmbiente(env)
-      const acumuladoAnterior = await somaEnviada(envio.pmo, envio.op, envio.id)
+      // O Compels tem UMA OP para a OP do ShopFloor e para a sua "segunda leva" (8682 e 8682_F): o que já
+      // foi enviado pela OP sem sufixo também conta no apontado que o ERP mostra.
+      let acumuladoAnterior = await somaEnviada(envio.pmo, envio.op, envio.id)
+      const opBase = semSufixo(envio.op)
+      const pmoBase = semSufixo(envio.pmo)
+      if (opBase !== envio.op.trim() || pmoBase !== envio.pmo.trim()) {
+        acumuladoAnterior += await somaEnviada(pmoBase, opBase, envio.id)
+      }
       const r = await enviarEntrada(
         erp,
         { pmo: envio.pmo, op: envio.op, quantidade: envio.quantidade, acumuladoAnterior, marca: marcaDaLinha(envio) },
