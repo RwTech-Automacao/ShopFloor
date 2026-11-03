@@ -195,7 +195,20 @@ describe('enviarEntrada', () => {
   })
 
   describe('conferências antes de tocar na OP', () => {
-    it('OP com sufixo (PMOC50_) não é numérica: fica manual', async () => {
+    it('OP com sufixo (8649_F) vira a OP 8649 do Compels e a PMO PRT446_F vira PRT446', async () => {
+      const { erp, chamadas } = fingir()
+      const r = await enviarEntrada(erp, { ...ENTRADA, op: '8649_F', pmo: 'PRT446_F' }, opcoes)
+      expect(r.ok).toBe(true)
+      expect(chamadas).toContain('apontar')
+    })
+
+    it('a PMO sem sufixo continua tendo que bater com o produto do Compels', async () => {
+      const { erp } = fingir()
+      const r = await enviarEntrada(erp, { ...ENTRADA, op: '8649_F', pmo: 'PMOC57_F' }, opcoes)
+      expect(r.ok === false && r.erro).toContain('(PRT446) é diferente da PMO PMOC57_F')
+    })
+
+    it('OP que sem o sufixo não é número (PMOC50_) não é numérica: fica manual', async () => {
       const { erp, chamadas } = fingir()
       const r = await enviarEntrada(erp, { ...ENTRADA, op: 'PMOC50_' }, opcoes)
       expect(r.ok === false && r.erro).toContain('não é numérica')

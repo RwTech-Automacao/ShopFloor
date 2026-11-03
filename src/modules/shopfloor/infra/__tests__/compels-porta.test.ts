@@ -76,6 +76,26 @@ describe('criarPortaCompels', () => {
     expect(chamadas).toContain('apontar')
   })
 
+  it('OP com sufixo (8649_F): libera por 8649, grava na OP 8649 e soma também o já enviado pela OP sem sufixo', async () => {
+    const { erp, chamadas } = erpFalso()
+    const soma = vi.fn(async () => 0)
+    const porta = criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: soma })
+    expect(await porta(linha({ op: '8649_F', pmo: 'PRT446_F' }))).toEqual({ ok: true })
+    expect(soma).toHaveBeenCalledWith('PRT446_F', '8649_F', 'id-1')
+    expect(soma).toHaveBeenCalledWith('PRT446', '8649', 'id-1')
+    expect(chamadas).toContain('apontar')
+  })
+
+  it('OP com sufixo: o acumulado é a soma das duas, e o ERP tem que mostrar essa soma', async () => {
+    const { erp } = erpFalso({
+      requisicoes: [{ quantidade: 3, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+      apontamentos: [{ quantidadeProduzida: 3, quantidadeCancelada: 0 }],
+    })
+    const soma = vi.fn(async (_pmo: string, op: string) => (op === '8649' ? 2 : 1))
+    const r = await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: soma })(linha({ op: '8649_F', pmo: 'PRT446_F' }))
+    expect(r).toEqual({ ok: true })
+  })
+
   it('o acumulado vem do banco: a 2ª peça (acumulado 1) só pode ser enviada com o ERP mostrando 1', async () => {
     const { erp } = erpFalso({
       requisicoes: [{ quantidade: 1, quantidadeEstornar: 0, situacao: 'Requisitada' }],
