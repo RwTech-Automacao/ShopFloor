@@ -74,7 +74,11 @@ export async function EnvioCompels() {
                 <Badge variant="outline" className={CLASSE_SITUACAO[l.situacao]}>{l.rotulo}</Badge>
               </div>
               {l.erro && <p className="mt-1">Motivo: {l.erro}</p>}
-              <p className="mt-1 text-muted-foreground">{l.oQueFazer}</p>
+              <p className="mt-1 text-muted-foreground">
+                {l.situacao === 'na_fila' && !l.erro
+                  ? 'Aguardando a próxima rodada de envio ao Compels.'
+                  : l.oQueFazer}
+              </p>
             </li>
           )
         })}

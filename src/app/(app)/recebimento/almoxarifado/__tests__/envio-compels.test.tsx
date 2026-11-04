@@ -46,6 +46,14 @@ describe('EnvioCompels', () => {
     expect(screen.getByRole('link', { name: 'Ver a fila completa' })).toHaveAttribute('href', '/shopfloor/analisar/estoque-pendente')
   })
 
+  it('linha ainda não tentada: frase simples, sem explicação do cron', async () => {
+    listarEstoquePendente.mockResolvedValue({ linhas: [linha()], entradas: new Map(), cortada: false })
+    await montar()
+    expect(screen.getByText('Na fila')).toBeInTheDocument()
+    expect(screen.getByText('Aguardando a próxima rodada de envio ao Compels.')).toBeInTheDocument()
+    expect(screen.queryByText(/já estiver armado/)).toBeNull()
+  })
+
   it('linha que gastou as tentativas: selo "Fora da fila"', async () => {
     listarEstoquePendente.mockResolvedValue({
       linhas: [linha({ tentativas: 5, erro: 'O Compels recusou' })],
