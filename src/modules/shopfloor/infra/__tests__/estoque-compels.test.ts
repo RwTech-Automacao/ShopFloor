@@ -34,6 +34,16 @@ describe('buscarEstoqueCompels', () => {
     expect(consultar).toHaveBeenCalledTimes(2)
   })
 
+  it('PMO de segunda leva (sufixo _F ou _): consulta o item do Compels sem o sufixo e compartilha o cache', async () => {
+    const consultar = vi.fn(async () => SALDO)
+    const deps = { cliente: { consultarSaldoItem: consultar }, agora: () => 1_000 }
+    expect(await buscarEstoqueCompels('PMOF52_F', deps)).toMatchObject({ tipo: 'ok', proprio: 28 })
+    expect(consultar).toHaveBeenCalledWith('PMOF52')
+    await buscarEstoqueCompels('PMOF52', deps)
+    await buscarEstoqueCompels('PMOF52_', deps)
+    expect(consultar).toHaveBeenCalledTimes(1)
+  })
+
   it('item que o Compels não tem: nao_encontrado', async () => {
     const r = await buscarEstoqueCompels('ZZZ', { cliente: { consultarSaldoItem: async () => null } })
     expect(r).toEqual({ tipo: 'nao_encontrado' })
