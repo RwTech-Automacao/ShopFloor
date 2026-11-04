@@ -73,7 +73,15 @@ export function decidirEntrada(
   if (estado.apontada !== anterior) return erro('fora_do_esperado')
 
   if (estado.temPendencia) return erro('pendencia_no_erp')
-  if (estado.empenhada < novo) return erro('sem_empenho')
+  if (estado.empenhada < novo) {
+    return {
+      tipo: 'erro',
+      codigo: 'sem_empenho',
+      mensagem:
+        `${MENSAGEM_ERRO.sem_empenho.replace(/\.$/, '')}: empenhado ${estado.empenhada}, `
+        + `precisa de ${novo} (faltam ${q6(novo - estado.empenhada)}).`,
+    }
+  }
 
   // Cada entrada é UMA requisição + UM apontamento. O ERP precisa estar no ponto certo:
   // - requisitada == anterior: caminho normal, requisita e aponta a quantidade da entrada;

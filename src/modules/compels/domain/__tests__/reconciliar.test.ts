@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EstadoOpErp } from '../estado-op'
-import { decidirEntrada, MENSAGEM_ERRO } from '../reconciliar'
+import { decidirEntrada } from '../reconciliar'
 
 const base: EstadoOpErp = {
   status: 'Em Processo',
@@ -116,6 +116,16 @@ describe('decidirEntrada', () => {
 
   it('toda decisão de erro traz a mensagem legível do código', () => {
     const d = decidirEntrada(com({ empenhada: 0 }), { anterior: 0, novo: 1 })
-    expect(d).toEqual({ tipo: 'erro', codigo: 'sem_empenho', mensagem: MENSAGEM_ERRO.sem_empenho })
+    expect(d).toMatchObject({ tipo: 'erro', codigo: 'sem_empenho' })
+    expect(d.tipo === 'erro' && d.mensagem.startsWith('OP sem empenho suficiente no Compels')).toBe(true)
+  })
+
+  it('sem empenho diz quanto está empenhado, quanto precisa e quanto falta (OP com 22 de base)', () => {
+    const estado = com({ quantidadeOp: 100, empenhada: 22, requisitada: 22, apontada: 22 })
+    const d = decidirEntrada(estado, { anterior: 22, novo: 28 })
+    expect(d).toMatchObject({ tipo: 'erro', codigo: 'sem_empenho' })
+    expect(d.tipo === 'erro' && d.mensagem).toBe(
+      'OP sem empenho suficiente no Compels: empenhado 22, precisa de 28 (faltam 6).',
+    )
   })
 })
