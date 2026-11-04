@@ -286,7 +286,7 @@ function decidirEntrada(estado, acumulado) {
 	};
 	if (estado.apontada < anterior) return erro("abaixo_do_enviado");
 	if (estado.apontada !== anterior) return erro("fora_do_esperado");
-	if (estado.temPendencia) return erro("pendencia_no_erp");
+	if (estado.temPendencia && estado.requisitada !== novo) return erro("pendencia_no_erp");
 	if (estado.empenhada < novo) return {
 		tipo: "erro",
 		codigo: "sem_empenho",
@@ -443,13 +443,21 @@ async function planejar(erp, op, e, opcoes) {
 			precisa: c.quantidadeRequisitar,
 			tem: c.saldo
 		}));
-		if (sem.length > 0) return recusa(faltas("requisitar", sem), true);
 		requisitar = corpoRequisicao({
 			opId: op.id,
 			tipoPropriedade: op.tipoPropriedade,
 			quantidade: decisao.requisitar,
 			componentes
 		});
+		if (sem.length > 0) return {
+			tipo: "enviar",
+			op,
+			novoAcumulado: novo,
+			baseACapturar: baseNova ? base : null,
+			requisitar,
+			apontar: null,
+			requisicaoPendente: faltas("requisitar", sem)
+		};
 	}
 	const componentes = await erp.consultarDisponibilidade(op, decisao.apontar);
 	const aRequisitar = new Map(requisitarComponentes.map((c) => [c.itemId, c.quantidadeRequisitar]));
@@ -478,7 +486,8 @@ async function planejar(erp, op, e, opcoes) {
 		novoAcumulado: novo,
 		baseACapturar: baseNova ? base : null,
 		requisitar,
-		apontar
+		apontar,
+		requisicaoPendente: null
 	};
 }
 function erroDeExcecao(e) {
@@ -886,7 +895,7 @@ for (const numero of ops) try {
 	}, { destino });
 	const base = `OP ${numero} | ${op.codigoItem} | ${op.unidade} | ${op.status} | ${apontada}/${op.quantidade} apontadas`;
 	if (plano.tipo === "enviar") {
-		console.log(`${base} | ENVIARIA (${plano.requisitar ? "requisita e aponta" : "só aponta"})`);
+		console.log(`${base} | ENVIARIA (${plano.apontar === null ? "só requisita: ficaria PENDENTE por falta de saldo" : plano.requisitar ? "requisita e aponta" : "só aponta"})`);
 		somar("seria enviada");
 	} else if (plano.tipo === "ja_enviada") {
 		console.log(`${base} | já tem a entrada`);

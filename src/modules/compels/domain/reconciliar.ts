@@ -72,7 +72,10 @@ export function decidirEntrada(
   if (estado.apontada < anterior) return erro('abaixo_do_enviado')
   if (estado.apontada !== anterior) return erro('fora_do_esperado')
 
-  if (estado.temPendencia) return erro('pendencia_no_erp')
+  // Requisição pendente de OUTRA coisa trava (alguém mexeu à mão, ou sobrou pendência antiga). A requisição pendente
+  // desta mesma entrada (`requisitada === novo`) não: é a que a própria integração criou com componente sem saldo, e a
+  // retomada só precisa apontar quando o saldo chegar.
+  if (estado.temPendencia && estado.requisitada !== novo) return erro('pendencia_no_erp')
   if (estado.empenhada < novo) {
     return {
       tipo: 'erro',

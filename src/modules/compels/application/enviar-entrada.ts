@@ -77,7 +77,10 @@ export type Plano =
       /** O ponto de partida a guardar antes de gravar; `null` quando ele já está guardado ou não se aplica. */
       baseACapturar: number | null
       requisitar: Record<string, unknown> | null
-      apontar: Record<string, unknown>
+      /** `null` quando só dá para requisitar agora: falta saldo de componente, então a requisição fica PENDENTE. */
+      apontar: Record<string, unknown> | null
+      /** Quando só a requisição vai agora: os componentes sem saldo, em texto. O apontamento espera o saldo chegar. */
+      requisicaoPendente: string | null
     }
 
 const recusa = (erro: string, tentarDeNovo = false) => ({ tipo: 'erro', erro, tentarDeNovo }) as const
@@ -137,8 +140,20 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
     const sem = componentes
       .filter((c) => !c.itemFantasma && c.saldo < c.quantidadeRequisitar)
       .map((c) => ({ codigo: c.codigo, precisa: c.quantidadeRequisitar, tem: c.saldo }))
-    if (sem.length > 0) return recusa(faltas('requisitar', sem), true)
     requisitar = corpoRequisicao({ opId: op.id, tipoPropriedade: op.tipoPropriedade, quantidade: decisao.requisitar, componentes })
+    if (sem.length > 0) {
+      // O Compels aceita a requisição com componente sem saldo (ela fica "Pendente", e é isso que a tela dele faz).
+      // Requisita agora e avisa; o apontamento espera o saldo chegar (e a pendência ser paga) e sai numa rodada seguinte.
+      return {
+        tipo: 'enviar',
+        op,
+        novoAcumulado: novo,
+        baseACapturar: baseNova ? base : null,
+        requisitar,
+        apontar: null,
+        requisicaoPendente: faltas('requisitar', sem),
+      }
+    }
   }
 
   const componentes = await erp.consultarDisponibilidade(op, decisao.apontar)
@@ -162,7 +177,7 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
     destino: opcoes.destino,
     ...(e.marca ? { observacao: e.marca } : {}),
   })
-  return { tipo: 'enviar', op, novoAcumulado: novo, baseACapturar: baseNova ? base : null, requisitar, apontar }
+  return { tipo: 'enviar', op, novoAcumulado: novo, baseACapturar: baseNova ? base : null, requisitar, apontar, requisicaoPendente: null }
 }
 
 function erroDeExcecao(e: unknown): { ok: false; erro: string; tentarDeNovo: boolean } {
@@ -225,6 +240,18 @@ export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes:
     if (plano.requisitar) {
       const r = await erp.requisitar(plano.requisitar)
       if (!r.ok) return falha(r.mensagem, r.tentarDeNovo, gravou)
+    }
+    if (plano.apontar === null) {
+      // Só a requisição vai agora (componente sem saldo): ela fica pendente no Compels e o apontamento espera.
+      // A retomada é segura: a próxima rodada vê `requisitada === novo` e só aponta. Não gasta tentativa.
+      return {
+        ok: false,
+        erro:
+          `A requisição foi criada no Compels, mas ficou PENDENTE: ${plano.requisicaoPendente} `
+          + 'Dê entrada do componente e pague a pendência no Compels; o apontamento sai sozinho depois.',
+        tentarDeNovo: true,
+        aguardar: true,
+      }
     }
     const a = await erp.apontar(plano.apontar)
     if (!a.ok) {

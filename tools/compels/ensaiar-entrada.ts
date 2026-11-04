@@ -62,8 +62,13 @@ try {
     console.log(`ENSAIO: seria enviada. OP ${plano.op.numero} (id ${plano.op.id}), produto ${plano.op.codigoItem}, novo acumulado ${plano.novoAcumulado}.`)
     console.log(plano.requisitar ? '\n--- Requisitar (requisicaoOrdemProducao/save) ---' : '\n--- Requisitar: não precisa (a requisição desta entrada já existe) ---')
     if (plano.requisitar) console.log(JSON.stringify(mascarar(plano.requisitar), null, 1))
-    console.log('\n--- Apontar (apontamentoOrdemProducao/save) ---')
-    console.log(JSON.stringify(mascarar(plano.apontar), null, 1))
+    if (plano.apontar === null) {
+      console.log(`\n--- Apontar: NÃO agora. A requisição ficaria PENDENTE: ${plano.requisicaoPendente}`)
+      console.log('O apontamento esperaria o saldo do componente chegar e a pendência ser paga no Compels.')
+    } else {
+      console.log('\n--- Apontar (apontamentoOrdemProducao/save) ---')
+      console.log(JSON.stringify(mascarar(plano.apontar), null, 1))
+    }
   }
   console.log('\nFIM: só leitura, nada foi gravado e a trava não foi pega.')
 } catch (e) {
