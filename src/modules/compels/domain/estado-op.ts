@@ -50,7 +50,12 @@ export interface EstadoOpErp {
   apontada: number
   /** Há estorno ou cancelamento na OP: ainda não sabemos como o ERP o representa nas listas. */
   temEstorno: boolean
-  /** Empenho ou requisição 'Pendente': falta saldo de componente no ERP (precisa de "Pagar Pendência"). */
+  /**
+   * REQUISIÇÃO 'Pendente': falta saldo de componente no ERP (precisa de "Pagar Pendência"). Empenho pendente NÃO conta:
+   * ele só diz que algum componente do empenho não tem estoque, e a falta de saldo para ESTA entrada já é conferida,
+   * componente a componente, na consulta da requisição (que nomeia o componente). Bloquear por um empenho pendente
+   * de outra quantidade impedia entradas que o ERP aceitaria.
+   */
   temPendencia: boolean
   /** Meia-noite (`AAAA-MM-DDT00:00:00`) do dia do primeiro apontamento da OP, ou null se ainda não há. */
   inicioApontamento: string | null
@@ -73,9 +78,7 @@ export function estadoDaOp(leituras: LeiturasOp): EstadoOpErp {
     leituras.requisicoes.some((r) => q6(r.quantidadeEstornar) !== 0) ||
     leituras.apontamentos.some((a) => q6(a.quantidadeCancelada) !== 0)
 
-  const temPendencia =
-    leituras.empenhos.some((e) => e.situacao === 'Pendente') ||
-    leituras.requisicoes.some((r) => r.situacao === 'Pendente')
+  const temPendencia = leituras.requisicoes.some((r) => r.situacao === 'Pendente')
 
   const inicios = leituras.apontamentos.flatMap((a) => (a.dataInicio ? [a.dataInicio.slice(0, 10)] : []))
   const inicioApontamento = inicios.length > 0 ? `${[...inicios].sort()[0]}T00:00:00` : null

@@ -32,7 +32,7 @@ export const MENSAGEM_ERRO: Record<CodigoErro, string> = {
   fora_do_esperado: 'OP com apontamento fora do esperado no Compels. Confira antes de reenviar.',
   requisicao_fora_do_esperado: 'OP com requisição fora do esperado no Compels (alguém requisitou à mão). Confira antes de reenviar.',
   sem_empenho: 'OP sem empenho suficiente no Compels.',
-  pendencia_no_erp: 'Há pendência de material no Compels (falta saldo de componente). Resolva lá e reenvie.',
+  pendencia_no_erp: 'Há requisição pendente no Compels (falta saldo de componente). Resolva lá e reenvie.',
 }
 
 function erro(codigo: CodigoErro): Decisao {
