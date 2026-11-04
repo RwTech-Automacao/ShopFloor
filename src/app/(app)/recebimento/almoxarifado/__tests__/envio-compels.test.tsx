@@ -43,6 +43,8 @@ describe('EnvioCompels', () => {
     expect(screen.getByText(/PMOF52_F · 6 peças/)).toBeInTheDocument()
     expect(screen.getByText('Esperando o Compels')).toBeInTheDocument()
     expect(screen.getByText(/sendo acessado pelo usuário qualidade@enterplak.com.br/)).toBeInTheDocument()
+    expect(screen.getByText(/Nada foi gravado no Compels\. A integração tenta de novo sozinha, por volta das \d{2}:\d{2}\./)).toBeInTheDocument()
+    expect(screen.queryByText(/motivo está ao lado/)).toBeNull()
     expect(screen.getByRole('link', { name: 'Ver a fila completa' })).toHaveAttribute('href', '/shopfloor/analisar/estoque-pendente')
   })
 
