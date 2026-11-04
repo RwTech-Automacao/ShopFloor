@@ -10,6 +10,9 @@ import type { DadosOp } from '@/modules/compels/infra/cliente'
 import type { EnvioEstoqueReservado } from '../../application/enviar-estoque'
 import { criarPortaCompels } from '../compels'
 
+/** Sem ponto de partida guardado: o comportamento de uma OP que a integração ainda não tocou. */
+const SEM_BASE = { ler: async () => null, guardar: async () => {} }
+
 const OP: DadosOp = {
   id: 13027, numero: 8649, status: 'Empenhada', tipoPropriedade: 0, quantidade: 1000,
   produtoId: 22078, negocianteId: 1679, codigoItem: 'PRT446', unidade: 'UN',
@@ -69,7 +72,7 @@ describe('criarPortaCompels', () => {
   it('entrega uma linha: soma o já enviado, grava e devolve ok', async () => {
     const { erp, chamadas } = erpFalso()
     const soma = vi.fn(async () => 0)
-    const porta = criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: soma })
+    const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma })
     expect(await porta(linha())).toEqual({ ok: true })
     expect(soma).toHaveBeenCalledWith('PRT446', '8649', 'id-1')
     expect(chamadas).toContain('requisitar')
@@ -79,7 +82,7 @@ describe('criarPortaCompels', () => {
   it('OP com sufixo (8649_F): libera por 8649, grava na OP 8649 e soma também o já enviado pela OP sem sufixo', async () => {
     const { erp, chamadas } = erpFalso()
     const soma = vi.fn(async () => 0)
-    const porta = criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: soma })
+    const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma })
     expect(await porta(linha({ op: '8649_F', pmo: 'PRT446_F' }))).toEqual({ ok: true })
     expect(soma).toHaveBeenCalledWith('PRT446_F', '8649_F', 'id-1')
     expect(soma).toHaveBeenCalledWith('PRT446', '8649', 'id-1')
@@ -92,7 +95,7 @@ describe('criarPortaCompels', () => {
       apontamentos: [{ quantidadeProduzida: 3, quantidadeCancelada: 0 }],
     })
     const soma = vi.fn(async (_pmo: string, op: string) => (op === '8649' ? 2 : 1))
-    const r = await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: soma })(linha({ op: '8649_F', pmo: 'PRT446_F' }))
+    const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma })(linha({ op: '8649_F', pmo: 'PRT446_F' }))
     expect(r).toEqual({ ok: true })
   })
 
@@ -101,7 +104,7 @@ describe('criarPortaCompels', () => {
       requisicoes: [{ quantidade: 1, quantidadeEstornar: 0, situacao: 'Requisitada' }],
       apontamentos: [{ quantidadeProduzida: 1, quantidadeCancelada: 0 }],
     })
-    const porta = criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 1 })
+    const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 1 })
     expect(await porta(linha({ id: 'id-2' }))).toEqual({ ok: true })
   })
 
@@ -111,7 +114,7 @@ describe('criarPortaCompels', () => {
       requisicoes: [{ quantidade: 4, quantidadeEstornar: 0, situacao: 'Requisitada' }],
       apontamentos: [{ quantidadeProduzida: 4, quantidadeCancelada: 0 }],
     })
-    const r = await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 2 })(linha({ quantidade: 5 }))
+    const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 2 })(linha({ quantidade: 5 }))
     expect(r).toMatchObject({ ok: false })
     expect(r.ok === false && r.erro).toContain('fora do esperado')
     expect(r.ok === false && r.aguardar).toBeUndefined()
@@ -124,24 +127,37 @@ describe('criarPortaCompels', () => {
       apontamentos: [{ quantidadeProduzida: 3, quantidadeCancelada: 0 }],
     })
     // Acumulado anterior 2 + esta entrada (1) = 3: o ERP está EXATAMENTE nele.
-    expect(await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 2 })(linha())).toEqual({ ok: true })
+    expect(await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 2 })(linha())).toEqual({ ok: true })
     expect(chamadas).not.toContain('apontar')
   })
 
-  it('ERP com MAIS apontado do que o acumulado novo (apontamento de fora): recusa, não marca como enviada', async () => {
+  it('OP com 22 apontadas de fora e nada enviado por nós: guarda 22 como ponto de partida (chave = OP do Compels) e grava', async () => {
     const { erp, chamadas } = erpFalso({
       requisicoes: [{ quantidade: 22, quantidadeEstornar: 0, situacao: 'Requisitada' }],
       apontamentos: [{ quantidadeProduzida: 22, quantidadeCancelada: 0 }],
     })
-    const r = await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 0 })(linha())
+    const guardadas: [string, number][] = []
+    const base = { ler: async () => null, guardar: async (op: string, valor: number) => { guardadas.push([op, valor]) } }
+    const r = await criarPortaCompels({ env: AMBIENTE, erp, base, somaEnviada: async () => 0 })(linha())
+    expect(r).toEqual({ ok: true })
+    expect(guardadas).toEqual([['8649', 22]])
+    expect(chamadas).toContain('apontar')
+  })
+
+  it('ponto de partida já guardado (22) e o ERP em 25: apontamento de fora depois dele, recusa sem gravar', async () => {
+    const { erp, chamadas } = erpFalso({
+      requisicoes: [{ quantidade: 25, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+      apontamentos: [{ quantidadeProduzida: 25, quantidadeCancelada: 0 }],
+    })
+    const base = { ler: async () => 22, guardar: async () => {} }
+    const r = await criarPortaCompels({ env: AMBIENTE, erp, base, somaEnviada: async () => 0 })(linha())
     expect(r.ok).toBe(false)
-    expect(r.ok === false && r.erro).toContain('22 apontadas')
     expect(chamadas).not.toContain('apontar')
   })
 
   it('estorno: ainda manual, visível, e NÃO gasta tentativa', async () => {
     const { erp, chamadas } = erpFalso()
-    const r = await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 0 })(linha({ operacao: 'estorno' }))
+    const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0 })(linha({ operacao: 'estorno' }))
     expect(r).toMatchObject({ ok: false, aguardar: true })
     expect(r.ok === false && r.erro).toContain('estorno no Compels ainda é manual')
     expect(chamadas).toEqual([])
@@ -150,7 +166,7 @@ describe('criarPortaCompels', () => {
   it('OP fora da lista liberada: espera, sem chamar o ERP nem o banco', async () => {
     const { erp, chamadas } = erpFalso()
     const soma = vi.fn(async () => 0)
-    const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: '9999' }, erp, somaEnviada: soma })(linha())
+    const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: '9999' }, erp, base: SEM_BASE, somaEnviada: soma })(linha())
     expect(r).toMatchObject({ ok: false, aguardar: true })
     expect(r.ok === false && r.erro).toContain('OP 8649 ainda não está liberada')
     expect(chamadas).toEqual([])
@@ -160,14 +176,14 @@ describe('criarPortaCompels', () => {
   it('lista de OPs liberadas vazia ou ausente = nenhuma OP é enviada', async () => {
     const { erp, chamadas } = erpFalso()
     for (const lista of [undefined, '']) {
-      const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: lista }, erp, somaEnviada: async () => 0 })(linha())
+      const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: lista }, erp, base: SEM_BASE, somaEnviada: async () => 0 })(linha())
       expect(r).toMatchObject({ ok: false, aguardar: true })
     }
     expect(chamadas).toEqual([])
   })
 
   it('sem as variáveis do ezpointweb: espera com mensagem clara (e não derruba a rodada)', async () => {
-    const r = await criarPortaCompels({ env: { COMPELS_OPS_LIBERADAS: '*' }, somaEnviada: async () => 0 })(linha())
+    const r = await criarPortaCompels({ env: { COMPELS_OPS_LIBERADAS: '*' }, base: SEM_BASE, somaEnviada: async () => 0 })(linha())
     expect(r).toMatchObject({ ok: false, aguardar: true })
     expect(r.ok === false && r.erro).toContain('não configurada neste ambiente')
     expect(r.ok === false && r.erro).toContain('COMPELS_EZPOINT_USUARIO')
@@ -176,7 +192,7 @@ describe('criarPortaCompels', () => {
   it('erro do banco ao somar: espera, nada foi gravado no ERP', async () => {
     const { erp, chamadas } = erpFalso()
     const r = await criarPortaCompels({
-      env: AMBIENTE, erp, somaEnviada: async () => { throw new Error('sf_estoque_enviado: connection refused') },
+      env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => { throw new Error('sf_estoque_enviado: connection refused') },
     })(linha())
     expect(r).toMatchObject({ ok: false, aguardar: true })
     expect(chamadas).toEqual([])
@@ -185,7 +201,7 @@ describe('criarPortaCompels', () => {
   it('OP em uso: espera, e as OUTRAS linhas da mesma OP na rodada recebem a mesma resposta sem chamar o ERP', async () => {
     const trava = vi.fn(async () => ({ ok: false as const, codigo: 'op_em_uso' as const, mensagem: 'Este registro está sendo acessado pelo usuário fulano !', tentarDeNovo: true }))
     const { erp, chamadas } = erpFalso({}, { adquirirTrava: trava })
-    const porta = criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 0 })
+    const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0 })
 
     const a = await porta(linha({ id: 'a' }))
     const antes = chamadas.length
@@ -201,7 +217,7 @@ describe('criarPortaCompels', () => {
 
   it('o cache de espera é por OP: outra OP segue o seu caminho', async () => {
     const { erp } = erpFalso({}, { adquirirTrava: async () => ({ ok: false, codigo: 'op_em_uso', mensagem: 'em uso', tentarDeNovo: true }) })
-    const porta = criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: '8649,8650' }, erp, somaEnviada: async () => 0 })
+    const porta = criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: '8649,8650' }, erp, base: SEM_BASE, somaEnviada: async () => 0 })
     await porta(linha())
     const outra = await porta(linha({ op: '8650', id: 'x' }))
     // a 8650 também chamou o ERP (o `buscarOp` do falso devolve a mesma OP) e recebeu a sua própria resposta
@@ -214,7 +230,7 @@ describe('criarPortaCompels', () => {
       apontar: async (c) => { corpo = c; return OK },
       // a releitura do falso não vê esta gravação: o resultado aqui não importa, só a marca
     })
-    await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 0 })(linha({ chave: 'x'.repeat(300) }))
+    await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0 })(linha({ chave: 'x'.repeat(300) }))
     expect(String(corpo.observacao).startsWith('ShopFloor xxx')).toBe(true)
     expect(String(corpo.observacao).length).toBeLessThanOrEqual(100)
   })

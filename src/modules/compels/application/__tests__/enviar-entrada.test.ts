@@ -96,10 +96,112 @@ describe('enviarEntrada', () => {
       requisicoes: [{ quantidade: 55, quantidadeEstornar: 0, situacao: 'Requisitada' }],
       apontamentos: [{ quantidadeProduzida: 55, quantidadeCancelada: 0 }],
     })
-    expect(await enviarEntrada(erp, ENTRADA, opcoes)).toEqual({ ok: true, detalhe: 'O Compels já tinha esta entrada.' })
+    // `base: 0` = o ponto de partida já foi guardado na tentativa que gravou (retomada).
+    expect(await enviarEntrada(erp, { ...ENTRADA, base: 0 }, opcoes)).toEqual({ ok: true, detalhe: 'O Compels já tinha esta entrada.' })
     expect(chamadas).not.toContain('requisitar')
     expect(chamadas).not.toContain('apontar')
     expect(chamadas.at(-1)).toBe('liberarTrava')
+  })
+
+  describe('ponto de partida (apontado que a OP já tinha no Compels antes da integração)', () => {
+    const COM_22 = {
+      requisicoes: [{ quantidade: 22, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+      apontamentos: [{ quantidadeProduzida: 22, quantidadeCancelada: 0 }],
+      empenhos: [{ quantidade: 28, quantidadeEstornar: 0, situacao: 'Empenhada' }],
+    }
+
+    it('primeira entrada numa OP com 22 apontadas: guarda 22 ANTES de gravar e aponta só as 6', async () => {
+      const { erp, chamadas, gravados } = fingir(COM_22)
+      const guardadas: number[] = []
+      const guardarBase = async (b: number) => { chamadas.push('guardarBase'); guardadas.push(b) }
+      const r = await enviarEntrada(erp, { ...ENTRADA, quantidade: 6, guardarBase }, opcoes)
+      expect(r).toEqual({ ok: true, detalhe: 'Requisitado e apontado.' })
+      expect(guardadas).toEqual([22])
+      expect(chamadas.indexOf('guardarBase')).toBeLessThan(chamadas.indexOf('requisitar'))
+      expect(gravados.requisitar?.quantidade).toBe(6)
+      expect((gravados.apontar as Record<string, unknown>).quantidadeProduzida).toBe(6)
+    })
+
+    it('com o ponto já guardado (22), a segunda entrada soma por cima e não guarda de novo', async () => {
+      const { erp } = fingir({
+        requisicoes: [{ quantidade: 28, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+        apontamentos: [{ quantidadeProduzida: 28, quantidadeCancelada: 0 }],
+        empenhos: [{ quantidade: 30, quantidadeEstornar: 0, situacao: 'Empenhada' }],
+      })
+      let chamadasGuardar = 0
+      const r = await enviarEntrada(
+        erp,
+        { ...ENTRADA, quantidade: 2, acumuladoAnterior: 6, base: 22, guardarBase: async () => { chamadasGuardar += 1 } },
+        opcoes,
+      )
+      expect(r.ok).toBe(true)
+      expect(chamadasGuardar).toBe(0)
+    })
+
+    it('retomada com o ponto guardado: o ERP já está em 28 = 22 + 6, então a entrada já tinha sido gravada', async () => {
+      const { erp, chamadas } = fingir({
+        requisicoes: [{ quantidade: 28, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+        apontamentos: [{ quantidadeProduzida: 28, quantidadeCancelada: 0 }],
+        empenhos: [{ quantidade: 28, quantidadeEstornar: 0, situacao: 'Empenhada' }],
+      })
+      const r = await enviarEntrada(erp, { ...ENTRADA, quantidade: 6, base: 22 }, opcoes)
+      expect(r).toEqual({ ok: true, detalhe: 'O Compels já tinha esta entrada.' })
+      expect(chamadas).not.toContain('apontar')
+    })
+
+    it('alguém apontou à mão depois do ponto guardado: ERP em 25 com ponto 22 e nada enviado → para', async () => {
+      const { erp, chamadas } = fingir({
+        ...COM_22,
+        requisicoes: [{ quantidade: 25, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+        apontamentos: [{ quantidadeProduzida: 25, quantidadeCancelada: 0 }],
+      })
+      const r = await enviarEntrada(erp, { ...ENTRADA, quantidade: 6, base: 22 }, opcoes)
+      expect(r).toMatchObject({ ok: false, tentarDeNovo: false })
+      expect(chamadas).not.toContain('apontar')
+    })
+
+    it('sem empenho para 22 + 6: espera e diz o que falta, sem guardar o ponto nem gravar', async () => {
+      const { erp, chamadas } = fingir({ ...COM_22, empenhos: [{ quantidade: 22, quantidadeEstornar: 0, situacao: 'Empenhada' }] })
+      let guardou = false
+      const r = await enviarEntrada(
+        erp,
+        { ...ENTRADA, quantidade: 6, guardarBase: async () => { guardou = true } },
+        opcoes,
+      )
+      expect(r).toMatchObject({ ok: false, aguardar: true })
+      expect(r.ok === false && r.erro).toBe('OP sem empenho suficiente no Compels: empenhado 22, precisa de 28 (faltam 6).')
+      expect(guardou).toBe(false)
+      expect(chamadas).not.toContain('apontar')
+    })
+
+    it('OP que já tem envios nossos e nenhum ponto guardado (anterior à mudança): ponto 0, como sempre foi', async () => {
+      const { erp } = fingir({
+        requisicoes: [{ quantidade: 4, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+        apontamentos: [{ quantidadeProduzida: 4, quantidadeCancelada: 0 }],
+      })
+      let guardou = false
+      const r = await enviarEntrada(
+        erp,
+        { ...ENTRADA, quantidade: 1, acumuladoAnterior: 4, guardarBase: async () => { guardou = true } },
+        opcoes,
+      )
+      expect(r.ok).toBe(true)
+      expect(guardou).toBe(false)
+    })
+
+    it('falha ao guardar o ponto de partida: não grava nada no Compels e espera', async () => {
+      const { erp, chamadas } = fingir(COM_22)
+      const r = await enviarEntrada(
+        erp,
+        { ...ENTRADA, quantidade: 6, guardarBase: async () => { throw new Error('banco fora') } },
+        opcoes,
+      )
+      expect(r).toMatchObject({ ok: false, aguardar: true })
+      expect(r.ok === false && r.erro).toContain('nada foi gravado no Compels')
+      expect(chamadas).not.toContain('requisitar')
+      expect(chamadas).not.toContain('apontar')
+      expect(chamadas.at(-1)).toBe('liberarTrava')
+    })
   })
 
   it('retomada: a requisição desta entrada já existe, então só aponta (sem requisitar de novo)', async () => {

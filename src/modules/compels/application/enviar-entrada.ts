@@ -41,6 +41,14 @@ export interface EntradaParaEnviar {
   quantidade: number
   /** Soma das entradas desta OP que o ShopFloor já enviou com sucesso. */
   acumuladoAnterior: number
+  /**
+   * PONTO DE PARTIDA da OP no Compels: o apontado que já existia lá antes de a integração começar (apontamento
+   * à mão, por exemplo), guardado na primeira gravação. `null`/ausente = ainda não guardado: vale o que o ERP mostra
+   * agora quando nada foi enviado antes (`acumuladoAnterior === 0`), ou 0 quando já há envios (OP anterior a isto).
+   */
+  base?: number | null
+  /** Guarda o ponto de partida lido agora. Chamado UMA vez, DEPOIS da trava e ANTES da primeira gravação. */
+  guardarBase?: (base: number) => Promise<void>
   /** Texto gravado na Observação do apontamento (marca de rastreio). */
   marca?: string
 }
@@ -61,7 +69,16 @@ export interface OpcoesEnvio {
 export type Plano =
   | { tipo: 'erro'; erro: string; tentarDeNovo: boolean }
   | { tipo: 'ja_enviada' }
-  | { tipo: 'enviar'; op: DadosOp; novoAcumulado: number; requisitar: Record<string, unknown> | null; apontar: Record<string, unknown> }
+  | {
+      tipo: 'enviar'
+      op: DadosOp
+      /** O apontado que o ERP deve mostrar depois desta entrada (ponto de partida + enviado + esta entrada). */
+      novoAcumulado: number
+      /** O ponto de partida a guardar antes de gravar; `null` quando ele já está guardado ou não se aplica. */
+      baseACapturar: number | null
+      requisitar: Record<string, unknown> | null
+      apontar: Record<string, unknown>
+    }
 
 const recusa = (erro: string, tentarDeNovo = false) => ({ tipo: 'erro', erro, tentarDeNovo }) as const
 
@@ -96,10 +113,17 @@ async function conferir(erp: PortaErp, e: EntradaParaEnviar): Promise<{ op: Dado
 /** Com a OP já conferida: lê o estado, decide, consulta os componentes e monta os corpos. Não grava. */
 async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes: OpcoesEnvio): Promise<Plano> {
   const agora = (opcoes.agora ?? (() => new Date()))()
-  const novo = e.acumuladoAnterior + e.quantidade
   const estado = estadoDaOp(await erp.lerOp(op))
 
-  const decisao = decidirEntrada(estado, { anterior: e.acumuladoAnterior, novo })
+  // O apontado do ERP inclui o que já existia lá antes da integração (ponto de partida). Se a OP nunca recebeu
+  // envio nosso e o ponto ainda não foi guardado, ele é o que o ERP mostra AGORA (nada nosso pode estar nele).
+  const baseGuardada = e.base ?? null
+  const baseNova = baseGuardada === null && e.acumuladoAnterior === 0
+  const base = baseGuardada ?? (baseNova ? estado.apontada : 0)
+  const anterior = e.acumuladoAnterior + base
+  const novo = anterior + e.quantidade
+
+  const decisao = decidirEntrada(estado, { anterior, novo })
   if (decisao.tipo === 'erro') {
     return recusa(decisao.mensagem, decisao.codigo === 'sem_empenho' || decisao.codigo === 'pendencia_no_erp')
   }
@@ -138,7 +162,7 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
     destino: opcoes.destino,
     ...(e.marca ? { observacao: e.marca } : {}),
   })
-  return { tipo: 'enviar', op, novoAcumulado: novo, requisitar, apontar }
+  return { tipo: 'enviar', op, novoAcumulado: novo, baseACapturar: baseNova ? base : null, requisitar, apontar }
 }
 
 function erroDeExcecao(e: unknown): { ok: false; erro: string; tentarDeNovo: boolean } {
@@ -184,6 +208,17 @@ export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes:
     const plano = await planejar(erp, op, e, opcoes)
     if (plano.tipo === 'erro') return falha(plano.erro, plano.tentarDeNovo, false)
     if (plano.tipo === 'ja_enviada') return { ok: true, detalhe: 'O Compels já tinha esta entrada.' }
+
+    // O ponto de partida é guardado ANTES de qualquer gravação: se o processo cair no meio, a nova tentativa
+    // lê o mesmo número e reconhece o que já foi gravado (em vez de tomar o apontado novo como ponto de partida).
+    if (plano.baseACapturar !== null && e.guardarBase) {
+      try {
+        await e.guardarBase(plano.baseACapturar)
+      } catch (erro) {
+        const motivo = erro instanceof Error ? erro.message : String(erro)
+        return falha(`Não consegui guardar o ponto de partida da OP (nada foi gravado no Compels): ${motivo}`, true, false)
+      }
+    }
 
     // A partir daqui o ERP pode ter recebido algo: falha deixa de ser "só esperar".
     gravou = true

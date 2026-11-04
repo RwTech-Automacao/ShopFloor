@@ -5,7 +5,7 @@ import { semSufixo } from '@/modules/compels/domain/sem-sufixo'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
 import { ConfiguracaoIncompleta, configDoAmbiente, destinoDoAmbiente } from '@/modules/compels/infra/config'
 import type { EnvioEstoqueReservado, PortaCompels, ResultadoEnvioEstoque } from '../application/enviar-estoque'
-import { criarSomaEnviada } from './estoque-envios-repository'
+import { criarBaseDaOp, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
 
 /**
  * O ÚLTIMO METRO DA FILA DE ESTOQUE: entrega UMA linha da fila ao Compels (Requisitar + Apontar).
@@ -37,6 +37,8 @@ export interface DependenciasPortaCompels {
   erp?: PortaErp
   /** Para teste: a soma já enviada por OP. Em produção é a função do banco (0153). */
   somaEnviada?: (pmo: string, op: string, excetoId: string) => Promise<number>
+  /** Para teste: o ponto de partida por OP do Compels. Em produção é a tabela da 0168. */
+  base?: BaseDaOp
 }
 
 /** Marca gravada na Observação do apontamento: curta, e a chave diz que bipe foi. */
@@ -52,6 +54,7 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
   const env = deps.env ?? process.env
   let erp: PortaErp | undefined = deps.erp
   const somaEnviada = deps.somaEnviada ?? criarSomaEnviada()
+  const baseDaOp = deps.base ?? criarBaseDaOp()
   const esperando = new Map<string, ResultadoEnvioEstoque>()
 
   return async function enviarMovimentacaoCompels(envio: EnvioEstoqueReservado): Promise<ResultadoEnvioEstoque> {
@@ -80,9 +83,21 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
       if (opBase !== envio.op.trim() || pmoBase !== envio.pmo.trim()) {
         acumuladoAnterior += await somaEnviada(pmoBase, opBase, envio.id)
       }
+      // PONTO DE PARTIDA: o apontado que a OP já tinha no Compels antes da integração (guardado na primeira
+      // gravação, tabela da 0168). Chave = o número da OP no Compels, que é o mesmo para 8682 e 8682_F.
+      const opCompels = opBase
+      const base = await baseDaOp.ler(opCompels)
       const r = await enviarEntrada(
         erp,
-        { pmo: envio.pmo, op: envio.op, quantidade: envio.quantidade, acumuladoAnterior, marca: marcaDaLinha(envio) },
+        {
+          pmo: envio.pmo,
+          op: envio.op,
+          quantidade: envio.quantidade,
+          acumuladoAnterior,
+          marca: marcaDaLinha(envio),
+          base,
+          guardarBase: (valor) => baseDaOp.guardar(opCompels, valor),
+        },
         { destino },
       )
       if (r.ok) return { ok: true }

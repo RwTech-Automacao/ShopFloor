@@ -182,3 +182,32 @@ export function criarSomaEnviada(
   }
 }
 
+/**
+ * O PONTO DE PARTIDA de cada OP do Compels (migração 0168): o apontado que ela já tinha lá quando a
+ * integração gravou pela primeira vez. `op` é o número do Compels (só dígitos).
+ */
+export interface BaseDaOp {
+  /** `null` = ainda não guardado. */
+  ler(op: string): Promise<number | null>
+  /** Guarda uma vez; se já existe, não troca (o primeiro número guardado é o que vale). */
+  guardar(op: string, base: number): Promise<void>
+}
+
+export function criarBaseDaOp(sb: SupabaseClient = createServiceSupabase()): BaseDaOp {
+  return {
+    async ler(op) {
+      const { data, error } = await sb.from('sf_compels_op_base').select('base').eq('op', op).maybeSingle()
+      if (error) throw new Error(`sf_compels_op_base: ${error.message}`)
+      if (!data) return null
+      const n = Number((data as { base: unknown }).base)
+      if (!Number.isFinite(n) || n < 0) throw new Error(`sf_compels_op_base devolveu um valor inválido para a OP ${op}`)
+      return n
+    },
+    async guardar(op, base) {
+      const { error } = await sb
+        .from('sf_compels_op_base')
+        .upsert({ op, base }, { onConflict: 'op', ignoreDuplicates: true })
+      if (error) throw new Error(`sf_compels_op_base: ${error.message}`)
+    },
+  }
+}

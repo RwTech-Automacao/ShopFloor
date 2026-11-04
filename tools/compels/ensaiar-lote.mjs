@@ -1,4 +1,3 @@
-// GERADO por rolldown a partir de ensaiar-lote.ts. Nao edite: veja o cabecalho do .ts.
 //#region src/modules/compels/domain/leituras-erp.ts
 /**
 * Converte as respostas CRUAS do Compels em `LeiturasOp`. As respostas vêm em formatos diferentes
@@ -279,11 +278,20 @@ function decidirEntrada(estado, acumulado) {
 	if (estado.tipoPropriedade !== 0) return erro("propriedade_nao_suportada");
 	if (novo > estado.quantidadeOp) return erro("acima_da_op");
 	if (estado.temEstorno) return erro("estorno_na_op");
-	if (estado.apontada >= novo) return { tipo: "ja_enviada" };
+	if (estado.apontada === novo) return { tipo: "ja_enviada" };
+	if (estado.apontada > novo) return {
+		tipo: "erro",
+		codigo: "fora_do_esperado",
+		mensagem: `A OP já tem ${estado.apontada} apontadas no Compels, mais do que o esperado depois desta entrada (${novo}): há apontamento que não veio desta integração. Confira antes de enviar.`
+	};
 	if (estado.apontada < anterior) return erro("abaixo_do_enviado");
 	if (estado.apontada !== anterior) return erro("fora_do_esperado");
 	if (estado.temPendencia) return erro("pendencia_no_erp");
-	if (estado.empenhada < novo) return erro("sem_empenho");
+	if (estado.empenhada < novo) return {
+		tipo: "erro",
+		codigo: "sem_empenho",
+		mensagem: `${MENSAGEM_ERRO.sem_empenho.replace(/\.$/, "")}: empenhado ${estado.empenhada}, precisa de ${novo} (faltam ${q6(novo - estado.empenhada)}).`
+	};
 	if (estado.requisitada === anterior) return {
 		tipo: "enviar",
 		requisitar: quantidade,
@@ -295,6 +303,16 @@ function decidirEntrada(estado, acumulado) {
 		apontar: quantidade
 	};
 	return erro("requisicao_fora_do_esperado");
+}
+//#endregion
+//#region src/modules/compels/domain/sem-sufixo.ts
+/**
+* O Compels só conhece a OP e o produto sem o sufixo de "segunda leva" do ShopFloor: a OP `8682_F` é a
+* OP `8682` lá, e a PMO `PMOF52_F` é o produto `PMOF52`. O sufixo é `_` mais letras no FIM do texto
+* (`_` sozinho também vale: `8504_` é `8504`). Qualquer outro `_` no meio do texto fica como está.
+*/
+function semSufixo(texto) {
+	return texto.trim().replace(/_[A-Za-z]*$/, "");
 }
 //#endregion
 //#region src/modules/compels/domain/jwt.ts
@@ -384,7 +402,8 @@ const recusa = (erro, tentarDeNovo = false) => ({
 	tentarDeNovo
 });
 function numeroDaOp(texto) {
-	return /^\d+$/.test(texto.trim()) ? Number(texto.trim()) : null;
+	const base = semSufixo(texto);
+	return /^\d+$/.test(base) ? Number(base) : null;
 }
 function faltas(etapa, componentes) {
 	return `Falta saldo de componente no Compels para ${etapa}: ${componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, tem ${c.tem})`).join("; ")}.`;
@@ -395,17 +414,21 @@ async function conferir(erp, e) {
 	if (numero === null) return { erro: recusa(`OP "${e.op}" não é numérica; a integração só atende OP numérica. Faça a entrada à mão no Compels.`) };
 	const op = await erp.buscarOp(numero);
 	if (!op) return { erro: recusa(`OP ${numero} não encontrada no Compels.`) };
-	if (op.codigoItem.trim().toUpperCase() !== e.pmo.trim().toUpperCase()) return { erro: recusa(`O produto da OP ${numero} no Compels (${op.codigoItem}) é diferente da PMO ${e.pmo}.`) };
+	if (op.codigoItem.trim().toUpperCase() !== semSufixo(e.pmo).toUpperCase()) return { erro: recusa(`O produto da OP ${numero} no Compels (${op.codigoItem}) é diferente da PMO ${e.pmo}.`) };
 	if (op.unidade !== "UN") return { erro: recusa(`Produto em ${op.unidade || "unidade desconhecida"}: a integração só atende UN. Faça a entrada à mão no Compels.`) };
 	return { op };
 }
 /** Com a OP já conferida: lê o estado, decide, consulta os componentes e monta os corpos. Não grava. */
 async function planejar(erp, op, e, opcoes) {
 	const agora = (opcoes.agora ?? (() => /* @__PURE__ */ new Date()))();
-	const novo = e.acumuladoAnterior + e.quantidade;
 	const estado = estadoDaOp(await erp.lerOp(op));
+	const baseGuardada = e.base ?? null;
+	const baseNova = baseGuardada === null && e.acumuladoAnterior === 0;
+	const base = baseGuardada ?? (baseNova ? estado.apontada : 0);
+	const anterior = e.acumuladoAnterior + base;
+	const novo = anterior + e.quantidade;
 	const decisao = decidirEntrada(estado, {
-		anterior: e.acumuladoAnterior,
+		anterior,
 		novo
 	});
 	if (decisao.tipo === "erro") return recusa(decisao.mensagem, decisao.codigo === "sem_empenho" || decisao.codigo === "pendencia_no_erp");
@@ -453,6 +476,7 @@ async function planejar(erp, op, e, opcoes) {
 		tipo: "enviar",
 		op,
 		novoAcumulado: novo,
+		baseACapturar: baseNova ? base : null,
 		requisitar,
 		apontar
 	};
@@ -491,6 +515,35 @@ async function ensaiarEntrada(erp, e, opcoes) {
 			tentarDeNovo: r.tentarDeNovo
 		};
 	}
+}
+//#endregion
+//#region src/modules/compels/domain/saldo-item.ts
+function saldoDoItem(resposta, codigo) {
+	const alvo = codigo.trim().toUpperCase();
+	const linhas = listaDe(resposta, "saldo do item");
+	for (const linha of linhas) {
+		const item = linha.item;
+		if (typeof item !== "object" || item === null) throw new RespostaInesperada("saldo.item");
+		const cadastro = item;
+		if (typeof cadastro.codigo !== "string") throw new RespostaInesperada("saldo.item.codigo");
+		if (cadastro.codigo.trim().toUpperCase() !== alvo) continue;
+		const numero = (campo) => {
+			const v = linha[campo];
+			if (typeof v !== "number" || !Number.isFinite(v)) throw new RespostaInesperada(`saldo.${campo}`);
+			return v;
+		};
+		const unidade = cadastro.unidade?.codigo;
+		return {
+			codigo: cadastro.codigo,
+			descricao: typeof cadastro.descricao === "string" ? cadastro.descricao.trim() : "",
+			unidade: typeof unidade === "string" ? unidade : "",
+			proprio: numero("saldoItemEstoqueProprio"),
+			pendencia: numero("saldoItemPendencia"),
+			emTerceiros: numero("saldoItemEstoqueEmTerceiros"),
+			deTerceiros: numero("saldoItemEstoqueDeTerceiros")
+		};
+	}
+	return null;
 }
 //#endregion
 //#region src/modules/compels/domain/resposta-erp.ts
@@ -738,6 +791,25 @@ var ClienteCompels = class {
 	/** `apontamentoOrdemProducao/save`. GRAVA no Compels e dá entrada no estoque. */
 	apontar(corpo) {
 		return this.gravar("/apontamentoOrdemProducao/save", corpo);
+	}
+	/**
+	* Saldo de estoque de UM item (a PMO) pela tela Movimento de Item. Só leitura. `null` = o item não veio
+	* na resposta (código exato). Pede os itens de saldo zero também, senão "não existe" e "zero" se
+	* confundiriam.
+	*/
+	async consultarSaldoItem(codigo) {
+		const filtro = {
+			codigo: codigo.trim(),
+			descricao: "",
+			data: dataIso(this.agora()),
+			exibeItensComSaldoZerado: true
+		};
+		return saldoDoItem(await this.json("/itemMovimento/findFilter", this.formulario({
+			filter: JSON.stringify(filtro),
+			page: "1",
+			start: "0",
+			limit: "50"
+		})), codigo);
 	}
 };
 //#endregion
