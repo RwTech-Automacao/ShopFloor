@@ -38,6 +38,14 @@ describe('decidirEntrada', () => {
     expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'ja_enviada' })
   })
 
+  it('OP com apontamento de fora (22 apontadas à mão, esta entrada vai a 6): erro, NÃO "já enviada"', () => {
+    const estado = com({ quantidadeOp: 100, empenhada: 22, requisitada: 22, apontada: 22 })
+    const d = decidirEntrada(estado, { anterior: 0, novo: 6 })
+    expect(d).toMatchObject({ tipo: 'erro', codigo: 'fora_do_esperado' })
+    expect(d.tipo === 'erro' && d.mensagem).toContain('22 apontadas')
+    expect(d.tipo === 'erro' && d.mensagem).toContain('não veio desta integração')
+  })
+
   it('já enviada tem prioridade sobre falta de empenho', () => {
     const estado = com({ empenhada: 0, requisitada: 4, apontada: 4 })
     expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'ja_enviada' })
