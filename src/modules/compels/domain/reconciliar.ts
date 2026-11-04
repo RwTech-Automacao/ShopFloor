@@ -52,8 +52,20 @@ export function decidirEntrada(
   if (novo > estado.quantidadeOp) return erro('acima_da_op')
   if (estado.temEstorno) return erro('estorno_na_op')
 
-  // Já enviada: o ERP cobre esta entrada (inclui a retomada depois de uma falha no meio).
-  if (estado.apontada >= novo) return { tipo: 'ja_enviada' }
+  // Já enviada: o ERP está EXATAMENTE no acumulado novo (a retomada depois de uma falha no meio: a entrada
+  // foi gravada e só o registro dela falhou). Tem que ser IGUAL, não "pelo menos": a integração só sobe o
+  // apontado de `anterior` para `novo`, então MAIS do que `novo` é apontamento que não é dela (feito à mão, ou
+  // de outra leva da mesma OP). Tratar isso como "já enviada" marcava a linha como enviada sem gravar nada.
+  if (estado.apontada === novo) return { tipo: 'ja_enviada' }
+  if (estado.apontada > novo) {
+    return {
+      tipo: 'erro',
+      codigo: 'fora_do_esperado',
+      mensagem:
+        `A OP já tem ${estado.apontada} apontadas no Compels, mais do que o esperado depois desta entrada (${novo}): `
+        + 'há apontamento que não veio desta integração. Confira antes de enviar.',
+    }
+  }
 
   // O ERP tem menos do que já enviamos, ou um valor que não é "exatamente até a entrada anterior":
   // alguém mexeu à mão. Parar é mais seguro do que contar em dobro.

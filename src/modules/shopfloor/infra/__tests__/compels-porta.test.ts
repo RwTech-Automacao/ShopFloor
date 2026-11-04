@@ -120,10 +120,22 @@ describe('criarPortaCompels', () => {
 
   it('ERP que JÁ cobre a entrada (ex.: resposta perdida num envio anterior): ok, sem gravar de novo', async () => {
     const { erp, chamadas } = erpFalso({
-      requisicoes: [{ quantidade: 5, quantidadeEstornar: 0, situacao: 'Requisitada' }],
-      apontamentos: [{ quantidadeProduzida: 5, quantidadeCancelada: 0 }],
+      requisicoes: [{ quantidade: 3, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+      apontamentos: [{ quantidadeProduzida: 3, quantidadeCancelada: 0 }],
     })
+    // Acumulado anterior 2 + esta entrada (1) = 3: o ERP está EXATAMENTE nele.
     expect(await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 2 })(linha())).toEqual({ ok: true })
+    expect(chamadas).not.toContain('apontar')
+  })
+
+  it('ERP com MAIS apontado do que o acumulado novo (apontamento de fora): recusa, não marca como enviada', async () => {
+    const { erp, chamadas } = erpFalso({
+      requisicoes: [{ quantidade: 22, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+      apontamentos: [{ quantidadeProduzida: 22, quantidadeCancelada: 0 }],
+    })
+    const r = await criarPortaCompels({ env: AMBIENTE, erp, somaEnviada: async () => 0 })(linha())
+    expect(r.ok).toBe(false)
+    expect(r.ok === false && r.erro).toContain('22 apontadas')
     expect(chamadas).not.toContain('apontar')
   })
 
