@@ -3,6 +3,9 @@ import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { AlmoxarifadoTela } from './almoxarifado-tela'
+import { EnvioCompels } from './envio-compels'
+
+export const dynamic = 'force-dynamic'
 
 /**
  * Almoxarifado: entrada de produto acabado no estoque. Tela PRÓPRIA do módulo Recebimento, em cartões
@@ -50,6 +53,7 @@ export default async function AlmoxarifadoPage() {
           Há {postosAlmoxarifado.length} postos com o perfil Almoxarifado; esta tela usa &quot;{posto}&quot;.
         </p>
       )}
+      <EnvioCompels />
       <AlmoxarifadoTela colaborador={sessao.nome} posto={posto} />
     </div>
   )
