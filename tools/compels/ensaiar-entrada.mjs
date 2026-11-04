@@ -286,7 +286,7 @@ function decidirEntrada(estado, acumulado) {
 	};
 	if (estado.apontada < anterior) return erro("abaixo_do_enviado");
 	if (estado.apontada !== anterior) return erro("fora_do_esperado");
-	if (estado.temPendencia) return erro("pendencia_no_erp");
+	if (estado.temPendencia && estado.requisitada !== novo) return erro("pendencia_no_erp");
 	if (estado.empenhada < novo) return {
 		tipo: "erro",
 		codigo: "sem_empenho",
@@ -443,13 +443,21 @@ async function planejar(erp, op, e, opcoes) {
 			precisa: c.quantidadeRequisitar,
 			tem: c.saldo
 		}));
-		if (sem.length > 0) return recusa(faltas("requisitar", sem), true);
 		requisitar = corpoRequisicao({
 			opId: op.id,
 			tipoPropriedade: op.tipoPropriedade,
 			quantidade: decisao.requisitar,
 			componentes
 		});
+		if (sem.length > 0) return {
+			tipo: "enviar",
+			op,
+			novoAcumulado: novo,
+			baseACapturar: baseNova ? base : null,
+			requisitar,
+			apontar: null,
+			requisicaoPendente: faltas("requisitar", sem)
+		};
 	}
 	const componentes = await erp.consultarDisponibilidade(op, decisao.apontar);
 	const aRequisitar = new Map(requisitarComponentes.map((c) => [c.itemId, c.quantidadeRequisitar]));
@@ -478,7 +486,8 @@ async function planejar(erp, op, e, opcoes) {
 		novoAcumulado: novo,
 		baseACapturar: baseNova ? base : null,
 		requisitar,
-		apontar
+		apontar,
+		requisicaoPendente: null
 	};
 }
 function erroDeExcecao(e) {
@@ -904,8 +913,13 @@ try {
 		console.log(`ENSAIO: seria enviada. OP ${plano.op.numero} (id ${plano.op.id}), produto ${plano.op.codigoItem}, novo acumulado ${plano.novoAcumulado}.`);
 		console.log(plano.requisitar ? "\n--- Requisitar (requisicaoOrdemProducao/save) ---" : "\n--- Requisitar: não precisa (a requisição desta entrada já existe) ---");
 		if (plano.requisitar) console.log(JSON.stringify(mascarar(plano.requisitar), null, 1));
-		console.log("\n--- Apontar (apontamentoOrdemProducao/save) ---");
-		console.log(JSON.stringify(mascarar(plano.apontar), null, 1));
+		if (plano.apontar === null) {
+			console.log(`\n--- Apontar: NÃO agora. A requisição ficaria PENDENTE: ${plano.requisicaoPendente}`);
+			console.log("O apontamento esperaria o saldo do componente chegar e a pendência ser paga no Compels.");
+		} else {
+			console.log("\n--- Apontar (apontamentoOrdemProducao/save) ---");
+			console.log(JSON.stringify(mascarar(plano.apontar), null, 1));
+		}
 	}
 	console.log("\nFIM: só leitura, nada foi gravado e a trava não foi pega.");
 } catch (e) {

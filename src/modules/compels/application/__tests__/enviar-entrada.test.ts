@@ -251,11 +251,56 @@ describe('enviarEntrada', () => {
     expect(await enviarEntrada(depois.erp, ENTRADA, opcoes)).toMatchObject({ ok: false, tentarDeNovo: true, aguardar: false })
   })
 
-  it('falta de saldo na requisição: não grava', async () => {
-    const { erp, chamadas } = fingir({}, { consultarRequisicao: async (_o, q) => [linhaReq(q, 10)] })
-    const r = await enviarEntrada(erp, ENTRADA, opcoes)
-    expect(r.ok === false && r.erro).toContain('para requisitar: RWCI57 (precisa 55, tem 10)')
-    expect(chamadas).not.toContain('apontar')
+  describe('componente sem saldo na requisição (o Compels aceita e a requisição fica Pendente)', () => {
+    const SEM_SALDO = { consultarRequisicao: async (_o: unknown, q: number) => [linhaReq(q, 0)] }
+
+    it('requisita (como a tela do Compels) mas NÃO aponta; espera sem gastar tentativa e avisa o componente', async () => {
+      const { erp, chamadas, gravados } = fingir({}, SEM_SALDO)
+      const r = await enviarEntrada(erp, ENTRADA, opcoes)
+      expect(chamadas).toContain('requisitar')
+      expect(chamadas).not.toContain('apontar')
+      expect(gravados.requisitar?.quantidade).toBe(55)
+      expect(r).toMatchObject({ ok: false, tentarDeNovo: true, aguardar: true })
+      expect(r.ok === false && r.erro).toContain('ficou PENDENTE')
+      expect(r.ok === false && r.erro).toContain('RWCI57 (precisa 55, tem 0)')
+      expect(chamadas.at(-1)).toBe('liberarTrava')
+    })
+
+    it('guarda o ponto de partida antes de requisitar', async () => {
+      const { erp, chamadas } = fingir({}, SEM_SALDO)
+      await enviarEntrada(erp, { ...ENTRADA, guardarBase: async () => { chamadas.push('guardarBase') } }, opcoes)
+      expect(chamadas.indexOf('guardarBase')).toBeLessThan(chamadas.indexOf('requisitar'))
+    })
+
+    it('falha no Requisitar dessa tentativa: não aponta e não se faz de espera', async () => {
+      const { erp, chamadas } = fingir({}, {
+        ...SEM_SALDO,
+        requisitar: async () => ({ ok: false, codigo: 'desconhecido', mensagem: 'O Compels recusou', tentarDeNovo: false }),
+      })
+      const r = await enviarEntrada(erp, ENTRADA, opcoes)
+      expect(r).toMatchObject({ ok: false, tentarDeNovo: false, aguardar: false })
+      expect(chamadas).not.toContain('apontar')
+    })
+
+    it('rodada seguinte, requisição pendente já criada e componente ainda sem saldo: não requisita de novo e espera pelo apontar', async () => {
+      const { erp, chamadas } = fingir(
+        { requisicoes: [{ quantidade: 55, quantidadeEstornar: 0, situacao: 'Pendente' }] },
+        { consultarDisponibilidade: async (_o, q) => [linhaDisp(q, 0)] },
+      )
+      const r = await enviarEntrada(erp, { ...ENTRADA, base: 0 }, opcoes)
+      expect(chamadas).not.toContain('requisitar')
+      expect(chamadas).not.toContain('apontar')
+      expect(r).toMatchObject({ ok: false, aguardar: true })
+      expect(r.ok === false && r.erro).toContain('para apontar: RWCI57 (precisa 55, tem 0)')
+    })
+
+    it('saldo chegou e a pendência foi paga: só aponta, sem requisitar de novo', async () => {
+      const { erp, chamadas } = fingir({ requisicoes: [{ quantidade: 55, quantidadeEstornar: 0, situacao: 'Requisitada' }] })
+      const r = await enviarEntrada(erp, { ...ENTRADA, base: 0 }, opcoes)
+      expect(r).toEqual({ ok: true, detalhe: 'Apontado.' })
+      expect(chamadas).not.toContain('requisitar')
+      expect(chamadas).toContain('apontar')
+    })
   })
 
   it('falha no Requisitar: não aponta e libera a trava', async () => {
@@ -350,7 +395,7 @@ describe('ensaiarEntrada (não grava e não pega a trava)', () => {
     expect(plano.tipo).toBe('enviar')
     if (plano.tipo !== 'enviar') return
     expect(plano.requisitar?.quantidade).toBe(55)
-    expect(plano.apontar.quantidadeProduzida).toBe(55)
+    expect(plano.apontar?.quantidadeProduzida).toBe(55)
     expect(chamadas).not.toContain('adquirirTrava')
     expect(chamadas).not.toContain('requisitar')
     expect(chamadas).not.toContain('apontar')

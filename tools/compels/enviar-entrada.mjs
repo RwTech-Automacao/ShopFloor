@@ -286,7 +286,7 @@ function decidirEntrada(estado, acumulado) {
 	};
 	if (estado.apontada < anterior) return erro("abaixo_do_enviado");
 	if (estado.apontada !== anterior) return erro("fora_do_esperado");
-	if (estado.temPendencia) return erro("pendencia_no_erp");
+	if (estado.temPendencia && estado.requisitada !== novo) return erro("pendencia_no_erp");
 	if (estado.empenhada < novo) return {
 		tipo: "erro",
 		codigo: "sem_empenho",
@@ -443,13 +443,21 @@ async function planejar(erp, op, e, opcoes) {
 			precisa: c.quantidadeRequisitar,
 			tem: c.saldo
 		}));
-		if (sem.length > 0) return recusa(faltas("requisitar", sem), true);
 		requisitar = corpoRequisicao({
 			opId: op.id,
 			tipoPropriedade: op.tipoPropriedade,
 			quantidade: decisao.requisitar,
 			componentes
 		});
+		if (sem.length > 0) return {
+			tipo: "enviar",
+			op,
+			novoAcumulado: novo,
+			baseACapturar: baseNova ? base : null,
+			requisitar,
+			apontar: null,
+			requisicaoPendente: faltas("requisitar", sem)
+		};
 	}
 	const componentes = await erp.consultarDisponibilidade(op, decisao.apontar);
 	const aRequisitar = new Map(requisitarComponentes.map((c) => [c.itemId, c.quantidadeRequisitar]));
@@ -478,7 +486,8 @@ async function planejar(erp, op, e, opcoes) {
 		novoAcumulado: novo,
 		baseACapturar: baseNova ? base : null,
 		requisitar,
-		apontar
+		apontar,
+		requisicaoPendente: null
 	};
 }
 function erroDeExcecao(e) {
@@ -534,6 +543,12 @@ async function enviarEntrada(erp, e, opcoes) {
 			const r = await erp.requisitar(plano.requisitar);
 			if (!r.ok) return falha(r.mensagem, r.tentarDeNovo, gravou);
 		}
+		if (plano.apontar === null) return {
+			ok: false,
+			erro: `A requisição foi criada no Compels, mas ficou PENDENTE: ${plano.requisicaoPendente} Dê entrada do componente e pague a pendência no Compels; o apontamento sai sozinho depois.`,
+			tentarDeNovo: true,
+			aguardar: true
+		};
 		const a = await erp.apontar(plano.apontar);
 		if (!a.ok) {
 			const aviso = plano.requisitar ? " A requisição já foi feita; a próxima tentativa só aponta." : "";

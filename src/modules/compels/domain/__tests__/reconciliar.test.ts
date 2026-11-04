@@ -82,6 +82,16 @@ describe('decidirEntrada', () => {
     })
   })
 
+  it('a requisição PENDENTE desta própria entrada (requisitada = novo) não trava: só falta apontar', () => {
+    const estado = com({ temPendencia: true, requisitada: 4, apontada: 0 })
+    expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', requisitar: 0, apontar: 4 })
+  })
+
+  it('pendência de outra requisição (requisitada diferente do novo) continua travando', () => {
+    const estado = com({ temPendencia: true, requisitada: 7, apontada: 3 })
+    expect(decidirEntrada(estado, { anterior: 3, novo: 4 })).toMatchObject({ tipo: 'erro', codigo: 'pendencia_no_erp' })
+  })
+
   it('entrega acima da OP', () => {
     expect(decidirEntrada(base, { anterior: 8, novo: 11 })).toMatchObject({ tipo: 'erro', codigo: 'acima_da_op' })
   })
