@@ -4,6 +4,7 @@ import {
   ROTA_ESTOQUE_PENDENTE,
   agruparEstoquePendente,
   type GrupoEstoquePendente,
+  type LinhaEstoquePendente,
   type SituacaoEstoque,
 } from '@/modules/shopfloor/domain/estoque-pendente'
 import { listarEstoquePendente } from '@/modules/shopfloor/infra/estoque-pendente-repository'
@@ -22,6 +23,22 @@ const CLASSE_SITUACAO: Record<SituacaoEstoque, string> = {
 }
 
 const plural = (n: number) => (n === 1 ? '' : 's')
+
+const formatadorHora = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+
+/**
+ * A frase de baixo de cada lançamento. A da tela de Estoque pendente fala de "motivo ao lado" e do cron, porque lá
+ * o motivo é outra coluna e quem lê é gestor; aqui o motivo está logo acima e quem lê é o Almoxarifado.
+ */
+function fraseDeEstado(l: LinhaEstoquePendente): string {
+  if (l.situacao === 'na_fila' && !l.erro) return 'Aguardando a próxima rodada de envio ao Compels.'
+  if (l.situacao === 'esperando_erp') {
+    const quando = l.adiadoAte ? new Date(l.adiadoAte) : null
+    const hora = quando && !Number.isNaN(quando.getTime()) ? formatadorHora.format(quando) : null
+    return `Nada foi gravado no Compels. A integração tenta de novo sozinha${hora ? `, por volta das ${hora}` : ' em poucos minutos'}.`
+  }
+  return l.oQueFazer
+}
 
 /** A linha que representa o bipe na tela: a entrada (as saídas dela só existem depois de um estorno). */
 function linhaDoGrupo(g: GrupoEstoquePendente) {
@@ -74,11 +91,7 @@ export async function EnvioCompels() {
                 <Badge variant="outline" className={CLASSE_SITUACAO[l.situacao]}>{l.rotulo}</Badge>
               </div>
               {l.erro && <p className="mt-1">Motivo: {l.erro}</p>}
-              <p className="mt-1 text-muted-foreground">
-                {l.situacao === 'na_fila' && !l.erro
-                  ? 'Aguardando a próxima rodada de envio ao Compels.'
-                  : l.oQueFazer}
-              </p>
+              <p className="mt-1 text-muted-foreground">{fraseDeEstado(l)}</p>
             </li>
           )
         })}
