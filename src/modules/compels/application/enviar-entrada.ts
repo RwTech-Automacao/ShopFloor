@@ -1,11 +1,9 @@
 import {
   componentesSemSaldo,
   corpoApontamento,
-  corpoRequisicao,
   dataHoraLocal,
   inicioDoDia,
   type ComponenteApontamento,
-  type ComponenteRequisicao,
   type DestinoEstoque,
 } from '../domain/corpos'
 import { estadoDaOp, type LeiturasOp } from '../domain/estado-op'
@@ -17,7 +15,7 @@ import type { DadosOp } from '../infra/cliente'
 import { ErroDeLogin } from '../infra/token'
 
 /**
- * Entrega UMA entrada do Almoxarifado ao Compels: Requisitar + Apontar (spec 16/10/2026, §3.2).
+ * Entrega UMA entrada do Almoxarifado ao Compels: só APONTA (desde 05/11/2026 a requisição é feita no Compels, não aqui).
  * Só conhece a PORTA `PortaErp`, nunca `fetch`: nos testes entra um Compels de mentira, e no ensaio
  * do servidor entra o cliente real em modo "mostrar, não gravar".
  */
@@ -26,9 +24,7 @@ export interface PortaErp {
   lerOp(op: DadosOp): Promise<LeiturasOp>
   adquirirTrava(idOp: number): Promise<ResultadoGravacao>
   liberarTrava(idOp: number): Promise<void>
-  consultarRequisicao(op: DadosOp, quantidade: number): Promise<ComponenteRequisicao[]>
   consultarDisponibilidade(op: DadosOp, quantidade: number): Promise<ComponenteApontamento[]>
-  requisitar(corpo: Record<string, unknown>): Promise<ResultadoGravacao>
   apontar(corpo: Record<string, unknown>): Promise<ResultadoGravacao>
 }
 
@@ -76,11 +72,9 @@ export type Plano =
       novoAcumulado: number
       /** O ponto de partida a guardar antes de gravar; `null` quando ele já está guardado ou não se aplica. */
       baseACapturar: number | null
-      requisitar: Record<string, unknown> | null
-      /** `null` quando só dá para requisitar agora: falta saldo de componente, então a requisição fica PENDENTE. */
-      apontar: Record<string, unknown> | null
-      /** Quando só a requisição vai agora: os componentes sem saldo, em texto. O apontamento espera o saldo chegar. */
-      requisicaoPendente: string | null
+      apontar: Record<string, unknown>
+      /** Empenho/requisição insuficientes no Compels: não bloqueiam, só avisam. */
+      avisos: string[]
     }
 
 const recusa = (erro: string, tentarDeNovo = false) => ({ tipo: 'erro', erro, tentarDeNovo }) as const
@@ -92,9 +86,14 @@ function numeroDaOp(texto: string): number | null {
   return /^\d+$/.test(base) ? Number(base) : null
 }
 
-function faltas(etapa: 'requisitar' | 'apontar', componentes: { codigo: string; precisa: number; tem: number }[]): string {
-  const lista = componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, tem ${c.tem})`).join('; ')
-  return `Falta saldo de componente no Compels para ${etapa}: ${lista}.`
+function aguardandoRequisicao(componentes: { codigo: string; precisa: number; tem: number }[]): string {
+  const lista = componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, requisitado disponível ${c.tem})`).join('; ')
+  return `Aguardando requisição no Compels: ${lista}.`
+}
+
+/** Avisos (empenho/requisição insuficientes) em uma frase para colar no fim de outra mensagem. */
+function textoAvisos(avisos: string[]): string {
+  return avisos.length > 0 ? ` Aviso: ${avisos.join('; ')}.` : ''
 }
 
 /** Conferências que não precisam da trava: a OP existe, é desta PMO, em UN e de estoque próprio. */
@@ -128,43 +127,15 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
 
   const decisao = decidirEntrada(estado, { anterior, novo })
   if (decisao.tipo === 'erro') {
-    return recusa(decisao.mensagem, decisao.codigo === 'sem_empenho' || decisao.codigo === 'pendencia_no_erp')
+    return recusa(decisao.mensagem)
   }
   if (decisao.tipo === 'ja_enviada') return { tipo: 'ja_enviada' }
 
-  let requisitar: Record<string, unknown> | null = null
-  let requisitarComponentes: ComponenteRequisicao[] = []
-  if (decisao.requisitar > 0) {
-    const componentes = await erp.consultarRequisicao(op, decisao.requisitar)
-    requisitarComponentes = componentes
-    const sem = componentes
-      .filter((c) => !c.itemFantasma && c.saldo < c.quantidadeRequisitar)
-      .map((c) => ({ codigo: c.codigo, precisa: c.quantidadeRequisitar, tem: c.saldo }))
-    requisitar = corpoRequisicao({ opId: op.id, tipoPropriedade: op.tipoPropriedade, quantidade: decisao.requisitar, componentes })
-    if (sem.length > 0) {
-      // O Compels aceita a requisição com componente sem saldo (ela fica "Pendente", e é isso que a tela dele faz).
-      // Requisita agora e avisa; o apontamento espera o saldo chegar (e a pendência ser paga) e sai numa rodada seguinte.
-      return {
-        tipo: 'enviar',
-        op,
-        novoAcumulado: novo,
-        baseACapturar: baseNova ? base : null,
-        requisitar,
-        apontar: null,
-        requisicaoPendente: faltas('requisitar', sem),
-      }
-    }
-  }
-
   const componentes = await erp.consultarDisponibilidade(op, decisao.apontar)
-  // `saldoDisponivel` é o material JÁ REQUISITADO e ainda não consumido por apontamento (não é o estoque
-  // livre da prateleira). Antes do Requisitar ele é 0: o que esta entrada vai requisitar conta como
-  // disponível, senão toda primeira entrada pareceria sem saldo.
-  const aRequisitar = new Map(requisitarComponentes.map((c) => [c.itemId, c.quantidadeRequisitar]))
-  const sem = componentesSemSaldo(
-    componentes.map((c) => ({ ...c, saldoDisponivel: c.saldoDisponivel + (aRequisitar.get(c.itemId) ?? 0) })),
-  ).map((c) => ({ codigo: c.codigo, precisa: c.quantidadeUtilizada, tem: c.saldoDisponivel }))
-  if (sem.length > 0) return recusa(faltas('apontar', sem), true)
+  // `saldoDisponivel` é o material JÁ REQUISITADO e ainda não consumido por apontamento (não é o estoque livre da
+  // prateleira). A integração não requisita: se não houver o bastante, espera alguém requisitar no Compels.
+  const sem = componentesSemSaldo(componentes).map((c) => ({ codigo: c.codigo, precisa: c.quantidadeUtilizada, tem: c.saldoDisponivel }))
+  if (sem.length > 0) return recusa(`${aguardandoRequisicao(sem)}${textoAvisos(decisao.avisos)}`, true)
 
   const apontar = corpoApontamento({
     opId: op.id,
@@ -177,7 +148,7 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
     destino: opcoes.destino,
     ...(e.marca ? { observacao: e.marca } : {}),
   })
-  return { tipo: 'enviar', op, novoAcumulado: novo, baseACapturar: baseNova ? base : null, requisitar, apontar, requisicaoPendente: null }
+  return { tipo: 'enviar', op, novoAcumulado: novo, baseACapturar: baseNova ? base : null, apontar, avisos: decisao.avisos }
 }
 
 function erroDeExcecao(e: unknown): { ok: false; erro: string; tentarDeNovo: boolean } {
@@ -206,7 +177,7 @@ export async function ensaiarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes
   }
 }
 
-/** Entrega a entrada: trava → ler → decidir → consultar → requisitar → apontar → reler → liberar a trava. */
+/** Entrega a entrada: trava → ler → decidir → consultar saldo → apontar → reler → liberar a trava. */
 export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes: OpcoesEnvio): Promise<ResultadoEntrada> {
   let travada: number | null = null
   let gravou = false
@@ -237,26 +208,9 @@ export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes:
 
     // A partir daqui o ERP pode ter recebido algo: falha deixa de ser "só esperar".
     gravou = true
-    if (plano.requisitar) {
-      const r = await erp.requisitar(plano.requisitar)
-      if (!r.ok) return falha(r.mensagem, r.tentarDeNovo, gravou)
-    }
-    if (plano.apontar === null) {
-      // Só a requisição vai agora (componente sem saldo): ela fica pendente no Compels e o apontamento espera.
-      // A retomada é segura: a próxima rodada vê `requisitada === novo` e só aponta. Não gasta tentativa.
-      return {
-        ok: false,
-        erro:
-          `A requisição foi criada no Compels, mas ficou PENDENTE: ${plano.requisicaoPendente} `
-          + 'Dê entrada do componente e pague a pendência no Compels; o apontamento sai sozinho depois.',
-        tentarDeNovo: true,
-        aguardar: true,
-      }
-    }
     const a = await erp.apontar(plano.apontar)
     if (!a.ok) {
-      const aviso = plano.requisitar ? ' A requisição já foi feita; a próxima tentativa só aponta.' : ''
-      return falha(`${a.mensagem}${aviso}`, a.tentarDeNovo, gravou)
+      return falha(a.mensagem, a.tentarDeNovo, gravou)
     }
 
     // Conferência final: só vale como enviado se o ERP mostra o acumulado novo.
@@ -268,7 +222,7 @@ export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes:
         gravou,
       )
     }
-    return { ok: true, detalhe: plano.requisitar ? 'Requisitado e apontado.' : 'Apontado.' }
+    return { ok: true, detalhe: `Apontado.${textoAvisos(plano.avisos)}` }
   } catch (erro) {
     const r = erroDeExcecao(erro)
     return falha(r.erro, r.tentarDeNovo, gravou)

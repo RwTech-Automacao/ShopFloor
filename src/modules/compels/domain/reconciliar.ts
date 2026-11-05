@@ -13,13 +13,10 @@ export type CodigoErro =
   | 'estorno_na_op'
   | 'abaixo_do_enviado'
   | 'fora_do_esperado'
-  | 'requisicao_fora_do_esperado'
-  | 'sem_empenho'
-  | 'pendencia_no_erp'
 
 export type Decisao =
   | { tipo: 'ja_enviada' }
-  | { tipo: 'enviar'; requisitar: number; apontar: number }
+  | { tipo: 'enviar'; apontar: number; avisos: string[] }
   | { tipo: 'erro'; codigo: CodigoErro; mensagem: string }
 
 /** Textos mostrados na tela de pendências. Em português claro, sem termo de API. */
@@ -30,9 +27,6 @@ export const MENSAGEM_ERRO: Record<CodigoErro, string> = {
   estorno_na_op: 'A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar.',
   abaixo_do_enviado: 'Leitura inconsistente: o Compels mostra menos apontado do que já enviamos.',
   fora_do_esperado: 'OP com apontamento fora do esperado no Compels. Confira antes de reenviar.',
-  requisicao_fora_do_esperado: 'OP com requisição fora do esperado no Compels (alguém requisitou à mão). Confira antes de reenviar.',
-  sem_empenho: 'OP sem empenho suficiente no Compels.',
-  pendencia_no_erp: 'Há requisição pendente no Compels (falta saldo de componente). Resolva lá e reenvie.',
 }
 
 function erro(codigo: CodigoErro): Decisao {
@@ -72,30 +66,15 @@ export function decidirEntrada(
   if (estado.apontada < anterior) return erro('abaixo_do_enviado')
   if (estado.apontada !== anterior) return erro('fora_do_esperado')
 
-  // Requisição pendente de OUTRA coisa trava (alguém mexeu à mão, ou sobrou pendência antiga). A requisição pendente
-  // desta mesma entrada (`requisitada === novo`) não: é a que a própria integração criou com componente sem saldo, e a
-  // retomada só precisa apontar quando o saldo chegar.
-  if (estado.temPendencia && estado.requisitada !== novo) return erro('pendencia_no_erp')
+  // A integração SÓ APONTA: quem requisita é o pessoal do Compels. Empenho e requisição insuficientes não
+  // bloqueiam aqui (o que bloqueia é o saldo requisitado disponível por componente, conferido antes de gravar);
+  // viram AVISO. A requisição não precisa ter uma quantidade exata, só ser suficiente (`requisitada >= novo`).
+  const avisos: string[] = []
   if (estado.empenhada < novo) {
-    return {
-      tipo: 'erro',
-      codigo: 'sem_empenho',
-      mensagem:
-        `${MENSAGEM_ERRO.sem_empenho.replace(/\.$/, '')}: empenhado ${estado.empenhada}, `
-        + `precisa de ${novo} (faltam ${q6(novo - estado.empenhada)}).`,
-    }
+    avisos.push(`empenho insuficiente no Compels: empenhado ${estado.empenhada}, precisa de ${novo} (faltam ${q6(novo - estado.empenhada)})`)
   }
-
-  // Cada entrada é UMA requisição + UM apontamento. O ERP precisa estar no ponto certo:
-  // - requisitada == anterior: caminho normal, requisita e aponta a quantidade da entrada;
-  // - requisitada == novo: a requisição desta entrada já foi feita e o apontamento falhou (retomada),
-  //   então só falta apontar. Requisitar de novo duplicaria;
-  // - qualquer outro valor (ex.: alguém requisitou à frente ou à mão): para.
-  if (estado.requisitada === anterior) {
-    return { tipo: 'enviar', requisitar: quantidade, apontar: quantidade }
+  if (estado.requisitada < novo) {
+    avisos.push(`requisição insuficiente no Compels: requisitado ${estado.requisitada}, precisa de ${novo} (faltam ${q6(novo - estado.requisitada)})`)
   }
-  if (estado.requisitada === novo) {
-    return { tipo: 'enviar', requisitar: 0, apontar: quantidade }
-  }
-  return erro('requisicao_fora_do_esperado')
+  return { tipo: 'enviar', apontar: quantidade, avisos }
 }
