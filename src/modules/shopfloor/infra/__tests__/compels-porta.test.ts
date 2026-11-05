@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('server-only', () => ({}))
 vi.mock('@/shared/lib/supabase/service', () => ({ createServiceSupabase: () => null }))
 
-import type { ComponenteApontamento, ComponenteRequisicao } from '@/modules/compels/domain/corpos'
+import type { ComponenteApontamento } from '@/modules/compels/domain/corpos'
 import type { LeiturasOp } from '@/modules/compels/domain/estado-op'
 import type { PortaErp } from '@/modules/compels/application/enviar-entrada'
 import type { DadosOp } from '@/modules/compels/infra/cliente'
@@ -38,26 +38,16 @@ function erpFalso(estadoInicial: Partial<LeiturasOp> = {}, desvios: Partial<Port
     empenhos: [{ quantidade: 1000, quantidadeEstornar: 0, situacao: 'Empenhada' }],
     requisicoes: [], apontamentos: [], ...estadoInicial,
   }
-  const req = (q: number): ComponenteRequisicao => ({
-    itemId: 1, codigo: 'C1', rastreavel: false, precoCusto: 1, quantidadeRequisitar: q, quantidadeComposicao: q,
-    quantidadeRequisitadaDisponivel: 0, itemOrdemProducaoId: 9, itemFantasma: false, saldo: 100,
-  })
   const disp = (q: number): ComponenteApontamento => ({
     itemId: 1, codigo: 'C1', quantidadeUtilizada: q, quantidadeComposicao: 1, itemOrdemProducaoId: 9,
-    itemFantasma: false, saldoDisponivel: 0,
+    itemFantasma: false, saldoDisponivel: 100,
   })
   const erp: PortaErp = {
     async buscarOp() { chamadas.push('buscarOp'); return OP },
     async lerOp() { chamadas.push('lerOp'); return structuredClone(estado) },
     async adquirirTrava() { chamadas.push('trava'); return OK },
     async liberarTrava() { chamadas.push('libera') },
-    async consultarRequisicao(_o, q) { chamadas.push('consultaReq'); return [req(q)] },
     async consultarDisponibilidade(_o, q) { chamadas.push('consultaDisp'); return [disp(q)] },
-    async requisitar(c) {
-      chamadas.push('requisitar')
-      estado.requisicoes = [...estado.requisicoes, { quantidade: Number(c.quantidade), quantidadeEstornar: 0, situacao: 'Requisitada' }]
-      return OK
-    },
     async apontar(c) {
       chamadas.push('apontar')
       estado.apontamentos = [...estado.apontamentos, { quantidadeProduzida: Number(c.quantidadeProduzida), quantidadeCancelada: 0 }]
@@ -75,7 +65,7 @@ describe('criarPortaCompels', () => {
     const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma })
     expect(await porta(linha())).toEqual({ ok: true })
     expect(soma).toHaveBeenCalledWith('PRT446', '8649', 'id-1')
-    expect(chamadas).toContain('requisitar')
+    expect(chamadas).toContain('apontar')
     expect(chamadas).toContain('apontar')
   })
 

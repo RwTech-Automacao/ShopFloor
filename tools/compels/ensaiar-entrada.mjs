@@ -125,31 +125,6 @@ function consultaRequisitada(p) {
 		quantidade: p.quantidade
 	};
 }
-/** Corpo (campo `jsonData`) de `requisicaoOrdemProducao/save`. O nome `itemRequisicaOrdemProducaoList` (sem o "r") é o do ERP. */
-function corpoRequisicao(p) {
-	return {
-		ordemProducao: {
-			id: String(p.opId),
-			tipoPropriedade: p.tipoPropriedade
-		},
-		itemRequisicaOrdemProducaoList: p.componentes.map((c) => ({
-			item: {
-				id: c.itemId,
-				codigo: c.codigo,
-				rastreavel: c.rastreavel,
-				precoCusto: c.precoCusto
-			},
-			quantidade: c.quantidadeRequisitar,
-			quantidadeRequisitadaDisponivel: c.quantidadeRequisitadaDisponivel,
-			quantidadeComposicao: c.quantidadeComposicao,
-			itemEstoqueRequisicaoList: [],
-			itemOrdemProducaoId: c.itemOrdemProducaoId,
-			motivoRequisicao: "",
-			itemFantasma: c.itemFantasma
-		})),
-		quantidade: p.quantidade
-	};
-}
 function componentesDeApontamento(resposta) {
 	return listaDe(resposta, "verificaDisponibilidade").map((linha) => {
 		const item = objeto(linha.item, "componente.item");
@@ -258,10 +233,7 @@ const MENSAGEM_ERRO = {
 	acima_da_op: "A entrada passa da quantidade da OP no Compels.",
 	estorno_na_op: "A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar.",
 	abaixo_do_enviado: "Leitura inconsistente: o Compels mostra menos apontado do que já enviamos.",
-	fora_do_esperado: "OP com apontamento fora do esperado no Compels. Confira antes de reenviar.",
-	requisicao_fora_do_esperado: "OP com requisição fora do esperado no Compels (alguém requisitou à mão). Confira antes de reenviar.",
-	sem_empenho: "OP sem empenho suficiente no Compels.",
-	pendencia_no_erp: "Há requisição pendente no Compels (falta saldo de componente). Resolva lá e reenvie."
+	fora_do_esperado: "OP com apontamento fora do esperado no Compels. Confira antes de reenviar."
 };
 function erro(codigo) {
 	return {
@@ -286,23 +258,14 @@ function decidirEntrada(estado, acumulado) {
 	};
 	if (estado.apontada < anterior) return erro("abaixo_do_enviado");
 	if (estado.apontada !== anterior) return erro("fora_do_esperado");
-	if (estado.temPendencia && estado.requisitada !== novo) return erro("pendencia_no_erp");
-	if (estado.empenhada < novo) return {
-		tipo: "erro",
-		codigo: "sem_empenho",
-		mensagem: `${MENSAGEM_ERRO.sem_empenho.replace(/\.$/, "")}: empenhado ${estado.empenhada}, precisa de ${novo} (faltam ${q6(novo - estado.empenhada)}).`
-	};
-	if (estado.requisitada === anterior) return {
+	const avisos = [];
+	if (estado.empenhada < novo) avisos.push(`empenho insuficiente no Compels: empenhado ${estado.empenhada}, precisa de ${novo} (faltam ${q6(novo - estado.empenhada)})`);
+	if (estado.requisitada < novo) avisos.push(`requisição insuficiente no Compels: requisitado ${estado.requisitada}, precisa de ${novo} (faltam ${q6(novo - estado.requisitada)})`);
+	return {
 		tipo: "enviar",
-		requisitar: quantidade,
-		apontar: quantidade
+		apontar: quantidade,
+		avisos
 	};
-	if (estado.requisitada === novo) return {
-		tipo: "enviar",
-		requisitar: 0,
-		apontar: quantidade
-	};
-	return erro("requisicao_fora_do_esperado");
 }
 //#endregion
 //#region src/modules/compels/domain/sem-sufixo.ts
@@ -405,8 +368,12 @@ function numeroDaOp(texto) {
 	const base = semSufixo(texto);
 	return /^\d+$/.test(base) ? Number(base) : null;
 }
-function faltas(etapa, componentes) {
-	return `Falta saldo de componente no Compels para ${etapa}: ${componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, tem ${c.tem})`).join("; ")}.`;
+function aguardandoRequisicao(componentes) {
+	return `Aguardando requisição no Compels: ${componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, requisitado disponível ${c.tem})`).join("; ")}.`;
+}
+/** Avisos (empenho/requisição insuficientes) em uma frase para colar no fim de outra mensagem. */
+function textoAvisos(avisos) {
+	return avisos.length > 0 ? ` Aviso: ${avisos.join("; ")}.` : "";
 }
 /** Conferências que não precisam da trava: a OP existe, é desta PMO, em UN e de estoque próprio. */
 async function conferir(erp, e) {
@@ -431,45 +398,15 @@ async function planejar(erp, op, e, opcoes) {
 		anterior,
 		novo
 	});
-	if (decisao.tipo === "erro") return recusa(decisao.mensagem, decisao.codigo === "sem_empenho" || decisao.codigo === "pendencia_no_erp");
+	if (decisao.tipo === "erro") return recusa(decisao.mensagem);
 	if (decisao.tipo === "ja_enviada") return { tipo: "ja_enviada" };
-	let requisitar = null;
-	let requisitarComponentes = [];
-	if (decisao.requisitar > 0) {
-		const componentes = await erp.consultarRequisicao(op, decisao.requisitar);
-		requisitarComponentes = componentes;
-		const sem = componentes.filter((c) => !c.itemFantasma && c.saldo < c.quantidadeRequisitar).map((c) => ({
-			codigo: c.codigo,
-			precisa: c.quantidadeRequisitar,
-			tem: c.saldo
-		}));
-		requisitar = corpoRequisicao({
-			opId: op.id,
-			tipoPropriedade: op.tipoPropriedade,
-			quantidade: decisao.requisitar,
-			componentes
-		});
-		if (sem.length > 0) return {
-			tipo: "enviar",
-			op,
-			novoAcumulado: novo,
-			baseACapturar: baseNova ? base : null,
-			requisitar,
-			apontar: null,
-			requisicaoPendente: faltas("requisitar", sem)
-		};
-	}
 	const componentes = await erp.consultarDisponibilidade(op, decisao.apontar);
-	const aRequisitar = new Map(requisitarComponentes.map((c) => [c.itemId, c.quantidadeRequisitar]));
-	const sem = componentesSemSaldo(componentes.map((c) => ({
-		...c,
-		saldoDisponivel: c.saldoDisponivel + (aRequisitar.get(c.itemId) ?? 0)
-	}))).map((c) => ({
+	const sem = componentesSemSaldo(componentes).map((c) => ({
 		codigo: c.codigo,
 		precisa: c.quantidadeUtilizada,
 		tem: c.saldoDisponivel
 	}));
-	if (sem.length > 0) return recusa(faltas("apontar", sem), true);
+	if (sem.length > 0) return recusa(`${aguardandoRequisicao(sem)}${textoAvisos(decisao.avisos)}`, true);
 	const apontar = corpoApontamento({
 		opId: op.id,
 		produtoId: op.produtoId,
@@ -485,9 +422,8 @@ async function planejar(erp, op, e, opcoes) {
 		op,
 		novoAcumulado: novo,
 		baseACapturar: baseNova ? base : null,
-		requisitar,
 		apontar,
-		requisicaoPendente: null
+		avisos: decisao.avisos
 	};
 }
 function erroDeExcecao(e) {
@@ -911,15 +847,9 @@ try {
 	else if (plano.tipo === "ja_enviada") console.log("ENSAIO: o Compels já tem esta entrada; nada seria enviado.");
 	else {
 		console.log(`ENSAIO: seria enviada. OP ${plano.op.numero} (id ${plano.op.id}), produto ${plano.op.codigoItem}, novo acumulado ${plano.novoAcumulado}.`);
-		console.log(plano.requisitar ? "\n--- Requisitar (requisicaoOrdemProducao/save) ---" : "\n--- Requisitar: não precisa (a requisição desta entrada já existe) ---");
-		if (plano.requisitar) console.log(JSON.stringify(mascarar(plano.requisitar), null, 1));
-		if (plano.apontar === null) {
-			console.log(`\n--- Apontar: NÃO agora. A requisição ficaria PENDENTE: ${plano.requisicaoPendente}`);
-			console.log("O apontamento esperaria o saldo do componente chegar e a pendência ser paga no Compels.");
-		} else {
-			console.log("\n--- Apontar (apontamentoOrdemProducao/save) ---");
-			console.log(JSON.stringify(mascarar(plano.apontar), null, 1));
-		}
+		if (plano.avisos.length > 0) console.log(`Aviso: ${plano.avisos.join("; ")}.`);
+		console.log("\n--- Apontar (apontamentoOrdemProducao/save) ---");
+		console.log(JSON.stringify(mascarar(plano.apontar), null, 1));
 	}
 	console.log("\nFIM: só leitura, nada foi gravado e a trava não foi pega.");
 } catch (e) {
