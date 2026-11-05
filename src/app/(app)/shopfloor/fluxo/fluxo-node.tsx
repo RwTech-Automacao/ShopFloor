@@ -38,8 +38,10 @@ export function iconePorRecurso(recurso: string, temStatus: boolean, className =
 }
 
 
-/** Cache do navegador (1 min por PMO): o nó re-renderiza e remonta com frequência (zoom, arrasto, modo TV). */
-const CACHE_ESTOQUE_MS = 60_000
+/** Cache do navegador (15 s por PMO): o nó re-renderiza e remonta com frequência (zoom, arrasto, modo TV). */
+const CACHE_ESTOQUE_MS = 15_000
+/** De quanto em quanto tempo o card relê o estoque sozinho, com o Fluxo aberto e a aba visível. */
+const INTERVALO_ESTOQUE_MS = 20_000
 const cacheEstoque = new Map<string, { ate: number; resultado: EstoqueCompels }>()
 
 /**
@@ -55,16 +57,20 @@ export function EstoqueCompelsCard({ pmo }: { pmo: string }) {
   })
 
   useEffect(() => {
-    const guardado = cacheEstoque.get(pmo)
-    if (guardado && guardado.ate > Date.now()) return
     let vivo = true
-    lerEstoqueCompelsAction(pmo)
-      .then((r) => {
-        cacheEstoque.set(pmo, { ate: Date.now() + (r.tipo === 'indisponivel' ? 15_000 : CACHE_ESTOQUE_MS), resultado: r })
-        if (vivo) setEstado(r)
-      })
-      .catch(() => { if (vivo) setEstado({ tipo: 'indisponivel' }) })
-    return () => { vivo = false }
+    const ler = (forcar: boolean) => {
+      const guardado = cacheEstoque.get(pmo)
+      if (!forcar && guardado && guardado.ate > Date.now()) return
+      lerEstoqueCompelsAction(pmo)
+        .then((r) => {
+          cacheEstoque.set(pmo, { ate: Date.now() + (r.tipo === 'indisponivel' ? 15_000 : CACHE_ESTOQUE_MS), resultado: r })
+          if (vivo) setEstado(r)
+        })
+        .catch(() => { if (vivo) setEstado((atual) => (atual === 'carregando' ? { tipo: 'indisponivel' } : atual)) })
+    }
+    ler(false)
+    const id = setInterval(() => { if (!document.hidden) ler(true) }, INTERVALO_ESTOQUE_MS)
+    return () => { vivo = false; clearInterval(id) }
   }, [pmo])
 
   if (estado !== 'carregando' && estado.tipo === 'nao_configurado') return null
