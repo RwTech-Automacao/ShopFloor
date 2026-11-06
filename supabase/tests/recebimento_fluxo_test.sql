@@ -33,7 +33,7 @@ create table public.processos_recebimento (
   id uuid primary key default gen_random_uuid(),
   numero bigint not null default nextval('public.processos_numero_seq') unique,
   status text not null default 'aberto',
-  numero_emb text, fornecedor text,
+  numero_emb text, numero_pedido text, fornecedor text,
   codigo_material text, descricao_material text, quantidade_pedido numeric,
   quantidade_recebida numeric, divergencia text, part_number_recebido text,
   fabricante text, resultado text,
@@ -61,6 +61,7 @@ select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
 \i /tmp/0143.sql
 \i /tmp/0144.sql
 \i /tmp/0147.sql
+\i /tmp/0171.sql
 
 -- ---------- massa de teste ----------
 -- EMB390: um item em cada caixa (um deles divergente), mais um sem histórico nenhum.
@@ -648,6 +649,24 @@ begin
      or r.divergencia_justificada_em is not null then
     raise exception 'FALHOU: item sem justificativa tem que vir vazio'; end if;
   raise notice 'itens da caixa trazem a justificativa (0144): ok';
+end $t$;
+
+-- ---------- 9b. Itens da caixa trazem o Nº da PO (0171) ----------
+-- O diálogo da divergência mostra EMB e PO do item; a PO só existe na linha do processo.
+do $t$
+declare r record;
+begin
+  perform set_config('teste.perms', 'recebimento.visualizar', false);
+  update public.processos_recebimento set numero_pedido = 'PO-4521'
+   where id = '00000000-0000-0000-0000-0000000000aa';
+  select * into r from rec_fluxo_emb_itens('EMB777', 'recebimento') limit 1;
+  if r.numero_pedido is distinct from 'PO-4521' then
+    raise exception 'FALHOU: a PO não veio nos itens (veio %)', r.numero_pedido; end if;
+  -- Processo sem PO: '' (não nulo), como os outros textos da função.
+  select * into r from rec_fluxo_emb_itens('EMB390', 'qualidade') limit 1;
+  if r.numero_pedido is distinct from '' then
+    raise exception 'FALHOU: item sem PO tem que vir com texto vazio (veio %)', r.numero_pedido; end if;
+  raise notice 'itens da caixa trazem o Nº da PO (0171): ok';
 end $t$;
 
 -- ---------- 10. Divergência em número (0147) ----------

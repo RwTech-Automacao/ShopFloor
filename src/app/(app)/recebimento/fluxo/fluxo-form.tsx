@@ -142,12 +142,15 @@ function ItemRotulo({ item, numero }: { item: string; numero: number }) {
  * mesma UX do "Pendentes no posto" do Fluxo do ShopFloor.
  */
 function ItensDaEtapa({
+  emb,
   itens,
   carregando,
   total,
   podeJustificar,
   aoSalvarJustificativa,
 }: {
+  /** A EMB aberta: o diálogo da divergência a mostra. */
+  emb: string
   itens: ItemFluxo[]
   carregando: boolean
   /** Contagem da caixa: quando for maior que a lista, a consulta bateu no teto. */
@@ -204,6 +207,8 @@ function ItensDaEtapa({
                             // De que item é a divergência: a `rec_fluxo_emb_itens` (0144) já
                             // traz tudo; o diálogo formata igual à grade.
                             contexto: {
+                              emb,
+                              po: i.pedido,
                               codigo: i.item,
                               descricao: i.descricao,
                               quantidadePedido: i.quantidadePedido,
@@ -875,6 +880,7 @@ export function FluxoForm({ embs, podeJustificar = false }: { embs: string[]; po
                       )}
                     </div>
                     <ItensDaEtapa
+                      emb={emb}
                       itens={itens}
                       carregando={carregandoItens}
                       total={detalhe.itens}
