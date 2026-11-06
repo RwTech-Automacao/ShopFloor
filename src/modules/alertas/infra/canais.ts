@@ -37,10 +37,10 @@ export function criarPortasCanais(env: NodeJS.ProcessEnv = process.env): PortasC
   if (tokenDiscord) {
     const dc = criarDiscord({ token: tokenDiscord })
     const porta: PortaCanal = {
-      enviar: (destino, texto, botao) =>
+      enviar: (destino, texto, botao, anexos) =>
         destino.tipo === 'canal'
-          ? dc.enviarCanal(destino.externoId, texto, botao)
-          : dc.enviarDm(destino.externoId, texto, botao),
+          ? dc.enviarCanal(destino.externoId, texto, botao, anexos)
+          : dc.enviarDm(destino.externoId, texto, botao, anexos),
       removerBotoes: (id) => dc.removerBotoes(id),
     }
     portas.discord = porta

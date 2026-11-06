@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ContaDestino, ResultadoAvaliacaoRpc } from '../../domain/avaliacao'
+import type { AnexoEnvio } from '../../domain/anexos'
 import type { EnvioReservado } from '../../domain/envio'
 import type { DestinoTipo, ResultadoEnvio } from '../../domain/tipos'
 import type {
@@ -21,8 +22,10 @@ import {
 function portaFalsa(opcoes: { falharPara?: string[]; lancarPara?: string[] } = {}) {
   const enviados: { externoId: string; destino: DestinoTipo; texto: string; botao: string | null }[] = []
   const removidos: string[] = []
+  const anexosRecebidos: (AnexoEnvio[] | undefined)[] = []
   const porta: PortaCanal = {
-    async enviar(destino, texto, ocorrenciaIdBotao) {
+    async enviar(destino, texto, ocorrenciaIdBotao, anexos) {
+      anexosRecebidos.push(anexos)
       const externoId = destino.externoId
       if (opcoes.lancarPara?.includes(externoId)) throw new Error('rede caiu')
       enviados.push({ externoId, destino: destino.tipo, texto, botao: ocorrenciaIdBotao })
@@ -34,7 +37,7 @@ function portaFalsa(opcoes: { falharPara?: string[]; lancarPara?: string[] } = {
       return { ok: true }
     },
   }
-  return { porta, enviados, removidos }
+  return { porta, enviados, removidos, anexosRecebidos }
 }
 
 const DADOS_ALERTA = {
@@ -477,5 +480,46 @@ describe('enviarTeste (entrega direta, fora da fila)', () => {
     const r = await enviarTeste({ telegram: tg.porta }, repo, { usuarioId: 'u1', canal: 'telegram', nome: 'Ana' })
     expect(r).toEqual({ ok: false, erro: 'Canal 403: bloqueado' })
     expect(diretos[0]!.resultado.ok).toBe(false)
+  })
+})
+
+describe('anexo: o QR do envio', () => {
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+
+  it('envio com `qr` nos dados vai com o PNG anexado, com nome seguro e tipo image/png', async () => {
+    const dc = portaFalsa()
+    const gerados: string[] = []
+    const { repo } = repoFalso({ fila: [linha({ id: 'f1', canal: 'discord', dados: { ...DADOS_ALERTA, qr: 'CX[1][160]8682_F-PMOF52_F' } })] })
+    const r = await entregarPendentes({ discord: dc.porta }, repo, {
+      gerarQr: async (texto) => { gerados.push(texto); return PNG },
+    })
+    expect(r).toEqual({ enviados: 1, falhas: 0 })
+    expect(gerados).toEqual(['CX[1][160]8682_F-PMOF52_F'])
+    expect(dc.anexosRecebidos[0]).toEqual([{ nome: 'qr-CX-1-160-8682_F-PMOF52_F.png', tipo: 'image/png', bytes: PNG }])
+  })
+
+  it('envio sem `qr` não gera nada e não passa anexo', async () => {
+    const dc = portaFalsa()
+    let chamou = false
+    const { repo } = repoFalso({ fila: [linha({ id: 'f1', canal: 'discord' })] })
+    await entregarPendentes({ discord: dc.porta }, repo, { gerarQr: async () => { chamou = true; return PNG } })
+    expect(chamou).toBe(false)
+    expect(dc.anexosRecebidos[0]).toBeUndefined()
+  })
+
+  it('se o QR não gera, o envio falha de forma legível e volta para a fila (não perde a ficha nem derruba a rodada)', async () => {
+    const dc = portaFalsa()
+    const { repo, fila } = repoFalso({
+      fila: [
+        linha({ id: 'f1', canal: 'discord', externoId: 'A', dados: { ...DADOS_ALERTA, qr: 'X' } }),
+        linha({ id: 'f2', canal: 'discord', externoId: 'B' }),
+      ],
+    })
+    const r = await entregarPendentes({ discord: dc.porta }, repo, {
+      gerarQr: async () => { throw new Error('canvas quebrou') },
+    })
+    expect(r).toEqual({ enviados: 1, falhas: 1 })
+    expect(dc.enviados.map((e) => e.externoId)).toEqual(['B'])
+    expect(fila.find((e) => e.id === 'f1')?.ok).toBeFalsy()
   })
 })
