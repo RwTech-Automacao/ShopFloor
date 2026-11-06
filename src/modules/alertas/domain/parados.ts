@@ -33,15 +33,22 @@ export interface ItemParado {
 export interface ParadosDaOp {
   pmo: string
   op: string
-  /** O posto da OCORRÊNCIA: fixo por regra (índice único regra x posto x PMO/OP), não o da peça mais antiga. */
-  posto: string
   maisAntigaMin: number
   /** A conta foi em horas de expediente (a regra tem turno) e não em relógio corrido. */
   expediente: boolean
   itens: ItemParado[]
 }
 
-/** A chave da ocorrência por OP. O banco a grava em `alerta_ocorrencias.defeito` (0167). */
+/**
+ * A ocorrência do parado é UMA POR REGRA (relatório único): o par PMO/OP é fixo e legível, e junto com o
+ * posto (o 1º da regra) forma a chave do índice único `alerta_ocorrencias` (regra x posto x PMO/OP).
+ */
+export const PMO_RELATORIO = 'TODAS'
+export const OP_RELATORIO = '—'
+/** A chave gravada em `alerta_ocorrencias.defeito` (a 0151/0167 copia 'PMO/OP'). */
+export const CHAVE_RELATORIO = `${PMO_RELATORIO}/${OP_RELATORIO}`
+
+/** A chave por OP (usada para reunir os grupos). */
 export function chaveDaOp(pmo: string, op: string): string {
   return `${pmo}/${op}`
 }
@@ -53,7 +60,6 @@ export function chaveDaOp(pmo: string, op: string): string {
 export function paradosPorOp(
   grupos: readonly GrupoTravado[],
   turnos: readonly Intervalo[],
-  postoDaOcorrencia: string,
   agora: Date,
 ): ParadosDaOp[] {
   const expediente = turnos.length > 0
@@ -63,7 +69,7 @@ export function paradosPorOp(
     const chave = chaveDaOp(g.pmo, g.op)
     let op = porOp.get(chave)
     if (!op) {
-      op = { pmo: g.pmo, op: g.op, posto: postoDaOcorrencia, maisAntigaMin: 0, expediente, itens: [] }
+      op = { pmo: g.pmo, op: g.op, maisAntigaMin: 0, expediente, itens: [] }
       porOp.set(chave, op)
     }
     op.itens.push({
@@ -79,16 +85,25 @@ export function paradosPorOp(
   return lista
 }
 
-/** A forma que o `alerta_avaliar` lê em `p_parados -> "<regra_id>"`. */
-export function paradosParaBanco(ops: readonly ParadosDaOp[]) {
-  return ops.map((o) => ({
-    pmo: o.pmo,
-    op: o.op,
-    posto: o.posto,
-    mais_antiga_min: o.maisAntigaMin,
-    expediente: o.expediente,
-    itens: o.itens.map((i) => ({
-      tipo: i.tipo, codigo: i.codigo, pecas: i.pecas, minutos: i.minutos, amostras: i.amostras,
+/**
+ * A forma que o `alerta_avaliar` lê em `p_parados -> "<regra_id>"`: UM item por regra (o relatório),
+ * ou lista vazia quando nada está parado (aí o banco normaliza a ocorrência viva). `itens` carrega as
+ * OPs ({pmo, op, mais_antiga_min, itens: postos}); o banco só repassa esse jsonb ao `dados` do envio.
+ * As amostras de série não viajam: o texto do relatório não as mostra.
+ */
+export function paradosParaBanco(ops: readonly ParadosDaOp[], postoDaOcorrencia: string) {
+  if (ops.length === 0) return []
+  return [{
+    pmo: PMO_RELATORIO,
+    op: OP_RELATORIO,
+    posto: postoDaOcorrencia,
+    mais_antiga_min: Math.max(...ops.map((o) => o.maisAntigaMin)),
+    expediente: ops[0]!.expediente,
+    itens: ops.map((o) => ({
+      pmo: o.pmo,
+      op: o.op,
+      mais_antiga_min: o.maisAntigaMin,
+      itens: o.itens.map((i) => ({ tipo: i.tipo, codigo: i.codigo, pecas: i.pecas, minutos: i.minutos })),
     })),
-  }))
+  }]
 }

@@ -233,9 +233,10 @@ begin
   raise notice 'T2-T9 ok';
 end $t$;
 
--- ---------- T10: a regra completa ----------
--- O app monta p_parados (a conta de horário mora no TS) e a alerta_avaliar abre UMA ocorrência por OP; a
--- mensagem precisa saber se a conta foi em expediente.
+-- ---------- T10: a regra completa (RELATÓRIO ÚNICO) ----------
+-- O app monta p_parados (a conta de horário mora no TS) com UM item por regra (pmo 'TODAS', op '—'; as OPs
+-- vão dentro de `itens`) e a alerta_avaliar abre UMA ocorrência por REGRA; a mensagem precisa saber se a
+-- conta foi em expediente. O banco só repassa `itens` ao `dados` do envio.
 create function public.teste_trv_regra(p_nome text) returns uuid language sql as $f$
   insert into public.alerta_regras
     (nome, tipo, modulo, postos, janela_tipo, janela_valor, minimo_bipes, limite_horas, canais,
@@ -252,40 +253,59 @@ declare
   v_mapa jsonb;
   v_dados jsonb;
 begin
+  -- Duas OPs paradas: UM item da regra.
   v_mapa := jsonb_build_object(v_id::text, jsonb_build_array(
-    jsonb_build_object('pmo', 'PMOT', 'op', 'A', 'posto', 'Teste', 'mais_antiga_min', 14400, 'expediente', true,
+    jsonb_build_object('pmo', 'TODAS', 'op', '—', 'posto', 'Teste', 'mais_antiga_min', 14400, 'expediente', true,
       'itens', jsonb_build_array(
-        jsonb_build_object('tipo', 'posto', 'codigo', 'Teste', 'pecas', 5, 'minutos', 14400, 'amostras', jsonb_build_array('a1', 'b1')),
-        jsonb_build_object('tipo', 'conserto', 'codigo', 'Teste', 'pecas', 1, 'minutos', 12960, 'amostras', jsonb_build_array('a5'))))));
+        jsonb_build_object('pmo', 'PMOT', 'op', 'A', 'mais_antiga_min', 14400, 'itens', jsonb_build_array(
+          jsonb_build_object('tipo', 'posto', 'codigo', 'Teste', 'pecas', 5, 'minutos', 14400),
+          jsonb_build_object('tipo', 'conserto', 'codigo', 'Teste', 'pecas', 1, 'minutos', 12960))),
+        jsonb_build_object('pmo', 'PMOT', 'op', 'B', 'mais_antiga_min', 12000, 'itens', jsonb_build_array(
+          jsonb_build_object('tipo', 'posto', 'codigo', 'Embalagem', 'pecas', 2, 'minutos', 12000)))))));
   perform public.alerta_avaliar(p_parados => v_mapa);
   select dados into v_dados from public.alerta_envios
    where dados->>'regra_nome' = 'TRV completa' and tipo = 'alerta' order by criado_em desc limit 1;
   if v_dados is null then raise exception 'T10 FALHOU: nenhum alerta enfileirado'; end if;
   if (v_dados->>'expediente')::boolean is not true then raise exception 'T10 FALHOU: dados.expediente = %', v_dados->>'expediente'; end if;
   if (v_dados->>'limite_horas')::int <> 168 then raise exception 'T10 FALHOU: limite_horas = %', v_dados->>'limite_horas'; end if;
-  if jsonb_array_length(v_dados->'itens') <> 2 or v_dados->'itens'->1->>'tipo' <> 'conserto'
-     or v_dados->'itens'->0->'amostras'->>0 <> 'a1' then
+  if jsonb_array_length(v_dados->'itens') <> 2 or v_dados->'itens'->0->>'op' <> 'A'
+     or jsonb_array_length(v_dados->'itens'->0->'itens') <> 2
+     or v_dados->'itens'->0->'itens'->1->>'tipo' <> 'conserto' then
     raise exception 'T10 FALHOU: itens = %', v_dados->'itens';
   end if;
-  -- Uma ocorrência só, com a chave PMO/OP e o posto fixo da regra.
+  -- UMA ocorrência por regra, com a chave TODAS/— e o posto fixo da regra.
   if (select count(*) from public.alerta_ocorrencias oc join public.alerta_regras rg on rg.id = oc.regra_id
-       where rg.nome = 'TRV completa' and oc.defeito = 'PMOT/A' and oc.posto = 'Teste') <> 1 then
-    raise exception 'T10 FALHOU: ocorrência por OP';
+       where rg.nome = 'TRV completa' and oc.defeito = 'TODAS/—' and oc.posto = 'Teste') <> 1
+     or (select count(*) from public.alerta_ocorrencias where regra_id = v_id) <> 1 then
+    raise exception 'T10 FALHOU: ocorrência única por regra';
+  end if;
+  -- Uma rodada logo em seguida (mesma lista) não repete a mensagem.
+  perform public.alerta_avaliar(p_parados => v_mapa);
+  if (select count(*) from public.alerta_envios where dados->>'regra_nome' = 'TRV completa') <> 1 then
+    raise exception 'T10 FALHOU: repetiu o alerta antes do lembrete';
   end if;
 
-  -- Sem a chave `expediente` (relógio corrido) o texto não diz "de expediente".
+  -- 24 h depois: UM lembrete, com a lista NOVA (só a OP B) e sem a chave `expediente` (relógio corrido).
   update public.alerta_ocorrencias set ultimo_envio_em = now() - interval '25 hours'
    where regra_id = v_id;
   v_mapa := jsonb_build_object(v_id::text, jsonb_build_array(
-    jsonb_build_object('pmo', 'PMOT', 'op', 'A', 'posto', 'Teste', 'mais_antiga_min', 14500,
-      'itens', jsonb_build_array(jsonb_build_object('tipo', 'posto', 'codigo', 'Teste', 'pecas', 5, 'minutos', 14500, 'amostras', '[]'::jsonb)))));
+    jsonb_build_object('pmo', 'TODAS', 'op', '—', 'posto', 'Teste', 'mais_antiga_min', 12100,
+      'itens', jsonb_build_array(
+        jsonb_build_object('pmo', 'PMOT', 'op', 'B', 'mais_antiga_min', 12100, 'itens', jsonb_build_array(
+          jsonb_build_object('tipo', 'posto', 'codigo', 'Embalagem', 'pecas', 2, 'minutos', 12100)))))));
   perform public.alerta_avaliar(p_parados => v_mapa);
   select dados into v_dados from public.alerta_envios
    where dados->>'regra_nome' = 'TRV completa' and tipo = 'lembrete' order by criado_em desc limit 1;
   if v_dados is null then raise exception 'T10 FALHOU: lembrete de 24 h não saiu'; end if;
+  if (select count(*) from public.alerta_envios where dados->>'regra_nome' = 'TRV completa' and tipo = 'lembrete') <> 1 then
+    raise exception 'T10 FALHOU: mais de um lembrete na rodada';
+  end if;
   if (v_dados->>'expediente')::boolean is not false then raise exception 'T10 FALHOU: expediente deveria ser false, é %', v_dados->>'expediente'; end if;
+  if jsonb_array_length(v_dados->'itens') <> 1 or v_dados->'itens'->0->>'op' <> 'B' then
+    raise exception 'T10 FALHOU: o lembrete deveria ter só a OP B: %', v_dados->'itens';
+  end if;
 
-  -- OP sem peça parada: a chave vem com lista vazia e a ocorrência normaliza.
+  -- Nada parado: a chave vem com lista vazia e a ocorrência normaliza.
   perform public.alerta_avaliar(p_parados => jsonb_build_object(v_id::text, '[]'::jsonb));
   if not exists (select 1 from public.alerta_envios where dados->>'regra_nome' = 'TRV completa' and tipo = 'normalizou') then
     raise exception 'T10 FALHOU: não normalizou';
