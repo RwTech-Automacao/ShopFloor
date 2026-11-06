@@ -11,8 +11,8 @@ import {
 const BASE: EntradaRegra = {
   modulo: 'shopfloor',
   tipo: 'parado',
-  nome: 'Parado no Almoxarifado',
-  postos: ['Almoxarifado'],
+  nome: 'Parado ou travado',
+  postos: ['Teste'],
   taxaMinima: '',
   janelaTipo: '',
   janelaValor: null,
@@ -24,7 +24,7 @@ const BASE: EntradaRegra = {
   ativa: true,
 }
 
-const MSG_LIMITE = 'Informe o limite em horas (de 1 a 72).'
+const MSG_LIMITE = 'Informe o limite em horas (de 1 a 720).'
 
 function erroDe(e: EntradaRegra): string | null {
   const r = validarRegra(e)
@@ -48,15 +48,40 @@ describe('validarRegra no tipo parado', () => {
     expect(r.valor.horaResumo).toBeNull()
     expect(r.valor.lembreteMin).toBe(30)
     expect(r.valor.intervalos).toEqual([])
+    // sem escolha, o padrão é o mais conservador: só OPs ativas, e as reprovadas entram
+    expect(r.valor.soOpsAtivas).toBe(true)
+    expect(r.valor.incluirManutencao).toBe(true)
   })
 
   it('as constantes do limite', () => {
-    expect(LIMITE_HORAS_MAX).toBe(72)
-    expect(LIMITE_HORAS_PADRAO).toBe(2)
+    expect(LIMITE_HORAS_MAX).toBe(720)
+    expect(LIMITE_HORAS_PADRAO).toBe(24)
   })
 
-  it('aceita o limite de 1 a 72, inclusive como texto', () => {
-    for (const v of [1, 2, 72, '1', '72']) {
+  it('guarda as duas opções que o gestor escolheu', () => {
+    const r = validarRegra({ ...BASE, soOpsAtivas: false, incluirManutencao: false })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.valor.soOpsAtivas).toBe(false)
+      expect(r.valor.incluirManutencao).toBe(false)
+    }
+  })
+
+  it('os outros tipos saem com as opções neutras (true), qualquer que seja a entrada', () => {
+    const r = validarRegra({
+      modulo: 'shopfloor', tipo: 'tempo', nome: 'T', postos: ['Teste'], janelaTipo: 'tempo', janelaValor: '60',
+      limiteTempo: '2:00', minimoBipes: '10', taxaMinima: '', lembreteMin: null, canais: ['telegram'],
+      destinatarios: ['u1'], ativa: true, soOpsAtivas: false, incluirManutencao: false,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.valor.soOpsAtivas).toBe(true)
+      expect(r.valor.incluirManutencao).toBe(true)
+    }
+  })
+
+  it('aceita o limite de 1 a 720 (30 dias), inclusive como texto', () => {
+    for (const v of [1, 2, 72, 168, 720, '1', '720']) {
       const r = validarRegra({ ...BASE, limiteHoras: v })
       expect(r.ok).toBe(true)
       if (r.ok) expect(r.valor.limiteHoras).toBe(Number(v))
@@ -64,7 +89,7 @@ describe('validarRegra no tipo parado', () => {
   })
 
   it('recusa o limite ausente, 0, 73, 1,5 e texto', () => {
-    for (const v of [undefined, null, '', 0, 73, 1.5, '1,5', 'abc']) {
+    for (const v of [undefined, null, '', 0, 721, 1.5, '1,5', 'abc']) {
       expect(erroDe({ ...BASE, limiteHoras: v })).toBe(MSG_LIMITE)
     }
   })
@@ -120,12 +145,18 @@ describe('validarRegra no tipo parado', () => {
 
 describe('colunas da lista no tipo parado', () => {
   const regra = { tipo: 'parado' as const, janelaTipo: 'op' as const, janelaValor: null, horaResumo: null }
-  it('Limite mostra as horas de expediente', () => {
-    expect(
-      resumoLimite({ ...regra, limiteHoras: 3, taxaMinima: null, limiteTempoSeg: null, limiteOcorrencias: null }),
-    ).toBe('Parado há mais de 3 h de expediente')
+  const medidas = { taxaMinima: null, limiteTempoSeg: null, limiteOcorrencias: null }
+  it('Limite mostra as horas, de expediente quando a regra tem turno', () => {
+    expect(resumoLimite({ ...regra, ...medidas, limiteHoras: 3, intervalos: [{ inicio: '07:00', fim: '17:00' }] }))
+      .toBe('Parado há mais de 3 h de expediente')
+    expect(resumoLimite({ ...regra, ...medidas, limiteHoras: 3, intervalos: [] })).toBe('Parado há mais de 3 h')
+    expect(resumoLimite({ ...regra, ...medidas, limiteHoras: 3 })).toBe('Parado há mais de 3 h')
+  })
+  it('Limite de dias redondos mostra os dias entre parênteses (relógio corrido)', () => {
+    expect(resumoLimite({ ...regra, ...medidas, limiteHoras: 168, intervalos: [] })).toBe('Parado há mais de 168 h (7 dias)')
+    expect(resumoLimite({ ...regra, ...medidas, limiteHoras: 24, intervalos: [] })).toBe('Parado há mais de 24 h (1 dia)')
   })
   it('Janela mostra o que a regra olha', () => {
-    expect(resumoJanelaRegra(regra)).toBe('Itens prontos sem entrada no Almoxarifado')
+    expect(resumoJanelaRegra(regra)).toBe('Peças paradas em qualquer posto, sem terminar')
   })
 })

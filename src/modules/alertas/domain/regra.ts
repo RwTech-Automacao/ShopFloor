@@ -49,8 +49,12 @@ export interface EntradaRegra {
   intervalos?: unknown
   /** Resumo diário: a hora do envio ('HH:MM', hora da fábrica). Nos outros tipos, é ignorado. */
   horaResumo?: string | null
-  /** Parado no Almoxarifado: horas de expediente sem entrada (inteiro de 1 a 72). Nos outros, é ignorado. */
+  /** Parado ou travado: horas paradas (inteiro de 1 a 720); de expediente se a regra tem turno. Nos outros, é ignorado. */
   limiteHoras?: string | number | null
+  /** Parado ou travado: olha só as OPs ativas (não finalizadas). Ausente = true. Nos outros tipos, é ignorado. */
+  soOpsAtivas?: boolean
+  /** Parado ou travado: conta também as peças reprovadas aguardando conserto/Manutenção. Ausente = true. */
+  incluirManutencao?: boolean
   ativa: boolean
 }
 
@@ -72,8 +76,12 @@ export interface RegraValida {
   intervalos: Intervalo[]
   /** Resumo diário: a hora do envio ('HH:MM'). Nos outros tipos, null. */
   horaResumo: string | null
-  /** Parado no Almoxarifado: o limite em horas de expediente. Nos outros tipos, null. */
+  /** Parado ou travado: o limite em horas. Nos outros tipos, null. */
   limiteHoras: number | null
+  /** Parado ou travado: só as OPs ativas. Nos outros tipos fica true (neutro; a coluna do banco tem default true). */
+  soOpsAtivas: boolean
+  /** Parado ou travado: inclui as reprovadas aguardando conserto. Nos outros tipos fica true (neutro). */
+  incluirManutencao: boolean
   canais: Canal[]
   destinatarios: string[]
   avisarPessoas: boolean
@@ -139,12 +147,12 @@ export const PADROES_TIPO = {
  * 0115); vazia = não descarta nenhum intervalo (todas as pausas entram na média). */
 export const PAUSA_MAX_MIN = { min: 1, max: 240 } as const
 
-/** Teto e padrão do limite do parado (check da 0167: 1..72). */
-export const LIMITE_HORAS_MAX = 72
-export const LIMITE_HORAS_PADRAO = 2
+/** Teto e padrão do limite do parado (check da 0172: 1..720 horas = 30 dias; era 1..72 na 0167). */
+export const LIMITE_HORAS_MAX = 720
+export const LIMITE_HORAS_PADRAO = 24
 
 const MSG_LIMITE_HORAS = `Informe o limite em horas (de 1 a ${LIMITE_HORAS_MAX}).`
-const JANELA_PARADO = 'Itens prontos sem entrada no Almoxarifado'
+const JANELA_PARADO = 'Peças paradas em qualquer posto, sem terminar'
 const JANELA_COMPELS = 'Fila de envio ao Compels'
 const LIMITE_COMPELS = 'Na primeira falha do envio'
 const MSG_RESUMO_CAMPO = 'O resumo diário não usa este campo.'
@@ -263,7 +271,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     horaResumo = textoLimpo(e.horaResumo)
   }
 
-  // Parado no Almoxarifado: também sem janela (sai 'op' de fachada, como o fim de EMB; o banco exige
+  // Parado ou travado na produção: também sem janela (sai 'op' de fachada, como o fim de EMB; o banco exige
   // janela_valor nulo). Os campos de medida dos outros tipos são IGNORADOS e saem nulos. Os turnos
   // são opcionais: sem nenhum, o relógio é corrido; com algum, só as horas de expediente contam.
   let limiteHoras: number | null = null
@@ -459,6 +467,8 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
       intervalos,
       horaResumo,
       limiteHoras,
+      soOpsAtivas: tipo === 'parado' ? e.soOpsAtivas !== false : true,
+      incluirManutencao: tipo === 'parado' ? e.incluirManutencao !== false : true,
       canais,
       destinatarios,
       avisarPessoas,
@@ -514,12 +524,20 @@ export function validarPrevia(e: EntradaPrevia): Resultado<PreviaValida> {
 export function resumoLimite(
   r: Pick<RegraValida, 'tipo' | 'taxaMinima' | 'limiteTempoSeg' | 'limiteOcorrencias'> & {
     limiteHoras?: number | null
+    /** Os turnos da regra: com algum, o limite é de expediente. */
+    intervalos?: readonly unknown[]
   },
 ): string {
   // O fim de EMB não tem limite: tem gatilho. Mostrar '—' deixaria a coluna parecendo defeito.
   if (r.tipo === 'emb') return LIMITE_EMB
   if (r.tipo === 'compels') return LIMITE_COMPELS
-  if (r.tipo === 'parado') return r.limiteHoras == null ? '—' : `Parado há mais de ${r.limiteHoras} h de expediente`
+  if (r.tipo === 'parado') {
+    if (r.limiteHoras == null) return '—'
+    if ((r.intervalos?.length ?? 0) > 0) return `Parado há mais de ${r.limiteHoras} h de expediente`
+    // Relógio corrido: dias redondos ganham a conversão, para "168 h" ser lido como uma semana.
+    const dias = r.limiteHoras % 24 === 0 ? r.limiteHoras / 24 : 0
+    return `Parado há mais de ${r.limiteHoras} h${dias > 0 ? ` (${dias} ${dias === 1 ? 'dia' : 'dias'})` : ''}`
+  }
   if (r.tipo === 'tempo') return r.limiteTempoSeg === null ? '—' : `≤ ${formatarMmSs(r.limiteTempoSeg)}/peça`
   if (r.tipo === 'defeito') return r.limiteOcorrencias === null ? '—' : `≥ ${r.limiteOcorrencias} vezes`
   return r.taxaMinima === null ? '—' : `≥ ${formatarMeta(r.taxaMinima)}%`

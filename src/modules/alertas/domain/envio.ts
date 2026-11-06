@@ -332,7 +332,10 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
   return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
 }
 
-/** Lê o `dados` do parado (0167): `itens` (array de {tipo, codigo, pecas, minutos}) e `limite_horas`. */
+/**
+ * Lê o `dados` do parado (0167, reescrito na 0172): `itens` (array de {tipo, codigo = posto, pecas,
+ * minutos, amostras}), `limite_horas` e `expediente` (a regra conta horas de expediente).
+ */
 function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
   const refOp = refOpDe(dados)
   if (tipo === 'normalizou') return textoNormalizouParado(refOp)
@@ -343,14 +346,21 @@ function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>):
     }
     const i = bruto as Record<string, unknown>
     const t = i.tipo
-    if (t !== 'caixa' && t !== 'lote' && t !== 'peca') throw new DadosEnvioInvalidos('itens.tipo')
-    return { tipo: t, codigo: texto(i, 'codigo'), pecas: numero(i, 'pecas'), minutos: numero(i, 'minutos') }
+    if (t !== 'posto' && t !== 'conserto') throw new DadosEnvioInvalidos('itens.tipo')
+    // Ausente nas linhas sem exemplo; o que não é texto é descartado, não vira "undefined" na mensagem.
+    const amostras = Array.isArray(i.amostras)
+      ? i.amostras.filter((a): a is string => typeof a === 'string' && a !== '')
+      : []
+    return {
+      tipo: t, codigo: texto(i, 'codigo'), pecas: numero(i, 'pecas'), minutos: numero(i, 'minutos'), amostras,
+    }
   })
   const agora = data(dados, 'agora')
   const alerta = textoAlertaParado({
     ...refOp,
     regraNome: texto(dados, 'regra_nome'),
     limiteHoras: numero(dados, 'limite_horas'),
+    expediente: dados.expediente === true,
     itens,
     em: agora,
   })
@@ -417,7 +427,7 @@ function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
  *   compels:   linhas, itens (array de {motivo, linhas, pecas, desistiu}); 0170
  *   compels_aviso: regra_nome, agora, avisos (array de {pmo, op, quantidade, aviso}); 0170
- *   parado:    limite_horas, mais_antiga_min, itens (array de {tipo, codigo, pecas, minutos}); 0167
+ *   parado:    limite_horas, mais_antiga_min, expediente, itens (array de {tipo, codigo, pecas, minutos, amostras}); 0167/0172
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome

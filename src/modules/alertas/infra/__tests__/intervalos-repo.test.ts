@@ -113,6 +113,8 @@ const TURNO: RegraValida = {
   lembreteMin: null,
   horaResumo: null,
   limiteHoras: null,
+  soOpsAtivas: true,
+  incluirManutencao: true,
   intervalos: [
     { inicio: '07:00', fim: '12:00' },
     { inicio: '13:30', fim: '17:30' },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { minutosDeExpediente } from '../horas-de-turno'
+import { corteDeExpediente, ehDiaUtilSp, minutosDeExpediente } from '../horas-de-turno'
 
 /** Instante a partir da hora de PAREDE de São Paulo (UTC-3, sem horário de verão). */
 const sp = (dia: string, hhmm: string) => new Date(`${dia}T${hhmm}:00-03:00`)
@@ -83,5 +83,44 @@ describe('minutosDeExpediente', () => {
     // 50 chamadas < 1500 ms = 30 ms cada, folga larga sobre o esperado (poucos ms) para não
     // ficar instável em máquina lenta; antes do cache dos formatadores eram ~270 ms por chamada.
     expect(performance.now() - ini).toBeLessThan(1500)
+  })
+})
+
+describe('corteDeExpediente', () => {
+  const AGORA = sp('2026-10-28', '15:00') // quarta
+
+  it('sem turno é agora menos o limite, em relógio corrido (fim de semana conta)', () => {
+    expect(corteDeExpediente(AGORA, 168 * 60, []).getTime()).toBe(AGORA.getTime() - 168 * 3_600_000)
+  })
+
+  it('com turno, quem está no corte tem exatamente o limite; um minuto depois, menos', () => {
+    const corte = corteDeExpediente(AGORA, 120, TURNOS) // 2 h de expediente
+    expect(minutosDeExpediente(corte, AGORA, TURNOS)).toBeGreaterThanOrEqual(120)
+    expect(minutosDeExpediente(new Date(corte.getTime() + 60_000), AGORA, TURNOS)).toBeLessThan(120)
+    expect(corte.getTime()).toBe(sp('2026-10-28', '11:30').getTime()) // 13:30-15:00 (90) + 11:30-12:00 (30)
+  })
+
+  it('atravessa a noite e o fim de semana: o corte é o instante certo, não o relógio', () => {
+    const segunda = sp('2026-11-02', '09:00')
+    const corte = corteDeExpediente(segunda, 600, TURNOS) // 10 h de expediente
+    expect(minutosDeExpediente(corte, segunda, TURNOS)).toBeGreaterThanOrEqual(600)
+    expect(minutosDeExpediente(new Date(corte.getTime() + 60_000), segunda, TURNOS)).toBeLessThan(600)
+    // sexta 30/10 ficou para trás do fim de semana: o corte cai na sexta, não no sábado
+    expect(corte.getTime()).toBeLessThan(sp('2026-10-31', '00:00').getTime())
+  })
+
+  it('limite além do que o cálculo enxerga devolve o início da janela, sem travar', () => {
+    const corte = corteDeExpediente(AGORA, 720 * 60 * 10, TURNOS)
+    expect(Number.isFinite(corte.getTime())).toBe(true)
+    expect(corte.getTime()).toBeLessThan(AGORA.getTime())
+  })
+})
+
+describe('ehDiaUtilSp', () => {
+  it('segunda a sexta, no calendário de São Paulo', () => {
+    expect(ehDiaUtilSp(sp('2026-11-02', '08:00'))).toBe(true) // segunda
+    expect(ehDiaUtilSp(sp('2026-11-06', '23:30'))).toBe(true) // sexta à noite (já é sábado em UTC)
+    expect(ehDiaUtilSp(sp('2026-11-07', '00:10'))).toBe(false) // sábado, 03:10 UTC
+    expect(ehDiaUtilSp(sp('2026-11-08', '12:00'))).toBe(false) // domingo
   })
 })

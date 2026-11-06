@@ -59,3 +59,40 @@ export function minutosDeExpediente(de: Date, ate: Date, turnos: readonly Interv
   }
   return Math.floor(total)
 }
+
+/** Segunda a sexta no calendário de São Paulo (o dia da semana sai da data de parede, não do fuso do processo). */
+export function ehDiaUtilSp(d: Date): boolean {
+  const p = partesSp(d)
+  const semana = new Date(Date.UTC(p.ano, p.mes - 1, p.dia)).getUTCDay()
+  return semana !== 0 && semana !== 6
+}
+
+/**
+ * O instante MAIS RECENTE `T` tal que `minutosDeExpediente(T, agora, turnos) >= limiteMin`: quem ficou
+ * parado desde `T` (ou antes) já passou do limite. A conta é monotônica (quanto mais antigo o
+ * instante, mais minutos), então uma busca binária acha o corte; o banco filtra por `data_hora <= corte`
+ * e a conta de expediente continua morando só aqui. Sem turno legível é relógio corrido: `agora - limite`.
+ * Se nem a janela inteira do cálculo (400 dias) chega ao limite, devolve o início dela.
+ */
+export function corteDeExpediente(agora: Date, limiteMin: number, turnos: readonly Intervalo[]): Date {
+  const fim = agora.getTime()
+  const direto = fim - limiteMin * MINUTO_MS
+  const temTurno = turnos.some((t) => {
+    const ini = lerHhMm(t.inicio)
+    const f = lerHhMm(t.fim)
+    return ini !== null && f !== null && f > ini
+  })
+  if (!temTurno) return new Date(direto)
+  const maisAntigo = fim - DIAS_MAX * 24 * 60 * MINUTO_MS
+  if (minutosDeExpediente(new Date(maisAntigo), agora, turnos) < limiteMin) return new Date(maisAntigo)
+  // Invariante: `lo` atinge o limite. Procura o maior instante (em minutos inteiros) que ainda atinge;
+  // o expediente é no máximo o relógio, então o corte nunca passa de `agora - limite`.
+  let lo = Math.floor(maisAntigo / MINUTO_MS)
+  let hi = Math.floor(direto / MINUTO_MS)
+  while (lo < hi) {
+    const meio = Math.ceil((lo + hi) / 2)
+    if (minutosDeExpediente(new Date(meio * MINUTO_MS), agora, turnos) >= limiteMin) lo = meio
+    else hi = meio - 1
+  }
+  return new Date(lo * MINUTO_MS)
+}

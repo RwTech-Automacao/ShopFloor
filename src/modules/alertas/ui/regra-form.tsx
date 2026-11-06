@@ -29,6 +29,15 @@ import { IntervalosEditor } from './intervalos-editor'
 import { PmosSelecao } from './pmos-selecao'
 
 const TOAST = { position: 'bottom-center' } as const
+
+/** Dica sob o campo do limite: "168 h = 7 dias" para o gestor não ter de fazer a conta. */
+function textoDiasDoLimite(texto: string): string {
+  const h = Number(texto.trim())
+  if (!Number.isInteger(h) || h < 1) return ''
+  if (h < 24) return ''
+  const dias = h / 24
+  return Number.isInteger(dias) ? `${h} h = ${dias} ${dias === 1 ? 'dia' : 'dias'}` : `${h} h = ${Math.floor(dias)} d ${h % 24} h`
+}
 /** Mensagem do repositório quando a regra já foi excluída (exclusão lógica) por outro gestor. */
 export const ERRO_REGRA_EXCLUIDA = 'Essa regra foi excluída.'
 
@@ -60,7 +69,7 @@ const TITULO_PREVIA: Record<TipoRegra, string> = {
   // Sem uso, pelo mesmo motivo: não há janela a antecipar no fim de EMB, e o botão "Ver prévia" não
   // aparece neste tipo. A chave fecha o Record e dá um título honesto se a prévia um dia existir.
   emb: 'Fim de EMB',
-  parado: 'Parado no Almoxarifado',
+  parado: 'Parado ou travado na produção',
   compels: 'Problemas no envio ao Compels',
 }
 
@@ -79,7 +88,7 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
   emb:
     'O aviso de fim de EMB não usa posto: ele sai quando todos os processos de uma EMB terminam.',
   parado:
-    'O aviso olha, por OP, as caixas, lotes e peças que já ficaram prontos no posto anterior e ainda não deram entrada no Almoxarifado. Cada OP parada abre o seu próprio alerta.',
+    'O aviso olha, por OP, as peças cujo último registro está num dos postos marcados há mais tempo que o limite e que ainda não terminaram. Cada OP com peça parada abre o seu próprio alerta e lista, por posto, quantas peças são e há quanto tempo.',
   compels:
     'O aviso olha a fila de envio das entradas do Almoxarifado ao Compels. Cada OP com linha travada abre o seu próprio alerta, com o motivo que o Compels devolveu.',
 }
@@ -92,8 +101,6 @@ const EXPLICA_FILTRO: Partial<Record<TipoRegra, string>> = {
     'Só aparecem os postos que dão Aprovado ou Reprovado. Posto que só registra a passagem da peça não tem taxa e ficaria fora do relatório, sem aviso.',
   defeito:
     'Só aparecem os postos que registram o código do defeito na reprova. Sem código não há defeito para se repetir, e o alerta nunca sairia.',
-  parado:
-    'Só aparecem os postos de perfil Almoxarifado: é neles que a entrada dos itens acontece. Em qualquer outro posto não há o que estar parado.',
   compels:
     'Só aparecem os postos de perfil Almoxarifado: é neles que nasce a fila de envio ao Compels.',
 }
@@ -106,7 +113,6 @@ const AVISO_FORA_DO_TIPO: Partial<Record<TipoRegra, string>> = {
   aprovacao: 'não dá Aprovado/Reprovado, então a taxa fica sempre em 100% e o alerta não sai',
   resumo: 'não dá Aprovado/Reprovado, então não tem taxa e fica fora do resumo',
   defeito: 'não registra código de defeito, então não há o que repetir e o alerta não sai',
-  parado: 'não é um posto de Almoxarifado, então não há entrada a esperar e o alerta não sai',
   compels: 'não é um posto de Almoxarifado, então não há envio ao Compels a vigiar e o alerta não sai',
 }
 
@@ -239,6 +245,8 @@ export function RegraForm({
   const [intervalos, setIntervalos] = useState<Intervalo[]>(() => intervalosIniciais(tipo, regra))
   const [horaResumo, setHoraResumo] = useState(regra?.horaResumo ?? HORA_RESUMO_PADRAO)
   const [limiteHoras, setLimiteHoras] = useState(String(regra?.limiteHoras ?? LIMITE_HORAS_PADRAO))
+  const [soOpsAtivas, setSoOpsAtivas] = useState(regra?.soOpsAtivas ?? true)
+  const [incluirManutencao, setIncluirManutencao] = useState(regra?.incluirManutencao ?? true)
   const [minimo, setMinimo] = useState(minimoInicial(tipo, regra))
   // O compels abre com o lembrete de hora em hora (decisão de 06/11/2026); os outros tipos, vazio. Regra
   // salva mostra o que está salvo (vazio quando a regra não lembra).
@@ -309,7 +317,12 @@ export function RegraForm({
       // O turno do parado é opcional: linha deixada em branco não é turno, e não pode virar erro de
       // "informe os horários" para quem queria o relógio corrido.
       ...(tipo === 'parado'
-        ? { limiteHoras, intervalos: intervalos.filter((i) => i.inicio.trim() !== '' || i.fim.trim() !== '') }
+        ? {
+            limiteHoras,
+            soOpsAtivas,
+            incluirManutencao,
+            intervalos: intervalos.filter((i) => i.inicio.trim() !== '' || i.fim.trim() !== ''),
+          }
         : {}),
       ...(tipo === 'resumo' ? { horaResumo } : {}),
       ativa: regra?.ativa ?? true,
@@ -365,7 +378,7 @@ export function RegraForm({
           id="nome"
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          placeholder={tipo === 'emb' ? 'Divergências de EMB' : tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : tipo === 'parado' ? 'Parado no Almoxarifado' : tipo === 'compels' ? 'Problemas no Compels' : 'Teste abaixo de 90'}
+          placeholder={tipo === 'emb' ? 'Divergências de EMB' : tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : tipo === 'parado' ? 'Peças paradas há mais de uma semana' : tipo === 'compels' ? 'Problemas no Compels' : 'Teste abaixo de 90'}
           autoComplete="off"
         />
       </div>
@@ -575,8 +588,9 @@ export function RegraForm({
             <div className="flex items-center gap-1.5">
               <Label htmlFor="limite-horas">Limite (horas)</Label>
               <Explica titulo="Limite (horas)">
-                <p>Quanto tempo os itens prontos podem esperar para dar entrada no Almoxarifado. Passou disso, a OP abre o alerta.</p>
-                <p>Conta só as horas de expediente, de segunda a sexta, pelos turnos abaixo. De 1 a {LIMITE_HORAS_MAX} horas.</p>
+                <p>Quanto tempo uma peça pode ficar parada no mesmo posto, sem avançar, antes de a OP abrir o alerta. De 1 a {LIMITE_HORAS_MAX} horas (30 dias).</p>
+                <p>Em dias: <strong>24 h = 1 dia</strong>, <strong>168 h = 1 semana</strong>, <strong>720 h = 30 dias</strong>.</p>
+                <p>Sem turnos, o relógio é corrido (dia, noite e fim de semana contam). Com turnos, só contam as horas de expediente, de segunda a sexta.</p>
               </Explica>
             </div>
             <Input
@@ -585,6 +599,34 @@ export function RegraForm({
               onChange={(e) => setLimiteHoras(e.target.value)}
               inputMode="numeric"
             />
+            <span className="text-xs text-muted-foreground">{textoDiasDoLimite(limiteHoras)}</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                aria-label="Só OPs ativas"
+                checked={soOpsAtivas}
+                onChange={() => setSoOpsAtivas((a) => !a)}
+              />
+              Só OPs ativas
+              <Explica titulo="Só OPs ativas">
+                <p><strong>Marcado</strong>: só entram as OPs que não foram finalizadas.</p>
+                <p><strong>Desmarcado</strong>: também as OPs já finalizadas, com peças que ficaram pelo caminho.</p>
+              </Explica>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                aria-label="Incluir peças em Manutenção"
+                checked={incluirManutencao}
+                onChange={() => setIncluirManutencao((a) => !a)}
+              />
+              Incluir peças em Manutenção
+              <Explica titulo="Incluir peças em Manutenção">
+                <p>Peças reprovadas que aguardam conserto também ficam paradas. <strong>Marcado</strong>: elas entram na conta (e aparecem como "reprovadas, aguardando conserto"). <strong>Desmarcado</strong>: só contam as peças que não foram reprovadas.</p>
+              </Explica>
+            </label>
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1.5">
@@ -741,6 +783,9 @@ export function RegraForm({
             <Explica titulo="Lembrar a cada (min)">
               <p>Enquanto o problema continuar e ninguém apertar <strong>Resolvido</strong>, o alerta é reenviado a cada X minutos.</p>
               <p>Vazio = só um alerta quando começa e um aviso quando normaliza.</p>
+              {tipo === 'parado' && (
+                <p>Para um aviso por dia, use <strong>1440</strong> (24 h). Este tipo só avisa de segunda a sexta: sábado e domingo ficam em silêncio.</p>
+              )}
             </Explica>
           </div>
           <Input

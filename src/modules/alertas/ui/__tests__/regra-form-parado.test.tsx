@@ -44,7 +44,7 @@ const enviado = () => (salvarRegraAction.mock.calls[0] as unknown[])[2] as Recor
 
 function preencher() {
   fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Parado' } })
-  fireEvent.click(screen.getByLabelText('Almoxarifado'))
+  fireEvent.click(screen.getByLabelText('Teste'))
   fireEvent.click(screen.getByLabelText('Telegram'))
   fireEvent.click(screen.getByLabelText('Ana Gestora'))
 }
@@ -52,9 +52,12 @@ function preencher() {
 beforeEach(() => vi.clearAllMocks())
 
 describe('formulário da regra parado', () => {
-  it('mostra o limite em horas (padrão 2) e o editor de turnos, e esconde o que não se aplica', () => {
+  it('mostra o limite em horas (padrão 24) e o editor de turnos, e esconde o que não se aplica', () => {
     montar()
-    expect(screen.getByLabelText('Limite (horas)')).toHaveValue('2')
+    expect(screen.getByLabelText('Limite (horas)')).toHaveValue('24')
+    expect(screen.getByText('24 h = 1 dia')).toBeInTheDocument()
+    expect(screen.getByLabelText('Só OPs ativas')).toBeChecked()
+    expect(screen.getByLabelText('Incluir peças em Manutenção')).toBeChecked()
     expect(screen.getByText(/Turnos \(conta só as horas de expediente; vazio = relógio corrido\)/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Adicionar intervalo' })).toBeInTheDocument()
     expect(screen.queryByText('Janela')).not.toBeInTheDocument()
@@ -64,11 +67,37 @@ describe('formulário da regra parado', () => {
     expect(screen.queryByRole('button', { name: /ver prévia/i })).not.toBeInTheDocument()
   })
 
-  it('lista só o posto de perfil Almoxarifado', () => {
+  it('lista todos os postos da rota (a peça pode parar em qualquer um)', () => {
     montar()
-    expect(screen.getByLabelText('Almoxarifado')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Teste')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Embalagem')).not.toBeInTheDocument()
+    for (const p of ['Teste', 'Embalagem', 'Almoxarifado']) expect(screen.getByLabelText(p)).toBeInTheDocument()
+  })
+
+  it('a dica do limite converte em dias, e some abaixo de um dia', () => {
+    montar()
+    fireEvent.change(screen.getByLabelText('Limite (horas)'), { target: { value: '168' } })
+    expect(screen.getByText('168 h = 7 dias')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Limite (horas)'), { target: { value: '30' } })
+    expect(screen.getByText('30 h = 1 d 6 h')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Limite (horas)'), { target: { value: '6' } })
+    expect(screen.queryByText(/^\d+ h = /)).not.toBeInTheDocument()
+  })
+
+  it('manda as duas opções: o caso de uso de uma semana, relógio corrido', async () => {
+    salvarRegraAction.mockResolvedValue({ ok: true, id: 'g1' })
+    montar()
+    preencher()
+    fireEvent.change(screen.getByLabelText('Limite (horas)'), { target: { value: '168' } })
+    fireEvent.change(screen.getByLabelText('Lembrar a cada (min)'), { target: { value: '1440' } })
+    fireEvent.click(screen.getByLabelText('Só OPs ativas'))
+    fireEvent.click(screen.getByLabelText('Incluir peças em Manutenção'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    const d = enviado()
+    expect(d.limiteHoras).toBe('168')
+    expect(d.lembreteMin).toBe('1440')
+    expect(d.soOpsAtivas).toBe(false)
+    expect(d.incluirManutencao).toBe(false)
+    expect(d.intervalos).toEqual([])
   })
 
   it('manda o limite, a janela de fachada e nenhum turno quando o gestor não cadastra', async () => {
@@ -80,7 +109,9 @@ describe('formulário da regra parado', () => {
     await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
     const d = enviado()
     expect(d.tipo).toBe('parado')
-    expect(d.postos).toEqual(['Almoxarifado'])
+    expect(d.postos).toEqual(['Teste'])
+    expect(d.soOpsAtivas).toBe(true)
+    expect(d.incluirManutencao).toBe(true)
     expect(d.limiteHoras).toBe('4')
     expect(d.janelaTipo).toBe('op')
     expect(d.janelaValor).toBeNull()
@@ -107,13 +138,13 @@ describe('formulário da regra parado', () => {
     expect(enviado().intervalos).toEqual([{ inicio: '07:00', fim: '12:00' }])
   })
 
-  it('limite fora de 1 a 72 é recusado na tela, sem ir ao servidor', async () => {
+  it('limite fora de 1 a 720 é recusado na tela, sem ir ao servidor', async () => {
     montar()
     preencher()
     fireEvent.change(screen.getByLabelText('Limite (horas)'), { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(toastErro).toHaveBeenCalled())
-    expect(String((toastErro.mock.calls[0] as unknown[])[0])).toBe('Informe o limite em horas (de 1 a 72).')
+    expect(String((toastErro.mock.calls[0] as unknown[])[0])).toBe('Informe o limite em horas (de 1 a 720).')
     expect(salvarRegraAction).not.toHaveBeenCalled()
   })
 
@@ -136,6 +167,8 @@ describe('formulário da regra parado', () => {
       intervalos: [{ inicio: '07:00', fim: '12:00' }],
       horaResumo: null,
       limiteHoras: 6,
+      soOpsAtivas: false,
+      incluirManutencao: false,
       canais: ['telegram'],
       destinatarios: ['u1'],
       avisarPessoas: true,
@@ -145,5 +178,7 @@ describe('formulário da regra parado', () => {
     })
     expect(screen.getByLabelText('Limite (horas)')).toHaveValue('6')
     expect(screen.getByLabelText('Início do intervalo 1')).toHaveValue('07:00')
+    expect(screen.getByLabelText('Só OPs ativas')).not.toBeChecked()
+    expect(screen.getByLabelText('Incluir peças em Manutenção')).not.toBeChecked()
   })
 })

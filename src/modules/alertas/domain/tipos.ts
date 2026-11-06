@@ -87,7 +87,7 @@ export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
   defeito: 'Defeito repetido',
   resumo: 'Resumo diário',
   emb: 'Fim de EMB',
-  parado: 'Parado no Almoxarifado',
+  parado: 'Parado ou travado na produção',
   compels: 'Problemas no envio ao Compels',
 }
 
@@ -101,7 +101,7 @@ export const DESCRICAO_TIPO_REGRA: Record<TipoRegra, string> = {
   // fecha limpa (decisão 5 da spec, revertida em 14/10/2026). Sem ela o cartão deixaria o gestor
   // achar que a regra só fala quando há problema.
   emb: 'Avisa quando todos os processos de uma EMB terminam, com as divergências de quantidade e as justificativas (ou dizendo que não houve nenhuma).',
-  parado: 'Avisa quando caixas, lotes ou peças prontas ficam horas sem dar entrada no Almoxarifado.',
+  parado: 'Avisa quando peças ficam paradas num posto da produção por mais tempo que o limite, sem terminar.',
   compels:
     'Avisa quando a integração não consegue apontar uma entrada no Compels (com o que o Compels respondeu) ou aponta com ressalva.',
 }
