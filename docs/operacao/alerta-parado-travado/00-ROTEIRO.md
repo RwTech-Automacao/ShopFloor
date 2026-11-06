@@ -1,6 +1,6 @@
 # Deploy do alerta "Parado ou travado na produção" (roteiro)
 
-O tipo de regra `parado` (hoje "Parado no Almoxarifado", migração 0167) passa a ser **"Parado ou travado na produção"**: avisa quando **peças ficam paradas em qualquer posto** da rota por mais de X horas, sem terminar. **Uma mensagem por OP** (chave `PMO/OP`), lembrete a cada N minutos enquanto houver peça parada, normaliza sozinha. Nenhuma tela nova: é uma regra em **Alertas**, como as outras. Use sempre o último commit da `main` depois do merge da branch `feat/alerta-parado-travado`.
+O tipo de regra `parado` (hoje "Parado no Almoxarifado", migração 0167) passa a ser **"Parado ou travado na produção"**: avisa quando **peças ficam paradas em qualquer posto** da rota por mais de X horas, sem terminar. **Um RELATÓRIO ÚNICO por regra** (uma ocorrência por regra, uma mensagem por rodada com todas as OPs), lembrete a cada N minutos com a lista atualizada enquanto houver peça parada, normaliza sozinha. Nenhuma tela nova: é uma regra em **Alertas**, como as outras. Use sempre o último commit da `main` depois do merge da branch `feat/alerta-parado-travado`.
 Tudo na **Lightsail**, um bloco de cada vez. A senha do banco é digitada no `Password:`. Nada de senha no chat.
 
 ## O que este deploy faz
@@ -73,11 +73,11 @@ curl -fsS -m 60 -X POST -H @$HOME/.alertas-cron-header http://127.0.0.1:3000/api
 Abra **Alertas** no navegador: a lista de regras deve carregar e, em **Nova regra**, o tipo **Parado ou travado na produção** deve aparecer, com **Limite (horas)**, **Só OPs ativas** e **Incluir peças em Manutenção**.
 
 ## Passo 5: simulação ANTES de criar a regra de produção
-Sem piso de idade, o primeiro ciclo de uma regra abre **uma ocorrência por OP** para tudo o que já estiver parado — e cada OP vira **um e-mail por destinatário por dia** enquanto houver peça parada. Veja o que a regra do caso de uso enxergaria agora (só leitura):
+Sem piso de idade, o primeiro ciclo de uma regra abre a ocorrência com **tudo o que já estiver parado**, e o relatório (**um e-mail por destinatário por dia**) lista essas OPs enquanto houver peça parada. Veja o que a regra do caso de uso enxergaria agora (só leitura):
 ```bash
 HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PAGER=cat PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -f /tmp/02-simulacao.sql
 ```
-Saem três tabelas: por OP e posto (com a idade e exemplos de SN), o resumo por OP e o total (quantas OPs = quantos e-mails por dia por pessoa). O que olhar: **muitas OPs antigas abandonadas** (o e-mail diário seria sobre elas para sempre). Antes de criar a regra: finalize/arrume a OP, marque **Só OPs ativas**, ou restrinja **Postos** e **PMOs**. Mande-me a saída se houver dúvida.
+Saem quatro resultados: por OP e posto (com a idade e exemplos de SN), o resumo por OP, o total (peças e nº de OPs) e **o relatório como ficaria** (assunto + uma linha por OP, o mesmo texto do e-mail, já com o corte em 2000 caracteres). O que olhar: **muitas OPs antigas abandonadas** (o relatório diário listaria essas OPs para sempre; acima de uns 25 OPs a mensagem é cortada com "… e mais K OPs"). Antes de criar a regra: finalize/arrume a OP, marque **Só OPs ativas**, ou restrinja **Postos** e **PMOs**. Mande-me a saída se houver dúvida.
 
 ## Passo 6: a receita do caso de uso (peças paradas há mais de uma semana, e-mail seg–sex para Diogo, Bruno e Tiago)
 **Pré-requisito:** os três precisam ter **usuário ativo** no ShopFloor com **e-mail** preenchido e **permissão de administrar o módulo ShopFloor** (o e-mail só sai para quem administra; é a mesma regra das outras). O SMTP dos Alertas já funciona em Prod.
@@ -99,11 +99,11 @@ Em **Alertas > Nova regra > Parado ou travado na produção**:
 
 Como se comporta (conferido nos testes):
 - **Só avisa se houver peça parada:** sem peça, não existe ocorrência e nada sai.
-- **Um e-mail por OP com peça parada**, por pessoa. O assunto é a primeira linha: `⚠️ Parado na produção: OP PMO/OP com N peças paradas (limite 168 h)`; nos dias seguintes, `⏰ Lembrete — OP PMO/OP · aberto há 3 d`. O corpo lista, por posto, quantas peças, a idade da mais antiga e até 3 números de série de exemplo.
+- **Um e-mail por dia útil por pessoa, com TODAS as OPs paradas** (relatório único). O assunto é a primeira linha: `⏰ N peças paradas há mais de 7 dias em M OPs`. O corpo tem uma linha por OP, da mais antiga para a mais nova: `PMO/OP · N peças · mais antiga há 9d · Posto A (n), Posto B (n)` (e, com Manutenção ligada, uma linha `↳ reprovadas, aguardando conserto: ...`), e o rodapé `Regra: <nome> · <data>`. O limite do Discord é 2000 caracteres: o que não cabe vira `… e mais K OPs`. O alerta e cada lembrete têm o mesmo formato, com a lista de **agora**. Em Alertas > Ocorrências a regra aparece como **uma** linha ("Todas as OPs").
 - **Primeiro e-mail:** na primeira rodada do cron (5 em 5 minutos) de um **dia útil** depois de criada a regra, para toda OP que já tiver peça com mais de 168 h.
 - **Todo dia útil depois:** o lembrete de 1440 min (24 h) repete o aviso a cada 24 h **desde o último envio**. Como cada rodada olha o relógio a cada 5 minutos, o horário pode **escorregar alguns minutos por dia** (não é um horário fixo como "08:00").
 - **Sábado e domingo:** o app **pula** as regras desse tipo (calendário de São Paulo): nada abre, nada lembra, nada normaliza. Na segunda, o lembrete vence na **primeira rodada do cron do dia** (a mesma hora em que o RDS liga/o cron volta), não "às 08:00".
-- **Quando a OP não tem mais peça parada:** uma mensagem `🟢 Parado na produção: OP PMO/OP sem peças paradas` e a ocorrência se encerra sozinha.
+- **Quando não sobra nenhuma peça parada em nenhuma OP:** uma mensagem `🟢 Parado na produção: sem peças paradas` e a ocorrência se encerra sozinha. Enquanto sobrar alguma, a ocorrência continua e a lista só encolhe.
 - O botão **Resolvido** não existe no e-mail. Quem usa Telegram/Discord pode apertá-lo; o alerta reabre sozinho depois da carência se a peça continuar parada.
 
 ## Passo 7: smoke guiado numa OP de TESTE (antes da regra real)
@@ -113,7 +113,7 @@ Use um PMO/OP **claramente de teste** (ex.: `PMOTESTE01` / `9901`), com a rota e
 ```bash
 HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '"') && test -n "$HOST" && PAGER=cat PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "host=$HOST port=5432 user=postgres dbname=postgres sslmode=require" -v ON_ERROR_STOP=1 -c "update public.sf_registros set data_hora = data_hora - interval '3 hours' where pmo = 'PMOTESTE01' and op = '9901' returning posto, numero_serie, data_hora;"
 ```
-3. **Ver a mensagem** em até 5 minutos num dia útil (ou dispare o `curl` do Passo 4): **uma** mensagem para a OP, com o posto, as peças e os SNs. **Alertas > Ocorrências** mostra uma ocorrência com a OP.
+3. **Ver a mensagem** em até 5 minutos num dia útil (ou dispare o `curl` do Passo 4): **uma** mensagem de relatório com a OP de teste (`⏰ N peças paradas há mais de 1 h em 1 OP`). **Alertas > Ocorrências** mostra uma ocorrência da regra ("Todas as OPs").
 4. **Andar com as peças** (bipar no posto seguinte, ou até o último posto): no cron seguinte, a ocorrência **normaliza** e chega a mensagem 🟢.
 5. **Limpar:** apague a regra de teste e cancele os lançamentos de teste (tela de Cancelamentos). Anote o PMO/OP.
 
@@ -136,9 +136,10 @@ cd ~/supabase/docker && docker compose restart rest
 ```
 
 ## Pontos conhecidos
-- **Uma OP = um e-mail por pessoa por dia.** Com 20 OPs paradas são 20 e-mails por dia para cada um dos três. Não existe (ainda) um "relatório único"; para reduzir, restrinja postos/PMOs ou marque **Só OPs ativas**.
+- **Relatório único:** um e-mail por pessoa por dia útil, qualquer que seja o nº de OPs. A mensagem tem teto de 2000 caracteres (aprox. 25 OPs com um posto cada); acima disso lista as mais antigas e avisa "… e mais K OPs". A lista de peças-exemplo (SN) não vai mais na mensagem. Para encurtar, restrinja postos/PMOs ou marque **Só OPs ativas**.
 - "Peça parada" = último registro do SN (por OP) está num posto da regra e é mais antigo que o limite; **não conta** a peça que terminou (último registro no último posto da rota não é reprovação, a conta da finalização automática). Posto **Burn-in** (peça "cozinhando" por horas) também conta se estiver na regra: tire-o dos postos se não quiser aviso dele.
 - OP que não está em `sf_ordens` (registro órfão) é ignorada. OP sem rota cadastrada não conclui nenhuma peça (todas as peças dela contam como paradas no último posto em que aparecem).
 - A conta de horas é de **expediente** só quando a regra tem turnos (segunda a sexta, fuso de São Paulo); sem turnos é relógio corrido. Feriados contam como dia útil.
-- O posto da ocorrência é o **primeiro posto marcado** na regra (fixo, para a ocorrência não trocar de posto quando a peça andar). Na tela de Ocorrências a OP aparece com esse posto; o detalhe por posto está na mensagem.
+- A ocorrência é **uma por regra**, no **primeiro posto marcado** (fixo; internamente a chave é `TODAS/—`, que a tela mostra como "Todas as OPs"). O detalhe por OP e por posto está só na mensagem. Se você trocar os postos da regra, a ocorrência viva é encerrada e uma nova abre na rodada seguinte.
+- Idade na linha da OP: relógio corrido em dias inteiros (`9d`, ou horas se menos de 1 dia); regra com turnos em horas de expediente (`216 h`), porque um dia de expediente não é um dia de calendário.
 - **Não normalizar** o sufixo `_` das OPs (`PMOC50_`, `8504_` são válidas).

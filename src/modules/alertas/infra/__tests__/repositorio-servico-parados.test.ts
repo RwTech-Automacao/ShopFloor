@@ -106,7 +106,7 @@ describe('avaliar — monta o p_parados', () => {
     expect(m.rpcs.some((r) => r.nome === 'alerta_travados')).toBe(false)
   })
 
-  it('uma regra com um posto travado: uma OP, um item, posto da ocorrência = o 1º posto da regra', async () => {
+  it('uma regra com um posto travado: UM item (o relatório), posto da ocorrência = o 1º posto da regra', async () => {
     const m = montar({
       regras: { data: [regra()], ...OK },
       travados: { data: [grupo({ posto: 'Embalagem' })], ...OK },
@@ -115,11 +115,34 @@ describe('avaliar — monta o p_parados', () => {
     expect(m.parados()).toEqual({
       r1: [
         {
-          pmo: 'PRT797', op: '8563', posto: 'Teste', mais_antiga_min: 300, expediente: true,
-          itens: [{ tipo: 'posto', codigo: 'Embalagem', pecas: 4, minutos: 300, amostras: ['258001', '258002'] }],
+          pmo: 'TODAS', op: '—', posto: 'Teste', mais_antiga_min: 300, expediente: true,
+          itens: [{
+            pmo: 'PRT797', op: '8563', mais_antiga_min: 300,
+            itens: [{ tipo: 'posto', codigo: 'Embalagem', pecas: 4, minutos: 300 }],
+          }],
         },
       ],
     })
+  })
+
+  it('várias OPs e postos viram UM único item da regra, com as OPs dentro (a mais antiga primeiro)', async () => {
+    const m = montar({
+      regras: { data: [regra()], ...OK },
+      travados: {
+        data: [
+          grupo({ op: '8563', posto: 'Teste', em: HA_5H }),
+          grupo({ op: '8564', posto: 'Embalagem', pecas: 2, em: '2026-10-28T12:00:00Z' }),
+          grupo({ op: '8563', posto: 'Embalagem', pecas: 1, em: HA_5H }),
+        ],
+        ...OK,
+      },
+    })
+    await m.avaliar()
+    const r = m.parados().r1 as { pmo: string; op: string; itens: { op: string; itens: unknown[] }[] }[]
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ pmo: 'TODAS', op: '—' })
+    expect(r[0]!.itens.map((o) => o.op).sort()).toEqual(['8563', '8564'])
+    expect(r[0]!.itens.find((o) => o.op === '8563')!.itens).toHaveLength(2)
   })
 
   it('manda ao banco o corte em horas de expediente e as opções da regra', async () => {
@@ -205,8 +228,8 @@ describe('avaliar — monta o p_parados', () => {
       travados: { data: [grupo({ reprovada: true })], ...OK },
     })
     await m.avaliar()
-    const g = m.parados().r1 as { itens: { tipo: string }[] }[]
-    expect(g[0]!.itens[0]!.tipo).toBe('conserto')
+    const g = m.parados().r1 as { itens: { itens: { tipo: string }[] }[] }[]
+    expect(g[0]!.itens[0]!.itens[0]!.tipo).toBe('conserto')
   })
 })
 
@@ -251,8 +274,8 @@ describe('avaliar — o parado nunca derruba a rodada dos outros tipos', () => {
       travados: { data: [grupo({ pmo: null, op: 'RUIM' }), grupo({ op: 'BOA' })], ...OK },
     })
     await m.avaliar()
-    const g = m.parados().r1 as { op: string }[]
-    expect(g.map((o) => o.op)).toEqual(['BOA'])
+    const g = m.parados().r1 as { itens: { op: string }[] }[]
+    expect(g[0]!.itens.map((o) => o.op)).toEqual(['BOA'])
   })
 
   it('elemento nulo em pmos da regra não lança', async () => {

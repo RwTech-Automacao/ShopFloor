@@ -26,8 +26,8 @@ import {
   type RefOp,
 } from './mensagens'
 import { textoEmb, type DivergenciaEmb } from './emb'
-import { textoAlertaParado, textoLembreteParado, textoNormalizouParado } from './parados-texto'
-import type { ItemParado } from './parados'
+import { OP_RELATORIO, PMO_RELATORIO } from './parados'
+import { textoNormalizouParado, textoRelatorioParado, type OpParada } from './parados-texto'
 import {
   textoAlertaCompels,
   textoAvisosCompels,
@@ -333,39 +333,36 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
 }
 
 /**
- * Lê o `dados` do parado (0167, reescrito na 0172): `itens` (array de {tipo, codigo = posto, pecas,
- * minutos, amostras}), `limite_horas` e `expediente` (a regra conta horas de expediente).
+ * Lê o `dados` do parado (relatório único por regra): `itens` = as OPs paradas ({pmo, op, mais_antiga_min,
+ * itens: [{tipo, codigo = posto, pecas, minutos}]}), `limite_horas` e `expediente` (a regra conta horas
+ * de expediente). O alerta e cada lembrete têm o MESMO texto: a lista é a de agora, e a primeira linha
+ * já é o assunto do e-mail.
  */
 function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
-  const refOp = refOpDe(dados)
-  if (tipo === 'normalizou') return textoNormalizouParado(refOp)
+  if (tipo === 'normalizou') return textoNormalizouParado()
   if (!Array.isArray(dados.itens)) throw new DadosEnvioInvalidos('itens')
-  const itens: ItemParado[] = dados.itens.map((bruto) => {
-    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) {
-      throw new DadosEnvioInvalidos('itens')
-    }
-    const i = bruto as Record<string, unknown>
-    const t = i.tipo
-    if (t !== 'posto' && t !== 'conserto') throw new DadosEnvioInvalidos('itens.tipo')
-    // Ausente nas linhas sem exemplo; o que não é texto é descartado, não vira "undefined" na mensagem.
-    const amostras = Array.isArray(i.amostras)
-      ? i.amostras.filter((a): a is string => typeof a === 'string' && a !== '')
-      : []
-    return {
-      tipo: t, codigo: texto(i, 'codigo'), pecas: numero(i, 'pecas'), minutos: numero(i, 'minutos'), amostras,
-    }
+  const objeto = (bruto: unknown, campo: string): Record<string, unknown> => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) throw new DadosEnvioInvalidos(campo)
+    return bruto as Record<string, unknown>
+  }
+  const ops: OpParada[] = dados.itens.map((brutaOp) => {
+    const o = objeto(brutaOp, 'itens')
+    if (!Array.isArray(o.itens)) throw new DadosEnvioInvalidos('itens.itens')
+    const itens = o.itens.map((brutoItem): OpParada['itens'][number] => {
+      const i = objeto(brutoItem, 'itens.itens')
+      const t = i.tipo
+      if (t !== 'posto' && t !== 'conserto') throw new DadosEnvioInvalidos('itens.itens.tipo')
+      return { tipo: t, codigo: texto(i, 'codigo'), pecas: numero(i, 'pecas'), minutos: numero(i, 'minutos') }
+    })
+    return { pmo: texto(o, 'pmo'), op: texto(o, 'op'), maisAntigaMin: numero(o, 'mais_antiga_min'), itens }
   })
-  const agora = data(dados, 'agora')
-  const alerta = textoAlertaParado({
-    ...refOp,
+  return textoRelatorioParado({
     regraNome: texto(dados, 'regra_nome'),
     limiteHoras: numero(dados, 'limite_horas'),
     expediente: dados.expediente === true,
-    itens,
-    em: agora,
+    ops,
+    em: data(dados, 'agora'),
   })
-  if (tipo === 'alerta') return alerta
-  return textoLembreteParado(alerta, refOp, data(dados, 'aberta_em'), agora)
 }
 
 /** Lê o `dados` do compels (0170), ocorrência: `itens` (array de {motivo, linhas, pecas, desistiu}) e `linhas`. */
@@ -427,7 +424,7 @@ function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
  *   compels:   linhas, itens (array de {motivo, linhas, pecas, desistiu}); 0170
  *   compels_aviso: regra_nome, agora, avisos (array de {pmo, op, quantidade, aviso}); 0170
- *   parado:    limite_horas, mais_antiga_min, expediente, itens (array de {tipo, codigo, pecas, minutos, amostras}); 0167/0172
+ *   parado:    limite_horas, mais_antiga_min, expediente, itens (as OPs: array de {pmo, op, mais_antiga_min, itens: array de {tipo, codigo, pecas, minutos}}); relatório único, 0172
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome
@@ -445,9 +442,12 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
   if (tipo === 'compels_aviso') return textoAvisosCompelsDe(dados)
   if (tipo === 'resolvido') {
     // No parado a 0151 copia a chave "PMO/OP" da ocorrência para `defeito`: não é defeito de verdade.
-    const refResolvido = refOpDe(dados)
+    const refBruto = refOpDe(dados)
+    // O relatório único do parado usa TODAS/— no lugar da OP: não é uma OP, então a mensagem não a cita.
+    const ehRelatorio = refBruto.pmo === PMO_RELATORIO && refBruto.op === OP_RELATORIO
+    const refResolvido: RefOp = ehRelatorio ? { pmo: null, op: null, ops: [] } : refBruto
     const defeitoBruto = textoOuNulo(dados, 'defeito')
-    const chaveDeParado = `${(refResolvido.pmo ?? '').trim()}/${refResolvido.op ?? ''}`
+    const chaveDeParado = `${(refBruto.pmo ?? '').trim()}/${refBruto.op ?? ''}`
     const defeito = defeitoBruto !== null && defeitoBruto === chaveDeParado ? null : defeitoBruto
     return textoResolvido({
       ...refResolvido,
