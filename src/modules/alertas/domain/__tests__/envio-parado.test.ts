@@ -18,8 +18,10 @@ describe('textoDoEnvio — parado', () => {
     expect(t.split('\n')[0]).toBe('⚠️ Parado na produção: OP PRT797/8563 com 3 peças paradas (limite 168 h)')
   })
 
-  it('lembrete leva o cabeçalho de lembrete', () => {
-    expect(textoDoEnvio('lembrete', dados)).toMatch(/^⏰ Lembrete — continua há \d+ min\n/)
+  it('lembrete leva a OP no assunto (primeira linha) e há quanto tempo o alerta está aberto', () => {
+    expect(textoDoEnvio('lembrete', dados)).toMatch(/^⏰ Lembrete — OP PRT797\/8563 · aberto há 1 h 05 min\n⚠️ Parado na produção/)
+    const tresDias = { ...dados, aberta_em: '2026-10-25T18:05:00Z' }
+    expect(textoDoEnvio('lembrete', tresDias).split('\n')[0]).toBe('⏰ Lembrete — OP PRT797/8563 · aberto há 3 d')
   })
 
   it('normalizou', () => {

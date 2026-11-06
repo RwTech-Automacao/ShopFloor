@@ -624,7 +624,7 @@ export function RegraForm({
               />
               Incluir peças em Manutenção
               <Explica titulo="Incluir peças em Manutenção">
-                <p>Peças reprovadas que aguardam conserto também ficam paradas. <strong>Marcado</strong>: elas entram na conta (e aparecem como "reprovadas, aguardando conserto"). <strong>Desmarcado</strong>: só contam as peças que não foram reprovadas.</p>
+                <p>Peças reprovadas que aguardam conserto também ficam paradas. <strong>Marcado</strong>: elas entram na conta (e aparecem como “reprovadas, aguardando conserto”). <strong>Desmarcado</strong>: só contam as peças que não foram reprovadas.</p>
               </Explica>
             </label>
           </div>

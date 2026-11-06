@@ -62,3 +62,13 @@ export function textoAlertaParado(d: DadosParado): string {
 export function textoNormalizouParado(d: ParOp): string {
   return `🟢 Parado na produção: OP ${textoOp(d)} sem peças paradas`
 }
+
+/**
+ * O lembrete do parado. A primeira linha é o assunto do e-mail, e o lembrete diário chega com a OP no
+ * assunto (senão três e-mails de OPs diferentes teriam o mesmo "continua há N min"). O tempo é o de
+ * relógio desde que o alerta abriu, em dias a partir de 48 h.
+ */
+export function textoLembreteParado(alerta: string, ref: ParOp, abertaEm: Date, em: Date): string {
+  const min = Math.max(0, Math.floor((em.getTime() - abertaEm.getTime()) / 60_000))
+  return `⏰ Lembrete — OP ${textoOp(ref)} · aberto há ${formatarTempoParado(min, false)}\n${alerta}`
+}

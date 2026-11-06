@@ -26,7 +26,7 @@ import {
   type RefOp,
 } from './mensagens'
 import { textoEmb, type DivergenciaEmb } from './emb'
-import { textoAlertaParado, textoNormalizouParado } from './parados-texto'
+import { textoAlertaParado, textoLembreteParado, textoNormalizouParado } from './parados-texto'
 import type { ItemParado } from './parados'
 import {
   textoAlertaCompels,
@@ -365,7 +365,7 @@ function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>):
     em: agora,
   })
   if (tipo === 'alerta') return alerta
-  return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
+  return textoLembreteParado(alerta, refOp, data(dados, 'aberta_em'), agora)
 }
 
 /** Lê o `dados` do compels (0170), ocorrência: `itens` (array de {motivo, linhas, pecas, desistiu}) e `linhas`. */
