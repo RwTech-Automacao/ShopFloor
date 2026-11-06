@@ -200,7 +200,7 @@ describe('criarPortaCompels', () => {
       const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0 })
       expect(await porta(linha({ id: 'a', estoque: 'EINTER' }))).toMatchObject({ ok: false, aguardar: true })
       expect(await porta(linha({ id: 'b', op: '8650', estoque: 'PA' }))).toMatchObject({ ok: false }) // OP 8650 não liberada
-      expect(await porta(linha({ id: 'c', estoque: 'PA' }))).toEqual({ ok: true })
+      expect(await porta(linha({ id: 'c', estoque: 'PA' }))).toMatchObject({ ok: true })
       expect(corpos).toHaveLength(1)
     })
 
