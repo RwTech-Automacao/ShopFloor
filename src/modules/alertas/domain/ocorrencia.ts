@@ -87,6 +87,8 @@ export function formatarValorOcorrencia(tipo: TipoRegra, valor: number | null): 
   if (tipo === 'defeito') return valor === 1 ? '1 vez' : `${valor} vezes`
   // O parado não mede taxa: mostrar '%' diria uma grandeza que ele não tem.
   if (tipo === 'parado') return '—'
+  // O compels mede quantas linhas da fila estão com problema.
+  if (tipo === 'compels') return valor === 1 ? '1 linha' : `${valor} linhas`
   return `${formatarTaxaValor(valor)}%`
 }
 

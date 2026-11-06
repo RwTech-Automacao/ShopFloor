@@ -197,6 +197,8 @@ export function mensagemRecusaLote(motivo: string, detalhe?: string): string {
       return detalhe || 'Este posto não é um posto de Almoxarifado.'
     case 'posto_fora_da_op':
       return detalhe || 'Este posto não está nos postos desta OP. Acrescente-o em Cadastrar OP.'
+    case 'estoque_invalido':
+      return 'Estoque de destino inválido: escolha PA ou EINTER.'
     default:
       return 'Não foi possível confirmar o lote.'
   }

@@ -64,19 +64,19 @@ describe('postoServeAoTipo', () => {
     for (const p of FLUXO) expect(postoServeAoTipo('tempo', p)).toBe(true)
   })
 
-  // O parado também fica fora: só serve ao posto de perfil Almoxarifado (o `it` dele, abaixo).
+  // O compels também fica fora: só serve ao posto de perfil Almoxarifado.
   // O fim de EMB fica FORA: ele é o único tipo sem posto nenhum (o gatilho é a EMB fechar, e EMB
   // não é posto). O caso dele é o `it` abaixo, para a exclusão ficar medida e não só suposta.
   it('todo tipo de posto aceita pelo menos o posto de teste', () => {
-    for (const tipo of TIPOS_REGRA.filter((t) => t !== 'emb' && t !== 'parado')) {
+    for (const tipo of TIPOS_REGRA.filter((t) => t !== 'emb' && t !== 'compels' && t !== 'ficha')) {
       expect(postoServeAoTipo(tipo, TESTE)).toBe(true)
     }
   })
 
-  it('parado: só o posto de perfil Almoxarifado', () => {
-    expect(postoServeAoTipo('parado', ALMOX)).toBe(true)
-    for (const p of [TESTE, NQA, EMBALAGEM]) expect(postoServeAoTipo('parado', p)).toBe(false)
-    expect(postosOferecidos('parado', [...FLUXO, ALMOX], []).map((p) => p.chave)).toEqual(['Almoxarifado'])
+  it('parado: qualquer posto da rota (a peça pode parar em qualquer um)', () => {
+    for (const p of [TESTE, NQA, EMBALAGEM, ALMOX]) expect(postoServeAoTipo('parado', p)).toBe(true)
+    expect(postosOferecidos('parado', [...FLUXO, ALMOX], []).map((p) => p.chave)).toEqual(
+      [...FLUXO, ALMOX].map((p) => p.chave))
   })
 
   it('fim de EMB não aceita posto nenhum, e não oferece lista de postos', () => {

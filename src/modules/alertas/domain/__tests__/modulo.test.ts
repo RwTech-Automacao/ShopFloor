@@ -33,9 +33,9 @@ describe('módulo da regra de alerta', () => {
     expect(new Set(vistos).size).toBe(vistos.length)
   })
 
-  it('os tipos de posto (e o parado do Almoxarifado) são do ShopFloor', () => {
+  it('os tipos de posto (e os do Almoxarifado: parado, compels e ficha) são do ShopFloor', () => {
     expect(TIPOS_REGRA_POR_MODULO.shopfloor).toEqual([
-      'aprovacao', 'tempo', 'defeito', 'resumo', 'parado',
+      'aprovacao', 'tempo', 'defeito', 'resumo', 'parado', 'compels', 'ficha',
     ])
   })
 

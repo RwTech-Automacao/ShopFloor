@@ -92,6 +92,8 @@ const PARADO: RegraValida = {
   lembreteMin: null,
   horaResumo: null,
   limiteHoras: 3,
+  soOpsAtivas: false,
+  incluirManutencao: true,
   intervalos: [
     { inicio: '07:00', fim: '12:00' },
     { inicio: '13:30', fim: '17:30' },
@@ -118,6 +120,8 @@ function linhaParado(id: string): Record<string, unknown> {
     limite_ocorrencias: null,
     pausa_max_min: null,
     limite_horas: 3,
+    so_ops_ativas: false,
+    incluir_manutencao: true,
     pmos: null,
     lembrete_min: null,
     canais: ['telegram'],
@@ -147,6 +151,8 @@ describe('inserirRegra — parado', () => {
       limite_ocorrencias: null,
       pausa_max_min: null,
       limite_horas: 3,
+      so_ops_ativas: false,
+      incluir_manutencao: true,
       pmos: [],
       lembrete_min: null,
       hora_resumo: null,
@@ -190,6 +196,8 @@ describe('inserirRegra — outro tipo', () => {
     const { inserirRegra } = await repo(sb)
     await inserirRegra({ ...PARADO, tipo: 'aprovacao', limiteHoras: null, janelaTipo: 'tempo', janelaValor: 60, intervalos: [] })
     expect(chamadas[0]!.valores).not.toHaveProperty('limite_horas')
+    expect(chamadas[0]!.valores).not.toHaveProperty('so_ops_ativas')
+    expect(chamadas[0]!.valores).not.toHaveProperty('incluir_manutencao')
   })
 })
 
@@ -226,6 +234,8 @@ describe('listarRegras — parado', () => {
     expect(r!.tipo).toBe('parado')
     expect(r!.limiteHoras).toBe(3)
     expect(typeof r!.limiteHoras).toBe('number')
+    expect(r!.soOpsAtivas).toBe(false)
+    expect(r!.incluirManutencao).toBe(true)
     expect(r!.intervalos).toEqual([{ inicio: '07:00', fim: '12:00' }])
   })
 

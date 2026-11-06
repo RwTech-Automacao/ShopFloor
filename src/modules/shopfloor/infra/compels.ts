@@ -3,7 +3,7 @@ import { enviarEntrada, type PortaErp } from '@/modules/compels/application/envi
 import { opLiberada } from '@/modules/compels/domain/liberacao'
 import { semSufixo } from '@/modules/compels/domain/sem-sufixo'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
-import { ConfiguracaoIncompleta, configDoAmbiente, destinoDoAmbiente } from '@/modules/compels/infra/config'
+import { ConfiguracaoIncompleta, EstoqueNaoConfigurado, configDoAmbiente, destinoDoEstoque } from '@/modules/compels/infra/config'
 import type { EnvioEstoqueReservado, PortaCompels, ResultadoEnvioEstoque } from '../application/enviar-estoque'
 import { criarBaseDaOp, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
 
@@ -19,13 +19,16 @@ import { criarBaseDaOp, criarSomaEnviada, type BaseDaOp } from './estoque-envios
  *
  * VARIÁVEIS (nunca no código): COMPELS_EZPOINT_USUARIO e COMPELS_EZPOINT_SENHA (login do ezpointweb);
  * COMPELS_EZPOINT_EMPRESA (padrão `enterplak`); COMPELS_ESTOQUE_ID e COMPELS_LOCACAO_ID (padrão 217 e
- * 5314: estoque PA, locação Padrão); COMPELS_OPS_LIBERADAS (OPs que a integração pode enviar, ou `*`;
+ * 5314: estoque PA, locação Padrão); COMPELS_ESTOQUE_EINTER_ID e COMPELS_LOCACAO_EINTER_ID (SEM padrão:
+ * o estoque EINTER escolhido no Almoxarifado, 0175; sem as duas, a linha EINTER espera); COMPELS_OPS_LIBERADAS (OPs que a integração pode enviar, ou `*`;
  * VAZIA = nenhuma).
  *
  * Esperar não é falhar: tudo o que é recusado ANTES de gravar no ERP e passa sozinho (OP em uso, sem
  * empenho, pendência de material, falta de saldo, ERP fora do ar, OP ainda não liberada) volta como
- * `aguardar` e a fila não gasta tentativa. Quando uma OP já deu "espere" nesta rodada, as outras linhas
- * dela recebem a mesma resposta sem chamar o ERP de novo.
+ * `aguardar` e a fila não gasta tentativa. As três esperas que NÃO são problema (OP não liberada,
+ * integração não configurada, estorno manual) vão além, com `esperado`: o alerta de problemas do Compels
+ * as ignora (0170). Quando uma OP já deu "espere" nesta rodada, as outras linhas dela recebem a mesma
+ * resposta sem chamar o ERP de novo.
  */
 
 const MOTIVO_ESTORNO =
@@ -59,13 +62,14 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
 
   return async function enviarMovimentacaoCompels(envio: EnvioEstoqueReservado): Promise<ResultadoEnvioEstoque> {
     // Estorno automático é a fase 2: por ora fica visível na tela de pendências, sem gastar tentativa.
-    if (envio.operacao === 'estorno') return { ok: false, erro: MOTIVO_ESTORNO, aguardar: true }
+    if (envio.operacao === 'estorno') return { ok: false, erro: MOTIVO_ESTORNO, aguardar: true, esperado: true }
 
     if (!opLiberada(envio.op, env.COMPELS_OPS_LIBERADAS)) {
       return {
         ok: false,
         erro: `OP ${envio.op} ainda não está liberada para a integração com o Compels. Faça a entrada à mão no ERP, ou libere a OP.`,
         aguardar: true,
+        esperado: true,
       }
     }
 
@@ -73,8 +77,11 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
     if (jaEsperando) return jaEsperando
 
     try {
+      // O destino é POR LINHA (0175): o PA é o de sempre; o EINTER vem das variáveis próprias e, sem elas, a linha
+      // espera com a mensagem de configuração (nada foi gravado, não gasta tentativa). Antes do cliente do ERP,
+      // para nem pedir token por uma linha que não tem para onde ir.
+      const destino = destinoDoEstoque(envio.estoque ?? 'PA', env)
       erp ??= new ClienteCompels(configDoAmbiente(env))
-      const destino = destinoDoAmbiente(env)
       // O Compels tem UMA OP para a OP do ShopFloor e para a sua "segunda leva" (8682 e 8682_F): o que já
       // foi enviado pela OP sem sufixo também conta no apontado que o ERP mostra.
       let acumuladoAnterior = await somaEnviada(envio.pmo, envio.op, envio.id)
@@ -100,13 +107,19 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
         },
         { destino },
       )
-      if (r.ok) return { ok: true }
+      if (r.ok) return r.aviso ? { ok: true, aviso: r.aviso } : { ok: true }
       const resultado: ResultadoEnvioEstoque = { ok: false, erro: r.erro, ...(r.aguardar ? { aguardar: true } : {}) }
       if (r.aguardar) esperando.set(envio.op, resultado)
       return resultado
     } catch (e) {
+      if (e instanceof EstoqueNaoConfigurado) return { ok: false, erro: e.message, aguardar: true }
       if (e instanceof ConfiguracaoIncompleta) {
-        return { ok: false, erro: `Integração com o Compels não configurada neste ambiente. ${e.message}`, aguardar: true }
+        return {
+          ok: false,
+          erro: `Integração com o Compels não configurada neste ambiente. ${e.message}`,
+          aguardar: true,
+          esperado: true,
+        }
       }
       // Erro do banco ao somar, ou configuração inválida: nada foi gravado no ERP, vale esperar.
       return {

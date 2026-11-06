@@ -231,9 +231,7 @@ const MENSAGEM_ERRO = {
 	quantidade_invalida: "Quantidade da entrada inválida.",
 	propriedade_nao_suportada: "OP com estoque que não é próprio (ex.: em terceiros). Faça a entrada à mão no Compels.",
 	acima_da_op: "A entrada passa da quantidade da OP no Compels.",
-	estorno_na_op: "A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar.",
-	abaixo_do_enviado: "Leitura inconsistente: o Compels mostra menos apontado do que já enviamos.",
-	fora_do_esperado: "OP com apontamento fora do esperado no Compels. Confira antes de reenviar."
+	estorno_na_op: "A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar."
 };
 function erro(codigo) {
 	return {
@@ -251,14 +249,12 @@ function decidirEntrada(estado, acumulado) {
 	if (novo > estado.quantidadeOp) return erro("acima_da_op");
 	if (estado.temEstorno) return erro("estorno_na_op");
 	if (estado.apontada === novo) return { tipo: "ja_enviada" };
-	if (estado.apontada > novo) return {
-		tipo: "erro",
-		codigo: "fora_do_esperado",
-		mensagem: `A OP já tem ${estado.apontada} apontadas no Compels, mais do que o esperado depois desta entrada (${novo}): há apontamento que não veio desta integração. Confira antes de enviar.`
-	};
-	if (estado.apontada < anterior) return erro("abaixo_do_enviado");
-	if (estado.apontada !== anterior) return erro("fora_do_esperado");
 	const avisos = [];
+	if (estado.apontada !== anterior) {
+		const diferenca = q6(estado.apontada - anterior);
+		const sentido = diferenca > 0 ? `a mais: ${diferenca}` : `a menos: ${q6(-diferenca)}`;
+		avisos.push(`quantidade inesperada no Compels: mostra ${estado.apontada} apontadas, esperado ${anterior} antes desta entrada (${sentido}). Foi gravado mesmo assim; confira se há apontamento manual ou estorno nesta OP`);
+	}
 	if (estado.empenhada < novo) avisos.push(`empenho insuficiente no Compels: empenhado ${estado.empenhada}, precisa de ${novo} (faltam ${q6(novo - estado.empenhada)})`);
 	if (estado.requisitada < novo) avisos.push(`requisição insuficiente no Compels: requisitado ${estado.requisitada}, precisa de ${novo} (faltam ${q6(novo - estado.requisitada)})`);
 	return {
@@ -421,6 +417,7 @@ async function planejar(erp, op, e, opcoes) {
 		tipo: "enviar",
 		op,
 		novoAcumulado: novo,
+		apontadaDepois: q6(estado.apontada + decisao.apontar),
 		baseACapturar: baseNova ? base : null,
 		apontar,
 		avisos: decisao.avisos
@@ -478,10 +475,11 @@ async function enviarEntrada(erp, e, opcoes) {
 		const a = await erp.apontar(plano.apontar);
 		if (!a.ok) return falha(a.mensagem, a.tentarDeNovo, gravou);
 		const depois = estadoDaOp(await erp.lerOp(op));
-		if (depois.apontada < plano.novoAcumulado) return falha(`O Compels aceitou a gravação, mas mostra ${depois.apontada} apontadas (esperado ${plano.novoAcumulado}). Confira antes de reenviar.`, false, gravou);
+		if (depois.apontada < plano.apontadaDepois) return falha(`O Compels aceitou a gravação, mas mostra ${depois.apontada} apontadas (esperado ${plano.apontadaDepois}). Confira antes de reenviar.`, false, gravou);
 		return {
 			ok: true,
-			detalhe: `Apontado.${textoAvisos(plano.avisos)}`
+			detalhe: `Apontado.${textoAvisos(plano.avisos)}`,
+			...plano.avisos.length > 0 ? { aviso: plano.avisos.join("; ") } : {}
 		};
 	} catch (erro) {
 		const r = erroDeExcecao(erro);

@@ -9,6 +9,7 @@ import type { EnvioEstoqueReservado } from '../../application/enviar-estoque'
 
 interface Chamada {
   tabela: string
+  leitura?: { colunas: string; ids: unknown[] }
   update?: Record<string, unknown>
   filtros: [string, unknown][]
 }
@@ -21,6 +22,9 @@ interface Chamada {
 function sbFalso(opcoes: {
   rpc?: (nome: string, args: Record<string, unknown>) => { data: unknown; error: { message: string } | null }
   linhasAfetadas?: (c: Chamada) => number
+  /** A leitura do estoque de destino (select id, estoque ... in (ids)): o estoque por id, ou um erro. */
+  estoques?: Record<string, string>
+  erroEstoque?: { message: string; code?: string }
 } = {}) {
   const chamadas: Chamada[] = []
   const rpcs: { nome: string; args: Record<string, unknown> }[] = []
@@ -28,6 +32,14 @@ function sbFalso(opcoes: {
     const c: Chamada = { tabela, filtros: [] }
     chamadas.push(c)
     const resultado = () => {
+      if (c.leitura) {
+        if (opcoes.erroEstoque) return { data: null, error: opcoes.erroEstoque }
+        const mapa = opcoes.estoques ?? {}
+        return {
+          data: c.leitura.ids.filter((id) => String(id) in mapa).map((id) => ({ id, estoque: mapa[String(id)] })),
+          error: null,
+        }
+      }
       const n = opcoes.linhasAfetadas?.(c) ?? 1
       return { data: Array.from({ length: n }, (_, i) => ({ id: `x${i}` })), error: null }
     }
@@ -44,7 +56,13 @@ function sbFalso(opcoes: {
         c.filtros.push([col, v])
         return q
       },
-      select() {
+      select(colunas?: string) {
+        // select depois do update é o retorno das linhas afetadas; select direto é uma LEITURA.
+        if (c.update === undefined) c.leitura = { colunas: String(colunas ?? ''), ids: [] }
+        return q
+      },
+      in(_col: string, ids: unknown[]) {
+        if (c.leitura) c.leitura.ids = ids
         return q
       },
       then(ok: (v: unknown) => unknown, erro?: (e: unknown) => unknown) {
@@ -121,6 +139,45 @@ describe('reservarPendentes', () => {
     expect(lote.ilegiveis).toBe(0)
   })
 
+  it('lê o estoque de destino de cada linha reservada (0175) em UMA consulta por chave primária', async () => {
+    const { sb, chamadas } = sbFalso({
+      rpc: () => ({ data: [LINHA_RPC, { ...LINHA_RPC, id: 'e2', chave: 'outra' }], error: null }),
+      estoques: { e1: 'EINTER', e2: 'PA' },
+    })
+    const lote = await criarRepositorioEstoqueEnvios(sb).reservarPendentes(30)
+    expect(lote.envios.map((e) => [e.id, e.estoque])).toEqual([['e1', 'EINTER'], ['e2', 'PA']])
+    const leituras = chamadas.filter((c) => c.leitura)
+    expect(leituras).toHaveLength(1)
+    expect(leituras[0]!.tabela).toBe('sf_estoque_envios')
+    expect(leituras[0]!.leitura).toEqual({ colunas: 'id, estoque', ids: ['e1', 'e2'] })
+  })
+
+  it('app novo antes da migração 0175 (coluna inexistente): toda linha é PA, a rodada segue', async () => {
+    const { sb } = sbFalso({
+      rpc: () => ({ data: [LINHA_RPC], error: null }),
+      erroEstoque: { message: 'column sf_estoque_envios.estoque does not exist', code: '42703' },
+    })
+    const lote = await criarRepositorioEstoqueEnvios(sb).reservarPendentes(30)
+    expect(lote.envios.map((e) => e.estoque)).toEqual(['PA'])
+  })
+
+  it('leitura do estoque falhou por outro motivo: NÃO assume PA — a linha espera (tentativa devolvida)', async () => {
+    const { sb, chamadas } = sbFalso({
+      rpc: () => ({ data: [LINHA_RPC], error: null }),
+      erroEstoque: { message: 'timeout' },
+    })
+    const erros = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(await criarRepositorioEstoqueEnvios(sb).reservarPendentes(30)).toEqual({ envios: [], ilegiveis: 0 })
+    } finally {
+      erros.mockRestore()
+    }
+    const escrita = chamadas.find((c) => c.update)!
+    expect(escrita.update).toMatchObject({ ok: false, reservado_em: null, tentativas: 0 })
+    expect(escrita.update!.adiado_ate).toEqual(expect.any(String))
+    expect(String(escrita.update!.erro)).toContain('estoque de destino')
+  })
+
   it('linha ilegível é concluída como FALHA e CONTADA pra quem chama', async () => {
     // Se fosse só pulada, ela voltaria a cada 15 min para sempre, ocupando lugar no lote e sem nunca
     // registrar nada — ninguém veria que existe uma linha com defeito de dado. E a CONTAGEM tem que
@@ -178,6 +235,24 @@ describe('concluirEnvio', () => {
     expect(adiadoAte - antes).toBeLessThan(5 * 60 * 1000 + 5000)
     // a cerca continua sendo a tentativa lida na reserva (3), não a devolvida
     expect(chamadas[0]!.filtros).toContainEqual(['tentativas', 3])
+  })
+
+  it('erro_esperado: só a espera ESPERADA (OP não liberada etc.) é marcada; toda FALHA regrava a marca', async () => {
+    const { sb, chamadas } = sbFalso()
+    const repo = criarRepositorioEstoqueEnvios(sb)
+    await repo.concluirEnvio(ENVIO, { ok: false, erro: 'OP 1 ainda não está liberada', aguardar: true, esperado: true })
+    await repo.concluirEnvio(ENVIO, { ok: false, erro: 'Aguardando requisição', aguardar: true })
+    await repo.concluirEnvio(ENVIO, { ok: false, erro: 'ERP 500' })
+    expect(chamadas[0]!.update).toMatchObject({ erro_esperado: true })
+    // regravada a cada falha: sem isso, uma espera esperada de ontem esconderia a falha de hoje
+    expect(chamadas[1]!.update).toMatchObject({ erro_esperado: false })
+    expect(chamadas[2]!.update).toMatchObject({ erro_esperado: false })
+  })
+
+  it('envio que deu certo NÃO toca em erro_esperado: com o app antes da migração a fila continua concluindo', async () => {
+    const { sb, chamadas } = sbFalso()
+    await criarRepositorioEstoqueEnvios(sb).concluirEnvio(ENVIO, { ok: true })
+    expect(chamadas[0]!.update).not.toHaveProperty('erro_esperado')
   })
 
   it('sucesso e falha comum LIMPAM o adiamento', async () => {

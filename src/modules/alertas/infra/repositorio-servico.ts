@@ -8,7 +8,8 @@ import { lerEnvioReservado, type EnvioReservado } from '../domain/envio'
 import { blocoCandidato, lerHoraDoBanco, lerIntervaloDoBanco, type Intervalo } from '../domain/intervalos'
 import { horaDeEnviarResumo, resumoDaRodada, type ResumoDaRodada } from '../domain/resumo'
 import { lerResolucao } from '../domain/resolucao'
-import { paradosPorOp, paradosParaBanco, type ItemPendente } from '../domain/parados'
+import { paradosPorOp, paradosParaBanco, type GrupoTravado } from '../domain/parados'
+import { corteDeExpediente, ehDiaUtilSp } from '../domain/horas-de-turno'
 import { codigoErroAlerta, mensagemErroAlerta } from '../domain/erros'
 import type {
   FiltroReserva,
@@ -48,17 +49,19 @@ interface LinhaRegraParado {
   postos: string[] | null
   pmos: string[] | null
   limite_horas: unknown
+  so_ops_ativas: boolean | null
+  incluir_manutencao: boolean | null
 }
 
-interface LinhaPendencia {
-  pmo: string
-  op: string
-  tipo: string
-  codigo: string | null
+/** Uma linha de `alerta_travados` (0172): peças paradas de uma OP num posto, já cortadas pelo limite. */
+interface LinhaTravada {
+  pmo: string | null
+  op: string | null
+  posto: string | null
+  reprovada: boolean | null
   pecas: unknown
   em: string
-  posto: string | null
-  em_mais_antiga: string | null
+  amostras: unknown
 }
 
 interface LinhaRegraResumo {
@@ -276,12 +279,16 @@ export function criarRepositorioServico(
   }
 
   /**
-   * O mapa `p_parados` da rodada: {"<regra_id>": [{pmo, op, posto, mais_antiga_min, itens}]} para cada
-   * regra de parado no Almoxarifado ativa. A conta de horário (turnos, semana útil) mora aqui, em
-   * `domain/horas-de-turno.ts`, testada; o banco só decide abrir/atualizar/normalizar.
-   * ⚠️ A chave de uma regra só entra se TUDO que ela precisa foi lido (pendências e turnos). Regra
-   * ausente do mapa é PULADA pelo banco: erro de leitura nunca vira "não tem nada parado", que
+   * O mapa `p_parados` da rodada: {"<regra_id>": [{pmo, op, posto, mais_antiga_min, expediente, itens}]} (UM item por regra: o relatório)
+   * para cada regra "Parado ou travado na produção" ativa. A conta de horário (turnos, instante de
+   * corte) mora aqui, em `domain/horas-de-turno.ts`, testada; o banco só filtra por `data_hora <=
+   * corte` (alerta_travados) e decide abrir/atualizar/normalizar.
+   * ⚠️ A chave de uma regra só entra se TUDO que ela precisa foi lido (regras, turnos e travados DELA).
+   * Regra ausente do mapa é PULADA pelo banco: erro de leitura nunca vira "não tem nada parado", que
    * normalizaria a ocorrência viva por engano. Array vazio É informação ("nada parado agora").
+   * ⚠️ FIM DE SEMANA: sábado e domingo (calendário de São Paulo) o mapa sai vazio, ou seja, TODAS as
+   * regras são puladas: nada abre, nada lembra, nada normaliza. É o que faz o lembrete de 24 h virar
+   * "um aviso por dia útil" sem tocar na `alerta_avaliar` (os outros tipos seguem avaliando).
    */
   async function paradosDaRodada(agora: Date): Promise<Record<string, unknown[]>> {
     // Um defeito inesperado aqui (dado nulo, rede) não pode derrubar o ciclo dos OUTROS tipos de
@@ -296,15 +303,16 @@ export function criarRepositorioServico(
 
   async function calcularParados(agora: Date): Promise<Record<string, unknown[]>> {
     const mapa: Record<string, unknown[]> = {}
+    if (!ehDiaUtilSp(agora)) return mapa
 
     const { data, error } = await sb
       .from('alerta_regras')
-      .select('id, postos, pmos, limite_horas')
+      .select('id, postos, pmos, limite_horas, so_ops_ativas, incluir_manutencao')
       .eq('ativa', true)
       .is('excluida_em', null)
       .eq('tipo', 'parado')
     if (error) {
-      console.error('[alertas] ler as regras de parado no Almoxarifado falhou:', error.message)
+      console.error('[alertas] ler as regras de parado ou travado falhou:', error.message)
       return mapa
     }
     // O limite tem que ser inteiro >= 1 (check do banco); o que não é vira barulho no log, não silêncio.
@@ -314,13 +322,6 @@ export function criarRepositorioServico(
       return ok
     })
     if (regras.length === 0) return mapa
-
-    // As pendências são lidas UMA vez por rodada, para todas as regras.
-    const { data: pend, error: erroPend } = await sb.rpc('sf_almox_pendencias_base')
-    if (erroPend) {
-      console.error('[alertas] ler as pendências do Almoxarifado falhou:', erroPend.message)
-      return mapa
-    }
 
     const { data: linhas, error: erroTurnos } = await sb
       .from('alerta_regra_intervalos')
@@ -340,32 +341,39 @@ export function criarRepositorioServico(
       else turnos.set(l.regra_id, [intervalo])
     }
 
-    const pendentes: ItemPendente[] = []
-    for (const l of (pend ?? []) as LinhaPendencia[]) {
-      if (l.tipo !== 'caixa' && l.tipo !== 'lote' && l.tipo !== 'peca') continue
-      const posto = typeof l.posto === 'string' ? l.posto : ''
-      if (posto === '') continue
-      // Das peças avulsas `em` é a mais recente; para "parado" vale a mais ANTIGA (em_mais_antiga).
-      const quando = new Date(l.em_mais_antiga ?? l.em)
-      if (Number.isNaN(quando.getTime())) continue
-      const pmoDaLinha = String(l.pmo ?? '').trim()
-      if (pmoDaLinha === '') continue
-      pendentes.push({
-        pmo: pmoDaLinha, op: l.op, posto, tipo: l.tipo,
-        codigo: String(l.codigo ?? ''), pecas: Number(l.pecas) || 0, em: quando,
-      })
-    }
-
+    // Uma leitura por regra: postos, PMOs, corte e opções são dela. Uma regra que falha não tira a chave
+    // das outras (cada uma só entra no mapa com a SUA leitura inteira).
     for (const r of regras) {
       const postos = r.postos ?? []
-      // Espelha `alerta_pmos_normalizar` (0115): só btrim, SEM maiúsculas.
-      const pmos = (r.pmos ?? []).map((p) => String(p ?? '').trim())
-      const dela = pendentes.filter(
-        (p) => postos.includes(p.posto) && (pmos.length === 0 || pmos.includes(p.pmo)),
-      )
-      mapa[r.id] = paradosParaBanco(
-        paradosPorOp(dela, turnos.get(r.id) ?? [], r.limite_horas as number, agora),
-      )
+      if (postos.length === 0) continue
+      const dela = turnos.get(r.id) ?? []
+      const corte = corteDeExpediente(agora, (r.limite_horas as number) * 60, dela)
+      const { data: travadas, error: erroTravadas } = await sb.rpc('alerta_travados', {
+        p_postos: postos,
+        // Espelha `alerta_pmos_normalizar` (0115): só btrim, SEM maiúsculas.
+        p_pmos: (r.pmos ?? []).map((p) => String(p ?? '').trim()),
+        p_corte: corte.toISOString(),
+        p_so_ativas: r.so_ops_ativas !== false,
+        p_incluir_manutencao: r.incluir_manutencao !== false,
+      })
+      if (erroTravadas) {
+        console.error(`[alertas] regra ${r.id}: ler as peças travadas falhou: ${erroTravadas.message}`)
+        continue
+      }
+      const grupos: GrupoTravado[] = []
+      for (const l of (travadas ?? []) as LinhaTravada[]) {
+        const pmo = String(l.pmo ?? '').trim()
+        const posto = typeof l.posto === 'string' ? l.posto : ''
+        const quando = new Date(l.em)
+        if (pmo === '' || l.op === null || posto === '' || Number.isNaN(quando.getTime())) continue
+        grupos.push({
+          pmo, op: l.op, posto, reprovada: l.reprovada === true, pecas: Number(l.pecas) || 0, em: quando,
+          amostras: Array.isArray(l.amostras) ? l.amostras.filter((a): a is string => typeof a === 'string') : [],
+        })
+      }
+      // RELATÓRIO ÚNICO: uma ocorrência por regra (PMO/OP fixos), num posto FIXO (o índice único é regra x
+      // posto x PMO/OP): o 1º dela. As OPs viajam dentro dos itens; nada travado = lista vazia = normaliza.
+      mapa[r.id] = paradosParaBanco(paradosPorOp(grupos, dela, agora), postos[0]!)
     }
     return mapa
   }

@@ -26,8 +26,16 @@ import {
   type RefOp,
 } from './mensagens'
 import { textoEmb, type DivergenciaEmb } from './emb'
-import { textoAlertaParado, textoNormalizouParado } from './parados-texto'
-import type { ItemParado } from './parados'
+import { textoFicha } from './ficha-texto'
+import { OP_RELATORIO, PMO_RELATORIO } from './parados'
+import { textoNormalizouParado, textoRelatorioParado, type OpParada } from './parados-texto'
+import {
+  textoAlertaCompels,
+  textoAvisosCompels,
+  textoNormalizouCompels,
+  type AvisoCompels,
+  type ItemCompels,
+} from './compels-texto'
 
 /**
  * Uma linha da fila (`alerta_envios`) já RESERVADA por esta rodada (`alerta_reservar_envios`):
@@ -50,7 +58,7 @@ export interface EnvioReservado {
 }
 
 const TIPOS: readonly TipoEnvio[] = [
-  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb',
+  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb', 'compels_aviso', 'ficha',
 ]
 
 function ehTipoEnvio(v: unknown): v is TipoEnvio {
@@ -147,7 +155,7 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
  * EMB (0150) entra na lista dos excluídos pelo mesmo motivo do resumo: ele nasce SEM ocorrência,
  * tem texto próprio e nunca chega a `textoAprovacao`/`textoTempo`/`textoDefeito`.
  */
-type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb'>
+type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb' | 'compels_aviso' | 'ficha'>
 
 /**
  * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
@@ -243,6 +251,28 @@ function textoEmbDe(dados: Record<string, unknown>): string {
   return textoEmb(texto(dados, 'regra_nome'), emb, divergencias)
 }
 
+/**
+ * Lê o `dados` da ficha de apontamento como a 0173 o grava: unidade ('caixa' | 'lote'), codigo, pmo, op,
+ * produto, quantidade_op (pode faltar), quantidade_apontada, data_producao (pode faltar) e responsavel
+ * (pode vir vazio). O `qr` fica de fora do texto: quem o anexa é o entregador (só o Discord). Formato
+ * errado LANÇA: nunca uma ficha em branco calada.
+ */
+function textoFichaDe(dados: Record<string, unknown>): string {
+  const unidade = dados.unidade
+  if (unidade !== 'caixa' && unidade !== 'lote') throw new DadosEnvioInvalidos('unidade')
+  return textoFicha({
+    unidade,
+    codigo: texto(dados, 'codigo'),
+    dataProducao: dataOuNulo(dados, 'data_producao'),
+    produto: textoOuVazio(dados, 'produto'),
+    quantidadeOp: numeroOuNulo(dados, 'quantidade_op'),
+    pmo: texto(dados, 'pmo'),
+    op: texto(dados, 'op'),
+    quantidadeApontada: numero(dados, 'quantidade_apontada'),
+    responsavel: textoOuVazio(dados, 'responsavel'),
+  })
+}
+
 function janelaDe(d: Record<string, unknown>): Janela {
   const tipo = d.janela_tipo
   if (!ehJanelaTipo(tipo)) throw new DadosEnvioInvalidos('janela_tipo')
@@ -325,30 +355,82 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
   return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
 }
 
-/** Lê o `dados` do parado (0167): `itens` (array de {tipo, codigo, pecas, minutos}) e `limite_horas`. */
+/**
+ * Lê o `dados` do parado (relatório único por regra): `itens` = as OPs paradas ({pmo, op, mais_antiga_min,
+ * itens: [{tipo, codigo = posto, pecas, minutos}]}), `limite_horas` e `expediente` (a regra conta horas
+ * de expediente). O alerta e cada lembrete têm o MESMO texto: a lista é a de agora, e a primeira linha
+ * já é o assunto do e-mail.
+ */
 function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
-  const refOp = refOpDe(dados)
-  if (tipo === 'normalizou') return textoNormalizouParado(refOp)
+  if (tipo === 'normalizou') return textoNormalizouParado()
   if (!Array.isArray(dados.itens)) throw new DadosEnvioInvalidos('itens')
-  const itens: ItemParado[] = dados.itens.map((bruto) => {
+  const objeto = (bruto: unknown, campo: string): Record<string, unknown> => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) throw new DadosEnvioInvalidos(campo)
+    return bruto as Record<string, unknown>
+  }
+  const ops: OpParada[] = dados.itens.map((brutaOp) => {
+    const o = objeto(brutaOp, 'itens')
+    if (!Array.isArray(o.itens)) throw new DadosEnvioInvalidos('itens.itens')
+    const itens = o.itens.map((brutoItem): OpParada['itens'][number] => {
+      const i = objeto(brutoItem, 'itens.itens')
+      const t = i.tipo
+      if (t !== 'posto' && t !== 'conserto') throw new DadosEnvioInvalidos('itens.itens.tipo')
+      return { tipo: t, codigo: texto(i, 'codigo'), pecas: numero(i, 'pecas'), minutos: numero(i, 'minutos') }
+    })
+    return { pmo: texto(o, 'pmo'), op: texto(o, 'op'), maisAntigaMin: numero(o, 'mais_antiga_min'), itens }
+  })
+  return textoRelatorioParado({
+    regraNome: texto(dados, 'regra_nome'),
+    limiteHoras: numero(dados, 'limite_horas'),
+    expediente: dados.expediente === true,
+    ops,
+    em: data(dados, 'agora'),
+  })
+}
+
+/** Lê o `dados` do compels (0170), ocorrência: `itens` (array de {motivo, linhas, pecas, desistiu}) e `linhas`. */
+function textoCompels(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
+  const refOp = refOpDe(dados)
+  if (tipo === 'normalizou') return textoNormalizouCompels(refOp)
+  if (!Array.isArray(dados.itens)) throw new DadosEnvioInvalidos('itens')
+  const itens: ItemCompels[] = dados.itens.map((bruto) => {
     if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) {
       throw new DadosEnvioInvalidos('itens')
     }
     const i = bruto as Record<string, unknown>
-    const t = i.tipo
-    if (t !== 'caixa' && t !== 'lote' && t !== 'peca') throw new DadosEnvioInvalidos('itens.tipo')
-    return { tipo: t, codigo: texto(i, 'codigo'), pecas: numero(i, 'pecas'), minutos: numero(i, 'minutos') }
+    return {
+      motivo: texto(i, 'motivo'),
+      linhas: numero(i, 'linhas'),
+      pecas: numero(i, 'pecas'),
+      desistiu: i.desistiu === true,
+    }
   })
   const agora = data(dados, 'agora')
-  const alerta = textoAlertaParado({
+  const alerta = textoAlertaCompels({
     ...refOp,
     regraNome: texto(dados, 'regra_nome'),
-    limiteHoras: numero(dados, 'limite_horas'),
+    linhas: numero(dados, 'linhas'),
     itens,
     em: agora,
   })
   if (tipo === 'alerta') return alerta
   return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
+}
+
+/**
+ * Lê o `dados` do aviso de gravação como a 0170 o grava: `regra_nome`, `agora` e `avisos` (array de
+ * {pmo, op, quantidade, aviso}). Formato diferente LANÇA: nunca uma mensagem vazia calada.
+ */
+function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
+  if (!Array.isArray(dados.avisos)) throw new DadosEnvioInvalidos('avisos')
+  const avisos: AvisoCompels[] = dados.avisos.map((bruto) => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) {
+      throw new DadosEnvioInvalidos('avisos')
+    }
+    const a = bruto as Record<string, unknown>
+    return { pmo: textoOuVazio(a, 'pmo'), op: textoOuVazio(a, 'op'), quantidade: numero(a, 'quantidade'), aviso: texto(a, 'aviso') }
+  })
+  return textoAvisosCompels(texto(dados, 'regra_nome'), data(dados, 'agora'), avisos)
 }
 
 /**
@@ -363,7 +445,10 @@ function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>):
  *   aprovacao: taxa, taxa_minima, aprovados, reprovados
  *   tempo:     media_seg, limite_tempo_seg, pecas
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
- *   parado:    limite_horas, mais_antiga_min, itens (array de {tipo, codigo, pecas, minutos}); 0167
+ *   compels:   linhas, itens (array de {motivo, linhas, pecas, desistiu}); 0170
+ *   compels_aviso: regra_nome, agora, avisos (array de {pmo, op, quantidade, aviso}); 0170
+ *   ficha:     unidade, qr, codigo, pmo, op, produto, quantidade_op, quantidade_apontada, data_producao, responsavel; 0173
+ *   parado:    limite_horas, mais_antiga_min, expediente, itens (as OPs: array de {pmo, op, mais_antiga_min, itens: array de {tipo, codigo, pecas, minutos}}); relatório único, 0172
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome
@@ -378,11 +463,16 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
   if (tipo === 'resumo') return textoResumoDe(dados)
   if (tipo === 'emb') return textoEmbDe(dados)
+  if (tipo === 'compels_aviso') return textoAvisosCompelsDe(dados)
+  if (tipo === 'ficha') return textoFichaDe(dados)
   if (tipo === 'resolvido') {
     // No parado a 0151 copia a chave "PMO/OP" da ocorrência para `defeito`: não é defeito de verdade.
-    const refResolvido = refOpDe(dados)
+    const refBruto = refOpDe(dados)
+    // O relatório único do parado usa TODAS/— no lugar da OP: não é uma OP, então a mensagem não a cita.
+    const ehRelatorio = refBruto.pmo === PMO_RELATORIO && refBruto.op === OP_RELATORIO
+    const refResolvido: RefOp = ehRelatorio ? { pmo: null, op: null, ops: [] } : refBruto
     const defeitoBruto = textoOuNulo(dados, 'defeito')
-    const chaveDeParado = `${(refResolvido.pmo ?? '').trim()}/${refResolvido.op ?? ''}`
+    const chaveDeParado = `${(refBruto.pmo ?? '').trim()}/${refBruto.op ?? ''}`
     const defeito = defeitoBruto !== null && defeitoBruto === chaveDeParado ? null : defeitoBruto
     return textoResolvido({
       ...refResolvido,
@@ -405,7 +495,9 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
         ? textoDefeito(tipo, dados)
         : regraTipo === 'parado'
           ? textoParado(tipo, dados)
-          : textoAprovacao(tipo, dados)
+          : regraTipo === 'compels'
+            ? textoCompels(tipo, dados)
+            : textoAprovacao(tipo, dados)
 
   // REABERTURA: vale para os três tipos, então o cabeçalho envolve o texto já montado em vez de
   // ser repetido dentro de cada um. Só no 'alerta' — a reabertura sempre enfileira esse tipo.

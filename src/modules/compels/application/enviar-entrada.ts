@@ -6,7 +6,7 @@ import {
   type ComponenteApontamento,
   type DestinoEstoque,
 } from '../domain/corpos'
-import { estadoDaOp, type LeiturasOp } from '../domain/estado-op'
+import { estadoDaOp, q6, type LeiturasOp } from '../domain/estado-op'
 import { RespostaInesperada } from '../domain/leituras-erp'
 import { decidirEntrada } from '../domain/reconciliar'
 import type { ResultadoGravacao } from '../domain/resposta-erp'
@@ -50,7 +50,11 @@ export interface EntradaParaEnviar {
 }
 
 export type ResultadoEntrada =
-  | { ok: true; detalhe: string }
+  /**
+   * `aviso`: o que foi gravado mas merece conferência (quantidade inesperada, empenho/requisição insuficientes).
+   * Só existe quando há o que avisar.
+   */
+  | { ok: true; detalhe: string; aviso?: string }
   /**
    * `aguardar`: falhou ANTES de qualquer gravação no ERP e vale tentar de novo (OP em uso, sem empenho,
    * pendência, falta de saldo, ERP fora do ar na leitura). A fila usa isso para não gastar tentativa.
@@ -70,6 +74,8 @@ export type Plano =
       op: DadosOp
       /** O apontado que o ERP deve mostrar depois desta entrada (ponto de partida + enviado + esta entrada). */
       novoAcumulado: number
+      /** O apontado que o ERP deve mostrar depois desta gravação: o que ele mostra AGORA + esta entrada. */
+      apontadaDepois: number
       /** O ponto de partida a guardar antes de gravar; `null` quando ele já está guardado ou não se aplica. */
       baseACapturar: number | null
       apontar: Record<string, unknown>
@@ -148,7 +154,15 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
     destino: opcoes.destino,
     ...(e.marca ? { observacao: e.marca } : {}),
   })
-  return { tipo: 'enviar', op, novoAcumulado: novo, baseACapturar: baseNova ? base : null, apontar, avisos: decisao.avisos }
+  return {
+    tipo: 'enviar',
+    op,
+    novoAcumulado: novo,
+    apontadaDepois: q6(estado.apontada + decisao.apontar),
+    baseACapturar: baseNova ? base : null,
+    apontar,
+    avisos: decisao.avisos,
+  }
 }
 
 function erroDeExcecao(e: unknown): { ok: false; erro: string; tentarDeNovo: boolean } {
@@ -213,16 +227,22 @@ export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes:
       return falha(a.mensagem, a.tentarDeNovo, gravou)
     }
 
-    // Conferência final: só vale como enviado se o ERP mostra o acumulado novo.
+    // Conferência final: só vale como enviado se o ERP SUBIU pela entrada. Compara com o que ele mostrava antes de
+    // gravar (mais esta entrada), e não com o acumulado teórico: numa OP com apontamento de fora o teórico não é o
+    // que o ERP mostra, e um envio certo apareceria como falha.
     const depois = estadoDaOp(await erp.lerOp(op))
-    if (depois.apontada < plano.novoAcumulado) {
+    if (depois.apontada < plano.apontadaDepois) {
       return falha(
-        `O Compels aceitou a gravação, mas mostra ${depois.apontada} apontadas (esperado ${plano.novoAcumulado}). Confira antes de reenviar.`,
+        `O Compels aceitou a gravação, mas mostra ${depois.apontada} apontadas (esperado ${plano.apontadaDepois}). Confira antes de reenviar.`,
         false,
         gravou,
       )
     }
-    return { ok: true, detalhe: `Apontado.${textoAvisos(plano.avisos)}` }
+    return {
+      ok: true,
+      detalhe: `Apontado.${textoAvisos(plano.avisos)}`,
+      ...(plano.avisos.length > 0 ? { aviso: plano.avisos.join('; ') } : {}),
+    }
   } catch (erro) {
     const r = erroDeExcecao(erro)
     return falha(r.erro, r.tentarDeNovo, gravou)

@@ -293,4 +293,67 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0167.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_parado.sql
 echo "0167 (parado no Almoxarifado): ok"
 
+# ---------- 0170: tipo de regra 'compels' (problemas no envio ao Compels) ----------
+# Mesmo molde da 0167: recria o alerta_avaliar (mesma assinatura de 4 parâmetros, create or replace) com
+# dois ramos novos no cursor. Esta base não tem a fila do Compels (só o _stubs.sql): o esquema mínimo
+# dela entra ANTES, com linhas "legadas" que provam o backfill de erro_esperado. Duas aplicações, cada
+# uma como transação única (-1): idempotência, inclusive a do backfill e a dos checks.
+docker cp supabase/migrations/0170_alerta_problemas_compels.sql "$NOME":/tmp/0170.sql
+docker cp supabase/tests/alertas_compels_esquema.sql "$NOME":/tmp/esquema_compels.sql
+docker cp supabase/tests/alertas_compels_test.sql "$NOME":/tmp/teste_compels.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema_compels.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0170.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0170.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_compels.sql
+echo "0170 (problemas no envio ao Compels): ok"
+
+# ---------- 0172: "parado ou travado na produção" (reescreve o tipo de regra 'parado') ----------
+# Mesmo molde: create or replace do alerta_avaliar (4 parâmetros), partindo do corpo da 0170. O esquema mínimo do
+# chão de fábrica entra ANTES (a função de leitura é SQL e o Postgres confere as colunas na criação). Antes
+# da primeira aplicação entra uma regra 'parado' ANTIGA (ativa, do tempo do Almoxarifado): a migração a converte
+# (desativa, defaults nas colunas novas) UMA vez — na segunda aplicação, uma regra reativada à mão NÃO é desativada
+# de novo (a guarda é a coluna nova ainda não existir).
+docker cp supabase/migrations/0172_alerta_parado_travado.sql "$NOME":/tmp/0172.sql
+docker cp supabase/tests/alertas_travados_esquema.sql "$NOME":/tmp/esquema_travados.sql
+docker cp supabase/tests/alertas_travados_test.sql "$NOME":/tmp/teste_travados.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema_travados.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "
+  insert into public.alerta_regras (nome, tipo, modulo, postos, janela_tipo, minimo_bipes, limite_horas, canais, destinatarios, ativa, criado_por)
+  values ('Parado ANTIGA', 'parado', 'shopfloor', array['ALMOX'], 'op', null, 2, array['telegram'],
+          array['00000000-0000-0000-0000-0000000000c1']::uuid[], true, '00000000-0000-0000-0000-000000000001')"
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0172.sql
+CONV=$(docker exec "$NOME" psql -U postgres -qtA -c "select ativa::text || '/' || so_ops_ativas::text || '/' || incluir_manutencao::text || '/' || limite_horas::text from public.alerta_regras where nome = 'Parado ANTIGA'")
+if [ "$CONV" != "false/true/true/2" ]; then echo "0172 conversao da regra antiga FALHOU: [$CONV]"; exit 1; fi
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "update public.alerta_regras set ativa = true where nome = 'Parado ANTIGA'"
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0172.sql   # de novo: idempotente
+CONV2=$(docker exec "$NOME" psql -U postgres -qtA -c "select ativa::text from public.alerta_regras where nome = 'Parado ANTIGA'")
+if [ "$CONV2" != "true" ]; then echo "0172 NAO e idempotente: a segunda aplicacao desativou a regra reativada [$CONV2]"; exit 1; fi
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "update public.alerta_regras set ativa = false where nome = 'Parado ANTIGA'"
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_travados.sql
+echo "0172 (parado ou travado na produção): ok"
+
+# ---------- 0173: ficha de apontamento (tipo de regra 'ficha') ----------
+# Mesmo molde: create or replace do alerta_avaliar (4 parâmetros), partindo do corpo da 0172, só com ACRÉSCIMOS.
+# PROVA no próprio runner: o corpo da alerta_avaliar da 0173, comparado com o da 0172, não pode ter NENHUMA linha
+# removida ou alterada (diff: só linhas '>'). O esquema mínimo do chão de fábrica (com as funções-base do
+# Almoxarifado como stubs) entra ANTES; duas aplicações, cada uma como transação única (-1): idempotência.
+corpo() { awk 'index($0,"create or replace function public.alerta_avaliar(")==1{p=1} p{print} p&&$0=="$func$;"{exit}' "$1"; }
+M0173="${FICHA_MIGRACAO:-supabase/migrations/0173_alerta_ficha_apontamento.sql}"   # FICHA_MIGRACAO: so para o teste de mutantes
+REMOVIDAS=$(diff <(corpo supabase/migrations/0172_alerta_parado_travado.sql) <(corpo "$M0173") | grep -c '^<' || true)
+if [ "$REMOVIDAS" != "0" ]; then echo "0173 alterou/removeu $REMOVIDAS linha(s) da alerta_avaliar da 0172 (so acrescimos sao permitidos)"; exit 1; fi
+echo "0173: alerta_avaliar so com acrescimos sobre a 0172 (0 linhas removidas): ok"
+docker cp "$M0173" "$NOME":/tmp/0173.sql
+docker cp supabase/tests/alertas_ficha_esquema.sql "$NOME":/tmp/esquema_ficha.sql
+docker cp supabase/tests/alertas_ficha_test.sql "$NOME":/tmp/teste_ficha.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema_ficha.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0173.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0173.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_ficha.sql
+# Os dois scripts de leitura do roteiro (medição e simulação) têm de RODAR (sintaxe e nomes de coluna certos).
+docker cp docs/operacao/alerta-ficha/01-medir.sql "$NOME":/tmp/ficha_medir.sql
+docker cp docs/operacao/alerta-ficha/02-simulacao.sql "$NOME":/tmp/ficha_simulacao.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/ficha_medir.sql >/dev/null
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/ficha_simulacao.sql >/dev/null
+echo "0173 (ficha de apontamento): ok"
+
 echo "ALERTAS SQL OK"

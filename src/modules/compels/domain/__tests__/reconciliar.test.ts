@@ -40,12 +40,17 @@ describe('decidirEntrada', () => {
     expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'ja_enviada' })
   })
 
-  it('OP com apontamento de fora (22 apontadas à mão, esta entrada vai a 6): erro, NÃO "já enviada"', () => {
+  it('OP com apontamento de fora (22 apontadas à mão, esta entrada vai a 6): GRAVA e avisa a quantidade inesperada', () => {
     const estado = com({ quantidadeOp: 100, empenhada: 22, requisitada: 22, apontada: 22 })
     const d = decidirEntrada(estado, { anterior: 0, novo: 6 })
-    expect(d).toMatchObject({ tipo: 'erro', codigo: 'fora_do_esperado' })
-    expect(d.tipo === 'erro' && d.mensagem).toContain('22 apontadas')
-    expect(d.tipo === 'erro' && d.mensagem).toContain('não veio desta integração')
+    expect(d).toMatchObject({ tipo: 'enviar', apontar: 6 })
+    const avisos = d.tipo === 'enviar' ? d.avisos : []
+    expect(avisos).toHaveLength(1)
+    expect(avisos[0]).toContain('quantidade inesperada no Compels')
+    expect(avisos[0]).toContain('mostra 22 apontadas')
+    expect(avisos[0]).toContain('esperado 0')
+    expect(avisos[0]).toContain('a mais: 22')
+    expect(avisos[0]).toContain('gravado mesmo assim')
   })
 
   it('já enviada tem prioridade sobre falta de empenho', () => {
@@ -67,10 +72,33 @@ describe('decidirEntrada', () => {
     expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', apontar: 4, avisos: [] })
   })
 
-  it('apontamento manual no meio: ERP com valor que não é o esperado', () => {
-    const estado = com({ apontada: 3, requisitada: 3 })
-    expect(decidirEntrada(estado, { anterior: 4, novo: 6 })).toMatchObject({ tipo: 'erro', codigo: 'abaixo_do_enviado' })
-    expect(decidirEntrada(estado, { anterior: 1, novo: 6 })).toMatchObject({ tipo: 'erro', codigo: 'fora_do_esperado' })
+  it('ERP com MENOS do que já enviamos (alguém estornou à mão): grava e avisa "a menos"', () => {
+    const estado = com({ apontada: 3, requisitada: 6, empenhada: 6 })
+    const d = decidirEntrada(estado, { anterior: 4, novo: 6 })
+    expect(d).toMatchObject({ tipo: 'enviar', apontar: 2 })
+    const avisos = d.tipo === 'enviar' ? d.avisos : []
+    expect(avisos).toHaveLength(1)
+    expect(avisos[0]).toContain('mostra 3 apontadas')
+    expect(avisos[0]).toContain('esperado 4')
+    expect(avisos[0]).toContain('a menos: 1')
+  })
+
+  it('ERP com valor no meio do caminho (nem o anterior nem o novo): grava e avisa', () => {
+    const estado = com({ apontada: 3, requisitada: 6, empenhada: 6 })
+    const d = decidirEntrada(estado, { anterior: 1, novo: 6 })
+    expect(d).toMatchObject({ tipo: 'enviar', apontar: 5 })
+    expect(d.tipo === 'enviar' && d.avisos[0]).toContain('a mais: 2')
+  })
+
+  it('ERP exatamente no anterior: sem aviso de quantidade (o caminho normal)', () => {
+    const estado = com({ apontada: 4, requisitada: 6, empenhada: 6 })
+    expect(decidirEntrada(estado, { anterior: 4, novo: 6 })).toEqual({ tipo: 'enviar', apontar: 2, avisos: [] })
+  })
+
+  it('o aviso de quantidade vem junto dos de empenho e requisição', () => {
+    const estado = com({ apontada: 10, requisitada: 1, empenhada: 2 })
+    const d = decidirEntrada(estado, { anterior: 0, novo: 4 })
+    expect(d.tipo === 'enviar' && d.avisos).toHaveLength(3)
   })
 
   it('requisição Pendente não tem regra própria: o que decide é o saldo disponível, conferido na aplicação', () => {
