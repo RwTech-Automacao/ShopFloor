@@ -31,7 +31,7 @@ describe('Almoxarifado em placas por painel', () => {
     mocks({ ok: true, quantidade: 50 })
     const { registrarEntradaAlmoxarifado } = await import('../almoxarifado-actions')
     const r = await registrarEntradaAlmoxarifado({ pmo: 'PMOZ03', op: '9603', posto: 'Almoxarifado', colaborador: 'Ana', bipe: '9701' })
-    expect(r).toEqual({ ok: true, quantidade: 50, tipo: 'serie', divergencia: undefined })
+    expect(r).toEqual({ ok: true, quantidade: 50, tipo: 'serie', divergencia: undefined, estoque: 'PA' })
   })
 
   it('caixa CX[1][500] com 10 painéis: 500 entraram, sem divergência', async () => {
@@ -40,7 +40,7 @@ describe('Almoxarifado em placas por painel', () => {
     const r = await registrarEntradaAlmoxarifado({
       pmo: 'PMOZ01', op: '9601', posto: 'Almoxarifado', colaborador: 'Ana', bipe: 'CX[1][500]9601-PMOZ01',
     })
-    expect(r).toEqual({ ok: true, quantidade: 500, tipo: 'caixa', divergencia: undefined })
+    expect(r).toEqual({ ok: true, quantidade: 500, tipo: 'caixa', divergencia: undefined, estoque: 'PA' })
   })
 
   it('lote de 4 painéis: a confirmação devolve as placas (200)', async () => {
@@ -49,7 +49,7 @@ describe('Almoxarifado em placas por painel', () => {
     const r = await confirmarLoteAlmoxarifado({
       pmo: 'PMOZ04', op: '9604', posto: 'Almoxarifado', colaborador: 'Ana', loteId: 'l1', amostra: ['9801', '9802', '9803', '9804'],
     })
-    expect(r).toEqual({ ok: true, quantidade: 200, lote: 'LOTE[abcd1234][4]' })
+    expect(r).toEqual({ ok: true, quantidade: 200, lote: 'LOTE[abcd1234][4]', estoque: 'PA' })
   })
 
   it('detalhe das peças avulsas: pecas em placas e `paineis` = SNs esperando', async () => {
