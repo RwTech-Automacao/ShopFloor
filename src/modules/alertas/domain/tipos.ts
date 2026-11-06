@@ -28,6 +28,8 @@ export type TipoEnvio =
   | 'emb'
   /** Aviso de gravação do Compels (0170): nasce sem ocorrência e sem botão, uma mensagem por lote de avisos. */
   | 'compels_aviso'
+  /** Ficha de apontamento (0173): uma mensagem por caixa/lote que vira necessidade no Almoxarifado; leva o QR. */
+  | 'ficha'
 
 /** Estados de uma ocorrência (`alerta_ocorrencias.estado`). */
 export type EstadoOcorrencia = 'aberta' | 'resolvida' | 'normalizada'
@@ -76,9 +78,9 @@ export interface ContaVinculada {
 }
 
 /** Tipo da regra (specs 2026-09-18 e 2026-10-09). O tipo não muda depois de criado. */
-export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito' | 'resumo' | 'emb' | 'parado' | 'compels'
+export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito' | 'resumo' | 'emb' | 'parado' | 'compels' | 'ficha'
 export const TIPOS_REGRA: readonly TipoRegra[] = [
-  'aprovacao', 'tempo', 'defeito', 'resumo', 'emb', 'parado', 'compels',
+  'aprovacao', 'tempo', 'defeito', 'resumo', 'emb', 'parado', 'compels', 'ficha',
 ]
 
 export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
@@ -89,6 +91,7 @@ export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
   emb: 'Fim de EMB',
   parado: 'Parado ou travado na produção',
   compels: 'Problemas no envio ao Compels',
+  ficha: 'Ficha de apontamento (Almoxarifado)',
 }
 
 /** A frase de cada cartão da escolha do tipo. */
@@ -104,6 +107,8 @@ export const DESCRICAO_TIPO_REGRA: Record<TipoRegra, string> = {
   parado: 'Avisa quando peças ficam paradas num posto da produção por mais tempo que o limite, sem terminar.',
   compels:
     'Avisa quando a integração não consegue apontar uma entrada no Compels (com o que o Compels respondeu) ou aponta com ressalva.',
+  ficha:
+    'Quando uma caixa ou um lote vira entrada pendente no Almoxarifado, manda a ficha de apontamento com o QR do código (o QR vai só no Discord).',
 }
 
 /** É um tipo de regra conhecido? */
@@ -115,6 +120,7 @@ export function ehTipoRegra(valor: unknown): valor is TipoRegra {
     valor === 'resumo' ||
     valor === 'emb' ||
     valor === 'parado' ||
-    valor === 'compels'
+    valor === 'compels' ||
+    valor === 'ficha'
   )
 }

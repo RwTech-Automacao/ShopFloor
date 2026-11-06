@@ -68,7 +68,7 @@ describe('postoServeAoTipo', () => {
   // O fim de EMB fica FORA: ele é o único tipo sem posto nenhum (o gatilho é a EMB fechar, e EMB
   // não é posto). O caso dele é o `it` abaixo, para a exclusão ficar medida e não só suposta.
   it('todo tipo de posto aceita pelo menos o posto de teste', () => {
-    for (const tipo of TIPOS_REGRA.filter((t) => t !== 'emb' && t !== 'compels')) {
+    for (const tipo of TIPOS_REGRA.filter((t) => t !== 'emb' && t !== 'compels' && t !== 'ficha')) {
       expect(postoServeAoTipo(tipo, TESTE)).toBe(true)
     }
   })

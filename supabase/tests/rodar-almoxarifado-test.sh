@@ -465,6 +465,25 @@ if [ -n "${PLACAS:-}" ] && [ -z "${RED:-}" ]; then
     || { echo "$SAIDA"; echo "medição de sf_almox_pendencias_base FALHOU"; exit 1; }
   echo "$SAIDA" | grep -E "TEMPO|PLANO|a base devolve" || true
   echo "medição de sf_almox_pendencias_base (massa): ok"
+
+  # 0173 (ficha de apontamento): as duas funções de LEITURA da migração, contra as bases REAIS e a massa. Só elas
+  # são extraídas do arquivo (do create da alerta_ficha_responsavel até o comentário "F. alerta_avaliar"), sem os
+  # revoke/grant (esta base não tem o role service_role); a tabela da marca entra mínima, sem a FK de alerta_regras.
+  # Mede o custo em volume de produção (sem analyze): critério 1,5 s.
+  awk 'index($0,"create or replace function public.alerta_ficha_responsavel(")==1{p=1} index($0,"-- ---------- F. alerta_avaliar")==1{p=0} p{print}' \
+    supabase/migrations/0173_alerta_ficha_apontamento.sql | grep -v -E '^(revoke|grant) ' > /tmp/ficha_fn.sql
+  docker cp /tmp/ficha_fn.sql "$NOME":/tmp/ficha_fn.sql
+  docker cp supabase/tests/alertas_ficha_real_test.sql "$NOME":/tmp/teste_ficha_real.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+    -c "create table public.alerta_ficha_avisadas (regra_id uuid not null, tipo text not null, pmo text not null, op text not null, chave text not null, avisada_em timestamptz not null default now(), primary key (regra_id, tipo, pmo, op, chave))"
+  # O stub de sf_ordens desta suíte não tem a descrição da OP (em produção ela existe desde a 0028).
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+    -c "alter table public.sf_ordens add column if not exists descricao text not null default ''"
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/ficha_fn.sql
+  SAIDA=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_ficha_real.sql 2>&1) \
+    || { echo "$SAIDA"; echo "teste real da ficha de apontamento FALHOU"; exit 1; }
+  echo "$SAIDA" | grep -E "TEMPO|PARTE|PLANO" || true
+  echo "0173 (ficha de apontamento, funções de leitura nas bases reais + medição): ok"
 fi
 
 # O PLANO ESTÁVEL DA sf_nqa_caixa (0160): OP nova e grande, sem analyze, tem que passar em < 3 s e

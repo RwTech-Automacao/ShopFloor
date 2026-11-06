@@ -332,4 +332,28 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "update public.ale
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_travados.sql
 echo "0172 (parado ou travado na produção): ok"
 
+# ---------- 0173: ficha de apontamento (tipo de regra 'ficha') ----------
+# Mesmo molde: create or replace do alerta_avaliar (4 parâmetros), partindo do corpo da 0172, só com ACRÉSCIMOS.
+# PROVA no próprio runner: o corpo da alerta_avaliar da 0173, comparado com o da 0172, não pode ter NENHUMA linha
+# removida ou alterada (diff: só linhas '>'). O esquema mínimo do chão de fábrica (com as funções-base do
+# Almoxarifado como stubs) entra ANTES; duas aplicações, cada uma como transação única (-1): idempotência.
+corpo() { awk 'index($0,"create or replace function public.alerta_avaliar(")==1{p=1} p{print} p&&$0=="$func$;"{exit}' "$1"; }
+M0173="${FICHA_MIGRACAO:-supabase/migrations/0173_alerta_ficha_apontamento.sql}"   # FICHA_MIGRACAO: so para o teste de mutantes
+REMOVIDAS=$(diff <(corpo supabase/migrations/0172_alerta_parado_travado.sql) <(corpo "$M0173") | grep -c '^<' || true)
+if [ "$REMOVIDAS" != "0" ]; then echo "0173 alterou/removeu $REMOVIDAS linha(s) da alerta_avaliar da 0172 (so acrescimos sao permitidos)"; exit 1; fi
+echo "0173: alerta_avaliar so com acrescimos sobre a 0172 (0 linhas removidas): ok"
+docker cp "$M0173" "$NOME":/tmp/0173.sql
+docker cp supabase/tests/alertas_ficha_esquema.sql "$NOME":/tmp/esquema_ficha.sql
+docker cp supabase/tests/alertas_ficha_test.sql "$NOME":/tmp/teste_ficha.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema_ficha.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0173.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0173.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_ficha.sql
+# Os dois scripts de leitura do roteiro (medição e simulação) têm de RODAR (sintaxe e nomes de coluna certos).
+docker cp docs/operacao/alerta-ficha/01-medir.sql "$NOME":/tmp/ficha_medir.sql
+docker cp docs/operacao/alerta-ficha/02-simulacao.sql "$NOME":/tmp/ficha_simulacao.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/ficha_medir.sql >/dev/null
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/ficha_simulacao.sql >/dev/null
+echo "0173 (ficha de apontamento): ok"
+
 echo "ALERTAS SQL OK"

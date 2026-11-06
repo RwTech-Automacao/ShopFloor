@@ -26,6 +26,7 @@ import {
   type RefOp,
 } from './mensagens'
 import { textoEmb, type DivergenciaEmb } from './emb'
+import { textoFicha } from './ficha-texto'
 import { textoAlertaParado, textoLembreteParado, textoNormalizouParado } from './parados-texto'
 import type { ItemParado } from './parados'
 import {
@@ -57,7 +58,7 @@ export interface EnvioReservado {
 }
 
 const TIPOS: readonly TipoEnvio[] = [
-  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb', 'compels_aviso',
+  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb', 'compels_aviso', 'ficha',
 ]
 
 function ehTipoEnvio(v: unknown): v is TipoEnvio {
@@ -154,7 +155,7 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
  * EMB (0150) entra na lista dos excluídos pelo mesmo motivo do resumo: ele nasce SEM ocorrência,
  * tem texto próprio e nunca chega a `textoAprovacao`/`textoTempo`/`textoDefeito`.
  */
-type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb' | 'compels_aviso'>
+type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb' | 'compels_aviso' | 'ficha'>
 
 /**
  * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
@@ -248,6 +249,28 @@ function textoEmbDe(dados: Record<string, unknown>): string {
     }
   })
   return textoEmb(texto(dados, 'regra_nome'), emb, divergencias)
+}
+
+/**
+ * Lê o `dados` da ficha de apontamento como a 0173 o grava: unidade ('caixa' | 'lote'), codigo, pmo, op,
+ * produto, quantidade_op (pode faltar), quantidade_apontada, data_producao (pode faltar) e responsavel
+ * (pode vir vazio). O `qr` fica de fora do texto: quem o anexa é o entregador (só o Discord). Formato
+ * errado LANÇA: nunca uma ficha em branco calada.
+ */
+function textoFichaDe(dados: Record<string, unknown>): string {
+  const unidade = dados.unidade
+  if (unidade !== 'caixa' && unidade !== 'lote') throw new DadosEnvioInvalidos('unidade')
+  return textoFicha({
+    unidade,
+    codigo: texto(dados, 'codigo'),
+    dataProducao: dataOuNulo(dados, 'data_producao'),
+    produto: textoOuVazio(dados, 'produto'),
+    quantidadeOp: numeroOuNulo(dados, 'quantidade_op'),
+    pmo: texto(dados, 'pmo'),
+    op: texto(dados, 'op'),
+    quantidadeApontada: numero(dados, 'quantidade_apontada'),
+    responsavel: textoOuVazio(dados, 'responsavel'),
+  })
 }
 
 function janelaDe(d: Record<string, unknown>): Janela {
@@ -427,6 +450,7 @@ function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
  *   compels:   linhas, itens (array de {motivo, linhas, pecas, desistiu}); 0170
  *   compels_aviso: regra_nome, agora, avisos (array de {pmo, op, quantidade, aviso}); 0170
+ *   ficha:     unidade, qr, codigo, pmo, op, produto, quantidade_op, quantidade_apontada, data_producao, responsavel; 0173
  *   parado:    limite_horas, mais_antiga_min, expediente, itens (array de {tipo, codigo, pecas, minutos, amostras}); 0167/0172
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
@@ -443,6 +467,7 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
   if (tipo === 'resumo') return textoResumoDe(dados)
   if (tipo === 'emb') return textoEmbDe(dados)
   if (tipo === 'compels_aviso') return textoAvisosCompelsDe(dados)
+  if (tipo === 'ficha') return textoFichaDe(dados)
   if (tipo === 'resolvido') {
     // No parado a 0151 copia a chave "PMO/OP" da ocorrência para `defeito`: não é defeito de verdade.
     const refResolvido = refOpDe(dados)

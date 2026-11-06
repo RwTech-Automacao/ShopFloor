@@ -58,6 +58,8 @@ const JANELAS: Record<TipoRegra, JanelaTipo[]> = {
   parado: ['op'],
   // O compels também não tem janela: avisa na primeira falha da fila. 'op' é a fachada da validação.
   compels: ['op'],
+  // A ficha também não tem janela: uma mensagem por caixa/lote que vira entrada pendente. 'op' é a fachada.
+  ficha: ['op'],
 }
 
 const TITULO_PREVIA: Record<TipoRegra, string> = {
@@ -71,6 +73,7 @@ const TITULO_PREVIA: Record<TipoRegra, string> = {
   emb: 'Fim de EMB',
   parado: 'Parado ou travado na produção',
   compels: 'Problemas no envio ao Compels',
+  ficha: 'Ficha de apontamento',
 }
 
 const EXPLICA_POSTOS: Record<TipoRegra, string> = {
@@ -91,6 +94,8 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
     'O aviso olha, por OP, as peças cujo último registro está num dos postos marcados há mais tempo que o limite e que ainda não terminaram. Cada OP com peça parada abre o seu próprio alerta e lista, por posto, quantas peças são e há quanto tempo.',
   compels:
     'O aviso olha a fila de envio das entradas do Almoxarifado ao Compels. Cada OP com linha travada abre o seu próprio alerta, com o motivo que o Compels devolveu.',
+  ficha:
+    'A ficha de apontamento não usa posto: o Almoxarifado é o da rota de cada OP.',
 }
 
 /** Por que a lista de postos é mais curta neste tipo. Tempo médio serve em qualquer posto. */
@@ -140,7 +145,7 @@ function janelaInicial(tipo: TipoRegra, regra: RegraAlerta | null): JanelaTipo {
   if (tipo === 'resumo') return 'intervalos'
   // Fachada, a mesma da validação: o fim de EMB não tem campo de janela, e o estado começa já no
   // valor que vai ser gravado. Sem isto o estado nasceria em 'tempo' e o formulário mandaria minutos.
-  if (tipo === 'emb' || tipo === 'parado' || tipo === 'compels') return 'op'
+  if (tipo === 'emb' || tipo === 'parado' || tipo === 'compels' || tipo === 'ficha') return 'op'
   const salva = regra?.janelaTipo ?? 'tempo'
   return JANELAS[tipo].includes(salva) ? salva : 'tempo'
 }
@@ -272,7 +277,7 @@ export function RegraForm({
   // valor de fachada diferente, amanhã, mande minutos ao servidor — e `validarRegra` RECUSA a regra
   // de EMB com `janelaValor` preenchido, então isto não é zelo: é a gravação funcionando.)
   const janelaValor =
-    tipo === 'resumo' || tipo === 'emb' || tipo === 'parado' || tipo === 'compels' ? null : janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
+    tipo === 'resumo' || tipo === 'emb' || tipo === 'parado' || tipo === 'compels' || tipo === 'ficha' ? null : janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
 
   const oferecidos = postosOferecidos(tipo, postos, postosDaRegra)
   // Só avisa sobre o que está de fato MARCADO: desmarcado, o posto não atrapalha mais.
@@ -288,7 +293,7 @@ export function RegraForm({
       // O fim de EMB não tem posto: o gatilho é a EMB fechar, e EMB não é posto. A seção nem
       // aparece, mas a entrada manda a lista vazia de forma EXPLÍCITA — uma regra salva antes com
       // posto, reaberta, não devolveria posto nenhum ao servidor.
-      postos: tipo === 'emb' ? [] : postosSel,
+      postos: tipo === 'emb' || tipo === 'ficha' ? [] : postosSel,
       taxaMinima: tipo === 'aprovacao' ? taxa : '',
       janelaTipo,
       janelaValor,
@@ -303,7 +308,7 @@ export function RegraForm({
       // um campo escondido não manda valor nenhum.
       // O fim de EMB também não tem lembrete: o aviso de cada EMB sai UMA vez (a marca de "já
       // avisei" por (regra, EMB) na 0150), então não há o que insistir.
-      lembreteMin: tipo === 'resumo' || tipo === 'emb' || janelaTipo === 'intervalos' ? '' : lembrete,
+      lembreteMin: tipo === 'resumo' || tipo === 'emb' || tipo === 'ficha' || janelaTipo === 'intervalos' ? '' : lembrete,
       canais: canaisSel,
       destinatarios: destSel,
       avisarPessoas,
@@ -378,14 +383,14 @@ export function RegraForm({
           id="nome"
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          placeholder={tipo === 'emb' ? 'Divergências de EMB' : tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : tipo === 'parado' ? 'Peças paradas há mais de uma semana' : tipo === 'compels' ? 'Problemas no Compels' : 'Teste abaixo de 90'}
+          placeholder={tipo === 'emb' ? 'Divergências de EMB' : tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : tipo === 'parado' ? 'Peças paradas há mais de uma semana' : tipo === 'compels' ? 'Problemas no Compels' : tipo === 'ficha' ? 'Ficha do Almoxarifado' : 'Teste abaixo de 90'}
           autoComplete="off"
         />
       </div>
 
       {/* O fim de EMB não tem posto: o gatilho é a EMB fechar, e EMB não é posto. Campo morto é
           pior que campo nenhum — a seção some, e no lugar dela entra o quadro que EXPLICA o gatilho. */}
-      {tipo !== 'emb' && (
+      {tipo !== 'emb' && tipo !== 'ficha' && (
       <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Postos
@@ -446,6 +451,30 @@ export function RegraForm({
           salva sem saber quando sai, o que traz e o que NÃO conta. Cada frase foi conferida contra a
           0170: a linha com problema é entrada, não cancelada, não enviada, com erro gravado e fora das
           esperas esperadas (OP não liberada, integração não configurada neste ambiente). */}
+      {/* A ficha não tem número nem posto a configurar: o gatilho tem de estar ESCRITO na tela. Cada frase foi
+          conferida contra a 0173: caixa ou lote que aparece na lista de confirmação do Almoxarifado, OP não
+          finalizada, piso = criado_em da regra, teto de 3 dias, no máximo 30 por rodada de 5 min, uma vez só. */}
+      {tipo === 'ficha' && (
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
+          <p>
+            Quando uma <strong>caixa ou um lote</strong> vira entrada pendente no Almoxarifado (aparece na
+            lista de confirmação), sai <strong>uma mensagem por caixa ou lote</strong> com a ficha de
+            apontamento: data de produção, produto, quantidade da OP, PMO, OP, quantidade apontada e
+            responsável.
+          </p>
+          <p>
+            No <strong>Discord</strong> a mensagem leva o <strong>QR do código</strong> que o Almoxarifado bipa,
+            como imagem. No Telegram e no e-mail vai só o texto. Peça avulsa não gera ficha.
+          </p>
+          <p>
+            Cada caixa ou lote avisa <strong>uma vez só</strong>, só de OP não finalizada. A conferência é feita
+            a cada 5 minutos; o que ficou pendente antes de a regra ser criada, ou há mais de 3 dias, não é
+            avisado. Se a regra estiver sem ninguém para receber, a ficha espera até alguém poder receber (dentro
+            dos 3 dias).
+          </p>
+        </div>
+      )}
+
       {tipo === 'compels' && (
         <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
           <p>
@@ -645,7 +674,7 @@ export function RegraForm({
 
       {/* O resumo não tem janela a escolher: o bloco acima já traz os intervalos. O fim de EMB e o
           parado não têm janela NENHUMA: o gatilho de um é a EMB fechar, o do outro é o limite em horas. */}
-      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && (
+      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && tipo !== 'ficha' && (
       <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Janela
@@ -776,7 +805,7 @@ export function RegraForm({
           insistência é o fechamento do próximo bloco. Campo que não faz nada é pior que campo
           nenhum, então ele some. No fim de EMB some pelo mesmo motivo: cada EMB avisa UMA vez (a
           marca de "já avisei" por (regra, EMB) na 0150), e não há alerta aberto para insistir. */}
-      {tipo !== 'resumo' && tipo !== 'emb' && janelaTipo !== 'intervalos' && (
+      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'ficha' && janelaTipo !== 'intervalos' && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
             <Label htmlFor="lembrete">Lembrar a cada (min)</Label>
@@ -899,7 +928,7 @@ export function RegraForm({
         <PmosSelecao disponiveis={pmosDisponiveis} selecionadas={pmosSel} onChange={setPmosSel} />
       )}
 
-      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && previa && (
+      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && tipo !== 'ficha' && previa && (
         <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-3 text-sm">
           <span className="font-medium">{TITULO_PREVIA[tipo]}</span>
           {previa.linhas.map((p) => (
@@ -925,7 +954,7 @@ export function RegraForm({
             o bloco é tarefa própria, e o botão volta. No fim de EMB não há prévia por outro
             motivo: não há janela a antecipar, nem medida a mostrar — só o gatilho. O parado também não tem
             prévia: a `alerta_previa` não conhece o tipo. */}
-        {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && janelaTipo !== 'intervalos' && (
+        {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && tipo !== 'ficha' && janelaTipo !== 'intervalos' && (
           <Button variant="outline" onClick={verPrevia} disabled={pendente}>
             Ver prévia
           </Button>
