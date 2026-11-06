@@ -4,6 +4,23 @@ export function normalizarSerie(sn: string): string {
 }
 
 /**
+ * Forma de BUSCA "contém" do Nº de Série: sem separadores (espaço, traço, ponto…) e minúsculo, MANTENDO os
+ * zeros à esquerda — o SN é gravado sem separadores (`limparSerie`), então a busca tem de ignorar os mesmos.
+ */
+export function limparSerieParaBusca(s: string): string {
+  return (s ?? '').toString().replace(/[^A-Za-z0-9]/g, '').toLowerCase()
+}
+
+/**
+ * O SN contém o que a pessoa digitou no filtro? Ignora espaço, traço e maiúsculas; aceita pedaço do SN.
+ * Busca vazia (ou só com separadores) não filtra nada. É a regra do filtro da Pesquisa e da Manutenção.
+ */
+export function serieContem(sn: string, busca: string): boolean {
+  const alvo = limparSerieParaBusca(busca)
+  return alvo === '' || limparSerieParaBusca(sn).includes(alvo)
+}
+
+/**
  * Teto de caracteres do Nº de Série (depois de limpar separadores). Os SNs daqui têm ~8–12.
  * Um bipe de produção (01/09/2026, Printer TOP) gravou 55 caracteres: 46 zeros à esquerda antes do
  * código correto — assinatura de tecla "0" repetindo no coletor. Acima deste teto é leitura suja:
