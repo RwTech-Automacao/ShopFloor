@@ -180,18 +180,22 @@ describe('concluirEnvio', () => {
     expect(chamadas[0]!.filtros).toContainEqual(['tentativas', 3])
   })
 
-  it('erro_esperado: só a espera ESPERADA (OP não liberada etc.) é marcada; o resto grava false, sempre', async () => {
+  it('erro_esperado: só a espera ESPERADA (OP não liberada etc.) é marcada; toda FALHA regrava a marca', async () => {
     const { sb, chamadas } = sbFalso()
     const repo = criarRepositorioEstoqueEnvios(sb)
     await repo.concluirEnvio(ENVIO, { ok: false, erro: 'OP 1 ainda não está liberada', aguardar: true, esperado: true })
     await repo.concluirEnvio(ENVIO, { ok: false, erro: 'Aguardando requisição', aguardar: true })
     await repo.concluirEnvio(ENVIO, { ok: false, erro: 'ERP 500' })
-    await repo.concluirEnvio(ENVIO, { ok: true })
     expect(chamadas[0]!.update).toMatchObject({ erro_esperado: true })
-    // a marca é regravada a cada conclusão: sem isso, uma espera esperada de ontem esconderia a falha de hoje
+    // regravada a cada falha: sem isso, uma espera esperada de ontem esconderia a falha de hoje
     expect(chamadas[1]!.update).toMatchObject({ erro_esperado: false })
     expect(chamadas[2]!.update).toMatchObject({ erro_esperado: false })
-    expect(chamadas[3]!.update).toMatchObject({ erro_esperado: false })
+  })
+
+  it('envio que deu certo NÃO toca em erro_esperado: com o app antes da migração a fila continua concluindo', async () => {
+    const { sb, chamadas } = sbFalso()
+    await criarRepositorioEstoqueEnvios(sb).concluirEnvio(ENVIO, { ok: true })
+    expect(chamadas[0]!.update).not.toHaveProperty('erro_esperado')
   })
 
   it('sucesso e falha comum LIMPAM o adiamento', async () => {

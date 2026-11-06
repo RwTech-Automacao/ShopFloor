@@ -33,11 +33,12 @@
 --   RDS:  PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "<conexão>" \
 --           -1 -v ON_ERROR_STOP=1 -f supabase/migrations/0170_alerta_problemas_compels.sql
 --
--- ⚠️ ORDEM DE DEPLOY: esta migração ANTES do app. O app novo (1) grava erro_esperado em toda
---    conclusão da fila do Compels e (2) lê/grava o tipo 'compels'. App antes da migração = a fila do
---    Compels PARA de concluir envios (coluna inexistente) e o cron do Compels devolve falha.
---    Mitigação se o app subir antes: aplicar a migração logo em seguida; as linhas reservadas voltam
---    à fila sozinhas quando a reserva vence (15 min), sem perda.
+-- ⚠️ ORDEM DE DEPLOY: esta migração ANTES do app. O app novo (1) grava erro_esperado nas FALHAS/ESPERAS
+--    da fila do Compels (o envio que dá certo não toca na coluna) e (2) lê/grava o tipo 'compels'.
+--    App antes da migração = as entradas continuam sendo enviadas e concluídas, mas as falhas/esperas
+--    deixam de ser gravadas (coluna inexistente) e o cron do alerta devolve falha. Mitigação: aplicar a
+--    migração logo em seguida; as linhas reservadas voltam à fila sozinhas quando a reserva vence
+--    (15 min), sem perda.
 -- ⚠️ Os `add constraint` validam as linhas que já existem; nenhuma regra de produção é do tipo novo.
 -- Convenções: corpo de função com $func$ (o SQL Editor recusa o de dois cifrões); grants e revokes
 -- explícitos; notify pgrst na última linha.
@@ -107,7 +108,7 @@ alter table public.alerta_regras add constraint alerta_regras_campos_por_tipo ch
 alter table public.sf_estoque_envios add column if not exists erro_esperado boolean not null default false;
 
 comment on column public.sf_estoque_envios.erro_esperado is
-  'A espera é ESPERADA e não é problema a alertar: OP ainda não liberada para a integração, integração não configurada neste ambiente, estorno ainda manual. Gravada pelo app a cada conclusão (concluirEnvio).';
+  'A espera é ESPERADA e não é problema a alertar: OP ainda não liberada para a integração, integração não configurada neste ambiente, estorno ainda manual. Gravada pelo app a cada falha/espera (concluirEnvio).';
 
 -- Backfill pelas frases que o app gravava (src/modules/shopfloor/infra/compels.ts). Só toca linha com erro
 -- e ainda não marcada; reexecutar não muda nada.
