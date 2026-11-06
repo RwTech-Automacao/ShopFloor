@@ -279,7 +279,7 @@ export function criarRepositorioServico(
   }
 
   /**
-   * O mapa `p_parados` da rodada: {"<regra_id>": [{pmo, op, posto, mais_antiga_min, expediente, itens}]}
+   * O mapa `p_parados` da rodada: {"<regra_id>": [{pmo, op, posto, mais_antiga_min, expediente, itens}]} (UM item por regra: o relatório)
    * para cada regra "Parado ou travado na produção" ativa. A conta de horário (turnos, instante de
    * corte) mora aqui, em `domain/horas-de-turno.ts`, testada; o banco só filtra por `data_hora <=
    * corte` (alerta_travados) e decide abrir/atualizar/normalizar.
@@ -371,8 +371,9 @@ export function criarRepositorioServico(
           amostras: Array.isArray(l.amostras) ? l.amostras.filter((a): a is string => typeof a === 'string') : [],
         })
       }
-      // A ocorrência é da OP, num posto FIXO da regra (o índice único é regra x posto x PMO/OP): o 1º dela.
-      mapa[r.id] = paradosParaBanco(paradosPorOp(grupos, dela, postos[0]!, agora))
+      // RELATÓRIO ÚNICO: uma ocorrência por regra (PMO/OP fixos), num posto FIXO (o índice único é regra x
+      // posto x PMO/OP): o 1º dela. As OPs viajam dentro dos itens; nada travado = lista vazia = normaliza.
+      mapa[r.id] = paradosParaBanco(paradosPorOp(grupos, dela, agora), postos[0]!)
     }
     return mapa
   }

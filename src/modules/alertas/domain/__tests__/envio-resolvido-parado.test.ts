@@ -47,3 +47,12 @@ describe('resolvido de uma ocorrência de parado', () => {
     ).toContain('✅ Defeito 2040 (Componente Faltando) no Teste: resolvido por Bruno Líder às 14:05')
   })
 })
+
+describe('resolvido do relatório único do parado', () => {
+  it('não cita "OP TODAS/—" nem trata a chave como defeito', () => {
+    const t = textoDoEnvio('resolvido', {
+      ...BASE, defeito: 'TODAS/—', pmo: 'TODAS', op: '—', ops: [{ pmo: 'TODAS', op: '—' }],
+    })
+    expect(t).toBe('✅ ALMOXARIFADO: resolvido por Ana às 10:00')
+  })
+})

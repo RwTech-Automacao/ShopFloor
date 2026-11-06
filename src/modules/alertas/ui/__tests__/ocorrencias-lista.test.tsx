@@ -59,6 +59,20 @@ describe('OcorrenciasLista', () => {
     expect(screen.getByText('OP PMOG13/8504')).toBeInTheDocument()
   })
 
+  it('ocorrência do relatório único do parado mostra "Todas as OPs", sem "(TODAS/—)" no posto', () => {
+    render(
+      <OcorrenciasLista
+        modulo="shopfloor"
+        ocorrenciasIniciais={[
+          { ...BASE, id: 'p2', regraNome: 'Parado', regraTipo: 'parado', posto: 'Teste', pmo: 'TODAS', op: '—', defeito: 'TODAS/—', valorAbertura: null, valorUltimo: null },
+        ]}
+        filtroInicial={{ de: '2026-09-12', ate: '2026-09-18', estado: '' }}
+      />,
+    )
+    expect(screen.getByText('Todas as OPs')).toBeInTheDocument()
+    expect(screen.queryByText(/TODAS/)).toBeNull()
+  })
+
   it('ocorrência do compels mostra "OP PMO/OP" e quantas linhas travaram', () => {
     render(
       <OcorrenciasLista
