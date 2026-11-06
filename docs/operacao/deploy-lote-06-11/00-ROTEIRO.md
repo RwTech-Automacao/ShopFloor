@@ -59,6 +59,20 @@ HOST=$(grep -E '^POSTGRES_HOST=' ~/supabase/docker/.env | cut -d= -f2- | tr -d '
 ```
 Todas as colunas do resultado devem ser `t`.
 
+## 3b. Alertas visíveis para todos (pedido de 06/11/2026) — ANTES do deploy do app
+Hoje a tela de Alertas do Recebimento (onde está o "Fim de EMB") pode estar liberada só para o seu e-mail. As duas travas:
+`ALERTAS_LIBERADO_PARA` (Alertas do ShopFloor) e `ALERTAS_RECEBIMENTO_LIBERADO_PARA` (Alertas do Recebimento).
+Com `*`, todo usuário com a permissão de administrar o módulo passa a ver a tela. O `deploy.sh` do passo 4 já reinicia o app,
+então basta ajustar o arquivo antes dele (um comando por vez):
+
+```bash
+cd ~/ShopFloor && grep -E '^ALERTAS_' .env.production
+```
+```bash
+cd ~/ShopFloor && cp .env.production ~/env.production.bak-06-11 && for v in ALERTAS_LIBERADO_PARA ALERTAS_RECEBIMENTO_LIBERADO_PARA; do if grep -q "^$v=" .env.production; then sed -i "s|^$v=.*|$v=*|" .env.production; else echo "$v=*" >> .env.production; fi; done; grep -E '^ALERTAS_' .env.production
+```
+O esperado é as duas linhas com `=*`. A cópia fica em `~/env.production.bak-06-11` (para voltar: `cp ~/env.production.bak-06-11 ~/ShopFloor/.env.production`).
+
 ## 4. Deploy do app
 ```bash
 cd ~/ShopFloor && bash deploy/aws/deploy.sh
