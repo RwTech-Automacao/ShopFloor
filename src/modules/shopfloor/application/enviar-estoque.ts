@@ -23,6 +23,8 @@
  * interfaces seria um arquivo a mais para achar sem nada a mais para dizer.
  */
 
+import type { EstoqueDestino } from '@/modules/compels/domain/estoque-destino'
+
 /**
  * Uma linha da fila já RESERVADA por esta rodada (`sf_estoque_reservar`): `tentativas` já conta esta
  * tentativa. Os campos são exatamente os que a função devolve — nada é derivado aqui.
@@ -52,6 +54,11 @@ export interface EnvioEstoqueReservado {
    * são, e `operacao` diz para onde elas vão.
    */
   quantidade: number
+  /**
+   * O estoque de destino no ERP (0175): o que a pessoa escolheu ao confirmar no Almoxarifado; o estorno traz
+   * o MESMO da entrada que desfaz. Ausente = 'PA' (o de sempre, e o que a linha de antes da 0175 sempre foi).
+   */
+  estoque?: EstoqueDestino
   tentativas: number
   criadoEm: string
 }

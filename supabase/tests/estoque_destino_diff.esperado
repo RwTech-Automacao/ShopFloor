@@ -1,0 +1,35 @@
+### sf_almoxarifado_entrada
+<   p_serie_norm  text
+>   p_serie_norm  text,
+>   -- 0175: o estoque de destino no ERP ('PA' | 'EINTER'). Opcional: sem ele, 'PA' (o de sempre).
+>   p_estoque     text default 'PA'
+>   -- 0175: o destino da entrada; nulo vale 'PA'.
+>   v_estoque    text := coalesce(p_estoque, 'PA');
+>   -- 0175: o destino só pode ser um dos dois estoques que o Compels conhece. Quem sabe se o EINTER
+>   -- está configurado neste ambiente é o aplicativo (variáveis de ambiente); aqui só se barra o lixo.
+>   if v_estoque not in ('PA', 'EINTER') then
+>     return jsonb_build_object('ok', false, 'motivo', 'estoque_invalido',
+>       'detalhe', 'Estoque de destino inválido: use PA ou EINTER.');
+>   end if;
+> 
+<     (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade)
+>     (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade, estoque)
+<      p_pmo, p_op, p_posto, v_tipo, p_bipe, v_serie_fila, v_quantidade);
+>      p_pmo, p_op, p_posto, v_tipo, p_bipe, v_serie_fila, v_quantidade, v_estoque);
+### sf_almoxarifado_lote
+<   p_amostra     text[]
+>   p_amostra     text[],
+>   -- 0175: o estoque de destino no ERP ('PA' | 'EINTER'). Opcional: sem ele, 'PA' (o de sempre).
+>   p_estoque     text default 'PA'
+>   -- 0175: o destino do envio; nulo vale 'PA'.
+>   v_estoque  text := coalesce(p_estoque, 'PA');
+>   -- 0175: só PA ou EINTER (o aplicativo confere se o EINTER está configurado).
+>   if v_estoque not in ('PA', 'EINTER') then
+>     return jsonb_build_object('ok', false, 'motivo', 'estoque_invalido',
+>       'detalhe', 'Estoque de destino inválido: use PA ou EINTER.');
+>   end if;
+> 
+<     (id, chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade, lote_id, sns)
+>     (id, chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade, lote_id, sns, estoque)
+<      p_pmo, p_op, p_posto, 'lote', v_rotulo, '', v_qtd, p_lote_id, v_lote.sns);
+>      p_pmo, p_op, p_posto, 'lote', v_rotulo, '', v_qtd, p_lote_id, v_lote.sns, v_estoque);

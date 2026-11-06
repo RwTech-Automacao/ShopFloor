@@ -2,6 +2,8 @@
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
+import { ehEstoqueDestino, ESTOQUE_PADRAO, type EstoqueDestino } from '@/modules/compels/domain/estoque-destino'
+import { einterConfigurado } from '@/modules/compels/infra/config'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import {
   FRASE_ITEM_NAO_PENDENTE,
@@ -25,9 +27,33 @@ export interface EntradaAlmoxarifado {
   posto: string
   colaborador: string
   bipe: string
+  /** O estoque de destino no ERP (0175). Ausente = PA. EINTER só se estiver configurado neste ambiente. */
+  estoque?: string
 }
 
 const SEM_PERMISSAO = 'Você não tem permissão para esta ação.'
+
+const FRASE_ESTOQUE_INVALIDO = 'Estoque de destino inválido: escolha PA ou EINTER.'
+const FRASE_EINTER_INDISPONIVEL = 'O estoque EINTER ainda não está disponível neste ambiente. Escolha PA.'
+
+/**
+ * Valida a escolha do estoque NO SERVIDOR (o cliente nunca é confiável): só 'PA' ou 'EINTER'; EINTER só se as
+ * duas variáveis do ambiente estiverem postas. Ausente/vazio = PA. A decisão de enviar `p_estoque` ao banco só
+ * quando for EINTER mantém a chamada do PA idêntica à de antes da 0175.
+ */
+function resolverEstoque(
+  valor: unknown,
+  env: Record<string, string | undefined> = process.env,
+): { ok: true; estoque: EstoqueDestino } | { ok: false; erro: string } {
+  if (valor === undefined || valor === null || valor === '') return { ok: true, estoque: ESTOQUE_PADRAO }
+  if (!ehEstoqueDestino(valor)) return { ok: false, erro: FRASE_ESTOQUE_INVALIDO }
+  if (valor === 'EINTER' && !einterConfigurado(env)) return { ok: false, erro: FRASE_EINTER_INDISPONIVEL }
+  return { ok: true, estoque: valor }
+}
+
+/** Só o EINTER vai como argumento: o PA é o default do banco. */
+const argumentoEstoque = (estoque: EstoqueDestino): { p_estoque?: string } =>
+  estoque === 'EINTER' ? { p_estoque: 'EINTER' } : {}
 
 /**
  * Recusa de FORMATO (classificarBipeAlmoxarifado): decidida só pelo que foi bipado, sem round-trip
@@ -116,6 +142,8 @@ function mensagemRecusaBanco(
         })
       }
       return detalhe || 'O posto anterior ainda não concluiu este bipe.'
+    case 'estoque_invalido':
+      return FRASE_ESTOQUE_INVALIDO
     case 'serie_exige_lote':
       // 0156: na OP individual com NQA no posto anterior, a entrada é pelo LOTE (Confirmar lote).
       return MENSAGEM_SERIE_EXIGE_LOTE
@@ -153,13 +181,15 @@ function mensagemDivergenciaEtiqueta(qtdEtiqueta: number, quantidade: number): s
 export async function registrarEntradaAlmoxarifado(
   entrada: EntradaAlmoxarifado,
 ): Promise<
-  | { ok: true; quantidade: number; tipo: 'serie' | 'caixa'; divergencia?: string }
+  | { ok: true; quantidade: number; tipo: 'serie' | 'caixa'; divergencia?: string; estoque: EstoqueDestino }
   | { ok: false; erro: string }
 > {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'lancar')) {
     return { ok: false, erro: SEM_PERMISSAO }
   }
+  const escolha = resolverEstoque(entrada.estoque)
+  if (!escolha.ok) return escolha
 
   // 'vazio' não depende de OP nenhuma — resolvido sem round-trip ao banco.
   const bipeBruto = entrada.bipe ?? ''
@@ -201,6 +231,7 @@ export async function registrarEntradaAlmoxarifado(
     p_tipo: tipo,
     p_quantidade: quantidade,
     p_serie_norm: serieNorm,
+    ...argumentoEstoque(escolha.estoque),
   })
   if (error) return { ok: false, erro: 'Não foi possível registrar a entrada.' }
 
@@ -226,7 +257,7 @@ export async function registrarEntradaAlmoxarifado(
     r.qtd_etiqueta !== undefined && r.qtd_etiqueta !== null && r.qtd_etiqueta !== gravadas
       ? mensagemDivergenciaEtiqueta(r.qtd_etiqueta, gravadas)
       : undefined
-  return { ok: true, quantidade: gravadas, tipo, divergencia }
+  return { ok: true, quantidade: gravadas, tipo, divergencia, estoque: escolha.estoque }
 }
 
 const FALHA_NECESSIDADES = 'Não foi possível carregar as caixas esperando confirmação.'
@@ -337,6 +368,8 @@ export interface ConfirmacaoLote {
   loteId: string
   /** Os SNs bipados do lote (todos, desde 21/10), como vieram do coletor. */
   amostra: string[]
+  /** O estoque de destino no ERP (0175). Ausente = PA. EINTER só se estiver configurado neste ambiente. */
+  estoque?: string
 }
 
 /**
@@ -347,11 +380,13 @@ export interface ConfirmacaoLote {
  */
 export async function confirmarLoteAlmoxarifado(
   c: ConfirmacaoLote,
-): Promise<{ ok: true; quantidade: number; lote: string } | { ok: false; erro: string }> {
+): Promise<{ ok: true; quantidade: number; lote: string; estoque: EstoqueDestino } | { ok: false; erro: string }> {
   const sessao = await getSessao()
   if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'lancar')) {
     return { ok: false, erro: SEM_PERMISSAO }
   }
+  const escolha = resolverEstoque(c.estoque)
+  if (!escolha.ok) return escolha
   const pmo = (c.pmo ?? '').trim()
   const op = (c.op ?? '').trim()
   const posto = (c.posto ?? '').trim()
@@ -371,11 +406,12 @@ export async function confirmarLoteAlmoxarifado(
     p_colaborador: colaborador,
     p_lote_id: loteId,
     p_amostra: amostra,
+    ...argumentoEstoque(escolha.estoque),
   })
   if (error) return { ok: false, erro: 'Não foi possível confirmar o lote.' }
   const r = (data ?? {}) as { ok?: boolean; motivo?: string; detalhe?: string; quantidade?: number; lote?: string }
   if (!r.ok) return { ok: false, erro: mensagemRecusaLote(r.motivo ?? '', r.detalhe) }
-  return { ok: true, quantidade: Number(r.quantidade ?? 0), lote: r.lote ?? '' }
+  return { ok: true, quantidade: Number(r.quantidade ?? 0), lote: r.lote ?? '', estoque: escolha.estoque }
 }
 
 const FALHA_PENDENCIAS = 'Não foi possível carregar o que está esperando confirmação no Almoxarifado.'
@@ -497,3 +533,41 @@ export async function detalharPendenciaAlmoxarifado(p: {
   }
 }
 
+
+const AVISO_ULTIMO_ESTOQUE =
+  'Não foi possível ver o último estoque desta OP. Confira o estoque escolhido antes de confirmar.'
+
+/**
+ * O que a tela precisa para oferecer a escolha de estoque (0175): se o EINTER está configurado neste ambiente
+ * (senão a tela só oferece o PA, como sempre) e qual vem pré-selecionado — o estoque da última entrada vigente
+ * desta OP (`sf_estoque_ultimo_da_op`), ou PA se a OP ainda não teve entrada. Só leitura.
+ *
+ * Com o EINTER indisponível nem se consulta o banco. Se a consulta falhar, o padrão é PA e vai um aviso para a
+ * tela mostrar: a pessoa ainda escolhe, só não recebe o palpite.
+ */
+export async function estoqueDestinoDaOp(
+  pmo: string,
+  op: string,
+): Promise<
+  | { ok: true; einterDisponivel: boolean; padrao: EstoqueDestino; aviso?: string }
+  | { ok: false; erro: string }
+> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'recebimento', 'lancar')) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  if (!einterConfigurado()) return { ok: true, einterDisponivel: false, padrao: ESTOQUE_PADRAO }
+
+  const p = (pmo ?? '').trim()
+  const o = (op ?? '').trim()
+  if (!p || !o) return { ok: true, einterDisponivel: true, padrao: ESTOQUE_PADRAO }
+
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_estoque_ultimo_da_op', { p_pmo: p, p_op: o })
+  if (error) {
+    return error.message?.includes('SEM_PERMISSAO')
+      ? { ok: false, erro: SEM_PERMISSAO }
+      : { ok: true, einterDisponivel: true, padrao: ESTOQUE_PADRAO, aviso: AVISO_ULTIMO_ESTOQUE }
+  }
+  return { ok: true, einterDisponivel: true, padrao: ehEstoqueDestino(data) ? data : ESTOQUE_PADRAO }
+}

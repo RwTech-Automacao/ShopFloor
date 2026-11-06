@@ -45,7 +45,10 @@ export function AlmoxarifadoTela({ colaborador, posto }: { colaborador: string; 
       tipo: 'ok',
       titulo: pecasTexto(c.quantidade),
       detalhe: c.divergencia,
-      chips: [{ rotulo: caixa ? 'Caixa' : 'Lote', valor: c.codigo, mono: true }],
+      chips: [
+        { rotulo: caixa ? 'Caixa' : 'Lote', valor: c.codigo, mono: true },
+        ...(c.estoque ? [{ rotulo: 'Estoque', valor: c.estoque }] : []),
+      ],
       dica: c.divergencia ? 'Confira a caixa física e avise o gestor: a diferença não deu entrada.' : undefined,
     })
     setSelecionado(null)

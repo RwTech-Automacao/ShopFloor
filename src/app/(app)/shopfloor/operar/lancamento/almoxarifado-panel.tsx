@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SeletorEstoque } from '@/app/(app)/recebimento/almoxarifado/seletor-estoque'
+import { useEstoqueDestino } from '@/app/(app)/recebimento/almoxarifado/use-estoque-destino'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import {
   confirmarLoteAlmoxarifado,
@@ -86,6 +88,8 @@ export function AlmoxarifadoPanel({
   posto: string
   contexto?: React.ReactNode
 }) {
+  // PA × EINTER (0175): só aparece com o EINTER configurado; pré-selecionado com o último estoque da OP.
+  const estoque = useEstoqueDestino(pmo, op)
   const [bipe, setBipe] = useState('')
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null)
   const [recentes, setRecentes] = useState<EntradaSessao[]>([])
@@ -172,14 +176,21 @@ export function AlmoxarifadoPanel({
     const bipados = amostra
     void (async () => {
       try {
-        const r = await confirmarLoteAlmoxarifado({ pmo, op, posto, colaborador, loteId: lote.loteId, amostra: bipados })
+        const r = await confirmarLoteAlmoxarifado({ pmo, op, posto, colaborador, loteId: lote.loteId, amostra: bipados, estoque: estoque.paraEnvio })
         if (!r.ok) {
           // Recusado: o lote continua aberto, com a amostra, pro operador ver o que caiu.
           setResultado({ tipo: 'aviso', titulo: r.erro })
           return
         }
         const rotulo = r.lote || lote.rotulo
-        setResultado({ tipo: 'ok', titulo: pecas(r.quantidade), chips: [{ rotulo: 'Lote', valor: rotulo, mono: true }] })
+        setResultado({
+          tipo: 'ok',
+          titulo: pecas(r.quantidade),
+          chips: [
+            { rotulo: 'Lote', valor: rotulo, mono: true },
+            ...(estoque.disponivel ? [{ rotulo: 'Estoque', valor: r.estoque }] : []),
+          ],
+        })
         setRecentes((prev) => [{ bipe: rotulo, quantidade: r.quantidade, tipo: 'lote' as const }, ...prev].slice(0, 30))
         setAberto(null)
         setAmostra([])
@@ -241,7 +252,7 @@ export function AlmoxarifadoPanel({
     // assentar no MESMO desenho — é isso que fecha a fresta que engoliu bipe no Abastecimento.
     void (async () => {
       try {
-        const r = await registrarEntradaAlmoxarifado({ pmo, op, posto, colaborador, bipe: alvo })
+        const r = await registrarEntradaAlmoxarifado({ pmo, op, posto, colaborador, bipe: alvo, estoque: estoque.paraEnvio })
         if (!r.ok) {
           // Recusado: o campo NÃO é limpo — o texto bipado fica na tela pro operador ver o que caiu.
           setResultado({ tipo: 'aviso', titulo: r.erro })
@@ -254,7 +265,10 @@ export function AlmoxarifadoPanel({
           // Etiqueta × contagem real: a entrada foi aceita (quem manda é a peça), mas o operador
           // precisa ver a diferença — ela era só um aviso no log do Postgres, que ninguém lê.
           detalhe: r.divergencia,
-          chips: [{ rotulo: r.tipo === 'caixa' ? 'Caixa' : 'Nº Série', valor: alvo.trim(), mono: true }],
+          chips: [
+            { rotulo: r.tipo === 'caixa' ? 'Caixa' : 'Nº Série', valor: alvo.trim(), mono: true },
+            ...(estoque.disponivel ? [{ rotulo: 'Estoque', valor: r.estoque }] : []),
+          ],
           dica: r.divergencia ? 'Confira a caixa física e avise o gestor: a diferença não deu entrada.' : undefined,
         })
         setRecentes((prev) => [{ bipe: alvo.trim(), quantidade: r.quantidade, tipo: r.tipo }, ...prev].slice(0, 30))
@@ -372,6 +386,7 @@ export function AlmoxarifadoPanel({
                 </Button>
               </div>
             )}
+            <SeletorEstoque estoque={estoque} desabilitado={enviando} />
             <Label htmlFor="bipeAlmoxarifado">
               {loteAberto ? 'Bipe os SNs do lote' : 'Bipe a peça ou a caixa'}
             </Label>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import type { EstoqueDestino } from '@/modules/compels/domain/estoque-destino'
 import { Input } from '@/components/ui/input'
 import type { ResultadoAcao } from '@/components/ui/painel-resultado'
 import { registrarEntradaAlmoxarifado } from '@/modules/shopfloor/application/almoxarifado-actions'
@@ -12,12 +13,16 @@ import {
   pecasTexto,
   type PendenciaAlmoxarifado,
 } from '@/modules/shopfloor/domain/almoxarifado'
+import { SeletorEstoque } from './seletor-estoque'
 import { useDetalhe } from './use-detalhe'
+import { useEstoqueDestino } from './use-estoque-destino'
 
 export interface ConfirmacaoCartao {
   quantidade: number
   codigo: string
   divergencia?: string
+  /** Em qual estoque do ERP a entrada foi (só quando a escolha PA × EINTER é oferecida). */
+  estoque?: EstoqueDestino
 }
 
 /**
@@ -41,6 +46,7 @@ export function CaixaAberta({
   onVoltar: () => void
 }) {
   const estado = useDetalhe(item)
+  const estoque = useEstoqueDestino(item.pmo, item.op)
   const [bipe, setBipe] = useState('')
   const [enviando, setEnviando] = useState(false)
   const enviandoRef = useRef(false)
@@ -78,12 +84,15 @@ export function CaixaAberta({
     setEnviando(true)
     void (async () => {
       try {
-        const r = await registrarEntradaAlmoxarifado({ pmo: item.pmo, op: item.op, posto, colaborador, bipe: alvo })
+        const r = await registrarEntradaAlmoxarifado({ pmo: item.pmo, op: item.op, posto, colaborador, bipe: alvo, estoque: estoque.paraEnvio })
         if (!r.ok) {
           onResultado({ tipo: 'aviso', titulo: r.erro })
           return
         }
-        onConfirmado({ quantidade: r.quantidade, codigo: item.codigo, divergencia: r.divergencia })
+        onConfirmado({
+          quantidade: r.quantidade, codigo: item.codigo, divergencia: r.divergencia,
+          estoque: estoque.disponivel ? r.estoque : undefined,
+        })
       } catch {
         onResultado({ tipo: 'aviso', titulo: 'Não foi possível registrar a entrada.' })
       } finally {
@@ -102,6 +111,7 @@ export function CaixaAberta({
       <p className="text-base">
         Bipe este código para confirmar a entrada de <span className="font-semibold text-primary">{pecasTexto(d.pecas)}</span>.
       </p>
+      <SeletorEstoque estoque={estoque} desabilitado={enviando} />
       <Input
         ref={bipeRef}
         value={bipe}

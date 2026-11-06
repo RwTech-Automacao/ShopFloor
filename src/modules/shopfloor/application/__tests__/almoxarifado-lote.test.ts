@@ -112,7 +112,7 @@ describe('confirmarLoteAlmoxarifado (0156)', () => {
       p_pmo: 'PMOL01', p_op: '9201', p_posto: 'Almoxarifado', p_colaborador: 'Ana',
       p_lote_id: 'l1', p_amostra: ['7001', '7003'],
     })
-    expect(r).toEqual({ ok: true, quantidade: 5, lote: 'LOTE[abcd1234][5]' })
+    expect(r).toEqual({ ok: true, quantidade: 5, lote: 'LOTE[abcd1234][5]', estoque: 'PA' })
   })
 
   it('recusa da RPC vira a frase (o detalhe pronto vale)', async () => {

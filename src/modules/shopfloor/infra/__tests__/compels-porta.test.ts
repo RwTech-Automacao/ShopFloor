@@ -145,6 +145,75 @@ describe('criarPortaCompels', () => {
     expect(chamadas).not.toContain('apontar')
   })
 
+  describe('estoque de destino (0175)', () => {
+    const EINTER = { COMPELS_ESTOQUE_EINTER_ID: '301', COMPELS_LOCACAO_EINTER_ID: '7001' }
+
+    /** O que o apontamento levou como estoque e locação (campos do corpo que o ERP recebeu). */
+    function destinoGravado() {
+      const corpos: Record<string, unknown>[] = []
+      const { erp, chamadas } = erpFalso()
+      const apontar = erp.apontar.bind(erp)
+      erp.apontar = async (c) => {
+        corpos.push(c as unknown as Record<string, unknown>)
+        return apontar(c)
+      }
+      return { erp, chamadas, corpos }
+    }
+    it('linha PA (e linha sem o campo, como as de antes) grava no destino de sempre: 217/5314', async () => {
+      for (const estoque of [undefined, 'PA' as const]) {
+        const { erp, corpos } = destinoGravado()
+        const r = await criarPortaCompels({ env: { ...AMBIENTE, ...EINTER }, erp, base: SEM_BASE, somaEnviada: async () => 0 })(
+          linha({ estoque }),
+        )
+        expect(r).toEqual({ ok: true })
+        expect(corpos).toHaveLength(1)
+        expect(JSON.stringify(corpos[0])).toContain('217')
+        expect(JSON.stringify(corpos[0])).not.toContain('301')
+      }
+    })
+
+    it('linha EINTER grava no estoque e na locação do EINTER, nunca no PA', async () => {
+      const { erp, corpos } = destinoGravado()
+      const r = await criarPortaCompels({ env: { ...AMBIENTE, ...EINTER }, erp, base: SEM_BASE, somaEnviada: async () => 0 })(
+        linha({ estoque: 'EINTER' }),
+      )
+      expect(r).toEqual({ ok: true })
+      const texto = JSON.stringify(corpos[0])
+      expect(texto).toContain('301')
+      expect(texto).toContain('7001')
+      expect(texto).not.toContain('217')
+      expect(texto).not.toContain('5314')
+    })
+
+    it('linha EINTER SEM as variáveis: espera com mensagem de configuração, sem chamar o ERP nem o banco', async () => {
+      const { erp, chamadas } = destinoGravado()
+      const soma = vi.fn(async () => 0)
+      const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma })(linha({ estoque: 'EINTER' }))
+      expect(r).toMatchObject({ ok: false, aguardar: true })
+      expect(r.ok === false && r.erro).toContain('EINTER ainda não está configurado')
+      expect(chamadas).toEqual([])
+      expect(soma).not.toHaveBeenCalled()
+    })
+
+    it('uma linha PA na mesma rodada não é afetada por uma EINTER que esperou', async () => {
+      const { erp, corpos } = destinoGravado()
+      const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0 })
+      expect(await porta(linha({ id: 'a', estoque: 'EINTER' }))).toMatchObject({ ok: false, aguardar: true })
+      expect(await porta(linha({ id: 'b', op: '8650', estoque: 'PA' }))).toMatchObject({ ok: false }) // OP 8650 não liberada
+      expect(await porta(linha({ id: 'c', estoque: 'PA' }))).toEqual({ ok: true })
+      expect(corpos).toHaveLength(1)
+    })
+
+    it('o estorno de uma entrada EINTER segue manual (não grava nada) e sem gastar tentativa', async () => {
+      const { erp, chamadas } = destinoGravado()
+      const r = await criarPortaCompels({ env: { ...AMBIENTE, ...EINTER }, erp, base: SEM_BASE, somaEnviada: async () => 0 })(
+        linha({ operacao: 'estorno', estoque: 'EINTER' }),
+      )
+      expect(r).toMatchObject({ ok: false, aguardar: true })
+      expect(chamadas).toEqual([])
+    })
+  })
+
   it('estorno: ainda manual, visível, e NÃO gasta tentativa', async () => {
     const { erp, chamadas } = erpFalso()
     const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0 })(linha({ operacao: 'estorno' }))

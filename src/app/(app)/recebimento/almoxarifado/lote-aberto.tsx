@@ -14,7 +14,9 @@ import {
   type PendenciaAlmoxarifado,
 } from '@/modules/shopfloor/domain/almoxarifado'
 import type { ConfirmacaoCartao } from './caixa-aberta'
+import { SeletorEstoque } from './seletor-estoque'
 import { useDetalhe } from './use-detalhe'
+import { useEstoqueDestino } from './use-estoque-destino'
 
 /**
  * Lote aberto (OP individual): TODOS os SNs do lote como etiquetas; o operador bipa cada um deles (os N
@@ -36,6 +38,7 @@ export function LoteAberto({
   onVoltar: () => void
 }) {
   const estado = useDetalhe(item)
+  const estoque = useEstoqueDestino(item.pmo, item.op)
   const [bipe, setBipe] = useState('')
   const [amostra, setAmostra] = useState<string[]>([])
   const [enviando, setEnviando] = useState(false)
@@ -95,13 +98,15 @@ export function LoteAberto({
     void (async () => {
       try {
         const r = await confirmarLoteAlmoxarifado({
-          pmo: item.pmo, op: item.op, posto, colaborador, loteId: lote.loteId, amostra: bipados,
+          pmo: item.pmo, op: item.op, posto, colaborador, loteId: lote.loteId, amostra: bipados, estoque: estoque.paraEnvio,
         })
         if (!r.ok) {
           onResultado({ tipo: 'aviso', titulo: r.erro })
           return
         }
-        onConfirmado({ quantidade: r.quantidade, codigo: r.lote || item.codigo })
+        onConfirmado({
+          quantidade: r.quantidade, codigo: r.lote || item.codigo, estoque: estoque.disponivel ? r.estoque : undefined,
+        })
       } catch {
         onResultado({ tipo: 'aviso', titulo: 'Não foi possível confirmar o lote.' })
       } finally {
@@ -137,6 +142,7 @@ export function LoteAberto({
           )
         })}
       </ul>
+      <SeletorEstoque estoque={estoque} desabilitado={enviando} />
       <Input
         ref={bipeRef}
         value={bipe}
