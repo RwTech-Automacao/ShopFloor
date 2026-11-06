@@ -100,7 +100,7 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
         },
         { destino },
       )
-      if (r.ok) return { ok: true }
+      if (r.ok) return r.aviso ? { ok: true, aviso: r.aviso } : { ok: true }
       const resultado: ResultadoEnvioEstoque = { ok: false, erro: r.erro, ...(r.aguardar ? { aguardar: true } : {}) }
       if (r.aguardar) esperando.set(envio.op, resultado)
       return resultado

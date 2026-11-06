@@ -133,15 +133,17 @@ describe('enviarEntrada', () => {
       expect(chamadas).not.toContain('apontar')
     })
 
-    it('alguém apontou à mão depois do ponto guardado: ERP em 25 com ponto 22 e nada enviado → para', async () => {
+    it('alguém apontou à mão depois do ponto guardado: ERP em 25 com ponto 22 e nada enviado → grava as 6 e avisa os 3 a mais', async () => {
       const { erp, chamadas } = fingir({
         ...COM_22,
         requisicoes: [{ quantidade: 25, quantidadeEstornar: 0, situacao: 'Requisitada' }],
         apontamentos: [{ quantidadeProduzida: 25, quantidadeCancelada: 0 }],
       })
       const r = await enviarEntrada(erp, { ...ENTRADA, quantidade: 6, base: 22 }, opcoes)
-      expect(r).toMatchObject({ ok: false, tentarDeNovo: false })
-      expect(chamadas).not.toContain('apontar')
+      expect(r.ok).toBe(true)
+      expect(chamadas).toContain('apontar')
+      expect(r.ok && r.aviso).toContain('mostra 25 apontadas, esperado 22')
+      expect(r.ok && r.aviso).toContain('a mais: 3')
     })
 
     it('empenho insuficiente (22 de 28) NÃO bloqueia: aponta e só avisa, dizendo quanto falta', async () => {
@@ -255,6 +257,46 @@ describe('enviarEntrada', () => {
     const r = await enviarEntrada(erp, ENTRADA, opcoes)
     expect(r).toMatchObject({ ok: false, tentarDeNovo: false, aguardar: false })
     expect(r.ok === false && r.erro).toContain('mostra 0 apontadas (esperado 55)')
+  })
+
+  describe('quantidade inesperada no Compels (06/11/2026): grava e avisa, não para', () => {
+    // O ERP mostra 22 apontadas que o ShopFloor não enviou (apontamento antecipado/manual) e a base já está guardada em 0.
+    const COM_22_DE_FORA = {
+      requisicoes: [{ quantidade: 1000, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+      apontamentos: [{ quantidadeProduzida: 22, quantidadeCancelada: 0 }],
+    }
+
+    it('apontado a mais do que o esperado: aponta a entrada mesmo assim e devolve o aviso', async () => {
+      const { erp, chamadas, gravados } = fingir(COM_22_DE_FORA)
+      const r = await enviarEntrada(erp, { ...ENTRADA, quantidade: 6, base: 0 }, opcoes)
+      expect(chamadas).toContain('apontar')
+      expect((gravados.apontar as Record<string, unknown>).quantidadeProduzida).toBe(6)
+      expect(r.ok).toBe(true)
+      const aviso = r.ok ? r.aviso : undefined
+      expect(aviso).toContain('quantidade inesperada no Compels')
+      expect(aviso).toContain('mostra 22 apontadas, esperado 0')
+      expect(r.ok && r.detalhe).toContain('Aviso: quantidade inesperada')
+    })
+
+    it('a conferência final espera "o apontado de antes + esta entrada" (28), não o acumulado teórico (6)', async () => {
+      const { erp } = fingir(COM_22_DE_FORA, { apontar: async () => OK }) // aceita sem alterar o estado
+      const r = await enviarEntrada(erp, { ...ENTRADA, quantidade: 6, base: 0 }, opcoes)
+      expect(r).toMatchObject({ ok: false, tentarDeNovo: false, aguardar: false })
+      expect(r.ok === false && r.erro).toContain('mostra 22 apontadas (esperado 28)')
+    })
+
+    it('sem diferença nenhuma não há aviso, e o resultado é o de sempre', async () => {
+      const { erp } = fingir()
+      const r = await enviarEntrada(erp, { ...ENTRADA, quantidade: 6 }, opcoes)
+      expect(r).toEqual({ ok: true, detalhe: 'Apontado.' })
+      expect(r.ok && 'aviso' in r).toBe(false)
+    })
+
+    it('aviso de empenho/requisição insuficientes também vai no campo aviso', async () => {
+      const { erp } = fingir({ empenhos: [{ quantidade: 2, quantidadeEstornar: 0, situacao: 'Empenhada' }] })
+      const r = await enviarEntrada(erp, { ...ENTRADA, quantidade: 6 }, opcoes)
+      expect(r.ok && r.aviso).toContain('empenho insuficiente')
+    })
   })
 
   it('exceção no meio vira falha legível, libera a trava e RespostaInesperada não tenta de novo', async () => {

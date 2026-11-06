@@ -63,7 +63,7 @@ describe('criarPortaCompels', () => {
     const { erp, chamadas } = erpFalso()
     const soma = vi.fn(async () => 0)
     const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma })
-    expect(await porta(linha())).toEqual({ ok: true })
+    expect(await porta(linha())).toMatchObject({ ok: true })
     expect(soma).toHaveBeenCalledWith('PRT446', '8649', 'id-1')
     expect(chamadas).toContain('apontar')
     expect(chamadas).toContain('apontar')
@@ -73,7 +73,7 @@ describe('criarPortaCompels', () => {
     const { erp, chamadas } = erpFalso()
     const soma = vi.fn(async () => 0)
     const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma })
-    expect(await porta(linha({ op: '8649_F', pmo: 'PRT446_F' }))).toEqual({ ok: true })
+    expect(await porta(linha({ op: '8649_F', pmo: 'PRT446_F' }))).toMatchObject({ ok: true })
     expect(soma).toHaveBeenCalledWith('PRT446_F', '8649_F', 'id-1')
     expect(soma).toHaveBeenCalledWith('PRT446', '8649', 'id-1')
     expect(chamadas).toContain('apontar')
@@ -86,7 +86,7 @@ describe('criarPortaCompels', () => {
     })
     const soma = vi.fn(async (_pmo: string, op: string) => (op === '8649' ? 2 : 1))
     const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma })(linha({ op: '8649_F', pmo: 'PRT446_F' }))
-    expect(r).toEqual({ ok: true })
+    expect(r).toMatchObject({ ok: true })
   })
 
   it('o acumulado vem do banco: a 2ª peça (acumulado 1) só pode ser enviada com o ERP mostrando 1', async () => {
@@ -95,20 +95,20 @@ describe('criarPortaCompels', () => {
       apontamentos: [{ quantidadeProduzida: 1, quantidadeCancelada: 0 }],
     })
     const porta = criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 1 })
-    expect(await porta(linha({ id: 'id-2' }))).toEqual({ ok: true })
+    expect(await porta(linha({ id: 'id-2' }))).toMatchObject({ ok: true })
   })
 
-  it('ERP com apontado diferente do que mandamos: para, sem gravar e GASTA tentativa (precisa de gente)', async () => {
+  it('ERP com apontado diferente do que mandamos: GRAVA e devolve o aviso de quantidade inesperada', async () => {
     // mandamos 2 antes; o ERP mostra 4 (alguém apontou à mão) e a entrada nova é de 5 (acumulado 7)
     const { erp, chamadas } = erpFalso({
-      requisicoes: [{ quantidade: 4, quantidadeEstornar: 0, situacao: 'Requisitada' }],
+      requisicoes: [{ quantidade: 40, quantidadeEstornar: 0, situacao: 'Requisitada' }],
       apontamentos: [{ quantidadeProduzida: 4, quantidadeCancelada: 0 }],
     })
     const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 2 })(linha({ quantidade: 5 }))
-    expect(r).toMatchObject({ ok: false })
-    expect(r.ok === false && r.erro).toContain('fora do esperado')
-    expect(r.ok === false && r.aguardar).toBeUndefined()
-    expect(chamadas).not.toContain('apontar')
+    expect(r).toMatchObject({ ok: true })
+    expect(r.ok && r.aviso).toContain('quantidade inesperada no Compels')
+    expect(r.ok && r.aviso).toContain('mostra 4 apontadas, esperado 2')
+    expect(chamadas).toContain('apontar')
   })
 
   it('ERP que JÁ cobre a entrada (ex.: resposta perdida num envio anterior): ok, sem gravar de novo', async () => {
@@ -117,7 +117,7 @@ describe('criarPortaCompels', () => {
       apontamentos: [{ quantidadeProduzida: 3, quantidadeCancelada: 0 }],
     })
     // Acumulado anterior 2 + esta entrada (1) = 3: o ERP está EXATAMENTE nele.
-    expect(await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 2 })(linha())).toEqual({ ok: true })
+    expect(await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 2 })(linha())).toMatchObject({ ok: true })
     expect(chamadas).not.toContain('apontar')
   })
 
@@ -129,20 +129,21 @@ describe('criarPortaCompels', () => {
     const guardadas: [string, number][] = []
     const base = { ler: async () => null, guardar: async (op: string, valor: number) => { guardadas.push([op, valor]) } }
     const r = await criarPortaCompels({ env: AMBIENTE, erp, base, somaEnviada: async () => 0 })(linha())
-    expect(r).toEqual({ ok: true })
+    expect(r).toMatchObject({ ok: true })
     expect(guardadas).toEqual([['8649', 22]])
     expect(chamadas).toContain('apontar')
   })
 
-  it('ponto de partida já guardado (22) e o ERP em 25: apontamento de fora depois dele, recusa sem gravar', async () => {
+  it('ponto de partida já guardado (22) e o ERP em 25: apontamento de fora depois dele, grava e avisa os 3 a mais', async () => {
     const { erp, chamadas } = erpFalso({
       requisicoes: [{ quantidade: 25, quantidadeEstornar: 0, situacao: 'Requisitada' }],
       apontamentos: [{ quantidadeProduzida: 25, quantidadeCancelada: 0 }],
     })
     const base = { ler: async () => 22, guardar: async () => {} }
     const r = await criarPortaCompels({ env: AMBIENTE, erp, base, somaEnviada: async () => 0 })(linha())
-    expect(r.ok).toBe(false)
-    expect(chamadas).not.toContain('apontar')
+    expect(r.ok).toBe(true)
+    expect(r.ok && r.aviso).toContain('a mais: 3')
+    expect(chamadas).toContain('apontar')
   })
 
   it('estorno: ainda manual, visível, e NÃO gasta tentativa', async () => {

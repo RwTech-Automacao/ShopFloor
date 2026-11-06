@@ -11,8 +11,6 @@ export type CodigoErro =
   | 'propriedade_nao_suportada'
   | 'acima_da_op'
   | 'estorno_na_op'
-  | 'abaixo_do_enviado'
-  | 'fora_do_esperado'
 
 export type Decisao =
   | { tipo: 'ja_enviada' }
@@ -25,8 +23,6 @@ export const MENSAGEM_ERRO: Record<CodigoErro, string> = {
   propriedade_nao_suportada: 'OP com estoque que não é próprio (ex.: em terceiros). Faça a entrada à mão no Compels.',
   acima_da_op: 'A entrada passa da quantidade da OP no Compels.',
   estorno_na_op: 'A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar.',
-  abaixo_do_enviado: 'Leitura inconsistente: o Compels mostra menos apontado do que já enviamos.',
-  fora_do_esperado: 'OP com apontamento fora do esperado no Compels. Confira antes de reenviar.',
 }
 
 function erro(codigo: CodigoErro): Decisao {
@@ -47,29 +43,25 @@ export function decidirEntrada(
   if (estado.temEstorno) return erro('estorno_na_op')
 
   // Já enviada: o ERP está EXATAMENTE no acumulado novo (a retomada depois de uma falha no meio: a entrada
-  // foi gravada e só o registro dela falhou). Tem que ser IGUAL, não "pelo menos": a integração só sobe o
-  // apontado de `anterior` para `novo`, então MAIS do que `novo` é apontamento que não é dela (feito à mão, ou
-  // de outra leva da mesma OP). Tratar isso como "já enviada" marcava a linha como enviada sem gravar nada.
+  // foi gravada e só o registro dela falhou). Tem que ser IGUAL, não "pelo menos": gravar de novo contaria a
+  // entrada em dobro, e esta é a única conferência de apontado que ainda segura a gravação.
   if (estado.apontada === novo) return { tipo: 'ja_enviada' }
-  if (estado.apontada > novo) {
-    return {
-      tipo: 'erro',
-      codigo: 'fora_do_esperado',
-      mensagem:
-        `A OP já tem ${estado.apontada} apontadas no Compels, mais do que o esperado depois desta entrada (${novo}): `
-        + 'há apontamento que não veio desta integração. Confira antes de enviar.',
-    }
-  }
-
-  // O ERP tem menos do que já enviamos, ou um valor que não é "exatamente até a entrada anterior":
-  // alguém mexeu à mão. Parar é mais seguro do que contar em dobro.
-  if (estado.apontada < anterior) return erro('abaixo_do_enviado')
-  if (estado.apontada !== anterior) return erro('fora_do_esperado')
 
   // A integração SÓ APONTA: quem requisita é o pessoal do Compels. Empenho e requisição insuficientes não
   // bloqueiam aqui (o que bloqueia é o saldo requisitado disponível por componente, conferido antes de gravar);
   // viram AVISO. A requisição não precisa ter uma quantidade exata, só ser suficiente (`requisitada >= novo`).
   const avisos: string[] = []
+  // QUANTIDADE INESPERADA (decisão de 06/11/2026): o apontado do ERP não é o que o ShopFloor esperava (apontamento
+  // manual, antecipado para faturamento, estorno à mão, outra leva da mesma OP). Antes isso PARAVA a entrada; agora
+  // grava e AVISA, porque parar travava a fila por algo que a integração não tem como resolver sozinha.
+  if (estado.apontada !== anterior) {
+    const diferenca = q6(estado.apontada - anterior)
+    const sentido = diferenca > 0 ? `a mais: ${diferenca}` : `a menos: ${q6(-diferenca)}`
+    avisos.push(
+      `quantidade inesperada no Compels: mostra ${estado.apontada} apontadas, esperado ${anterior} antes desta entrada (${sentido}). `
+      + 'Foi gravado mesmo assim; confira se há apontamento manual ou estorno nesta OP',
+    )
+  }
   if (estado.empenhada < novo) {
     avisos.push(`empenho insuficiente no Compels: empenhado ${estado.empenhada}, precisa de ${novo} (faltam ${q6(novo - estado.empenhada)})`)
   }
