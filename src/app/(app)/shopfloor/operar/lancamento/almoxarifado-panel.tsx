@@ -1,5 +1,6 @@
 'use client'
 
+import { resolverCodigoBipado } from '@/modules/shopfloor/domain/bipe-teclado'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -230,7 +231,10 @@ export function AlmoxarifadoPanel({
       biparAmostra(loteAberto)
       return
     }
-    const alvo = bipe
+    // Leitor com o teclado trocado (`CX´1[´3[…`): se o bipe é de uma caixa da lista, manda o código REAL dela.
+    // Nº de série e qualquer outro bipe seguem como vieram.
+    const codigosDaLista = necessidades.tipo === 'ok' ? necessidades.itens.map((i) => i.codigo) : []
+    const alvo = resolverCodigoBipado(bipe, codigosDaLista)
     enviandoRef.current = true
     setEnviando(true)
     // IIFE comum, não `startTransition`: tudo que muda ao final (resultado, campo, trava) precisa
