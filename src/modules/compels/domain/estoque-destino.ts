@@ -13,8 +13,8 @@ export function ehEstoqueDestino(valor: unknown): valor is EstoqueDestino {
   return valor === 'PA' || valor === 'EINTER'
 }
 
-/** Como a tela chama cada um. */
+/** Como a tela chama cada um: sigla e nome completo, como no ERP (pedido de 06/11/2026). */
 export const ROTULO_ESTOQUE: Record<EstoqueDestino, string> = {
-  PA: 'PA',
-  EINTER: 'EINTER',
+  PA: 'PA – Produto acabado',
+  EINTER: 'EINTER – Estoque intermediário',
 }
