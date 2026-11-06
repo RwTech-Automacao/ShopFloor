@@ -293,4 +293,18 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0167.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_parado.sql
 echo "0167 (parado no Almoxarifado): ok"
 
+# ---------- 0170: tipo de regra 'compels' (problemas no envio ao Compels) ----------
+# Mesmo molde da 0167: recria o alerta_avaliar (mesma assinatura de 4 parâmetros, create or replace) com
+# dois ramos novos no cursor. Esta base não tem a fila do Compels (só o _stubs.sql): o esquema mínimo
+# dela entra ANTES, com linhas "legadas" que provam o backfill de erro_esperado. Duas aplicações, cada
+# uma como transação única (-1): idempotência, inclusive a do backfill e a dos checks.
+docker cp supabase/migrations/0170_alerta_problemas_compels.sql "$NOME":/tmp/0170.sql
+docker cp supabase/tests/alertas_compels_esquema.sql "$NOME":/tmp/esquema_compels.sql
+docker cp supabase/tests/alertas_compels_test.sql "$NOME":/tmp/teste_compels.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema_compels.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0170.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0170.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_compels.sql
+echo "0170 (problemas no envio ao Compels): ok"
+
 echo "ALERTAS SQL OK"

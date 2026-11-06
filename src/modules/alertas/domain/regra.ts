@@ -145,6 +145,8 @@ export const LIMITE_HORAS_PADRAO = 2
 
 const MSG_LIMITE_HORAS = `Informe o limite em horas (de 1 a ${LIMITE_HORAS_MAX}).`
 const JANELA_PARADO = 'Itens prontos sem entrada no Almoxarifado'
+const JANELA_COMPELS = 'Fila de envio ao Compels'
+const LIMITE_COMPELS = 'Na primeira falha do envio'
 const MSG_RESUMO_CAMPO = 'O resumo diário não usa este campo.'
 const MSG_EMB_CAMPO = 'O aviso de fim de EMB não usa este campo.'
 const MSG_RESUMO_HORA =
@@ -291,8 +293,11 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
     taxaMinima = taxa
   }
 
-  // O parado não pergunta a janela: ela sai 'op' de fachada, seja o que o formulário mandar.
-  if (tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && !ehJanelaTipo(e.janelaTipo)) {
+  // O fim de EMB, o parado e o compels não perguntam a janela: ela sai 'op' de fachada, seja o que o
+  // formulário mandar (o banco exige janela_valor nulo nesses três). O compels também ignora o limite em
+  // horas e os turnos: ele avisa na PRIMEIRA falha, sem espera nem relógio de expediente.
+  const semJanela = tipo === 'emb' || tipo === 'parado' || tipo === 'compels'
+  if (tipo !== 'resumo' && !semJanela && !ehJanelaTipo(e.janelaTipo)) {
     return erro('Escolha a janela da regra.')
   }
   // O resumo sai SEMPRE como 'intervalos' (ele usa os intervalos) e o fim de EMB SEMPRE como 'op'
@@ -300,7 +305,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   const janelaTipo: JanelaTipo =
     tipo === 'resumo'
       ? 'intervalos'
-      : tipo === 'emb' || tipo === 'parado'
+      : semJanela
         ? 'op'
         : (e.janelaTipo as JanelaTipo)
   if (tipo !== 'aprovacao' && tipo !== 'resumo' && janelaTipo === 'intervalos') {
@@ -314,7 +319,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   let janelaValor: number | null = null
   // O `tipo !== 'emb'` é redundante hoje (a janela dele é 'op'), e está escrito para o dia em que
   // o valor de fachada mudar: o fim de EMB não tem janela em grandeza nenhuma.
-  if (tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && janelaTipo !== 'op') {
+  if (tipo !== 'resumo' && !semJanela && janelaTipo !== 'op') {
     const v = inteiro(e.janelaValor)
     if (v === null || Number.isNaN(v) || v <= 0) {
       if (janelaTipo === 'intervalos') return erro('Informe o passo do bloco em minutos.')
@@ -329,7 +334,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // Janela por blocos: `janelaValor` é o PASSO em minutos. As faixas do passo e os horários são
   // conferidas por `validarIntervalos`, e o erro dela sobe como erro da regra, sem reescrever.
   let intervalos: Intervalo[] = tipo === 'parado' ? intervalosParado : intervalosResumo
-  if (tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && janelaTipo === 'intervalos') {
+  if (tipo !== 'resumo' && !semJanela && janelaTipo === 'intervalos') {
     const ri = validarIntervalos(e.intervalos, janelaValor)
     if (!ri.ok) return erro(ri.erro)
     intervalos = ri.valor
@@ -513,6 +518,7 @@ export function resumoLimite(
 ): string {
   // O fim de EMB não tem limite: tem gatilho. Mostrar '—' deixaria a coluna parecendo defeito.
   if (r.tipo === 'emb') return LIMITE_EMB
+  if (r.tipo === 'compels') return LIMITE_COMPELS
   if (r.tipo === 'parado') return r.limiteHoras == null ? '—' : `Parado há mais de ${r.limiteHoras} h de expediente`
   if (r.tipo === 'tempo') return r.limiteTempoSeg === null ? '—' : `≤ ${formatarMmSs(r.limiteTempoSeg)}/peça`
   if (r.tipo === 'defeito') return r.limiteOcorrencias === null ? '—' : `≥ ${r.limiteOcorrencias} vezes`
@@ -532,6 +538,7 @@ export function resumoJanelaRegra(
   if (r.tipo === 'emb') return JANELA_EMB
   // Mesma fachada do fim de EMB: o 'op' guardado não é uma janela de verdade.
   if (r.tipo === 'parado') return JANELA_PARADO
+  if (r.tipo === 'compels') return JANELA_COMPELS
   if (r.tipo === 'resumo') return r.horaResumo ? `Dia inteiro, às ${r.horaResumo}` : '—'
   return resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })
 }

@@ -47,6 +47,8 @@ const JANELAS: Record<TipoRegra, JanelaTipo[]> = {
   // O parado também não tem janela a escolher: a seção some (ver o render) e o 'op' é a fachada que
   // `validarRegra` força, como no fim de EMB. A coluna "Janela" da lista mostra `JANELA_PARADO`.
   parado: ['op'],
+  // O compels também não tem janela: avisa na primeira falha da fila. 'op' é a fachada da validação.
+  compels: ['op'],
 }
 
 const TITULO_PREVIA: Record<TipoRegra, string> = {
@@ -59,6 +61,7 @@ const TITULO_PREVIA: Record<TipoRegra, string> = {
   // aparece neste tipo. A chave fecha o Record e dá um título honesto se a prévia um dia existir.
   emb: 'Fim de EMB',
   parado: 'Parado no Almoxarifado',
+  compels: 'Problemas no envio ao Compels',
 }
 
 const EXPLICA_POSTOS: Record<TipoRegra, string> = {
@@ -77,6 +80,8 @@ const EXPLICA_POSTOS: Record<TipoRegra, string> = {
     'O aviso de fim de EMB não usa posto: ele sai quando todos os processos de uma EMB terminam.',
   parado:
     'O aviso olha, por OP, as caixas, lotes e peças que já ficaram prontos no posto anterior e ainda não deram entrada no Almoxarifado. Cada OP parada abre o seu próprio alerta.',
+  compels:
+    'O aviso olha a fila de envio das entradas do Almoxarifado ao Compels. Cada OP com linha travada abre o seu próprio alerta, com o motivo que o Compels devolveu.',
 }
 
 /** Por que a lista de postos é mais curta neste tipo. Tempo médio serve em qualquer posto. */
@@ -89,6 +94,8 @@ const EXPLICA_FILTRO: Partial<Record<TipoRegra, string>> = {
     'Só aparecem os postos que registram o código do defeito na reprova. Sem código não há defeito para se repetir, e o alerta nunca sairia.',
   parado:
     'Só aparecem os postos de perfil Almoxarifado: é neles que a entrada dos itens acontece. Em qualquer outro posto não há o que estar parado.',
+  compels:
+    'Só aparecem os postos de perfil Almoxarifado: é neles que nasce a fila de envio ao Compels.',
 }
 
 /**
@@ -100,6 +107,7 @@ const AVISO_FORA_DO_TIPO: Partial<Record<TipoRegra, string>> = {
   resumo: 'não dá Aprovado/Reprovado, então não tem taxa e fica fora do resumo',
   defeito: 'não registra código de defeito, então não há o que repetir e o alerta não sai',
   parado: 'não é um posto de Almoxarifado, então não há entrada a esperar e o alerta não sai',
+  compels: 'não é um posto de Almoxarifado, então não há envio ao Compels a vigiar e o alerta não sai',
 }
 
 /**
@@ -126,7 +134,7 @@ function janelaInicial(tipo: TipoRegra, regra: RegraAlerta | null): JanelaTipo {
   if (tipo === 'resumo') return 'intervalos'
   // Fachada, a mesma da validação: o fim de EMB não tem campo de janela, e o estado começa já no
   // valor que vai ser gravado. Sem isto o estado nasceria em 'tempo' e o formulário mandaria minutos.
-  if (tipo === 'emb' || tipo === 'parado') return 'op'
+  if (tipo === 'emb' || tipo === 'parado' || tipo === 'compels') return 'op'
   const salva = regra?.janelaTipo ?? 'tempo'
   return JANELAS[tipo].includes(salva) ? salva : 'tempo'
 }
@@ -232,7 +240,11 @@ export function RegraForm({
   const [horaResumo, setHoraResumo] = useState(regra?.horaResumo ?? HORA_RESUMO_PADRAO)
   const [limiteHoras, setLimiteHoras] = useState(String(regra?.limiteHoras ?? LIMITE_HORAS_PADRAO))
   const [minimo, setMinimo] = useState(minimoInicial(tipo, regra))
-  const [lembrete, setLembrete] = useState(regra?.lembreteMin === null || regra === null ? '' : String(regra.lembreteMin))
+  // O compels abre com o lembrete de hora em hora (decisão de 06/11/2026); os outros tipos, vazio. Regra
+  // salva mostra o que está salvo (vazio quando a regra não lembra).
+  const [lembrete, setLembrete] = useState(
+    regra === null ? (tipo === 'compels' ? '60' : '') : regra.lembreteMin === null ? '' : String(regra.lembreteMin),
+  )
   const [canaisSel, setCanaisSel] = useState<Canal[]>(regra?.canais ?? [])
   // Regra nova nasce como era antes do canal existir: avisa as pessoas, não avisa canal.
   const [avisarPessoas, setAvisarPessoas] = useState(regra?.avisarPessoas ?? true)
@@ -252,7 +264,7 @@ export function RegraForm({
   // valor de fachada diferente, amanhã, mande minutos ao servidor — e `validarRegra` RECUSA a regra
   // de EMB com `janelaValor` preenchido, então isto não é zelo: é a gravação funcionando.)
   const janelaValor =
-    tipo === 'resumo' || tipo === 'emb' || tipo === 'parado' ? null : janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
+    tipo === 'resumo' || tipo === 'emb' || tipo === 'parado' || tipo === 'compels' ? null : janelaTipo === 'tempo' ? minutos : janelaTipo === 'bipes' ? bipes : janelaTipo === 'intervalos' ? passo : null
 
   const oferecidos = postosOferecidos(tipo, postos, postosDaRegra)
   // Só avisa sobre o que está de fato MARCADO: desmarcado, o posto não atrapalha mais.
@@ -353,7 +365,7 @@ export function RegraForm({
           id="nome"
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          placeholder={tipo === 'emb' ? 'Divergências de EMB' : tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : tipo === 'parado' ? 'Parado no Almoxarifado' : 'Teste abaixo de 90'}
+          placeholder={tipo === 'emb' ? 'Divergências de EMB' : tipo === 'resumo' ? 'Resumo do dia' : tipo === 'tempo' ? 'Teste lento' : tipo === 'defeito' ? 'Defeito repetido no Teste' : tipo === 'parado' ? 'Parado no Almoxarifado' : tipo === 'compels' ? 'Problemas no Compels' : 'Teste abaixo de 90'}
           autoComplete="off"
         />
       </div>
@@ -413,6 +425,29 @@ export function RegraForm({
           <p>
             Cada EMB avisa <strong>uma vez só</strong>. A conferência é feita a cada 5 minutos, e
             EMBs que fecharam antes de a regra ser criada não são avisadas.
+          </p>
+        </div>
+      )}
+
+      {/* O gatilho do compels não tem número a configurar: tem de estar ESCRITO na tela, senão o gestor
+          salva sem saber quando sai, o que traz e o que NÃO conta. Cada frase foi conferida contra a
+          0170: a linha com problema é entrada, não cancelada, não enviada, com erro gravado e fora das
+          esperas esperadas (OP não liberada, integração não configurada neste ambiente). */}
+      {tipo === 'compels' && (
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
+          <p>
+            O alerta sai <strong>na primeira falha</strong>: quando uma entrada do Almoxarifado não consegue
+            ser apontada no Compels (erro ou espera, como falta de requisição, empenho ou saldo, tela em uso,
+            ERP fora do ar). A mensagem lista a OP e <strong>o texto que o Compels devolveu</strong>.
+          </p>
+          <p>
+            Enquanto a OP tiver linha travada ele lembra no intervalo abaixo, e some sozinho quando o
+            problema passa. Entradas gravadas <strong>com ressalva</strong> (quantidade inesperada, empenho
+            ou requisição insuficientes) avisam uma vez só.
+          </p>
+          <p>
+            Não avisa: OP ainda não liberada para a integração, integração não configurada neste
+            ambiente, estorno manual e linhas canceladas.
           </p>
         </div>
       )}
@@ -568,7 +603,7 @@ export function RegraForm({
 
       {/* O resumo não tem janela a escolher: o bloco acima já traz os intervalos. O fim de EMB e o
           parado não têm janela NENHUMA: o gatilho de um é a EMB fechar, o do outro é o limite em horas. */}
-      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && (
+      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && (
       <fieldset className="flex flex-col gap-2">
         <legend className="flex items-center gap-1.5 text-sm font-medium">
           Janela
@@ -819,7 +854,7 @@ export function RegraForm({
         <PmosSelecao disponiveis={pmosDisponiveis} selecionadas={pmosSel} onChange={setPmosSel} />
       )}
 
-      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && previa && (
+      {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && previa && (
         <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-3 text-sm">
           <span className="font-medium">{TITULO_PREVIA[tipo]}</span>
           {previa.linhas.map((p) => (
@@ -845,7 +880,7 @@ export function RegraForm({
             o bloco é tarefa própria, e o botão volta. No fim de EMB não há prévia por outro
             motivo: não há janela a antecipar, nem medida a mostrar — só o gatilho. O parado também não tem
             prévia: a `alerta_previa` não conhece o tipo. */}
-        {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && janelaTipo !== 'intervalos' && (
+        {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'parado' && tipo !== 'compels' && janelaTipo !== 'intervalos' && (
           <Button variant="outline" onClick={verPrevia} disabled={pendente}>
             Ver prévia
           </Button>

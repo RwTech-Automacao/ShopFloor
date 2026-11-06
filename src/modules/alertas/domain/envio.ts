@@ -28,6 +28,13 @@ import {
 import { textoEmb, type DivergenciaEmb } from './emb'
 import { textoAlertaParado, textoNormalizouParado } from './parados-texto'
 import type { ItemParado } from './parados'
+import {
+  textoAlertaCompels,
+  textoAvisosCompels,
+  textoNormalizouCompels,
+  type AvisoCompels,
+  type ItemCompels,
+} from './compels-texto'
 
 /**
  * Uma linha da fila (`alerta_envios`) já RESERVADA por esta rodada (`alerta_reservar_envios`):
@@ -50,7 +57,7 @@ export interface EnvioReservado {
 }
 
 const TIPOS: readonly TipoEnvio[] = [
-  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb',
+  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb', 'compels_aviso',
 ]
 
 function ehTipoEnvio(v: unknown): v is TipoEnvio {
@@ -147,7 +154,7 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
  * EMB (0150) entra na lista dos excluídos pelo mesmo motivo do resumo: ele nasce SEM ocorrência,
  * tem texto próprio e nunca chega a `textoAprovacao`/`textoTempo`/`textoDefeito`.
  */
-type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb'>
+type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb' | 'compels_aviso'>
 
 /**
  * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
@@ -351,6 +358,51 @@ function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>):
   return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
 }
 
+/** Lê o `dados` do compels (0170), ocorrência: `itens` (array de {motivo, linhas, pecas, desistiu}) e `linhas`. */
+function textoCompels(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
+  const refOp = refOpDe(dados)
+  if (tipo === 'normalizou') return textoNormalizouCompels(refOp)
+  if (!Array.isArray(dados.itens)) throw new DadosEnvioInvalidos('itens')
+  const itens: ItemCompels[] = dados.itens.map((bruto) => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) {
+      throw new DadosEnvioInvalidos('itens')
+    }
+    const i = bruto as Record<string, unknown>
+    return {
+      motivo: texto(i, 'motivo'),
+      linhas: numero(i, 'linhas'),
+      pecas: numero(i, 'pecas'),
+      desistiu: i.desistiu === true,
+    }
+  })
+  const agora = data(dados, 'agora')
+  const alerta = textoAlertaCompels({
+    ...refOp,
+    regraNome: texto(dados, 'regra_nome'),
+    linhas: numero(dados, 'linhas'),
+    itens,
+    em: agora,
+  })
+  if (tipo === 'alerta') return alerta
+  return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
+}
+
+/**
+ * Lê o `dados` do aviso de gravação como a 0170 o grava: `regra_nome`, `agora` e `avisos` (array de
+ * {pmo, op, quantidade, aviso}). Formato diferente LANÇA: nunca uma mensagem vazia calada.
+ */
+function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
+  if (!Array.isArray(dados.avisos)) throw new DadosEnvioInvalidos('avisos')
+  const avisos: AvisoCompels[] = dados.avisos.map((bruto) => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) {
+      throw new DadosEnvioInvalidos('avisos')
+    }
+    const a = bruto as Record<string, unknown>
+    return { pmo: textoOuVazio(a, 'pmo'), op: textoOuVazio(a, 'op'), quantidade: numero(a, 'quantidade'), aviso: texto(a, 'aviso') }
+  })
+  return textoAvisosCompels(texto(dados, 'regra_nome'), data(dados, 'agora'), avisos)
+}
+
 /**
  * Monta o texto de uma linha da fila a partir dos `dados` gravados pelo banco. A formatação
  * (fuso de São Paulo, taxa truncada, mm:ss, duração) existe SÓ aqui no TS — o SQL guarda os números.
@@ -363,6 +415,8 @@ function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>):
  *   aprovacao: taxa, taxa_minima, aprovados, reprovados
  *   tempo:     media_seg, limite_tempo_seg, pecas
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
+ *   compels:   linhas, itens (array de {motivo, linhas, pecas, desistiu}); 0170
+ *   compels_aviso: regra_nome, agora, avisos (array de {pmo, op, quantidade, aviso}); 0170
  *   parado:    limite_horas, mais_antiga_min, itens (array de {tipo, codigo, pecas, minutos}); 0167
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
@@ -378,6 +432,7 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
   if (tipo === 'resumo') return textoResumoDe(dados)
   if (tipo === 'emb') return textoEmbDe(dados)
+  if (tipo === 'compels_aviso') return textoAvisosCompelsDe(dados)
   if (tipo === 'resolvido') {
     // No parado a 0151 copia a chave "PMO/OP" da ocorrência para `defeito`: não é defeito de verdade.
     const refResolvido = refOpDe(dados)
@@ -405,7 +460,9 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
         ? textoDefeito(tipo, dados)
         : regraTipo === 'parado'
           ? textoParado(tipo, dados)
-          : textoAprovacao(tipo, dados)
+          : regraTipo === 'compels'
+            ? textoCompels(tipo, dados)
+            : textoAprovacao(tipo, dados)
 
   // REABERTURA: vale para os três tipos, então o cabeçalho envolve o texto já montado em vez de
   // ser repetido dentro de cada um. Só no 'alerta' — a reabertura sempre enfileira esse tipo.

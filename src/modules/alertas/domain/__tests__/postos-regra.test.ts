@@ -64,11 +64,11 @@ describe('postoServeAoTipo', () => {
     for (const p of FLUXO) expect(postoServeAoTipo('tempo', p)).toBe(true)
   })
 
-  // O parado também fica fora: só serve ao posto de perfil Almoxarifado (o `it` dele, abaixo).
+  // O parado e o compels também ficam fora: só servem ao posto de perfil Almoxarifado (o `it` do parado, abaixo).
   // O fim de EMB fica FORA: ele é o único tipo sem posto nenhum (o gatilho é a EMB fechar, e EMB
   // não é posto). O caso dele é o `it` abaixo, para a exclusão ficar medida e não só suposta.
   it('todo tipo de posto aceita pelo menos o posto de teste', () => {
-    for (const tipo of TIPOS_REGRA.filter((t) => t !== 'emb' && t !== 'parado')) {
+    for (const tipo of TIPOS_REGRA.filter((t) => t !== 'emb' && t !== 'parado' && t !== 'compels')) {
       expect(postoServeAoTipo(tipo, TESTE)).toBe(true)
     }
   })

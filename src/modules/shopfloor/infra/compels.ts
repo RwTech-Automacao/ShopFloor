@@ -24,8 +24,10 @@ import { criarBaseDaOp, criarSomaEnviada, type BaseDaOp } from './estoque-envios
  *
  * Esperar não é falhar: tudo o que é recusado ANTES de gravar no ERP e passa sozinho (OP em uso, sem
  * empenho, pendência de material, falta de saldo, ERP fora do ar, OP ainda não liberada) volta como
- * `aguardar` e a fila não gasta tentativa. Quando uma OP já deu "espere" nesta rodada, as outras linhas
- * dela recebem a mesma resposta sem chamar o ERP de novo.
+ * `aguardar` e a fila não gasta tentativa. As três esperas que NÃO são problema (OP não liberada,
+ * integração não configurada, estorno manual) vão além, com `esperado`: o alerta de problemas do Compels
+ * as ignora (0170). Quando uma OP já deu "espere" nesta rodada, as outras linhas dela recebem a mesma
+ * resposta sem chamar o ERP de novo.
  */
 
 const MOTIVO_ESTORNO =
@@ -59,13 +61,14 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
 
   return async function enviarMovimentacaoCompels(envio: EnvioEstoqueReservado): Promise<ResultadoEnvioEstoque> {
     // Estorno automático é a fase 2: por ora fica visível na tela de pendências, sem gastar tentativa.
-    if (envio.operacao === 'estorno') return { ok: false, erro: MOTIVO_ESTORNO, aguardar: true }
+    if (envio.operacao === 'estorno') return { ok: false, erro: MOTIVO_ESTORNO, aguardar: true, esperado: true }
 
     if (!opLiberada(envio.op, env.COMPELS_OPS_LIBERADAS)) {
       return {
         ok: false,
         erro: `OP ${envio.op} ainda não está liberada para a integração com o Compels. Faça a entrada à mão no ERP, ou libere a OP.`,
         aguardar: true,
+        esperado: true,
       }
     }
 
@@ -106,7 +109,12 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
       return resultado
     } catch (e) {
       if (e instanceof ConfiguracaoIncompleta) {
-        return { ok: false, erro: `Integração com o Compels não configurada neste ambiente. ${e.message}`, aguardar: true }
+        return {
+          ok: false,
+          erro: `Integração com o Compels não configurada neste ambiente. ${e.message}`,
+          aguardar: true,
+          esperado: true,
+        }
       }
       // Erro do banco ao somar, ou configuração inválida: nada foi gravado no ERP, vale esperar.
       return {

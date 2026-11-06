@@ -67,7 +67,20 @@ export interface EnvioEstoqueReservado {
  * `aviso` (só em `ok: true`): a linha FOI enviada, mas algo merece conferência (quantidade inesperada no
  * Compels, empenho/requisição insuficientes). Vai para a coluna `aviso` da fila (0169) e alimenta o alerta.
  */
-export type ResultadoEnvioEstoque = { ok: true; aviso?: string } | { ok: false; erro: string; aguardar?: boolean }
+export type ResultadoEnvioEstoque =
+  | { ok: true; aviso?: string }
+  | {
+      ok: false
+      erro: string
+      aguardar?: boolean
+      /**
+       * A espera é ESPERADA e não é problema a alertar (0170, `sf_estoque_envios.erro_esperado`): OP ainda não
+       * liberada para a integração, integração não configurada neste ambiente, estorno ainda manual. O alerta
+       * "Problemas no envio ao Compels" ignora estas linhas; sem a marca, cada OP não liberada inundaria o
+       * responsável. Ausente = é problema de verdade.
+       */
+      esperado?: boolean
+    }
 
 /**
  * O último metro, como PORTA: uma função que recebe uma linha da fila e devolve sucesso ou o motivo

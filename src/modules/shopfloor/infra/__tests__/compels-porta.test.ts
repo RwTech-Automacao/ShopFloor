@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
@@ -151,6 +153,8 @@ describe('criarPortaCompels', () => {
     const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0 })(linha({ operacao: 'estorno' }))
     expect(r).toMatchObject({ ok: false, aguardar: true })
     expect(r.ok === false && r.erro).toContain('estorno no Compels ainda é manual')
+    // ESPERADO: o alerta de problemas do Compels não conta isto (0170, erro_esperado)
+    expect(r).toMatchObject({ esperado: true })
     expect(chamadas).toEqual([])
   })
 
@@ -160,6 +164,7 @@ describe('criarPortaCompels', () => {
     const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: '9999' }, erp, base: SEM_BASE, somaEnviada: soma })(linha())
     expect(r).toMatchObject({ ok: false, aguardar: true })
     expect(r.ok === false && r.erro).toContain('OP 8649 ainda não está liberada')
+    expect(r).toMatchObject({ esperado: true })
     expect(chamadas).toEqual([])
     expect(soma).not.toHaveBeenCalled()
   })
@@ -168,7 +173,7 @@ describe('criarPortaCompels', () => {
     const { erp, chamadas } = erpFalso()
     for (const lista of [undefined, '']) {
       const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: lista }, erp, base: SEM_BASE, somaEnviada: async () => 0 })(linha())
-      expect(r).toMatchObject({ ok: false, aguardar: true })
+      expect(r).toMatchObject({ ok: false, aguardar: true, esperado: true })
     }
     expect(chamadas).toEqual([])
   })
@@ -178,6 +183,7 @@ describe('criarPortaCompels', () => {
     expect(r).toMatchObject({ ok: false, aguardar: true })
     expect(r.ok === false && r.erro).toContain('não configurada neste ambiente')
     expect(r.ok === false && r.erro).toContain('COMPELS_EZPOINT_USUARIO')
+    expect(r).toMatchObject({ esperado: true })
   })
 
   it('erro do banco ao somar: espera, nada foi gravado no ERP', async () => {
@@ -186,6 +192,8 @@ describe('criarPortaCompels', () => {
       env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => { throw new Error('sf_estoque_enviado: connection refused') },
     })(linha())
     expect(r).toMatchObject({ ok: false, aguardar: true })
+    // este É problema a alertar (banco fora): nunca marcado como esperado
+    expect(r).not.toHaveProperty('esperado')
     expect(chamadas).toEqual([])
   })
 
@@ -224,5 +232,38 @@ describe('criarPortaCompels', () => {
     await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0 })(linha({ chave: 'x'.repeat(300) }))
     expect(String(corpo.observacao).startsWith('ShopFloor xxx')).toBe(true)
     expect(String(corpo.observacao).length).toBeLessThanOrEqual(100)
+  })
+})
+
+// O backfill da 0170 marca as linhas que JÁ estão na fila pelas frases que o app gravava até hoje. Se alguém
+// reescrever uma dessas frases em compels.ts sem mexer na migração, a linha antiga deixaria de ser reconhecida
+// (e o alerta inundaria o responsável) — este teste prende as duas pontas.
+describe('frases da espera esperada × backfill da 0170', () => {
+  const sql = readFileSync(
+    join(process.cwd(), 'supabase/migrations/0170_alerta_problemas_compels.sql'),
+    'utf8',
+  )
+  const padroes = [...sql.matchAll(/erro like '([^']+)'/g)].map((m) => m[1]!)
+  const regex = (like: string) =>
+    new RegExp('^' + like.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.'))
+
+  it('a migração tem os três padrões', () => {
+    expect(padroes).toHaveLength(3)
+  })
+
+  it('cada espera esperada que a porta devolve casa com algum padrão do backfill', async () => {
+    const { erp } = erpFalso()
+    const porta = (env: Record<string, string | undefined>) =>
+      criarPortaCompels({ env, erp, base: SEM_BASE, somaEnviada: async () => 0 })
+    const esperas = [
+      await porta(AMBIENTE)(linha({ operacao: 'estorno' })),
+      await porta({ ...AMBIENTE, COMPELS_OPS_LIBERADAS: '9999' })(linha()),
+      await criarPortaCompels({ env: { COMPELS_OPS_LIBERADAS: '*' }, base: SEM_BASE, somaEnviada: async () => 0 })(linha()),
+    ]
+    for (const r of esperas) {
+      expect(r).toMatchObject({ ok: false, esperado: true })
+      const erro = r.ok === false ? r.erro : ''
+      expect(padroes.some((p) => regex(p).test(erro)), erro).toBe(true)
+    }
   })
 })

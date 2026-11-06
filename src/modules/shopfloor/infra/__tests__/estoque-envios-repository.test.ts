@@ -180,6 +180,20 @@ describe('concluirEnvio', () => {
     expect(chamadas[0]!.filtros).toContainEqual(['tentativas', 3])
   })
 
+  it('erro_esperado: só a espera ESPERADA (OP não liberada etc.) é marcada; o resto grava false, sempre', async () => {
+    const { sb, chamadas } = sbFalso()
+    const repo = criarRepositorioEstoqueEnvios(sb)
+    await repo.concluirEnvio(ENVIO, { ok: false, erro: 'OP 1 ainda não está liberada', aguardar: true, esperado: true })
+    await repo.concluirEnvio(ENVIO, { ok: false, erro: 'Aguardando requisição', aguardar: true })
+    await repo.concluirEnvio(ENVIO, { ok: false, erro: 'ERP 500' })
+    await repo.concluirEnvio(ENVIO, { ok: true })
+    expect(chamadas[0]!.update).toMatchObject({ erro_esperado: true })
+    // a marca é regravada a cada conclusão: sem isso, uma espera esperada de ontem esconderia a falha de hoje
+    expect(chamadas[1]!.update).toMatchObject({ erro_esperado: false })
+    expect(chamadas[2]!.update).toMatchObject({ erro_esperado: false })
+    expect(chamadas[3]!.update).toMatchObject({ erro_esperado: false })
+  })
+
   it('sucesso e falha comum LIMPAM o adiamento', async () => {
     const { sb, chamadas } = sbFalso()
     await criarRepositorioEstoqueEnvios(sb).concluirEnvio(ENVIO, { ok: true })
