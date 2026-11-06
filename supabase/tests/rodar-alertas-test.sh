@@ -307,4 +307,29 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0170.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_compels.sql
 echo "0170 (problemas no envio ao Compels): ok"
 
+# ---------- 0172: "parado ou travado na produção" (reescreve o tipo de regra 'parado') ----------
+# Mesmo molde: create or replace do alerta_avaliar (4 parâmetros), partindo do corpo da 0170. O esquema mínimo do
+# chão de fábrica entra ANTES (a função de leitura é SQL e o Postgres confere as colunas na criação). Antes
+# da primeira aplicação entra uma regra 'parado' ANTIGA (ativa, do tempo do Almoxarifado): a migração a converte
+# (desativa, defaults nas colunas novas) UMA vez — na segunda aplicação, uma regra reativada à mão NÃO é desativada
+# de novo (a guarda é a coluna nova ainda não existir).
+docker cp supabase/migrations/0172_alerta_parado_travado.sql "$NOME":/tmp/0172.sql
+docker cp supabase/tests/alertas_travados_esquema.sql "$NOME":/tmp/esquema_travados.sql
+docker cp supabase/tests/alertas_travados_test.sql "$NOME":/tmp/teste_travados.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema_travados.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "
+  insert into public.alerta_regras (nome, tipo, modulo, postos, janela_tipo, minimo_bipes, limite_horas, canais, destinatarios, ativa, criado_por)
+  values ('Parado ANTIGA', 'parado', 'shopfloor', array['ALMOX'], 'op', null, 2, array['telegram'],
+          array['00000000-0000-0000-0000-0000000000c1']::uuid[], true, '00000000-0000-0000-0000-000000000001')"
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0172.sql
+CONV=$(docker exec "$NOME" psql -U postgres -qtA -c "select ativa::text || '/' || so_ops_ativas::text || '/' || incluir_manutencao::text || '/' || limite_horas::text from public.alerta_regras where nome = 'Parado ANTIGA'")
+if [ "$CONV" != "false/true/true/2" ]; then echo "0172 conversao da regra antiga FALHOU: [$CONV]"; exit 1; fi
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "update public.alerta_regras set ativa = true where nome = 'Parado ANTIGA'"
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0172.sql   # de novo: idempotente
+CONV2=$(docker exec "$NOME" psql -U postgres -qtA -c "select ativa::text from public.alerta_regras where nome = 'Parado ANTIGA'")
+if [ "$CONV2" != "true" ]; then echo "0172 NAO e idempotente: a segunda aplicacao desativou a regra reativada [$CONV2]"; exit 1; fi
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "update public.alerta_regras set ativa = false where nome = 'Parado ANTIGA'"
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_travados.sql
+echo "0172 (parado ou travado na produção): ok"
+
 echo "ALERTAS SQL OK"

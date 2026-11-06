@@ -94,7 +94,7 @@ describe('formulário da regra compels', () => {
       id: 'r1', atualizadoEm: '2026-11-06T12:00:00Z', modulo: 'shopfloor', tipo: 'compels',
       nome: 'Compels', postos: ['Almoxarifado'], taxaMinima: null, janelaTipo: 'op', janelaValor: null,
       minimoBipes: null, limiteTempoSeg: null, limiteOcorrencias: null, pausaMaxMin: null,
-      lembreteMin: 90, intervalos: [], horaResumo: null, limiteHoras: null, canais: ['telegram'],
+      lembreteMin: 90, intervalos: [], horaResumo: null, limiteHoras: null, soOpsAtivas: true, incluirManutencao: true, canais: ['telegram'],
       destinatarios: ['u1'], avisarPessoas: true, avisarCanal: false, pmos: [], ativa: true,
     })
     expect(screen.getByLabelText('Lembrar a cada (min)')).toHaveValue('90')

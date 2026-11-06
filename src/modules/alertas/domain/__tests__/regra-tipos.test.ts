@@ -47,7 +47,7 @@ describe('tipos de regra', () => {
       defeito: 'Defeito repetido',
       resumo: 'Resumo diário',
       emb: 'Fim de EMB',
-      parado: 'Parado no Almoxarifado',
+      parado: 'Parado ou travado na produção',
       compels: 'Problemas no envio ao Compels',
     })
     expect(ehTipoRegra('tempo')).toBe(true)
@@ -84,6 +84,8 @@ describe('validarRegra — tempo médio por peça', () => {
         intervalos: [],
         horaResumo: null,
         limiteHoras: null,
+        soOpsAtivas: true,
+        incluirManutencao: true,
         canais: ['telegram'],
         destinatarios: ['u1'],
         avisarPessoas: true,
@@ -182,6 +184,8 @@ describe('validarRegra — defeito repetido', () => {
         intervalos: [],
         horaResumo: null,
         limiteHoras: null,
+        soOpsAtivas: true,
+        incluirManutencao: true,
         canais: ['telegram'],
         destinatarios: ['u1'],
         avisarPessoas: true,

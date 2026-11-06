@@ -104,6 +104,8 @@ const REGRA: RegraValida = {
   lembreteMin: null,
   horaResumo: null,
   limiteHoras: null,
+  soOpsAtivas: true,
+  incluirManutencao: true,
   intervalos: [],
   canais: ['telegram'],
   avisarPessoas: true,
