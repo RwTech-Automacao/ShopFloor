@@ -35,7 +35,9 @@ const COM_EINTER = (padrao: 'PA' | 'EINTER') => ({ ok: true, einterDisponivel: t
 const SEM_EINTER = { ok: true, einterDisponivel: false, padrao: 'PA' }
 
 const grupo = () => screen.queryByRole('group', { name: 'Estoque de destino' })
-const botao = (nome: 'PA' | 'EINTER') => screen.getByRole('button', { name: nome })
+// Os botões levam o NOME COMPLETO do estoque (pedido de 06/11/2026), não só a sigla.
+const NOME_DO_BOTAO = { PA: 'PA – Produto acabado', EINTER: 'EINTER – Estoque intermediário' } as const
+const botao = (nome: 'PA' | 'EINTER') => screen.getByRole('button', { name: NOME_DO_BOTAO[nome] })
 
 beforeEach(() => {
   vi.clearAllMocks()
