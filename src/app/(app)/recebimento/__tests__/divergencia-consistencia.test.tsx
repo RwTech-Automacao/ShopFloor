@@ -113,6 +113,8 @@ const estadoGrid = decodificarEstadoGrid(undefined, colunas.map((c) => c.campo))
  * duas telas têm de contar a mesma história.
  */
 const ITEM = {
+  emb: 'EMB390',
+  po: 'PO-4521',
   codigo: 'CAPJ91',
   descricao: 'CAPACITOR CERAMICO 100NF 50V',
   pedido: 1010,
@@ -125,6 +127,8 @@ function renderGrade(divergencia: number | string | null, justificativa: string)
     id: 'p1',
     numero: 101,
     divergencia,
+    numero_emb: ITEM.emb,
+    numero_pedido: ITEM.po,
     codigo_material: ITEM.codigo,
     descricao_material: ITEM.descricao,
     quantidade_pedido: String(ITEM.pedido),
@@ -151,6 +155,7 @@ async function renderFluxo(divergencia: string, justificativa: string): Promise<
   const item: ItemFluxo = {
     processoId: 'p1',
     numero: 101,
+    pedido: ITEM.po,
     item: ITEM.codigo,
     descricao: ITEM.descricao,
     quantidadePedido: ITEM.pedido,
@@ -253,6 +258,8 @@ describe('contexto da divergência: o diálogo é o mesmo nas duas telas', () =>
     expect(noFluxo, `Fluxo ${JSON.stringify(noFluxo)} diverge da grade ${JSON.stringify(naGrade)}`).toEqual(naGrade)
     // E é a coisa certa (senão as duas poderiam errar juntas): milhar em pt-BR e negativo vermelho.
     expect(naGrade).toEqual([
+      { rotulo: 'Nº da EMB', valor: 'EMB390', vermelho: false },
+      { rotulo: 'Nº da PO', valor: 'PO-4521', vermelho: false },
       { rotulo: 'Código do material', valor: 'CAPJ91', vermelho: false },
       { rotulo: 'Descrição', valor: 'CAPACITOR CERAMICO 100NF 50V', vermelho: false },
       { rotulo: 'Quantidade pedida', valor: '1.010', vermelho: false },

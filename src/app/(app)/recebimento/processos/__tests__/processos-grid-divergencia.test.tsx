@@ -255,6 +255,8 @@ describe('contexto da divergência dentro do diálogo', () => {
   /** O item como a GRADE o recebe: `numeric` do Postgres chega como STRING no PostgREST e
    *  `divergencia` é coluna text. */
   const ITEM = {
+    numero_emb: 'EMB390',
+    numero_pedido: 'PO-4521',
     codigo_material: 'CAPJ91',
     descricao_material: 'CAPACITOR CERAMICO 100NF 50V',
     quantidade_pedido: '1010',
@@ -268,15 +270,24 @@ describe('contexto da divergência dentro do diálogo', () => {
     return within(screen.getByRole('dialog'))
   }
 
-  it('mostra os cinco campos do item, com o número em pt-BR', () => {
+  it('mostra a EMB, a PO e os cinco campos do item, com o número em pt-BR', () => {
     abrir()
     expect(contextoDoDialogo()).toEqual([
+      { rotulo: 'Nº da EMB', valor: 'EMB390', vermelho: false },
+      { rotulo: 'Nº da PO', valor: 'PO-4521', vermelho: false },
       { rotulo: 'Código do material', valor: 'CAPJ91', vermelho: false },
       { rotulo: 'Descrição', valor: 'CAPACITOR CERAMICO 100NF 50V', vermelho: false },
       { rotulo: 'Quantidade pedida', valor: '1.010', vermelho: false },
       { rotulo: 'Quantidade recebida', valor: '505', vermelho: false },
       { rotulo: 'Divergência', valor: '-505', vermelho: true },
     ])
+  })
+
+  it('EMB ou PO em branco no processo mostram o traço, sem esconder a linha', () => {
+    abrir({ numero_emb: '', numero_pedido: null })
+    const c = contextoDoDialogo()
+    expect(c[0]).toEqual({ rotulo: 'Nº da EMB', valor: '—', vermelho: false })
+    expect(c[1]).toEqual({ rotulo: 'Nº da PO', valor: '—', vermelho: false })
   })
 
   it('com a coluna do Código OCULTA no layout, o diálogo mostra o código de todo jeito', () => {
@@ -296,6 +307,6 @@ describe('contexto da divergência dentro do diálogo', () => {
   it('campo sem valor sai como —, igual à célula da grade', () => {
     abrir({ codigo_material: null, descricao_material: '', quantidade_recebida: null })
     const vistos = contextoDoDialogo().map((c) => c.valor)
-    expect(vistos).toEqual(['—', '—', '1.010', '—', '-505'])
+    expect(vistos).toEqual(['EMB390', 'PO-4521', '—', '—', '1.010', '—', '-505'])
   })
 })

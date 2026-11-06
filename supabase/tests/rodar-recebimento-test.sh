@@ -15,6 +15,7 @@ docker cp supabase/migrations/0142_divergencia_justificativa.sql "$NOME":/tmp/01
 docker cp supabase/migrations/0143_rec_justificar_divergencia.sql "$NOME":/tmp/0143.sql
 docker cp supabase/migrations/0144_rec_fluxo_itens_justificativa.sql "$NOME":/tmp/0144.sql
 docker cp supabase/migrations/0147_divergencia_num.sql "$NOME":/tmp/0147.sql
+docker cp supabase/migrations/0171_rec_fluxo_itens_pedido.sql "$NOME":/tmp/0171.sql
 docker cp supabase/tests/recebimento_fluxo_test.sql "$NOME":/tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 
@@ -33,6 +34,7 @@ for _ in 1 2; do
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0143.sql
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0144.sql
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0147.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0171.sql
 done
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select count(*) from information_schema.columns where table_schema='public' and table_name='processos_recebimento' and column_name in ('divergencia_justificativa','divergencia_justificada_por','divergencia_justificada_em','divergencia_justificada_por_nome')" | grep -qx 4 \

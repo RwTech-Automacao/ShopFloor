@@ -29,6 +29,8 @@ export interface ItemFluxo {
   processoId: string
   /** Número do processo: é ele que desempata o MESMO item duas vezes na mesma EMB. */
   numero: number
+  /** Nº da PO (`numero_pedido` do processo) — o diálogo da divergência a mostra ('' = sem PO). */
+  pedido: string
   item: string
   descricao: string
   quantidadePedido: number | null
@@ -71,6 +73,7 @@ interface ItemRpc {
   divergencia_justificativa: string | null
   divergencia_justificada_por_nome: string | null
   divergencia_justificada_em: string | null
+  numero_pedido: string | null
 }
 
 /** `numeric` do Postgres chega como string no PostgREST (não cabe em float sem perda). */
@@ -121,6 +124,7 @@ export async function carregarItensCaixa(emb: string, etapa: CaixaFluxoId): Prom
   return ((data ?? []) as ItemRpc[]).map((l) => ({
     processoId: l.processo_id,
     numero: l.numero,
+    pedido: l.numero_pedido ?? '',
     item: l.item,
     descricao: l.descricao,
     quantidadePedido: numero(l.quantidade_pedido),
