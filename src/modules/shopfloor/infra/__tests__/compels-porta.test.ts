@@ -168,7 +168,7 @@ describe('criarPortaCompels', () => {
         const r = await criarPortaCompels({ env: { ...AMBIENTE, ...EINTER }, erp, base: SEM_BASE, somaEnviada: async () => 0 })(
           linha({ estoque }),
         )
-        expect(r).toEqual({ ok: true })
+        expect(r).toMatchObject({ ok: true }) // pode vir com `aviso` (empenho/requisição do cenário)
         expect(corpos).toHaveLength(1)
         expect(JSON.stringify(corpos[0])).toContain('217')
         expect(JSON.stringify(corpos[0])).not.toContain('301')
@@ -180,7 +180,7 @@ describe('criarPortaCompels', () => {
       const r = await criarPortaCompels({ env: { ...AMBIENTE, ...EINTER }, erp, base: SEM_BASE, somaEnviada: async () => 0 })(
         linha({ estoque: 'EINTER' }),
       )
-      expect(r).toEqual({ ok: true })
+      expect(r).toMatchObject({ ok: true }) // pode vir com `aviso` (empenho/requisição do cenário)
       const texto = JSON.stringify(corpos[0])
       expect(texto).toContain('301')
       expect(texto).toContain('7001')
