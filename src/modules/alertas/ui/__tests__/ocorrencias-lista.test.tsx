@@ -59,6 +59,21 @@ describe('OcorrenciasLista', () => {
     expect(screen.getByText('OP PMOG13/8504')).toBeInTheDocument()
   })
 
+  it('ocorrência do compels mostra "OP PMO/OP" e quantas linhas travaram', () => {
+    render(
+      <OcorrenciasLista
+        modulo="shopfloor"
+        ocorrenciasIniciais={[
+          { ...BASE, id: 'c1', regraNome: 'Compels', regraTipo: 'compels', posto: 'Almoxarifado', defeito: 'PMOG13/8682_F', valorAbertura: 1, valorUltimo: 3 },
+        ]}
+        filtroInicial={{ de: '2026-09-12', ate: '2026-09-18', estado: '' }}
+      />,
+    )
+    expect(screen.getByText('OP PMOG13/8682_F')).toBeInTheDocument()
+    expect(screen.getByText('1 linha')).toBeInTheDocument()
+    expect(screen.getByText('3 linhas')).toBeInTheDocument()
+  })
+
   it('mostra o defeito (código + descrição) e o valor medido na régua de cada tipo', () => {
     render(
       <OcorrenciasLista

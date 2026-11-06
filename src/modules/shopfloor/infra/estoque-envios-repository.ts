@@ -124,6 +124,14 @@ export function criarRepositorioEstoqueEnvios(
         .update({
           ok: resultado.ok,
           erro: resultado.ok ? null : resultado.erro.slice(0, LIMITE_ERRO),
+          // Só quando há aviso: um envio normal não toca na coluna (0169), então nada muda enquanto a migração
+          // não chegou — o que quebra, nesse caso, é só a linha que carrega aviso.
+          ...(resultado.ok && resultado.aviso ? { aviso: resultado.aviso.slice(0, LIMITE_ERRO) } : {}),
+          // Regravada a CADA FALHA/ESPERA (0170): a espera esperada de ontem (OP ainda não liberada) não pode
+          // esconder a falha de hoje. Só nas falhas, de propósito: um envio que deu certo NÃO toca na coluna,
+          // então, se o app subir um instante antes da migração, a fila continua concluindo as entradas — só as
+          // falhas deixam de ser gravadas nessa janela. Linha enviada nunca entra no alerta de erro.
+          ...(!resultado.ok ? { erro_esperado: resultado.esperado === true } : {}),
           // o CHECK da 0132 é ok = (enviado_em is not null): os dois andam sempre juntos
           enviado_em: resultado.ok ? new Date().toISOString() : null,
           // Solta a reserva: se falhou (e ainda tem tentativa), a próxima rodada pega de novo. Isso

@@ -1,3 +1,4 @@
+import type { AnexoEnvio } from '../domain/anexos'
 import { montarCallbackResolver } from '../domain/codigos'
 import type { ResultadoEnvio, ResultadoSimples } from '../domain/tipos'
 
@@ -6,7 +7,12 @@ const TEMPO_LIMITE_MS = 10_000
 
 export interface DiscordClient {
   /** Abre (ou reaproveita) a DM com a pessoa e manda a mensagem. */
-  enviarDm(usuarioExternoId: string, texto: string, ocorrenciaIdBotao: string | null): Promise<ResultadoEnvio>
+  enviarDm(
+    usuarioExternoId: string,
+    texto: string,
+    ocorrenciaIdBotao: string | null,
+    anexos?: AnexoEnvio[],
+  ): Promise<ResultadoEnvio>
   /**
    * Posta direto num canal do servidor (0123). É o MESMO endpoint da DM
    * (`POST /channels/{id}/messages`) — o que a conversa privada tem de específico é só o
@@ -15,7 +21,12 @@ export interface DiscordClient {
    * O bot precisa de "Ver canal" e "Enviar mensagens" naquele canal; sem isso o envio falha e a
    * fila tenta 3 vezes antes de desistir.
    */
-  enviarCanal(canalId: string, texto: string, ocorrenciaIdBotao: string | null): Promise<ResultadoEnvio>
+  enviarCanal(
+    canalId: string,
+    texto: string,
+    ocorrenciaIdBotao: string | null,
+    anexos?: AnexoEnvio[],
+  ): Promise<ResultadoEnvio>
   removerBotoes(mensagemExternaId: string): Promise<ResultadoSimples>
 }
 
@@ -58,22 +69,41 @@ function separarId(id: string): { canalId: string; mensagemId: string } | null {
   return { canalId: id.slice(0, i), mensagemId: id.slice(i + 1) }
 }
 
+/**
+ * Mensagem com arquivos: multipart com o JSON da mensagem em `payload_json` (mais a lista `attachments`, que
+ * liga cada `files[N]` ao seu nome) e os arquivos em `files[0]`, `files[1]`… (documentação do Discord).
+ */
+function corpoMultipart(payload: Record<string, unknown>, anexos: AnexoEnvio[]): FormData {
+  const form = new FormData()
+  form.append(
+    'payload_json',
+    JSON.stringify({ ...payload, attachments: anexos.map((a, id) => ({ id, filename: a.nome })) }),
+  )
+  anexos.forEach((a, i) => {
+    // `new Uint8Array(...)` copia para um buffer próprio: o Blob não pode compartilhar o do chamador.
+    form.append(`files[${i}]`, new Blob([new Uint8Array(a.bytes)], { type: a.tipo }), a.nome)
+  })
+  return form
+}
+
 export function criarDiscord(cfg: { token: string; fetch?: typeof fetch }): DiscordClient {
   async function chamar(
     metodo: 'POST' | 'PATCH',
     caminho: string,
-    corpo: Record<string, unknown>,
+    corpo: Record<string, unknown> | FormData,
   ): Promise<{ ok: true; json: Record<string, unknown> } | { ok: false; erro: string }> {
     const f = cfg.fetch ?? fetch
+    // Com anexo o corpo é multipart (FormData): NÃO se fixa o Content-Type, quem põe é o fetch, com o boundary.
+    const multipart = corpo instanceof FormData
     try {
       const res = await f(`${API}${caminho}`, {
         method: metodo,
         headers: {
           Authorization: `Bot ${cfg.token}`,
-          'Content-Type': 'application/json',
+          ...(multipart ? {} : { 'Content-Type': 'application/json' }),
           'User-Agent': 'ShopFloor (https://shopfloor.enterplak.com.br, 1.0)',
         },
-        body: JSON.stringify(corpo),
+        body: multipart ? corpo : JSON.stringify(corpo),
         signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
       })
       const json = (await res.json().catch(() => null)) as Record<string, unknown> | null
@@ -92,8 +122,10 @@ export function criarDiscord(cfg: { token: string; fetch?: typeof fetch }): Disc
     canalId: string,
     texto: string,
     ocorrenciaIdBotao: string | null,
+    anexos: AnexoEnvio[] = [],
   ): Promise<ResultadoEnvio> {
-    const msg = await chamar('POST', `/channels/${canalId}/messages`, payloadMensagemDiscord(texto, ocorrenciaIdBotao))
+    const payload = payloadMensagemDiscord(texto, ocorrenciaIdBotao)
+    const msg = await chamar('POST', `/channels/${canalId}/messages`, anexos.length > 0 ? corpoMultipart(payload, anexos) : payload)
     if (!msg.ok) return msg
     const mensagemId = msg.json.id
     if (typeof mensagemId !== 'string') return { ok: false, erro: 'Discord: resposta sem id da mensagem' }
@@ -101,16 +133,16 @@ export function criarDiscord(cfg: { token: string; fetch?: typeof fetch }): Disc
   }
 
   return {
-    async enviarDm(usuarioExternoId, texto, ocorrenciaIdBotao) {
+    async enviarDm(usuarioExternoId, texto, ocorrenciaIdBotao, anexos) {
       const canal = await chamar('POST', '/users/@me/channels', { recipient_id: usuarioExternoId })
       if (!canal.ok) return canal
       const canalId = canal.json.id
       if (typeof canalId !== 'string') return { ok: false, erro: 'Discord: resposta sem id do canal' }
-      return postar(canalId, texto, ocorrenciaIdBotao)
+      return postar(canalId, texto, ocorrenciaIdBotao, anexos)
     },
 
-    async enviarCanal(canalId, texto, ocorrenciaIdBotao) {
-      return postar(canalId, texto, ocorrenciaIdBotao)
+    async enviarCanal(canalId, texto, ocorrenciaIdBotao, anexos) {
+      return postar(canalId, texto, ocorrenciaIdBotao, anexos)
     },
 
     async removerBotoes(mensagemExternaId) {

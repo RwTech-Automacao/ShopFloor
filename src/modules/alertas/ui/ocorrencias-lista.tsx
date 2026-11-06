@@ -178,7 +178,7 @@ export function OcorrenciasLista({
                 {/* A ocorrência do parado guarda a chave 'PMO/OP' na coluna do defeito: é a OP, e não
                     um código de defeito, então não passa por `rotuloDefeito`. */}
                 <TableCell>
-                  {o.defeito ? (o.regraTipo === 'parado' ? `OP ${o.defeito}` : rotuloDefeito(o.defeito)) : '—'}
+                  {o.defeito ? (o.regraTipo === 'parado' || o.regraTipo === 'compels' ? `OP ${o.defeito}` : rotuloDefeito(o.defeito)) : '—'}
                 </TableCell>
                 <TableCell>{formatarValorOcorrencia(o.regraTipo, o.valorAbertura)}</TableCell>
                 <TableCell>{formatarValorOcorrencia(o.regraTipo, o.valorUltimo)}</TableCell>

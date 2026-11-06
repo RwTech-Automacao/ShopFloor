@@ -34,18 +34,21 @@ export function postoRegraDe(chave: string, perfil: PerfilPosto): PostoRegra {
  *  - defeito: só quem registra o código. `alerta_defeitos` exige status reprovado E
  *    `codigo_defeito` preenchido — sem código não há o que repetir.
  *  - tempo médio: qualquer posto, que todo posto tem intervalo entre um bipe e o próximo.
- *  - parado: só o posto de perfil Almoxarifado (`recurso = 'almoxarifado'`).
+ *  - parado ("Parado ou travado na produção"): QUALQUER posto — a peça pode ficar parada em qualquer um.
+ *  - compels: só o posto de perfil Almoxarifado (a fila de envio ao Compels nasce nele).
+ *  - ficha de apontamento: nenhum posto (como o fim de EMB). O Almoxarifado é o da ROTA de cada OP; a regra não escolhe posto.
  *  - fim de EMB: nenhum posto. A regra não tem posto nenhum (o gatilho é a EMB fechar, e EMB não é
  *    posto), e a lista de postos não aparece no formulário dele. É o único tipo que devolve false
  *    para TODO posto — por isso o teste "todo tipo aceita pelo menos o posto de teste" o exclui.
  */
 export function postoServeAoTipo(tipo: TipoRegra, posto: PostoRegra): boolean {
-  if (tipo === 'emb') return false
+  if (tipo === 'emb' || tipo === 'ficha') return false
   // O resumo traz a taxa de aprovação: posto sem status não tem linha Aprovado/Reprovado e sumiria.
   if (tipo === 'aprovacao' || tipo === 'resumo') return posto.temStatus
   if (tipo === 'defeito') return posto.coletaDefeito
-  // O parado olha a ENTRADA no Almoxarifado: só o posto de perfil almoxarifado serve.
-  if (tipo === 'parado') return posto.almoxarifado === true
+  // O compels olha a fila de entradas do Almoxarifado: só o posto de perfil almoxarifado serve.
+  // O parado (0172) olha onde a peça parou: qualquer posto serve.
+  if (tipo === 'compels') return posto.almoxarifado === true
   return true
 }
 

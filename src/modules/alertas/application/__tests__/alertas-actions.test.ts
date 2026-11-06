@@ -231,8 +231,8 @@ describe('actions de alertas — payload malformado não lança exceção', () =
   describe('salvarRegraAction — regra parado', () => {
     const PARADO: EntradaRegra = {
       tipo: 'parado',
-      nome: 'Parado no Almoxarifado',
-      postos: ['Almoxarifado'],
+      nome: 'Parado ou travado',
+      postos: ['Teste'],
       taxaMinima: '',
       janelaTipo: 'op',
       janelaValor: null,
@@ -256,6 +256,8 @@ describe('actions de alertas — payload malformado não lança exceção', () =
         modulo: 'shopfloor',
         tipo: 'parado',
         limiteHoras: 2,
+        soOpsAtivas: true,
+        incluirManutencao: true,
         janelaTipo: 'op',
         janelaValor: null,
         minimoBipes: null,
@@ -264,15 +266,15 @@ describe('actions de alertas — payload malformado não lança exceção', () =
       limparMocks()
     })
 
-    it('limite fora de 1 a 72 é recusado e nada é gravado', async () => {
+    it('limite fora de 1 a 720 é recusado e nada é gravado', async () => {
       const inserirRegra = vi.fn()
       comoGestor()
       repositorioFalso({ inserirRegra })
       vi.resetModules()
       const { salvarRegraAction } = await import('../alertas-actions')
-      expect(await salvarRegraAction('shopfloor', null, { ...PARADO, limiteHoras: '73' })).toEqual({
+      expect(await salvarRegraAction('shopfloor', null, { ...PARADO, limiteHoras: '721' })).toEqual({
         ok: false,
-        erro: 'Informe o limite em horas (de 1 a 72).',
+        erro: 'Informe o limite em horas (de 1 a 720).',
       })
       expect(inserirRegra).not.toHaveBeenCalled()
       limparMocks()
