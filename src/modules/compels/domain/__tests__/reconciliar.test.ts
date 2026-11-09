@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EstadoOpErp } from '../estado-op'
-import { decidirEntrada, MENSAGEM_ERRO } from '../reconciliar'
+import { decidirEntrada } from '../reconciliar'
 
 const base: EstadoOpErp = {
   status: 'Em Processo',
@@ -16,20 +16,22 @@ const base: EstadoOpErp = {
 const com = (parcial: Partial<EstadoOpErp>): EstadoOpErp => ({ ...base, ...parcial })
 
 describe('decidirEntrada', () => {
-  it('primeira entrada: requisita e aponta a quantidade', () => {
-    expect(decidirEntrada(base, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', requisitar: 4, apontar: 4 })
+  it('primeira entrada com requisição suficiente: só aponta, sem avisos', () => {
+    const estado = com({ requisitada: 4 })
+    expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', apontar: 4, avisos: [] })
   })
 
-  it('toda entrada é uma requisição + um apontamento da mesma quantidade', () => {
-    const estado = com({ requisitada: 4, apontada: 4 })
-    expect(decidirEntrada(estado, { anterior: 4, novo: 5 })).toEqual({ tipo: 'enviar', requisitar: 1, apontar: 1 })
-  })
-
-  it('requisição feita à frente (OP 8697: 5 requisitadas, apontadas em 3 + 2) não é tratada: para', () => {
+  it('requisição maior que o necessário serve (não precisa ser exata): OP 8697 com 10 requisitadas e 5 apontadas', () => {
     const estado = com({ requisitada: 10, apontada: 5 })
-    expect(decidirEntrada(estado, { anterior: 5, novo: 8 })).toMatchObject({
-      tipo: 'erro',
-      codigo: 'requisicao_fora_do_esperado',
+    expect(decidirEntrada(estado, { anterior: 5, novo: 8 })).toEqual({ tipo: 'enviar', apontar: 3, avisos: [] })
+  })
+
+  it('requisição insuficiente NÃO bloqueia: vira aviso com o quanto falta', () => {
+    const estado = com({ requisitada: 1 })
+    expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({
+      tipo: 'enviar',
+      apontar: 4,
+      avisos: ['requisição insuficiente no Compels: requisitado 1, precisa de 4 (faltam 3)'],
     })
   })
 
@@ -38,40 +40,71 @@ describe('decidirEntrada', () => {
     expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'ja_enviada' })
   })
 
+  it('OP com apontamento de fora (22 apontadas à mão, esta entrada vai a 6): GRAVA e avisa a quantidade inesperada', () => {
+    const estado = com({ quantidadeOp: 100, empenhada: 22, requisitada: 22, apontada: 22 })
+    const d = decidirEntrada(estado, { anterior: 0, novo: 6 })
+    expect(d).toMatchObject({ tipo: 'enviar', apontar: 6 })
+    const avisos = d.tipo === 'enviar' ? d.avisos : []
+    expect(avisos).toHaveLength(1)
+    expect(avisos[0]).toContain('quantidade inesperada no Compels')
+    expect(avisos[0]).toContain('mostra 22 apontadas')
+    expect(avisos[0]).toContain('esperado 0')
+    expect(avisos[0]).toContain('a mais: 22')
+    expect(avisos[0]).toContain('gravado mesmo assim')
+  })
+
   it('já enviada tem prioridade sobre falta de empenho', () => {
     const estado = com({ empenhada: 0, requisitada: 4, apontada: 4 })
     expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'ja_enviada' })
   })
 
-  it('falha no meio: a requisição desta entrada já foi feita e o apontamento não, então só falta apontar', () => {
-    const estado = com({ requisitada: 4, apontada: 0 })
-    expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', requisitar: 0, apontar: 4 })
-  })
-
-  it('sem empenho suficiente', () => {
-    const estado = com({ empenhada: 3 })
-    expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toMatchObject({ tipo: 'erro', codigo: 'sem_empenho' })
-  })
-
-  it('empenho exato basta', () => {
-    const estado = com({ empenhada: 4 })
-    expect(decidirEntrada(estado, { anterior: 0, novo: 4 }).tipo).toBe('enviar')
-  })
-
-  it('apontamento manual no meio: ERP com valor que não é o esperado', () => {
-    const estado = com({ apontada: 3, requisitada: 3 })
-    expect(decidirEntrada(estado, { anterior: 4, novo: 6 })).toMatchObject({ tipo: 'erro', codigo: 'abaixo_do_enviado' })
-    expect(decidirEntrada(estado, { anterior: 1, novo: 6 })).toMatchObject({ tipo: 'erro', codigo: 'fora_do_esperado' })
-  })
-
-  it('pendência de material no ERP para a integração (e entrada já enviada continua "já enviada")', () => {
-    expect(decidirEntrada(com({ temPendencia: true }), { anterior: 0, novo: 4 })).toMatchObject({
-      tipo: 'erro',
-      codigo: 'pendencia_no_erp',
+  it('empenho insuficiente NÃO bloqueia: vira aviso com o quanto falta', () => {
+    const estado = com({ empenhada: 3, requisitada: 4 })
+    expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({
+      tipo: 'enviar',
+      apontar: 4,
+      avisos: ['empenho insuficiente no Compels: empenhado 3, precisa de 4 (faltam 1)'],
     })
-    expect(decidirEntrada(com({ temPendencia: true, apontada: 4 }), { anterior: 0, novo: 4 })).toEqual({
-      tipo: 'ja_enviada',
-    })
+  })
+
+  it('empenho e requisição exatos bastam, sem avisos', () => {
+    const estado = com({ empenhada: 4, requisitada: 4 })
+    expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', apontar: 4, avisos: [] })
+  })
+
+  it('ERP com MENOS do que já enviamos (alguém estornou à mão): grava e avisa "a menos"', () => {
+    const estado = com({ apontada: 3, requisitada: 6, empenhada: 6 })
+    const d = decidirEntrada(estado, { anterior: 4, novo: 6 })
+    expect(d).toMatchObject({ tipo: 'enviar', apontar: 2 })
+    const avisos = d.tipo === 'enviar' ? d.avisos : []
+    expect(avisos).toHaveLength(1)
+    expect(avisos[0]).toContain('mostra 3 apontadas')
+    expect(avisos[0]).toContain('esperado 4')
+    expect(avisos[0]).toContain('a menos: 1')
+  })
+
+  it('ERP com valor no meio do caminho (nem o anterior nem o novo): grava e avisa', () => {
+    const estado = com({ apontada: 3, requisitada: 6, empenhada: 6 })
+    const d = decidirEntrada(estado, { anterior: 1, novo: 6 })
+    expect(d).toMatchObject({ tipo: 'enviar', apontar: 5 })
+    expect(d.tipo === 'enviar' && d.avisos[0]).toContain('a mais: 2')
+  })
+
+  it('ERP exatamente no anterior: sem aviso de quantidade (o caminho normal)', () => {
+    const estado = com({ apontada: 4, requisitada: 6, empenhada: 6 })
+    expect(decidirEntrada(estado, { anterior: 4, novo: 6 })).toEqual({ tipo: 'enviar', apontar: 2, avisos: [] })
+  })
+
+  it('o aviso de quantidade vem junto dos de empenho e requisição', () => {
+    const estado = com({ apontada: 10, requisitada: 1, empenhada: 2 })
+    const d = decidirEntrada(estado, { anterior: 0, novo: 4 })
+    expect(d.tipo === 'enviar' && d.avisos).toHaveLength(3)
+  })
+
+  it('requisição Pendente não tem regra própria: o que decide é o saldo disponível, conferido na aplicação', () => {
+    const estado = com({ temPendencia: true, requisitada: 4 })
+    expect(decidirEntrada(estado, { anterior: 0, novo: 4 })).toEqual({ tipo: 'enviar', apontar: 4, avisos: [] })
+    expect(decidirEntrada(com({ temPendencia: true, apontada: 4 }), { anterior: 0, novo: 4 })).toEqual({ tipo: 'ja_enviada' })
   })
 
   it('entrega acima da OP', () => {
@@ -98,16 +131,13 @@ describe('decidirEntrada', () => {
   })
 
   it('compara decimais sem erro de ponto flutuante', () => {
-    const estado = com({ requisitada: 0.3, apontada: 0.3, empenhada: 1 })
-    expect(decidirEntrada(estado, { anterior: 0.1 + 0.2, novo: 0.6 })).toEqual({
-      tipo: 'enviar',
-      requisitar: 0.3,
-      apontar: 0.3,
-    })
+    const estado = com({ requisitada: 0.6, apontada: 0.3, empenhada: 1 })
+    expect(decidirEntrada(estado, { anterior: 0.1 + 0.2, novo: 0.6 })).toEqual({ tipo: 'enviar', apontar: 0.3, avisos: [] })
   })
 
   it('toda decisão de erro traz a mensagem legível do código', () => {
-    const d = decidirEntrada(com({ empenhada: 0 }), { anterior: 0, novo: 1 })
-    expect(d).toEqual({ tipo: 'erro', codigo: 'sem_empenho', mensagem: MENSAGEM_ERRO.sem_empenho })
+    const d = decidirEntrada(com({ temEstorno: true }), { anterior: 0, novo: 1 })
+    expect(d).toMatchObject({ tipo: 'erro', codigo: 'estorno_na_op' })
+    expect(d.tipo === 'erro' && d.mensagem.length > 0).toBe(true)
   })
 })

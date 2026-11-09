@@ -140,6 +140,30 @@ describe('ClienteCompels', () => {
     expect(filtro.exibeItensComSaldoZerado).toBe(true)
   })
 
+  it('pagar pendência: lê o detalhe nos endereços da tela e grava com JSON puro (não jsonData=)', async () => {
+    const { buscar, chamadas } = fingirCompels({
+      '/empenho/findById/7241': () => json({ id: 7241 }),
+      '/requisicaoOrdemProducao/findById': () => json({ data: { id: 18510 }, success: true }),
+      '/empenho/pagarPendencia': () => json({ message: 'Processo realizado com sucesso. Consulte a situação do Empenho.' }),
+      '/requisicaoOrdemProducao/pagarPendencia': () => json({ success: false, msg: 'Saldo insuficiente' }),
+    })
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    expect(await c.lerEmpenho(7241)).toEqual({ id: 7241 })
+    expect(await c.lerRequisicao(18510)).toEqual({ data: { id: 18510 }, success: true })
+    const req = chamadas.find((x) => x.url.startsWith('/requisicaoOrdemProducao/findById'))!
+    expect((req.init.body as URLSearchParams).get('id')).toBe('18510')
+
+    expect(await c.pagarPendenciaEmpenho({ id: '7241' })).toEqual({
+      ok: true, mensagem: 'Processo realizado com sucesso. Consulte a situação do Empenho.',
+    })
+    const pg = chamadas.find((x) => x.url === '/empenho/pagarPendencia')!
+    expect(pg.init.method).toBe('POST')
+    expect(pg.init.body).toBe('{"id":"7241"}')
+    expect((pg.init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+
+    expect(await c.pagarPendenciaRequisicao({ id: '18510' })).toMatchObject({ ok: false, codigo: 'sem_saldo', mensagem: 'Saldo insuficiente' })
+  })
+
   it('item que não veio na resposta: null (não zero)', async () => {
     const { buscar } = fingirCompels({ '/itemMovimento/findFilter': () => json({ data: [] }) })
     expect(await new ClienteCompels(config, tokenFixo(), buscar).consultarSaldoItem('ZZZ')).toBeNull()

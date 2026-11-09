@@ -8,8 +8,11 @@ vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right' },
 }))
 
-const { lerEstoqueCompelsAction } = vi.hoisted(() => ({ lerEstoqueCompelsAction: vi.fn() }))
-vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({ lerEstoqueCompelsAction }))
+const { lerEstoqueCompelsAction, lerPendenteCompelsAction } = vi.hoisted(() => ({
+  lerEstoqueCompelsAction: vi.fn(),
+  lerPendenteCompelsAction: vi.fn(),
+}))
+vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({ lerEstoqueCompelsAction, lerPendenteCompelsAction }))
 
 const { FluxoNode, EstoqueCompelsCard } = await import('../fluxo-node')
 
@@ -23,7 +26,11 @@ const saida = (over: Record<string, unknown> = {}) => ({
   passou: 0, devemPassar: null, selecionado: false, ...over,
 })
 
-beforeEach(() => { lerEstoqueCompelsAction.mockReset() })
+beforeEach(() => {
+  lerEstoqueCompelsAction.mockReset()
+  lerPendenteCompelsAction.mockReset()
+  lerPendenteCompelsAction.mockResolvedValue(null)
+})
 
 describe('estoque do Compels abaixo do card Concluído', () => {
   it('mostra o estoque próprio do PMO, formatado em pt-BR, com o detalhe no tooltip', async () => {
@@ -92,5 +99,39 @@ describe('estoque do Compels abaixo do card Concluído', () => {
     render(createElement(EstoqueCompelsCard, { pmo: 'PMO-G' }))
     expect(screen.getByText(/1\.234,5 UN/)).toBeInTheDocument()
     expect(lerEstoqueCompelsAction).not.toHaveBeenCalled()
+  })
+})
+
+describe('aviso "ainda não chegou ao Compels" abaixo do card Concluído', () => {
+  it('mostra as peças que esperam, o selo e o motivo, e consulta pela PMO e OP do Fluxo', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue(OK)
+    lerPendenteCompelsAction.mockResolvedValue({
+      pecas: 6, situacao: 'esperando_erp', rotulo: 'Esperando o Compels',
+      motivo: 'OP sem empenho suficiente no Compels: empenhado 22, precisa de 28 (faltam 6).', oQueFazer: 'Nada.',
+    })
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMOF52_F', op: '8682_F' }) } as never))
+
+    expect(await screen.findByText(/6 peças ainda não chegaram ao Compels/)).toBeInTheDocument()
+    expect(screen.getByText(/Esperando o Compels · OP sem empenho suficiente/)).toBeInTheDocument()
+    expect(lerPendenteCompelsAction).toHaveBeenCalledWith('PMOF52_F', '8682_F')
+    expect(screen.getByRole('status').getAttribute('title')).toContain('faltam 6')
+  })
+
+  it('uma peça só: singular', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue(OK)
+    lerPendenteCompelsAction.mockResolvedValue({ pecas: 1, situacao: 'na_fila', rotulo: 'Na fila', motivo: null, oQueFazer: 'Nada.' })
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-A', op: '1' }) } as never))
+    expect(await screen.findByText('1 peça ainda não chegou ao Compels')).toBeInTheDocument()
+  })
+
+  it('nada esperando: sem aviso; sem a OP no card: nem consulta', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue(OK)
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-A', op: '1' }) } as never))
+    await waitFor(() => expect(lerPendenteCompelsAction).toHaveBeenCalled())
+    expect(screen.queryByRole('status')).toBeNull()
+
+    lerPendenteCompelsAction.mockClear()
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-A' }) } as never))
+    expect(lerPendenteCompelsAction).not.toHaveBeenCalled()
   })
 })

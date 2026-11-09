@@ -15,6 +15,32 @@ export interface PlanilhaLida {
  * inesperado) resulta em `{ colunas: [], linhas: [] }` — quem chama decide
  * como sinalizar isso ao usuário.
  */
+/**
+ * Troca a área usada declarada (`!ref`) pela área que as células realmente
+ * ocupam. Google Sheets/LibreOffice gravam `A1:AMJ1048576` quando há formatação
+ * de coluna/linha inteira, e `sheet_to_json` varreria ~1 milhão de linhas × 1.024
+ * colunas (o navegador congela). Só olha as chaves da planilha, nunca a área.
+ */
+function aparaAreaUsada(ws: XLSX.WorkSheet): void {
+  let maxL = -1
+  let maxC = -1
+  let minL = Infinity
+  let minC = Infinity
+  for (const chave of Object.keys(ws)) {
+    if (chave.startsWith('!')) continue
+    const { r, c } = XLSX.utils.decode_cell(chave)
+    if (r < minL) minL = r
+    if (c < minC) minC = c
+    if (r > maxL) maxL = r
+    if (c > maxC) maxC = c
+  }
+  if (maxL < 0) {
+    delete ws['!ref']
+    return
+  }
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: minL, c: minC }, e: { r: maxL, c: maxC } })
+}
+
 export async function lerPlanilha(file: File): Promise<PlanilhaLida> {
   try {
     const buf = await file.arrayBuffer()
@@ -22,6 +48,7 @@ export async function lerPlanilha(file: File): Promise<PlanilhaLida> {
     const nomeAba = wb.SheetNames[0]
     const ws = nomeAba ? wb.Sheets[nomeAba] : undefined
     if (!ws) return { colunas: [], linhas: [] }
+    aparaAreaUsada(ws)
 
     const linhasBrutas = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: null })
     const colunasBrutas = linhasBrutas[0] ? Object.keys(linhasBrutas[0]) : []

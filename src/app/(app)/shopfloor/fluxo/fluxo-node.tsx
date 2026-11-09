@@ -7,7 +7,8 @@ import {
 } from 'lucide-react'
 import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarQuantidade, type EstoqueCompels } from '@/modules/shopfloor/domain/estoque-compels'
-import { lerEstoqueCompelsAction } from '@/modules/shopfloor/application/estoque-compels-actions'
+import { lerEstoqueCompelsAction, lerPendenteCompelsAction } from '@/modules/shopfloor/application/estoque-compels-actions'
+import type { ResumoPendenteOp } from '@/modules/shopfloor/domain/estoque-pendente'
 
 export interface FluxoNodePayload extends FluxoNodeData {
   selecionado: boolean
@@ -37,8 +38,10 @@ export function iconePorRecurso(recurso: string, temStatus: boolean, className =
 }
 
 
-/** Cache do navegador (1 min por PMO): o nó re-renderiza e remonta com frequência (zoom, arrasto, modo TV). */
-const CACHE_ESTOQUE_MS = 60_000
+/** Cache do navegador (15 s por PMO): o nó re-renderiza e remonta com frequência (zoom, arrasto, modo TV). */
+const CACHE_ESTOQUE_MS = 15_000
+/** De quanto em quanto tempo o card relê o estoque sozinho, com o Fluxo aberto e a aba visível. */
+const INTERVALO_ESTOQUE_MS = 20_000
 const cacheEstoque = new Map<string, { ate: number; resultado: EstoqueCompels }>()
 
 /**
@@ -54,16 +57,20 @@ export function EstoqueCompelsCard({ pmo }: { pmo: string }) {
   })
 
   useEffect(() => {
-    const guardado = cacheEstoque.get(pmo)
-    if (guardado && guardado.ate > Date.now()) return
     let vivo = true
-    lerEstoqueCompelsAction(pmo)
-      .then((r) => {
-        cacheEstoque.set(pmo, { ate: Date.now() + (r.tipo === 'indisponivel' ? 15_000 : CACHE_ESTOQUE_MS), resultado: r })
-        if (vivo) setEstado(r)
-      })
-      .catch(() => { if (vivo) setEstado({ tipo: 'indisponivel' }) })
-    return () => { vivo = false }
+    const ler = (forcar: boolean) => {
+      const guardado = cacheEstoque.get(pmo)
+      if (!forcar && guardado && guardado.ate > Date.now()) return
+      lerEstoqueCompelsAction(pmo)
+        .then((r) => {
+          cacheEstoque.set(pmo, { ate: Date.now() + (r.tipo === 'indisponivel' ? 15_000 : CACHE_ESTOQUE_MS), resultado: r })
+          if (vivo) setEstado(r)
+        })
+        .catch(() => { if (vivo) setEstado((atual) => (atual === 'carregando' ? { tipo: 'indisponivel' } : atual)) })
+    }
+    ler(false)
+    const id = setInterval(() => { if (!document.hidden) ler(true) }, INTERVALO_ESTOQUE_MS)
+    return () => { vivo = false; clearInterval(id) }
   }, [pmo])
 
   if (estado !== 'carregando' && estado.tipo === 'nao_configurado') return null
@@ -89,10 +96,47 @@ export function EstoqueCompelsCard({ pmo }: { pmo: string }) {
   return (
     <div
       title={dica || undefined}
-      className="absolute left-0 top-full mt-2 flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-sm"
+      className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-sm"
     >
       <span className="truncate">Estoque no Compels · {pmo}</span>
       {corpo}
+    </div>
+  )
+}
+
+/** De quanto em quanto tempo o aviso relê a fila (o Fluxo inteiro atualiza a cada 15 s). */
+const INTERVALO_PENDENTE_MS = 15_000
+
+/**
+ * AVISO "AINDA NÃO CHEGOU AO COMPELS", abaixo do card Concluído: peças que o Almoxarifado já deu entrada e que a
+ * fila ainda não entregou ao ERP, com o motivo no tooltip. Os números do Fluxo continuam sendo o que foi lançado no
+ * ShopFloor; este aviso diz que o estoque do Compels ainda não os reflete. Some quando a fila esvazia.
+ */
+export function PendenteCompelsAviso({ pmo, op }: { pmo: string; op: string }) {
+  const [resumo, setResumo] = useState<ResumoPendenteOp | null>(null)
+
+  useEffect(() => {
+    let vivo = true
+    const ler = () => {
+      lerPendenteCompelsAction(pmo, op)
+        .then((r) => { if (vivo) setResumo(r) })
+        .catch(() => { if (vivo) setResumo(null) })
+    }
+    ler()
+    const id = setInterval(ler, INTERVALO_PENDENTE_MS)
+    return () => { vivo = false; clearInterval(id) }
+  }, [pmo, op])
+
+  if (!resumo || resumo.pecas <= 0) return null
+  const pecas = resumo.pecas === 1 ? '1 peça' : `${formatarQuantidade(resumo.pecas)} peças`
+  return (
+    <div
+      role="status"
+      title={resumo.motivo ?? resumo.oQueFazer}
+      className="flex w-full flex-col gap-0.5 rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-xs text-foreground shadow-sm dark:border-amber-700 dark:bg-amber-950/40"
+    >
+      <span className="font-medium">{pecas} ainda não {resumo.pecas === 1 ? 'chegou' : 'chegaram'} ao Compels</span>
+      <span className="truncate text-muted-foreground">{resumo.rotulo}{resumo.motivo ? ` · ${resumo.motivo}` : ''}</span>
     </div>
   )
 }
@@ -141,7 +185,12 @@ function FluxoNodeBase({ data }: NodeProps) {
           </span>
         </div>
         {d.ehEntrada && <Handle type="source" position={Position.Right} />}
-        {d.ehSaida && d.pmo && <EstoqueCompelsCard pmo={d.pmo} />}
+        {d.ehSaida && d.pmo && (
+          <div className="absolute left-0 top-full mt-2 flex w-full flex-col gap-2">
+            {d.op && <PendenteCompelsAviso pmo={d.pmo} op={d.op} />}
+            <EstoqueCompelsCard pmo={d.pmo} />
+          </div>
+        )}
       </div>
     )
   }

@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/table'
 import {
   TETO_TENTATIVAS,
+  rotuloTipoGrupo,
   type GrupoEstoquePendente,
   type LinhaEstoquePendente,
   type SituacaoEstoque,
@@ -167,7 +168,7 @@ export function EstoquePendenteTabela({
                   {g.pmo}·{g.op} · {g.posto} ·{' '}
                   <span className="font-mono">{g.alvo}</span>
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    ({g.tipo === 'caixa' ? 'caixa' : 'peça'}
+                    ({rotuloTipoGrupo(g)}
                     {g.linhas.length > 1 ? ` · ${g.linhas.length} movimentações deste bipe` : ''})
                   </span>
                 </TableCell>

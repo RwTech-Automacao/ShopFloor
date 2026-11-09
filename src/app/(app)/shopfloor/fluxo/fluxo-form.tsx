@@ -857,7 +857,7 @@ export function FluxoForm({
           // Só a Entrada carrega PMO/OP + descrição da OP (o card mostra; o domínio não tem esse dado).
           ...(n.id === ENTRADA ? { pmo: opSel?.pmo, op: opSel?.op, descricao: opSel?.descricao } : {}),
           // A Saída (card Concluído) leva só o PMO: é com ele que o card consulta o estoque do Compels.
-          ...(n.id === SAIDA ? { pmo: opSel?.pmo } : {}),
+          ...(n.id === SAIDA ? { pmo: opSel?.pmo, op: opSel?.op } : {}),
           // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
           ...(rota ? (() => {
             const idx = rota.ordem.indexOf(n.id)
@@ -942,6 +942,8 @@ export function FluxoForm({
     const [pmo, op] = sel.split('||')
     return { pmo: pmo ?? '', op: op ?? '' }
   }, [sel])
+  // Placas por painel da OP aberta (1 se desconhecido): o número de "não iniciadas" é em placas, mas a lista são painéis.
+  const placasPorPainelOp = ordensDashboard.find((o) => o.pmo === opInfo.pmo && o.op === opInfo.op)?.placas_por_painel ?? 1
   // % "macro": soma das passagens (aprovadas p/ posto com status; registros p/ sem) de TODOS os postos
   // normais ÷ (qtd × nº de postos) — equivale à média do % de cada posto; exclui reprovados.
   const totalPassagens = useMemo(
@@ -1648,7 +1650,7 @@ export function FluxoForm({
                       <>
                         {naoIniciadasPrimeiro > 0 && (
                           <p className="mb-2 text-xs text-muted-foreground">
-                            Inclui <span className="font-semibold text-foreground">{naoIniciadasPrimeiro}</span> não iniciada{naoIniciadasPrimeiro > 1 ? 's' : ''} (ainda sem bipe), na lista abaixo.
+                            Inclui <span className="font-semibold text-foreground">{naoIniciadasPrimeiro}</span> não iniciada{naoIniciadasPrimeiro > 1 ? 's' : ''}{placasPorPainelOp > 1 ? ` (${Math.ceil(naoIniciadasPrimeiro / placasPorPainelOp)} painel(éis))` : ''} (ainda sem bipe), na lista abaixo.
                           </p>
                         )}
                         <PendentesPosto titulo="Pendentes no posto" itens={listas.agora} carregando={carregandoSns} onSn={setSnAberto} defaultOpen />

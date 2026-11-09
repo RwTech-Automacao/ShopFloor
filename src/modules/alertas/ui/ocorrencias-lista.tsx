@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { LIMITE_EXPLICACAO, formatarDataHoraCurta, rotuloDefeito } from '@/modules/alertas/domain/mensagens'
+import { OP_RELATORIO, PMO_RELATORIO } from '@/modules/alertas/domain/parados'
 import { NOME_TIPO_REGRA } from '@/modules/alertas/domain/tipos'
 import {
   formatarValorOcorrencia,
@@ -29,6 +30,11 @@ import type { ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { listarOcorrenciasAction, resolverOcorrenciaAction } from '@/modules/alertas/application/alertas-actions'
 
 const TOAST = { position: 'bottom-center' } as const
+
+/** A ocorrência do relatório único do parado (PMO/OP fixos): não é de uma OP, é da regra. */
+function ehRelatorioParado(o: OcorrenciaLinha): boolean {
+  return o.regraTipo === 'parado' && o.pmo === PMO_RELATORIO && o.op === OP_RELATORIO
+}
 
 function quando(iso: string | null): string {
   if (!iso) return '—'
@@ -173,9 +179,19 @@ export function OcorrenciasLista({
                 </TableCell>
                 <TableCell>
                   {o.posto}
-                  {o.pmo && o.op ? ` (${o.pmo}/${o.op})` : ''}
+                  {o.pmo && o.op && !ehRelatorioParado(o) ? ` (${o.pmo}/${o.op})` : ''}
                 </TableCell>
-                <TableCell>{o.defeito ? rotuloDefeito(o.defeito) : '—'}</TableCell>
+                {/* A ocorrência do parado guarda a chave 'PMO/OP' na coluna do defeito: é a OP, e não
+                    um código de defeito, então não passa por `rotuloDefeito`. */}
+                <TableCell>
+                  {o.defeito
+                    ? ehRelatorioParado(o)
+                      ? 'Todas as OPs'
+                      : o.regraTipo === 'parado' || o.regraTipo === 'compels'
+                        ? `OP ${o.defeito}`
+                        : rotuloDefeito(o.defeito)
+                    : '—'}
+                </TableCell>
                 <TableCell>{formatarValorOcorrencia(o.regraTipo, o.valorAbertura)}</TableCell>
                 <TableCell>{formatarValorOcorrencia(o.regraTipo, o.valorUltimo)}</TableCell>
                 <TableCell>

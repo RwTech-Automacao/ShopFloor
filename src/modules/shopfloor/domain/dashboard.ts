@@ -1,8 +1,12 @@
+import { somarPecasPorSn } from './caixa'
+
 export interface RegistroContagem {
   posto: string
   status: string
   /** Nº de série normalizado — a contagem é por PEÇA, então o mesmo SN conta uma vez por posto. */
   sn: string
+  /** Placas que o bipe vale (sf_registros.pecas = placas por painel da OP). Ausente = 1. */
+  pecas?: number
 }
 
 /**
@@ -10,6 +14,7 @@ export interface RegistroContagem {
  * Posto com status conta as peças APROVADAS nele; posto sem status (e a Manutenção) conta as peças
  * que passaram por ele. Peça, não bipe: um reteste ou os vários registros de um reparo na
  * Manutenção não inflam a coluna — mesma régua da aba Geral e do "Contar diferentes" do legado.
+ * Em PLACAS: cada SN soma `pecas` uma vez (a da linha mais recente), nunca uma vez por linha.
  */
 export function contarPorPosto(
   postosDaOp: string[],
@@ -17,14 +22,15 @@ export function contarPorPosto(
   temStatus: (posto: string) => boolean,
 ): Record<string, number> {
   const colunas = [...postosDaOp, 'Manutenção']
-  const pecas = new Map<string, Set<string>>(colunas.map((c) => [c, new Set<string>()]))
-  for (const r of registros) {
+  const linhas = new Map<string, { numero_serie_norm: string; pecas: number }[]>(colunas.map((c) => [c, []]))
+  // Mais recente primeiro: somarPecasPorSn soma a 1ª linha de cada SN (os registros vêm em ordem de id).
+  for (const r of [...registros].reverse()) {
     const coluna = colunas.find((c) => c.toLowerCase() === r.posto.toLowerCase())
     if (!coluna || r.sn === '') continue
     if (temStatus(coluna) && r.status.toLowerCase() !== 'aprovado') continue
-    pecas.get(coluna)!.add(r.sn)
+    linhas.get(coluna)!.push({ numero_serie_norm: r.sn, pecas: r.pecas ?? 1 })
   }
-  return Object.fromEntries(colunas.map((c) => [c, pecas.get(c)!.size]))
+  return Object.fromEntries(colunas.map((c) => [c, somarPecasPorSn(linhas.get(c)!)]))
 }
 
 // ---------------------------------------------------------------------------

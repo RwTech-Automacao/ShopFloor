@@ -19,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollHorizontalTopo } from '@/shared/ui/scroll-horizontal-topo'
 import { registrarReparo } from '@/modules/shopfloor/application/manutencao-actions'
 import type { Ocorrencia } from '@/modules/shopfloor/domain/manutencao-pendencias'
+import { serieContem } from '@/modules/shopfloor/domain/serie'
 
 interface Conserto {
   descricao: string
@@ -51,7 +52,8 @@ export function ManutencaoLista({
       ocorrencias.filter((o) => {
         if (fCliente !== '' && o.cliente !== fCliente) return false
         if (fStatus !== '' && o.status !== fStatus) return false
-        if (fSn.trim() !== '' && !o.sn.toLowerCase().includes(fSn.trim().toLowerCase())) return false
+        // O SN é gravado sem separadores: o filtro ignora espaço, traço e maiúsculas ("0845801001 FNT" acha).
+        if (!serieContem(o.sn, fSn)) return false
         return true
       }),
     [ocorrencias, fCliente, fStatus, fSn],

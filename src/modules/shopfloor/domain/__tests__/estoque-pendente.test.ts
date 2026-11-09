@@ -4,6 +4,7 @@ import {
   agruparEstoquePendente,
   esperaAEntrada,
   podeReenviar,
+  resumirPendenteDaOp,
   situacaoDaLinha,
   type EntradaDoEstorno,
   type GrupoEstoquePendente,
@@ -290,3 +291,35 @@ function traduzirParaTeste(l: LinhaFilaEstoque): LinhaEstoquePendente {
   return grupos[0]!.linhas[0]!
 }
 
+describe('resumirPendenteDaOp (o aviso do Fluxo)', () => {
+  it('sem nada esperando: null', () => {
+    expect(resumirPendenteDaOp([])).toBeNull()
+  })
+
+  it('soma as peças das entradas pendentes e traz o selo e o motivo do primeiro bipe', () => {
+    const grupos = agruparEstoquePendente(
+      [
+        linha({ id: 'a', alvo: 'A', bipe: 'A', quantidade: 6, tentativas: 5, erro: 'O Compels recusou' }),
+        linha({ id: 'b', alvo: 'B', bipe: 'B', quantidade: 4 }),
+      ],
+      new Map(),
+      AGORA,
+    )
+    const r = resumirPendenteDaOp(grupos)!
+    expect(r.pecas).toBe(10)
+    expect(r.situacao).toBe('fora_da_fila')
+    expect(r.rotulo).toBe('Fora da fila')
+    expect(r.motivo).toBe('O Compels recusou')
+  })
+
+  it('o saldo é o que conta: entrada de 6 com 2 estornadas vale 4', () => {
+    const grupos = agruparEstoquePendente([linha({ quantidade: 6, estornado: 2 })], new Map(), AGORA)
+    expect(resumirPendenteDaOp(grupos)!.pecas).toBe(4)
+  })
+
+  it('estorno pendente sozinho (a entrada dele já chegou ao ERP) não conta como peça esperando', () => {
+    const estorno = linha({ id: 'e', operacao: 'estorno', quantidade: 3, entradaId: 'x', chave: 'k/S1', seqChave: 1 })
+    const grupos = agruparEstoquePendente([estorno], new Map([['x', { id: 'x', chave: 'k/E1', ok: true, canceladoEm: null, tentativas: 1 }]]), AGORA)
+    expect(resumirPendenteDaOp(grupos)).toBeNull()
+  })
+})

@@ -208,11 +208,14 @@ const COLUNAS_JUSTIFICATIVA = [
   'divergencia_justificada_em',
 ]
 
-/** De que item é a divergência: são os CINCO campos que o diálogo mostra no bloco de contexto
- *  (pedido de 09/10/2026), e ele os mostra igual no Fluxo, onde vêm da `rec_fluxo_emb_itens`.
+/** De que item é a divergência: são os SETE campos que o diálogo mostra no bloco de contexto
+ *  (pedido de 09/10/2026; EMB e PO acrescentadas em 06/11/2026), e ele os mostra igual no Fluxo, onde
+ *  vêm da `rec_fluxo_emb_itens`.
  *  Esconder a coluna "Código do Material" no layout não pode deixar o diálogo sem o código —
  *  é por isso que elas vão forçadas, e não porque o grid as exiba. */
 const COLUNAS_CONTEXTO_DIVERGENCIA = [
+  'numero_emb',
+  'numero_pedido',
   'codigo_material',
   'descricao_material',
   'quantidade_pedido',

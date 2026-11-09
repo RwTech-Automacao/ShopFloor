@@ -19,6 +19,17 @@ describe('leiturasDeRespostas', () => {
     expect(estado).toMatchObject({ empenhada: 10, requisitada: 10, apontada: 10, quantidadeOp: 10, tipoPropriedade: 0 })
   })
 
+  it('guarda o id de cada empenho e requisição (para pagar a pendência); sem id na lista, segue sem', () => {
+    const l = leiturasDeRespostas({
+      ...OP_8697,
+      empenhos: [{ ...emp(978), id: 7241, situacao: 'Pendente' }, emp(22)],
+      requisicoes: { data: [{ ...emp(978), id: 18510, situacao: 'Pendente' }] },
+    })
+    expect(l.empenhos[0]).toMatchObject({ id: 7241, situacao: 'Pendente' })
+    expect(l.empenhos[1]).not.toHaveProperty('id')
+    expect(l.requisicoes[0]).toMatchObject({ id: 18510, situacao: 'Pendente' })
+  })
+
   it('aceita a OP sem o embrulho `data`', () => {
     const l = leiturasDeRespostas({ ...OP_8697, op: OP_8697.op.data })
     expect(l.status).toBe('Produzida')

@@ -1,5 +1,8 @@
 import { CANAIS, NOME_CANAL, type Canal, type ResultadoEnvio, type ResultadoSimples } from '../domain/tipos'
+import { nomeDoQr, qrDoEnvio, type AnexoEnvio } from '../domain/anexos'
 import { textoDoEnvio } from '../domain/envio'
+import { baseDoShopfloor } from '../domain/links'
+import { gerarQrPng } from '../infra/qr'
 import { LIMITE_MENSAGEM, cortarUtf16 } from '../domain/mensagens'
 import type { PortasCanais, RepositorioEnvios } from './portas'
 
@@ -46,7 +49,16 @@ export interface ResumoAvaliacao extends ResumoEnvio {
 export async function entregarPendentes(
   portas: PortasCanais,
   repo: RepositorioEnvios,
-  opcoes: { ocorrenciaId?: string | null; limite?: number; orcamentoMs?: number; agora?: () => number } = {},
+  opcoes: {
+    ocorrenciaId?: string | null
+    limite?: number
+    orcamentoMs?: number
+    agora?: () => number
+    /** Gera o PNG do QR (troca-se nos testes). */
+    gerarQr?: (texto: string) => Promise<Uint8Array>
+    /** A origem dos links dos relatórios. Padrão: SHOPFLOOR_URL (ou o endereço de produção). */
+    urlBase?: string
+  } = {},
 ): Promise<ResumoEnvio> {
   const canais: Canal[] = CANAIS.filter((c) => portas[c])
   if (canais.length === 0) return { enviados: 0, falhas: 0 }
@@ -55,6 +67,7 @@ export async function entregarPendentes(
   const orcamento = opcoes.orcamentoMs ?? ORCAMENTO_ENTREGA_MS
   const agora = opcoes.agora ?? Date.now
   const inicio = agora()
+  const urlBase = opcoes.urlBase ?? baseDoShopfloor(process.env.SHOPFLOOR_URL)
 
   let enviados = 0
   let falhas = 0
@@ -74,11 +87,18 @@ export async function entregarPendentes(
         if (!porta) throw new Error(`${NOME_CANAL[envio.canal]} não configurado`)
         // Teto duro: o Discord RECUSA a mensagem inteira acima de 2000 (não corta), e a fila desistiria
         // após 3 tentativas. Cobre todos os tipos, inclusive o aviso de resolvido com explicação enorme.
-        texto = cortarUtf16(textoDoEnvio(envio.tipo, envio.dados), LIMITE_MENSAGEM)
+        texto = cortarUtf16(textoDoEnvio(envio.tipo, envio.dados, { urlBase }), LIMITE_MENSAGEM)
+        // Um envio que traz `qr` nos dados (a ficha de apontamento) vai com o QR anexado. A geração está DENTRO
+        // do try: se falhar, só esta linha vira falha e volta para a fila; as outras seguem.
+        const qr = qrDoEnvio(envio.dados)
+        const anexos: AnexoEnvio[] | undefined = qr
+          ? [{ nome: nomeDoQr(qr), tipo: 'image/png', bytes: await (opcoes.gerarQr ?? gerarQrPng)(qr) }]
+          : undefined
         resultado = await porta.enviar(
           { tipo: envio.destinoTipo, externoId: envio.externoId },
           texto,
           envio.comBotao ? envio.ocorrenciaId : null,
+          anexos,
         )
       } catch (e) {
         console.error(`[alertas] envio ${envio.id} falhou:`, mensagemDe(e))

@@ -117,7 +117,7 @@ export async function carregarGrade(
     return {
       ok: true,
       colunas: [...ordem.postos, 'Manutenção'],
-      resumo: montarResumoPorPosto(faixa.total, ordem.postos, registros, temStatus), // OP inteira (qualquer tamanho)
+      resumo: montarResumoPorPosto(faixa.total, ordem.postos, registros, temStatus, ordem.placas_por_painel), // OP inteira (qualquer tamanho)
       linhas: montarGrade(faixa.sns, ordem.postos, registros, temStatus),            // só a página
       total: faixa.total,
       pagina: pag,

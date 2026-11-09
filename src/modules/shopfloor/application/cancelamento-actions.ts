@@ -2,13 +2,19 @@
 
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
-import { postoCancelavel, ehEntradaDeCaixaAlmoxarifado } from '../domain/cancelamento'
+import {
+  postoCancelavel,
+  ehEntradaDeCaixaAlmoxarifado,
+  ehEntradaDeLoteAlmoxarifado,
+} from '../domain/cancelamento'
 import {
   lerRegistroParaCancelar,
   ehUltimoBipe,
   chamarSfCancelar,
   chamarSfCancelarCaixa,
   contarPecasDaEntradaDeCaixa,
+  lerLoteDaEntrada,
+  chamarSfCancelarLote,
 } from '../infra/cancelamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import { estadoCaixaDoRegistro } from '../infra/caixa-repository'
@@ -25,11 +31,21 @@ export interface CaixaDoRegistro {
   pecas: number
 }
 
+/**
+ * Informação da entrada de LOTE do Almoxarifado (0156): o rótulo do lote e quantas peças o
+ * cancelamento vai levar. A presença deste campo faz a tela oferecer "Cancelar o lote inteiro".
+ */
+export interface LoteDoRegistro {
+  rotulo: string
+  pecas: number
+}
+
 export interface CancelavelInfo {
   podeCancelar: boolean
   motivo?: string
   aviso?: string
   caixa?: CaixaDoRegistro
+  lote?: LoteDoRegistro
 }
 
 /** Checagem pro botão (UX): dá pra cancelar este bipe? Fail-closed.
@@ -54,6 +70,12 @@ export async function cancelavelInfo(id: string): Promise<CancelavelInfo> {
     // traduzida no diálogo.
     if (!(await ehUltimoBipe(reg.pmo, reg.op, reg.numeroSerieNorm, id))) {
       return { podeCancelar: false, motivo: 'Só o bipe mais recente deste SN pode ser cancelado — cancele o mais recente primeiro.' }
+    }
+    // Entrada de LOTE (0156): fail-closed de propósito — se não der pra saber se é lote, não oferece
+    // o cancelamento da linha avulsa (que a RPC recusaria com CANCELE_O_LOTE de qualquer jeito).
+    if (ehEntradaDeLoteAlmoxarifado(perfil?.recurso, reg.envioId)) {
+      const lote = await lerLoteDaEntrada(reg.envioId)
+      if (lote) return { podeCancelar: true, lote }
     }
     if (ehEntradaDeCaixaAlmoxarifado(perfil?.recurso, reg.numeroCaixa)) {
       // Best-effort: falhar a contagem não pode bloquear o cancelamento (a RPC conta de novo, dentro
@@ -120,6 +142,24 @@ export async function cancelarCaixaAlmoxarifado(
 }
 
 /**
+ * Cancela o LOTE INTEIRO de uma entrada do Almoxarifado (0156): as N linhas que a confirmação do lote
+ * gravou, de uma vez, com um motivo só, e a reversão do envio ao Compels (cancela o pendente ou gera o
+ * estorno). Mesma permissão do resto do cancelamento: `shopfloor.administrar`.
+ */
+export async function cancelarLoteAlmoxarifado(
+  id: string, motivo: string,
+): Promise<{ ok: true; canceladas: number } | { ok: false; erro: string }> {
+  const sessao = await getSessao()
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
+    return { ok: false, erro: SEM_PERMISSAO }
+  }
+  if (motivo.trim() === '') return { ok: false, erro: 'Informe o motivo do cancelamento.' }
+  const r = await chamarSfCancelarLote(id, motivo.trim())
+  if (r.ok) return { ok: true, canceladas: r.canceladas }
+  return { ok: false, erro: mensagemErroRpc(r.erro, 'Não foi possível cancelar o lote.') }
+}
+
+/**
  * Tradução dos códigos que a RPC de cancelamento levanta (`raise exception`) — as duas usam os
  * mesmos, então a tabela é uma só.
  *
@@ -131,6 +171,8 @@ function mensagemErroRpc(msg: string, fallback: string): string {
   if (msg.includes('NAO_E_ULTIMO')) return 'Só o bipe mais recente do SN pode ser cancelado — cancele o mais recente primeiro.'
   if (msg.includes('POSTO_NAO_CANCELAVEL')) return 'Este posto não pode ser cancelado por aqui.'
   if (msg.includes('NAO_E_ENTRADA_DE_CAIXA')) return 'Este registro não é uma entrada de caixa — use Cancelar lançamento.'
+  if (msg.includes('NAO_E_ENTRADA_DE_LOTE')) return 'Este registro não é uma entrada de lote — use Cancelar lançamento.'
+  if (msg.includes('CANCELE_O_LOTE')) return 'Esta peça entrou com um lote do NQA: cancele o lote inteiro.'
   if (msg.includes('MOTIVO_OBRIGATORIO')) return 'Informe o motivo do cancelamento.'
   if (msg.includes('SEM_PERMISSAO')) return SEM_PERMISSAO
   if (msg.includes('NAO_ENCONTRADO')) return 'Registro não encontrado (talvez já cancelado).'

@@ -68,11 +68,11 @@ describe('estadoDaOp', () => {
 })
 
 describe('pendência de material', () => {
-  it('empenho ou requisição "Pendente" (falta saldo de componente) marca temPendencia', () => {
+  it('requisição "Pendente" (falta saldo de componente) marca temPendencia; empenho "Pendente" não', () => {
     const empenho = { ...OP_8697, empenhos: [{ quantidade: 1000, quantidadeEstornar: 0, situacao: 'Pendente' }] }
     const requisicao = { ...OP_8697, requisicoes: [{ quantidade: 1000, quantidadeEstornar: 0, situacao: 'Pendente' }] }
-    expect(estadoDaOp(empenho).temPendencia).toBe(true)
     expect(estadoDaOp(requisicao).temPendencia).toBe(true)
+    expect(estadoDaOp(empenho).temPendencia).toBe(false)
     expect(estadoDaOp(OP_8697).temPendencia).toBe(false)
   })
 })

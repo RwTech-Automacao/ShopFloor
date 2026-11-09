@@ -76,3 +76,23 @@ describe('textoDoEnvio com tipo emb', () => {
     expect(() => textoDoEnvio('emb', { ...DADOS, divergencias: ['x'] })).toThrow()
   })
 })
+
+describe('textoDoEnvio com tipo emb — link do relatório', () => {
+  const opcoes = { urlBase: 'https://shopfloor.enterplak.com.br' }
+
+  it('com urlBase: o link da tela da EMB na última linha; a 1ª linha (assunto) não muda', () => {
+    const com = textoDoEnvio('emb', DADOS, opcoes).split('\n')
+    expect(com[com.length - 1]).toBe('Ver relatório completo: https://shopfloor.enterplak.com.br/recebimento/emb/EMB390')
+    expect(com[0]).toBe(textoDoEnvio('emb', DADOS).split('\n')[0])
+  })
+
+  it('EMB limpa: a linha única de sempre, sem link', () => {
+    const limpa = { ...DADOS, divergencias: [] }
+    expect(textoDoEnvio('emb', limpa, opcoes)).toBe(textoDoEnvio('emb', limpa))
+    expect(textoDoEnvio('emb', limpa, opcoes)).not.toContain('Ver relatório')
+  })
+
+  it('sem urlBase: como antes', () => {
+    expect(textoDoEnvio('emb', DADOS)).not.toContain('Ver relatório')
+  })
+})

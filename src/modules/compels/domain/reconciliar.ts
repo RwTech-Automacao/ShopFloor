@@ -11,15 +11,10 @@ export type CodigoErro =
   | 'propriedade_nao_suportada'
   | 'acima_da_op'
   | 'estorno_na_op'
-  | 'abaixo_do_enviado'
-  | 'fora_do_esperado'
-  | 'requisicao_fora_do_esperado'
-  | 'sem_empenho'
-  | 'pendencia_no_erp'
 
 export type Decisao =
   | { tipo: 'ja_enviada' }
-  | { tipo: 'enviar'; requisitar: number; apontar: number }
+  | { tipo: 'enviar'; apontar: number; avisos: string[] }
   | { tipo: 'erro'; codigo: CodigoErro; mensagem: string }
 
 /** Textos mostrados na tela de pendências. Em português claro, sem termo de API. */
@@ -28,11 +23,6 @@ export const MENSAGEM_ERRO: Record<CodigoErro, string> = {
   propriedade_nao_suportada: 'OP com estoque que não é próprio (ex.: em terceiros). Faça a entrada à mão no Compels.',
   acima_da_op: 'A entrada passa da quantidade da OP no Compels.',
   estorno_na_op: 'A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar.',
-  abaixo_do_enviado: 'Leitura inconsistente: o Compels mostra menos apontado do que já enviamos.',
-  fora_do_esperado: 'OP com apontamento fora do esperado no Compels. Confira antes de reenviar.',
-  requisicao_fora_do_esperado: 'OP com requisição fora do esperado no Compels (alguém requisitou à mão). Confira antes de reenviar.',
-  sem_empenho: 'OP sem empenho suficiente no Compels.',
-  pendencia_no_erp: 'Há pendência de material no Compels (falta saldo de componente). Resolva lá e reenvie.',
 }
 
 function erro(codigo: CodigoErro): Decisao {
@@ -52,27 +42,31 @@ export function decidirEntrada(
   if (novo > estado.quantidadeOp) return erro('acima_da_op')
   if (estado.temEstorno) return erro('estorno_na_op')
 
-  // Já enviada: o ERP cobre esta entrada (inclui a retomada depois de uma falha no meio).
-  if (estado.apontada >= novo) return { tipo: 'ja_enviada' }
+  // Já enviada: o ERP está EXATAMENTE no acumulado novo (a retomada depois de uma falha no meio: a entrada
+  // foi gravada e só o registro dela falhou). Tem que ser IGUAL, não "pelo menos": gravar de novo contaria a
+  // entrada em dobro, e esta é a única conferência de apontado que ainda segura a gravação.
+  if (estado.apontada === novo) return { tipo: 'ja_enviada' }
 
-  // O ERP tem menos do que já enviamos, ou um valor que não é "exatamente até a entrada anterior":
-  // alguém mexeu à mão. Parar é mais seguro do que contar em dobro.
-  if (estado.apontada < anterior) return erro('abaixo_do_enviado')
-  if (estado.apontada !== anterior) return erro('fora_do_esperado')
-
-  if (estado.temPendencia) return erro('pendencia_no_erp')
-  if (estado.empenhada < novo) return erro('sem_empenho')
-
-  // Cada entrada é UMA requisição + UM apontamento. O ERP precisa estar no ponto certo:
-  // - requisitada == anterior: caminho normal, requisita e aponta a quantidade da entrada;
-  // - requisitada == novo: a requisição desta entrada já foi feita e o apontamento falhou (retomada),
-  //   então só falta apontar. Requisitar de novo duplicaria;
-  // - qualquer outro valor (ex.: alguém requisitou à frente ou à mão): para.
-  if (estado.requisitada === anterior) {
-    return { tipo: 'enviar', requisitar: quantidade, apontar: quantidade }
+  // A integração SÓ APONTA: quem requisita é o pessoal do Compels. Empenho e requisição insuficientes não
+  // bloqueiam aqui (o que bloqueia é o saldo requisitado disponível por componente, conferido antes de gravar);
+  // viram AVISO. A requisição não precisa ter uma quantidade exata, só ser suficiente (`requisitada >= novo`).
+  const avisos: string[] = []
+  // QUANTIDADE INESPERADA (decisão de 06/11/2026): o apontado do ERP não é o que o ShopFloor esperava (apontamento
+  // manual, antecipado para faturamento, estorno à mão, outra leva da mesma OP). Antes isso PARAVA a entrada; agora
+  // grava e AVISA, porque parar travava a fila por algo que a integração não tem como resolver sozinha.
+  if (estado.apontada !== anterior) {
+    const diferenca = q6(estado.apontada - anterior)
+    const sentido = diferenca > 0 ? `a mais: ${diferenca}` : `a menos: ${q6(-diferenca)}`
+    avisos.push(
+      `quantidade inesperada no Compels: mostra ${estado.apontada} apontadas, esperado ${anterior} antes desta entrada (${sentido}). `
+      + 'Foi gravado mesmo assim; confira se há apontamento manual ou estorno nesta OP',
+    )
   }
-  if (estado.requisitada === novo) {
-    return { tipo: 'enviar', requisitar: 0, apontar: quantidade }
+  if (estado.empenhada < novo) {
+    avisos.push(`empenho insuficiente no Compels: empenhado ${estado.empenhada}, precisa de ${novo} (faltam ${q6(novo - estado.empenhada)})`)
   }
-  return erro('requisicao_fora_do_esperado')
+  if (estado.requisitada < novo) {
+    avisos.push(`requisição insuficiente no Compels: requisitado ${estado.requisitada}, precisa de ${novo} (faltam ${q6(novo - estado.requisitada)})`)
+  }
+  return { tipo: 'enviar', apontar: quantidade, avisos }
 }
