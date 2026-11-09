@@ -63,11 +63,13 @@ export function leiturasDeRespostas(r: RespostasCruas): LeiturasOp {
     tipoPropriedade: numero(op, 'tipoPropriedade', 'op'),
     quantidadeOp: numero(op, 'quantidade', 'op'),
     empenhos: listaDe(r.empenhos, 'empenhos').map((e) => ({
+      ...(typeof e.id === 'number' ? { id: e.id } : {}),
       quantidade: numero(e, 'quantidade', 'empenho'),
       quantidadeEstornar: numero(e, 'quantidadeEstornar', 'empenho'),
       situacao: texto(e, 'situacao', 'empenho'),
     })),
     requisicoes: listaDe(r.requisicoes, 'requisicoes').map((q) => ({
+      ...(typeof q.id === 'number' ? { id: q.id } : {}),
       quantidade: numero(q, 'quantidade', 'requisicao'),
       quantidadeEstornar: numero(q, 'quantidadeEstornar', 'requisicao'),
       situacao: texto(q, 'situacao', 'requisicao'),

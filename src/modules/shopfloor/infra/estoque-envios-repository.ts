@@ -231,6 +231,19 @@ export function criarSomaEnviada(
 }
 
 /**
+ * O erro da tentativa ANTERIOR de uma linha da fila (o que a tela de pendências mostra). `null` = sem erro
+ * (linha nova). O pagamento automático de pendência só age quando ele diz que faltou saldo requisitado.
+ */
+export function criarErroAnterior(sb: SupabaseClient = createServiceSupabase()): (id: string) => Promise<string | null> {
+  return async (id) => {
+    const { data, error } = await sb.from('sf_estoque_envios').select('erro').eq('id', id).maybeSingle()
+    if (error) throw new Error(`sf_estoque_envios (erro anterior): ${error.message}`)
+    const erro = (data as { erro?: unknown } | null)?.erro
+    return typeof erro === 'string' ? erro : null
+  }
+}
+
+/**
  * O PONTO DE PARTIDA de cada OP do Compels (migração 0168): o apontado que ela já tinha lá quando a
  * integração gravou pela primeira vez. `op` é o número do Compels (só dígitos).
  */

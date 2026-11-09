@@ -192,6 +192,34 @@ export class ClienteCompels {
     return this.gravar('/apontamentoOrdemProducao/save', corpo)
   }
 
+  /** Detalhe de UM empenho (`empenho/findById/{id}`), com os itens e a pendência de cada um. Só leitura. */
+  lerEmpenho(id: number): Promise<unknown> {
+    return this.json(`/empenho/findById/${id}?page=1&start=0&limit=25`)
+  }
+
+  /** Detalhe de UMA requisição (`requisicaoOrdemProducao/findById`), com os itens e a pendência. Só leitura. */
+  lerRequisicao(id: number): Promise<unknown> {
+    return this.json('/requisicaoOrdemProducao/findById', this.formulario({ id: String(id), page: '1', start: '0', limit: '50' }))
+  }
+
+  /** Corpo em JSON puro (não `jsonData=` de formulário), como a tela manda nos dois "Pagar Pendência". */
+  private async gravarJson(caminho: string, corpo: Record<string, unknown>): Promise<ResultadoGravacao> {
+    const r = await this.enviar(caminho, { method: 'POST', body: JSON.stringify(corpo) })
+    let resposta: unknown = null
+    try { resposta = await r.json() } catch { /* sem corpo JSON */ }
+    return resultadoDaGravacao(r.status, resposta)
+  }
+
+  /** `empenho/pagarPendencia`. GRAVA no Compels (empenha o que faltou). O ERP processa depois ("consulte a situação"). */
+  pagarPendenciaEmpenho(corpo: Record<string, unknown>): Promise<ResultadoGravacao> {
+    return this.gravarJson('/empenho/pagarPendencia', corpo)
+  }
+
+  /** `requisicaoOrdemProducao/pagarPendencia`. GRAVA no Compels (requisita o que faltou). Também processa depois. */
+  pagarPendenciaRequisicao(corpo: Record<string, unknown>): Promise<ResultadoGravacao> {
+    return this.gravarJson('/requisicaoOrdemProducao/pagarPendencia', corpo)
+  }
+
   /**
    * Saldo de estoque de UM item (a PMO) pela tela Movimento de Item. Só leitura. `null` = o item não veio
    * na resposta (código exato). Pede os itens de saldo zero também, senão "não existe" e "zero" se

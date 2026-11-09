@@ -1,11 +1,17 @@
 import 'server-only'
-import { enviarEntrada, type PortaErp } from '@/modules/compels/application/enviar-entrada'
+import { AGUARDANDO_REQUISICAO, enviarEntrada, type PortaErp } from '@/modules/compels/application/enviar-entrada'
 import { opLiberada } from '@/modules/compels/domain/liberacao'
 import { semSufixo } from '@/modules/compels/domain/sem-sufixo'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
-import { ConfiguracaoIncompleta, EstoqueNaoConfigurado, configDoAmbiente, destinoDoEstoque } from '@/modules/compels/infra/config'
+import {
+  ConfiguracaoIncompleta,
+  EstoqueNaoConfigurado,
+  configDoAmbiente,
+  destinoDoEstoque,
+  pagarPendenciaLigado,
+} from '@/modules/compels/infra/config'
 import type { EnvioEstoqueReservado, PortaCompels, ResultadoEnvioEstoque } from '../application/enviar-estoque'
-import { criarBaseDaOp, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
+import { criarBaseDaOp, criarErroAnterior, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
 
 /**
  * O ÚLTIMO METRO DA FILA DE ESTOQUE: entrega UMA linha da fila ao Compels (Requisitar + Apontar).
@@ -21,7 +27,8 @@ import { criarBaseDaOp, criarSomaEnviada, type BaseDaOp } from './estoque-envios
  * COMPELS_EZPOINT_EMPRESA (padrão `enterplak`); COMPELS_ESTOQUE_ID e COMPELS_LOCACAO_ID (padrão 217 e
  * 5314: estoque PA, locação Padrão); COMPELS_ESTOQUE_EINTER_ID e COMPELS_LOCACAO_EINTER_ID (SEM padrão:
  * o estoque EINTER escolhido no Almoxarifado, 0175; sem as duas, a linha EINTER espera); COMPELS_OPS_LIBERADAS (OPs que a integração pode enviar, ou `*`;
- * VAZIA = nenhuma).
+ * VAZIA = nenhuma); COMPELS_PAGAR_PENDENCIA (`1` liga o "Pagar Pendência" automático, só a partir da 2ª tentativa
+ * da linha que esperou por falta de saldo; ausente/vazia = desligado).
  *
  * Esperar não é falhar: tudo o que é recusado ANTES de gravar no ERP e passa sozinho (OP em uso, sem
  * empenho, pendência de material, falta de saldo, ERP fora do ar, OP ainda não liberada) volta como
@@ -42,6 +49,8 @@ export interface DependenciasPortaCompels {
   somaEnviada?: (pmo: string, op: string, excetoId: string) => Promise<number>
   /** Para teste: o ponto de partida por OP do Compels. Em produção é a tabela da 0168. */
   base?: BaseDaOp
+  /** Para teste: o erro da tentativa anterior da linha. Em produção é a coluna `erro` da fila. */
+  erroAnterior?: (id: string) => Promise<string | null>
 }
 
 /** Marca gravada na Observação do apontamento: curta, e a chave diz que bipe foi. */
@@ -58,6 +67,7 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
   let erp: PortaErp | undefined = deps.erp
   const somaEnviada = deps.somaEnviada ?? criarSomaEnviada()
   const baseDaOp = deps.base ?? criarBaseDaOp()
+  const erroAnterior = deps.erroAnterior ?? criarErroAnterior()
   const esperando = new Map<string, ResultadoEnvioEstoque>()
 
   return async function enviarMovimentacaoCompels(envio: EnvioEstoqueReservado): Promise<ResultadoEnvioEstoque> {
@@ -94,6 +104,10 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
       // gravação, tabela da 0168). Chave = o número da OP no Compels, que é o mesmo para 8682 e 8682_F.
       const opCompels = opBase
       const base = await baseDaOp.ler(opCompels)
+      // PAGAR PENDÊNCIA (09/11/2026): só a partir da 2ª tentativa. A 1ª que bate em falta de saldo só espera (e o
+      // erro fica na linha); se a seguinte ainda faltar, a integração paga a pendência do empenho e da requisição.
+      const pagarPendencia =
+        pagarPendenciaLigado(env) && (await erroAnterior(envio.id))?.startsWith(AGUARDANDO_REQUISICAO) === true
       const r = await enviarEntrada(
         erp,
         {
@@ -104,6 +118,7 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
           marca: marcaDaLinha(envio),
           base,
           guardarBase: (valor) => baseDaOp.guardar(opCompels, valor),
+          pagarPendencia,
         },
         { destino },
       )

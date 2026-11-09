@@ -8,6 +8,7 @@ import {
 } from '../domain/corpos'
 import { estadoDaOp, q6, type LeiturasOp } from '../domain/estado-op'
 import { RespostaInesperada } from '../domain/leituras-erp'
+import { corpoPendenciaEmpenho, corpoPendenciaRequisicao, descreverPagamento, PendenciaManual } from '../domain/pendencia'
 import { decidirEntrada } from '../domain/reconciliar'
 import type { ResultadoGravacao } from '../domain/resposta-erp'
 import { semSufixo } from '../domain/sem-sufixo'
@@ -26,6 +27,14 @@ export interface PortaErp {
   liberarTrava(idOp: number): Promise<void>
   consultarDisponibilidade(op: DadosOp, quantidade: number): Promise<ComponenteApontamento[]>
   apontar(corpo: Record<string, unknown>): Promise<ResultadoGravacao>
+  /**
+   * "Pagar Pendência" (06/11/2026). Opcionais: sem eles a integração nunca paga pendência (só espera alguém pagar
+   * no Compels). Os dois `ler*` devolvem o DETALHE cru; os dois `pagar*` GRAVAM no ERP.
+   */
+  lerEmpenho?(id: number): Promise<unknown>
+  lerRequisicao?(id: number): Promise<unknown>
+  pagarPendenciaEmpenho?(corpo: Record<string, unknown>): Promise<ResultadoGravacao>
+  pagarPendenciaRequisicao?(corpo: Record<string, unknown>): Promise<ResultadoGravacao>
 }
 
 export interface EntradaParaEnviar {
@@ -47,6 +56,12 @@ export interface EntradaParaEnviar {
   guardarBase?: (base: number) => Promise<void>
   /** Texto gravado na Observação do apontamento (marca de rastreio). */
   marca?: string
+  /**
+   * Pode pagar a pendência de empenho/requisição se faltar saldo. Quem chama só liga isto a partir da SEGUNDA
+   * tentativa da linha, quando a anterior já esperou por falta de saldo (decisão de 09/11/2026): a primeira só
+   * avisa, e o pessoal do Compels tem a chance de resolver à mão antes.
+   */
+  pagarPendencia?: boolean
 }
 
 export type ResultadoEntrada =
@@ -64,10 +79,20 @@ export type ResultadoEntrada =
 export interface OpcoesEnvio {
   destino: DestinoEstoque
   agora?: () => Date
+  /** Pausa entre as releituras depois de pagar a pendência (o Compels processa depois). Nos testes, instantânea. */
+  esperar?: (ms: number) => Promise<void>
 }
 
+/** Começo da mensagem de "falta saldo requisitado": a fila guarda o erro, e quem chama o reconhece na tentativa seguinte. */
+export const AGUARDANDO_REQUISICAO = 'Aguardando requisição no Compels'
+
+/** Depois de pagar: até 4 releituras, 3 s entre elas (no HAR o Compels respondeu "consulte a situação"). */
+const RELEITURAS_APOS_PAGAR = 4
+const PAUSA_APOS_PAGAR_MS = 3000
+
 export type Plano =
-  | { tipo: 'erro'; erro: string; tentarDeNovo: boolean }
+  /** `semSaldo`: falta saldo requisitado de algum componente (o caso em que pagar a pendência pode resolver). */
+  | { tipo: 'erro'; erro: string; tentarDeNovo: boolean; semSaldo?: true }
   | { tipo: 'ja_enviada' }
   | {
       tipo: 'enviar'
@@ -94,7 +119,7 @@ function numeroDaOp(texto: string): number | null {
 
 function aguardandoRequisicao(componentes: { codigo: string; precisa: number; tem: number }[]): string {
   const lista = componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, requisitado disponível ${c.tem})`).join('; ')
-  return `Aguardando requisição no Compels: ${lista}.`
+  return `${AGUARDANDO_REQUISICAO}: ${lista}.`
 }
 
 /** Avisos (empenho/requisição insuficientes) em uma frase para colar no fim de outra mensagem. */
@@ -141,7 +166,7 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
   // `saldoDisponivel` é o material JÁ REQUISITADO e ainda não consumido por apontamento (não é o estoque livre da
   // prateleira). A integração não requisita: se não houver o bastante, espera alguém requisitar no Compels.
   const sem = componentesSemSaldo(componentes).map((c) => ({ codigo: c.codigo, precisa: c.quantidadeUtilizada, tem: c.saldoDisponivel }))
-  if (sem.length > 0) return recusa(`${aguardandoRequisicao(sem)}${textoAvisos(decisao.avisos)}`, true)
+  if (sem.length > 0) return { ...recusa(`${aguardandoRequisicao(sem)}${textoAvisos(decisao.avisos)}`, true), semSaldo: true }
 
   const apontar = corpoApontamento({
     opId: op.id,
@@ -166,6 +191,7 @@ async function planejar(erp: PortaErp, op: DadosOp, e: EntradaParaEnviar, opcoes
 }
 
 function erroDeExcecao(e: unknown): { ok: false; erro: string; tentarDeNovo: boolean } {
+  if (e instanceof PendenciaManual) return { ok: false, erro: e.message, tentarDeNovo: true }
   if (e instanceof RespostaInesperada) return { ok: false, erro: `${e.message} Confira o Compels antes de reenviar.`, tentarDeNovo: false }
   if (e instanceof ErroDeLogin) return { ok: false, erro: e.message, tentarDeNovo: true }
   return { ok: false, erro: `Erro ao falar com o Compels: ${e instanceof Error ? e.message : String(e)}`, tentarDeNovo: true }
@@ -174,6 +200,37 @@ function erroDeExcecao(e: unknown): { ok: false; erro: string; tentarDeNovo: boo
 /** Falha da entrega; `gravou` = já chamou algum gesto que GRAVA no ERP (aí não é "só esperar"). */
 function falha(erro: string, tentarDeNovo: boolean, gravou: boolean): ResultadoEntrada {
   return { ok: false, erro, tentarDeNovo, aguardar: tentarDeNovo && !gravou }
+}
+
+type Pagamento = { ok: true; pagos: string[] } | { ok: false; erro: string; tentarDeNovo: boolean }
+
+/**
+ * Paga a pendência dos empenhos e depois das requisições 'Pendente' da OP, como o botão da tela: só os itens que
+ * faltam, e a pendência INTEIRA de cada um. Empenho primeiro: no HAR, pagar só o empenho não destravou o
+ * apontamento; foi a requisição que destravou, e ela vem depois do empenho.
+ */
+async function pagarPendencias(erp: PortaErp, op: DadosOp): Promise<Pagamento> {
+  if (!erp.lerEmpenho || !erp.lerRequisicao || !erp.pagarPendenciaEmpenho || !erp.pagarPendenciaRequisicao) {
+    return { ok: true, pagos: [] }
+  }
+  const leituras = await erp.lerOp(op)
+  const pagos: string[] = []
+  const passos = [
+    { tipo: 'empenho' as const, linhas: leituras.empenhos, ler: erp.lerEmpenho, montar: corpoPendenciaEmpenho, pagar: erp.pagarPendenciaEmpenho },
+    { tipo: 'requisição' as const, linhas: leituras.requisicoes, ler: erp.lerRequisicao, montar: corpoPendenciaRequisicao, pagar: erp.pagarPendenciaRequisicao },
+  ]
+  for (const passo of passos) {
+    for (const linha of passo.linhas) {
+      if (linha.situacao !== 'Pendente' || linha.id === undefined) continue
+      const pagamento = passo.montar(await passo.ler.call(erp, linha.id))
+      if (!pagamento) continue
+      const r = await passo.pagar.call(erp, pagamento.corpo)
+      const descricao = descreverPagamento(passo.tipo, pagamento)
+      if (!r.ok) return { ok: false, erro: `Não consegui pagar a pendência no Compels (${descricao}): ${r.mensagem}`, tentarDeNovo: r.tentarDeNovo }
+      pagos.push(descricao)
+    }
+  }
+  return { ok: true, pagos }
 }
 
 /**
@@ -205,7 +262,24 @@ export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes:
     travada = op.id
 
     // O estado é lido DEPOIS da trava: ninguém muda a OP entre a leitura e a gravação.
-    const plano = await planejar(erp, op, e, opcoes)
+    let plano = await planejar(erp, op, e, opcoes)
+
+    // Falta saldo e esta linha já esperou por isso antes: paga a pendência e relê até o Compels processar.
+    let pagos: string[] = []
+    if (plano.tipo === 'erro' && plano.semSaldo && e.pagarPendencia) {
+      const p = await pagarPendencias(erp, op)
+      if (!p.ok) return falha(p.erro, p.tentarDeNovo, false)
+      pagos = p.pagos
+      const esperar = opcoes.esperar ?? ((ms: number) => new Promise<void>((ok) => setTimeout(ok, ms)))
+      for (let i = 0; pagos.length > 0 && i < RELEITURAS_APOS_PAGAR; i++) {
+        await esperar(PAUSA_APOS_PAGAR_MS)
+        plano = await planejar(erp, op, e, opcoes)
+        if (!(plano.tipo === 'erro' && plano.semSaldo)) break
+      }
+      if (pagos.length > 0 && plano.tipo === 'erro' && plano.semSaldo) {
+        return falha(`${plano.erro} Pendência paga no Compels (${pagos.join('; ')}); aguardando o Compels processar.`, true, false)
+      }
+    }
     if (plano.tipo === 'erro') return falha(plano.erro, plano.tentarDeNovo, false)
     if (plano.tipo === 'ja_enviada') return { ok: true, detalhe: 'O Compels já tinha esta entrada.' }
 
@@ -238,10 +312,11 @@ export async function enviarEntrada(erp: PortaErp, e: EntradaParaEnviar, opcoes:
         gravou,
       )
     }
+    const avisos = pagos.length > 0 ? [`pendência paga automaticamente no Compels (${pagos.join('; ')})`, ...plano.avisos] : plano.avisos
     return {
       ok: true,
-      detalhe: `Apontado.${textoAvisos(plano.avisos)}`,
-      ...(plano.avisos.length > 0 ? { aviso: plano.avisos.join('; ') } : {}),
+      detalhe: `Apontado.${textoAvisos(avisos)}`,
+      ...(avisos.length > 0 ? { aviso: avisos.join('; ') } : {}),
     }
   } catch (erro) {
     const r = erroDeExcecao(erro)

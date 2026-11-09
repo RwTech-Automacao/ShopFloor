@@ -37,6 +37,14 @@ export function configDoAmbiente(env: Record<string, string | undefined> = proce
   }
 }
 
+/**
+ * "Pagar Pendência" automático (09/11/2026): DESLIGADO por padrão. Liga com `COMPELS_PAGAR_PENDENCIA=1` (ou `true`).
+ * Desligado, a integração só espera alguém pagar a pendência no Compels, como antes.
+ */
+export function pagarPendenciaLigado(env: Record<string, string | undefined> = process.env): boolean {
+  return ['1', 'true', 'sim'].includes((env.COMPELS_PAGAR_PENDENCIA ?? '').trim().toLowerCase())
+}
+
 /** Estoque e locação onde o apontamento dá entrada do produto acabado (estoque 217 `PA`, locação 5314 `Padrão`). */
 export interface DestinoConfig {
   estoqueId: number

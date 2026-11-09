@@ -374,3 +374,130 @@ describe('ensaiarEntrada (não grava e não pega a trava)', () => {
     expect((await ensaiarEntrada(erp, ENTRADA, opcoes)).tipo).toBe('erro')
   })
 })
+
+describe('enviarEntrada — pagar pendência (a partir da 2ª tentativa por falta de saldo)', () => {
+  // Detalhes mínimos no formato de `empenho/findById` e `requisicaoOrdemProducao/findById` (HAR de 06/11/2026).
+  const OP_EMB = {
+    id: 13027, numero: 8649, tipoPropriedade: 0, operacaoMista: false, negociante: { id: 1679 },
+    composicaoProduto: { item: { id: 22078 } },
+  }
+  const detalheEmpenho = (pendente: number, rastreavel = false) => ({
+    id: 7241, numero: 2, quantidade: 1000, quantidadeEmpenhada: 1000, quantidadeEstornar: 0, quantidadeRequisitada: 1000,
+    ordemProducao: OP_EMB,
+    itemEmpenhoOrdemProducaoList: [{
+      id: 1, itemOrdemProducaoId: 138103, itemFantasma: false, item: { id: 12225, codigo: 'RWCI57', rastreavel },
+      quantidadeEmpenhada: 1000 - pendente, quantidadeComposicao: 1000, quantidadePendente: pendente, ordemProducaoFilha: null,
+    }],
+  })
+  const detalheRequisicao = (pendente: number, rastreavel = false) => ({
+    data: {
+      id: 18510, numero: 2, quantidade: 1000, ordemProducao: OP_EMB,
+      itemRequisicaOrdemProducaoList: [{
+        id: 2, itemOrdemProducaoId: 138103, itemFantasma: false, item: { id: 12225, codigo: 'RWCI57', rastreavel },
+        quantidade: 1000 - pendente, quantidadeComposicaoCalculada: 1000, quantidadePendente: pendente, ordemProducaoFilha: null,
+      }],
+    },
+  })
+  const pendentes: Partial<LeiturasOp> = {
+    empenhos: [{ id: 7241, quantidade: 1000, quantidadeEstornar: 0, situacao: 'Pendente' }],
+    requisicoes: [{ id: 18510, quantidade: 1000, quantidadeEstornar: 0, situacao: 'Pendente' }],
+  }
+  const semEspera = { ...opcoes, esperar: async () => {} }
+
+  /** Compels em que o saldo requisitado só aparece depois de pagar a pendência da REQUISIÇÃO (como no HAR). */
+  function comPendencia(o: { inicial?: Partial<LeiturasOp>; processaEm?: number; desvios?: Partial<PortaErp>; rastreavel?: boolean } = {}) {
+    let pagouRequisicao = false
+    let consultasDepois = 0
+    const base = fingir(o.inicial ?? pendentes)
+    const erp: PortaErp = {
+      ...base.erp,
+      async consultarDisponibilidade(_op, q) {
+        base.chamadas.push('consultarDisponibilidade')
+        if (pagouRequisicao) consultasDepois++
+        const processou = pagouRequisicao && consultasDepois >= (o.processaEm ?? 1)
+        return [linhaDisp(q, processou ? 1000 : 0)]
+      },
+      async lerEmpenho() { base.chamadas.push('lerEmpenho'); return detalheEmpenho(178, o.rastreavel) },
+      async lerRequisicao() { base.chamadas.push('lerRequisicao'); return detalheRequisicao(498, o.rastreavel) },
+      async pagarPendenciaEmpenho() { base.chamadas.push('pagarPendenciaEmpenho'); return OK },
+      async pagarPendenciaRequisicao() { base.chamadas.push('pagarPendenciaRequisicao'); pagouRequisicao = true; return OK },
+      ...o.desvios,
+    }
+    return { erp, chamadas: base.chamadas }
+  }
+
+  it('1ª tentativa (pagarPendencia desligado): só espera, NÃO paga nada', async () => {
+    const { erp, chamadas } = comPendencia()
+    const r = await enviarEntrada(erp, ENTRADA, semEspera)
+    expect(r).toMatchObject({ ok: false, aguardar: true })
+    expect(r.ok === false && r.erro).toContain('Aguardando requisição no Compels')
+    expect(chamadas).not.toContain('pagarPendenciaEmpenho')
+    expect(chamadas).not.toContain('pagarPendenciaRequisicao')
+    expect(chamadas).not.toContain('apontar')
+  })
+
+  it('2ª tentativa: paga empenho e depois requisição, relê, aponta e avisa o que pagou', async () => {
+    const { erp, chamadas } = comPendencia()
+    const r = await enviarEntrada(erp, { ...ENTRADA, pagarPendencia: true }, semEspera)
+    expect(r.ok).toBe(true)
+    expect(r.ok && r.aviso).toContain('pendência paga automaticamente no Compels (empenho nº 2: RWCI57 +178; requisição nº 2: RWCI57 +498)')
+    expect(chamadas).toEqual([
+      'buscarOp', 'adquirirTrava', 'lerOp', 'consultarDisponibilidade',
+      'lerOp', 'lerEmpenho', 'pagarPendenciaEmpenho', 'lerRequisicao', 'pagarPendenciaRequisicao',
+      'lerOp', 'consultarDisponibilidade', 'apontar', 'lerOp', 'liberarTrava',
+    ])
+  })
+
+  it('o Compels demora a processar: relê até 4 vezes com pausa; se resolver na 3ª, aponta', async () => {
+    const pausas: number[] = []
+    const { erp, chamadas } = comPendencia({ processaEm: 3 })
+    const r = await enviarEntrada(erp, { ...ENTRADA, pagarPendencia: true }, { ...opcoes, esperar: async (ms) => { pausas.push(ms) } })
+    expect(r.ok).toBe(true)
+    expect(pausas).toEqual([3000, 3000, 3000])
+    expect(chamadas.filter((c) => c === 'apontar')).toHaveLength(1)
+  })
+
+  it('pagou mas o Compels não processou nas 4 releituras: espera (sem gastar tentativa) e diz que pagou', async () => {
+    const { erp, chamadas } = comPendencia({ processaEm: 99 })
+    const r = await enviarEntrada(erp, { ...ENTRADA, pagarPendencia: true }, semEspera)
+    expect(r).toMatchObject({ ok: false, aguardar: true, tentarDeNovo: true })
+    expect(r.ok === false && r.erro).toContain('Pendência paga no Compels (empenho nº 2: RWCI57 +178; requisição nº 2: RWCI57 +498)')
+    expect(chamadas).not.toContain('apontar')
+    expect(chamadas.at(-1)).toBe('liberarTrava')
+  })
+
+  it('falta saldo mas nada está Pendente (requisição menor que o preciso): não paga nada, só espera', async () => {
+    const { erp, chamadas } = comPendencia({ inicial: {} })
+    const r = await enviarEntrada(erp, { ...ENTRADA, pagarPendencia: true }, semEspera)
+    expect(r).toMatchObject({ ok: false, aguardar: true })
+    expect(r.ok === false && r.erro).not.toContain('Pendência paga')
+    expect(chamadas).not.toContain('pagarPendenciaEmpenho')
+    expect(chamadas).not.toContain('pagarPendenciaRequisicao')
+  })
+
+  it('o Compels recusa o pagamento: não aponta e devolve a mensagem dele', async () => {
+    const { erp, chamadas } = comPendencia({
+      desvios: { pagarPendenciaRequisicao: async () => ({ ok: false, codigo: 'sem_saldo', mensagem: 'Saldo insuficiente do item PRT706', tentarDeNovo: true }) },
+    })
+    const r = await enviarEntrada(erp, { ...ENTRADA, pagarPendencia: true }, semEspera)
+    expect(r).toMatchObject({ ok: false, aguardar: true })
+    expect(r.ok === false && r.erro).toContain('Não consegui pagar a pendência no Compels (requisição nº 2: RWCI57 +498): Saldo insuficiente do item PRT706')
+    expect(chamadas).not.toContain('apontar')
+  })
+
+  it('componente rastreável pendente: não paga a requisição, espera e manda pagar à mão', async () => {
+    const { erp, chamadas } = comPendencia({ rastreavel: true })
+    const r = await enviarEntrada(erp, { ...ENTRADA, pagarPendencia: true }, semEspera)
+    expect(r).toMatchObject({ ok: false, aguardar: true })
+    expect(r.ok === false && r.erro).toContain('rastreável')
+    expect(chamadas).not.toContain('pagarPendenciaRequisicao')
+    expect(chamadas).not.toContain('apontar')
+  })
+
+  it('porta sem os métodos de pendência (ERP antigo/teste): segue como antes, só espera', async () => {
+    const { erp, chamadas } = fingir(pendentes, { consultarDisponibilidade: async (_op, q) => [linhaDisp(q, 0)] })
+    const r = await enviarEntrada(erp, { ...ENTRADA, pagarPendencia: true }, semEspera)
+    expect(r).toMatchObject({ ok: false, aguardar: true })
+    expect(chamadas).not.toContain('apontar')
+  })
+})
