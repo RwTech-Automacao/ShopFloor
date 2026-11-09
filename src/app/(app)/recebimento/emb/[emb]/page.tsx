@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { IrParaEmb } from '../ir-para-emb'
+import { BotaoJustificar } from '../botao-justificar'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +38,8 @@ function decodificar(bruto: string): string {
 /**
  * O relatório de UMA EMB, aberto pelo link da mensagem do alerta "Fim de EMB" ou pelo índice do menu
  * (/recebimento/emb): o Nº da PO, quando fechou e as divergências de quantidade com a justificativa (as sem
- * justificativa em destaque). O topo troca de EMB ou volta ao índice.
+ * justificativa em destaque). O topo troca de EMB ou volta ao índice. Quem administra o Recebimento
+ * justifica (ou edita) cada linha ali mesmo, na mesma janela do Fluxo e dos Processos.
  */
 export default async function EmbRelatorioPage({ params }: { params: Promise<{ emb: string }> }) {
   const sessao = await getSessao()
@@ -70,6 +72,10 @@ export default async function EmbRelatorioPage({ params }: { params: Promise<{ e
   }
 
   const pendentes = semJustificativa(r.divergencias)
+  const podeJustificar = podeNoModulo(sessao.perfil, 'recebimento', 'administrar')
+  // A linha não traz o Nº da PO do processo (a 0178 só agrega os da EMB): com uma PO só, é ela;
+  // com mais de uma, o diálogo mostra o traço em vez de chutar.
+  const poDaEmb = r.pedidos.length === 1 ? (r.pedidos[0] ?? '') : ''
   return (
     <div className="flex flex-col gap-4">
       {topo}
@@ -103,6 +109,7 @@ export default async function EmbRelatorioPage({ params }: { params: Promise<{ e
                 <TableHead className="text-right">Divergência</TableHead>
                 <TableHead>Justificativa</TableHead>
                 <TableHead>Justificado por</TableHead>
+                {podeJustificar && <TableHead><span className="sr-only">Ações</span></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -135,6 +142,30 @@ export default async function EmbRelatorioPage({ params }: { params: Promise<{ e
                         </>
                       )}
                     </TableCell>
+                    {podeJustificar && (
+                      <TableCell className="whitespace-nowrap text-right">
+                        {d.id && (
+                          <BotaoJustificar
+                            alvo={{
+                              id: d.id,
+                              numero: String(d.numero),
+                              texto: d.justificativa,
+                              autor: d.justificadaPorNome,
+                              quando: d.justificadaEm ? d.justificadaEm.toISOString() : null,
+                              contexto: {
+                                emb: r.emb,
+                                po: poDaEmb,
+                                codigo: d.item,
+                                descricao: d.descricao,
+                                quantidadePedido: d.quantidadePedido,
+                                quantidadeRecebida: d.quantidadeRecebida,
+                                divergencia: d.divergencia,
+                              },
+                            }}
+                          />
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
