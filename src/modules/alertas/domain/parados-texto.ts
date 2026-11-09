@@ -1,4 +1,5 @@
-import { LIMITE_MENSAGEM, formatarDataHoraCurta, listaComCorte } from './mensagens'
+import { LIMITE_MENSAGEM, formatarDataHoraCurta, listaComCorte, listaPrimeiros } from './mensagens'
+import { linhaVerRelatorio } from './links'
 import type { ItemParado } from './parados'
 
 /** Margem que a reabertura acrescenta acima do texto (mesma de `mensagens.ts`). */
@@ -48,7 +49,16 @@ export interface DadosParado {
   expediente: boolean
   ops: readonly OpParada[]
   em: Date
+  /**
+   * O link do relatório completo (a tela "Peças paradas" da regra). Com ele, a mensagem mostra só as
+   * `OPS_NA_MENSAGEM` mais antigas e o link; sem ele (linha antiga da fila, sem o id da regra), a lista
+   * vai inteira até o limite do Discord, como antes.
+   */
+  urlRelatorio?: string | null
 }
+
+/** Quantas OPs a mensagem mostra quando leva o link do relatório (o resto está na tela). */
+export const OPS_NA_MENSAGEM = 3
 
 const pecasTexto = (n: number) => `${n} ${n === 1 ? 'peça' : 'peças'}`
 
@@ -71,21 +81,40 @@ function ordenadas(ops: readonly OpParada[]): OpParada[] {
 }
 
 /**
+ * O título do relatório, sem o emoji: "N peças paradas há mais de X em M OPs". É a primeira linha da
+ * mensagem (o ASSUNTO do e-mail, com o ⏰ na frente) e o cabeçalho da tela "Peças paradas".
+ */
+export function tituloParado(totalPecas: number, nOps: number, limiteHoras: number, expediente: boolean): string {
+  return (
+    `${pecasTexto(totalPecas)} ${totalPecas === 1 ? 'parada' : 'paradas'} há mais de ${formatarLimiteParado(limiteHoras, expediente)} ` +
+    `em ${nOps} ${nOps === 1 ? 'OP' : 'OPs'}`
+  )
+}
+
+/**
  * O RELATÓRIO ÚNICO do alerta "Parado ou travado na produção" (uma mensagem por regra, não por OP). A
- * primeira linha é o assunto do e-mail: "⏰ N peças paradas há mais de X em M OPs". Depois, uma linha por
- * OP, da mais antiga para a mais nova, e o rodapé da regra. A lista cabe no que sobra dos 2000 do
- * Discord (que RECUSA a mensagem inteira acima do limite): o que não cabe vira "… e mais K OPs", e o
- * cabeçalho e o rodapé ficam sempre. O mesmo texto serve ao alerta e a cada lembrete.
+ * primeira linha é o assunto do e-mail: "⏰ N peças paradas há mais de X em M OPs". Depois:
+ *  - com o link do relatório: as 3 OPs mais antigas, "… e mais K OPs" se houver, "Ver relatório completo:
+ *    <url>" e o rodapé da regra (a lista inteira, com os números de série, está na tela);
+ *  - sem o link (linha antiga da fila): uma linha por OP, da mais antiga para a mais nova, e o rodapé.
+ * Nos dois casos a lista cabe no que sobra dos 2000 do Discord (que RECUSA a mensagem inteira acima do
+ * limite): o que não cabe vira "… e mais K OPs", e o cabeçalho, o link e o rodapé ficam sempre. O mesmo
+ * texto serve ao alerta e a cada lembrete.
  */
 export function textoRelatorioParado(d: DadosParado): string {
   const total = d.ops.reduce((s, o) => s + o.itens.reduce((t, i) => t + i.pecas, 0), 0)
-  const n = d.ops.length
-  const cabecalho =
-    `⏰ ${pecasTexto(total)} ${total === 1 ? 'parada' : 'paradas'} há mais de ${formatarLimiteParado(d.limiteHoras, d.expediente)} ` +
-    `em ${n} ${n === 1 ? 'OP' : 'OPs'}`
+  const cabecalho = `⏰ ${tituloParado(total, d.ops.length, d.limiteHoras, d.expediente)}`
   const rodape = `Regra: ${d.regraNome} · ${formatarDataHoraCurta(d.em)}`
+  const linhasOps = ordenadas(d.ops).map((o) => linhaDaOp(o, d.expediente))
+  const url = (d.urlRelatorio ?? '').trim()
+  if (url !== '') {
+    const link = linhaVerRelatorio(url)
+    const orcamento = LIMITE_MENSAGEM - MARGEM_CABECALHO - cabecalho.length - link.length - rodape.length - 3
+    const lista = listaPrimeiros(linhasOps, OPS_NA_MENSAGEM, orcamento, 'OP', 'OPs')
+    return [cabecalho, lista, link, rodape].filter((p) => p !== '').join('\n')
+  }
   const orcamento = LIMITE_MENSAGEM - MARGEM_CABECALHO - cabecalho.length - rodape.length - 2
-  const lista = listaComCorte(ordenadas(d.ops).map((o) => linhaDaOp(o, d.expediente)), orcamento, 'OP', 'OPs', '\n')
+  const lista = listaComCorte(linhasOps, orcamento, 'OP', 'OPs', '\n')
   return [cabecalho, lista, rodape].filter((p) => p !== '').join('\n')
 }
 
