@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lerRelatorioEmb, semJustificativa } from '../emb-relatorio'
+import { caminhoRelatorioEmb, filtrarEmbs, lerRelatorioEmb, semJustificativa } from '../emb-relatorio'
 
 const OK = {
   ok: true,
@@ -64,5 +64,24 @@ describe('semJustificativa', () => {
     if (!r.ok) throw new Error('esperava ok')
     expect(semJustificativa(r.valor.divergencias)).toBe(1)
     expect(semJustificativa([{ ...r.valor.divergencias[0]!, justificativa: '  ' }])).toBe(1)
+  })
+})
+
+describe('caminhoRelatorioEmb', () => {
+  it('codifica a EMB e apara os espaços', () => {
+    expect(caminhoRelatorioEmb(' EMB390 ')).toBe('/recebimento/emb/EMB390')
+    expect(caminhoRelatorioEmb('EMB 1/2')).toBe('/recebimento/emb/EMB%201%2F2')
+  })
+})
+
+describe('filtrarEmbs', () => {
+  const embs = ['EMB390', 'emb388CA', 'EMB12']
+  it('filtro vazio devolve todas, na mesma ordem', () => {
+    expect(filtrarEmbs(embs, '  ')).toEqual(embs)
+  })
+  it('contém, sem diferenciar maiúsculas', () => {
+    expect(filtrarEmbs(embs, 'ca')).toEqual(['emb388CA'])
+    expect(filtrarEmbs(embs, ' emb3 ')).toEqual(['EMB390', 'emb388CA'])
+    expect(filtrarEmbs(embs, 'xyz')).toEqual([])
   })
 })

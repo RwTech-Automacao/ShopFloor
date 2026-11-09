@@ -377,4 +377,12 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0178.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_emb_relatorio.sql
 echo "0178 (relatório de uma EMB): ok"
 
+# ---------- 0179: lista das regras "parado" para o seletor da aba "Peças paradas" ----------
+docker cp supabase/migrations/0179_alerta_parado_regras_lista.sql "$NOME":/tmp/0179.sql
+docker cp supabase/tests/alertas_parado_regras_lista_test.sql "$NOME":/tmp/teste_parado_regras_lista.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0179.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0179.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_parado_regras_lista.sql
+echo "0179 (lista das regras parado): ok"
+
 echo "ALERTAS SQL OK"

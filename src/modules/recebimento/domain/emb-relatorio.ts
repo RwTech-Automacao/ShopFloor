@@ -1,5 +1,6 @@
 /**
- * O relatório de UMA EMB (/recebimento/emb/<emb>), aberto pelo link da mensagem do alerta "Fim de EMB".
+ * O relatório de UMA EMB (/recebimento/emb/<emb>), aberto pelo link da mensagem do alerta "Fim de EMB" ou pelo
+ * item "Relatório de EMB" do menu (o índice /recebimento/emb escolhe a EMB).
  * O banco devolve tudo pronto em `rec_emb_relatorio` (0178), com as divergências da MESMA
  * `rec_emb_divergencias` que o alerta usa; aqui só se lê o jsonb.
  */
@@ -88,4 +89,15 @@ export function lerRelatorioEmb(bruto: unknown): LeituraRelatorioEmb {
 /** Quantas divergências ninguém justificou ainda. */
 export function semJustificativa(divergencias: readonly DivergenciaDaEmb[]): number {
   return divergencias.filter((d) => d.justificativa.trim() === '').length
+}
+
+/** O caminho do relatório de uma EMB (a EMB vai codificada: pode ter espaço ou barra). */
+export function caminhoRelatorioEmb(emb: string): string {
+  return `/recebimento/emb/${encodeURIComponent(emb.trim())}`
+}
+
+/** As EMBs que contêm o filtro (sem diferenciar maiúsculas), na ordem recebida. Filtro vazio: todas. */
+export function filtrarEmbs(embs: readonly string[], filtro: string): readonly string[] {
+  const f = filtro.trim().toLowerCase()
+  return f ? embs.filter((e) => e.toLowerCase().includes(f)) : embs
 }
