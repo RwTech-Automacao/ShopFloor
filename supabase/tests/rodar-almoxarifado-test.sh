@@ -530,6 +530,19 @@ if [ -n "${PLACAS:-}" ] && [ -z "${RED:-}" ]; then
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
     "select public.teste_fila_invariantes('PLACAS: 0175 reaplicada depois do rollback')" >/dev/null \
     && echo "0175 reaplicada depois do rollback: ok"
+
+  # 0181 (faixas de Nº de Série por OP): por cima da 0175 (vigente da entrada que ela recria), DUAS vezes;
+  # depois uma segunda faixa na PMOI01 e a entrada aceitando a série dela (faixas_sn_almox_test.sql). O
+  # resto da 0181 (tabela, trigger, Setup, aviso da edição) é testado em rodar-faixas-sn-test.sh.
+  docker cp supabase/migrations/0181_sf_ordem_faixas.sql "$NOME":/tmp/0181.sql
+  docker cp supabase/tests/faixas_sn_almox_test.sql "$NOME":/tmp/teste_faixas.sql
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0181.sql
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0181.sql   # de novo: idempotente
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_faixas.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select public.teste_fila_invariantes('PLACAS: depois da 0181')" >/dev/null \
+    && echo "0181 (faixas de SN) na entrada do Almoxarifado: ok" \
+    || { echo "invariantes da fila FALHARAM depois da 0181"; exit 1; }
 fi
 
 # O PLANO ESTÁVEL DA sf_nqa_caixa (0160): OP nova e grande, sem analyze, tem que passar em < 3 s e
