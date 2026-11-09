@@ -1,13 +1,13 @@
 import type { PerfilPosto } from './perfil-posto'
 
 /**
- * Rota padrão de uma OP NOVA: o posto Almoxarifado vem pré-marcado como ÚLTIMO posto, "como se fosse o
- * card de Concluído" (decisão de 09/11/2026). Sendo o último, é ele que manda no % de conclusão e na
- * finalização automática (0145): a OP nova só fecha em 100% quando a produção entra no estoque.
+ * Rota de uma OP NOVA: o posto Almoxarifado é OBRIGATÓRIO e vem sempre como ÚLTIMO posto, "como se
+ * fosse o card de Concluído" (decisão de 09/11/2026). Sendo o último, é ele que manda no % de conclusão
+ * e na finalização automática (0145): a OP nova só fecha em 100% quando a produção entra no estoque.
  *
- * Só vale ao CRIAR a OP (pela tela ou puxando um Padrão de fluxo). A pessoa pode tirar o posto antes de
- * salvar. Editar uma OP existente NUNCA acrescenta o Almoxarifado: numa rota antiga ele derrubaria o %
- * e reabriria OPs já concluídas — por isso nada aqui roda no servidor nem em OP gravada.
+ * Vale ao CRIAR a OP (pela tela, por Padrão de fluxo e, no servidor, mesmo que o formulário não mande).
+ * Na EDIÇÃO a trava só existe se a rota GRAVADA já tem o Almoxarifado; numa OP antiga sem ele nada é
+ * acrescentado: numa rota antiga ele derrubaria o % e reabriria OPs já concluídas (sem backfill).
  */
 
 /**
@@ -23,9 +23,10 @@ export function postoAlmoxarifadoPadrao(
 }
 
 /**
- * Monta a rota de uma OP nova a partir de uma base (vazia ou os postos de um Padrão): mantém a ordem
- * da base sem repetir posto e põe o Almoxarifado no fim, uma vez só — se a base já o tinha em outra
- * posição, ele é movido para o fim. Sem posto Almoxarifado, devolve a base sem repetições.
+ * Monta a rota com o Almoxarifado fixo no fim a partir de uma base (vazia, os postos de um Padrão ou o
+ * que o formulário mandou): mantém a ordem da base sem repetir posto e põe o Almoxarifado no fim, uma
+ * vez só — se a base já o tinha em outra posição, ele é movido para o fim; se não tinha, entra. Sem
+ * posto Almoxarifado (`null`), devolve a base sem repetições.
  */
 export function rotaPadraoOpNova(base: readonly string[], almoxarifado: string | null): string[] {
   const rota: string[] = []
@@ -47,4 +48,35 @@ export function adicionarPostoNaRota(rota: readonly string[], posto: string, alm
     return [...rota.slice(0, -1), posto, almoxarifado]
   }
   return [...rota, posto]
+}
+
+/**
+ * Move o posto da posição `i` em `delta` (−1 sobe, +1 desce). Com o Almoxarifado fixo, nem ele se move
+ * nem outro posto passa para depois dele: a rota continua terminando no Almoxarifado.
+ */
+export function moverPostoNaRota(rota: readonly string[], i: number, delta: number, fixo: string | null): string[] {
+  const j = i + delta
+  if (j < 0 || j >= rota.length || i < 0 || i >= rota.length) return [...rota]
+  if (fixo !== null && (rota[i] === fixo || rota[j] === fixo)) return [...rota]
+  const copia = [...rota]
+  const [item] = copia.splice(i, 1)
+  copia.splice(j, 0, item!)
+  return copia
+}
+
+export const MSG_ALMOXARIFADO_OBRIGATORIO = 'O posto Almoxarifado é obrigatório nesta OP e não pode ser retirado da rota.'
+
+/**
+ * Rota a gravar na EDIÇÃO. A trava vem da rota GRAVADA no banco (nunca do formulário): se ela já tem o
+ * Almoxarifado, ele não pode sair (recusa) e é mantido como último. Se a OP gravada não tem o
+ * Almoxarifado (OP antiga), a rota do formulário passa como veio — nada é acrescentado.
+ */
+export function rotaDaEdicao(
+  rotaGravada: readonly string[],
+  rotaNova: readonly string[],
+  almoxarifado: string | null,
+): { ok: true; rota: string[] } | { ok: false; erro: string } {
+  if (almoxarifado === null || !rotaGravada.includes(almoxarifado)) return { ok: true, rota: [...rotaNova] }
+  if (!rotaNova.includes(almoxarifado)) return { ok: false, erro: MSG_ALMOXARIFADO_OBRIGATORIO }
+  return { ok: true, rota: rotaPadraoOpNova(rotaNova, almoxarifado) }
 }

@@ -46,8 +46,9 @@ vi.mock('@/components/ui/dialog', () => ({
 }))
 
 /**
- * Posto Almoxarifado pré-marcado no fim da rota da OP NOVA (09/11/2026): vem marcado, a pessoa pode
- * tirar; puxar um Padrão também o põe no fim; a EDIÇÃO nunca o acrescenta.
+ * Posto Almoxarifado OBRIGATÓRIO no fim da rota (09/11/2026): fixo em toda OP nova (sem remover nem
+ * mover), mantido no fim ao puxar Padrão; na EDIÇÃO fica fixo só se a rota gravada já o tem, e OP
+ * antiga sem ele nunca o ganha.
  */
 
 const ALMOX: PerfilPosto = { ...PERFIL_PADRAO, chave: 'almoxarifado', nome: 'Almoxarifado', recurso: 'almoxarifado' }
@@ -79,10 +80,13 @@ const selectCom = (valor: string) =>
   screen.getAllByRole('combobox').find((s) => Array.from((s as HTMLSelectElement).options).some((o) => o.value === valor))!
 const adicionar = (posto: string) => fireEvent.change(selectCom(posto), { target: { value: posto } })
 
-describe('Almoxarifado pré-marcado no fim da rota da OP nova', () => {
-  it('OP nova nasce com o Almoxarifado na rota', () => {
+describe('Almoxarifado obrigatório no fim da rota', () => {
+  it('OP nova nasce com o Almoxarifado fixo: marcado como obrigatório, sem remover nem mover', () => {
     const { container } = montar()
     expect(fluxoEnviado(container)).toEqual(['Almoxarifado'])
+    expect(screen.getByText('obrigatório')).toBeTruthy()
+    expect(screen.queryAllByLabelText('Remover')).toHaveLength(0)
+    expect(screen.queryAllByLabelText('Subir')).toHaveLength(0)
   })
 
   it('postos acrescentados entram antes do Almoxarifado, que segue no fim', () => {
@@ -90,21 +94,19 @@ describe('Almoxarifado pré-marcado no fim da rota da OP nova', () => {
     adicionar('Teste')
     adicionar('Embalagem')
     expect(fluxoEnviado(container)).toEqual(['Teste', 'Embalagem', 'Almoxarifado'])
+    expect(screen.getAllByLabelText('Remover')).toHaveLength(2)
   })
 
-  it('a pessoa pode tirar o Almoxarifado', () => {
+  it('reordenar não tira o Almoxarifado do último lugar', () => {
     const { container } = montar()
     adicionar('Teste')
-    fireEvent.click(screen.getAllByLabelText('Remover')[1]!)
-    expect(fluxoEnviado(container)).toEqual(['Teste'])
-  })
-
-  it('reabrir o "Nova OP" volta a trazer o Almoxarifado pré-marcado', () => {
-    const { container } = montar()
+    adicionar('Embalagem')
+    const descer = screen.getAllByLabelText('Descer') as HTMLButtonElement[]
+    expect(descer[1]!.disabled).toBe(true) // o posto logo antes do Almoxarifado não desce
+    fireEvent.click(descer[0]!)
+    expect(fluxoEnviado(container)).toEqual(['Embalagem', 'Teste', 'Almoxarifado'])
     fireEvent.click(screen.getAllByLabelText('Remover')[0]!)
-    expect(fluxoEnviado(container)).toEqual([])
-    fireEvent.click(screen.getAllByText('reabrir')[0]!)
-    expect(fluxoEnviado(container)).toEqual(['Almoxarifado'])
+    expect(fluxoEnviado(container)).toEqual(['Teste', 'Almoxarifado'])
   })
 
   it('puxar um Padrão sem Almoxarifado o põe no fim', () => {
@@ -114,7 +116,7 @@ describe('Almoxarifado pré-marcado no fim da rota da OP nova', () => {
     expect(fluxoEnviado(container)).toEqual(['Teste', 'Embalagem', 'Almoxarifado'])
   })
 
-  it('puxar um Padrão que já tem o Almoxarifado não duplica', () => {
+  it('puxar um Padrão que já tem o Almoxarifado no meio: vai para o fim, sem duplicar', () => {
     const { container } = montar({ padroes: [{ ...PADRAO, postos: ['Teste', 'Almoxarifado', 'Embalagem'] }] })
     fireEvent.change(screen.getByLabelText('PMO *'), { target: { value: 'PMOX01' } })
     fireEvent.change(selectCom('p1'), { target: { value: 'p1' } })
@@ -124,18 +126,28 @@ describe('Almoxarifado pré-marcado no fim da rota da OP nova', () => {
   it('sem posto de perfil almoxarifado, a OP nova nasce com a rota vazia (como antes)', () => {
     const { container } = montar({ perfis: {} })
     expect(fluxoEnviado(container)).toEqual([])
+    expect(screen.queryByText('obrigatório')).toBeNull()
   })
 
-  it('EDIÇÃO: a rota vem do banco como está, sem o Almoxarifado', () => {
+  it('EDIÇÃO de OP antiga sem Almoxarifado: a rota vem do banco como está e nada fica fixo', () => {
     const { container } = montar({ ordem: BASE })
     expect(fluxoEnviado(container)).toEqual(['Teste', 'Embalagem'])
+    expect(screen.queryByText('obrigatório')).toBeNull()
     fireEvent.click(screen.getAllByText('reabrir')[0]!)
     expect(fluxoEnviado(container)).toEqual(['Teste', 'Embalagem'])
   })
 
-  it('EDIÇÃO: puxar um Padrão não acrescenta o Almoxarifado', () => {
+  it('EDIÇÃO de OP antiga: puxar um Padrão não acrescenta o Almoxarifado', () => {
     const { container } = montar({ ordem: BASE, padroes: [{ ...PADRAO, postos: ['Embalagem'] }] })
     fireEvent.change(selectCom('p1'), { target: { value: 'p1' } })
     expect(fluxoEnviado(container)).toEqual(['Embalagem'])
+  })
+
+  it('EDIÇÃO de OP que já tem o Almoxarifado: ele fica fixo no fim, sem remover', () => {
+    const { container } = montar({ ordem: { ...BASE, postos: ['Teste', 'Almoxarifado'] }, padroes: [{ ...PADRAO, postos: ['Embalagem'] }] })
+    expect(screen.getByText('obrigatório')).toBeTruthy()
+    expect(screen.getAllByLabelText('Remover')).toHaveLength(1)
+    fireEvent.change(selectCom('p1'), { target: { value: 'p1' } })
+    expect(fluxoEnviado(container)).toEqual(['Embalagem', 'Almoxarifado'])
   })
 })

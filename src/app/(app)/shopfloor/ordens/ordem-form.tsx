@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useState, useTransition } from 'react'
-import { Plus, Pencil, ArrowUp, ArrowDown, X } from 'lucide-react'
+import { Plus, Pencil, ArrowUp, ArrowDown, X, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,7 +29,7 @@ import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { placasDosPaineis, paineisDasPlacas } from '@/modules/shopfloor/domain/placas-por-painel'
-import { adicionarPostoNaRota, postoAlmoxarifadoPadrao, rotaPadraoOpNova } from '@/modules/shopfloor/domain/rota-op-nova'
+import { adicionarPostoNaRota, moverPostoNaRota, postoAlmoxarifadoPadrao, rotaPadraoOpNova } from '@/modules/shopfloor/domain/rota-op-nova'
 
 export interface OrdemView {
   id: string
@@ -92,10 +92,12 @@ export function OrdemForm({
 }) {
   const ehEdicao = ordem !== undefined
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
-  // OP NOVA nasce com o Almoxarifado pré-marcado no fim (a pessoa pode tirar). Na edição a rota vem
-  // do banco como está: acrescentar o posto numa OP existente derrubaria o % e reabriria OPs.
+  // Almoxarifado OBRIGATÓRIO e fixo no fim: em toda OP nova e na edição de OP cuja rota gravada já o
+  // tem. OP antiga sem ele segue como está: acrescentá-lo derrubaria o % e reabriria OPs. O servidor
+  // aplica a mesma regra (a tela só a mostra).
   const almoxarifado = postoAlmoxarifadoPadrao(postos, perfilDo)
-  const fluxoInicial = (): string[] => ordem?.postos ?? rotaPadraoOpNova([], almoxarifado)
+  const almoxFixo = almoxarifado !== null && (!ordem || ordem.postos.includes(almoxarifado)) ? almoxarifado : null
+  const fluxoInicial = (): string[] => (almoxFixo ? rotaPadraoOpNova(ordem?.postos ?? [], almoxFixo) : ordem?.postos ?? [])
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState<ResultadoOrdem | undefined, FormData>(action, undefined)
@@ -211,19 +213,15 @@ export function OrdemForm({
   }
 
   function mover(i: number, delta: number) {
-    const j = i + delta
-    if (j < 0 || j >= fluxo.length) return
-    const copia = [...fluxo]
-    const [item] = copia.splice(i, 1)
-    copia.splice(j, 0, item!)
-    setFluxo(copia)
+    setFluxo(moverPostoNaRota(fluxo, i, delta, almoxFixo))
   }
   function remover(i: number) {
+    if (fluxo[i] === almoxFixo) return
     setFluxo(fluxo.filter((_, idx) => idx !== i))
   }
   function adicionar(posto: string) {
     if (fluxo.includes(posto)) return
-    setFluxo(adicionarPostoNaRota(fluxo, posto, almoxarifado))
+    setFluxo(adicionarPostoNaRota(fluxo, posto, almoxFixo))
     if (perfilDo(posto).recurso === 'burnin' && (tempoBurnin[posto] ?? '') === '') {
       setTempoBurnin((prev) => ({ ...prev, [posto]: '6:00' }))
     }
@@ -414,7 +412,7 @@ export function OrdemForm({
                       <Select value={padraoSelecionado} onValueChange={(id) => {
                         setPadraoSelecionado(id ?? '')
                         const padrao = padroesDoPmo.find((p) => p.id === id)
-                        if (padrao) { setFluxo(ehEdicao ? padrao.postos : rotaPadraoOpNova(padrao.postos, almoxarifado)); setReceita(coagirReceitaPadrao(padrao.componentes)) }
+                        if (padrao) { setFluxo(almoxFixo ? rotaPadraoOpNova(padrao.postos, almoxFixo) : padrao.postos); setReceita(coagirReceitaPadrao(padrao.componentes)) }
                       }}>
                         <SelectTrigger className="h-8 w-auto text-xs">
                           <SelectValue>
@@ -470,15 +468,23 @@ export function OrdemForm({
                         />
                       </span>
                     )}
-                    <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
-                      <ArrowUp className="size-4" />
-                    </button>
-                    <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === fluxo.length - 1} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
-                      <ArrowDown className="size-4" />
-                    </button>
-                    <button type="button" aria-label="Remover" onClick={() => remover(i)} className="text-muted-foreground hover:text-red-600">
-                      <X className="size-4" />
-                    </button>
+                    {posto === almoxFixo ? (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Posto obrigatório: fecha a rota da OP">
+                        <Lock className="size-3.5" aria-hidden="true" /> obrigatório
+                      </span>
+                    ) : (
+                      <>
+                        <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                          <ArrowUp className="size-4" />
+                        </button>
+                        <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === fluxo.length - 1 || fluxo[i + 1] === almoxFixo} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                          <ArrowDown className="size-4" />
+                        </button>
+                        <button type="button" aria-label="Remover" onClick={() => remover(i)} className="text-muted-foreground hover:text-red-600">
+                          <X className="size-4" />
+                        </button>
+                      </>
+                    )}
                   </li>
                 ))}
                 {fluxo.length === 0 && (
