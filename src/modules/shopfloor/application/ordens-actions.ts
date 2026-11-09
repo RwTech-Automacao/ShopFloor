@@ -9,6 +9,7 @@ import { validarOrdem } from '../domain/validar-ordem'
 import { mensagemOpDuplicada } from '../domain/op-unica'
 import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-posto'
+import { postoAlmoxarifadoPadrao, rotaDaEdicao, rotaPadraoOpNova } from '../domain/rota-op-nova'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import {
   criarOrdem,
@@ -18,6 +19,7 @@ import {
   buscarOrdemBase,
   buscarOpEmUso,
   listarPostos,
+  listarRotaGravada,
   type DadosOrdem,
 } from '../infra/ordem-repository'
 
@@ -45,6 +47,12 @@ function lerDados(fd: FormData): DadosOrdem {
     // status limpa a marca. Nunca lido do formulário, para o cliente não forjar 'rotina'.
     finalizada_por: finalizadaPorDoCadastro(status),
   }
+}
+
+/** Posto Almoxarifado do catálogo (pelo recurso do perfil), ou null se não existe. */
+async function postoAlmoxarifado(): Promise<string | null> {
+  const [catalogo, mapa] = await Promise.all([listarPostos(), mapaPostoPerfil()])
+  return postoAlmoxarifadoPadrao(catalogo.map((p) => p.chave), (p) => mapa[p] ?? { recurso: 'nenhum' })
 }
 
 /** Fluxo ordenado enviado pelo form (campo `fluxo` = JSON de chaves), validado contra o catálogo. */
@@ -105,7 +113,8 @@ export async function criarOrdemAction(
   // OP única global: o número da OP não pode existir em nenhum outro PMO.
   const emUso = await buscarOpEmUso(dados.op)
   if (emUso) return { ok: false, erro: mensagemOpDuplicada(emUso) }
-  const postos = await lerPostos(formData)
+  // OP nova: o Almoxarifado é obrigatório e fecha a rota, mesmo que o formulário não o mande.
+  const postos = rotaPadraoOpNova(await lerPostos(formData), await postoAlmoxarifado())
   const receita = await lerReceita(formData, postos)
   const burnin = await lerBurnin(formData, postos)
   if (!burnin.ok) return { ok: false, erro: burnin.erro }
@@ -156,7 +165,17 @@ export async function editarOrdemAction(
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).
   const emUso = await buscarOpEmUso(dados.op, id)
   if (emUso) return { ok: false, erro: mensagemOpDuplicada(emUso) }
-  const postos = await lerPostos(formData)
+  // Trava do Almoxarifado pela rota GRAVADA (não pelo form): se a OP já o tem, ele não sai e fica por
+  // último; OP antiga sem ele segue como veio (nunca acrescentar em OP existente).
+  let rotaGravada: string[]
+  try {
+    rotaGravada = await listarRotaGravada(id)
+  } catch {
+    return { ok: false, erro: 'Não foi possível salvar a OP.' }
+  }
+  const rota = rotaDaEdicao(rotaGravada, await lerPostos(formData), await postoAlmoxarifado())
+  if (!rota.ok) return rota
+  const postos = rota.rota
   const receita = await lerReceita(formData, postos)
   const burnin = await lerBurnin(formData, postos)
   if (!burnin.ok) return { ok: false, erro: burnin.erro }

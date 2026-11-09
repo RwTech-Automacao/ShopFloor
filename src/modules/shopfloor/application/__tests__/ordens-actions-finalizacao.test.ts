@@ -21,6 +21,7 @@ vi.mock('../../infra/ordem-repository', () => ({
   buscarOrdemBase: m.buscarOrdemBase,
   buscarOpEmUso: vi.fn(async () => null),
   listarPostos: vi.fn(async () => []),
+  listarRotaGravada: vi.fn(async () => []),
 }))
 
 import { criarOrdemAction, editarOrdemAction } from '../ordens-actions'
