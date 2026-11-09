@@ -4,7 +4,6 @@ import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdens, listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarPadroes } from '@/modules/shopfloor/infra/padroes-fluxo-repository'
-import { almoxarifadoAutomaticoLigado, postoAlmoxarifadoDaOp } from '@/modules/shopfloor/domain/almoxarifado-automatico'
 import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import { agruparTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import type { OrdemView } from './ordem-form'
@@ -17,10 +16,6 @@ export default async function OrdensPage() {
   }
 
   const [ordens, postos, padroes, postosPerfil] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil()])
-  // Etapa 2 do card único, DESLIGADA por padrão: a variável é lida aqui, no servidor, e só a chave do
-  // posto vai ao formulário (ausente = formulário idêntico ao de sempre).
-  const almox = almoxarifadoAutomaticoLigado(process.env.ALMOXARIFADO_AUTOMATICO_NAS_OPS_NOVAS) ? postoAlmoxarifadoDaOp(postosPerfil) : null
-  const almoxarifadoAutomatico = almox && almox.ok ? almox.posto : null
   const chavesPostos = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const views: OrdemView[] = ordens.map((o) => ({
     id: o.id,
@@ -59,7 +54,7 @@ export default async function OrdensPage() {
         <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
       </div>
 
-      <OrdensLista views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} almoxarifadoAutomatico={almoxarifadoAutomatico} />
+      <OrdensLista views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
     </div>
   )
 }

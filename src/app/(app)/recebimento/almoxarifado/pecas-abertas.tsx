@@ -7,7 +7,9 @@ import type { ResultadoAcao } from '@/components/ui/painel-resultado'
 import { registrarEntradaAlmoxarifado } from '@/modules/shopfloor/application/almoxarifado-actions'
 import { quandoCurto, pecasTexto, type PendenciaAlmoxarifado } from '@/modules/shopfloor/domain/almoxarifado'
 import type { ConfirmacaoCartao } from './caixa-aberta'
+import { SeletorEstoque } from './seletor-estoque'
 import { useDetalheRecarregavel } from './use-detalhe'
+import { useEstoqueDestino } from './use-estoque-destino'
 
 const MAX_BIPES = 10
 const FALHA_BIPE = 'Não foi possível registrar a entrada.'
@@ -34,6 +36,7 @@ export function PecasAbertas({
   onVoltar: () => void
 }) {
   const { estado, recarregar } = useDetalheRecarregavel(item)
+  const estoque = useEstoqueDestino(item.pmo, item.op)
   const [bipe, setBipe] = useState('')
   const [aceitos, setAceitos] = useState<BipeAceito[]>([])
   const [enviando, setEnviando] = useState(false)
@@ -65,7 +68,7 @@ export function PecasAbertas({
     void (async () => {
       try {
         const r = await registrarEntradaAlmoxarifado({
-          pmo: item.pmo, op: item.op, posto, colaborador, bipe: lido,
+          pmo: item.pmo, op: item.op, posto, colaborador, bipe: lido, estoque: estoque.paraEnvio,
         })
         if (!r.ok) {
           onResultado({ tipo: 'aviso', titulo: r.erro })
@@ -77,7 +80,10 @@ export function PecasAbertas({
           tipo: 'ok',
           titulo: pecasTexto(r.quantidade),
           detalhe: r.divergencia,
-          chips: [{ rotulo: 'Nº Série', valor: lido, mono: true }],
+          chips: [
+            { rotulo: 'Nº Série', valor: lido, mono: true },
+            ...(estoque.disponivel ? [{ rotulo: 'Estoque', valor: r.estoque }] : []),
+          ],
         })
         await recarregar()
       } catch {
@@ -111,6 +117,7 @@ export function PecasAbertas({
               )}
             </ul>
           )}
+          <SeletorEstoque estoque={estoque} desabilitado={enviando} />
           <Input
             ref={bipeRef}
             value={bipe}

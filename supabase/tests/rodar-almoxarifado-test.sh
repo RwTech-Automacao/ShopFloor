@@ -418,6 +418,118 @@ if [ -n "${PLACAS:-}" ] && [ -z "${RED:-}" ]; then
     && echo "0165 reaplicada duas vezes, invariantes da fila: ok" \
     || { echo "invariantes da fila FALHARAM depois de reaplicar a 0165"; exit 1; }
   echo "PLACAS ALMOXARIFADO OK"
+
+  # 0167 (alerta de parado): sf_almox_pendencias, sf_almox_necessidades e sf_almox_lotes viram cascas das
+  # respectivas _base (sem gate, para o cron). Entra aqui,
+  # por cima da 0165 reaplicada, porque é o corpo da 0165 que ela copia. Antes dela, guarda a saída da
+  # pública ANTIGA (pend_antes, lida pelo teste) e a foto das leituras; depois, a foto de novo — com a
+  # massa inteira da suíte, as duas fotos têm que ser IDÊNTICAS (a casca não muda contrato nenhum).
+  # Esta base não tem o esquema dos alertas, e a 0167 também mexe em alerta_regras e recria o
+  # alerta_avaliar (que declara variável do tipo alerta_ocorrencias): o stub abaixo tem só as colunas
+  # que os checks da 0167 citam, para a migração INTEIRA aplicar aqui como aplica no RDS. O
+  # comportamento dos alertas é medido no rodar-alertas-test.sh. Duas aplicações, cada uma com -1.
+  docker cp supabase/migrations/0167_alerta_almox_parado.sql "$NOME":/tmp/0167.sql
+  docker cp supabase/tests/almox_pendencias_base_test.sql "$NOME":/tmp/teste_pend_base.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+    -c "create table public.alerta_regras (
+          id uuid primary key default gen_random_uuid(), tipo text not null, modulo text not null,
+          postos text[] not null default '{}', pmos text[], janela_tipo text, janela_valor int,
+          taxa_minima numeric, minimo_bipes int, limite_tempo_seg int, limite_ocorrencias int,
+          pausa_max_min int, hora_resumo time, lembrete_min int)" \
+    -c "create table public.alerta_ocorrencias (id uuid primary key default gen_random_uuid())"
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+    -c "select set_config('teste.perms', 'recebimento.lancar,shopfloor.visualizar', false)" \
+    -c "create table pend_antes as select * from public.sf_almox_pendencias()"
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -v tabela=foto_pre0167 -f /tmp/foto.sql >/dev/null
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0167.sql
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0167.sql   # de novo: idempotente
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -v tabela=foto_pos0167 -f /tmp/foto.sql >/dev/null
+  DIF=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c "
+    select (select count(*) from foto_pre0167) || '/' ||
+           (select count(*) from ((select * from foto_pos0167) except all (select * from foto_pre0167)) x) || '/' ||
+           (select count(*) from ((select * from foto_pre0167) except all (select * from foto_pos0167)) y)")
+  case "$DIF" in
+    0/*) echo "foto da 0167 FALHOU: foto vazia ($DIF)"; exit 1 ;;
+    */0/0) echo "foto das leituras antes x depois da 0167: idênticas ($DIF): ok" ;;
+    *) echo "foto da 0167 FALHOU (linhas/só-depois/só-antes = $DIF)"; exit 1 ;;
+  esac
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pend_base.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select public.teste_fila_invariantes('PLACAS: depois da 0167')" >/dev/null \
+    && echo "0167 (pendências base + casca): ok" \
+    || { echo "invariantes da fila FALHARAM depois da 0167"; exit 1; }
+  # Custo da base (o cron roda a cada 5 min sobre todas as OPs ativas): OPs novas de 10 mil registros,
+  # sem analyze. Falha acima de 900 ms por OP (3 x o critério de 300 ms: ruído do Docker); imprime o tempo real.
+  docker cp supabase/tests/almox_pendencias_base_massa.sql "$NOME":/tmp/massa_pend_base.sql
+  SAIDA=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/massa_pend_base.sql 2>&1) \
+    || { echo "$SAIDA"; echo "medição de sf_almox_pendencias_base FALHOU"; exit 1; }
+  echo "$SAIDA" | grep -E "TEMPO|PLANO|a base devolve" || true
+  echo "medição de sf_almox_pendencias_base (massa): ok"
+
+  # 0173 (ficha de apontamento): as duas funções de LEITURA da migração, contra as bases REAIS e a massa. Só elas
+  # são extraídas do arquivo (do create da alerta_ficha_responsavel até o comentário "F. alerta_avaliar"), sem os
+  # revoke/grant (esta base não tem o role service_role); a tabela da marca entra mínima, sem a FK de alerta_regras.
+  # Mede o custo em volume de produção (sem analyze): critério 1,5 s.
+  awk 'index($0,"create or replace function public.alerta_ficha_responsavel(")==1{p=1} index($0,"-- ---------- F. alerta_avaliar")==1{p=0} p{print}' \
+    supabase/migrations/0173_alerta_ficha_apontamento.sql | grep -v -E '^(revoke|grant) ' > /tmp/ficha_fn.sql
+  docker cp /tmp/ficha_fn.sql "$NOME":/tmp/ficha_fn.sql
+  docker cp supabase/tests/alertas_ficha_real_test.sql "$NOME":/tmp/teste_ficha_real.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+    -c "create table public.alerta_ficha_avisadas (regra_id uuid not null, tipo text not null, pmo text not null, op text not null, chave text not null, avisada_em timestamptz not null default now(), primary key (regra_id, tipo, pmo, op, chave))"
+  # O stub de sf_ordens desta suíte não tem a descrição da OP (em produção ela existe desde a 0028).
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+    -c "alter table public.sf_ordens add column if not exists descricao text not null default ''"
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/ficha_fn.sql
+  SAIDA=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_ficha_real.sql 2>&1) \
+    || { echo "$SAIDA"; echo "teste real da ficha de apontamento FALHOU"; exit 1; }
+  echo "$SAIDA" | grep -E "TEMPO|PARTE|PLANO" || true
+  echo "0173 (ficha de apontamento, funções de leitura nas bases reais + medição): ok"
+
+  # 0175 (estoque de destino PA x EINTER): por cima da 0165 (a vigente das duas funções que ela recria).
+  # Aplicada DUAS vezes (psql -1, uma transação, como no RDS); depois o estoque_destino_test.sql; depois uma
+  # TERCEIRA aplicação, com linhas EINTER já gravadas, que não pode apagar nem mudar nenhuma; e a prova por
+  # diff de que só os trechos pretendidos mudaram nas funções copiadas (estoque_destino_diff.sh).
+  # F0175 troca o arquivo (usado para provar que o teste tem dentes: migração mutilada tem que falhar).
+  F0175="${F0175:-supabase/migrations/0175_estoque_destino_almoxarifado.sql}"
+  docker cp "$F0175" "$NOME":/tmp/0175.sql
+  docker cp supabase/tests/estoque_destino_test.sql "$NOME":/tmp/teste_estoque_destino.sql
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0175.sql
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0175.sql   # de novo: idempotente
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_estoque_destino.sql
+  ANTES=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select count(*) || '/' || count(*) filter (where estoque = 'EINTER') from public.sf_estoque_envios")
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0175.sql   # com dados EINTER na tabela
+  DEPOIS=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select count(*) || '/' || count(*) filter (where estoque = 'EINTER') from public.sf_estoque_envios")
+  case "$ANTES" in */0) echo "0175 FALHOU: nenhuma linha EINTER para provar a idempotência ($ANTES)"; exit 1 ;; esac
+  [ "$ANTES" = "$DEPOIS" ] \
+    && echo "0175 reaplicada com dados EINTER na fila: nada mudou ($ANTES): ok" \
+    || { echo "0175 FALHOU: reaplicar mudou a fila ($ANTES -> $DEPOIS)"; exit 1; }
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select public.teste_fila_invariantes('PLACAS: depois da 0175')" >/dev/null \
+    && echo "0175 (estoque de destino): ok" \
+    || { echo "invariantes da fila FALHARAM depois da 0175"; exit 1; }
+  bash supabase/tests/estoque_destino_diff.sh
+
+  # ROLLBACK da 0175 (docs/operacao/estoque-destino/rollback-0175.sql): volta as assinaturas da 0165, a coluna
+  # fica; depois a 0175 de novo (ida e volta), e o teste do app antigo (chamada de 8 argumentos) segue valendo.
+  docker cp docs/operacao/estoque-destino/rollback-0175.sql "$NOME":/tmp/rollback0175.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/rollback0175.sql
+  VOLTOU=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c "
+    select (select count(*) from pg_proc p where p.proname = 'sf_almoxarifado_entrada' and p.pronargs = 8)
+        || '/' || (select count(*) from pg_proc p where p.proname = 'sf_almoxarifado_lote' and p.pronargs = 6)
+        || '/' || (select count(*) from pg_proc p where p.proname in ('sf_almoxarifado_entrada','sf_almoxarifado_lote'))
+        || '/' || (select count(*) from pg_proc p where p.proname = 'sf_estoque_ultimo_da_op')
+        || '/' || (select count(*) from pg_trigger where tgname = 'sf_estoque_envios_estoque_do_estorno')")
+  [ "$VOLTOU" = "1/1/2/0/0" ] \
+    && echo "rollback da 0175 devolveu as assinaturas da 0165 ($VOLTOU): ok" \
+    || { echo "rollback da 0175 FALHOU ($VOLTOU)"; exit 1; }
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select public.teste_fila_invariantes('PLACAS: depois do rollback da 0175')" >/dev/null
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0175.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c \
+    "select public.teste_fila_invariantes('PLACAS: 0175 reaplicada depois do rollback')" >/dev/null \
+    && echo "0175 reaplicada depois do rollback: ok"
 fi
 
 # O PLANO ESTÁVEL DA sf_nqa_caixa (0160): OP nova e grande, sem analyze, tem que passar em < 3 s e

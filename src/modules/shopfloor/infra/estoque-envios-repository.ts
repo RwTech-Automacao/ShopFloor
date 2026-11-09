@@ -1,5 +1,6 @@
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { ehEstoqueDestino, type EstoqueDestino } from '@/modules/compels/domain/estoque-destino'
 import { createServiceSupabase } from '@/shared/lib/supabase/service'
 import type {
   EnvioEstoqueReservado,
@@ -60,6 +61,7 @@ export function lerEnvioEstoque(bruto: unknown): EnvioEstoqueReservado | null {
     bipe: String(l.bipe ?? ''),
     serieNorm: String(l.serie_norm ?? ''),
     quantidade,
+    estoque: ehEstoqueDestino(l.estoque) ? l.estoque : 'PA',
     tentativas: Number(l.tentativas ?? 0) || 0,
     criadoEm: String(l.criado_em ?? ''),
   }
@@ -97,15 +99,52 @@ export function criarRepositorioEstoqueEnvios(
     }
   }
 
-  return {
+  /**
+   * O estoque de destino (0175) de cada linha reservada. Lido da própria tabela por uma consulta pequena, e não
+   * devolvido pela `sf_estoque_reservar`: mudar o `returns table` dela seria drop+create de uma função crítica
+   * (o cron a chama a cada minuto), e esta leitura é por chave primária.
+   *
+   * ⚠️ Se a leitura falhar, as linhas NÃO seguem com o PA por omissão: uma EINTER mandada ao PA é estoque no
+   * lugar errado do ERP, e sem aviso. Elas esperam (a tentativa devolvida, 5 min adiadas) e a próxima rodada
+   * tenta de novo. A única exceção é a coluna ainda não existir (app novo antes da migração 0175): então toda
+   * linha é PA, porque não há outra coisa que ela pudesse ser.
+   */
+  async function comEstoque(lidos: EnvioEstoqueReservado[], ilegiveis: number): Promise<LoteEstoqueReservado> {
+    if (lidos.length === 0) return { envios: [], ilegiveis }
+    const { data, error } = await sb
+      .from('sf_estoque_envios')
+      .select('id, estoque')
+      .in('id', lidos.map((e) => e.id))
+    if (error) {
+      const semColuna = error.code === '42703' || /column .*estoque.* does not exist/i.test(error.message ?? '')
+      if (semColuna) return { envios: lidos.map((e) => ({ ...e, estoque: 'PA' as const })), ilegiveis }
+      const erro = `Não foi possível ler o estoque de destino da linha: ${error.message}`
+      console.error(`[estoque] ${erro}`)
+      for (const e of lidos) {
+        try {
+          await repo.concluirEnvio(e, { ok: false, erro, aguardar: true })
+        } catch (x) {
+          console.error(`[estoque] devolver a linha ${e.id} falhou:`, x instanceof Error ? x.message : x)
+        }
+      }
+      return { envios: [], ilegiveis }
+    }
+    const porId = new Map<string, EstoqueDestino>()
+    for (const l of (data ?? []) as { id: string; estoque: unknown }[]) {
+      if (ehEstoqueDestino(l.estoque)) porId.set(l.id, l.estoque)
+    }
+    return { envios: lidos.map((e) => ({ ...e, estoque: porId.get(e.id) ?? 'PA' })), ilegiveis }
+  }
+
+  const repo: RepositorioEstoqueEnvios = {
     async reservarPendentes(limite: number): Promise<LoteEstoqueReservado> {
       const { data, error } = await sb.rpc('sf_estoque_reservar', { p_limite: limite })
       if (error) throw new Error(`sf_estoque_reservar: ${error.message}`)
-      const envios: EnvioEstoqueReservado[] = []
+      const lidos: EnvioEstoqueReservado[] = []
       let ilegiveis = 0
       for (const bruto of (data ?? []) as unknown[]) {
         const envio = lerEnvioEstoque(bruto)
-        if (envio) envios.push(envio)
+        if (envio) lidos.push(envio)
         else {
           // Concluída como falha aqui (é este arquivo que sabe escrever na linha), mas CONTADA pra
           // quem chama: a linha ilegível é uma falha da rodada e ocupou lugar no lote. Devolver só as
@@ -115,7 +154,7 @@ export function criarRepositorioEstoqueEnvios(
           await concluirIlegivel(bruto)
         }
       }
-      return { envios, ilegiveis }
+      return comEstoque(lidos, ilegiveis)
     },
 
     async concluirEnvio(envio: EnvioEstoqueReservado, resultado: ResultadoEnvioEstoque) {
@@ -124,6 +163,14 @@ export function criarRepositorioEstoqueEnvios(
         .update({
           ok: resultado.ok,
           erro: resultado.ok ? null : resultado.erro.slice(0, LIMITE_ERRO),
+          // Só quando há aviso: um envio normal não toca na coluna (0169), então nada muda enquanto a migração
+          // não chegou — o que quebra, nesse caso, é só a linha que carrega aviso.
+          ...(resultado.ok && resultado.aviso ? { aviso: resultado.aviso.slice(0, LIMITE_ERRO) } : {}),
+          // Regravada a CADA FALHA/ESPERA (0170): a espera esperada de ontem (OP ainda não liberada) não pode
+          // esconder a falha de hoje. Só nas falhas, de propósito: um envio que deu certo NÃO toca na coluna,
+          // então, se o app subir um instante antes da migração, a fila continua concluindo as entradas — só as
+          // falhas deixam de ser gravadas nessa janela. Linha enviada nunca entra no alerta de erro.
+          ...(!resultado.ok ? { erro_esperado: resultado.esperado === true } : {}),
           // o CHECK da 0132 é ok = (enviado_em is not null): os dois andam sempre juntos
           enviado_em: resultado.ok ? new Date().toISOString() : null,
           // Solta a reserva: se falhou (e ainda tem tentativa), a próxima rodada pega de novo. Isso
@@ -163,6 +210,7 @@ export function criarRepositorioEstoqueEnvios(
       }
     },
   }
+  return repo
 }
 
 /**
@@ -182,3 +230,59 @@ export function criarSomaEnviada(
   }
 }
 
+/**
+ * O erro da tentativa ANTERIOR de uma linha da fila (o que a tela de pendências mostra). `null` = sem erro
+ * (linha nova). O pagamento automático de pendência só age quando ele diz que faltou saldo requisitado.
+ */
+export function criarErroAnterior(sb: SupabaseClient = createServiceSupabase()): (id: string) => Promise<string | null> {
+  return async (id) => {
+    const { data, error } = await sb.from('sf_estoque_envios').select('erro').eq('id', id).maybeSingle()
+    if (error) throw new Error(`sf_estoque_envios (erro anterior): ${error.message}`)
+    const erro = (data as { erro?: unknown } | null)?.erro
+    return typeof erro === 'string' ? erro : null
+  }
+}
+
+/**
+ * A OP nasceu depois de 09/11/2026 e por isso a integração com o Compels é automática para ela? (0176:
+ * `sf_ordens.integrar_compels`.) Casa a linha da fila com a OP pelo mesmo pmo e op. OP que não existe em
+ * `sf_ordens` = false. Erro de leitura sobe: quem chama transforma em espera.
+ */
+export function criarOpIntegrada(sb?: SupabaseClient): (pmo: string, op: string) => Promise<boolean> {
+  return async (pmo, op) => {
+    const cliente = sb ?? createServiceSupabase()
+    const { data, error } = await cliente.from('sf_ordens').select('integrar_compels').eq('pmo', pmo).eq('op', op).maybeSingle()
+    if (error) throw new Error(`sf_ordens (integrar_compels): ${error.message}`)
+    return (data as { integrar_compels?: unknown } | null)?.integrar_compels === true
+  }
+}
+
+/**
+ * O PONTO DE PARTIDA de cada OP do Compels (migração 0168): o apontado que ela já tinha lá quando a
+ * integração gravou pela primeira vez. `op` é o número do Compels (só dígitos).
+ */
+export interface BaseDaOp {
+  /** `null` = ainda não guardado. */
+  ler(op: string): Promise<number | null>
+  /** Guarda uma vez; se já existe, não troca (o primeiro número guardado é o que vale). */
+  guardar(op: string, base: number): Promise<void>
+}
+
+export function criarBaseDaOp(sb: SupabaseClient = createServiceSupabase()): BaseDaOp {
+  return {
+    async ler(op) {
+      const { data, error } = await sb.from('sf_compels_op_base').select('base').eq('op', op).maybeSingle()
+      if (error) throw new Error(`sf_compels_op_base: ${error.message}`)
+      if (!data) return null
+      const n = Number((data as { base: unknown }).base)
+      if (!Number.isFinite(n) || n < 0) throw new Error(`sf_compels_op_base devolveu um valor inválido para a OP ${op}`)
+      return n
+    },
+    async guardar(op, base) {
+      const { error } = await sb
+        .from('sf_compels_op_base')
+        .upsert({ op, base }, { onConflict: 'op', ignoreDuplicates: true })
+      if (error) throw new Error(`sf_compels_op_base: ${error.message}`)
+    },
+  }
+}

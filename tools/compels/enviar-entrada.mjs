@@ -1,4 +1,3 @@
-// GERADO por rolldown a partir de enviar-entrada.ts. Nao edite: veja o cabecalho do .ts.
 //#region src/modules/compels/domain/leituras-erp.ts
 /**
 * Converte as respostas CRUAS do Compels em `LeiturasOp`. As respostas vêm em formatos diferentes
@@ -96,31 +95,6 @@ function consultaRequisitada(p) {
 			negociante: { id: String(p.negocianteId) },
 			id: String(p.opId)
 		},
-		quantidade: p.quantidade
-	};
-}
-/** Corpo (campo `jsonData`) de `requisicaoOrdemProducao/save`. O nome `itemRequisicaOrdemProducaoList` (sem o "r") é o do ERP. */
-function corpoRequisicao(p) {
-	return {
-		ordemProducao: {
-			id: String(p.opId),
-			tipoPropriedade: p.tipoPropriedade
-		},
-		itemRequisicaOrdemProducaoList: p.componentes.map((c) => ({
-			item: {
-				id: c.itemId,
-				codigo: c.codigo,
-				rastreavel: c.rastreavel,
-				precoCusto: c.precoCusto
-			},
-			quantidade: c.quantidadeRequisitar,
-			quantidadeRequisitadaDisponivel: c.quantidadeRequisitadaDisponivel,
-			quantidadeComposicao: c.quantidadeComposicao,
-			itemEstoqueRequisicaoList: [],
-			itemOrdemProducaoId: c.itemOrdemProducaoId,
-			motivoRequisicao: "",
-			itemFantasma: c.itemFantasma
-		})),
 		quantidade: p.quantidade
 	};
 }
@@ -235,7 +209,7 @@ function soma(valores) {
 }
 function estadoDaOp(leituras) {
 	const temEstorno = leituras.empenhos.some((e) => q6(e.quantidadeEstornar) !== 0) || leituras.requisicoes.some((r) => q6(r.quantidadeEstornar) !== 0) || leituras.apontamentos.some((a) => q6(a.quantidadeCancelada) !== 0);
-	const temPendencia = leituras.empenhos.some((e) => e.situacao === "Pendente") || leituras.requisicoes.some((r) => r.situacao === "Pendente");
+	const temPendencia = leituras.requisicoes.some((r) => r.situacao === "Pendente");
 	const inicios = leituras.apontamentos.flatMap((a) => a.dataInicio ? [a.dataInicio.slice(0, 10)] : []);
 	const inicioApontamento = inicios.length > 0 ? `${[...inicios].sort()[0]}T00:00:00` : null;
 	return {
@@ -257,12 +231,7 @@ const MENSAGEM_ERRO = {
 	quantidade_invalida: "Quantidade da entrada inválida.",
 	propriedade_nao_suportada: "OP com estoque que não é próprio (ex.: em terceiros). Faça a entrada à mão no Compels.",
 	acima_da_op: "A entrada passa da quantidade da OP no Compels.",
-	estorno_na_op: "A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar.",
-	abaixo_do_enviado: "Leitura inconsistente: o Compels mostra menos apontado do que já enviamos.",
-	fora_do_esperado: "OP com apontamento fora do esperado no Compels. Confira antes de reenviar.",
-	requisicao_fora_do_esperado: "OP com requisição fora do esperado no Compels (alguém requisitou à mão). Confira antes de reenviar.",
-	sem_empenho: "OP sem empenho suficiente no Compels.",
-	pendencia_no_erp: "Há pendência de material no Compels (falta saldo de componente). Resolva lá e reenvie."
+	estorno_na_op: "A OP tem estorno ou cancelamento no Compels. Confira antes de reenviar."
 };
 function erro(codigo) {
 	return {
@@ -279,22 +248,30 @@ function decidirEntrada(estado, acumulado) {
 	if (estado.tipoPropriedade !== 0) return erro("propriedade_nao_suportada");
 	if (novo > estado.quantidadeOp) return erro("acima_da_op");
 	if (estado.temEstorno) return erro("estorno_na_op");
-	if (estado.apontada >= novo) return { tipo: "ja_enviada" };
-	if (estado.apontada < anterior) return erro("abaixo_do_enviado");
-	if (estado.apontada !== anterior) return erro("fora_do_esperado");
-	if (estado.temPendencia) return erro("pendencia_no_erp");
-	if (estado.empenhada < novo) return erro("sem_empenho");
-	if (estado.requisitada === anterior) return {
+	if (estado.apontada === novo) return { tipo: "ja_enviada" };
+	const avisos = [];
+	if (estado.apontada !== anterior) {
+		const diferenca = q6(estado.apontada - anterior);
+		const sentido = diferenca > 0 ? `a mais: ${diferenca}` : `a menos: ${q6(-diferenca)}`;
+		avisos.push(`quantidade inesperada no Compels: mostra ${estado.apontada} apontadas, esperado ${anterior} antes desta entrada (${sentido}). Foi gravado mesmo assim; confira se há apontamento manual ou estorno nesta OP`);
+	}
+	if (estado.empenhada < novo) avisos.push(`empenho insuficiente no Compels: empenhado ${estado.empenhada}, precisa de ${novo} (faltam ${q6(novo - estado.empenhada)})`);
+	if (estado.requisitada < novo) avisos.push(`requisição insuficiente no Compels: requisitado ${estado.requisitada}, precisa de ${novo} (faltam ${q6(novo - estado.requisitada)})`);
+	return {
 		tipo: "enviar",
-		requisitar: quantidade,
-		apontar: quantidade
+		apontar: quantidade,
+		avisos
 	};
-	if (estado.requisitada === novo) return {
-		tipo: "enviar",
-		requisitar: 0,
-		apontar: quantidade
-	};
-	return erro("requisicao_fora_do_esperado");
+}
+//#endregion
+//#region src/modules/compels/domain/sem-sufixo.ts
+/**
+* O Compels só conhece a OP e o produto sem o sufixo de "segunda leva" do ShopFloor: a OP `8682_F` é a
+* OP `8682` lá, e a PMO `PMOF52_F` é o produto `PMOF52`. O sufixo é `_` mais letras no FIM do texto
+* (`_` sozinho também vale: `8504_` é `8504`). Qualquer outro `_` no meio do texto fica como está.
+*/
+function semSufixo(texto) {
+	return texto.trim().replace(/_[A-Za-z]*$/, "");
 }
 //#endregion
 //#region src/modules/compels/domain/jwt.ts
@@ -384,10 +361,15 @@ const recusa = (erro, tentarDeNovo = false) => ({
 	tentarDeNovo
 });
 function numeroDaOp(texto) {
-	return /^\d+$/.test(texto.trim()) ? Number(texto.trim()) : null;
+	const base = semSufixo(texto);
+	return /^\d+$/.test(base) ? Number(base) : null;
 }
-function faltas(etapa, componentes) {
-	return `Falta saldo de componente no Compels para ${etapa}: ${componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, tem ${c.tem})`).join("; ")}.`;
+function aguardandoRequisicao(componentes) {
+	return `Aguardando requisição no Compels: ${componentes.map((c) => `${c.codigo} (precisa ${c.precisa}, requisitado disponível ${c.tem})`).join("; ")}.`;
+}
+/** Avisos (empenho/requisição insuficientes) em uma frase para colar no fim de outra mensagem. */
+function textoAvisos(avisos) {
+	return avisos.length > 0 ? ` Aviso: ${avisos.join("; ")}.` : "";
 }
 /** Conferências que não precisam da trava: a OP existe, é desta PMO, em UN e de estoque próprio. */
 async function conferir(erp, e) {
@@ -395,50 +377,32 @@ async function conferir(erp, e) {
 	if (numero === null) return { erro: recusa(`OP "${e.op}" não é numérica; a integração só atende OP numérica. Faça a entrada à mão no Compels.`) };
 	const op = await erp.buscarOp(numero);
 	if (!op) return { erro: recusa(`OP ${numero} não encontrada no Compels.`) };
-	if (op.codigoItem.trim().toUpperCase() !== e.pmo.trim().toUpperCase()) return { erro: recusa(`O produto da OP ${numero} no Compels (${op.codigoItem}) é diferente da PMO ${e.pmo}.`) };
+	if (op.codigoItem.trim().toUpperCase() !== semSufixo(e.pmo).toUpperCase()) return { erro: recusa(`O produto da OP ${numero} no Compels (${op.codigoItem}) é diferente da PMO ${e.pmo}.`) };
 	if (op.unidade !== "UN") return { erro: recusa(`Produto em ${op.unidade || "unidade desconhecida"}: a integração só atende UN. Faça a entrada à mão no Compels.`) };
 	return { op };
 }
 /** Com a OP já conferida: lê o estado, decide, consulta os componentes e monta os corpos. Não grava. */
 async function planejar(erp, op, e, opcoes) {
 	const agora = (opcoes.agora ?? (() => /* @__PURE__ */ new Date()))();
-	const novo = e.acumuladoAnterior + e.quantidade;
 	const estado = estadoDaOp(await erp.lerOp(op));
+	const baseGuardada = e.base ?? null;
+	const baseNova = baseGuardada === null && e.acumuladoAnterior === 0;
+	const base = baseGuardada ?? (baseNova ? estado.apontada : 0);
+	const anterior = e.acumuladoAnterior + base;
+	const novo = anterior + e.quantidade;
 	const decisao = decidirEntrada(estado, {
-		anterior: e.acumuladoAnterior,
+		anterior,
 		novo
 	});
-	if (decisao.tipo === "erro") return recusa(decisao.mensagem, decisao.codigo === "sem_empenho" || decisao.codigo === "pendencia_no_erp");
+	if (decisao.tipo === "erro") return recusa(decisao.mensagem);
 	if (decisao.tipo === "ja_enviada") return { tipo: "ja_enviada" };
-	let requisitar = null;
-	let requisitarComponentes = [];
-	if (decisao.requisitar > 0) {
-		const componentes = await erp.consultarRequisicao(op, decisao.requisitar);
-		requisitarComponentes = componentes;
-		const sem = componentes.filter((c) => !c.itemFantasma && c.saldo < c.quantidadeRequisitar).map((c) => ({
-			codigo: c.codigo,
-			precisa: c.quantidadeRequisitar,
-			tem: c.saldo
-		}));
-		if (sem.length > 0) return recusa(faltas("requisitar", sem), true);
-		requisitar = corpoRequisicao({
-			opId: op.id,
-			tipoPropriedade: op.tipoPropriedade,
-			quantidade: decisao.requisitar,
-			componentes
-		});
-	}
 	const componentes = await erp.consultarDisponibilidade(op, decisao.apontar);
-	const aRequisitar = new Map(requisitarComponentes.map((c) => [c.itemId, c.quantidadeRequisitar]));
-	const sem = componentesSemSaldo(componentes.map((c) => ({
-		...c,
-		saldoDisponivel: c.saldoDisponivel + (aRequisitar.get(c.itemId) ?? 0)
-	}))).map((c) => ({
+	const sem = componentesSemSaldo(componentes).map((c) => ({
 		codigo: c.codigo,
 		precisa: c.quantidadeUtilizada,
 		tem: c.saldoDisponivel
 	}));
-	if (sem.length > 0) return recusa(faltas("apontar", sem), true);
+	if (sem.length > 0) return recusa(`${aguardandoRequisicao(sem)}${textoAvisos(decisao.avisos)}`, true);
 	const apontar = corpoApontamento({
 		opId: op.id,
 		produtoId: op.produtoId,
@@ -453,8 +417,10 @@ async function planejar(erp, op, e, opcoes) {
 		tipo: "enviar",
 		op,
 		novoAcumulado: novo,
-		requisitar,
-		apontar
+		apontadaDepois: q6(estado.apontada + decisao.apontar),
+		baseACapturar: baseNova ? base : null,
+		apontar,
+		avisos: decisao.avisos
 	};
 }
 function erroDeExcecao(e) {
@@ -474,68 +440,84 @@ function erroDeExcecao(e) {
 		tentarDeNovo: true
 	};
 }
-/** Entrega a entrada: trava → ler → decidir → consultar → requisitar → apontar → reler → liberar a trava. */
+/** Falha da entrega; `gravou` = já chamou algum gesto que GRAVA no ERP (aí não é "só esperar"). */
+function falha(erro, tentarDeNovo, gravou) {
+	return {
+		ok: false,
+		erro,
+		tentarDeNovo,
+		aguardar: tentarDeNovo && !gravou
+	};
+}
+/** Entrega a entrada: trava → ler → decidir → consultar saldo → apontar → reler → liberar a trava. */
 async function enviarEntrada(erp, e, opcoes) {
 	let travada = null;
+	let gravou = false;
 	try {
 		const c = await conferir(erp, e);
-		if ("erro" in c) return {
-			ok: false,
-			erro: c.erro.erro,
-			tentarDeNovo: c.erro.tentarDeNovo
-		};
+		if ("erro" in c) return falha(c.erro.erro, c.erro.tentarDeNovo, false);
 		const op = c.op;
 		const trava = await erp.adquirirTrava(op.id);
-		if (!trava.ok) return {
-			ok: false,
-			erro: trava.mensagem,
-			tentarDeNovo: trava.tentarDeNovo
-		};
+		if (!trava.ok) return falha(trava.mensagem, trava.tentarDeNovo, false);
 		travada = op.id;
 		const plano = await planejar(erp, op, e, opcoes);
-		if (plano.tipo === "erro") return {
-			ok: false,
-			erro: plano.erro,
-			tentarDeNovo: plano.tentarDeNovo
-		};
+		if (plano.tipo === "erro") return falha(plano.erro, plano.tentarDeNovo, false);
 		if (plano.tipo === "ja_enviada") return {
 			ok: true,
 			detalhe: "O Compels já tinha esta entrada."
 		};
-		if (plano.requisitar) {
-			const r = await erp.requisitar(plano.requisitar);
-			if (!r.ok) return {
-				ok: false,
-				erro: r.mensagem,
-				tentarDeNovo: r.tentarDeNovo
-			};
+		if (plano.baseACapturar !== null && e.guardarBase) try {
+			await e.guardarBase(plano.baseACapturar);
+		} catch (erro) {
+			return falha(`Não consegui guardar o ponto de partida da OP (nada foi gravado no Compels): ${erro instanceof Error ? erro.message : String(erro)}`, true, false);
 		}
+		gravou = true;
 		const a = await erp.apontar(plano.apontar);
-		if (!a.ok) {
-			const aviso = plano.requisitar ? " A requisição já foi feita; a próxima tentativa só aponta." : "";
-			return {
-				ok: false,
-				erro: `${a.mensagem}${aviso}`,
-				tentarDeNovo: a.tentarDeNovo
-			};
-		}
+		if (!a.ok) return falha(a.mensagem, a.tentarDeNovo, gravou);
 		const depois = estadoDaOp(await erp.lerOp(op));
-		if (depois.apontada < plano.novoAcumulado) return {
-			ok: false,
-			erro: `O Compels aceitou a gravação, mas mostra ${depois.apontada} apontadas (esperado ${plano.novoAcumulado}). Confira antes de reenviar.`,
-			tentarDeNovo: false
-		};
+		if (depois.apontada < plano.apontadaDepois) return falha(`O Compels aceitou a gravação, mas mostra ${depois.apontada} apontadas (esperado ${plano.apontadaDepois}). Confira antes de reenviar.`, false, gravou);
 		return {
 			ok: true,
-			detalhe: plano.requisitar ? "Requisitado e apontado." : "Apontado."
+			detalhe: `Apontado.${textoAvisos(plano.avisos)}`,
+			...plano.avisos.length > 0 ? { aviso: plano.avisos.join("; ") } : {}
 		};
 	} catch (erro) {
-		return erroDeExcecao(erro);
+		const r = erroDeExcecao(erro);
+		return falha(r.erro, r.tentarDeNovo, gravou);
 	} finally {
 		if (travada !== null) try {
 			await erp.liberarTrava(travada);
 		} catch {}
 	}
+}
+//#endregion
+//#region src/modules/compels/domain/saldo-item.ts
+function saldoDoItem(resposta, codigo) {
+	const alvo = codigo.trim().toUpperCase();
+	const linhas = listaDe(resposta, "saldo do item");
+	for (const linha of linhas) {
+		const item = linha.item;
+		if (typeof item !== "object" || item === null) throw new RespostaInesperada("saldo.item");
+		const cadastro = item;
+		if (typeof cadastro.codigo !== "string") throw new RespostaInesperada("saldo.item.codigo");
+		if (cadastro.codigo.trim().toUpperCase() !== alvo) continue;
+		const numero = (campo) => {
+			const v = linha[campo];
+			if (typeof v !== "number" || !Number.isFinite(v)) throw new RespostaInesperada(`saldo.${campo}`);
+			return v;
+		};
+		const unidade = cadastro.unidade?.codigo;
+		return {
+			codigo: cadastro.codigo,
+			descricao: typeof cadastro.descricao === "string" ? cadastro.descricao.trim() : "",
+			unidade: typeof unidade === "string" ? unidade : "",
+			proprio: numero("saldoItemEstoqueProprio"),
+			pendencia: numero("saldoItemPendencia"),
+			emTerceiros: numero("saldoItemEstoqueEmTerceiros"),
+			deTerceiros: numero("saldoItemEstoqueDeTerceiros")
+		};
+	}
+	return null;
 }
 //#endregion
 //#region src/modules/compels/domain/resposta-erp.ts
@@ -783,6 +765,25 @@ var ClienteCompels = class {
 	/** `apontamentoOrdemProducao/save`. GRAVA no Compels e dá entrada no estoque. */
 	apontar(corpo) {
 		return this.gravar("/apontamentoOrdemProducao/save", corpo);
+	}
+	/**
+	* Saldo de estoque de UM item (a PMO) pela tela Movimento de Item. Só leitura. `null` = o item não veio
+	* na resposta (código exato). Pede os itens de saldo zero também, senão "não existe" e "zero" se
+	* confundiriam.
+	*/
+	async consultarSaldoItem(codigo) {
+		const filtro = {
+			codigo: codigo.trim(),
+			descricao: "",
+			data: dataIso(this.agora()),
+			exibeItensComSaldoZerado: true
+		};
+		return saldoDoItem(await this.json("/itemMovimento/findFilter", this.formulario({
+			filter: JSON.stringify(filtro),
+			page: "1",
+			start: "0",
+			limit: "50"
+		})), codigo);
 	}
 };
 //#endregion

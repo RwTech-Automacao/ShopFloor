@@ -137,6 +137,21 @@ describe('AlmoxarifadoPanel — caixas esperando confirmação (0155)', () => {
     expect(listarNecessidadesAlmoxarifado).toHaveBeenCalledWith('PMO1', '12345')
   })
 
+  it('leitor com o teclado trocado (CX´1[´3[12345-PMO1): manda ao servidor o código REAL da caixa da lista', async () => {
+    listarNecessidadesAlmoxarifado.mockResolvedValue({ ok: true, necessidades: [CX1, CX2] })
+    registrarEntradaAlmoxarifado.mockResolvedValue({ ok: true, quantidade: 3, tipo: 'caixa' })
+    render(<AlmoxarifadoPanel {...PROPS} />)
+    await screen.findByRole('list', { name: 'Caixas esperando confirmação' })
+
+    bipar('CX´1[´3[12345-PMO1')
+
+    await waitFor(() =>
+      expect(registrarEntradaAlmoxarifado).toHaveBeenCalledWith(
+        expect.objectContaining({ bipe: 'CX[1][3]12345-PMO1' }),
+      ),
+    )
+  })
+
   it('a caixa confirmada pelo bipe some da lista (recarrega depois do bipe aceito)', async () => {
     listarNecessidadesAlmoxarifado.mockResolvedValueOnce({ ok: true, necessidades: [CX1, CX2] })
     render(<AlmoxarifadoPanel {...PROPS} />)

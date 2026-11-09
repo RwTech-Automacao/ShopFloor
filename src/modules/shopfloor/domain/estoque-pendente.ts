@@ -368,3 +368,31 @@ export function rotuloTipoGrupo(g: GrupoEstoquePendente): string {
   if (!linha || !(linha.quantidade > 0)) return 'lote do NQA'
   return `lote do NQA · ${linha.quantidade === 1 ? '1 peça' : `${linha.quantidade} peças`}`
 }
+
+/** O que o Fluxo mostra sobre uma OP: peças que o Almoxarifado já deu entrada e que ainda não chegaram ao Compels. */
+export interface ResumoPendenteOp {
+  /** Peças de entradas ainda pendentes (o saldo: o que já foi estornado não conta). */
+  pecas: number
+  situacao: SituacaoEstoque
+  /** O selo do primeiro bipe a pedir atenção (a lista já vem com o que precisa de gente na frente). */
+  rotulo: string
+  /** O motivo da última recusa do Compels, em português; nulo se ainda nunca foi tentada. */
+  motivo: string | null
+  oQueFazer: string
+}
+
+/** `null` quando nada espera: o Fluxo não mostra nada. Só entradas contam peças. */
+export function resumirPendenteDaOp(grupos: GrupoEstoquePendente[]): ResumoPendenteOp | null {
+  const entradas = grupos
+    .map((g) => g.linhas.find((l) => l.operacao === 'entrada'))
+    .filter((l): l is LinhaEstoquePendente => !!l)
+  if (entradas.length === 0) return null
+  const primeira = entradas[0]!
+  return {
+    pecas: entradas.reduce((soma, l) => soma + l.saldo, 0),
+    situacao: primeira.situacao,
+    rotulo: primeira.rotulo,
+    motivo: primeira.erro,
+    oQueFazer: primeira.oQueFazer,
+  }
+}

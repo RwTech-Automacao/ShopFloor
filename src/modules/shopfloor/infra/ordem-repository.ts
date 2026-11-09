@@ -166,3 +166,11 @@ export async function buscarOrdemBase(id: string): Promise<{ pmo: string; op: st
   if (error) return null
   return data as { pmo: string; op: string; status: string; placas_por_painel: number }
 }
+
+/** Rota GRAVADA da OP (postos na ordem). É a base da trava do Almoxarifado na edição; erro de leitura lança (fail-closed). */
+export async function listarRotaGravada(id: string): Promise<string[]> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.from('sf_ordem_postos').select('posto,ordem').eq('ordem_id', id).order('ordem')
+  if (error) throw error
+  return ((data ?? []) as { posto: string }[]).map((r) => r.posto)
+}

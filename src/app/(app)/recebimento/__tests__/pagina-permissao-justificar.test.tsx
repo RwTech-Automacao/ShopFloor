@@ -21,7 +21,7 @@ vi.mock('@/modules/recebimento/application/justificar-divergencia', () => ({
 }))
 
 /** O diálogo exige o contexto do item; aqui ele é só enfeite — o que se vigia é a permissão. */
-const CONTEXTO = { codigo: 'CAPJ91', descricao: 'CAPACITOR', quantidadePedido: 1010, quantidadeRecebida: 505, divergencia: '-505' }
+const CONTEXTO = { emb: 'EMB390', po: 'PO-4521', codigo: 'CAPJ91', descricao: 'CAPACITOR', quantidadePedido: 1010, quantidadeRecebida: 505, divergencia: '-505' }
 
 // As telas filhas são trocadas por um stub que só abre o diálogo REAL com a prop `podeJustificar`
 // que a página entregou. O que se vigia aqui é a fiação da página (qual permissão ela consulta),

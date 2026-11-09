@@ -12,7 +12,7 @@ import type { ResultadoResolver } from '../application/portas'
 
 const CAMPOS_REGRA =
   'id, modulo, tipo, nome, postos, taxa_minima, janela_tipo, janela_valor, minimo_bipes, ' +
-  'limite_tempo_seg, limite_ocorrencias, pausa_max_min, pmos, lembrete_min, hora_resumo, canais, ' +
+  'limite_tempo_seg, limite_ocorrencias, pausa_max_min, pmos, lembrete_min, hora_resumo, limite_horas, so_ops_ativas, incluir_manutencao, canais, ' +
   'destinatarios, avisar_pessoas, avisar_canal, ativa, atualizado_em'
 
 interface LinhaRegra {
@@ -32,6 +32,11 @@ interface LinhaRegra {
   lembrete_min: number | null
   /** `time` no Postgres: o PostgREST entrega texto 'HH:MM:SS'. `unknown` de propósito — o tipo é afirmado em `lerHoraResumo`. */
   hora_resumo: unknown
+  /** Parado ou travado (0167/0172): horas paradas. Nulo nos outros tipos. */
+  limite_horas: number | null
+  /** Parado ou travado (0172): só OPs ativas / inclui reprovadas. Default true na coluna. */
+  so_ops_ativas: boolean | null
+  incluir_manutencao: boolean | null
   canais: string[] | null
   destinatarios: string[] | null
   avisar_pessoas: boolean | null
@@ -105,6 +110,9 @@ function paraRegra(l: LinhaRegra, intervalos: Intervalo[]): RegraAlerta {
     // para todas as regras da lista. Janela que não é 'intervalos' não tem nenhum.
     intervalos,
     horaResumo: lerHoraResumo(l),
+    limiteHoras: l.limite_horas ?? null,
+    soOpsAtivas: l.so_ops_ativas ?? true,
+    incluirManutencao: l.incluir_manutencao ?? true,
     canais: (l.canais ?? []).filter(ehCanal),
     destinatarios: l.destinatarios ?? [],
     // Banco ainda sem a 0123 (deploy antes da migração): o comportamento de hoje é avisar as pessoas.
@@ -143,6 +151,14 @@ function paraLinha(r: RegraValida, comTipo: boolean): Record<string, unknown> {
     avisar_pessoas: r.avisarPessoas,
     avisar_canal: r.avisarCanal,
     ativa: r.ativa,
+  }
+  // Só o parado grava estas colunas: nos outros tipos o INSERT/UPDATE as omite (o default de
+  // `limite_horas` é null; o das duas opções é true). Isso NÃO torna seguro subir o app antes da
+  // migração 0172: o SELECT de leitura (CAMPOS_REGRA) já lista as colunas. A migração sempre vai ANTES do app.
+  if (r.tipo === 'parado') {
+    linha.limite_horas = r.limiteHoras
+    linha.so_ops_ativas = r.soOpsAtivas
+    linha.incluir_manutencao = r.incluirManutencao
   }
   if (comTipo) {
     linha.tipo = r.tipo
@@ -207,7 +223,8 @@ async function trocarIntervalos(
     }
   }
   // Regra de outra janela não tem intervalo nenhum para inserir.
-  const linhas = r.janelaTipo === 'intervalos' ? r.intervalos : []
+  // O parado guarda janela 'op' de fachada mas TEM turnos (as horas de expediente que ele conta).
+  const linhas = r.janelaTipo === 'intervalos' || r.tipo === 'parado' ? r.intervalos : []
   if (linhas.length === 0) return { ok: true }
   const { error } = await sb
     .from('alerta_regra_intervalos')
@@ -236,7 +253,7 @@ export async function listarRegras(modulo: ModuloAlerta): Promise<RegraAlerta[]>
     .order('nome')
   if (error) throw error
   const linhas = (data ?? []) as unknown as LinhaRegra[]
-  const comBlocos = linhas.filter((l) => l.janela_tipo === 'intervalos').map((l) => l.id)
+  const comBlocos = linhas.filter((l) => l.janela_tipo === 'intervalos' || l.tipo === 'parado').map((l) => l.id)
   const porRegra = await intervalosPorRegra(sb, comBlocos)
   return linhas.map((l) => paraRegra(l, porRegra.get(l.id) ?? []))
 }

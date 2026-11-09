@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ChartColumn } from 'lucide-react'
+import { ChartColumn, FileText } from 'lucide-react'
 
 // O app-shell importa a server action de sair e o router; nenhum dos dois importa aqui.
 vi.mock('server-only', () => ({}))
@@ -9,11 +9,19 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/', useRouter: () => ({ 
 import { RECEBIMENTO } from '../app-shell'
 
 describe('menu do Recebimento', () => {
-  it('"Dashboard" fica entre Fluxo e Registros', () => {
+  it('a ordem depois do Fluxo: Relatório de EMB, Dashboard, Registros', () => {
     const chaves = RECEBIMENTO.map((i) => i.chave)
     const fluxo = chaves.indexOf('rec-fluxo')
-    expect(chaves[fluxo + 1]).toBe('rec-dashboard')
-    expect(chaves[fluxo + 2]).toBe('rec-registros')
+    expect(chaves[fluxo + 1]).toBe('rec-emb')
+    expect(chaves[fluxo + 2]).toBe('rec-dashboard')
+    expect(chaves[fluxo + 3]).toBe('rec-registros')
+  })
+  it('"Relatório de EMB" aponta para o índice /recebimento/emb, com a permissão de visualizar', () => {
+    const item = RECEBIMENTO.find((i) => i.chave === 'rec-emb')!
+    expect(item).toMatchObject({
+      rotulo: 'Relatório de EMB', href: '/recebimento/emb', modulo: 'recebimento', perm: 'visualizar',
+    })
+    expect(item.icone).toBe(FileText)
   })
   it('aponta para /recebimento/dashboard, com ícone de gráfico e a permissão de visualizar', () => {
     const item = RECEBIMENTO.find((i) => i.chave === 'rec-dashboard')!

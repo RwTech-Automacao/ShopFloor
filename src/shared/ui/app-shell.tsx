@@ -47,6 +47,7 @@ import {
   Boxes,
   Server,
   ChartColumn,
+  FileText,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -77,6 +78,8 @@ export const RECEBIMENTO: FolhaModular[] = [
   { chave: 'importar', rotulo: 'Importar Planilha', href: '/recebimento/importar', icone: Upload, modulo: 'recebimento', perm: 'importar' },
   { chave: 'processos', rotulo: 'Processos', href: '/recebimento/processos', icone: ClipboardList, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'rec-fluxo', rotulo: 'Fluxo', href: '/recebimento/fluxo', icone: Workflow, modulo: 'recebimento', perm: 'visualizar' },
+  // O relatório de uma EMB (0178): o mesmo da mensagem do alerta "Fim de EMB"; o índice escolhe a EMB.
+  { chave: 'rec-emb', rotulo: 'Relatório de EMB', href: '/recebimento/emb', icone: FileText, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'rec-dashboard', rotulo: 'Dashboard', href: '/recebimento/dashboard', icone: ChartColumn, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'rec-registros', rotulo: 'Registros', href: '/recebimento/registros', icone: History, modulo: 'recebimento', perm: 'visualizar' },
   { chave: 'importacoes', rotulo: 'Importações', href: '/recebimento/importacoes', icone: FileDown, modulo: 'recebimento', perm: 'visualizar' },

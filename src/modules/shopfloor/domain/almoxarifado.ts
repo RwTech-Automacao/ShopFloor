@@ -1,5 +1,6 @@
 import { separarCodigoCaixa } from './caixa'
 import { normalizarSerie } from './serie'
+import { canonicoDoBipe } from './bipe-teclado'
 
 export type TipoBipeAlmoxarifado = 'serie' | 'caixa'
 
@@ -196,6 +197,8 @@ export function mensagemRecusaLote(motivo: string, detalhe?: string): string {
       return detalhe || 'Este posto não é um posto de Almoxarifado.'
     case 'posto_fora_da_op':
       return detalhe || 'Este posto não está nos postos desta OP. Acrescente-o em Cadastrar OP.'
+    case 'estoque_invalido':
+      return 'Estoque de destino inválido: escolha PA ou EINTER.'
     default:
       return 'Não foi possível confirmar o lote.'
   }
@@ -301,9 +304,13 @@ export function quandoCurto(iso: string | null, agora: Date = new Date()): strin
   return `${dm} ${hora}`
 }
 
-/** O código bipado confere com o da caixa (sem espaço nas pontas, sem diferença de maiúscula). */
+/**
+ * O código bipado confere com o da caixa: sem espaço nas pontas, sem diferença de maiúscula e com a tolerância
+ * ao teclado trocado do leitor (`CX´1[´160[…` é o `CX[1][160]…` — ver `bipe-teclado.ts`).
+ */
 export function codigoConfere(bipado: string, codigoDaCaixa: string): boolean {
-  return (bipado ?? '').trim().toUpperCase() === (codigoDaCaixa ?? '').trim().toUpperCase()
+  const alvo = canonicoDoBipe(codigoDaCaixa)
+  return alvo !== '' && canonicoDoBipe(bipado) === alvo
 }
 
 /** A frase do banco quando a caixa/lote já não espera confirmação (a mesma das actions). */

@@ -11,11 +11,15 @@ export interface PostoRegra {
   temStatus: boolean
   /** O posto registra o CÓDIGO do defeito na reprova (`sf_posto_perfis.reprova` ≠ 'nenhum'). */
   coletaDefeito: boolean
+  /** O perfil do posto é o do Almoxarifado (`recurso = 'almoxarifado'`). Ausente = não é. */
+  almoxarifado?: boolean
 }
 
 /** Traduz o perfil do posto para o que a regra de alerta precisa saber. */
 export function postoRegraDe(chave: string, perfil: PerfilPosto): PostoRegra {
-  return { chave, temStatus: perfil.temStatus, coletaDefeito: perfil.reprova !== 'nenhum' }
+  return { chave, temStatus: perfil.temStatus, coletaDefeito: perfil.reprova !== 'nenhum',
+    almoxarifado: perfil.recurso === 'almoxarifado',
+  }
 }
 
 /**
@@ -30,15 +34,21 @@ export function postoRegraDe(chave: string, perfil: PerfilPosto): PostoRegra {
  *  - defeito: só quem registra o código. `alerta_defeitos` exige status reprovado E
  *    `codigo_defeito` preenchido — sem código não há o que repetir.
  *  - tempo médio: qualquer posto, que todo posto tem intervalo entre um bipe e o próximo.
+ *  - parado ("Parado ou travado na produção"): QUALQUER posto — a peça pode ficar parada em qualquer um.
+ *  - compels: só o posto de perfil Almoxarifado (a fila de envio ao Compels nasce nele).
+ *  - ficha de apontamento: nenhum posto (como o fim de EMB). O Almoxarifado é o da ROTA de cada OP; a regra não escolhe posto.
  *  - fim de EMB: nenhum posto. A regra não tem posto nenhum (o gatilho é a EMB fechar, e EMB não é
  *    posto), e a lista de postos não aparece no formulário dele. É o único tipo que devolve false
  *    para TODO posto — por isso o teste "todo tipo aceita pelo menos o posto de teste" o exclui.
  */
 export function postoServeAoTipo(tipo: TipoRegra, posto: PostoRegra): boolean {
-  if (tipo === 'emb') return false
+  if (tipo === 'emb' || tipo === 'ficha') return false
   // O resumo traz a taxa de aprovação: posto sem status não tem linha Aprovado/Reprovado e sumiria.
   if (tipo === 'aprovacao' || tipo === 'resumo') return posto.temStatus
   if (tipo === 'defeito') return posto.coletaDefeito
+  // O compels olha a fila de entradas do Almoxarifado: só o posto de perfil almoxarifado serve.
+  // O parado (0172) olha onde a peça parou: qualquer posto serve.
+  if (tipo === 'compels') return posto.almoxarifado === true
   return true
 }
 

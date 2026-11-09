@@ -60,8 +60,7 @@ try {
     console.log('ENSAIO: o Compels já tem esta entrada; nada seria enviado.')
   } else {
     console.log(`ENSAIO: seria enviada. OP ${plano.op.numero} (id ${plano.op.id}), produto ${plano.op.codigoItem}, novo acumulado ${plano.novoAcumulado}.`)
-    console.log(plano.requisitar ? '\n--- Requisitar (requisicaoOrdemProducao/save) ---' : '\n--- Requisitar: não precisa (a requisição desta entrada já existe) ---')
-    if (plano.requisitar) console.log(JSON.stringify(mascarar(plano.requisitar), null, 1))
+    if (plano.avisos.length > 0) console.log(`Aviso: ${plano.avisos.join('; ')}.`)
     console.log('\n--- Apontar (apontamentoOrdemProducao/save) ---')
     console.log(JSON.stringify(mascarar(plano.apontar), null, 1))
   }

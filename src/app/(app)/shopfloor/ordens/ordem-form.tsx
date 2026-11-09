@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useState, useTransition } from 'react'
-import { Plus, Pencil, ArrowUp, ArrowDown, X } from 'lucide-react'
+import { Plus, Pencil, ArrowUp, ArrowDown, X, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,6 +29,7 @@ import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { placasDosPaineis, paineisDasPlacas } from '@/modules/shopfloor/domain/placas-por-painel'
+import { adicionarPostoNaRota, moverPostoNaRota, postoAlmoxarifadoPadrao, rotaPadraoOpNova } from '@/modules/shopfloor/domain/rota-op-nova'
 
 export interface OrdemView {
   id: string
@@ -80,7 +81,6 @@ export function OrdemForm({
   pmosExistentes,
   clientesExistentes,
   dadosPorPmo,
-  almoxarifadoAutomatico,
 }: {
   postos: string[]
   postosPerfil: Record<string, PerfilPosto>
@@ -89,20 +89,21 @@ export function OrdemForm({
   pmosExistentes: string[]
   clientesExistentes: string[]
   dadosPorPmo: Record<string, { cliente: string; descricao: string }>
-  /** Chave do posto Almoxarifado que entra sozinho no fim da rota de OP NOVA (etapa 2 do card único,
-   *  vinda do servidor só com a variável ligada). Ausente/null = formulário idêntico ao de sempre. */
-  almoxarifadoAutomatico?: string | null
 }) {
   const ehEdicao = ordem !== undefined
-  // Só OP nova: a edição nunca recebe o posto sozinho.
-  const fixo = !ehEdicao ? (almoxarifadoAutomatico ?? null) : null
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
+  // Almoxarifado OBRIGATÓRIO e fixo no fim: em toda OP nova e na edição de OP cuja rota gravada já o
+  // tem. OP antiga sem ele segue como está: acrescentá-lo derrubaria o % e reabriria OPs. O servidor
+  // aplica a mesma regra (a tela só a mostra).
+  const almoxarifado = postoAlmoxarifadoPadrao(postos, perfilDo)
+  const almoxFixo = almoxarifado !== null && (!ordem || ordem.postos.includes(almoxarifado)) ? almoxarifado : null
+  const fluxoInicial = (): string[] => (almoxFixo ? rotaPadraoOpNova(ordem?.postos ?? [], almoxFixo) : ordem?.postos ?? [])
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState<ResultadoOrdem | undefined, FormData>(action, undefined)
 
   const [pmo, setPmo] = useState(ordem?.pmo ?? '')
-  const [fluxo, setFluxo] = useState<string[]>(ordem?.postos ?? [])
+  const [fluxo, setFluxo] = useState<string[]>(fluxoInicial)
   const [receita, setReceita] = useState<ReceitaPorPosto>(ordem?.receitaPorPosto ?? {})
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
   const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
@@ -147,11 +148,7 @@ export function OrdemForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
-  // Rota editável = sem o posto fixo (ele fica sempre no fim, fora do alcance de mover/remover/adicionar).
-  // Sem posto fixo `lista` é o próprio `fluxo`: nada muda.
-  const lista = fixo ? fluxo.filter((p) => p !== fixo) : fluxo
-  const fluxoEnviado = fixo ? [...lista, fixo] : fluxo
-  const disponiveis = postos.filter((p) => !fluxo.includes(p) && p !== fixo)
+  const disponiveis = postos.filter((p) => !fluxo.includes(p))
   const padroesDoPmo = padroesExistentes.filter((p) => p.pmo === pmo)
 
   const [salvarAberto, setSalvarAberto] = useState(false)
@@ -192,7 +189,7 @@ export function OrdemForm({
         pmo: pmoAlvo,
         nome,
         descricao: '',
-        postos: lista,
+        postos: fluxo,
         componentes: receitaFiltrada,
       })
       if (r.ok) {
@@ -216,19 +213,15 @@ export function OrdemForm({
   }
 
   function mover(i: number, delta: number) {
-    const j = i + delta
-    if (j < 0 || j >= lista.length) return
-    const copia = [...lista]
-    const [item] = copia.splice(i, 1)
-    copia.splice(j, 0, item!)
-    setFluxo(copia)
+    setFluxo(moverPostoNaRota(fluxo, i, delta, almoxFixo))
   }
   function remover(i: number) {
-    setFluxo(lista.filter((_, idx) => idx !== i))
+    if (fluxo[i] === almoxFixo) return
+    setFluxo(fluxo.filter((_, idx) => idx !== i))
   }
   function adicionar(posto: string) {
-    if (fluxo.includes(posto) || posto === fixo) return
-    setFluxo([...lista, posto])
+    if (fluxo.includes(posto)) return
+    setFluxo(adicionarPostoNaRota(fluxo, posto, almoxFixo))
     if (perfilDo(posto).recurso === 'burnin' && (tempoBurnin[posto] ?? '') === '') {
       setTempoBurnin((prev) => ({ ...prev, [posto]: '6:00' }))
     }
@@ -250,7 +243,7 @@ export function OrdemForm({
         if (v) {
           // Reset ao abrir: "Nova OP" limpa; edição recarrega a OP (fix do "cache").
           setPmo(ordem?.pmo ?? '')
-          setFluxo(ordem?.postos ?? [])
+          setFluxo(fluxoInicial())
           setReceita(ordem?.receitaPorPosto ?? {})
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
@@ -294,7 +287,7 @@ export function OrdemForm({
           </DialogHeader>
           <form key={instanciaForm} action={formAction} className="flex flex-col gap-4">
             {ehEdicao && <input type="hidden" name="id" value={ordem.id} />}
-            <input type="hidden" name="fluxo" value={JSON.stringify(fluxoEnviado)} />
+            <input type="hidden" name="fluxo" value={JSON.stringify(fluxo)} />
             <input type="hidden" name="componentes" value={JSON.stringify(receitaFiltrada)} />
             <input type="hidden" name="tempo_burnin" value={JSON.stringify(tempoFiltrado)} />
 
@@ -419,7 +412,7 @@ export function OrdemForm({
                       <Select value={padraoSelecionado} onValueChange={(id) => {
                         setPadraoSelecionado(id ?? '')
                         const padrao = padroesDoPmo.find((p) => p.id === id)
-                        if (padrao) { setFluxo(padrao.postos); setReceita(coagirReceitaPadrao(padrao.componentes)) }
+                        if (padrao) { setFluxo(almoxFixo ? rotaPadraoOpNova(padrao.postos, almoxFixo) : padrao.postos); setReceita(coagirReceitaPadrao(padrao.componentes)) }
                       }}>
                         <SelectTrigger className="h-8 w-auto text-xs">
                           <SelectValue>
@@ -449,7 +442,7 @@ export function OrdemForm({
                       )}
                     </div>
                   )}
-                  {pmo.trim() !== '' && lista.length > 0 && (
+                  {pmo.trim() !== '' && fluxo.length > 0 && (
                     <Button type="button" size="sm" variant="outline" onClick={abrirSalvarPadrao}>
                       Salvar como padrão
                     </Button>
@@ -458,7 +451,7 @@ export function OrdemForm({
               </div>
 
               <ol className="flex flex-col gap-1">
-                {lista.map((posto, i) => (
+                {fluxo.map((posto, i) => (
                   <li key={posto} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm">
                     <span className="w-5 text-center text-xs font-medium text-enterplak">{i + 1}</span>
                     <span className="flex-1">{posto}</span>
@@ -475,25 +468,26 @@ export function OrdemForm({
                         />
                       </span>
                     )}
-                    <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
-                      <ArrowUp className="size-4" />
-                    </button>
-                    <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === lista.length - 1} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
-                      <ArrowDown className="size-4" />
-                    </button>
-                    <button type="button" aria-label="Remover" onClick={() => remover(i)} className="text-muted-foreground hover:text-red-600">
-                      <X className="size-4" />
-                    </button>
+                    {posto === almoxFixo ? (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Posto obrigatório: fecha a rota da OP">
+                        <Lock className="size-3.5" aria-hidden="true" /> obrigatório
+                      </span>
+                    ) : (
+                      <>
+                        <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                          <ArrowUp className="size-4" />
+                        </button>
+                        <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === fluxo.length - 1 || fluxo[i + 1] === almoxFixo} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                          <ArrowDown className="size-4" />
+                        </button>
+                        <button type="button" aria-label="Remover" onClick={() => remover(i)} className="text-muted-foreground hover:text-red-600">
+                          <X className="size-4" />
+                        </button>
+                      </>
+                    )}
                   </li>
                 ))}
-                {fixo && (
-                  <li className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-sm">
-                    <span className="w-5 text-center text-xs font-medium text-enterplak">{lista.length + 1}</span>
-                    <span className="flex-1">{fixo}</span>
-                    <span className="text-xs text-muted-foreground">automático · sempre no fim</span>
-                  </li>
-                )}
-                {lista.length === 0 && !fixo && (
+                {fluxo.length === 0 && (
                   <li className="rounded-lg border border-dashed border-border px-2.5 py-3 text-center text-xs text-muted-foreground">
                     Nenhum posto no fluxo. Adicione abaixo.
                   </li>

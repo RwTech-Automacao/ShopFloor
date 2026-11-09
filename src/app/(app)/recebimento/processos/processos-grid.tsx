@@ -141,6 +141,8 @@ export function ProcessosGrid({ colunas, linhas: linhasServidor, total, estado, 
       // De que item é a divergência. As colunas vêm em TODA linha (COLUNAS_CONTEXTO_DIVERGENCIA
       // no `processo-repository`), mesmo que o layout do usuário as esconda.
       contexto: {
+        emb: String(linha.numero_emb ?? ''),
+        po: String(linha.numero_pedido ?? ''),
         codigo: String(linha.codigo_material ?? ''),
         descricao: String(linha.descricao_material ?? ''),
         quantidadePedido: bruto(linha.quantidade_pedido),

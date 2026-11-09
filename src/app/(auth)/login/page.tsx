@@ -1,13 +1,14 @@
 import Image from 'next/image'
 import { LoginForm } from './login-form'
 import { VERSAO } from '@/shared/lib/versao'
+import { destinoPosLogin } from '@/modules/auth/domain/destino-pos-login'
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redefinida?: string }>
+  searchParams: Promise<{ redefinida?: string; next?: string | string[] }>
 }) {
-  const { redefinida } = await searchParams
+  const { redefinida, next } = await searchParams
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       {/* Painel de marca (vinho) — visível a partir de lg */}
@@ -58,7 +59,10 @@ export default async function LoginPage({
           <p className="mt-1 mb-8 text-sm text-muted-foreground">
             Acesse sua conta para continuar.
           </p>
-          <LoginForm redefinida={redefinida === '1'} />
+          <LoginForm
+            redefinida={redefinida === '1'}
+            destino={destinoPosLogin(typeof next === 'string' ? next : undefined)}
+          />
           <p className="mt-10 text-center text-xs text-muted-foreground">Versão {VERSAO}</p>
         </div>
       </div>

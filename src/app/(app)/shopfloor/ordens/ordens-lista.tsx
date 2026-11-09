@@ -20,7 +20,6 @@ export function OrdensLista({
   pmosExistentes,
   clientesExistentes,
   dadosPorPmo,
-  almoxarifadoAutomatico,
 }: {
   views: OrdemView[]
   chavesPostos: string[]
@@ -29,8 +28,6 @@ export function OrdensLista({
   pmosExistentes: string[]
   clientesExistentes: string[]
   dadosPorPmo: Record<string, { cliente: string; descricao: string }>
-  /** Posto Almoxarifado automático (só vale no formulário de OP NOVA). */
-  almoxarifadoAutomatico?: string | null
 }) {
   const [cliente, setCliente] = useState(TODOS)
   const [status, setStatus] = useState(TODOS)
@@ -53,7 +50,7 @@ export function OrdensLista({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex justify-end">
-        <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} almoxarifadoAutomatico={almoxarifadoAutomatico} />
+        <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
       </div>
 
       {/* Filtros */}

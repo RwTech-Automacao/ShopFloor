@@ -858,8 +858,8 @@ export function FluxoForm({
           // Só a Entrada carrega PMO/OP + descrição da OP (o card mostra; o domínio não tem esse dado).
           ...(n.id === ENTRADA ? { pmo: opSel?.pmo, op: opSel?.op, descricao: opSel?.descricao } : {}),
           // A Saída (card Concluído) leva só o PMO: é com ele que o card consulta o estoque do Compels.
-          // Card único: quando o Almoxarifado é o fim da rota (sem nó Saída), é ELE que leva o PMO.
-          ...(n.id === SAIDA || n.data.mostrarEstoque ? { pmo: opSel?.pmo } : {}),
+          // Card único: quando o Almoxarifado é o fim da rota (sem nó Saída), é ELE que leva o PMO (e a OP).
+          ...(n.id === SAIDA || n.data.mostrarEstoque ? { pmo: opSel?.pmo, op: opSel?.op } : {}),
           // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
           ...(rota ? (() => {
             const idx = rota.ordem.indexOf(n.id)
