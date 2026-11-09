@@ -26,4 +26,22 @@ docker cp supabase/migrations/0181_sf_ordem_faixas.sql "$NOME":/tmp/0181.sql
 docker cp supabase/tests/faixas_sn_test.sql "$NOME":/tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 bash supabase/tests/faixas_sn_diff.sh
+
+# ROLLBACK (docs/operacao/faixas-sn-op/rollback-0181.sql): as funções voltam a olhar só a faixa da OP, as
+# novas somem, a tabela e as faixas ficam; reaplicar a 0181 devolve tudo (ida e volta).
+docker cp docs/operacao/faixas-sn-op/rollback-0181.sql "$NOME":/tmp/rollback.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/rollback.sql
+TROCA="select set_config('teste.uid','00000000-0000-0000-0000-000000000001',false), set_config('teste.perms','setup.lancar',false);
+select st_trocar_rolo((select id from st_setups where op='8682_F'), '36', 'ZSY-1', 'CAPJ41-L1R3', 'CAPJ41-L1R5', '08458001025')->>'resultado';"
+ESTADO=$(docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c "
+  select (select count(*) from pg_proc where proname in ('sf_sn_nas_faixas','sf_faixas_texto','sf_ordem_sns_fora_das_faixas','sf_ordens_faixa_principal'))
+      || '/' || (select count(*) from pg_trigger where tgname like 'sf_ordens_faixa_principal%')
+      || '/' || (select count(*) from sf_ordem_faixas)")
+DEPOIS_RB=$(printf '%s\n' "$TROCA" | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
+case "$ESTADO" in 0/0/[1-9]*) ;; *) echo "rollback FALHOU: estado $ESTADO"; exit 1 ;; esac
+[ "$DEPOIS_RB" = REPROVADO ] || { echo "rollback FALHOU: faixa 2 ainda aceita ($DEPOIS_RB)"; exit 1; }
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0181.sql
+DE_NOVO=$(printf '%s\n' "$TROCA" | docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq | tail -1)
+[ "$DE_NOVO" = APROVADO ] || { echo "0181 reaplicada depois do rollback FALHOU ($DE_NOVO)"; exit 1; }
+echo "rollback da 0181 ($ESTADO: funções/triggers/faixas) e reaplicação: ok"
 echo "FAIXAS SN OK"
