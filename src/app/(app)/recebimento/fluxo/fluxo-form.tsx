@@ -17,7 +17,6 @@ import {
 import '@xyflow/react/dist/style.css'
 import {
   ChevronDown,
-  ChevronsUpDown,
   Maximize2,
   Minimize2,
   RotateCcw,
@@ -28,7 +27,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ControlesCanvas } from '@/shared/ui/fluxo/controles-canvas'
 import { HelperLines, getHelperLines } from '@/shared/ui/fluxo/helper-lines'
 import {
@@ -48,7 +46,6 @@ import {
 } from '@/modules/recebimento/domain/etapa-processo'
 import { estadoDaDivergencia } from '@/modules/recebimento/domain/divergencia'
 import type { CaixaFluxo, ItemFluxo, PassagemEtapa } from '@/modules/recebimento/infra/fluxo-repository'
-import { cn } from '@/lib/utils'
 import { ArestaFluxo } from './aresta-fluxo'
 import {
   FluxoEmbNode,
@@ -57,6 +54,7 @@ import {
   type FluxoRecebimentoNodeData,
 } from './fluxo-node'
 import { HistoricoItemDialog, type ItemDoHistorico } from './historico-item-dialog'
+import { SeletorEmb } from '../_components/seletor-emb'
 import {
   JustificarDivergenciaDialog,
   type AlvoJustificativa,
@@ -399,8 +397,6 @@ function RelogioAoVivo() {
 
 export function FluxoForm({ embs, podeJustificar = false }: { embs: string[]; podeJustificar?: boolean }) {
   const [emb, setEmb] = useState('')
-  const [aberto, setAberto] = useState(false)
-  const [filtro, setFiltro] = useState('')
   const [caixas, setCaixas] = useState<CaixaFluxo[] | null>(null)
   // Data de chegada da EMB (`aaaa-mm-dd`), do card de início. `null` = nenhum item tem data.
   const [chegada, setChegada] = useState<string | null>(null)
@@ -424,11 +420,6 @@ export function FluxoForm({ embs, podeJustificar = false }: { embs: string[]; po
   const rfRef = useRef<ReactFlowInstance | null>(null)
   const [zoomPct, setZoomPct] = useState(100)
   const [telaCheia, setTelaCheia] = useState(false)
-
-  const embsFiltradas = useMemo(() => {
-    const f = filtro.trim().toLowerCase()
-    return f ? embs.filter((e) => e.toLowerCase().includes(f)) : embs
-  }, [embs, filtro])
 
   // As duas contagens do rodapé andam só pelas caixas REAIS: a de sinalização repete itens que já
   // foram contados na caixa onde eles estão, e somá-la contaria cada marcado duas vezes.
@@ -622,8 +613,6 @@ export function FluxoForm({ embs, podeJustificar = false }: { embs: string[]; po
 
   async function escolher(valor: string) {
     setEmb(valor)
-    setAberto(false)
-    setFiltro('')
     setEtapaSel(null)
     setItens([])
     setErro('')
@@ -686,53 +675,7 @@ export function FluxoForm({ embs, podeJustificar = false }: { embs: string[]; po
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-1 flex-col gap-1.5 sm:max-w-md sm:min-w-64">
             <Label>EMB</Label>
-            {/* Combobox (Popover + input), como o seletor de OP do Fluxo do ShopFloor: o Select
-                sequestra as teclas e a lista de EMBs é longa. */}
-            <Popover open={aberto} onOpenChange={(o) => { setAberto(o); if (!o) setFiltro('') }}>
-              <PopoverTrigger
-                render={
-                  <button
-                    type="button"
-                    className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                  >
-                    <span className={emb ? 'truncate' : 'truncate text-muted-foreground'}>
-                      {emb || 'Selecione a EMB'}
-                    </span>
-                    <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
-                  </button>
-                }
-              />
-              <PopoverContent side="bottom" align="start" sideOffset={4} className="w-[22rem] max-w-[calc(100vw-2rem)] gap-0 p-0">
-                <div className="border-b border-border p-1.5">
-                  <input
-                    autoFocus
-                    value={filtro}
-                    onChange={(e) => setFiltro(e.target.value)}
-                    placeholder="Filtrar EMB…"
-                    className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                  />
-                </div>
-                <div className="max-h-64 overflow-y-auto p-1">
-                  {embsFiltradas.length === 0 ? (
-                    <p className="px-2 py-2 text-sm text-muted-foreground">Nenhuma EMB encontrada.</p>
-                  ) : (
-                    embsFiltradas.map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        onClick={() => void escolher(e)}
-                        className={cn(
-                          'flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent',
-                          emb === e && 'bg-accent font-medium',
-                        )}
-                      >
-                        {e}
-                      </button>
-                    ))
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
+            <SeletorEmb embs={embs} valor={emb} onEscolher={(e) => void escolher(e)} />
           </div>
 
           <div className="flex flex-wrap items-center gap-3 pb-1">

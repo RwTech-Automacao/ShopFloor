@@ -3,6 +3,7 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { buscarRelatorioEmb } from '@/modules/recebimento/infra/emb-relatorio-repository'
+import { listarValoresDistintos } from '@/modules/recebimento/infra/registros-repository'
 import { semJustificativa } from '@/modules/recebimento/domain/emb-relatorio'
 import {
   Table,
@@ -12,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { IrParaEmb } from '../ir-para-emb'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,8 +35,9 @@ function decodificar(bruto: string): string {
 }
 
 /**
- * O relatório de UMA EMB, aberto pelo link da mensagem do alerta "Fim de EMB" (sem item de menu): o Nº da
- * PO, quando fechou e as divergências de quantidade com a justificativa (as sem justificativa em destaque).
+ * O relatório de UMA EMB, aberto pelo link da mensagem do alerta "Fim de EMB" ou pelo índice do menu
+ * (/recebimento/emb): o Nº da PO, quando fechou e as divergências de quantidade com a justificativa (as sem
+ * justificativa em destaque). O topo troca de EMB ou volta ao índice.
  */
 export default async function EmbRelatorioPage({ params }: { params: Promise<{ emb: string }> }) {
   const sessao = await getSessao()
@@ -43,13 +46,25 @@ export default async function EmbRelatorioPage({ params }: { params: Promise<{ e
   }
 
   const emb = decodificar((await params).emb).trim()
-  const r = await buscarRelatorioEmb(emb)
+  const [r, embs] = await Promise.all([buscarRelatorioEmb(emb), listarValoresDistintos('numero_emb')])
+
+  const topo = (
+    <div className="flex flex-wrap items-end gap-3 print:hidden">
+      <IrParaEmb embs={embs} atual={r?.emb ?? emb} />
+      <Link href="/recebimento/emb" className="pb-2 text-sm text-enterplak underline-offset-2 hover:underline">
+        ← Todas as EMBs
+      </Link>
+    </div>
+  )
 
   if (!r) {
     return (
-      <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-tinta">EMB {emb || '—'}</h2>
-        <p className="text-sm text-muted-foreground">Nenhum processo com esta EMB.</p>
+      <div className="flex flex-col gap-4">
+        {topo}
+        <div className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold text-tinta">EMB {emb || '—'}</h2>
+          <p className="text-sm text-muted-foreground">Nenhum processo com esta EMB.</p>
+        </div>
       </div>
     )
   }
@@ -57,6 +72,7 @@ export default async function EmbRelatorioPage({ params }: { params: Promise<{ e
   const pendentes = semJustificativa(r.divergencias)
   return (
     <div className="flex flex-col gap-4">
+      {topo}
       <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold text-tinta">EMB {r.emb}</h2>
         <p className="text-sm text-muted-foreground">
