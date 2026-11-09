@@ -369,4 +369,12 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0177.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_parados_relatorio.sql
 echo "0177 (relatório de peças paradas): ok"
 
+# ---------- 0178: relatório de uma EMB (rec_emb_relatorio sobre a rec_emb_divergencias da 0150) ----------
+docker cp supabase/migrations/0178_rec_emb_relatorio.sql "$NOME":/tmp/0178.sql
+docker cp supabase/tests/rec_emb_relatorio_test.sql "$NOME":/tmp/teste_emb_relatorio.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0178.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0178.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_emb_relatorio.sql
+echo "0178 (relatório de uma EMB): ok"
+
 echo "ALERTAS SQL OK"

@@ -1,4 +1,5 @@
-import { LIMITE_MENSAGEM, cortarUtf16, listaComCorte } from './mensagens'
+import { LIMITE_MENSAGEM, cortarUtf16, listaComCorte, listaPrimeiros } from './mensagens'
+import { linhaVerRelatorio } from './links'
 
 /** Um item divergente da EMB, como a mensagem precisa dele (o `dados` da fila, já lido). */
 export interface DivergenciaEmb {
@@ -15,6 +16,9 @@ export interface DivergenciaEmb {
   justificativa: string
   justificadaPorNome: string
 }
+
+/** Quantas divergências a mensagem mostra quando leva o link do relatório (o resto está na tela). */
+export const DIVERGENCIAS_NA_MENSAGEM = 3
 
 /** A frase da coluna "Janela" da lista de regras. A regra de fim de EMB não tem janela. */
 export const JANELA_EMB = 'Quando a EMB fecha'
@@ -49,6 +53,9 @@ function numeroOuTraco(v: number | null): string {
  * nenhuma, no caso da EMB limpa.
  * Mexer na ordem das linhas muda o assunto do e-mail.
  *
+ * COM O LINK DO RELATÓRIO (`urlRelatorio`, a tela /recebimento/emb/<emb>): só as 3 primeiras divergências,
+ * "… e mais K divergências" se houver e "Ver relatório completo: <url>". A EMB limpa não leva link.
+ *
  * ⚠️ Uma EMB com muitas divergências passaria dos 2000 do Discord, que RECUSA a mensagem inteira.
  * O corte é o mesmo das posições e do resumo (`listaComCorte`): "… e mais 12 divergências". O
  * orçamento é o que sobra do limite depois do cabeçalho e do `\n` que o separa da lista. Sem
@@ -58,6 +65,7 @@ export function textoEmb(
   nomeRegra: string,
   emb: string,
   divergencias: readonly DivergenciaEmb[],
+  urlRelatorio: string | null = null,
 ): string {
   // A EMB limpa tem texto PRÓPRIO, e sai por aqui antes de qualquer lista.
   if (divergencias.length === 0) {
@@ -90,6 +98,23 @@ export function textoEmb(
         : `   ↳ ${texto}${quem === '' ? '' : ` (${quem})`}`
     return `${identidade} · ${quantidades}\n${explicacao}`
   })
+
+  // Com o link do relatório (a tela da EMB): só as DIVERGENCIAS_NA_MENSAGEM primeiras, "… e mais K
+  // divergências" e o link na última linha. Sem link (linha antiga, sem origem): a lista inteira até o limite.
+  const url = (urlRelatorio ?? '').trim()
+  if (url !== '') {
+    const link = linhaVerRelatorio(url)
+    const listaCurta = listaPrimeiros(
+      itens,
+      DIVERGENCIAS_NA_MENSAGEM,
+      LIMITE_MENSAGEM - cabecalho.length - link.length - 2,
+      'divergência',
+      'divergências',
+    )
+    const texto = [cabecalho, listaCurta, link].filter((p) => p !== '').join('\n')
+    // Cabeçalho + link já no limite (nome de regra absurdo): o cabeçalho sozinho, como abaixo.
+    return texto.length <= LIMITE_MENSAGEM ? texto : cabecalho
+  }
 
   const lista = listaComCorte(
     itens,

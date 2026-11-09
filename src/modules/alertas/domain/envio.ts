@@ -28,7 +28,7 @@ import {
 import { textoEmb, type DivergenciaEmb } from './emb'
 import { textoFicha } from './ficha-texto'
 import { OP_RELATORIO, PMO_RELATORIO } from './parados'
-import { urlRelatorioParados } from './links'
+import { urlRelatorioEmb, urlRelatorioParados } from './links'
 import { textoNormalizouParado, textoRelatorioParado, type OpParada } from './parados-texto'
 import {
   textoAlertaCompels,
@@ -225,7 +225,7 @@ function textoResumoDe(dados: Record<string, unknown>): string {
  * ⚠️ A LISTA VAZIA NÃO É ERRO: é a EMB que fechou sem divergência nenhuma, e ela TAMBÉM manda
  * mensagem (decisão 5 da spec, corrigida em 14/10/2026). Quem escreve essa frase é o `textoEmb`.
  */
-function textoEmbDe(dados: Record<string, unknown>): string {
+function textoEmbDe(dados: Record<string, unknown>, opcoes: OpcoesTexto): string {
   const emb = texto(dados, 'emb')
   if (emb.trim() === '') throw new DadosEnvioInvalidos('emb')
   if (!Array.isArray(dados.divergencias)) throw new DadosEnvioInvalidos('divergencias')
@@ -249,7 +249,7 @@ function textoEmbDe(dados: Record<string, unknown>): string {
       justificadaPorNome: textoOuVazio(d, 'justificada_por_nome'),
     }
   })
-  return textoEmb(texto(dados, 'regra_nome'), emb, divergencias)
+  return textoEmb(texto(dados, 'regra_nome'), emb, divergencias, opcoes.urlBase ? urlRelatorioEmb(opcoes.urlBase, emb) : null)
 }
 
 /**
@@ -477,7 +477,7 @@ export interface OpcoesTexto {
 export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>, opcoes: OpcoesTexto = {}): string {
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
   if (tipo === 'resumo') return textoResumoDe(dados)
-  if (tipo === 'emb') return textoEmbDe(dados)
+  if (tipo === 'emb') return textoEmbDe(dados, opcoes)
   if (tipo === 'compels_aviso') return textoAvisosCompelsDe(dados)
   if (tipo === 'ficha') return textoFichaDe(dados)
   if (tipo === 'resolvido') {
