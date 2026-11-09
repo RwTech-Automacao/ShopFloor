@@ -3,6 +3,7 @@ import { updateSession } from '@/shared/lib/supabase/middleware'
 import { ehRotaPublicaDeAlertas } from '@/modules/alertas/domain/rotas'
 import { ehRotaDeDadosDoDashboard } from '@/modules/shopfloor/domain/rotas-dashboard'
 import { ehRotaDaFilaDeEstoque } from '@/modules/shopfloor/domain/rotas-estoque'
+import { ehRotaDoQuiosqueDeFichas } from '@/modules/shopfloor/domain/rotas-quiosque'
 import { cabecalhosComMarcaEmbed } from '@/shared/lib/supabase/embed'
 
 export async function middleware(request: NextRequest) {
@@ -16,6 +17,8 @@ export async function middleware(request: NextRequest) {
   // redirect pro /login — e o Telegram trataria isso como entrega bem-sucedida, enquanto o `curl -f`
   // de um cron veria um 3xx, que não é erro: a tarefa falharia toda vez sem ninguém perceber.
   // A fila de estoque do Compels (/api/shopfloor/estoque) é o mesmo caso — ver tools/estoque/README.md.
+  // A página do tablet do Almoxarifado (/quiosque/fichas) também: quem autoriza é a chave do link
+  // (FICHAS_TABLET_CHAVE); sem ela a rota responde 404.
   //
   // ⚠️ TODAS passam pelos `cabecalhos`, nunca por um NextResponse.next() pelado: é aqui que a marca
   // de embed mandada pelo cliente é apagada. Uma rota que saia sem eles aceita a marca forjada e
@@ -23,7 +26,8 @@ export async function middleware(request: NextRequest) {
   if (
     ehRotaPublicaDeAlertas(request.nextUrl.pathname) ||
     ehRotaDeDadosDoDashboard(request.nextUrl.pathname) ||
-    ehRotaDaFilaDeEstoque(request.nextUrl.pathname)
+    ehRotaDaFilaDeEstoque(request.nextUrl.pathname) ||
+    ehRotaDoQuiosqueDeFichas(request.nextUrl.pathname)
   )
     return NextResponse.next({ request: { headers: cabecalhos } })
 
