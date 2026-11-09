@@ -29,6 +29,7 @@ import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { placasDosPaineis, paineisDasPlacas } from '@/modules/shopfloor/domain/placas-por-painel'
+import { adicionarPostoNaRota, postoAlmoxarifadoPadrao, rotaPadraoOpNova } from '@/modules/shopfloor/domain/rota-op-nova'
 
 export interface OrdemView {
   id: string
@@ -91,12 +92,16 @@ export function OrdemForm({
 }) {
   const ehEdicao = ordem !== undefined
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
+  // OP NOVA nasce com o Almoxarifado pré-marcado no fim (a pessoa pode tirar). Na edição a rota vem
+  // do banco como está: acrescentar o posto numa OP existente derrubaria o % e reabriria OPs.
+  const almoxarifado = postoAlmoxarifadoPadrao(postos, perfilDo)
+  const fluxoInicial = (): string[] => ordem?.postos ?? rotaPadraoOpNova([], almoxarifado)
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState<ResultadoOrdem | undefined, FormData>(action, undefined)
 
   const [pmo, setPmo] = useState(ordem?.pmo ?? '')
-  const [fluxo, setFluxo] = useState<string[]>(ordem?.postos ?? [])
+  const [fluxo, setFluxo] = useState<string[]>(fluxoInicial)
   const [receita, setReceita] = useState<ReceitaPorPosto>(ordem?.receitaPorPosto ?? {})
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
   const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
@@ -218,7 +223,7 @@ export function OrdemForm({
   }
   function adicionar(posto: string) {
     if (fluxo.includes(posto)) return
-    setFluxo([...fluxo, posto])
+    setFluxo(adicionarPostoNaRota(fluxo, posto, almoxarifado))
     if (perfilDo(posto).recurso === 'burnin' && (tempoBurnin[posto] ?? '') === '') {
       setTempoBurnin((prev) => ({ ...prev, [posto]: '6:00' }))
     }
@@ -240,7 +245,7 @@ export function OrdemForm({
         if (v) {
           // Reset ao abrir: "Nova OP" limpa; edição recarrega a OP (fix do "cache").
           setPmo(ordem?.pmo ?? '')
-          setFluxo(ordem?.postos ?? [])
+          setFluxo(fluxoInicial())
           setReceita(ordem?.receitaPorPosto ?? {})
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
@@ -409,7 +414,7 @@ export function OrdemForm({
                       <Select value={padraoSelecionado} onValueChange={(id) => {
                         setPadraoSelecionado(id ?? '')
                         const padrao = padroesDoPmo.find((p) => p.id === id)
-                        if (padrao) { setFluxo(padrao.postos); setReceita(coagirReceitaPadrao(padrao.componentes)) }
+                        if (padrao) { setFluxo(ehEdicao ? padrao.postos : rotaPadraoOpNova(padrao.postos, almoxarifado)); setReceita(coagirReceitaPadrao(padrao.componentes)) }
                       }}>
                         <SelectTrigger className="h-8 w-auto text-xs">
                           <SelectValue>
