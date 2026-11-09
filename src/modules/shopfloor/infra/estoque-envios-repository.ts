@@ -244,6 +244,20 @@ export function criarErroAnterior(sb: SupabaseClient = createServiceSupabase()):
 }
 
 /**
+ * A OP nasceu depois de 09/11/2026 e por isso a integração com o Compels é automática para ela? (0176:
+ * `sf_ordens.integrar_compels`.) Casa a linha da fila com a OP pelo mesmo pmo e op. OP que não existe em
+ * `sf_ordens` = false. Erro de leitura sobe: quem chama transforma em espera.
+ */
+export function criarOpIntegrada(sb?: SupabaseClient): (pmo: string, op: string) => Promise<boolean> {
+  return async (pmo, op) => {
+    const cliente = sb ?? createServiceSupabase()
+    const { data, error } = await cliente.from('sf_ordens').select('integrar_compels').eq('pmo', pmo).eq('op', op).maybeSingle()
+    if (error) throw new Error(`sf_ordens (integrar_compels): ${error.message}`)
+    return (data as { integrar_compels?: unknown } | null)?.integrar_compels === true
+  }
+}
+
+/**
  * O PONTO DE PARTIDA de cada OP do Compels (migração 0168): o apontado que ela já tinha lá quando a
  * integração gravou pela primeira vez. `op` é o número do Compels (só dígitos).
  */
