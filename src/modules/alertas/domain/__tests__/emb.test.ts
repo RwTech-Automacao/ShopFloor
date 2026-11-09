@@ -75,3 +75,53 @@ describe('textoEmb', () => {
     expect(t).not.toContain('0 divergências')
   })
 })
+
+describe('textoEmb — com o link do relatório', () => {
+  const URL = 'https://shopfloor.enterplak.com.br/recebimento/emb/EMB388CA'
+  const muitas = (n: number) => Array.from({ length: n }, (_, i) => div({ numero: 2000 + i, item: `IT-${i}` }))
+
+  it('até 3: todas (2 linhas cada), sem "… e mais", e o link no fim', () => {
+    const t = textoEmb('Fim de EMB', 'EMB388CA', muitas(3), URL)
+    expect(t.split('\n')).toEqual([
+      '📦 EMB388CA fechou — 3 divergências de quantidade · Fim de EMB',
+      '#2000 IT-0 CAPACITOR 100UF · pedido 500, recebido 490 (-10)',
+      '   ↳ ⚠️ sem justificativa',
+      '#2001 IT-1 CAPACITOR 100UF · pedido 500, recebido 490 (-10)',
+      '   ↳ ⚠️ sem justificativa',
+      '#2002 IT-2 CAPACITOR 100UF · pedido 500, recebido 490 (-10)',
+      '   ↳ ⚠️ sem justificativa',
+      `Ver relatório completo: ${URL}`,
+    ])
+  })
+
+  it('19 divergências: as 3 primeiras, "… e mais 16 divergências" e o link', () => {
+    const t = textoEmb('Fim de EMB', 'EMB388CA', muitas(19), URL)
+    const linhas = t.split('\n')
+    expect(linhas[0]).toBe('📦 EMB388CA fechou — 19 divergências de quantidade · Fim de EMB')
+    expect(linhas.filter((l) => l.startsWith('#'))).toHaveLength(3)
+    expect(linhas.slice(-2)).toEqual(['… e mais 16 divergências', `Ver relatório completo: ${URL}`])
+    expect(linhas).toHaveLength(1 + 6 + 2)
+  })
+
+  it('4: "… e mais 1 divergência" no singular', () => {
+    expect(textoEmb('Fim de EMB', 'EMB388CA', muitas(4), URL)).toContain('\n… e mais 1 divergência\nVer relatório')
+  })
+
+  it('a justificativa e quem justificou seguem na 2ª linha', () => {
+    const t = textoEmb('Fim de EMB', 'EMB388CA', [div({ justificativa: 'Falta no fornecedor', justificadaPorNome: 'Ana' })], URL)
+    expect(t).toContain('   ↳ Falta no fornecedor (Ana)\nVer relatório completo:')
+  })
+
+  it('justificativas enormes: menos de 3 e o "… e mais" conta o resto; cabe no limite', () => {
+    const t = textoEmb('Fim de EMB', 'EMB388CA', muitas(5).map((d) => ({ ...d, justificativa: 'x'.repeat(900) })), URL)
+    expect(t.length).toBeLessThanOrEqual(LIMITE_MENSAGEM)
+    const mostradas = t.split('\n').filter((l) => l.startsWith('#')).length
+    expect(mostradas).toBeLessThan(3)
+    expect(t).toContain(`… e mais ${5 - mostradas} divergências`)
+    expect(t.endsWith(`Ver relatório completo: ${URL}`)).toBe(true)
+  })
+
+  it('EMB limpa continua com a linha única, sem link', () => {
+    expect(textoEmb('Fim de EMB', 'EMB388CA', [], URL)).toBe(textoEmb('Fim de EMB', 'EMB388CA', []))
+  })
+})
