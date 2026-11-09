@@ -2,69 +2,63 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { corteDeExpediente } from '../domain/horas-de-turno'
-import {
-  lerListaDeRegras, lerRegraDoRelatorio, lerSnsParados, montarRelatorioParados,
-  type RegraDaLista, type RegraDoRelatorio, type RelatorioParados,
-} from '../domain/parados-relatorio'
-
-export type LeituraRelatorioParados =
-  | { ok: true; regra: RegraDoRelatorio; relatorio: RelatorioParados; agora: Date }
-  | { ok: false; motivo: 'regra_inexistente' }
+import type { Intervalo } from '../domain/intervalos'
+import { lerRegraDoRelatorio, type RegraDoRelatorio } from '../domain/parados-relatorio'
+import { lerPecasParadas, type SituacaoOp, type SnParadoTela } from '../domain/parados-filtros'
 
 const PAGINA = 1000
-/** Teto de segurança da tela (50 páginas). Uma regra com mais peças paradas que isso é caso de investigar à parte. */
+/** Teto de segurança da tela (50 páginas). Mais peças paradas que isso é caso de investigar à parte. */
 const LIMITE_SNS = 50_000
 
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
- * A tela "Peças paradas" de uma regra, com a SESSÃO do usuário (as duas funções conferem
- * tem_permissao('shopfloor','visualizar') no banco). O corte é calculado como no avaliador do alerta
- * (`repositorio-servico.ts`, calcularParados): `corteDeExpediente(agora, limite_horas * 60, turnos)`.
- * Diferença deliberada: a tela mostra o estado de agora também no fim de semana (o cron não avalia).
+ * A regra do link da mensagem (`?regra=<id>`), com a SESSÃO do usuário (alerta_parado_regra, 0177, confere
+ * tem_permissao('shopfloor','visualizar')). Ela só preenche os filtros da tela. null = id inválido, regra
+ * excluída, inexistente ou de outro tipo.
  */
-export async function lerRelatorioParados(
-  regraId: string,
-  agora: Date = new Date(),
-  sb?: SupabaseClient,
-): Promise<LeituraRelatorioParados> {
-  if (!RE_UUID.test(regraId)) return { ok: false, motivo: 'regra_inexistente' }
+export async function lerRegraParado(regraId: string, sb?: SupabaseClient): Promise<RegraDoRelatorio | null> {
+  if (!RE_UUID.test(regraId)) return null
   const cliente = sb ?? (await createServerSupabase())
-
-  const { data: bruto, error } = await cliente.rpc('alerta_parado_regra', { p_regra: regraId })
+  const { data, error } = await cliente.rpc('alerta_parado_regra', { p_regra: regraId })
   if (error) throw new Error(`alerta_parado_regra: ${error.message}`)
-  const lida = lerRegraDoRelatorio(bruto)
+  const lida = lerRegraDoRelatorio(data)
   if (!lida.ok) {
-    if (lida.motivo === 'regra_inexistente') return { ok: false, motivo: 'regra_inexistente' }
+    if (lida.motivo === 'regra_inexistente') return null
     throw new Error('alerta_parado_regra: resposta ilegível')
   }
-  const regra = lida.valor
+  return lida.valor
+}
 
-  const corte = corteDeExpediente(agora, regra.limiteHoras * 60, regra.turnos)
-  // Paginado: o PostgREST corta cada resposta no max-rows (1000 no Supabase). A função já devolve numa ordem
-  // fixa (mais antiga primeiro, desempate PMO/OP/SN), então as páginas não se sobrepõem.
+export interface OpcoesLeituraParados {
+  horas: number
+  situacao: SituacaoOp
+  /** Vazio = todas (o link de uma regra com PMOs passa as da regra). */
+  pmos: readonly string[]
+  /** Os turnos da regra do link: o tempo conta em horas de expediente. Vazio = relógio corrido. */
+  turnos: readonly Intervalo[]
+}
+
+/**
+ * As peças paradas há mais de `horas` (sf_pecas_paradas, 0180), SN a SN, com a SESSÃO do usuário. O corte é
+ * calculado como no avaliador do alerta: `corteDeExpediente(agora, horas * 60, turnos)`.
+ */
+export async function lerPecasParadasTela(
+  o: OpcoesLeituraParados, agora: Date = new Date(), sb?: SupabaseClient,
+): Promise<SnParadoTela[]> {
+  const cliente = sb ?? (await createServerSupabase())
+  const corte = corteDeExpediente(agora, o.horas * 60, o.turnos)
+  // Paginado: o PostgREST corta cada resposta no max-rows (1000). A função devolve numa ordem fixa (mais antiga
+  // primeiro, desempate PMO/OP/SN), então as páginas não se sobrepõem.
   const linhas: unknown[] = []
   for (let de = 0; de < LIMITE_SNS; de += PAGINA) {
-    const { data, error: erroSns } = await cliente
-      .rpc('alerta_parado_sns', { p_regra: regraId, p_corte: corte.toISOString() })
+    const { data, error } = await cliente
+      .rpc('sf_pecas_paradas', { p_corte: corte.toISOString(), p_situacao: o.situacao, p_pmos: o.pmos.length > 0 ? o.pmos : null })
       .range(de, de + PAGINA - 1)
-    if (erroSns) throw new Error(`alerta_parado_sns: ${erroSns.message}`)
+    if (error) throw new Error(`sf_pecas_paradas: ${error.message}`)
     const pagina = (data ?? []) as unknown[]
     linhas.push(...pagina)
     if (pagina.length < PAGINA) break
   }
-
-  return { ok: true, regra, relatorio: montarRelatorioParados(lerSnsParados(linhas), regra.turnos, agora), agora }
-}
-
-/**
- * As regras "Parado ou travado" ATIVAS (id e nome) para o seletor da aba, com a SESSÃO do usuário. A RLS de
- * alerta_regras só deixa ler quem administra; a `alerta_parado_regras_lista` (0179) confere
- * tem_permissao('shopfloor','visualizar') e devolve só id e nome.
- */
-export async function listarRegrasParado(sb?: SupabaseClient): Promise<RegraDaLista[]> {
-  const cliente = sb ?? (await createServerSupabase())
-  const { data, error } = await cliente.rpc('alerta_parado_regras_lista')
-  if (error) throw new Error(`alerta_parado_regras_lista: ${error.message}`)
-  return lerListaDeRegras(data)
+  return lerPecasParadas(linhas)
 }

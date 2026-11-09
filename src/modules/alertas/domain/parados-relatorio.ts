@@ -3,9 +3,9 @@ import { lerIntervaloDoBanco, type Intervalo } from './intervalos'
 import { paradosPorOp, type GrupoTravado, type ParadosDaOp } from './parados'
 
 /**
- * A tela "Peças paradas" de UMA regra (/shopfloor/analisar/parados?regra=<id>): o estado de AGORA, com os
- * mesmos critérios do avaliador do alerta. O banco devolve as peças SN a SN (alerta_parado_sns, 0177, o
- * mesmo miolo da alerta_travados); a conta de expediente e o agrupamento por OP são os do alerta
+ * A tela "Peças paradas" (/shopfloor/analisar/parados): o estado de AGORA, SN a SN (sf_pecas_paradas, 0180, o
+ * mesmo miolo da alerta_travados). A regra do link da mensagem (alerta_parado_regra, 0177) só preenche os
+ * filtros (parados-filtros.ts). A conta de expediente e o agrupamento por OP são os do alerta
  * (`corteDeExpediente`, `minutosDeExpediente`, `paradosPorOp`).
  */
 
@@ -153,47 +153,4 @@ export function montarRelatorioParados(
     expediente: turnos.length > 0,
     ops,
   }
-}
-
-/** Uma regra do seletor da aba "Peças paradas", como `alerta_parado_regras_lista` (0179) a devolve. */
-export interface RegraDaLista {
-  id: string
-  nome: string
-}
-
-/** Lê as linhas de `alerta_parado_regras_lista`, na ordem do banco (alfabética). Linha sem id é descartada. */
-export function lerListaDeRegras(linhas: unknown): RegraDaLista[] {
-  const saida: RegraDaLista[] = []
-  for (const bruto of Array.isArray(linhas) ? linhas : []) {
-    if (bruto === null || typeof bruto !== 'object') continue
-    const l = bruto as Record<string, unknown>
-    if (typeof l.id !== 'string' || l.id === '') continue
-    saida.push({ id: l.id, nome: typeof l.nome === 'string' ? l.nome : '' })
-  }
-  return saida
-}
-
-/**
- * Qual regra a tela abre: a do `?regra=` (o link da mensagem pode ser de uma regra desativada, que não está na
- * lista e mesmo assim abre); sem ela, a primeira regra ativa; sem nenhuma, null (estado vazio).
- */
-export function regraEscolhida(pedida: string, lista: readonly RegraDaLista[]): string | null {
-  const limpa = pedida.trim()
-  if (limpa !== '') return limpa
-  return lista[0]?.id ?? null
-}
-
-/**
- * As opções do seletor: as regras ativas e, se a regra aberta não está entre elas (link de uma regra
- * desativada), ela no fim, marcada — para o seletor não mostrar outra regra que não a da tela.
- */
-export function opcoesDoSeletor(
-  lista: readonly RegraDaLista[], aberta: RegraDaLista | null,
-): { id: string; rotulo: string }[] {
-  const rotulo = (nome: string) => nome.trim() || '(sem nome)'
-  const opcoes = lista.map((r) => ({ id: r.id, rotulo: rotulo(r.nome) }))
-  if (aberta && !lista.some((r) => r.id === aberta.id)) {
-    opcoes.push({ id: aberta.id, rotulo: `${rotulo(aberta.nome)} (desativada)` })
-  }
-  return opcoes
 }

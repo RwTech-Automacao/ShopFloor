@@ -385,4 +385,12 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0179.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_parado_regras_lista.sql
 echo "0179 (lista das regras parado): ok"
 
+# ---------- 0180: tela "Peças paradas" sem regra (sf_pecas_paradas) ----------
+docker cp supabase/migrations/0180_sf_pecas_paradas.sql "$NOME":/tmp/0180.sql
+docker cp supabase/tests/sf_pecas_paradas_test.sql "$NOME":/tmp/teste_pecas_paradas.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0180.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0180.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pecas_paradas.sql
+echo "0180 (peças paradas sem regra): ok"
+
 echo "ALERTAS SQL OK"
