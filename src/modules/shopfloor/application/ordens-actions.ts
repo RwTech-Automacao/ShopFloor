@@ -11,6 +11,7 @@ import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto
 import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-posto'
 import { postoAlmoxarifadoPadrao, rotaDaEdicao, rotaPadraoOpNova } from '../domain/rota-op-nova'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { faixasDe, faixasIguais, lerFaixasDoFormulario, type FaixaSN } from '../domain/faixas-sn'
 import {
   criarOrdem,
   atualizarOrdem,
@@ -20,16 +21,34 @@ import {
   buscarOpEmUso,
   listarPostos,
   listarRotaGravada,
+  contarSnsForaDasFaixas,
   type DadosOrdem,
 } from '../infra/ordem-repository'
 
-export type ResultadoOrdem = { ok: true; id?: string; pmo?: string; op?: string } | { ok: false; erro: string }
+/**
+ * `confirmarForaDaFaixa`: a edição NÃO foi gravada porque N SNs da OP ficariam fora das faixas novas
+ * (ou no PMO/OP antigo). A tela pergunta e reenvia com `confirmar_fora_faixa=1`. É aviso, não trava.
+ */
+export type ResultadoOrdem =
+  | { ok: true; id?: string; pmo?: string; op?: string }
+  | { ok: false; erro: string; confirmarForaDaFaixa?: number }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar ordens de produção.'
+
+/**
+ * Faixas de SN do formulário (0181): o campo `faixas` (JSON da lista) ou, no formulário antigo, a faixa
+ * única de `sn_ini`/`sn_fim`.
+ */
+function lerFaixas(fd: FormData): FaixaSN[] {
+  const json = fd.get('faixas')
+  return lerFaixasDoFormulario(json === null ? null : String(json), String(fd.get('sn_ini') ?? ''), String(fd.get('sn_fim') ?? ''))
+}
 
 function lerDados(fd: FormData): DadosOrdem {
   const qtdBruto = String(fd.get('qtd') ?? '').trim()
   const status = String(fd.get('status') ?? '').trim() || 'ATIVA'
+  // sf_ordens.sn_ini/sn_fim = a PRIMEIRA faixa (0181); a lista inteira vai para sf_ordem_faixas.
+  const primeira = lerFaixas(fd)[0] ?? { sn_ini: '', sn_fim: '' }
   return {
     pmo: String(fd.get('pmo') ?? '').trim(),
     op: String(fd.get('op') ?? '').trim(),
@@ -38,8 +57,8 @@ function lerDados(fd: FormData): DadosOrdem {
     descricao: String(fd.get('descricao') ?? '').trim(),
     acp: String(fd.get('acp') ?? '').trim(),
     status,
-    sn_ini: String(fd.get('sn_ini') ?? '').trim(),
-    sn_fim: String(fd.get('sn_fim') ?? '').trim(),
+    sn_ini: primeira.sn_ini,
+    sn_fim: primeira.sn_fim,
     embalagem_individual: fd.get('embalagem_individual') === 'on', // checkbox: 1 produto por caixa
     // Ausente = 1; presente vale como veio (0, vazio ou inválido são recusados por validarOrdem).
     placas_por_painel: fd.has('placas_por_painel') ? Number(fd.get('placas_por_painel')) : 1,
@@ -96,6 +115,14 @@ async function lerBurnin(fd: FormData, postos: string[]): Promise<{ ok: true; ro
   return { ok: true, rows: temposParaLinhas(r.tempos) }
 }
 
+/** A pergunta do aviso de SNs fora das faixas novas (ou presos no PMO/OP antigo). */
+function mensagemForaDaFaixa(n: number, trocouOp: boolean, base: { pmo: string; op: string }): string {
+  const quantos = n === 1 ? '1 registro ficaria' : `${n} registros ficariam`
+  return trocouOp
+    ? `${quantos} no PMO/OP antigo (${base.pmo}/${base.op}). Salvar mesmo assim?`
+    : `${quantos} fora das faixas novas. Salvar mesmo assim?`
+}
+
 function ehDuplicidade(e: unknown): boolean {
   return typeof e === 'object' && e !== null && (e as { code?: string }).code === '23505'
 }
@@ -108,7 +135,8 @@ export async function criarOrdemAction(
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) return { ok: false, erro: SEM_PERMISSAO }
 
   const dados = lerDados(formData)
-  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel })
+  const faixas = lerFaixas(formData)
+  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel, faixas })
   if (!v.ok) return v
   // OP única global: o número da OP não pode existir em nenhum outro PMO.
   const emUso = await buscarOpEmUso(dados.op)
@@ -121,13 +149,13 @@ export async function criarOrdemAction(
 
   let id: string
   try {
-    id = await criarOrdem(dados, postos, receita, burnin.rows)
+    id = await criarOrdem(dados, postos, receita, burnin.rows, faixas)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
     return { ok: false, erro: 'Não foi possível criar a OP.' }
   }
 
-  await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'criar', descricao: `OP ${dados.pmo}/${dados.op} criada`, dados })
+  await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'criar', descricao: `OP ${dados.pmo}/${dados.op} criada`, dados: { ...dados, faixas } })
   revalidatePath('/shopfloor/ordens')
   return { ok: true, id, pmo: dados.pmo, op: dados.op }
 }
@@ -149,7 +177,8 @@ export async function editarOrdemAction(
   // Fail-closed: sem ler a OP gravada não dá para aplicar as travas (buscarOrdemBase devolve null em qualquer erro de leitura).
   if (!base) return { ok: false, erro: 'OP não encontrada.' }
   if (ehReativacaoManual(base.status, dados.status)) dados.reaberta_manual = true
-  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel })
+  const faixas = lerFaixas(formData)
+  const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel, faixas })
   if (!v.ok) return v
   // Trava: com registros, mudar as placas por painel faria o histórico (`pecas` gravada com o N
   // antigo) divergir das telas que usam o N atual. O N atual e o par PMO/OP vêm do banco, não do form.
@@ -180,14 +209,30 @@ export async function editarOrdemAction(
   const burnin = await lerBurnin(formData, postos)
   if (!burnin.ok) return { ok: false, erro: burnin.erro }
 
+  // Aviso (não trava): mexer nas faixas ou no PMO/OP de uma OP que já tem registros pode deixar SNs
+  // de fora. Conta pelo banco e devolve a pergunta; a tela reenvia com `confirmar_fora_faixa=1`.
+  if (formData.get('confirmar_fora_faixa') !== '1') {
+    const trocouOp = dados.pmo !== base.pmo || dados.op !== base.op
+    const faixasGravadas = faixasDe({ sn_ini: base.sn_ini ?? '', sn_fim: base.sn_fim ?? '', faixas: base.faixas })
+    if (trocouOp || !faixasIguais(faixasGravadas, faixas)) {
+      let fora: number
+      try {
+        fora = await contarSnsForaDasFaixas(base.pmo, base.op, trocouOp ? null : faixas)
+      } catch {
+        return { ok: false, erro: 'Não foi possível salvar a OP.' }
+      }
+      if (fora > 0) return { ok: false, erro: mensagemForaDaFaixa(fora, trocouOp, base), confirmarForaDaFaixa: fora }
+    }
+  }
+
   try {
-    await atualizarOrdem(id, dados, postos, receita, burnin.rows)
+    await atualizarOrdem(id, dados, postos, receita, burnin.rows, faixas)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
     return { ok: false, erro: 'Não foi possível salvar a OP.' }
   }
 
-  await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados })
+  await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados: { ...dados, faixas } })
   revalidatePath('/shopfloor/ordens')
   return { ok: true, id, pmo: dados.pmo, op: dados.op }
 }

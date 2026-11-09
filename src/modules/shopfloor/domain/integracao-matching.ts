@@ -1,4 +1,4 @@
-import { serieDentroDaFaixa } from './serie'
+import { serieNasFaixas, type FaixaSN } from './faixas-sn'
 import { receitaPermite } from './receita'
 
 export interface FaixaOp {
@@ -6,6 +6,8 @@ export interface FaixaOp {
   op: string
   sn_ini: string
   sn_fim: string
+  /** Todas as faixas da OP (0181); ausente = só sn_ini/sn_fim. */
+  faixas?: FaixaSN[]
 }
 
 export interface CandidatoPlaca {
@@ -19,13 +21,11 @@ export type ResolucaoPlaca =
   | { ok: false; erro: 'AMBIGUO'; candidatos: CandidatoPlaca[] }
 
 /**
- * Acha a OP/PMO de uma placa pelo SN bipado: dentro da faixa E com a PMO na receita do produto.
+ * Acha a OP/PMO de uma placa pelo SN bipado: dentro de uma faixa da OP E com a PMO na receita do produto.
  * Se mais de uma OP da receita contém o SN → AMBIGUO + a lista de candidatos (o operador escolhe).
  */
 export function resolverPlaca(receita: string[], faixas: FaixaOp[], sn: string): ResolucaoPlaca {
-  const comFaixa = faixas.filter(
-    (f) => f.sn_ini.trim() !== '' && f.sn_fim.trim() !== '' && serieDentroDaFaixa(f.sn_ini, f.sn_fim, sn),
-  )
+  const comFaixa = faixas.filter((f) => serieNasFaixas(f, sn))
   if (comFaixa.length === 0) return { ok: false, erro: 'SEM_OP' }
   const naReceita = comFaixa.filter((f) => receitaPermite(receita, f.pmo))
   if (naReceita.length === 0) return { ok: false, erro: 'FORA_RECEITA' }

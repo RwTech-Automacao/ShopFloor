@@ -32,3 +32,11 @@ describe('resolverPlaca', () => {
     })
   })
 })
+
+describe('resolverPlaca com várias faixas (0181)', () => {
+  it('SN na segunda faixa da OP da placa encaixa nela', () => {
+    const multi: FaixaOp = { ...F('PMOB76', '8801', 'B7600', 'B7699'), faixas: [{ sn_ini: 'B7600', sn_fim: 'B7699' }, { sn_ini: 'C100', sn_fim: 'C110' }] }
+    expect(resolverPlaca(RECEITA, [multi, FAIXAS[1]!], 'C105')).toEqual({ ok: true, pmo: 'PMOB76', op: '8801' })
+    expect(resolverPlaca(RECEITA, [multi, FAIXAS[1]!], 'C111')).toEqual({ ok: false, erro: 'SEM_OP' })
+  })
+})
