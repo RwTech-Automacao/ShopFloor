@@ -5,6 +5,7 @@ import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { buscarRelatorioEmb } from '@/modules/recebimento/infra/emb-relatorio-repository'
 import { listarValoresDistintos } from '@/modules/recebimento/infra/registros-repository'
 import { semJustificativa } from '@/modules/recebimento/domain/emb-relatorio'
+import { divergenciaNegativa, planilhaDivergencias } from '@/modules/recebimento/domain/emb-relatorio-excel'
 import {
   Table,
   TableBody,
@@ -15,6 +16,7 @@ import {
 } from '@/components/ui/table'
 import { IrParaEmb } from '../ir-para-emb'
 import { BotaoJustificar } from '../botao-justificar'
+import { BotaoExportarExcel } from '../botao-exportar-excel'
 
 export const dynamic = 'force-dynamic'
 
@@ -97,6 +99,12 @@ export default async function EmbRelatorioPage({ params }: { params: Promise<{ e
       </div>
 
       {r.divergencias.length > 0 && (
+        <div className="flex justify-end print:hidden">
+          <BotaoExportarExcel planilha={planilhaDivergencias(r)} />
+        </div>
+      )}
+
+      {r.divergencias.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <Table>
             <TableHeader>
@@ -126,7 +134,9 @@ export default async function EmbRelatorioPage({ params }: { params: Promise<{ e
                     <TableCell className="max-w-[18rem] truncate" title={d.descricao}>{d.descricao || '—'}</TableCell>
                     <TableCell className="text-right">{qtd(d.quantidadePedido)}</TableCell>
                     <TableCell className="text-right">{qtd(d.quantidadeRecebida)}</TableCell>
-                    <TableCell className="text-right font-medium">{d.divergencia || '—'}</TableCell>
+                    <TableCell className={`text-right font-medium${divergenciaNegativa(d.divergencia) ? ' text-red-600' : ''}`}>
+                      {d.divergencia || '—'}
+                    </TableCell>
                     <TableCell className="max-w-[20rem]">
                       {sem
                         ? <span className="font-medium text-amber-800">⚠️ sem justificativa</span>
