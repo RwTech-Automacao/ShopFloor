@@ -11,7 +11,7 @@ import {
   pagarPendenciaLigado,
 } from '@/modules/compels/infra/config'
 import type { EnvioEstoqueReservado, PortaCompels, ResultadoEnvioEstoque } from '../application/enviar-estoque'
-import { criarBaseDaOp, criarErroAnterior, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
+import { criarBaseDaOp, criarErroAnterior, criarOpIntegrada, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
 
 /**
  * O ÚLTIMO METRO DA FILA DE ESTOQUE: entrega UMA linha da fila ao Compels (Requisitar + Apontar).
@@ -27,7 +27,8 @@ import { criarBaseDaOp, criarErroAnterior, criarSomaEnviada, type BaseDaOp } fro
  * COMPELS_EZPOINT_EMPRESA (padrão `enterplak`); COMPELS_ESTOQUE_ID e COMPELS_LOCACAO_ID (padrão 217 e
  * 5314: estoque PA, locação Padrão); COMPELS_ESTOQUE_EINTER_ID e COMPELS_LOCACAO_EINTER_ID (SEM padrão:
  * o estoque EINTER escolhido no Almoxarifado, 0175; sem as duas, a linha EINTER espera); COMPELS_OPS_LIBERADAS (OPs que a integração pode enviar, ou `*`;
- * VAZIA = nenhuma); COMPELS_PAGAR_PENDENCIA (`1` liga o "Pagar Pendência" automático, só a partir da 2ª tentativa
+ * VAZIA = nenhuma lista; a OP criada a partir de 09/11/2026 fica liberada sozinha: `sf_ordens.integrar_compels`, 0176,
+ * e vale a lista OU a coluna); COMPELS_PAGAR_PENDENCIA (`1` liga o "Pagar Pendência" automático, só a partir da 2ª tentativa
  * da linha que esperou por falta de saldo; ausente/vazia = desligado).
  *
  * Esperar não é falhar: tudo o que é recusado ANTES de gravar no ERP e passa sozinho (OP em uso, sem
@@ -51,6 +52,8 @@ export interface DependenciasPortaCompels {
   base?: BaseDaOp
   /** Para teste: o erro da tentativa anterior da linha. Em produção é a coluna `erro` da fila. */
   erroAnterior?: (id: string) => Promise<string | null>
+  /** Para teste: a OP foi criada com a integração automática ligada? Em produção é `sf_ordens.integrar_compels` (0176). */
+  opIntegrada?: (pmo: string, op: string) => Promise<boolean>
 }
 
 /** Marca gravada na Observação do apontamento: curta, e a chave diz que bipe foi. */
@@ -68,18 +71,33 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
   const somaEnviada = deps.somaEnviada ?? criarSomaEnviada()
   const baseDaOp = deps.base ?? criarBaseDaOp()
   const erroAnterior = deps.erroAnterior ?? criarErroAnterior()
+  const opIntegrada = deps.opIntegrada ?? criarOpIntegrada()
   const esperando = new Map<string, ResultadoEnvioEstoque>()
 
   return async function enviarMovimentacaoCompels(envio: EnvioEstoqueReservado): Promise<ResultadoEnvioEstoque> {
     // Estorno automático é a fase 2: por ora fica visível na tela de pendências, sem gastar tentativa.
     if (envio.operacao === 'estorno') return { ok: false, erro: MOTIVO_ESTORNO, aguardar: true, esperado: true }
 
+    // Liberada pela lista do ambiente OU pela própria OP (criada a partir de 09/11/2026, 0176). O banco só é
+    // consultado quando a lista não liberou; se a leitura falhar, a linha espera (nada foi gravado no ERP).
     if (!opLiberada(envio.op, env.COMPELS_OPS_LIBERADAS)) {
-      return {
-        ok: false,
-        erro: `OP ${envio.op} ainda não está liberada para a integração com o Compels. Faça a entrada à mão no ERP, ou libere a OP.`,
-        aguardar: true,
-        esperado: true,
+      let automatica: boolean
+      try {
+        automatica = await opIntegrada(envio.pmo, envio.op)
+      } catch (e) {
+        return {
+          ok: false,
+          erro: `Não foi possível conferir se a OP ${envio.op} está liberada para o Compels: ${e instanceof Error ? e.message : String(e)}`,
+          aguardar: true,
+        }
+      }
+      if (!automatica) {
+        return {
+          ok: false,
+          erro: `OP ${envio.op} ainda não está liberada para a integração com o Compels. Faça a entrada à mão no ERP, ou libere a OP.`,
+          aguardar: true,
+          esperado: true,
+        }
       }
     }
 

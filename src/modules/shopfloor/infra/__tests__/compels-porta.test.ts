@@ -230,7 +230,7 @@ describe('criarPortaCompels', () => {
   it('OP fora da lista liberada: espera, sem chamar o ERP nem o banco', async () => {
     const { erp, chamadas } = erpFalso()
     const soma = vi.fn(async () => 0)
-    const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: '9999' }, erp, base: SEM_BASE, somaEnviada: soma })(linha())
+    const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: '9999' }, erp, base: SEM_BASE, somaEnviada: soma, opIntegrada: async () => false })(linha())
     expect(r).toMatchObject({ ok: false, aguardar: true })
     expect(r.ok === false && r.erro).toContain('OP 8649 ainda não está liberada')
     expect(r).toMatchObject({ esperado: true })
@@ -238,10 +238,51 @@ describe('criarPortaCompels', () => {
     expect(soma).not.toHaveBeenCalled()
   })
 
+  describe('OP criada a partir de 09/11/2026 (sf_ordens.integrar_compels, 0176)', () => {
+    const FORA_DA_LISTA = { ...AMBIENTE, COMPELS_OPS_LIBERADAS: '9999' }
+
+    it('OP nova (true) fora da lista: fica liberada e envia, consultando a OP pelo pmo e op da linha', async () => {
+      const { erp, chamadas } = erpFalso()
+      const consulta = vi.fn(async () => true)
+      const r = await criarPortaCompels({ env: FORA_DA_LISTA, erp, base: SEM_BASE, somaEnviada: async () => 0, opIntegrada: consulta })(linha())
+      expect(r).toMatchObject({ ok: true })
+      expect(consulta).toHaveBeenCalledWith('PRT446', '8649')
+      expect(chamadas).toContain('apontar')
+    })
+
+    it('OP antiga (false) fora da lista: continua esperando, como esperada', async () => {
+      const { erp, chamadas } = erpFalso()
+      const r = await criarPortaCompels({ env: FORA_DA_LISTA, erp, base: SEM_BASE, somaEnviada: async () => 0, opIntegrada: async () => false })(linha())
+      expect(r).toMatchObject({ ok: false, aguardar: true, esperado: true })
+      expect(r.ok === false && r.erro).toContain('OP 8649 ainda não está liberada')
+      expect(chamadas).toEqual([])
+    })
+
+    it('OP na lista: libera sem consultar o banco', async () => {
+      const { erp } = erpFalso()
+      const consulta = vi.fn(async () => false)
+      const r = await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: async () => 0, opIntegrada: consulta })(linha())
+      expect(r).toMatchObject({ ok: true })
+      expect(consulta).not.toHaveBeenCalled()
+    })
+
+    it('erro ao ler a OP no banco: espera (aguardar), sem chamar o ERP e sem marcar como esperado', async () => {
+      const { erp, chamadas } = erpFalso()
+      const r = await criarPortaCompels({
+        env: FORA_DA_LISTA, erp, base: SEM_BASE, somaEnviada: async () => 0,
+        opIntegrada: async () => { throw new Error('sf_ordens (integrar_compels): conexão recusada') },
+      })(linha())
+      expect(r).toMatchObject({ ok: false, aguardar: true })
+      expect(r).not.toHaveProperty('esperado')
+      expect(r.ok === false && r.erro).toContain('conexão recusada')
+      expect(chamadas).toEqual([])
+    })
+  })
+
   it('lista de OPs liberadas vazia ou ausente = nenhuma OP é enviada', async () => {
     const { erp, chamadas } = erpFalso()
     for (const lista of [undefined, '']) {
-      const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: lista }, erp, base: SEM_BASE, somaEnviada: async () => 0 })(linha())
+      const r = await criarPortaCompels({ env: { ...AMBIENTE, COMPELS_OPS_LIBERADAS: lista }, erp, base: SEM_BASE, somaEnviada: async () => 0, opIntegrada: async () => false })(linha())
       expect(r).toMatchObject({ ok: false, aguardar: true, esperado: true })
     }
     expect(chamadas).toEqual([])
@@ -323,7 +364,7 @@ describe('frases da espera esperada × backfill da 0170', () => {
   it('cada espera esperada que a porta devolve casa com algum padrão do backfill', async () => {
     const { erp } = erpFalso()
     const porta = (env: Record<string, string | undefined>) =>
-      criarPortaCompels({ env, erp, base: SEM_BASE, somaEnviada: async () => 0 })
+      criarPortaCompels({ env, erp, base: SEM_BASE, somaEnviada: async () => 0, opIntegrada: async () => false })
     const esperas = [
       await porta(AMBIENTE)(linha({ operacao: 'estorno' })),
       await porta({ ...AMBIENTE, COMPELS_OPS_LIBERADAS: '9999' })(linha()),
