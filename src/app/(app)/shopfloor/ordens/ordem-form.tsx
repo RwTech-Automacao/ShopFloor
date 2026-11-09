@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect, useState, useTransition } from 'react'
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react'
 import { Plus, Pencil, ArrowUp, ArrowDown, X, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,8 @@ import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/d
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { placasDosPaineis, paineisDasPlacas } from '@/modules/shopfloor/domain/placas-por-painel'
 import { adicionarPostoNaRota, moverPostoNaRota, postoAlmoxarifadoPadrao, rotaPadraoOpNova } from '@/modules/shopfloor/domain/rota-op-nova'
+import { faixasDe, type FaixaSN } from '@/modules/shopfloor/domain/faixas-sn'
+import { totalFaixaSNs } from '@/modules/shopfloor/domain/grade'
 
 export interface OrdemView {
   id: string
@@ -42,6 +44,8 @@ export interface OrdemView {
   status: string
   sn_ini: string
   sn_fim: string
+  /** Faixas de SN (0181), na ordem; ausente = só sn_ini/sn_fim. */
+  faixas?: FaixaSN[]
   embalagem_individual: boolean
   placas_por_painel: number
   postos: string[]
@@ -65,6 +69,19 @@ function paineisTexto(qtd: string, n: number): string {
   if (qtd.trim() === '' || Number.isNaN(Number(qtd))) return ''
   const p = paineisDasPlacas(Number(qtd), n)
   return p === null ? '' : String(p)
+}
+
+/** Faixas para começar o formulário: as da OP, ou uma faixa vazia (OP nova / OP sem faixa). */
+function faixasIniciais(ordem?: OrdemView): FaixaSN[] {
+  const f = ordem ? faixasDe(ordem) : []
+  return f.length > 0 ? f.map((x) => ({ ...x })) : [{ sn_ini: '', sn_fim: '' }]
+}
+
+/** Quantos SNs a faixa tem ('' enquanto incompleta ou sem bloco numérico). */
+function contagemFaixa(f: FaixaSN): number | null {
+  if (f.sn_ini.trim() === '' || f.sn_fim.trim() === '') return null
+  const t = totalFaixaSNs(f.sn_ini, f.sn_fim)
+  return t.ok && t.total > 0 ? t.total : null
 }
 
 function tempoBurninInicial(ordem?: OrdemView): Record<string, string> {
@@ -101,6 +118,11 @@ export function OrdemForm({
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState<ResultadoOrdem | undefined, FormData>(action, undefined)
+  const formRef = useRef<HTMLFormElement>(null)
+  const { confirmar, dialog: dialogConfirmacao } = useConfirmacao()
+  const [, startReenvio] = useTransition()
+  // Faixas de SN (0181): a OP pode ter várias; a primeira é o "SN inicial/final" de sempre.
+  const [faixas, setFaixas] = useState<FaixaSN[]>(() => faixasIniciais(ordem))
 
   const [pmo, setPmo] = useState(ordem?.pmo ?? '')
   const [fluxo, setFluxo] = useState<string[]>(fluxoInicial)
@@ -142,6 +164,17 @@ export function OrdemForm({
       // eslint-plugin-react-hooks (set-state-in-effect) não se aplica aqui.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpen(false)
+    } else if ('confirmarForaDaFaixa' in state && state.confirmarForaDaFaixa) {
+      // Aviso, não trava: a OP já tem registros que ficariam fora das faixas novas (ou no PMO/OP
+      // antigo). Confirmou → reenvia o MESMO formulário com a confirmação.
+      const titulo = state.erro
+      void (async () => {
+        const ok = await confirmar({ titulo, rotuloConfirmar: 'Salvar mesmo assim' })
+        if (!ok || !formRef.current) return
+        const fd = new FormData(formRef.current)
+        fd.set('confirmar_fora_faixa', '1')
+        startReenvio(() => formAction(fd))
+      })()
     } else if ('erro' in state) {
       toast.error(state.erro, { position: 'bottom-center' })
     }
@@ -157,7 +190,6 @@ export function OrdemForm({
   const [salvandoPadrao, startSalvarPadrao] = useTransition()
   const [padraoSelecionado, setPadraoSelecionado] = useState('')
   const [excluindoPadrao, startExcluirPadrao] = useTransition()
-  const { confirmar, dialog: dialogConfirmacao } = useConfirmacao()
 
   function abrirSalvarPadrao() {
     setNomePadrao('')
@@ -248,6 +280,7 @@ export function OrdemForm({
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
           setTempoBurnin(tempoBurninInicial(ordem))
+          setFaixas(faixasIniciais(ordem))
           setPlacasPorPainel(String(ordem?.placas_por_painel ?? 1))
           setQtd(ordem?.qtd != null ? String(ordem.qtd) : '')
           setPaineis(paineisTexto(ordem?.qtd != null ? String(ordem.qtd) : '', ordem?.placas_por_painel ?? 1))
@@ -285,11 +318,12 @@ export function OrdemForm({
           <DialogHeader>
             <DialogTitle>{ehEdicao ? 'Editar OP' : 'Nova OP'}</DialogTitle>
           </DialogHeader>
-          <form key={instanciaForm} action={formAction} className="flex flex-col gap-4">
+          <form ref={formRef} key={instanciaForm} action={formAction} className="flex flex-col gap-4">
             {ehEdicao && <input type="hidden" name="id" value={ordem.id} />}
             <input type="hidden" name="fluxo" value={JSON.stringify(fluxo)} />
             <input type="hidden" name="componentes" value={JSON.stringify(receitaFiltrada)} />
             <input type="hidden" name="tempo_burnin" value={JSON.stringify(tempoFiltrado)} />
+            <input type="hidden" name="faixas" value={JSON.stringify(faixas)} />
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
@@ -385,17 +419,7 @@ export function OrdemForm({
                   </p>
                 )}
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sn_ini">SN inicial *</Label>
-                <Input id="sn_ini" name="sn_ini" defaultValue={ordem?.sn_ini ?? ''} required />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sn_fim">SN final *</Label>
-                <Input id="sn_fim" name="sn_fim" defaultValue={ordem?.sn_fim ?? ''} required />
-              </div>
-              <p className="text-xs text-muted-foreground sm:col-span-2">
-                Faixa de SN obrigatória — mesmo formato nos dois limites (ex.: <code>SN0001</code> a <code>SN0500</code>).
-              </p>
+              <FaixasSn faixas={faixas} setFaixas={setFaixas} qtd={qtd} nPainel={nPainel} />
               <label className="flex items-start gap-2 text-sm sm:col-span-2">
                 <input type="checkbox" name="embalagem_individual" defaultChecked={ordem?.embalagem_individual} className="mt-0.5 size-4" />
                 <span>Embalagem <b>individual</b> — 1 produto por caixa; o posto Embalagem confere o Nº de Série da caixa com o do produto (deixe desmarcado para caixa coletiva).</span>
@@ -574,6 +598,87 @@ export function OrdemForm({
 
       {dialogConfirmacao}
     </>
+  )
+}
+
+/**
+ * Faixas de SN da OP (0181). Com uma faixa, a cara de sempre (SN inicial/final); "+ Adicionar faixa"
+ * abre outra (ex.: etiquetas impressas com um dígito a mais). Com mais de uma, cada faixa mostra
+ * quantos números tem e o rodapé compara o total com a quantidade — a regra é soma = quantidade.
+ * Vai para o servidor no campo escondido `faixas` (JSON).
+ */
+function FaixasSn({
+  faixas,
+  setFaixas,
+  qtd,
+  nPainel,
+}: {
+  faixas: FaixaSN[]
+  setFaixas: (f: FaixaSN[]) => void
+  qtd: string
+  nPainel: number
+}) {
+  const varias = faixas.length > 1
+  const alterar = (i: number, campo: keyof FaixaSN, valor: string) =>
+    setFaixas(faixas.map((f, j) => (j === i ? { ...f, [campo]: valor } : f)))
+  const contagens = faixas.map(contagemFaixa)
+  const total = contagens.every((c) => c !== null) ? contagens.reduce<number>((a, c) => a + (c ?? 0), 0) : null
+  const totalPlacas = total === null ? null : total * nPainel
+  const qtdNum = qtd.trim() === '' || Number.isNaN(Number(qtd)) ? null : Number(qtd)
+  const bate = totalPlacas !== null && qtdNum !== null && totalPlacas === qtdNum
+  return (
+    <div className="flex flex-col gap-2 sm:col-span-2">
+      {faixas.map((f, i) => {
+        const sufixo = i === 0 ? '' : `_${i + 1}`
+        const rotulo = varias ? ` (faixa ${i + 1})` : ''
+        return (
+          <div key={i} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`sn_ini${sufixo}`}>SN inicial{rotulo} *</Label>
+              <Input id={`sn_ini${sufixo}`} value={f.sn_ini} onChange={(e) => alterar(i, 'sn_ini', e.target.value)} required />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`sn_fim${sufixo}`}>SN final{rotulo} *</Label>
+              <Input id={`sn_fim${sufixo}`} value={f.sn_fim} onChange={(e) => alterar(i, 'sn_fim', e.target.value)} required />
+            </div>
+            {varias ? (
+              <div className="flex h-9 items-center gap-2">
+                <span className="w-20 text-right text-xs text-muted-foreground tabular-nums">
+                  {contagens[i] !== null ? `${contagens[i]} nº` : '—'}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remover faixa ${i + 1}`}
+                  onClick={() => setFaixas(faixas.filter((_, j) => j !== i))}
+                  className="text-muted-foreground hover:text-red-600"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : (
+              <span className="hidden sm:block" />
+            )}
+          </div>
+        )
+      })}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {varias ? (
+            <span className={qtdNum !== null && totalPlacas !== null && !bate ? 'text-amber-700 dark:text-amber-500' : undefined}>
+              Total das faixas: {total ?? '—'} números
+              {nPainel > 1 && totalPlacas !== null ? ` × ${nPainel} = ${totalPlacas} placas` : ''}
+              {qtdNum !== null ? ` · Quantidade: ${qtdNum}` : ''}
+              {' '}— a soma tem que bater com a quantidade, sem faixas sobrepostas.
+            </span>
+          ) : (
+            <>Faixa de SN obrigatória — mesmo formato nos dois limites (ex.: <code>SN0001</code> a <code>SN0500</code>).</>
+          )}
+        </p>
+        <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => setFaixas([...faixas, { sn_ini: '', sn_fim: '' }])}>
+          <Plus className="size-3.5" /> Adicionar faixa
+        </Button>
+      </div>
+    </div>
   )
 }
 

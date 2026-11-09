@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { OrdemForm, type OrdemView, type PadraoFluxo } from './ordem-form'
 import type { PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
+import { faixasDe, rotuloFaixas } from '@/modules/shopfloor/domain/faixas-sn'
 import { ExcluirOrdemBotao } from './excluir-ordem-botao'
 import { FluxoBotao } from './fluxo-botao'
 
@@ -113,7 +114,7 @@ export function OrdensLista({
                 <TableCell>{o.cliente}</TableCell>
                 <TableCell className="max-w-[240px] truncate">{o.descricao || '—'}</TableCell>
                 <TableCell>{o.status.toUpperCase() === 'FINALIZADA' ? 'Finalizada' : 'Ativa'}</TableCell>
-                <TableCell>{o.sn_ini && o.sn_fim ? `${o.sn_ini}–${o.sn_fim}` : '—'}</TableCell>
+                <TableCell title={faixasDe(o).map((f) => `${f.sn_ini}–${f.sn_fim}`).join('\n') || undefined}>{rotuloFaixas(o)}</TableCell>
                 <TableCell className="text-center">{o.postos.length}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
