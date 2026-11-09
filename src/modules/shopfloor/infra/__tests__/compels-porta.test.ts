@@ -335,4 +335,68 @@ describe('frases da espera esperada × backfill da 0170', () => {
       expect(padroes.some((p) => regex(p).test(erro)), erro).toBe(true)
     }
   })
+
+  describe('pagar pendência só a partir da 2ª tentativa', () => {
+    // Falta saldo requisitado e o empenho/requisição estão Pendentes; pagar a requisição resolve.
+    function erpComPendencia() {
+      let pago = false
+      const { erp, chamadas } = erpFalso({
+        empenhos: [{ id: 1, quantidade: 1000, quantidadeEstornar: 0, situacao: 'Empenhada' }],
+        requisicoes: [{ id: 18510, quantidade: 1000, quantidadeEstornar: 0, situacao: 'Pendente' }],
+      }, {
+        async consultarDisponibilidade(_o, q) {
+          chamadas.push('consultaDisp')
+          return [{ itemId: 1, codigo: 'C1', quantidadeUtilizada: q, quantidadeComposicao: 1, itemOrdemProducaoId: 9, itemFantasma: false, saldoDisponivel: pago ? 100 : 0 }]
+        },
+        async lerEmpenho() { return {} },
+        async lerRequisicao() {
+          chamadas.push('lerRequisicao')
+          return {
+            id: 18510, numero: 2, quantidade: 1000,
+            ordemProducao: { id: 13027, numero: 8649, tipoPropriedade: 0, negociante: { id: 1679 }, composicaoProduto: { item: { id: 22078 } } },
+            itemRequisicaOrdemProducaoList: [{
+              id: 2, itemOrdemProducaoId: 9, item: { id: 1, codigo: 'C1' }, quantidade: 0, quantidadeComposicaoCalculada: 1000, quantidadePendente: 1000,
+            }],
+          }
+        },
+        async pagarPendenciaEmpenho() { return OK },
+        async pagarPendenciaRequisicao() { chamadas.push('pagarRequisicao'); pago = true; return OK },
+      })
+      return { erp, chamadas }
+    }
+    const LIGADO = { ...AMBIENTE, COMPELS_PAGAR_PENDENCIA: '1' }
+    const soma = async () => 0
+
+    it('1ª vez que falta saldo (linha sem erro anterior): só espera, não paga', async () => {
+      const { erp, chamadas } = erpComPendencia()
+      const r = await criarPortaCompels({ env: LIGADO, erp, base: SEM_BASE, somaEnviada: soma, erroAnterior: async () => null })(linha())
+      expect(r).toMatchObject({ ok: false, aguardar: true })
+      expect(chamadas).not.toContain('pagarRequisicao')
+    })
+
+    it('2ª tentativa depois de "Aguardando requisição": paga a pendência e aponta', async () => {
+      const { erp, chamadas } = erpComPendencia()
+      const anterior = async () => 'Aguardando requisição no Compels: C1 (precisa 1, requisitado disponível 0).'
+      const r = await criarPortaCompels({ env: LIGADO, erp, base: SEM_BASE, somaEnviada: soma, erroAnterior: anterior })(linha())
+      expect(r).toMatchObject({ ok: true })
+      expect(r.ok && r.aviso).toContain('pendência paga automaticamente')
+      expect(chamadas).toContain('pagarRequisicao')
+      expect(chamadas).toContain('apontar')
+    }, 20_000)
+
+    it('erro anterior de OUTRO tipo (OP em uso): não paga', async () => {
+      const { erp, chamadas } = erpComPendencia()
+      const anterior = async () => 'Este registro está sendo acessado pelo usuário X!'
+      await criarPortaCompels({ env: LIGADO, erp, base: SEM_BASE, somaEnviada: soma, erroAnterior: anterior })(linha())
+      expect(chamadas).not.toContain('pagarRequisicao')
+    })
+
+    it('chave desligada: nem consulta o erro anterior, e não paga', async () => {
+      const { erp, chamadas } = erpComPendencia()
+      const anterior = vi.fn(async () => 'Aguardando requisição no Compels: C1.')
+      await criarPortaCompels({ env: AMBIENTE, erp, base: SEM_BASE, somaEnviada: soma, erroAnterior: anterior })(linha())
+      expect(anterior).not.toHaveBeenCalled()
+      expect(chamadas).not.toContain('pagarRequisicao')
+    })
+  })
 })

@@ -10,6 +10,8 @@
  */
 
 export interface LinhaEmpenho {
+  /** Id do empenho no Compels (para abrir o detalhe e pagar a pendência). Ausente se a lista não trouxer. */
+  id?: number
   quantidade: number
   quantidadeEstornar: number
   /** 'Empenhada' quando completo; 'Pendente' quando falta saldo de algum componente. */
@@ -17,6 +19,8 @@ export interface LinhaEmpenho {
 }
 
 export interface LinhaRequisicao {
+  /** Id da requisição no Compels (para abrir o detalhe e pagar a pendência). Ausente se a lista não trouxer. */
+  id?: number
   quantidade: number
   quantidadeEstornar: number
   /** 'Requisitada' quando completa; 'Pendente' quando falta saldo de algum componente. */

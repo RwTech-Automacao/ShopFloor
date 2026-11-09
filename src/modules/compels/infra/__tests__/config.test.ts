@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { destinoDoAmbiente, destinoDoEstoque, einterConfigurado, EstoqueNaoConfigurado } from '../config'
+import { destinoDoAmbiente, destinoDoEstoque, einterConfigurado, EstoqueNaoConfigurado, pagarPendenciaLigado } from '../config'
 
 const EINTER = { COMPELS_ESTOQUE_EINTER_ID: '301', COMPELS_LOCACAO_EINTER_ID: '7001' }
 
@@ -36,6 +36,17 @@ describe('destinoDoEstoque', () => {
       expect(() => destinoDoEstoque('EINTER', { ...EINTER, COMPELS_ESTOQUE_EINTER_ID: ruim })).toThrow(/inteiro positivo/)
       expect(() => destinoDoEstoque('EINTER', { ...EINTER, COMPELS_LOCACAO_EINTER_ID: ruim })).toThrow(/inteiro positivo/)
     }
+  })
+})
+
+describe('pagarPendenciaLigado', () => {
+  it('desligado por padrão; liga com 1, true ou sim (sem diferenciar maiúsculas)', () => {
+    expect(pagarPendenciaLigado({})).toBe(false)
+    expect(pagarPendenciaLigado({ COMPELS_PAGAR_PENDENCIA: '' })).toBe(false)
+    expect(pagarPendenciaLigado({ COMPELS_PAGAR_PENDENCIA: '0' })).toBe(false)
+    expect(pagarPendenciaLigado({ COMPELS_PAGAR_PENDENCIA: '1' })).toBe(true)
+    expect(pagarPendenciaLigado({ COMPELS_PAGAR_PENDENCIA: ' TRUE ' })).toBe(true)
+    expect(pagarPendenciaLigado({ COMPELS_PAGAR_PENDENCIA: 'sim' })).toBe(true)
   })
 })
 
