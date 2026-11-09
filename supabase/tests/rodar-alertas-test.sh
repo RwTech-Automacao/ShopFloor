@@ -356,4 +356,17 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/ficha_medir.s
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/ficha_simulacao.sql >/dev/null
 echo "0173 (ficha de apontamento): ok"
 
+# ---------- 0177: relatório "Peças paradas" (alerta_travados_sns + leituras da tela) ----------
+# A 0177 reescreve a alerta_travados como agrupamento da alerta_travados_sns. PROVA: uma FOTO da alerta_travados
+# da 0172 é tirada ANTES (na massa que o alertas_travados_test.sql deixou), e o teste exige saída idêntica depois.
+# Duas aplicações, cada uma como transação única (-1): idempotência.
+docker cp supabase/migrations/0177_alerta_parados_relatorio.sql "$NOME":/tmp/0177.sql
+docker cp supabase/tests/alertas_parados_relatorio_foto.sql "$NOME":/tmp/foto_parados_relatorio.sql
+docker cp supabase/tests/alertas_parados_relatorio_test.sql "$NOME":/tmp/teste_parados_relatorio.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/foto_parados_relatorio.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0177.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0177.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_parados_relatorio.sql
+echo "0177 (relatório de peças paradas): ok"
+
 echo "ALERTAS SQL OK"

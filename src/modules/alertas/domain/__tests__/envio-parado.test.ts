@@ -68,3 +68,32 @@ describe('textoDoEnvio — parado (relatório único)', () => {
     expect(() => textoDoEnvio('alerta', { ...dados, itens: 'x' })).toThrow(/DADOS_INVALIDOS/)
   })
 })
+
+describe('textoDoEnvio — parado com o link do relatório', () => {
+  const comRegra = { ...dados, regra_id: 'r-123' }
+  const opcoes = { urlBase: 'https://shopfloor.enterplak.com.br' }
+
+  it('com regra_id e urlBase: a linha do link antes do rodapé, assunto igual', () => {
+    expect(textoDoEnvio('alerta', comRegra, opcoes).split('\n')).toEqual([
+      '⏰ 5 peças paradas há mais de 7 dias em 2 OPs',
+      'PRT797/8563 · 3 peças · mais antiga há 9d · Teste (3)',
+      'PMOG13/9001 · 2 peças · mais antiga há 8d · Embalagem (2)',
+      'Ver relatório completo: https://shopfloor.enterplak.com.br/shopfloor/analisar/parados?regra=r-123',
+      'Regra: Parado ou travado · 28/10 15:05',
+    ])
+  })
+
+  it('o lembrete leva o mesmo link', () => {
+    expect(textoDoEnvio('lembrete', comRegra, opcoes)).toBe(textoDoEnvio('alerta', comRegra, opcoes))
+  })
+
+  it('sem regra_id (linha antiga) ou sem urlBase: sai como antes, sem link', () => {
+    expect(textoDoEnvio('alerta', dados, opcoes)).toBe(textoDoEnvio('alerta', dados))
+    expect(textoDoEnvio('alerta', comRegra)).toBe(textoDoEnvio('alerta', dados))
+    expect(textoDoEnvio('alerta', comRegra)).not.toContain('Ver relatório')
+  })
+
+  it('a normalização não muda', () => {
+    expect(textoDoEnvio('normalizou', { ...comRegra, itens: [] }, opcoes)).toBe('🟢 Parado na produção: sem peças paradas')
+  })
+})

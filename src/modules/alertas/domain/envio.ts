@@ -28,6 +28,7 @@ import {
 import { textoEmb, type DivergenciaEmb } from './emb'
 import { textoFicha } from './ficha-texto'
 import { OP_RELATORIO, PMO_RELATORIO } from './parados'
+import { urlRelatorioParados } from './links'
 import { textoNormalizouParado, textoRelatorioParado, type OpParada } from './parados-texto'
 import {
   textoAlertaCompels,
@@ -361,7 +362,7 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  * de expediente). O alerta e cada lembrete têm o MESMO texto: a lista é a de agora, e a primeira linha
  * já é o assunto do e-mail.
  */
-function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
+function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>, opcoes: OpcoesTexto): string {
   if (tipo === 'normalizou') return textoNormalizouParado()
   if (!Array.isArray(dados.itens)) throw new DadosEnvioInvalidos('itens')
   const objeto = (bruto: unknown, campo: string): Record<string, unknown> => {
@@ -379,12 +380,16 @@ function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>):
     })
     return { pmo: texto(o, 'pmo'), op: texto(o, 'op'), maisAntigaMin: numero(o, 'mais_antiga_min'), itens }
   })
+  // `regra_id` não vem do banco no `dados`: o repositório o acrescenta na reserva (pela ocorrência). Sem ele
+  // (ou sem a origem do ShopFloor), a mensagem sai sem link e com a lista inteira, como antes.
+  const regraId = textoOuNulo(dados, 'regra_id')
   return textoRelatorioParado({
     regraNome: texto(dados, 'regra_nome'),
     limiteHoras: numero(dados, 'limite_horas'),
     expediente: dados.expediente === true,
     ops,
     em: data(dados, 'agora'),
+    urlRelatorio: opcoes.urlBase && regraId ? urlRelatorioParados(opcoes.urlBase, regraId) : null,
   })
 }
 
@@ -433,6 +438,15 @@ function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
   return textoAvisosCompels(texto(dados, 'regra_nome'), data(dados, 'agora'), avisos)
 }
 
+/** O que o texto precisa de fora do `dados`. */
+export interface OpcoesTexto {
+  /**
+   * A origem do ShopFloor (`baseDoShopfloor`), para os links dos relatórios (parado e fim de EMB). Ausente:
+   * as mensagens saem sem link, como antes.
+   */
+  urlBase?: string | null
+}
+
 /**
  * Monta o texto de uma linha da fila a partir dos `dados` gravados pelo banco. A formatação
  * (fuso de São Paulo, taxa truncada, mm:ss, duração) existe SÓ aqui no TS — o SQL guarda os números.
@@ -449,6 +463,7 @@ function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
  *   compels_aviso: regra_nome, agora, avisos (array de {pmo, op, quantidade, aviso}); 0170
  *   ficha:     unidade, qr, codigo, pmo, op, produto, quantidade_op, quantidade_apontada, data_producao, responsavel; 0173
  *   parado:    limite_horas, mais_antiga_min, expediente, itens (as OPs: array de {pmo, op, mais_antiga_min, itens: array de {tipo, codigo, pecas, minutos}}); relatório único, 0172
+ *              regra_id (para o link do relatório): NÃO vem do banco; o repositório acrescenta na reserva
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome
@@ -459,7 +474,7 @@ function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
  *              resolvida_por_nome, resolvida_em, reaberturas
  * `regra_tipo` ausente = 'aprovacao' (linhas enfileiradas antes da 0115).
  */
-export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): string {
+export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>, opcoes: OpcoesTexto = {}): string {
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
   if (tipo === 'resumo') return textoResumoDe(dados)
   if (tipo === 'emb') return textoEmbDe(dados)
@@ -494,7 +509,7 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
       : regraTipo === 'defeito'
         ? textoDefeito(tipo, dados)
         : regraTipo === 'parado'
-          ? textoParado(tipo, dados)
+          ? textoParado(tipo, dados, opcoes)
           : regraTipo === 'compels'
             ? textoCompels(tipo, dados)
             : textoAprovacao(tipo, dados)

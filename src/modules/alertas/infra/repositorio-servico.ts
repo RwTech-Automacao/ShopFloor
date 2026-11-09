@@ -378,6 +378,36 @@ export function criarRepositorioServico(
     return mapa
   }
 
+  /**
+   * O link do relatório "Peças paradas" precisa do id da REGRA, e o `dados` que o banco grava no parado não
+   * o traz (mexer nisso seria reescrever a alerta_avaliar). Ele vem da ocorrência da linha: uma leitura
+   * por lote, só quando há parado. Falhar aqui NUNCA segura a entrega: a mensagem sai sem link (e com a
+   * lista inteira, como antes).
+   */
+  async function comRegraDoParado(envios: EnvioReservado[]): Promise<EnvioReservado[]> {
+    const alvo = envios.filter(
+      (e) => e.ocorrenciaId !== null && (e.tipo === 'alerta' || e.tipo === 'lembrete')
+        && e.dados.regra_tipo === 'parado' && !e.dados.regra_id,
+    )
+    if (alvo.length === 0) return envios
+    try {
+      const ids = [...new Set(alvo.map((e) => e.ocorrenciaId as string))]
+      const { data, error } = await sb.from('alerta_ocorrencias').select('id, regra_id').in('id', ids)
+      if (error) throw new Error(error.message)
+      const regraDe = new Map<string, string>()
+      for (const l of (data ?? []) as { id: string; regra_id: string | null }[]) {
+        if (l.regra_id) regraDe.set(l.id, l.regra_id)
+      }
+      return envios.map((e) => {
+        const regraId = alvo.includes(e) ? regraDe.get(e.ocorrenciaId as string) : undefined
+        return regraId ? { ...e, dados: { ...e.dados, regra_id: regraId } } : e
+      })
+    } catch (e) {
+      console.error(`[alertas] ler a regra dos envios de parado falhou (sai sem link): ${e instanceof Error ? e.message : String(e)}`)
+      return envios
+    }
+  }
+
   return {
     async avaliar() {
       // Os parâmetros vêm do SERVIDOR pelo mesmo motivo (ver `blocosDaRodada`):
@@ -409,7 +439,7 @@ export function criarRepositorioServico(
         if (envio) saida.push(envio)
         else await concluirIlegivel(bruto)
       }
-      return saida
+      return comRegraDoParado(saida)
     },
 
     async concluirEnvio(envio: EnvioReservado, texto: string, resultado: ResultadoEnvio) {

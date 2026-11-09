@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatarIdadeParado, formatarLimiteParado, formatarMinutos, textoNormalizouParado, textoRelatorioParado,
-  type OpParada,
+  tituloParado, type OpParada,
 } from '../parados-texto'
 
 const AGORA = new Date('2026-10-28T18:05:00Z') // 15:05 em São Paulo
@@ -130,6 +130,86 @@ describe('textoRelatorioParado', () => {
   it('deixa 160 caracteres de margem para o cabeçalho da reabertura', () => {
     const t = textoRelatorioParado({ ...base, ops: Array.from({ length: 300 }, (_, i) => op(i)) })
     expect(t.length).toBeLessThanOrEqual(1840)
+  })
+})
+
+const URL = 'https://shopfloor.enterplak.com.br/shopfloor/analisar/parados?regra=r1'
+
+describe('textoRelatorioParado — com o link do relatório', () => {
+  it('3 OPs ou menos: todas, o link e o rodapé, sem "… e mais"', () => {
+    const t = textoRelatorioParado({ ...base, urlRelatorio: URL, ops: [op(2), op(0), op(1)] })
+    expect(t.split('\n')).toEqual([
+      '⏰ 9 peças paradas há mais de 7 dias em 3 OPs',
+      'PRT797/8000 · 3 peças · mais antiga há 400d · Teste (3)',
+      'PRT797/8001 · 3 peças · mais antiga há 399d · Teste (3)',
+      'PRT797/8002 · 3 peças · mais antiga há 398d · Teste (3)',
+      `Ver relatório completo: ${URL}`,
+      'Regra: Parado ou travado · 28/10 15:05',
+    ])
+  })
+
+  it('mais de 3: as 3 mais antigas, "… e mais K OPs" (K = todas as outras), o link e o rodapé', () => {
+    const ops = Array.from({ length: 10 }, (_, i) => op(i)).reverse()
+    const t = textoRelatorioParado({ ...base, urlRelatorio: URL, ops })
+    expect(t.split('\n')).toEqual([
+      '⏰ 30 peças paradas há mais de 7 dias em 10 OPs',
+      'PRT797/8000 · 3 peças · mais antiga há 400d · Teste (3)',
+      'PRT797/8001 · 3 peças · mais antiga há 399d · Teste (3)',
+      'PRT797/8002 · 3 peças · mais antiga há 398d · Teste (3)',
+      '… e mais 7 OPs',
+      `Ver relatório completo: ${URL}`,
+      'Regra: Parado ou travado · 28/10 15:05',
+    ])
+  })
+
+  it('4 OPs: "… e mais 1 OP" no singular', () => {
+    const t = textoRelatorioParado({ ...base, urlRelatorio: URL, ops: Array.from({ length: 4 }, (_, i) => op(i)) })
+    expect(t).toContain('\n… e mais 1 OP\nVer relatório completo:')
+  })
+
+  it('1 OP: assunto no singular; a linha das reprovadas acompanha a OP', () => {
+    const t = textoRelatorioParado({
+      ...base, urlRelatorio: URL,
+      ops: [{ pmo: 'PRT797', op: '8563', maisAntigaMin: 9 * dia, itens: [{ tipo: 'conserto', codigo: 'Teste', pecas: 1, minutos: 9 * dia }] }],
+    })
+    expect(t.split('\n')).toEqual([
+      '⏰ 1 peça parada há mais de 7 dias em 1 OP',
+      'PRT797/8563 · 1 peça · mais antiga há 9d',
+      '   ↳ reprovadas, aguardando conserto: Teste (1)',
+      `Ver relatório completo: ${URL}`,
+      'Regra: Parado ou travado · 28/10 15:05',
+    ])
+  })
+
+  it('a 1ª linha (assunto do e-mail) é a mesma com e sem link', () => {
+    const ops = Array.from({ length: 300 }, (_, i) => op(i))
+    const com = textoRelatorioParado({ ...base, urlRelatorio: URL, ops })
+    const sem = textoRelatorioParado({ ...base, ops })
+    expect(com.split('\n')[0]).toBe(sem.split('\n')[0])
+  })
+
+  it('OPs com linhas enormes: mostra menos que 3 e o "… e mais" conta o resto, dentro da margem', () => {
+    const postos = Array.from({ length: 80 }, (_, i) => ({ tipo: 'posto' as const, codigo: `Posto ${i}`, pecas: 1, minutos: dia }))
+    const ops = Array.from({ length: 5 }, (_, i) => op(i, { itens: postos }))
+    const t = textoRelatorioParado({ ...base, urlRelatorio: URL, ops })
+    expect(t.length).toBeLessThanOrEqual(1840)
+    const mostradas = t.split('\n').filter((l) => l.startsWith('PRT797/')).length
+    expect(mostradas).toBeLessThan(3)
+    expect(t).toContain(`… e mais ${5 - mostradas} OPs`)
+    expect(t).toContain(`Ver relatório completo: ${URL}`)
+    expect(t.endsWith('Regra: Parado ou travado · 28/10 15:05')).toBe(true)
+  })
+
+  it('url vazia (ou só espaço) = sem link, lista inteira como antes', () => {
+    const ops = Array.from({ length: 5 }, (_, i) => op(i))
+    expect(textoRelatorioParado({ ...base, urlRelatorio: '  ', ops })).toBe(textoRelatorioParado({ ...base, ops }))
+  })
+})
+
+describe('tituloParado', () => {
+  it('é a 1ª linha da mensagem sem o emoji', () => {
+    expect(tituloParado(14, 3, 168, false)).toBe('14 peças paradas há mais de 7 dias em 3 OPs')
+    expect(tituloParado(1, 1, 8, true)).toBe('1 peça parada há mais de 8 h de expediente em 1 OP')
   })
 })
 
