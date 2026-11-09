@@ -68,7 +68,7 @@ export function DashboardRecebimento({
       {dados && (
         // Recalculando: segura a foto anterior esmaecida, sem pular o layout nem piscar em branco.
         <div className={`flex min-w-0 flex-col gap-4 transition-opacity ${pendente ? 'opacity-60' : ''}`}>
-          <CartoesDashboard totais={dados.totais} sinal={filtros.sinal} />
+          <CartoesDashboard totais={dados.totais} sinal={filtros.sinal} reprovacao={metricas?.qualidade.totais} />
           <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             <CartaoGrafico titulo="Ranking por fornecedor" explica={EXPLICA.fornecedores}>
               <RankingFornecedores fornecedores={dados.fornecedores} ativo={filtros.fornecedor}

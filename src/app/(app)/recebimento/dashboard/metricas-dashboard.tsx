@@ -42,7 +42,8 @@ function linhaFornecedor(fornecedor: string, valor: number, texto: string, dica:
 }
 
 /**
- * Seção de métricas do dashboard: quatro números e cinco blocos. O estado mora na URL, como no
+ * Seção de métricas do dashboard: três números e cinco blocos (a taxa de reprovação subiu para
+ * a fileira dos cartões de divergência). O estado mora na URL, como no
  * resto da tela: clicar num fornecedor ou material, ou trocar o "X dias", navega e o servidor
  * recalcula.
  */
@@ -70,7 +71,6 @@ export function SecaoMetricas({ filtros, metricas, erro, paradoDias }: SecaoMetr
 
   const { volume, qualidade, atraso, tempo, pendencias } = metricas
   const pctAtrasados = percentual(atraso.totais.atrasados, atraso.totais.comPrazo)
-  const taxa = taxaPorItem(qualidade.totais.reprovados, qualidade.totais.comResultado)
   const parados = tempo.parados.recebimento + tempo.parados.qualidade
   const periodos = periodo === 'semana' ? volume.semanas : volume.meses
 
@@ -83,14 +83,10 @@ export function SecaoMetricas({ filtros, metricas, erro, paradoDias }: SecaoMetr
       <h3 id="titulo-metricas" className="text-base font-semibold text-tinta">Métricas</h3>
 
       <div className={`flex min-w-0 flex-col gap-4 transition-opacity ${pendente ? 'opacity-60' : ''}`}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-3">
           <Numero rotulo="Itens atrasados" valor={formatarPercentual(pctAtrasados)}
             detalhe={`${formatarNumero(atraso.totais.atrasados)} de ${formatarNumero(atraso.totais.comPrazo)} com data prevista`}
             explica={EXPLICA_METRICAS.atrasados} />
-          <Numero rotulo="Taxa de reprovação" valor={formatarPercentual(taxa)}
-            detalhe={`${formatarNumero(qualidade.totais.reprovados)} de ${formatarNumero(qualidade.totais.comResultado)} itens com resultado`}
-            dica={`${formatarNumero(qualidade.totais.pecasReprovadas)} de ${formatarNumero(qualidade.totais.pecasRecebidas)} peças reprovadas`}
-            explica={EXPLICA_METRICAS.reprovacao} />
           <Numero rotulo="Mediana na Qualidade" valor={formatarDias(tempo.qualidade.medianaDias)}
             detalhe={`${formatarNumero(tempo.qualidade.n)} itens finalizados`}
             explica={EXPLICA_METRICAS.medianaQualidade} />
@@ -201,19 +197,18 @@ export function SecaoMetricas({ filtros, metricas, erro, paradoDias }: SecaoMetr
   )
 }
 
-function Numero({ rotulo, valor, detalhe, dica, explica }: {
-  rotulo: string; valor: string; detalhe: string; dica?: string; explica: string
+function Numero({ rotulo, valor, detalhe, explica }: {
+  rotulo: string; valor: string; detalhe: string; explica: string
 }) {
   return (
     <Card>
-      <CardContent className="flex flex-col gap-1 py-4" title={dica}>
+      <CardContent className="flex flex-col gap-1 py-4">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium text-muted-foreground">{rotulo}</p>
           <Explica texto={explica} />
         </div>
         <p className="text-3xl font-bold tabular-nums text-foreground">{valor}</p>
         <p className="text-xs text-muted-foreground">{detalhe}</p>
-        {dica && <p className="text-xs text-muted-foreground">{dica}</p>}
       </CardContent>
     </Card>
   )
