@@ -4,16 +4,25 @@ import { useActionState, useState } from 'react'
 import Link from 'next/link'
 import { AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import { entrar } from '@/modules/auth/application/actions'
+import { PARAM_DESTINO } from '@/modules/auth/domain/destino-pos-login'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-export function LoginForm({ redefinida = false }: { redefinida?: boolean }) {
+export function LoginForm({
+  redefinida = false,
+  destino,
+}: {
+  redefinida?: boolean
+  /** Para onde voltar depois de entrar (o link que a pessoa abriu sem sessão). A action revalida. */
+  destino?: string
+}) {
   const [state, formAction, pending] = useActionState(entrar, undefined)
   const [mostrarSenha, setMostrarSenha] = useState(false)
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
+      {destino && <input type="hidden" name={PARAM_DESTINO} value={destino} />}
       {redefinida && (
         <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
           <CheckCircle2 className="size-4 shrink-0" />
