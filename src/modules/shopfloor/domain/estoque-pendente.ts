@@ -45,7 +45,8 @@ export interface LinhaFilaEstoque {
   pmo: string
   op: string
   posto: string
-  tipo: 'caixa' | 'serie'
+  /** 'lote' = o lote do NQA individual confirmado de uma vez (0156): uma linha pra N peças. */
+  tipo: 'caixa' | 'serie' | 'lote'
   /** O que o coletor leu: código da caixa ou a série crua. */
   bipe: string
   /** A identidade do bipe (coluna GERADA no banco): série normalizada, senão o código da caixa. */
@@ -138,7 +139,8 @@ export interface GrupoEstoquePendente {
   op: string
   posto: string
   alvo: string
-  tipo: 'caixa' | 'serie'
+  /** 'lote' = o lote do NQA individual confirmado de uma vez (0156): uma linha pra N peças. */
+  tipo: 'caixa' | 'serie' | 'lote'
   linhas: LinhaEstoquePendente[]
 }
 
@@ -352,4 +354,45 @@ export function agruparEstoquePendente(
   return [...grupos.values()].sort(
     (a, b) => pedeGesto(a) - pedeGesto(b) || maisNovo(b).localeCompare(maisNovo(a)),
   )
+}
+
+/**
+ * O que o bipe do grupo é, pro cabeçalho da tela de pendências: "caixa", "peça" ou, no envio de LOTE
+ * do NQA individual (0156), "lote do NQA · N peças" — o alvo do lote é um rótulo (LOTE[...][N]) e não
+ * diz sozinho que ali vão N peças numa linha só. N vem da entrada (ou, sem ela na tela, do estorno).
+ */
+export function rotuloTipoGrupo(g: GrupoEstoquePendente): string {
+  if (g.tipo === 'caixa') return 'caixa'
+  if (g.tipo === 'serie') return 'peça'
+  const linha = g.linhas.find((l) => l.operacao === 'entrada') ?? g.linhas[0]
+  if (!linha || !(linha.quantidade > 0)) return 'lote do NQA'
+  return `lote do NQA · ${linha.quantidade === 1 ? '1 peça' : `${linha.quantidade} peças`}`
+}
+
+/** O que o Fluxo mostra sobre uma OP: peças que o Almoxarifado já deu entrada e que ainda não chegaram ao Compels. */
+export interface ResumoPendenteOp {
+  /** Peças de entradas ainda pendentes (o saldo: o que já foi estornado não conta). */
+  pecas: number
+  situacao: SituacaoEstoque
+  /** O selo do primeiro bipe a pedir atenção (a lista já vem com o que precisa de gente na frente). */
+  rotulo: string
+  /** O motivo da última recusa do Compels, em português; nulo se ainda nunca foi tentada. */
+  motivo: string | null
+  oQueFazer: string
+}
+
+/** `null` quando nada espera: o Fluxo não mostra nada. Só entradas contam peças. */
+export function resumirPendenteDaOp(grupos: GrupoEstoquePendente[]): ResumoPendenteOp | null {
+  const entradas = grupos
+    .map((g) => g.linhas.find((l) => l.operacao === 'entrada'))
+    .filter((l): l is LinhaEstoquePendente => !!l)
+  if (entradas.length === 0) return null
+  const primeira = entradas[0]!
+  return {
+    pecas: entradas.reduce((soma, l) => soma + l.saldo, 0),
+    situacao: primeira.situacao,
+    rotulo: primeira.rotulo,
+    motivo: primeira.erro,
+    oQueFazer: primeira.oQueFazer,
+  }
 }

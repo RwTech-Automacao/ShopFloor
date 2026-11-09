@@ -39,14 +39,17 @@ const DEFEITO: EntradaRegra = {
 }
 
 describe('tipos de regra', () => {
-  it('cinco tipos, com nome de tela', () => {
-    expect(TIPOS_REGRA).toEqual(['aprovacao', 'tempo', 'defeito', 'resumo', 'emb'])
+  it('oito tipos, com nome de tela', () => {
+    expect(TIPOS_REGRA).toEqual(['aprovacao', 'tempo', 'defeito', 'resumo', 'emb', 'parado', 'compels', 'ficha'])
     expect(NOME_TIPO_REGRA).toEqual({
       aprovacao: 'Taxa de aprovação',
       tempo: 'Tempo médio por peça',
       defeito: 'Defeito repetido',
       resumo: 'Resumo diário',
       emb: 'Fim de EMB',
+      parado: 'Parado ou travado na produção',
+      compels: 'Problemas no envio ao Compels',
+      ficha: 'Ficha de apontamento (Almoxarifado)',
     })
     expect(ehTipoRegra('tempo')).toBe(true)
     expect(ehTipoRegra('lua')).toBe(false)
@@ -81,6 +84,9 @@ describe('validarRegra — tempo médio por peça', () => {
         lembreteMin: null,
         intervalos: [],
         horaResumo: null,
+        limiteHoras: null,
+        soOpsAtivas: true,
+        incluirManutencao: true,
         canais: ['telegram'],
         destinatarios: ['u1'],
         avisarPessoas: true,
@@ -178,6 +184,9 @@ describe('validarRegra — defeito repetido', () => {
         lembreteMin: null,
         intervalos: [],
         horaResumo: null,
+        limiteHoras: null,
+        soOpsAtivas: true,
+        incluirManutencao: true,
         canais: ['telegram'],
         destinatarios: ['u1'],
         avisarPessoas: true,

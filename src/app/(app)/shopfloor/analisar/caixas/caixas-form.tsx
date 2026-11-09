@@ -42,6 +42,12 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
     })
   }
 
+  /** A coluna QTD da folha/CSV numera os SNs (um por painel): a base são os painéis das caixas
+   *  anteriores, não as placas (`qtd`). Com 1 placa por painel os dois coincidem. */
+  function paineisAntesDaCaixa(todas: CaixaConsulta[], alvo: CaixaConsulta): number {
+    return pecasAntesDaCaixa(todas.map((c) => ({ posto: c.posto, seq: c.seq, qtd: c.sns.length })), alvo)
+  }
+
   function toggle(key: string) {
     setAbertos((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
   }
@@ -54,7 +60,7 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
    * Excel em pt-BR abre direto, sem passar pelo assistente de importação.
    */
   function exportarCsv(caixa: CaixaConsulta) {
-    const base = pecasAntesDaCaixa(caixas, caixa)
+    const base = paineisAntesDaCaixa(caixas, caixa)
     const linhas = [
       ['#', 'Número de Série', 'Caixa'].join(';'),
       ...caixa.sns.map((sn, i) => [base + i + 1, sn, caixa.codigo].map(campoCsv).join(';')),
@@ -88,7 +94,7 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
       if (!rCodigo.ok && caixa.fechada) toast.error(rCodigo.erro)
       setFolha({
         caixa,
-        base: pecasAntesDaCaixa(caixas, caixa),
+        base: paineisAntesDaCaixa(caixas, caixa),
         qrSvg: rSns.ok ? rSns.svg : null,
         aviso: rSns.ok ? null : rSns.erro,
         qrCodigoSvg: rCodigo.ok ? rCodigo.svg : null,

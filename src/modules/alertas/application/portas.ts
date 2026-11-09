@@ -1,3 +1,4 @@
+import type { AnexoEnvio } from '../domain/anexos'
 import type { Canal, DestinoEnvio, ResultadoEnvio, ResultadoSimples } from '../domain/tipos'
 import type { ContaDestino, ResultadoAvaliacaoRpc } from '../domain/avaliacao'
 import type { EnvioReservado } from '../domain/envio'
@@ -11,7 +12,13 @@ import type { ResolucaoOcorrencia } from '../domain/resolucao'
  * do Discord. Canal que não sabe postar em canal (o Telegram) recusa aquele destino.
  */
 export interface PortaCanal {
-  enviar(destino: DestinoEnvio, texto: string, ocorrenciaIdBotao: string | null): Promise<ResultadoEnvio>
+  /** `anexos`: só o Discord anexa (o QR da ficha); os outros canais mandam o texto e ignoram a lista. */
+  enviar(
+    destino: DestinoEnvio,
+    texto: string,
+    ocorrenciaIdBotao: string | null,
+    anexos?: AnexoEnvio[],
+  ): Promise<ResultadoEnvio>
   removerBotoes(mensagemExternaId: string): Promise<ResultadoSimples>
 }
 

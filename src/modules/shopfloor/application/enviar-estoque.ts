@@ -23,6 +23,8 @@
  * interfaces seria um arquivo a mais para achar sem nada a mais para dizer.
  */
 
+import type { EstoqueDestino } from '@/modules/compels/domain/estoque-destino'
+
 /**
  * Uma linha da fila já RESERVADA por esta rodada (`sf_estoque_reservar`): `tentativas` já conta esta
  * tentativa. Os campos são exatamente os que a função devolve — nada é derivado aqui.
@@ -40,8 +42,9 @@ export interface EnvioEstoqueReservado {
   pmo: string
   op: string
   posto: string
-  tipo: 'caixa' | 'serie'
-  /** O que o coletor leu: código da caixa ou a série crua. */
+  /** 'lote' (0156): o lote do NQA individual, uma linha com a quantidade do lote. */
+  tipo: 'caixa' | 'serie' | 'lote'
+  /** O que o coletor leu: código da caixa ou a série crua (no lote, o rótulo LOTE[...][N]). */
   bipe: string
   /** Série normalizada; vazia no bipe de caixa. */
   serieNorm: string
@@ -51,6 +54,11 @@ export interface EnvioEstoqueReservado {
    * são, e `operacao` diz para onde elas vão.
    */
   quantidade: number
+  /**
+   * O estoque de destino no ERP (0175): o que a pessoa escolheu ao confirmar no Almoxarifado; o estorno traz
+   * o MESMO da entrada que desfaz. Ausente = 'PA' (o de sempre, e o que a linha de antes da 0175 sempre foi).
+   */
+  estoque?: EstoqueDestino
   tentativas: number
   criadoEm: string
 }
@@ -62,7 +70,24 @@ export interface EnvioEstoqueReservado {
  * reserva e adia a linha uns minutos: esperar o Almoxarifado empenhar não pode gastar as 5 tentativas
  * e jogar centenas de linhas para o Reenviar manual.
  */
-export type ResultadoEnvioEstoque = { ok: true } | { ok: false; erro: string; aguardar?: boolean }
+/**
+ * `aviso` (só em `ok: true`): a linha FOI enviada, mas algo merece conferência (quantidade inesperada no
+ * Compels, empenho/requisição insuficientes). Vai para a coluna `aviso` da fila (0169) e alimenta o alerta.
+ */
+export type ResultadoEnvioEstoque =
+  | { ok: true; aviso?: string }
+  | {
+      ok: false
+      erro: string
+      aguardar?: boolean
+      /**
+       * A espera é ESPERADA e não é problema a alertar (0170, `sf_estoque_envios.erro_esperado`): OP ainda não
+       * liberada para a integração, integração não configurada neste ambiente, estorno ainda manual. O alerta
+       * "Problemas no envio ao Compels" ignora estas linhas; sem a marca, cada OP não liberada inundaria o
+       * responsável. Ausente = é problema de verdade.
+       */
+      esperado?: boolean
+    }
 
 /**
  * O último metro, como PORTA: uma função que recebe uma linha da fila e devolve sucesso ou o motivo
@@ -185,6 +210,7 @@ export async function entregarEstoquePendente(
       if (resultado.ok) {
         enviados += 1
         enviadosNoLote += 1
+        if (resultado.aviso) console.warn(`[estoque] envio ${envio.chave} gravado com aviso:`, resultado.aviso)
       } else if (resultado.aguardar) {
         // Espera, não falha: nada chegou ao ERP e a linha volta daqui a pouco sem gastar tentativa.
         aguardando += 1

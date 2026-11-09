@@ -1,4 +1,5 @@
 import 'server-only'
+import { semSufixo } from '@/modules/compels/domain/sem-sufixo'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
 import { ConfiguracaoIncompleta, configDoAmbiente } from '@/modules/compels/infra/config'
 import type { EstoqueCompels } from '../domain/estoque-compels'
@@ -8,7 +9,7 @@ import type { EstoqueCompels } from '../domain/estoque-compels'
  * 16/10/2026: sem cópia no banco, porque o saldo muda por fora do ShopFloor). O cache evita uma ida ao ERP
  * a cada abertura do Fluxo; uma falha é lembrada por menos tempo ainda.
  */
-export const TTL_OK_MS = 60_000
+export const TTL_OK_MS = 15_000
 export const TTL_FALHA_MS = 15_000
 const TIMEOUT_MS = 10_000
 
@@ -49,7 +50,8 @@ export function limparEstoqueCompelsParaTeste(): void {
 }
 
 export async function buscarEstoqueCompels(pmo: string, deps: DependenciasEstoque = {}): Promise<EstoqueCompels> {
-  const codigo = pmo.trim()
+  // PMO de segunda leva (PMOF52_F) é o MESMO item do Compels (PMOF52): o sufixo só existe no ShopFloor.
+  const codigo = semSufixo(pmo)
   if (codigo === '') return { tipo: 'nao_encontrado' }
   const agora = (deps.agora ?? Date.now)()
 

@@ -41,7 +41,7 @@ for (const numero of ops) {
     )
     const base = `OP ${numero} | ${op.codigoItem} | ${op.unidade} | ${op.status} | ${apontada}/${op.quantidade} apontadas`
     if (plano.tipo === 'enviar') {
-      console.log(`${base} | ENVIARIA (${plano.requisitar ? 'requisita e aponta' : 'só aponta'})`)
+      console.log(`${base} | ENVIARIA (só aponta${plano.avisos.length > 0 ? `; aviso: ${plano.avisos.join('; ')}` : ''})`)
       somar('seria enviada')
     } else if (plano.tipo === 'ja_enviada') {
       console.log(`${base} | já tem a entrada`)

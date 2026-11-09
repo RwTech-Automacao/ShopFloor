@@ -19,6 +19,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/modules/shopfloor/application/ordens-actions', () => ({
   criarOrdemAction: vi.fn(),
   editarOrdemAction: vi.fn(),
+  opTemRegistrosAction: vi.fn(async () => false),
 }))
 vi.mock('@/modules/shopfloor/application/padroes-fluxo-actions', () => ({
   salvarPadraoAction: vi.fn(),

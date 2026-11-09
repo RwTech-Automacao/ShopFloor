@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useState, useTransition } from 'react'
-import { Plus, Pencil, ArrowUp, ArrowDown, X } from 'lucide-react'
+import { Plus, Pencil, ArrowUp, ArrowDown, X, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -20,6 +20,7 @@ import {
   criarOrdemAction,
   editarOrdemAction,
   type ResultadoOrdem,
+  opTemRegistrosAction,
 } from '@/modules/shopfloor/application/ordens-actions'
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
 import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
@@ -27,6 +28,8 @@ import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perf
 import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
+import { placasDosPaineis, paineisDasPlacas } from '@/modules/shopfloor/domain/placas-por-painel'
+import { adicionarPostoNaRota, moverPostoNaRota, postoAlmoxarifadoPadrao, rotaPadraoOpNova } from '@/modules/shopfloor/domain/rota-op-nova'
 
 export interface OrdemView {
   id: string
@@ -40,6 +43,7 @@ export interface OrdemView {
   sn_ini: string
   sn_fim: string
   embalagem_individual: boolean
+  placas_por_painel: number
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
@@ -55,6 +59,13 @@ export interface PadraoFluxo {
 }
 
 const CLIENTE_NOVO = '__novo_cliente__'
+
+/** Texto do campo auxiliar "Painéis" para uma quantidade em placas ('' se não divide exato). */
+function paineisTexto(qtd: string, n: number): string {
+  if (qtd.trim() === '' || Number.isNaN(Number(qtd))) return ''
+  const p = paineisDasPlacas(Number(qtd), n)
+  return p === null ? '' : String(p)
+}
 
 function tempoBurninInicial(ordem?: OrdemView): Record<string, string> {
   const m: Record<string, string> = {}
@@ -81,16 +92,30 @@ export function OrdemForm({
 }) {
   const ehEdicao = ordem !== undefined
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
+  // Almoxarifado OBRIGATÓRIO e fixo no fim: em toda OP nova e na edição de OP cuja rota gravada já o
+  // tem. OP antiga sem ele segue como está: acrescentá-lo derrubaria o % e reabriria OPs. O servidor
+  // aplica a mesma regra (a tela só a mostra).
+  const almoxarifado = postoAlmoxarifadoPadrao(postos, perfilDo)
+  const almoxFixo = almoxarifado !== null && (!ordem || ordem.postos.includes(almoxarifado)) ? almoxarifado : null
+  const fluxoInicial = (): string[] => (almoxFixo ? rotaPadraoOpNova(ordem?.postos ?? [], almoxFixo) : ordem?.postos ?? [])
   const action = ehEdicao ? editarOrdemAction : criarOrdemAction
   const [open, setOpen] = useState(false)
   const [state, formAction, pending] = useActionState<ResultadoOrdem | undefined, FormData>(action, undefined)
 
   const [pmo, setPmo] = useState(ordem?.pmo ?? '')
-  const [fluxo, setFluxo] = useState<string[]>(ordem?.postos ?? [])
+  const [fluxo, setFluxo] = useState<string[]>(fluxoInicial)
   const [receita, setReceita] = useState<ReceitaPorPosto>(ordem?.receitaPorPosto ?? {})
   const [cliente, setCliente] = useState(ordem?.cliente ?? '')
   const [descricao, setDescricao] = useState(ordem?.descricao ?? '')
   const [tempoBurnin, setTempoBurnin] = useState<Record<string, string>>(tempoBurninInicial(ordem))
+  // Quantidade (em placas) e Painéis são controlados: um deriva do outro pelo N. Só `qtd` é enviado.
+  const [placasPorPainel, setPlacasPorPainel] = useState(String(ordem?.placas_por_painel ?? 1))
+  const [qtd, setQtd] = useState(ordem?.qtd != null ? String(ordem.qtd) : '')
+  const [paineis, setPaineis] = useState(paineisTexto(ordem?.qtd != null ? String(ordem.qtd) : '', ordem?.placas_por_painel ?? 1))
+  const nPainel = Number.isInteger(Number(placasPorPainel)) && Number(placasPorPainel) >= 1 ? Number(placasPorPainel) : 1
+  // Consultado ao abrir a edição; até a resposta chegar o campo fica habilitado (o servidor é a trava real).
+  const [temRegistros, setTemRegistros] = useState(false)
+  const bloqueiaPlacas = !!ordem && temRegistros
   const [instanciaForm, setInstanciaForm] = useState(0)
   const [modoNovoCliente, setModoNovoCliente] = useState(false)
   // O status precisa ser controlado só por causa do aviso de reativação: ele depende de comparar o
@@ -188,19 +213,15 @@ export function OrdemForm({
   }
 
   function mover(i: number, delta: number) {
-    const j = i + delta
-    if (j < 0 || j >= fluxo.length) return
-    const copia = [...fluxo]
-    const [item] = copia.splice(i, 1)
-    copia.splice(j, 0, item!)
-    setFluxo(copia)
+    setFluxo(moverPostoNaRota(fluxo, i, delta, almoxFixo))
   }
   function remover(i: number) {
+    if (fluxo[i] === almoxFixo) return
     setFluxo(fluxo.filter((_, idx) => idx !== i))
   }
   function adicionar(posto: string) {
     if (fluxo.includes(posto)) return
-    setFluxo([...fluxo, posto])
+    setFluxo(adicionarPostoNaRota(fluxo, posto, almoxFixo))
     if (perfilDo(posto).recurso === 'burnin' && (tempoBurnin[posto] ?? '') === '') {
       setTempoBurnin((prev) => ({ ...prev, [posto]: '6:00' }))
     }
@@ -222,15 +243,29 @@ export function OrdemForm({
         if (v) {
           // Reset ao abrir: "Nova OP" limpa; edição recarrega a OP (fix do "cache").
           setPmo(ordem?.pmo ?? '')
-          setFluxo(ordem?.postos ?? [])
+          setFluxo(fluxoInicial())
           setReceita(ordem?.receitaPorPosto ?? {})
           setCliente(ordem?.cliente ?? '')
           setDescricao(ordem?.descricao ?? '')
           setTempoBurnin(tempoBurninInicial(ordem))
+          setPlacasPorPainel(String(ordem?.placas_por_painel ?? 1))
+          setQtd(ordem?.qtd != null ? String(ordem.qtd) : '')
+          setPaineis(paineisTexto(ordem?.qtd != null ? String(ordem.qtd) : '', ordem?.placas_por_painel ?? 1))
           setStatus(ordem?.status?.toUpperCase() === 'FINALIZADA' ? 'FINALIZADA' : 'ATIVA')
           setModoNovoCliente(false)
           setPadraoSelecionado('')
           setInstanciaForm((n) => n + 1)
+          setTemRegistros(false)
+          if (ordem) {
+            const idOp = ordem.id
+            void (async () => {
+              try {
+                setTemRegistros(await opTemRegistrosAction(idOp))
+              } catch {
+                // falha = trata como sem registros; o servidor recusa ao salvar se houver.
+              }
+            })()
+          }
         }
       }}>
         <DialogTrigger
@@ -298,8 +333,32 @@ export function OrdemForm({
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="qtd">Quantidade</Label>
-                <Input id="qtd" name="qtd" type="number" defaultValue={ordem?.qtd ?? ''} />
+                <Input id="qtd" name="qtd" type="number" value={qtd} onChange={(e) => {
+                  setQtd(e.target.value)
+                  setPaineis(paineisTexto(e.target.value, nPainel))
+                }} />
               </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="placas_por_painel">Placas por painel</Label>
+                {bloqueiaPlacas && <input type="hidden" name="placas_por_painel" value={ordem.placas_por_painel} />}
+                <Input id="placas_por_painel" name={bloqueiaPlacas ? undefined : 'placas_por_painel'} type="number" min={1} value={placasPorPainel} disabled={bloqueiaPlacas} onChange={(e) => {
+                  setPlacasPorPainel(e.target.value)
+                  const n = Number(e.target.value)
+                  setPaineis(Number.isInteger(n) && n >= 1 ? paineisTexto(qtd, n) : '')
+                }} />
+                <p className="text-xs text-muted-foreground">
+                  {bloqueiaPlacas ? 'Bloqueado: esta OP já tem registros.' : 'Use quando a etiqueta é por painel: cada bipe conta como N placas.'}
+                </p>
+              </div>
+              {nPainel > 1 && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="paineis">Painéis</Label>
+                  <Input id="paineis" type="number" min={0} value={paineis} onChange={(e) => {
+                    setPaineis(e.target.value)
+                    setQtd(e.target.value.trim() === '' || Number.isNaN(Number(e.target.value)) ? '' : String(placasDosPaineis(Number(e.target.value), nPainel)))
+                  }} />
+                </div>
+              )}
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="descricao">Descrição</Label>
                 <Input id="descricao" name="descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
@@ -353,7 +412,7 @@ export function OrdemForm({
                       <Select value={padraoSelecionado} onValueChange={(id) => {
                         setPadraoSelecionado(id ?? '')
                         const padrao = padroesDoPmo.find((p) => p.id === id)
-                        if (padrao) { setFluxo(padrao.postos); setReceita(coagirReceitaPadrao(padrao.componentes)) }
+                        if (padrao) { setFluxo(almoxFixo ? rotaPadraoOpNova(padrao.postos, almoxFixo) : padrao.postos); setReceita(coagirReceitaPadrao(padrao.componentes)) }
                       }}>
                         <SelectTrigger className="h-8 w-auto text-xs">
                           <SelectValue>
@@ -409,15 +468,23 @@ export function OrdemForm({
                         />
                       </span>
                     )}
-                    <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
-                      <ArrowUp className="size-4" />
-                    </button>
-                    <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === fluxo.length - 1} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
-                      <ArrowDown className="size-4" />
-                    </button>
-                    <button type="button" aria-label="Remover" onClick={() => remover(i)} className="text-muted-foreground hover:text-red-600">
-                      <X className="size-4" />
-                    </button>
+                    {posto === almoxFixo ? (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Posto obrigatório: fecha a rota da OP">
+                        <Lock className="size-3.5" aria-hidden="true" /> obrigatório
+                      </span>
+                    ) : (
+                      <>
+                        <button type="button" aria-label="Subir" onClick={() => mover(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                          <ArrowUp className="size-4" />
+                        </button>
+                        <button type="button" aria-label="Descer" onClick={() => mover(i, 1)} disabled={i === fluxo.length - 1 || fluxo[i + 1] === almoxFixo} className="text-muted-foreground hover:text-tinta disabled:opacity-30">
+                          <ArrowDown className="size-4" />
+                        </button>
+                        <button type="button" aria-label="Remover" onClick={() => remover(i)} className="text-muted-foreground hover:text-red-600">
+                          <X className="size-4" />
+                        </button>
+                      </>
+                    )}
                   </li>
                 ))}
                 {fluxo.length === 0 && (

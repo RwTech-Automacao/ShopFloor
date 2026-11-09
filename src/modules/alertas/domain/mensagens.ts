@@ -218,6 +218,25 @@ export function listaComCorte(
   return ''
 }
 
+/**
+ * Só os `maximo` PRIMEIROS itens e, se sobrar, "… e mais K <plural>" (K conta TODOS os que não foram
+ * mostrados). É a lista das mensagens que levam o link do relatório completo (parado e fim de EMB): o
+ * detalhe mora na tela, a mensagem mostra o topo. Dentro do orçamento, como `listaComCorte`: se nem os
+ * `maximo` cabem, mostra menos (no limite, só o "… e mais"); se nem isso cabe, devolve ''.
+ */
+export function listaPrimeiros(
+  itens: readonly string[], maximo: number, orcamento: number, singular: string, plural: string, separador = '\n',
+): string {
+  for (let n = Math.min(Math.max(0, Math.floor(maximo)), itens.length); n >= 0; n -= 1) {
+    const restantes = itens.length - n
+    const partes = itens.slice(0, n)
+    if (restantes > 0) partes.push(`… e mais ${restantes} ${restantes === 1 ? singular : plural}`)
+    const texto = partes.join(separador)
+    if (texto.length <= orcamento) return texto
+  }
+  return ''
+}
+
 /** O cortador acima, com as palavras das POSIÇÕES. */
 export function listaPosicoes(itens: readonly string[], orcamento: number): string {
   return listaComCorte(itens, orcamento, 'posição', 'posições')

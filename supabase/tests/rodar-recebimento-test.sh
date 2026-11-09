@@ -15,6 +15,7 @@ docker cp supabase/migrations/0142_divergencia_justificativa.sql "$NOME":/tmp/01
 docker cp supabase/migrations/0143_rec_justificar_divergencia.sql "$NOME":/tmp/0143.sql
 docker cp supabase/migrations/0144_rec_fluxo_itens_justificativa.sql "$NOME":/tmp/0144.sql
 docker cp supabase/migrations/0147_divergencia_num.sql "$NOME":/tmp/0147.sql
+docker cp supabase/migrations/0171_rec_fluxo_itens_pedido.sql "$NOME":/tmp/0171.sql
 docker cp supabase/tests/recebimento_fluxo_test.sql "$NOME":/tmp/teste.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 
@@ -33,6 +34,7 @@ for _ in 1 2; do
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0143.sql
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0144.sql
   docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0147.sql
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/0171.sql
 done
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq \
   -c "select count(*) from information_schema.columns where table_schema='public' and table_name='processos_recebimento' and column_name in ('divergencia_justificativa','divergencia_justificada_por','divergencia_justificada_em','divergencia_justificada_por_nome')" | grep -qx 4 \
@@ -68,3 +70,22 @@ for _ in 1 2; do
   docker exec "$NOME" psql -U postgres -d dashboard -1 -v ON_ERROR_STOP=1 -q -f /tmp/0152.sql
 done
 docker exec "$NOME" psql -U postgres -d dashboard -v ON_ERROR_STOP=1 -q -f /tmp/dash_teste.sql
+
+# ---------- Métricas do dashboard (0154) num banco PRÓPRIO (dashmet) ----------
+# Mesmo motivo do `dashboard`: a função conta a tabela inteira. Ordem: esquema (com os campos extras e
+# a tabela logs) → 0142/0143/0147 → 0152 → massa → 0154 DUAS vezes (idempotência; -1 = uma transação
+# por aplicação, como no SQL Editor) → teste.
+docker cp supabase/migrations/0154_rec_dashboard_metricas.sql "$NOME":/tmp/0154.sql
+docker cp supabase/tests/recebimento_dashboard_metricas_esquema.sql "$NOME":/tmp/dashmet_esquema.sql
+docker cp supabase/tests/recebimento_dashboard_metricas_massa.sql "$NOME":/tmp/dashmet_massa.sql
+docker cp supabase/tests/recebimento_dashboard_metricas_test.sql "$NOME":/tmp/dashmet_teste.sql
+docker exec "$NOME" createdb -U postgres dashmet
+docker exec "$NOME" psql -U postgres -d dashmet -v ON_ERROR_STOP=1 -q -f /tmp/dashmet_esquema.sql
+for m in 0142 0143 0147 0152; do
+  docker exec "$NOME" psql -U postgres -d dashmet -1 -v ON_ERROR_STOP=1 -q -f "/tmp/$m.sql"
+done
+docker exec "$NOME" psql -U postgres -d dashmet -v ON_ERROR_STOP=1 -q -f /tmp/dashmet_massa.sql
+for _ in 1 2; do
+  docker exec "$NOME" psql -U postgres -d dashmet -1 -v ON_ERROR_STOP=1 -q -f /tmp/0154.sql
+done
+docker exec "$NOME" psql -U postgres -d dashmet -v ON_ERROR_STOP=1 -q -f /tmp/dashmet_teste.sql

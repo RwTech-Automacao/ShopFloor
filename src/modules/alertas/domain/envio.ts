@@ -26,6 +26,17 @@ import {
   type RefOp,
 } from './mensagens'
 import { textoEmb, type DivergenciaEmb } from './emb'
+import { textoFicha } from './ficha-texto'
+import { OP_RELATORIO, PMO_RELATORIO } from './parados'
+import { urlRelatorioEmb, urlRelatorioParados } from './links'
+import { textoNormalizouParado, textoRelatorioParado, type OpParada } from './parados-texto'
+import {
+  textoAlertaCompels,
+  textoAvisosCompels,
+  textoNormalizouCompels,
+  type AvisoCompels,
+  type ItemCompels,
+} from './compels-texto'
 
 /**
  * Uma linha da fila (`alerta_envios`) já RESERVADA por esta rodada (`alerta_reservar_envios`):
@@ -48,7 +59,7 @@ export interface EnvioReservado {
 }
 
 const TIPOS: readonly TipoEnvio[] = [
-  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb',
+  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb', 'compels_aviso', 'ficha',
 ]
 
 function ehTipoEnvio(v: unknown): v is TipoEnvio {
@@ -145,7 +156,7 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
  * EMB (0150) entra na lista dos excluídos pelo mesmo motivo do resumo: ele nasce SEM ocorrência,
  * tem texto próprio e nunca chega a `textoAprovacao`/`textoTempo`/`textoDefeito`.
  */
-type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb'>
+type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb' | 'compels_aviso' | 'ficha'>
 
 /**
  * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
@@ -214,7 +225,7 @@ function textoResumoDe(dados: Record<string, unknown>): string {
  * ⚠️ A LISTA VAZIA NÃO É ERRO: é a EMB que fechou sem divergência nenhuma, e ela TAMBÉM manda
  * mensagem (decisão 5 da spec, corrigida em 14/10/2026). Quem escreve essa frase é o `textoEmb`.
  */
-function textoEmbDe(dados: Record<string, unknown>): string {
+function textoEmbDe(dados: Record<string, unknown>, opcoes: OpcoesTexto): string {
   const emb = texto(dados, 'emb')
   if (emb.trim() === '') throw new DadosEnvioInvalidos('emb')
   if (!Array.isArray(dados.divergencias)) throw new DadosEnvioInvalidos('divergencias')
@@ -238,7 +249,29 @@ function textoEmbDe(dados: Record<string, unknown>): string {
       justificadaPorNome: textoOuVazio(d, 'justificada_por_nome'),
     }
   })
-  return textoEmb(texto(dados, 'regra_nome'), emb, divergencias)
+  return textoEmb(texto(dados, 'regra_nome'), emb, divergencias, opcoes.urlBase ? urlRelatorioEmb(opcoes.urlBase, emb) : null)
+}
+
+/**
+ * Lê o `dados` da ficha de apontamento como a 0173 o grava: unidade ('caixa' | 'lote'), codigo, pmo, op,
+ * produto, quantidade_op (pode faltar), quantidade_apontada, data_producao (pode faltar) e responsavel
+ * (pode vir vazio). O `qr` fica de fora do texto: quem o anexa é o entregador (só o Discord). Formato
+ * errado LANÇA: nunca uma ficha em branco calada.
+ */
+function textoFichaDe(dados: Record<string, unknown>): string {
+  const unidade = dados.unidade
+  if (unidade !== 'caixa' && unidade !== 'lote') throw new DadosEnvioInvalidos('unidade')
+  return textoFicha({
+    unidade,
+    codigo: texto(dados, 'codigo'),
+    dataProducao: dataOuNulo(dados, 'data_producao'),
+    produto: textoOuVazio(dados, 'produto'),
+    quantidadeOp: numeroOuNulo(dados, 'quantidade_op'),
+    pmo: texto(dados, 'pmo'),
+    op: texto(dados, 'op'),
+    quantidadeApontada: numero(dados, 'quantidade_apontada'),
+    responsavel: textoOuVazio(dados, 'responsavel'),
+  })
 }
 
 function janelaDe(d: Record<string, unknown>): Janela {
@@ -324,6 +357,97 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
 }
 
 /**
+ * Lê o `dados` do parado (relatório único por regra): `itens` = as OPs paradas ({pmo, op, mais_antiga_min,
+ * itens: [{tipo, codigo = posto, pecas, minutos}]}), `limite_horas` e `expediente` (a regra conta horas
+ * de expediente). O alerta e cada lembrete têm o MESMO texto: a lista é a de agora, e a primeira linha
+ * já é o assunto do e-mail.
+ */
+function textoParado(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>, opcoes: OpcoesTexto): string {
+  if (tipo === 'normalizou') return textoNormalizouParado()
+  if (!Array.isArray(dados.itens)) throw new DadosEnvioInvalidos('itens')
+  const objeto = (bruto: unknown, campo: string): Record<string, unknown> => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) throw new DadosEnvioInvalidos(campo)
+    return bruto as Record<string, unknown>
+  }
+  const ops: OpParada[] = dados.itens.map((brutaOp) => {
+    const o = objeto(brutaOp, 'itens')
+    if (!Array.isArray(o.itens)) throw new DadosEnvioInvalidos('itens.itens')
+    const itens = o.itens.map((brutoItem): OpParada['itens'][number] => {
+      const i = objeto(brutoItem, 'itens.itens')
+      const t = i.tipo
+      if (t !== 'posto' && t !== 'conserto') throw new DadosEnvioInvalidos('itens.itens.tipo')
+      return { tipo: t, codigo: texto(i, 'codigo'), pecas: numero(i, 'pecas'), minutos: numero(i, 'minutos') }
+    })
+    return { pmo: texto(o, 'pmo'), op: texto(o, 'op'), maisAntigaMin: numero(o, 'mais_antiga_min'), itens }
+  })
+  // `regra_id` não vem do banco no `dados`: o repositório o acrescenta na reserva (pela ocorrência). Sem ele
+  // (ou sem a origem do ShopFloor), a mensagem sai sem link e com a lista inteira, como antes.
+  const regraId = textoOuNulo(dados, 'regra_id')
+  return textoRelatorioParado({
+    regraNome: texto(dados, 'regra_nome'),
+    limiteHoras: numero(dados, 'limite_horas'),
+    expediente: dados.expediente === true,
+    ops,
+    em: data(dados, 'agora'),
+    urlRelatorio: opcoes.urlBase && regraId ? urlRelatorioParados(opcoes.urlBase, regraId) : null,
+  })
+}
+
+/** Lê o `dados` do compels (0170), ocorrência: `itens` (array de {motivo, linhas, pecas, desistiu}) e `linhas`. */
+function textoCompels(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>): string {
+  const refOp = refOpDe(dados)
+  if (tipo === 'normalizou') return textoNormalizouCompels(refOp)
+  if (!Array.isArray(dados.itens)) throw new DadosEnvioInvalidos('itens')
+  const itens: ItemCompels[] = dados.itens.map((bruto) => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) {
+      throw new DadosEnvioInvalidos('itens')
+    }
+    const i = bruto as Record<string, unknown>
+    return {
+      motivo: texto(i, 'motivo'),
+      linhas: numero(i, 'linhas'),
+      pecas: numero(i, 'pecas'),
+      desistiu: i.desistiu === true,
+    }
+  })
+  const agora = data(dados, 'agora')
+  const alerta = textoAlertaCompels({
+    ...refOp,
+    regraNome: texto(dados, 'regra_nome'),
+    linhas: numero(dados, 'linhas'),
+    itens,
+    em: agora,
+  })
+  if (tipo === 'alerta') return alerta
+  return textoLembreteTipo(alerta, data(dados, 'aberta_em'), agora)
+}
+
+/**
+ * Lê o `dados` do aviso de gravação como a 0170 o grava: `regra_nome`, `agora` e `avisos` (array de
+ * {pmo, op, quantidade, aviso}). Formato diferente LANÇA: nunca uma mensagem vazia calada.
+ */
+function textoAvisosCompelsDe(dados: Record<string, unknown>): string {
+  if (!Array.isArray(dados.avisos)) throw new DadosEnvioInvalidos('avisos')
+  const avisos: AvisoCompels[] = dados.avisos.map((bruto) => {
+    if (bruto === null || typeof bruto !== 'object' || Array.isArray(bruto)) {
+      throw new DadosEnvioInvalidos('avisos')
+    }
+    const a = bruto as Record<string, unknown>
+    return { pmo: textoOuVazio(a, 'pmo'), op: textoOuVazio(a, 'op'), quantidade: numero(a, 'quantidade'), aviso: texto(a, 'aviso') }
+  })
+  return textoAvisosCompels(texto(dados, 'regra_nome'), data(dados, 'agora'), avisos)
+}
+
+/** O que o texto precisa de fora do `dados`. */
+export interface OpcoesTexto {
+  /**
+   * A origem do ShopFloor (`baseDoShopfloor`), para os links dos relatórios (parado e fim de EMB). Ausente:
+   * as mensagens saem sem link, como antes.
+   */
+  urlBase?: string | null
+}
+
+/**
  * Monta o texto de uma linha da fila a partir dos `dados` gravados pelo banco. A formatação
  * (fuso de São Paulo, taxa truncada, mm:ss, duração) existe SÓ aqui no TS — o SQL guarda os números.
  * Como os dados foram congelados quando a linha nasceu, o reenvio sai idêntico à primeira vez.
@@ -335,6 +459,11 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *   aprovacao: taxa, taxa_minima, aprovados, reprovados
  *   tempo:     media_seg, limite_tempo_seg, pecas
  *   defeito:   defeito, ocorrencias, limite_ocorrencias, posicoes (array de designadores, opcional)
+ *   compels:   linhas, itens (array de {motivo, linhas, pecas, desistiu}); 0170
+ *   compels_aviso: regra_nome, agora, avisos (array de {pmo, op, quantidade, aviso}); 0170
+ *   ficha:     unidade, qr, codigo, pmo, op, produto, quantidade_op, quantidade_apontada, data_producao, responsavel; 0173
+ *   parado:    limite_horas, mais_antiga_min, expediente, itens (as OPs: array de {pmo, op, mais_antiga_min, itens: array de {tipo, codigo, pecas, minutos}}); relatório único, 0172
+ *              regra_id (para o link do relatório): NÃO vem do banco; o repositório acrescenta na reserva
  *   resolvido: posto, resolvida_por_nome, resolvida_em, defeito (opcional — só em regra de defeito),
  *              pmo, op, ops, explicacao (opcionais; explicacao só existe quando a pessoa escreveu algo)
  *   teste: nome
@@ -345,18 +474,28 @@ function textoDefeito(tipo: TipoEnvioOcorrencia, dados: Record<string, unknown>)
  *              resolvida_por_nome, resolvida_em, reaberturas
  * `regra_tipo` ausente = 'aprovacao' (linhas enfileiradas antes da 0115).
  */
-export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): string {
+export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>, opcoes: OpcoesTexto = {}): string {
   if (tipo === 'teste') return textoTeste(texto(dados, 'nome'))
   if (tipo === 'resumo') return textoResumoDe(dados)
-  if (tipo === 'emb') return textoEmbDe(dados)
+  if (tipo === 'emb') return textoEmbDe(dados, opcoes)
+  if (tipo === 'compels_aviso') return textoAvisosCompelsDe(dados)
+  if (tipo === 'ficha') return textoFichaDe(dados)
   if (tipo === 'resolvido') {
+    // No parado a 0151 copia a chave "PMO/OP" da ocorrência para `defeito`: não é defeito de verdade.
+    const refBruto = refOpDe(dados)
+    // O relatório único do parado usa TODAS/— no lugar da OP: não é uma OP, então a mensagem não a cita.
+    const ehRelatorio = refBruto.pmo === PMO_RELATORIO && refBruto.op === OP_RELATORIO
+    const refResolvido: RefOp = ehRelatorio ? { pmo: null, op: null, ops: [] } : refBruto
+    const defeitoBruto = textoOuNulo(dados, 'defeito')
+    const chaveDeParado = `${(refBruto.pmo ?? '').trim()}/${refBruto.op ?? ''}`
+    const defeito = defeitoBruto !== null && defeitoBruto === chaveDeParado ? null : defeitoBruto
     return textoResolvido({
-      ...refOpDe(dados),
+      ...refResolvido,
       posto: texto(dados, 'posto'),
       nome: texto(dados, 'resolvida_por_nome'),
       em: data(dados, 'resolvida_em'),
       // Ausente nas linhas antigas da fila (de antes desta correção) e nos tipos sem defeito.
-      defeito: textoOuNulo(dados, 'defeito'),
+      defeito,
       // Só existe quando a pessoa escreveu algo (o banco omite a chave nos outros casos).
       explicacao: textoOuNulo(dados, 'explicacao'),
     })
@@ -369,7 +508,11 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>): s
       ? textoTempo(tipo, dados)
       : regraTipo === 'defeito'
         ? textoDefeito(tipo, dados)
-        : textoAprovacao(tipo, dados)
+        : regraTipo === 'parado'
+          ? textoParado(tipo, dados, opcoes)
+          : regraTipo === 'compels'
+            ? textoCompels(tipo, dados)
+            : textoAprovacao(tipo, dados)
 
   // REABERTURA: vale para os três tipos, então o cabeçalho envolve o texto já montado em vez de
   // ser repetido dentro de cada um. Só no 'alerta' — a reabertura sempre enfileira esse tipo.

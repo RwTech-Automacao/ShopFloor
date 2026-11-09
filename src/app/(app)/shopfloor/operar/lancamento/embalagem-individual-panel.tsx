@@ -63,8 +63,13 @@ export function EmbalagemIndividualPanel({
         })
         return
       }
-      setResultado({ tipo: 'ok', titulo: 'Peça embalada', chips: [{ rotulo: 'Nº Série', valor: prod.trim(), mono: true }] })
-      setTotal((t) => t + 1)
+      const pecas = r.pecas ?? 1
+      setResultado({
+        tipo: 'ok',
+        titulo: 'Peça embalada',
+        chips: [{ rotulo: 'Nº Série', valor: prod.trim(), mono: true }, ...(pecas > 1 ? [{ rotulo: 'Placas', valor: `+${pecas}` }] : [])],
+      })
+      setTotal((t) => t + (r.pecas ?? 1)) // placas do painel (1 se a OP não tem painel)
       setRecentes((prev) => [prod.trim(), ...prev])
     })
   }

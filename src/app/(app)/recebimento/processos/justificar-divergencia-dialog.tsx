@@ -22,6 +22,10 @@ import { LIMITE_JUSTIFICATIVA } from '@/modules/recebimento/domain/divergencia'
  * Quem formata é este arquivo — uma régua só, para as duas telas contarem a mesma história.
  */
 export interface ContextoDivergencia {
+  /** `numero_emb` do processo: de qual EMB é o item (pedido de 06/11/2026). Vazio mostra o traço. */
+  emb: string
+  /** `numero_pedido` do processo — o "nº da PO". Vazio mostra o traço. */
+  po: string
   /** `codigo_material` na grade, `item` no Fluxo. */
   codigo: string
   /** `descricao_material` na grade, `descricao` no Fluxo. */
@@ -87,6 +91,8 @@ function BlocoContexto({ contexto }: { contexto: ContextoDivergencia }) {
       aria-label="Contexto da divergência"
       className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm"
     >
+      <Linha rotulo="Nº da EMB">{contexto.emb || VAZIO}</Linha>
+      <Linha rotulo="Nº da PO">{contexto.po || VAZIO}</Linha>
       <Linha rotulo="Código do material">{contexto.codigo || VAZIO}</Linha>
       <Linha rotulo="Descrição">{contexto.descricao || VAZIO}</Linha>
       <Linha rotulo="Quantidade pedida">

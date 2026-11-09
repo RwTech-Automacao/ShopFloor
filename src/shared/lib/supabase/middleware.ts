@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { cabecalhosComMarcaEmbed, ehCaminhoEmbed, opcoesCookieEmbed } from './embed'
+import { DESTINO_PADRAO, PARAM_DESTINO, destinoPosLogin } from '@/modules/auth/domain/destino-pos-login'
 
 /**
  * @param cabecalhos cabeçalhos da requisição já com a marca de embed resolvida pelo caminho
@@ -75,20 +76,41 @@ export async function updateSession(request: NextRequest, cabecalhos: Headers) {
   // Sem esta exceção o middleware a mandaria pro /login antes de o token sequer ser lido.
   const isSso = request.nextUrl.pathname.startsWith('/sso')
 
-  const redirectTo = (pathname: string) => {
+  // `destino` é sempre um caminho interno (com ou sem query). A URL parte do nextUrl só porque o
+  // NextResponse.redirect exige URL absoluta: como o host é o mesmo da requisição, o próprio Next
+  // reescreve o Location para RELATIVO (getRelativeURL no adapter) — o host visto atrás do nginx
+  // não vaza para o navegador. A query da requisição original é descartada (antes ela ia junto).
+  const redirectTo = (destino: string) => {
     const url = request.nextUrl.clone()
-    url.pathname = pathname
+    const alvo = new URL(destino, 'http://x')
+    url.pathname = alvo.pathname
+    url.search = alvo.search
+    url.hash = ''
     const redirect = NextResponse.redirect(url)
     // preserva os cookies atualizados (incluindo a limpeza do signOut)
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie))
     return redirect
   }
 
+  // /login levando o destino em ?next= (caminho + query), para o login devolver a pessoa ao link que
+  // ela abriu. Só em GET de página: /api/* e POST (server action) não são lugar pra onde voltar.
+  const urlDoLogin = () => {
+    const destino = request.nextUrl.pathname + request.nextUrl.search
+    const voltar =
+      request.method === 'GET' &&
+      !request.nextUrl.pathname.startsWith('/api/') &&
+      request.nextUrl.pathname !== '/' &&
+      destinoPosLogin(destino) !== DESTINO_PADRAO
+    return voltar ? `/login?${new URLSearchParams({ [PARAM_DESTINO]: destino })}` : '/login'
+  }
+
   // ⚠️ /embed/* NUNCA redireciona: está dentro de um iframe do Dashboard. Sem sessão, /embed/sso
   // é quem a cria (como o /sso já faz) e as outras telas respondem "Conectando…" avisando o pai
   // por postMessage. Um redirect aqui travaria o dashboard sem explicação.
-  if (!appUserValido && !isAuthRoute && !isReset && !isSso && !ehEmbed) return redirectTo('/login')
-  if (appUserValido && isAuthRoute) return redirectTo('/home')
+  if (!appUserValido && !isAuthRoute && !isReset && !isSso && !ehEmbed) return redirectTo(urlDoLogin())
+  // Já logado no /login (ex.: abriu o link de um alerta em outra aba): segue direto pro destino.
+  if (appUserValido && isAuthRoute)
+    return redirectTo(destinoPosLogin(request.nextUrl.searchParams.get(PARAM_DESTINO)))
   // Conta com senha provisória fica presa em /definir-senha até trocar — menos no embed: a conta
   // compartilhada entra só por SSO, e /definir-senha dentro do iframe não teria como ser usada.
   if (appUserValido && senhaProvisoria && !isDefinirSenha && !ehEmbed)

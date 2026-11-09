@@ -3,22 +3,32 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 
 export async function lerRegistroParaCancelar(
   id: string,
-): Promise<{ pmo: string; op: string; numeroSerieNorm: string; posto: string; numeroCaixa: string } | null> {
+): Promise<{
+  pmo: string; op: string; numeroSerieNorm: string; posto: string; numeroCaixa: string; envioId: string
+} | null> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_registros')
-    .select('pmo,op,numero_serie_norm,posto,numero_caixa')
+    .select('pmo,op,numero_serie_norm,posto,numero_caixa,envio_id')
     .eq('id', id)
     .maybeSingle()
   if (error) throw error
   if (!data) return null
-  const r = data as { pmo: string; op: string; numero_serie_norm: string; posto: string; numero_caixa: string | null }
+  const r = data as {
+    pmo: string; op: string; numero_serie_norm: string; posto: string; numero_caixa: string | null
+    envio_id?: string | null
+  }
   // numero_caixa: é por ele que se acha a caixa a reabrir no cancelamento. Não é mais só a embalagem
   // que preenche — o bipe de caixa no Almoxarifado grava uma linha por peça com o código da caixa
   // (0129), então existe linha com numero_caixa fora da Embalagem. Quem decide reabrir é o RECURSO do
   // perfil do posto ('caixa'), conferido dentro da sf_cancelar_lancamento (0106): cancelar uma linha
   // de almoxarifado não mexe em caixa nenhuma.
-  return { pmo: r.pmo, op: r.op, numeroSerieNorm: r.numero_serie_norm, posto: r.posto, numeroCaixa: r.numero_caixa ?? '' }
+  // envio_id (0156): a entrada de LOTE do NQA individual aponta pro envio do lote; o desfazer dela é o
+  // lote inteiro. Vazio em todo o resto.
+  return {
+    pmo: r.pmo, op: r.op, numeroSerieNorm: r.numero_serie_norm, posto: r.posto,
+    numeroCaixa: r.numero_caixa ?? '', envioId: r.envio_id ?? '',
+  }
 }
 
 /** É o bipe mais recente (maior data_hora, depois id) do SN nesta OP? */
@@ -47,9 +57,30 @@ export async function chamarSfCancelar(
   return { ok: true }
 }
 
+const PAGINA = 1000
+
 /**
- * Quantas peças a entrada de caixa do Almoxarifado tem: as linhas daquela caixa NAQUELE posto — o
- * conjunto exato que a 0131 vai cancelar. Serve pro diálogo dizer "14 peças" ANTES de confirmar.
+ * Soma `pecas` (placas por painel, 0161) das linhas de sf_registros que `pagina` devolve, paginando
+ * (o PostgREST corta em 1000 linhas). As linhas de uma entrada do Almoxarifado são uma por SN (painel),
+ * então somar `pecas` delas é exatamente o que a 0165 devolve ao cancelar (a soma do que foi apagado).
+ */
+async function somarPecas(
+  pagina: (de: number, ate: number) => PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<number> {
+  let soma = 0
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await pagina(de, de + PAGINA - 1)
+    if (error) throw error
+    const linhas = (data ?? []) as { pecas?: number | null }[]
+    for (const l of linhas) soma += Number(l.pecas ?? 1)
+    if (linhas.length < PAGINA) return soma
+  }
+}
+
+/**
+ * Quantas peças (PLACAS, 0165) a entrada de caixa do Almoxarifado tem: a soma de `pecas` das linhas
+ * daquela caixa NAQUELE posto — o conjunto exato que a 0131/0165 vai cancelar. Serve pro diálogo dizer
+ * "500 peças" ANTES de confirmar. Com 1 placa por painel é a contagem de linhas de antes.
  *
  * É best-effort de UX: o número que vale é o que a RPC devolve depois de apagar (ela conta dentro da
  * trava). Este aqui é lido fora de trava e pode estar velho por um instante.
@@ -59,23 +90,56 @@ export async function contarPecasDaEntradaDeCaixa(
 ): Promise<number> {
   if (numeroCaixa.trim() === '') return 0 // numero_caixa='' casaria com toda entrada individual
   const supabase = await createServerSupabase()
-  const { count, error } = await supabase
-    .from('sf_registros')
-    .select('*', { count: 'exact', head: true })
-    .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', numeroCaixa)
-  if (error) throw error
-  return count ?? 0
+  return somarPecas((de, ate) =>
+    supabase.from('sf_registros').select('pecas')
+      .eq('pmo', pmo).eq('op', op).eq('posto', posto).eq('numero_caixa', numeroCaixa)
+      .order('id').range(de, ate))
 }
 
 /**
  * Cancela a CAIXA INTEIRA (0131): as N linhas da entrada, de uma vez, com um motivo só. Devolve
- * quantas linhas saíram — é o que a tela mostra ("14 peças canceladas").
+ * quantas PLACAS saíram (0165: soma de `pecas` das linhas apagadas) — é o que a tela mostra
+ * ("500 peças canceladas").
  */
 export async function chamarSfCancelarCaixa(
   id: string, motivo: string,
 ): Promise<{ ok: true; canceladas: number } | { ok: false; erro: string }> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_cancelar_caixa_almoxarifado', {
+    p_id: id, p_motivo: motivo,
+  })
+  if (error) return { ok: false, erro: error.message }
+  return { ok: true, canceladas: Number(data ?? 0) }
+}
+
+/**
+ * O lote da entrada (0156): o rótulo do envio e quantas PLACAS (0165) apontam pra ele — o conjunto exato que a
+ * sf_cancelar_lote_almoxarifado vai apagar. `null` quando o envio não é de lote. Best-effort de UX: o
+ * número que vale é o que a RPC devolve depois de apagar.
+ */
+export async function lerLoteDaEntrada(envioId: string): Promise<{ rotulo: string; pecas: number } | null> {
+  if (envioId.trim() === '') return null
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_estoque_envios')
+    .select('bipe,tipo')
+    .eq('id', envioId)
+    .maybeSingle()
+  if (error) throw error
+  const envio = data as { bipe: string; tipo: string } | null
+  if (!envio || envio.tipo !== 'lote') return null
+  // 0165: em PLACAS (soma de `pecas` das linhas do lote), o que a sf_cancelar_lote_almoxarifado devolve.
+  const pecas = await somarPecas((de, ate) =>
+    supabase.from('sf_registros').select('pecas').eq('envio_id', envioId).order('id').range(de, ate))
+  return { rotulo: envio.bipe, pecas }
+}
+
+/** Cancela o LOTE INTEIRO (0156). Devolve quantas PLACAS saíram (0165; "200 peças canceladas"). */
+export async function chamarSfCancelarLote(
+  id: string, motivo: string,
+): Promise<{ ok: true; canceladas: number } | { ok: false; erro: string }> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase.rpc('sf_cancelar_lote_almoxarifado', {
     p_id: id, p_motivo: motivo,
   })
   if (error) return { ok: false, erro: error.message }

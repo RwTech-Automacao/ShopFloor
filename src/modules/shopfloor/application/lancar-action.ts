@@ -48,7 +48,8 @@ export interface EntradaLancamento {
   observacao?: string
 }
 
-export type ResultadoLancamento = { ok: true; caixaCount?: number } | { ok: false; erro: string }
+/** `pecas` = placas do painel bipado (N da OP; 1 quando a OP não tem painel). */
+export type ResultadoLancamento = { ok: true; caixaCount?: number; pecas?: number } | { ok: false; erro: string }
 
 const MENSAGENS: Record<string, string> = {
   SEM_PERMISSAO: 'Você não tem permissão para lançar.',
@@ -201,6 +202,13 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     }
   }
 
+  // Embalagem INDIVIDUAL (caixa = o próprio painel, limite 1): o limite é em PLACAS, então o painel de
+  // N placas precisa de limite N — com 1 o sf_lancar recusaria todo bipe (`0 + N > 1`). OP sem painel: N=1, igual a antes.
+  const limiteEfetivo =
+    perfil.recurso === 'caixa' && ordem.embalagem_individual && qtdPorCaixa === 1
+      ? Math.max(1, ordem.placas_por_painel ?? 1)
+      : qtdPorCaixa
+
   // NQA não tem campo Status: deriva aprovado/reprovado de visual+funcional.
   // Paridade com o legado: Funcional "Não aplicável" também conta como aprovado.
   const ehNqa = perfil.recurso === 'nqa'
@@ -231,7 +239,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     p_numero_caixa: entrada.numeroCaixa ?? '',
     // Última caixa (permitirExtraCaixa) → manda qtd=null pro RPC, que então pula a checagem de
     // CAIXA_CHEIA. A validação de qtd_por_caixa acima já rodou com o valor real, então continua exigida.
-    p_qtd_por_caixa: entrada.permitirExtraCaixa ? null : qtdPorCaixa,
+    p_qtd_por_caixa: entrada.permitirExtraCaixa ? null : limiteEfetivo,
     p_nqa_visual: entrada.nqaVisual ?? '',
     p_nqa_funcional: entrada.nqaFuncional ?? '',
     p_prev_posto: prevPosto ?? '',
@@ -242,6 +250,10 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
   })
 
   if (!r.ok) {
+    // Painel de várias placas que estoura o limite: a mensagem diz quantas placas ele traz e quanto já há.
+    if (r.erro === 'CAIXA_CHEIA' && (r.pecas ?? 1) > 1 && r.caixa_count !== undefined && r.limite !== undefined) {
+      return { ok: false, erro: `Este painel (${r.pecas} placas) ultrapassa o limite da caixa (${r.caixa_count}/${r.limite}).` }
+    }
     // Dizer QUAL posto falta é a diferença entre o operador resolver sozinho e chamar o supervisor.
     if (r.erro === 'RETESTE_PENDENTE' && r.postoPendente) {
       return { ok: false, erro: `A peça precisa passar por ${r.postoPendente} antes de voltar aqui.` }
@@ -284,7 +296,7 @@ export async function lancar(entrada: EntradaLancamento): Promise<ResultadoLanca
     }
   }
 
-  return { ok: true, caixaCount: r.caixa_count }
+  return { ok: true, caixaCount: r.caixa_count, pecas: r.pecas }
 }
 
 /**

@@ -4,19 +4,13 @@ import type { ReactElement } from 'react'
 
 vi.mock('server-only', () => ({}))
 
-const { getSessao, listarOrdensParaLancamento, mapaPostoPerfil } = vi.hoisted(() => ({
+const { getSessao, mapaPostoPerfil } = vi.hoisted(() => ({
   getSessao: vi.fn(),
-  listarOrdensParaLancamento: vi.fn(),
   mapaPostoPerfil: vi.fn(),
 }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao }))
-vi.mock('@/modules/shopfloor/infra/lancamento-repository', () => ({ listarOrdensParaLancamento }))
-vi.mock('@/modules/shopfloor/infra/postos-repository', () => ({
-  mapaPostoPerfil,
-  mapaPostoColetivo: vi.fn(async () => ({})),
-  mapaPostoRotaDestino: vi.fn(async () => new Set<string>()),
-}))
-vi.mock('@/app/(app)/shopfloor/operar/lancamento/lancamento-form', () => ({ LancamentoForm: () => null }))
+vi.mock('@/modules/shopfloor/infra/postos-repository', () => ({ mapaPostoPerfil }))
+vi.mock('../almoxarifado-tela', () => ({ AlmoxarifadoTela: function AlmoxarifadoTela() { return null } }))
 vi.mock('@/shared/ui/sem-permissao', () => ({ SemPermissao: () => null }))
 
 import { SemPermissao } from '@/shared/ui/sem-permissao'
@@ -24,8 +18,6 @@ import AlmoxarifadoPage from '../page'
 
 const perfil = (porModulo: Record<string, Record<string, boolean>>) => ({ porModulo })
 const COM_TUDO = perfil({ recebimento: { lancar: true }, shopfloor: { visualizar: true } })
-
-const ordem = (op: string, postos: string[]) => ({ cliente: 'C', pmo: 'PMO1', op, postos })
 
 function achar(el: unknown, tipo: string): ReactElement | null {
   if (!el || typeof el !== 'object') return null
@@ -39,7 +31,6 @@ function achar(el: unknown, tipo: string): ReactElement | null {
 beforeEach(() => {
   vi.clearAllMocks()
   mapaPostoPerfil.mockResolvedValue({ Almoxarifado: { recurso: 'almoxarifado' }, Embalagem: { recurso: 'caixa' } })
-  listarOrdensParaLancamento.mockResolvedValue([ordem('1', ['Embalagem', 'Almoxarifado']), ordem('2', ['Embalagem'])])
 })
 
 describe('/recebimento/almoxarifado', () => {
@@ -48,13 +39,13 @@ describe('/recebimento/almoxarifado', () => {
     const el = (await AlmoxarifadoPage()) as ReactElement<{ descricao: string }>
     expect(el.type).toBe(SemPermissao)
     expect(el.props.descricao).toContain('dar entrada no Almoxarifado')
-    expect(listarOrdensParaLancamento).not.toHaveBeenCalled()
+    expect(mapaPostoPerfil).not.toHaveBeenCalled()
   })
 
   it('sem sessão: sem permissão', async () => {
     getSessao.mockResolvedValue(null)
     expect(((await AlmoxarifadoPage()) as ReactElement).type).toBe(SemPermissao)
-    expect(listarOrdensParaLancamento).not.toHaveBeenCalled()
+    expect(mapaPostoPerfil).not.toHaveBeenCalled()
   })
 
   it('com lançar do Recebimento mas sem visualizar do ShopFloor: avisa e não lê', async () => {
@@ -62,24 +53,21 @@ describe('/recebimento/almoxarifado', () => {
     const el = (await AlmoxarifadoPage()) as ReactElement<{ descricao: string }>
     expect(el.type).toBe(SemPermissao)
     expect(el.props.descricao).toContain('visualizar')
-    expect(listarOrdensParaLancamento).not.toHaveBeenCalled()
+    expect(mapaPostoPerfil).not.toHaveBeenCalled()
   })
 
-  it('monta o formulário em modo Almoxarifado: posto fixo, colaborador = usuário logado, só OPs com o posto na rota', async () => {
+  it('monta a tela de cartões: posto achado pelo perfil, colaborador = usuário logado', async () => {
     getSessao.mockResolvedValue({ nome: 'Ana Souza', perfil: COM_TUDO })
     const el = await AlmoxarifadoPage()
-    const form = achar(el, 'LancamentoForm')
-    expect(form).not.toBeNull()
-    const props = form!.props as { ordens: { op: string }[]; modoAlmoxarifado: { colaborador: string; posto: string }; defeitos: unknown[] }
-    expect(props.modoAlmoxarifado).toEqual({ colaborador: 'Ana Souza', posto: 'Almoxarifado' })
-    expect(props.ordens.map((o) => o.op)).toEqual(['1'])
-    expect(props.defeitos).toEqual([])
+    const tela = achar(el, 'AlmoxarifadoTela')
+    expect(tela).not.toBeNull()
+    expect(tela!.props).toEqual({ colaborador: 'Ana Souza', posto: 'Almoxarifado' })
   })
 
-  it('sem posto de perfil Almoxarifado cadastrado: mensagem clara, sem formulário', async () => {
+  it('sem posto de perfil Almoxarifado cadastrado: mensagem clara, sem a tela', async () => {
     mapaPostoPerfil.mockResolvedValue({ Embalagem: { recurso: 'caixa' } })
     getSessao.mockResolvedValue({ nome: 'Ana', perfil: COM_TUDO })
     const el = await AlmoxarifadoPage()
-    expect(achar(el, 'LancamentoForm')).toBeNull()
+    expect(achar(el, 'AlmoxarifadoTela')).toBeNull()
   })
 })

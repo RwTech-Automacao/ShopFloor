@@ -15,6 +15,8 @@ export interface OrdemLancamento {
   /** OP de embalagem individual (1 peça = 1 caixa) × coletiva (caixa com N peças) — o Almoxarifado
    *  usa isto pra saber se o bipe esperado é a série da peça ou o código da caixa fechada. */
   embalagem_individual: boolean
+  /** Placas que um bipe de painel vale nesta OP (1 = sem painel). */
+  placas_por_painel?: number
 }
 
 export interface SfLancarArgs {
@@ -38,38 +40,38 @@ export interface SfLancarArgs {
   p_observacao: string
 }
 
-/** Nº de peças DISTINTAS (SN único) já lançadas nesse posto pra essa OP. Rebipe/reteste não soma. */
 /**
  * Peças DISTINTAS "aprovadas/passadas" no posto = SNs cujo ÚLTIMO registro no posto NÃO é 'reprovado'.
  * Assim: reprovada não conta (ainda não está boa); ao ser retestada e aprovada, o último vira aprovado e
  * passa a contar; posto de passagem (status vazio) sempre conta. Corrige o contador que somava qualquer bipe.
+ * Em PLACAS: cada SN conta `pecas` (placas por painel) UMA vez, a da linha mais recente dele — nunca soma linhas.
  */
 export async function contarLancadosNoPosto(pmo: string, op: string, posto: string): Promise<number> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
   // Último status por SN no posto (desempata por data_hora, depois id).
-  const ultimo = new Map<string, { dh: string; id: number; status: string }>()
+  const ultimo = new Map<string, { dh: string; id: number; status: string; pecas: number }>()
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_registros')
-      .select('numero_serie_norm,status,data_hora,id')
+      .select('numero_serie_norm,status,data_hora,id,pecas')
       .eq('pmo', pmo)
       .eq('op', op)
       .eq('posto', posto)
       .neq('numero_serie_norm', '')
       .range(i * PAGINA, i * PAGINA + PAGINA - 1)
     if (error) throw error
-    const lote = (data ?? []) as { numero_serie_norm: string; status: string; data_hora: string; id: number }[]
+    const lote = (data ?? []) as { numero_serie_norm: string; status: string; data_hora: string; id: number; pecas: number | null }[]
     for (const r of lote) {
       const cur = ultimo.get(r.numero_serie_norm)
       if (!cur || r.data_hora > cur.dh || (r.data_hora === cur.dh && r.id > cur.id)) {
-        ultimo.set(r.numero_serie_norm, { dh: r.data_hora, id: r.id, status: r.status })
+        ultimo.set(r.numero_serie_norm, { dh: r.data_hora, id: r.id, status: r.status, pecas: r.pecas ?? 1 })
       }
     }
     if (lote.length < PAGINA) break
   }
   let n = 0
-  for (const v of ultimo.values()) if ((v.status ?? '').trim().toLowerCase() !== 'reprovado') n++
+  for (const v of ultimo.values()) if ((v.status ?? '').trim().toLowerCase() !== 'reprovado') n += v.pecas
   return n
 }
 
@@ -77,13 +79,14 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('cliente,descricao,qtd,sn_ini,sn_fim,embalagem_individual,sf_ordem_postos(posto,ordem)')
+    .select('cliente,descricao,qtd,sn_ini,sn_fim,embalagem_individual,placas_por_painel,sf_ordem_postos(posto,ordem)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
   if (error) throw error
   if (!data) return null
   const row = data as unknown as {
+    placas_por_painel: number | null
     cliente: string
     descricao: string
     qtd: number | null
@@ -99,6 +102,7 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
     sn_ini: row.sn_ini,
     sn_fim: row.sn_fim,
     embalagem_individual: row.embalagem_individual,
+    placas_por_painel: row.placas_por_painel ?? 1,
     // postos NA ORDEM da OP (a sequência importa p/ a trava de sequência).
     postos: [...row.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
   }
@@ -114,12 +118,13 @@ export async function listarDefeitos(): Promise<{ codigo: string; tipo: number }
 /** Chama a função atômica sf_lancar. Erros de infra viram { ok:false, erro:'ERRO_INTERNO' }. */
 export async function chamarSfLancar(
   args: SfLancarArgs,
-): Promise<{ ok: boolean; erro?: string; caixa_count?: number; postoPendente?: string }> {
+): Promise<{ ok: boolean; erro?: string; caixa_count?: number; pecas?: number; limite?: number; postoPendente?: string }> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_lancar', args)
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
-  const r = data as { ok: boolean; erro?: string; caixa_count?: number; posto_pendente?: string }
-  return { ok: r.ok, erro: r.erro, caixa_count: r.caixa_count, postoPendente: r.posto_pendente }
+  const r = data as { ok: boolean; erro?: string; caixa_count?: number; pecas?: number; count?: number; limite?: number; posto_pendente?: string }
+  // `count` (placas já na caixa) só vem na recusa CAIXA_CHEIA; `caixa_count` só no sucesso.
+  return { ok: r.ok, erro: r.erro, caixa_count: r.caixa_count ?? r.count, pecas: r.pecas, limite: r.limite, postoPendente: r.posto_pendente }
 }
 
 export interface OrdemLancamentoLista {

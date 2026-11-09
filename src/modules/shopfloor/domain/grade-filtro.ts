@@ -1,3 +1,4 @@
+import { limparSerieParaBusca } from './serie'
 import { CELULA_PENDENTE, CELULA_SEM_MANUTENCAO, type LinhaGrade } from './grade'
 
 /**
@@ -28,10 +29,6 @@ export function valorFiltro(celula: string | undefined): string {
   return v
 }
 
-/** Normaliza pra comparação "contém" ignorando separadores (traço, ponto, espaço…) e maiúsculas. */
-function limparParaBusca(s: string): string {
-  return s.replace(/[^A-Za-z0-9]/g, '').toLowerCase()
-}
 
 /** Valores distintos da coluna, ordenados (numérico-aware, pt-BR) com "Pendente" no fim. */
 export function valoresDistintos(linhas: LinhaGrade[], coluna: string): string[] {
@@ -54,11 +51,11 @@ export function temFiltroAtivo(f: FiltrosColuna): boolean {
 
 /** Aplica os filtros de coluna (E entre colunas, OU dentro da coluna). Sem filtro = tudo. */
 export function filtrarLinhas(linhas: LinhaGrade[], f: FiltrosColuna): LinhaGrade[] {
-  const texto = limparParaBusca(f.sn)
+  const texto = limparSerieParaBusca(f.sn)
   const cols = Object.entries(f.valores).map(([c, vs]) => [c, new Set(vs)] as const)
   if (texto === '' && cols.length === 0) return linhas
   return linhas.filter((l) => {
-    if (texto !== '' && !limparParaBusca(l.sn).includes(texto)) return false
+    if (texto !== '' && !limparSerieParaBusca(l.sn).includes(texto)) return false
     for (const [c, set] of cols) {
       if (!set.has(valorFiltro(l.celulas[c]))) return false
     }

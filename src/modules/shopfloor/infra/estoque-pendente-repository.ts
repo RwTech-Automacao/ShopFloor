@@ -86,7 +86,8 @@ function lerOperacao(v: string): LinhaFilaEstoque['operacao'] {
   return v === 'estorno' ? 'estorno' : 'entrada'
 }
 function lerTipo(v: string): LinhaFilaEstoque['tipo'] {
-  return v === 'serie' ? 'serie' : 'caixa'
+  // 'lote' (0156): o envio do lote do NQA individual.
+  return v === 'serie' ? 'serie' : v === 'lote' ? 'lote' : 'caixa'
 }
 
 function converter(l: LinhaBruta): LinhaFilaEstoque {
@@ -132,13 +133,18 @@ export interface DadosEstoquePendente {
  *     está fora dela;
  *   • COMPLETA O PAR — se a entrada ainda é pendência e ficou fora do corte, ela entra na lista.
  */
-export async function listarEstoquePendente(limite = 200): Promise<DadosEstoquePendente> {
+export async function listarEstoquePendente(
+  limite = 200,
+  filtro?: { pmo: string; op: string },
+): Promise<DadosEstoquePendente> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase
+  let consulta = supabase
     .from('sf_estoque_envios')
     .select(COLUNAS)
     .eq('ok', false)
     .is('cancelado_em', null)
+  if (filtro) consulta = consulta.eq('pmo', filtro.pmo).eq('op', filtro.op)
+  const { data, error } = await consulta
     // ACIONABILIDADE ANTES DA DATA. Ordenar só por `criado_em desc` esconde exatamente quem a tela
     // existe para mostrar: com o último metro falhando, em 5 rodadas TODA a fila vai para o teto, e
     // as linhas que precisam de gente são as mais ANTIGAS — as primeiras a sair de um corte por

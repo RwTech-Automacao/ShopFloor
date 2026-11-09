@@ -14,6 +14,12 @@ import {
 import { CartoesDashboard } from './cartoes-dashboard'
 import { FiltrosDashboardBarra } from './filtros-dashboard'
 import {
+  PARADOS_PADRAO,
+  urlDosFiltrosComParado,
+  type MetricasDashboard,
+} from '@/modules/recebimento/domain/dashboard-metricas'
+import { SecaoMetricas } from './metricas-dashboard'
+import {
   CartaoGrafico,
   GraficoSemanas,
   LegendaSemanas,
@@ -27,6 +33,12 @@ interface DashboardRecebimentoProps {
   dados: DadosDashboard | null
   opcoes: OpcoesDashboard
   erro: string | null
+  /** Métricas novas (Volume, Qualidade, Atraso, Tempo, Pendências). Ausente = sem a seção. */
+  metricas?: MetricasDashboard | null
+  /** Mensagem da seção de métricas quando só ela falhou. */
+  erroMetricas?: string | null
+  /** "X dias" dos parados (3, 7, 15 ou 30). */
+  paradoDias?: number
 }
 
 /**
@@ -34,13 +46,15 @@ interface DashboardRecebimentoProps {
  * uma etiqueta ou por um clique num gráfico) é navegar para a URL nova, e o servidor recalcula.
  * Assim o link compartilhado reproduz a tela.
  */
-export function DashboardRecebimento({ filtros, dados, opcoes, erro }: DashboardRecebimentoProps) {
+export function DashboardRecebimento({
+  filtros, dados, opcoes, erro, metricas, erroMetricas, paradoDias = PARADOS_PADRAO,
+}: DashboardRecebimentoProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [pendente, iniciar] = useTransition()
 
   function navegar(novos: FiltrosDashboard) {
-    const query = urlDosFiltros(novos, new Date())
+    const query = urlDosFiltrosComParado(novos, paradoDias, new Date())
     iniciar(() => router.push(query ? `${pathname}?${query}` : pathname))
   }
 
@@ -71,6 +85,11 @@ export function DashboardRecebimento({ filtros, dados, opcoes, erro }: Dashboard
               onClique={(semana) => navegar(aplicarClique(filtros, { semana }))} />
           </CartaoGrafico>
         </div>
+      )}
+
+      {(metricas || erroMetricas) && (
+        <SecaoMetricas filtros={filtros} metricas={metricas ?? null} erro={erroMetricas ?? null}
+          paradoDias={paradoDias} />
       )}
     </div>
   )

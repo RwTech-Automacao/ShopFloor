@@ -122,6 +122,7 @@ const CHEGADA = '2026-09-02'
 const ITEM: ItemFluxo = {
   processoId: 'p1',
   numero: 123,
+  pedido: 'PO-4521',
   item: 'CAPJ91',
   descricao: 'CAPACITOR 100uF',
   quantidadePedido: 500,

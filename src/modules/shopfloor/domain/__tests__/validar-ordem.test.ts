@@ -30,4 +30,18 @@ describe('validarOrdem', () => {
     expect(validarOrdem({ ...base, snIni: 'SN0001', snFim: 'SN0001', qtd: 5 }).ok).toBe(false) // faixa 1 ≠ 5
     expect(validarOrdem({ ...base, qtd: null }).ok).toBe(true) // sem qtd, não checa
   })
+
+  it('placas por painel: recusa não inteiro ou menor que 1', () => {
+    const msg = 'Placas por painel deve ser um número inteiro maior ou igual a 1.'
+    expect(validarOrdem({ ...base, placasPorPainel: 0 })).toEqual({ ok: false, erro: msg })
+    expect(validarOrdem({ ...base, placasPorPainel: 1.5 })).toEqual({ ok: false, erro: msg })
+    expect(validarOrdem({ ...base, placasPorPainel: -2 })).toEqual({ ok: false, erro: msg })
+    expect(validarOrdem({ ...base, placasPorPainel: 50 }).ok).toBe(true)
+    expect(validarOrdem({ ...base, placasPorPainel: 1 }).ok).toBe(true)
+  })
+  it('placas por painel: a faixa de SN conta painéis, então qtd (em placas) = faixa × N', () => {
+    // SN0001..SN0500 = 500 painéis × 50 = 25000 placas
+    expect(validarOrdem({ ...base, placasPorPainel: 50, qtd: 25000 }).ok).toBe(true)
+    expect(validarOrdem({ ...base, placasPorPainel: 50, qtd: 500 }).ok).toBe(false)
+  })
 })

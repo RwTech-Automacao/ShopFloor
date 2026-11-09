@@ -9,7 +9,7 @@ import {
 
 const PAGINA = 1000
 
-/** Registros (posto,status,SN) da OP, com período opcional (datas YYYY-MM-DD, fuso -03:00). Paginado. */
+/** Registros (posto,status,SN,pecas) da OP, com período opcional (datas YYYY-MM-DD, fuso -03:00). Paginado. */
 export async function listarContagemDaOp(
   pmo: string,
   op: string,
@@ -21,7 +21,7 @@ export async function listarContagemDaOp(
   for (let ini = 0; ; ini += PAGINA) {
     let q = supabase
       .from('sf_registros')
-      .select('posto,status,numero_serie_norm')
+      .select('posto,status,numero_serie_norm,pecas')
       .eq('pmo', pmo)
       .eq('op', op)
       .order('id', { ascending: true })
@@ -30,8 +30,8 @@ export async function listarContagemDaOp(
     if (ate) q = q.lte('data_hora', `${ate}T23:59:59-03:00`)
     const { data, error } = await q
     if (error) throw error
-    const rows = data as { posto: string; status: string; numero_serie_norm: string }[]
-    out.push(...rows.map((r) => ({ posto: r.posto, status: r.status, sn: r.numero_serie_norm ?? '' })))
+    const rows = data as { posto: string; status: string; numero_serie_norm: string; pecas: number | null }[]
+    out.push(...rows.map((r) => ({ posto: r.posto, status: r.status, sn: r.numero_serie_norm ?? '', pecas: r.pecas ?? 1 })))
     if (rows.length < PAGINA) break
   }
   return out

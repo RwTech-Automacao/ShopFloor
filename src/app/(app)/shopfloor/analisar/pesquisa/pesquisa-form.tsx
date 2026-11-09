@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { buscarHistoricoSN, carregarGrade, carregarGradeCompleta } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { RegistroHistorico, OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
-import type { LinhaGrade, ResumoPosto } from '@/modules/shopfloor/domain/grade'
+import { rotuloUnidadeFaixa, type LinhaGrade, type ResumoPosto } from '@/modules/shopfloor/domain/grade'
 import { pareaBurnin, formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FILTROS_VAZIOS, filtrarLinhas, temFiltroAtivo, valoresDistintos, type FiltrosColuna } from '@/modules/shopfloor/domain/grade-filtro'
 import { FiltroColuna } from './filtro-coluna'
@@ -67,6 +67,12 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   const ops = useMemo(
     () => ordens.filter((o) => o.cliente === cliente && o.pmo === pmo).map((o) => o.op),
     [ordens, cliente, pmo],
+  )
+
+  // Cada linha da grade é um SN: com N>1 placas por painel, o rodapé conta PAINÉIS (o resumo do topo é em placas).
+  const unidade = useMemo(
+    () => rotuloUnidadeFaixa(ordens.find((o) => o.cliente === cliente && o.pmo === pmo && o.op === op)?.placas_por_painel),
+    [ordens, cliente, pmo, op],
   )
 
   // --- filtro por coluna (estilo Excel) ---
@@ -454,7 +460,7 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
                   ) : (
                     <span className="text-muted-foreground">
                       {filtradasCompletas
-                        ? `${filtradasCompletas.length} de ${linhasCompletas?.length ?? total} peça(s)${caixa !== '' ? ` · caixa ${caixa}` : ''} · página ${pagClienteEf} de ${totalPagCliente}`
+                        ? `${filtradasCompletas.length} de ${linhasCompletas?.length ?? total} ${unidade}${caixa !== '' ? ` · caixa ${caixa}` : ''} · página ${pagClienteEf} de ${totalPagCliente}`
                         : 'Carregando…'}
                     </span>
                   )}
@@ -468,7 +474,7 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
               ) : (
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span className="text-muted-foreground">
-                    {total} peça(s){caixa !== '' ? ` · caixa ${caixa} (só nesta página)` : ''} · página {pagina} de {totalPaginas}
+                    {total} {unidade}{caixa !== '' ? ` · caixa ${caixa} (só nesta página)` : ''} · página {pagina} de {totalPaginas}
                   </span>
                   {totalPaginas > 1 && (
                     <div className="flex gap-2">

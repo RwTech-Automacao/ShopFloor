@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gerarFaixaSNs, gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, burninEmAndamento, snsNaoIniciados } from '../grade'
+import { gerarFaixaSNs, gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, burninEmAndamento, snsNaoIniciados, rotuloUnidadeFaixa } from '../grade'
 import { normalizarSerie } from '../serie'
 
 const temStatus = (p: string) =>
@@ -168,6 +168,35 @@ describe('montarResumoPorPosto', () => {
     ]
     const teste = montarResumoPorPosto(5, ['Teste'], registros, temStatus).find((r) => r.posto === 'Teste')!
     expect(teste).toMatchObject({ produzido: 1, aprovados: 1, reprovados: 0 })
+  })
+})
+
+describe('montarResumoPorPosto — placas por painel', () => {
+  const reg = (snNorm: string, posto: string, status = '') => ({ snNorm, posto, status, numeroCaixa: '', dataHora: '2026-01-01T00:00:00Z' })
+  it('N=50, faixa de 100 SNs, 40 painéis produzidos → produzido=2000, pendentes=3000', () => {
+    const registros = Array.from({ length: 40 }, (_, i) => reg(String(1000 + i), 'Inicial'))
+    const r = montarResumoPorPosto(100, ['Inicial'], registros, temStatus, 50).find((x) => x.posto === 'Inicial')!
+    expect(r).toMatchObject({ produzido: 2000, pendentes: 3000 })
+  })
+  it('aprovados/reprovados também em placas', () => {
+    const registros = [reg('1', 'Teste', 'Aprovado'), reg('2', 'Teste', 'Reprovado')]
+    const r = montarResumoPorPosto(10, ['Teste'], registros, temStatus, 4).find((x) => x.posto === 'Teste')!
+    expect(r).toMatchObject({ produzido: 8, pendentes: 32, aprovados: 4, reprovados: 4 })
+  })
+  it('N=1 (padrão) é idêntico ao comportamento atual', () => {
+    const registros = [reg('1', 'Inicial'), reg('2', 'Inicial')]
+    const a = montarResumoPorPosto(10, ['Inicial'], registros, temStatus)
+    const b = montarResumoPorPosto(10, ['Inicial'], registros, temStatus, 1)
+    expect(a).toEqual(b)
+    expect(a.find((x) => x.posto === 'Inicial')).toMatchObject({ produzido: 2, pendentes: 8 })
+  })
+})
+
+describe('rotuloUnidadeFaixa', () => {
+  it('"painel(éis)" só quando a OP tem mais de uma placa por painel', () => {
+    expect(rotuloUnidadeFaixa(1)).toBe('peça(s)')
+    expect(rotuloUnidadeFaixa(50)).toBe('painel(éis)')
+    expect(rotuloUnidadeFaixa(undefined)).toBe('peça(s)')
   })
 })
 
