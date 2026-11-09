@@ -5,6 +5,7 @@ import { headers } from 'next/headers'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { validarForcaSenha } from '@/modules/usuarios/domain/senha'
 import { mensagemErroLogin } from '@/modules/auth/domain/erro-login'
+import { PARAM_DESTINO, destinoPosLogin } from '@/modules/auth/domain/destino-pos-login'
 
 export async function entrar(
   _prev: { erro?: string } | undefined,
@@ -21,7 +22,9 @@ export async function entrar(
   if (error) {
     return { erro: mensagemErroLogin(error) }
   }
-  redirect('/home')
+  // O destino veio do formulário (logo, do cliente): revalidado aqui, nunca confiado. Caminho
+  // relativo — nada de URL montada a partir do request (atrás do nginx a origin vira localhost).
+  redirect(destinoPosLogin(formData.get(PARAM_DESTINO)))
 }
 
 export async function sair(): Promise<void> {
