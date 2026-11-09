@@ -19,6 +19,9 @@ export const ABAS_ANALISE: AbaFluxo[] = [
   // A fila de estoque do Almoxarifado que ainda não chegou ao ERP (0132). Fica em Análise, junto das
   // outras telas de gestor, porque quem age nela é gestor — o posto de bipe não abre esta tela.
   { rotulo: 'Estoque pendente', href: '/shopfloor/analisar/estoque-pendente' },
+  // As peças paradas de uma regra do alerta "Parado ou travado na produção" (0177): a tela que o link da
+  // mensagem abre, também alcançável daqui (sem ?regra abre na primeira regra ativa).
+  { rotulo: 'Peças paradas', href: '/shopfloor/analisar/parados' },
   { rotulo: 'Repinmetro', href: '/shopfloor/analisar/repinmetro' },
 ]
 

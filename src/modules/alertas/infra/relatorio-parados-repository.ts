@@ -3,8 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { corteDeExpediente } from '../domain/horas-de-turno'
 import {
-  lerRegraDoRelatorio, lerSnsParados, montarRelatorioParados,
-  type RegraDoRelatorio, type RelatorioParados,
+  lerListaDeRegras, lerRegraDoRelatorio, lerSnsParados, montarRelatorioParados,
+  type RegraDaLista, type RegraDoRelatorio, type RelatorioParados,
 } from '../domain/parados-relatorio'
 
 export type LeituraRelatorioParados =
@@ -55,4 +55,16 @@ export async function lerRelatorioParados(
   }
 
   return { ok: true, regra, relatorio: montarRelatorioParados(lerSnsParados(linhas), regra.turnos, agora), agora }
+}
+
+/**
+ * As regras "Parado ou travado" ATIVAS (id e nome) para o seletor da aba, com a SESSÃO do usuário. A RLS de
+ * alerta_regras só deixa ler quem administra; a `alerta_parado_regras_lista` (0179) confere
+ * tem_permissao('shopfloor','visualizar') e devolve só id e nome.
+ */
+export async function listarRegrasParado(sb?: SupabaseClient): Promise<RegraDaLista[]> {
+  const cliente = sb ?? (await createServerSupabase())
+  const { data, error } = await cliente.rpc('alerta_parado_regras_lista')
+  if (error) throw new Error(`alerta_parado_regras_lista: ${error.message}`)
+  return lerListaDeRegras(data)
 }
