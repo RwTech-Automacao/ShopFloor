@@ -82,4 +82,21 @@ describe('RegraConteudo', () => {
     expect(screen.getByLabelText('Teste')).not.toBeChecked()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
+
+  it('a ficha de apontamento não tem cartão na regra nova, mas a regra de ficha que já existe abre para editar', () => {
+    const { unmount } = render(<RegraConteudo regra={null} {...PROPS} />)
+    expect(screen.queryByRole('button', { name: /Ficha de apontamento/ })).not.toBeInTheDocument()
+    unmount()
+    const regra: RegraAlerta = {
+      id: 'f1', atualizadoEm: '2026-11-06T12:00:00Z', modulo: 'shopfloor', tipo: 'ficha',
+      nome: 'Ficha antiga', postos: [], taxaMinima: null, janelaTipo: 'op', janelaValor: null,
+      minimoBipes: null, limiteTempoSeg: null, limiteOcorrencias: null, pausaMaxMin: null,
+      lembreteMin: null, intervalos: [], horaResumo: null, limiteHoras: null, soOpsAtivas: true,
+      incluirManutencao: true, canais: ['telegram'], destinatarios: [], avisarPessoas: true,
+      avisarCanal: false, pmos: [], ativa: true,
+    }
+    render(<RegraConteudo regra={regra} {...PROPS} />)
+    expect(screen.getByText('Ficha de apontamento (Almoxarifado)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Nome')).toHaveValue('Ficha antiga')
+  })
 })

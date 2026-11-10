@@ -44,6 +44,26 @@ export function tipoPertenceAoModulo(tipo: TipoRegra, modulo: ModuloAlerta): boo
 }
 
 /**
+ * Tipos que continuam EXISTINDO (o avaliador roda, a regra salva aparece na lista e pode ser editada,
+ * desativada e excluída, e o servidor aceita gravá-la) mas que a regra NOVA não oferece: o cartão some
+ * da escolha do tipo. É a chave única para esconder um tipo por enquanto — esvaziar a lista religa.
+ *
+ * ⚠️ Não tire o tipo de `TIPOS_REGRA_POR_MODULO` para escondê-lo: `tipoPertenceAoModulo` passaria a
+ * recusar a regra que já existe, e ela ficaria órfã (sem poder ser salva nem desativada pela tela).
+ *
+ * 'ficha' (Ficha de apontamento, 0173): escondida em 10/11/2026 a pedido do usuário.
+ */
+export const TIPOS_REGRA_OCULTOS_NA_CRIACAO: readonly TipoRegra[] = ['ficha']
+
+/** Os tipos que a escolha da regra nova mostra: os do módulo, menos os ocultos. */
+export function tiposOferecidosNaCriacao(
+  modulo: ModuloAlerta,
+  ocultos: readonly TipoRegra[] = TIPOS_REGRA_OCULTOS_NA_CRIACAO,
+): readonly TipoRegra[] {
+  return TIPOS_REGRA_POR_MODULO[modulo].filter((t) => !ocultos.includes(t))
+}
+
+/**
  * A rota da tela de Alertas de cada módulo. Duas rotas, um componente (spec, decisão 2): é a rota
  * que carrega o `modulo` e o RBAC do menu, não o componente.
  */
