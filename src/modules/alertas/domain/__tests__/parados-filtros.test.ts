@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  FILTROS_PADRAO, agruparPorOp, agruparPorPosto, filtrarPecas, lerFiltros, lerPecasParadas, opcoesDeHoras,
+  FILTROS_PADRAO, agruparPorOp, agruparPorPosto, filtrarPecas, filtrarPorMenosDe, lerFiltros, lerPecasParadas, opcoesDeHoras,
   ordenarLinhas, postosComPecas, queryDosFiltros, tipoDaPeca, type SnParadoTela,
 } from '../parados-filtros'
 import type { RegraDoRelatorio } from '../parados-relatorio'
@@ -20,17 +20,29 @@ describe('lerFiltros', () => {
   })
   it('a regra preenche o que a URL não traz', () => {
     expect(lerFiltros({}, REGRA)).toEqual({
-      horas: 12, situacao: 'todas', postos: ['Teste', 'Embalagem'], tipo: 'posto', agrupar: 'op', ordem: 'antiga',
+      horas: 12, menos: null, situacao: 'todas', postos: ['Teste', 'Embalagem'], tipo: 'posto', agrupar: 'op', ordem: 'antiga',
     })
     expect(lerFiltros({}, { ...REGRA, soOpsAtivas: true, incluirManutencao: true })).toMatchObject({ situacao: 'ativas', tipo: 'todos' })
   })
   it('a URL vence a regra; "*" = todos os postos; valor inválido cai na base', () => {
     expect(lerFiltros({ horas: '72', situacao: 'finalizadas', postos: '*', tipo: 'conserto', agrupar: 'posto', ordem: 'pecas' }, REGRA))
-      .toEqual({ horas: 72, situacao: 'finalizadas', postos: [], tipo: 'conserto', agrupar: 'posto', ordem: 'pecas' })
+      .toEqual({ horas: 72, menos: null, situacao: 'finalizadas', postos: [], tipo: 'conserto', agrupar: 'posto', ordem: 'pecas' })
     expect(lerFiltros({ horas: '0', situacao: 'x', tipo: 'toString', agrupar: '', ordem: ['nome'] }, null))
       .toEqual({ ...FILTROS_PADRAO, ordem: 'nome' })
     expect(lerFiltros({ horas: '99999' }, null).horas).toBe(24)
     expect(lerFiltros({ postos: ' Teste , ,Inicial' }, null).postos).toEqual(['Teste', 'Inicial'])
+  })
+  it('"-" deixa o tempo vazio (nulo); menos de vem da URL', () => {
+    expect(lerFiltros({ horas: '-', menos: '72' }, REGRA)).toMatchObject({ horas: null, menos: 72 })
+    expect(lerFiltros({ menos: '-' }, null).menos).toBeNull()
+    expect(lerFiltros({ menos: '0' }, null).menos).toBeNull()
+    expect(lerFiltros({ menos: 'abc' }, null).menos).toBeNull()
+  })
+  it('ida e volta pela query string, com os tempos vazios', () => {
+    const f = { ...FILTROS_PADRAO, horas: null, menos: 8 }
+    expect(lerFiltros(Object.fromEntries(new URLSearchParams(queryDosFiltros(f, null))), REGRA)).toMatchObject({ horas: null, menos: 8 })
+    const v = { ...FILTROS_PADRAO, menos: null }
+    expect(lerFiltros(Object.fromEntries(new URLSearchParams(queryDosFiltros(v, null))), null)).toEqual(v)
   })
   it('ida e volta pela query string', () => {
     const f = { ...FILTROS_PADRAO, postos: ['Teste', 'Inspeção NQA'], agrupar: 'posto' as const }
@@ -38,6 +50,20 @@ describe('lerFiltros', () => {
     expect(q.regra).toBe('r1')
     expect(lerFiltros(q, REGRA)).toEqual(f)
     expect(new URLSearchParams(queryDosFiltros(FILTROS_PADRAO, null)).get('postos')).toBe('*')
+  })
+})
+
+describe('filtrarPorMenosDe', () => {
+  const sns = [sn('1', 'A', 'Teste', 2), sn('1', 'B', 'Teste', 30), sn('1', 'C', 'Teste', 100)]
+  it('vazio (nulo) não filtra', () => {
+    expect(filtrarPorMenosDe(sns, null, [], AGORA).map((s) => s.numeroSerie)).toEqual(['A', 'B', 'C'])
+  })
+  it('só as peças com menos do limite', () => {
+    expect(filtrarPorMenosDe(sns, 72, [], AGORA).map((s) => s.numeroSerie)).toEqual(['A', 'B'])
+    expect(filtrarPorMenosDe(sns, 24, [], AGORA).map((s) => s.numeroSerie)).toEqual(['A'])
+  })
+  it('exatamente no limite não entra (menos de)', () => {
+    expect(filtrarPorMenosDe([sn('1', 'X', 'Teste', 24)], 24, [], AGORA)).toEqual([])
   })
 })
 

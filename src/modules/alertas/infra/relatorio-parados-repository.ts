@@ -31,7 +31,8 @@ export async function lerRegraParado(regraId: string, sb?: SupabaseClient): Prom
 }
 
 export interface OpcoesLeituraParados {
-  horas: number
+  /** "Parada há mais de". Nulo = vazio: o corte é agora (todas as peças paradas). */
+  horas: number | null
   situacao: SituacaoOp
   /** Vazio = todas (o link de uma regra com PMOs passa as da regra). */
   pmos: readonly string[]
@@ -47,7 +48,7 @@ export async function lerPecasParadasTela(
   o: OpcoesLeituraParados, agora: Date = new Date(), sb?: SupabaseClient,
 ): Promise<SnParadoTela[]> {
   const cliente = sb ?? (await createServerSupabase())
-  const corte = corteDeExpediente(agora, o.horas * 60, o.turnos)
+  const corte = o.horas === null ? agora : corteDeExpediente(agora, o.horas * 60, o.turnos)
   // Paginado: o PostgREST corta cada resposta no max-rows (1000). A função devolve numa ordem fixa (mais antiga
   // primeiro, desempate PMO/OP/SN), então as páginas não se sobrepõem.
   const linhas: unknown[] = []
