@@ -10,6 +10,7 @@ import {
   LIMITE_HORAS_PADRAO,
   PADROES_REGRA,
   PADROES_TIPO,
+  destinatariosDoTipo,
   destinatariosSemCanal,
   validarRegra,
   type DestinatarioDisponivel,
@@ -272,7 +273,10 @@ export function RegraForm({
   // Regra nova nasce como era antes do canal existir: avisa as pessoas, não avisa canal.
   const [avisarPessoas, setAvisarPessoas] = useState(regra?.avisarPessoas ?? true)
   const [avisarCanal, setAvisarCanal] = useState(regra?.avisarCanal ?? false)
-  const [inicioDest] = useState(() => separarDestinatarios(regra?.destinatarios ?? [], destinatarios))
+  // Os responsáveis que ESTE tipo aceita: no 'compels' também quem só usa o Almoxarifado (0182); nos
+  // outros, só quem administra o módulo. A tela recebe a lista mais larga e o filtro é daqui.
+  const disponiveis = destinatariosDoTipo(destinatarios, tipo)
+  const [inicioDest] = useState(() => separarDestinatarios(regra?.destinatarios ?? [], disponiveis))
   const [destSel, setDestSel] = useState<string[]>(inicioDest.validos)
   const [pmosSel, setPmosSel] = useState<string[]>(regra?.pmos ?? [])
   const [previa, setPrevia] = useState<{ linhas: PreviaPosto[]; limite: number | null } | null>(null)
@@ -280,7 +284,7 @@ export function RegraForm({
 
   // "Fulano sem Telegram" só importa se a regra avisa no privado: no canal, quem vê não precisa de
   // conta vinculada nenhuma.
-  const avisos = avisarPessoas ? destinatariosSemCanal(destinatarios, destSel, canaisSel) : []
+  const avisos = avisarPessoas ? destinatariosSemCanal(disponiveis, destSel, canaisSel) : []
   // Na janela por blocos o `janelaValor` é o PASSO em minutos (outra grandeza, mesmo campo do banco).
   // O fim de EMB sai com valor nulo, como o resumo: a janela dele é só fachada. (Hoje o `janelaTipo`
   // dele já é 'op' e cairia no `null` do fim da cadeia; a condição explícita é o que impede que um
@@ -933,10 +937,13 @@ export function RegraForm({
                 quem tem `usuario_tem_permissao(usuário, <módulo da regra>, 'administrar')`. O texto
                 dizia "o ShopFloor" fixo — numa regra do Recebimento isso afirmava a permissão errada. */}
             <p>Só aparecem usuários ativos que podem <strong>administrar o {NOME_MODULO_ALERTA[modulo]}</strong>. Quem perder essa permissão para de receber e de poder encerrar, mesmo continuando na regra.</p>
+            {tipo === 'compels' && (
+              <p>Nesta regra aparecem também os usuários que podem usar a tela do <strong>Almoxarifado</strong> (dar entrada no Recebimento e ver o Fluxo de Processos): eles recebem e podem apertar <strong>Resolvido</strong>.</p>
+            )}
           </Explica>
         </legend>
         <div className="flex max-h-40 flex-col gap-2 overflow-y-auto rounded-md border border-border p-3">
-          {destinatarios.map((d) => (
+          {disponiveis.map((d) => (
             <label key={d.usuarioId} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

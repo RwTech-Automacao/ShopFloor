@@ -46,6 +46,30 @@ describe('as RPCs levam o módulo', () => {
     expect(rpc).toHaveBeenCalledWith('alerta_destinatarios', { p_modulo: 'recebimento' })
   })
 
+  it('alerta_destinatarios recebe p_tipo quando a tela pede a lista de um tipo (0182)', async () => {
+    const { listarDestinatarios } = await import('../regras-repository')
+    await listarDestinatarios('shopfloor', 'compels')
+    expect(rpc).toHaveBeenCalledWith('alerta_destinatarios', { p_modulo: 'shopfloor', p_tipo: 'compels' })
+  })
+
+  it('alerta_destinatarios: a coluna administra vem para a tela (ausente = administra)', async () => {
+    rpc.mockResolvedValueOnce({
+      data: [
+        { usuario_id: 'a', nome: 'Admin', email: 'a@x', telegram: true, discord: false, email_ok: true, administra: true },
+        { usuario_id: 'g', nome: 'Gilania', email: 'g@x', telegram: true, discord: false, email_ok: true, administra: false },
+        { usuario_id: 'v', nome: 'Velho', email: 'v@x', telegram: false, discord: false, email_ok: true },
+      ],
+      error: null,
+    })
+    const { listarDestinatarios } = await import('../regras-repository')
+    const lista = await listarDestinatarios('shopfloor', 'compels')
+    expect(lista.map((d) => [d.usuarioId, d.administra])).toEqual([
+      ['a', true],
+      ['g', false],
+      ['v', true],
+    ])
+  })
+
   it('alerta_listar_ocorrencias recebe p_modulo', async () => {
     const { listarOcorrencias } = await import('../regras-repository')
     await listarOcorrencias('recebimento', { de: '2026-10-01', ate: '2026-10-09', estado: '' })
