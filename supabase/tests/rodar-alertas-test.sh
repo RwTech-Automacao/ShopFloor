@@ -414,4 +414,14 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0182.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_compels_dest.sql
 echo "0182 (responsáveis do Compels): ok"
 
+# ---------- 0183: peças paradas no posto PENDENTE (alerta_travados_sns) ----------
+docker cp supabase/migrations/0183_parados_posto_pendente.sql "$NOME":/tmp/0183.sql
+docker cp supabase/tests/parados_posto_pendente_test.sql "$NOME":/tmp/teste_posto_pendente.sql
+docker cp supabase/tests/parados_posto_pendente_esquema.sql "$NOME":/tmp/esquema_posto_pendente.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema_posto_pendente.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0183.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0183.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_posto_pendente.sql
+echo "0183 (posto pendente): ok"
+
 echo "ALERTAS SQL OK"
