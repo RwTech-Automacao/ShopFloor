@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gerarFaixaSNs, gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, burninEmAndamento, snsNaoIniciados, rotuloUnidadeFaixa } from '../grade'
+import { gerarFaixaSNs, gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, burninEmAndamento, snsNaoIniciados, rotuloUnidadeFaixa, totalFaixasSNs, gerarFaixasSNsPagina, snsNaoIniciadosDasFaixas } from '../grade'
 import { normalizarSerie } from '../serie'
 
 const temStatus = (p: string) =>
@@ -222,5 +222,31 @@ describe('snsNaoIniciados', () => {
 
   it('faixa incoerente → null', () => {
     expect(snsNaoIniciados('', '', new Set(), 5)).toBeNull()
+  })
+})
+
+describe('várias faixas (0181)', () => {
+  const F1 = { sn_ini: 'SN0001', sn_fim: 'SN0003' }
+  const F2 = { sn_ini: '08458001024', sn_fim: '08458001025' }
+
+  it('totalFaixasSNs soma as faixas; faixa sem número → erro', () => {
+    expect(totalFaixasSNs([F1, F2])).toEqual({ ok: true, total: 5 })
+    expect(totalFaixasSNs([F1, { sn_ini: 'AB', sn_fim: 'AC' }]).ok).toBe(false)
+  })
+
+  it('gerarFaixasSNsPagina pagina sobre a lista concatenada', () => {
+    expect(gerarFaixasSNsPagina([F1, F2], 0, 100)).toEqual({
+      ok: true, total: 5, sns: ['SN0001', 'SN0002', 'SN0003', '08458001024', '08458001025'],
+    })
+    expect(gerarFaixasSNsPagina([F1, F2], 2, 2)).toEqual({ ok: true, total: 5, sns: ['SN0003', '08458001024'] })
+    expect(gerarFaixasSNsPagina([F1, F2], 4, 2)).toEqual({ ok: true, total: 5, sns: ['08458001025'] })
+    expect(gerarFaixasSNsPagina([F1, F2], 10, 2)).toEqual({ ok: true, total: 5, sns: [] })
+  })
+
+  it('snsNaoIniciadosDasFaixas pula os registrados e respeita o teto', () => {
+    const reg = new Set(['sn0002', '8458001024'])
+    expect(snsNaoIniciadosDasFaixas([F1, F2], reg, 10)).toEqual(['SN0001', 'SN0003', '08458001025'])
+    expect(snsNaoIniciadosDasFaixas([F1, F2], reg, 2)).toEqual(['SN0001', 'SN0003'])
+    expect(snsNaoIniciadosDasFaixas([F1, { sn_ini: 'A', sn_fim: 'B' }], reg, 10)).toBeNull()
   })
 })

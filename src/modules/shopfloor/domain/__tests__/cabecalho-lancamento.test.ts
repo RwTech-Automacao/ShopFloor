@@ -130,3 +130,19 @@ describe('resolverOpPorCaixa (cabeçalho do Almoxarifado em OP coletiva: só a c
   })
 })
 
+
+describe('resolverOpPorSn com várias faixas (0181)', () => {
+  const op8682 = {
+    ...O('C2', 'PMOF', '8682_F', '0845801001', '0845801993'),
+    faixas: [
+      { sn_ini: '0845801001', sn_fim: '0845801993' },
+      { sn_ini: '08458001024', sn_fim: '08458001030' },
+    ],
+  }
+  it('SN da SEGUNDA faixa acha a OP', () => {
+    expect(resolverOpPorSn([...ORDS, op8682], '08458001027')).toEqual({ ok: true, ordem: op8682 })
+  })
+  it('SN fora de todas as faixas → SEM_OP', () => {
+    expect(resolverOpPorSn([...ORDS, op8682], '08458001031')).toEqual({ ok: false, erro: 'SEM_OP' })
+  })
+})
