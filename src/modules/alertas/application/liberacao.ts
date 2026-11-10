@@ -69,7 +69,8 @@ export function alertasLiberadosDoModulo(
 
 /**
  * Pode usar os Alertas (Meu perfil e vínculo Telegram/Discord)? Quem administra algum módulo com
- * alertas — são essas as pessoas que podem ser responsáveis — E está liberado NAQUELE módulo. Sem o
+ * alertas — são essas as pessoas que podem ser responsáveis — E está liberado NAQUELE módulo. E, desde a
+ * 0182, quem usa a tela do Almoxarifado (responsável possível da regra 'compels'), com a trava do ShopFloor. Sem o
  * admin, a pessoa conseguiria vincular a conta mas nunca receberia nada.
  *
  * ⚠️ A liberação é por módulo: quem administra só o Recebimento só entra aqui quando o Recebimento
@@ -79,9 +80,21 @@ export function alertasDisponiveis(
   sessao: { email: string | null | undefined; perfil: Parameters<typeof podeNoModulo>[0] } | null,
 ): boolean {
   if (!sessao) return false
-  return MODULOS_ALERTA.some(
+  const administra = MODULOS_ALERTA.some(
     (m) => podeNoModulo(sessao.perfil, m, 'administrar') && alertasLiberadosDoModulo(m, sessao.email),
   )
+  // 0182: quem usa a tela do Almoxarifado pode ser responsável da regra 'compels' (do ShopFloor), então
+  // precisa do Meu perfil para vincular Telegram/Discord. Segue a trava do ShopFloor, como a regra.
+  return administra || (usaTelaDoAlmoxarifado(sessao.perfil) && alertasLiberadosDoModulo('shopfloor', sessao.email))
+}
+
+/**
+ * As duas permissões da tela do Almoxarifado (`/recebimento/almoxarifado`): dar entrada no Recebimento
+ * e ver o Fluxo de Processos. É a régua extra do responsável da regra 'compels' (`alerta_pode_receber`,
+ * 0182) — as duas têm de andar juntas.
+ */
+function usaTelaDoAlmoxarifado(perfil: Parameters<typeof podeNoModulo>[0]): boolean {
+  return podeNoModulo(perfil, 'recebimento', 'lancar') && podeNoModulo(perfil, 'shopfloor', 'visualizar')
 }
 
 /** Quais itens "Alertas" do menu aparecem para esta pessoa (um por módulo). */

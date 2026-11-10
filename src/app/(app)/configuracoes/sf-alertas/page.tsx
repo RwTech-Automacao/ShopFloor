@@ -35,7 +35,8 @@ export default async function AlertasShopFloorPage() {
     listarPostos(),
     mapaPostoPerfil(),
     listarPmosAlerta(),
-    listarDestinatarios('shopfloor'),
+    // A lista do 'compels' (0182) traz também o Almoxarifado; o formulário filtra por tipo.
+    listarDestinatarios('shopfloor', 'compels'),
     listarOcorrencias('shopfloor', filtro),
   ])
 

@@ -104,6 +104,27 @@ export interface DestinatarioDisponivel {
   discord: boolean
   /** O endereço de login serve para enviar (não está em branco) — o "tem canal" do e-mail. */
   emailOk: boolean
+  /**
+   * Administra o módulo (a régua de sempre). `false` = só entrou na lista pela régua de um TIPO (0182:
+   * quem pode usar a tela do Almoxarifado, na regra 'compels'). Ausente = administra.
+   */
+  administra?: boolean
+}
+
+/**
+ * Tipos em que o responsável pode ser também quem só usa a tela do Almoxarifado (recebimento.lancar +
+ * shopfloor.visualizar), e não só quem administra o módulo. É a mesma régua da `alerta_pode_receber`
+ * (0182) — mudar aqui sem mudar lá mostra na tela quem nunca vai receber.
+ */
+export const TIPOS_COM_RESPONSAVEL_DO_ALMOXARIFADO: readonly TipoRegra[] = ['compels']
+
+/** Os responsáveis que o formulário oferece para este tipo de regra. */
+export function destinatariosDoTipo(
+  disponiveis: DestinatarioDisponivel[],
+  tipo: TipoRegra,
+): DestinatarioDisponivel[] {
+  if (TIPOS_COM_RESPONSAVEL_DO_ALMOXARIFADO.includes(tipo)) return disponiveis
+  return disponiveis.filter((d) => d.administra !== false)
 }
 
 /** O que a prévia do formulário precisa (nome/canais/destinatários ainda podem faltar). */

@@ -393,4 +393,25 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0180.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_pecas_paradas.sql
 echo "0180 (peças paradas sem regra): ok"
 
+# ---------- 0182: responsáveis da regra 'compels' (o Almoxarifado também) ----------
+# Recria a alerta_avaliar (corpo da 0173), a alerta_resolver_interno e a alerta_reservar_envios (corpos da 0151).
+# PROVA no próprio runner: na alerta_avaliar só mudam as DUAS linhas da régua do responsável (o fan-out do aviso
+# de gravação do Compels e o da ocorrência), e as duas viram alerta_pode_receber. Duas aplicações, cada uma como
+# transação única (-1): idempotência, inclusive o drop/create da alerta_destinatarios.
+M0182="${COMPELS_DEST_MIGRACAO:-supabase/migrations/0182_alerta_compels_destinatarios.sql}"
+DIFF0182=$(diff <(corpo supabase/migrations/0173_alerta_ficha_apontamento.sql) <(corpo "$M0182") || true)
+SAIU=$(grep -c '^<' <<<"$DIFF0182" || true)
+ENTROU=$(grep -c '^>' <<<"$DIFF0182" || true)
+TROCAS=$(grep -c "^> .*where public.alerta_pode_receber(d.usuario_id, t.modulo, t.tipo)$" <<<"$DIFF0182" || true)
+if [ "$SAIU" != "2" ] || [ "$ENTROU" != "2" ] || [ "$TROCAS" != "2" ]; then
+  echo "0182 mudou a alerta_avaliar da 0173 além das 2 linhas da régua do responsável:"; echo "$DIFF0182"; exit 1
+fi
+echo "0182: alerta_avaliar = 0173 com só as 2 linhas da régua trocadas: ok"
+docker cp "$M0182" "$NOME":/tmp/0182.sql
+docker cp supabase/tests/alertas_compels_destinatarios_test.sql "$NOME":/tmp/teste_compels_dest.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0182.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0182.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_compels_dest.sql
+echo "0182 (responsáveis do Compels): ok"
+
 echo "ALERTAS SQL OK"
