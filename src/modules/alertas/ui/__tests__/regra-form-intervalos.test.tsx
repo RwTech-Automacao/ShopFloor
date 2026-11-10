@@ -135,11 +135,11 @@ describe('RegraForm — janela por blocos de turno: onde ela aparece', () => {
 describe('RegraForm — janela por blocos: o que sai e o que fica da tela', () => {
   it('o lembrete desaparece nessa janela (a validação o ignora) e volta ao sair dela', () => {
     montar()
-    expect(screen.getByLabelText('Lembrar a cada (min)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Lembrar a cada')).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('Por blocos de turno'))
-    expect(screen.queryByLabelText('Lembrar a cada (min)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Lembrar a cada')).not.toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('Janela por tempo'))
-    expect(screen.getByLabelText('Lembrar a cada (min)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Lembrar a cada')).toBeInTheDocument()
   })
 
   it('o mínimo de bipes CONTINUA pedido: a validação não o dispensa', () => {
