@@ -60,7 +60,7 @@ describe('formulário da regra ficha', () => {
     expect(screen.queryByLabelText('Almoxarifado')).not.toBeInTheDocument()
     expect(screen.queryByText('Janela')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Lembrar a cada (min)')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Limite (horas)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Limite (dias)')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Adicionar intervalo' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /ver prévia/i })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Diogo')).toBeInTheDocument()

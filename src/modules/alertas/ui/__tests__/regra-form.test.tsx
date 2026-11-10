@@ -152,6 +152,7 @@ describe('RegraForm — taxa de aprovação', () => {
     const { onSalvo } = montar()
     preencherObrigatorios('Teste 90')
     fireEvent.change(screen.getByLabelText('Taxa mínima de aprovação (%)'), { target: { value: '92,5' } })
+    fireEvent.change(screen.getByLabelText('Lembrar a cada'), { target: { value: 'personalizado' } })
     fireEvent.change(screen.getByLabelText('Lembrar a cada (min)'), { target: { value: '10' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 
