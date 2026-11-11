@@ -164,6 +164,29 @@ describe('ClienteCompels', () => {
     expect(await c.pagarPendenciaRequisicao({ id: '18510' })).toMatchObject({ ok: false, codigo: 'sem_saldo', mensagem: 'Saldo insuficiente' })
   })
 
+  it('saldo por estoque: GET da linha expandida, data de Brasília dd/mm/aaaa, código exato', async () => {
+    const { buscar, chamadas } = fingirCompels({
+      '/estoque/consultaSaldoItemEstoque': () => json({
+        results: [
+          { item: { codigo: 'PMOC31' }, estoque: { codigo: 'PA', descricao: 'PRODUTO ACABADO' }, saldo: 14 },
+          { item: { codigo: 'PMOC31' }, estoque: { codigo: 'EA', descricao: 'ESTOQUE DE ATIVO' }, saldo: 49 },
+        ],
+        metadata: { resultset: { count: 2 } },
+      }),
+    })
+    // 02:00 UTC de 12/11 ainda é 11/11 em Brasília.
+    const c = new ClienteCompels(config, tokenFixo(), buscar, () => Date.UTC(2026, 10, 12, 2, 0))
+    expect(await c.consultarSaldoPorEstoque('PMOC31')).toEqual([
+      { estoque: 'PA', descricao: 'PRODUTO ACABADO', saldo: 14 },
+      { estoque: 'EA', descricao: 'ESTOQUE DE ATIVO', saldo: 49 },
+    ])
+    const u = new URL(`https://x${chamadas[0]!.url}`)
+    expect(u.pathname).toBe('/estoque/consultaSaldoItemEstoque')
+    expect(u.searchParams.get('codigoItem')).toBe('PMOC31')
+    expect(u.searchParams.get('data')).toBe('11/11/2026')
+    expect(chamadas[0]!.init.method ?? 'GET').toBe('GET')
+  })
+
   it('item que não veio na resposta: null (não zero)', async () => {
     const { buscar } = fingirCompels({ '/itemMovimento/findFilter': () => json({ data: [] }) })
     expect(await new ClienteCompels(config, tokenFixo(), buscar).consultarSaldoItem('ZZZ')).toBeNull()
