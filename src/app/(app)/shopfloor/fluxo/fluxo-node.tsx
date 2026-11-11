@@ -173,15 +173,16 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
             valor={aguardando}
             dica={`${aguardando} peça(s) que passaram por todos os postos e esperam dar entrada no estoque.`}
           />
-          <LinhaResumo
-            sub
-            rotulo="Fila Compels"
-            valor={fila}
-            alerta={fila > 0}
-            dica={fila > 0
-              ? `${fila} peça(s) já deram entrada no Almoxarifado e ainda não chegaram ao Compels. ${pendente?.rotulo ?? ''}${pendente?.motivo ? ` · ${pendente.motivo}` : ''}`
-              : 'Nenhuma peça esperando para chegar ao Compels.'}
-          />
+          {/* Fila em 0: a linha não aparece (nada esperando para chegar ao Compels). */}
+          {fila > 0 && (
+            <LinhaResumo
+              sub
+              rotulo="Fila Compels"
+              valor={fila}
+              alerta
+              dica={`${fila} peça(s) já deram entrada no Almoxarifado e ainda não chegaram ao Compels. ${pendente?.rotulo ?? ''}${pendente?.motivo ? ` · ${pendente.motivo}` : ''}`}
+            />
+          )}
         </>
       )}
     </div>
