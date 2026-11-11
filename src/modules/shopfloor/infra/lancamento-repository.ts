@@ -4,6 +4,11 @@ import { agruparReceitaPorPosto, type ReceitaPorPosto } from '@/modules/shopfloo
 import type { PerfilPosto } from '../domain/perfil-posto'
 import type { ConsertoConfirmavel } from '../domain/rota-reteste'
 import { agruparTempoBurninPorPosto, type TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
+import { faixasDoBanco, type FaixaSN } from '@/modules/shopfloor/domain/faixas-sn'
+
+/** Embutido no select das OPs: as faixas de SN (0181), ordenadas depois por `faixasDoBanco`. */
+const FAIXAS = 'sf_ordem_faixas(seq,sn_ini,sn_fim)'
+type FaixasRow = { sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string }[] | null }
 
 export interface OrdemLancamento {
   cliente: string
@@ -11,6 +16,8 @@ export interface OrdemLancamento {
   qtd: number | null
   sn_ini: string
   sn_fim: string
+  /** Todas as faixas de SN da OP (0181), na ordem; sn_ini/sn_fim = a primeira. */
+  faixas?: FaixaSN[]
   postos: string[]
   /** OP de embalagem individual (1 peça = 1 caixa) × coletiva (caixa com N peças) — o Almoxarifado
    *  usa isto pra saber se o bipe esperado é a série da peça ou o código da caixa fechada. */
@@ -79,7 +86,7 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('cliente,descricao,qtd,sn_ini,sn_fim,embalagem_individual,placas_por_painel,sf_ordem_postos(posto,ordem)')
+    .select(`cliente,descricao,qtd,sn_ini,sn_fim,embalagem_individual,placas_por_painel,sf_ordem_postos(posto,ordem),${FAIXAS}`)
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
@@ -94,13 +101,14 @@ export async function carregarOrdem(pmo: string, op: string): Promise<OrdemLanca
     sn_fim: string
     embalagem_individual: boolean
     sf_ordem_postos: { posto: string; ordem: number }[]
-  }
+  } & FaixasRow
   return {
     cliente: row.cliente,
     descricao: row.descricao,
     qtd: row.qtd,
     sn_ini: row.sn_ini,
     sn_fim: row.sn_fim,
+    faixas: faixasDoBanco(row.sf_ordem_faixas),
     embalagem_individual: row.embalagem_individual,
     placas_por_painel: row.placas_por_painel ?? 1,
     // postos NA ORDEM da OP (a sequência importa p/ a trava de sequência).
@@ -135,6 +143,8 @@ export interface OrdemLancamentoLista {
   qtd: number | null
   sn_ini: string
   sn_fim: string
+  /** Todas as faixas de SN da OP (0181): a busca do cabeçalho por bipe aceita qualquer uma. */
+  faixas?: FaixaSN[]
   embalagem_individual: boolean
   /**
    * Status cru da OP, como está no banco. Vem junto porque a busca do cabeçalho por bipe
@@ -186,12 +196,13 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sf_ordem_postos: { posto: string; ordem: number }[]
     sf_ordem_componentes: { posto: string; pmo_componente: string }[]
     sf_ordem_burnin: { posto: string; tempo_min: number }[]
+    sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string }[] | null
   }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_ordens')
       .select(
-        'cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min)',
+        `cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),${FAIXAS}`,
       )
       .order('cliente')
       .order('pmo')
@@ -210,6 +221,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     qtd: r.qtd,
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
+    faixas: faixasDoBanco(r.sf_ordem_faixas),
     embalagem_individual: r.embalagem_individual,
     status: r.status ?? '',
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
@@ -225,6 +237,7 @@ export interface OrdemIntegracao {
   descricao: string
   sn_ini: string
   sn_fim: string
+  faixas?: FaixaSN[]
   qtd: number | null
   status: string
   postos: string[]
@@ -237,7 +250,7 @@ export async function listarOrdensParaIntegracao(): Promise<OrdemIntegracao[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('cliente,pmo,op,descricao,sn_ini,sn_fim,qtd,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente)')
+    .select(`cliente,pmo,op,descricao,sn_ini,sn_fim,qtd,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(pmo_componente),${FAIXAS}`)
     .order('cliente')
     .order('pmo')
     .order('op')
@@ -253,6 +266,7 @@ export async function listarOrdensParaIntegracao(): Promise<OrdemIntegracao[]> {
     status: string
     sf_ordem_postos: { posto: string; ordem: number }[]
     sf_ordem_componentes: { pmo_componente: string }[]
+    sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string }[] | null
   }[]
   const resumo = await supabase.from('sf_ordem_resumo').select('pmo,op,concluidas')
   if (resumo.error) throw resumo.error
@@ -267,6 +281,7 @@ export async function listarOrdensParaIntegracao(): Promise<OrdemIntegracao[]> {
     descricao: r.descricao,
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
+    faixas: faixasDoBanco(r.sf_ordem_faixas),
     qtd: r.qtd,
     status: r.status,
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
@@ -275,12 +290,18 @@ export async function listarOrdensParaIntegracao(): Promise<OrdemIntegracao[]> {
   }))
 }
 
-/** Faixas de SN de todas as OPs (p/ a verificação N1 do SN da placa). */
-export async function listarFaixasOrdens(): Promise<{ pmo: string; op: string; sn_ini: string; sn_fim: string }[]> {
+/** Faixas de SN de todas as OPs (p/ a verificação N1 do SN da placa), com a lista inteira de cada OP (0181). */
+export async function listarFaixasOrdens(): Promise<{ pmo: string; op: string; sn_ini: string; sn_fim: string; faixas: FaixaSN[] }[]> {
   const supabase = await createServerSupabase()
-  const { data, error } = await supabase.from('sf_ordens').select('pmo,op,sn_ini,sn_fim')
+  const { data, error } = await supabase.from('sf_ordens').select(`pmo,op,sn_ini,sn_fim,${FAIXAS}`)
   if (error) throw error
-  return data as { pmo: string; op: string; sn_ini: string; sn_fim: string }[]
+  return (data as unknown as ({ pmo: string; op: string; sn_ini: string; sn_fim: string } & FaixasRow)[]).map((r) => ({
+    pmo: r.pmo,
+    op: r.op,
+    sn_ini: r.sn_ini,
+    sn_fim: r.sn_fim,
+    faixas: faixasDoBanco(r.sf_ordem_faixas),
+  }))
 }
 
 export interface SfBurninArgs {

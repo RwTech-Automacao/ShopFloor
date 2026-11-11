@@ -7,10 +7,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CANAIS, NOME_CANAL, type Canal, type JanelaTipo, type TipoRegra } from '@/modules/alertas/domain/tipos'
 import {
-  LIMITE_HORAS_MAX,
   LIMITE_HORAS_PADRAO,
   PADROES_REGRA,
   PADROES_TIPO,
+  destinatariosDoTipo,
   destinatariosSemCanal,
   validarRegra,
   type DestinatarioDisponivel,
@@ -20,6 +20,8 @@ import {
 import { HORA_RESUMO_MAX, HORA_RESUMO_MIN, HORA_RESUMO_PADRAO } from '@/modules/alertas/domain/resumo'
 import { postosOferecidos, type PostoRegra } from '@/modules/alertas/domain/postos-regra'
 import { formatarMmSs } from '@/modules/alertas/domain/tempo'
+import { LIMITE_DIAS_MAX, diasIniciaisDoLimite, horasDoLimiteEmDias } from '@/modules/alertas/domain/limite-dias'
+import { minutosDoModoLembrete, modoLembreteInicial, type ModoLembrete } from '@/modules/alertas/domain/lembrete'
 import type { Intervalo } from '@/modules/alertas/domain/intervalos'
 import { textoPreviaPosto, type PreviaPosto } from '@/modules/alertas/domain/ocorrencia'
 import { NOME_MODULO_ALERTA, type ModuloAlerta } from '@/modules/alertas/domain/modulo'
@@ -30,14 +32,15 @@ import { PmosSelecao } from './pmos-selecao'
 
 const TOAST = { position: 'bottom-center' } as const
 
-/** Dica sob o campo do limite: "168 h = 7 dias" para o gestor não ter de fazer a conta. */
-function textoDiasDoLimite(texto: string): string {
-  const h = Number(texto.trim())
-  if (!Number.isInteger(h) || h < 1) return ''
-  if (h < 24) return ''
+/** Dica sob o campo do limite: "7 dias = 168 h", as horas que vão ser gravadas. Vazia se o valor não vale. */
+function textoHorasDoLimite(texto: string): string {
+  const h = horasDoLimiteEmDias(texto)
+  if (h === null) return ''
   const dias = h / 24
-  return Number.isInteger(dias) ? `${h} h = ${dias} ${dias === 1 ? 'dia' : 'dias'}` : `${h} h = ${Math.floor(dias)} d ${h % 24} h`
+  return `${dias} ${dias === 1 ? 'dia' : 'dias'} = ${h} h`
 }
+
+const MSG_LIMITE_DIAS = `Informe o limite em dias (de 1 a ${LIMITE_DIAS_MAX}).`
 /** Mensagem do repositório quando a regra já foi excluída (exclusão lógica) por outro gestor. */
 export const ERRO_REGRA_EXCLUIDA = 'Essa regra foi excluída.'
 
@@ -249,7 +252,12 @@ export function RegraForm({
   const [passo, setPasso] = useState(passoInicial(regra))
   const [intervalos, setIntervalos] = useState<Intervalo[]>(() => intervalosIniciais(tipo, regra))
   const [horaResumo, setHoraResumo] = useState(regra?.horaResumo ?? HORA_RESUMO_PADRAO)
-  const [limiteHoras, setLimiteHoras] = useState(String(regra?.limiteHoras ?? LIMITE_HORAS_PADRAO))
+  // O parado é digitado em DIAS e gravado em horas (dias × 24). Valor salvo que não fecha em dias abre
+  // arredondado para cima; `limiteArredondadoDe` guarda as horas salvas para o aviso.
+  const [{ dias: limiteDiasInicial, horasArredondadas: limiteArredondadoDe }] = useState(() =>
+    diasIniciaisDoLimite(regra?.limiteHoras ?? LIMITE_HORAS_PADRAO),
+  )
+  const [limiteDias, setLimiteDias] = useState(limiteDiasInicial)
   const [soOpsAtivas, setSoOpsAtivas] = useState(regra?.soOpsAtivas ?? true)
   const [incluirManutencao, setIncluirManutencao] = useState(regra?.incluirManutencao ?? true)
   const [minimo, setMinimo] = useState(minimoInicial(tipo, regra))
@@ -258,11 +266,17 @@ export function RegraForm({
   const [lembrete, setLembrete] = useState(
     regra === null ? (tipo === 'compels' ? '60' : '') : regra.lembreteMin === null ? '' : String(regra.lembreteMin),
   )
+  // A opção do "Lembrar a cada" (sem lembrete, 1 vez por dia, 1 vez por semana ou minutos livres). Estado
+  // próprio, e não derivado dos minutos: quem escolhe Personalizado e digita 1440 continua no Personalizado.
+  const [modoLembrete, setModoLembrete] = useState<ModoLembrete>(() => modoLembreteInicial(lembrete))
   const [canaisSel, setCanaisSel] = useState<Canal[]>(regra?.canais ?? [])
   // Regra nova nasce como era antes do canal existir: avisa as pessoas, não avisa canal.
   const [avisarPessoas, setAvisarPessoas] = useState(regra?.avisarPessoas ?? true)
   const [avisarCanal, setAvisarCanal] = useState(regra?.avisarCanal ?? false)
-  const [inicioDest] = useState(() => separarDestinatarios(regra?.destinatarios ?? [], destinatarios))
+  // Os responsáveis que ESTE tipo aceita: no 'compels' também quem só usa o Almoxarifado (0182); nos
+  // outros, só quem administra o módulo. A tela recebe a lista mais larga e o filtro é daqui.
+  const disponiveis = destinatariosDoTipo(destinatarios, tipo)
+  const [inicioDest] = useState(() => separarDestinatarios(regra?.destinatarios ?? [], disponiveis))
   const [destSel, setDestSel] = useState<string[]>(inicioDest.validos)
   const [pmosSel, setPmosSel] = useState<string[]>(regra?.pmos ?? [])
   const [previa, setPrevia] = useState<{ linhas: PreviaPosto[]; limite: number | null } | null>(null)
@@ -270,7 +284,7 @@ export function RegraForm({
 
   // "Fulano sem Telegram" só importa se a regra avisa no privado: no canal, quem vê não precisa de
   // conta vinculada nenhuma.
-  const avisos = avisarPessoas ? destinatariosSemCanal(destinatarios, destSel, canaisSel) : []
+  const avisos = avisarPessoas ? destinatariosSemCanal(disponiveis, destSel, canaisSel) : []
   // Na janela por blocos o `janelaValor` é o PASSO em minutos (outra grandeza, mesmo campo do banco).
   // O fim de EMB sai com valor nulo, como o resumo: a janela dele é só fachada. (Hoje o `janelaTipo`
   // dele já é 'op' e cairia no `null` do fim da cadeia; a condição explícita é o que impede que um
@@ -323,7 +337,8 @@ export function RegraForm({
       // "informe os horários" para quem queria o relógio corrido.
       ...(tipo === 'parado'
         ? {
-            limiteHoras,
+            // Em horas, como o servidor sempre recebeu. Dias inválidos são barrados antes, em `salvar`.
+            limiteHoras: String(horasDoLimiteEmDias(limiteDias) ?? ''),
             soOpsAtivas,
             incluirManutencao,
             intervalos: intervalos.filter((i) => i.inicio.trim() !== '' || i.fim.trim() !== ''),
@@ -335,6 +350,11 @@ export function RegraForm({
   }
 
   function salvar() {
+    // O limite do parado é digitado em dias: o erro tem de falar em dias (a validação abaixo fala em horas).
+    if (tipo === 'parado' && horasDoLimiteEmDias(limiteDias) === null) {
+      toast.error(MSG_LIMITE_DIAS, TOAST)
+      return
+    }
     // Mesma validação do servidor, antes de ir ao banco: o gestor vê o erro na hora.
     const dados = entrada()
     const v = validarRegra(dados, { canalConfigurado, canaisConfigurados: configurados })
@@ -615,20 +635,26 @@ export function RegraForm({
         <fieldset className="flex flex-col gap-3">
           <div className="flex flex-col gap-2 sm:max-w-xs">
             <div className="flex items-center gap-1.5">
-              <Label htmlFor="limite-horas">Limite (horas)</Label>
-              <Explica titulo="Limite (horas)">
-                <p>Quanto tempo uma peça pode ficar parada no mesmo posto, sem avançar, antes de a OP abrir o alerta. De 1 a {LIMITE_HORAS_MAX} horas (30 dias).</p>
-                <p>Em dias: <strong>24 h = 1 dia</strong>, <strong>168 h = 1 semana</strong>, <strong>720 h = 30 dias</strong>.</p>
-                <p>Sem turnos, o relógio é corrido (dia, noite e fim de semana contam). Com turnos, só contam as horas de expediente, de segunda a sexta.</p>
+              <Label htmlFor="limite-dias">Limite (dias)</Label>
+              <Explica titulo="Limite (dias)">
+                <p>Quantos dias uma peça pode ficar parada no mesmo posto, sem avançar, antes de a OP abrir o alerta. Número inteiro, de 1 a {LIMITE_DIAS_MAX} dias.</p>
+                <p>Sem turnos, o relógio é corrido (dia, noite e fim de semana contam): 1 dia = 24 horas corridas.</p>
+                <p>Com turnos, só contam as horas de expediente, de segunda a sexta: 1 dia = 24 horas <strong>de expediente</strong> (com 8 h de turno por dia, isso dá 3 dias de trabalho).</p>
               </Explica>
             </div>
             <Input
-              id="limite-horas"
-              value={limiteHoras}
-              onChange={(e) => setLimiteHoras(e.target.value)}
+              id="limite-dias"
+              value={limiteDias}
+              onChange={(e) => setLimiteDias(e.target.value)}
               inputMode="numeric"
             />
-            <span className="text-xs text-muted-foreground">{textoDiasDoLimite(limiteHoras)}</span>
+            <span className="text-xs text-muted-foreground">{textoHorasDoLimite(limiteDias)}</span>
+            {limiteArredondadoDe !== null && (
+              <span role="status" className="text-xs text-amber-700 dark:text-amber-400">
+                O limite salvo é de {limiteArredondadoDe} h, que não fecha em dias inteiros: foi arredondado para
+                cima. Ao salvar, a regra passa a usar o valor em dias.
+              </span>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             <label className="flex items-center gap-2 text-sm">
@@ -808,22 +834,44 @@ export function RegraForm({
       {tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'ficha' && janelaTipo !== 'intervalos' && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
-            <Label htmlFor="lembrete">Lembrar a cada (min)</Label>
-            <Explica titulo="Lembrar a cada (min)">
-              <p>Enquanto o problema continuar e ninguém apertar <strong>Resolvido</strong>, o alerta é reenviado a cada X minutos.</p>
-              <p>Vazio = só um alerta quando começa e um aviso quando normaliza.</p>
+            <Label htmlFor="lembrete-frequencia">Lembrar a cada</Label>
+            <Explica titulo="Lembrar a cada">
+              <p>Enquanto o problema continuar e ninguém apertar <strong>Resolvido</strong>, o alerta é reenviado nessa frequência.</p>
+              <p><strong>Não lembrar</strong> = só um alerta quando começa e um aviso quando normaliza.</p>
+              <p><strong>1 vez por dia</strong> = a cada 1440 minutos; <strong>1 vez por semana</strong> = a cada 10080 minutos. Em <strong>Personalizado</strong>, digite os minutos.</p>
               {tipo === 'parado' && (
-                <p>Para um aviso por dia, use <strong>1440</strong> (24 h). Este tipo só avisa de segunda a sexta: sábado e domingo ficam em silêncio.</p>
+                <p>Este tipo só avisa de segunda a sexta: sábado e domingo ficam em silêncio.</p>
               )}
             </Explica>
           </div>
-          <Input
-            id="lembrete"
-            value={lembrete}
-            onChange={(e) => setLembrete(e.target.value)}
-            inputMode="numeric"
-            placeholder="vazio = sem lembrete"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              id="lembrete-frequencia"
+              className="h-9 rounded-lg border border-border bg-background px-2 text-sm"
+              value={modoLembrete}
+              onChange={(e) => {
+                const modo = e.target.value as ModoLembrete
+                setModoLembrete(modo)
+                setLembrete((atual) => minutosDoModoLembrete(modo, atual))
+              }}
+            >
+              <option value="nenhum">Não lembrar</option>
+              <option value="dia">1 vez por dia</option>
+              <option value="semana">1 vez por semana</option>
+              <option value="personalizado">Personalizado (minutos)</option>
+            </select>
+            {modoLembrete === 'personalizado' && (
+              <Input
+                id="lembrete"
+                aria-label="Lembrar a cada (min)"
+                className="w-28"
+                value={lembrete}
+                onChange={(e) => setLembrete(e.target.value)}
+                inputMode="numeric"
+                placeholder="minutos"
+              />
+            )}
+          </div>
         </div>
       )}
 
@@ -889,10 +937,13 @@ export function RegraForm({
                 quem tem `usuario_tem_permissao(usuário, <módulo da regra>, 'administrar')`. O texto
                 dizia "o ShopFloor" fixo — numa regra do Recebimento isso afirmava a permissão errada. */}
             <p>Só aparecem usuários ativos que podem <strong>administrar o {NOME_MODULO_ALERTA[modulo]}</strong>. Quem perder essa permissão para de receber e de poder encerrar, mesmo continuando na regra.</p>
+            {tipo === 'compels' && (
+              <p>Nesta regra aparecem também os usuários que podem usar a tela do <strong>Almoxarifado</strong> (dar entrada no Recebimento e ver o Fluxo de Processos): eles recebem e podem apertar <strong>Resolvido</strong>.</p>
+            )}
           </Explica>
         </legend>
         <div className="flex max-h-40 flex-col gap-2 overflow-y-auto rounded-md border border-border p-3">
-          {destinatarios.map((d) => (
+          {disponiveis.map((d) => (
             <label key={d.usuarioId} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

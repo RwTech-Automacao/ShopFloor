@@ -59,9 +59,11 @@ describe('formulário da regra compels', () => {
     montar()
     expect(screen.getByLabelText('Almoxarifado')).toBeInTheDocument()
     expect(screen.queryByLabelText('Teste')).not.toBeInTheDocument()
+    // O padrão do compels (60 min) não é uma das opções fixas: abre em Personalizado, com os minutos.
+    expect(screen.getByLabelText('Lembrar a cada')).toHaveValue('personalizado')
     expect(screen.getByLabelText('Lembrar a cada (min)')).toHaveValue('60')
     expect(screen.queryByText('Janela')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Limite (horas)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Limite (dias)')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Adicionar intervalo' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Taxa mínima de aprovação (%)')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /ver prévia/i })).not.toBeInTheDocument()
@@ -98,5 +100,19 @@ describe('formulário da regra compels', () => {
       destinatarios: ['u1'], avisarPessoas: true, avisarCanal: false, pmos: [], ativa: true,
     })
     expect(screen.getByLabelText('Lembrar a cada (min)')).toHaveValue('90')
+  })
+
+  it('o lembrete oferece 1 vez por dia e 1 vez por semana, como nos outros tipos', async () => {
+    salvarRegraAction.mockResolvedValue({ ok: true, id: 'g1' })
+    montar()
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Compels' } })
+    fireEvent.click(screen.getByLabelText('Almoxarifado'))
+    fireEvent.click(screen.getByLabelText('Telegram'))
+    fireEvent.click(screen.getByLabelText('Valdei'))
+    fireEvent.change(screen.getByLabelText('Lembrar a cada'), { target: { value: 'dia' } })
+    expect(screen.queryByLabelText('Lembrar a cada (min)')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(salvarRegraAction).toHaveBeenCalled())
+    expect(enviado().lembreteMin).toBe('1440')
   })
 })

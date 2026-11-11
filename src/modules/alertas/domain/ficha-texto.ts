@@ -56,12 +56,23 @@ export function textoFicha(d: DadosFicha): string {
   const rotulo = d.unidade === 'lote' ? 'Lote' : 'Caixa'
   return [
     `📋 Ficha de apontamento · OP ${textoOp({ pmo: d.pmo, op: d.op })} · ${rotulo} ${d.codigo}`,
-    `Data de produção: ${data(d.dataProducao)}`,
-    `Produto: ${texto(d.produto)}`,
-    `Quantidade da OP: ${numero(d.quantidadeOp)}`,
-    `PMO: ${texto(d.pmo)}`,
-    `OP: ${texto(d.op)}`,
-    `Quantidade apontada: ${numero(d.quantidadeApontada)}`,
-    `Responsável: ${texto(d.responsavel)}`,
+    ...camposFicha(d).map((c) => `${c.rotulo}: ${c.valor}`),
   ].join('\n')
+}
+
+/**
+ * Os campos da ficha, na ordem do papel, já formatados (dia de São Paulo, milhar pt-BR, "—" no vazio). É a
+ * MESMA fonte da mensagem do Discord e da página do tablet do Almoxarifado (/quiosque/fichas): os dois nunca
+ * divergem de rótulo ou de formato. Valores em texto puro — quem monta HTML escapa.
+ */
+export function camposFicha(d: DadosFicha): { rotulo: string; valor: string }[] {
+  return [
+    { rotulo: 'Data de produção', valor: data(d.dataProducao) },
+    { rotulo: 'Produto', valor: texto(d.produto) },
+    { rotulo: 'Quantidade da OP', valor: numero(d.quantidadeOp) },
+    { rotulo: 'PMO', valor: texto(d.pmo) },
+    { rotulo: 'OP', valor: texto(d.op) },
+    { rotulo: 'Quantidade apontada', valor: numero(d.quantidadeApontada) },
+    { rotulo: 'Responsável', valor: texto(d.responsavel) },
+  ]
 }

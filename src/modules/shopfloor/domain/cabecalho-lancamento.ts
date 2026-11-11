@@ -1,4 +1,5 @@
-import { serieDentroDaFaixa, limparSerie } from './serie'
+import { limparSerie } from './serie'
+import { serieNasFaixas, type ComFaixas } from './faixas-sn'
 import { ehOpFinalizada } from './ops-ativas'
 import { separarCodigoCaixa } from './caixa'
 
@@ -24,18 +25,18 @@ export type ResolucaoOpPorSn<T> =
  *   etapa 1 acha a ativa e para ali, a finalizada nunca entra na conta;
  * - não custa nada no caminho normal — a segunda varredura só roda quando a primeira falha.
  *
- * Só considera OPs com faixa cadastrada (sn_ini/sn_fim não-vazios). Mais de uma OP na MESMA etapa
+ * Só considera OPs com faixa cadastrada. A OP pode ter várias faixas (0181): vale QUALQUER uma
+ * (`serieNasFaixas`; sem a lista carregada, a faixa sn_ini/sn_fim). Mais de uma OP na MESMA etapa
  * → AMBIGUO (duas ativas é o que já acontecia; duas finalizadas é raro e não dá para dizer qual
  * reativar). Nenhuma OP em etapa nenhuma → SEM_OP, como antes.
  */
-export function resolverOpPorSn<T extends { sn_ini: string; sn_fim: string; status: string | null }>(
+export function resolverOpPorSn<T extends ComFaixas & { status: string | null }>(
   ordens: T[],
   sn: string,
 ): ResolucaoOpPorSn<T> {
   const alvo = limparSerie(sn)
   if (alvo === '') return { ok: false, erro: 'SEM_OP' }
-  const naFaixa = (o: T) =>
-    o.sn_ini.trim() !== '' && o.sn_fim.trim() !== '' && serieDentroDaFaixa(o.sn_ini, o.sn_fim, alvo)
+  const naFaixa = (o: T) => serieNasFaixas(o, alvo)
 
   // Etapa 1: as ATIVAS. `ehOpFinalizada` é case-insensitive de propósito (o status é texto livre e
   // já veio gravado em mais de uma grafia na história da planilha).
