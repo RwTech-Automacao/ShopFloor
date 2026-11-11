@@ -53,11 +53,13 @@ describe('card Finalizadas com o Almoxarifado no fim da rota', () => {
     expect(lerPendenteCompelsAction).toHaveBeenCalledWith('PMOE74', '8665')
   })
 
-  it('fila vazia com peça aguardando: Fila Compels 0 sem o alerta', async () => {
+  it('fila vazia com peça aguardando: a linha Fila Compels não aparece', async () => {
     lerEstoqueCompelsAction.mockResolvedValue(OK)
     render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-B', op: '1', aguardandoAlmoxarifado: 3 }) } as never))
     await waitFor(() => expect(valorDe('Total disponível')).toBe('1.176'))
-    expect(valorDe('Fila Compels')).toBe('0')
+    await waitFor(() => expect(lerPendenteCompelsAction).toHaveBeenCalled())
+    expect(valorDe('Aguard. Almoxarifado')).toBe('3')
+    expect(screen.queryByText('Fila Compels')).toBeNull()
     expect(screen.queryByLabelText('atenção')).toBeNull()
   })
 
