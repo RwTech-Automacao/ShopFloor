@@ -8,6 +8,7 @@ import {
 } from '../domain/corpos'
 import { leiturasDeRespostas, listaDe, RespostaInesperada } from '../domain/leituras-erp'
 import { saldoDoItem, type SaldoItem } from '../domain/saldo-item'
+import { saldosPorEstoque, type SaldoEmEstoque } from '../domain/saldo-por-estoque'
 import type { LeiturasOp } from '../domain/estado-op'
 import { resultadoDaGravacao, type ResultadoGravacao } from '../domain/resposta-erp'
 import type { ConfigCompels } from './config'
@@ -237,6 +238,20 @@ export class ClienteCompels {
       this.formulario({ filter: JSON.stringify(filtro), page: '1', start: '0', limit: '50' }),
     )
     return saldoDoItem(resposta, codigo)
+  }
+
+  /**
+   * Saldo do item POR ESTOQUE (PA, EINTER, EA…), a mesma consulta da linha expandida do Movimento de Item.
+   * Só leitura. Data no formato da tela (`dd/mm/aaaa`, dia de Brasília); item sem saldo = lista vazia.
+   */
+  async consultarSaldoPorEstoque(codigo: string): Promise<SaldoEmEstoque[]> {
+    const data = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date(this.agora()))
+    const params = new URLSearchParams({
+      codigoItem: codigo.trim(), descricaoItem: '', data, exibeItensComSaldoZerado: 'false', estoque: '',
+      offset: '0', limit: '50',
+    })
+    const resposta = await this.json(`/estoque/consultaSaldoItemEstoque?${params}`)
+    return saldosPorEstoque(resposta, codigo)
   }
 }
 

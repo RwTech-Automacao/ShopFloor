@@ -2,6 +2,7 @@ import 'server-only'
 import { semSufixo } from '@/modules/compels/domain/sem-sufixo'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
 import { ConfiguracaoIncompleta, configDoAmbiente } from '@/modules/compels/infra/config'
+import { saldoDisponivel, type SaldoEmEstoque } from '@/modules/compels/domain/saldo-por-estoque'
 import type { EstoqueCompels } from '../domain/estoque-compels'
 
 /**
@@ -14,13 +15,7 @@ export const TTL_FALHA_MS = 15_000
 const TIMEOUT_MS = 10_000
 
 interface Consulta {
-  consultarSaldoItem(codigo: string): Promise<{
-    proprio: number
-    unidade: string
-    pendencia: number
-    emTerceiros: number
-    deTerceiros: number
-  } | null>
+  consultarSaldoPorEstoque(codigo: string): Promise<SaldoEmEstoque[]>
 }
 
 export interface DependenciasEstoque {
@@ -63,21 +58,13 @@ export async function buscarEstoqueCompels(pmo: string, deps: DependenciasEstoqu
 
   let resultado: EstoqueCompels
   try {
-    const saldo = await Promise.race([
-      cliente.consultarSaldoItem(codigo),
+    const linhas = await Promise.race([
+      cliente.consultarSaldoPorEstoque(codigo),
       new Promise<never>((_, rejeitar) => setTimeout(() => rejeitar(new Error('tempo esgotado')), TIMEOUT_MS)),
     ])
-    resultado = saldo
-      ? {
-          tipo: 'ok',
-          proprio: saldo.proprio,
-          unidade: saldo.unidade,
-          pendencia: saldo.pendencia,
-          emTerceiros: saldo.emTerceiros,
-          deTerceiros: saldo.deTerceiros,
-          consultadoEm: new Date(agora).toISOString(),
-        }
-      : { tipo: 'nao_encontrado' }
+    // Item sem saldo em nenhum estoque volta sem linhas: para o card isso é zero disponível.
+    const { total, porEstoque } = saldoDisponivel(linhas)
+    resultado = { tipo: 'ok', disponivel: total, porEstoque, consultadoEm: new Date(agora).toISOString() }
   } catch (e) {
     // Sem detalhe para a tela (nunca vaza mensagem do ERP); o log do servidor guarda o motivo.
     console.error('[estoque-compels] consulta falhou:', e instanceof Error ? e.message : e)
