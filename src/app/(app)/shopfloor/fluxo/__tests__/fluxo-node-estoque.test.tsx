@@ -14,17 +14,20 @@ const { lerEstoqueCompelsAction, lerPendenteCompelsAction } = vi.hoisted(() => (
 }))
 vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({ lerEstoqueCompelsAction, lerPendenteCompelsAction }))
 
-const { FluxoNode, EstoqueCompelsCard } = await import('../fluxo-node')
+const { FluxoNode } = await import('../fluxo-node')
 
 const OK: EstoqueCompels = {
-  tipo: 'ok', proprio: 1234.5, unidade: 'UN', pendencia: 2, emTerceiros: 0, deTerceiros: 3, consultadoEm: '2026-10-19T12:00:00.000Z',
+  tipo: 'ok', proprio: 1173, unidade: 'UN', pendencia: 2, emTerceiros: 0, deTerceiros: 3, consultadoEm: '2026-11-11T12:00:00.000Z',
 }
 
 const saida = (over: Record<string, unknown> = {}) => ({
-  posto: '__SAIDA__', wip: 12, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0,
+  posto: 'Saída', wip: 450, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0,
   reprovadosSemReteste: 0, temStatus: false, ehManutencao: false, recurso: 'saida', concluido: false, ehSaida: true,
   passou: 0, devemPassar: null, selecionado: false, ...over,
 })
+
+/** Linha do resumo pelo rótulo → o texto do número à direita. */
+const valorDe = (rotulo: string) => screen.getByText(rotulo).closest('div')!.lastElementChild!.textContent
 
 beforeEach(() => {
   lerEstoqueCompelsAction.mockReset()
@@ -32,106 +35,73 @@ beforeEach(() => {
   lerPendenteCompelsAction.mockResolvedValue(null)
 })
 
-describe('estoque do Compels abaixo do card Concluído', () => {
-  it('mostra o estoque próprio do PMO, formatado em pt-BR, com o detalhe no tooltip', async () => {
+describe('card Finalizadas com o Almoxarifado no fim da rota', () => {
+  it('título, PMO - OP, contagem e o resumo: total = estoque + aguardando + fila', async () => {
     lerEstoqueCompelsAction.mockResolvedValue(OK)
-    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-A' }) } as never))
+    lerPendenteCompelsAction.mockResolvedValue({ pecas: 14, situacao: 'esperando_erp', rotulo: 'Esperando o Compels', motivo: 'sem empenho', oQueFazer: 'Nada.' })
+    const { container } = render(createElement(FluxoNode, { data: saida({ pmo: 'PMOE74', op: '8665', aguardandoAlmoxarifado: 20 }) } as never))
 
-    expect(await screen.findByText(/1\.234,5 UN/)).toBeInTheDocument()
-    expect(screen.getByText(/Estoque no Compels · PMO-A/)).toBeInTheDocument()
-    expect(lerEstoqueCompelsAction).toHaveBeenCalledWith('PMO-A')
-    const faixa = screen.getByText(/Estoque no Compels · PMO-A/).parentElement!
-    expect(faixa.getAttribute('title')).toContain('todos os estoques')
-    expect(faixa.getAttribute('title')).toContain('Em pendência: 2')
+    expect(container.textContent).toContain('Finalizadas')
+    expect(container.textContent).toContain('PMOE74 - 8665')
+    expect(container.textContent).toContain('450')
+    await waitFor(() => expect(valorDe('Fila Compels')).toBe('14'))
+    expect(valorDe('Em estoque')).toBe('1.173')
+    expect(valorDe('Aguard. Almoxarifado')).toBe('20')
+    expect(valorDe('Total disponível')).toBe('1.207')
+    expect(screen.getByLabelText('atenção')).toBeInTheDocument()
+    expect(lerEstoqueCompelsAction).toHaveBeenCalledWith('PMOE74')
+    expect(lerPendenteCompelsAction).toHaveBeenCalledWith('PMOE74', '8665')
   })
 
-  it('o card Concluído continua igual (contagem de finalizadas) e a faixa não entra no card de outro posto', async () => {
+  it('fila vazia com peça aguardando: Fila Compels 0 sem o alerta', async () => {
     lerEstoqueCompelsAction.mockResolvedValue(OK)
-    const { container } = render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-B' }) } as never))
-    expect(container.textContent).toContain('Concluído')
-    expect(container.textContent).toContain('12')
-
-    lerEstoqueCompelsAction.mockClear()
-    render(createElement(FluxoNode, { data: { ...saida({ pmo: 'PMO-B' }), ehSaida: false, recurso: 'caixa', posto: 'Embalagem' } } as never))
-    expect(lerEstoqueCompelsAction).not.toHaveBeenCalled()
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-B', op: '1', aguardandoAlmoxarifado: 3 }) } as never))
+    await waitFor(() => expect(valorDe('Total disponível')).toBe('1.176'))
+    expect(valorDe('Fila Compels')).toBe('0')
+    expect(screen.queryByLabelText('atenção')).toBeNull()
   })
 
-  it('sem PMO no nó (Saída sem OP escolhida) não consulta nada', () => {
-    render(createElement(FluxoNode, { data: saida() } as never))
-    expect(lerEstoqueCompelsAction).not.toHaveBeenCalled()
+  it('aguardando e fila zerados: só o Total disponível (= estoque)', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue(OK)
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-Z', op: '1', aguardandoAlmoxarifado: 0 }) } as never))
+    await waitFor(() => expect(valorDe('Total disponível')).toBe('1.173'))
+    await waitFor(() => expect(lerPendenteCompelsAction).toHaveBeenCalled())
+    expect(screen.queryByText('Em estoque')).toBeNull()
+    expect(screen.queryByText('Aguard. Almoxarifado')).toBeNull()
+    expect(screen.queryByText('Fila Compels')).toBeNull()
   })
 
-  it('integração não configurada neste ambiente: não mostra faixa nenhuma', async () => {
-    lerEstoqueCompelsAction.mockResolvedValue({ tipo: 'nao_configurado' })
-    render(createElement(EstoqueCompelsCard, { pmo: 'PMO-C' }))
-    await waitFor(() => expect(lerEstoqueCompelsAction).toHaveBeenCalled())
-    await waitFor(() => expect(screen.queryByText(/Estoque no Compels/)).not.toBeInTheDocument())
-  })
-
-  it('Compels indisponível: diz "indisponível" (e não um número velho)', async () => {
+  it('Compels indisponível: estoque diz "indisponível" e o total não inventa número', async () => {
     lerEstoqueCompelsAction.mockResolvedValue({ tipo: 'indisponivel' })
-    render(createElement(EstoqueCompelsCard, { pmo: 'PMO-D' }))
-    expect(await screen.findByText('indisponível')).toBeInTheDocument()
-  })
-
-  it('a chamada que lança vira "indisponível"', async () => {
-    lerEstoqueCompelsAction.mockRejectedValue(new Error('rede'))
-    render(createElement(EstoqueCompelsCard, { pmo: 'PMO-E' }))
-    expect(await screen.findByText('indisponível')).toBeInTheDocument()
-  })
-
-  it('item que o Compels não conhece: "item não encontrado"', async () => {
-    lerEstoqueCompelsAction.mockResolvedValue({ tipo: 'nao_encontrado' })
-    render(createElement(EstoqueCompelsCard, { pmo: 'PMO-F' }))
-    expect(await screen.findByText('item não encontrado')).toBeInTheDocument()
-  })
-
-  it('enquanto consulta, mostra "consultando…"; a segunda montagem do mesmo PMO usa o cache do navegador', async () => {
-    let resolver!: (v: EstoqueCompels) => void
-    lerEstoqueCompelsAction.mockReturnValue(new Promise<EstoqueCompels>((r) => { resolver = r }))
-    const primeira = render(createElement(EstoqueCompelsCard, { pmo: 'PMO-G' }))
-    expect(screen.getByText('consultando…')).toBeInTheDocument()
-    resolver(OK)
-    expect(await screen.findByText(/1\.234,5 UN/)).toBeInTheDocument()
-    primeira.unmount()
-
-    lerEstoqueCompelsAction.mockClear()
-    render(createElement(EstoqueCompelsCard, { pmo: 'PMO-G' }))
-    expect(screen.getByText(/1\.234,5 UN/)).toBeInTheDocument()
-    expect(lerEstoqueCompelsAction).not.toHaveBeenCalled()
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-C', op: '1', aguardandoAlmoxarifado: 5 }) } as never))
+    await waitFor(() => expect(valorDe('Em estoque')).toBe('indisponível'))
+    expect(valorDe('Total disponível')).toBe('indisponível')
+    expect(valorDe('Aguard. Almoxarifado')).toBe('5')
   })
 })
 
-describe('aviso "ainda não chegou ao Compels" abaixo do card Concluído', () => {
-  it('mostra as peças que esperam, o selo e o motivo, e consulta pela PMO e OP do Fluxo', async () => {
+describe('card Finalizadas sem o Almoxarifado na rota', () => {
+  it('só o Total disponível (estoque do Compels); não consulta a fila', async () => {
     lerEstoqueCompelsAction.mockResolvedValue(OK)
-    lerPendenteCompelsAction.mockResolvedValue({
-      pecas: 6, situacao: 'esperando_erp', rotulo: 'Esperando o Compels',
-      motivo: 'OP sem empenho suficiente no Compels: empenhado 22, precisa de 28 (faltam 6).', oQueFazer: 'Nada.',
-    })
-    render(createElement(FluxoNode, { data: saida({ pmo: 'PMOF52_F', op: '8682_F' }) } as never))
-
-    expect(await screen.findByText(/6 peças ainda não chegaram ao Compels/)).toBeInTheDocument()
-    expect(screen.getByText(/Esperando o Compels · OP sem empenho suficiente/)).toBeInTheDocument()
-    expect(lerPendenteCompelsAction).toHaveBeenCalledWith('PMOF52_F', '8682_F')
-    expect(screen.getByRole('status').getAttribute('title')).toContain('faltam 6')
-  })
-
-  it('uma peça só: singular', async () => {
-    lerEstoqueCompelsAction.mockResolvedValue(OK)
-    lerPendenteCompelsAction.mockResolvedValue({ pecas: 1, situacao: 'na_fila', rotulo: 'Na fila', motivo: null, oQueFazer: 'Nada.' })
-    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-A', op: '1' }) } as never))
-    expect(await screen.findByText('1 peça ainda não chegou ao Compels')).toBeInTheDocument()
-  })
-
-  it('nada esperando: sem aviso; sem a OP no card: nem consulta', async () => {
-    lerEstoqueCompelsAction.mockResolvedValue(OK)
-    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-A', op: '1' }) } as never))
-    await waitFor(() => expect(lerPendenteCompelsAction).toHaveBeenCalled())
-    expect(screen.queryByRole('status')).toBeNull()
-
-    lerPendenteCompelsAction.mockClear()
-    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-A' }) } as never))
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMOE74', op: '8665' }) } as never))
+    await waitFor(() => expect(valorDe('Total disponível')).toBe('1.173'))
+    expect(screen.queryByText('Em estoque')).toBeNull()
+    expect(screen.queryByText('Aguard. Almoxarifado')).toBeNull()
+    expect(screen.queryByText('Fila Compels')).toBeNull()
     expect(lerPendenteCompelsAction).not.toHaveBeenCalled()
+  })
+
+  it('sem PMO (nenhuma OP escolhida): sem resumo e sem consulta; outro posto nunca consulta', () => {
+    render(createElement(FluxoNode, { data: saida() } as never))
+    render(createElement(FluxoNode, { data: { ...saida({ pmo: 'PMO-D' }), ehSaida: false, recurso: 'caixa', posto: 'Embalagem' } } as never))
+    expect(lerEstoqueCompelsAction).not.toHaveBeenCalled()
+    expect(screen.queryByText('Total disponível')).toBeNull()
+  })
+
+  it('enquanto consulta mostra "…"; a chamada que lança vira "indisponível"', async () => {
+    lerEstoqueCompelsAction.mockRejectedValue(new Error('rede'))
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMO-E' }) } as never))
+    expect(valorDe('Total disponível')).toBe('…')
+    await waitFor(() => expect(valorDe('Total disponível')).toBe('indisponível'))
   })
 })

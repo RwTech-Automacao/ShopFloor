@@ -797,11 +797,14 @@ export function FluxoForm({
       const r = await rotaSn(pmo, op, sn)
       if (!r.ok) { toast.error(r.erro); return }
       if (r.postos.length === 0) { toast.error('Este SN não passou por esta OP.'); setRota(null); return }
-      // Concluiu (r.atual null) → destaca a caixa "Concluído" (SAÍDA) SE ela existe (OP com qtd);
+      // Concluiu (r.atual null) → destaca a caixa "Finalizadas" (SAÍDA) SE ela existe (OP com qtd);
       // OP sem qtd não tem esse nó → posição atual = último posto visitado (senão o realce cairia no vácuo).
+      // Posto sem card no desenho (o Almoxarifado no fim da rota vive dentro de Finalizadas) cai na Saída.
       const temSaida = dom.some((n) => n.id === SAIDA)
-      const atual = r.atual ?? (temSaida ? SAIDA : (r.postos[r.postos.length - 1] ?? null))
-      const ordem = [...r.postos]
+      const noDesenho = new Set(dom.map((n) => n.id))
+      const naTela = (p: string) => (noDesenho.has(p) ? p : temSaida ? SAIDA : null)
+      const atual = r.atual ? naTela(r.atual) : (temSaida ? SAIDA : (r.postos[r.postos.length - 1] ?? null))
+      const ordem = [...new Set(r.postos.map(naTela).filter((p): p is string => p !== null))]
       if (atual && !ordem.includes(atual)) ordem.push(atual) // posição atual entra no fim da ordem de revelação
       setRota({ ordem, atual })
     })
@@ -856,7 +859,7 @@ export function FluxoForm({
           selecionado: aberto === n.id,
           // Só a Entrada carrega PMO/OP + descrição da OP (o card mostra; o domínio não tem esse dado).
           ...(n.id === ENTRADA ? { pmo: opSel?.pmo, op: opSel?.op, descricao: opSel?.descricao } : {}),
-          // A Saída (card Concluído) leva só o PMO: é com ele que o card consulta o estoque do Compels.
+          // A Saída (card Finalizadas) leva PMO e OP: o estoque do Compels e a fila do Compels são consultados com eles.
           ...(n.id === SAIDA ? { pmo: opSel?.pmo, op: opSel?.op } : {}),
           // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
           ...(rota ? (() => {
