@@ -17,7 +17,7 @@ vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({ lerE
 const { FluxoNode } = await import('../fluxo-node')
 
 const OK: EstoqueCompels = {
-  tipo: 'ok', proprio: 1173, unidade: 'UN', pendencia: 2, emTerceiros: 0, deTerceiros: 3, consultadoEm: '2026-11-11T12:00:00.000Z',
+  tipo: 'ok', disponivel: 1173, porEstoque: [{ estoque: 'PA', saldo: 1000 }, { estoque: 'EINTER', saldo: 173 }], consultadoEm: '2026-11-11T12:00:00.000Z',
 }
 
 const saida = (over: Record<string, unknown> = {}) => ({

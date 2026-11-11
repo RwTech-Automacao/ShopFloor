@@ -143,11 +143,11 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
 
   const ok = estoque !== null && estoque !== 'carregando' && estoque.tipo === 'ok'
   let valorEstoque: React.ReactNode = '—'
-  let dicaEstoque = `Estoque próprio de ${pmo} no Compels, somando todos os estoques.`
+  let dicaEstoque = `Estoque de ${pmo} no Compels: produto acabado (PA) + intermediário (EINTER).`
   if (estoque === 'carregando') valorEstoque = '…'
   else if (estoque && estoque.tipo === 'ok') {
-    valorEstoque = formatarQuantidade(estoque.proprio)
-    dicaEstoque += ` Em pendência: ${formatarQuantidade(estoque.pendencia)} · em terceiros: ${formatarQuantidade(estoque.emTerceiros)} · de terceiros: ${formatarQuantidade(estoque.deTerceiros)} (${estoque.unidade}). Não é só o que esta OP deu entrada.`
+    valorEstoque = formatarQuantidade(estoque.disponivel)
+    dicaEstoque += ` ${estoque.porEstoque.map((e) => `${e.estoque}: ${formatarQuantidade(e.saldo)}`).join(' · ')}. Os outros estoques não entram. Não é só o que esta OP deu entrada.`
   } else if (estoque && estoque.tipo === 'nao_encontrado') dicaEstoque = `${pmo} não foi encontrado no Compels.`
   else if (estoque && estoque.tipo === 'indisponivel') {
     valorEstoque = <span className="text-amber-600">indisponível</span>
@@ -156,7 +156,7 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
 
   const total = !comAlmox
     ? valorEstoque
-    : ok ? formatarQuantidade(estoque.proprio + (aguardando ?? 0) + fila) : valorEstoque
+    : ok ? formatarQuantidade(estoque.disponivel + (aguardando ?? 0) + fila) : valorEstoque
   const dicaTotal = comAlmox
     ? 'Em estoque no Compels + aguardando o Almoxarifado + na fila do Compels.'
     : dicaEstoque

@@ -1,16 +1,15 @@
 /**
- * O que a tela do Fluxo mostra do estoque do Compels abaixo do card "Concluído". Consulta NA HORA (sem
- * cópia no ShopFloor), com cache curto em memória no servidor; o número é o estoque PRÓPRIO do item (PMO)
- * em TODOS os estoques do Compels. Não é "o que esta OP deu entrada": é contexto, não conferência.
+ * O que o card Finalizadas do Fluxo mostra do estoque do Compels. Consulta NA HORA (sem cópia no ShopFloor),
+ * com cache curto em memória no servidor. `disponivel` = saldo do item (PMO) só nos estoques PA (produto
+ * acabado) + EINTER (intermediário), pedido de 11/11/2026; os outros (ativo, engenharia, devolvidos…) não
+ * entram. Não é "o que esta OP deu entrada": é contexto, não conferência.
  */
 export type EstoqueCompels =
   | {
       tipo: 'ok'
-      proprio: number
-      unidade: string
-      pendencia: number
-      emTerceiros: number
-      deTerceiros: number
+      disponivel: number
+      /** Um por estoque considerado (PA, EINTER), zero quando o item não tem saldo nele. */
+      porEstoque: { estoque: string; saldo: number }[]
       consultadoEm: string
     }
   | { tipo: 'nao_encontrado' }
