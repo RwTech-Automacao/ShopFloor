@@ -3,7 +3,8 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { normalizarSerie } from '../domain/serie'
-import { gerarFaixaSNsPagina, totalFaixaSNs, montarGrade, montarResumoPorPosto, type LinhaGrade, type ResumoPosto } from '../domain/grade'
+import { gerarFaixasSNsPagina, totalFaixasSNs, montarGrade, montarResumoPorPosto, type LinhaGrade, type ResumoPosto } from '../domain/grade'
+import { faixasDe } from '../domain/faixas-sn'
 import { PERFIL_PADRAO, perfilTemStatus } from '../domain/perfil-posto'
 import { carregarOrdem } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
@@ -80,10 +81,12 @@ export async function carregarResumoDefeitos(
 async function baseDaGrade(pmo: string, op: string) {
   const ordem = await carregarOrdem(pmo, op)
   if (!ordem) return { ok: false as const, erro: 'OP não encontrada.' }
-  if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
+  // A OP pode ter várias faixas (0181): a grade lista todas, na ordem (a 1 inteira, depois a 2…).
+  const faixas = faixasDe(ordem)
+  if (faixas.length === 0) {
     return { ok: false as const, erro: 'Esta OP não tem faixa de Nº de Série cadastrada.' }
   }
-  return { ok: true as const, ordem }
+  return { ok: true as const, ordem, faixas }
 }
 
 async function registrosEPerfis(pmo: string, op: string) {
@@ -106,10 +109,10 @@ export async function carregarGrade(
 
   const base = await baseDaGrade(pmo.trim(), op.trim())
   if (!base.ok) return base
-  const { ordem } = base
+  const { ordem, faixas } = base
   const tam = Math.max(1, Math.floor(tamanho))
   const pag = Math.max(1, Math.floor(pagina))
-  const faixa = gerarFaixaSNsPagina(ordem.sn_ini, ordem.sn_fim, (pag - 1) * tam, tam)
+  const faixa = gerarFaixasSNsPagina(faixas, (pag - 1) * tam, tam)
   if (!faixa.ok) return faixa
 
   try {
@@ -149,8 +152,8 @@ export async function carregarGradeCompleta(
 
   const base = await baseDaGrade(pmo.trim(), op.trim())
   if (!base.ok) return base
-  const { ordem } = base
-  const tot = totalFaixaSNs(ordem.sn_ini, ordem.sn_fim)
+  const { ordem, faixas } = base
+  const tot = totalFaixasSNs(faixas)
   if (!tot.ok) return tot
   if (tot.total > MAX_SNS_FILTRO) {
     return {
@@ -159,7 +162,7 @@ export async function carregarGradeCompleta(
       permanente: true,
     }
   }
-  const faixa = gerarFaixaSNsPagina(ordem.sn_ini, ordem.sn_fim, 0, tot.total)
+  const faixa = gerarFaixasSNsPagina(faixas, 0, tot.total)
   if (!faixa.ok) return faixa
 
   try {

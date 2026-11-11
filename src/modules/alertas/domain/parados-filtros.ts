@@ -16,7 +16,10 @@ export type Agrupamento = 'op' | 'posto'
 export type Ordem = 'antiga' | 'pecas' | 'nome'
 
 export interface FiltrosParados {
-  horas: number
+  /** "Parada há mais de" (vai ao banco como corte). Nulo = vazio: não filtra (todas as peças paradas). */
+  horas: number | null
+  /** "Parada há menos de" (aplicado na tela). Nulo = vazio: não filtra. */
+  menos: number | null
   situacao: SituacaoOp
   /** Vazio = todos os postos. */
   postos: string[]
@@ -27,7 +30,7 @@ export interface FiltrosParados {
 
 export const OPCOES_HORAS = [4, 8, 24, 72, 168] as const
 export const FILTROS_PADRAO: FiltrosParados = {
-  horas: 24, situacao: 'ativas', postos: [], tipo: 'todos', agrupar: 'op', ordem: 'antiga',
+  horas: 24, menos: null, situacao: 'ativas', postos: [], tipo: 'todos', agrupar: 'op', ordem: 'antiga',
 }
 /** O maior tempo aceito na URL (1 ano), para um link digitado não virar um corte absurdo. */
 const HORAS_MAX = 24 * 365
@@ -45,6 +48,12 @@ export const ROTULOS_ORDEM: Record<Ordem, string> = {
 
 type Params = Record<string, string | string[] | undefined>
 const um = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v)?.trim() || undefined
+/** Horas da URL: "-" = vazio (nulo); inteiro de 1 a 1 ano; o resto (ou ausente) = `base`. */
+function horasDaUrl(v: string | undefined, base: number | null): number | null {
+  if (v === '-') return null
+  const h = Number(v)
+  return v !== undefined && Number.isInteger(h) && h >= 1 && h <= HORAS_MAX ? h : base
+}
 const de = <T extends string>(v: string | undefined, validos: Record<T, string>): T | undefined =>
   v !== undefined && Object.hasOwn(validos, v) ? (v as T) : undefined
 
@@ -59,10 +68,10 @@ export function lerFiltros(params: Params, regra: RegraDoRelatorio | null): Filt
         tipo: regra.incluirManutencao ? 'todos' : 'posto',
       }
     : FILTROS_PADRAO
-  const h = Number(um(params.horas))
   const postos = um(params.postos)
   return {
-    horas: Number.isInteger(h) && h >= 1 && h <= HORAS_MAX ? h : base.horas,
+    horas: horasDaUrl(um(params.horas), base.horas),
+    menos: horasDaUrl(um(params.menos), base.menos),
     situacao: de(um(params.situacao), ROTULOS_SITUACAO) ?? base.situacao,
     postos: postos === undefined ? base.postos : postos === '*' ? [] : postos.split(',').map((p) => p.trim()).filter(Boolean),
     tipo: de(um(params.tipo), ROTULOS_TIPO) ?? base.tipo,
@@ -75,7 +84,8 @@ export function lerFiltros(params: Params, regra: RegraDoRelatorio | null): Filt
 export function queryDosFiltros(f: FiltrosParados, regraId: string | null): string {
   const q = new URLSearchParams()
   if (regraId) q.set('regra', regraId)
-  q.set('horas', String(f.horas))
+  q.set('horas', f.horas === null ? '-' : String(f.horas))
+  q.set('menos', f.menos === null ? '-' : String(f.menos))
   q.set('situacao', f.situacao)
   q.set('postos', f.postos.length === 0 ? '*' : f.postos.join(','))
   q.set('tipo', f.tipo)
@@ -85,9 +95,9 @@ export function queryDosFiltros(f: FiltrosParados, regraId: string | null): stri
 }
 
 /** As opções do tempo: as fixas e, se a regra do link usa outro limite, ele também (em ordem). */
-export function opcoesDeHoras(atual: number): number[] {
+export function opcoesDeHoras(atual: number | null): number[] {
   const lista: number[] = [...OPCOES_HORAS]
-  if (!lista.includes(atual)) lista.push(atual)
+  if (atual !== null && !lista.includes(atual)) lista.push(atual)
   return lista.sort((a, b) => a - b)
 }
 
@@ -128,6 +138,17 @@ export function tipoDaPeca(s: Pick<SnParado, 'posto' | 'reprovada'>): Exclude<Ti
 export function filtrarPecas<T extends SnParado>(sns: readonly T[], f: Pick<FiltrosParados, 'postos' | 'tipo'>): T[] {
   const postos = new Set(f.postos)
   return sns.filter((s) => (postos.size === 0 || postos.has(s.posto)) && (f.tipo === 'todos' || tipoDaPeca(s) === f.tipo))
+}
+
+/**
+ * "Parada há menos de": só as peças com idade abaixo do limite (em expediente se houver turnos, como o resto da
+ * tela). Nulo = vazio: devolve todas. O "mais de" já veio filtrado do banco.
+ */
+export function filtrarPorMenosDe<T extends SnParado>(
+  sns: readonly T[], menos: number | null, turnos: readonly Intervalo[], agora: Date,
+): T[] {
+  if (menos === null) return [...sns]
+  return sns.filter((s) => minutosDeExpediente(s.em, agora, turnos) < menos * 60)
 }
 
 /** Os postos que aparecem nas peças (já filtradas pelo tipo), com as peças de cada um, por nome. */

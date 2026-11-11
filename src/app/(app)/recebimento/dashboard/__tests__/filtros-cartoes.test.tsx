@@ -86,4 +86,22 @@ describe('cartões e rodapé', () => {
     expect(screen.getAllByRole('button', { name: 'Como é calculado' })).toHaveLength(3)
     expect(screen.getByRole('button', { name: 'O que conta como EMB' })).toBeInTheDocument()
   })
+  it('com a qualidade, a taxa de reprovação vira o quarto cartão, com o seu ⓘ e as duas linhas', () => {
+    render(<CartoesDashboard totais={t} sinal=""
+      reprovacao={{ reprovados: 4, comResultado: 448, pecasReprovadas: 11533, pecasRecebidas: 809781.1 }} />)
+    expect(screen.getByText('Taxa de reprovação')).toBeInTheDocument()
+    expect(screen.getByText('0,9%')).toBeInTheDocument()
+    expect(screen.getByText('4 de 448 itens com resultado')).toBeInTheDocument()
+    expect(screen.getByText('11.533 de 809.781,1 peças reprovadas')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Como é calculado' })).toHaveLength(4)
+  })
+  it('sem a qualidade (métricas ausentes ou com erro), ficam só os três', () => {
+    render(<CartoesDashboard totais={t} sinal="" reprovacao={null} />)
+    expect(screen.queryByText('Taxa de reprovação')).not.toBeInTheDocument()
+  })
+  it('sem item com resultado, a taxa é "—", nunca zero', () => {
+    render(<CartoesDashboard totais={t} sinal=""
+      reprovacao={{ reprovados: 0, comResultado: 0, pecasReprovadas: 0, pecasRecebidas: 0 }} />)
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
 })

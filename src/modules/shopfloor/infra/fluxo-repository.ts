@@ -3,7 +3,8 @@ import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { mapaPostoPerfil } from './postos-repository'
 import { postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, type PassagemPosto, type BipePeca } from '../domain/fluxo-op'
 import { pareaBurnin, estaAberto, type RegistroBurnin } from '../domain/burnin'
-import { snsNaoIniciados } from '../domain/grade'
+import { snsNaoIniciadosDasFaixas } from '../domain/grade'
+import { faixasDe, faixasDoBanco } from '../domain/faixas-sn'
 import { somarPecasPorSn } from '../domain/caixa'
 
 export interface OpItem { pmo: string; op: string; cliente: string; descricao: string; criadoEm: string }
@@ -241,7 +242,7 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
   // ordem dos postos + flags do perfil (pra decidir a fila de cada peça)
   const { data: ordemRow, error: eo } = await supabase
     .from('sf_ordens')
-    .select('sn_ini,sn_fim,sf_ordem_postos(posto,ordem)')
+    .select('sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_faixas(seq,sn_ini,sn_fim)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
@@ -287,9 +288,17 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
 
   // No 1º posto, as peças NÃO INICIADAS (SNs da faixa que ainda não têm registro) também aguardam
   // aqui — antes só apareciam no contador/nota, agora entram na lista (com teto p/ OP grande).
-  const faixa = ordemRow as unknown as { sn_ini: string | null; sn_fim: string | null } | null
-  if (postos[0] && alvo === postos[0].toLowerCase() && faixa?.sn_ini && faixa?.sn_fim) {
-    const naoIniciados = snsNaoIniciados(faixa.sn_ini, faixa.sn_fim, new Set(porPeca.keys()), 500)
+  // A OP pode ter várias faixas (0181): os não iniciados saem de todas, na ordem.
+  const faixaRow = ordemRow as unknown as {
+    sn_ini: string | null
+    sn_fim: string | null
+    sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string }[] | null
+  } | null
+  const faixas = faixaRow
+    ? faixasDe({ sn_ini: faixaRow.sn_ini ?? '', sn_fim: faixaRow.sn_fim ?? '', faixas: faixasDoBanco(faixaRow.sf_ordem_faixas) })
+    : []
+  if (postos[0] && alvo === postos[0].toLowerCase() && faixas.length > 0) {
+    const naoIniciados = snsNaoIniciadosDasFaixas(faixas, new Set(porPeca.keys()), 500)
     if (naoIniciados) {
       for (const sn of naoIniciados) agora.push({ sn, status: 'não iniciada', vezes: 1 })
     }

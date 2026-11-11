@@ -69,12 +69,11 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-describe('os quatro números', () => {
-  it('mostram % atrasados, taxa de reprovação, mediana e parados', () => {
+describe('os três números', () => {
+  it('mostram % atrasados, mediana e parados; a taxa de reprovação subiu para os cartões', () => {
     tela()
     expect(screen.getByText('33,3%')).toBeInTheDocument() // 30 de 90
-    expect(screen.getByText('4%')).toBeInTheDocument() // 4 de 100
-    expect(screen.getByText('380 de 52.000 peças reprovadas')).toBeInTheDocument()
+    expect(screen.queryByText('Taxa de reprovação')).not.toBeInTheDocument()
     expect(screen.getAllByText('2,1 d').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Parados há mais de 7 dias')).toBeInTheDocument()
     expect(screen.getByText('13')).toBeInTheDocument() // 4 + 9
@@ -82,7 +81,7 @@ describe('os quatro números', () => {
   })
   it('sem base mostra "—", nunca zero', () => {
     tela({ metricas: SEM_BASE })
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3)
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
     expect(screen.queryByText('0,0 d')).not.toBeInTheDocument()
   })
 })
@@ -175,6 +174,16 @@ describe('estados vazios e erro', () => {
       metricas={null} erroMetricas="Não foi possível carregar as métricas." />)
     expect(screen.getByText('Itens')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar as métricas.')
+    // Sem métricas, a fileira de cartões fica só com os três de divergência.
+    expect(screen.queryByText('Taxa de reprovação')).not.toBeInTheDocument()
+  })
+  it('com métricas, a taxa de reprovação aparece uma vez só, na fileira dos cartões', () => {
+    render(<DashboardRecebimento filtros={NOVENTA}
+      dados={{ totais: { itens: 9, comDivergencia: 6, semJustificativa: 4, positivas: 3, negativas: 3, embs: 4, foraDoRecortePorData: 0 }, fornecedores: [], semanas: [] }}
+      opcoes={{ fornecedores: [], compradores: [] }} erro={null}
+      metricas={METRICAS} erroMetricas={null} />)
+    expect(screen.getAllByText('Taxa de reprovação')).toHaveLength(1)
+    expect(screen.getByText('4 de 100 itens com resultado')).toBeInTheDocument()
   })
 })
 

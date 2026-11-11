@@ -6,14 +6,17 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { classeChipTrigger } from '@/lib/chip-trigger'
 import type { Intervalo } from '@/modules/alertas/domain/intervalos'
-import { formatarLimiteParado, tituloParado } from '@/modules/alertas/domain/parados-texto'
+import { formatarLimiteParado, tituloParadoTela } from '@/modules/alertas/domain/parados-texto'
 import {
   ROTULOS_AGRUPAR, ROTULOS_ORDEM, ROTULOS_SITUACAO, ROTULOS_TIPO,
-  agruparPorOp, agruparPorPosto, filtrarPecas, opcoesDeHoras, ordenarLinhas, postosComPecas, queryDosFiltros,
+  agruparPorOp, agruparPorPosto, filtrarPecas, filtrarPorMenosDe, opcoesDeHoras, ordenarLinhas, postosComPecas, queryDosFiltros,
   type FiltrosParados, type SnParadoTela,
 } from '@/modules/alertas/domain/parados-filtros'
 import { ParadosRelatorio } from './parados-relatorio'
 import { ParadosPorPosto } from './parados-por-posto'
+
+/** O valor do Select para o filtro vazio (o Select não aceita valor nulo). */
+const VAZIO = '-'
 
 const chaves = <T extends string>(r: Record<T, string>) => Object.keys(r) as T[]
 
@@ -46,7 +49,8 @@ export function ParadosTela({ sns, turnos, agora, filtros, regraId }: {
     local({ ...f, postos: tem ? f.postos.filter((p) => p !== posto) : [...f.postos, posto] })
   }
 
-  const doTipo = useMemo(() => filtrarPecas(sns, { postos: [], tipo: f.tipo }), [sns, f.tipo])
+  const doTempo = useMemo(() => filtrarPorMenosDe(sns, f.menos, turnos, agora), [sns, f.menos, turnos, agora])
+  const doTipo = useMemo(() => filtrarPecas(doTempo, { postos: [], tipo: f.tipo }), [doTempo, f.tipo])
   const postos = useMemo(() => {
     const lista = postosComPecas(doTipo)
     for (const p of f.postos) if (!lista.some((l) => l.posto === p)) lista.push({ posto: p, pecas: 0 })
@@ -62,21 +66,17 @@ export function ParadosTela({ sns, turnos, agora, filtros, regraId }: {
 
   return (
     <div className="flex flex-col gap-4" aria-busy={carregando}>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Campo rotulo="Parada há mais de">
-          <Select
-            value={String(f.horas)}
-            onValueChange={(v) => v && Number(v) !== f.horas && navegar({ ...f, horas: Number(v) })}
-          >
-            <SelectTrigger className="w-full" disabled={carregando}>
-              <SelectValue>{(v: string | null) => formatarLimiteParado(Number(v), expediente)}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {opcoesDeHoras(f.horas).map((h) => (
-                <SelectItem key={h} value={String(h)}>{formatarLimiteParado(h, expediente)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SelectHoras
+            valor={f.horas}
+            expediente={expediente}
+            desabilitado={carregando}
+            aoMudar={(h) => h !== f.horas && navegar({ ...f, horas: h })}
+          />
+        </Campo>
+        <Campo rotulo="Parada há menos de">
+          <SelectHoras valor={f.menos} expediente={expediente} aoMudar={(h) => h !== f.menos && local({ ...f, menos: h })} />
         </Campo>
         <Campo rotulo="OPs">
           <Select
@@ -144,7 +144,7 @@ export function ParadosTela({ sns, turnos, agora, filtros, regraId }: {
             ? 'Carregando…'
             : ops.length === 0
               ? 'Nenhuma peça parada com esses filtros.'
-              : tituloParado(total, ops.length, f.horas, expediente)}
+              : tituloParadoTela(total, ops.length, f.horas, f.menos, expediente)}
         </p>
         <div role="group" aria-label="Agrupar" className="flex items-center gap-2">
           {chaves(ROTULOS_AGRUPAR).map((a) => (
@@ -165,6 +165,29 @@ export function ParadosTela({ sns, turnos, agora, filtros, regraId }: {
         ? <ParadosRelatorio ops={ops} expediente={expediente} />
         : <ParadosPorPosto postos={porPosto} expediente={expediente} />}
     </div>
+  )
+}
+
+/** Um filtro de tempo: as opções fixas e "Sem filtro" (vazio = nulo, não filtra). */
+function SelectHoras({ valor, expediente, desabilitado, aoMudar }: {
+  valor: number | null
+  expediente: boolean
+  desabilitado?: boolean
+  aoMudar: (horas: number | null) => void
+}) {
+  const rotulo = (v: string | null) => (v === null || v === VAZIO ? 'Sem filtro' : formatarLimiteParado(Number(v), expediente))
+  return (
+    <Select value={valor === null ? VAZIO : String(valor)} onValueChange={(v) => v && aoMudar(v === VAZIO ? null : Number(v))}>
+      <SelectTrigger className="w-full" disabled={desabilitado}>
+        <SelectValue>{rotulo}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={VAZIO}>Sem filtro</SelectItem>
+        {opcoesDeHoras(valor).map((h) => (
+          <SelectItem key={h} value={String(h)}>{formatarLimiteParado(h, expediente)}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

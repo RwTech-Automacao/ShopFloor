@@ -2,9 +2,13 @@
 
 import { Button } from '@/components/ui/button'
 import { DESCRICAO_TIPO_REGRA, NOME_TIPO_REGRA, type TipoRegra } from '@/modules/alertas/domain/tipos'
-import { TIPOS_REGRA_POR_MODULO, type ModuloAlerta } from '@/modules/alertas/domain/modulo'
+import { tiposOferecidosNaCriacao, type ModuloAlerta } from '@/modules/alertas/domain/modulo'
 
-/** Regra nova começa aqui: um cartão por tipo DO MÓDULO (título + uma frase). O tipo não muda depois. */
+/**
+ * Regra nova começa aqui: um cartão por tipo DO MÓDULO (título + uma frase). O tipo não muda depois.
+ * Os tipos ocultos (`TIPOS_REGRA_OCULTOS_NA_CRIACAO`) não ganham cartão; a regra deles que já existe
+ * continua abrindo para editar, porque a edição não passa por aqui.
+ */
 export function TipoEscolha({
   modulo,
   onEscolher,
@@ -12,7 +16,7 @@ export function TipoEscolha({
   modulo: ModuloAlerta
   onEscolher: (tipo: TipoRegra) => void
 }) {
-  const tipos = TIPOS_REGRA_POR_MODULO[modulo]
+  const tipos = tiposOferecidosNaCriacao(modulo)
   return (
     // A grade era de 3 colunas para 3 cartões; com 4 (ShopFloor) ela ficou apertada. Duas colunas
     // acomodam 4 e 1 sem cartão órfão esticado.

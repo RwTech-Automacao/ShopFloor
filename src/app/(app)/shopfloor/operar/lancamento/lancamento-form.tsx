@@ -11,7 +11,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PainelResultado, type ResultadoAcao } from '@/components/ui/painel-resultado'
 import { HistoricoLancamentos, type LinhaHistorico } from './historico-lancamentos'
-import { serieDentroDaFaixa, normalizarSerie, MAX_SERIE } from '@/modules/shopfloor/domain/serie'
+import { normalizarSerie, MAX_SERIE } from '@/modules/shopfloor/domain/serie'
+import { faixasDe, serieNasFaixas } from '@/modules/shopfloor/domain/faixas-sn'
 import { resolverOpPorCaixa, resolverOpPorSn } from '@/modules/shopfloor/domain/cabecalho-lancamento'
 import { postosSelecionaveis } from '@/modules/shopfloor/domain/postos-lancamento'
 import { postoAnteriorNaSequencia } from '@/modules/shopfloor/domain/postos'
@@ -251,7 +252,7 @@ export function LancamentoForm({
   // No Burn-in, status/defeitos só valem na saída (entrada é neutra).
   const mostraStatus = comStatus && !ehNqa && (!ehBurnin || burninEvento === 'saida')
   const reprovado = status.toLowerCase() === 'reprovado'
-  const semFaixa = ordemSel !== null && (ordemSel.sn_ini.trim() === '' || ordemSel.sn_fim.trim() === '')
+  const semFaixa = ordemSel !== null && faixasDe(ordemSel).length === 0
 
   /** Mostra o resultado no balão; se `linha` vier, registra no histórico (lançamento efetivo). */
   function mostrar(res: ResultadoAcao, linha?: LinhaHistorico) {
@@ -378,7 +379,7 @@ export function LancamentoForm({
     if (!colaborador.trim() || !cliente || !pmo || !op || !posto) return 'Preencha Colaborador, contexto (OP) e Posto antes de bipar.'
     if (numeroSerie.trim() === '') return 'Bipe o Nº de Série.'
     if (!ordemSel || semFaixa) return 'Esta OP não tem faixa de Nº de Série cadastrada.'
-    if (!serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) return 'Nº de Série fora da faixa desta OP.'
+    if (!serieNasFaixas(ordemSel, numeroSerie)) return 'Nº de Série fora da faixa desta OP.'
     if (ehNqa && (nqaVisual === '' || nqaFuncional === '')) return 'Selecione a Inspeção Visual e a Funcional.'
     if (mostraStatus && status === '') return 'Selecione o Status (Aprovado/Reprovado).'
     if (mostraStatus && reprovado) {
@@ -666,7 +667,7 @@ export function LancamentoForm({
       return
     }
     // Inspeção/Teste/SPI e Burn-in saída: o campo é SÓ Nº de Série — reprova é pela lista (acordeão).
-    if (serieDentroDaFaixa(ordemSel.sn_ini, ordemSel.sn_fim, numeroSerie)) {
+    if (serieNasFaixas(ordemSel, numeroSerie)) {
       setAprovarSn(numeroSerie.trim())
     } else {
       mostrar({ tipo: 'aviso', titulo: 'Nº de Série fora da faixa desta OP. Para reprovar, toque em Reprovar.' })

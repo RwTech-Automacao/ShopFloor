@@ -3,7 +3,8 @@
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { serieDentroDaFaixa, normalizarSerie, limparSerie } from '../domain/serie'
+import { normalizarSerie, limparSerie } from '../domain/serie'
+import { faixasDe, serieNasFaixas } from '../domain/faixas-sn'
 import { validarItensIntegracao, type PlacaIntegracao } from '../domain/integracao-itens'
 import { postoAnteriorNaSequencia } from '../domain/postos'
 import { perfilPrecisaAprovado, PERFIL_PADRAO } from '../domain/perfil-posto'
@@ -57,10 +58,11 @@ export async function integrar(
   if (!posto || !ordem.postos.includes(posto) || mapa[posto]?.recurso !== 'integracao') {
     return { ok: false, erro: 'Posto de Integração inválido para esta OP.' }
   }
-  if (ordem.sn_ini.trim() === '' || ordem.sn_fim.trim() === '') {
+  if (faixasDe(ordem).length === 0) {
     return { ok: false, erro: 'Esta OP não tem faixa de Nº de Série cadastrada.' }
   }
-  if (!serieDentroDaFaixa(ordem.sn_ini, ordem.sn_fim, produtoSN)) {
+  // A OP pode ter várias faixas (0181): vale qualquer uma.
+  if (!serieNasFaixas(ordem, produtoSN)) {
     return { ok: false, erro: 'Nº de Série do produto fora da faixa desta OP.' }
   }
 
@@ -73,7 +75,7 @@ export async function integrar(
   for (let i = 0; i < v.placas.length; i++) {
     const placa = v.placas[i]!
     const f = mapaFaixa.get(`${placa.pmo.trim()}||${placa.op.trim()}`)
-    if (f && f.sn_ini.trim() !== '' && f.sn_fim.trim() !== '' && !serieDentroDaFaixa(f.sn_ini, f.sn_fim, placa.sn)) {
+    if (f && faixasDe(f).length > 0 && !serieNasFaixas(f, placa.sn)) {
       return { ok: false, erro: `Nº de Série da placa ${i + 1} fora da faixa da OP ${placa.op}.` }
     }
   }
