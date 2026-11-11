@@ -53,10 +53,10 @@ describe('planilhaDivergencias', () => {
     expect(p.linhas).toEqual([
       ['EMB', 'EMB392CA'],
       [],
-      ['Nº da PO', 'Item', 'Descrição', 'Qtd pedido', 'Qtd recebida', 'Divergência', 'Justificativa', 'Justificado por'],
-      ['1016/26', 'CAP-001', 'CAPACITOR', 500, 490, -10, 'Falta no fornecedor', 'Ana'],
+      ['Item', 'Nº da PO', 'Descrição', 'Qtd pedido', 'Qtd recebida', 'Divergência', 'Justificativa', 'Justificado por'],
+      ['CAP-001', '1016/26', 'CAPACITOR', 500, 490, -10, 'Falta no fornecedor', 'Ana'],
       ['', '', '', null, 3, 3, '', ''],
-      ['1017/26', 'CAP-001', 'CAPACITOR', 500, 490, -2.5, 'Falta no fornecedor', 'Ana'],
+      ['CAP-001', '1017/26', 'CAPACITOR', 500, 490, -2.5, 'Falta no fornecedor', 'Ana'],
     ])
   })
 
