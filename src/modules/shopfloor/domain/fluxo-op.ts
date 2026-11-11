@@ -70,6 +70,9 @@ export interface FluxoNodeData extends FluxoAgregado {
    *  operador conta CAIXAS empilhadas, não peças. undefined nos dois = o card não mostra a linha. */
   caixasBipadas?: number
   caixasFechadas?: number
+  /** Só na Saída (card "Finalizadas") quando o ÚLTIMO posto da rota é o Almoxarifado: o posto não ganha
+   *  card próprio e a fila na porta dele ("Aguard. Almoxarifado" = WIP do posto) vem para cá. */
+  aguardandoAlmoxarifado?: number
 }
 
 export interface FluxoNodePos {
@@ -262,9 +265,21 @@ export function postoPendenteDePeca(
   return postosOrdenados[idx + 1] ?? null
 }
 
+/**
+ * O ÚLTIMO posto da rota é o Almoxarifado (perfil de recurso `almoxarifado`)? Decide pelo perfil, nunca
+ * pelo nome do posto. Almoxarifado no meio da rota, lista vazia ou recurso desconhecido: false.
+ */
+export function ultimoPostoEhAlmoxarifado(
+  postosOrdenados: string[],
+  recursoDe: (posto: string) => string,
+): boolean {
+  const ultimo = postosOrdenados[postosOrdenados.length - 1]
+  return ultimo != null && recursoDe(ultimo) === 'almoxarifado'
+}
+
 /** Monta nós/arestas do canvas a partir da ordem do fluxo + agregados da RPC. Puro. */
 export function construirFluxo(
-  postosOrdenados: string[],
+  postosDaRota: string[],
   agregados: FluxoAgregado[],
   temStatus: (posto: string) => boolean,
   recursoDe: (posto: string) => string = () => 'nenhum',
@@ -277,6 +292,12 @@ export function construirFluxo(
   naoIniciadas: number | null = null,
   finalizadas: number | null = null,
 ): { nodes: FluxoNodePos[]; edges: FluxoEdge[] } {
+  // Card único: com o Almoxarifado no FIM da rota (e a Saída visível), ele não ganha card — a Saída
+  // ("Finalizadas") é o fim do desenho e mostra a fila dele. Finalizadas = concluíram a rota = deram
+  // entrada no estoque, a mesma contagem de antes. Almoxarifado no meio da rota: nada muda.
+  const unificar = finalizadas != null && postosDaRota.length > 1 && ultimoPostoEhAlmoxarifado(postosDaRota, recursoDe)
+  const almox = unificar ? postosDaRota[postosDaRota.length - 1]! : null
+  const postosOrdenados = almox ? postosDaRota.slice(0, -1) : postosDaRota
   const nodes: FluxoNodePos[] = postosOrdenados.map((posto, i) => ({
     id: posto,
     ...posSerpentina(i),
@@ -301,7 +322,9 @@ export function construirFluxo(
     nodes.push({ id: ENTRADA, x: -ESPACO_X, y: 0, data: dadosCaixa(ENTRADA, naoIniciadas, 'entrada') })
   }
   if (temCaixas && finalizadas != null) {
-    nodes.push({ id: SAIDA, ...posSerpentina(postosOrdenados.length), data: dadosCaixa(SAIDA, finalizadas, 'saida') })
+    const saida = dadosCaixa(SAIDA, finalizadas, 'saida')
+    if (almox) saida.aguardandoAlmoxarifado = acharAgg(agregados, almox)?.wip ?? 0
+    nodes.push({ id: SAIDA, ...posSerpentina(postosOrdenados.length), data: saida })
   }
 
   const edges: FluxoEdge[] = []

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
   Wrench, Package, GitMerge, ThermometerSun, ShieldCheck, ClipboardCheck, CircleDot, Check, Inbox, PackageCheck, AlertTriangle,
@@ -31,32 +31,32 @@ export function iconePorRecurso(recurso: string, temStatus: boolean, className =
     case 'integracao': return <GitMerge className={className} />
     case 'burnin': return <ThermometerSun className={className} strokeWidth={2.25} />
     case 'nqa': return <ShieldCheck className={className} />
-    // Mesmo ícone do card "Concluído" (a caixa de Saída): diz "entrou no estoque".
+    // Mesmo ícone do card "Finalizadas" (a caixa de Saída): diz "entrou no estoque".
     case 'almoxarifado': return <PackageCheck className={className} />
     default: return temStatus ? <ClipboardCheck className={className} /> : <CircleDot className={className} />
   }
 }
 
 
-/** Cache do navegador (15 s por PMO): o nó re-renderiza e remonta com frequência (zoom, arrasto, modo TV). */
-const CACHE_ESTOQUE_MS = 15_000
+/** Cache do navegador (5 s por PMO): o nó re-renderiza e remonta com frequência (zoom, arrasto, modo TV). */
+const CACHE_ESTOQUE_MS = 5_000
 /** De quanto em quanto tempo o card relê o estoque sozinho, com o Fluxo aberto e a aba visível. */
-const INTERVALO_ESTOQUE_MS = 20_000
+const INTERVALO_ESTOQUE_MS = 10_000
 const cacheEstoque = new Map<string, { ate: number; resultado: EstoqueCompels }>()
 
 /**
- * Estoque do Compels, ABAIXO do card Concluído (solto, sem aumentar o nó: as arestas continuam apontando para o
- * card). Consulta na hora, uma vez por PMO por minuto. É o estoque PRÓPRIO do item em TODOS os estoques do
- * Compels: contexto, não a conferência do que esta OP deu entrada. Sem o login do Compels neste ambiente, não
- * mostra nada.
+ * Estoque do Compels do PMO, para o card Finalizadas. Consulta na hora e relê a cada 20 s com a aba visível. É o
+ * estoque PRÓPRIO do item em TODOS os estoques do Compels: contexto, não a conferência do que esta OP deu entrada.
  */
-export function EstoqueCompelsCard({ pmo }: { pmo: string }) {
-  const [estado, setEstado] = useState<EstoqueCompels | 'carregando'>(() => {
+function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCompels | 'carregando' | null {
+  const [estado, setEstado] = useState<EstoqueCompels | 'carregando' | null>(() => {
+    if (!pmo) return null
     const guardado = cacheEstoque.get(pmo)
     return guardado && guardado.ate > Date.now() ? guardado.resultado : 'carregando'
   })
 
   useEffect(() => {
+    if (!pmo) return
     let vivo = true
     const ler = (forcar: boolean) => {
       const guardado = cacheEstoque.get(pmo)
@@ -66,56 +66,39 @@ export function EstoqueCompelsCard({ pmo }: { pmo: string }) {
           cacheEstoque.set(pmo, { ate: Date.now() + (r.tipo === 'indisponivel' ? 15_000 : CACHE_ESTOQUE_MS), resultado: r })
           if (vivo) setEstado(r)
         })
-        .catch(() => { if (vivo) setEstado((atual) => (atual === 'carregando' ? { tipo: 'indisponivel' } : atual)) })
+        .catch(() => { if (vivo) setEstado((atual) => (atual === 'carregando' || atual === null ? { tipo: 'indisponivel' } : atual)) })
     }
     ler(false)
     const id = setInterval(() => { if (!document.hidden) ler(true) }, INTERVALO_ESTOQUE_MS)
     return () => { vivo = false; clearInterval(id) }
   }, [pmo])
 
-  if (estado !== 'carregando' && estado.tipo === 'nao_configurado') return null
+  // Mudou a contagem do Fluxo (entrou peça no estoque, chegou peça na porta): relê já, sem esperar o intervalo.
+  const primeira = useRef(true)
+  useEffect(() => {
+    if (primeira.current) { primeira.current = false; return }
+    if (!pmo) return
+    let vivo = true
+    lerEstoqueCompelsAction(pmo)
+      .then((r) => {
+        cacheEstoque.set(pmo, { ate: Date.now() + CACHE_ESTOQUE_MS, resultado: r })
+        if (vivo) setEstado(r)
+      })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [pmo, gatilho])
 
-  let corpo: React.ReactNode
-  let dica = ''
-  if (estado === 'carregando') {
-    corpo = <span className="text-muted-foreground">consultando…</span>
-  } else if (estado.tipo === 'ok') {
-    corpo = (
-      <span className="font-semibold tabular-nums text-foreground">
-        {formatarQuantidade(estado.proprio)} {estado.unidade}
-      </span>
-    )
-    dica = `Estoque próprio de ${pmo} no Compels, somando todos os estoques. Em pendência: ${formatarQuantidade(estado.pendencia)} · em terceiros: ${formatarQuantidade(estado.emTerceiros)} · de terceiros: ${formatarQuantidade(estado.deTerceiros)}. Consultado agora há pouco; não é só o que esta OP deu entrada.`
-  } else if (estado.tipo === 'nao_encontrado') {
-    corpo = <span className="text-muted-foreground">item não encontrado</span>
-  } else {
-    corpo = <span className="text-amber-600">indisponível</span>
-    dica = 'Não foi possível consultar o Compels agora. Tente de novo em instantes.'
-  }
-
-  return (
-    <div
-      title={dica || undefined}
-      className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-sm"
-    >
-      <span className="truncate">Estoque no Compels · {pmo}</span>
-      {corpo}
-    </div>
-  )
+  return pmo ? estado : null
 }
 
-/** De quanto em quanto tempo o aviso relê a fila (o Fluxo inteiro atualiza a cada 15 s). */
-const INTERVALO_PENDENTE_MS = 15_000
+/** De quanto em quanto tempo a fila do Compels é relida (o Fluxo inteiro atualiza a cada 20 s). */
+const INTERVALO_PENDENTE_MS = 10_000
 
-/**
- * AVISO "AINDA NÃO CHEGOU AO COMPELS", abaixo do card Concluído: peças que o Almoxarifado já deu entrada e que a
- * fila ainda não entregou ao ERP, com o motivo no tooltip. Os números do Fluxo continuam sendo o que foi lançado no
- * ShopFloor; este aviso diz que o estoque do Compels ainda não os reflete. Some quando a fila esvazia.
- */
-export function PendenteCompelsAviso({ pmo, op }: { pmo: string; op: string }) {
+/** Peças que o Almoxarifado já deu entrada e que a fila ainda não entregou ao Compels (com o motivo). */
+function usePendenteCompels(pmo: string | undefined, op: string | undefined, ligado: boolean, gatilho: string): ResumoPendenteOp | null {
   const [resumo, setResumo] = useState<ResumoPendenteOp | null>(null)
-
   useEffect(() => {
+    if (!ligado || !pmo || !op) return
     let vivo = true
     const ler = () => {
       lerPendenteCompelsAction(pmo, op)
@@ -125,18 +108,82 @@ export function PendenteCompelsAviso({ pmo, op }: { pmo: string; op: string }) {
     ler()
     const id = setInterval(ler, INTERVALO_PENDENTE_MS)
     return () => { vivo = false; clearInterval(id) }
-  }, [pmo, op])
+  }, [pmo, op, ligado, gatilho]) // gatilho: a contagem do Fluxo mudou → relê na hora
+  return ligado && pmo && op ? resumo : null
+}
 
-  if (!resumo || resumo.pecas <= 0) return null
-  const pecas = resumo.pecas === 1 ? '1 peça' : `${formatarQuantidade(resumo.pecas)} peças`
+/** Uma linha do resumo do card Finalizadas: rótulo à esquerda, número à direita (sub-linha com o "└"). */
+function LinhaResumo({ rotulo, valor, sub, dica, alerta }: {
+  rotulo: string; valor: React.ReactNode; sub?: boolean; dica?: string; alerta?: boolean
+}) {
   return (
-    <div
-      role="status"
-      title={resumo.motivo ?? resumo.oQueFazer}
-      className="flex w-full flex-col gap-0.5 rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-xs text-foreground shadow-sm dark:border-amber-700 dark:bg-amber-950/40"
-    >
-      <span className="font-medium">{pecas} ainda não {resumo.pecas === 1 ? 'chegou' : 'chegaram'} ao Compels</span>
-      <span className="truncate text-muted-foreground">{resumo.rotulo}{resumo.motivo ? ` · ${resumo.motivo}` : ''}</span>
+    <div className={`flex items-center justify-between gap-2 ${dica ? 'cursor-help' : ''}`} title={dica}>
+      <span className={`flex min-w-0 items-center gap-1 ${sub ? 'pl-1' : ''}`}>
+        {sub && <span aria-hidden className="text-muted-foreground/60">└</span>}
+        <span className="truncate">{rotulo}</span>
+        {alerta && <AlertTriangle aria-label="atenção" className="size-3.5 shrink-0 text-amber-600" />}
+      </span>
+      <span className={`shrink-0 tabular-nums ${alerta ? 'font-semibold text-amber-600' : 'text-foreground'}`}>{valor}</span>
+    </div>
+  )
+}
+
+/**
+ * Corpo do card Finalizadas: Total disponível = Em estoque (Compels) + Aguard. Almoxarifado (fila na porta do
+ * posto) + Fila Compels (entradas que ainda não chegaram ao ERP). Com as duas últimas em 0 (ou OP sem o
+ * Almoxarifado no fim da rota), mostra só o Total disponível — que aí é o próprio estoque.
+ */
+function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; op?: string; aguardando?: number; finalizadas: number }) {
+  const temAlmox = aguardando != null
+  const gatilho = `${finalizadas}|${aguardando ?? ''}`
+  const estoque = useEstoqueCompels(pmo, gatilho)
+  const pendente = usePendenteCompels(pmo, op, temAlmox, gatilho)
+  const fila = pendente?.pecas ?? 0
+  const comAlmox = temAlmox && ((aguardando ?? 0) > 0 || fila > 0)
+
+  const ok = estoque !== null && estoque !== 'carregando' && estoque.tipo === 'ok'
+  let valorEstoque: React.ReactNode = '—'
+  let dicaEstoque = `Estoque próprio de ${pmo} no Compels, somando todos os estoques.`
+  if (estoque === 'carregando') valorEstoque = '…'
+  else if (estoque && estoque.tipo === 'ok') {
+    valorEstoque = formatarQuantidade(estoque.proprio)
+    dicaEstoque += ` Em pendência: ${formatarQuantidade(estoque.pendencia)} · em terceiros: ${formatarQuantidade(estoque.emTerceiros)} · de terceiros: ${formatarQuantidade(estoque.deTerceiros)} (${estoque.unidade}). Não é só o que esta OP deu entrada.`
+  } else if (estoque && estoque.tipo === 'nao_encontrado') dicaEstoque = `${pmo} não foi encontrado no Compels.`
+  else if (estoque && estoque.tipo === 'indisponivel') {
+    valorEstoque = <span className="text-amber-600">indisponível</span>
+    dicaEstoque = 'Não foi possível consultar o Compels agora. Tente de novo em instantes.'
+  } else if (estoque && estoque.tipo === 'nao_configurado') dicaEstoque = 'A consulta ao Compels não está configurada neste ambiente.'
+
+  const total = !comAlmox
+    ? valorEstoque
+    : ok ? formatarQuantidade(estoque.proprio + (aguardando ?? 0) + fila) : valorEstoque
+  const dicaTotal = comAlmox
+    ? 'Em estoque no Compels + aguardando o Almoxarifado + na fila do Compels.'
+    : dicaEstoque
+
+  return (
+    <div className="flex flex-col gap-1 rounded-b-xl border-x-2 border-b-2 border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+      <LinhaResumo rotulo="Total disponível" valor={total} dica={dicaTotal} />
+      {comAlmox && (
+        <>
+          <LinhaResumo sub rotulo="Em estoque" valor={valorEstoque} dica={dicaEstoque} />
+          <LinhaResumo
+            sub
+            rotulo="Aguard. Almoxarifado"
+            valor={aguardando}
+            dica={`${aguardando} peça(s) que passaram por todos os postos e esperam dar entrada no estoque.`}
+          />
+          <LinhaResumo
+            sub
+            rotulo="Fila Compels"
+            valor={fila}
+            alerta={fila > 0}
+            dica={fila > 0
+              ? `${fila} peça(s) já deram entrada no Almoxarifado e ainda não chegaram ao Compels. ${pendente?.rotulo ?? ''}${pendente?.motivo ? ` · ${pendente.motivo}` : ''}`
+              : 'Nenhuma peça esperando para chegar ao Compels.'}
+          />
+        </>
+      )}
     </div>
   )
 }
@@ -160,16 +207,18 @@ function FluxoNodeBase({ data }: NodeProps) {
   const bordaRota = d.animarRota ? <span aria-hidden className="fluxo-borda-rota pointer-events-none absolute inset-0 z-10 rounded-xl" /> : null
 
   // Caixas de Entrada/Saída: bloco em vinho predominante, só com a contagem (sem detalhe ao clicar).
+  // A Saída ("Finalizadas") ganha embaixo o resumo do estoque (e, com o Almoxarifado no fim da rota, a fila dele).
   if (d.ehEntrada || d.ehSaida) {
     const descCurta = d.descricao ? (d.descricao.length > 20 ? d.descricao.slice(0, 20) + '…' : d.descricao) : ''
-    // Entrada: principal = PMO · OP, subtítulo = descrição. Saída: "Concluído" · "finalizadas".
-    const principal = d.ehEntrada ? ([d.pmo, d.op].filter(Boolean).join(' · ') || 'Entrada') : 'Concluído'
-    const sub = d.ehEntrada ? descCurta : 'finalizadas'
+    // Entrada: principal = PMO · OP, subtítulo = descrição. Saída: "Finalizadas" · PMO - OP.
+    const principal = d.ehEntrada ? ([d.pmo, d.op].filter(Boolean).join(' · ') || 'Entrada') : 'Finalizadas'
+    const sub = d.ehEntrada ? descCurta : [d.pmo, d.op].filter(Boolean).join(' - ')
+    const comResumo = d.ehSaida && !!d.pmo
     return (
-      <div className={`relative w-[240px] rounded-xl border-2 border-enterplak bg-enterplak text-white shadow-sm ${realceRota || (d.selecionado ? 'ring-2 ring-enterplak/40' : '')} ${atenuaRota} ${transRota}`}>
+      <div className={`relative w-[240px] rounded-xl shadow-sm ${realceRota || (d.selecionado ? 'ring-2 ring-enterplak/40' : '')} ${atenuaRota} ${transRota}`}>
         {bordaRota}
         {d.ehSaida && <Handle type="target" position={Position.Left} />}
-        <div className="flex items-center gap-2.5 px-3 py-2.5">
+        <div className={`flex items-center gap-2.5 border-2 border-enterplak bg-enterplak px-3 py-2.5 text-white ${comResumo ? 'rounded-t-xl' : 'rounded-xl'}`}>
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
             {d.ehEntrada ? <Inbox className="size-5" /> : <PackageCheck className="size-5" />}
           </div>
@@ -184,13 +233,8 @@ function FluxoNodeBase({ data }: NodeProps) {
             {d.wip}
           </span>
         </div>
+        {comResumo && <ResumoFinalizadas key={`${d.pmo}|${d.op ?? ''}`} pmo={d.pmo!} op={d.op} aguardando={d.aguardandoAlmoxarifado} finalizadas={d.wip} />}
         {d.ehEntrada && <Handle type="source" position={Position.Right} />}
-        {d.ehSaida && d.pmo && (
-          <div className="absolute left-0 top-full mt-2 flex w-full flex-col gap-2">
-            {d.op && <PendenteCompelsAviso pmo={d.pmo} op={d.op} />}
-            <EstoqueCompelsCard pmo={d.pmo} />
-          </div>
-        )}
       </div>
     )
   }

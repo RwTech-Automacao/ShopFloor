@@ -167,19 +167,37 @@ describe('construirFluxo', () => {
     // Recurso por posto desta OP: Embalagem é 'caixa', Almoxarifado é 'almoxarifado' — os demais 'nenhum'.
     const recursoDe = (p: string) => (p === 'Embalagem' ? 'caixa' : p === 'Almoxarifado' ? 'almoxarifado' : 'nenhum')
 
-    it('OP com Almoxarifado no fluxo: entra DEPOIS da Embalagem e a caixa Concluído (Saída) liga nele', () => {
+    it('card único: Almoxarifado no FIM da rota não ganha card; a Saída (Finalizadas) liga na Embalagem e leva a fila dele', () => {
+      const agg: FluxoAgregado[] = [{ ...zero('Almoxarifado'), wip: 20, registros: 450, passouDistinto: 450 }]
       const { nodes, edges } = construirFluxo(
-        ['Teste', 'Embalagem', 'Almoxarifado'], [], () => false, recursoDe, 10, () => true, 2, 3,
+        ['Teste', 'Embalagem', 'Almoxarifado'], agg, () => false, recursoDe, 10, () => true, 2, 450,
       )
       const ids = nodes.map((n) => n.id)
-      // Almoxarifado aparece na ordem certa: depois da Embalagem, antes da Manutenção/Saída.
-      expect(ids.indexOf('Embalagem')).toBeLessThan(ids.indexOf('Almoxarifado'))
-      expect(nodes.find((n) => n.id === 'Almoxarifado')!.data.recurso).toBe('almoxarifado')
-      // A cadeia liga Embalagem → Almoxarifado, e é o Almoxarifado (não mais a Embalagem) que
-      // alimenta a caixa "Concluído" (Saída) — ele é agora o último posto do fluxo desta OP.
-      expect(edges).toContainEqual({ id: 'f:Embalagem->Almoxarifado', source: 'Embalagem', target: 'Almoxarifado', tipo: 'fluxo' })
-      expect(edges).toContainEqual({ id: `f:Almoxarifado->${SAIDA}`, source: 'Almoxarifado', target: SAIDA, tipo: 'fluxo' })
-      expect(edges.some((e) => e.source === 'Embalagem' && e.target === SAIDA)).toBe(false)
+      expect(ids).not.toContain('Almoxarifado')
+      const saida = nodes.find((n) => n.id === SAIDA)!
+      expect(saida.data.wip).toBe(450) // finalizadas = deram entrada no estoque
+      expect(saida.data.aguardandoAlmoxarifado).toBe(20) // a fila na porta do Almoxarifado
+      // Saída fica onde o Almoxarifado ficaria (3º da serpentina), ligada na Embalagem.
+      expect(saida.x).toBe(600)
+      expect(edges).toContainEqual({ id: `f:Embalagem->${SAIDA}`, source: 'Embalagem', target: SAIDA, tipo: 'fluxo' })
+      expect(edges.some((e) => e.source === 'Almoxarifado' || e.target === 'Almoxarifado')).toBe(false)
+    })
+
+    it('card único com o Almoxarifado sem nada na porta: aguardando 0', () => {
+      const { nodes } = construirFluxo(['Embalagem', 'Almoxarifado'], [], () => false, recursoDe, 10, () => true, 0, 0)
+      expect(nodes.find((n) => n.id === SAIDA)!.data.aguardandoAlmoxarifado).toBe(0)
+    })
+
+    it('Almoxarifado no MEIO da rota: continua com card próprio e a Saída não leva fila', () => {
+      const { nodes, edges } = construirFluxo(['Almoxarifado', 'Teste'], [], () => false, recursoDe, 10, () => true, 2, 3)
+      expect(nodes.some((n) => n.id === 'Almoxarifado')).toBe(true)
+      expect(nodes.find((n) => n.id === SAIDA)!.data.aguardandoAlmoxarifado).toBeUndefined()
+      expect(edges).toContainEqual({ id: `f:Teste->${SAIDA}`, source: 'Teste', target: SAIDA, tipo: 'fluxo' })
+    })
+
+    it('sem a Saída (OP sem qtd) ou rota só com o Almoxarifado: o card do Almoxarifado fica como sempre', () => {
+      expect(construirFluxo(['Embalagem', 'Almoxarifado'], [], () => false, recursoDe, null).nodes.some((n) => n.id === 'Almoxarifado')).toBe(true)
+      expect(construirFluxo(['Almoxarifado'], [], () => false, recursoDe, 10, () => true, 1, 1).nodes.some((n) => n.id === 'Almoxarifado')).toBe(true)
     })
 
     it('o denominador do Almoxarifado é o que CHEGOU EMBALADO (deram entrada + disponíveis), não a qtd da OP', () => {
@@ -233,12 +251,13 @@ describe('construirFluxo', () => {
       }
     })
 
-    it('OP SEM Almoxarifado (a imensa maioria das OPs antigas): nada muda — Concluído continua ligado na Embalagem', () => {
+    it('OP SEM Almoxarifado (a imensa maioria das OPs antigas): Finalizadas ligado na Embalagem, sem fila do Almoxarifado', () => {
       const { nodes, edges } = construirFluxo(
         ['Teste', 'Embalagem'], [], () => false, recursoDe, 10, () => true, 2, 3,
       )
       expect(nodes.some((n) => n.id === 'Almoxarifado')).toBe(false)
       expect(edges).toContainEqual({ id: `f:Embalagem->${SAIDA}`, source: 'Embalagem', target: SAIDA, tipo: 'fluxo' })
+      expect(nodes.find((n) => n.id === SAIDA)!.data.aguardandoAlmoxarifado).toBeUndefined()
     })
   })
 })
