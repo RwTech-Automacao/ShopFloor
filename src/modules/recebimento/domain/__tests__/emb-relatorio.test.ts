@@ -34,11 +34,11 @@ describe('lerRelatorioEmb', () => {
           {
             id: 'p1', numero: 1234, item: 'CAP-001', descricao: 'CAPACITOR', quantidadePedido: 500, quantidadeRecebida: 490,
             divergencia: '-10', justificativa: 'Falta no fornecedor', justificadaPorNome: 'Ana',
-            justificadaEm: new Date('2026-11-06T16:00:00Z'),
+            justificadaEm: new Date('2026-11-06T16:00:00Z'), pedido: '',
           },
           {
             id: null, numero: 1235, item: '', descricao: '', quantidadePedido: null, quantidadeRecebida: 3,
-            divergencia: '3', justificativa: '', justificadaPorNome: '', justificadaEm: null,
+            divergencia: '3', justificativa: '', justificadaPorNome: '', justificadaEm: null, pedido: '',
           },
         ],
       },
