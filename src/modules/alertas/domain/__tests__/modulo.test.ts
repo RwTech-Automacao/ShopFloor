@@ -3,9 +3,11 @@ import {
   MODULOS_ALERTA,
   NOME_MODULO_ALERTA,
   ROTA_ALERTAS,
+  TIPOS_REGRA_OCULTOS_NA_CRIACAO,
   TIPOS_REGRA_POR_MODULO,
   ehModuloAlerta,
   tipoPertenceAoModulo,
+  tiposOferecidosNaCriacao,
 } from '../modulo'
 import { TIPOS_REGRA } from '../tipos'
 
@@ -48,5 +50,19 @@ describe('módulo da regra de alerta', () => {
   it('tipoPertenceAoModulo recusa o tipo do outro módulo', () => {
     expect(tipoPertenceAoModulo('aprovacao', 'shopfloor')).toBe(true)
     expect(tipoPertenceAoModulo('aprovacao', 'recebimento')).toBe(false)
+  })
+
+  it('a ficha de apontamento está oculta na regra nova, mas continua sendo do ShopFloor', () => {
+    expect(TIPOS_REGRA_OCULTOS_NA_CRIACAO).toEqual(['ficha'])
+    expect(tiposOferecidosNaCriacao('shopfloor')).toEqual([
+      'aprovacao', 'tempo', 'defeito', 'resumo', 'parado', 'compels',
+    ])
+    expect(tiposOferecidosNaCriacao('recebimento')).toEqual(['emb'])
+    // A regra de ficha que já existe continua válida no servidor (editar, desativar, excluir).
+    expect(tipoPertenceAoModulo('ficha', 'shopfloor')).toBe(true)
+  })
+
+  it('esvaziar a lista de ocultos volta a oferecer todos os tipos do módulo', () => {
+    expect(tiposOferecidosNaCriacao('shopfloor', [])).toEqual(TIPOS_REGRA_POR_MODULO.shopfloor)
   })
 })

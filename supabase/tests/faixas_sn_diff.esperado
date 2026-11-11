@@ -1,0 +1,14 @@
+### sf_almoxarifado_entrada
+<     v_na_faixa := sf_sn_na_faixa(v_ordem.sn_ini, v_ordem.sn_fim, p_bipe);
+>     -- 0181: a série vale se cair em QUALQUER faixa da OP (sf_ordem_faixas).
+>     v_na_faixa := sf_sn_nas_faixas(p_pmo, p_op, p_bipe);
+<           || v_ordem.sn_ini || ' a ' || v_ordem.sn_fim || ').');
+>           || sf_faixas_texto(p_pmo, p_op) || ').');  -- 0181: todas as faixas
+### st_liberar_setup
+<   v_faixa := public.st_sn_na_faixa(v_ordem.sn_ini, v_ordem.sn_fim, v_sn);
+>   -- 0181: o SN vale se cair em QUALQUER faixa da OP (sf_ordem_faixas).
+>   v_faixa := public.sf_sn_nas_faixas(v_setup.pmo, v_setup.op, v_sn);
+### st_trocar_rolo
+<   v_faixa := public.st_sn_na_faixa(v_ordem.sn_ini, v_ordem.sn_fim, v_sn);
+>   -- 0181: o SN vale se cair em QUALQUER faixa da OP (sf_ordem_faixas).
+>   v_faixa := public.sf_sn_nas_faixas(v_setup.pmo, v_setup.op, v_sn);

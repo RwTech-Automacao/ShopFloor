@@ -44,9 +44,12 @@ const enviado = () => (salvarRegraAction.mock.calls[0] as unknown[])[2] as Recor
 beforeEach(() => vi.clearAllMocks())
 
 describe('escolha do tipo', () => {
-  it('o ShopFloor oferece o cartão da ficha de apontamento; o Recebimento não', () => {
+  it('a ficha de apontamento está oculta: nem o ShopFloor nem o Recebimento oferecem o cartão', () => {
     const { unmount } = render(<TipoEscolha modulo="shopfloor" onEscolher={vi.fn()} />)
-    expect(screen.getByText('Ficha de apontamento (Almoxarifado)')).toBeInTheDocument()
+    expect(screen.queryByText('Ficha de apontamento (Almoxarifado)')).not.toBeInTheDocument()
+    // Os outros tipos do ShopFloor continuam lá.
+    expect(screen.getByText('Problemas no envio ao Compels')).toBeInTheDocument()
+    expect(screen.getByText('Parado ou travado na produção')).toBeInTheDocument()
     unmount()
     render(<TipoEscolha modulo="recebimento" onEscolher={vi.fn()} />)
     expect(screen.queryByText('Ficha de apontamento (Almoxarifado)')).not.toBeInTheDocument()
@@ -60,7 +63,7 @@ describe('formulário da regra ficha', () => {
     expect(screen.queryByLabelText('Almoxarifado')).not.toBeInTheDocument()
     expect(screen.queryByText('Janela')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Lembrar a cada (min)')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Limite (horas)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Limite (dias)')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Adicionar intervalo' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /ver prévia/i })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Diogo')).toBeInTheDocument()

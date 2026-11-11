@@ -1,6 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { ehCanal, ehJanelaTipo, ehTipoRegra, type EstadoOcorrencia } from '../domain/tipos'
+import { ehCanal, ehJanelaTipo, ehTipoRegra, type EstadoOcorrencia, type TipoRegra } from '../domain/tipos'
 import type { DestinatarioDisponivel, PreviaValida, RegraAlerta, RegraValida } from '../domain/regra'
 import { ehModuloAlerta, type ModuloAlerta } from '../domain/modulo'
 import type { FiltroOcorrencias, OcorrenciaLinha, PreviaPosto } from '../domain/ocorrencia'
@@ -380,10 +380,20 @@ export async function listarPmosAlerta(): Promise<string[]> {
   return [...new Set(lista.map((p) => String(p ?? '').trim()).filter((p) => p !== ''))]
 }
 
-/** Quem pode ser responsável por uma regra DESTE módulo (quem administra o módulo, 0149). */
-export async function listarDestinatarios(modulo: ModuloAlerta): Promise<DestinatarioDisponivel[]> {
+/**
+ * Quem pode ser responsável por uma regra DESTE módulo (quem administra o módulo, 0149). Com `tipo`
+ * (0182), a lista inclui também quem entra pela régua do tipo — hoje, o Almoxarifado na regra 'compels' —,
+ * marcado com `administra: false`; o formulário filtra por tipo (`destinatariosDoTipo`).
+ */
+export async function listarDestinatarios(
+  modulo: ModuloAlerta,
+  tipo?: TipoRegra,
+): Promise<DestinatarioDisponivel[]> {
   const sb = await createServerSupabase()
-  const { data, error } = await sb.rpc('alerta_destinatarios', { p_modulo: modulo })
+  const { data, error } = await sb.rpc(
+    'alerta_destinatarios',
+    tipo ? { p_modulo: modulo, p_tipo: tipo } : { p_modulo: modulo },
+  )
   if (error) throw error
   return ((data ?? []) as {
     usuario_id: string
@@ -392,6 +402,7 @@ export async function listarDestinatarios(modulo: ModuloAlerta): Promise<Destina
     telegram: boolean
     discord: boolean
     email_ok: boolean | null
+    administra?: boolean | null
   }[]).map((l) => ({
     usuarioId: l.usuario_id,
     nome: l.nome,
@@ -401,6 +412,8 @@ export async function listarDestinatarios(modulo: ModuloAlerta): Promise<Destina
     // Banco ainda sem a 0151 (deploy antes da migração): a coluna não vem. Cai no endereço não
     // estar em branco — a mesma conta que a 0151 faz, só que aqui.
     emailOk: l.email_ok ?? l.email.trim() !== '',
+    // Banco sem a 0182: a coluna não vem, e a lista é a de sempre (só quem administra).
+    administra: l.administra ?? true,
   }))
 }
 

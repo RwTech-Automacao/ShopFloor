@@ -17,7 +17,7 @@ import {
   type DestinatarioDisponivel,
   type RegraAlerta,
 } from '@/modules/alertas/domain/regra'
-import { TIPOS_REGRA_POR_MODULO, type ModuloAlerta } from '@/modules/alertas/domain/modulo'
+import { tiposOferecidosNaCriacao, type ModuloAlerta } from '@/modules/alertas/domain/modulo'
 import { alternarRegraAtivaAction, excluirRegraAction } from '@/modules/alertas/application/alertas-actions'
 import { RegraDialog } from './regra-dialog'
 import { ERRO_REGRA_EXCLUIDA } from './regra-form'
@@ -58,7 +58,8 @@ export function RegrasLista({
 
   // Enquanto o módulo não tiver nenhum tipo de regra, "Nova regra" abriria um diálogo com zero
   // cartões para escolher — um beco sem saída. Melhor o botão desligado e a frase do porquê.
-  const semTipos = TIPOS_REGRA_POR_MODULO[modulo].length === 0
+  // Conta os tipos OFERECIDOS (sem os ocultos): são eles que viram cartão.
+  const semTipos = tiposOferecidosNaCriacao(modulo).length === 0
 
   function alternar(regra: RegraAlerta, ativa: boolean) {
     startTransition(async () => {

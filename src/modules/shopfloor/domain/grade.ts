@@ -1,4 +1,5 @@
 import { partesSerie, normalizarSerie } from './serie'
+import type { FaixaSN } from './faixas-sn'
 import { pareaBurnin, estaAberto } from './burnin'
 
 const MAX_SNS = 2000
@@ -93,6 +94,63 @@ export function snsNaoIniciados(
   for (let n = f.ini; n <= f.fim && sns.length < cap; n++) {
     const sn = f.prefixo + String(n).padStart(f.largura, '0') + f.sufixo
     if (!registradosNorm.has(normalizarSerie(sn))) sns.push(sn)
+  }
+  return sns
+}
+
+/**
+ * Total de SNs de VÁRIAS faixas (0181): a soma de cada uma. Uma faixa sem bloco numérico (ou com
+ * prefixo/sufixo trocados) torna a lista incontável, com o mesmo erro da faixa única.
+ */
+export function totalFaixasSNs(faixas: FaixaSN[]): { ok: true; total: number } | { ok: false; erro: string } {
+  let total = 0
+  for (const f of faixas) {
+    const t = totalFaixaSNs(f.sn_ini, f.sn_fim)
+    if (!t.ok) return t
+    total += t.total
+  }
+  return { ok: true, total }
+}
+
+/**
+ * Uma página de SNs sobre VÁRIAS faixas, como se fossem uma lista só (a faixa 1 inteira, depois a 2…).
+ * Mesmo contrato de `gerarFaixaSNsPagina`: devolve a página e o total de todas.
+ */
+export function gerarFaixasSNsPagina(
+  faixas: FaixaSN[],
+  offset: number,
+  tamanho: number,
+): { ok: true; sns: string[]; total: number } | { ok: false; erro: string } {
+  const tot = totalFaixasSNs(faixas)
+  if (!tot.ok) return tot
+  const sns: string[] = []
+  let pular = Math.max(0, offset)
+  let falta = Math.max(1, tamanho)
+  for (const f of faixas) {
+    if (falta === 0) break
+    const t = totalFaixaSNs(f.sn_ini, f.sn_fim)
+    if (!t.ok) return t
+    if (pular >= t.total) {
+      pular -= t.total
+      continue
+    }
+    const pag = gerarFaixaSNsPagina(f.sn_ini, f.sn_fim, pular, falta)
+    if (!pag.ok) return pag
+    sns.push(...pag.sns)
+    falta -= pag.sns.length
+    pular = 0
+  }
+  return { ok: true, sns, total: tot.total }
+}
+
+/** `snsNaoIniciados` sobre VÁRIAS faixas, na ordem delas, até `cap`. Alguma faixa incoerente → null. */
+export function snsNaoIniciadosDasFaixas(faixas: FaixaSN[], registradosNorm: Set<string>, cap: number): string[] | null {
+  const sns: string[] = []
+  for (const f of faixas) {
+    const parte = snsNaoIniciados(f.sn_ini, f.sn_fim, registradosNorm, cap - sns.length)
+    if (parte === null) return null
+    sns.push(...parte)
+    if (sns.length >= cap) break
   }
   return sns
 }

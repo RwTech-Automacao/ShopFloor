@@ -121,6 +121,32 @@ describe('alertasDisponiveis em mais de um módulo', () => {
   })
 })
 
+describe('alertasDisponiveis para quem só usa o Almoxarifado (0182: responsável da regra Compels)', () => {
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  const almox = { porModulo: { recebimento: { lancar: true }, shopfloor: { visualizar: true } } } as never
+  const soLancar = { porModulo: { recebimento: { lancar: true } } } as never
+  const soVisualizar = { porModulo: { shopfloor: { visualizar: true } } } as never
+
+  it('libera o Meu perfil (vínculo Telegram/Discord) para o perfil Almoxarifado, seguindo a trava do ShopFloor', () => {
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', '*')
+    vi.stubEnv('ALERTAS_RECEBIMENTO_LIBERADO_PARA', '')
+    expect(alertasDisponiveis({ email: 'gilania@x', perfil: almox })).toBe(true)
+  })
+
+  it('a trava do ShopFloor fechada fecha também para o Almoxarifado (a do Recebimento não conta)', () => {
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', '')
+    vi.stubEnv('ALERTAS_RECEBIMENTO_LIBERADO_PARA', '*')
+    expect(alertasDisponiveis({ email: 'gilania@x', perfil: almox })).toBe(false)
+  })
+
+  it('precisa das DUAS permissões da tela do Almoxarifado', () => {
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', '*')
+    expect(alertasDisponiveis({ email: 'hugo@x', perfil: soLancar })).toBe(false)
+    expect(alertasDisponiveis({ email: 'iris@x', perfil: soVisualizar })).toBe(false)
+  })
+})
+
 describe('trava própria do Recebimento', () => {
   const prod = { node: 'production' }
 

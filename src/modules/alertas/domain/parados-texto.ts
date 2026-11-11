@@ -92,6 +92,23 @@ export function tituloParado(totalPecas: number, nOps: number, limiteHoras: numb
 }
 
 /**
+ * O título da tela "Peças paradas", com o intervalo de tempo escolhido: "há mais de X", "há menos de Y",
+ * "há mais de X e menos de Y", ou sem tempo quando os dois filtros estão vazios.
+ */
+export function tituloParadoTela(
+  totalPecas: number, nOps: number, maisDe: number | null, menosDe: number | null, expediente: boolean,
+): string {
+  const tempo = [
+    maisDe === null ? null : `mais de ${formatarLimiteParado(maisDe, expediente)}`,
+    menosDe === null ? null : `menos de ${formatarLimiteParado(menosDe, expediente)}`,
+  ].filter(Boolean).join(' e ')
+  return (
+    `${pecasTexto(totalPecas)} ${totalPecas === 1 ? 'parada' : 'paradas'}${tempo ? ` há ${tempo}` : ''} ` +
+    `em ${nOps} ${nOps === 1 ? 'OP' : 'OPs'}`
+  )
+}
+
+/**
  * O RELATÓRIO ÚNICO do alerta "Parado ou travado na produção" (uma mensagem por regra, não por OP). A
  * primeira linha é o assunto do e-mail: "⏰ N peças paradas há mais de X em M OPs". Depois:
  *  - com o link do relatório: as 3 OPs mais antigas, "… e mais K OPs" se houver, "Ver relatório completo:

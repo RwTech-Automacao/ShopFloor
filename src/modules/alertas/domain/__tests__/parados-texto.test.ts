@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatarIdadeParado, formatarLimiteParado, formatarMinutos, textoNormalizouParado, textoRelatorioParado,
-  tituloParado, type OpParada,
+  tituloParado, tituloParadoTela, type OpParada,
 } from '../parados-texto'
 
 const AGORA = new Date('2026-10-28T18:05:00Z') // 15:05 em São Paulo
@@ -216,5 +216,14 @@ describe('tituloParado', () => {
 describe('textoNormalizouParado', () => {
   it('diz que não há mais nada parado', () => {
     expect(textoNormalizouParado()).toBe('🟢 Parado na produção: sem peças paradas')
+  })
+})
+
+describe('tituloParadoTela', () => {
+  it('mais de, menos de, os dois, ou nenhum', () => {
+    expect(tituloParadoTela(3, 2, 24, null, false)).toBe('3 peças paradas há mais de 1 dia em 2 OPs')
+    expect(tituloParadoTela(1, 1, null, 8, false)).toBe('1 peça parada há menos de 8 h em 1 OP')
+    expect(tituloParadoTela(5, 2, 24, 72, true)).toBe('5 peças paradas há mais de 1 dia de expediente e menos de 3 dias de expediente em 2 OPs')
+    expect(tituloParadoTela(5, 2, null, null, false)).toBe('5 peças paradas em 2 OPs')
   })
 })
