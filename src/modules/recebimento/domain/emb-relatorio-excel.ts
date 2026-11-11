@@ -26,7 +26,7 @@ export interface PlanilhaDivergencias {
 }
 
 export const CABECALHO_DIVERGENCIAS = [
-  'Processo', 'Item', 'Descrição', 'Qtd pedido', 'Qtd recebida', 'Divergência', 'Justificativa', 'Justificado por',
+  'Nº da PO', 'Item', 'Descrição', 'Qtd pedido', 'Qtd recebida', 'Divergência', 'Justificativa', 'Justificado por',
 ] as const
 
 // Caracteres que o Windows não aceita em nome de arquivo e o Excel não aceita em nome de aba.
@@ -34,8 +34,8 @@ const PROIBIDOS_ARQUIVO = /[\\/:*?"<>|]/g
 const PROIBIDOS_ABA = /[\\/:*?[\]]/g
 
 /**
- * A planilha das divergências do relatório de uma EMB: duas linhas de identificação (EMB e Nº da PO),
- * uma em branco, o cabeçalho e uma linha por divergência, na ordem da tela. Quantidades e divergência
+ * A planilha das divergências do relatório de uma EMB: a linha da EMB, uma em branco, o cabeçalho e uma linha
+ * por divergência, na ordem da tela, com o Nº da PO do próprio item na 1ª coluna (o nº do processo fica só na tela). Quantidades e divergência
  * saem como NÚMERO (não texto formatado), para o Excel somar e filtrar; o que falta sai como célula vazia.
  * Divergência que não é número sai como o texto do banco.
  */
@@ -48,11 +48,10 @@ export function planilhaDivergencias(r: RelatorioEmb): PlanilhaDivergencias {
     nomeAba: aba,
     linhas: [
       ['EMB', emb],
-      ['Nº da PO', r.pedidos.join(', ')],
       [],
       [...CABECALHO_DIVERGENCIAS],
       ...r.divergencias.map((d) => [
-        d.numero,
+        d.pedido,
         d.item,
         d.descricao,
         d.quantidadePedido,

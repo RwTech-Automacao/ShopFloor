@@ -18,6 +18,8 @@ export interface DivergenciaDaEmb {
   justificativa: string
   justificadaPorNome: string
   justificadaEm: Date | null
+  /** Nº da PO do processo ('' = sem PO). A RPC não traz: o repositório completa pelo id do processo. */
+  pedido: string
 }
 
 export interface RelatorioEmb {
@@ -71,6 +73,7 @@ export function lerRelatorioEmb(bruto: unknown): LeituraRelatorioEmb {
       justificativa: texto(d.justificativa),
       justificadaPorNome: texto(d.justificada_por_nome),
       justificadaEm: dataOuNula(d.justificada_em),
+      pedido: texto(d.pedido).trim(),
     })
   }
   return {
