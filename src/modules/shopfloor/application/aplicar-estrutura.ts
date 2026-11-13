@@ -2,7 +2,7 @@ import 'server-only'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
 import { configDoAmbiente } from '@/modules/compels/infra/config'
 import { casarTrechos, type NoArvore } from '../domain/estrutura'
-import { copiarParaOp, gravarFilhas, trechosDaOp } from '../infra/estrutura-repository'
+import { copiarParaOp, gravarFilhas, limparFilhas, trechosDaOp } from '../infra/estrutura-repository'
 
 export const numeroDaOp = (op: string) => Number(/^(\d+)/.exec(op.trim())?.[1] ?? NaN)
 
@@ -36,6 +36,9 @@ export async function aplicarEstruturaNaOp(
     if (opcoes.criacao) {
       alvo = await copiarParaOp(ordemId, pmo, rota)
     } else {
+      // OP mudou de número: as filhas antigas não valem mais. Zera antes de consultar o Compels, para que uma
+      // falha de rede deixe os trechos sem filha (o próximo salvamento casa de novo), nunca com a antiga.
+      if (opcoes.refazerTodas) await limparFilhas(ordemId)
       const existentes = await trechosDaOp(ordemId)
       alvo = existentes.filter((t) => opcoes.refazerTodas || t.compelsOp === null).map(({ seq, codigo }) => ({ seq, codigo }))
     }

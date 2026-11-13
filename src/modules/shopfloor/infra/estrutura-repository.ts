@@ -124,7 +124,17 @@ export async function copiarParaOp(ordemId: string, pmo: string, rotaDaOp: strin
   return validos.map((t) => ({ seq: t.seq, codigo: t.codigo }))
 }
 
-/** Grava a OP filha casada de cada trecho e corrige as linhas da fila que nasceram sem ela (op = ''). */
+/** Zera a OP filha de todos os trechos da OP (a OP mudou de número: as filhas antigas não valem mais). */
+export async function limparFilhas(ordemId: string): Promise<void> {
+  const sb = await createServerSupabase()
+  const { error } = await sb.from('sf_ordem_trechos').update({ compels_op: null }).eq('ordem_id', ordemId)
+  if (error) throw new Error(`sf_ordem_trechos (limpar filhas): ${error.message}`)
+}
+
+/**
+ * Grava a OP filha casada de cada trecho e acerta as linhas PENDENTES da fila desse trecho: com filha, passam a
+ * apontar para ela; sem filha, voltam a op = ''. Linhas já enviadas (ok) nunca são tocadas.
+ */
 export async function gravarFilhas(ordemId: string, filhas: Map<number, number | null>): Promise<void> {
   const sb = await createServerSupabase()
   for (const [seq, numero] of filhas) {
@@ -133,11 +143,11 @@ export async function gravarFilhas(ordemId: string, filhas: Map<number, number |
       .eq('ordem_id', ordemId).eq('seq', seq).select('codigo')
     if (error) throw new Error(`sf_ordem_trechos (filha): ${error.message}`)
     const codigo = (data?.[0] as { codigo?: string } | undefined)?.codigo
-    if (numero !== null && codigo) {
-      // sf_estoque_envios só tem policy de select (0132): quem grava é o servidor. Quem chama (a action) já exigiu shopfloor.administrar.
-      const { error: e2 } = await createServiceSupabase().from('sf_estoque_envios').update({ op: String(numero) })
-        .eq('ordem_id', ordemId).eq('pmo', codigo).eq('op', '').eq('ok', false).is('cancelado_em', null)
-      if (e2) throw new Error(`sf_estoque_envios (filha): ${e2.message}`)
-    }
+    if (!codigo) continue
+    // sf_estoque_envios só tem policy de select (0132): quem grava é o servidor. Quem chama (a action) já exigiu shopfloor.administrar.
+    const novo = numero === null ? '' : String(numero)
+    const { error: e2 } = await createServiceSupabase().from('sf_estoque_envios').update({ op: novo })
+      .eq('ordem_id', ordemId).eq('pmo', codigo).eq('ok', false).is('cancelado_em', null).neq('op', novo)
+    if (e2) throw new Error(`sf_estoque_envios (filha): ${e2.message}`)
   }
 }

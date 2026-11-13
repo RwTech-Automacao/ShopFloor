@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const repo = vi.hoisted(() => ({ copiarParaOp: vi.fn(), gravarFilhas: vi.fn(), trechosDaOp: vi.fn() }))
+const repo = vi.hoisted(() => ({ copiarParaOp: vi.fn(), gravarFilhas: vi.fn(), limparFilhas: vi.fn(), trechosDaOp: vi.fn() }))
 const compels = vi.hoisted(() => ({ lerDescendentes: vi.fn() }))
 vi.mock('server-only', () => ({}))
 vi.mock('../../infra/estrutura-repository', () => repo)
@@ -75,5 +75,18 @@ describe('aplicarEstruturaNaOp: edição (OP que já tem trechos)', () => {
     expect(await aplicarEstruturaNaOp('id', 'PMOC14', '9500', ROTA, { criacao: false, refazerTodas: true })).toBeNull()
     expect(repo.copiarParaOp).not.toHaveBeenCalled()
     expect(repo.gravarFilhas).toHaveBeenCalledWith('id', new Map([[1, 9501], [2, 9502]]))
+  })
+  it('mudou o número e o Compels falha: zera as filhas antigas e avisa', async () => {
+    repo.trechosDaOp.mockResolvedValue([{ seq: 1, codigo: 'PRT410', compelsOp: null }])
+    compels.lerDescendentes.mockRejectedValue(new Error('rede'))
+    const aviso = await aplicarEstruturaNaOp('id', 'PMOC14', '9500', ROTA, { criacao: false, refazerTodas: true })
+    expect(repo.limparFilhas).toHaveBeenCalledWith('id')
+    expect(repo.gravarFilhas).not.toHaveBeenCalled()
+    expect(aviso).toMatch(/^Não foi possível consultar o Compels agora/)
+  })
+  it('edição comum não zera as filhas', async () => {
+    repo.trechosDaOp.mockResolvedValue([{ seq: 1, codigo: 'PRT410', compelsOp: '8500' }])
+    await aplicarEstruturaNaOp('id', 'PMOC14', '8498', ROTA, EDIT)
+    expect(repo.limparFilhas).not.toHaveBeenCalled()
   })
 })
