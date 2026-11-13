@@ -79,4 +79,15 @@ describe('EstruturasCliente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ler do Compels' }))
     await waitFor(() => expect((screen.getByLabelText('Código do trecho 1') as HTMLInputElement).value).toBe('PRT410'))
   })
+
+  it('Nova estrutura com PMO já existente não salva', () => {
+    acoes.salvarEstruturaAction.mockClear()
+    render(<EstruturasCliente estruturas={ESTRUTURAS} postos={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Nova estrutura' }))
+    fireEvent.change(screen.getByLabelText('PMO'), { target: { value: 'PMOC14' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(acoes.salvarEstruturaAction).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe('Essa PMO já tem estrutura — use Editar na lista.')
+    expect((screen.getByLabelText('PMO') as HTMLInputElement).disabled).toBe(false)
+  })
 })

@@ -81,7 +81,7 @@ export function EstruturasCliente({ estruturas, postos }: { estruturas: Estrutur
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-sm">PMO
-              <Input value={editando.pmo} onChange={(ev) => { setSujo(true); setEditando({ ...editando, pmo: ev.target.value.toUpperCase() }) }} disabled={origemLista || salvo} />
+              <Input value={editando.pmo} onChange={(ev) => { setSujo(true); setEditando({ ...editando, pmo: ev.target.value.toUpperCase() }) }} disabled={origemLista || salvo || pendente} />
             </label>
             <label className="flex flex-col gap-1 text-sm">Ler do Compels (nº de uma OP da PMO)
               <Input value={opCompels} onChange={(ev) => setOpCompels(ev.target.value)} placeholder="ex.: 8498" />
@@ -130,10 +130,16 @@ export function EstruturasCliente({ estruturas, postos }: { estruturas: Estrutur
             <Button variant="outline" onClick={() => { setSujo(true); setTrechos((ts) => [...ts, trechoVazio(ts.length + 1)]) }}>Adicionar trecho</Button>
             <Button
               disabled={pendente}
-              onClick={() => start(async () => {
+              onClick={() => {
+                if (!origemLista && !salvo && estruturas.some((e) => e.pmo === editando.pmo.trim())) {
+                  setErro('Essa PMO já tem estrutura — use Editar na lista.')
+                  return
+                }
+                start(async () => {
                 const r = await salvarEstruturaAction(editando.pmo, trechos)
                 if (r.ok) { toast.success('Estrutura salva como rascunho.'); setErro(null); setSalvo(true); setSujo(false) } else setErro(r.erro)
-              })}
+                })
+              }}
             >
               Salvar
             </Button>
