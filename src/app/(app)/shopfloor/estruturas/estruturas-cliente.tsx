@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useConfirmacao } from '@/components/ui/confirm-dialog'
 import type { TrechoReceita } from '@/modules/shopfloor/domain/estrutura'
 import type { EstruturaView } from '@/modules/shopfloor/infra/estrutura-repository'
 import {
@@ -20,15 +21,23 @@ export function EstruturasCliente({ estruturas, postos }: { estruturas: Estrutur
   const [erro, setErro] = useState<string | null>(null)
   const [resumo, setResumo] = useState<string | null>(null)
   const [pendente, start] = useTransition()
+  const [origemLista, setOrigemLista] = useState(false)
+  const [salvo, setSalvo] = useState(false)
+  const [sujo, setSujo] = useState(false)
+  const { confirmar, dialog } = useConfirmacao()
 
   function abrir(e: EstruturaView) {
     setEditando(e); setTrechos(e.trechos.length ? e.trechos : [trechoVazio(1)]); setErro(null)
+    setSalvo(false); setSujo(false); setOrigemLista(false)
   }
   function novo() {
     abrir({ pmo: '', situacao: 'rascunho', origem: 'manual', trechos: [] })
   }
+  function editar(e: EstruturaView) {
+    abrir(e); setOrigemLista(true)
+  }
   const mudar = (i: number, parcial: Partial<TrechoReceita>) =>
-    setTrechos((ts) => ts.map((t, j) => (j === i ? { ...t, ...parcial } : t)))
+    { setSujo(true); setTrechos((ts) => ts.map((t, j) => (j === i ? { ...t, ...parcial } : t))) }
 
   return (
     <div className="flex flex-col gap-4">
@@ -57,18 +66,22 @@ export function EstruturasCliente({ estruturas, postos }: { estruturas: Estrutur
               <td>{e.trechos.map((t) => `${t.codigo} → ${t.postoConclui ?? '?'}`).join(' · ') || '—'}</td>
               <td>{SITUACAO[e.situacao]}</td>
               <td className="text-right">
-                <Button size="sm" variant="outline" aria-label={`Editar ${e.pmo}`} onClick={() => abrir(e)}>Editar</Button>
+                <Button size="sm" variant="outline" aria-label={`Editar ${e.pmo}`} onClick={() => editar(e)}>Editar</Button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
+      {dialog}
       {editando && (
         <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
+          <p className="text-sm text-muted-foreground">
+            Situação: {SITUACAO[estruturas.find((e) => e.pmo === editando.pmo.trim())?.situacao ?? 'rascunho']}
+          </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-sm">PMO
-              <Input value={editando.pmo} onChange={(ev) => setEditando({ ...editando, pmo: ev.target.value.toUpperCase() })} disabled={editando.trechos.length > 0} />
+              <Input value={editando.pmo} onChange={(ev) => { setSujo(true); setEditando({ ...editando, pmo: ev.target.value.toUpperCase() }) }} disabled={origemLista || salvo} />
             </label>
             <label className="flex flex-col gap-1 text-sm">Ler do Compels (nº de uma OP da PMO)
               <Input value={opCompels} onChange={(ev) => setOpCompels(ev.target.value)} placeholder="ex.: 8498" />
@@ -76,11 +89,17 @@ export function EstruturasCliente({ estruturas, postos }: { estruturas: Estrutur
             <Button
               variant="outline"
               disabled={pendente || !opCompels.trim() || !editando.pmo.trim()}
-              onClick={() => start(async () => {
-                const r = await lerDoCompelsAction(editando.pmo, opCompels)
-                if (r.ok) setTrechos(r.trechos.length ? r.trechos : [trechoVazio(1)])
-                else toast.error(r.erro)
-              })}
+              onClick={async () => {
+                if (trechos.some((t) => t.codigo.trim())) {
+                  const ok = await confirmar({ titulo: 'Substituir os trechos pelos lidos do Compels?', rotuloConfirmar: 'Substituir' })
+                  if (!ok) return
+                }
+                start(async () => {
+                  const r = await lerDoCompelsAction(editando.pmo, opCompels)
+                  if (r.ok) { setTrechos(r.trechos.length ? r.trechos : [trechoVazio(1)]); setSujo(true) }
+                  else toast.error(r.erro)
+                })
+              }}
             >
               Ler do Compels
             </Button>
@@ -93,6 +112,7 @@ export function EstruturasCliente({ estruturas, postos }: { estruturas: Estrutur
               <select aria-label={`Posto que conclui o trecho ${i + 1}`} className="h-9 rounded-md border border-border bg-background px-2"
                 value={t.postoConclui ?? ''} onChange={(ev) => mudar(i, { postoConclui: ev.target.value || null })}>
                 <option value="">— escolha o posto —</option>
+                {t.postoConclui && !postos.includes(t.postoConclui) && <option value={t.postoConclui}>{t.postoConclui}</option>}
                 {postos.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
               <select aria-label={`Estoque do trecho ${i + 1}`} className="h-9 rounded-md border border-border bg-background px-2"
@@ -100,26 +120,26 @@ export function EstruturasCliente({ estruturas, postos }: { estruturas: Estrutur
                 <option value="EINTER">EINTER</option>
                 <option value="PA">PA</option>
               </select>
-              <Button variant="ghost" size="sm" onClick={() => setTrechos((ts) => ts.filter((_, j) => j !== i))}>Remover</Button>
+              <Button variant="ghost" size="sm" aria-label={`Remover trecho ${i + 1}`} onClick={() => { setSujo(true); setTrechos((ts) => ts.filter((_, j) => j !== i)) }}>Remover</Button>
             </div>
           ))}
           <p className="text-xs text-muted-foreground">Trechos na ordem da rota (o primeiro é o mais fundo, ex.: SMD). Número de série: o mesmo da PMO.</p>
 
-          {erro && <p className="text-sm text-red-600">{erro}</p>}
+          {erro && <p role="alert" className="text-sm text-red-600">{erro}</p>}
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setTrechos((ts) => [...ts, trechoVazio(ts.length + 1)])}>Adicionar trecho</Button>
+            <Button variant="outline" onClick={() => { setSujo(true); setTrechos((ts) => [...ts, trechoVazio(ts.length + 1)]) }}>Adicionar trecho</Button>
             <Button
               disabled={pendente}
               onClick={() => start(async () => {
                 const r = await salvarEstruturaAction(editando.pmo, trechos)
-                if (r.ok) { toast.success('Estrutura salva como rascunho.'); setErro(null) } else setErro(r.erro)
+                if (r.ok) { toast.success('Estrutura salva como rascunho.'); setErro(null); setSalvo(true); setSujo(false) } else setErro(r.erro)
               })}
             >
               Salvar
             </Button>
             <Button
               variant="secondary"
-              disabled={pendente}
+              disabled={pendente || sujo}
               onClick={() => start(async () => {
                 const r = await ativarEstruturaAction(editando.pmo)
                 if (r.ok) { toast.success('Estrutura ativa: vale para as próximas OPs desta PMO.'); setErro(null) } else setErro(r.erro)
@@ -127,6 +147,7 @@ export function EstruturasCliente({ estruturas, postos }: { estruturas: Estrutur
             >
               Ativar
             </Button>
+            {sujo && <span className="self-center text-xs text-muted-foreground">Salve antes de ativar.</span>}
           </div>
         </div>
       )}

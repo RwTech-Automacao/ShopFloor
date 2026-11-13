@@ -37,4 +37,46 @@ describe('EstruturasCliente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Importar do Compels' }))
     await waitFor(() => expect(screen.getByText('3 estrutura(s) criada(s) em rascunho · 2 PMO(s) sem PRT no Compels · 0 falha(s)')).toBeTruthy())
   })
+
+  it('PMO de estrutura nova é editável até salvar; depois trava', async () => {
+    render(<EstruturasCliente estruturas={ESTRUTURAS} postos={['Inspeção AOI TOP']} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Nova estrutura' }))
+    const pmo = screen.getByLabelText('PMO') as HTMLInputElement
+    expect(pmo.disabled).toBe(false)
+    fireEvent.change(pmo, { target: { value: 'pmox1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect((screen.getByLabelText('PMO') as HTMLInputElement).disabled).toBe(true))
+  })
+
+  it('estrutura existente abre com a PMO travada, mesmo sem trechos', () => {
+    render(<EstruturasCliente estruturas={ESTRUTURAS} postos={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar PMOG14' }))
+    expect((screen.getByLabelText('PMO') as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getAllByText('Situação: Ativa').length).toBe(1)
+  })
+
+  it('editar um trecho desativa Ativar e avisa', () => {
+    render(<EstruturasCliente estruturas={ESTRUTURAS} postos={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar PMOC14' }))
+    expect((screen.getByRole('button', { name: 'Ativar' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText('Código do trecho 1'), { target: { value: 'prt2' } })
+    expect((screen.getByRole('button', { name: 'Ativar' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('Salve antes de ativar.')).toBeTruthy()
+  })
+
+  it('Ativar chama a ação com a PMO certa', async () => {
+    acoes.ativarEstruturaAction.mockClear()
+    render(<EstruturasCliente estruturas={ESTRUTURAS} postos={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar PMOC14' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ativar' }))
+    await waitFor(() => expect(acoes.ativarEstruturaAction).toHaveBeenCalledWith('PMOC14'))
+  })
+
+  it('Ler do Compels preenche as linhas', async () => {
+    render(<EstruturasCliente estruturas={ESTRUTURAS} postos={['Inspeção AOI TOP']} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar PMOG14' }))
+    fireEvent.change(screen.getByPlaceholderText('ex.: 8498'), { target: { value: '8498' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ler do Compels' }))
+    await waitFor(() => expect((screen.getByLabelText('Código do trecho 1') as HTMLInputElement).value).toBe('PRT410'))
+  })
 })
