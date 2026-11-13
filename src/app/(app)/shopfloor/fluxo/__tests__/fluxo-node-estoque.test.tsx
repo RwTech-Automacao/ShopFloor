@@ -7,6 +7,7 @@ vi.mock('@xyflow/react', () => ({
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
 }))
+vi.mock('@/modules/shopfloor/application/estrutura-actions', () => ({ lerTrechosCompelsAction: vi.fn(async () => []) }))
 
 const { lerEstoqueCompelsAction, lerPendenteCompelsAction } = vi.hoisted(() => ({
   lerEstoqueCompelsAction: vi.fn(),

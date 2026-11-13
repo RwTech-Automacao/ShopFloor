@@ -10,7 +10,8 @@ import { trechosDaArvore, validarParaAtivar, type TrechoReceita } from '../domai
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import { descendentes, numeroDaOp } from './aplicar-estrutura'
 import {
-  estruturaDaPmo, listarEstruturas, marcarAtiva, rotaDeReferencia, salvarEstrutura, ultimaOpNumericaPorPmo,
+  estruturaDaPmo, listarEstruturas, marcarAtiva, resumoTrechosDaOp, rotaDeReferencia, salvarEstrutura, ultimaOpNumericaPorPmo,
+  type ResumoTrecho,
 } from '../infra/estrutura-repository'
 
 type Resultado<T = object> = ({ ok: true } & T) | { ok: false; erro: string }
@@ -109,4 +110,11 @@ export async function importarDoCompelsAction(): Promise<Resultado<{ criadas: nu
   await registrarLog({ entidade: 'sf_estrutura', acao: 'importar', descricao: `Estruturas importadas do Compels: ${criadas}`, dados: { criadas, semFilhas, falhas } })
   revalidatePath('/shopfloor/estruturas')
   return { ok: true, criadas, semFilhas, falhas }
+}
+
+/** Resumo por trecho (PRT) da OP para o card do Fluxo. Sem sessão ou sem permissão de ver, devolve vazio. */
+export async function lerTrechosCompelsAction(pmo: string, op: string): Promise<ResumoTrecho[]> {
+  const s = await getSessao()
+  if (!s || !podeNoModulo(s.perfil, 'shopfloor', 'visualizar')) return []
+  try { return await resumoTrechosDaOp(String(pmo ?? ''), String(op ?? '')) } catch { return [] }
 }

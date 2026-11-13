@@ -11,6 +11,7 @@ vi.mock('@xyflow/react', () => ({
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
 }))
+vi.mock('@/modules/shopfloor/application/estrutura-actions', () => ({ lerTrechosCompelsAction: vi.fn(async () => []) }))
 
 // O card Concluído consulta o estoque do Compels por uma server action; aqui ela não importa.
 vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({

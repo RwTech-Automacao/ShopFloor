@@ -14,14 +14,20 @@ import {
 const SITUACAO = { rascunho: 'Rascunho — conferir postos', ativa: 'Ativa' } as const
 const trechoVazio = (seq: number): TrechoReceita => ({ seq, codigo: '', descricao: '', postoConclui: null, snModo: 'mesmo', estoque: 'EINTER' })
 
-export function EstruturasCliente({ estruturas, postos }: { estruturas: EstruturaView[]; postos: string[] }) {
-  const [editando, setEditando] = useState<EstruturaView | null>(null)
-  const [trechos, setTrechos] = useState<TrechoReceita[]>([])
+export function EstruturasCliente({ estruturas, postos, pmoInicial }: { estruturas: EstruturaView[]; postos: string[]; pmoInicial?: string }) {
+  // Vindo do aviso do formulário da OP: abre já na PMO pedida (estrutura nova, ou a existente em edição).
+  const [aberturaInicial] = useState(() => {
+    if (!pmoInicial) return null
+    const existente = estruturas.find((e) => e.pmo === pmoInicial)
+    return { e: existente ?? ({ pmo: pmoInicial, situacao: 'rascunho', origem: 'manual', trechos: [] } as EstruturaView), daLista: !!existente }
+  })
+  const [editando, setEditando] = useState<EstruturaView | null>(aberturaInicial?.e ?? null)
+  const [trechos, setTrechos] = useState<TrechoReceita[]>(() => (aberturaInicial ? (aberturaInicial.e.trechos.length ? aberturaInicial.e.trechos : [trechoVazio(1)]) : []))
   const [opCompels, setOpCompels] = useState('')
   const [erro, setErro] = useState<string | null>(null)
   const [resumo, setResumo] = useState<string | null>(null)
   const [pendente, start] = useTransition()
-  const [origemLista, setOrigemLista] = useState(false)
+  const [origemLista, setOrigemLista] = useState(aberturaInicial?.daLista ?? false)
   const [salvo, setSalvo] = useState(false)
   const [sujo, setSujo] = useState(false)
   const { confirmar, dialog } = useConfirmacao()

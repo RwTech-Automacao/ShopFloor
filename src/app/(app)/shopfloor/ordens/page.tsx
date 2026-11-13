@@ -7,6 +7,7 @@ import { listarPadroes } from '@/modules/shopfloor/infra/padroes-fluxo-repositor
 import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import { agruparTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { faixasDoBanco } from '@/modules/shopfloor/domain/faixas-sn'
+import { listarEstruturas } from '@/modules/shopfloor/infra/estrutura-repository'
 import type { OrdemView } from './ordem-form'
 import { OrdensLista } from './ordens-lista'
 
@@ -16,7 +17,8 @@ export default async function OrdensPage() {
     return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
   }
 
-  const [ordens, postos, padroes, postosPerfil] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil()])
+  const [ordens, postos, padroes, postosPerfil, estruturas] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil(), listarEstruturas()])
+  const situacaoEstruturaPorPmo = Object.fromEntries(estruturas.map((e) => [e.pmo, e.situacao])) as Record<string, 'rascunho' | 'ativa'>
   const chavesPostos = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const views: OrdemView[] = ordens.map((o) => ({
     id: o.id,
@@ -56,7 +58,7 @@ export default async function OrdensPage() {
         <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
       </div>
 
-      <OrdensLista views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+      <OrdensLista views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} situacaoEstruturaPorPmo={situacaoEstruturaPorPmo} />
     </div>
   )
 }
