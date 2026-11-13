@@ -12,6 +12,7 @@ import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto
 import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-posto'
 import { postoAlmoxarifadoPadrao, rotaDaEdicao, rotaPadraoOpNova } from '../domain/rota-op-nova'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { ordemTemTrechos } from '../infra/estrutura-repository'
 import { faixasDe, faixasIguais, lerFaixasDoFormulario, type FaixaSN } from '../domain/faixas-sn'
 import {
   criarOrdem,
@@ -189,6 +190,15 @@ export async function editarOrdemAction(
       if ((await contarRegistros(base.pmo, base.op)) > 0) {
         return { ok: false, erro: 'Esta OP já tem registros; não é possível alterar as placas por painel.' }
       }
+    } catch {
+      return { ok: false, erro: 'Não foi possível salvar a OP.' }
+    }
+  }
+  // Trava da estrutura (0184): os trechos copiados são da receita da PMO gravada. Trocar a PMO deixaria a OP
+  // apontando PRTs de outro produto no Compels, então a troca é recusada enquanto houver trechos.
+  if (dados.pmo !== base.pmo) {
+    try {
+      if (await ordemTemTrechos(id)) return { ok: false, erro: 'Esta OP já tem estrutura aplicada: não é possível trocar a PMO.' }
     } catch {
       return { ok: false, erro: 'Não foi possível salvar a OP.' }
     }

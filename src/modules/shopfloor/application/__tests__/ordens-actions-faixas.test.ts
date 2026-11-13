@@ -17,6 +17,11 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ perfil: {} })) }))
 vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: vi.fn(() => true) }))
 vi.mock('@/modules/logs/application/registrar-log', () => ({ registrarLog: vi.fn(async () => undefined) }))
+// A OP destes testes não tem estrutura aplicada (a trava da troca de PMO tem o seu próprio teste).
+vi.mock('../../infra/estrutura-repository', async (original) => ({
+  ...(await original<typeof import('../../infra/estrutura-repository')>()),
+  ordemTemTrechos: vi.fn(async () => false),
+}))
 vi.mock('../../infra/postos-repository', () => ({ mapaPostoPerfil: vi.fn(async () => ({})) }))
 vi.mock('../../infra/ordem-repository', () => ({
   criarOrdem: m.criarOrdem,

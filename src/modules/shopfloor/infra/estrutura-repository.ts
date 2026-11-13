@@ -104,6 +104,14 @@ export async function trechosDaOp(ordemId: string): Promise<{ seq: number; codig
   return ((data ?? []) as { seq: number; codigo: string; compels_op: string | null }[]).map((t) => ({ seq: t.seq, codigo: t.codigo, compelsOp: t.compels_op }))
 }
 
+/** A OP já tem estrutura aplicada (algum trecho copiado)? Erro de leitura sobe: quem chama trava. */
+export async function ordemTemTrechos(ordemId: string): Promise<boolean> {
+  const sb = await createServerSupabase()
+  const { count, error } = await sb.from('sf_ordem_trechos').select('seq', { count: 'exact', head: true }).eq('ordem_id', ordemId)
+  if (error) throw new Error(`sf_ordem_trechos: ${error.message}`)
+  return (count ?? 0) > 0
+}
+
 /**
  * Copia a receita ATIVA da PMO para a OP (só trechos cujo posto está na rota da OP). Só mexe na cópia
  * existente depois de confirmar que há receita ativa com trechos válidos para gravar.
