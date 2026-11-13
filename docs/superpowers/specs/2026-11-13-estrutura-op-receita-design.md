@@ -39,6 +39,8 @@ O ShopFloor aponta **cada PRT no Compels quando as peças passam pelo posto que 
 | D6 | Cada peça conta **uma vez por trecho**. Reaprovação depois da Manutenção não gera outro apontamento. |
 | D7 | O apontamento das PRTs nasce **desligado por uma chave** até a frequência ser decidida. |
 | D8 | Uma PMO **sem receita** gera OP como hoje, com um aviso discreto e um link para cadastrar a estrutura. |
+| D9 | **Importação em lote do Compels**: para as PMOs que já tiveram OP no Compels, o ShopFloor lê a árvore da OP mais recente e cria a receita em **rascunho**, com os códigos das PRTs e os postos sugeridos. A pessoa só confere "onde cada nível termina" e ativa. Rascunho não vale para OP nova. |
+| D10 | A **montagem em cards** (arrastar postos e trechos) fica para uma branch posterior. A receita fica, por ora, separada do padrão de fluxo; reavaliar a unificação depois para não ficar redundante. |
 
 ## 4. Modelo de dados (migrações novas)
 
