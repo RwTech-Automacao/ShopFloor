@@ -1,5 +1,6 @@
 'use server'
 
+import { aplicarEstruturaNaOp } from './estrutura-actions'
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
@@ -30,7 +31,7 @@ import {
  * (ou no PMO/OP antigo). A tela pergunta e reenvia com `confirmar_fora_faixa=1`. É aviso, não trava.
  */
 export type ResultadoOrdem =
-  | { ok: true; id?: string; pmo?: string; op?: string }
+  | { ok: true; id?: string; pmo?: string; op?: string; aviso?: string }
   | { ok: false; erro: string; confirmarForaDaFaixa?: number }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar ordens de produção.'
@@ -156,8 +157,9 @@ export async function criarOrdemAction(
   }
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'criar', descricao: `OP ${dados.pmo}/${dados.op} criada`, dados: { ...dados, faixas } })
+  const avisoEstrutura = await aplicarEstruturaNaOp(id, dados.pmo, dados.op, postos)
   revalidatePath('/shopfloor/ordens')
-  return { ok: true, id, pmo: dados.pmo, op: dados.op }
+  return { ok: true, id, pmo: dados.pmo, op: dados.op, ...(avisoEstrutura ? { aviso: avisoEstrutura } : {}) }
 }
 
 export async function editarOrdemAction(
@@ -233,8 +235,9 @@ export async function editarOrdemAction(
   }
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados: { ...dados, faixas } })
+  const avisoEstrutura = await aplicarEstruturaNaOp(id, dados.pmo, dados.op, postos)
   revalidatePath('/shopfloor/ordens')
-  return { ok: true, id, pmo: dados.pmo, op: dados.op }
+  return { ok: true, id, pmo: dados.pmo, op: dados.op, ...(avisoEstrutura ? { aviso: avisoEstrutura } : {}) }
 }
 
 /** A OP já tem lançamentos? Consulta leve (um HEAD count) para a tela travar as placas por painel; erro/sem permissão = false (o servidor trava de verdade ao salvar). */

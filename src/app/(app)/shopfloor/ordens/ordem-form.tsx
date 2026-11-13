@@ -159,6 +159,7 @@ export function OrdemForm({
         description: `${state.pmo}/${state.op}`,
         position: 'bottom-center',
       })
+      if (state.aviso) toast.warning(state.aviso, { position: 'bottom-center' })
       // Fecha o dialog em reação ao sucesso da action — não é o efeito
       // que "produz" o estado, então o alerta de cascading render do
       // eslint-plugin-react-hooks (set-state-in-effect) não se aplica aqui.
