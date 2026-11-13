@@ -6,6 +6,7 @@ import {
   type ComponenteApontamento,
   type ComponenteRequisicao,
 } from '../domain/corpos'
+import { noDaLinhaOp, type NoOp } from '../domain/arvore-op'
 import { leiturasDeRespostas, listaDe, RespostaInesperada } from '../domain/leituras-erp'
 import { saldoDoItem, type SaldoItem } from '../domain/saldo-item'
 import { saldosPorEstoque, type SaldoEmEstoque } from '../domain/saldo-por-estoque'
@@ -253,5 +254,55 @@ export class ClienteCompels {
     const resposta = await this.json(`/estoque/consultaSaldoItemEstoque?${params}`)
     return saldosPorEstoque(resposta, codigo)
   }
-}
 
+  /** Uma OP como nó da árvore (número, código, mãe, principal, nível). `null` = não existe ou resposta sem código. */
+  async lerNoOp(numero: number): Promise<NoOp | null> {
+    const filtro = {
+      numero: String(numero), codigoNegociante: null, nomeNegociante: null, cpfCnpjNegociante: null,
+      clientePedido: '', item: '', linha: '', tipoPropriedade: null, statusList: null,
+      selecionarPor: 'Data Documento',
+      dataInicial: dataIso(this.agora() - TRES_ANOS_MS), dataFinal: dataIso(this.agora()),
+      numeroPedido: '', centroCusto: '', listarPendentes: false, prototipo: false, etapa: '',
+      selecionarOPPor: 'op', observacao: '', nivel: '', responsavelCriacao: '', responsavelAlteracao: '',
+      situacaoId: null, semVinculoComSolicitacaoInternaCompra: false,
+    }
+    const busca = await this.json(
+      '/ordemProducaoSimples/findAllFilter',
+      this.formulario({ sortFilter: 'null', filtro: JSON.stringify(filtro), page: '1', start: '0', limit: '25' }),
+    )
+    const linha = listaDe(busca, 'busca de OP').find((o) => o.numero === numero)
+    if (!linha || typeof linha.id !== 'number') return null
+    const detalhe = await this.json(
+      '/ordemProducaoSimples/findById',
+      this.formulario({ id: String(linha.id), page: '1', start: '0', limit: '25' }),
+    )
+    return noDaLinhaOp(linha, detalhe)
+  }
+
+  /**
+   * Os DESCENDENTES de uma OP (filhas, netas…). No Compels a família é numerada em sequência (8681, 8682, 8683…),
+   * então varre os números seguintes enquanto a OP principal for a mesma; para no primeiro que não existe ou é de
+   * outra família. Devolve só quem descende da OP pedida (a fonte 8682 não leva o gabinete 8685, irmão dela).
+   */
+  async lerDescendentes(numero: number): Promise<NoOp[]> {
+    const raiz = await this.lerNoOp(numero)
+    if (!raiz) return []
+    const familia = raiz.principal ?? raiz.numero
+    const nos: NoOp[] = []
+    for (let n = numero + 1, i = 0; i < 25; n++, i++) {
+      const no = await this.lerNoOp(n)
+      if (!no || (no.principal ?? no.numero) !== familia) break
+      nos.push(no)
+    }
+    const porNumero = new Map(nos.map((x) => [x.numero, x]))
+    const desce = (x: NoOp): boolean => {
+      let atual: NoOp | undefined = x
+      for (let i = 0; i < 20 && atual; i++) {
+        if (atual.mae === numero) return true
+        atual = atual.mae === null ? undefined : porNumero.get(atual.mae)
+      }
+      return false
+    }
+    return nos.filter(desce)
+  }
+}

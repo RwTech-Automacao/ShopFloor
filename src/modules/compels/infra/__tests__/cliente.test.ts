@@ -191,5 +191,34 @@ describe('ClienteCompels', () => {
     const { buscar } = fingirCompels({ '/itemMovimento/findFilter': () => json({ data: [] }) })
     expect(await new ClienteCompels(config, tokenFixo(), buscar).consultarSaldoItem('ZZZ')).toBeNull()
   })
-})
 
+  it('lerDescendentes: varre os números seguintes da mesma principal e devolve só quem descende da raiz', async () => {
+    const LISTA: Record<number, Record<string, unknown>> = {
+      8682: { id: 2, numero: 8682, status: 'Em Processo', nivel: 2, ordemProducaoMaeNumero: 8681, ordemProducaoPrincipalNumero: 8681 },
+      8683: { id: 3, numero: 8683, status: 'Em Processo', nivel: 3, ordemProducaoMaeNumero: 8682, ordemProducaoPrincipalNumero: 8681 },
+      8684: { id: 4, numero: 8684, status: 'Em Processo', nivel: 4, ordemProducaoMaeNumero: 8683, ordemProducaoPrincipalNumero: 8681 },
+      8685: { id: 5, numero: 8685, status: 'Aberta', nivel: 2, ordemProducaoMaeNumero: 8681, ordemProducaoPrincipalNumero: 8681 },
+      8686: { id: 6, numero: 8686, status: 'Aberta', nivel: 1, ordemProducaoMaeNumero: null, ordemProducaoPrincipalNumero: null },
+    }
+    const COD: Record<string, string> = { '2': 'PMOF52', '3': 'PRT706', '4': 'PRT705', '5': 'PMOF51', '6': 'OUTRA' }
+    const { buscar } = fingirCompels({
+      '/ordemProducaoSimples/findAllFilter': () => json({ data: [] }),
+    })
+    const buscarComArvore = (async (url: string | URL | Request, init: RequestInit = {}) => {
+      const u = String(url).replace('https://api.erpeasy.compels.net', '')
+      const corpo = init.body as URLSearchParams | undefined
+      if (u.startsWith('/ordemProducaoSimples/findAllFilter')) {
+        const n = Number(JSON.parse(corpo!.get('filtro')!).numero)
+        return json({ data: LISTA[n] ? [LISTA[n]] : [] })
+      }
+      if (u.startsWith('/ordemProducaoSimples/findById')) {
+        return json({ data: { composicaoProduto: { item: { codigo: COD[corpo!.get('id')!], descricao: 'X' } } } })
+      }
+      return buscar(url, init)
+    }) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscarComArvore)
+    const desc = await c.lerDescendentes(8682)
+    expect(desc.map((n) => [n.numero, n.codigo])).toEqual([[8683, 'PRT706'], [8684, 'PRT705']])
+    expect(await c.lerNoOp(9999)).toBeNull()
+  })
+})
