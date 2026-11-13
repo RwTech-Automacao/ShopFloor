@@ -195,7 +195,9 @@ function iconeDo(d: FluxoNodePayload) {
   return iconePorRecurso(d.recurso, d.temStatus, 'size-5')
 }
 
-const CACHE_TRECHOS_MS = 10_000
+/** Os trechos mudam devagar (o envio ao Compels é por cron): o card relê a cada 30 s, e o cache vale o mesmo. */
+const INTERVALO_TRECHOS_MS = 30_000
+const CACHE_TRECHOS_MS = 30_000
 const cacheTrechos = new Map<string, { ate: number; promessa: Promise<ResumoTrecho[]> }>()
 /** Só para os testes: zera o cache por OP. */
 export function limparCacheTrechosParaTeste() { cacheTrechos.clear() }
@@ -209,7 +211,7 @@ function lerTrechosDaOp(pmo: string, op: string, forcar: boolean): Promise<Resum
   return promessa
 }
 
-/** Trechos (PRTs) da OP, com cache por OP no módulo: os N cards de posto dividem uma só consulta. Relê a cada 10 s. */
+/** Trechos (PRTs) da OP, com cache por OP no módulo: os N cards de posto dividem uma só consulta. Relê a cada 30 s. */
 function useTrechosCompels(pmo: string | undefined, op: string | undefined): ResumoTrecho[] {
   const [trechos, setTrechos] = useState<ResumoTrecho[]>([])
   useEffect(() => {
@@ -217,7 +219,7 @@ function useTrechosCompels(pmo: string | undefined, op: string | undefined): Res
     let vivo = true
     const ler = (forcar: boolean) => { lerTrechosDaOp(pmo, op, forcar).then((r) => { if (vivo) setTrechos(r) }) }
     ler(false)
-    const id = setInterval(() => { if (!document.hidden) ler(false) }, INTERVALO_ESTOQUE_MS)
+    const id = setInterval(() => { if (!document.hidden) ler(false) }, INTERVALO_TRECHOS_MS)
     return () => { vivo = false; clearInterval(id) }
   }, [pmo, op])
   return pmo && op ? trechos : []

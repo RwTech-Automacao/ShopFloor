@@ -65,4 +65,18 @@ describe('linha da PRT no card do posto', () => {
     await waitFor(() => expect(screen.getByText('PRT420 → Compels 8499')).toBeTruthy())
     expect(trechos.lerTrechosCompelsAction).toHaveBeenCalledTimes(1)
   })
+  it('relê a cada 30 s (não a cada 10 s)', async () => {
+    vi.useFakeTimers()
+    try {
+      renderNo('Inspeção PTH', 'PMOC14', '8498')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(trechos.lerTrechosCompelsAction).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(trechos.lerTrechosCompelsAction).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(trechos.lerTrechosCompelsAction).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

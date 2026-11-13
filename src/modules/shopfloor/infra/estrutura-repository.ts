@@ -161,37 +161,21 @@ export async function gravarFilhas(ordemId: string, filhas: Map<number, number |
 
 export interface ResumoTrecho { posto: string; codigo: string; compelsOp: string | null; apontadas: number; naFila: number; motivo: string | null }
 
-/** Por trecho da OP: quantas peças já foram apontadas no Compels (entradas − estornos enviados) e quantas esperam. */
+/**
+ * Por trecho da OP: quantas peças já foram apontadas no Compels (entradas − estornos enviados), quantas esperam e o
+ * motivo da mais antiga. Uma chamada só (sf_resumo_trechos_op, 0184): o card do Fluxo não pagina a fila no servidor.
+ */
 export async function resumoTrechosDaOp(pmo: string, op: string): Promise<ResumoTrecho[]> {
   const sb = await createServerSupabase()
-  const { data: o, error: e1 } = await sb.from('sf_ordens')
-    .select('id, sf_ordem_trechos(seq, codigo, posto_conclui, compels_op)').eq('pmo', pmo).eq('op', op).maybeSingle()
-  if (e1) throw new Error(`sf_ordens: ${e1.message}`)
-  const ordem = o as { id: string; sf_ordem_trechos: { seq: number; codigo: string; posto_conclui: string; compels_op: string | null }[] } | null
-  if (!ordem || ordem.sf_ordem_trechos.length === 0) return []
-  type Linha = { pmo: string; operacao: string; quantidade: number; ok: boolean; cancelado_em: string | null; erro: string | null; criado_em: string }
-  const ls: Linha[] = []
-  for (let de = 0; ; de += 1000) {
-    const { data: pg, error: e2 } = await sb.from('sf_estoque_envios')
-      .select('pmo, operacao, quantidade, ok, cancelado_em, erro, criado_em').eq('ordem_id', ordem.id)
-      .order('criado_em').order('id').range(de, de + 999)
-    if (e2) throw new Error(`sf_estoque_envios: ${e2.message}`)
-    const lote = (pg ?? []) as Linha[]
-    ls.push(...lote)
-    if (lote.length < 1000) break
-  }
-  return [...ordem.sf_ordem_trechos].sort((a, b) => a.seq - b.seq).map((t) => {
-    // Linha cancelada nunca é ok (check da 0132): excluí-la aqui é correto.
-    const dele = ls.filter((l) => l.pmo === t.codigo && !l.cancelado_em)
-    const sinal = (l: { operacao: string }) => (l.operacao === 'estorno' ? -1 : 1)
-    const pend = dele.filter((l) => !l.ok && l.operacao === 'entrada').sort((a, b) => a.criado_em.localeCompare(b.criado_em))
-    return {
-      posto: t.posto_conclui,
-      codigo: t.codigo,
-      compelsOp: t.compels_op,
-      apontadas: dele.filter((l) => l.ok).reduce((s, l) => s + sinal(l) * l.quantidade, 0),
-      naFila: pend.reduce((s, l) => s + l.quantidade, 0),
-      motivo: pend[0]?.erro ?? null,
-    }
-  })
+  const { data, error } = await sb.rpc('sf_resumo_trechos_op', { p_pmo: pmo, p_op: op })
+  if (error) throw new Error(`sf_resumo_trechos_op: ${error.message}`)
+  type Linha = { posto: string; codigo: string; compels_op: string | null; apontadas: number | null; na_fila: number | null; motivo: string | null }
+  return ((data ?? []) as Linha[]).map((l) => ({
+    posto: l.posto,
+    codigo: l.codigo,
+    compelsOp: l.compels_op,
+    apontadas: Number(l.apontadas ?? 0),
+    naFila: Number(l.na_fila ?? 0),
+    motivo: l.motivo,
+  }))
 }
