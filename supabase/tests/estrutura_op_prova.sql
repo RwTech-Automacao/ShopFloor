@@ -90,4 +90,25 @@ begin
   select count(*) into n from sf_estoque_envios where serie_norm = 'dup1' and cancelado_em is null;
   if n <> 2 then raise exception 'caso 10 falhou: % linhas', n; end if;
 end $$;
+
+-- 11) sf_salvar_estrutura: atômica; criado_por só no insert; FK inválida não deixa estrago
+do $$
+declare n int; cp text; ap text;
+begin
+  perform sf_salvar_estrutura('PMOS', '[{"seq":1,"codigo":"PRT1","descricao":"a","posto_conclui":"Inspeção PTH","sn_modo":"mesmo","estoque":"EINTER"},{"seq":2,"codigo":" PRT2 ","posto_conclui":null}]'::jsonb, 'ana', 'manual');
+  select count(*) into n from sf_estrutura_trechos where pmo = 'PMOS';
+  if n <> 2 then raise exception 'caso 11 falhou (2 trechos: %)', n; end if;
+  perform sf_salvar_estrutura('PMOS', '[{"seq":1,"codigo":"PRT1","posto_conclui":"Teste"}]'::jsonb, 'bia');
+  select count(*) into n from sf_estrutura_trechos where pmo = 'PMOS';
+  select criado_por, alterado_por into cp, ap from sf_estruturas where pmo = 'PMOS';
+  if n <> 1 or cp <> 'ana' or ap <> 'bia' then raise exception 'caso 11 falhou (n=%, criado_por=%, alterado_por=%)', n, cp, ap; end if;
+  begin
+    perform sf_salvar_estrutura('PMOS', '[{"seq":1,"codigo":"X","posto_conclui":"NaoExiste"},{"seq":2,"codigo":"Y"}]'::jsonb, 'cai');
+    raise exception 'caso 11 falhou (FK nao recusou)';
+  exception when foreign_key_violation then null;
+  end;
+  select count(*) into n from sf_estrutura_trechos where pmo = 'PMOS' and codigo = 'PRT1' and posto_conclui = 'Teste';
+  select alterado_por into ap from sf_estruturas where pmo = 'PMOS';
+  if n <> 1 or ap <> 'bia' then raise exception 'caso 11 falhou (estrago apos erro: n=%, ap=%)', n, ap; end if;
+end $$;
 \echo 'PROVA ESTRUTURA OK'

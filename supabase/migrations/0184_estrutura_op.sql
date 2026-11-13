@@ -85,6 +85,25 @@ revoke all on public.sf_estruturas, public.sf_estrutura_trechos, public.sf_ordem
 grant select, insert, update, delete on public.sf_estruturas, public.sf_estrutura_trechos, public.sf_ordem_trechos
   to authenticated, service_role;
 
+-- ---------- salvar a receita de uma PMO numa transação só ----------
+create or replace function public.sf_salvar_estrutura(p_pmo text, p_trechos jsonb, p_usuario text, p_origem text default null)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not (select tem_permissao('shopfloor', 'administrar')) then raise exception 'sem permissão'; end if;
+  insert into sf_estruturas (pmo, situacao, origem, criado_por, alterado_por)
+  values (p_pmo, 'rascunho', coalesce(p_origem, 'manual'), p_usuario, p_usuario)
+  on conflict (pmo) do update
+    set situacao = 'rascunho', alterado_em = now(), alterado_por = p_usuario,
+        origem = case when p_origem is null then sf_estruturas.origem else p_origem end;
+  delete from sf_estrutura_trechos where pmo = p_pmo;
+  insert into sf_estrutura_trechos (pmo, seq, codigo, descricao, posto_conclui, sn_modo, estoque)
+  select p_pmo, (t->>'seq')::int, btrim(t->>'codigo'), coalesce(t->>'descricao', ''), nullif(t->>'posto_conclui', ''),
+         coalesce(t->>'sn_modo', 'mesmo'), coalesce(t->>'estoque', 'EINTER')
+    from jsonb_array_elements(coalesce(p_trechos, '[]'::jsonb)) t;
+end $$;
+revoke all on function public.sf_salvar_estrutura(text, jsonb, text, text) from public, anon;
+grant execute on function public.sf_salvar_estrutura(text, jsonb, text, text) to authenticated, service_role;
+
 -- ---------- enfileirar a PRT no bipe aprovado ----------
 create or replace function public.sf_trecho_enfileirar()
 returns trigger language plpgsql security definer set search_path = public as $func$

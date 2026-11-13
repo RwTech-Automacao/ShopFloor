@@ -5,27 +5,20 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
-import { configDoAmbiente } from '@/modules/compels/infra/config'
-import { casarTrechos, trechosDaArvore, validarParaAtivar, type NoArvore, type TrechoReceita } from '../domain/estrutura'
+import { configDoAmbiente, ConfiguracaoIncompleta } from '@/modules/compels/infra/config'
+import { trechosDaArvore, validarParaAtivar, type TrechoReceita } from '../domain/estrutura'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { descendentes, numeroDaOp } from './aplicar-estrutura'
 import {
-  copiarParaOp, estruturaDaPmo, gravarFilhas, listarEstruturas, marcarAtiva, rotaDeReferencia, salvarEstrutura, ultimaOpNumericaPorPmo,
+  estruturaDaPmo, listarEstruturas, marcarAtiva, rotaDeReferencia, salvarEstrutura, ultimaOpNumericaPorPmo,
 } from '../infra/estrutura-repository'
 
 type Resultado<T = object> = ({ ok: true } & T) | { ok: false; erro: string }
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar estruturas.'
-const numeroDaOp = (op: string) => Number(/^(\d+)/.exec(op.trim())?.[1] ?? NaN)
 
 async function sessaoAdmin() {
   const s = await getSessao()
   return s && podeNoModulo(s.perfil, 'shopfloor', 'administrar') ? s : null
-}
-
-async function descendentes(op: string): Promise<NoArvore[]> {
-  const n = numeroDaOp(op)
-  if (!Number.isInteger(n)) return []
-  const cliente = new ClienteCompels(configDoAmbiente())
-  return (await cliente.lerDescendentes(n)).map(({ numero, codigo, descricao, nivel, mae }) => ({ numero, codigo, descricao, nivel, mae }))
 }
 
 const ehAlmox = async () => {
@@ -52,9 +45,14 @@ export async function salvarEstruturaAction(pmo: string, trechos: TrechoReceita[
 export async function ativarEstruturaAction(pmo: string): Promise<Resultado> {
   const s = await sessaoAdmin()
   if (!s) return { ok: false, erro: SEM_PERMISSAO }
-  const e = await estruturaDaPmo(pmo)
-  if (!e) return { ok: false, erro: 'Estrutura não encontrada.' }
-  const v = validarParaAtivar(e.trechos, await rotaDeReferencia(pmo), await ehAlmox())
+  let v: ReturnType<typeof validarParaAtivar>
+  try {
+    const e = await estruturaDaPmo(pmo)
+    if (!e) return { ok: false, erro: 'Estrutura não encontrada.' }
+    v = validarParaAtivar(e.trechos, await rotaDeReferencia(pmo), await ehAlmox())
+  } catch {
+    return { ok: false, erro: 'Não foi possível conferir a estrutura agora.' }
+  }
   if (!v.ok) return { ok: false, erro: v.erros.join(' ') }
   try {
     await marcarAtiva(pmo, s.nome || s.email)
@@ -81,12 +79,26 @@ export async function lerDoCompelsAction(pmo: string, op: string): Promise<Resul
 export async function importarDoCompelsAction(): Promise<Resultado<{ criadas: number; semFilhas: number; falhas: number }>> {
   const s = await sessaoAdmin()
   if (!s) return { ok: false, erro: SEM_PERMISSAO }
-  const existentes = new Set((await listarEstruturas()).map((e) => e.pmo))
+  let cliente: ClienteCompels
+  try {
+    cliente = new ClienteCompels(configDoAmbiente())
+  } catch (e) {
+    if (e instanceof ConfiguracaoIncompleta) return { ok: false, erro: 'A consulta ao Compels não está configurada neste ambiente.' }
+    return { ok: false, erro: 'Não foi possível consultar o Compels agora.' }
+  }
+  let existentes: Set<string>
+  let candidatas: { pmo: string; op: string }[]
+  try {
+    existentes = new Set((await listarEstruturas()).map((e) => e.pmo))
+    candidatas = await ultimaOpNumericaPorPmo()
+  } catch {
+    return { ok: false, erro: 'Não foi possível ler as estruturas e as OPs agora.' }
+  }
   let criadas = 0, semFilhas = 0, falhas = 0
-  for (const { pmo, op } of await ultimaOpNumericaPorPmo()) {
+  for (const { pmo, op } of candidatas) {
     if (existentes.has(pmo)) continue
     try {
-      const trechos = trechosDaArvore(numeroDaOp(op), await descendentes(op), await rotaDeReferencia(pmo))
+      const trechos = trechosDaArvore(numeroDaOp(op), await descendentes(op, cliente), await rotaDeReferencia(pmo))
       if (trechos.length === 0) { semFilhas++; continue }
       await salvarEstrutura(pmo, trechos, s.nome || s.email, `compels:${numeroDaOp(op)}`)
       criadas++
@@ -97,34 +109,4 @@ export async function importarDoCompelsAction(): Promise<Resultado<{ criadas: nu
   await registrarLog({ entidade: 'sf_estrutura', acao: 'importar', descricao: `Estruturas importadas do Compels: ${criadas}`, dados: { criadas, semFilhas, falhas } })
   revalidatePath('/shopfloor/estruturas')
   return { ok: true, criadas, semFilhas, falhas }
-}
-
-/**
- * Aplica a receita ATIVA da PMO na OP (cópia + OP filha casada). Nunca derruba a criação da OP: devolve um aviso
- * em texto (ou null). Chamado por criarOrdemAction/editarOrdemAction depois de gravar a OP.
- */
-export async function aplicarEstruturaNaOp(ordemId: string, pmo: string, op: string, rota: string[]): Promise<string | null> {
-  let copiados: { seq: number; codigo: string }[]
-  try {
-    copiados = await copiarParaOp(ordemId, pmo, rota)
-  } catch {
-    return 'Não foi possível aplicar a estrutura da PMO nesta OP.'
-  }
-  if (copiados.length === 0) return null
-  let nos: NoArvore[]
-  try {
-    nos = await descendentes(op)
-  } catch {
-    return 'Não foi possível consultar o Compels agora: as OPs filhas serão procuradas quando a OP for salva de novo.'
-  }
-  const filhas = casarTrechos(copiados, nos)
-  try {
-    await gravarFilhas(ordemId, filhas)
-  } catch {
-    return 'Não foi possível gravar as OPs filhas do Compels nesta OP.'
-  }
-  const faltando = copiados.filter((t) => filhas.get(t.seq) === null).map((t) => t.codigo)
-  return faltando.length
-    ? `${faltando.join(', ')} não foi encontrada no Compels abaixo da OP ${numeroDaOp(op)}: esse trecho não será apontado até a OP ser salva de novo.`
-    : null
 }

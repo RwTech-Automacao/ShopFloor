@@ -1,6 +1,6 @@
 'use server'
 
-import { aplicarEstruturaNaOp } from './estrutura-actions'
+import { aplicarEstruturaNaOp } from './aplicar-estrutura'
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'

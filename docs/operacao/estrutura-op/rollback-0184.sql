@@ -1,6 +1,7 @@
 -- Rollback da 0184 (estrutura da OP). Roda numa transação (psql -1).
 drop trigger if exists sf_registros_trecho_ins on public.sf_registros;
 drop trigger if exists sf_registros_trecho_del on public.sf_registros;
+drop function if exists public.sf_salvar_estrutura(text, jsonb, text, text);
 drop function if exists public.sf_trecho_enfileirar();
 drop function if exists public.sf_trecho_desfazer();
 drop index if exists public.sf_estoque_envios_ordem;

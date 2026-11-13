@@ -29,25 +29,31 @@ export async function listarEstruturas(): Promise<EstruturaView[]> {
 }
 
 export async function estruturaDaPmo(pmo: string): Promise<EstruturaView | null> {
-  return (await listarEstruturas()).find((e) => e.pmo === pmo) ?? null
+  const sb = await createServerSupabase()
+  const { data, error } = await sb
+    .from('sf_estruturas')
+    .select('pmo, situacao, origem, sf_estrutura_trechos(seq, codigo, descricao, posto_conclui, sn_modo, estoque)')
+    .eq('pmo', pmo)
+    .maybeSingle()
+  if (error) throw new Error(`sf_estruturas: ${error.message}`)
+  if (!data) return null
+  const e = data as unknown as Omit<EstruturaView, 'trechos'> & { sf_estrutura_trechos: LinhaTrecho[] }
+  return {
+    pmo: e.pmo, situacao: e.situacao, origem: e.origem,
+    trechos: [...e.sf_estrutura_trechos].sort((x, y) => x.seq - y.seq).map(paraTrecho),
+  }
 }
 
-/** Grava a receita inteira (substitui os trechos) e volta para rascunho: mudou, precisa conferir e ativar de novo. */
+/** Grava a receita inteira (substitui os trechos) e volta para rascunho, numa transação só (RPC sf_salvar_estrutura). */
 export async function salvarEstrutura(pmo: string, trechos: TrechoReceita[], usuario: string, origem?: string): Promise<void> {
   const sb = await createServerSupabase()
-  const agora = new Date().toISOString()
-  const { error: e1 } = await sb.from('sf_estruturas').upsert(
-    { pmo, situacao: 'rascunho', alterado_em: agora, alterado_por: usuario, ...(origem ? { origem } : {}), criado_por: usuario },
-    { onConflict: 'pmo', ignoreDuplicates: false },
-  )
-  if (e1) throw new Error(`sf_estruturas: ${e1.message}`)
-  const { error: e2 } = await sb.from('sf_estrutura_trechos').delete().eq('pmo', pmo)
-  if (e2) throw new Error(`sf_estrutura_trechos (limpar): ${e2.message}`)
-  if (trechos.length === 0) return
-  const { error: e3 } = await sb.from('sf_estrutura_trechos').insert(
-    trechos.map((t) => ({ pmo, seq: t.seq, codigo: t.codigo.trim(), descricao: t.descricao, posto_conclui: t.postoConclui, sn_modo: t.snModo, estoque: t.estoque })),
-  )
-  if (e3) throw new Error(`sf_estrutura_trechos: ${e3.message}`)
+  const { error } = await sb.rpc('sf_salvar_estrutura', {
+    p_pmo: pmo,
+    p_trechos: trechos.map((t) => ({ seq: t.seq, codigo: t.codigo.trim(), descricao: t.descricao, posto_conclui: t.postoConclui, sn_modo: t.snModo, estoque: t.estoque })),
+    p_usuario: usuario,
+    p_origem: origem ?? null,
+  })
+  if (error) throw new Error(`sf_salvar_estrutura: ${error.message}`)
 }
 
 export async function marcarAtiva(pmo: string, usuario: string): Promise<void> {
@@ -59,39 +65,58 @@ export async function marcarAtiva(pmo: string, usuario: string): Promise<void> {
 /** Rota da OP mais recente da PMO (a referência para validar os postos da receita). */
 export async function rotaDeReferencia(pmo: string): Promise<string[]> {
   const sb = await createServerSupabase()
-  const { data, error } = await sb
-    .from('sf_ordens').select('created_at, sf_ordem_postos(posto, ordem)')
-    .eq('pmo', pmo).order('created_at', { ascending: false }).limit(1)
-  if (error) throw new Error(`rota da PMO: ${error.message}`)
-  const postos = ((data?.[0] as { sf_ordem_postos?: { posto: string; ordem: number }[] } | undefined)?.sf_ordem_postos ?? [])
+  const busca = async (filtro: (q: any) => any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    const { data, error } = await filtro(
+      sb.from('sf_ordens').select('created_at, sf_ordem_postos(posto, ordem)').order('created_at', { ascending: false }).limit(1),
+    )
+    if (error) throw new Error(`rota da PMO: ${error.message}`)
+    return (data?.[0] as { sf_ordem_postos?: { posto: string; ordem: number }[] } | undefined)?.sf_ordem_postos ?? null
+  }
+  // Sem OP com exatamente essa PMO, cai nas variantes com sufixo (PMOX_F).
+  const postos = (await busca((q) => q.eq('pmo', pmo))) ?? (await busca((q) => q.like('pmo', `${pmo.replace(/[\\%_]/g, '\\$&')}\\_%`))) ?? []
   return [...postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto)
 }
 
 /** A OP mais recente (com número só de dígitos, opcionalmente com sufixo _/_F) de cada PMO do ShopFloor. */
 export async function ultimaOpNumericaPorPmo(): Promise<{ pmo: string; op: string }[]> {
   const sb = await createServerSupabase()
-  const { data, error } = await sb.from('sf_ordens').select('pmo, op, created_at').order('created_at', { ascending: false })
-  if (error) throw new Error(`sf_ordens: ${error.message}`)
   const vistas = new Map<string, string>()
-  for (const o of (data ?? []) as { pmo: string; op: string }[]) {
-    const pmo = o.pmo.replace(/_[A-Za-z]*$/, '')
-    if (!vistas.has(pmo) && /^\d+/.test(o.op)) vistas.set(pmo, o.op)
+  const PAGINA = 1000
+  for (let ini = 0; ; ini += PAGINA) {
+    const { data, error } = await sb.from('sf_ordens').select('pmo, op, created_at')
+      .order('created_at', { ascending: false }).order('id').range(ini, ini + PAGINA - 1)
+    if (error) throw new Error(`sf_ordens: ${error.message}`)
+    const linhas = (data ?? []) as { pmo: string; op: string }[]
+    for (const o of linhas) {
+      const pmo = o.pmo.replace(/_[A-Za-z]*$/, '')
+      if (!vistas.has(pmo) && /^\d+(_[A-Za-z]*)?$/.test(o.op)) vistas.set(pmo, o.op)
+    }
+    if (linhas.length < PAGINA) break
   }
   return [...vistas].map(([pmo, op]) => ({ pmo, op }))
 }
 
+/** Os trechos que a OP já carrega (a cópia da receita feita na criação). */
+export async function trechosDaOp(ordemId: string): Promise<{ seq: number; codigo: string; compelsOp: string | null }[]> {
+  const sb = await createServerSupabase()
+  const { data, error } = await sb.from('sf_ordem_trechos').select('seq, codigo, compels_op').eq('ordem_id', ordemId).order('seq')
+  if (error) throw new Error(`sf_ordem_trechos: ${error.message}`)
+  return ((data ?? []) as { seq: number; codigo: string; compels_op: string | null }[]).map((t) => ({ seq: t.seq, codigo: t.codigo, compelsOp: t.compels_op }))
+}
+
 /**
- * Copia a receita ATIVA da PMO para a OP (substitui a cópia anterior; só trechos cujo posto está na rota da OP).
- * Devolve os trechos copiados (vazio = PMO sem estrutura ativa).
+ * Copia a receita ATIVA da PMO para a OP (só trechos cujo posto está na rota da OP). Só mexe na cópia
+ * existente depois de confirmar que há receita ativa com trechos válidos para gravar.
+ * Devolve os trechos copiados (vazio = PMO sem estrutura ativa; nada é apagado).
  */
 export async function copiarParaOp(ordemId: string, pmo: string, rotaDaOp: string[]): Promise<{ seq: number; codigo: string }[]> {
   const e = await estruturaDaPmo(pmo.replace(/_[A-Za-z]*$/, ''))
-  const sb = await createServerSupabase()
-  const { error: e1 } = await sb.from('sf_ordem_trechos').delete().eq('ordem_id', ordemId)
-  if (e1) throw new Error(`sf_ordem_trechos (limpar): ${e1.message}`)
   if (!e || e.situacao !== 'ativa') return []
   const validos = e.trechos.filter((t) => t.postoConclui && rotaDaOp.includes(t.postoConclui))
   if (validos.length === 0) return []
+  const sb = await createServerSupabase()
+  const { error: e1 } = await sb.from('sf_ordem_trechos').delete().eq('ordem_id', ordemId)
+  if (e1) throw new Error(`sf_ordem_trechos (limpar): ${e1.message}`)
   const { error: e2 } = await sb.from('sf_ordem_trechos').insert(
     validos.map((t) => ({ ordem_id: ordemId, seq: t.seq, codigo: t.codigo, posto_conclui: t.postoConclui, sn_modo: t.snModo, estoque: t.estoque })),
   )
@@ -109,7 +134,7 @@ export async function gravarFilhas(ordemId: string, filhas: Map<number, number |
     if (error) throw new Error(`sf_ordem_trechos (filha): ${error.message}`)
     const codigo = (data?.[0] as { codigo?: string } | undefined)?.codigo
     if (numero !== null && codigo) {
-      // sf_estoque_envios só tem policy de select (0132): quem grava é o servidor. A action já exigiu shopfloor.administrar.
+      // sf_estoque_envios só tem policy de select (0132): quem grava é o servidor. Quem chama (a action) já exigiu shopfloor.administrar.
       const { error: e2 } = await createServiceSupabase().from('sf_estoque_envios').update({ op: String(numero) })
         .eq('ordem_id', ordemId).eq('pmo', codigo).eq('op', '').eq('ok', false).is('cancelado_em', null)
       if (e2) throw new Error(`sf_estoque_envios (filha): ${e2.message}`)

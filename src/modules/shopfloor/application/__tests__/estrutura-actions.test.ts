@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const repo = vi.hoisted(() => ({
   listarEstruturas: vi.fn(), salvarEstrutura: vi.fn(), marcarAtiva: vi.fn(), rotaDeReferencia: vi.fn(),
-  ultimaOpNumericaPorPmo: vi.fn(), copiarParaOp: vi.fn(), gravarFilhas: vi.fn(), estruturaDaPmo: vi.fn(),
+  ultimaOpNumericaPorPmo: vi.fn(), copiarParaOp: vi.fn(), gravarFilhas: vi.fn(), trechosDaOp: vi.fn(), estruturaDaPmo: vi.fn(),
 }))
 const compels = vi.hoisted(() => ({ lerDescendentes: vi.fn() }))
 vi.mock('server-only', () => ({}))
+vi.mock('@/shared/lib/supabase/service', () => ({ createServiceSupabase: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ perfil: 'admin', nome: 'Matheus', email: 'm@x' })) }))
 vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: vi.fn(() => true) }))
@@ -15,7 +16,9 @@ vi.mock('../../infra/postos-repository', () => ({ mapaPostoPerfil: vi.fn(async (
 vi.mock('@/modules/compels/infra/cliente', () => ({ ClienteCompels: vi.fn(function () { return compels }) }))
 vi.mock('@/modules/compels/infra/config', () => ({ configDoAmbiente: vi.fn(() => ({})), ConfiguracaoIncompleta: class extends Error {} }))
 
-import { aplicarEstruturaNaOp, ativarEstruturaAction, importarDoCompelsAction, lerDoCompelsAction } from '../estrutura-actions'
+import { ativarEstruturaAction, importarDoCompelsAction, lerDoCompelsAction, salvarEstruturaAction } from '../estrutura-actions'
+import { getSessao } from '@/modules/auth/application/get-sessao'
+import { podeNoModulo } from '@/modules/auth/domain/perfil'
 
 const ROTA = ['Inspeção AOI TOP', 'Montagem PTH', 'Inspeção PTH', 'Teste', 'Almoxarifado']
 beforeEach(() => { vi.clearAllMocks(); repo.rotaDeReferencia.mockResolvedValue(ROTA) })
@@ -63,23 +66,33 @@ describe('importarDoCompelsAction', () => {
   })
 })
 
-describe('aplicarEstruturaNaOp', () => {
-  it('PMO sem estrutura ativa: não copia nada e não avisa', async () => {
-    repo.copiarParaOp.mockResolvedValue([])
-    expect(await aplicarEstruturaNaOp('id', 'P', '1', ROTA)).toBeNull()
-    expect(compels.lerDescendentes).not.toHaveBeenCalled()
+describe('importarDoCompelsAction (falhas)', () => {
+  it('conta falha quando o Compels erra para uma PMO e segue com as outras', async () => {
+    repo.listarEstruturas.mockResolvedValue([])
+    repo.ultimaOpNumericaPorPmo.mockResolvedValue([{ pmo: 'A', op: '1' }, { pmo: 'B', op: '2' }])
+    compels.lerDescendentes.mockImplementation(async (n: number) => {
+      if (n === 1) throw new Error('rede')
+      return [{ numero: 3, codigo: 'PRT420', descricao: '', nivel: 2, mae: 2, principal: 2, status: '' }]
+    })
+    expect(await importarDoCompelsAction()).toEqual({ ok: true, criadas: 1, semFilhas: 0, falhas: 1 })
   })
-  it('copia, casa as filhas e avisa o que não achou', async () => {
-    repo.copiarParaOp.mockResolvedValue([{ seq: 1, codigo: 'PRT410' }, { seq: 2, codigo: 'PRT420' }])
-    compels.lerDescendentes.mockResolvedValue([{ numero: 8500, codigo: 'PRT410', descricao: '', nivel: 3, mae: 8499, principal: 8498, status: '' }])
-    const aviso = await aplicarEstruturaNaOp('id', 'PMOC14', '8498', ROTA)
-    expect(repo.gravarFilhas).toHaveBeenCalledWith('id', new Map([[1, 8500], [2, null]]))
-    expect(aviso).toBe('PRT420 não foi encontrada no Compels abaixo da OP 8498: esse trecho não será apontado até a OP ser salva de novo.')
+})
+
+describe('salvarEstruturaAction', () => {
+  const t = (codigo: string, seq = 9) => ({ seq, codigo, descricao: '', postoConclui: null, snModo: 'mesmo' as const, estoque: 'EINTER' as const })
+  it('renumera o seq a partir de 1', async () => {
+    expect(await salvarEstruturaAction('P', [t('PRT1', 7), t('PRT2', 3)])).toEqual({ ok: true })
+    expect(repo.salvarEstrutura.mock.calls[0]![1].map((x: { seq: number }) => x.seq)).toEqual([1, 2])
   })
-  it('Compels fora do ar: a OP segue, com aviso', async () => {
-    repo.copiarParaOp.mockResolvedValue([{ seq: 1, codigo: 'PRT410' }])
-    compels.lerDescendentes.mockRejectedValue(new Error('rede'))
-    expect(await aplicarEstruturaNaOp('id', 'PMOC14', '8498', ROTA)).toBe(
-      'Não foi possível consultar o Compels agora: as OPs filhas serão procuradas quando a OP for salva de novo.')
+  it('recusa código vazio sem gravar', async () => {
+    expect(await salvarEstruturaAction('P', [t('  ')])).toEqual({ ok: false, erro: 'Todo trecho precisa do código da PRT.' })
+    expect(repo.salvarEstrutura).not.toHaveBeenCalled()
+  })
+  it('sem permissão: recusa', async () => {
+    vi.mocked(podeNoModulo).mockReturnValueOnce(false)
+    const r = await salvarEstruturaAction('P', [t('PRT1')])
+    expect(r).toEqual({ ok: false, erro: 'Você não tem permissão para gerenciar estruturas.' })
+    expect(repo.salvarEstrutura).not.toHaveBeenCalled()
+    expect(getSessao).toHaveBeenCalled()
   })
 })
