@@ -129,6 +129,10 @@ export async function limparFilhas(ordemId: string): Promise<void> {
   const sb = await createServerSupabase()
   const { error } = await sb.from('sf_ordem_trechos').update({ compels_op: null }).eq('ordem_id', ordemId)
   if (error) throw new Error(`sf_ordem_trechos (limpar filhas): ${error.message}`)
+  // As entradas pendentes e livres da fila voltam a op = '' (sf_estoque_envios só aceita escrita do servidor).
+  const { error: e2 } = await createServiceSupabase().from('sf_estoque_envios').update({ op: '' })
+    .eq('ordem_id', ordemId).eq('operacao', 'entrada').eq('ok', false).is('cancelado_em', null).is('reservado_em', null).neq('op', '')
+  if (e2) throw new Error(`sf_estoque_envios (limpar filhas): ${e2.message}`)
 }
 
 /**
@@ -145,9 +149,12 @@ export async function gravarFilhas(ordemId: string, filhas: Map<number, number |
     const codigo = (data?.[0] as { codigo?: string } | undefined)?.codigo
     if (!codigo) continue
     // sf_estoque_envios só tem policy de select (0132): quem grava é o servidor. Quem chama (a action) já exigiu shopfloor.administrar.
+    // A chave não é recalculada de propósito: guarda a op antiga só como texto de identidade e segue única.
+    // Só entradas pendentes e não reservadas: estorno herda a op da entrada que reverte; reservada o cron está enviando.
     const novo = numero === null ? '' : String(numero)
     const { error: e2 } = await createServiceSupabase().from('sf_estoque_envios').update({ op: novo })
-      .eq('ordem_id', ordemId).eq('pmo', codigo).eq('ok', false).is('cancelado_em', null).neq('op', novo)
+      .eq('ordem_id', ordemId).eq('pmo', codigo).eq('operacao', 'entrada').eq('ok', false)
+      .is('cancelado_em', null).is('reservado_em', null).neq('op', novo)
     if (e2) throw new Error(`sf_estoque_envios (filha): ${e2.message}`)
   }
 }

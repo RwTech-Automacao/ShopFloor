@@ -111,4 +111,37 @@ begin
   select alterado_por into ap from sf_estruturas where pmo = 'PMOS';
   if n <> 1 or ap <> 'bia' then raise exception 'caso 11 falhou (estrago apos erro: n=%, ap=%)', n, ap; end if;
 end $$;
+-- 12) o SQL do gravarFilhas/limparFilhas: só a entrada pendente e livre muda; estorno, enviada e reservada ficam
+do $$
+declare o uuid := '00000000-0000-0000-0000-000000000b01'; ent uuid; r record;
+begin
+  insert into sf_ordens (id, pmo, op) values (o, 'PMOR', '3000');
+  insert into sf_ordem_trechos (ordem_id, seq, codigo, posto_conclui, estoque, compels_op) values (o, 1, 'PRTR', 'Inspeção PTH', 'EINTER', '3001');
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque, ok, enviado_em)
+    values ('R/ENV', 'PRTR', '3001', 'Inspeção PTH', 'serie', 'e1', 'e1', 1, o, 'EINTER', true, now()) returning id into ent;
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque)
+    values ('R/PEND', 'PRTR', '3001', 'Inspeção PTH', 'serie', 'e2', 'e2', 1, o, 'EINTER');
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque, reservado_em)
+    values ('R/RES', 'PRTR', '3001', 'Inspeção PTH', 'serie', 'e3', 'e3', 1, o, 'EINTER', now());
+  insert into sf_estoque_envios (chave, operacao, entrada_id, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque)
+    values ('R/EST', 'estorno', ent, 'PRTR', '3001', 'Inspeção PTH', 'serie', 'e1', 'e1', 1, o, 'EINTER');
+
+  -- repoint do gravarFilhas (nova filha 4001)
+  update sf_estoque_envios set op = '4001'
+   where ordem_id = o and pmo = 'PRTR' and operacao = 'entrada' and ok = false and cancelado_em is null and reservado_em is null and op <> '4001';
+  for r in select chave, op from sf_estoque_envios where ordem_id = o loop
+    if (r.chave = 'R/PEND') <> (r.op = '4001') or (r.chave <> 'R/PEND' and r.op <> '3001') then
+      raise exception 'caso 12 falhou (repoint): % -> %', r.chave, r.op;
+    end if;
+  end loop;
+
+  -- reset do limparFilhas
+  update sf_estoque_envios set op = ''
+   where ordem_id = o and operacao = 'entrada' and ok = false and cancelado_em is null and reservado_em is null and op <> '';
+  for r in select chave, op from sf_estoque_envios where ordem_id = o loop
+    if (r.chave = 'R/PEND') <> (r.op = '') or (r.chave <> 'R/PEND' and r.op <> '3001') then
+      raise exception 'caso 12 falhou (reset): % -> %', r.chave, r.op;
+    end if;
+  end loop;
+end $$;
 \echo 'PROVA ESTRUTURA OK'
