@@ -10,10 +10,10 @@
 --    linha é PRT" e de qual OP ela veio (liberação, Fluxo).
 -- 4. Triggers em sf_registros (cobrem TODOS os caminhos de bipe):
 --    - AFTER INSERT: registro não reprovado, com SN, no posto que conclui um trecho → entrada da PRT, UMA vez por
---      peça e trecho (o líquido entradas − estornos vigentes é > 0 → não duplica). quantidade = pecas (painel).
+--      peça e trecho (existe entrada viva — pendente ou enviada com saldo — → não duplica). quantidade = pecas (painel).
 --    - AFTER DELETE (cancelar lançamento move o registro p/ auditoria): se não sobrou outro registro aprovado da
---      peça no mesmo posto, desfaz: pendente → cancela; já enviada → estorno (mesma regra da 0132: não se estorna
---      o que ainda não saiu).
+--      peça no mesmo posto, desfaz: pendente → cancela; já enviada → estorno ligado à entrada (entrada_id) e
+--      baixa do saldo (estornado), como a sf_estoque_reverter da 0132. As duas funções travam por peça/trecho.
 
 create table if not exists public.sf_estruturas (
   pmo          text primary key,
@@ -49,7 +49,9 @@ create table if not exists public.sf_ordem_trechos (
 create index if not exists sf_ordem_trechos_posto on public.sf_ordem_trechos (ordem_id, posto_conclui);
 
 alter table public.sf_estoque_envios add column if not exists ordem_id uuid;
-create index if not exists sf_estoque_envios_ordem on public.sf_estoque_envios (ordem_id) where ordem_id is not null;
+drop index if exists public.sf_estoque_envios_ordem;
+create index if not exists sf_estoque_envios_ordem_alvo on public.sf_estoque_envios (ordem_id, pmo, posto, alvo)
+  where ordem_id is not null;
 
 alter table public.sf_estruturas enable row level security;
 alter table public.sf_estrutura_trechos enable row level security;
@@ -88,7 +90,6 @@ create or replace function public.sf_trecho_enfileirar()
 returns trigger language plpgsql security definer set search_path = public as $func$
 declare
   t record;
-  v_liquido int;
 begin
   if new.numero_serie_norm = '' or new.status ilike 'reprov%' then
     return new;
@@ -99,20 +100,20 @@ begin
       join public.sf_ordem_trechos ot on ot.ordem_id = o.id
      where o.pmo = new.pmo and o.op = new.op and ot.posto_conclui = new.posto
   loop
-    select count(*) filter (where e.operacao = 'entrada') - count(*) filter (where e.operacao = 'estorno')
-      into v_liquido
-      from public.sf_estoque_envios e
-     where e.ordem_id = t.ordem_id and e.pmo = t.codigo and e.posto = new.posto
-       and e.alvo = new.numero_serie_norm and e.cancelado_em is null;
-    if v_liquido > 0 then
-      continue;  -- a peça já entrou neste trecho (reaprovação depois da Manutenção, rebipe): não duplica
+    perform pg_advisory_xact_lock(hashtext(t.ordem_id::text || '/' || t.codigo || '/' || new.numero_serie_norm));
+    -- já existe entrada viva (na fila, ou enviada e ainda com saldo): reaprovação/rebipe não duplica
+    if exists (select 1 from public.sf_estoque_envios e
+                where e.ordem_id = t.ordem_id and e.pmo = t.codigo and e.posto = new.posto
+                  and e.alvo = new.numero_serie_norm and e.operacao = 'entrada' and e.cancelado_em is null
+                  and (not e.ok or e.estornado < e.quantidade)) then
+      continue;
     end if;
     insert into public.sf_estoque_envios
-      (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade, estoque, ordem_id)
+      (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade, estoque, ordem_id, criado_em)
     values
       (public.sf_estoque_chave(t.codigo, t.op_filha, new.posto, new.numero_serie_norm, 'entrada'), 'entrada',
        t.codigo, t.op_filha, new.posto, 'serie', coalesce(nullif(new.numero_serie, ''), new.numero_serie_norm),
-       new.numero_serie_norm, greatest(coalesce(new.pecas, 1), 1), t.estoque, t.ordem_id);
+       new.numero_serie_norm, greatest(coalesce(new.pecas, 1), 1), t.estoque, t.ordem_id, clock_timestamp());
   end loop;
   return new;
 end
@@ -124,8 +125,7 @@ returns trigger language plpgsql security definer set search_path = public as $f
 declare
   t record;
   v_id uuid;
-  v_env record;
-  v_liquido int;
+  v_ent record;
 begin
   if old.numero_serie_norm = '' or old.status ilike 'reprov%' then
     return old;
@@ -136,6 +136,7 @@ begin
       join public.sf_ordem_trechos ot on ot.ordem_id = o.id
      where o.pmo = old.pmo and o.op = old.op and ot.posto_conclui = old.posto
   loop
+    perform pg_advisory_xact_lock(hashtext(t.ordem_id::text || '/' || t.codigo || '/' || old.numero_serie_norm));
     -- outra aprovação da mesma peça no mesmo posto continua valendo: nada a desfazer
     if exists (select 1 from public.sf_registros r
                 where r.pmo = old.pmo and r.op = old.op and r.posto = old.posto
@@ -153,26 +154,24 @@ begin
       update public.sf_estoque_envios set cancelado_em = now() where id = v_id;
       continue;
     end if;
-    -- já enviada e ainda não estornada → estorno com a mesma op, quantidade e estoque
-    select count(*) filter (where e.operacao = 'entrada') - count(*) filter (where e.operacao = 'estorno')
-      into v_liquido
+    -- já enviada, com saldo → estorno ligado à entrada (entrada_id) + baixa do saldo, na mesma transação
+    select e.* into v_ent
       from public.sf_estoque_envios e
      where e.ordem_id = t.ordem_id and e.pmo = t.codigo and e.posto = old.posto
-       and e.alvo = old.numero_serie_norm and e.cancelado_em is null;
-    if v_liquido <= 0 then
+       and e.alvo = old.numero_serie_norm and e.operacao = 'entrada'
+       and e.ok and e.cancelado_em is null and e.estornado < e.quantidade
+     order by e.criado_em desc, e.id desc limit 1
+     for update;
+    if v_ent.id is null then
       continue;
     end if;
-    select e.op, e.bipe, e.quantidade, e.estoque into v_env
-      from public.sf_estoque_envios e
-     where e.ordem_id = t.ordem_id and e.pmo = t.codigo and e.posto = old.posto
-       and e.alvo = old.numero_serie_norm and e.operacao = 'entrada' and e.ok
-     order by e.criado_em desc limit 1;
     insert into public.sf_estoque_envios
-      (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade, estoque, ordem_id)
+      (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade, estoque, ordem_id, entrada_id, criado_em)
     values
-      (public.sf_estoque_chave(t.codigo, v_env.op, old.posto, old.numero_serie_norm, 'estorno'), 'estorno',
-       t.codigo, v_env.op, old.posto, 'serie', v_env.bipe, old.numero_serie_norm, v_env.quantidade, v_env.estoque,
-       t.ordem_id);
+      (public.sf_estoque_chave(v_ent.pmo, v_ent.op, v_ent.posto, v_ent.alvo, 'estorno'), 'estorno',
+       v_ent.pmo, v_ent.op, v_ent.posto, v_ent.tipo, v_ent.bipe, v_ent.serie_norm,
+       v_ent.quantidade - v_ent.estornado, v_ent.estoque, t.ordem_id, v_ent.id, clock_timestamp());
+    update public.sf_estoque_envios set estornado = quantidade where id = v_ent.id;
   end loop;
   return old;
 end

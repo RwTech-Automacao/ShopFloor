@@ -26,8 +26,28 @@ create table public.sf_estoque_envios (
   reservado_em timestamptz, enviado_em timestamptz, cancelado_em timestamptz,
   criado_em timestamptz not null default now(),
   estoque text not null default 'PA' check (estoque in ('PA','EINTER')),
+  estornado int not null default 0,
+  entrada_id uuid references public.sf_estoque_envios (id) on delete restrict,
+  adiado_ate timestamptz,
+  check (btrim(chave) <> ''),
+  check (btrim(bipe) <> ''),
+  check (tentativas >= 0),
+  check (tipo <> 'serie' or btrim(serie_norm) <> ''),
+  check (estornado >= 0 and estornado <= quantidade),
+  check ((operacao = 'estorno') = (entrada_id is not null)),
   check (ok = (enviado_em is not null)),
   check (cancelado_em is null or not ok));
+create or replace function public.sf_estoque_envios_estoque_do_estorno() returns trigger language plpgsql
+set search_path = public as $f$
+begin
+  if new.operacao = 'estorno' and new.entrada_id is not null then
+    select e.estoque into new.estoque from public.sf_estoque_envios e where e.id = new.entrada_id;
+    new.estoque := coalesce(new.estoque, 'PA');
+  end if;
+  return new;
+end $f$;
+create trigger sf_estoque_envios_estoque_do_estorno before insert on public.sf_estoque_envios
+  for each row execute function public.sf_estoque_envios_estoque_do_estorno();
 create unique index sf_estoque_envios_chave on public.sf_estoque_envios (chave);
 create or replace function public.sf_estoque_chave(
   p_pmo text, p_op text, p_posto text, p_alvo text, p_operacao text
