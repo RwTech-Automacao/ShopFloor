@@ -20,19 +20,25 @@ const avisoFaltando = (faltando: string[], op: string) =>
     : `${faltando.join(', ')} não foram encontradas no Compels abaixo da OP ${numeroDaOp(op)}: esses trechos não serão apontados até a OP ser salva de novo.`
 
 /**
- * Receita da PMO na OP. A OP guarda a CÓPIA da receita desde a criação (D5): editar a receita ou a OP não troca os
- * trechos de uma OP em andamento.
- * - OP sem trechos (criação): copia a receita ATIVA e casa as OPs filhas do Compels.
- * - OP com trechos (edição): não copia nem apaga nada; só procura de novo a filha dos trechos que ainda não têm.
+ * Receita da PMO na OP. A OP guarda a CÓPIA da receita desde a criação (D5): a receita só é copiada na CRIAÇÃO;
+ * editar a receita ou a OP nunca troca os trechos de uma OP em andamento.
+ * - criacao: copia a receita ATIVA e casa as OPs filhas do Compels.
+ * - edição: não copia nem apaga nada. Sem trechos na OP, devolve null sem consultar o Compels. Com trechos, procura
+ *   de novo a filha dos que ainda não têm; se a edição mudou o PMO/OP (`refazerTodas`), refaz o casamento de todos.
  * Nunca derruba o salvamento da OP: devolve um aviso em texto (ou null). Chamado só pelo servidor (ordens-actions).
  */
-export async function aplicarEstruturaNaOp(ordemId: string, pmo: string, op: string, rota: string[]): Promise<string | null> {
+export async function aplicarEstruturaNaOp(
+  ordemId: string, pmo: string, op: string, rota: string[],
+  opcoes: { criacao: boolean; refazerTodas?: boolean },
+): Promise<string | null> {
   let alvo: { seq: number; codigo: string }[]
   try {
-    const existentes = await trechosDaOp(ordemId)
-    alvo = existentes.length > 0
-      ? existentes.filter((t) => t.compelsOp === null).map(({ seq, codigo }) => ({ seq, codigo }))
-      : await copiarParaOp(ordemId, pmo, rota)
+    if (opcoes.criacao) {
+      alvo = await copiarParaOp(ordemId, pmo, rota)
+    } else {
+      const existentes = await trechosDaOp(ordemId)
+      alvo = existentes.filter((t) => opcoes.refazerTodas || t.compelsOp === null).map(({ seq, codigo }) => ({ seq, codigo }))
+    }
   } catch {
     return 'Não foi possível aplicar a estrutura da PMO nesta OP.'
   }

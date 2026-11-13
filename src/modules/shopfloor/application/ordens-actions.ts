@@ -157,7 +157,7 @@ export async function criarOrdemAction(
   }
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'criar', descricao: `OP ${dados.pmo}/${dados.op} criada`, dados: { ...dados, faixas } })
-  const avisoEstrutura = await aplicarEstruturaNaOp(id, dados.pmo, dados.op, postos)
+  const avisoEstrutura = await aplicarEstruturaNaOp(id, dados.pmo, dados.op, postos, { criacao: true })
   revalidatePath('/shopfloor/ordens')
   return { ok: true, id, pmo: dados.pmo, op: dados.op, ...(avisoEstrutura ? { aviso: avisoEstrutura } : {}) }
 }
@@ -235,7 +235,7 @@ export async function editarOrdemAction(
   }
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados: { ...dados, faixas } })
-  const avisoEstrutura = await aplicarEstruturaNaOp(id, dados.pmo, dados.op, postos)
+  const avisoEstrutura = await aplicarEstruturaNaOp(id, dados.pmo, dados.op, postos, { criacao: false, refazerTodas: dados.pmo !== base.pmo || dados.op !== base.op })
   revalidatePath('/shopfloor/ordens')
   return { ok: true, id, pmo: dados.pmo, op: dados.op, ...(avisoEstrutura ? { aviso: avisoEstrutura } : {}) }
 }
