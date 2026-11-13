@@ -17,6 +17,10 @@ begin
      or r.tipo <> 'serie' or r.estoque <> 'EINTER' or r.posto <> 'Inspeção AOI TOP' then
     raise exception 'caso 1 falhou: %', row_to_json(r);
   end if;
+  -- a chave da PRT é própria (sf_trecho_chave): PRT/<ordem>/<codigo>/<posto>/<alvo>/E<n>
+  if r.chave <> 'PRT/00000000-0000-0000-0000-000000008498/PRT410/Inspeção AOI TOP/331001251/E1' or r.seq_chave <> 1 then
+    raise exception 'caso 1 falhou (chave %)', r.chave;
+  end if;
 
   -- 2) reprova não enfileira; posto que não conclui trecho não enfileira; SN vazio não enfileira
   insert into sf_registros (created_at, posto, pmo, op, status, numero_serie, numero_serie_norm) values (clock_timestamp(), 'Inspeção PTH', 'PMOC14', '8498', 'Reprovado', '331001252', '331001252');
@@ -52,14 +56,14 @@ begin
   select count(*) into n from sf_estoque_envios where pmo = 'PRT410' and cancelado_em is null and operacao = 'entrada';
   if n <> 1 then raise exception 'caso 7 falhou'; end if;
   select * into r from sf_estoque_envios where pmo = 'PRT410' and cancelado_em is null and operacao = 'entrada';
-  if r.chave not like '%/E2' then raise exception 'caso 7 falhou (chave %)', r.chave; end if;
+  if r.chave not like 'PRT/%/E2' or r.seq_chave <> 2 then raise exception 'caso 7 falhou (chave %)', r.chave; end if;
 
   -- 8) linha JÁ ENVIADA e o registro sai → estorno com a mesma op/quantidade/estoque
   update sf_estoque_envios set ok = true, enviado_em = now() where pmo = 'PRT410' and cancelado_em is null;
   delete from sf_registros where posto = 'Inspeção AOI TOP';
   select * into r from sf_estoque_envios where pmo = 'PRT410' and operacao = 'estorno';
   if r is null or r.op <> '8500' or r.quantidade <> 1 or r.estoque <> 'EINTER' or r.ordem_id is null
-     or r.chave not like '%/S1' or r.ok then
+     or r.chave not like 'PRT/%/S1' or r.ok then
     raise exception 'caso 8 falhou: %', row_to_json(r);
   end if;
   select * into e from sf_estoque_envios where id = r.entrada_id;
@@ -143,5 +147,131 @@ begin
       raise exception 'caso 12 falhou (reset): % -> %', r.chave, r.op;
     end if;
   end loop;
+end $$;
+-- 13) linha PENDENTE mas TOCADA (a regra v_tocada da sf_estoque_reverter, 0132): não cancela, estorna o saldo
+do $$
+declare o uuid := '00000000-0000-0000-0000-000000000c01'; ent record; est record; n int;
+begin
+  insert into sf_ordens (id, pmo, op) values (o, 'PMOT', '5000');
+  insert into sf_ordem_trechos (ordem_id, seq, codigo, posto_conclui, estoque, compels_op) values (o, 1, 'PRTT', 'Inspeção PTH', 'EINTER', '5001');
+  -- 13a) tentativas = 1 (a reserva já mandou uma vez: o ERP pode ter recebido)
+  insert into sf_registros (created_at, posto, pmo, op, status, numero_serie, numero_serie_norm) values (clock_timestamp(), 'Inspeção PTH', 'PMOT', '5000', 'Aprovado', 'T1', 't1');
+  update sf_estoque_envios set tentativas = 1, erro = 'resposta perdida' where ordem_id = o and alvo = 't1';
+  delete from sf_registros where pmo = 'PMOT' and numero_serie_norm = 't1';
+  select * into ent from sf_estoque_envios where ordem_id = o and alvo = 't1' and operacao = 'entrada';
+  if ent.cancelado_em is not null or ent.estornado <> ent.quantidade then
+    raise exception 'caso 13a falhou (entrada tocada foi cancelada ou não debitada): %', row_to_json(ent);
+  end if;
+  select * into est from sf_estoque_envios where ordem_id = o and alvo = 't1' and operacao = 'estorno';
+  if est.id is null or est.entrada_id <> ent.id or est.ordem_id <> o or est.quantidade <> 1 or est.op <> '5001'
+     or est.estoque <> 'EINTER' or est.chave not like 'PRT/%/S1' or est.ok then
+    raise exception 'caso 13a falhou (estorno): %', row_to_json(est);
+  end if;
+  -- rebipe depois da reversão da tocada: a E1 está sem saldo, então a peça ganha entrada nova (E2)
+  insert into sf_registros (created_at, posto, pmo, op, status, numero_serie, numero_serie_norm) values (clock_timestamp(), 'Inspeção PTH', 'PMOT', '5000', 'Aprovado', 'T1', 't1');
+  select count(*) into n from sf_estoque_envios where ordem_id = o and alvo = 't1' and operacao = 'entrada' and chave like 'PRT/%/E2' and not ok and cancelado_em is null;
+  if n <> 1 then raise exception 'caso 13a falhou (rebipe pós-estorno da tocada: % E2)', n; end if;
+  -- 13b) reserva VIVA (reservado_em há menos de 15 min, sem tentativa) também é tocada
+  insert into sf_registros (created_at, posto, pmo, op, status, numero_serie, numero_serie_norm) values (clock_timestamp(), 'Inspeção PTH', 'PMOT', '5000', 'Aprovado', 'T2', 't2');
+  update sf_estoque_envios set reservado_em = now() - interval '1 minute' where ordem_id = o and alvo = 't2';
+  delete from sf_registros where pmo = 'PMOT' and numero_serie_norm = 't2';
+  select count(*) into n from sf_estoque_envios where ordem_id = o and alvo = 't2' and operacao = 'estorno';
+  if n <> 1 then raise exception 'caso 13b falhou (reserva viva: % estornos)', n; end if;
+  select count(*) into n from sf_estoque_envios where ordem_id = o and alvo = 't2' and cancelado_em is not null;
+  if n <> 0 then raise exception 'caso 13b falhou (reserva viva cancelada)'; end if;
+  -- 13c) reserva VENCIDA e sem tentativa: intocada → cancela, sem estorno
+  insert into sf_registros (created_at, posto, pmo, op, status, numero_serie, numero_serie_norm) values (clock_timestamp(), 'Inspeção PTH', 'PMOT', '5000', 'Aprovado', 'T3', 't3');
+  update sf_estoque_envios set reservado_em = now() - interval '20 minutes' where ordem_id = o and alvo = 't3';
+  delete from sf_registros where pmo = 'PMOT' and numero_serie_norm = 't3';
+  select count(*) into n from sf_estoque_envios where ordem_id = o and alvo = 't3' and operacao = 'estorno';
+  if n <> 0 then raise exception 'caso 13c falhou (estorno indevido)'; end if;
+  select count(*) into n from sf_estoque_envios where ordem_id = o and alvo = 't3' and cancelado_em is not null;
+  if n <> 1 then raise exception 'caso 13c falhou (não cancelou)'; end if;
+end $$;
+
+-- 14) a chave da PRT não depende da op da linha: troca de filha + cancelamento + rebipe não colide
+do $$
+declare o uuid := '00000000-0000-0000-0000-000000000d01'; n int; r record;
+begin
+  insert into sf_ordens (id, pmo, op) values (o, 'PMOK', '6000');
+  insert into sf_ordem_trechos (ordem_id, seq, codigo, posto_conclui, estoque, compels_op) values (o, 1, 'PRTK', 'Inspeção PTH', 'EINTER', null);
+  insert into sf_registros (created_at, posto, pmo, op, status, numero_serie, numero_serie_norm) values (clock_timestamp(), 'Inspeção PTH', 'PMOK', '6000', 'Aprovado', 'K1', 'k1');
+  -- gravarFilhas acha a filha 6001 e reaponta a pendente; depois a peça é cancelada
+  update sf_ordem_trechos set compels_op = '6001' where ordem_id = o;
+  update sf_estoque_envios set op = '6001' where ordem_id = o and alvo = 'k1';
+  delete from sf_registros where pmo = 'PMOK';
+  -- limparFilhas (a OP mudou de número): a filha volta a vazio; rebipe
+  update sf_ordem_trechos set compels_op = null where ordem_id = o;
+  insert into sf_registros (created_at, posto, pmo, op, status, numero_serie, numero_serie_norm) values (clock_timestamp(), 'Inspeção PTH', 'PMOK', '6000', 'Aprovado', 'K1', 'k1');
+  select * into r from sf_estoque_envios where ordem_id = o and alvo = 'k1' and cancelado_em is null;
+  if r.id is null or r.chave not like 'PRT/%/E2' or r.op <> '' then raise exception 'caso 14 falhou: %', row_to_json(r); end if;
+  select count(distinct chave) into n from sf_estoque_envios where ordem_id = o;
+  if n <> 2 then raise exception 'caso 14 falhou (chaves distintas: %)', n; end if;
+end $$;
+
+-- 15) sf_resumo_trechos_op: por trecho, apontadas (entradas ok − estornos ok), na fila (pendentes vivas) e o motivo da mais antiga
+do $$
+declare o uuid := '00000000-0000-0000-0000-000000000e01'; ent uuid; r record; n int;
+begin
+  insert into sf_ordens (id, pmo, op) values (o, 'PMOF', '7000');
+  insert into sf_ordem_trechos (ordem_id, seq, codigo, posto_conclui, estoque, compels_op) values
+    (o, 2, 'PRTF2', 'Inspeção PTH', 'EINTER', null),
+    (o, 1, 'PRTF1', 'Inspeção AOI TOP', 'EINTER', '7001');
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque, ok, enviado_em)
+    values ('F/OK', 'PRTF1', '7001', 'Inspeção AOI TOP', 'serie', 'f1', 'f1', 3, o, 'EINTER', true, now()) returning id into ent;
+  insert into sf_estoque_envios (chave, operacao, entrada_id, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque, ok, enviado_em)
+    values ('F/EST', 'estorno', ent, 'PRTF1', '7001', 'Inspeção AOI TOP', 'serie', 'f1', 'f1', 1, o, 'EINTER', true, now());
+  insert into sf_estoque_envios (chave, operacao, entrada_id, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque)
+    values ('F/EST2', 'estorno', ent, 'PRTF1', '7001', 'Inspeção AOI TOP', 'serie', 'f1', 'f1', 1, o, 'EINTER');
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque, erro, criado_em)
+    values ('F/P1', 'PRTF1', '7001', 'Inspeção AOI TOP', 'serie', 'f2', 'f2', 2, o, 'EINTER', 'E-velho', now() - interval '1 hour'),
+           ('F/P2', 'PRTF1', '7001', 'Inspeção AOI TOP', 'serie', 'f3', 'f3', 1, o, 'EINTER', 'E-novo', now());
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, serie_norm, quantidade, ordem_id, estoque, cancelado_em, criado_em)
+    values ('F/C', 'PRTF1', '7001', 'Inspeção AOI TOP', 'serie', 'f4', 'f4', 5, o, 'EINTER', now(), now() - interval '2 hours');
+  select count(*) into n from sf_resumo_trechos_op('PMOF', '7000');
+  if n <> 2 then raise exception 'caso 15 falhou (% trechos)', n; end if;
+  select * into r from sf_resumo_trechos_op('PMOF', '7000') limit 1;
+  if r.codigo <> 'PRTF1' or r.posto <> 'Inspeção AOI TOP' or r.compels_op <> '7001' or r.apontadas <> 2 or r.na_fila <> 3 or r.motivo <> 'E-velho' then
+    raise exception 'caso 15 falhou (PRTF1): %', row_to_json(r);
+  end if;
+  select * into r from sf_resumo_trechos_op('PMOF', '7000') offset 1;
+  if r.codigo <> 'PRTF2' or r.compels_op is not null or r.apontadas <> 0 or r.na_fila <> 0 or r.motivo is not null then
+    raise exception 'caso 15 falhou (PRTF2): %', row_to_json(r);
+  end if;
+  select count(*) into n from sf_resumo_trechos_op('PMOF', '9999');
+  if n <> 0 then raise exception 'caso 15 falhou (OP inexistente: %)', n; end if;
+end $$;
+
+-- 16) sem permissão: salvar a receita e ler o resumo são recusados (stub tem_permissao lê teste.perms)
+do $$
+begin
+  perform set_config('teste.perms', 'shopfloor.visualizar', false);
+  begin
+    perform sf_salvar_estrutura('PMONEG', '[]'::jsonb, 'zé');
+    raise exception 'caso 16 falhou (salvar sem administrar passou)';
+  exception when raise_exception then
+    if sqlerrm <> 'sem permissão' then raise; end if;
+  end;
+  if exists (select 1 from sf_estruturas where pmo = 'PMONEG') then raise exception 'caso 16 falhou (gravou)'; end if;
+  perform set_config('teste.perms', 'nenhuma', false);
+  begin
+    perform * from sf_resumo_trechos_op('PMOF', '7000');
+    raise exception 'caso 16 falhou (resumo sem visualizar passou)';
+  exception when raise_exception then
+    if sqlerrm <> 'sem permissão' then raise; end if;
+  end;
+  perform set_config('teste.perms', '', false);
+end $$;
+
+-- 17) a reserva da 0132 segura o estorno da linha tocada até a entrada dele estar ok
+do $$
+declare o uuid := '00000000-0000-0000-0000-000000000c01'; ent uuid; est uuid; n int;
+begin
+  select entrada_id, id into ent, est from sf_estoque_envios where ordem_id = o and alvo = 't1' and operacao = 'estorno';
+  select count(*) into n from sf_estoque_reservar(100) x where x.id = est;
+  if n <> 0 then raise exception 'caso 17 falhou (estorno reservado com a entrada pendente)'; end if;
+  update sf_estoque_envios set ok = true, enviado_em = now(), reservado_em = null where id = ent;
+  select count(*) into n from sf_estoque_reservar(100) x where x.id = est;
+  if n <> 1 then raise exception 'caso 17 falhou (estorno não liberado com a entrada ok)'; end if;
 end $$;
 \echo 'PROVA ESTRUTURA OK'

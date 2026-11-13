@@ -4,7 +4,12 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
   if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
 end $$;
-create or replace function public.tem_permissao(p_modulo text, p_acao text) returns boolean language sql as 'select true';
+-- `teste.perms` = lista 'modulo.permissao' separada por vírgula (como em alertas_test.sql). Ausente ou vazia = tudo
+-- liberado, que é o que a maior parte da prova precisa; o caso de permissão negada põe a lista e depois a limpa.
+create or replace function public.tem_permissao(p_modulo text, p_acao text) returns boolean language sql stable as $f$
+  select coalesce(current_setting('teste.perms', true), '') = ''
+      or (',' || current_setting('teste.perms', true) || ',') like '%,' || p_modulo || '.' || p_acao || ',%'
+$f$;
 create table public.sf_postos (chave text primary key, ordem int not null default 0);
 create table public.sf_ordens (
   id uuid primary key default gen_random_uuid(), pmo text not null, op text not null,
@@ -29,6 +34,8 @@ create table public.sf_estoque_envios (
   estornado int not null default 0,
   entrada_id uuid references public.sf_estoque_envios (id) on delete restrict,
   adiado_ate timestamptz,
+  -- 0132: o contador <n> da chave, materializado (a sf_estoque_reverter ordena por ele)
+  seq_chave int generated always as ((substring(chave from '/[ES]([0-9]{1,9})$'))::int) stored,
   check (btrim(chave) <> ''),
   check (btrim(bipe) <> ''),
   check (tentativas >= 0),
@@ -57,6 +64,42 @@ create or replace function public.sf_estoque_chave(
          || (select count(*) + 1 from public.sf_estoque_envios e
               where e.pmo = p_pmo and e.op = p_op and e.posto = p_posto
                 and e.alvo = p_alvo and e.operacao = p_operacao)
+$func$;
+-- 0132 (cópia sem os comentários): a reserva do lote. Segura o estorno até a entrada dele (entrada_id) estar ok.
+create or replace function public.sf_estoque_reservar(p_limite int default 30)
+returns table (id uuid, chave text, operacao text, pmo text, op text, posto text, tipo text,
+               bipe text, serie_norm text, quantidade int, tentativas int, criado_em timestamptz)
+language plpgsql volatile security definer set search_path = public as $func$
+#variable_conflict use_column
+begin
+  return query
+    with alvo as (
+      select e.id
+        from public.sf_estoque_envios e
+       where e.ok = false
+         and e.cancelado_em is null
+         and e.tentativas < 5
+         and (e.reservado_em is null or e.reservado_em < now() - interval '15 minutes')
+         and (e.adiado_ate is null or e.adiado_ate <= now())
+         and (e.operacao <> 'estorno'
+              or coalesce((select ent.ok from public.sf_estoque_envios ent where ent.id = e.entrada_id), false))
+       order by (e.tentativas > 0), e.criado_em, e.id
+       limit least(greatest(coalesce(p_limite, 30), 1), 100)
+       for update of e skip locked
+    ),
+    reservadas as (
+      update public.sf_estoque_envios e
+         set tentativas = e.tentativas + 1, reservado_em = now()
+        from alvo
+       where e.id = alvo.id
+      returning e.id, e.chave, e.operacao, e.pmo, e.op, e.posto, e.tipo, e.bipe, e.serie_norm,
+                e.quantidade, e.tentativas, e.criado_em
+    )
+    select r.id, r.chave, r.operacao, r.pmo, r.op, r.posto, r.tipo, r.bipe, r.serie_norm,
+           r.quantidade, r.tentativas, r.criado_em
+      from reservadas r
+     order by (r.tentativas > 1), r.criado_em, r.id;
+end
 $func$;
 insert into public.sf_postos (chave, ordem) values
   ('Inspeção AOI TOP', 1), ('Inspeção PTH', 2), ('Teste', 3), ('Almoxarifado', 4);
