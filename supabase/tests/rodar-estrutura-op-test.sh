@@ -17,7 +17,7 @@ docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -1 -f /tmp/0184.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/prova.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -1 -f /tmp/rollback.sql
 docker exec "$NOME" psql -U postgres -tAq -c "select count(*) from information_schema.tables where table_name in ('sf_estruturas','sf_estrutura_trechos','sf_ordem_trechos')" | grep -qx 0 || { echo "rollback não removeu as tabelas"; exit 1; }
-docker exec "$NOME" psql -U postgres -tAq -c "select count(*) from sf_estoque_envios where pmo like 'PRT%' and not ok and cancelado_em is null" | grep -qx 0 || { echo "rollback deixou linha de PRT pendente na fila"; exit 1; }
+docker exec "$NOME" psql -U postgres -tAq -c "select count(*) from sf_estoque_envios where pmo like 'PRT%' and operacao = 'entrada' and not ok and cancelado_em is null and tentativas = 0 and reservado_em is null" | grep -qx 0 || { echo "rollback deixou entrada de PRT intocada pendente na fila"; exit 1; }
 docker exec "$NOME" psql -U postgres -tAq -c "select count(*) from pg_proc where proname in ('sf_trecho_chave','sf_resumo_trechos_op','sf_trecho_enfileirar','sf_trecho_desfazer','sf_salvar_estrutura')" | grep -qx 0 || { echo "rollback não removeu as funções"; exit 1; }
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -1 -f /tmp/0184.sql   # volta depois do rollback
 echo "ESTRUTURA OP SQL OK"

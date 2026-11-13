@@ -116,7 +116,7 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
       if (!pai || !(opLiberada(pai.op, env.COMPELS_OPS_LIBERADAS) || pai.integrar)) {
         return {
           ok: false, aguardar: true, esperado: true,
-          erro: `OP ${pai?.op ?? '?'} ainda não está liberada para a integração com o Compels (${envio.pmo} da OP ${envio.op}). Faça a entrada à mão no ERP, ou libere a OP.`,
+          erro: `OP ${pai?.op ?? '?'} ainda não está liberada para a integração com o Compels (PRT ${envio.pmo}). Faça a entrada à mão no ERP, ou libere a OP.`,
         }
       }
       // A filha vale a do TRECHO da OP agora, não a gravada na linha: a linha pode ter nascido antes de a filha ser

@@ -457,7 +457,7 @@ describe('linhas de PRT (estrutura da OP)', () => {
     const porta = criarPortaCompels({ env: { COMPELS_PRT_LIGADO: '1' }, ordemDaLinha: async () => ({ op: '8498', integrar: false }) })
     const r = await porta(linhaPrt)
     expect(r).toMatchObject({ ok: false, aguardar: true, esperado: true })
-    expect((r as { erro: string }).erro).toBe('OP 8498 ainda não está liberada para a integração com o Compels (PRT420 da OP 8499). Faça a entrada à mão no ERP, ou libere a OP.')
+    expect((r as { erro: string }).erro).toBe('OP 8498 ainda não está liberada para a integração com o Compels (PRT PRT420). Faça a entrada à mão no ERP, ou libere a OP.')
   })
 
   const FILHA_NAO_ACHADA = {

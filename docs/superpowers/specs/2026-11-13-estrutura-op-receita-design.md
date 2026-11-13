@@ -67,15 +67,15 @@ O ShopFloor aponta **cada PRT no Compels quando as peças passam pelo posto que 
 
 **Fila: `sf_estoque_envios`** recebe as entradas das PRTs com `pmo = codigo da PRT` e `op = número da OP filha`. Com isso o adaptador atual (`criarPortaCompels` → `enviarEntrada`) resolve a OP no Compels, confere o código e guarda o ponto de partida (`sf_compels_op_base`, 0168) **sem mudança**.
 - **Coluna nova `ordem_id`**, que liga a linha à OP do ShopFloor. É ela que permite a liberação (§6) e o Fluxo/Almoxarifado mostrarem a linha junto da OP.
-- **Chave de idempotência:** passa a incluir o trecho, pelo prefixo `trecho:<seq>`, para a mesma série gerar uma linha por trecho e nunca duas (D6).
+- **Chave de idempotência:** as linhas de PRT têm chave própria, `PRT/<ordem_id>/<codigo>/<posto>/<alvo>/[ES]n`, gerada pela função `sf_trecho_chave`. Assim a mesma série gera uma linha por trecho e nunca duas (D6).
 
 ## 5. Fluxo de dados
 
 1. **Criação da OP:**
-   - se a PMO tem receita, os trechos são copiados para `sf_ordem_trechos`;
-   - o servidor lê a árvore da OP no Compels (busca da OP + filhas pelo `ordemProducaoMaeNumero` e pela sequência de números, como no `mapa-ops.mjs`);
+   - se a PMO tem receita, os trechos são copiados para `sf_ordem_trechos` (a receita é copiada **só na criação**: editar a OP nunca copia de novo, e trocar a PMO de uma OP que já tem trechos é recusado);
+   - o servidor lê a árvore da OP no Compels, **na criação da OP (ou ao salvar depois de uma troca de número)**, (busca da OP + filhas pelo `ordemProducaoMaeNumero` e pela sequência de números, como no `mapa-ops.mjs`);
    - cada trecho é casado com a filha **pelo código**, e o número da filha é guardado;
-   - Compels fora do ar ou filha não achada: a OP é criada assim mesmo, com aviso, e o casamento é refeito no primeiro envio.
+   - Compels fora do ar ou filha não achada: a OP é criada assim mesmo, com aviso. **No envio, o adaptador não busca a árvore de novo: usa a filha atual do trecho em `sf_ordem_trechos`.**
 2. **Bipe aprovado no `posto_conclui` de um trecho:**
    - a RPC do lançamento enfileira uma `entrada` daquele trecho;
    - `quantidade` = placas por painel (1 em OP comum);
@@ -137,7 +137,7 @@ O ShopFloor aponta **cada PRT no Compels quando as peças passam pelo posto que 
 
 | Situação | Comportamento |
 |---|---|
-| Compels fora do ar na criação da OP | OP criada sem as filhas, com aviso; casamento refeito no 1º envio |
+| Compels fora do ar na criação da OP | OP criada sem as filhas, com aviso; o envio usa a filha atual do trecho em `sf_ordem_trechos` (a árvore só é buscada na criação ou ao salvar após troca de número) |
 | OP filha cancelada ou trocada depois | O envio confere sempre; a linha para com "OP 8499 cancelada no Compels" |
 | Reaprovação depois da Manutenção | Não duplica (chave por trecho + série) |
 | Lançamento cancelado | Pendente é cancelado; enviado vira estorno manual |
@@ -145,7 +145,8 @@ O ShopFloor aponta **cada PRT no Compels quando as peças passam pelo posto que 
 | Requisição faltando na filha | Espera, sem gastar tentativa; paga pendência se existir uma |
 | PTH antes da SMD | PTH espera a SMD entrar |
 | Apontamento manual na mesma filha | O ponto de partida detecta a diferença e para com aviso |
-| Receita editada | Só vale para OP nova (D5) |
+| Receita editada | Só vale para OP nova (D5); editar a OP nunca copia a receita de novo |
+| Troca de PMO em OP que já tem trechos | Recusada |
 | Bipe duplo errado | Recusa com o motivo |
 
 ## 10. Testes
