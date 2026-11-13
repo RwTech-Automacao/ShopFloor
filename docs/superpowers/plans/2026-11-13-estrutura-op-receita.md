@@ -1912,4 +1912,47 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## Resultado do smoke
 
-(preenchido na Task 8)
+Rodado em 13/11/2026, na branch `feat/estrutura-op-receita` (`dd644db1`).
+
+**Verificação automática**
+- vitest: 3610 de 3611 testes passaram. A única falha foi `modal-abastecimento.test.tsx`, que não é desta branch: estourou o tempo com a suíte inteira e passou sozinho (37/37). Os testes `etiquetar-rolo` passaram com a suíte inteira.
+- `tsc --noEmit`: sem erro.
+- eslint: 1 erro e cerca de 35 avisos que já existiam na main (o erro é `camera-captura.tsx`). Esta branch acrescenta 2 avisos de variável não usada em `ordens/__tests__/estrutura-aviso-form.test.tsx` (`waitFor` e `_o`).
+- Harness SQL (`rodar-estrutura-op-test.sh`): `PROVA ESTRUTURA OK` e `ESTRUTURA OP SQL OK`, com a 0184 rodando duas vezes e o rollback.
+- `next build` (worktree com `cp -al`): OK. Sem `.env.local`, a coleta de dados de `/api/alertas/avaliar` falha; isso é do ambiente, não da branch.
+
+**Smoke local**
+- **Ambiente:** banco local com a 0182–0184 aplicadas por psql e os grants; `next dev` na porta 3002; Compels simulado na porta 4590 com a família 9498 PMOC14 → 9499 PRT420 → 9500 PRT410; Chrome automatizado. O banco local não tem a OP 8498 nem o posto AOI TOP. Por isso foram criados:
+  - o posto `Inspeção AOI TOP`;
+  - a OP de referência `PMOC14/9400`, com a rota SPI › AOI TOP › Montagem PTH › Inspeção PTH › Teste › Embalagem › NQA › Almoxarifado;
+  - o padrão "Rota 8498" com essa mesma rota.
+- **Estrutura, pela tela:**
+  - "Ler do Compels" com 9498 trouxe PRT410 e PRT420.
+  - Postos escolhidos: AOI TOP e Inspeção PTH. Salvar e Ativar funcionaram.
+  - O formulário da OP mostrou "Esta PMO tem estrutura ativa…".
+1. ✅ **Criar a OP** `PMOC14/9498` pela tela, com a rota puxada do padrão: `sf_ordem_trechos` ficou com PRT410 → `compels_op` 9500 e PRT420 → 9499, os dois com estoque EINTER.
+2. ✅ **3 peças aprovadas na AOI TOP:** 3 linhas `PRT410/9500`, `quantidade` 1, EINTER, com `ordem_id`.
+3. ✅ **Reprovar na Inspeção PTH:** nenhuma linha nova.
+4. ✅ **Manutenção e reaprovação na PTH:** 1 linha `PRT420/9499`. Um segundo bipe aprovado da mesma peça não duplicou a linha.
+5. ✅ **Cancelar o último lançamento** (`sf_cancelar_lancamento`, como Administrador):
+   - Cancelar o bipe repetido manteve a linha, porque a outra aprovação ainda vale.
+   - Cancelar a reaprovação deixou a linha `PRT420/9499` cancelada.
+   - A peça foi reaprovada depois, e isso criou uma linha nova (`…/E2`) para o passo 7.
+6. ✅ **Cron sem `COMPELS_PRT_LIGADO`:** as 4 linhas de PRT ficaram esperando com "Apontamento das PRTs ainda desligado…". Ficaram com `erro_esperado` true, sem gastar tentativa, e com o envio adiado.
+7. ✅ **Com `COMPELS_PRT_LIGADO=1`:**
+   - O cron respondeu `enviados: 4`.
+   - O Compels simulado recebeu, nesta ordem: 9500, 9500, 9500 e depois 9499, com quantidade 1 cada e estoque/locação EINTER (300/400).
+   - A Observação levou a chave da linha.
+   - As linhas ficaram `ok`.
+8. ✅ **Fluxo:** com uma 4ª peça aprovada na AOI TOP ainda na fila, os cards mostram:
+   - AOI TOP: `└ PRT410 → Compels 9500 · apontadas 3 · na fila 1`
+   - Inspeção PTH: `└ PRT420 → Compels 9499 · apontadas 1 · na fila 0`
+
+As 3 falhas do cron são linhas antigas de teste do banco local (`PMOTESTE/9101`, OP que o Compels simulado não conhece). Não têm relação com esta feature.
+
+**Observações, sem defeito:**
+- A estrutura montada com "Ler do Compels" no editor fica com `origem = manual`. Só o "Importar do Compels" grava outra origem.
+- A chave e a Observação das linhas de PRT começam com `ALMOX/`, como as da PMO.
+- Na largura de 1800 px, o texto `PRT… → Compels …` quebra em duas linhas no card.
+
+**Desligado ao final:** app, Compels simulado e `supabase stop` (volume mantido; os dados do smoke continuam no banco local); `.env.local` e worktree de teste removidos.
