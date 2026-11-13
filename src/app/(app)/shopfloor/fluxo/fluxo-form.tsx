@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, opsComBipes, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
+import { dadosPmoOpDoNo } from './dados-pmo-op-do-no'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo, ordenarOpsPorBipes } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
@@ -857,10 +858,8 @@ export function FluxoForm({
         data: {
           ...n.data,
           selecionado: aberto === n.id,
-          // Só a Entrada carrega PMO/OP + descrição da OP (o card mostra; o domínio não tem esse dado).
-          ...(n.id === ENTRADA ? { pmo: opSel?.pmo, op: opSel?.op, descricao: opSel?.descricao } : {}),
-          // A Saída (card Finalizadas) leva PMO e OP: o estoque do Compels e a fila do Compels são consultados com eles.
-          ...(n.id === SAIDA ? { pmo: opSel?.pmo, op: opSel?.op } : {}),
+          // PMO/OP em todos os nós (o card do posto mostra a linha da PRT; a Entrada leva ainda a descrição).
+          ...dadosPmoOpDoNo(n.id, opSel),
           // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
           ...(rota ? (() => {
             const idx = rota.ordem.indexOf(n.id)

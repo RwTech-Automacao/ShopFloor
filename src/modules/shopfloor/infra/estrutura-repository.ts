@@ -169,11 +169,19 @@ export async function resumoTrechosDaOp(pmo: string, op: string): Promise<Resumo
   if (e1) throw new Error(`sf_ordens: ${e1.message}`)
   const ordem = o as { id: string; sf_ordem_trechos: { seq: number; codigo: string; posto_conclui: string; compels_op: string | null }[] } | null
   if (!ordem || ordem.sf_ordem_trechos.length === 0) return []
-  const { data: linhas, error: e2 } = await sb.from('sf_estoque_envios')
-    .select('pmo, operacao, quantidade, ok, cancelado_em, erro, criado_em').eq('ordem_id', ordem.id)
-  if (e2) throw new Error(`sf_estoque_envios: ${e2.message}`)
-  const ls = (linhas ?? []) as { pmo: string; operacao: string; quantidade: number; ok: boolean; cancelado_em: string | null; erro: string | null; criado_em: string }[]
+  type Linha = { pmo: string; operacao: string; quantidade: number; ok: boolean; cancelado_em: string | null; erro: string | null; criado_em: string }
+  const ls: Linha[] = []
+  for (let de = 0; ; de += 1000) {
+    const { data: pg, error: e2 } = await sb.from('sf_estoque_envios')
+      .select('pmo, operacao, quantidade, ok, cancelado_em, erro, criado_em').eq('ordem_id', ordem.id)
+      .order('criado_em').order('id').range(de, de + 999)
+    if (e2) throw new Error(`sf_estoque_envios: ${e2.message}`)
+    const lote = (pg ?? []) as Linha[]
+    ls.push(...lote)
+    if (lote.length < 1000) break
+  }
   return [...ordem.sf_ordem_trechos].sort((a, b) => a.seq - b.seq).map((t) => {
+    // Linha cancelada nunca é ok (check da 0132): excluí-la aqui é correto.
     const dele = ls.filter((l) => l.pmo === t.codigo && !l.cancelado_em)
     const sinal = (l: { operacao: string }) => (l.operacao === 'estorno' ? -1 : 1)
     const pend = dele.filter((l) => !l.ok && l.operacao === 'entrada').sort((a, b) => a.criado_em.localeCompare(b.criado_em))

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
+import type { ResumoTrecho } from '@/modules/shopfloor/infra/estrutura-repository'
 
 vi.mock('@xyflow/react', () => ({
   Handle: () => null,
@@ -11,7 +12,7 @@ vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({
   lerPendenteCompelsAction: vi.fn(),
 }))
 const trechos = vi.hoisted(() => ({
-  lerTrechosCompelsAction: vi.fn(async () => [
+  lerTrechosCompelsAction: vi.fn(async (): Promise<ResumoTrecho[]> => [
     { posto: 'Inspeção PTH', codigo: 'PRT420', compelsOp: '8499', apontadas: 160, naFila: 26, motivo: 'Aguardando requisição no Compels: PRT410' },
   ]),
 }))
@@ -28,7 +29,7 @@ const posto = (id: string, over: Record<string, unknown> = {}) => ({
 const renderNo = (id: string, pmo: string, op: string) =>
   render(createElement(FluxoNode, { id, data: posto(id, { pmo, op }) } as never))
 
-beforeEach(() => { limparCacheTrechosParaTeste() })
+beforeEach(() => { limparCacheTrechosParaTeste(); trechos.lerTrechosCompelsAction.mockClear() })
 
 describe('linha da PRT no card do posto', () => {
   it('o card do posto que conclui um trecho mostra a PRT, a OP filha, apontadas e fila com o motivo', async () => {
@@ -39,7 +40,29 @@ describe('linha da PRT no card do posto', () => {
   })
   it('posto que não conclui trecho não mostra nada', async () => {
     renderNo('Teste', 'PMOC14', '8498')
+    await waitFor(() => expect(trechos.lerTrechosCompelsAction).toHaveBeenCalledTimes(1))
     await new Promise((r) => setTimeout(r, 0))
     expect(screen.queryByText(/→ Compels/)).toBeNull()
+  })
+  it('fila zerada: sem ícone de atenção', async () => {
+    trechos.lerTrechosCompelsAction.mockResolvedValueOnce([
+      { posto: 'Inspeção PTH', codigo: 'PRT420', compelsOp: '8499', apontadas: 186, naFila: 0, motivo: null },
+    ])
+    renderNo('Inspeção PTH', 'PMOC14', '8498')
+    await waitFor(() => expect(screen.getByText('apontadas 186 · na fila 0')).toBeTruthy())
+    expect(screen.queryByLabelText('atenção')).toBeNull()
+  })
+  it('trecho sem OP no Compels', async () => {
+    trechos.lerTrechosCompelsAction.mockResolvedValueOnce([
+      { posto: 'Inspeção PTH', codigo: 'PRT420', compelsOp: null, apontadas: 0, naFila: 0, motivo: null },
+    ])
+    renderNo('Inspeção PTH', 'PMOC14', '8498')
+    await waitFor(() => expect(screen.getByText('PRT420 → sem OP no Compels')).toBeTruthy())
+  })
+  it('dois cards da mesma OP dividem uma só consulta', async () => {
+    renderNo('Inspeção PTH', 'PMOC14', '8498')
+    renderNo('Teste', 'PMOC14', '8498')
+    await waitFor(() => expect(screen.getByText('PRT420 → Compels 8499')).toBeTruthy())
+    expect(trechos.lerTrechosCompelsAction).toHaveBeenCalledTimes(1)
   })
 })

@@ -338,13 +338,14 @@ export function OrdemForm({
                   if (dados) { setCliente(dados.cliente); setDescricao(dados.descricao); setModoNovoCliente(false) }
                 }} required />
                 {pmo.trim() !== '' && (() => {
-                  const s = situacaoEstruturaPorPmo[pmo.trim().replace(/_[A-Za-z]*$/, '')]
+                  const base = pmo.trim().replace(/_[A-Za-z]*$/, '')
+                  const s = situacaoEstruturaPorPmo[base]
                   if (s === 'ativa') return <p className="text-xs text-muted-foreground">Esta PMO tem estrutura ativa: as PRTs serão apontadas no Compels pelo ShopFloor.</p>
                   if (s === 'rascunho') return <p className="text-xs text-amber-700">A estrutura desta PMO está em rascunho: ative-a em Estruturas para valer nesta OP.</p>
                   return (
                     <p className="text-xs text-muted-foreground">
                       Esta PMO não tem estrutura — as PRTs não serão apontadas pelo ShopFloor.{' '}
-                      <a className="underline" href={`/shopfloor/estruturas?pmo=${encodeURIComponent(pmo.trim())}`}>Cadastrar estrutura</a>
+                      <a className="underline" href={`/shopfloor/estruturas?pmo=${encodeURIComponent(base)}`}>Cadastrar estrutura</a>
                     </p>
                   )
                 })()}

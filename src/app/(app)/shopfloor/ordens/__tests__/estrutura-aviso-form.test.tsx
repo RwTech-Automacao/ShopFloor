@@ -76,4 +76,12 @@ describe('aviso da estrutura no formulário da OP', () => {
     renderForm({ situacaoEstruturaPorPmo: { PMOC14: 'rascunho' }, pmoInicial: 'PMOC14' })
     expect(screen.getByText('A estrutura desta PMO está em rascunho: ative-a em Estruturas para valer nesta OP.')).toBeTruthy()
   })
+  it('PMO com sufixo de OP (PMOC14_F) usa a estrutura da PMO base', () => {
+    renderForm({ situacaoEstruturaPorPmo: { PMOC14: 'ativa' }, pmoInicial: 'PMOC14_F' })
+    expect(screen.getByText('Esta PMO tem estrutura ativa: as PRTs serão apontadas no Compels pelo ShopFloor.')).toBeTruthy()
+  })
+  it('o link de PMOX_F aponta para a PMO base', () => {
+    renderForm({ situacaoEstruturaPorPmo: {}, pmoInicial: 'PMOX_F' })
+    expect(screen.getByRole('link', { name: 'Cadastrar estrutura' }).getAttribute('href')).toBe('/shopfloor/estruturas?pmo=PMOX')
+  })
 })
