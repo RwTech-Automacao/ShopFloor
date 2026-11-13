@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 vi.mock('server-only', () => ({}))
 vi.mock('@/shared/lib/supabase/service', () => ({ createServiceSupabase: () => null }))
 
-import { criarRepositorioEstoqueEnvios, lerEnvioEstoque } from '../estoque-envios-repository'
+import { criarFilhaAtual, criarRepositorioEstoqueEnvios, criarTrocarOpDaLinha, lerEnvioEstoque } from '../estoque-envios-repository'
 import type { EnvioEstoqueReservado } from '../../application/enviar-estoque'
 
 interface Chamada {
@@ -25,6 +25,10 @@ function sbFalso(opcoes: {
   /** A leitura do estoque de destino (select id, estoque ... in (ids)): o estoque por id, ou um erro. */
   estoques?: Record<string, string>
   erroEstoque?: { message: string; code?: string }
+  /** Erro por leitura, pelas colunas pedidas (decide antes de `erroEstoque`); `null` = a leitura passa. */
+  erroLeitura?: (colunas: string) => { message: string; code?: string } | null
+  /** O ordem_id (0184) por id, devolvido só quando a leitura pede a coluna. */
+  ordens?: Record<string, string>
 } = {}) {
   const chamadas: Chamada[] = []
   const rpcs: { nome: string; args: Record<string, unknown> }[] = []
@@ -33,10 +37,16 @@ function sbFalso(opcoes: {
     chamadas.push(c)
     const resultado = () => {
       if (c.leitura) {
+        const erroDaLeitura = opcoes.erroLeitura?.(c.leitura.colunas)
+        if (erroDaLeitura) return { data: null, error: erroDaLeitura }
         if (opcoes.erroEstoque) return { data: null, error: opcoes.erroEstoque }
         const mapa = opcoes.estoques ?? {}
+        const comOrdem = c.leitura.colunas.includes('ordem_id')
         return {
-          data: c.leitura.ids.filter((id) => String(id) in mapa).map((id) => ({ id, estoque: mapa[String(id)] })),
+          data: c.leitura.ids.filter((id) => String(id) in mapa).map((id) => ({
+            id, estoque: mapa[String(id)],
+            ...(comOrdem && opcoes.ordens?.[String(id)] ? { ordem_id: opcoes.ordens[String(id)] } : {}),
+          })),
           error: null,
         }
       }
@@ -150,6 +160,29 @@ describe('reservarPendentes', () => {
     expect(leituras).toHaveLength(1)
     expect(leituras[0]!.tabela).toBe('sf_estoque_envios')
     expect(leituras[0]!.leitura).toEqual({ colunas: 'id, estoque, ordem_id', ids: ['e1', 'e2'] })
+  })
+
+  it('linha de PRT (0184): o ordem_id lido vira ordemId; linha da PMO fica com null', async () => {
+    const { sb } = sbFalso({
+      rpc: () => ({ data: [LINHA_RPC, { ...LINHA_RPC, id: 'e2', chave: 'outra' }], error: null }),
+      estoques: { e1: 'EINTER', e2: 'PA' },
+      ordens: { e1: 'ord-1' },
+    })
+    const lote = await criarRepositorioEstoqueEnvios(sb).reservarPendentes(30)
+    expect(lote.envios.map((e) => [e.id, e.ordemId])).toEqual([['e1', 'ord-1'], ['e2', null]])
+  })
+
+  it('app novo antes da 0184 (sem ordem_id): relê só id e estoque, mantém o estoque e toda linha é da PMO', async () => {
+    const { sb, chamadas } = sbFalso({
+      rpc: () => ({ data: [LINHA_RPC], error: null }),
+      estoques: { e1: 'EINTER' },
+      erroLeitura: (colunas) =>
+        colunas.includes('ordem_id') ? { message: 'column sf_estoque_envios.ordem_id does not exist', code: '42703' } : null,
+    })
+    const lote = await criarRepositorioEstoqueEnvios(sb).reservarPendentes(30)
+    expect(lote.envios.map((e) => [e.id, e.estoque, e.ordemId])).toEqual([['e1', 'EINTER', null]])
+    expect(chamadas.filter((c) => c.leitura).map((c) => c.leitura!.colunas)).toEqual(['id, estoque, ordem_id', 'id, estoque'])
+    expect(chamadas.some((c) => c.update)).toBe(false)
   })
 
   it('app novo antes da migração 0175 (coluna inexistente): toda linha é PA, a rodada segue', async () => {
@@ -298,5 +331,39 @@ describe('concluirEnvio', () => {
     const { sb, chamadas } = sbFalso()
     await criarRepositorioEstoqueEnvios(sb).concluirEnvio(ENVIO, { ok: false, erro: 'x'.repeat(2000) })
     expect(String(chamadas[0]!.update!.erro)).toHaveLength(500)
+  })
+})
+
+describe('filha atual e troca da op da linha (0184)', () => {
+  function sbTrechos(resposta: { data: unknown; error: { message: string } | null }) {
+    const filtros: [string, unknown][] = []
+    const q = {
+      select: () => q,
+      eq: (c: string, v: unknown) => { filtros.push([c, v]); return q },
+      order: () => q,
+      limit: async () => resposta,
+    }
+    return { sb: { from: (t: string) => { filtros.push(['tabela', t]); return q } } as unknown as SupabaseClient, filtros }
+  }
+
+  it('lê compels_op do trecho pela OP e pelo código', async () => {
+    const { sb, filtros } = sbTrechos({ data: [{ compels_op: ' 8499 ' }], error: null })
+    expect(await criarFilhaAtual(sb)('ord-1', 'PRT420')).toBe('8499')
+    expect(filtros).toEqual([['tabela', 'sf_ordem_trechos'], ['ordem_id', 'ord-1'], ['codigo', 'PRT420']])
+  })
+
+  it('sem trecho ou sem filha → null; erro sobe', async () => {
+    expect(await criarFilhaAtual(sbTrechos({ data: [], error: null }).sb)('o', 'c')).toBeNull()
+    expect(await criarFilhaAtual(sbTrechos({ data: [{ compels_op: null }], error: null }).sb)('o', 'c')).toBeNull()
+    await expect(criarFilhaAtual(sbTrechos({ data: null, error: { message: 'rede' } }).sb)('o', 'c')).rejects.toThrow('rede')
+  })
+
+  it('troca a op só da linha não enviada e não cancelada', async () => {
+    const { sb, chamadas } = sbFalso()
+    await criarTrocarOpDaLinha(sb)('id-1', '8499')
+    expect(chamadas[0]).toMatchObject({
+      tabela: 'sf_estoque_envios', update: { op: '8499' },
+      filtros: [['id', 'id-1'], ['ok', false], ['cancelado_em', null]],
+    })
   })
 })

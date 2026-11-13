@@ -11,7 +11,16 @@ import {
   pagarPendenciaLigado,
 } from '@/modules/compels/infra/config'
 import type { EnvioEstoqueReservado, PortaCompels, ResultadoEnvioEstoque } from '../application/enviar-estoque'
-import { criarBaseDaOp, criarErroAnterior, criarOpIntegrada, criarOrdemDaLinha, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
+import {
+  criarBaseDaOp,
+  criarErroAnterior,
+  criarFilhaAtual,
+  criarOpIntegrada,
+  criarOrdemDaLinha,
+  criarSomaEnviada,
+  criarTrocarOpDaLinha,
+  type BaseDaOp,
+} from './estoque-envios-repository'
 
 /**
  * O ÚLTIMO METRO DA FILA DE ESTOQUE: entrega UMA linha da fila ao Compels (Requisitar + Apontar).
@@ -56,6 +65,10 @@ export interface DependenciasPortaCompels {
   opIntegrada?: (pmo: string, op: string) => Promise<boolean>
   /** Para teste: a OP do ShopFloor de uma linha de PRT (0184). Em produção é `sf_ordens`. */
   ordemDaLinha?: (ordemId: string) => Promise<{ op: string; integrar: boolean } | null>
+  /** Para teste: a OP filha ATUAL do trecho (sf_ordem_trechos.compels_op por OP e código da PRT). */
+  filhaAtual?: (ordemId: string, codigo: string) => Promise<string | null>
+  /** Para teste: regrava a op de uma linha de PRT que estava com a filha antiga (melhor esforço). */
+  trocarOpDaLinha?: (id: string, op: string) => Promise<void>
 }
 
 /** Marca gravada na Observação do apontamento: curta, e a chave diz que bipe foi. */
@@ -75,9 +88,12 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
   const erroAnterior = deps.erroAnterior ?? criarErroAnterior()
   const opIntegrada = deps.opIntegrada ?? criarOpIntegrada()
   const ordemDaLinha = deps.ordemDaLinha ?? criarOrdemDaLinha()
+  const filhaAtual = deps.filhaAtual ?? criarFilhaAtual()
+  const trocarOpDaLinha = deps.trocarOpDaLinha ?? criarTrocarOpDaLinha()
   const esperando = new Map<string, ResultadoEnvioEstoque>()
 
-  return async function enviarMovimentacaoCompels(envio: EnvioEstoqueReservado): Promise<ResultadoEnvioEstoque> {
+  return async function enviarMovimentacaoCompels(reservado: EnvioEstoqueReservado): Promise<ResultadoEnvioEstoque> {
+    let envio = reservado
     // Estorno automático é a fase 2: por ora fica visível na tela de pendências, sem gastar tentativa.
     if (envio.operacao === 'estorno') return { ok: false, erro: MOTIVO_ESTORNO, aguardar: true, esperado: true }
 
@@ -103,10 +119,28 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
           erro: `OP ${pai?.op ?? '?'} ainda não está liberada para a integração com o Compels (${envio.pmo} da OP ${envio.op}). Faça a entrada à mão no ERP, ou libere a OP.`,
         }
       }
-      if (!envio.op.trim()) {
+      // A filha vale a do TRECHO da OP agora, não a gravada na linha: a linha pode ter nascido antes de a filha ser
+      // casada, ou ter ficado com a antiga (reservada no momento em que o gravarFilhas reapontou as pendentes).
+      let filha: string
+      try {
+        filha = ((await filhaAtual(envio.ordemId, envio.pmo)) ?? '').trim()
+      } catch (e) {
+        return { ok: false, aguardar: true, erro: `Não foi possível conferir a OP filha da PRT ${envio.pmo}: ${e instanceof Error ? e.message : String(e)}` }
+      }
+      // O adaptador não procura a filha no Compels: quem procura é o salvamento da OP (aplicarEstruturaNaOp).
+      if (!filha) {
         return {
           ok: false, aguardar: true, esperado: true,
           erro: `${envio.pmo} não tem OP filha no Compels: confira a estrutura e salve a OP ${pai.op} de novo para procurar.`,
+        }
+      }
+      if (filha !== envio.op) {
+        const antiga = envio.op
+        envio = { ...envio, op: filha }
+        try {
+          await trocarOpDaLinha(envio.id, filha)
+        } catch (e) {
+          console.error(`[estoque] regravar a op da linha ${envio.chave} (${antiga} → ${filha}) falhou:`, e instanceof Error ? e.message : e)
         }
       }
     } else if (!opLiberada(envio.op, env.COMPELS_OPS_LIBERADAS)) {

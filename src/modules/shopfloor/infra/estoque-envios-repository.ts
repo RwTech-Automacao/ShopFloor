@@ -306,3 +306,31 @@ export function criarOrdemDaLinha(sb?: SupabaseClient): (ordemId: string) => Pro
     return { op: d.op, integrar: d.integrar_compels === true }
   }
 }
+
+/**
+ * A OP filha ATUAL de um trecho (0184): `sf_ordem_trechos.compels_op` pela OP do ShopFloor e pelo código da PRT (que é o
+ * `pmo` da linha). `null` = trecho sem filha casada (ou que não existe mais). Erro de leitura sobe: quem chama espera.
+ */
+export function criarFilhaAtual(sb?: SupabaseClient): (ordemId: string, codigo: string) => Promise<string | null> {
+  return async (ordemId, codigo) => {
+    const cliente = sb ?? createServiceSupabase()
+    const { data, error } = await cliente.from('sf_ordem_trechos').select('compels_op')
+      .eq('ordem_id', ordemId).eq('codigo', codigo).order('seq').limit(1)
+    if (error) throw new Error(`sf_ordem_trechos (filha atual): ${error.message}`)
+    const op = (data?.[0] as { compels_op?: unknown } | undefined)?.compels_op
+    return typeof op === 'string' && op.trim() !== '' ? op.trim() : null
+  }
+}
+
+/**
+ * Regrava a op de uma linha de PRT que ficou com a filha antiga. Só na linha ainda não enviada e não cancelada (o
+ * CHECK da 0132 e o histórico do que foi ao ERP). Melhor esforço: quem chama só registra a falha.
+ */
+export function criarTrocarOpDaLinha(sb?: SupabaseClient): (id: string, op: string) => Promise<void> {
+  return async (id, op) => {
+    const cliente = sb ?? createServiceSupabase()
+    const { error } = await cliente.from('sf_estoque_envios').update({ op })
+      .eq('id', id).eq('ok', false).is('cancelado_em', null)
+    if (error) throw new Error(`sf_estoque_envios (op da linha): ${error.message}`)
+  }
+}
