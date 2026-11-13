@@ -1,6 +1,6 @@
 import type * as React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { OrdemForm } from '../ordem-form'
 
 vi.mock('server-only', () => ({}))
@@ -14,7 +14,7 @@ vi.mock('@/modules/shopfloor/application/padroes-fluxo-actions', () => ({
   salvarPadraoAction: vi.fn(),
   excluirPadraoAction: vi.fn(),
 }))
-const confirmar = vi.hoisted(() => vi.fn(async (_o: unknown) => true))
+const confirmar = vi.hoisted(() => vi.fn(async () => true))
 vi.mock('@/components/ui/confirm-dialog', () => ({ useConfirmacao: () => ({ confirmar, dialog: null }) }))
 
 // Select nativo no lugar do Base UI (portal/floating-ui não funcionam em jsdom).
