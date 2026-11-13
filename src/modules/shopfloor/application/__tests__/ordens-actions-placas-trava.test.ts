@@ -5,10 +5,10 @@ vi.mock('server-only', () => ({}))
 
 type Base = { pmo: string; op: string; status: string; placas_por_painel: number }
 const m = vi.hoisted(() => ({
-  criarOrdem: vi.fn(async (_dados: Record<string, unknown>) => 'id-novo'),
-  atualizarOrdem: vi.fn(async (_id: string, _dados: Record<string, unknown>) => undefined),
-  contarRegistros: vi.fn(async (_pmo: string, _op: string) => 0),
-  buscarOrdemBase: vi.fn(async (_id: string) => null as Base | null),
+  criarOrdem: vi.fn<(dados: Record<string, unknown>) => Promise<string>>(async () => 'id-novo'),
+  atualizarOrdem: vi.fn<(id: string, dados: Record<string, unknown>) => Promise<undefined>>(async () => undefined),
+  contarRegistros: vi.fn<(pmo: string, op: string) => Promise<number>>(async () => 0),
+  buscarOrdemBase: vi.fn<(id: string) => Promise<Base | null>>(async () => null),
 }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ perfil: {} })) }))

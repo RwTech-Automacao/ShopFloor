@@ -5,9 +5,9 @@ vi.mock('server-only', () => ({}))
 
 type Base = { pmo: string; op: string; status: string; placas_por_painel: number }
 const m = vi.hoisted(() => ({
-  atualizarOrdem: vi.fn(async (_id: string, _dados: Record<string, unknown>) => undefined),
-  buscarOrdemBase: vi.fn(async (_id: string) => null as Base | null),
-  ordemTemTrechos: vi.fn(async (_id: string) => false),
+  atualizarOrdem: vi.fn<(id: string, dados: Record<string, unknown>) => Promise<undefined>>(async () => undefined),
+  buscarOrdemBase: vi.fn<(id: string) => Promise<Base | null>>(async () => null),
+  ordemTemTrechos: vi.fn<(id: string) => Promise<boolean>>(async () => false),
   aplicarEstruturaNaOp: vi.fn(async () => null as string | null),
 }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
