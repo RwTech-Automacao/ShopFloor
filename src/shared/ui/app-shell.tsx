@@ -48,6 +48,7 @@ import {
   Server,
   ChartColumn,
   FileText,
+  Network,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -100,6 +101,7 @@ const SHOPFLOOR: FolhaModular[] = [
   { chave: 'fluxo', rotulo: 'Fluxo', href: '/shopfloor/fluxo', icone: Workflow, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'registros', rotulo: 'Registros', href: '/shopfloor/registros', icone: History, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
+  { chave: 'op-estruturas', rotulo: 'Estruturas', href: '/shopfloor/estruturas', icone: Network, modulo: 'shopfloor', perm: 'administrar' },
 ]
 
 const SETUP: FolhaModular[] = [
