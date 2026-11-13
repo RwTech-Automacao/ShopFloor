@@ -149,7 +149,7 @@ describe('reservarPendentes', () => {
     const leituras = chamadas.filter((c) => c.leitura)
     expect(leituras).toHaveLength(1)
     expect(leituras[0]!.tabela).toBe('sf_estoque_envios')
-    expect(leituras[0]!.leitura).toEqual({ colunas: 'id, estoque', ids: ['e1', 'e2'] })
+    expect(leituras[0]!.leitura).toEqual({ colunas: 'id, estoque, ordem_id', ids: ['e1', 'e2'] })
   })
 
   it('app novo antes da migração 0175 (coluna inexistente): toda linha é PA, a rodada segue', async () => {

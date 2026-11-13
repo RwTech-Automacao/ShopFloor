@@ -111,13 +111,19 @@ export function criarRepositorioEstoqueEnvios(
    */
   async function comEstoque(lidos: EnvioEstoqueReservado[], ilegiveis: number): Promise<LoteEstoqueReservado> {
     if (lidos.length === 0) return { envios: [], ilegiveis }
-    const { data, error } = await sb
-      .from('sf_estoque_envios')
-      .select('id, estoque')
-      .in('id', lidos.map((e) => e.id))
+    const ids = lidos.map((e) => e.id)
+    const primeira = await sb.from('sf_estoque_envios').select('id, estoque, ordem_id').in('id', ids)
+    let data: unknown[] | null = primeira.data
+    let error = primeira.error
+    // Sem a 0184 no banco ainda: lê só o estoque (as linhas seguem como linhas da PMO).
+    if (error && (error.code === '42703' || /ordem_id.*does not exist/i.test(error.message ?? ''))) {
+      const segunda = await sb.from('sf_estoque_envios').select('id, estoque').in('id', ids)
+      data = segunda.data
+      error = segunda.error
+    }
     if (error) {
       const semColuna = error.code === '42703' || /column .*estoque.* does not exist/i.test(error.message ?? '')
-      if (semColuna) return { envios: lidos.map((e) => ({ ...e, estoque: 'PA' as const })), ilegiveis }
+      if (semColuna) return { envios: lidos.map((e) => ({ ...e, estoque: 'PA' as const, ordemId: null })), ilegiveis }
       const erro = `Não foi possível ler o estoque de destino da linha: ${error.message}`
       console.error(`[estoque] ${erro}`)
       for (const e of lidos) {
@@ -130,10 +136,12 @@ export function criarRepositorioEstoqueEnvios(
       return { envios: [], ilegiveis }
     }
     const porId = new Map<string, EstoqueDestino>()
-    for (const l of (data ?? []) as { id: string; estoque: unknown }[]) {
+    const ordemPorId = new Map<string, string>()
+    for (const l of (data ?? []) as { id: string; estoque: unknown; ordem_id?: unknown }[]) {
       if (ehEstoqueDestino(l.estoque)) porId.set(l.id, l.estoque)
+      if (typeof l.ordem_id === 'string' && l.ordem_id) ordemPorId.set(l.id, l.ordem_id)
     }
-    return { envios: lidos.map((e) => ({ ...e, estoque: porId.get(e.id) ?? 'PA' })), ilegiveis }
+    return { envios: lidos.map((e) => ({ ...e, estoque: porId.get(e.id) ?? 'PA', ordemId: ordemPorId.get(e.id) ?? null })), ilegiveis }
   }
 
   const repo: RepositorioEstoqueEnvios = {
@@ -284,5 +292,17 @@ export function criarBaseDaOp(sb: SupabaseClient = createServiceSupabase()): Bas
         .upsert({ op, base }, { onConflict: 'op', ignoreDuplicates: true })
       if (error) throw new Error(`sf_compels_op_base: ${error.message}`)
     },
+  }
+}
+
+/** A OP do ShopFloor de uma linha de PRT (0184): o número dela e se a integração automática está ligada. */
+export function criarOrdemDaLinha(sb?: SupabaseClient): (ordemId: string) => Promise<{ op: string; integrar: boolean } | null> {
+  return async (ordemId) => {
+    const cliente = sb ?? createServiceSupabase()
+    const { data, error } = await cliente.from('sf_ordens').select('op, integrar_compels').eq('id', ordemId).maybeSingle()
+    if (error) throw new Error(`sf_ordens (ordem da linha): ${error.message}`)
+    if (!data) return null
+    const d = data as { op: string; integrar_compels?: unknown }
+    return { op: d.op, integrar: d.integrar_compels === true }
   }
 }

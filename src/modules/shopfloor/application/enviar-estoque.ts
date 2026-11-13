@@ -59,6 +59,8 @@ export interface EnvioEstoqueReservado {
    * o MESMO da entrada que desfaz. Ausente = 'PA' (o de sempre, e o que a linha de antes da 0175 sempre foi).
    */
   estoque?: EstoqueDestino
+  /** Linha de PRT da estrutura da OP (0184): a OP do ShopFloor de onde a peça veio. Ausente/null = linha da PMO (Almoxarifado). */
+  ordemId?: string | null
   tentativas: number
   criadoEm: string
 }

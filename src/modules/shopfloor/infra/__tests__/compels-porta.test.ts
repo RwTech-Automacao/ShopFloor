@@ -441,3 +441,30 @@ describe('frases da espera esperada × backfill da 0170', () => {
     })
   })
 })
+
+describe('linhas de PRT (estrutura da OP)', () => {
+  const linhaPrt = linha({ pmo: 'PRT420', op: '8499', ordemId: 'ord-1' })
+
+  it('chave COMPELS_PRT_LIGADO ausente → espera, com motivo próprio', async () => {
+    const porta = criarPortaCompels({ env: { COMPELS_OPS_LIBERADAS: '*' }, ordemDaLinha: async () => ({ op: '8498', integrar: true }) })
+    expect(await porta(linhaPrt)).toEqual({
+      ok: false, aguardar: true, esperado: true,
+      erro: 'Apontamento das PRTs ainda desligado: a linha fica esperando até a chave COMPELS_PRT_LIGADO ser ligada.',
+    })
+  })
+
+  it('chave ligada, OP-pai não liberada → espera com o número da OP do ShopFloor', async () => {
+    const porta = criarPortaCompels({ env: { COMPELS_PRT_LIGADO: '1' }, ordemDaLinha: async () => ({ op: '8498', integrar: false }) })
+    const r = await porta(linhaPrt)
+    expect(r).toMatchObject({ ok: false, aguardar: true, esperado: true })
+    expect((r as { erro: string }).erro).toBe('OP 8498 ainda não está liberada para a integração com o Compels (PRT420 da OP 8499). Faça a entrada à mão no ERP, ou libere a OP.')
+  })
+
+  it('OP filha não encontrada (op vazia) → espera com orientação', async () => {
+    const porta = criarPortaCompels({ env: { COMPELS_PRT_LIGADO: '1', COMPELS_OPS_LIBERADAS: '*' }, ordemDaLinha: async () => ({ op: '8498', integrar: true }) })
+    expect(await porta({ ...linhaPrt, op: '' })).toEqual({
+      ok: false, aguardar: true, esperado: true,
+      erro: 'PRT420 não tem OP filha no Compels: confira a estrutura e salve a OP 8498 de novo para procurar.',
+    })
+  })
+})

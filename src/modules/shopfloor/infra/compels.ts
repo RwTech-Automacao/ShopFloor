@@ -11,7 +11,7 @@ import {
   pagarPendenciaLigado,
 } from '@/modules/compels/infra/config'
 import type { EnvioEstoqueReservado, PortaCompels, ResultadoEnvioEstoque } from '../application/enviar-estoque'
-import { criarBaseDaOp, criarErroAnterior, criarOpIntegrada, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
+import { criarBaseDaOp, criarErroAnterior, criarOpIntegrada, criarOrdemDaLinha, criarSomaEnviada, type BaseDaOp } from './estoque-envios-repository'
 
 /**
  * O ÚLTIMO METRO DA FILA DE ESTOQUE: entrega UMA linha da fila ao Compels (Requisitar + Apontar).
@@ -54,6 +54,8 @@ export interface DependenciasPortaCompels {
   erroAnterior?: (id: string) => Promise<string | null>
   /** Para teste: a OP foi criada com a integração automática ligada? Em produção é `sf_ordens.integrar_compels` (0176). */
   opIntegrada?: (pmo: string, op: string) => Promise<boolean>
+  /** Para teste: a OP do ShopFloor de uma linha de PRT (0184). Em produção é `sf_ordens`. */
+  ordemDaLinha?: (ordemId: string) => Promise<{ op: string; integrar: boolean } | null>
 }
 
 /** Marca gravada na Observação do apontamento: curta, e a chave diz que bipe foi. */
@@ -72,6 +74,7 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
   const baseDaOp = deps.base ?? criarBaseDaOp()
   const erroAnterior = deps.erroAnterior ?? criarErroAnterior()
   const opIntegrada = deps.opIntegrada ?? criarOpIntegrada()
+  const ordemDaLinha = deps.ordemDaLinha ?? criarOrdemDaLinha()
   const esperando = new Map<string, ResultadoEnvioEstoque>()
 
   return async function enviarMovimentacaoCompels(envio: EnvioEstoqueReservado): Promise<ResultadoEnvioEstoque> {
@@ -80,7 +83,33 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
 
     // Liberada pela lista do ambiente OU pela própria OP (criada a partir de 09/11/2026, 0176). O banco só é
     // consultado quando a lista não liberou; se a leitura falhar, a linha espera (nada foi gravado no ERP).
-    if (!opLiberada(envio.op, env.COMPELS_OPS_LIBERADAS)) {
+    // LINHA DE PRT (estrutura da OP, 0184): liberada pela chave das PRTs E pela OP do ShopFloor de onde veio.
+    if (envio.ordemId) {
+      if (env.COMPELS_PRT_LIGADO !== '1') {
+        return {
+          ok: false, aguardar: true, esperado: true,
+          erro: 'Apontamento das PRTs ainda desligado: a linha fica esperando até a chave COMPELS_PRT_LIGADO ser ligada.',
+        }
+      }
+      let pai: { op: string; integrar: boolean } | null
+      try {
+        pai = await ordemDaLinha(envio.ordemId)
+      } catch (e) {
+        return { ok: false, aguardar: true, erro: `Não foi possível conferir a OP da PRT ${envio.pmo}: ${e instanceof Error ? e.message : String(e)}` }
+      }
+      if (!pai || !(opLiberada(pai.op, env.COMPELS_OPS_LIBERADAS) || pai.integrar)) {
+        return {
+          ok: false, aguardar: true, esperado: true,
+          erro: `OP ${pai?.op ?? '?'} ainda não está liberada para a integração com o Compels (${envio.pmo} da OP ${envio.op}). Faça a entrada à mão no ERP, ou libere a OP.`,
+        }
+      }
+      if (!envio.op.trim()) {
+        return {
+          ok: false, aguardar: true, esperado: true,
+          erro: `${envio.pmo} não tem OP filha no Compels: confira a estrutura e salve a OP ${pai.op} de novo para procurar.`,
+        }
+      }
+    } else if (!opLiberada(envio.op, env.COMPELS_OPS_LIBERADAS)) {
       let automatica: boolean
       try {
         automatica = await opIntegrada(envio.pmo, envio.op)
