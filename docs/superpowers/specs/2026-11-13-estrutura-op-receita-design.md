@@ -1,6 +1,6 @@
 # Estrutura da OP (receita por PMO) — apontar as PRTs no Compels pelo ShopFloor
 
-Data: 13/11/2026 · Status: desenho aprovado em conversa, aguardando revisão deste documento · Branch: `feat/estrutura-op-receita`
+Data: 13/11/2026 · Status: aprovado (13/11) — implementar a estrutura primeiro; cards depois · Branch: `feat/estrutura-op-receita`
 
 ## 1. Problema
 
@@ -44,6 +44,8 @@ O ShopFloor aponta **cada PRT no Compels quando as peças passam pelo posto que 
 
 **`sf_estruturas`**: a receita, uma por PMO.
 - `pmo text primary key`
+- `situacao text check in ('rascunho','ativa')`: só a `ativa` vale para OP nova (D9)
+- `origem text`: `manual` ou `compels:<nº da OP lida>`
 - `criado_em`, `criado_por`, `alterado_em`, `alterado_por`
 
 **`sf_estrutura_trechos`**: os trechos da receita, na ordem da rota.
@@ -103,6 +105,12 @@ O ShopFloor aponta **cada PRT no Compels quando as peças passam pelo posto que 
   - não há dois trechos no mesmo posto;
   - trecho com SN próprio tem posto de ligação.
 - Permissão: a mesma de editar padrões de fluxo e OPs.
+- **Botão "Importar do Compels" (D9)**, para todas as PMOs que já têm OP no ShopFloor:
+  - para cada PMO, busca no Compels a OP mais recente desse item (filtro `item` da busca de OPs) e lê a árvore;
+  - cria a receita em **rascunho**, com as PRTs na ordem da árvore (a mais funda primeiro) e os postos sugeridos;
+  - não mexe em receita que já existe.
+- **A lista mostra a situação** de cada PMO: *ativa*, *rascunho — conferir postos* ou *sem filhas no Compels*. Esta última é uma PMO que no Compels não tem PRT e não precisa de receita.
+- **Ativar** só é permitido com todas as validações acima OK.
 
 **B. Formulário da OP**
 - PMO com receita: bloco **Estrutura**, só de leitura, com o trecho, o código, a OP filha achada no Compels (✓ ou aviso) e o campo de faixa de SN de cada trecho com SN próprio.
