@@ -4,6 +4,7 @@ import { ehRotaPublicaDeAlertas } from '@/modules/alertas/domain/rotas'
 import { ehRotaDeDadosDoDashboard } from '@/modules/shopfloor/domain/rotas-dashboard'
 import { ehRotaDaFilaDeEstoque } from '@/modules/shopfloor/domain/rotas-estoque'
 import { ehRotaDoQuiosqueDeFichas } from '@/modules/shopfloor/domain/rotas-quiosque'
+import { ehRotaDaBaixaDeNf } from '@/modules/compels/domain/rotas-baixa-nf'
 import { cabecalhosComMarcaEmbed } from '@/shared/lib/supabase/embed'
 
 export async function middleware(request: NextRequest) {
@@ -27,7 +28,8 @@ export async function middleware(request: NextRequest) {
     ehRotaPublicaDeAlertas(request.nextUrl.pathname) ||
     ehRotaDeDadosDoDashboard(request.nextUrl.pathname) ||
     ehRotaDaFilaDeEstoque(request.nextUrl.pathname) ||
-    ehRotaDoQuiosqueDeFichas(request.nextUrl.pathname)
+    ehRotaDoQuiosqueDeFichas(request.nextUrl.pathname) ||
+    ehRotaDaBaixaDeNf(request.nextUrl.pathname)
   )
     return NextResponse.next({ request: { headers: cabecalhos } })
 
