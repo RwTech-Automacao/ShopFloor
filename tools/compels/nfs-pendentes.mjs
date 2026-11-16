@@ -44,16 +44,23 @@ const fmt = (d) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Pau
 const hoje = new Date()
 const inicio = new Date(hoje.getTime() - dias * 86400000)
 const base = { page: '1', start: '0', limit: '50' }
-const datas = { dataInicial: fmt(inicio), dataFinal: fmt(hoje) }
-const filtroExt = JSON.stringify([
-  { property: 'dataInicial', value: fmt(inicio) }, { property: 'dataFinal', value: fmt(hoje) },
-])
-// Tipo de nota de saída = '1' (ConstantsNotaICMS.codigoTipoNotaSaida no JS da tela).
+// Formato tirado do JS da tela (AceiteBaixaMercadoriaPanel): POST com `filter` = JSON; datas no formato do
+// Ext.encode ("Y-m-dTH:i:s"); statusAceiteBaixa 'false' = Não Processada (pendente). GET não serve: a rota
+// cai em /notaICMS/{id}.
+const iso = (d) => {
+  const [dd, mm, aa] = fmt(d).split('/')
+  return `${aa}-${mm}-${dd}T00:00:00`
+}
+const filtro = (extra) => JSON.stringify({
+  tipo: '1', emissaoPropria: true, numero: '', dataInicial: iso(inicio), dataFinal: iso(hoje), status: null,
+  statusAceiteBaixa: 'false', selecionarPor: 'emissao', nomeNegociante: '', cpfCnpjNegociante: '',
+  codigoNegociante: '', item: '', coc: '', cfop: '', ...extra,
+})
 const tentativas = [
-  { nome: 'GET datas + tipo=1', metodo: 'GET', params: { ...base, ...datas, tipo: '1' } },
-  { nome: 'GET filter(Ext) + tipo=1', metodo: 'GET', params: { ...base, tipo: '1', filter: filtroExt } },
-  { nome: 'POST form datas + tipo=1', metodo: 'POST', params: { ...base, ...datas, tipo: '1' } },
-  { nome: 'GET só paginação', metodo: 'GET', params: base },
+  { nome: "tipo '1', pendentes", params: { ...base, filter: filtro({}) } },
+  { nome: "tipo '1 - Saída', pendentes", params: { ...base, filter: filtro({ tipo: '1 - Saída' }) } },
+  { nome: 'tipo 1 (número), pendentes', params: { ...base, filter: filtro({ tipo: 1 }) } },
+  { nome: "tipo '1', todas (baixadas e não)", params: { ...base, filter: filtro({ statusAceiteBaixa: null }) } },
 ]
 
 function linhasDe(corpo) {
@@ -66,13 +73,11 @@ function linhasDe(corpo) {
 let notas = null
 for (const t of tentativas) {
   const qs = new URLSearchParams(t.params)
-  const r = t.metodo === 'GET'
-    ? await chamar(`${urlApi}/notaICMS/findFilterStockMoves?${qs}`, { headers: cab })
-    : await chamar(`${urlApi}/notaICMS/findFilterStockMoves`, {
-      method: 'POST', headers: { ...cab, 'Content-Type': 'application/x-www-form-urlencoded' }, body: qs,
-    })
+  const r = await chamar(`${urlApi}/notaICMS/findFilterStockMoves`, {
+    method: 'POST', headers: { ...cab, 'Content-Type': 'application/x-www-form-urlencoded' }, body: qs,
+  })
   const linhas = linhasDe(r.corpo)
-  console.log(`- ${t.nome}: HTTP ${r.status}${linhas ? `, ${linhas.length} nota(s), total=${r.corpo?.totalCount ?? '?'}` : `, sem lista (${String(r.corpo?.msg ?? r.texto).slice(0, 120)})`}`)
+  console.log(`- ${t.nome}: HTTP ${r.status}${linhas ? `, ${linhas.length} nota(s), total=${r.corpo?.totalCount ?? '?'}` : `, sem lista (${String(r.corpo?.msg ?? r.texto).slice(0, 300)})`}`)
   if (linhas && linhas.length && !notas) notas = linhas
 }
 if (!notas) falha('nenhuma forma devolveu notas — aí precisamos do HAR para ver os filtros exatos.')
