@@ -152,7 +152,7 @@ function fmtHora(iso: string): string {
     : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[], pecasAndando = false): Edge[] {
+function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[]): Edge[] {
   const dataDe = (id: string) => nodesData.find((n) => n.id === id)?.data
   // Todas as arestas são FLUTUANTES (o traçado se ajusta a qualquer arranjo dos cards). A aparência
   // vem do `data`: ativo = peça andando (preenchimento animado); concluido = trilha vinho sólida;
@@ -161,7 +161,7 @@ function paraEdges(es: FluxoEdge[], nodesData: FluxoNodePos[], pecasAndando = fa
     const reprova = e.tipo === 'reprova'
     const ativo = reprova ? (dataDe(MANUTENCAO)?.wip ?? 0) > 0 : (dataDe(e.target)?.wip ?? 0) > 0
     const concluido = !reprova && (dataDe(e.target)?.concluido ?? false)
-    return { id: e.id, source: e.source, target: e.target, type: 'floating', data: { ativo, concluido, reprova, bolinhas: pecasAndando && ativo && !reprova } }
+    return { id: e.id, source: e.source, target: e.target, type: 'floating', data: { ativo, concluido, reprova } }
   })
 }
 
@@ -486,7 +486,6 @@ export function FluxoForm({
   modoTv = false,
   embed = false,
   intervaloAtualizacaoMs = 20_000,
-  pecasAndando = false,
 }: {
   ops: OpItem[]
   ordensDashboard: OrdemPesquisa[]
@@ -500,8 +499,6 @@ export function FluxoForm({
   embed?: boolean
   /** De quanto em quanto a tela relê o fluxo (padrão 20 s; a Vitrine usa menos para as peças andarem). */
   intervaloAtualizacaoMs?: number
-  /** Bolinhas percorrendo as linhas com peça andando (só a Vitrine liga). */
-  pecasAndando?: boolean
 }) {
   const fonte = useFonteFluxo()
   // `sel` = "pmo||op" (a chave da OP escolhida). Com `opFixa`, já nasce escolhida.
@@ -657,12 +654,12 @@ export function FluxoForm({
       const r = await fonte.carregarFluxo(pmo, op)
       if (!r.ok) { toast.error(r.erro); return }
       setDom(r.nodes)
-      setEdgesBase(paraEdges(r.edges, r.nodes, pecasAndando))
+      setEdgesBase(paraEdges(r.edges, r.nodes))
       setQtd(r.qtd)
       setAtualizadoMs(Date.now())
       setBuscou(true)
     })
-  }, [fonte, pecasAndando, embed])
+  }, [fonte, embed])
 
   const escolher = useCallback((v: string) => {
     setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
@@ -896,7 +893,7 @@ export function FluxoForm({
       const r = await fonte.carregarFluxo(pmo, op)
       if (vivo && r.ok) {
         setDom(r.nodes)
-        setEdgesBase(paraEdges(r.edges, r.nodes, pecasAndando))
+        setEdgesBase(paraEdges(r.edges, r.nodes))
         setQtd(r.qtd)
         setAtualizadoMs(Date.now())
       }
@@ -909,7 +906,7 @@ export function FluxoForm({
     const onVis = () => { if (!document.hidden) void atualizar() } // voltou pra aba → atualiza já
     document.addEventListener('visibilitychange', onVis)
     return () => { vivo = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
-  }, [fonte, intervaloAtualizacaoMs, pecasAndando, buscou, sel])
+  }, [fonte, intervaloAtualizacaoMs, buscou, sel])
 
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
   // Postos da OP em ordem (sem Manutenção nem as caixas Entrada/Saída) — pra timeline e % de progresso.

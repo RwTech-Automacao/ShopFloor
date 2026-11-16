@@ -13,7 +13,7 @@ na produção real.
 3. **Momento:** OP em torno de 93% concluída — peças no Almoxarifado, a "onda" final nos últimos postos.
 4. **Peças andando (animação):** a vitrine tem um relógio simulado que avança enquanto a tela está aberta;
    a cada poucos segundos os números mudam e as linhas entre postos ficam "andando" (a mesma animação do
-   Fluxo real). Bolinhas percorrem as linhas ativas. A janela é um laço: vai de ~90% a ~97% e recomeça.
+   Fluxo real). (As bolinhas nas linhas ativas foram retiradas em 16/11 a pedido do usuário: visual igual à produção.) A janela é um laço: vai de ~90% a ~97% e recomeça.
 5. **Isolamento:** a vitrine NÃO chama banco, Compels nem servidor de dados. O Fluxo passa a buscar tudo
    por um **fornecedor de dados** (contexto React `FonteFluxo`); o padrão continua sendo as Server Actions
    de hoje (o Fluxo real não muda de comportamento) e a vitrine fornece uma fonte que calcula tudo no
@@ -34,7 +34,7 @@ na produção real.
 - `fluxo-form.tsx`, `fluxo-node.tsx`, `defeitos-lista.tsx`, `historico-sn-dialog.tsx`, `dashboard-form.tsx`
   trocam a chamada direta por `useFonteFluxo()`. Sem provider = fonte real.
 - `FluxoForm` ganha `intervaloAtualizacaoMs` (padrão 20 000, a vitrine usa 3 000) e `pecasAndando`
-  (bolinhas nas linhas ativas; padrão desligado).
+  (retirado em 16/11).
 - `src/modules/vitrine/domain/op-demo.ts` (puro): modelo da OP perfeita — cada peça i passa no posto k no
   instante `inicio(i) + atraso(k)` em minutos úteis; daí saem agregados (reusa `construirFluxo`), detalhe e
   histórico do posto, produção por dia/hora, burn-in, caixas (50 por caixa), rota e histórico do SN,
