@@ -43,7 +43,7 @@ const cab = { Accept: 'application/json', 'Content-Type': 'application/json', Au
 const fmt = (d) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(d)
 const hoje = new Date()
 const inicio = new Date(hoje.getTime() - dias * 86400000)
-const base = { page: '1', start: '0', limit: '50' }
+const base = { page: '1', start: '0', limit: '100' }
 // Formato tirado do JS da tela (AceiteBaixaMercadoriaPanel): POST com `filter` = JSON; datas no formato do
 // Ext.encode ("Y-m-dTH:i:s"); statusAceiteBaixa 'false' = Não Processada (pendente). GET não serve: a rota
 // cai em /notaICMS/{id}.
@@ -51,19 +51,16 @@ const iso = (d) => {
   const [dd, mm, aa] = fmt(d).split('/')
   return `${aa}-${mm}-${dd}T00:00:00`
 }
+// Corpo IGUAL ao da tela (HAR de 16/11): form-urlencoded com `filter` em JSON; negociante = null (texto vazio
+// filtra por nome '' e não acha nada — foi o motivo das rodadas vazias), tipo '1 - Saída', datas null = todas.
 const filtro = (extra) => JSON.stringify({
-  tipo: '1', emissaoPropria: true, numero: '', dataInicial: iso(inicio), dataFinal: iso(hoje), status: null,
-  statusAceiteBaixa: 'false', selecionarPor: 'emissao', nomeNegociante: '', cpfCnpjNegociante: '',
-  codigoNegociante: '', item: '', coc: '', cfop: '', ...extra,
+  tipo: '1 - Saída', emissaoPropria: true, numero: '', dataInicial: null, dataFinal: null, status: null,
+  statusAceiteBaixa: 'false', selecionarPor: 'emissao', nomeNegociante: null, cpfCnpjNegociante: null,
+  codigoNegociante: null, item: '', coc: '', cfop: '', ...extra,
 })
-const br = (d) => fmt(d)
 const tentativas = [
-  { nome: 'sem datas, só tipo 1 e todas', params: { ...base, filter: filtro({ dataInicial: null, dataFinal: null, statusAceiteBaixa: null }) } },
-  { nome: 'datas dd/mm/aaaa, todas', params: { ...base, filter: filtro({ dataInicial: br(inicio), dataFinal: br(hoje), statusAceiteBaixa: null }) } },
-  { nome: 'datas aaaa-mm-dd, todas', params: { ...base, filter: filtro({ dataInicial: iso(inicio).slice(0, 10), dataFinal: iso(hoje).slice(0, 10), statusAceiteBaixa: null }) } },
-  { nome: 'sem emissaoPropria, sem datas, todas', params: { ...base, filter: filtro({ emissaoPropria: null, dataInicial: null, dataFinal: null, statusAceiteBaixa: null }) } },
-  { nome: 'filtro vazio {}', params: { ...base, filter: '{}' } },
-  { nome: "datas ISO, pendentes (statusAceiteBaixa 'false')", params: { ...base, filter: filtro({}) } },
+  { nome: 'pendentes de baixa (Não Processada), todas as datas', params: { ...base, filter: filtro({}) } },
+  { nome: `pendentes de baixa, emitidas nos últimos ${dias} dias`, params: { ...base, filter: filtro({ dataInicial: iso(inicio), dataFinal: iso(hoje) }) } },
 ]
 
 function linhasDe(corpo) {
@@ -83,7 +80,7 @@ for (const t of tentativas) {
   console.log(`- ${t.nome}: HTTP ${r.status}${linhas ? `, ${linhas.length} nota(s), total=${r.corpo?.totalCount ?? '?'}` : `, sem lista (${String(r.corpo?.msg ?? r.texto).slice(0, 300)})`}`)
   if (linhas && linhas.length && !notas) notas = linhas
 }
-if (!notas) falha('nenhuma forma devolveu notas — aí precisamos do HAR para ver os filtros exatos.')
+if (!notas) { console.log('\nNenhuma nota pendente de baixa.\nFIM: só leitura.'); process.exit(0) }
 
 console.log(`\nCampos de uma nota: ${Object.keys(notas[0]).sort().join(', ')}\n`)
 console.log('Nº NF      série  emissão      tipo  baixada?')
@@ -92,14 +89,18 @@ for (const n of notas) {
   console.log(`${String(n.numero ?? '?').padEnd(10)} ${String(n.serie ?? '').padEnd(6)} ${String(emissao).slice(0, 12).padEnd(12)} ${String(n.tipo ?? n.tipoNota ?? '?').padEnd(5)} ${n.aceiteBaixa ? 'SIM' : 'NÃO'}`)
 }
 
-const pendente = notas.find((n) => !n.aceiteBaixa)
-if (!pendente) { console.log('\nNenhuma pendente nesta janela.\nFIM: só leitura.'); process.exit(0) }
-const it = await chamar(`${urlApi}/itemBaixaMercadoria/findAllEstoqueProprioByNotaICMSId?${new URLSearchParams({ notaICMSId: String(pendente.id), page: '1', start: '0', limit: '50' })}`, { headers: cab })
-const itens = linhasDe(it.corpo)
-console.log(`\nItens da NF ${pendente.numero} (pendente): HTTP ${it.status}${itens ? `, ${itens.length} linha(s)` : ` (${String(it.corpo?.msg ?? it.texto).slice(0, 160)})`}`)
-for (const l of itens ?? []) {
-  const g = (caminho) => caminho.split('.').reduce((o, k) => o?.[k], l) ?? l[caminho]
-  console.log(`   ${String(g('itemLote.item.codigo')).padEnd(10)} qtd NF=${String(g('itemNotaICMS.quantidadeInterna')).padStart(6)}  qtd=${String(g('quantidade')).padStart(6)}  estoque=${g('itemLote.itemLoteEstoque.estoque.codigo')}  locação=${g('itemLote.itemLoteEstoque.itemLoteEstoqueLocacao.locacao.codigo') ?? g('itemLote.itemLoteEstoque.itemLoteEstoqueLocacao.id')}  rastreável=${g('itemLote.item.rastreavel')}`)
+// Itens da nota: POST form, como a tela. Sem `itemLote` = o Compels não achou lote com saldo para baixar.
+for (const nota of notas.filter((n) => !n.aceiteBaixa).slice(0, 5)) {
+  const it = await chamar(`${urlApi}/itemBaixaMercadoria/findAllEstoqueProprioByNotaICMSId`, {
+    method: 'POST', headers: { ...cab, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ notaICMSId: String(nota.id), page: '1', start: '0', limit: '25' }),
+  })
+  const itens = linhasDe(it.corpo)
+  console.log(`\nItens da NF ${nota.numero} (pendente): HTTP ${it.status}${itens ? `, ${itens.length} linha(s)` : ` (${String(it.corpo?.msg ?? it.texto).slice(0, 160)})`}`)
+  for (const l of itens ?? []) {
+    const g = (caminho) => caminho.split('.').reduce((o, k) => o?.[k], l)
+    const lote = g('itemLote')
+    console.log(`   item=${g('itemNotaICMS.numeroItemPedidoVenda') ?? '?'}  qtd NF=${g('itemNotaICMS.quantidadeInterna')}  a baixar=${g('quantidade')}  ${lote ? `lote ${lote.numero} estoque=${g('itemLote.itemLoteEstoque.estoque.codigo')} saldo=${g('itemLote.itemLoteEstoque.saldo')}` : 'SEM LOTE COM SALDO'}`)
+  }
 }
-if (itens?.[0]) console.log(`\nCampos de um item: ${Object.keys(itens[0]).sort().join(', ')}`)
 console.log('\nFIM: só leitura.')
