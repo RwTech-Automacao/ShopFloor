@@ -105,7 +105,7 @@ const SHOPFLOOR: FolhaModular[] = [
 
 // Vitrine do marketing: o Fluxo da OP com uma produção fictícia (sem banco). Grupo próprio no menu.
 const VITRINE: FolhaModular[] = [
-  { chave: 'vitrine-fluxo', rotulo: 'Fluxo da OP (demo)', href: '/vitrine/fluxo', icone: Sparkles, modulo: 'vitrine', perm: 'visualizar' },
+  { chave: 'vitrine-fluxo', rotulo: 'Fluxo da OP', href: '/vitrine/fluxo', icone: Sparkles, modulo: 'vitrine', perm: 'visualizar' },
 ]
 
 const SETUP: FolhaModular[] = [
