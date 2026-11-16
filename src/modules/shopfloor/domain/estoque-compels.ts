@@ -10,6 +10,11 @@ export type EstoqueCompels =
       disponivel: number
       /** Um por estoque considerado (PA, EINTER), zero quando o item não tem saldo nele. */
       porEstoque: { estoque: string; saldo: number }[]
+      /**
+       * Já vendido em NF de saída ainda SEM baixa (emitida sem saldo, desde COMPELS_BAIXA_NF_DESDE). Sai do Total
+       * disponível no card. Ausente = recurso desligado ou consulta das NFs falhou.
+       */
+      vendidoEmNf?: number
       consultadoEm: string
     }
   | { tipo: 'nao_encontrado' }

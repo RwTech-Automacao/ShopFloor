@@ -83,3 +83,35 @@ describe('buscarEstoqueCompels', () => {
     expect(consultar).not.toHaveBeenCalled()
   })
 })
+
+describe('vendido em NF sem baixa', () => {
+  const notas = [
+    { id: 1, numero: 74202, empresa: { id: 133 }, dataHoraEmissao: '2025-07-25 10:00:00' }, // antes do corte
+    { id: 2, numero: 80, empresa: { id: 133 }, dataHoraEmissao: '2026-11-18 10:00:00' },
+  ]
+  const itens = {
+    1: [{ itemNotaICMS: { quantidadeInterna: 99, numeroItemPedidoVenda: 'PRT446' } }],
+    2: [{ itemNotaICMS: { quantidadeInterna: 5, numeroItemPedidoVenda: 'PRT446' } }, { itemNotaICMS: { quantidadeInterna: 7, numeroItemPedidoVenda: 'OUTRO' } }],
+  } as Record<number, unknown[]>
+  const cliente = () => ({
+    consultarSaldoPorEstoque: vi.fn(async () => SALDO),
+    listarNfsPendentes: vi.fn(async () => notas),
+    itensDaNf: vi.fn(async (id: number) => ({ proprias: itens[id] ?? [] })),
+  })
+
+  it('com a data de corte: soma só as notas da janela e só o código consultado', async () => {
+    vi.stubEnv('COMPELS_BAIXA_NF_DESDE', '2026-11-17')
+    const r = await buscarEstoqueCompels('PRT446_', { cliente: cliente(), agora: () => 1_000 })
+    expect(r).toMatchObject({ tipo: 'ok', disponivel: 28, vendidoEmNf: 5 })
+    vi.unstubAllEnvs()
+  })
+
+  it('sem a data de corte: não consulta as NFs', async () => {
+    vi.stubEnv('COMPELS_BAIXA_NF_DESDE', '')
+    const c = cliente()
+    const r = await buscarEstoqueCompels('PRT446', { cliente: c, agora: () => 1_000 })
+    expect(r).not.toHaveProperty('vendidoEmNf')
+    expect(c.listarNfsPendentes).not.toHaveBeenCalled()
+    vi.unstubAllEnvs()
+  })
+})

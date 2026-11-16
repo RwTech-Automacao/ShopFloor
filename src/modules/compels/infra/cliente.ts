@@ -221,6 +221,64 @@ export class ClienteCompels {
     return this.gravarJson('/requisicaoOrdemProducao/pagarPendencia', corpo)
   }
 
+  // ---- Baixa de Mercadoria (NF de saída emitida sem saldo) — spec 2026-11-16-baixa-nf-compels-design.md ----
+
+  /**
+   * Notas de SAÍDA de emissão própria ainda NÃO baixadas, com o filtro exato da tela (HAR 16/11/2026): os
+   * campos de negociante vão `null` (texto vazio filtra por nome '' e não acha nada). Todas as datas — o
+   * corte por emissão é feito pelo domínio. Só leitura.
+   */
+  async listarNfsPendentes(): Promise<Record<string, unknown>[]> {
+    const filtro = {
+      tipo: '1 - Saída', emissaoPropria: true, numero: '', dataInicial: null, dataFinal: null, status: null,
+      statusAceiteBaixa: 'false', selecionarPor: 'emissao', nomeNegociante: null, cpfCnpjNegociante: null,
+      codigoNegociante: null, item: '', coc: '', cfop: '',
+    }
+    const todas: Record<string, unknown>[] = []
+    const limite = 100
+    for (let pagina = 1; pagina <= 20; pagina++) {
+      const resposta = await this.json('/notaICMS/findFilterStockMoves', this.formulario({
+        filter: JSON.stringify(filtro), page: String(pagina), start: String((pagina - 1) * limite), limit: String(limite),
+      }))
+      const linhas = listaDe(resposta, 'notas pendentes de baixa')
+      todas.push(...linhas)
+      const total = (resposta as { totalCount?: unknown } | null)?.totalCount
+      if (linhas.length < limite || (typeof total === 'number' && todas.length >= total)) break
+    }
+    return todas
+  }
+
+  /** As três listas de itens da nota que a tela de baixa carrega (estoque próprio, em terceiros, de terceiros). Só leitura. */
+  async itensDaNf(idNota: number): Promise<{ proprias: unknown[]; emTerceiros: unknown[]; deTerceiros: unknown[] }> {
+    const ler = async (sufixo: string) => listaDe(
+      await this.json(`/itemBaixaMercadoria/findAll${sufixo}ByNotaICMSId`, this.formulario({
+        notaICMSId: String(idNota), page: '1', start: '0', limit: '500',
+      })),
+      `itens da NF (${sufixo})`,
+    )
+    const [proprias, emTerceiros, deTerceiros] = await Promise.all([
+      ler('EstoqueProprio'), ler('EstoqueEmTerceiros'), ler('EstoqueDeTerceiros'),
+    ])
+    return { proprias, emTerceiros, deTerceiros }
+  }
+
+  /** Trava de edição da nota (a mesma da tela): 201 = é nossa; 400 = alguém está com a nota aberta. */
+  async travarNf(idNota: number): Promise<ResultadoGravacao> {
+    const r = await this.enviar(`/lock/lfi.notaicms/${idNota}`, { method: 'POST' })
+    let corpo: unknown = null
+    try { corpo = await r.json() } catch { /* 201 vem sem corpo */ }
+    return resultadoDaGravacao(r.status, corpo)
+  }
+
+  async liberarNf(idNota: number): Promise<void> {
+    await this.enviar(`/lock/release/lfi.notaicms/${idNota}`, { method: 'DELETE' })
+  }
+
+  /** `baixaMercadoria/baixar` com corpo JSON, como a tela. GRAVA no Compels (baixa o estoque da nota). */
+  baixarNf(corpo: Record<string, unknown>): Promise<ResultadoGravacao> {
+    return this.gravarJson('/baixaMercadoria/baixar', corpo)
+  }
+
   /**
    * Saldo de estoque de UM item (a PMO) pela tela Movimento de Item. Só leitura. `null` = o item não veio
    * na resposta (código exato). Pede os itens de saldo zero também, senão "não existe" e "zero" se
