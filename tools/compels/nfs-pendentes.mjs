@@ -56,11 +56,14 @@ const filtro = (extra) => JSON.stringify({
   statusAceiteBaixa: 'false', selecionarPor: 'emissao', nomeNegociante: '', cpfCnpjNegociante: '',
   codigoNegociante: '', item: '', coc: '', cfop: '', ...extra,
 })
+const br = (d) => fmt(d)
 const tentativas = [
-  { nome: "tipo '1', pendentes", params: { ...base, filter: filtro({}) } },
-  { nome: "tipo '1 - Saída', pendentes", params: { ...base, filter: filtro({ tipo: '1 - Saída' }) } },
-  { nome: 'tipo 1 (número), pendentes', params: { ...base, filter: filtro({ tipo: 1 }) } },
-  { nome: "tipo '1', todas (baixadas e não)", params: { ...base, filter: filtro({ statusAceiteBaixa: null }) } },
+  { nome: 'sem datas, só tipo 1 e todas', params: { ...base, filter: filtro({ dataInicial: null, dataFinal: null, statusAceiteBaixa: null }) } },
+  { nome: 'datas dd/mm/aaaa, todas', params: { ...base, filter: filtro({ dataInicial: br(inicio), dataFinal: br(hoje), statusAceiteBaixa: null }) } },
+  { nome: 'datas aaaa-mm-dd, todas', params: { ...base, filter: filtro({ dataInicial: iso(inicio).slice(0, 10), dataFinal: iso(hoje).slice(0, 10), statusAceiteBaixa: null }) } },
+  { nome: 'sem emissaoPropria, sem datas, todas', params: { ...base, filter: filtro({ emissaoPropria: null, dataInicial: null, dataFinal: null, statusAceiteBaixa: null }) } },
+  { nome: 'filtro vazio {}', params: { ...base, filter: '{}' } },
+  { nome: "datas ISO, pendentes (statusAceiteBaixa 'false')", params: { ...base, filter: filtro({}) } },
 ]
 
 function linhasDe(corpo) {
