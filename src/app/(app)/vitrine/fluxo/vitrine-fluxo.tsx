@@ -24,7 +24,6 @@ export function VitrineFluxo() {
         opFixa={{ pmo: PMO_DEMO, op: OP_DEMO }}
         ocultarSeletor
         intervaloAtualizacaoMs={INTERVALO_VITRINE_MS}
-        pecasAndando
       />
     </FonteFluxoProvider>
   )
