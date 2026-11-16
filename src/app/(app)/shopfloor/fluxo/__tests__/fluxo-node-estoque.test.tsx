@@ -12,6 +12,15 @@ const { lerEstoqueCompelsAction, lerPendenteCompelsAction } = vi.hoisted(() => (
   lerEstoqueCompelsAction: vi.fn(),
   lerPendenteCompelsAction: vi.fn(),
 }))
+// A fonte de dados do Fluxo (fonte-fluxo) importa TODAS as actions; aqui só o estoque importa.
+vi.mock('@/modules/shopfloor/application/fluxo-actions', () => ({
+  carregarFluxo: vi.fn(), fluxoPeriodo: vi.fn(), rotaSn: vi.fn(), detalhePosto: vi.fn(), historicoPosto: vi.fn(),
+  producaoPeriodo: vi.fn(), burninDetalhe: vi.fn(), embalagemCaixas: vi.fn(), snsManutencao: vi.fn(), opsComBipes: vi.fn(),
+}))
+vi.mock('@/modules/shopfloor/application/pesquisa-actions', () => ({
+  buscarHistoricoSN: vi.fn(), carregarDefeitosDaOp: vi.fn(), carregarResumoDefeitos: vi.fn(),
+}))
+vi.mock('@/modules/shopfloor/application/dashboard-actions', () => ({ carregarDashboard: vi.fn() }))
 vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({ lerEstoqueCompelsAction, lerPendenteCompelsAction }))
 
 const { FluxoNode } = await import('../fluxo-node')

@@ -1,5 +1,6 @@
 'use client'
 
+import { useFonteFluxo } from './fonte-fluxo'
 import { memo, useEffect, useRef, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
@@ -7,7 +8,6 @@ import {
 } from 'lucide-react'
 import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarQuantidade, type EstoqueCompels } from '@/modules/shopfloor/domain/estoque-compels'
-import { lerEstoqueCompelsAction, lerPendenteCompelsAction } from '@/modules/shopfloor/application/estoque-compels-actions'
 import type { ResumoPendenteOp } from '@/modules/shopfloor/domain/estoque-pendente'
 
 export interface FluxoNodePayload extends FluxoNodeData {
@@ -49,6 +49,7 @@ const cacheEstoque = new Map<string, { ate: number; resultado: EstoqueCompels }>
  * estoque PRÓPRIO do item em TODOS os estoques do Compels: contexto, não a conferência do que esta OP deu entrada.
  */
 function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCompels | 'carregando' | null {
+  const fonte = useFonteFluxo()
   const [estado, setEstado] = useState<EstoqueCompels | 'carregando' | null>(() => {
     if (!pmo) return null
     const guardado = cacheEstoque.get(pmo)
@@ -61,7 +62,7 @@ function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCom
     const ler = (forcar: boolean) => {
       const guardado = cacheEstoque.get(pmo)
       if (!forcar && guardado && guardado.ate > Date.now()) return
-      lerEstoqueCompelsAction(pmo)
+      fonte.lerEstoqueCompels(pmo)
         .then((r) => {
           cacheEstoque.set(pmo, { ate: Date.now() + (r.tipo === 'indisponivel' ? 15_000 : CACHE_ESTOQUE_MS), resultado: r })
           if (vivo) setEstado(r)
@@ -71,7 +72,7 @@ function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCom
     ler(false)
     const id = setInterval(() => { if (!document.hidden) ler(true) }, INTERVALO_ESTOQUE_MS)
     return () => { vivo = false; clearInterval(id) }
-  }, [pmo])
+  }, [fonte, pmo])
 
   // Mudou a contagem do Fluxo (entrou peça no estoque, chegou peça na porta): relê já, sem esperar o intervalo.
   const primeira = useRef(true)
@@ -79,14 +80,14 @@ function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCom
     if (primeira.current) { primeira.current = false; return }
     if (!pmo) return
     let vivo = true
-    lerEstoqueCompelsAction(pmo)
+    fonte.lerEstoqueCompels(pmo)
       .then((r) => {
         cacheEstoque.set(pmo, { ate: Date.now() + CACHE_ESTOQUE_MS, resultado: r })
         if (vivo) setEstado(r)
       })
       .catch(() => {})
     return () => { vivo = false }
-  }, [pmo, gatilho])
+  }, [fonte, pmo, gatilho])
 
   return pmo ? estado : null
 }
@@ -96,19 +97,20 @@ const INTERVALO_PENDENTE_MS = 10_000
 
 /** Peças que o Almoxarifado já deu entrada e que a fila ainda não entregou ao Compels (com o motivo). */
 function usePendenteCompels(pmo: string | undefined, op: string | undefined, ligado: boolean, gatilho: string): ResumoPendenteOp | null {
+  const fonte = useFonteFluxo()
   const [resumo, setResumo] = useState<ResumoPendenteOp | null>(null)
   useEffect(() => {
     if (!ligado || !pmo || !op) return
     let vivo = true
     const ler = () => {
-      lerPendenteCompelsAction(pmo, op)
+      fonte.lerPendenteCompels(pmo, op)
         .then((r) => { if (vivo) setResumo(r) })
         .catch(() => { if (vivo) setResumo(null) })
     }
     ler()
     const id = setInterval(ler, INTERVALO_PENDENTE_MS)
     return () => { vivo = false; clearInterval(id) }
-  }, [pmo, op, ligado, gatilho]) // gatilho: a contagem do Fluxo mudou → relê na hora
+  }, [fonte, pmo, op, ligado, gatilho]) // gatilho: a contagem do Fluxo mudou → relê na hora
   return ligado && pmo && op ? resumo : null
 }
 

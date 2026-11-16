@@ -5,6 +5,8 @@ export const MODULOS: { chave: Modulo; rotulo: string }[] = [
   { chave: 'shopfloor', rotulo: 'Fluxo de Processos' },
   { chave: 'setup', rotulo: 'Setup' },
   { chave: 'sistema', rotulo: 'Sistema' },
+  // Vitrine do marketing: o Fluxo da OP com dados fictícios fixos (sem banco). Só se vê, nada se faz.
+  { chave: 'vitrine', rotulo: 'Vitrine (marketing)' },
 ]
 
 /** Permissões que cada módulo expõe (define os accordions e a migração). */
@@ -14,4 +16,5 @@ export const PERMISSOES_POR_MODULO: Record<Modulo, Permissao[]> = {
   shopfloor: ['visualizar', 'lancar', 'administrar'],
   setup: ['visualizar', 'lancar', 'administrar'],
   sistema: ['administrar'],
+  vitrine: ['visualizar'],
 }

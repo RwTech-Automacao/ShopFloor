@@ -1,4 +1,4 @@
-import type { Permissao } from '@/modules/auth/domain/perfil'
+import type { Modulo, Permissao } from '@/modules/auth/domain/perfil'
 
 export const PERMISSOES: { chave: Permissao; rotulo: string }[] = [
   { chave: 'visualizar', rotulo: 'Visualizar' },
@@ -48,4 +48,28 @@ export function grantsParaRemover(
     porModulo.set(g.modulo, [...(porModulo.get(g.modulo) ?? []), g.permissao])
   }
   return [...porModulo.entries()]
+}
+
+/** Módulos cujas permissões NÃO ligam as colunas antigas `pode_*` do perfil. */
+export const MODULOS_SEM_FLAG_LEGADA: Modulo[] = ['vitrine']
+
+/**
+ * As colunas `pode_*` do perfil (derivadas, usadas pelo RLS antigo): cada uma é true se a permissão foi
+ * concedida em QUALQUER módulo — menos os de `MODULOS_SEM_FLAG_LEGADA`. A Vitrine não lê o banco, e as
+ * regras de 1 argumento (`tem_permissao('visualizar')`) olham estas flags: se `vitrine.visualizar`
+ * ligasse `pode_visualizar`, o perfil do marketing passaria a ler dados reais direto pela API.
+ */
+export function flagsLegadas(grants: { modulo: Modulo; permissao: Permissao }[]): Record<`pode_${Permissao}`, boolean> {
+  const concedida = (p: Permissao) => grants.some((g) => g.permissao === p && !MODULOS_SEM_FLAG_LEGADA.includes(g.modulo))
+  return {
+    pode_visualizar: concedida('visualizar'),
+    pode_importar: concedida('importar'),
+    pode_editar: concedida('editar'),
+    pode_finalizar: concedida('finalizar'),
+    pode_editar_finalizado: concedida('editar_finalizado'),
+    pode_excluir: concedida('excluir'),
+    pode_gerar_etiqueta: concedida('gerar_etiqueta'),
+    pode_administrar: concedida('administrar'),
+    pode_lancar: concedida('lancar'),
+  }
 }
