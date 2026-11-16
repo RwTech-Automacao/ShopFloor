@@ -91,6 +91,22 @@ describe('card Finalizadas com o Almoxarifado no fim da rota', () => {
   })
 })
 
+describe('card Finalizadas com venda em NF sem baixa', () => {
+  it('o vendido em NF sai do total e aparece numa linha própria', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue({ ...OK, vendidoEmNf: 73 })
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMONF1', op: '9001', aguardandoAlmoxarifado: 20 }) } as never))
+    await waitFor(() => expect(valorDe('Vendido em NF')).toBe('−73'))
+    expect(valorDe('Total disponível')).toBe('1.120') // 1.173 + 20 − 73
+  })
+
+  it('OP sem Almoxarifado: total = estoque − vendido, sem a linha de aguardando', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue({ ...OK, vendidoEmNf: 173 })
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMONF2', op: '9002' }) } as never))
+    await waitFor(() => expect(valorDe('Total disponível')).toBe('1.000'))
+    expect(screen.queryByText('Aguard. Almoxarifado')).toBeNull()
+  })
+})
+
 describe('card Finalizadas sem o Almoxarifado na rota', () => {
   it('só o Total disponível (estoque do Compels); não consulta a fila', async () => {
     lerEstoqueCompelsAction.mockResolvedValue(OK)

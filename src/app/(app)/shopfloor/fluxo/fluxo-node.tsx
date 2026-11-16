@@ -141,9 +141,9 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
   const estoque = useEstoqueCompels(pmo, gatilho)
   const pendente = usePendenteCompels(pmo, op, temAlmox, gatilho)
   const fila = pendente?.pecas ?? 0
-  const comAlmox = temAlmox && ((aguardando ?? 0) > 0 || fila > 0)
-
   const ok = estoque !== null && estoque !== 'carregando' && estoque.tipo === 'ok'
+  const vendido = ok ? (estoque.vendidoEmNf ?? 0) : 0
+  const comAlmox = (temAlmox && ((aguardando ?? 0) > 0 || fila > 0)) || vendido > 0
   let valorEstoque: React.ReactNode = '—'
   let dicaEstoque = `Estoque de ${pmo} no Compels: produto acabado (PA) + intermediário (EINTER).`
   if (estoque === 'carregando') valorEstoque = '…'
@@ -158,9 +158,9 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
 
   const total = !comAlmox
     ? valorEstoque
-    : ok ? formatarQuantidade(estoque.disponivel + (aguardando ?? 0) + fila) : valorEstoque
+    : ok ? formatarQuantidade(estoque.disponivel + (aguardando ?? 0) + fila - vendido) : valorEstoque
   const dicaTotal = comAlmox
-    ? 'Em estoque no Compels + aguardando o Almoxarifado + na fila do Compels.'
+    ? `Em estoque no Compels + aguardando o Almoxarifado + na fila do Compels${vendido > 0 ? ' − já vendido em NF sem baixa' : ''}.`
     : dicaEstoque
 
   return (
@@ -169,12 +169,14 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
       {comAlmox && (
         <>
           <LinhaResumo sub rotulo="Em estoque" valor={valorEstoque} dica={dicaEstoque} />
-          <LinhaResumo
-            sub
-            rotulo="Aguard. Almoxarifado"
-            valor={aguardando}
-            dica={`${aguardando} peça(s) que passaram por todos os postos e esperam dar entrada no estoque.`}
-          />
+          {temAlmox && (
+            <LinhaResumo
+              sub
+              rotulo="Aguard. Almoxarifado"
+              valor={aguardando}
+              dica={`${aguardando} peça(s) que passaram por todos os postos e esperam dar entrada no estoque.`}
+            />
+          )}
           {/* Fila em 0: a linha não aparece (nada esperando para chegar ao Compels). */}
           {fila > 0 && (
             <LinhaResumo
@@ -183,6 +185,15 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
               valor={fila}
               alerta
               dica={`${fila} peça(s) já deram entrada no Almoxarifado e ainda não chegaram ao Compels. ${pendente?.rotulo ?? ''}${pendente?.motivo ? ` · ${pendente.motivo}` : ''}`}
+            />
+          )}
+          {vendido > 0 && (
+            <LinhaResumo
+              sub
+              rotulo="Vendido em NF"
+              valor={`−${formatarQuantidade(vendido)}`}
+              alerta
+              dica={`${formatarQuantidade(vendido)} peça(s) de ${pmo} já faturadas em NF de saída ainda sem baixa no Compels. Saem do total; a baixa automática baixa a nota quando houver saldo.`}
             />
           )}
         </>

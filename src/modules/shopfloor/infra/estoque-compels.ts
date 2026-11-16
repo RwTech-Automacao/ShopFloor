@@ -4,6 +4,7 @@ import { ClienteCompels } from '@/modules/compels/infra/cliente'
 import { ConfiguracaoIncompleta, configDoAmbiente } from '@/modules/compels/infra/config'
 import { saldoDisponivel, type SaldoEmEstoque } from '@/modules/compels/domain/saldo-por-estoque'
 import type { EstoqueCompels } from '../domain/estoque-compels'
+import { codigoDaLinha, lerNota } from '@/modules/compels/domain/baixa-nf'
 
 /**
  * Estoque de uma PMO no Compels, consultado NA HORA e guardado só em memória por pouco tempo (decisão de
@@ -16,6 +17,29 @@ const TIMEOUT_MS = 10_000
 
 interface Consulta {
   consultarSaldoPorEstoque(codigo: string): Promise<SaldoEmEstoque[]>
+  listarNfsPendentes?(): Promise<Record<string, unknown>[]>
+  itensDaNf?(idNota: number): Promise<{ proprias: unknown[] }>
+}
+
+/** Quantidade vendida em NF pendente de baixa, por código (sem sufixo, maiúsculo). Uma leitura para todos os itens. */
+let cacheNfs: { ate: number; porCodigo: Map<string, number> } | null = null
+const TTL_NFS_MS = 60_000
+
+async function vendidoEmNfs(cliente: Consulta, desde: string, agora: number): Promise<Map<string, number>> {
+  if (cacheNfs && cacheNfs.ate > agora) return cacheNfs.porCodigo
+  const porCodigo = new Map<string, number>()
+  if (cliente.listarNfsPendentes && cliente.itensDaNf) {
+    const notas = (await cliente.listarNfsPendentes()).map(lerNota).filter((n) => n !== null && n.emissao >= desde)
+    for (const nota of notas) {
+      for (const linha of (await cliente.itensDaNf(nota!.id)).proprias) {
+        const codigo = semSufixo(codigoDaLinha(linha)).toUpperCase()
+        const qtd = (linha as { itemNotaICMS?: { quantidadeInterna?: unknown } }).itemNotaICMS?.quantidadeInterna
+        if (codigo && typeof qtd === 'number') porCodigo.set(codigo, (porCodigo.get(codigo) ?? 0) + qtd)
+      }
+    }
+  }
+  cacheNfs = { ate: agora + TTL_NFS_MS, porCodigo }
+  return porCodigo
 }
 
 export interface DependenciasEstoque {
@@ -41,6 +65,7 @@ function clientePadrao(): ClienteCompels | null {
 /** Só para teste: esvazia o cache e o cliente do processo. */
 export function limparEstoqueCompelsParaTeste(): void {
   cache.clear()
+  cacheNfs = null
   clienteDoProcesso = undefined
 }
 
@@ -65,6 +90,16 @@ export async function buscarEstoqueCompels(pmo: string, deps: DependenciasEstoqu
     // Item sem saldo em nenhum estoque volta sem linhas: para o card isso é zero disponível.
     const { total, porEstoque } = saldoDisponivel(linhas)
     resultado = { tipo: 'ok', disponivel: total, porEstoque, consultadoEm: new Date(agora).toISOString() }
+    // NFs vendidas sem baixa: só com a automação configurada (a mesma data de corte). Falhar aqui não
+    // derruba o estoque — o card só não mostra o desconto.
+    const desde = process.env.COMPELS_BAIXA_NF_DESDE?.trim() ?? ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(desde)) {
+      try {
+        resultado.vendidoEmNf = (await vendidoEmNfs(cliente, desde, agora)).get(codigo.toUpperCase()) ?? 0
+      } catch (e) {
+        console.error('[estoque-compels] NFs pendentes falharam:', e instanceof Error ? e.message : e)
+      }
+    }
   } catch (e) {
     // Sem detalhe para a tela (nunca vaza mensagem do ERP); o log do servidor guarda o motivo.
     console.error('[estoque-compels] consulta falhou:', e instanceof Error ? e.message : e)
