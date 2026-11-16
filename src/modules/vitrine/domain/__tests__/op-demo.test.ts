@@ -8,12 +8,12 @@ import {
 const iso = (m: number) => new Date(Date.UTC(2026, 10, 9, 10) + m * 60000).toISOString()
 
 describe('OP da vitrine', () => {
-  it('no começo do laço está em torno de 93% e no fim em torno de 97%', () => {
+  it('no começo do laço está em torno de 93% e no fim em 95%, sem chegar a 100%', () => {
     const ini = resumir(T_INICIO_LACO, iso)
     const fim = resumir(T_FIM_LACO, iso)
     expect(ini.finalizadas / QTD_DEMO).toBeGreaterThan(0.91)
     expect(ini.finalizadas / QTD_DEMO).toBeLessThan(0.95)
-    expect(fim.finalizadas / QTD_DEMO).toBeGreaterThan(0.95)
+    expect(fim.finalizadas / QTD_DEMO).toBeGreaterThanOrEqual(0.95)
     expect(fim.finalizadas).toBeLessThan(QTD_DEMO)
   })
 
@@ -33,11 +33,11 @@ describe('OP da vitrine', () => {
     expect(bipesAte(T_FIM_LACO).every((b) => b.status !== 'Reprovado')).toBe(true)
   })
 
-  it('o canvas tem os 11 postos + Entrada, Saída e Manutenção, sem aresta de reprova', () => {
+  it('o canvas tem os 7 postos reais + Entrada, Saída e Manutenção, sem aresta de reprova', () => {
     const { nodes, edges } = fluxoDemo(T_INICIO_LACO, iso)
     const ids = nodes.map((n) => n.id)
-    // Almoxarifado no fim da rota vira o card Saída (Finalizadas).
-    for (const p of NOMES_POSTOS.slice(0, -1)) expect(ids).toContain(p)
+    expect(NOMES_POSTOS).toEqual(['Inicial', 'Teste', 'Burn-in', 'Teste Final', 'Inspeção Final', 'Embalagem', 'Inspeção NQA'])
+    for (const p of NOMES_POSTOS) expect(ids).toContain(p)
     expect(ids).toEqual(expect.arrayContaining([ENTRADA, SAIDA, MANUTENCAO]))
     expect(edges.some((e) => e.tipo === 'reprova')).toBe(false)
     const saida = nodes.find((n) => n.id === SAIDA)!
@@ -45,20 +45,32 @@ describe('OP da vitrine', () => {
   })
 
   it('as peças andam: entre dois instantes do laço há mais finalizadas', () => {
-    expect(resumir(T_INICIO_LACO + 30, iso).finalizadas).toBeGreaterThan(resumir(T_INICIO_LACO, iso).finalizadas)
+    expect(resumir(T_FIM_LACO, iso).finalizadas).toBeGreaterThan(resumir(T_INICIO_LACO, iso).finalizadas)
   })
 
-  it('peça concluída passou por todos os postos; caixas de 50', () => {
+  it('peça concluída passou por todos os postos; caixas de 25', () => {
     const pend = pendentesPorPeca(T_INICIO_LACO)
     expect(pend.get(snDaPeca(0))).toBeNull()
+    expect(snDaPeca(0)).toBe('EP88000001')
     expect(caixaDaPeca(0)).toBe('CX[1]')
     expect(caixaDaPeca(PECAS_POR_CAIXA)).toBe('CX[2]')
-    const almox = resumir(T_INICIO_LACO, iso).agregados.find((a) => a.posto === 'Almoxarifado')!
-    expect(almox.caixasFechadas).toBeGreaterThanOrEqual(almox.caixasBipadas!)
+  })
+
+  it('o NQA só inspeciona caixa fechada: nenhum bipe de NQA antes da última peça da caixa ser embalada', () => {
+    const bipes = bipesAte(T_FIM_LACO)
+    const fecha = new Map<string, number>()
+    for (const b of bipes) if (b.posto === 'Embalagem') fecha.set(b.caixa, Math.max(fecha.get(b.caixa) ?? 0, b.minuto))
+    const nqa = bipes.filter((b) => b.posto === 'Inspeção NQA')
+    expect(nqa.length).toBeGreaterThan(0)
+    for (const b of nqa) {
+      expect(bipes.filter((x) => x.posto === 'Embalagem' && x.caixa === b.caixa)).toHaveLength(PECAS_POR_CAIXA)
+      expect(b.minuto).toBeGreaterThan(fecha.get(b.caixa)!)
+    }
   })
 
   it('burn-in: peças cozinhando têm entrada sem saída', () => {
-    const b = burninDemo(T_INICIO_LACO, 'Burn-in', iso)
+    // No laço o Burn-in já esvaziou (fim da OP); horas antes ainda tem peça no forno.
+    const b = burninDemo(T_INICIO_LACO - 120, 'Burn-in', iso)
     expect(b.emAndamento.length).toBeGreaterThan(0)
     expect(b.entradas.length).toBe(b.saidas.length + b.emAndamento.length)
   })

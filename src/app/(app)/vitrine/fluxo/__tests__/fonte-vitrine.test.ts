@@ -29,17 +29,17 @@ describe('fonte da vitrine', () => {
     const umaHora = { ini: new Date(AGORA - 3600_000).toISOString(), fim: new Date(AGORA).toISOString() }
     const periodo = await fonte.fluxoPeriodo(P, O, [umaHora])
     expect(periodo.ok && Object.keys(periodo.postos).length).toBeGreaterThan(0)
-    const rota = await fonte.rotaSn(P, O, 'DEMO000001')
+    const rota = await fonte.rotaSn(P, O, 'EP88000001')
     expect(rota.ok && rota.atual).toBeNull() // a 1ª peça já concluiu
-    expect(rota.ok && rota.postos.length).toBe(12)
-    const det = await fonte.detalhePosto(P, O, 'NQA')
+    expect(rota.ok && rota.postos.length).toBe(7)
+    const det = await fonte.detalhePosto(P, O, 'Inspeção NQA')
     expect(det.ok).toBe(true)
-    const hist = await fonte.historicoPosto(P, O, 'Printer', 0)
+    const hist = await fonte.historicoPosto(P, O, 'Inicial', 0)
     expect(hist.ok && hist.linhas.length).toBe(100)
     expect(hist.ok && hist.temMais).toBe(true)
-    const prod = await fonte.producaoPeriodo(P, O, 'Printer', null, null, 'dia')
+    const prod = await fonte.producaoPeriodo(P, O, 'Inicial', null, null, 'dia')
     expect(prod.ok && prod.linhas.reduce((s, l) => s + l.qtd, 0)).toBe(QTD_DEMO)
-    const prodHora = await fonte.producaoPeriodo(P, O, 'NQA', umaHora.ini, umaHora.fim, 'hora')
+    const prodHora = await fonte.producaoPeriodo(P, O, 'Inspeção NQA', umaHora.ini, umaHora.fim, 'hora')
     expect(prodHora.ok && prodHora.linhas.every((l) => /^\d{2}\/\d{2} \d{2}h$/.test(l.rotulo))).toBe(true)
     expect((await fonte.burninDetalhe(P, O, 'Burn-in')).ok).toBe(true)
     const emb = await fonte.embalagemCaixas(P, O, 'Embalagem')
@@ -47,8 +47,8 @@ describe('fonte da vitrine', () => {
     expect(await fonte.snsManutencao(P, O)).toEqual({ ok: true, sns: [] })
     const ops = await fonte.opsComBipes(null, null)
     expect(ops?.[`${P}||${O}`]?.pct).toBeGreaterThan(90)
-    const sn = await fonte.buscarHistoricoSN('demo000001')
-    expect(sn.ok && sn.registros.length).toBe(13) // 12 postos + entrada do Burn-in
+    const sn = await fonte.buscarHistoricoSN('ep88000001')
+    expect(sn.ok && sn.registros.length).toBe(8) // 7 postos + entrada do Burn-in
     expect(await fonte.carregarDefeitosDaOp(P, O)).toEqual({ ok: true, linhas: [], temMais: false })
     expect(await fonte.carregarResumoDefeitos(P, O)).toEqual({ ok: true, resumo: [] })
     const dash = await fonte.carregarDashboard(P, O, '', '')
@@ -64,7 +64,7 @@ describe('fonte da vitrine', () => {
   })
 
   it('o bipe mais novo é "agora" (a tela não envelhece)', async () => {
-    const hist = await fonte.historicoPosto(P, O, 'Almoxarifado', 0)
+    const hist = await fonte.historicoPosto(P, O, 'Embalagem', 0)
     const maisNovo = hist.ok ? Date.parse(hist.linhas[0]!.dataHora) : 0
     expect(AGORA - maisNovo).toBeLessThan(10 * 60_000)
   })

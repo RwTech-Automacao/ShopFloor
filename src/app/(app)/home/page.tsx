@@ -39,7 +39,7 @@ const ATALHOS: Atalho[] = [
   },
   {
     titulo: 'Vitrine',
-    descricao: 'O Fluxo da OP em uma produção de demonstração, para apresentações.',
+    descricao: 'O Fluxo da OP acompanhando uma produção em tempo real.',
     href: '/vitrine/fluxo',
     icone: Sparkles,
     modulo: 'vitrine',

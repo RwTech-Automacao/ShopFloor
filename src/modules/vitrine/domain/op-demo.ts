@@ -22,12 +22,15 @@ import {
 } from '@/modules/shopfloor/domain/fluxo-op'
 import { pareaBurnin, estaAberto } from '@/modules/shopfloor/domain/burnin'
 
-export const PMO_DEMO = 'DEMO'
-export const OP_DEMO = 'DEMO-01'
-export const DESCRICAO_DEMO = 'Placa controladora'
-export const CLIENTE_DEMO = 'Cliente Demonstração'
-export const QTD_DEMO = 1000
-export const PECAS_POR_CAIXA = 50
+// No molde da OP de exemplo montada no banco local em 20/10 (PMOD88 / 8800): nenhum texto "demo" na tela.
+export const PMO_DEMO = 'PMOD88'
+export const OP_DEMO = '8800'
+export const DESCRICAO_DEMO = 'Controlador de acesso RW-200'
+export const CLIENTE_DEMO = 'Cliente A'
+export const QTD_DEMO = 500
+export const PECAS_POR_CAIXA = 25
+/** Minutos entre a caixa fechar na Embalagem e o NQA inspecioná-la. */
+const NQA_DEPOIS_DE_FECHAR = 12
 
 /** Peça i (0-based) começa no Printer neste minuto × i. */
 const CADENCIA = 2.6
@@ -41,23 +44,22 @@ export interface PostoDemo {
   colaborador: string
 }
 
-/** A rota de placa típica. `recurso` igual aos perfis reais (burnin, caixa, nqa, almoxarifado). */
+/**
+ * Os 7 postos reais da OP de exemplo, com os nomes e os perfis de `sf_postos` (Inicial = passagem,
+ * Teste/Teste Final = teste, Burn-in = burnin, Inspeção Final = inspecao, Embalagem = caixa,
+ * Inspeção NQA = nqa). No NQA o `atraso` não vale: a caixa é inspecionada depois que fecha.
+ */
 export const POSTOS_DEMO: PostoDemo[] = [
-  { nome: 'Printer', temStatus: false, recurso: 'nenhum', atraso: 0, colaborador: 'Ana Souza' },
-  { nome: 'SPI', temStatus: true, recurso: 'nenhum', atraso: 2, colaborador: 'Bruno Lima' },
-  { nome: 'Pick & Place', temStatus: false, recurso: 'nenhum', atraso: 3, colaborador: 'Carla Mendes' },
-  { nome: 'Forno', temStatus: false, recurso: 'nenhum', atraso: 6, colaborador: 'Carla Mendes' },
-  { nome: 'AOI', temStatus: true, recurso: 'nenhum', atraso: 8, colaborador: 'Diego Alves' },
-  { nome: 'Montagem PTH', temStatus: false, recurso: 'nenhum', atraso: 30, colaborador: 'Elaine Rocha' },
-  { nome: 'Inspeção PTH', temStatus: true, recurso: 'nenhum', atraso: 15, colaborador: 'Fábio Costa' },
-  { nome: 'Teste funcional', temStatus: true, recurso: 'nenhum', atraso: 20, colaborador: 'Gabriela Dias' },
-  { nome: 'Burn-in', temStatus: true, recurso: 'burnin', atraso: 15, colaborador: 'Gabriela Dias' },
-  { nome: 'Embalagem', temStatus: false, recurso: 'caixa', atraso: 20, colaborador: 'Henrique Prado' },
-  { nome: 'NQA', temStatus: true, recurso: 'nqa', atraso: 30, colaborador: 'Isabela Nunes' },
-  { nome: 'Almoxarifado', temStatus: false, recurso: 'almoxarifado', atraso: 60, colaborador: 'João Martins' },
+  { nome: 'Inicial', temStatus: false, recurso: 'nenhum', atraso: 0, colaborador: 'Ana Souza' },
+  { nome: 'Teste', temStatus: true, recurso: 'nenhum', atraso: 12, colaborador: 'Bruno Lima' },
+  { nome: 'Burn-in', temStatus: true, recurso: 'burnin', atraso: 15, colaborador: 'Carla Mendes' },
+  { nome: 'Teste Final', temStatus: true, recurso: 'nenhum', atraso: 20, colaborador: 'Diego Alves' },
+  { nome: 'Inspeção Final', temStatus: true, recurso: 'nenhum', atraso: 15, colaborador: 'Elaine Rocha' },
+  { nome: 'Embalagem', temStatus: false, recurso: 'caixa', atraso: 18, colaborador: 'Fábio Costa' },
+  { nome: 'Inspeção NQA', temStatus: true, recurso: 'nqa', atraso: 0, colaborador: 'Gabriela Dias' },
 ]
-/** Horas de Burn-in (entrada → saída aprovada). */
-export const BURNIN_MIN = 240
+/** Minutos de Burn-in (entrada → saída aprovada): ~5 h, como na OP de exemplo. */
+export const BURNIN_MIN = 300
 
 export const NOMES_POSTOS = POSTOS_DEMO.map((p) => p.nome)
 const POSTO = new Map(POSTOS_DEMO.map((p) => [p.nome.toLowerCase(), p]))
@@ -67,8 +69,8 @@ const temStatusDe = (p: string) => POSTO.get(p.toLowerCase())?.temStatus ?? fals
 const exigeManutencaoDe = () => false
 
 /** Minuto simulado em que a OP está "congelada" (~93%) e o laço da animação. */
-export const T_INICIO_LACO = 2870
-export const T_FIM_LACO = 2990
+export const T_INICIO_LACO = 1630
+export const T_FIM_LACO = 1695
 
 /** Um bipe da OP demo (o equivalente de uma linha de `sf_registros`). */
 export interface BipeDemo {
@@ -82,7 +84,7 @@ export interface BipeDemo {
 }
 
 export function snDaPeca(i: number): string {
-  return `DEMO${String(i + 1).padStart(6, '0')}`
+  return `EP88${String(i + 1).padStart(6, '0')}`
 }
 
 export function caixaDaPeca(i: number): string {
@@ -101,18 +103,31 @@ function variacao(i: number, k: number): number {
 function gerarTodos(): BipeDemo[] {
   const out: BipeDemo[] = []
   let seq = 0
+  // 1ª passada: todos os postos até a Embalagem; guarda quando cada caixa fecha (a última peça dela).
+  const fechaEm = new Map<string, number>()
+  const nqa: { i: number; sn: string; caixa: string; p: PostoDemo }[] = []
   for (let i = 0; i < QTD_DEMO; i++) {
     let m = i * CADENCIA
     const sn = snDaPeca(i)
     POSTOS_DEMO.forEach((p, k) => {
-      m += p.atraso + (k === 0 ? 0 : variacao(i, k) * 1.5)
       const caixa = p.recurso === 'caixa' || p.recurso === 'nqa' || p.recurso === 'almoxarifado' ? caixaDaPeca(i) : ''
+      if (p.recurso === 'nqa') {
+        nqa.push({ i, sn, caixa, p })
+        return
+      }
+      m += p.atraso + (k === 0 ? 0 : variacao(i, k) * 1.5)
       if (p.recurso === 'burnin') {
         out.push({ sn, posto: p.nome, status: '', minuto: m, caixa, colaborador: p.colaborador, seq: seq++ })
         m += BURNIN_MIN
       }
       out.push({ sn, posto: p.nome, status: p.temStatus ? 'Aprovado' : '', minuto: m, caixa, colaborador: p.colaborador, seq: seq++ })
+      if (p.recurso === 'caixa') fechaEm.set(caixa, Math.max(fechaEm.get(caixa) ?? 0, m))
     })
+  }
+  // 2ª passada: o NQA inspeciona a caixa inteira depois que ela fecha (peça a peça, uns segundos entre elas).
+  for (const { i, sn, caixa, p } of nqa) {
+    const m = fechaEm.get(caixa)! + NQA_DEPOIS_DE_FECHAR + (i % PECAS_POR_CAIXA) * 0.2
+    out.push({ sn, posto: p.nome, status: 'Aprovado', minuto: m, caixa, colaborador: p.colaborador, seq: seq++ })
   }
   return out.sort((a, b) => a.minuto - b.minuto || a.seq - b.seq)
 }

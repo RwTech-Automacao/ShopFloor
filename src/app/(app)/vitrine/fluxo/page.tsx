@@ -15,12 +15,7 @@ export default async function VitrineFluxoPage() {
   }
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-lg font-semibold text-tinta">Fluxo da OP — demonstração</h2>
-        <p className="text-sm text-muted-foreground">
-          Uma produção de exemplo, com dados fictícios, para apresentar o acompanhamento em tempo real.
-        </p>
-      </div>
+      <h2 className="text-lg font-semibold text-tinta">Fluxo da OP</h2>
       <VitrineFluxo />
     </div>
   )

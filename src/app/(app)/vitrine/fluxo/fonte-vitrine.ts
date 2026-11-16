@@ -7,8 +7,8 @@ import {
   recursoDoPostoDemo, temStatusDoPostoDemo, exigeManutencaoDemo, type BipeDemo,
 } from '@/modules/vitrine/domain/op-demo'
 
-/** Minutos simulados que andam a cada segundo real (2 min a cada 3 s → o laço inteiro em 3 min). */
-export const MINUTOS_SIMULADOS_POR_SEGUNDO = 2 / 3
+/** Minutos simulados que andam a cada segundo real (1,2 min a cada 3 s → o laço inteiro em ~2,7 min). */
+export const MINUTOS_SIMULADOS_POR_SEGUNDO = 0.4
 /** A cada quanto a tela da vitrine relê o fluxo (as peças andam nesse passo). */
 export const INTERVALO_VITRINE_MS = 3000
 
