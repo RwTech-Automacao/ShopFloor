@@ -111,7 +111,7 @@ function Bolinhas({ path }: { path: string }) {
   return (
     <g className="motion-reduce:hidden" aria-hidden>
       {[0, 1, 2].map((i) => (
-        <circle key={i} r={4} fill="#8D2033" stroke="#fff" strokeWidth={1.5}>
+        <circle key={i} r={5} fill="#8D2033" stroke="#fff" strokeWidth={1.5}>
           <animateMotion dur="2.4s" begin={`${i * 0.8}s`} repeatCount="indefinite" path={path} />
         </circle>
       ))}

@@ -1252,7 +1252,7 @@ export function FluxoForm({
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
                   <span className="relative inline-flex size-2 rounded-full bg-green-500" />
                 </span>
-                Ao vivo · atualiza a cada 15s
+                Ao vivo · atualiza a cada {Math.round(intervaloAtualizacaoMs / 1000)}s
               </span>
             )}
             {buscou && (
