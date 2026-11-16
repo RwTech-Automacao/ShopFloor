@@ -85,3 +85,27 @@ export function configBaixaNf(env: Record<string, string | undefined> = process.
   if (!modo || !/^\d{4}-\d{2}-\d{2}$/.test(desde)) return null
   return { modo, desde, usuario: env.COMPELS_BAIXA_NF_USUARIO?.trim() || 'ShopFloor' }
 }
+
+const ROTULO_AVISO: Partial<Record<ResultadoNota['resultado'], string>> = {
+  baixada: '✅ NF baixada automaticamente',
+  simulada: '🧪 (simulação) a NF seria baixada',
+  manual: '✋ NF precisa de baixa manual no Compels',
+  falhou: '❌ Falha ao baixar NF',
+}
+
+/**
+ * Mensagens do Discord desta rodada. Nota só "esperando saldo" não avisa. Cada nota avisa UMA vez por situação
+ * (a chave vai para `jaAvisadas`, que vive enquanto o processo vive): a nota manual não repete a cada rodada.
+ */
+export function mensagensDeAviso(resumo: ResumoRodadaNf, jaAvisadas: Set<string>): string[] {
+  const saida: string[] = []
+  for (const n of resumo.notas) {
+    const rotulo = ROTULO_AVISO[n.resultado]
+    if (!rotulo) continue
+    const chave = `${n.numero}|${n.resultado}|${n.detalhe}`
+    if (jaAvisadas.has(chave)) continue
+    jaAvisadas.add(chave)
+    saida.push(`${rotulo}: **NF ${n.numero}** (emitida em ${n.emissao.split('-').reverse().join('/')}) — ${n.detalhe}`)
+  }
+  return saida
+}

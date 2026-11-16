@@ -1,4 +1,6 @@
-import { baixarNfsPendentes, configBaixaNf } from '@/modules/compels/application/baixar-nfs'
+import { baixarNfsPendentes, configBaixaNf, mensagensDeAviso } from '@/modules/compels/application/baixar-nfs'
+import { criarDiscord } from '@/modules/alertas/infra/discord'
+import { canalDiscordDoSistema } from '@/modules/alertas/infra/canais'
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
 import { configDoAmbiente } from '@/modules/compels/infra/config'
 import { segredoConfere } from '@/modules/alertas/infra/assinatura'
@@ -9,13 +11,29 @@ export const dynamic = 'force-dynamic'
 /** Prefixo de toda linha de log desta rodada — é por ele que se filtra o log do pm2. */
 const TAG = '[baixa-nf]'
 
+/** Notas já avisadas neste processo (reinício do app = pode repetir um aviso, nunca perder). */
+const jaAvisadas = new Set<string>()
+
+/** Avisa no canal do Discord do sistema (o mesmo bot dos Alertas). Sem bot ou sem canal, só o log. */
+async function avisarNoDiscord(mensagens: string[]): Promise<void> {
+  const token = process.env.DISCORD_BOT_TOKEN ?? ''
+  const canal = (process.env.COMPELS_BAIXA_NF_DISCORD_CANAL_ID ?? '').trim() || canalDiscordDoSistema()
+  if (!token || !canal || mensagens.length === 0) return
+  const dc = criarDiscord({ token })
+  for (const texto of mensagens) {
+    const r = await dc.enviarCanal(canal, texto, null).catch((e: unknown) => ({ ok: false as const, erro: String(e) }))
+    if (!r.ok) console.error(`${TAG} aviso no Discord falhou:`, r.erro)
+  }
+}
+
 /**
  * BAIXA AUTOMÁTICA DAS NFs DE SAÍDA emitidas sem saldo (spec 2026-11-16-baixa-nf-compels-design.md). Chamada
  * pelo crontab da instância com o MESMO segredo e o mesmo arquivo de cabeçalho do cron de estoque:
  *   curl -fsS -m 300 -X POST -H @$HOME/.estoque-cron-header http://127.0.0.1:3000/api/compels/baixa-nf
  *
  * Desligada até `COMPELS_BAIXA_NF_DESDE` (aaaa-mm-dd) e `COMPELS_BAIXA_NF` (`simular` ou `1`) estarem no ambiente.
- * Não usa o banco: só o Compels.
+ * Não usa o banco: só o Compels. Avisos no canal do Discord do sistema (DISCORD_CANAL_ID, ou
+ * COMPELS_BAIXA_NF_DISCORD_CANAL_ID para um canal próprio).
  */
 export async function POST(request: Request): Promise<Response> {
   const esperado = process.env.ESTOQUE_CRON_SECRET ?? ''
@@ -34,6 +52,7 @@ export async function POST(request: Request): Promise<Response> {
       if (n.resultado === 'falhou' || n.resultado === 'manual') console.error(linha)
       else console.log(linha)
     }
+    await avisarNoDiscord(mensagensDeAviso(resumo, jaAvisadas))
     console.log(`${TAG} ${agora} rodada (${resumo.modo}): ${resumo.notas.length} nota(s) pendente(s) na janela desde ${config.desde}`)
     return Response.json(resumo)
   } catch (e) {

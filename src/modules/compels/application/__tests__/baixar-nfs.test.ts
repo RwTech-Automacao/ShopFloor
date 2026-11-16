@@ -70,3 +70,24 @@ describe('configBaixaNf', () => {
     expect(configBaixaNf({ COMPELS_BAIXA_NF: '1', COMPELS_BAIXA_NF_DESDE: '2026-11-17' })?.modo).toBe('baixar')
   })
 })
+
+describe('mensagensDeAviso', () => {
+  it('avisa baixada/simulada/manual/falhou uma vez; esperando nunca', async () => {
+    const { mensagensDeAviso } = await import('../baixar-nfs')
+    const resumo = {
+      modo: 'baixar' as const,
+      notas: [
+        { numero: 90, emissao: '2026-11-18', resultado: 'baixada' as const, detalhe: '2 × PMOD44 — ok' },
+        { numero: 91, emissao: '2026-11-19', resultado: 'esperando' as const, detalhe: 'sem saldo' },
+        { numero: 92, emissao: '2026-11-19', resultado: 'manual' as const, detalhe: 'rastreável' },
+      ],
+    }
+    const ja = new Set<string>()
+    const m = mensagensDeAviso(resumo, ja)
+    expect(m).toEqual([
+      '✅ NF baixada automaticamente: **NF 90** (emitida em 18/11/2026) — 2 × PMOD44 — ok',
+      '✋ NF precisa de baixa manual no Compels: **NF 92** (emitida em 19/11/2026) — rastreável',
+    ])
+    expect(mensagensDeAviso(resumo, ja)).toEqual([])
+  })
+})
