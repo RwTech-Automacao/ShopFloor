@@ -1,9 +1,9 @@
 'use client'
 
+import { useFonteFluxo } from './fonte-fluxo'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { AlertTriangle, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
-import { carregarDefeitosDaOp, carregarResumoDefeitos } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { DefeitoDaOp, ResumoDefeito } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { agruparDefeitos, capitalizarDescricaoDefeito, separarCodigoDefeito, tipoDefeitoExibido } from '@/modules/shopfloor/domain/defeito'
 import { iconePorRecurso } from './fluxo-node'
@@ -39,6 +39,7 @@ export function DefeitosLista({
   postos?: string[]
   postoInfo?: Record<string, PostoInfo>
 }) {
+  const fonte = useFonteFluxo()
   const [linhas, setLinhas] = useState<DefeitoDaOp[]>([])
   const [resumo, setResumo] = useState<ResumoDefeito[]>([])
   const [buscou, setBuscou] = useState(false)
@@ -57,8 +58,8 @@ export function DefeitosLista({
     const atualizar = async (primeira: boolean) => {
       const desde = new Date(Date.now() - JANELA_MIN * 60_000).toISOString()
       const [rLista, rResumo] = await Promise.all([
-        carregarDefeitosDaOp(pmo, op, 0, postoFiltro, LINHAS_MAX, desde),
-        carregarResumoDefeitos(pmo, op, postoFiltro),
+        fonte.carregarDefeitosDaOp(pmo, op, 0, postoFiltro, LINHAS_MAX, desde),
+        fonte.carregarResumoDefeitos(pmo, op, postoFiltro),
       ])
       if (!vivo) return
       // Erro só incomoda na 1ª carga: no polling (a cada 15s) um toast por falha viraria spam na TV.
@@ -73,7 +74,7 @@ export function DefeitosLista({
     const onVis = () => { if (!document.hidden) void atualizar(false) }
     document.addEventListener('visibilitychange', onVis)
     return () => { vivo = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
-  }, [pmo, op, postoFiltro])
+  }, [fonte, pmo, op, postoFiltro])
 
   // Um card por DEFEITO: as peças que deram o mesmo defeito viram ocorrências dentro dele.
   const grupos = useMemo(

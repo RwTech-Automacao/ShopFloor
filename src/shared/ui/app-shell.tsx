@@ -32,6 +32,7 @@ import {
   Table2,
   History,
   Workflow,
+  Sparkles,
   ScrollText,
   Info,
   ChevronDown,
@@ -100,6 +101,11 @@ const SHOPFLOOR: FolhaModular[] = [
   { chave: 'fluxo', rotulo: 'Fluxo', href: '/shopfloor/fluxo', icone: Workflow, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'registros', rotulo: 'Registros', href: '/shopfloor/registros', icone: History, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
+]
+
+// Vitrine do marketing: o Fluxo da OP com uma produção fictícia (sem banco). Grupo próprio no menu.
+const VITRINE: FolhaModular[] = [
+  { chave: 'vitrine-fluxo', rotulo: 'Fluxo da OP (demo)', href: '/vitrine/fluxo', icone: Sparkles, modulo: 'vitrine', perm: 'visualizar' },
 ]
 
 const SETUP: FolhaModular[] = [
@@ -224,6 +230,7 @@ export function AppShell({
   const shopfloorAtivo = pathname.startsWith('/shopfloor')
   const [shopfloorAberto, setShopfloorAberto] = useState(shopfloorAtivo)
   const setupVisivel = SETUP.filter(pode)
+  const vitrineVisivel = VITRINE.filter(pode)
   const setupAtivo = pathname.startsWith('/setup')
   // Nome diferente do `setupAberto`/`setSetupAberto` do modo quiosque (mais abaixo)
   // para não colidir com esse estado já existente.
@@ -238,7 +245,7 @@ export function AppShell({
   const [configSetupAberto, setConfigSetupAberto] = useState(configSetupAtivo)
 
   const tituloPagina =
-    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...CONFIG_TODOS, AJUDA, PERFIL]
+    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...VITRINE, ...CONFIG_TODOS, AJUDA, PERFIL]
       .filter((i) => ehAtivo(pathname, i.href))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
@@ -395,6 +402,18 @@ export function AppShell({
                 ))}
               </div>
             )}
+          </>
+        )}
+
+        {vitrineVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('Vitrine')}
+            {vitrineVisivel.map((i) => (
+              <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                <i.icone className="size-[18px] shrink-0" />
+                {i.rotulo}
+              </Link>
+            ))}
           </>
         )}
 

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Cpu, Inbox, Workflow, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Cpu, Inbox, Sparkles, Workflow, type LucideIcon } from 'lucide-react'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo, type Modulo, type Permissao } from '@/modules/auth/domain/perfil'
 
@@ -36,6 +36,14 @@ const ATALHOS: Atalho[] = [
     icone: Cpu,
     modulo: 'setup',
     permissao: 'lancar',
+  },
+  {
+    titulo: 'Vitrine',
+    descricao: 'O Fluxo da OP em uma produção de demonstração, para apresentações.',
+    href: '/vitrine/fluxo',
+    icone: Sparkles,
+    modulo: 'vitrine',
+    permissao: 'visualizar',
   },
 ]
 

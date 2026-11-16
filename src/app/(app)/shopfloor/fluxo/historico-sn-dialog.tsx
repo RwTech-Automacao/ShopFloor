@@ -1,9 +1,9 @@
 'use client'
 
+import { useFonteFluxo } from './fonte-fluxo'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
-import { buscarHistoricoSN } from '@/modules/shopfloor/application/pesquisa-actions'
 import type { RegistroHistorico } from '@/modules/shopfloor/infra/pesquisa-repository'
 import { cn } from '@/lib/utils'
 
@@ -69,16 +69,17 @@ export function HistoricoSnDialog({
   onFechar: () => void
   container?: HTMLElement | null
 }) {
+  const fonte = useFonteFluxo()
   const [registros, setRegistros] = useState<RegistroHistorico[] | null>(null)
   const [carregando, startBusca] = useTransition()
 
   useEffect(() => {
     if (sn === null) return
     startBusca(async () => {
-      const r = await buscarHistoricoSN(sn)
+      const r = await fonte.buscarHistoricoSN(sn)
       setRegistros(r.ok ? r.registros : [])
     })
-  }, [sn])
+  }, [fonte, sn])
 
   const passos = useMemo<Passo[]>(() => {
     if (!registros) return []

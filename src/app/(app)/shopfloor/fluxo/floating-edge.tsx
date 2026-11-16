@@ -12,7 +12,7 @@ import { formatarRelogio } from '@/modules/shopfloor/domain/fluxo-op'
  * Fluxo do Recebimento. Aqui fica só o estilo e o rótulo de cadência, que são desta tela.
  */
 
-interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; cadencia?: number; emRota?: boolean; animarRota?: boolean; atenuado?: boolean; reta?: boolean }
+interface DadosAresta { ativo?: boolean; concluido?: boolean; reprova?: boolean; cadencia?: number; emRota?: boolean; animarRota?: boolean; atenuado?: boolean; reta?: boolean; bolinhas?: boolean }
 
 export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps) {
   const sourceNode = useInternalNode(source)
@@ -82,6 +82,7 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
           strokeDasharray="1 1"
           className="fluxo-preenche"
         />
+        {d.bolinhas ? <Bolinhas path={path} /> : null}
         {rotulo}
       </>
     )
@@ -99,5 +100,21 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />
       {d.atenuado ? null : rotulo}
     </>
+  )
+}
+
+/**
+ * Peças "andando" na linha (só a Vitrine liga): três bolinhas defasadas percorrendo o traçado. SVG puro
+ * (`animateMotion`), sem JS por quadro. Quem pediu menos movimento no sistema não vê as bolinhas.
+ */
+function Bolinhas({ path }: { path: string }) {
+  return (
+    <g className="motion-reduce:hidden" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <circle key={i} r={5} fill="#8D2033" stroke="#fff" strokeWidth={1.5}>
+          <animateMotion dur="2.4s" begin={`${i * 0.8}s`} repeatCount="indefinite" path={path} />
+        </circle>
+      ))}
+    </g>
   )
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validarEdicaoPerfil } from '../regras-perfil'
+import { validarEdicaoPerfil, flagsLegadas } from '../regras-perfil'
 
 describe('validarEdicaoPerfil', () => {
   it('bloqueia remover administrar do próprio perfil', () => {
@@ -25,5 +25,15 @@ describe('validarEdicaoPerfil', () => {
       administrarNasNovasFlags: true,
     })
     expect(r.ok).toBe(true)
+  })
+})
+
+describe('flagsLegadas', () => {
+  it('visualizar em um módulo de negócio liga pode_visualizar', () => {
+    expect(flagsLegadas([{ modulo: 'shopfloor', permissao: 'visualizar' }]).pode_visualizar).toBe(true)
+  })
+  it('a Vitrine NÃO liga pode_visualizar (o perfil do marketing não lê o banco)', () => {
+    const f = flagsLegadas([{ modulo: 'vitrine', permissao: 'visualizar' }])
+    expect(Object.values(f).every((v) => v === false)).toBe(true)
   })
 })
