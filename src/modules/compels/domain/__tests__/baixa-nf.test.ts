@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { avaliarNota, lerNota, ordenarPorEmissao, codigoDaLinha, type NotaPendente } from '../baixa-nf'
+import {
+  avaliarNota, lerNota, ordenarPorEmissao, codigoDaLinha, pedidoDeVenda, itensDaNota, situacaoDaNota, previsaoDaSelecao,
+  type NotaPendente,
+} from '../baixa-nf'
 
 const nota: NotaPendente = {
   id: 62476, numero: 78817, empresaId: 133, emissao: '2026-11-20',
   codigoRemetente: 'X', razaoSocialNomeRemetente: 'Y', informacoesComplementares: '',
+  clienteCodigo: 'X', clienteNome: 'Y', valor: null, pedidoVenda: '', natureza: '',
 }
 
 function linha(p: { item?: number; pedido?: number; qtd?: number; estoque?: string; saldo?: number; loc?: number; lote?: number | null; rastreavel?: boolean } = {}) {
@@ -20,11 +24,11 @@ function linha(p: { item?: number; pedido?: number; qtd?: number; estoque?: stri
   }
 }
 
-const base = { nota, emTerceiros: [], deTerceiros: [], desde: '2026-11-17', usuario: 'ShopFloor' }
+const base = { nota, emTerceiros: [], deTerceiros: [], usuario: 'ShopFloor' }
 
 describe('avaliarNota', () => {
-  it('nota emitida antes do corte nunca é tocada (ex.: NF 74202 de 2025)', () => {
-    expect(avaliarNota({ ...base, nota: { ...nota, emissao: '2025-07-25' }, proprias: [linha()] })).toEqual({ acao: 'fora_da_janela' })
+  it('sem data de corte: a NF 74202 (2025) é avaliada como qualquer outra', () => {
+    expect(avaliarNota({ ...base, nota: { ...nota, emissao: '2025-07-25' }, proprias: [linha()] }).acao).toBe('baixar')
   })
 
   it('sem lote com saldo, lote fora do PA ou saldo insuficiente → espera', () => {
@@ -76,5 +80,72 @@ describe('lista de notas', () => {
   it('código do produto: do item do lote; sem lote, o que a nota traz', () => {
     expect(codigoDaLinha(linha())).toBe('PMOD44')
     expect(codigoDaLinha(linha({ lote: null }))).toBe('PMOD44')
+  })
+})
+
+describe('campos de exibição', () => {
+  it('lê cliente, valor, pedido de venda e natureza da nota', () => {
+    const n = lerNota({
+      id: 1, numero: 80, empresa: { id: 133 }, dataHoraEmissao: '2026-11-20 16:00:00',
+      codigoRemetente: 'C123', razaoSocialNomeRemetente: 'ACME LTDA', totalNota: 1530.5,
+      observacoesFinanceiro: 'Ref. Pedido de Venda 2836/26 - pagamento 30 dias',
+      naturezaOperacao: { id: 4, descricao: 'VENDA DE PRODUÇÃO' },
+    })!
+    expect(n).toMatchObject({ clienteCodigo: 'C123', clienteNome: 'ACME LTDA', valor: 1530.5, pedidoVenda: '2836/26', natureza: 'VENDA DE PRODUÇÃO' })
+    const m = lerNota({ id: 1, numero: 80, empresa: { id: 133 }, dataHoraEmissao: '2026-11-20', naturezaOperacao: 'REMESSA' })!
+    expect(m).toMatchObject({ clienteCodigo: '', clienteNome: '', valor: null, pedidoVenda: '', natureza: 'REMESSA' })
+  })
+
+  it('pedido de venda do texto; sem o padrão, vazio', () => {
+    expect(pedidoDeVenda('Pedido de Venda 2836/26')).toBe('2836/26')
+    expect(pedidoDeVenda('pedido de venda nº 1234')).toBe('1234')
+    expect(pedidoDeVenda('sem pedido aqui')).toBe('')
+    expect(pedidoDeVenda('')).toBe('')
+  })
+
+  it('itens da nota: um por item, com descrição e quantidade da nota (linhas de lote somam uma vez só)', () => {
+    const l1 = { ...linha({ item: 1, pedido: 6, qtd: 4 }), itemNotaICMS: { id: 1, quantidadeInterna: 6, descricao: 'MÓDULO 44', numeroItemPedidoVenda: 'PMOD44' } }
+    const l2 = { ...linha({ item: 1, pedido: 6, qtd: 2 }), itemNotaICMS: { id: 1, quantidadeInterna: 6, descricao: 'MÓDULO 44', numeroItemPedidoVenda: 'PMOD44' } }
+    const l3 = { quantidade: 0, itemLote: null, itemNotaICMS: { id: 2, quantidadeInterna: 3, item: { codigo: 'PRT446', descricao: 'PLACA' } } }
+    expect(itensDaNota([l1, l2, l3])).toEqual([
+      { codigo: 'PMOD44', descricao: 'MÓDULO 44', quantidade: 6 },
+      { codigo: 'PRT446', descricao: 'PLACA', quantidade: 3 },
+    ])
+  })
+})
+
+describe('situacaoDaNota', () => {
+  const itens = [{ codigo: 'PMOD44', descricao: '', quantidade: 10 }, { codigo: 'PRT446', descricao: '', quantidade: 5 }]
+  it('baixar → pode baixar; manual → manual com o motivo', () => {
+    expect(situacaoDaNota({ acao: 'baixar', corpo: {}, itens: [] }, itens, new Map())).toEqual({ tipo: 'pode_baixar' })
+    expect(situacaoDaNota({ acao: 'manual', motivo: 'rastreavel' }, itens, new Map()))
+      .toEqual({ tipo: 'manual', motivo: 'item com controle de número de série no Compels — baixar à mão' })
+  })
+  it('sem saldo: diz qual item e quanto falta pelo estoque do PA', () => {
+    const pa = new Map<string, number | null>([['PMOD44', 4], ['PRT446', 9]])
+    expect(situacaoDaNota({ acao: 'esperar', motivo: 'sem_saldo_pa' }, itens, pa)).toEqual({
+      tipo: 'sem_saldo', motivo: 'ainda sem saldo no estoque PA', faltas: [{ codigo: 'PMOD44', falta: 6 }],
+    })
+    // estoque desconhecido (consulta falhou): não inventa a falta
+    expect(situacaoDaNota({ acao: 'esperar', motivo: 'sem_saldo_pa' }, itens, new Map([['PMOD44', null]])))
+      .toMatchObject({ tipo: 'sem_saldo', faltas: [] })
+  })
+})
+
+describe('previsaoDaSelecao', () => {
+  const nota = (notaId: number, tipo: 'pode_baixar' | 'sem_saldo' | 'manual', qtd = 10, naFila = false) => ({
+    notaId, naFila, itens: [{ codigo: 'PMOD44', descricao: '', quantidade: qtd }],
+    situacao: tipo === 'pode_baixar' ? { tipo } as const : tipo === 'manual' ? { tipo, motivo: 'm' } as const : { tipo, motivo: 's', faltas: [] },
+  })
+  it('na ordem marcada: baixa agora enquanto o PA cobre; depois entra na fila atrás das que já estão', () => {
+    const pa = new Map<string, number | null>([['PMOD44', 15]])
+    expect(previsaoDaSelecao([nota(1, 'pode_baixar'), nota(2, 'pode_baixar'), nota(3, 'manual'), nota(4, 'sem_saldo'), nota(5, 'sem_saldo', 1, true)], pa, 3))
+      .toEqual([
+        { notaId: 1, acao: 'baixa_agora' },
+        { notaId: 2, acao: 'fila', posicao: 4 },
+        { notaId: 3, acao: 'manual' },
+        { notaId: 4, acao: 'fila', posicao: 5 },
+        { notaId: 5, acao: 'ja_na_fila' },
+      ])
   })
 })

@@ -51,8 +51,7 @@ export async function baixarNfsPendentes(porta: PortaBaixaNf, op: OpcoesRodada):
     const base = { numero: nota.numero, emissao: nota.emissao }
     try {
       const itens = await porta.itensDaNf(nota.id)
-      const d = avaliarNota({ nota, ...itens, desde: op.desde, usuario: op.usuario })
-      if (d.acao === 'fora_da_janela') continue
+      const d = avaliarNota({ nota, ...itens, usuario: op.usuario })
       if (d.acao === 'esperar') { saida.push({ ...base, resultado: 'esperando', detalhe: TEXTO_MOTIVO[d.motivo] }); continue }
       if (d.acao === 'manual') { saida.push({ ...base, resultado: 'manual', detalhe: TEXTO_MOTIVO[d.motivo] }); continue }
       if (op.modo === 'simular') { saida.push({ ...base, resultado: 'simulada', detalhe: `baixaria ${itensTexto(d)}` }); continue }
