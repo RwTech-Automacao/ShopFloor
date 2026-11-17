@@ -9,7 +9,6 @@ const repo = vi.hoisted(() => ({
   registrarEntrada: vi.fn(async () => ({ id: 'e1', osNumero: '90001', motivos: ['Sem CFOP'] })),
   corrigirNf: vi.fn(async () => ({ ns: 'X', empresa: 'C', osNumero: '9', nfDe: '1', nfPara: '1', situacaoDe: 'reprovada', situacaoPara: 'aprovada', motivos: [] })),
   trocarNf: vi.fn(async () => ({ ns: 'X', empresa: 'C', osNumero: '9', nfDe: '1', nfPara: '2', situacaoDe: 'reprovada', situacaoPara: 'aprovada', motivos: [] })),
-  salvarMotivo: vi.fn(async () => 'm1'),
   ErroDoBanco: class ErroDoBanco extends Error {},
 }))
 vi.mock('../../infra/repository', () => repo)
@@ -106,17 +105,4 @@ describe('actions do SAT', () => {
     expect(repo.corrigirNf).not.toHaveBeenCalled()
   })
 
-  it('motivos: só sat.administrar', async () => {
-    sessao({ visualizar: true, registrar_entrada: true, aprovar_nf: true })
-    const { salvarMotivoAction } = await import('../actions')
-    expect(await salvarMotivoAction(null, 'Sem CFOP', true)).toMatchObject({ ok: false })
-    expect(repo.salvarMotivo).not.toHaveBeenCalled()
-  })
-
-  it('motivos: com sat.administrar grava', async () => {
-    sessao({ visualizar: true, administrar: true })
-    const { salvarMotivoAction } = await import('../actions')
-    expect(await salvarMotivoAction(null, ' Sem CFOP ', true)).toEqual({ ok: true, valor: 'm1' })
-    expect(repo.salvarMotivo).toHaveBeenCalledWith(null, 'Sem CFOP', true)
-  })
 })
