@@ -27,7 +27,9 @@ ficha) fica para depois — vai precisar de integrações com o Compels.
    Célula com vários números de série vira vários itens. Duplicadas entre abas (150 linhas de 2025 repetem a
    2025/2024) gravam uma vez (chave: OS + modelo/sequência + código da peça + data).
 5. **Tela de entrada:** digita o número de série → mostra o que achar em: planilha (OS mais recente primeiro, já
-   escolhida a última "Envio ao SAT"), repinmetro (revenda, saída da expedição, teste de produção, números de série
+   escolhida a última que **volta para a fábrica** — soluções "Envio ao SAT" e "Troca do Relógio", decisão de 17/11; as
+   demais, como "Envio de Peça para o Cliente" e "Manutenção do display no cliente", ficam recolhidas em "Outros
+   atendimentos"; nenhuma que volta = "Sem OS"), repinmetro (revenda, saída da expedição, teste de produção, números de série
    das peças internas), ShopFloor (OP/produto se passou pela produção acompanhada), Compels (descrição do produto pelo
    código). Nada encontrado = entrada manual.
 6. **Campos da entrada:** empresa, CNPJ e produto (sugeridos, editáveis); NF de entrada; valor unitário; frete de

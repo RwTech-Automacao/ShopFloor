@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { consultarNsAction, registrarEntradaAction } from '@/modules/sat/application/actions'
 import type { OsDoNs, ResultadoConsultaNs } from '@/modules/sat/application/consultar-ns'
-import { FRETES, ITENS_JUNTO, cnpjDoCliente, type EntradaInput, type Frete, type ItemJunto, type SituacaoNf } from '@/modules/sat/domain/entrada'
+import { FRETES, ITENS_JUNTO, cnpjDoCliente, voltaParaFabrica, type EntradaInput, type Frete, type ItemJunto, type SituacaoNf } from '@/modules/sat/domain/entrada'
 import type { MotivoNf } from '@/modules/sat/infra/repository'
 import { cn } from '@/lib/utils'
 import { SituacaoNfCampos } from '../situacao-nf'
@@ -164,13 +164,29 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
 
           {consulta.os.length > 0 && (
             <Secao titulo="Planilha de garantia (OS)">
-              {consulta.os.map((o) => (
+              {consulta.os.filter((o) => voltaParaFabrica(o.solucao)).map((o) => (
                 <CartaoOs key={o.id} os={o} escolhida={form.osId === o.id} onEscolher={() => escolherOs(o)} />
               ))}
+              {consulta.os.every((o) => !voltaParaFabrica(o.solucao)) && (
+                <p className="text-sm text-muted-foreground">Nenhuma OS de envio ao SAT ou troca do relógio para este número de série.</p>
+              )}
               <label className="flex items-center gap-2 text-sm">
                 <input type="radio" name="os" checked={form.osId === null} onChange={() => escolherOs(null)} />
                 Sem OS
               </label>
+              {consulta.os.some((o) => !voltaParaFabrica(o.solucao)) && (
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Outros atendimentos ({consulta.os.filter((o) => !voltaParaFabrica(o.solucao)).length}) — envio de peça e
+                    outros que não voltam para a fábrica
+                  </summary>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {consulta.os.filter((o) => !voltaParaFabrica(o.solucao)).map((o) => (
+                      <CartaoOs key={o.id} os={o} escolhida={form.osId === o.id} onEscolher={() => escolherOs(o)} />
+                    ))}
+                  </div>
+                </details>
+              )}
             </Secao>
           )}
 

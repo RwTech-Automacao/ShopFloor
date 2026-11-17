@@ -127,13 +127,21 @@ export function ordenarOs<T extends OsOrdenavel>(os: T[]): T[] {
   })
 }
 
-const ehEnvioAoSat = (solucao: string) =>
-  solucao.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().includes('ENVIO AO SAT')
+/**
+ * Soluções do formulário de abertura de OS em que o equipamento VOLTA para a fábrica (decisão de 17/11): "Envio ao
+ * SAT" e "Troca do Relógio". As demais ("Envio de Peça para o Cliente", "Manutenção do display no cliente", os valores
+ * antigos da aba 2025, vazio) não passam pela entrada do SAT.
+ */
+const SOLUCOES_QUE_VOLTAM = ['ENVIO AO SAT', 'TROCA DO RELOGIO']
 
-/** A OS já escolhida na tela: a última com solução "Envio ao SAT"; sem nenhuma, a mais recente. */
+export function voltaParaFabrica(solucao: string): boolean {
+  const s = (solucao ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
+  return SOLUCOES_QUE_VOLTAM.some((v) => s.includes(v))
+}
+
+/** A OS já escolhida na tela: a mais recente que volta para a fábrica; nenhuma volta = nenhuma (entrada "Sem OS"). */
 export function osSugerida<T extends OsOrdenavel>(os: T[]): T | null {
-  const ordem = ordenarOs(os)
-  return ordem.find((o) => ehEnvioAoSat(o.solucao)) ?? ordem[0] ?? null
+  return ordenarOs(os).find((o) => voltaParaFabrica(o.solucao)) ?? null
 }
 
 /** A coluna CLIENTE da planilha às vezes traz o CNPJ junto do nome. */
