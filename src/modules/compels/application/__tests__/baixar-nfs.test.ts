@@ -100,6 +100,14 @@ describe('confirmarSelecao', () => {
     expect(f.colocar).toHaveBeenCalledWith(expect.anything(), { status: 'aguardando', mensagem: 'Compels recusou', tentativas: 1 })
     expect(c.liberarNf).toHaveBeenCalledTimes(2)
   })
+  it('baixa feita mas o registro no histórico falhou: continua dizendo baixada', async () => {
+    const c = compels([nota(1, 80)], { 1: [comSaldo] })
+    const f = filaConfirmacao()
+    f.colocar.mockRejectedValueOnce(new Error('sem tabela'))
+    const r = await confirmarSelecao(c, f, [1], { ...op, modo: 'baixar' })
+    expect(r[0]).toMatchObject({ resultado: 'baixada' })
+    expect(r[0]!.detalhe).toContain('não ficou registrada no histórico: sem tabela')
+  })
 })
 
 describe('processarFila', () => {

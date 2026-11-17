@@ -156,8 +156,10 @@ export async function confirmarSelecao(
       const t = await tentarBaixar(porta, nota, op)
       if (t.tipo === 'manual') { saida.push({ ...base, resultado: 'manual', detalhe: t.detalhe }); continue }
       if (t.tipo === 'baixada' || t.tipo === 'simulada') {
-        await fila.colocar(paraFila, { status: t.tipo, mensagem: t.detalhe, tentativas: 0 })
-        saida.push({ ...base, resultado: t.tipo, detalhe: t.detalhe })
+        // A baixa JÁ aconteceu no Compels: falhar ao registrar no histórico não pode virar "erro" na tela.
+        const registro = await fila.colocar(paraFila, { status: t.tipo, mensagem: t.detalhe, tentativas: 0 })
+          .then(() => '', (e: unknown) => ` (não ficou registrada no histórico: ${textoErro(e)})`)
+        saida.push({ ...base, resultado: t.tipo, detalhe: t.detalhe + registro })
         continue
       }
       const { posicao } = await fila.colocar(paraFila, {
