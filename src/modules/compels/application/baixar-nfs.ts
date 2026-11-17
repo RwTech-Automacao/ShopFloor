@@ -47,12 +47,12 @@ export interface NotaParaFila {
 export interface FilaDaConfirmacao {
   aguardando(): Promise<ItemFila[]>
   /**
-   * `aguardando` entra no fim da fila e devolve a posição; `baixada`/`simulada` só ficam registradas (histórico
-   * de quem baixou) e devolvem `posicao: null`.
+   * `aguardando` entra no fim da fila e devolve a posição; `baixada` só fica registrada (histórico de quem
+   * baixou) e devolve `posicao: null`. A simulação nunca grava `simulada`: a nota entra na fila (não é consumida).
    */
   colocar(
     nota: NotaParaFila,
-    r: { status: 'aguardando' | 'baixada' | 'simulada'; mensagem: string; tentativas: number },
+    r: { status: 'aguardando' | 'baixada'; mensagem: string; tentativas: number },
   ): Promise<{ posicao: number | null }>
 }
 
@@ -60,7 +60,7 @@ export interface FilaDaConfirmacao {
 export interface FilaDoCron {
   aguardando(): Promise<ItemFila[]>
   tentativa(id: string, r: { mensagem: string; tentativas: number }): Promise<void>
-  finalizar(id: string, status: 'baixada' | 'simulada' | 'baixada_fora' | 'falhou', mensagem: string): Promise<void>
+  finalizar(id: string, status: 'baixada' | 'baixada_fora' | 'falhou', mensagem: string): Promise<void>
 }
 
 /** Falhas seguidas da baixa até a nota sair da fila como `falhou`. */
@@ -69,7 +69,7 @@ export const MAX_FALHAS_SEGUIDAS = 5
 const itensTexto = (d: Extract<DecisaoNota, { acao: 'baixar' }>) =>
   d.itens.map((i) => `${i.quantidade} × ${i.codigo || '?'}`).join(', ')
 
-const textoSimulacao = (d: Extract<DecisaoNota, { acao: 'baixar' }>) => `simulação: seria baixada (${itensTexto(d)})`
+const textoSimulacao = (d: Extract<DecisaoNota, { acao: 'baixar' }>) => `simulação: seria baixada — ${itensTexto(d)}`
 
 const textoErro = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -155,11 +155,21 @@ export async function confirmarSelecao(
     try {
       const t = await tentarBaixar(porta, nota, op)
       if (t.tipo === 'manual') { saida.push({ ...base, resultado: 'manual', detalhe: t.detalhe }); continue }
-      if (t.tipo === 'baixada' || t.tipo === 'simulada') {
+      if (t.tipo === 'simulada') {
+        // Simulação NÃO consome a seleção: a nota entra na fila na ordem marcada, para baixar de verdade (na
+        // mesma ordem) quando o interruptor virar `1`.
+        const { posicao } = await fila.colocar(paraFila, { status: 'aguardando', mensagem: t.detalhe, tentativas: 0 })
+        saida.push({
+          ...base, resultado: 'simulada', ...(posicao != null ? { posicao } : {}),
+          detalhe: `simulação: seria baixada agora — entrou na fila na posição ${posicao ?? '?'}`,
+        })
+        continue
+      }
+      if (t.tipo === 'baixada') {
         // A baixa JÁ aconteceu no Compels: falhar ao registrar no histórico não pode virar "erro" na tela.
         const registro = await fila.colocar(paraFila, { status: t.tipo, mensagem: t.detalhe, tentativas: 0 })
           .then(() => '', (e: unknown) => ` (não ficou registrada no histórico: ${textoErro(e)})`)
-        saida.push({ ...base, resultado: t.tipo, detalhe: t.detalhe + registro })
+        saida.push({ ...base, resultado: 'baixada', detalhe: t.detalhe + registro })
         continue
       }
       const { posicao } = await fila.colocar(paraFila, {
@@ -188,7 +198,8 @@ export interface ResumoFila {
 /**
  * Uma rodada do cron: percorre a fila EM ORDEM e baixa cada nota que já tem saldo. Nota sem saldo não trava as
  * de trás. Nota que deixou de estar pendente no Compels sai como `baixada_fora`. Recusa/erro do Compels soma uma
- * falha; na `MAX_FALHAS_SEGUIDAS`ª seguida a nota sai como `falhou`. Em `simular` sai como `simulada`.
+ * falha; na `MAX_FALHAS_SEGUIDAS`ª seguida a nota sai como `falhou`. Em `simular` a nota que seria baixada FICA na
+ * fila (mesma posição, falhas iguais) só com a mensagem "simulação: seria baixada" — a fila não é consumida.
  */
 export async function processarFila(porta: PortaBaixaNf, fila: FilaDoCron, op: OpcoesBaixa): Promise<ResumoFila> {
   const itens = await fila.aguardando()
@@ -209,9 +220,12 @@ export async function processarFila(porta: PortaBaixaNf, fila: FilaDoCron, op: O
     } catch (e) {
       t = { tipo: 'falha', detalhe: textoErro(e) }
     }
-    if (t.tipo === 'baixada' || t.tipo === 'simulada') {
-      await fila.finalizar(item.id, t.tipo, t.detalhe)
-      saida.push({ numero: item.numero, resultado: t.tipo, detalhe: t.detalhe })
+    if (t.tipo === 'baixada') {
+      await fila.finalizar(item.id, 'baixada', t.detalhe)
+      saida.push({ numero: item.numero, resultado: 'baixada', detalhe: t.detalhe })
+    } else if (t.tipo === 'simulada') {
+      await fila.tentativa(item.id, { mensagem: t.detalhe, tentativas: item.tentativas })
+      saida.push({ numero: item.numero, resultado: 'simulada', detalhe: t.detalhe })
     } else if (t.tipo === 'manual') {
       await fila.finalizar(item.id, 'falhou', `baixa manual: ${t.detalhe}`)
       saida.push({ numero: item.numero, resultado: 'falhou', detalhe: `baixa manual: ${t.detalhe}` })

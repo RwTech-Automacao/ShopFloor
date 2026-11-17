@@ -62,14 +62,18 @@ describe('confirmarSelecao', () => {
     expect(f.colocar).toHaveBeenCalledWith({ notaId: 1, numero: 80, cliente: 'C1 — ACME' }, expect.objectContaining({ status: 'aguardando', tentativas: 0 }))
   })
 
-  it('simulação nunca trava nem baixa: registra "seria baixada"', async () => {
-    const c = compels([nota(1, 80)], { 1: [comSaldo] })
-    const f = filaConfirmacao()
-    const r = await confirmarSelecao(c, f, [1], { ...op, modo: 'simular' })
-    expect(r[0]).toMatchObject({ resultado: 'simulada', detalhe: 'simulação: seria baixada (2 × PMOD44)' })
+  it('simulação nunca trava nem baixa e NÃO consome: a nota com saldo entra na fila na ordem marcada', async () => {
+    const c = compels([nota(1, 80), nota(2, 81)], { 1: [comSaldo], 2: [semSaldo] })
+    const f = filaConfirmacao([item('x', 99, 70)])
+    const r = await confirmarSelecao(c, f, [1, 2], { ...op, modo: 'simular' })
+    expect(r[0]).toMatchObject({
+      resultado: 'simulada', posicao: 2, detalhe: 'simulação: seria baixada agora — entrou na fila na posição 2',
+    })
+    expect(r[1]).toMatchObject({ resultado: 'na_fila', posicao: 3 })
     expect(c.travarNf).not.toHaveBeenCalled()
     expect(c.baixarNf).not.toHaveBeenCalled()
-    expect(f.colocar).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ status: 'simulada' }))
+    expect(f.colocar.mock.calls.map((a) => (a[1] as { status: string }).status)).toEqual(['aguardando', 'aguardando'])
+    expect(f.colocar).toHaveBeenNthCalledWith(1, expect.anything(), { status: 'aguardando', mensagem: 'simulação: seria baixada — 2 × PMOD44', tentativas: 0 })
   })
 
   it('já na fila, não pendente mais: não mexe', async () => {
@@ -122,11 +126,13 @@ describe('processarFila', () => {
     expect(c.liberarNf).toHaveBeenCalledWith(2)
   })
 
-  it('simulação: sai da fila como simulada, sem travar nem baixar', async () => {
+  it('simulação: a nota FICA na fila (mesma posição, tentativas iguais), sem travar nem baixar', async () => {
     const c = compels([nota(1, 80)], { 1: [comSaldo] })
-    const f = filaCron([item('a', 1, 80)])
-    await processarFila(c, f, { ...op, modo: 'simular' })
-    expect(f.finalizar).toHaveBeenCalledWith('a', 'simulada', 'simulação: seria baixada (2 × PMOD44)')
+    const f = filaCron([item('a', 1, 80, 2)])
+    const r = await processarFila(c, f, { ...op, modo: 'simular' })
+    expect(r.notas).toEqual([{ numero: 80, resultado: 'simulada', detalhe: 'simulação: seria baixada — 2 × PMOD44' }])
+    expect(f.tentativa).toHaveBeenCalledWith('a', { mensagem: 'simulação: seria baixada — 2 × PMOD44', tentativas: 2 })
+    expect(f.finalizar).not.toHaveBeenCalled()
     expect(c.travarNf).not.toHaveBeenCalled()
     expect(c.baixarNf).not.toHaveBeenCalled()
   })
@@ -178,12 +184,14 @@ describe('mensagensDeAviso', () => {
         { numero: 91, resultado: 'esperando' as const, detalhe: 'sem saldo' },
         { numero: 92, resultado: 'falha' as const, detalhe: 'recusou' },
         { numero: 93, resultado: 'falhou' as const, detalhe: 'recusou 5 vezes' },
+        { numero: 94, resultado: 'simulada' as const, detalhe: 'simulação: seria baixada — 1 × X' },
       ],
     }
     const ja = new Set<string>()
     expect(mensagensDeAviso(resumo, ja)).toEqual([
       '✅ NF baixada pela fila: **NF 90** — 2 × PMOD44 — ok',
       '❌ NF saiu da fila sem baixar: **NF 93** — recusou 5 vezes',
+      '🧪 (simulação) a NF da fila seria baixada: **NF 94** — simulação: seria baixada — 1 × X',
     ])
     expect(mensagensDeAviso(resumo, ja)).toEqual([])
   })

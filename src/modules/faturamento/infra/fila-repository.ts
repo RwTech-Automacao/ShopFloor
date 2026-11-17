@@ -14,6 +14,7 @@ const TABELA = 'fat_fila_baixa_nf'
 /** Nome que o cron deixa em `finalizado_por_nome` (não há usuário). */
 export const NOME_DO_CRON = 'ShopFloor (fila automática)'
 
+// `simulada` existe no check da 0185 mas o app não grava mais (a simulação não consome a fila).
 export type StatusFila = 'aguardando' | 'baixada' | 'simulada' | 'baixada_fora' | 'removida' | 'falhou'
 
 export interface LinhaFila {
@@ -125,7 +126,7 @@ export function filaDoServico(sb: SupabaseClient = createServiceSupabase()): Fil
       const agora = new Date().toISOString()
       // Baixa feita de verdade vale mesmo que alguém tenha tirado a nota da fila durante a rodada: o registro
       // tem que dizer o que aconteceu no Compels.
-      const de = status === 'baixada' || status === 'simulada' ? ['aguardando', 'removida'] : ['aguardando']
+      const de = status === 'baixada' ? ['aguardando', 'removida'] : ['aguardando']
       const { error } = await sb.from(TABELA)
         .update({
           status, ultima_mensagem: mensagem, ultima_tentativa_em: agora,

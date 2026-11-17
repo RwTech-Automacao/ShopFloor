@@ -50,7 +50,7 @@ const TEXTO_PREVISAO = (p: PrevisaoNota, motivo: string) =>
 
 const TEXTO_RESULTADO: Record<ResultadoConfirmacao['resultado'], string> = {
   baixada: 'Baixada',
-  simulada: 'Simulação: seria baixada',
+  simulada: 'Simulação',
   na_fila: 'Na fila',
   manual: 'Baixa manual',
   ja_na_fila: 'Já estava na fila',
@@ -117,7 +117,8 @@ export function BaixaNfTela({ dados, podeBaixar }: { dados: DadosTelaBaixaNf; po
     <div className="flex flex-col gap-4">
       {dados.modo === 'simular' && (
         <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Modo simulação: a tela e a fila fazem tudo menos a baixa no Compels (&quot;simulação: seria baixada&quot;).
+          Modo simulação: a tela e a fila fazem tudo menos a baixa no Compels (&quot;simulação: seria baixada&quot;). As notas
+          selecionadas ficam na fila, na ordem, para baixar de verdade quando a baixa for ligada.
         </p>
       )}
       {dados.compels === 'indisponivel' && (
@@ -280,7 +281,7 @@ export function BaixaNfTela({ dados, podeBaixar }: { dados: DadosTelaBaixaNf; po
               {resultado.map((r) => (
                 <li key={r.notaId}>
                   <span className="font-semibold">NF {r.numero ?? r.notaId}</span>: {TEXTO_RESULTADO[r.resultado]}
-                  {r.posicao != null && ` (posição ${r.posicao})`}
+                  {r.posicao != null && r.resultado !== 'simulada' && ` (posição ${r.posicao})`}
                   {r.detalhe && <span className="text-muted-foreground"> — {r.detalhe}</span>}
                 </li>
               ))}

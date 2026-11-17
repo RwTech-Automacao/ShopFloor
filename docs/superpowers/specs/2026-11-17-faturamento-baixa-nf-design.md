@@ -18,8 +18,15 @@ modo simulação desde 16/11). O que continua valendo de lá: o domínio que dec
    de existir. O "Vendido em NF" do Fluxo soma todas as pendentes.
 5. **Permissão própria `faturamento`:** `visualizar` (vê a tela) e `baixar` (seleciona, confirma, tira da fila).
    Como `vitrine`, NÃO liga flag legada `pode_*` (`MODULOS_SEM_FLAG_LEGADA`).
-6. **Interruptor:** `COMPELS_BAIXA_NF=simular` faz tela e fila fazerem tudo menos a baixa ("simulação: seria
-   baixada"); `=1` baixa de verdade; ausente = tela só leitura (o botão diz que a baixa está desligada).
+6. **Interruptor:** `COMPELS_BAIXA_NF=simular` faz tela e fila fazerem tudo menos a baixa; `=1` baixa de verdade;
+   ausente = tela só leitura (o botão diz que a baixa está desligada). **A simulação NÃO consome a fila** (17/11):
+   o plano de teste é simular no dia em que o Compels é "aberto", conferir, e virar para `=1` para as baixas
+   acontecerem na ordem da fila. Por isso, em `simular`:
+   - na confirmação, a nota com saldo entra na fila como `aguardando` (na ordem marcada, como as sem saldo), e o
+     resultado diz "simulação: seria baixada agora — entrou na fila na posição N";
+   - no cron, a nota que seria baixada FICA `aguardando` (mesma posição, `tentativas` iguais), com
+     `ultima_mensagem` "simulação: seria baixada — <itens>"; o aviso "seria baixada" no Discord sai uma vez por nota.
+   O status `simulada` continua aceito pelo banco (0185), mas o app não o grava mais.
 7. **Baixada fora do ShopFloor:** nota da fila que deixou de estar pendente no Compels sai da fila como
    `baixada_fora`.
 8. Avisos no Discord: fora deste escopo (ficam para depois).
@@ -69,6 +76,6 @@ crescente), `status` (`aguardando` · `baixada` · `simulada` · `baixada_fora` 
 ## Testes
 
 Domínio: situação da nota, pedido de venda do texto, campos de exibição. Aplicação: ordem da seleção; com saldo
-baixa, sem saldo enfileira, manual recusa; simulação nunca chama `baixarNf`; fila em ordem, sem saldo não trava as
+baixa, sem saldo enfileira, manual recusa; simulação nunca chama `baixarNf` nem tira a nota da fila; fila em ordem, sem saldo não trava as
 de trás, baixada fora sai, 5 falhas viram `falhou`; trava sempre liberada. Permissão: `faturamento` não liga
 `pode_*`. SQL no harness (`supabase/tests/`): RLS e índice único da fila.
