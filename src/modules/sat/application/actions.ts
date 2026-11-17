@@ -63,9 +63,12 @@ export async function consultarNsAction(ns: string): Promise<ResultadoAcao<Resul
   }
 }
 
-/** A empresa da nota pelo CNPJ no Compels; `null` = não achou (ou Compels fora) — a pessoa digita. */
+/**
+ * A empresa da nota pelo CNPJ no Compels; `null` = não achou (ou Compels fora) — a pessoa digita. Usada na entrada
+ * (`registrar_entrada`) e no "Trocar NF" da ficha (`aprovar_nf`).
+ */
 export async function buscarEmpresaAction(cnpj: string): Promise<ResultadoAcao<{ codigo: string; nome: string } | null>> {
-  if (!(await pode('registrar_entrada'))) return { ok: false, erro: SEM_PERMISSAO }
+  if (!(await pode('registrar_entrada')) && !(await pode('aprovar_nf'))) return { ok: false, erro: SEM_PERMISSAO }
   if (!textoOk(cnpj, 50) || formatarCnpj(cnpj) === null) return { ok: false, erro: CNPJ_INVALIDO }
   try {
     return { ok: true, valor: await empresaDoCnpj(cnpj) }

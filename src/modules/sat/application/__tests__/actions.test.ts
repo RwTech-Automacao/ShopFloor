@@ -70,6 +70,13 @@ describe('actions do SAT — entrada', () => {
     expect(avisarSat).not.toHaveBeenCalled()
   })
 
+  it('buscar empresa também vale para quem troca a NF (aprovar_nf sem registrar_entrada)', async () => {
+    sessao({ visualizar: true, aprovar_nf: true })
+    const { buscarEmpresaAction, registrarNfAction } = await import('../actions')
+    expect(await buscarEmpresaAction('12345678000190')).toEqual({ ok: true, valor: { codigo: 'C0001', nome: 'CLIENTE FICTICIO' } })
+    expect(await registrarNfAction(nota)).toEqual(SEM_PERMISSAO)
+  })
+
   it('registrar_entrada sem sat.visualizar também não passa', async () => {
     sessao({ registrar_entrada: true })
     const { registrarNfAction } = await import('../actions')
