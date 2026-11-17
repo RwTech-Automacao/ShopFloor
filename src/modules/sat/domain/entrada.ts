@@ -1,11 +1,11 @@
 import { normalizarNs } from './numero-serie'
+import { formatarCnpj } from './cnpj'
 
 /**
- * Regras da entrada do equipamento no SAT (metade de cima da FO-161) e da NF depois da entrada
- * (spec 2026-11-17-sat-entrada-design.md, decisões 5 a 9). O banco confere de novo (funções da 0186).
+ * Regras da entrada no SAT: UMA nota com N relógios, e a NF depois da entrada (spec
+ * 2026-11-17-sat-entrada-por-nf-design.md, decisões 1, 3 e 8). O banco confere de novo (funções da 0187).
  */
 export type SituacaoNf = 'aprovada' | 'reprovada'
-export type Frete = 'a_cobrar' | 'pago'
 export type ItemJunto = 'bobina' | 'chave' | 'fonte' | 'outros'
 
 export const ITENS_JUNTO: { chave: ItemJunto; rotulo: string }[] = [
@@ -15,39 +15,45 @@ export const ITENS_JUNTO: { chave: ItemJunto; rotulo: string }[] = [
   { chave: 'outros', rotulo: 'Outros' },
 ]
 
-export const FRETES: { chave: Frete; rotulo: string }[] = [
-  { chave: 'a_cobrar', rotulo: 'A cobrar' },
-  { chave: 'pago', rotulo: 'Pago' },
-]
+/** Mesmo limite de `sat_registrar_nf` (RELOGIOS_DEMAIS). */
+export const MAX_RELOGIOS = 200
 
 const SITUACOES: SituacaoNf[] = ['aprovada', 'reprovada']
 const MOTIVO_OBRIGATORIO = 'NF reprovada: escolha ao menos um motivo.'
+const CNPJ_INVALIDO = 'Informe o CNPJ da nota (14 dígitos) ou o CPF (11).'
+const VALOR_INVALIDO = 'Valor da nota inválido.'
 
-/** O que a tela manda (valores em texto, como digitados). */
-export interface EntradaInput {
+/** Um relógio bipado na nota (valores em texto, como digitados). */
+export interface RelogioInput {
   ns: string
-  osId: string | null
-  empresa: string
-  cnpj: string
   produto: string
-  nf: string
-  valor: string
-  frete: Frete | null
   itensJunto: ItemJunto[]
   itensJuntoOutros: string
-  defeito: string
   locacao: string
-  custo: string
+}
+
+/** O que a tela manda: a nota (uma vez) e os relógios dela. */
+export interface NotaInput {
+  cnpj: string
+  empresa: string
+  /** Código do negociante no Compels, quando a empresa veio de lá. */
+  negocianteCodigo: string | null
+  numero: string
+  valor: string
   situacao: SituacaoNf
   /** ids de `sat_motivos_nf`. */
   motivos: string[]
+  relogios: RelogioInput[]
 }
 
-export interface EntradaValida extends Omit<EntradaInput, 'valor' | 'custo'> {
+export interface RelogioValido extends RelogioInput {
   modelo: string | null
   sequencia: string | null
+}
+
+export interface NotaValida extends Omit<NotaInput, 'valor' | 'relogios'> {
   valor: number | null
-  custo: number | null
+  relogios: RelogioValido[]
 }
 
 /** "1.234,56", "1234.56", "R$ 10" → número; vazio → null; ilegível → NaN. */
@@ -70,43 +76,79 @@ function motivosDaSituacao(situacao: SituacaoNf, motivos: string[]): { ok: true;
   return unicos.length === 0 ? { ok: false, erro: MOTIVO_OBRIGATORIO } : { ok: true, motivos: unicos }
 }
 
-export function validarEntrada(i: EntradaInput): { ok: true; valor: EntradaValida } | { ok: false; erro: string } {
-  const ns = (i.ns ?? '').trim()
-  if (ns === '') return { ok: false, erro: 'Informe o número de série.' }
-  const nf = (i.nf ?? '').trim()
-  if (nf === '') return { ok: false, erro: 'Informe a NF de entrada.' }
-  const m = motivosDaSituacao(i.situacao, i.motivos)
-  if (!m.ok) return m
-  if (i.frete !== null && !FRETES.some((f) => f.chave === i.frete)) return { ok: false, erro: 'Frete inválido.' }
-  const itens = [...new Set(i.itensJunto ?? [])]
-  if (!itens.every((x) => ITENS_JUNTO.some((j) => j.chave === x))) return { ok: false, erro: 'Item que veio junto inválido.' }
-  const outros = itens.includes('outros') ? (i.itensJuntoOutros ?? '').trim() : ''
-  if (itens.includes('outros') && outros === '') return { ok: false, erro: 'Descreva os outros itens que vieram junto.' }
-  const valor = lerValor(i.valor)
-  if (!valorOk(valor)) return { ok: false, erro: 'Valor unitário inválido.' }
-  const custo = lerValor(i.custo)
-  if (!valorOk(custo)) return { ok: false, erro: 'Custo inválido.' }
+/** O mesmo relógio na nota: mesmo modelo + sequência; sem sequência legível, o mesmo texto (como `sat_registrar_nf`). */
+const chaveDoRelogio = (ns: string, modelo: string | null, sequencia: string | null) =>
+  sequencia ? `${modelo ?? ''}/${sequencia}` : `#${ns.toUpperCase()}`
 
+function validarRelogio(r: RelogioInput): { ok: true; valor: RelogioValido } | { ok: false; erro: string } {
+  const ns = (r.ns ?? '').trim()
+  if (ns === '') return { ok: false, erro: 'Informe o número de série.' }
+  const itens = [...new Set(r.itensJunto ?? [])]
+  const outros = itens.includes('outros') ? (r.itensJuntoOutros ?? '').trim() : ''
+  if (itens.includes('outros') && outros === '') return { ok: false, erro: `Descreva os outros itens que vieram junto (${ns}).` }
+  if (!itens.every((x) => ITENS_JUNTO.some((j) => j.chave === x))) return { ok: false, erro: 'Item que veio junto inválido.' }
   const par = normalizarNs(ns)
   return {
     ok: true,
     valor: {
-      ns, modelo: par.modelo, sequencia: par.sequencia, osId: i.osId || null,
-      empresa: (i.empresa ?? '').trim(), cnpj: (i.cnpj ?? '').trim(), produto: (i.produto ?? '').trim(), nf,
-      valor, frete: i.frete, itensJunto: itens, itensJuntoOutros: outros, defeito: (i.defeito ?? '').trim(),
-      locacao: (i.locacao ?? '').trim(), custo, situacao: i.situacao, motivos: m.motivos,
+      ns, modelo: par.modelo, sequencia: par.sequencia, produto: (r.produto ?? '').trim(), itensJunto: itens,
+      itensJuntoOutros: outros, locacao: (r.locacao ?? '').trim(),
     },
   }
 }
 
-/** Corrigir (mesma nota, outra situação) ou trocar (nota nova) a NF depois da entrada. */
+export function validarNota(i: NotaInput): { ok: true; valor: NotaValida } | { ok: false; erro: string } {
+  const cnpj = formatarCnpj(i.cnpj)
+  if (cnpj === null) return { ok: false, erro: CNPJ_INVALIDO }
+  const numero = (i.numero ?? '').trim()
+  if (numero === '') return { ok: false, erro: 'Informe o número da NF.' }
+  const valor = lerValor(i.valor)
+  if (!valorOk(valor)) return { ok: false, erro: VALOR_INVALIDO }
+  const m = motivosDaSituacao(i.situacao, i.motivos)
+  if (!m.ok) return m
+  const relogios = i.relogios ?? []
+  if (relogios.length === 0) return { ok: false, erro: 'Bipe ao menos um relógio.' }
+  if (relogios.length > MAX_RELOGIOS) return { ok: false, erro: `Uma nota leva no máximo ${MAX_RELOGIOS} relógios.` }
+
+  const validos: RelogioValido[] = []
+  const chaves = new Set<string>()
+  for (const r of relogios) {
+    const v = validarRelogio(r)
+    if (!v.ok) return v
+    const chave = chaveDoRelogio(v.valor.ns, v.valor.modelo, v.valor.sequencia)
+    if (chaves.has(chave)) return { ok: false, erro: `O número de série ${v.valor.ns} está duas vezes nesta nota.` }
+    chaves.add(chave)
+    validos.push(v.valor)
+  }
+
+  return {
+    ok: true,
+    valor: {
+      cnpj, empresa: (i.empresa ?? '').trim(), negocianteCodigo: (i.negocianteCodigo ?? '').trim() || null, numero,
+      valor, situacao: i.situacao, motivos: m.motivos, relogios: validos,
+    },
+  }
+}
+
+/** Corrigir (mesma nota, outra situação) ou trocar (nota nova) a NF depois da entrada — vale para todos os relógios dela. */
 export type MudancaNf =
   | { tipo: 'corrigir'; situacao: SituacaoNf; motivos: string[] }
-  | { tipo: 'troca'; nf: string; situacao: SituacaoNf; motivos: string[] }
+  | {
+      tipo: 'troca'; numero: string; cnpj: string; empresa: string; negocianteCodigo: string | null; valor: string
+      situacao: SituacaoNf; motivos: string[]
+    }
 
-export function validarMudancaNf(m: MudancaNf): { ok: true; motivos: string[] } | { ok: false; erro: string } {
-  if (m.tipo === 'troca' && (m.nf ?? '').trim() === '') return { ok: false, erro: 'Informe a NF nova.' }
-  return motivosDaSituacao(m.situacao, m.motivos)
+export function validarMudancaNf(
+  m: MudancaNf,
+): { ok: true; motivos: string[]; cnpj?: string; valor?: number | null } | { ok: false; erro: string } {
+  if (m.tipo === 'corrigir') return motivosDaSituacao(m.situacao, m.motivos)
+  const cnpj = formatarCnpj(m.cnpj)
+  if (cnpj === null) return { ok: false, erro: CNPJ_INVALIDO }
+  if ((m.numero ?? '').trim() === '') return { ok: false, erro: 'Informe o número da NF nova.' }
+  const valor = lerValor(m.valor)
+  if (!valorOk(valor)) return { ok: false, erro: VALOR_INVALIDO }
+  const r = motivosDaSituacao(m.situacao, m.motivos)
+  return r.ok ? { ok: true, motivos: r.motivos, cnpj, valor } : r
 }
 
 interface OsOrdenavel {
@@ -139,20 +181,12 @@ export function voltaParaFabrica(solucao: string): boolean {
   return SOLUCOES_QUE_VOLTAM.some((v) => s.includes(v))
 }
 
-/** A OS já escolhida na tela: a mais recente que volta para a fábrica; nenhuma volta = nenhuma (entrada "Sem OS"). */
-export function osSugerida<T extends OsOrdenavel>(os: T[]): T | null {
-  return ordenarOs(os).find((o) => voltaParaFabrica(o.solucao)) ?? null
-}
-
-/** A coluna CLIENTE da planilha às vezes traz o CNPJ junto do nome. */
-export function cnpjDoCliente(texto: string): { nome: string; cnpj: string } {
-  const t = (texto ?? '').trim()
-  const m = /(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})/.exec(t)
-  if (!m) return { nome: t, cnpj: '' }
-  const cnpj = `${m[1]}.${m[2]}.${m[3]}/${m[4]}-${m[5]}`
-  const nome = (t.slice(0, m.index) + t.slice(m.index + m[0].length))
-    .replace(/CNPJ\s*:?/i, '').replace(/[\s\-–—/:|,]+$/, '').replace(/^[\s\-–—/:|,]+/, '').trim()
-  return { nome, cnpj }
+/**
+ * A OS prevista na tela: a mais recente que volta para a fábrica e que ainda não está ligada a outra entrada
+ * (`emUso`, ids de OS) — a mesma regra de `sat__os_automatica`, que é quem escolhe de verdade ao gravar.
+ */
+export function osSugerida<T extends OsOrdenavel & { id: string }>(os: T[], emUso: Set<string>): T | null {
+  return ordenarOs(os).find((o) => voltaParaFabrica(o.solucao) && !emUso.has(o.id)) ?? null
 }
 
 /** Status v1 (a manutenção entra depois). */

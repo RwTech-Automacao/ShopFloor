@@ -12,9 +12,10 @@ export type PermissaoLegada =
 
 /**
  * Só existem por módulo — não têm coluna `pode_*`: `baixar` (Faturamento: baixa de NF no Compels),
- * `registrar_entrada` e `aprovar_nf` (SAT: entrada de equipamento e aprovação da NF de entrada).
+ * `registrar_entrada`, `aprovar_nf` e `associar_os` (SAT: entrada de equipamento, aprovação da NF de entrada e
+ * troca da OS do relógio).
  */
-export type Permissao = PermissaoLegada | 'baixar' | 'registrar_entrada' | 'aprovar_nf'
+export type Permissao = PermissaoLegada | 'baixar' | 'registrar_entrada' | 'aprovar_nf' | 'associar_os'
 
 export type Modulo = 'recebimento' | 'shopfloor' | 'setup' | 'sistema' | 'vitrine' | 'faturamento' | 'sat'
 

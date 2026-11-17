@@ -3,16 +3,16 @@ import { consultarNs, formasDoBipe, type OsDoNs, type PortasConsultaNs } from '.
 
 const os = (o: Partial<OsDoNs>): OsDoNs => ({
   id: 'x', numero: '', data: null, tecnico: '', cliente: '', equipamento: '', garantia: '', primeiroRegistro: '',
-  defeito: '', observacao: '', solucao: '', vendedor: '', pecas: [], ...o,
+  defeito: '', observacao: '', solucao: '', vendedor: '', pecas: [], emUso: false, ...o,
 })
 
 const vazio = { revendas: [], producao: [], shopfloor: [] }
+const sf = (pmo: string) => ({ pmo, op: '9001', cliente: 'C', descricao: 'REP DA OP', ultimoPosto: 'Embalagem', ultimoEm: '2025-02-11' })
 
 function portas(p: Partial<PortasConsultaNs> = {}): PortasConsultaNs {
   return {
     osPorNs: vi.fn(async () => []),
     consultarBanco: vi.fn(async () => vazio),
-    descricaoProduto: vi.fn(async () => null),
     ...p,
   }
 }
@@ -32,48 +32,52 @@ describe('consultarNs', () => {
     const p = portas()
     const r = await consultarNs('-', p)
     expect(r.nadaEncontrado).toBe(true)
+    expect(r.sugestao).toEqual({ produto: '' })
     expect(p.osPorNs).not.toHaveBeenCalled()
     expect(p.consultarBanco).not.toHaveBeenCalled()
   })
 
-  it('OS mais recente primeiro, já escolhida a última "Envio ao SAT"; sugere empresa/CNPJ/defeito da OS', async () => {
+  it('OS mais recente primeiro, já escolhida a última "Envio ao SAT"', async () => {
     const p = portas({
       osPorNs: vi.fn(async () => [
-        os({ id: 'a', numero: '1', data: '2026-01-01', solucao: 'Envio ao SAT', cliente: 'Cli A - 12.345.678/0001-90', defeito: 'não liga', equipamento: 'REP X' }),
-        os({ id: 'b', numero: '2', data: '2026-02-01', solucao: 'Troca', cliente: 'Cli B' }),
+        os({ id: 'a', numero: '1', data: '2026-01-01', solucao: 'Envio ao SAT', equipamento: 'BLUE' }),
+        os({ id: 'b', numero: '2', data: '2026-02-01', solucao: 'Troca' }),
       ]),
     })
     const r = await consultarNs('00043005620019177', p)
     expect(p.osPorNs).toHaveBeenCalledWith({ modelo: '562', sequencia: '19177' })
     expect(r.os.map((o) => o.id)).toEqual(['b', 'a'])
     expect(r.osSugeridaId).toBe('a')
-    expect(r.sugestao).toEqual({ empresa: 'Cli A', cnpj: '12.345.678/0001-90', produto: 'REP X', defeito: 'não liga' })
     expect(r.nadaEncontrado).toBe(false)
   })
 
-  it('ShopFloor + Compels: o produto sugerido é a descrição do Compels pelo código', async () => {
+  it('a OS sugerida pula a que já está ligada a outra entrada', async () => {
     const p = portas({
-      consultarBanco: vi.fn(async () => ({ ...vazio, shopfloor: [
-        { pmo: 'PMOD99', op: '9001', cliente: 'C', descricao: 'REP DA OP', ultimoPosto: 'Embalagem', ultimoEm: '2025-02-11' },
-      ] })),
-      descricaoProduto: vi.fn(async () => 'REP FICTÍCIO DO COMPELS'),
+      osPorNs: vi.fn(async () => [
+        os({ id: 'a', numero: '1', data: '2026-01-01', solucao: 'Envio ao SAT' }),
+        os({ id: 'c', numero: '3', data: '2026-03-01', solucao: 'Troca do Relógio', emUso: true }),
+      ]),
+    })
+    expect((await consultarNs('562-19177', p)).osSugeridaId).toBe('a')
+  })
+
+  it('produto sugerido = código da OP do ShopFloor (PMO), nunca o EQUIPAMENTO da planilha', async () => {
+    const p = portas({
+      osPorNs: vi.fn(async () => [os({ id: 'a', data: '2026-01-01', solucao: 'Envio ao SAT', equipamento: 'BLUE' })]),
+      consultarBanco: vi.fn(async () => ({ ...vazio, shopfloor: [sf('PMOC31'), sf('PMOD99')] })),
     })
     const r = await consultarNs('562-19177', p)
     expect(p.consultarBanco).toHaveBeenCalledWith('562', '19177', ['56219177', '43005620019177', '430056219177'])
-    expect(r.compels).toEqual([{ codigo: 'PMOD99', descricao: 'REP FICTÍCIO DO COMPELS' }])
-    expect(r.sugestao.produto).toBe('REP FICTÍCIO DO COMPELS')
+    expect(r.sugestao).toEqual({ produto: 'PMOC31' })
   })
 
-  it('Compels fora do ar ou sem configuração: segue sem a descrição', async () => {
+  it('sem ShopFloor: produto em branco (mesmo com OS na planilha)', async () => {
     const p = portas({
-      consultarBanco: vi.fn(async () => ({ ...vazio, shopfloor: [
-        { pmo: 'PMOD99', op: '9001', cliente: 'C', descricao: 'REP DA OP', ultimoPosto: 'Embalagem', ultimoEm: '2025-02-11' },
-      ] })),
-      descricaoProduto: vi.fn(async () => { throw new Error('fora do ar') }),
+      osPorNs: vi.fn(async () => [os({ id: 'a', data: '2026-01-01', solucao: 'Envio ao SAT', equipamento: 'BLUE' })]),
     })
     const r = await consultarNs('562-19177', p)
-    expect(r.compels).toEqual([])
-    expect(r.sugestao.produto).toBe('REP DA OP')
+    expect(r.sugestao).toEqual({ produto: '' })
+    expect(r).not.toHaveProperty('compels')
   })
 
   it('só a sequência (sem modelo): busca a planilha pela sequência e não consulta o repinmetro pelo par', async () => {

@@ -13,6 +13,7 @@ export const PERMISSOES: { chave: Permissao; rotulo: string }[] = [
   { chave: 'baixar', rotulo: 'Baixar NF' },
   { chave: 'registrar_entrada', rotulo: 'Registrar entrada' },
   { chave: 'aprovar_nf', rotulo: 'Aprovar NF' },
+  { chave: 'associar_os', rotulo: 'Associar OS' },
 ]
 
 export function validarEdicaoPerfil(input: {
@@ -63,7 +64,7 @@ export const MODULOS_SEM_FLAG_LEGADA: Modulo[] = ['vitrine', 'faturamento', 'sat
  * ligasse `pode_visualizar`, o perfil do marketing passaria a ler dados reais direto pela API. O Faturamento
  * (só a baixa de NF) pela mesma razão: `faturamento.visualizar` não pode abrir as tabelas do ShopFloor e do
  * Recebimento. O SAT idem: `sat.visualizar`/`sat.administrar` abririam leitura e escrita nas tabelas antigas.
- * `baixar`, `registrar_entrada` e `aprovar_nf` não têm coluna — nunca viram flag.
+ * `baixar`, `registrar_entrada`, `aprovar_nf` e `associar_os` não têm coluna — nunca viram flag.
  */
 export function flagsLegadas(grants: { modulo: Modulo; permissao: Permissao }[]): Record<`pode_${PermissaoLegada}`, boolean> {
   const concedida = (p: PermissaoLegada) => grants.some((g) => g.permissao === p && !MODULOS_SEM_FLAG_LEGADA.includes(g.modulo))
