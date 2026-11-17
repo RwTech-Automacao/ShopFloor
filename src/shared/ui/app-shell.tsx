@@ -52,6 +52,7 @@ import {
   Receipt,
   PackageOpen,
   ListChecks,
+  Headset,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -248,6 +249,7 @@ export function AppShell({
   const vitrineVisivel = VITRINE.filter(pode)
   const faturamentoVisivel = FATURAMENTO.filter(pode)
   const satVisivel = SAT.filter(pode)
+  const [satAberto, setSatAberto] = useState(pathname.startsWith('/sat'))
   const setupAtivo = pathname.startsWith('/setup')
   // Nome diferente do `setupAberto`/`setSetupAberto` do modo quiosque (mais abaixo)
   // para não colidir com esse estado já existente.
@@ -437,12 +439,27 @@ export function AppShell({
         {satVisivel.length > 0 && (
           <>
             {rotuloGrupo('SAT')}
-            {satVisivel.map((i) => (
-              <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
-                <i.icone className="size-[18px] shrink-0" />
-                {i.rotulo}
-              </Link>
-            ))}
+            <button
+              type="button"
+              onClick={() => setSatAberto((v) => !v)}
+              className={cn(linkClasse(false), 'w-full justify-between')}
+            >
+              <span className="flex items-center gap-3">
+                <Headset className="size-[18px] shrink-0" />
+                SAT
+              </span>
+              <ChevronDown className={cn('size-4 transition-transform', satAberto && 'rotate-180')} />
+            </button>
+            {satAberto && (
+              <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
+                {satVisivel.map((i) => (
+                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                    <i.icone className="size-[18px] shrink-0" />
+                    {i.rotulo}
+                  </Link>
+                ))}
+              </div>
+            )}
           </>
         )}
 
