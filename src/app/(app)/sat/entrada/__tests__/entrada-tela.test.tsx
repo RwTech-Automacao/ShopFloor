@@ -124,4 +124,30 @@ describe('EntradaTela', () => {
     expect(screen.queryAllByTestId('cartao-relogio')).toHaveLength(0)
     expect(await screen.findByRole('button', { name: 'Registrar entrada (0 relógios)' })).toBeDisabled()
   })
+
+  it('registrar fica desabilitado enquanto uma busca de NS está pendente', async () => {
+    vi.mocked(consultarNsAction).mockResolvedValueOnce({ ok: true, valor: consulta('562-19177', '562', '19177') })
+    let resolver!: (v: Awaited<ReturnType<typeof consultarNsAction>>) => void
+    vi.mocked(consultarNsAction).mockReturnValueOnce(new Promise((r) => { resolver = r }))
+    render(<EntradaTela motivos={[]} />)
+    bipar('562-19177')
+    await waitFor(() => expect(screen.getAllByTestId('cartao-relogio')).toHaveLength(1))
+    bipar('562-19178')
+    expect(screen.getByRole('button', { name: /Registrar entrada/ })).toBeDisabled()
+    resolver({ ok: true, valor: consulta('562-19178', '562', '19178') })
+    await waitFor(() => expect(screen.getAllByTestId('cartao-relogio')).toHaveLength(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Registrar entrada (2 relógios)' })).toBeEnabled())
+  })
+
+  it('consultarNsAction que lança: avisa e o mesmo NS pode ser bipado de novo', async () => {
+    vi.mocked(consultarNsAction)
+      .mockRejectedValueOnce(new Error('rede'))
+      .mockResolvedValueOnce({ ok: true, valor: consulta('562-19177', '562', '19177', { sugestao: { produto: 'PMOC31' } }) })
+    render(<EntradaTela motivos={[]} />)
+    bipar('562-19177')
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Não foi possível buscar o número de série. Tente de novo.'))
+    bipar('562-19177')
+    expect(await screen.findByDisplayValue('PMOC31')).toBeInTheDocument()
+    expect(consultarNsAction).toHaveBeenCalledTimes(2)
+  })
 })

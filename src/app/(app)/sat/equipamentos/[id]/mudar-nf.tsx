@@ -25,10 +25,13 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
  * relógios da nota. sat.aprovar_nf.
  */
 export function MudarNf({
-  nfId, nfAtual, relogios, motivos,
+  nfId, nfAtual, situacaoAtual, motivosAtuais, relogios, motivos,
 }: {
   nfId: string
   nfAtual: string
+  situacaoAtual: SituacaoNf
+  /** Textos dos motivos da nota (ela guarda o texto, não o id). */
+  motivosAtuais: string[]
   relogios: number
   motivos: MotivoNf[]
 }) {
@@ -42,7 +45,13 @@ export function MudarNf({
   const [pendente, iniciar] = useTransition()
 
   const abrir = (m: 'corrigir' | 'trocar') => {
-    setModo(m); setNumero(''); setValor(''); setSituacao('aprovada'); setEscolhidos([]); emp.limpar()
+    setModo(m); setNumero(''); setValor(''); emp.limpar()
+    if (m === 'corrigir') {
+      setSituacao(situacaoAtual)
+      setEscolhidos(situacaoAtual === 'reprovada' ? motivos.filter((x) => motivosAtuais.includes(x.texto)).map((x) => x.id) : [])
+    } else {
+      setSituacao('aprovada'); setEscolhidos([])
+    }
   }
 
   const confirmar = () => iniciar(async () => {

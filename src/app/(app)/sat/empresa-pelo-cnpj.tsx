@@ -24,6 +24,8 @@ export function useEmpresaPeloCnpj() {
     setCnpj(v)
     if (digitosCnpj(v) !== buscado.current) {
       buscado.current = ''
+      pedido.current++
+      setBuscando(false)
       setNegocianteCodigo(null)
       setOrigem(null)
     }
@@ -35,7 +37,16 @@ export function useEmpresaPeloCnpj() {
     buscado.current = d
     const n = ++pedido.current
     setBuscando(true)
-    const r = await buscarEmpresaAction(cnpj)
+    let r: Awaited<ReturnType<typeof buscarEmpresaAction>>
+    try {
+      r = await buscarEmpresaAction(cnpj)
+    } catch {
+      if (n !== pedido.current) return
+      buscado.current = ''
+      setBuscando(false)
+      toast.error('Não foi possível buscar a empresa no Compels — digite a empresa.')
+      return
+    }
     if (n !== pedido.current) return
     setBuscando(false)
     if (!r.ok) {

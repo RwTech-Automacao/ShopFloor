@@ -76,7 +76,7 @@ function CartaoRelogio({
     <div className="flex flex-col gap-2 rounded-md border p-3" data-testid="cartao-relogio">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="font-mono text-sm font-semibold">{c.ns.escrito}</h4>
-        <Button variant="ghost" size="sm" onClick={onRemover}>Remover</Button>
+        <Button variant="ghost" size="sm" aria-label={`Remover ${c.ns.escrito}`} onClick={onRemover}>Remover</Button>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Campo rotulo="Produto"><Input value={r.produto} onChange={(e) => onMudar({ produto: e.target.value })} /></Campo>
@@ -146,6 +146,8 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
   const [salvando, iniciarSalvar] = useTransition()
   // Chaves dos relógios na lista e dos que estão sendo buscados (bipes seguidos).
   const chaves = useRef(new Set<string>())
+  // Sobe a cada salvamento: a busca de NS que volta de uma geração anterior é descartada.
+  const geracao = useRef(0)
 
   const bipar = () => {
     const texto = ns.trim()
@@ -158,8 +160,17 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
     }
     chaves.current.add(chave)
     setNs('')
+    const minha = geracao.current
     iniciarBusca(async () => {
-      const r = await consultarNsAction(texto)
+      let r: Awaited<ReturnType<typeof consultarNsAction>>
+      try {
+        r = await consultarNsAction(texto)
+      } catch {
+        if (minha === geracao.current) chaves.current.delete(chave)
+        toast.error('Não foi possível buscar o número de série. Tente de novo.')
+        return
+      }
+      if (minha !== geracao.current) return
       if (!r.ok) {
         chaves.current.delete(chave)
         toast.error(r.erro)
@@ -194,6 +205,7 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
       const r = await registrarNfAction(input)
       if (!r.ok) { toast.error(r.erro); return }
       toast.success('Entrada registrada.')
+      geracao.current++
       setSalva({ numero: input.numero.trim(), n: r.valor.ids.length, id: r.valor.ids[0] ?? '' })
       emp.limpar()
       setNumero('')
@@ -253,7 +265,7 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
       </Secao>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={registrar} disabled={salvando || lista.length === 0}>
+        <Button onClick={registrar} disabled={salvando || buscando || emp.buscando || lista.length === 0}>
           {salvando ? 'Salvando…' : `Registrar entrada (${relogios(lista.length)})`}
         </Button>
         <span className="text-xs text-muted-foreground">Data = hoje; responsável = você.</span>

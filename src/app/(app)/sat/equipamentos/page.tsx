@@ -37,8 +37,8 @@ export default async function EquipamentosSatPage({
           <option value="aprovada">NF aprovada</option>
           <option value="reprovada">NF reprovada</option>
         </select>
-        <Input name="cliente" placeholder="Empresa" defaultValue={filtro.cliente} />
-        <Input name="ns" placeholder="Número de série" defaultValue={filtro.ns} />
+        <Input name="cliente" placeholder="Empresa" aria-label="Empresa" defaultValue={filtro.cliente} />
+        <Input name="ns" placeholder="Número de série" aria-label="Número de série" defaultValue={filtro.ns} />
         <Input name="de" type="date" aria-label="Recebido de" defaultValue={filtro.de} />
         <Input name="ate" type="date" aria-label="Recebido até" defaultValue={filtro.ate} />
         <Button type="submit">Filtrar</Button>

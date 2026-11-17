@@ -10,7 +10,9 @@ import { cn } from '@/lib/utils'
 import { dia } from '../../formato'
 
 /** "Trocar OS": liga o relógio a outra OS do mesmo NS, ou a nenhuma. sat.associar_os. */
-export function TrocarOs({ entradaId, osAtualId, opcoes }: { entradaId: string; osAtualId: string | null; opcoes: OsDoNs[] }) {
+export function TrocarOs({ entradaId, osAtualId, osAtualNumero, opcoes }: {
+  entradaId: string; osAtualId: string | null; osAtualNumero?: string; opcoes: OsDoNs[]
+}) {
   const router = useRouter()
   const [aberto, setAberto] = useState(false)
   const [escolhida, setEscolhida] = useState<string | null>(osAtualId)
@@ -45,6 +47,12 @@ export function TrocarOs({ entradaId, osAtualId, opcoes }: { entradaId: string; 
           </label>
         )
       })}
+      {osAtualId !== null && !opcoes.some((o) => o.id === osAtualId) && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="radio" name="trocar-os" checked={escolhida === osAtualId} onChange={() => setEscolhida(osAtualId)} />
+          {osAtualNumero ? `OS ${osAtualNumero}` : 'OS atual'}
+        </label>
+      )}
       <label className="flex items-center gap-2 text-sm">
         <input type="radio" name="trocar-os" checked={escolhida === null} onChange={() => setEscolhida(null)} />
         Sem OS

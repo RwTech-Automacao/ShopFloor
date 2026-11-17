@@ -104,7 +104,7 @@ export default async function FichaSatPage({ params }: { params: Promise<{ id: s
         ) : (
           <p className="text-sm text-muted-foreground">Sem OS</p>
         )}
-        {podeOs && <TrocarOs entradaId={e.id} osAtualId={e.os?.id ?? null} opcoes={e.osDoNs} />}
+        {podeOs && <TrocarOs entradaId={e.id} osAtualId={e.os?.id ?? null} osAtualNumero={e.os?.numero} opcoes={e.osDoNs} />}
       </Secao>
 
       <Secao titulo="Nota fiscal">
@@ -127,7 +127,7 @@ export default async function FichaSatPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
         )}
-        {podeNf && <MudarNf nfId={n.id} nfAtual={n.numero} relogios={e.outrosRelogios.length + 1} motivos={motivos} />}
+        {podeNf && <MudarNf nfId={n.id} nfAtual={n.numero} situacaoAtual={n.situacao} motivosAtuais={n.motivos} relogios={e.outrosRelogios.length + 1} motivos={motivos} />}
       </Secao>
 
       <section className="flex flex-col gap-2">
