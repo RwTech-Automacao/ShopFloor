@@ -9,8 +9,8 @@ describe('MODULOS', () => {
 })
 
 describe('PERMISSOES_POR_MODULO', () => {
-  it('sat tem visualizar, registrar_entrada, aprovar_nf e administrar', () => {
-    expect(PERMISSOES_POR_MODULO.sat).toEqual(['visualizar', 'registrar_entrada', 'aprovar_nf', 'administrar'])
+  it('sat tem visualizar, registrar_entrada, aprovar_nf, associar_os e administrar', () => {
+    expect(PERMISSOES_POR_MODULO.sat).toEqual(['visualizar', 'registrar_entrada', 'aprovar_nf', 'associar_os', 'administrar'])
   })
 
   it('faturamento tem visualizar e baixar', () => {

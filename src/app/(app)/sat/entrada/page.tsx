@@ -5,7 +5,7 @@ import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { EntradaTela } from './entrada-tela'
 
 /**
- * SAT → Entrada de equipamento (spec 2026-11-17-sat-entrada-design.md): a metade de entrada da FO-161.
+ * SAT → Entrada de equipamento (spec 2026-11-17-sat-entrada-por-nf-design.md): UMA nota fiscal com os relógios dela.
  * Precisa de sat.visualizar e sat.registrar_entrada (conferidos de novo na action e no banco).
  */
 export default async function EntradaSatPage() {

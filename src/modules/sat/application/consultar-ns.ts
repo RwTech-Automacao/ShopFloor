@@ -1,12 +1,13 @@
 import { normalizarSerie } from '@/modules/shopfloor/domain/serie'
 import { normalizarNs, type NsNormalizado } from '../domain/numero-serie'
-import { cnpjDoCliente, ordenarOs, osSugerida } from '../domain/entrada'
+import { ordenarOs, osSugerida } from '../domain/entrada'
 
 /**
- * O que se sabe de um número de série na hora da entrada (spec 2026-11-17-sat-entrada-design.md, decisão 5):
- * a planilha (OS mais recente primeiro, já escolhida a última que volta para a fábrica: "Envio ao SAT" ou "Troca do Relógio"), o repinmetro (revenda, saída da
- * expedição, teste de produção e os seriais das peças internas), o ShopFloor (OP/produto, se passou pela
- * produção acompanhada) e o Compels (descrição do produto pelo código). Nada encontrado = entrada manual.
+ * O que se sabe de um número de série na hora da entrada (spec 2026-11-17-sat-entrada-por-nf-design.md, decisões 4
+ * e 7): a planilha (OS mais recente primeiro; prevista a última que volta para a fábrica — "Envio ao SAT" ou "Troca
+ * do Relógio" — e que não está ligada a outra entrada), o repinmetro (revenda, saída da expedição, teste de produção
+ * e os seriais das peças internas) e o ShopFloor (OP/produto, se passou pela produção acompanhada). O produto
+ * sugerido é o código da OP do ShopFloor (ex.: PMOC31), nunca o EQUIPAMENTO da planilha. Nada encontrado = manual.
  */
 export interface PecaDaOs {
   nsEscrito: string
@@ -30,6 +31,8 @@ export interface OsDoNs {
   vendedor: string
   /** As peças DESTE NS na OS. */
   pecas: PecaDaOs[]
+  /** A OS já está ligada a alguma entrada (uma OS liga no máximo um relógio). */
+  emUso: boolean
 }
 
 export interface RevendaDoNs {
@@ -66,8 +69,6 @@ export interface DadosDoBanco {
 export interface PortasConsultaNs {
   osPorNs(ns: { modelo: string | null; sequencia: string }): Promise<OsDoNs[]>
   consultarBanco(modelo: string | null, sequencia: string | null, snsNorm: string[]): Promise<DadosDoBanco>
-  /** Descrição do item no Compels; `null` = não achou ou o Compels não está configurado. */
-  descricaoProduto(codigo: string): Promise<string | null>
 }
 
 export interface ResultadoConsultaNs {
@@ -76,13 +77,9 @@ export interface ResultadoConsultaNs {
   osSugeridaId: string | null
   repinmetro: { revendas: RevendaDoNs[]; producao: ProducaoDoNs[] }
   shopfloor: ShopfloorDoNs[]
-  compels: { codigo: string; descricao: string }[]
-  sugestao: { empresa: string; cnpj: string; produto: string; defeito: string }
+  sugestao: { produto: string }
   nadaEncontrado: boolean
 }
-
-/** Máximo de códigos de produto consultados no Compels por busca. */
-const MAX_CODIGOS_COMPELS = 3
 
 /** Como o NS pode ter sido bipado no ShopFloor (normalizado como lá: sem separador nem zero à esquerda). */
 export function formasDoBipe(ns: NsNormalizado): string[] {
@@ -104,20 +101,8 @@ export async function consultarNs(texto: string, portas: PortasConsultaNs): Prom
     ns.sequencia || formas.length > 0 ? portas.consultarBanco(ns.modelo, ns.sequencia, formas) : Promise.resolve(vazio),
   ])
 
-  const codigos = [...new Set(banco.shopfloor.map((s) => s.pmo).filter(Boolean))].slice(0, MAX_CODIGOS_COMPELS)
-  const compels = (await Promise.all(codigos.map(async (codigo) => {
-    try {
-      const descricao = await portas.descricaoProduto(codigo)
-      return descricao ? { codigo, descricao } : null
-    } catch {
-      return null
-    }
-  }))).filter((c): c is { codigo: string; descricao: string } => c !== null)
-
   const ordem = ordenarOs(os)
-  const sugerida = osSugerida(ordem)
-  const cliente = cnpjDoCliente(sugerida?.cliente ?? '')
-  const produto = compels[0]?.descricao || banco.shopfloor[0]?.descricao || sugerida?.equipamento || ''
+  const sugerida = osSugerida(ordem, new Set(os.filter((o) => o.emUso).map((o) => o.id)))
 
   return {
     ns,
@@ -125,8 +110,7 @@ export async function consultarNs(texto: string, portas: PortasConsultaNs): Prom
     osSugeridaId: sugerida?.id ?? null,
     repinmetro: { revendas: banco.revendas, producao: banco.producao },
     shopfloor: banco.shopfloor,
-    compels,
-    sugestao: { empresa: cliente.nome, cnpj: cliente.cnpj, produto, defeito: sugerida?.defeito ?? '' },
+    sugestao: { produto: banco.shopfloor[0]?.pmo ?? '' },
     nadaEncontrado: os.length === 0 && banco.revendas.length === 0 && banco.producao.length === 0 &&
       banco.shopfloor.length === 0,
   }

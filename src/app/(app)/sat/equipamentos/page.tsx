@@ -10,7 +10,7 @@ import { dia } from '../formato'
 
 const um = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] ?? '' : v ?? '').slice(0, 200)
 
-/** SAT → Equipamentos recebidos, com filtros (status da NF, cliente, número de série, período). sat.visualizar. */
+/** SAT → Equipamentos recebidos (um por relógio, com a nota dele), com filtros (status da NF, empresa, número de série, período). sat.visualizar. */
 export default async function EquipamentosSatPage({
   searchParams,
 }: {
@@ -37,8 +37,8 @@ export default async function EquipamentosSatPage({
           <option value="aprovada">NF aprovada</option>
           <option value="reprovada">NF reprovada</option>
         </select>
-        <Input name="cliente" placeholder="Cliente" defaultValue={filtro.cliente} />
-        <Input name="ns" placeholder="Número de série" defaultValue={filtro.ns} />
+        <Input name="cliente" placeholder="Empresa" aria-label="Empresa" defaultValue={filtro.cliente} />
+        <Input name="ns" placeholder="Número de série" aria-label="Número de série" defaultValue={filtro.ns} />
         <Input name="de" type="date" aria-label="Recebido de" defaultValue={filtro.de} />
         <Input name="ate" type="date" aria-label="Recebido até" defaultValue={filtro.ate} />
         <Button type="submit">Filtrar</Button>
@@ -48,27 +48,27 @@ export default async function EquipamentosSatPage({
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted-foreground">
             <tr>
-              <th className="p-2 font-medium">Recebido</th>
               <th className="p-2 font-medium">Número de série</th>
-              <th className="p-2 font-medium">Empresa</th>
               <th className="p-2 font-medium">Produto</th>
-              <th className="p-2 font-medium">OS</th>
+              <th className="p-2 font-medium">Empresa</th>
               <th className="p-2 font-medium">NF</th>
-              <th className="p-2 font-medium">Status</th>
+              <th className="p-2 font-medium">Situação</th>
+              <th className="p-2 font-medium">OS</th>
               <th className="p-2 font-medium">Locação</th>
+              <th className="p-2 font-medium">Data</th>
             </tr>
           </thead>
           <tbody>
             {entradas.map((e) => (
               <tr key={e.id} className="border-t hover:bg-muted/40">
-                <td className="p-2">{dia(e.data)}</td>
                 <td className="p-2 font-mono"><Link className="underline" href={`/sat/equipamentos/${e.id}`}>{e.nsEscrito}</Link></td>
-                <td className="p-2">{e.empresa || '—'}</td>
                 <td className="p-2">{e.produto || '—'}</td>
-                <td className="p-2">{e.osNumero || '—'}</td>
+                <td className="p-2">{e.empresa || '—'}</td>
                 <td className="p-2">{e.nf}</td>
                 <td className="p-2"><StatusNf situacao={e.situacao} /></td>
+                <td className="p-2">{e.osNumero || '—'}</td>
                 <td className="p-2">{e.locacao || '—'}</td>
+                <td className="p-2">{dia(e.data)}</td>
               </tr>
             ))}
             {entradas.length === 0 && (

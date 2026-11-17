@@ -7,6 +7,7 @@ import {
   type ComponenteRequisicao,
 } from '../domain/corpos'
 import { leiturasDeRespostas, listaDe, RespostaInesperada } from '../domain/leituras-erp'
+import { filtroNegociante } from '../domain/negociante'
 import { saldoDoItem, type SaldoItem } from '../domain/saldo-item'
 import { saldosPorEstoque, type SaldoEmEstoque } from '../domain/saldo-por-estoque'
 import type { LeiturasOp } from '../domain/estado-op'
@@ -311,5 +312,13 @@ export class ClienteCompels {
     const resposta = await this.json(`/estoque/consultaSaldoItemEstoque?${params}`)
     return saldosPorEstoque(resposta, codigo)
   }
-}
 
+  /**
+   * Negociantes pelo CPF/CNPJ (`GET negociante/list`, o filtro da grade da tela de negociantes). Só leitura — a
+   * entrada do SAT acha a empresa da nota por aqui. A resposta crua vai para `negocianteDoCnpj`.
+   */
+  buscarNegociantes(cpfCnpj: string): Promise<unknown> {
+    const filtro = encodeURIComponent(JSON.stringify(filtroNegociante(cpfCnpj)))
+    return this.json(`/negociante/list?sortFilter=[]&filter=${filtro}&true=1&offset=0&limit=50`)
+  }
+}
