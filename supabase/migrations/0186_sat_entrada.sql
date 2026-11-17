@@ -355,7 +355,7 @@ revoke all on function public.sat__motivos(text, uuid[]) from public, anon, auth
 
 -- ---------- sat_registrar_entrada: a tela de entrada grava aqui (sat.registrar_entrada) ----------
 -- p = {ns, modelo, sequencia, os_id, empresa, cnpj, produto, nf, valor, frete, itens_junto, itens_junto_outros,
---      defeito, locacao, custo, nf_situacao, motivos: [uuid]}. Devolve {id, motivos: [texto]}.
+--      defeito, locacao, custo, nf_situacao, motivos: [uuid]}. Devolve {id, os_numero, motivos: [texto]}.
 create or replace function public.sat_registrar_entrada(p jsonb)
 returns jsonb
 language plpgsql
@@ -411,7 +411,7 @@ begin
   insert into sat_entradas_historico (entrada_id, tipo, nf_para, situacao_para, motivos, usuario, usuario_nome)
   values (v_id, 'entrada', v_nf, v_situacao, v_motivos, auth.uid(), coalesce(v_nome, ''));
 
-  return jsonb_build_object('id', v_id, 'motivos', to_jsonb(v_motivos));
+  return jsonb_build_object('id', v_id, 'os_numero', coalesce(v_os_num, ''), 'motivos', to_jsonb(v_motivos));
 end
 $func$;
 

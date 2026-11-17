@@ -253,8 +253,8 @@ begin
     'cnpj', '12.345.678/0001-90', 'produto', 'REP X', 'nf', '4521', 'valor', 1500.5, 'frete', 'a_cobrar',
     'itens_junto', jsonb_build_array('bobina', 'outros'), 'itens_junto_outros', 'suporte', 'defeito', 'não liga',
     'locacao', 'Prateleira 1', 'custo', 0, 'nf_situacao', 'reprovada', 'motivos', jsonb_build_array(m2, m1)));
-  if r->'motivos' <> '["Sem CFOP de retorno", "Valor divergente"]'::jsonb then
-    raise exception 'FALHOU: motivos devolvidos %', r->'motivos';
+  if r->'motivos' <> '["Sem CFOP de retorno", "Valor divergente"]'::jsonb or r->>'os_numero' <> '90001' then
+    raise exception 'FALHOU: entrada devolveu %', r;
   end if;
   reset role;
   if not exists (select 1 from sat_entradas where id = (r->>'id')::uuid and ns_escrito = '00043005620019177'
