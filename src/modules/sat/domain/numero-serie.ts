@@ -21,7 +21,10 @@ export function normalizarNs(texto: string): NsNormalizado {
   const escrito = (texto ?? '').toString().trim()
   const vazio: NsNormalizado = { escrito, modelo: null, sequencia: null }
 
-  const traco = /^\D*?(\d+)\s*-\s*(\d+)\D*$/.exec(escrito)
+  // "562-19177", "562 -19177" — e também "562 19177" / "562.19177" (modelo de 3 dígitos separado por espaço ou
+  // ponto, visto em ~9 células da planilha real em 17/11/2026).
+  const traco =
+    /^\D*?(\d+)\s*-\s*(\d+)\D*$/.exec(escrito) ?? /^\D*?(\d{3})(?:\s+|\s*\.\s*)(\d{3,7})\D*$/.exec(escrito)
   if (traco) {
     const modelo = semZeros(traco[1]!)
     const sequencia = semZeros(traco[2]!)
@@ -49,7 +52,7 @@ export function normalizarNs(texto: string): NsNormalizado {
 export function nsDaCelula(celula: string): string[] {
   const texto = (celula ?? '').toString().trim()
   if (texto === '') return []
-  const pedacos = texto.match(/\d+\s*-\s*\d+|[^\s,;/]+/g) ?? []
+  const pedacos = texto.match(/\d+\s*-\s*\d+|(?<!\d)\d{3}(?:\s+|\.)\d{3,7}(?!\d)|[^\s,;/]+/g) ?? []
   const comDigito = pedacos.filter((p) => /\d/.test(p))
   return comDigito.length > 0 ? comDigito : [texto]
 }

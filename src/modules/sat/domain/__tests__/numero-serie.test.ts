@@ -34,6 +34,19 @@ describe('normalizarNs', () => {
   })
 })
 
+describe('modelo e sequência separados por espaço ou ponto (visto na planilha real)', () => {
+  it('"562 19177" e "562.19177" são um NS só, modelo 562 / sequência 19177', () => {
+    expect(normalizarNs('562 19177')).toEqual({ escrito: '562 19177', modelo: '562', sequencia: '19177' })
+    expect(normalizarNs('562.19177')).toEqual({ escrito: '562.19177', modelo: '562', sequencia: '19177' })
+    expect(nsDaCelula('562 19177')).toEqual(['562 19177'])
+    expect(nsDaCelula('562.19177 562-15382')).toEqual(['562.19177', '562-15382'])
+  })
+
+  it('duas sequências soltas separadas por espaço continuam sendo dois NS', () => {
+    expect(nsDaCelula('19177 19725')).toEqual(['19177', '19725'])
+  })
+})
+
 describe('nsDaCelula', () => {
   it('vários NS numa célula (espaço, quebra de linha, vírgula, ponto e vírgula)', () => {
     expect(nsDaCelula('00043005620019177 00043005620019178\n430056219725; 562-15382, 562 -19177'))
