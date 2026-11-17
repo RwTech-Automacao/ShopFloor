@@ -24,6 +24,6 @@ export const PERMISSOES_POR_MODULO: Record<Modulo, Permissao[]> = {
   // `baixar` = selecionar notas, confirmar a baixa e tirar da fila.
   faturamento: ['visualizar', 'baixar'],
   // `registrar_entrada` = dar entrada no equipamento; `aprovar_nf` = corrigir/trocar a NF depois da entrada;
-  // `administrar` = cadastro dos motivos de reprovação da NF.
+  // `administrar` = reservado (a tela de motivos saiu em 17/11; a lista vem por migração).
   sat: ['visualizar', 'registrar_entrada', 'aprovar_nf', 'administrar'],
 }

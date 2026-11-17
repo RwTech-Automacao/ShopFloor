@@ -51,7 +51,6 @@ import {
   FileText,
   Receipt,
   PackageOpen,
-  ListChecks,
   Headset,
   type LucideIcon,
 } from 'lucide-react'
@@ -121,7 +120,6 @@ const FATURAMENTO: FolhaModular[] = [
 const SAT: FolhaModular[] = [
   { chave: 'sat-entrada', rotulo: 'Entrada de equipamento', href: '/sat/entrada', icone: PackageOpen, modulo: 'sat', perm: 'registrar_entrada' },
   { chave: 'sat-equipamentos', rotulo: 'Equipamentos', href: '/sat/equipamentos', icone: Wrench, modulo: 'sat', perm: 'visualizar' },
-  { chave: 'sat-motivos', rotulo: 'Motivos de reprovação', href: '/sat/motivos', icone: ListChecks, modulo: 'sat', perm: 'administrar' },
 ]
 
 const SETUP: FolhaModular[] = [

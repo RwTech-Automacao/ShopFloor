@@ -33,7 +33,7 @@ export function SituacaoNfCampos({
           <span className="text-xs text-muted-foreground">Motivo(s) da reprovação — ao menos um</span>
           {ativos.length === 0 && (
             <span className="text-sm text-destructive">
-              Nenhum motivo cadastrado. Peça a quem administra o SAT para cadastrar em SAT → Motivos de reprovação.
+              Nenhum motivo de reprovação cadastrado ainda.
             </span>
           )}
           {ativos.map((m) => (

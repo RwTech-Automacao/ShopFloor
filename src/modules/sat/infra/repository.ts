@@ -92,13 +92,6 @@ export async function listarMotivos(): Promise<MotivoNf[]> {
   return ((data ?? []) as Linha[]).map((m) => ({ id: txt(m.id), texto: txt(m.texto), ativo: m.ativo === true }))
 }
 
-export async function salvarMotivo(id: string | null, texto: string, ativo: boolean): Promise<string> {
-  const sb = await createServerSupabase()
-  const { data, error } = await sb.rpc('sat_motivo_salvar', { p_id: id, p_texto: texto, p_ativo: ativo })
-  if (error) throw new ErroDoBanco(error.message)
-  return String(data)
-}
-
 // ---------- entrada e NF ----------
 export async function registrarEntrada(e: EntradaValida): Promise<{ id: string; osNumero: string; motivos: string[] }> {
   const sb = await createServerSupabase()

@@ -7,7 +7,7 @@ import { validarEntrada, validarMudancaNf, type EntradaInput, type SituacaoNf } 
 import { mensagemEntrada, mensagemMudancaNf } from '../domain/mensagens'
 import { mensagemDoErro } from '../domain/erros'
 import {
-  consultarNoBanco, corrigirNf, ErroDoBanco, osPorNs, registrarEntrada, salvarMotivo, trocarNf,
+  consultarNoBanco, corrigirNf, ErroDoBanco, osPorNs, registrarEntrada, trocarNf,
   type MudancaGravada,
 } from '../infra/repository'
 import { avisarSat } from '../infra/discord'
@@ -122,21 +122,4 @@ export async function trocarNfAction(
   const v = validarMudancaNf({ tipo: 'troca', nf, situacao, motivos })
   if (!v.ok) return v
   return mudarNf(entradaId, 'troca', () => trocarNf(entradaId, nf.trim(), situacao, v.motivos))
-}
-
-/** Cadastro dos motivos de reprovação (novo: `id` null). */
-export async function salvarMotivoAction(id: string | null, texto: string, ativo: boolean): Promise<ResultadoAcao<string>> {
-  if (!(await pode('administrar'))) return { ok: false, erro: SEM_PERMISSAO }
-  if ((id !== null && !(typeof id === 'string' && UUID.test(id))) || typeof texto !== 'string' || typeof ativo !== 'boolean') {
-    return { ok: false, erro: 'Pedido inválido.' }
-  }
-  const t = texto.trim()
-  if (t === '' || t.length > 200) return { ok: false, erro: 'O motivo precisa de um texto (até 200 caracteres).' }
-  try {
-    const salvo = await salvarMotivo(id, t, ativo)
-    revalidatePath('/sat/motivos')
-    return { ok: true, valor: salvo }
-  } catch (e) {
-    return falha(e, 'Não foi possível salvar o motivo.')
-  }
 }
