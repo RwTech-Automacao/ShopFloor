@@ -36,4 +36,12 @@ describe('flagsLegadas', () => {
     const f = flagsLegadas([{ modulo: 'vitrine', permissao: 'visualizar' }])
     expect(Object.values(f).every((v) => v === false)).toBe(true)
   })
+  it('o Faturamento NÃO liga nenhum pode_* (nem visualizar, nem baixar)', () => {
+    const f = flagsLegadas([
+      { modulo: 'faturamento', permissao: 'visualizar' },
+      { modulo: 'faturamento', permissao: 'baixar' },
+    ])
+    expect(Object.values(f).every((v) => v === false)).toBe(true)
+    expect(Object.keys(f)).not.toContain('pode_baixar')
+  })
 })
