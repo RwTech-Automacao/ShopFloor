@@ -10,10 +10,13 @@ export type PermissaoLegada =
   | 'administrar'
   | 'lancar'
 
-/** `baixar` (Faturamento: baixa de NF no Compels) só existe por módulo — não tem coluna `pode_*`. */
-export type Permissao = PermissaoLegada | 'baixar'
+/**
+ * Só existem por módulo — não têm coluna `pode_*`: `baixar` (Faturamento: baixa de NF no Compels),
+ * `registrar_entrada` e `aprovar_nf` (SAT: entrada de equipamento e aprovação da NF de entrada).
+ */
+export type Permissao = PermissaoLegada | 'baixar' | 'registrar_entrada' | 'aprovar_nf'
 
-export type Modulo = 'recebimento' | 'shopfloor' | 'setup' | 'sistema' | 'vitrine' | 'faturamento'
+export type Modulo = 'recebimento' | 'shopfloor' | 'setup' | 'sistema' | 'vitrine' | 'faturamento' | 'sat'
 
 export interface Perfil {
   id: string

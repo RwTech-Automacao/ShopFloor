@@ -11,6 +11,8 @@ export const PERMISSOES: { chave: Permissao; rotulo: string }[] = [
   { chave: 'administrar', rotulo: 'Administrar' },
   { chave: 'lancar', rotulo: 'Lançar' },
   { chave: 'baixar', rotulo: 'Baixar NF' },
+  { chave: 'registrar_entrada', rotulo: 'Registrar entrada' },
+  { chave: 'aprovar_nf', rotulo: 'Aprovar NF' },
 ]
 
 export function validarEdicaoPerfil(input: {
@@ -52,7 +54,7 @@ export function grantsParaRemover(
 }
 
 /** Módulos cujas permissões NÃO ligam as colunas antigas `pode_*` do perfil. */
-export const MODULOS_SEM_FLAG_LEGADA: Modulo[] = ['vitrine', 'faturamento']
+export const MODULOS_SEM_FLAG_LEGADA: Modulo[] = ['vitrine', 'faturamento', 'sat']
 
 /**
  * As colunas `pode_*` do perfil (derivadas, usadas pelo RLS antigo): cada uma é true se a permissão foi
@@ -60,7 +62,8 @@ export const MODULOS_SEM_FLAG_LEGADA: Modulo[] = ['vitrine', 'faturamento']
  * regras de 1 argumento (`tem_permissao('visualizar')`) olham estas flags: se `vitrine.visualizar`
  * ligasse `pode_visualizar`, o perfil do marketing passaria a ler dados reais direto pela API. O Faturamento
  * (só a baixa de NF) pela mesma razão: `faturamento.visualizar` não pode abrir as tabelas do ShopFloor e do
- * Recebimento. `baixar` não tem coluna — nunca vira flag.
+ * Recebimento. O SAT idem: `sat.visualizar`/`sat.administrar` abririam leitura e escrita nas tabelas antigas.
+ * `baixar`, `registrar_entrada` e `aprovar_nf` não têm coluna — nunca viram flag.
  */
 export function flagsLegadas(grants: { modulo: Modulo; permissao: Permissao }[]): Record<`pode_${PermissaoLegada}`, boolean> {
   const concedida = (p: PermissaoLegada) => grants.some((g) => g.permissao === p && !MODULOS_SEM_FLAG_LEGADA.includes(g.modulo))
