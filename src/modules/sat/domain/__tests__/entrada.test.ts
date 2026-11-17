@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  cnpjDoCliente, lerValor, ordenarOs, osSugerida, rotuloStatus, validarEntrada, validarMudancaNf,
+  cnpjDoCliente, lerValor, ordenarOs, osSugerida, voltaParaFabrica, rotuloStatus, validarEntrada, validarMudancaNf,
   type EntradaInput,
 } from '../entrada'
 
@@ -70,19 +70,28 @@ describe('lerValor', () => {
   })
 })
 
-describe('ordenarOs / osSugerida', () => {
+describe('ordenarOs / osSugerida / voltaParaFabrica', () => {
   const os = [
     { id: 'a', numero: '1', data: '2026-01-01', solucao: 'Envio ao SAT' },
-    { id: 'b', numero: '2', data: '2026-03-01', solucao: 'Troca da peça' },
+    { id: 'b', numero: '2', data: '2026-03-01', solucao: 'Envio de Peça para o Cliente' },
     { id: 'c', numero: '3', data: null, solucao: '' },
-    { id: 'd', numero: '4', data: '2026-02-01', solucao: 'ENVIO AO SAT para análise' },
+    { id: 'd', numero: '4', data: '2026-02-01', solucao: 'Troca do Relógio' },
   ]
   it('mais recente primeiro (sem data no fim)', () => {
     expect(ordenarOs(os).map((o) => o.id)).toEqual(['b', 'd', 'a', 'c'])
   })
-  it('sugere a última "Envio ao SAT"; sem nenhuma, a mais recente; sem OS, nada', () => {
+  it('só "Envio ao SAT" e "Troca do Relógio" voltam para a fábrica', () => {
+    expect(voltaParaFabrica('Envio ao SAT')).toBe(true)
+    expect(voltaParaFabrica('  envio ao sat ')).toBe(true)
+    expect(voltaParaFabrica('Troca do Relógio')).toBe(true)
+    expect(voltaParaFabrica('TROCA DO RELOGIO')).toBe(true)
+    for (const s of ['Envio de Peça para o Cliente', 'Manutenção do display no cliente', 'Envio de Rep para o Cliente',
+      'Manutenção', 'Devolução', 'Remanufatura', '', '8432']) expect(voltaParaFabrica(s)).toBe(false)
+  })
+  it('sugere a última que volta para a fábrica; nenhuma volta = nenhuma sugerida', () => {
     expect(osSugerida(os)?.id).toBe('d')
-    expect(osSugerida(os.filter((o) => !/sat/i.test(o.solucao)))?.id).toBe('b')
+    expect(osSugerida(os.filter((o) => o.id !== 'd'))?.id).toBe('a')
+    expect(osSugerida(os.filter((o) => o.id === 'b' || o.id === 'c'))).toBeNull()
     expect(osSugerida([])).toBeNull()
   })
 })

@@ -4,7 +4,7 @@ import { cnpjDoCliente, ordenarOs, osSugerida } from '../domain/entrada'
 
 /**
  * O que se sabe de um número de série na hora da entrada (spec 2026-11-17-sat-entrada-design.md, decisão 5):
- * a planilha (OS mais recente primeiro, já escolhida a última "Envio ao SAT"), o repinmetro (revenda, saída da
+ * a planilha (OS mais recente primeiro, já escolhida a última que volta para a fábrica: "Envio ao SAT" ou "Troca do Relógio"), o repinmetro (revenda, saída da
  * expedição, teste de produção e os seriais das peças internas), o ShopFloor (OP/produto, se passou pela
  * produção acompanhada) e o Compels (descrição do produto pelo código). Nada encontrado = entrada manual.
  */
