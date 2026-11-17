@@ -24,7 +24,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** O PostgREST devolve o recurso embutido (muitos-para-um) como objeto; por garantia aceita lista. */
 const embutido = (v: unknown): Linha | null => ((Array.isArray(v) ? v[0] : v) as Linha | null | undefined) ?? null
 /** Escapa os curingas do ILIKE (o texto do filtro é literal). */
-const literal = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`)
+const literal = (s: string) => s.replace(/[\\%_*]/g, (c) => `\\${c}`)
 
 // ---------- planilha ----------
 const CAMPOS_OS = 'id, numero, data, tecnico, cliente, equipamento, garantia, primeiro_registro, defeito, ' +
@@ -236,7 +236,7 @@ export async function listarEntradas(f: FiltroEntradas): Promise<EntradaResumo[]
   }
   if (DATA.test(f.de)) q = q.gte('data', f.de)
   if (DATA.test(f.ate)) q = q.lte('data', f.ate)
-  const { data, error } = await q.order('criado_em', { ascending: false }).limit(LIMITE_LISTA)
+  const { data, error } = await q.order('criado_em', { ascending: false }).order('id').limit(LIMITE_LISTA)
   if (error) throw new Error(`entradas do SAT: ${error.message}`)
   return ((data ?? []) as unknown as Linha[]).map((e) => {
     const n = embutido(e.nf) ?? {}

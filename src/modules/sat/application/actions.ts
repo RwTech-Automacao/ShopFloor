@@ -84,7 +84,8 @@ function relogiosNoFormato(xs: unknown): boolean {
 export async function registrarNfAction(input: NotaInput): Promise<ResultadoAcao<{ nfId: string; ids: string[] }>> {
   if (!(await pode('registrar_entrada'))) return { ok: false, erro: SEM_PERMISSAO }
   if (!input || typeof input !== 'object') return { ok: false, erro: 'Entrada inválida.' }
-  if (![input.cnpj, input.empresa, input.numero, input.valor].every((t) => textoOk(t)) || !codigoOk(input.negocianteCodigo) ||
+  if (!textoOk(input.numero, 100) || !textoOk(input.cnpj, 50) || !textoOk(input.valor, 50) || !textoOk(input.empresa) ||
+      !codigoOk(input.negocianteCodigo) ||
       !idsValidos(input.motivos) || !relogiosNoFormato(input.relogios)) return { ok: false, erro: 'Entrada inválida.' }
 
   const v = validarNota(input)
