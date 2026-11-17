@@ -1,4 +1,5 @@
-export type Permissao =
+/** As permissões que têm coluna `pode_*` no perfil (as de antes do controle por módulo). */
+export type PermissaoLegada =
   | 'visualizar'
   | 'importar'
   | 'editar'
@@ -9,17 +10,20 @@ export type Permissao =
   | 'administrar'
   | 'lancar'
 
-export type Modulo = 'recebimento' | 'shopfloor' | 'setup' | 'sistema' | 'vitrine'
+/** `baixar` (Faturamento: baixa de NF no Compels) só existe por módulo — não tem coluna `pode_*`. */
+export type Permissao = PermissaoLegada | 'baixar'
+
+export type Modulo = 'recebimento' | 'shopfloor' | 'setup' | 'sistema' | 'vitrine' | 'faturamento'
 
 export interface Perfil {
   id: string
   nome: string
-  permissoes: Record<Permissao, boolean>       // OR global (compat)
+  permissoes: Record<PermissaoLegada, boolean>       // OR global (compat)
   porModulo: Record<Modulo, Partial<Record<Permissao, boolean>>>
   sistema: boolean
 }
 
-export function podeFazer(perfil: Perfil | null, acao: Permissao): boolean {
+export function podeFazer(perfil: Perfil | null, acao: PermissaoLegada): boolean {
   if (!perfil) return false
   return perfil.permissoes[acao] === true
 }

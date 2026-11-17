@@ -49,6 +49,7 @@ import {
   Server,
   ChartColumn,
   FileText,
+  Receipt,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -106,6 +107,11 @@ const SHOPFLOOR: FolhaModular[] = [
 // Vitrine do marketing: o Fluxo da OP com uma produção fictícia (sem banco). Grupo próprio no menu.
 const VITRINE: FolhaModular[] = [
   { chave: 'vitrine-fluxo', rotulo: 'Fluxo da OP', href: '/vitrine/fluxo', icone: Sparkles, modulo: 'vitrine', perm: 'visualizar' },
+]
+
+// Faturamento: baixa de NF de saída no Compels com fila de prioridade. Grupo próprio no menu.
+const FATURAMENTO: FolhaModular[] = [
+  { chave: 'fat-baixa-nf', rotulo: 'Baixa de NF', href: '/faturamento/baixa-nf', icone: Receipt, modulo: 'faturamento', perm: 'visualizar' },
 ]
 
 const SETUP: FolhaModular[] = [
@@ -231,6 +237,7 @@ export function AppShell({
   const [shopfloorAberto, setShopfloorAberto] = useState(shopfloorAtivo)
   const setupVisivel = SETUP.filter(pode)
   const vitrineVisivel = VITRINE.filter(pode)
+  const faturamentoVisivel = FATURAMENTO.filter(pode)
   const setupAtivo = pathname.startsWith('/setup')
   // Nome diferente do `setupAberto`/`setSetupAberto` do modo quiosque (mais abaixo)
   // para não colidir com esse estado já existente.
@@ -245,7 +252,7 @@ export function AppShell({
   const [configSetupAberto, setConfigSetupAberto] = useState(configSetupAtivo)
 
   const tituloPagina =
-    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...VITRINE, ...CONFIG_TODOS, AJUDA, PERFIL]
+    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...VITRINE, ...FATURAMENTO, ...CONFIG_TODOS, AJUDA, PERFIL]
       .filter((i) => ehAtivo(pathname, i.href))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
@@ -402,6 +409,18 @@ export function AppShell({
                 ))}
               </div>
             )}
+          </>
+        )}
+
+        {faturamentoVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('Faturamento')}
+            {faturamentoVisivel.map((i) => (
+              <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                <i.icone className="size-[18px] shrink-0" />
+                {i.rotulo}
+              </Link>
+            ))}
           </>
         )}
 

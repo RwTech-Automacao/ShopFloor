@@ -1,4 +1,4 @@
-import type { Perfil, Permissao } from './perfil'
+import type { Perfil, Permissao, PermissaoLegada } from './perfil'
 import type { Modulo } from './perfil'
 
 export interface PerfilRow {
@@ -18,12 +18,12 @@ export interface PerfilRow {
 }
 
 export function mapearPerfil(row: PerfilRow): Perfil {
-  const porModulo: Perfil['porModulo'] = { recebimento: {}, shopfloor: {}, setup: {}, sistema: {}, vitrine: {} }
+  const porModulo: Perfil['porModulo'] = { recebimento: {}, shopfloor: {}, setup: {}, sistema: {}, vitrine: {}, faturamento: {} }
   for (const g of row.perfil_permissao ?? []) {
     const m = g.modulo as Modulo
     if (porModulo[m]) porModulo[m][g.permissao as Permissao] = true
   }
-  const flags: Record<Permissao, boolean> = {
+  const flags: Record<PermissaoLegada, boolean> = {
     visualizar: row.pode_visualizar,
     importar: row.pode_importar,
     editar: row.pode_editar,

@@ -1,4 +1,4 @@
-import type { Modulo, Permissao } from '@/modules/auth/domain/perfil'
+import type { Modulo, Permissao, PermissaoLegada } from '@/modules/auth/domain/perfil'
 
 export const PERMISSOES: { chave: Permissao; rotulo: string }[] = [
   { chave: 'visualizar', rotulo: 'Visualizar' },
@@ -10,6 +10,7 @@ export const PERMISSOES: { chave: Permissao; rotulo: string }[] = [
   { chave: 'gerar_etiqueta', rotulo: 'Gerar etiqueta' },
   { chave: 'administrar', rotulo: 'Administrar' },
   { chave: 'lancar', rotulo: 'Lançar' },
+  { chave: 'baixar', rotulo: 'Baixar NF' },
 ]
 
 export function validarEdicaoPerfil(input: {
@@ -51,16 +52,18 @@ export function grantsParaRemover(
 }
 
 /** Módulos cujas permissões NÃO ligam as colunas antigas `pode_*` do perfil. */
-export const MODULOS_SEM_FLAG_LEGADA: Modulo[] = ['vitrine']
+export const MODULOS_SEM_FLAG_LEGADA: Modulo[] = ['vitrine', 'faturamento']
 
 /**
  * As colunas `pode_*` do perfil (derivadas, usadas pelo RLS antigo): cada uma é true se a permissão foi
  * concedida em QUALQUER módulo — menos os de `MODULOS_SEM_FLAG_LEGADA`. A Vitrine não lê o banco, e as
  * regras de 1 argumento (`tem_permissao('visualizar')`) olham estas flags: se `vitrine.visualizar`
- * ligasse `pode_visualizar`, o perfil do marketing passaria a ler dados reais direto pela API.
+ * ligasse `pode_visualizar`, o perfil do marketing passaria a ler dados reais direto pela API. O Faturamento
+ * (só a baixa de NF) pela mesma razão: `faturamento.visualizar` não pode abrir as tabelas do ShopFloor e do
+ * Recebimento. `baixar` não tem coluna — nunca vira flag.
  */
-export function flagsLegadas(grants: { modulo: Modulo; permissao: Permissao }[]): Record<`pode_${Permissao}`, boolean> {
-  const concedida = (p: Permissao) => grants.some((g) => g.permissao === p && !MODULOS_SEM_FLAG_LEGADA.includes(g.modulo))
+export function flagsLegadas(grants: { modulo: Modulo; permissao: Permissao }[]): Record<`pode_${PermissaoLegada}`, boolean> {
+  const concedida = (p: PermissaoLegada) => grants.some((g) => g.permissao === p && !MODULOS_SEM_FLAG_LEGADA.includes(g.modulo))
   return {
     pode_visualizar: concedida('visualizar'),
     pode_importar: concedida('importar'),

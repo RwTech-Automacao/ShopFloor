@@ -1,5 +1,6 @@
 /**
- * Baixa automática de NF de SAÍDA emitida sem saldo (spec 2026-11-16-baixa-nf-compels-design.md).
+ * Baixa de NF de SAÍDA emitida sem saldo (spec 2026-11-16-baixa-nf-compels-design.md, com a fila de prioridade
+ * de 2026-11-17-faturamento-baixa-nf-design.md: sem data de corte, só baixa o que alguém selecionou).
  *
  * Puro: recebe o que a tela "Baixa de Mercadoria" do Compels lê (a nota da lista `notaICMS/findFilterStockMoves`
  * e as linhas de `itemBaixaMercadoria/findAll*ByNotaICMSId`) e decide o que fazer com a nota. O corpo do
@@ -24,7 +25,24 @@ export interface NotaPendente {
   razaoSocialNomeRemetente: unknown
   /** Texto livre da nota (onde às vezes vai o número de série). Só informativo. */
   informacoesComplementares: string
+  // ---- só para a tela (Faturamento) ----
+  clienteCodigo: string
+  clienteNome: string
+  /** `totalNota`; `null` quando não veio número. */
+  valor: number | null
+  /** Tirado de `observacoesFinanceiro` ("…Pedido de Venda 2836/26"); vazio se não houver. */
+  pedidoVenda: string
+  /** Natureza da operação (texto, ou a descrição do objeto). */
+  natureza: string
 }
+
+/** "…Pedido de Venda 2836/26…" → `2836/26`. Sem o padrão → `''`. */
+export function pedidoDeVenda(texto: string): string {
+  return /pedido\s+de\s+venda\s*(?:n[º°o.]*\s*)?(\d+(?:\/\d+)?)/i.exec(texto)?.[1] ?? ''
+}
+
+const textoOuDescricao = (v: unknown): string =>
+  (typeof v === 'string' ? v : txt(obj(v).descricao) || txt(obj(v).nome)).trim()
 
 /** Lê uma nota da lista. `null` = a linha não tem o mínimo (id, número, empresa, emissão). */
 export function lerNota(v: unknown): NotaPendente | null {
@@ -39,6 +57,11 @@ export function lerNota(v: unknown): NotaPendente | null {
     codigoRemetente: n.codigoRemetente ?? null,
     razaoSocialNomeRemetente: n.razaoSocialNomeRemetente ?? null,
     informacoesComplementares: txt(n.informacoesComplementares),
+    clienteCodigo: String(n.codigoRemetente ?? '').trim(),
+    clienteNome: txt(n.razaoSocialNomeRemetente).trim(),
+    valor: num(n.totalNota),
+    pedidoVenda: pedidoDeVenda(txt(n.observacoesFinanceiro)),
+    natureza: textoOuDescricao(n.naturezaOperacao),
   }
 }
 
@@ -51,7 +74,6 @@ export type MotivoEspera = 'sem_saldo_pa' | 'quantidade_incompleta'
 export type MotivoManual = 'rastreavel' | 'linhas_em_terceiros' | 'sem_itens'
 
 export type DecisaoNota =
-  | { acao: 'fora_da_janela' }
   | { acao: 'esperar'; motivo: MotivoEspera }
   | { acao: 'manual'; motivo: MotivoManual }
   | { acao: 'baixar'; corpo: Obj; itens: { codigo: string; quantidade: number }[] }
@@ -113,15 +135,12 @@ export interface EntradaAvaliacao {
   proprias: unknown[]
   emTerceiros: unknown[]
   deTerceiros: unknown[]
-  /** `aaaa-mm-dd`: notas emitidas antes disso nunca são tocadas. */
-  desde: string
   /** Vai no `usuarioAceiteBaixa` e na observação da baixa. */
   usuario: string
 }
 
 /** Decide o que fazer com UMA nota pendente. Nunca baixa parcial. */
 export function avaliarNota(e: EntradaAvaliacao): DecisaoNota {
-  if (e.nota.emissao < e.desde) return { acao: 'fora_da_janela' }
   if (e.emTerceiros.length > 0 || e.deTerceiros.length > 0) return { acao: 'manual', motivo: 'linhas_em_terceiros' }
   if (e.proprias.length === 0) return { acao: 'manual', motivo: 'sem_itens' }
 
@@ -170,4 +189,101 @@ export function avaliarNota(e: EntradaAvaliacao): DecisaoNota {
   const itens = new Map<string, number>()
   for (const l of linhas) itens.set(codigoDaLinha(l), (itens.get(codigoDaLinha(l)) ?? 0) + (num(l.quantidade) ?? 0))
   return { acao: 'baixar', corpo, itens: [...itens].map(([codigo, quantidade]) => ({ codigo, quantidade })) }
+}
+
+// ---- Tela do Faturamento: o que mostrar de cada nota e o que vai acontecer ao confirmar ----
+
+/** Um item da nota como a tela mostra: código, descrição e a quantidade da nota. */
+export interface ItemDaNota {
+  codigo: string
+  descricao: string
+  quantidade: number
+}
+
+/**
+ * Um por item da nota (`itemNotaICMS.id`), na ordem em que aparecem. Um item com vários lotes propostos vem em
+ * várias linhas com a MESMA `quantidadeInterna` — conta uma vez só.
+ */
+export function itensDaNota(proprias: unknown[]): ItemDaNota[] {
+  const porItem = new Map<unknown, ItemDaNota>()
+  for (const linha of proprias) {
+    const l = obj(linha)
+    const it = obj(l.itemNotaICMS)
+    const chave = it.id ?? porItem.size
+    if (porItem.has(chave)) continue
+    porItem.set(chave, {
+      codigo: codigoDaLinha(l),
+      descricao: (txt(it.descricao) || txt(obj(it.item).descricao) || txt(obj(obj(l.itemLote).item).descricao)).trim(),
+      quantidade: num(it.quantidadeInterna) ?? 0,
+    })
+  }
+  return [...porItem.values()]
+}
+
+/** Quantidade da nota por código (dois itens com o mesmo código somam). */
+function quantidadePorCodigo(itens: ItemDaNota[]): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const i of itens) m.set(i.codigo, (m.get(i.codigo) ?? 0) + i.quantidade)
+  return m
+}
+
+export type SituacaoNota =
+  | { tipo: 'pode_baixar' }
+  | { tipo: 'sem_saldo'; motivo: string; faltas: { codigo: string; falta: number }[] }
+  | { tipo: 'manual'; motivo: string }
+
+/**
+ * A situação que a tela mostra. Quem decide é o `avaliarNota` (lotes que o Compels propõe); o estoque do PA por
+ * código (`null` = não deu para consultar) só serve para dizer QUAL item falta e quanto.
+ */
+export function situacaoDaNota(d: DecisaoNota, itens: ItemDaNota[], estoquePa: Map<string, number | null>): SituacaoNota {
+  if (d.acao === 'baixar') return { tipo: 'pode_baixar' }
+  if (d.acao === 'manual') return { tipo: 'manual', motivo: TEXTO_MOTIVO[d.motivo] }
+  const faltas: { codigo: string; falta: number }[] = []
+  for (const [codigo, qtd] of quantidadePorCodigo(itens)) {
+    const pa = estoquePa.get(codigo)
+    if (pa == null) continue
+    if (pa + 1e-9 < qtd) faltas.push({ codigo, falta: qtd - pa })
+  }
+  return { tipo: 'sem_saldo', motivo: TEXTO_MOTIVO[d.motivo], faltas }
+}
+
+export type PrevisaoNota =
+  | { notaId: number; acao: 'baixa_agora' }
+  | { notaId: number; acao: 'fila'; posicao: number }
+  | { notaId: number; acao: 'manual' }
+  | { notaId: number; acao: 'ja_na_fila' }
+
+/**
+ * O que a confirmação anuncia, na ordem em que a pessoa marcou. Duas notas que disputam o mesmo saldo: a
+ * primeira marcada "baixa agora" e consome o estoque do PA; a outra entra na fila. É uma PREVISÃO — a baixa
+ * relê a nota no Compels e o resultado de verdade vem depois.
+ */
+export function previsaoDaSelecao(
+  selecao: { notaId: number; situacao: SituacaoNota; itens: ItemDaNota[]; naFila: boolean }[],
+  estoquePa: Map<string, number | null>,
+  tamanhoDaFila: number,
+): PrevisaoNota[] {
+  const restante = new Map(estoquePa)
+  let fila = tamanhoDaFila
+  return selecao.map((s): PrevisaoNota => {
+    if (s.naFila) return { notaId: s.notaId, acao: 'ja_na_fila' }
+    if (s.situacao.tipo === 'manual') return { notaId: s.notaId, acao: 'manual' }
+    if (s.situacao.tipo === 'pode_baixar') {
+      const precisa = quantidadePorCodigo(s.itens)
+      const cobre = [...precisa].every(([c, q]) => {
+        const r = restante.get(c)
+        return r === undefined || r === null || r + 1e-9 >= q
+      })
+      if (cobre) {
+        for (const [c, q] of precisa) {
+          const r = restante.get(c)
+          if (r != null) restante.set(c, r - q)
+        }
+        return { notaId: s.notaId, acao: 'baixa_agora' }
+      }
+    }
+    fila += 1
+    return { notaId: s.notaId, acao: 'fila', posicao: fila }
+  })
 }

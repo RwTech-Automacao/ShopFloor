@@ -44,7 +44,7 @@ describe('mapearPerfil', () => {
       pode_lancar: false,
       sistema: true,
     })
-    expect(perfil.porModulo).toEqual({ recebimento: {}, shopfloor: {}, setup: {}, sistema: {}, vitrine: {} })
+    expect(perfil.porModulo).toEqual({ recebimento: {}, shopfloor: {}, setup: {}, sistema: {}, vitrine: {}, faturamento: {} })
     expect(podeNoModulo(perfil, 'recebimento', 'visualizar')).toBe(false)
   })
 

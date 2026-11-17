@@ -2,13 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { MODULOS, PERMISSOES_POR_MODULO } from '../modulos'
 
 describe('MODULOS', () => {
-  it('contém os 5 módulos do catálogo', () => {
+  it('contém os 6 módulos do catálogo', () => {
     const chaves = MODULOS.map((m) => m.chave)
-    expect(chaves).toEqual(['recebimento', 'shopfloor', 'setup', 'sistema', 'vitrine'])
+    expect(chaves).toEqual(['recebimento', 'shopfloor', 'setup', 'sistema', 'vitrine', 'faturamento'])
   })
 })
 
 describe('PERMISSOES_POR_MODULO', () => {
+  it('faturamento tem visualizar e baixar', () => {
+    expect(PERMISSOES_POR_MODULO.faturamento).toEqual(['visualizar', 'baixar'])
+  })
+
   it('vitrine só tem visualizar', () => {
     expect(PERMISSOES_POR_MODULO.vitrine).toEqual(['visualizar'])
   })
