@@ -319,6 +319,7 @@ export class ClienteCompels {
    */
   buscarNegociantes(cpfCnpj: string): Promise<unknown> {
     const filtro = encodeURIComponent(JSON.stringify(filtroNegociante(cpfCnpj)))
-    return this.json(`/negociante/list?sortFilter=[]&filter=${filtro}&true=1&offset=0&limit=50`)
+    // tudo codificado (inclusive o `[]`): o Compels responde 400 a colchete/chave crus na URL
+    return this.json(`/negociante/list?sortFilter=${encodeURIComponent('[]')}&filter=${filtro}&true=1&offset=0&limit=50`)
   }
 }
