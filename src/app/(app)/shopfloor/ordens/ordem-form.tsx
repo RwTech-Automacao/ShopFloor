@@ -608,16 +608,19 @@ export function OrdemForm({
  * quantos números tem e o rodapé compara o total com a quantidade — a regra é soma = quantidade.
  * Vai para o servidor no campo escondido `faixas` (JSON).
  */
-function FaixasSn({
+export function FaixasSn({
   faixas,
   setFaixas,
   qtd,
   nPainel,
+  idBase = '',
 }: {
   faixas: FaixaSN[]
   setFaixas: (f: FaixaSN[]) => void
   qtd: string
   nPainel: number
+  /** Prefixo dos ids dos campos (a tela Nova OP tem uma faixa por trecho). */
+  idBase?: string
 }) {
   const varias = faixas.length > 1
   const alterar = (i: number, campo: keyof FaixaSN, valor: string) =>
@@ -635,12 +638,12 @@ function FaixasSn({
         return (
           <div key={i} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor={`sn_ini${sufixo}`}>SN inicial{rotulo} *</Label>
-              <Input id={`sn_ini${sufixo}`} value={f.sn_ini} onChange={(e) => alterar(i, 'sn_ini', e.target.value)} required />
+              <Label htmlFor={`${idBase}sn_ini${sufixo}`}>SN inicial{rotulo} *</Label>
+              <Input id={`${idBase}sn_ini${sufixo}`} value={f.sn_ini} onChange={(e) => alterar(i, 'sn_ini', e.target.value)} required />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor={`sn_fim${sufixo}`}>SN final{rotulo} *</Label>
-              <Input id={`sn_fim${sufixo}`} value={f.sn_fim} onChange={(e) => alterar(i, 'sn_fim', e.target.value)} required />
+              <Label htmlFor={`${idBase}sn_fim${sufixo}`}>SN final{rotulo} *</Label>
+              <Input id={`${idBase}sn_fim${sufixo}`} value={f.sn_fim} onChange={(e) => alterar(i, 'sn_fim', e.target.value)} required />
             </div>
             {varias ? (
               <div className="flex h-9 items-center gap-2">
