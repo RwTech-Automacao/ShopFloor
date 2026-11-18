@@ -204,7 +204,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   const opcao = 'flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md border px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-1 flex-col gap-3">
       <p className="text-xs text-muted-foreground">
         {leitura ? `Última leitura do Compels: ${dataHora(leitura)}` : 'O espelho do Compels ainda não foi lido.'}
       </p>
@@ -471,7 +471,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
       </Passo>
 
       {/* Barra fixa: resumo da rota e as ações */}
-      <div className="sticky -bottom-4 z-10 -mx-4 -mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-card px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6 lg:-bottom-8 lg:-mx-8 lg:-mb-8 lg:px-8">
+      <div className="sticky -bottom-4 z-10 -mx-4 -mb-4 mt-auto flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-card px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6 lg:-bottom-8 lg:-mx-8 lg:-mb-8 lg:px-8">
         <p className="min-w-0 flex-1 text-sm text-muted-foreground" data-testid="resumo-rota">
           {trechos.length > 0
             ? <><span className="font-medium text-foreground">{plural(trechos.length, 'trecho', 'trechos')}</span>{` · ${plural(totalPostos, 'posto', 'postos')}`}</>
