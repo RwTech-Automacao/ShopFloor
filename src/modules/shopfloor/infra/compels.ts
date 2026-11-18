@@ -131,7 +131,7 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
       if (!filha) {
         return {
           ok: false, aguardar: true, esperado: true,
-          erro: `${envio.pmo} não tem OP filha no Compels: confira a estrutura e salve a OP ${pai.op} de novo para procurar.`,
+          erro: `${envio.pmo} não tem OP filha no Compels: a OP ${pai.op} foi cadastrada sem a OP desse trecho (confira no Compels e no cadastro da OP).`,
         }
       }
       if (filha !== envio.op) {

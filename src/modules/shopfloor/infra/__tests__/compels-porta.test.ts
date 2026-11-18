@@ -462,7 +462,7 @@ describe('linhas de PRT (estrutura da OP)', () => {
 
   const FILHA_NAO_ACHADA = {
     ok: false, aguardar: true, esperado: true,
-    erro: 'PRT420 não tem OP filha no Compels: confira a estrutura e salve a OP 8498 de novo para procurar.',
+    erro: 'PRT420 não tem OP filha no Compels: a OP 8498 foi cadastrada sem a OP desse trecho (confira no Compels e no cadastro da OP).',
   }
 
   it('OP filha não encontrada no trecho (null ou vazia) → espera com orientação, mesmo com op antiga na linha', async () => {
