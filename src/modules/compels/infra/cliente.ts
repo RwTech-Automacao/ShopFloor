@@ -9,7 +9,7 @@ import {
 import { noDaLinhaOp, type NoOp } from '../domain/arvore-op'
 import { leiturasDeRespostas, listaDe, RespostaInesperada } from '../domain/leituras-erp'
 import { filtroOpsAtivas, opDaLinhaLista, type OpEspelhoLida } from '../domain/espelho-ops'
-import { filtroNegociante } from '../domain/negociante'
+import { filtroNegociante, filtroNegociantePorCodigo } from '../domain/negociante'
 import { saldoDoItem, type SaldoItem } from '../domain/saldo-item'
 import { saldosPorEstoque, type SaldoEmEstoque } from '../domain/saldo-por-estoque'
 import type { LeiturasOp } from '../domain/estado-op'
@@ -410,6 +410,12 @@ export class ClienteCompels {
   buscarNegociantes(cpfCnpj: string): Promise<unknown> {
     const filtro = encodeURIComponent(JSON.stringify(filtroNegociante(cpfCnpj)))
     // tudo codificado (inclusive o `[]`): o Compels responde 400 a colchete/chave crus na URL
+    return this.json(`/negociante/list?sortFilter=${encodeURIComponent('[]')}&filter=${filtro}&true=1&offset=0&limit=50`)
+  }
+
+  /** Negociantes pelo código (o mesmo `GET negociante/list`). Só leitura — o espelho das OPs acha o nome do cliente. */
+  buscarNegociantesPorCodigo(codigo: string): Promise<unknown> {
+    const filtro = encodeURIComponent(JSON.stringify(filtroNegociantePorCodigo(codigo)))
     return this.json(`/negociante/list?sortFilter=${encodeURIComponent('[]')}&filter=${filtro}&true=1&offset=0&limit=50`)
   }
 }

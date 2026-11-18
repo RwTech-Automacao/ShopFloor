@@ -1,6 +1,6 @@
 import { ClienteCompels } from '@/modules/compels/infra/cliente'
 import { configDoAmbiente } from '@/modules/compels/infra/config'
-import { sincronizarEspelhoOps } from '@/modules/compels/application/sincronizar-espelho-ops'
+import { criarNomesDeClientes, sincronizarEspelhoOps } from '@/modules/compels/application/sincronizar-espelho-ops'
 import { gravarEspelhoDoServico } from '@/modules/shopfloor/infra/espelho-ops-repository'
 import { segredoConfere } from '@/modules/alertas/infra/assinatura'
 
@@ -12,6 +12,13 @@ const TAG = '[espelho-ops]'
 
 /** Uma rodada por vez neste processo. */
 let rodando = false
+
+/** O cliente Compels da rodada em curso (o do token já obtido), usado na busca do nome do cliente. */
+let clienteDaRodada: ClienteCompels | null = null
+/** Código do negociante → nome do cliente, guardado neste processo entre as rodadas (6 h). */
+const nomesDeClientes = criarNomesDeClientes({
+  buscar: (codigo) => (clienteDaRodada ?? new ClienteCompels(configDoAmbiente())).buscarNegociantesPorCodigo(codigo),
+})
 
 /**
  * ESPELHO DAS OPs ATIVAS DO COMPELS (spec 2026-11-18-cadastro-op-compels-design.md): de 10 em 10 minutos o crontab
@@ -29,7 +36,10 @@ export async function POST(request: Request): Promise<Response> {
   rodando = true
   try {
     const cliente = new ClienteCompels(configDoAmbiente())
-    const r = await sincronizarEspelhoOps({ listar: () => cliente.listarOpsAtivas(), gravar: gravarEspelhoDoServico() })
+    clienteDaRodada = cliente
+    const r = await sincronizarEspelhoOps({
+      listar: () => cliente.listarOpsAtivas(), gravar: gravarEspelhoDoServico(), nomeCliente: nomesDeClientes,
+    })
     console.log(`${TAG} ${new Date().toISOString()} ${r.lidas} OPs ativas lidas; novas ${r.novas}, atualizadas ${r.atualizadas}, saíram ${r.inativadas}`)
     return Response.json(r)
   } catch (e) {

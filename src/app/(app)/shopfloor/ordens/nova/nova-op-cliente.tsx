@@ -171,8 +171,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     if (o.numero === opEscolhida) return // a mesma OP de novo não apaga o que já foi editado
     setOpEscolhida(o.numero)
     setOp(String(o.numero)); setQtd(String(o.quantidade))
-    if (!anterior?.cliente) setCliente(o.cliente)
-    if (!anterior?.descricao) setDescricao(o.descricao)
+    // cliente e descrição vêm sempre do Compels (padronizar); o resto continua copiado da última OP
+    setCliente(o.cliente); setDescricao(o.descricao)
     setTrechos(distribuirPostos(trechosDoEspelho(o, espelho), anterior?.postos ?? [], almox))
   }
 

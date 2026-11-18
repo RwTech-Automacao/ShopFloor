@@ -187,6 +187,18 @@ describe('ClienteCompels', () => {
     expect(chamadas[0]!.init.method ?? 'GET').toBe('GET')
   })
 
+  it('negociantes pelo código: o mesmo GET negociante/list, filtro com o código, tudo codificado', async () => {
+    const resposta = { results: [{ codigo: '160', nome: 'CLIENTE FICTICIO', inativo: false }] }
+    const { buscar, chamadas } = fingirCompels({ '/negociante/list': () => json(resposta) })
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    expect(await c.buscarNegociantesPorCodigo('160')).toEqual(resposta)
+    const u = new URL(`https://x${chamadas[0]!.url}`)
+    expect(u.pathname).toBe('/negociante/list')
+    expect(chamadas[0]!.url).toContain('sortFilter=%5B%5D')
+    expect(chamadas[0]!.url).not.toMatch(/[[\]{}"]/)
+    expect(JSON.parse(u.searchParams.get('filter')!)).toMatchObject({ codigo: '160', cpfCnpj: '', situacao: 'ATIVO' })
+  })
+
   it('negociantes pelo CPF/CNPJ: GET negociante/list com o filtro da grade em JSON (só leitura)', async () => {
     const resposta = { results: [{ codigo: 'C0001', cpfCnpj: '12.345.678/0001-90', nome: 'CLIENTE FICTICIO', inativo: false }] }
     const { buscar, chamadas } = fingirCompels({ '/negociante/list': () => json(resposta) })

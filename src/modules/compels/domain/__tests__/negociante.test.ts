@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filtroNegociante, negocianteDoCnpj } from '../negociante'
+import { filtroNegociante, filtroNegociantePorCodigo, negocianteDoCnpj, nomeDoNegociante } from '../negociante'
 import { RespostaInesperada } from '../leituras-erp'
 
 // Respostas fictícias no formato de `GET negociante/list` (nada de cadastro real).
@@ -54,5 +54,32 @@ describe('filtroNegociante', () => {
       observacao: '', limiteCreditoIdList: null, restricaoVendedor: false, carteiraRestricaoVendedor: false,
       exibirUltimaCompra: false, atendenteAlocadoId: null, cadastroLead: false,
     })
+  })
+})
+
+describe('filtroNegociantePorCodigo', () => {
+  it('é o mesmo filtro da grade, só com o código', () => {
+    expect(filtroNegociantePorCodigo(' 160 ')).toEqual({ ...filtroNegociante(''), codigo: '160', cpfCnpj: '' })
+    expect(Object.keys(filtroNegociantePorCodigo('160'))).toEqual(Object.keys(filtroNegociante('x')))
+  })
+})
+
+describe('nomeDoNegociante', () => {
+  it('nome fantasia, senão razão social (aparados)', () => {
+    expect(nomeDoNegociante({ results: [linha({ codigo: '160', nomeFantasia: ' FICTICIO ' })] }, '160')).toBe('FICTICIO')
+    expect(nomeDoNegociante({ results: [linha({ codigo: 160, nomeFantasia: '  ', nome: ' RAZAO LTDA ' })] }, '160')).toBe('RAZAO LTDA')
+  })
+  it('só o código EXATO (a busca do Compels é por trecho)', () => {
+    const r = { results: [linha({ codigo: '1600', nomeFantasia: 'OUTRO' }), linha({ codigo: '160', nomeFantasia: 'CERTO' })] }
+    expect(nomeDoNegociante(r, '160')).toBe('CERTO')
+  })
+  it('inativo só é ignorado se houver um ativo com o mesmo código', () => {
+    const r = { results: [linha({ codigo: '160', nomeFantasia: 'VELHO', inativo: true }), linha({ codigo: '160', nomeFantasia: 'NOVO' })] }
+    expect(nomeDoNegociante(r, '160')).toBe('NOVO')
+    expect(nomeDoNegociante({ results: [linha({ codigo: '160', nomeFantasia: 'VELHO', inativo: true })] }, '160')).toBe('VELHO')
+  })
+  it('nenhum ou sem nome: null', () => {
+    expect(nomeDoNegociante({ results: [] }, '160')).toBeNull()
+    expect(nomeDoNegociante({ results: [linha({ codigo: '160', nome: '', nomeFantasia: null })] }, '160')).toBeNull()
   })
 })

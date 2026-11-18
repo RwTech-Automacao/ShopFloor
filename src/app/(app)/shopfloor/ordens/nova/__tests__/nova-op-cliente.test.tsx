@@ -15,7 +15,7 @@ const { NovaOpCliente } = await import('../nova-op-cliente')
 
 const op = (numero: number, codigo: string, nivel: number, mae: number | null): OpEspelho => ({
   numero, idCompels: numero, codigo, descricao: codigo === 'PMOC14' ? 'PLACA X' : 'PARTES', situacao: 'Em Processo', nivel,
-  quantidade: 10, quantidadeProduzida: 0, maeNumero: mae, principalNumero: null, cliente: 'C01', dataDocumento: '2026-11-10',
+  quantidade: 10, quantidadeProduzida: 0, maeNumero: mae, principalNumero: null, cliente: 'CLIENTE COMPELS', dataDocumento: '2026-11-10',
   ativa: true, lidoEm: '2026-11-18T13:00:00Z',
 })
 const ESPELHO = [op(8498, 'PMOC14', 1, null), op(8499, 'PRT420', 2, 8498), op(8500, 'PRT410', 3, 8499)]
@@ -27,7 +27,7 @@ const montar = () => render(<NovaOpCliente espelho={ESPELHO} postos={POSTOS} pos
 beforeEach(() => {
   vi.clearAllMocks()
   acoes.ultimaOpDaPmoAction.mockResolvedValue({ ok: true, ultima: {
-    op: '8476', cliente: 'LINCE', descricao: 'PLACA X', placasPorPainel: 1, embalagemIndividual: false,
+    op: '8476', cliente: 'LINCE', descricao: 'DESCRICAO ANTIGA', placasPorPainel: 1, embalagemIndividual: false,
     postos: [{ posto: 'SPI', trechoCodigo: 'PRT410' }, { posto: 'Inspeção PTH', trechoCodigo: 'PRT420' }, { posto: 'Teste', trechoCodigo: null }, { posto: 'Almoxarifado', trechoCodigo: null }],
     componentes: [], burnin: [],
   } })
@@ -65,7 +65,8 @@ describe('Nova OP', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar OP' }))
     await waitFor(() => expect(acoes.cadastrarOpAction).toHaveBeenCalledTimes(1))
     const enviado = acoes.cadastrarOpAction.mock.calls[0]![0]
-    expect(enviado).toMatchObject({ modo: 'compels', pmo: 'PMOC14', op: '8498', cliente: 'LINCE', qtd: 10 })
+    // cliente e descrição vêm do Compels (espelho), mesmo havendo uma OP anterior com outros valores
+    expect(enviado).toMatchObject({ modo: 'compels', pmo: 'PMOC14', op: '8498', cliente: 'CLIENTE COMPELS', descricao: 'PLACA X', qtd: 10 })
     expect(enviado.trechos.map((t: { postos: string[] }) => t.postos)).toEqual([['SPI'], ['Inspeção PTH'], ['Teste', 'Almoxarifado']])
     await waitFor(() => expect(push).toHaveBeenCalledWith('/shopfloor/ordens-nova'))
   })
