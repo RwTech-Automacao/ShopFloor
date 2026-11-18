@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  lerValor, ordenarOs, osSugerida, voltaParaFabrica, rotuloStatus, validarMudancaNf, validarNota,
-  type NotaInput, type RelogioInput,
+  lerValor, motivosDaNota, motivosQueExigemTexto, ordenarOs, osSugerida, voltaParaFabrica, rotuloStatus,
+  validarMotivos, validarMudancaNf, validarNota, type NotaInput, type RelogioInput,
 } from '../entrada'
 
 const relogio = (r: Partial<RelogioInput> = {}): RelogioInput => ({
@@ -10,7 +10,7 @@ const relogio = (r: Partial<RelogioInput> = {}): RelogioInput => ({
 
 const nota: NotaInput = {
   cnpj: '12345678000190', empresa: ' Cliente Fictício Ltda ', negocianteCodigo: 'C001', numero: ' 4521 ', valor: '',
-  situacao: 'aprovada', motivos: [], relogios: [relogio()],
+  situacao: 'aprovada', motivos: [], motivoOutro: '', relogios: [relogio()],
 }
 
 describe('validarNota', () => {
@@ -21,7 +21,7 @@ describe('validarNota', () => {
     })
     expect(r).toEqual({ ok: true, valor: {
       cnpj: '12.345.678/0001-90', empresa: 'Cliente Fictício Ltda', negocianteCodigo: 'C001', numero: '4521',
-      valor: 1500.5, situacao: 'aprovada', motivos: [],
+      valor: 1500.5, situacao: 'aprovada', motivos: [], motivoOutro: '',
       relogios: [
         { ns: '00043005620019177', modelo: '562', sequencia: '19177', produto: 'PMOC31', itensJunto: ['bobina', 'chave'],
           itensJuntoOutros: '', locacao: 'prateleira 2' },
@@ -86,21 +86,64 @@ describe('validarNota', () => {
 
 describe('validarMudancaNf', () => {
   it('corrigir: reprovada exige motivo; aprovada zera os motivos', () => {
-    expect(validarMudancaNf({ tipo: 'corrigir', situacao: 'reprovada', motivos: [] })).toEqual({ ok: false, erro: 'NF reprovada: escolha ao menos um motivo.' })
-    expect(validarMudancaNf({ tipo: 'corrigir', situacao: 'aprovada', motivos: ['x'] })).toEqual({ ok: true, motivos: [] })
+    expect(validarMudancaNf({ tipo: 'corrigir', situacao: 'reprovada', motivos: [], motivoOutro: '' })).toEqual({ ok: false, erro: 'NF reprovada: escolha ao menos um motivo.' })
+    expect(validarMudancaNf({ tipo: 'corrigir', situacao: 'aprovada', motivos: ['x'], motivoOutro: 'y' })).toEqual({ ok: true, motivos: [], motivoOutro: '' })
   })
 
   const troca = {
     tipo: 'troca' as const, numero: '2', cnpj: '12345678000190', empresa: 'C', negocianteCodigo: null, valor: '10,5',
-    situacao: 'aprovada' as const, motivos: [],
+    situacao: 'aprovada' as const, motivos: [], motivoOutro: '',
   }
   it('troca: CNPJ, número e valor da nota nova', () => {
     expect(validarMudancaNf({ ...troca, cnpj: '1' })).toEqual({ ok: false, erro: 'Informe o CNPJ da nota (14 dígitos) ou o CPF (11).' })
     expect(validarMudancaNf({ ...troca, numero: ' ' })).toEqual({ ok: false, erro: 'Informe o número da NF nova.' })
     expect(validarMudancaNf({ ...troca, valor: 'x' })).toEqual({ ok: false, erro: 'Valor da nota inválido.' })
     expect(validarMudancaNf({ ...troca, situacao: 'reprovada' })).toEqual({ ok: false, erro: 'NF reprovada: escolha ao menos um motivo.' })
-    expect(validarMudancaNf(troca)).toEqual({ ok: true, motivos: [], cnpj: '12.345.678/0001-90', valor: 10.5 })
+    expect(validarMudancaNf(troca)).toEqual({ ok: true, motivos: [], motivoOutro: '', cnpj: '12.345.678/0001-90', valor: 10.5 })
     expect(validarMudancaNf({ ...troca, valor: '' })).toMatchObject({ ok: true, valor: null })
+  })
+})
+
+describe('motivos de reprovação ("Outro" com texto)', () => {
+  const OPCOES = [
+    { id: 'cfop', texto: 'CFOP errado', exigeTexto: false },
+    { id: 'desc', texto: 'Descrição errada', exigeTexto: false },
+    { id: 'outro', texto: 'Outro', exigeTexto: true },
+  ]
+  const exigem = motivosQueExigemTexto(OPCOES)
+
+  it('"Outro" marcado exige o texto; o texto vai limpo', () => {
+    expect(validarMotivos('reprovada', ['outro'], '   ', exigem)).toEqual({ ok: false, erro: 'Descreva o outro motivo.' })
+    expect(validarMotivos('reprovada', ['cfop', 'outro'], '  nota \n rasurada ', exigem))
+      .toEqual({ ok: true, motivos: ['cfop', 'outro'], motivoOutro: 'nota rasurada' })
+    expect(validarMotivos('reprovada', ['outro'], 'x'.repeat(201), exigem))
+      .toEqual({ ok: false, erro: 'O outro motivo passa de 200 caracteres.' })
+  })
+
+  it('texto sem o "Outro" marcado é descartado; aprovada também descarta', () => {
+    expect(validarMotivos('reprovada', ['cfop'], 'sobrou', exigem)).toEqual({ ok: true, motivos: ['cfop'], motivoOutro: '' })
+    expect(validarMotivos('aprovada', [], 'sobrou', exigem)).toEqual({ ok: true, motivos: [], motivoOutro: '' })
+  })
+
+  it('validarNota e validarMudancaNf com a lista: mesma regra', () => {
+    const reprovada = { ...nota, situacao: 'reprovada' as const, motivos: ['outro'] }
+    expect(validarNota(reprovada, exigem)).toEqual({ ok: false, erro: 'Descreva o outro motivo.' })
+    expect(validarNota({ ...reprovada, motivoOutro: 'rasurada' }, exigem))
+      .toMatchObject({ ok: true, valor: { motivos: ['outro'], motivoOutro: 'rasurada' } })
+    expect(validarNota({ ...reprovada, motivos: ['cfop'], motivoOutro: 'rasurada' }, exigem))
+      .toMatchObject({ ok: true, valor: { motivos: ['cfop'], motivoOutro: '' } })
+    expect(validarMudancaNf({ tipo: 'corrigir', situacao: 'reprovada', motivos: ['outro'], motivoOutro: '' }, exigem))
+      .toEqual({ ok: false, erro: 'Descreva o outro motivo.' })
+  })
+
+  it('sem a lista (servidor): só limpa — o banco confere (OUTRO_SEM_TEXTO)', () => {
+    expect(validarMotivos('reprovada', ['outro'], ' a ')).toEqual({ ok: true, motivos: ['outro'], motivoOutro: 'a' })
+  })
+
+  it('motivosDaNota: os textos da nota voltam para os ids e o texto do "Outro"', () => {
+    expect(motivosDaNota(['CFOP errado', 'Outro: falta: o pedido'], OPCOES)).toEqual({ ids: ['cfop', 'outro'], motivoOutro: 'falta: o pedido' })
+    expect(motivosDaNota(['Descrição errada', 'Motivo antigo'], OPCOES)).toEqual({ ids: ['desc'], motivoOutro: '' })
+    expect(motivosDaNota([], OPCOES)).toEqual({ ids: [], motivoOutro: '' })
   })
 })
 

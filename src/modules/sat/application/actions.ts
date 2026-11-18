@@ -89,7 +89,9 @@ export async function registrarNfAction(input: NotaInput): Promise<ResultadoAcao
   if (!input || typeof input !== 'object') return { ok: false, erro: 'Entrada inválida.' }
   if (!textoOk(input.numero, 100) || !textoOk(input.cnpj, 50) || !textoOk(input.valor, 50) || !textoOk(input.empresa) ||
       !codigoOk(input.negocianteCodigo) ||
-      !idsValidos(input.motivos) || !relogiosNoFormato(input.relogios)) return { ok: false, erro: 'Entrada inválida.' }
+      !idsValidos(input.motivos) || !textoOk(input.motivoOutro) || !relogiosNoFormato(input.relogios)) {
+    return { ok: false, erro: 'Entrada inválida.' }
+  }
 
   const v = validarNota(input)
   if (!v.ok) return v
@@ -121,13 +123,15 @@ async function mudarNf(tipo: 'correcao' | 'troca', grava: () => Promise<MudancaG
   return { ok: true, valor: null }
 }
 
-/** "Corrigir NF": a mesma nota muda de situação (ex.: reprovada → aprovada). */
-export async function corrigirNfAction(nfId: string, situacao: SituacaoNf, motivos: string[]): Promise<ResultadoAcao<null>> {
+/** "Corrigir NF": a mesma nota muda de situação (ex.: reprovada → aprovada). `motivoOutro` = o texto do "Outro". */
+export async function corrigirNfAction(
+  nfId: string, situacao: SituacaoNf, motivos: string[], motivoOutro: string,
+): Promise<ResultadoAcao<null>> {
   if (!(await pode('aprovar_nf'))) return { ok: false, erro: SEM_PERMISSAO }
-  if (!idOk(nfId) || !idsValidos(motivos)) return { ok: false, erro: 'Pedido inválido.' }
-  const v = validarMudancaNf({ tipo: 'corrigir', situacao, motivos })
+  if (!idOk(nfId) || !idsValidos(motivos) || !textoOk(motivoOutro)) return { ok: false, erro: 'Pedido inválido.' }
+  const v = validarMudancaNf({ tipo: 'corrigir', situacao, motivos, motivoOutro })
   if (!v.ok) return v
-  return mudarNf('correcao', () => corrigirNf(nfId, situacao, v.motivos))
+  return mudarNf('correcao', () => corrigirNf(nfId, situacao, v.motivos, v.motivoOutro))
 }
 
 /** "Trocar NF": nota nova (número, CNPJ, empresa, valor, situação); a antiga fica no histórico. */
@@ -135,15 +139,15 @@ export async function trocarNfAction(
   nfId: string, t: Omit<Extract<MudancaNf, { tipo: 'troca' }>, 'tipo'>,
 ): Promise<ResultadoAcao<null>> {
   if (!(await pode('aprovar_nf'))) return { ok: false, erro: SEM_PERMISSAO }
-  if (!idOk(nfId) || !t || typeof t !== 'object' || !idsValidos(t.motivos) || !textoOk(t.numero, 100) ||
-      !textoOk(t.cnpj, 50) || !textoOk(t.empresa) || !textoOk(t.valor, 50) || !codigoOk(t.negocianteCodigo)) {
+  if (!idOk(nfId) || !t || typeof t !== 'object' || !idsValidos(t.motivos) || !textoOk(t.motivoOutro) ||
+      !textoOk(t.numero, 100) || !textoOk(t.cnpj, 50) || !textoOk(t.empresa) || !textoOk(t.valor, 50) || !codigoOk(t.negocianteCodigo)) {
     return { ok: false, erro: 'Pedido inválido.' }
   }
   const v = validarMudancaNf({ ...t, tipo: 'troca' })
   if (!v.ok) return v
   return mudarNf('troca', () => trocarNf(nfId, {
     numero: t.numero.trim(), cnpj: v.cnpj!, empresa: t.empresa.trim(), negocianteCodigo: (t.negocianteCodigo ?? '').trim() || null,
-    valor: v.valor ?? null, situacao: t.situacao, motivos: v.motivos,
+    valor: v.valor ?? null, situacao: t.situacao, motivos: v.motivos, motivoOutro: v.motivoOutro,
   }))
 }
 
