@@ -5,6 +5,7 @@ import {
   alertasLiberadosDoModulo,
   alertasMenuPorModulo,
   alertasRecebimentoLiberados,
+  alertasSatLiberados,
 } from '../liberacao'
 
 describe('alertasLiberados', () => {
@@ -174,8 +175,8 @@ describe('trava própria do Recebimento', () => {
     expect(alertasLiberadosDoModulo('shopfloor', 'outra@rwtech.com.br')).toBe(true)
     expect(alertasLiberadosDoModulo('recebimento', 'outra@rwtech.com.br')).toBe(false)
     expect(alertasLiberadosDoModulo('recebimento', 'gptropa@rwtech.com.br')).toBe(true)
-    expect(alertasMenuPorModulo('outra@rwtech.com.br')).toEqual({ shopfloor: true, recebimento: false })
-    expect(alertasMenuPorModulo('gptropa@rwtech.com.br')).toEqual({ shopfloor: true, recebimento: true })
+    expect(alertasMenuPorModulo('outra@rwtech.com.br')).toEqual({ shopfloor: true, recebimento: false, sat: false })
+    expect(alertasMenuPorModulo('gptropa@rwtech.com.br')).toEqual({ shopfloor: true, recebimento: true, sat: false })
   })
 
   it('e a trava do Recebimento não abre o ShopFloor', () => {
@@ -193,5 +194,51 @@ describe('trava própria do Recebimento', () => {
     expect(alertasDisponiveis({ email: 'beto@x', perfil: soRec })).toBe(false)
     expect(alertasDisponiveis({ email: 'gptropa@rwtech.com.br', perfil: soRec })).toBe(true)
     expect(alertasDisponiveis({ email: 'beto@x', perfil: soSf })).toBe(true)
+  })
+})
+
+describe('trava própria do SAT (ALERTAS_SAT_LIBERADO_PARA), no molde da do Recebimento', () => {
+  const prod = { node: 'production' }
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('vazia ou ausente = ninguém em produção', () => {
+    expect(alertasSatLiberados('ana@x.com', undefined, prod)).toBe(false)
+    expect(alertasSatLiberados('ana@x.com', '', prod)).toBe(false)
+  })
+
+  it('libera só quem está na lista, e * libera todos', () => {
+    expect(alertasSatLiberados('ana@x.com', 'ANA@x.com, b@x.com', prod)).toBe(true)
+    expect(alertasSatLiberados('fora@x.com', 'ana@x.com', prod)).toBe(false)
+    expect(alertasSatLiberados('qualquer@x.com', '*', prod)).toBe(true)
+  })
+
+  it('fora da produção aparece sempre', () => {
+    expect(alertasSatLiberados('ana@x.com', '', { vercel: 'preview', node: 'production' })).toBe(true)
+    expect(alertasSatLiberados('ana@x.com', '', { node: 'development' })).toBe(true)
+  })
+
+  it('as travas do ShopFloor e do Recebimento NÃO abrem o SAT, nem a do SAT abre as outras', () => {
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', '*')
+    vi.stubEnv('ALERTAS_RECEBIMENTO_LIBERADO_PARA', '*')
+    vi.stubEnv('ALERTAS_SAT_LIBERADO_PARA', 'dora@x.com')
+    expect(alertasLiberadosDoModulo('sat', 'outra@x.com')).toBe(false)
+    expect(alertasLiberadosDoModulo('sat', 'dora@x.com')).toBe(true)
+    expect(alertasMenuPorModulo('outra@x.com')).toEqual({ shopfloor: true, recebimento: true, sat: false })
+    expect(alertasMenuPorModulo('dora@x.com')).toEqual({ shopfloor: true, recebimento: true, sat: true })
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', '')
+    vi.stubEnv('ALERTAS_RECEBIMENTO_LIBERADO_PARA', '')
+    vi.stubEnv('ALERTAS_SAT_LIBERADO_PARA', '*')
+    expect(alertasMenuPorModulo('dora@x.com')).toEqual({ shopfloor: false, recebimento: false, sat: true })
+  })
+
+  it('quem administra só o SAT vê Meu perfil quando o SAT está liberado para ele', () => {
+    const soSat = { porModulo: { sat: { administrar: true } } } as never
+    vi.stubEnv('ALERTAS_LIBERADO_PARA', '*')
+    vi.stubEnv('ALERTAS_SAT_LIBERADO_PARA', '')
+    expect(alertasDisponiveis({ email: 'dora@x.com', perfil: soSat })).toBe(false)
+    vi.stubEnv('ALERTAS_SAT_LIBERADO_PARA', 'dora@x.com')
+    expect(alertasDisponiveis({ email: 'dora@x.com', perfil: soSat })).toBe(true)
   })
 })

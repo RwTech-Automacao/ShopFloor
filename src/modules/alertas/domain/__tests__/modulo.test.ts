@@ -12,21 +12,26 @@ import {
 import { TIPOS_REGRA } from '../tipos'
 
 describe('módulo da regra de alerta', () => {
-  it('reconhece só os dois módulos que têm alertas', () => {
+  it('reconhece só os três módulos que têm alertas', () => {
     expect(ehModuloAlerta('shopfloor')).toBe(true)
     expect(ehModuloAlerta('recebimento')).toBe(true)
+    expect(ehModuloAlerta('sat')).toBe(true)
+    expect(ehModuloAlerta('faturamento')).toBe(false)
     expect(ehModuloAlerta('setup')).toBe(false)
     expect(ehModuloAlerta('sistema')).toBe(false)
     expect(ehModuloAlerta(undefined)).toBe(false)
   })
 
   it('tem nome e rota para cada módulo', () => {
-    for (const m of MODULOS_ALERTA) {
-      expect(NOME_MODULO_ALERTA[m]).not.toBe('')
-      expect(ROTA_ALERTAS[m].startsWith('/configuracoes/')).toBe(true)
-    }
-    // As duas rotas são DIFERENTES: é o que faz o RBAC do menu funcionar por módulo.
-    expect(ROTA_ALERTAS.shopfloor).not.toBe(ROTA_ALERTAS.recebimento)
+    expect(MODULOS_ALERTA).toEqual(['shopfloor', 'recebimento', 'sat'])
+    for (const m of MODULOS_ALERTA) expect(NOME_MODULO_ALERTA[m]).not.toBe('')
+    expect(ROTA_ALERTAS.shopfloor).toBe('/configuracoes/sf-alertas')
+    expect(ROTA_ALERTAS.recebimento).toBe('/configuracoes/rec-alertas')
+    // O SAT não tem Configurações próprias: a tela mora no acordeão do SAT.
+    expect(ROTA_ALERTAS.sat).toBe('/sat/alertas')
+    expect(NOME_MODULO_ALERTA.sat).toBe('SAT')
+    // As rotas são DIFERENTES: é o que faz o RBAC do menu funcionar por módulo.
+    expect(new Set(Object.values(ROTA_ALERTAS)).size).toBe(MODULOS_ALERTA.length)
   })
 
   it('cada tipo de regra pertence a exatamente um módulo', () => {
@@ -45,6 +50,15 @@ describe('módulo da regra de alerta', () => {
     expect(TIPOS_REGRA_POR_MODULO.recebimento).toEqual(['emb'])
     expect(tipoPertenceAoModulo('emb', 'shopfloor')).toBe(false)
     expect(tipoPertenceAoModulo('emb', 'recebimento')).toBe(true)
+  })
+
+  it('a entrada no SAT é do SAT, e só dele', () => {
+    expect(TIPOS_REGRA_POR_MODULO.sat).toEqual(['sat_entrada'])
+    expect(tipoPertenceAoModulo('sat_entrada', 'sat')).toBe(true)
+    expect(tipoPertenceAoModulo('sat_entrada', 'shopfloor')).toBe(false)
+    expect(tipoPertenceAoModulo('sat_entrada', 'recebimento')).toBe(false)
+    expect(tipoPertenceAoModulo('emb', 'sat')).toBe(false)
+    expect(tiposOferecidosNaCriacao('sat')).toEqual(['sat_entrada'])
   })
 
   it('tipoPertenceAoModulo recusa o tipo do outro módulo', () => {

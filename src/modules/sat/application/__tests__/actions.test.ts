@@ -20,8 +20,11 @@ const repo = vi.hoisted(() => ({
   ErroDoBanco: class ErroDoBanco extends Error {},
 }))
 vi.mock('../../infra/repository', () => repo)
-const avisarSat = vi.hoisted(() => vi.fn(async () => {}))
-vi.mock('../../infra/discord', () => ({ avisarSat }))
+// O aviso direto no Discord SAIU (spec 2026-11-18): a entrada no SAT virou regra dos Alertas, e quem detecta a NF
+// nova é a alerta_avaliar (0192), pelo histórico da nota. As actions não falam mais com o Discord: se alguma voltar
+// a chamar o bot dos Alertas, este espião acusa.
+const criarDiscord = vi.hoisted(() => vi.fn(() => ({ enviarCanal: vi.fn(async () => ({ ok: true })) })))
+vi.mock('@/modules/alertas/infra/discord', () => ({ criarDiscord }))
 const empresaDoCnpj = vi.hoisted(() => vi.fn(async () => ({ codigo: 'C0001', nome: 'CLIENTE FICTICIO' })))
 vi.mock('../../infra/compels', () => ({ empresaDoCnpj }))
 
@@ -67,7 +70,7 @@ describe('actions do SAT — entrada', () => {
     expect(repo.registrarNf).not.toHaveBeenCalled()
     expect(repo.osPorNs).not.toHaveBeenCalled()
     expect(empresaDoCnpj).not.toHaveBeenCalled()
-    expect(avisarSat).not.toHaveBeenCalled()
+    expect(criarDiscord).not.toHaveBeenCalled()
   })
 
   it('buscar empresa também vale para quem troca a NF (aprovar_nf sem registrar_entrada)', async () => {
@@ -112,7 +115,7 @@ describe('actions do SAT — entrada', () => {
     expect(repo.registrarNf).not.toHaveBeenCalled()
   })
 
-  it('registrar: grava a nota com os relógios e avisa UMA vez com todos os NS', async () => {
+  it('registrar: grava a nota com os relógios e NÃO avisa direto no Discord (o aviso é a regra dos Alertas)', async () => {
     sessao({ visualizar: true, registrar_entrada: true })
     const { registrarNfAction } = await import('../actions')
     expect(await registrarNfAction(nota)).toEqual({ ok: true, valor: { nfId: 'n1', ids: ['e1', 'e2'] } })
@@ -120,12 +123,10 @@ describe('actions do SAT — entrada', () => {
       cnpj: '12.345.678/0001-90', motivos: [MOTIVO],
       relogios: [expect.objectContaining({ modelo: '562', sequencia: '19177' }), expect.objectContaining({ modelo: '562', sequencia: '19178' })],
     }))
-    expect(avisarSat).toHaveBeenCalledTimes(1)
-    expect(avisarSat).toHaveBeenCalledWith(
-      '📦 Chegou no SAT: NF 4521 — EMPRESA (12.345.678/0001-90) — reprovada ❌ (Sem CFOP) — 2 relógios: 00043005620019177, 562-19178')
+    expect(criarDiscord).not.toHaveBeenCalled()
   })
 
-  it('registrar: passa o texto do "Outro" limpo; o aviso mostra "Outro: …" como o banco devolveu', async () => {
+  it('registrar: passa o texto do "Outro" limpo', async () => {
     sessao({ visualizar: true, registrar_entrada: true })
     repo.registrarNf.mockResolvedValueOnce({
       nfId: 'n1', motivos: ['CFOP errado', 'Outro: nota rasurada'], relogios: [{ id: 'e1', ns: '562-19178', osNumero: '' }],
@@ -134,8 +135,6 @@ describe('actions do SAT — entrada', () => {
     expect(await registrarNfAction({ ...nota, motivoOutro: '  nota   rasurada ', relogios: [relogio] }))
       .toEqual({ ok: true, valor: { nfId: 'n1', ids: ['e1'] } })
     expect(repo.registrarNf).toHaveBeenCalledWith(expect.objectContaining({ motivos: [MOTIVO], motivoOutro: 'nota rasurada' }))
-    expect(avisarSat).toHaveBeenCalledWith(
-      '📦 Chegou no SAT: NF 4521 — EMPRESA (12.345.678/0001-90) — reprovada ❌ (CFOP errado; Outro: nota rasurada) — 1 relógio: 562-19178')
   })
 
   it('registrar: texto do "Outro" fora do formato ou longo demais recusa; OUTRO_SEM_TEXTO do banco vira mensagem', async () => {
@@ -149,20 +148,12 @@ describe('actions do SAT — entrada', () => {
     expect(await registrarNfAction(nota)).toEqual({ ok: false, erro: 'Descreva o outro motivo.' })
   })
 
-  it('registrar: Discord fora do ar não impede a gravação', async () => {
-    sessao({ visualizar: true, registrar_entrada: true })
-    avisarSat.mockRejectedValueOnce(new Error('discord caiu'))
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { registrarNfAction } = await import('../actions')
-    expect(await registrarNfAction(nota)).toEqual({ ok: true, valor: { nfId: 'n1', ids: ['e1', 'e2'] } })
-  })
-
   it('registrar: erro do banco vira mensagem da tela e não avisa', async () => {
     sessao({ visualizar: true, registrar_entrada: true })
     repo.registrarNf.mockRejectedValueOnce(new repo.ErroDoBanco('NS_REPETIDO'))
     const { registrarNfAction } = await import('../actions')
     expect(await registrarNfAction(nota)).toEqual({ ok: false, erro: 'Um número de série está duas vezes nesta nota.' })
-    expect(avisarSat).not.toHaveBeenCalled()
+    expect(criarDiscord).not.toHaveBeenCalled()
   })
 })
 
@@ -176,17 +167,16 @@ describe('actions do SAT — NF depois da entrada', () => {
     expect(repo.trocarNf).not.toHaveBeenCalled()
   })
 
-  it('corrigir: grava pela nota e avisa no Discord', async () => {
+  it('corrigir: grava pela nota e NÃO avisa direto no Discord', async () => {
     sessao({ visualizar: true, aprovar_nf: true })
     repo.corrigirNf.mockResolvedValueOnce(mudanca)
     const { corrigirNfAction } = await import('../actions')
     expect(await corrigirNfAction(UUID, 'aprovada', [], '')).toEqual({ ok: true, valor: null })
     expect(repo.corrigirNf).toHaveBeenCalledWith(UUID, 'aprovada', [], '')
-    expect(avisarSat).toHaveBeenLastCalledWith(
-      '🧾 NF do SAT corrigida: NF 1 — EMPRESA (12.345.678/0001-90) — reprovada → aprovada ✅ — relógios: NS1, NS2')
+    expect(criarDiscord).not.toHaveBeenCalled()
   })
 
-  it('trocar: valida e grava a nota nova (CNPJ com máscara, valor lido) e avisa', async () => {
+  it('trocar: valida e grava a nota nova (CNPJ com máscara, valor lido), sem aviso direto no Discord', async () => {
     sessao({ visualizar: true, aprovar_nf: true })
     repo.trocarNf.mockResolvedValueOnce({ ...mudanca, numeroPara: '1240' })
     const { trocarNfAction } = await import('../actions')
@@ -195,8 +185,7 @@ describe('actions do SAT — NF depois da entrada', () => {
       numero: '1240', cnpj: '12.345.678/0001-90', empresa: 'EMPRESA', negocianteCodigo: null, valor: 10.5,
       situacao: 'aprovada', motivos: [], motivoOutro: '',
     })
-    expect(avisarSat).toHaveBeenLastCalledWith(
-      '🧾 NF do SAT trocada: NF 1 (reprovada) substituída pela NF 1240 — EMPRESA (12.345.678/0001-90) aprovada ✅ — relógios: NS1, NS2')
+    expect(criarDiscord).not.toHaveBeenCalled()
   })
 
   it('corrigir/trocar: passam o texto do "Outro" ao banco (aprovada descarta)', async () => {
@@ -219,15 +208,6 @@ describe('actions do SAT — NF depois da entrada', () => {
     const { trocarNfAction } = await import('../actions')
     expect(await trocarNfAction(UUID, { ...troca, cnpj: '1' })).toEqual({ ok: false, erro: 'Informe o CNPJ da nota (14 dígitos) ou o CPF (11).' })
     expect(repo.trocarNf).not.toHaveBeenCalled()
-  })
-
-  it('corrigir: Discord fora do ar não impede', async () => {
-    sessao({ visualizar: true, aprovar_nf: true })
-    repo.corrigirNf.mockResolvedValueOnce(mudanca)
-    avisarSat.mockRejectedValueOnce(new Error('discord caiu'))
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { corrigirNfAction } = await import('../actions')
-    expect(await corrigirNfAction(UUID, 'aprovada', [], '')).toEqual({ ok: true, valor: null })
   })
 
   it('id de nota inválido é recusado', async () => {
@@ -255,7 +235,7 @@ describe('actions do SAT — associar OS', () => {
     expect(repo.associarOs).toHaveBeenCalledWith(UUID, OS)
     expect(await associarOsAction(UUID, null)).toEqual({ ok: true, valor: null })
     expect(repo.associarOs).toHaveBeenLastCalledWith(UUID, null)
-    expect(avisarSat).not.toHaveBeenCalled()
+    expect(criarDiscord).not.toHaveBeenCalled()
   })
 
   it('ids inválidos recusam; erro do banco vira mensagem', async () => {
