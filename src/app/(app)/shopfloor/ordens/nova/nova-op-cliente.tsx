@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useId, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
+import { placasDosPaineis, paineisDasPlacas } from '@/modules/shopfloor/domain/placas-por-painel'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronRight, X } from 'lucide-react'
@@ -335,7 +336,22 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="placas_por_painel">Placas por painel</Label>
               <Input id="placas_por_painel" inputMode="numeric" value={placasPorPainel} onChange={(e) => setPlacasPorPainel(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Use quando a etiqueta é por painel: cada bipe conta como N placas.</p>
             </div>
+            {nPainel > 1 && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="paineis">Painéis</Label>
+                <Input
+                  id="paineis" inputMode="numeric"
+                  value={qtd.trim() === '' ? '' : String(paineisDasPlacas(Number(qtd), nPainel) ?? '')}
+                  onChange={(e) => setQtd(e.target.value.trim() === '' || Number.isNaN(Number(e.target.value)) ? '' : String(placasDosPaineis(Number(e.target.value), nPainel)))}
+                />
+                {qtd.trim() !== '' && paineisDasPlacas(Number(qtd), nPainel) === null && (
+                  <p className="text-xs text-destructive">{qtd} placas não fecham em painéis de {nPainel}. Ajuste a quantidade ou os painéis.</p>
+                )}
+                <p className="text-xs text-muted-foreground">A faixa de SN conta painéis (um SN por painel).</p>
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="descricao">Descrição</Label>
               <Input id="descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
