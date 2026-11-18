@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import type { ResumoTrecho } from '@/modules/shopfloor/infra/estrutura-repository'
 
+vi.mock('server-only', () => ({}))
 vi.mock('@xyflow/react', () => ({
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
