@@ -432,4 +432,40 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0188.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_caixa_aberta.sql
 echo "0188 (caixa aberta / fora da rota): ok"
 
+# ---------- 0192 (entrada no SAT vira regra dos Alertas) ----------
+# As migrações do SAT (0186, 0187, 0190) entram aqui, na mesma base: a 0192 lê o histórico da nota (sat_historico)
+# e o teste registra/corrige/troca NF pelas funções de verdade. O _stubs.sql já tem usuarios/tem_permissao/sf_*;
+# as tabelas do repinmetro só existem para a 0186 ser aceita (nenhum teste daqui as lê).
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q \
+  -c "create table if not exists public.repinmetro_revendas (numero_serie_completo text primary key, modelo text not null default '', numero_serie text not null default '', numero_serie_norm text not null default '', revenda text, gravada_em timestamptz, saida_em timestamptz)" \
+  -c "create table if not exists public.repinmetro_producao (origem_id bigint primary key, numero_serie text not null, numero_serie_norm text not null default '', modelo text, data_inicio timestamptz, data_fim timestamptz, status text, serial_impressora text, serial_mrp text, serial_modulo_bio text, serial_rfid text, serial_fonte text, serial_barras text)"
+for M in 0186_sat_entrada 0187_sat_entrada_por_nf 0190_sat_motivos_reprovacao; do
+  docker cp "supabase/migrations/$M.sql" "$NOME":/tmp/$M.sql
+  docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/$M.sql
+done
+
+M0192="${SAT_ALERTA_MIGRACAO:-supabase/migrations/0192_alerta_sat_entrada.sql}"
+REMOVIDAS=$(diff <(corpo supabase/migrations/0182_alerta_compels_destinatarios.sql) <(corpo "$M0192") | grep -c '^<' || true)
+if [ "$REMOVIDAS" != "0" ]; then echo "0192 alterou/removeu $REMOVIDAS linha(s) da alerta_avaliar da 0182 (so acrescimos sao permitidos)"; exit 1; fi
+echo "0192: alerta_avaliar so com acrescimos sobre a 0182 (0 linhas removidas): ok"
+docker cp "$M0192" "$NOME":/tmp/0192.sql
+docker cp supabase/tests/alertas_sat_test.sql "$NOME":/tmp/teste_sat.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0192.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_sat.sql
+# Reaplicar NÃO muda nada: regras, fila, marcas, checks, policies e o corpo das funções de alerta iguais.
+FOTO_0192="select (select count(*) from alerta_regras) || '/' || (select count(*) from alerta_envios) || '/' ||
+  (select count(*) from alerta_sat_avisada) || '/' ||
+  (select md5(string_agg(conname || pg_get_constraintdef(oid), ',' order by conname)) from pg_constraint
+    where conrelid in ('public.alerta_regras'::regclass, 'public.alerta_envios'::regclass, 'public.alerta_sat_avisada'::regclass)) || '/' ||
+  (select md5(string_agg(policyname || coalesce(qual, '') || coalesce(with_check, ''), ',' order by policyname)) from pg_policies
+    where tablename in ('alerta_regras', 'alerta_sat_avisada')) || '/' ||
+  (select md5(string_agg(p.oid::regprocedure::text || md5(p.prosrc), ',' order by p.oid::regprocedure::text))
+     from pg_proc p where p.proname like 'alerta\_%');"
+ANTES=$(docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -qtA <<<"$FOTO_0192")
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0192.sql   # de novo: idempotente
+DEPOIS=$(docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -qtA <<<"$FOTO_0192")
+if [ "$ANTES" != "$DEPOIS" ]; then echo "0192 NAO e idempotente (antes=$ANTES depois=$DEPOIS)"; exit 1; fi
+echo "0192 reaplicada sem mudar nada ($ANTES): ok"
+echo "0192 (entrada no SAT): ok"
+
 echo "ALERTAS SQL OK"

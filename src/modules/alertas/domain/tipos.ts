@@ -30,6 +30,8 @@ export type TipoEnvio =
   | 'compels_aviso'
   /** Ficha de apontamento (0173): uma mensagem por caixa/lote que vira necessidade no Almoxarifado; leva o QR. */
   | 'ficha'
+  /** Entrada no SAT (0192): uma mensagem por NF registrada, corrigida ou trocada; sem ocorrência e sem botão. */
+  | 'sat_entrada'
 
 /** Estados de uma ocorrência (`alerta_ocorrencias.estado`). */
 export type EstadoOcorrencia = 'aberta' | 'resolvida' | 'normalizada'
@@ -78,9 +80,10 @@ export interface ContaVinculada {
 }
 
 /** Tipo da regra (specs 2026-09-18 e 2026-10-09). O tipo não muda depois de criado. */
-export type TipoRegra = 'aprovacao' | 'tempo' | 'defeito' | 'resumo' | 'emb' | 'parado' | 'compels' | 'ficha'
+export type TipoRegra =
+  | 'aprovacao' | 'tempo' | 'defeito' | 'resumo' | 'emb' | 'parado' | 'compels' | 'ficha' | 'sat_entrada'
 export const TIPOS_REGRA: readonly TipoRegra[] = [
-  'aprovacao', 'tempo', 'defeito', 'resumo', 'emb', 'parado', 'compels', 'ficha',
+  'aprovacao', 'tempo', 'defeito', 'resumo', 'emb', 'parado', 'compels', 'ficha', 'sat_entrada',
 ]
 
 export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
@@ -92,6 +95,7 @@ export const NOME_TIPO_REGRA: Record<TipoRegra, string> = {
   parado: 'Parado ou travado na produção',
   compels: 'Problemas no envio ao Compels',
   ficha: 'Ficha de apontamento (Almoxarifado)',
+  sat_entrada: 'Entrada no SAT',
 }
 
 /** A frase de cada cartão da escolha do tipo. */
@@ -109,6 +113,8 @@ export const DESCRICAO_TIPO_REGRA: Record<TipoRegra, string> = {
     'Avisa quando a integração não consegue apontar uma entrada no Compels (com o que o Compels respondeu) ou aponta com ressalva.',
   ficha:
     'Quando uma caixa ou um lote vira entrada pendente no Almoxarifado, manda a ficha de apontamento com o QR do código (o QR vai só no Discord).',
+  sat_entrada:
+    'Avisa a cada NF registrada no SAT (empresa, CNPJ, NF, situação e motivos, números de série) e a cada correção ou troca de NF.',
 }
 
 /** É um tipo de regra conhecido? */
@@ -121,6 +127,7 @@ export function ehTipoRegra(valor: unknown): valor is TipoRegra {
     valor === 'emb' ||
     valor === 'parado' ||
     valor === 'compels' ||
-    valor === 'ficha'
+    valor === 'ficha' ||
+    valor === 'sat_entrada'
   )
 }

@@ -9,18 +9,19 @@ import type { TipoRegra } from './tipos'
  * `podeNoModulo(perfil, modulo, 'administrar')` e para `tem_permissao(modulo, 'administrar')` no
  * banco. Renomear um aqui quebraria a permissão em silêncio.
  */
-export type ModuloAlerta = 'shopfloor' | 'recebimento'
+export type ModuloAlerta = 'shopfloor' | 'recebimento' | 'sat'
 
-export const MODULOS_ALERTA: readonly ModuloAlerta[] = ['shopfloor', 'recebimento']
+export const MODULOS_ALERTA: readonly ModuloAlerta[] = ['shopfloor', 'recebimento', 'sat']
 
 export function ehModuloAlerta(valor: unknown): valor is ModuloAlerta {
-  return valor === 'shopfloor' || valor === 'recebimento'
+  return valor === 'shopfloor' || valor === 'recebimento' || valor === 'sat'
 }
 
 /** Como o módulo é chamado na tela (cabeçalho da página, mensagens de erro). */
 export const NOME_MODULO_ALERTA: Record<ModuloAlerta, string> = {
   shopfloor: 'Fluxo de Processos',
   recebimento: 'Recebimento',
+  sat: 'SAT',
 }
 
 /**
@@ -32,11 +33,12 @@ export const NOME_MODULO_ALERTA: Record<ModuloAlerta, string> = {
  * `TIPOS_REGRA`: tipo novo sem módulo derruba o teste em vez de aparecer nas duas telas.
  *
  * O Recebimento tem UM tipo, o fim de EMB (0150). O check `alerta_regras_modulo_tipo` cobra o mesmo
- * no banco: `recebimento -> tipo in ('emb')`.
+ * no banco: `recebimento -> tipo in ('emb')`. O SAT também tem UM, a entrada no SAT (0192): `sat -> tipo in ('sat_entrada')`.
  */
 export const TIPOS_REGRA_POR_MODULO: Record<ModuloAlerta, readonly TipoRegra[]> = {
   shopfloor: ['aprovacao', 'tempo', 'defeito', 'resumo', 'parado', 'compels', 'ficha'],
   recebimento: ['emb'],
+  sat: ['sat_entrada'],
 }
 
 export function tipoPertenceAoModulo(tipo: TipoRegra, modulo: ModuloAlerta): boolean {
@@ -64,10 +66,12 @@ export function tiposOferecidosNaCriacao(
 }
 
 /**
- * A rota da tela de Alertas de cada módulo. Duas rotas, um componente (spec, decisão 2): é a rota
- * que carrega o `modulo` e o RBAC do menu, não o componente.
+ * A rota da tela de Alertas de cada módulo. Uma rota por módulo, um componente (spec, decisão 2): é a rota
+ * que carrega o `modulo` e o RBAC do menu, não o componente. O SAT não tem Configurações próprias: a tela dele
+ * mora no acordeão do SAT (spec 2026-11-18, decisão 2).
  */
 export const ROTA_ALERTAS: Record<ModuloAlerta, string> = {
   shopfloor: '/configuracoes/sf-alertas',
   recebimento: '/configuracoes/rec-alertas',
+  sat: '/sat/alertas',
 }
