@@ -424,4 +424,12 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0183.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_posto_pendente.sql
 echo "0183 (posto pendente): ok"
 
+# ---------- 0188: peças paradas — caixa aberta fica na Embalagem; bipe fora da rota não move a peça ----------
+docker cp supabase/migrations/0188_parados_caixa_aberta_fora_rota.sql "$NOME":/tmp/0188.sql
+docker cp supabase/tests/parados_caixa_aberta_test.sql "$NOME":/tmp/teste_caixa_aberta.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0188.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0188.sql   # de novo: idempotente
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_caixa_aberta.sql
+echo "0188 (caixa aberta / fora da rota): ok"
+
 echo "ALERTAS SQL OK"
