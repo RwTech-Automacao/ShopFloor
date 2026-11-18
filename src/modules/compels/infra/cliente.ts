@@ -8,6 +8,7 @@ import {
 } from '../domain/corpos'
 import { noDaLinhaOp, type NoOp } from '../domain/arvore-op'
 import { leiturasDeRespostas, listaDe, RespostaInesperada } from '../domain/leituras-erp'
+import { filtroOpsAtivas, opDaLinhaLista, type OpEspelhoLida } from '../domain/espelho-ops'
 import { filtroNegociante } from '../domain/negociante'
 import { saldoDoItem, type SaldoItem } from '../domain/saldo-item'
 import { saldosPorEstoque, type SaldoEmEstoque } from '../domain/saldo-por-estoque'
@@ -363,6 +364,37 @@ export class ClienteCompels {
       return false
     }
     return nos.filter(desce)
+  }
+
+  /**
+   * As OPs ATIVAS (Aberta/Planejada/Empenhada/Em Processo) do último ano, pela lista da tela de OPs (HAR 18/11):
+   * `POST ordemProducaoSimples/findAllFilter` paginado até o `totalCount`. Só leitura — é o espelho do cadastro de OP.
+   * Lista que acaba antes do total é erro: o espelho inativa quem não veio, então lista incompleta nunca é gravada.
+   */
+  async listarOpsAtivas(): Promise<OpEspelhoLida[]> {
+    const filtro = JSON.stringify(filtroOpsAtivas(this.agora()))
+    const limite = 100
+    const maxPaginas = 50
+    const brutas: unknown[] = []
+    let total: number | null = null
+    let chegouAoFim = false
+    for (let pagina = 1; pagina <= maxPaginas; pagina++) {
+      const resposta = await this.json('/ordemProducaoSimples/findAllFilter', this.formulario({
+        sortFilter: 'null', filtro, page: String(pagina), start: String((pagina - 1) * limite), limit: String(limite),
+      }))
+      const linhas = listaDe(resposta, 'lista de OPs ativas')
+      brutas.push(...linhas)
+      const t = (resposta as { totalCount?: unknown } | null)?.totalCount
+      if (typeof t === 'number') total = t
+      if (linhas.length < limite || (total !== null && brutas.length >= total)) {
+        chegouAoFim = true
+        break
+      }
+    }
+    // Mais de maxPaginas páginas cheias sem chegar ao fim: também é lista incompleta.
+    if (!chegouAoFim) throw new RespostaInesperada(`lista de OPs ativas passou de ${maxPaginas * limite} linhas`)
+    if (total !== null && brutas.length < total) throw new RespostaInesperada(`lista de OPs ativas incompleta (${brutas.length} de ${total})`)
+    return brutas.map(opDaLinhaLista).filter((o): o is OpEspelhoLida => o !== null)
   }
 
   /**

@@ -241,4 +241,40 @@ describe('ClienteCompels', () => {
     expect(desc.map((n) => [n.numero, n.codigo])).toEqual([[8683, 'PRT706'], [8684, 'PRT705']])
     expect(await c.lerNoOp(9999)).toBeNull()
   })
+
+  it('listarOpsAtivas: pagina de 100 em 100 até o totalCount, com o filtro das situações ativas', async () => {
+    const linha = (n: number) => ({ id: n, numero: n, status: 'Aberta', nivel: 1, composicaoProduto: { item: { codigo: `PMO${n}`, descricao: '' } } })
+    const paginas: Record<string, unknown> = {
+      '1': { success: true, totalCount: 150, data: Array.from({ length: 100 }, (_, i) => linha(i + 1)) },
+      '2': { success: true, totalCount: 150, data: [...Array.from({ length: 49 }, (_, i) => linha(i + 101)), { numero: 999 }] },
+    }
+    const corpos: URLSearchParams[] = []
+    const buscar = (async (_url: string | URL | Request, init: RequestInit = {}) => {
+      const corpo = new URLSearchParams(String(init.body))
+      corpos.push(corpo)
+      return json(paginas[corpo.get('page') ?? ''] ?? { data: [] })
+    }) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar, () => Date.UTC(2026, 10, 18))
+    const ops = await c.listarOpsAtivas()
+    expect(ops).toHaveLength(149) // a linha sem código é descartada
+    expect(corpos.map((x) => [x.get('page'), x.get('start'), x.get('limit'), x.get('sortFilter')])).toEqual([['1', '0', '100', 'null'], ['2', '100', '100', 'null']])
+    expect(JSON.parse(corpos[0]!.get('filtro')!).statusList).toEqual(['Aberta', 'Planejada', 'Empenhada', 'Em Processo'])
+  })
+
+  it('listarOpsAtivas: lista que para antes do totalCount é erro (não pode inativar o resto)', async () => {
+    const buscar = (async () => json({ success: true, totalCount: 500, data: [] })) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await expect(c.listarOpsAtivas()).rejects.toThrow()
+  })
+
+  it('listarOpsAtivas: sem totalCount e páginas sempre cheias, para no limite e é erro (nunca grava lista cortada)', async () => {
+    let chamadas = 0
+    const buscar = (async () => {
+      chamadas++
+      return json({ success: true, data: Array.from({ length: 100 }, (_, i) => ({ id: i, numero: i, composicaoProduto: { item: { codigo: 'X' } } })) })
+    }) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await expect(c.listarOpsAtivas()).rejects.toThrow('passou de 5000 linhas')
+    expect(chamadas).toBe(50)
+  })
 })

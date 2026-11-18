@@ -7,6 +7,7 @@ import { ehRotaDoQuiosqueDeFichas } from '@/modules/shopfloor/domain/rotas-quios
 import { ehRotaDaBaixaDeNf } from '@/modules/compels/domain/rotas-baixa-nf'
 import { ehRotaDoManifestoDaBaixaNf } from '@/modules/faturamento/domain/app-baixa-nf'
 import { ehRotaDaSincronizacaoSat } from '@/modules/sat/domain/rotas-sat'
+import { ehRotaDoEspelhoDeOps } from '@/modules/compels/domain/rotas-espelho-ops'
 import { cabecalhosComMarcaEmbed } from '@/shared/lib/supabase/embed'
 
 export async function middleware(request: NextRequest) {
@@ -24,6 +25,7 @@ export async function middleware(request: NextRequest) {
   // (FICHAS_TABLET_CHAVE); sem ela a rota responde 404.
   // O manifesto do app "Baixa de NF" (/faturamento/manifest.webmanifest) também: o navegador o busca sem cookie.
   // A cópia da planilha do SAT (/api/sat/sincronizar-planilha) é cron: autoriza o ESTOQUE_CRON_SECRET na rota.
+  // O espelho das OPs do Compels (/api/compels/espelho-ops) também é cron: autoriza o ESTOQUE_CRON_SECRET na rota.
   //
   // ⚠️ TODAS passam pelos `cabecalhos`, nunca por um NextResponse.next() pelado: é aqui que a marca
   // de embed mandada pelo cliente é apagada. Uma rota que saia sem eles aceita a marca forjada e
@@ -35,7 +37,8 @@ export async function middleware(request: NextRequest) {
     ehRotaDoQuiosqueDeFichas(request.nextUrl.pathname) ||
     ehRotaDaBaixaDeNf(request.nextUrl.pathname) ||
     ehRotaDoManifestoDaBaixaNf(request.nextUrl.pathname) ||
-    ehRotaDaSincronizacaoSat(request.nextUrl.pathname)
+    ehRotaDaSincronizacaoSat(request.nextUrl.pathname) ||
+    ehRotaDoEspelhoDeOps(request.nextUrl.pathname)
   )
     return NextResponse.next({ request: { headers: cabecalhos } })
 
