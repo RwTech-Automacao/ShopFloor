@@ -116,10 +116,12 @@ const FATURAMENTO: FolhaModular[] = [
   { chave: 'fat-baixa-nf', rotulo: 'Baixa de NF', href: '/faturamento/baixa-nf', icone: Receipt, modulo: 'faturamento', perm: 'visualizar' },
 ]
 
-// SAT: entrada de equipamento que volta do cliente (FO-161). Grupo próprio no menu.
-const SAT: FolhaModular[] = [
+// SAT: entrada de equipamento que volta do cliente (FO-161). Grupo próprio no menu. Os Alertas do SAT moram aqui
+// (o SAT não tem Configurações próprias), com `sat.administrar` e a trava ALERTAS_SAT_LIBERADO_PARA.
+export const SAT: FolhaModular[] = [
   { chave: 'sat-entrada', rotulo: 'Entrada de equipamento', href: '/sat/entrada', icone: PackageOpen, modulo: 'sat', perm: 'registrar_entrada' },
   { chave: 'sat-equipamentos', rotulo: 'Equipamentos', href: '/sat/equipamentos', icone: Wrench, modulo: 'sat', perm: 'visualizar' },
+  { chave: 'sat-alertas', rotulo: 'Alertas', href: '/sat/alertas', icone: BellRing, modulo: 'sat', perm: 'administrar' },
 ]
 
 const SETUP: FolhaModular[] = [
@@ -198,8 +200,8 @@ export function AppShell({
   /** Lançamento escondido dos Alertas: calculado no servidor, nunca a lista de e-mails em si.
    *  Enquanto false, some o link Meu perfil do menu (hoje só tem o cartão de Alertas). */
   alertasLiberado: boolean
-  /** O item Alertas de cada módulo tem a própria liberação (ShopFloor × Recebimento). */
-  alertasMenu: { shopfloor: boolean; recebimento: boolean }
+  /** O item Alertas de cada módulo tem a própria liberação (ShopFloor × Recebimento × SAT). */
+  alertasMenu: { shopfloor: boolean; recebimento: boolean; sat: boolean }
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -228,7 +230,13 @@ export function AppShell({
   const configTopo = podeConfig ? CONFIG_TOPO.filter(pode) : []
   // Lançamento escondido dos Alertas: cada módulo tem a própria liberação.
   const alertasVisivel = (chave: string) =>
-    chave === 'sf-alertas' ? alertasMenu.shopfloor : chave === 'rec-alertas' ? alertasMenu.recebimento : true
+    chave === 'sf-alertas'
+      ? alertasMenu.shopfloor
+      : chave === 'rec-alertas'
+        ? alertasMenu.recebimento
+        : chave === 'sat-alertas'
+          ? alertasMenu.sat
+          : true
   const configRec = podeConfig
     ? CONFIG_RECEBIMENTO.filter(pode).filter((i) => alertasVisivel(i.chave))
     : []
@@ -246,7 +254,7 @@ export function AppShell({
   const setupVisivel = SETUP.filter(pode)
   const vitrineVisivel = VITRINE.filter(pode)
   const faturamentoVisivel = FATURAMENTO.filter(pode)
-  const satVisivel = SAT.filter(pode)
+  const satVisivel = SAT.filter(pode).filter((i) => alertasVisivel(i.chave))
   const [satAberto, setSatAberto] = useState(pathname.startsWith('/sat'))
   const setupAtivo = pathname.startsWith('/setup')
   // Nome diferente do `setupAberto`/`setSetupAberto` do modo quiosque (mais abaixo)

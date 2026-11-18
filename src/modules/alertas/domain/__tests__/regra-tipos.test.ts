@@ -39,8 +39,10 @@ const DEFEITO: EntradaRegra = {
 }
 
 describe('tipos de regra', () => {
-  it('oito tipos, com nome de tela', () => {
-    expect(TIPOS_REGRA).toEqual(['aprovacao', 'tempo', 'defeito', 'resumo', 'emb', 'parado', 'compels', 'ficha'])
+  it('nove tipos, com nome de tela', () => {
+    expect(TIPOS_REGRA).toEqual([
+      'aprovacao', 'tempo', 'defeito', 'resumo', 'emb', 'parado', 'compels', 'ficha', 'sat_entrada',
+    ])
     expect(NOME_TIPO_REGRA).toEqual({
       aprovacao: 'Taxa de aprovação',
       tempo: 'Tempo médio por peça',
@@ -50,6 +52,7 @@ describe('tipos de regra', () => {
       parado: 'Parado ou travado na produção',
       compels: 'Problemas no envio ao Compels',
       ficha: 'Ficha de apontamento (Almoxarifado)',
+      sat_entrada: 'Entrada no SAT',
     })
     expect(ehTipoRegra('tempo')).toBe(true)
     expect(ehTipoRegra('lua')).toBe(false)

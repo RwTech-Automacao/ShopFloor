@@ -27,6 +27,7 @@ import {
 } from './mensagens'
 import { textoEmb, type DivergenciaEmb } from './emb'
 import { textoFicha } from './ficha-texto'
+import { textoSat } from './sat-texto'
 import { OP_RELATORIO, PMO_RELATORIO } from './parados'
 import { urlRelatorioEmb, urlRelatorioParados } from './links'
 import { textoNormalizouParado, textoRelatorioParado, type OpParada } from './parados-texto'
@@ -59,7 +60,7 @@ export interface EnvioReservado {
 }
 
 const TIPOS: readonly TipoEnvio[] = [
-  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb', 'compels_aviso', 'ficha',
+  'alerta', 'lembrete', 'resolvido', 'normalizou', 'teste', 'resumo', 'emb', 'compels_aviso', 'ficha', 'sat_entrada',
 ]
 
 function ehTipoEnvio(v: unknown): v is TipoEnvio {
@@ -156,7 +157,9 @@ function dataOuNulo(d: Record<string, unknown>, campo: string): Date | null {
  * EMB (0150) entra na lista dos excluídos pelo mesmo motivo do resumo: ele nasce SEM ocorrência,
  * tem texto próprio e nunca chega a `textoAprovacao`/`textoTempo`/`textoDefeito`.
  */
-type TipoEnvioOcorrencia = Exclude<TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb' | 'compels_aviso' | 'ficha'>
+type TipoEnvioOcorrencia = Exclude<
+  TipoEnvio, 'teste' | 'resolvido' | 'resumo' | 'emb' | 'compels_aviso' | 'ficha' | 'sat_entrada'
+>
 
 /**
  * As ordens da linha da fila: a LISTA de todas as OPs da janela (`ops`, da 0136) e, como reserva, o
@@ -271,6 +274,32 @@ function textoFichaDe(dados: Record<string, unknown>): string {
     op: texto(dados, 'op'),
     quantidadeApontada: numero(dados, 'quantidade_apontada'),
     responsavel: textoOuVazio(dados, 'responsavel'),
+  })
+}
+
+/**
+ * Lê o `dados` da entrada no SAT como a 0192 o grava: evento ('entrada' | 'correcao' | 'troca'), numero_de (vazio
+ * na entrada), numero_para, empresa e cnpj (podem vir vazios), situacao_de (vazia na entrada), situacao_para,
+ * motivos e ns (listas de texto). Formato errado LANÇA: nunca uma mensagem vazia calada.
+ */
+function textoSatDe(dados: Record<string, unknown>): string {
+  const evento = dados.evento
+  if (evento !== 'entrada' && evento !== 'correcao' && evento !== 'troca') throw new DadosEnvioInvalidos('evento')
+  const situacao = (campo: string) => {
+    const v = dados[campo]
+    if (v !== 'aprovada' && v !== 'reprovada') throw new DadosEnvioInvalidos(campo)
+    return v
+  }
+  return textoSat({
+    evento,
+    numeroDe: textoOuVazio(dados, 'numero_de'),
+    numeroPara: texto(dados, 'numero_para'),
+    empresa: textoOuVazio(dados, 'empresa'),
+    cnpj: textoOuVazio(dados, 'cnpj'),
+    situacaoDe: evento === 'entrada' ? null : situacao('situacao_de'),
+    situacaoPara: situacao('situacao_para'),
+    motivos: listaTextos(dados, 'motivos'),
+    ns: listaTextos(dados, 'ns'),
   })
 }
 
@@ -470,6 +499,8 @@ export interface OpcoesTexto {
  *   resumo: regra_tipo, regra_nome, dia ('AAAA-MM-DD'), linhas (array de {posto, aprovados, reprovados}; 0141)
  *   emb: regra_tipo, regra_nome, emb, fechada_em, divergencias (array de {numero, item, descricao,
  *        quantidade_pedido, quantidade_recebida, divergencia, justificativa, justificada_por_nome}; 0150)
+ *   sat_entrada: regra_tipo, regra_nome, evento, numero_de, numero_para, empresa, cnpj, situacao_de,
+ *        situacao_para, motivos, ns, em; 0192
  *   reabertura (só no 'alerta' que nasce de uma reabertura, 0122): reabertura = true,
  *              resolvida_por_nome, resolvida_em, reaberturas
  * `regra_tipo` ausente = 'aprovacao' (linhas enfileiradas antes da 0115).
@@ -480,6 +511,7 @@ export function textoDoEnvio(tipo: TipoEnvio, dados: Record<string, unknown>, op
   if (tipo === 'emb') return textoEmbDe(dados, opcoes)
   if (tipo === 'compels_aviso') return textoAvisosCompelsDe(dados)
   if (tipo === 'ficha') return textoFichaDe(dados)
+  if (tipo === 'sat_entrada') return textoSatDe(dados)
   if (tipo === 'resolvido') {
     // No parado a 0151 copia a chave "PMO/OP" da ocorrência para `defeito`: não é defeito de verdade.
     const refBruto = refOpDe(dados)

@@ -1,6 +1,10 @@
 import type { SituacaoNf } from './entrada'
 
-/** Avisos do SAT no canal do Discord: um por nota (spec 2026-11-17-sat-entrada-por-nf-design.md, decisão 9). */
+/**
+ * Os textos do aviso de entrada no SAT: um por nota (spec 2026-11-17-sat-entrada-por-nf-design.md, decisão 9). Desde a
+ * spec de 2026-11-18 quem os manda é a regra "Entrada no SAT" dos Alertas (src/modules/alertas/domain/sat-texto.ts),
+ * não mais um aviso direto no Discord. Mudar uma frase aqui muda a mensagem da regra.
+ */
 const situacaoNf = (s: SituacaoNf, motivos: string[]) =>
   s === 'aprovada' ? 'aprovada ✅' : `reprovada ❌${motivos.length > 0 ? ` (${motivos.join('; ')})` : ''}`
 

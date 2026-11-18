@@ -34,8 +34,8 @@ function estaNaLista(email: string | null | undefined, listaEnv: string | undefi
  * vez). Vazia ou ausente = NINGUÉM: esquecer a variável no deploy não pode expor a feature.
  * No preview da Vercel e no dev local a feature aparece sempre (é onde se testa).
  *
- * ⚠️ O Recebimento NÃO usa esta variável: tem a própria trava (`alertasRecebimentoLiberados`), para
- * que liberar os Alertas do ShopFloor com `*` não abra a tela do Recebimento junto.
+ * ⚠️ O Recebimento e o SAT NÃO usam esta variável: cada um tem a própria trava (`alertasRecebimentoLiberados`,
+ * `alertasSatLiberados`), para que liberar os Alertas do ShopFloor com `*` não abra as telas deles junto.
  */
 export function alertasLiberados(
   email: string | null | undefined,
@@ -59,12 +59,27 @@ export function alertasRecebimentoLiberados(
   return estaNaLista(email, listaEnv)
 }
 
+/**
+ * Mesma regra de `alertasLiberados`, com a lista própria do SAT (`ALERTAS_SAT_LIBERADO_PARA`, spec de 2026-11-18,
+ * decisão 7). Vazia ou ausente = NINGUÉM em produção. Liberar o ShopFloor ou o Recebimento com `*` não abre o SAT.
+ */
+export function alertasSatLiberados(
+  email: string | null | undefined,
+  listaEnv: string | undefined = process.env.ALERTAS_SAT_LIBERADO_PARA,
+  ambiente: Ambiente = { vercel: process.env.VERCEL_ENV, node: process.env.NODE_ENV },
+): boolean {
+  if (foraDeProducao(ambiente)) return true
+  return estaNaLista(email, listaEnv)
+}
+
 /** A trava certa para o módulo da tela/ação. */
 export function alertasLiberadosDoModulo(
   modulo: ModuloAlerta,
   email: string | null | undefined,
 ): boolean {
-  return modulo === 'recebimento' ? alertasRecebimentoLiberados(email) : alertasLiberados(email)
+  if (modulo === 'recebimento') return alertasRecebimentoLiberados(email)
+  if (modulo === 'sat') return alertasSatLiberados(email)
+  return alertasLiberados(email)
 }
 
 /**
@@ -104,5 +119,6 @@ export function alertasMenuPorModulo(
   return {
     shopfloor: alertasLiberadosDoModulo('shopfloor', email),
     recebimento: alertasLiberadosDoModulo('recebimento', email),
+    sat: alertasLiberadosDoModulo('sat', email),
   }
 }

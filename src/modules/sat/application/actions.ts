@@ -5,19 +5,22 @@ import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo, type Permissao } from '@/modules/auth/domain/perfil'
 import { MAX_RELOGIOS, validarMudancaNf, validarNota, type MudancaNf, type NotaInput, type SituacaoNf } from '../domain/entrada'
 import { formatarCnpj } from '../domain/cnpj'
-import { mensagemMudancaNf, mensagemNota } from '../domain/mensagens'
 import { mensagemDoErro } from '../domain/erros'
 import {
   associarOs, consultarNoBanco, corrigirNf, ErroDoBanco, osPorNs, registrarNf, trocarNf,
   type MudancaGravada,
 } from '../infra/repository'
-import { avisarSat } from '../infra/discord'
 import { empresaDoCnpj } from '../infra/compels'
 import { consultarNs, type ResultadoConsultaNs } from './consultar-ns'
 
 /**
  * Ações do SAT (spec 2026-11-17-sat-entrada-por-nf-design.md). A permissão é conferida aqui ANTES de tudo e de novo
- * no banco (funções da 0187). O aviso no Discord vem depois da gravação e nunca a impede.
+ * no banco (funções da 0187).
+ *
+ * O aviso de entrada NÃO sai daqui (spec 2026-11-18-sat-alerta-entrada-design.md): virou o tipo de regra "Entrada no
+ * SAT" dos Alertas (tela SAT → Alertas). Quem detecta a NF registrada/corrigida/trocada é a `alerta_avaliar` (0192),
+ * pelo histórico da nota que estas funções já gravam, e só os responsáveis das regras ativas recebem. Por isso a
+ * gravação não depende de aviso nenhum: nada do lado dos Alertas pode desfazer uma entrada.
  */
 export type ResultadoAcao<T> = { ok: true; valor: T } | { ok: false; erro: string }
 
@@ -36,14 +39,6 @@ function falha(e: unknown, generica: string): { ok: false; erro: string } {
   if (e instanceof ErroDoBanco) return { ok: false, erro: mensagemDoErro(e.message, generica) }
   console.error('[sat]', generica, e instanceof Error ? e.message : e)
   return { ok: false, erro: generica }
-}
-
-async function avisar(texto: string): Promise<void> {
-  try {
-    await avisarSat(texto)
-  } catch (e) {
-    console.error('[sat] aviso no Discord falhou:', e instanceof Error ? e.message : e)
-  }
 }
 
 const idsValidos = (xs: unknown): xs is string[] =>
@@ -83,7 +78,7 @@ function relogiosNoFormato(xs: unknown): boolean {
     textoOk(r.locacao) && Array.isArray(r.itensJunto) && r.itensJunto.length <= 10)
 }
 
-/** "Registrar entrada": a nota e todos os relógios dela, numa gravação só; UM aviso no Discord. */
+/** "Registrar entrada": a nota e todos os relógios dela, numa gravação só (o aviso é a regra dos Alertas). */
 export async function registrarNfAction(input: NotaInput): Promise<ResultadoAcao<{ nfId: string; ids: string[] }>> {
   if (!(await pode('registrar_entrada'))) return { ok: false, erro: SEM_PERMISSAO }
   if (!input || typeof input !== 'object') return { ok: false, erro: 'Entrada inválida.' }
@@ -102,24 +97,18 @@ export async function registrarNfAction(input: NotaInput): Promise<ResultadoAcao
     return falha(e, 'Não foi possível registrar a entrada.')
   }
   revalidatePath('/sat/equipamentos')
-  await avisar(mensagemNota({
-    numero: v.valor.numero, empresa: v.valor.empresa, cnpj: v.valor.cnpj, situacao: v.valor.situacao,
-    motivos: gravada.motivos, ns: gravada.relogios.map((r) => r.ns),
-  }))
   return { ok: true, valor: { nfId: gravada.nfId, ids: gravada.relogios.map((r) => r.id) } }
 }
 
-async function mudarNf(tipo: 'correcao' | 'troca', grava: () => Promise<MudancaGravada>): Promise<ResultadoAcao<null>> {
-  let m: MudancaGravada
+async function mudarNf(grava: () => Promise<MudancaGravada>): Promise<ResultadoAcao<null>> {
   try {
-    m = await grava()
+    await grava()
   } catch (e) {
     return falha(e, 'Não foi possível mudar a NF.')
   }
   // A mudança vale para todos os relógios da nota: todas as fichas.
   revalidatePath('/sat/equipamentos/[id]', 'page')
   revalidatePath('/sat/equipamentos')
-  await avisar(mensagemMudancaNf({ tipo, ...m }))
   return { ok: true, valor: null }
 }
 
@@ -131,7 +120,7 @@ export async function corrigirNfAction(
   if (!idOk(nfId) || !idsValidos(motivos) || !textoOk(motivoOutro)) return { ok: false, erro: 'Pedido inválido.' }
   const v = validarMudancaNf({ tipo: 'corrigir', situacao, motivos, motivoOutro })
   if (!v.ok) return v
-  return mudarNf('correcao', () => corrigirNf(nfId, situacao, v.motivos, v.motivoOutro))
+  return mudarNf(() => corrigirNf(nfId, situacao, v.motivos, v.motivoOutro))
 }
 
 /** "Trocar NF": nota nova (número, CNPJ, empresa, valor, situação); a antiga fica no histórico. */
@@ -145,13 +134,13 @@ export async function trocarNfAction(
   }
   const v = validarMudancaNf({ ...t, tipo: 'troca' })
   if (!v.ok) return v
-  return mudarNf('troca', () => trocarNf(nfId, {
+  return mudarNf(() => trocarNf(nfId, {
     numero: t.numero.trim(), cnpj: v.cnpj!, empresa: t.empresa.trim(), negocianteCodigo: (t.negocianteCodigo ?? '').trim() || null,
     valor: v.valor ?? null, situacao: t.situacao, motivos: v.motivos, motivoOutro: v.motivoOutro,
   }))
 }
 
-/** "Trocar OS" na ficha: liga o relógio a outra OS do mesmo NS, ou a nenhuma. Vai para o histórico; não avisa no Discord. */
+/** "Trocar OS" na ficha: liga o relógio a outra OS do mesmo NS, ou a nenhuma. Vai para o histórico; não avisa. */
 export async function associarOsAction(entradaId: string, osId: string | null): Promise<ResultadoAcao<null>> {
   if (!(await pode('associar_os'))) return { ok: false, erro: SEM_PERMISSAO }
   if (!idOk(entradaId) || (osId !== null && !idOk(osId))) return { ok: false, erro: 'Pedido inválido.' }

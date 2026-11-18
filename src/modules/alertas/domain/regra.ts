@@ -14,6 +14,7 @@ import { formatarMmSs, lerMmSs } from './tempo'
 import { HORA_RESUMO_MAX, HORA_RESUMO_MIN } from './resumo'
 import { resumoJanela } from './janela'
 import { JANELA_EMB, LIMITE_EMB } from './emb'
+import { JANELA_SAT, LIMITE_SAT } from './sat-texto'
 
 /** O que vem do formulário (tudo pode chegar como texto). Campos de outro tipo são ignorados. */
 export interface EntradaRegra {
@@ -181,6 +182,7 @@ const LIMITE_FICHA = 'Uma ficha por caixa ou lote'
 const MSG_RESUMO_CAMPO = 'O resumo diário não usa este campo.'
 const MSG_EMB_CAMPO = 'O aviso de fim de EMB não usa este campo.'
 const MSG_FICHA_CAMPO = 'A ficha de apontamento não usa este campo.'
+const MSG_SAT_CAMPO = 'O aviso de entrada no SAT não usa este campo.'
 const MSG_RESUMO_HORA =
   'A hora do resumo deve ficar entre 06:00 e 19:00 (fora disso o banco está desligado e o relatório não sairia).'
 
@@ -257,7 +259,8 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // O fim de EMB não tem posto: o gatilho é a EMB fechar, e EMB não é posto. Os outros tipos
   // continuam exigindo pelo menos um. O banco cobra o mesmo (`alerta_regras_postos_por_tipo`, 0150).
   // A ficha de apontamento também não tem posto: o Almoxarifado é o da rota de cada OP (0173).
-  const semPosto = tipo === 'emb' || tipo === 'ficha'
+  // A entrada no SAT (0192) também não: o gatilho é a NF, que não passa por posto nenhum.
+  const semPosto = tipo === 'emb' || tipo === 'ficha' || tipo === 'sat_entrada'
   const postos = semPosto ? [] : unicos(e.postos)
   if (!semPosto && postos.length === 0) return erro('Escolha pelo menos 1 posto.')
 
@@ -282,6 +285,15 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
       e.limiteTempo, e.limiteOcorrencias, e.pausaMaxMin, e.horaResumo,
     ]
     if (naoUsados.some((v) => textoLimpo(v) !== '')) return erro(MSG_FICHA_CAMPO)
+  }
+
+  // Entrada no SAT (0192): os mesmos campos do fim de EMB — nenhum. Também RECUSA o campo que não é dele.
+  if (tipo === 'sat_entrada') {
+    const naoUsados = [
+      e.taxaMinima, e.janelaValor, e.minimoBipes, e.lembreteMin,
+      e.limiteTempo, e.limiteOcorrencias, e.pausaMaxMin, e.horaResumo,
+    ]
+    if (naoUsados.some((v) => textoLimpo(v) !== '')) return erro(MSG_SAT_CAMPO)
   }
 
   // Resumo diário: segue um caminho próprio até os destinatários (não usa taxa, janela em minutos,
@@ -340,7 +352,8 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // O fim de EMB, o parado e o compels não perguntam a janela: ela sai 'op' de fachada, seja o que o
   // formulário mandar (o banco exige janela_valor nulo nesses três). O compels também ignora o limite em
   // horas e os turnos: ele avisa na PRIMEIRA falha, sem espera nem relógio de expediente.
-  const semJanela = tipo === 'emb' || tipo === 'parado' || tipo === 'compels' || tipo === 'ficha'
+  const semJanela =
+    tipo === 'emb' || tipo === 'parado' || tipo === 'compels' || tipo === 'ficha' || tipo === 'sat_entrada'
   if (tipo !== 'resumo' && !semJanela && !ehJanelaTipo(e.janelaTipo)) {
     return erro('Escolha a janela da regra.')
   }
@@ -430,7 +443,7 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
   // Na janela por blocos quem comanda a insistência é o bloco, não os minutos: o lembrete é
   // ignorado (sai null), mesmo preenchido.
   let lembrete: number | null = null
-  if (tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'ficha' && janelaTipo !== 'intervalos') {
+  if (tipo !== 'resumo' && tipo !== 'emb' && tipo !== 'ficha' && tipo !== 'sat_entrada' && janelaTipo !== 'intervalos') {
     lembrete = inteiro(e.lembreteMin)
     if (lembrete !== null && (Number.isNaN(lembrete) || lembrete <= 0)) {
       return erro('O lembrete deve ser um número inteiro de minutos (ou vazio).')
@@ -510,7 +523,8 @@ export function validarRegra(e: EntradaRegra, ambiente: AmbienteRegra = {}): Res
       avisarPessoas,
       avisarCanal,
       // O fim de EMB não filtra por PMO: o gatilho é a EMB, e o check da 0150 exige `pmos` vazio.
-      pmos: tipo === 'emb' ? [] : unicos(e.pmos),
+      // A entrada no SAT também não (PMO é do ShopFloor; o check da 0192 exige `pmos` vazio).
+      pmos: tipo === 'emb' || tipo === 'sat_entrada' ? [] : unicos(e.pmos),
       ativa: e.ativa,
     },
   }
@@ -568,6 +582,7 @@ export function resumoLimite(
   if (r.tipo === 'emb') return LIMITE_EMB
   if (r.tipo === 'compels') return LIMITE_COMPELS
   if (r.tipo === 'ficha') return LIMITE_FICHA
+  if (r.tipo === 'sat_entrada') return LIMITE_SAT
   if (r.tipo === 'parado') {
     if (r.limiteHoras == null) return '—'
     if ((r.intervalos?.length ?? 0) > 0) return `Parado há mais de ${r.limiteHoras} h de expediente`
@@ -595,6 +610,7 @@ export function resumoJanelaRegra(
   if (r.tipo === 'parado') return JANELA_PARADO
   if (r.tipo === 'compels') return JANELA_COMPELS
   if (r.tipo === 'ficha') return JANELA_FICHA
+  if (r.tipo === 'sat_entrada') return JANELA_SAT
   if (r.tipo === 'resumo') return r.horaResumo ? `Dia inteiro, às ${r.horaResumo}` : '—'
   return resumoJanela({ tipo: r.janelaTipo, valor: r.janelaValor })
 }
