@@ -3063,4 +3063,5 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
    ```
    Primeira rodada à mão (mesmo `curl` sem o `flock`) e `tail ~/espelho-ops.log`: JSON com `lidas` > 0. HTML/302 no log = rota fora do `middleware.ts`.
 4. **Chave das PRTs:** continua desligada (`COMPELS_PRT_LIGADO` ausente) — as linhas das PRTs ficam na fila com "Apontamento das PRTs desligado" até a frequência ser decidida.
+4b. **Trava da tela Nova OP:** em produção só vê `/shopfloor/ordens/nova` quem estiver em `NOVA_OP_LIBERADA_PARA` (e-mails separados por vírgula; `*` = todos; vazia/ausente = ninguém); os demais seguem no cadastro antigo. Acrescente a linha ao `.env.production` (ver `.env.example`) e reinicie com `--update-env`; para liberar de vez, `NOVA_OP_LIBERADA_PARA=*`.
 5. **Rollback:** `docs/operacao/estrutura-op/rollback-0184.sql` (`psql -1`) + o app anterior (`git reset --hard <commit anterior>` + `npm run build` + `pm2 restart shopfloor --update-env` + `pm2 save`) + tirar a linha do crontab.

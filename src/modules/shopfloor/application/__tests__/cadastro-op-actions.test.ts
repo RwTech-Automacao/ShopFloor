@@ -5,8 +5,9 @@ import type { CadastroOp, OpEspelho } from '../../domain/cadastro-op'
 vi.mock('server-only', () => ({}))
 const m = vi.hoisted(() => ({
   cadastrarOp: vi.fn<(c: CadastroOp) => Promise<string>>(async () => 'uuid-1'), ultimaOpDaPmo: vi.fn(), listarEspelho: vi.fn(), buscarOpEmUso: vi.fn(async () => null),
-  registrarLog: vi.fn(), podeNoModulo: vi.fn(() => true),
+  registrarLog: vi.fn(), podeNoModulo: vi.fn(() => true), novaOpLiberada: vi.fn(() => true),
 }))
+vi.mock('../liberacao-nova-op', () => ({ novaOpLiberada: m.novaOpLiberada }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ perfil: {}, nome: 'Ana', email: 'a@x' })) }))
 vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: m.podeNoModulo }))
@@ -39,7 +40,7 @@ const cad = (over: Partial<CadastroOp> = {}): CadastroOp => ({
   ...over,
 })
 
-beforeEach(() => { vi.clearAllMocks(); m.listarEspelho.mockResolvedValue(ESPELHO); m.podeNoModulo.mockReturnValue(true) })
+beforeEach(() => { vi.clearAllMocks(); m.listarEspelho.mockResolvedValue(ESPELHO); m.podeNoModulo.mockReturnValue(true); m.novaOpLiberada.mockReturnValue(true) })
 
 describe('cadastrarOpAction', () => {
   it('limpa os postos (catálogo, Almoxarifado no fim da PMO), filtra componentes/burn-in e grava', async () => {
@@ -137,5 +138,16 @@ describe('ultimaOpDaPmoAction', () => {
     expect(await ultimaOpDaPmoAction('PMOC14')).toMatchObject({ ok: false })
     m.podeNoModulo.mockReturnValue(false)
     expect(await ultimaOpDaPmoAction('PMOC14')).toMatchObject({ ok: false })
+  })
+})
+
+describe('trava da Nova OP (NOVA_OP_LIBERADA_PARA)', () => {
+  it('admin fora da lista é recusado nas duas actions, sem tocar no banco', async () => {
+    m.novaOpLiberada.mockReturnValue(false)
+    expect(await cadastrarOpAction(cad())).toEqual({ ok: false, erro: 'Você não tem permissão para gerenciar ordens de produção.' })
+    expect(await ultimaOpDaPmoAction('PMOC14')).toEqual({ ok: false, erro: 'Você não tem permissão para gerenciar ordens de produção.' })
+    expect(m.cadastrarOp).not.toHaveBeenCalled()
+    expect(m.ultimaOpDaPmo).not.toHaveBeenCalled()
+    expect(m.novaOpLiberada).toHaveBeenCalledWith('a@x')
   })
 })

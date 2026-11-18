@@ -7,6 +7,7 @@ import { listarPadroes } from '@/modules/shopfloor/infra/padroes-fluxo-repositor
 import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import { agruparTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { faixasDaPmoDoBanco } from '@/modules/shopfloor/domain/faixas-sn'
+import { novaOpLiberada } from '@/modules/shopfloor/application/liberacao-nova-op'
 import type { OrdemView } from './ordem-form'
 import { OrdensLista } from './ordens-lista'
 
@@ -56,7 +57,7 @@ export default async function OrdensPage() {
         <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
       </div>
 
-      <OrdensLista views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+      <OrdensLista novaOpLiberada={novaOpLiberada(sessao.email)} views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
     </div>
   )
 }

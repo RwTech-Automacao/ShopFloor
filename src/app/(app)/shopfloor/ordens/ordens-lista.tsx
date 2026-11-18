@@ -17,6 +17,7 @@ import { FluxoBotao } from './fluxo-botao'
 const TODOS = '__todos__'
 
 export function OrdensLista({
+  novaOpLiberada,
   views,
   chavesPostos,
   postosPerfil,
@@ -25,6 +26,8 @@ export function OrdensLista({
   clientesExistentes,
   dadosPorPmo,
 }: {
+  /** Tela Nova OP liberada para este usuário (NOVA_OP_LIBERADA_PARA); senão, o cadastro antigo (OrdemForm). */
+  novaOpLiberada: boolean
   views: OrdemView[]
   chavesPostos: string[]
   postosPerfil: Record<string, PerfilPosto>
@@ -54,9 +57,13 @@ export function OrdensLista({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex justify-end">
-        <Link href="/shopfloor/ordens/nova" className={buttonVariants({ className: 'bg-enterplak hover:bg-enterplak-700' })}>
-          <Plus className="size-4" /> Nova OP
-        </Link>
+        {novaOpLiberada ? (
+          <Link href="/shopfloor/ordens/nova" className={buttonVariants({ className: 'bg-enterplak hover:bg-enterplak-700' })}>
+            <Plus className="size-4" /> Nova OP
+          </Link>
+        ) : (
+          <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+        )}
       </div>
 
       {/* Filtros */}

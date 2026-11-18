@@ -5,11 +5,12 @@ import { SemPermissao } from '@/shared/ui/sem-permissao'
 import { listarOrdens, listarPostos } from '@/modules/shopfloor/infra/ordem-repository'
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarEspelho } from '@/modules/shopfloor/infra/espelho-ops-repository'
+import { novaOpLiberada } from '@/modules/shopfloor/application/liberacao-nova-op'
 import { NovaOpCliente } from './nova-op-cliente'
 
 export default async function NovaOpPage() {
   const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar') || !novaOpLiberada(sessao.email)) {
     return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
   }
   const [espelho, postos, postosPerfil, ordens] = await Promise.all([listarEspelho(), listarPostos(), mapaPostoPerfil(), listarOrdens()])
