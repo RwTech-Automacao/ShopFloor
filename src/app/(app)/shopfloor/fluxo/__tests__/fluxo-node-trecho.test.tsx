@@ -16,6 +16,7 @@ const trechos = vi.hoisted(() => ({
   lerTrechosCompelsAction: vi.fn(async (): Promise<ResumoTrecho[]> => [
     { posto: 'Inspeção PTH', codigo: 'PRT420', compelsOp: '8499', apontadas: 160, naFila: 26, motivo: 'Aguardando requisição no Compels: PRT410' },
   ]),
+  lerTrechosDaOpAction: vi.fn(async () => []),
 }))
 vi.mock('@/modules/shopfloor/application/estrutura-actions', () => trechos)
 

@@ -212,5 +212,9 @@ export function criarFonteVitrine(relogio: RelogioVitrine): FonteFluxo {
     async lerPendenteCompels() {
       return null // nada esperando o Compels: tudo que entrou no Almoxarifado já está no estoque
     },
+
+    async lerTrechosDaOp() {
+      return [] // a OP da vitrine não tem trechos
+    },
   }
 }

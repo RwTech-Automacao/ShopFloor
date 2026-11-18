@@ -1,5 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
+import type { TrechoDaOp } from '../domain/trechos-op'
 
 /** Trechos da OP (0184): leitura para a edição de OP e para o Fluxo. */
 
@@ -29,5 +30,23 @@ export async function resumoTrechosDaOp(pmo: string, op: string): Promise<Resumo
     apontadas: Number(l.apontadas ?? 0),
     naFila: Number(l.na_fila ?? 0),
     motivo: l.motivo,
+  }))
+}
+
+/** Os trechos da OP com os postos de cada um (seletor do Fluxo). OP sem trechos ou inexistente: vazio. */
+export async function listarTrechosDaOp(pmo: string, op: string): Promise<TrechoDaOp[]> {
+  const sb = await createServerSupabase()
+  const { data, error } = await sb.from('sf_ordens')
+    .select('sf_ordem_trechos(seq,codigo,tipo,compels_op),sf_ordem_postos(posto,ordem,trecho_seq)')
+    .eq('pmo', pmo).eq('op', op).maybeSingle()
+  if (error) throw new Error(`trechos da OP: ${error.message}`)
+  const d = data as {
+    sf_ordem_trechos?: { seq: number; codigo: string; tipo: 'prt' | 'pmo'; compels_op: string | null }[]
+    sf_ordem_postos?: { posto: string; ordem: number; trecho_seq: number | null }[]
+  } | null
+  const postos = [...(d?.sf_ordem_postos ?? [])].sort((a, b) => a.ordem - b.ordem)
+  return [...(d?.sf_ordem_trechos ?? [])].sort((a, b) => a.seq - b.seq).map((t) => ({
+    seq: t.seq, codigo: t.codigo, tipo: t.tipo, compelsOp: t.compels_op,
+    postos: postos.filter((p) => p.trecho_seq === t.seq).map((p) => p.posto),
   }))
 }
