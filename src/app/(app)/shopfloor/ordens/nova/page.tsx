@@ -17,7 +17,7 @@ export default async function NovaOpPage() {
   const chaves = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const clientes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-h-full flex-col gap-4">
       <div>
         <h2 className="text-lg font-semibold text-tinta">Nova OP</h2>
         <p className="text-sm text-muted-foreground">
