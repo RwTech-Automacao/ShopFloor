@@ -317,7 +317,11 @@ declare
   v_rep text;
 begin
   if not (select tem_permissao('shopfloor', 'administrar')) then raise exception 'sem permissão'; end if;
-  if jsonb_array_length(v_trechos) = 0 then raise exception 'SEM_TRECHO'; end if;
+  if jsonb_typeof(v_trechos) is distinct from 'array' then raise exception 'SEM_TRECHO';
+  elsif jsonb_array_length(v_trechos) = 0 then raise exception 'SEM_TRECHO'; end if;
+  if (select count(distinct (x->>'seq')::int) from jsonb_array_elements(v_trechos) x) <> jsonb_array_length(v_trechos) then
+    raise exception 'TRECHO_SEQ_REPETIDO';
+  end if;
   select max((x->>'seq')::int) into v_pmo_seq from jsonb_array_elements(v_trechos) x;
   if (select count(*) from jsonb_array_elements(v_trechos) x where x->>'tipo' = 'pmo') <> 1
      or (select x->>'tipo' from jsonb_array_elements(v_trechos) x where (x->>'seq')::int = v_pmo_seq limit 1) <> 'pmo' then
@@ -326,8 +330,8 @@ begin
   select btrim(x->>'codigo') into v_rep from jsonb_array_elements(v_trechos) x
    where jsonb_array_length(coalesce(x->'postos', '[]'::jsonb)) = 0 order by (x->>'seq')::int limit 1;
   if v_rep is not null then raise exception 'TRECHO_SEM_POSTO:%', v_rep; end if;
-  select pp into v_rep from jsonb_array_elements(v_trechos) x, jsonb_array_elements_text(x->'postos') pp
-   group by pp having count(*) > 1 order by pp limit 1;
+  select btrim(pp) into v_rep from jsonb_array_elements(v_trechos) x, jsonb_array_elements_text(x->'postos') pp
+   group by btrim(pp) having count(*) > 1 order by btrim(pp) limit 1;
   if v_rep is not null then raise exception 'POSTO_REPETIDO:%', v_rep; end if;
   select btrim(x->>'codigo') into v_rep from jsonb_array_elements(v_trechos) x
    where (x->>'tipo' = 'pmo' or x->>'sn_modo' = 'proprio') and jsonb_array_length(coalesce(x->'faixas', '[]'::jsonb)) = 0
@@ -386,8 +390,12 @@ declare
   v_pmo_seq int;
   v_antigos jsonb;
   v_vazio text;
+  v_rep text;
 begin
   if not (select tem_permissao('shopfloor', 'administrar')) then raise exception 'sem permissão'; end if;
+  select btrim(pp) into v_rep from unnest(coalesce(p_postos, '{}'::text[])) pp
+   group by btrim(pp) having count(*) > 1 order by btrim(pp) limit 1;
+  if v_rep is not null then raise exception 'POSTO_REPETIDO:%', v_rep; end if;
   select seq into v_pmo_seq from sf_ordem_trechos where ordem_id = p_ordem_id and tipo = 'pmo';
   select coalesce(jsonb_object_agg(posto, trecho_seq), '{}'::jsonb) into v_antigos
     from sf_ordem_postos where ordem_id = p_ordem_id;
@@ -415,9 +423,26 @@ returns void language plpgsql security definer set search_path = public as $func
 declare
   v_pmo_seq int;
   v_prt jsonb;
+  v_faixas jsonb := case when jsonb_typeof(p_faixas) = 'array' then p_faixas else '[]'::jsonb end;
+  v_rep text;
 begin
   if not (select tem_permissao('shopfloor', 'administrar')) then raise exception 'sem permissão'; end if;
   select seq into v_pmo_seq from sf_ordem_trechos where ordem_id = p_ordem_id and tipo = 'pmo';
+  -- OP com trechos: as faixas da PMO = as sem trecho_seq (ou com o da PMO); as de outro trecho não entram.
+  -- Sem nenhuma da PMO, ou PRT 'proprio' que ficaria sem faixa: recusa antes de apagar qualquer coisa.
+  if v_pmo_seq is not null then
+    select coalesce(jsonb_agg(f), '[]'::jsonb) into v_faixas from jsonb_array_elements(v_faixas) f
+     where coalesce((f->>'trecho_seq')::int, v_pmo_seq) = v_pmo_seq;
+    if jsonb_array_length(v_faixas) = 0 then
+      select codigo into v_rep from sf_ordem_trechos where ordem_id = p_ordem_id and seq = v_pmo_seq;
+      raise exception 'TRECHO_SEM_FAIXA:%', v_rep;
+    end if;
+    select ot.codigo into v_rep from sf_ordem_trechos ot
+     where ot.ordem_id = p_ordem_id and ot.tipo = 'prt' and ot.sn_modo = 'proprio'
+       and not exists (select 1 from sf_ordem_faixas f where f.ordem_id = ot.ordem_id and f.trecho_seq = ot.seq)
+     order by ot.seq limit 1;
+    if v_rep is not null then raise exception 'TRECHO_SEM_FAIXA:%', v_rep; end if;
+  end if;
   select coalesce(jsonb_agg(jsonb_build_object('sn_ini', f.sn_ini, 'sn_fim', f.sn_fim, 'trecho_seq', f.trecho_seq) order by f.seq), '[]'::jsonb)
     into v_prt
     from sf_ordem_faixas f
@@ -427,8 +452,7 @@ begin
   select p_ordem_id, row_number() over (order by z.grupo, z.ord), z.sn_ini, z.sn_fim, z.trecho_seq
     from (
       select 1 as grupo, a.ord, btrim(a.f->>'sn_ini') as sn_ini, btrim(a.f->>'sn_fim') as sn_fim, v_pmo_seq as trecho_seq
-        from jsonb_array_elements(case when jsonb_typeof(p_faixas) = 'array' then p_faixas else '[]'::jsonb end)
-             with ordinality a(f, ord)
+        from jsonb_array_elements(v_faixas) with ordinality a(f, ord)
       union all
       select 2, b.ord, b.f->>'sn_ini', b.f->>'sn_fim', (b.f->>'trecho_seq')::int
         from jsonb_array_elements(v_prt) with ordinality b(f, ord)

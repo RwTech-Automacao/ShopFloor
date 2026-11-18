@@ -210,4 +210,75 @@ begin
     if sqlerrm <> 'LISTA_VAZIA' then raise exception 'caso I falhou (null SQL: %)', sqlerrm; end if;
   end;
 end $$;
+-- J) revisão da Task 2: entradas inválidas com erro claro e regravar faixas sem perder as da PRT
+do $$
+declare v_id uuid; v text; antes text; n int;
+  base text := '{"ordem":{"pmo":"PMOJ","op":"9700","cliente":"C","qtd":5,"placas_por_painel":1},"trechos":%s}';
+  ent jsonb;
+begin
+  -- cadastro: trechos que não são lista -> SEM_TRECHO (nunca o erro do jsonb_array_length)
+  foreach ent in array array['{}'::jsonb, '"x"'::jsonb, 'null'::jsonb, '{"seq":1}'::jsonb] loop
+    begin
+      perform sf_cadastrar_op(jsonb_build_object('ordem', '{"pmo":"PMOJ","op":"9700","cliente":"C"}'::jsonb, 'trechos', ent));
+      raise exception 'caso J falhou (trechos % passou)', ent;
+    exception when others then
+      if sqlerrm <> 'SEM_TRECHO' then raise exception 'caso J falhou (trechos %: %)', ent, sqlerrm; end if;
+    end;
+  end loop;
+  -- cadastro: seq repetido entre trechos
+  begin
+    perform sf_cadastrar_op(format(base, '[{"seq":1,"codigo":"PRTJ","tipo":"prt","postos":["SPI"],"faixas":[]},{"seq":1,"codigo":"PMOJ","tipo":"pmo","postos":["Teste"],"faixas":[{"sn_ini":"1","sn_fim":"5"}]}]')::jsonb);
+    raise exception 'caso J falhou (seq repetido passou)';
+  exception when others then
+    if sqlerrm <> 'TRECHO_SEQ_REPETIDO' then raise exception 'caso J falhou (seq repetido: %)', sqlerrm; end if;
+  end;
+  -- cadastro: posto repetido com espaço em volta
+  begin
+    perform sf_cadastrar_op(format(base, '[{"seq":1,"codigo":"PRTJ","tipo":"prt","postos":["Teste "],"faixas":[]},{"seq":2,"codigo":"PMOJ","tipo":"pmo","postos":["Teste","Almoxarifado"],"faixas":[{"sn_ini":"1","sn_fim":"5"}]}]')::jsonb);
+    raise exception 'caso J falhou (posto repetido com espaço passou)';
+  exception when others then
+    if sqlerrm <> 'POSTO_REPETIDO:Teste' then raise exception 'caso J falhou (posto repetido com espaço: %)', sqlerrm; end if;
+  end;
+  if exists (select 1 from sf_ordens o where o.pmo = 'PMOJ') then raise exception 'caso J falhou (recusa gravou OP)'; end if;
+
+  v_id := sf_cadastrar_op(format(base, '[{"seq":1,"codigo":"PRTJ","tipo":"prt","sn_modo":"proprio","postos":["SPI"],"faixas":[{"sn_ini":"J1","sn_fim":"J9"}]},{"seq":2,"codigo":"PMOJ","tipo":"pmo","postos":["Teste","Almoxarifado"],"faixas":[{"sn_ini":"1","sn_fim":"5"}]}]')::jsonb);
+  select string_agg(posto || ':' || ordem || ':' || trecho_seq, ',' order by ordem) into antes from sf_ordem_postos where ordem_id = v_id;
+  -- regravar postos: posto repetido (também com espaço) recusado antes de mexer
+  foreach v in array array['Teste', ' Teste'] loop
+    begin
+      perform sf_ordem_regravar_postos(v_id, array['SPI', 'Teste', v, 'Almoxarifado']);
+      raise exception 'caso J falhou (regravar posto repetido "%" passou)', v;
+    exception when others then
+      if sqlerrm <> 'POSTO_REPETIDO:Teste' then raise exception 'caso J falhou (regravar posto repetido "%": %)', v, sqlerrm; end if;
+    end;
+  end loop;
+  select string_agg(posto || ':' || ordem || ':' || trecho_seq, ',' order by ordem) into v from sf_ordem_postos where ordem_id = v_id;
+  if v is distinct from antes then raise exception 'caso J falhou (recusa de postos mexeu: %)', v; end if;
+
+  -- regravar faixas: [] ou só faixas da PRT -> recusado, nada muda (antes: as da PMO sumiam)
+  select string_agg(seq || ':' || sn_ini || '-' || sn_fim || ':' || trecho_seq, ',' order by seq) into antes from sf_ordem_faixas where ordem_id = v_id;
+  if antes <> '1:1-5:2,2:J1-J9:1' then raise exception 'caso J falhou (faixas iniciais: %)', antes; end if;
+  foreach ent in array array['[]'::jsonb, '[{"sn_ini":"J1","sn_fim":"J9","trecho_seq":1}]'::jsonb, '{}'::jsonb, 'null'::jsonb] loop
+    begin
+      perform sf_ordem_regravar_faixas(v_id, ent);
+      raise exception 'caso J falhou (faixas % passou)', ent;
+    exception when others then
+      if sqlerrm <> 'TRECHO_SEM_FAIXA:PMOJ' then raise exception 'caso J falhou (faixas %: %)', ent, sqlerrm; end if;
+    end;
+    select string_agg(seq || ':' || sn_ini || '-' || sn_fim || ':' || trecho_seq, ',' order by seq) into v from sf_ordem_faixas where ordem_id = v_id;
+    if v is distinct from antes then raise exception 'caso J falhou (recusa de faixas % mexeu: %)', ent, v; end if;
+  end loop;
+  -- PRT 'proprio' que ficaria sem faixa -> recusado, nada muda
+  delete from sf_ordem_faixas where ordem_id = v_id and trecho_seq = 1;
+  begin
+    perform sf_ordem_regravar_faixas(v_id, '[{"sn_ini":"10","sn_fim":"20"}]'::jsonb);
+    raise exception 'caso J falhou (PRT própria sem faixa passou)';
+  exception when others then
+    if sqlerrm <> 'TRECHO_SEM_FAIXA:PRTJ' then raise exception 'caso J falhou (PRT própria sem faixa: %)', sqlerrm; end if;
+  end;
+  select string_agg(seq || ':' || sn_ini || '-' || sn_fim || ':' || trecho_seq, ',' order by seq) into v from sf_ordem_faixas where ordem_id = v_id;
+  if v is distinct from '1:1-5:2' then raise exception 'caso J falhou (recusa da PRT mexeu: %)', v; end if;
+  select count(*) into n from sf_ordem_faixas where ordem_id = v_id;
+  if n <> 1 then raise exception 'caso J falhou (contagem: %)', n; end if;
+end $$;
 \echo 'PROVA CADASTRO OK'
