@@ -455,7 +455,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
       </Passo>
 
       {/* Barra fixa: resumo da rota e as ações */}
-      <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-card px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <div className="sticky -bottom-4 z-10 -mx-4 -mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-card px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6 lg:-bottom-8 lg:-mx-8 lg:-mb-8 lg:px-8">
         <p className="min-w-0 flex-1 text-sm text-muted-foreground" data-testid="resumo-rota">
           {trechos.length > 0
             ? <><span className="font-medium text-foreground">{plural(trechos.length, 'trecho', 'trechos')}</span>{` · ${plural(totalPostos, 'posto', 'postos')}`}</>
