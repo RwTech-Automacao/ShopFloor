@@ -127,7 +127,7 @@ export function criarPortaCompels(deps: DependenciasPortaCompels = {}): PortaCom
       } catch (e) {
         return { ok: false, aguardar: true, erro: `Não foi possível conferir a OP filha da PRT ${envio.pmo}: ${e instanceof Error ? e.message : String(e)}` }
       }
-      // O adaptador não procura a filha no Compels: quem procura é o salvamento da OP (aplicarEstruturaNaOp).
+      // O adaptador não procura a filha no Compels: ela é o compels_op do trecho, gravado no cadastro da OP (Nova OP).
       if (!filha) {
         return {
           ok: false, aguardar: true, esperado: true,

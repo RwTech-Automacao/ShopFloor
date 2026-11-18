@@ -1,6 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { faixasDaPmoDoBanco, type FaixaSN } from '@/modules/shopfloor/domain/faixas-sn'
+import { faixasDaPmoDoBanco, faixasDasPrtsDoBanco, type FaixaSN } from '@/modules/shopfloor/domain/faixas-sn'
 
 export interface PostoRow {
   chave: string
@@ -246,6 +246,8 @@ export interface OrdemBase {
   sn_fim?: string
   /** Faixas de SN gravadas (0181), na ordem. */
   faixas?: FaixaSN[]
+  /** Faixas próprias das PRTs (OP com trechos, 0184); só para o aviso de SNs fora das faixas. */
+  faixasPrt?: FaixaSN[]
 }
 
 /**
@@ -273,6 +275,7 @@ export async function buscarOrdemBase(id: string): Promise<OrdemBase | null> {
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
     faixas: faixasDaPmoDoBanco(r.sf_ordem_faixas, r.sf_ordem_trechos),
+    faixasPrt: faixasDasPrtsDoBanco(r.sf_ordem_faixas, r.sf_ordem_trechos),
   }
 }
 

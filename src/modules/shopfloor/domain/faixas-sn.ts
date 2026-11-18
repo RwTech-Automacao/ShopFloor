@@ -49,6 +49,21 @@ export function faixasDaPmoDoBanco(
   return faixasDoBanco((rows ?? []).filter((r) => r.trecho_seq == null || r.trecho_seq === pmoSeq))
 }
 
+/**
+ * As faixas próprias das PRTs (0184): as de trechos 'prt' (série própria), na ordem dos trechos. Entram no aviso de
+ * SNs fora das faixas da edição, senão os SNs das PRTs contariam como "fora" das faixas da PMO.
+ */
+export function faixasDasPrtsDoBanco(
+  rows: { seq: number; sn_ini: string; sn_fim: string; trecho_seq?: number | null }[] | null | undefined,
+  trechos: { seq: number; tipo: string }[] | null | undefined,
+): FaixaSN[] {
+  const prts = new Set((trechos ?? []).filter((t) => t.tipo === 'prt').map((t) => t.seq))
+  return [...(rows ?? [])]
+    .filter((r) => r.trecho_seq != null && prts.has(r.trecho_seq))
+    .sort((a, b) => a.trecho_seq! - b.trecho_seq! || a.seq - b.seq)
+    .map((r) => ({ sn_ini: r.sn_ini, sn_fim: r.sn_fim }))
+}
+
 /** O SN cai em alguma faixa da OP? OP sem faixa → false. */
 export function serieNasFaixas(o: ComFaixas, serie: string): boolean {
   return faixasDe(o).some((f) => serieDentroDaFaixa(f.sn_ini, f.sn_fim, serie))

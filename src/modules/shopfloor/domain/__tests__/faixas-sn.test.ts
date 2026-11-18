@@ -138,3 +138,20 @@ describe('faixasDaPmoDoBanco', () => {
     expect(faixasDaPmoDoBanco([{ seq: 1, sn_ini: '1', sn_fim: '5', trecho_seq: null }], [])).toEqual([{ sn_ini: '1', sn_fim: '5' }])
   })
 })
+
+describe('faixasDasPrtsDoBanco', () => {
+  it('só as faixas dos trechos PRT (série própria), na ordem', async () => {
+    const { faixasDasPrtsDoBanco } = await import('../faixas-sn')
+    const rows = [
+      { seq: 2, sn_ini: 'A6', sn_fim: 'A9', trecho_seq: 1 },
+      { seq: 1, sn_ini: 'A1', sn_fim: 'A5', trecho_seq: 1 },
+      { seq: 1, sn_ini: '1', sn_fim: '5', trecho_seq: 2 },
+      { seq: 3, sn_ini: 'X1', sn_fim: 'X2', trecho_seq: null },
+    ]
+    expect(faixasDasPrtsDoBanco(rows, [{ seq: 1, tipo: 'prt' }, { seq: 2, tipo: 'pmo' }])).toEqual([
+      { sn_ini: 'A1', sn_fim: 'A5' }, { sn_ini: 'A6', sn_fim: 'A9' },
+    ])
+    expect(faixasDasPrtsDoBanco(rows, [])).toEqual([])
+    expect(faixasDasPrtsDoBanco(null, null)).toEqual([])
+  })
+})

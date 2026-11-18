@@ -7,6 +7,7 @@ import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { ehReativacaoManual, finalizadaPorDoCadastro } from '../domain/finalizacao'
 import { validarOrdem } from '../domain/validar-ordem'
 import { mensagemOpDuplicada } from '../domain/op-unica'
+import { mensagemErroDeTrecho } from '../domain/erros-trecho'
 import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-posto'
 import { postoAlmoxarifadoPadrao, rotaDaEdicao, rotaPadraoOpNova } from '../domain/rota-op-nova'
@@ -234,7 +235,8 @@ export async function editarOrdemAction(
     if (trocouOp || !faixasIguais(faixasGravadas, faixas)) {
       let fora: number
       try {
-        fora = await contarSnsForaDasFaixas(base.pmo, base.op, trocouOp ? null : faixas)
+        // As faixas próprias das PRTs entram na conta: os SNs delas são da OP, não estão "fora".
+        fora = await contarSnsForaDasFaixas(base.pmo, base.op, trocouOp ? null : [...faixas, ...(base.faixasPrt ?? [])])
       } catch {
         return { ok: false, erro: 'Não foi possível salvar a OP.' }
       }
@@ -246,11 +248,8 @@ export async function editarOrdemAction(
     await atualizarOrdem(id, dados, postos, receita, burnin.rows, faixas)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
-    const msg = String((e as { message?: unknown } | null)?.message ?? '')
-    const semPosto = /^TRECHO_SEM_POSTO:(.+)$/.exec(msg)
-    if (semPosto) return { ok: false, erro: `O trecho ${semPosto[1]} ficaria sem posto.` }
-    const semFaixa = /^TRECHO_SEM_FAIXA:(.+)$/.exec(msg)
-    if (semFaixa) return { ok: false, erro: `O trecho ${semFaixa[1]} ficaria sem faixa de SN.` }
+    const doTrecho = mensagemErroDeTrecho(e)
+    if (doTrecho) return { ok: false, erro: doTrecho }
     return { ok: false, erro: 'Não foi possível salvar a OP.' }
   }
 

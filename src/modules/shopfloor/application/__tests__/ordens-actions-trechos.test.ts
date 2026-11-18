@@ -3,11 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 
-type Base = { pmo: string; op: string; status: string; placas_por_painel: number; sn_ini: string; sn_fim: string; faixas: { sn_ini: string; sn_fim: string }[] }
+type Base = { pmo: string; op: string; status: string; placas_por_painel: number; sn_ini: string; sn_fim: string; faixas: { sn_ini: string; sn_fim: string }[]; faixasPrt?: { sn_ini: string; sn_fim: string }[] }
 const m = vi.hoisted(() => ({
   atualizarOrdem: vi.fn<(...a: unknown[]) => Promise<undefined>>(async () => undefined),
   buscarOrdemBase: vi.fn<(id: string) => Promise<Base | null>>(async () => null),
   ordemTemTrechos: vi.fn<(id: string) => Promise<boolean>>(async () => true),
+  contarSnsForaDasFaixas: vi.fn<(pmo: string, op: string, f: unknown) => Promise<number>>(async () => 0),
 }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ perfil: {} })) }))
@@ -23,7 +24,7 @@ vi.mock('../../infra/ordem-repository', () => ({
   buscarOpEmUso: vi.fn(async () => null),
   listarPostos: vi.fn(async () => []),
   listarRotaGravada: vi.fn(async () => []),
-  contarSnsForaDasFaixas: vi.fn(async () => 0),
+  contarSnsForaDasFaixas: m.contarSnsForaDasFaixas,
 }))
 vi.mock('../../infra/estrutura-repository', () => ({ ordemTemTrechos: m.ordemTemTrechos }))
 
@@ -70,6 +71,16 @@ describe('edição de OP com trechos', () => {
   it('trecho que ficaria sem faixa vira mensagem', async () => {
     m.atualizarOrdem.mockRejectedValueOnce({ message: 'TRECHO_SEM_FAIXA:PRT410' })
     expect(await editarOrdemAction(undefined, formulario('PMOC14', '8498'))).toEqual({ ok: false, erro: 'O trecho PRT410 ficaria sem faixa de SN.' })
+  })
+  it('posto repetido entre trechos vira mensagem', async () => {
+    m.atualizarOrdem.mockRejectedValueOnce({ message: 'POSTO_REPETIDO:Teste' })
+    expect(await editarOrdemAction(undefined, formulario('PMOC14', '8498'))).toEqual({ ok: false, erro: 'O posto "Teste" está em mais de um trecho.' })
+  })
+  it('o aviso de SNs fora das faixas conta também as faixas próprias das PRTs', async () => {
+    m.buscarOrdemBase.mockResolvedValue({ ...BASE, faixasPrt: [{ sn_ini: 'A1', sn_fim: 'A5' }] })
+    const fd = formulario('PMOC14', '8498'); fd.set('sn_ini', 'SN0011'); fd.set('sn_fim', 'SN0020')
+    await editarOrdemAction(undefined, fd)
+    expect(m.contarSnsForaDasFaixas).toHaveBeenCalledWith('PMOC14', '8498', [{ sn_ini: 'SN0011', sn_fim: 'SN0020' }, { sn_ini: 'A1', sn_fim: 'A5' }])
   })
   it('erro ao ler os trechos trava a edição', async () => {
     m.ordemTemTrechos.mockRejectedValue(new Error('x'))
