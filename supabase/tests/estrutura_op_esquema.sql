@@ -103,3 +103,46 @@ end
 $func$;
 insert into public.sf_postos (chave, ordem) values
   ('Inspeção AOI TOP', 1), ('Inspeção PTH', 2), ('Teste', 3), ('Almoxarifado', 4);
+-- ---------- cadastro de OP (18/11): o resto da OP que a 0184 agora toca ----------
+alter table public.sf_ordens
+  add column cliente text not null default '', add column qtd int, add column descricao text not null default '',
+  add column acp text not null default '', add column status text not null default '',
+  add column sn_ini text not null default '', add column sn_fim text not null default '',
+  add column embalagem_individual boolean not null default false, add column finalizada_por text,
+  add column integrar_compels boolean not null default true, add column created_at timestamptz not null default now();
+create table public.sf_ordem_postos (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  posto text not null references public.sf_postos(chave), ordem int not null default 0,
+  primary key (ordem_id, posto));
+create table public.sf_ordem_componentes (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  posto text not null, pmo_componente text not null, primary key (ordem_id, posto, pmo_componente));
+create table public.sf_ordem_burnin (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  posto text not null, tempo_min int not null default 0, primary key (ordem_id, posto));
+create table public.sf_ordem_faixas (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  seq int not null check (seq >= 1), sn_ini text not null, sn_fim text not null, primary key (ordem_id, seq));
+-- 0181 (cópia): sn_ini/sn_fim da OP -> faixa seq 1
+create or replace function public.sf_ordens_faixa_principal() returns trigger language plpgsql security definer
+set search_path = public as $f$
+begin
+  if btrim(coalesce(new.sn_ini, '')) = '' or btrim(coalesce(new.sn_fim, '')) = '' then
+    delete from sf_ordem_faixas where ordem_id = new.id;
+  else
+    insert into sf_ordem_faixas (ordem_id, seq, sn_ini, sn_fim) values (new.id, 1, new.sn_ini, new.sn_fim)
+    on conflict (ordem_id, seq) do update set sn_ini = excluded.sn_ini, sn_fim = excluded.sn_fim;
+  end if;
+  return null;
+end $f$;
+create trigger sf_ordens_faixa_principal_ins after insert on public.sf_ordens
+  for each row execute function public.sf_ordens_faixa_principal();
+create trigger sf_ordens_faixa_principal_upd after update of sn_ini, sn_fim on public.sf_ordens
+  for each row when (old.sn_ini is distinct from new.sn_ini or old.sn_fim is distinct from new.sn_fim)
+  execute function public.sf_ordens_faixa_principal();
+insert into public.sf_postos (chave, ordem) values ('SPI', 0), ('Montagem PTH', 5), ('Embalagem', 6), ('NQA', 7);
+-- OP ANTIGA (existe antes da 0184): tem que sair intacta
+insert into public.sf_ordens (id, pmo, op, cliente, sn_ini, sn_fim)
+  values ('00000000-0000-0000-0000-000000007100', 'PMOANT', '7100', 'C', '100', '199');
+insert into public.sf_ordem_postos (ordem_id, posto, ordem) values
+  ('00000000-0000-0000-0000-000000007100', 'Teste', 0), ('00000000-0000-0000-0000-000000007100', 'Almoxarifado', 1);

@@ -1,4 +1,4 @@
--- Rollback da 0184 (estrutura da OP). Roda numa transação (psql -1).
+-- Rollback da 0184 (estrutura da OP + espelho do Compels + cadastro). Roda numa transação (psql -1).
 --
 -- ⚠️ ANTES DE TIRAR A COLUNA ordem_id: as entradas de PRT pendentes e intocadas são canceladas (as demais pendentes só são listadas, para conferência manual no Compels). Sem o ordem_id, uma linha
 -- de PRT (pmo = código da PRT, op = OP filha) fica igual a uma linha da PMO, e o adaptador do Compels a
@@ -32,6 +32,14 @@ drop function if exists public.sf_resumo_trechos_op(text, text);
 drop index if exists public.sf_estoque_envios_ordem;
 drop index if exists public.sf_estoque_envios_ordem_alvo;
 alter table public.sf_estoque_envios drop column if exists ordem_id;
+drop function if exists public.sf_cadastrar_op(jsonb);
+drop function if exists public.sf_ordem_regravar_postos(uuid, text[]);
+drop function if exists public.sf_ordem_regravar_faixas(uuid, jsonb);
+drop function if exists public.sf_ultima_op_da_pmo(text);
+drop function if exists public.sf_compels_ops_sincronizar(jsonb);
+drop table if exists public.sf_compels_ops;
+alter table public.sf_ordem_postos drop column if exists trecho_seq;
+alter table public.sf_ordem_faixas drop column if exists trecho_seq;
 drop table if exists public.sf_ordem_trechos;
 drop table if exists public.sf_estrutura_trechos;
 drop table if exists public.sf_estruturas;
