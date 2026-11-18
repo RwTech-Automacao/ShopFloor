@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { corrigirNfAction, trocarNfAction } from '@/modules/sat/application/actions'
-import type { SituacaoNf } from '@/modules/sat/domain/entrada'
+import { motivosDaNota, motivosQueExigemTexto, validarMotivos, type SituacaoNf } from '@/modules/sat/domain/entrada'
 import type { MotivoNf } from '@/modules/sat/infra/repository'
 import { SituacaoNfCampos } from '../../situacao-nf'
 import { AvisoEmpresa, useEmpresaPeloCnpj } from '../../empresa-pelo-cnpj'
@@ -42,25 +42,29 @@ export function MudarNf({
   const [valor, setValor] = useState('')
   const [situacao, setSituacao] = useState<SituacaoNf>('aprovada')
   const [escolhidos, setEscolhidos] = useState<string[]>([])
+  const [outro, setOutro] = useState('')
   const [pendente, iniciar] = useTransition()
 
   const abrir = (m: 'corrigir' | 'trocar') => {
     setModo(m); setNumero(''); setValor(''); emp.limpar()
-    if (m === 'corrigir') {
-      setSituacao(situacaoAtual)
-      setEscolhidos(situacaoAtual === 'reprovada' ? motivos.filter((x) => motivosAtuais.includes(x.texto)).map((x) => x.id) : [])
+    if (m === 'corrigir' && situacaoAtual === 'reprovada') {
+      // a nota guarda os textos ("Outro: xyz"): volta para os ids marcados e o texto do "Outro"
+      const atuais = motivosDaNota(motivosAtuais, motivos)
+      setSituacao(situacaoAtual); setEscolhidos(atuais.ids); setOutro(atuais.motivoOutro)
     } else {
-      setSituacao('aprovada'); setEscolhidos([])
+      setSituacao(m === 'corrigir' ? situacaoAtual : 'aprovada'); setEscolhidos([]); setOutro('')
     }
   }
 
   const confirmar = () => iniciar(async () => {
+    const mot = validarMotivos(situacao, escolhidos, outro, motivosQueExigemTexto(motivos))
+    if (!mot.ok) { toast.error(mot.erro); return }
     const r = modo === 'trocar'
       ? await trocarNfAction(nfId, {
           numero, cnpj: emp.cnpj, empresa: emp.empresa, negocianteCodigo: emp.negocianteCodigo, valor, situacao,
-          motivos: escolhidos,
+          motivos: escolhidos, motivoOutro: mot.motivoOutro,
         })
-      : await corrigirNfAction(nfId, situacao, escolhidos)
+      : await corrigirNfAction(nfId, situacao, escolhidos, mot.motivoOutro)
     if (!r.ok) { toast.error(r.erro); return }
     toast.success(modo === 'trocar' ? 'NF trocada.' : 'NF corrigida.')
     setModo(null)
@@ -94,8 +98,8 @@ export function MudarNf({
             </>
           )}
           <SituacaoNfCampos
-            nome="situacao-mudanca" situacao={situacao} motivos={escolhidos} opcoes={motivos}
-            onSituacao={setSituacao} onMotivos={setEscolhidos}
+            nome="situacao-mudanca" situacao={situacao} motivos={escolhidos} outro={outro} opcoes={motivos}
+            onSituacao={setSituacao} onMotivos={setEscolhidos} onOutro={setOutro}
           />
           <p className="text-xs text-muted-foreground">
             Vale para todos os relógios desta nota ({relogios === 1 ? '1 relógio' : `${relogios} relógios`}).

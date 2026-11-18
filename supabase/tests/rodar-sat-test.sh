@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes SQL do SAT (migrações 0186 e 0187) num Postgres descartável (Docker).
+# Testes SQL do SAT (migrações 0186, 0187 e 0190) num Postgres descartável (Docker).
 # Uso: supabase/tests/rodar-sat-test.sh
 #
 # A 0186 é aplicada de dentro do próprio sat_test.sql (que primeiro cria os stubs de role/RBAC e das tabelas do
@@ -15,8 +15,10 @@ for _ in $(seq 1 30); do docker exec "$NOME" pg_isready -U postgres >/dev/null 2
 
 docker cp supabase/migrations/0186_sat_entrada.sql "$NOME":/tmp/0186.sql
 docker cp supabase/migrations/0187_sat_entrada_por_nf.sql "$NOME":/tmp/0187.sql
+docker cp supabase/migrations/0190_sat_motivos_reprovacao.sql "$NOME":/tmp/0190.sql
 docker cp supabase/tests/sat_test.sql "$NOME":/tmp/teste.sql
 docker cp supabase/tests/sat_nf_test.sql "$NOME":/tmp/teste_nf.sql
+docker cp supabase/tests/sat_motivos_test.sql "$NOME":/tmp/teste_motivos.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste.sql
 
 sessao() { docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -qtA; }
@@ -51,6 +53,24 @@ else
   exit 1
 fi
 
+# ---------- 0190 (motivos de reprovação): a lista fixa e o "Outro" com texto ----------
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_motivos.sql
+CONTAGEM_MOT="select (select count(*) from sat_motivos_nf) || '/' ||
+  (select string_agg(texto || ':' || coalesce(ordem::text, '-') || ':' || ativo || ':' || exige_texto, '|' order by texto)
+     from sat_motivos_nf) || '/' || (select count(*) from sat_nfs) || '/' || (select count(*) from sat_historico) || '/' ||
+  (select md5(string_agg(p.oid::regprocedure::text || md5(p.prosrc), ',' order by p.oid::regprocedure::text))
+     from pg_proc p where p.proname like 'sat\_%');"
+ANTES=$(sessao <<<"$CONTAGEM_MOT")
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0190.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0190.sql
+DEPOIS=$(sessao <<<"$CONTAGEM_MOT")
+if [ "$ANTES" = "$DEPOIS" ]; then
+  echo "idempotência da 0190 (motivos, notas, histórico e funções intactos): ok"
+else
+  echo "idempotência da 0190 FALHOU (antes=$ANTES depois=$DEPOIS)"
+  exit 1
+fi
+
 # ---------- As 6 policies usam o InitPlan: (select tem_permissao(...)), nunca a chamada por linha ----------
 POLS=$(sessao <<'SQL'
 select count(*) from pg_policies
@@ -78,6 +98,12 @@ docker exec "$NOME" psql -U postgres -d limpo -v ON_ERROR_STOP=1 -q \
   -c "create function public.tem_permissao(p_modulo text, p_perm text) returns boolean language sql stable as \$f\$ select false \$f\$"
 docker exec "$NOME" psql -U postgres -d limpo -1 -v ON_ERROR_STOP=1 -q -f /tmp/0186.sql
 docker exec "$NOME" psql -U postgres -d limpo -1 -v ON_ERROR_STOP=1 -q -f /tmp/0187.sql
-echo "0186 e 0187 do zero, cada uma em transação única: ok"
+docker exec "$NOME" psql -U postgres -d limpo -1 -v ON_ERROR_STOP=1 -q -f /tmp/0190.sql
+LISTA=$(docker exec "$NOME" psql -U postgres -d limpo -qtA -c "select string_agg(texto, '|' order by ordem) from sat_motivos_nf where ativo")
+if [ "$LISTA" != "Sem nota fiscal (só declaração dos Correios)|CFOP errado|Natureza de operação errada|Descrição errada|CNPJ da RW errado na nota|Outro" ]; then
+  echo "0190 do zero: lista errada ($LISTA)"
+  exit 1
+fi
+echo "0186, 0187 e 0190 do zero, cada uma em transação única: ok"
 
 echo "SAT OK"

@@ -20,6 +20,10 @@ export const MAX_RELOGIOS = 200
 
 const SITUACOES: SituacaoNf[] = ['aprovada', 'reprovada']
 const MOTIVO_OBRIGATORIO = 'NF reprovada: escolha ao menos um motivo.'
+/** O motivo "Outro" (o que exige texto) marcado sem o texto — mesma mensagem do OUTRO_SEM_TEXTO do banco. */
+export const OUTRO_SEM_TEXTO = 'Descreva o outro motivo.'
+/** Mesmo limite de `sat__motivos` (OUTRO_TEXTO_LONGO). */
+export const MAX_MOTIVO_OUTRO = 200
 const CNPJ_INVALIDO = 'Informe o CNPJ da nota (14 dígitos) ou o CPF (11).'
 const VALOR_INVALIDO = 'Valor da nota inválido.'
 
@@ -43,6 +47,8 @@ export interface NotaInput {
   situacao: SituacaoNf
   /** ids de `sat_motivos_nf`. */
   motivos: string[]
+  /** O texto do motivo "Outro" (o que exige texto); vai para a nota como `Outro: <texto>`. */
+  motivoOutro: string
   relogios: RelogioInput[]
 }
 
@@ -69,11 +75,56 @@ export function lerValor(texto: string): number | null {
 
 const valorOk = (n: number | null) => n === null || (Number.isFinite(n) && n >= 0 && n < 1e11)
 
-function motivosDaSituacao(situacao: SituacaoNf, motivos: string[]): { ok: true; motivos: string[] } | { ok: false; erro: string } {
+/** O texto do "Outro" como o banco grava: aparado e com os espaços (e quebras de linha) juntados num só. */
+export const limparMotivoOutro = (t: string) => (t ?? '').trim().replace(/\s+/g, ' ')
+
+/**
+ * Os motivos da situação e o texto do "Outro". `exigemTexto` = ids dos motivos que pedem texto (o "Outro"); quando a
+ * lista é conhecida (a tela), o texto é obrigatório se um deles está marcado e é descartado se nenhum está. Sem a
+ * lista (as ações no servidor), só limpa e confere o tamanho — o banco decide o resto (OUTRO_SEM_TEXTO).
+ */
+export function validarMotivos(
+  situacao: SituacaoNf, motivos: string[], motivoOutro: string, exigemTexto?: ReadonlySet<string>,
+): { ok: true; motivos: string[]; motivoOutro: string } | { ok: false; erro: string } {
   if (!SITUACOES.includes(situacao)) return { ok: false, erro: 'Situação da NF inválida.' }
-  if (situacao === 'aprovada') return { ok: true, motivos: [] }
+  if (situacao === 'aprovada') return { ok: true, motivos: [], motivoOutro: '' }
   const unicos = [...new Set((motivos ?? []).filter((m) => typeof m === 'string' && m !== ''))]
-  return unicos.length === 0 ? { ok: false, erro: MOTIVO_OBRIGATORIO } : { ok: true, motivos: unicos }
+  if (unicos.length === 0) return { ok: false, erro: MOTIVO_OBRIGATORIO }
+  let outro = limparMotivoOutro(motivoOutro)
+  if (exigemTexto) {
+    const marcado = unicos.some((m) => exigemTexto.has(m))
+    if (!marcado) outro = ''
+    else if (outro === '') return { ok: false, erro: OUTRO_SEM_TEXTO }
+  }
+  if (outro.length > MAX_MOTIVO_OUTRO) {
+    return { ok: false, erro: `O outro motivo passa de ${MAX_MOTIVO_OUTRO} caracteres.` }
+  }
+  return { ok: true, motivos: unicos, motivoOutro: outro }
+}
+
+/** Os ids dos motivos que pedem texto (o "Outro"), para `validarMotivos`. */
+export const motivosQueExigemTexto = (opcoes: { id: string; exigeTexto: boolean }[]): Set<string> =>
+  new Set(opcoes.filter((m) => m.exigeTexto).map((m) => m.id))
+
+/**
+ * O caminho de volta, para abrir o "Corrigir NF": a nota guarda os TEXTOS ("CFOP errado", "Outro: xyz"); devolve os
+ * ids marcados e o texto do "Outro".
+ */
+export function motivosDaNota(
+  textos: string[], opcoes: { id: string; texto: string; exigeTexto: boolean }[],
+): { ids: string[]; motivoOutro: string } {
+  const ids: string[] = []
+  let motivoOutro = ''
+  for (const m of opcoes) {
+    if (m.exigeTexto) {
+      const prefixo = `${m.texto}: `
+      const achado = textos.find((t) => t.startsWith(prefixo))
+      if (achado !== undefined) { ids.push(m.id); motivoOutro = achado.slice(prefixo.length) }
+    } else if (textos.includes(m.texto)) {
+      ids.push(m.id)
+    }
+  }
+  return { ids, motivoOutro }
 }
 
 /** O mesmo relógio na nota: mesmo modelo + sequência; sem sequência legível, o mesmo texto (como `sat_registrar_nf`). */
@@ -97,14 +148,14 @@ function validarRelogio(r: RelogioInput): { ok: true; valor: RelogioValido } | {
   }
 }
 
-export function validarNota(i: NotaInput): { ok: true; valor: NotaValida } | { ok: false; erro: string } {
+export function validarNota(i: NotaInput, exigemTexto?: ReadonlySet<string>): { ok: true; valor: NotaValida } | { ok: false; erro: string } {
   const cnpj = formatarCnpj(i.cnpj)
   if (cnpj === null) return { ok: false, erro: CNPJ_INVALIDO }
   const numero = (i.numero ?? '').trim()
   if (numero === '') return { ok: false, erro: 'Informe o número da NF.' }
   const valor = lerValor(i.valor)
   if (!valorOk(valor)) return { ok: false, erro: VALOR_INVALIDO }
-  const m = motivosDaSituacao(i.situacao, i.motivos)
+  const m = validarMotivos(i.situacao, i.motivos, i.motivoOutro, exigemTexto)
   if (!m.ok) return m
   const relogios = i.relogios ?? []
   if (relogios.length === 0) return { ok: false, erro: 'Bipe ao menos um relógio.' }
@@ -125,30 +176,30 @@ export function validarNota(i: NotaInput): { ok: true; valor: NotaValida } | { o
     ok: true,
     valor: {
       cnpj, empresa: (i.empresa ?? '').trim(), negocianteCodigo: (i.negocianteCodigo ?? '').trim() || null, numero,
-      valor, situacao: i.situacao, motivos: m.motivos, relogios: validos,
+      valor, situacao: i.situacao, motivos: m.motivos, motivoOutro: m.motivoOutro, relogios: validos,
     },
   }
 }
 
 /** Corrigir (mesma nota, outra situação) ou trocar (nota nova) a NF depois da entrada — vale para todos os relógios dela. */
 export type MudancaNf =
-  | { tipo: 'corrigir'; situacao: SituacaoNf; motivos: string[] }
+  | { tipo: 'corrigir'; situacao: SituacaoNf; motivos: string[]; motivoOutro: string }
   | {
       tipo: 'troca'; numero: string; cnpj: string; empresa: string; negocianteCodigo: string | null; valor: string
-      situacao: SituacaoNf; motivos: string[]
+      situacao: SituacaoNf; motivos: string[]; motivoOutro: string
     }
 
 export function validarMudancaNf(
-  m: MudancaNf,
-): { ok: true; motivos: string[]; cnpj?: string; valor?: number | null } | { ok: false; erro: string } {
-  if (m.tipo === 'corrigir') return motivosDaSituacao(m.situacao, m.motivos)
+  m: MudancaNf, exigemTexto?: ReadonlySet<string>,
+): { ok: true; motivos: string[]; motivoOutro: string; cnpj?: string; valor?: number | null } | { ok: false; erro: string } {
+  if (m.tipo === 'corrigir') return validarMotivos(m.situacao, m.motivos, m.motivoOutro, exigemTexto)
   const cnpj = formatarCnpj(m.cnpj)
   if (cnpj === null) return { ok: false, erro: CNPJ_INVALIDO }
   if ((m.numero ?? '').trim() === '') return { ok: false, erro: 'Informe o número da NF nova.' }
   const valor = lerValor(m.valor)
   if (!valorOk(valor)) return { ok: false, erro: VALOR_INVALIDO }
-  const r = motivosDaSituacao(m.situacao, m.motivos)
-  return r.ok ? { ok: true, motivos: r.motivos, cnpj, valor } : r
+  const r = validarMotivos(m.situacao, m.motivos, m.motivoOutro, exigemTexto)
+  return r.ok ? { ok: true, motivos: r.motivos, motivoOutro: r.motivoOutro, cnpj, valor } : r
 }
 
 interface OsOrdenavel {

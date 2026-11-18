@@ -35,7 +35,7 @@ const MOTIVO = '00000000-0000-0000-0000-0000000000aa'
 const relogio = { ns: '562-19178', produto: '', itensJunto: [], itensJuntoOutros: '', locacao: '' }
 const nota = {
   cnpj: '12345678000190', empresa: 'EMPRESA', negocianteCodigo: 'C0001', numero: '4521', valor: '',
-  situacao: 'reprovada' as const, motivos: [MOTIVO],
+  situacao: 'reprovada' as const, motivos: [MOTIVO], motivoOutro: '',
   relogios: [
     { ns: '00043005620019177', produto: 'PMOC31', itensJunto: [], itensJuntoOutros: '', locacao: '' },
     relogio,
@@ -46,7 +46,7 @@ const OS = '00000000-0000-0000-0000-000000000002'
 const SEM_PERMISSAO = { ok: false, erro: 'Você não tem permissão para esta ação.' }
 const troca = {
   numero: ' 1240 ', cnpj: '12345678000190', empresa: ' EMPRESA ', negocianteCodigo: null, valor: '10,50',
-  situacao: 'aprovada' as const, motivos: [],
+  situacao: 'aprovada' as const, motivos: [], motivoOutro: '',
 }
 
 afterEach(() => {
@@ -125,6 +125,30 @@ describe('actions do SAT — entrada', () => {
       '📦 Chegou no SAT: NF 4521 — EMPRESA (12.345.678/0001-90) — reprovada ❌ (Sem CFOP) — 2 relógios: 00043005620019177, 562-19178')
   })
 
+  it('registrar: passa o texto do "Outro" limpo; o aviso mostra "Outro: …" como o banco devolveu', async () => {
+    sessao({ visualizar: true, registrar_entrada: true })
+    repo.registrarNf.mockResolvedValueOnce({
+      nfId: 'n1', motivos: ['CFOP errado', 'Outro: nota rasurada'], relogios: [{ id: 'e1', ns: '562-19178', osNumero: '' }],
+    })
+    const { registrarNfAction } = await import('../actions')
+    expect(await registrarNfAction({ ...nota, motivoOutro: '  nota   rasurada ', relogios: [relogio] }))
+      .toEqual({ ok: true, valor: { nfId: 'n1', ids: ['e1'] } })
+    expect(repo.registrarNf).toHaveBeenCalledWith(expect.objectContaining({ motivos: [MOTIVO], motivoOutro: 'nota rasurada' }))
+    expect(avisarSat).toHaveBeenCalledWith(
+      '📦 Chegou no SAT: NF 4521 — EMPRESA (12.345.678/0001-90) — reprovada ❌ (CFOP errado; Outro: nota rasurada) — 1 relógio: 562-19178')
+  })
+
+  it('registrar: texto do "Outro" fora do formato ou longo demais recusa; OUTRO_SEM_TEXTO do banco vira mensagem', async () => {
+    sessao({ visualizar: true, registrar_entrada: true })
+    const { registrarNfAction } = await import('../actions')
+    expect(await registrarNfAction({ ...nota, motivoOutro: 1 as never })).toEqual({ ok: false, erro: 'Entrada inválida.' })
+    expect(await registrarNfAction({ ...nota, motivoOutro: 'x'.repeat(201) }))
+      .toEqual({ ok: false, erro: 'O outro motivo passa de 200 caracteres.' })
+    expect(repo.registrarNf).not.toHaveBeenCalled()
+    repo.registrarNf.mockRejectedValueOnce(new repo.ErroDoBanco('OUTRO_SEM_TEXTO'))
+    expect(await registrarNfAction(nota)).toEqual({ ok: false, erro: 'Descreva o outro motivo.' })
+  })
+
   it('registrar: Discord fora do ar não impede a gravação', async () => {
     sessao({ visualizar: true, registrar_entrada: true })
     avisarSat.mockRejectedValueOnce(new Error('discord caiu'))
@@ -146,7 +170,7 @@ describe('actions do SAT — NF depois da entrada', () => {
   it('corrigir/trocar NF exigem sat.aprovar_nf', async () => {
     sessao({ visualizar: true, registrar_entrada: true, administrar: true, associar_os: true })
     const { corrigirNfAction, trocarNfAction } = await import('../actions')
-    expect(await corrigirNfAction(UUID, 'aprovada', [])).toEqual(SEM_PERMISSAO)
+    expect(await corrigirNfAction(UUID, 'aprovada', [], '')).toEqual(SEM_PERMISSAO)
     expect(await trocarNfAction(UUID, troca)).toEqual(SEM_PERMISSAO)
     expect(repo.corrigirNf).not.toHaveBeenCalled()
     expect(repo.trocarNf).not.toHaveBeenCalled()
@@ -156,8 +180,8 @@ describe('actions do SAT — NF depois da entrada', () => {
     sessao({ visualizar: true, aprovar_nf: true })
     repo.corrigirNf.mockResolvedValueOnce(mudanca)
     const { corrigirNfAction } = await import('../actions')
-    expect(await corrigirNfAction(UUID, 'aprovada', [])).toEqual({ ok: true, valor: null })
-    expect(repo.corrigirNf).toHaveBeenCalledWith(UUID, 'aprovada', [])
+    expect(await corrigirNfAction(UUID, 'aprovada', [], '')).toEqual({ ok: true, valor: null })
+    expect(repo.corrigirNf).toHaveBeenCalledWith(UUID, 'aprovada', [], '')
     expect(avisarSat).toHaveBeenLastCalledWith(
       '🧾 NF do SAT corrigida: NF 1 — EMPRESA (12.345.678/0001-90) — reprovada → aprovada ✅ — relógios: NS1, NS2')
   })
@@ -169,10 +193,25 @@ describe('actions do SAT — NF depois da entrada', () => {
     expect(await trocarNfAction(UUID, troca)).toEqual({ ok: true, valor: null })
     expect(repo.trocarNf).toHaveBeenCalledWith(UUID, {
       numero: '1240', cnpj: '12.345.678/0001-90', empresa: 'EMPRESA', negocianteCodigo: null, valor: 10.5,
-      situacao: 'aprovada', motivos: [],
+      situacao: 'aprovada', motivos: [], motivoOutro: '',
     })
     expect(avisarSat).toHaveBeenLastCalledWith(
       '🧾 NF do SAT trocada: NF 1 (reprovada) substituída pela NF 1240 — EMPRESA (12.345.678/0001-90) aprovada ✅ — relógios: NS1, NS2')
+  })
+
+  it('corrigir/trocar: passam o texto do "Outro" ao banco (aprovada descarta)', async () => {
+    sessao({ visualizar: true, aprovar_nf: true })
+    repo.corrigirNf.mockResolvedValue(mudanca)
+    repo.trocarNf.mockResolvedValue(mudanca)
+    const { corrigirNfAction, trocarNfAction } = await import('../actions')
+    expect(await corrigirNfAction(UUID, 'reprovada', [MOTIVO], ' falta o pedido ')).toEqual({ ok: true, valor: null })
+    expect(repo.corrigirNf).toHaveBeenCalledWith(UUID, 'reprovada', [MOTIVO], 'falta o pedido')
+    expect(await corrigirNfAction(UUID, 'aprovada', [], 'sobrou')).toEqual({ ok: true, valor: null })
+    expect(repo.corrigirNf).toHaveBeenLastCalledWith(UUID, 'aprovada', [], '')
+    expect(await trocarNfAction(UUID, { ...troca, situacao: 'reprovada', motivos: [MOTIVO], motivoOutro: 'sem ICMS' }))
+      .toEqual({ ok: true, valor: null })
+    expect(repo.trocarNf).toHaveBeenCalledWith(UUID, expect.objectContaining({ motivos: [MOTIVO], motivoOutro: 'sem ICMS' }))
+    expect(await corrigirNfAction(UUID, 'reprovada', [MOTIVO], null as never)).toEqual({ ok: false, erro: 'Pedido inválido.' })
   })
 
   it('trocar: CNPJ inválido recusa antes do banco', async () => {
@@ -188,13 +227,13 @@ describe('actions do SAT — NF depois da entrada', () => {
     avisarSat.mockRejectedValueOnce(new Error('discord caiu'))
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { corrigirNfAction } = await import('../actions')
-    expect(await corrigirNfAction(UUID, 'aprovada', [])).toEqual({ ok: true, valor: null })
+    expect(await corrigirNfAction(UUID, 'aprovada', [], '')).toEqual({ ok: true, valor: null })
   })
 
   it('id de nota inválido é recusado', async () => {
     sessao({ visualizar: true, aprovar_nf: true })
     const { corrigirNfAction, trocarNfAction } = await import('../actions')
-    expect(await corrigirNfAction('x; drop', 'aprovada', [])).toMatchObject({ ok: false })
+    expect(await corrigirNfAction('x; drop', 'aprovada', [], '')).toMatchObject({ ok: false })
     expect(await trocarNfAction('x; drop', troca)).toMatchObject({ ok: false })
     expect(repo.corrigirNf).not.toHaveBeenCalled()
     expect(repo.trocarNf).not.toHaveBeenCalled()

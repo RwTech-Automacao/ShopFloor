@@ -91,7 +91,7 @@ describe('EntradaTela', () => {
     vi.mocked(consultarNsAction)
       .mockResolvedValueOnce({ ok: true, valor: consulta('562-19177', '562', '19177', { sugestao: { produto: 'PMOC31' } }) })
       .mockResolvedValueOnce({ ok: true, valor: consulta('562-19178', '562', '19178') })
-    const MOTIVO = { id: '00000000-0000-0000-0000-0000000000aa', texto: 'Sem CFOP de retorno', ativo: true }
+    const MOTIVO = { id: '00000000-0000-0000-0000-0000000000aa', texto: 'Sem CFOP de retorno', ativo: true, ordem: 1, exigeTexto: false }
     render(<EntradaTela motivos={[MOTIVO]} />)
 
     const cnpj = screen.getByPlaceholderText('CNPJ ou CPF')
@@ -113,7 +113,7 @@ describe('EntradaTela', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Registrar entrada (2 relógios)' }))
     await waitFor(() => expect(registrarNfAction).toHaveBeenCalledWith({
       cnpj: '12.345.678/0001-90', empresa: 'CLIENTE FICTICIO', negocianteCodigo: 'C0001', numero: '4521', valor: '10,50',
-      situacao: 'reprovada', motivos: [MOTIVO.id],
+      situacao: 'reprovada', motivos: [MOTIVO.id], motivoOutro: '',
       relogios: [
         { ns: '562-19177', produto: 'PMOC31', itensJunto: ['bobina'], itensJuntoOutros: '', locacao: '' },
         { ns: '562-19178', produto: '', itensJunto: [], itensJuntoOutros: '', locacao: 'P1' },
@@ -123,6 +123,33 @@ describe('EntradaTela', () => {
     expect(screen.getByText('Ver a ficha')).toHaveAttribute('href', '/sat/equipamentos/00000000-0000-0000-0000-000000000009')
     expect(screen.queryAllByTestId('cartao-relogio')).toHaveLength(0)
     expect(await screen.findByRole('button', { name: 'Registrar entrada (0 relógios)' })).toBeDisabled()
+  })
+
+  it('motivo "Outro": abre o "Qual?", exige o texto e manda motivoOutro', async () => {
+    vi.mocked(consultarNsAction).mockResolvedValueOnce({ ok: true, valor: consulta('562-19177', '562', '19177') })
+    const CFOP = { id: '00000000-0000-0000-0000-0000000000a1', texto: 'CFOP errado', ativo: true, ordem: 2, exigeTexto: false }
+    const OUTRO = { id: '00000000-0000-0000-0000-0000000000a6', texto: 'Outro', ativo: true, ordem: 6, exigeTexto: true }
+    render(<EntradaTela motivos={[CFOP, OUTRO]} />)
+    fireEvent.change(screen.getByLabelText('Número da NF'), { target: { value: '4521' } })
+    fireEvent.change(screen.getByPlaceholderText('CNPJ ou CPF'), { target: { value: '12345678000190' } })
+    fireEvent.click(screen.getByLabelText('NF reprovada'))
+    expect(screen.queryByLabelText(/Qual\?/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Outro' }))
+    expect(screen.getByLabelText(/Qual\?/)).toBeInTheDocument()
+
+    bipar('562-19177')
+    await waitFor(() => expect(screen.getAllByTestId('cartao-relogio')).toHaveLength(1))
+    const registrar = screen.getByRole('button', { name: 'Registrar entrada (1 relógio)' })
+    await waitFor(() => expect(registrar).toBeEnabled())
+    fireEvent.click(registrar)
+    expect(toast.error).toHaveBeenCalledWith('Descreva o outro motivo.')
+    expect(registrarNfAction).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText(/Qual\?/), { target: { value: '  nota rasurada ' } })
+    fireEvent.click(registrar)
+    await waitFor(() => expect(registrarNfAction).toHaveBeenCalledWith(expect.objectContaining({
+      situacao: 'reprovada', motivos: [OUTRO.id], motivoOutro: 'nota rasurada',
+    })))
   })
 
   it('registrar fica desabilitado enquanto uma busca de NS está pendente', async () => {

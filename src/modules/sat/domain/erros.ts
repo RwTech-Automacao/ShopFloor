@@ -1,4 +1,4 @@
-/** Os códigos que as funções do SAT (0186/0187) levantam, na língua da tela. O resto vira a mensagem genérica. */
+/** Os códigos que as funções do SAT (0186/0187/0190) levantam, na língua da tela. O resto vira a mensagem genérica. */
 const MENSAGENS = new Map<string, string>(Object.entries({
   SEM_PERMISSAO: 'Você não tem permissão para esta ação.',
   ENTRADA_INVALIDA: 'Entrada inválida. Recarregue a página e tente de novo.',
@@ -14,6 +14,8 @@ const MENSAGENS = new Map<string, string>(Object.entries({
   MOTIVO_EM_NF_APROVADA: 'NF aprovada não leva motivo de reprovação.',
   MOTIVO_INVALIDO: 'Um dos motivos não existe mais ou foi desativado. Recarregue a página.',
   OUTROS_SEM_TEXTO: 'Descreva os outros itens que vieram junto.',
+  OUTRO_SEM_TEXTO: 'Descreva o outro motivo.',
+  OUTRO_TEXTO_LONGO: 'O outro motivo passa de 200 caracteres.',
   NF_NAO_ENCONTRADA: 'Nota não encontrada.',
   ENTRADA_NAO_ENCONTRADA: 'Entrada não encontrada.',
   NADA_A_MUDAR: 'Já está assim — nada a mudar.',

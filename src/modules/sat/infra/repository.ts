@@ -99,13 +99,21 @@ export interface MotivoNf {
   id: string
   texto: string
   ativo: boolean
+  /** Ordem na tela (0190). */
+  ordem: number | null
+  /** O motivo pede um texto (o "Outro"): vai para a nota como `Outro: <texto>`. */
+  exigeTexto: boolean
 }
 
 export async function listarMotivos(): Promise<MotivoNf[]> {
   const sb = await createServerSupabase()
-  const { data, error } = await sb.from('sat_motivos_nf').select('id, texto, ativo').order('texto')
+  const { data, error } = await sb.from('sat_motivos_nf').select('id, texto, ativo, ordem, exige_texto')
+    .order('ordem', { ascending: true, nullsFirst: false }).order('texto')
   if (error) throw new Error(`motivos: ${error.message}`)
-  return ((data ?? []) as Linha[]).map((m) => ({ id: txt(m.id), texto: txt(m.texto), ativo: m.ativo === true }))
+  return ((data ?? []) as Linha[]).map((m) => ({
+    id: txt(m.id), texto: txt(m.texto), ativo: m.ativo === true,
+    ordem: typeof m.ordem === 'number' ? m.ordem : null, exigeTexto: m.exige_texto === true,
+  }))
 }
 
 // ---------- a nota e os relógios ----------
@@ -119,7 +127,7 @@ export async function registrarNf(n: NotaValida): Promise<{
   const { data, error } = await sb.rpc('sat_registrar_nf', {
     p: {
       numero: n.numero, cnpj: n.cnpj, empresa: n.empresa, negociante_codigo: n.negocianteCodigo,
-      valor: valorParaBanco(n.valor), situacao: n.situacao, motivos: n.motivos,
+      valor: valorParaBanco(n.valor), situacao: n.situacao, motivos: n.motivos, motivo_outro: n.motivoOutro,
       relogios: n.relogios.map((r) => ({
         ns: r.ns, modelo: r.modelo, sequencia: r.sequencia, produto: r.produto, itens_junto: r.itensJunto,
         itens_junto_outros: r.itensJuntoOutros, locacao: r.locacao,
@@ -156,23 +164,27 @@ function lerMudanca(d: Linha): MudancaGravada {
   }
 }
 
-export async function corrigirNf(nfId: string, situacao: SituacaoNf, motivos: string[]): Promise<MudancaGravada> {
+export async function corrigirNf(
+  nfId: string, situacao: SituacaoNf, motivos: string[], motivoOutro: string,
+): Promise<MudancaGravada> {
   const sb = await createServerSupabase()
-  const { data, error } = await sb.rpc('sat_corrigir_nf', { p_nf: nfId, p_situacao: situacao, p_motivos: motivos })
+  const { data, error } = await sb.rpc('sat_corrigir_nf', {
+    p_nf: nfId, p_situacao: situacao, p_motivos: motivos, p_motivo_outro: motivoOutro,
+  })
   if (error) throw new ErroDoBanco(error.message)
   return lerMudanca((data ?? {}) as Linha)
 }
 
 export async function trocarNf(nfId: string, t: {
   numero: string; cnpj: string; empresa: string; negocianteCodigo: string | null; valor: number | null
-  situacao: SituacaoNf; motivos: string[]
+  situacao: SituacaoNf; motivos: string[]; motivoOutro: string
 }): Promise<MudancaGravada> {
   const sb = await createServerSupabase()
   const { data, error } = await sb.rpc('sat_trocar_nf', {
     p_nf: nfId,
     p: {
       numero: t.numero, cnpj: t.cnpj, empresa: t.empresa, negociante_codigo: t.negocianteCodigo,
-      valor: valorParaBanco(t.valor), situacao: t.situacao, motivos: t.motivos,
+      valor: valorParaBanco(t.valor), situacao: t.situacao, motivos: t.motivos, motivo_outro: t.motivoOutro,
     },
   })
   if (error) throw new ErroDoBanco(error.message)
