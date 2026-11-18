@@ -8,15 +8,20 @@ type Base = {
   sn_ini?: string; sn_fim?: string; faixas?: { sn_ini: string; sn_fim: string }[]
 }
 const m = vi.hoisted(() => ({
-  criarOrdem: vi.fn(async (..._a: unknown[]) => 'id-novo'),
-  atualizarOrdem: vi.fn(async (..._a: unknown[]) => undefined),
-  buscarOrdemBase: vi.fn(async (_id: string) => null as Base | null),
-  contarSnsForaDasFaixas: vi.fn(async (_pmo: string, _op: string, _f: unknown) => 0),
+  criarOrdem: vi.fn<(...a: unknown[]) => Promise<string>>(async () => 'id-novo'),
+  atualizarOrdem: vi.fn<(...a: unknown[]) => Promise<undefined>>(async () => undefined),
+  buscarOrdemBase: vi.fn<(id: string) => Promise<Base | null>>(async () => null),
+  contarSnsForaDasFaixas: vi.fn<(pmo: string, op: string, f: unknown) => Promise<number>>(async () => 0),
 }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ perfil: {} })) }))
 vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: vi.fn(() => true) }))
 vi.mock('@/modules/logs/application/registrar-log', () => ({ registrarLog: vi.fn(async () => undefined) }))
+// A OP destes testes não tem estrutura aplicada (a trava da troca de PMO tem o seu próprio teste).
+vi.mock('../../infra/estrutura-repository', async (original) => ({
+  ...(await original<typeof import('../../infra/estrutura-repository')>()),
+  ordemTemTrechos: vi.fn(async () => false),
+}))
 vi.mock('../../infra/postos-repository', () => ({ mapaPostoPerfil: vi.fn(async () => ({})) }))
 vi.mock('../../infra/ordem-repository', () => ({
   criarOrdem: m.criarOrdem,

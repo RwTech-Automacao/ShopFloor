@@ -1,0 +1,148 @@
+-- Esquema mínimo para testar a 0184 sem as 183 migrações anteriores.
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
+end $$;
+-- `teste.perms` = lista 'modulo.permissao' separada por vírgula (como em alertas_test.sql). Ausente ou vazia = tudo
+-- liberado, que é o que a maior parte da prova precisa; o caso de permissão negada põe a lista e depois a limpa.
+create or replace function public.tem_permissao(p_modulo text, p_acao text) returns boolean language sql stable as $f$
+  select coalesce(current_setting('teste.perms', true), '') = ''
+      or (',' || current_setting('teste.perms', true) || ',') like '%,' || p_modulo || '.' || p_acao || ',%'
+$f$;
+create table public.sf_postos (chave text primary key, ordem int not null default 0);
+create table public.sf_ordens (
+  id uuid primary key default gen_random_uuid(), pmo text not null, op text not null,
+  placas_por_painel int not null default 1, unique (pmo, op));
+create table public.sf_registros (
+  id uuid primary key default gen_random_uuid(), data_hora timestamptz not null default now(),
+  posto text not null, pmo text not null, op text not null, status text not null default '',
+  numero_serie text not null default '', numero_serie_norm text not null default '', pecas int not null default 1,
+  created_at timestamptz not null default now());
+create table public.sf_estoque_envios (
+  id uuid primary key default gen_random_uuid(),
+  chave text not null, operacao text not null default 'entrada' check (operacao in ('entrada','estorno')),
+  pmo text not null, op text not null, posto text not null,
+  tipo text not null check (tipo in ('caixa','serie','lote')),
+  bipe text not null, serie_norm text not null default '',
+  alvo text generated always as (coalesce(nullif(serie_norm, ''), bipe)) stored,
+  quantidade int not null check (quantidade > 0),
+  ok boolean not null default false, erro text, tentativas int not null default 0,
+  reservado_em timestamptz, enviado_em timestamptz, cancelado_em timestamptz,
+  criado_em timestamptz not null default now(),
+  estoque text not null default 'PA' check (estoque in ('PA','EINTER')),
+  estornado int not null default 0,
+  entrada_id uuid references public.sf_estoque_envios (id) on delete restrict,
+  adiado_ate timestamptz,
+  -- 0132: o contador <n> da chave, materializado (a sf_estoque_reverter ordena por ele)
+  seq_chave int generated always as ((substring(chave from '/[ES]([0-9]{1,9})$'))::int) stored,
+  check (btrim(chave) <> ''),
+  check (btrim(bipe) <> ''),
+  check (tentativas >= 0),
+  check (tipo <> 'serie' or btrim(serie_norm) <> ''),
+  check (estornado >= 0 and estornado <= quantidade),
+  check ((operacao = 'estorno') = (entrada_id is not null)),
+  check (ok = (enviado_em is not null)),
+  check (cancelado_em is null or not ok));
+create or replace function public.sf_estoque_envios_estoque_do_estorno() returns trigger language plpgsql
+set search_path = public as $f$
+begin
+  if new.operacao = 'estorno' and new.entrada_id is not null then
+    select e.estoque into new.estoque from public.sf_estoque_envios e where e.id = new.entrada_id;
+    new.estoque := coalesce(new.estoque, 'PA');
+  end if;
+  return new;
+end $f$;
+create trigger sf_estoque_envios_estoque_do_estorno before insert on public.sf_estoque_envios
+  for each row execute function public.sf_estoque_envios_estoque_do_estorno();
+create unique index sf_estoque_envios_chave on public.sf_estoque_envios (chave);
+create or replace function public.sf_estoque_chave(
+  p_pmo text, p_op text, p_posto text, p_alvo text, p_operacao text
+) returns text language sql volatile security definer set search_path = public as $func$
+  select 'ALMOX/' || p_pmo || '/' || p_op || '/' || p_posto || '/' || p_alvo || '/'
+         || case p_operacao when 'estorno' then 'S' else 'E' end
+         || (select count(*) + 1 from public.sf_estoque_envios e
+              where e.pmo = p_pmo and e.op = p_op and e.posto = p_posto
+                and e.alvo = p_alvo and e.operacao = p_operacao)
+$func$;
+-- 0132 (cópia sem os comentários): a reserva do lote. Segura o estorno até a entrada dele (entrada_id) estar ok.
+create or replace function public.sf_estoque_reservar(p_limite int default 30)
+returns table (id uuid, chave text, operacao text, pmo text, op text, posto text, tipo text,
+               bipe text, serie_norm text, quantidade int, tentativas int, criado_em timestamptz)
+language plpgsql volatile security definer set search_path = public as $func$
+#variable_conflict use_column
+begin
+  return query
+    with alvo as (
+      select e.id
+        from public.sf_estoque_envios e
+       where e.ok = false
+         and e.cancelado_em is null
+         and e.tentativas < 5
+         and (e.reservado_em is null or e.reservado_em < now() - interval '15 minutes')
+         and (e.adiado_ate is null or e.adiado_ate <= now())
+         and (e.operacao <> 'estorno'
+              or coalesce((select ent.ok from public.sf_estoque_envios ent where ent.id = e.entrada_id), false))
+       order by (e.tentativas > 0), e.criado_em, e.id
+       limit least(greatest(coalesce(p_limite, 30), 1), 100)
+       for update of e skip locked
+    ),
+    reservadas as (
+      update public.sf_estoque_envios e
+         set tentativas = e.tentativas + 1, reservado_em = now()
+        from alvo
+       where e.id = alvo.id
+      returning e.id, e.chave, e.operacao, e.pmo, e.op, e.posto, e.tipo, e.bipe, e.serie_norm,
+                e.quantidade, e.tentativas, e.criado_em
+    )
+    select r.id, r.chave, r.operacao, r.pmo, r.op, r.posto, r.tipo, r.bipe, r.serie_norm,
+           r.quantidade, r.tentativas, r.criado_em
+      from reservadas r
+     order by (r.tentativas > 1), r.criado_em, r.id;
+end
+$func$;
+insert into public.sf_postos (chave, ordem) values
+  ('Inspeção AOI TOP', 1), ('Inspeção PTH', 2), ('Teste', 3), ('Almoxarifado', 4);
+-- ---------- cadastro de OP (18/11): o resto da OP que a 0184 agora toca ----------
+alter table public.sf_ordens
+  add column cliente text not null default '', add column qtd int, add column descricao text not null default '',
+  add column acp text not null default '', add column status text not null default '',
+  add column sn_ini text not null default '', add column sn_fim text not null default '',
+  add column embalagem_individual boolean not null default false, add column finalizada_por text,
+  add column integrar_compels boolean not null default true, add column created_at timestamptz not null default now();
+create table public.sf_ordem_postos (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  posto text not null references public.sf_postos(chave), ordem int not null default 0,
+  primary key (ordem_id, posto));
+create table public.sf_ordem_componentes (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  posto text not null, pmo_componente text not null, primary key (ordem_id, posto, pmo_componente));
+create table public.sf_ordem_burnin (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  posto text not null, tempo_min int not null default 0, primary key (ordem_id, posto));
+create table public.sf_ordem_faixas (
+  ordem_id uuid not null references public.sf_ordens(id) on delete cascade,
+  seq int not null check (seq >= 1), sn_ini text not null, sn_fim text not null, primary key (ordem_id, seq));
+-- 0181 (cópia): sn_ini/sn_fim da OP -> faixa seq 1
+create or replace function public.sf_ordens_faixa_principal() returns trigger language plpgsql security definer
+set search_path = public as $f$
+begin
+  if btrim(coalesce(new.sn_ini, '')) = '' or btrim(coalesce(new.sn_fim, '')) = '' then
+    delete from sf_ordem_faixas where ordem_id = new.id;
+  else
+    insert into sf_ordem_faixas (ordem_id, seq, sn_ini, sn_fim) values (new.id, 1, new.sn_ini, new.sn_fim)
+    on conflict (ordem_id, seq) do update set sn_ini = excluded.sn_ini, sn_fim = excluded.sn_fim;
+  end if;
+  return null;
+end $f$;
+create trigger sf_ordens_faixa_principal_ins after insert on public.sf_ordens
+  for each row execute function public.sf_ordens_faixa_principal();
+create trigger sf_ordens_faixa_principal_upd after update of sn_ini, sn_fim on public.sf_ordens
+  for each row when (old.sn_ini is distinct from new.sn_ini or old.sn_fim is distinct from new.sn_fim)
+  execute function public.sf_ordens_faixa_principal();
+insert into public.sf_postos (chave, ordem) values ('SPI', 0), ('Montagem PTH', 5), ('Embalagem', 6), ('NQA', 7);
+-- OP ANTIGA (existe antes da 0184): tem que sair intacta
+insert into public.sf_ordens (id, pmo, op, cliente, sn_ini, sn_fim)
+  values ('00000000-0000-0000-0000-000000007100', 'PMOANT', '7100', 'C', '100', '199');
+insert into public.sf_ordem_postos (ordem_id, posto, ordem) values
+  ('00000000-0000-0000-0000-000000007100', 'Teste', 0), ('00000000-0000-0000-0000-000000007100', 'Almoxarifado', 1);

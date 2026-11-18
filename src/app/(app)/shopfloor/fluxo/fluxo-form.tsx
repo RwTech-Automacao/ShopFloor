@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
+import { dadosPmoOpDoNo } from './dados-pmo-op-do-no'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo, ordenarOpsPorBipes } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
 import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
@@ -24,6 +25,8 @@ import { FloatingEdge } from './floating-edge'
 import { HelperLines, getHelperLines } from '@/shared/ui/fluxo/helper-lines'
 import { ControlesCanvas } from '@/shared/ui/fluxo/controles-canvas'
 import { classeSoNoHover, controlesSoNoHover } from '@/shared/lib/modo-tv'
+import { SeletorTrecho } from './seletor-trecho'
+import { realceDoTrecho, type TrechoDaOp } from '@/modules/shopfloor/domain/trechos-op'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
 const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
@@ -733,6 +736,23 @@ export function FluxoForm({
   // OP selecionada (pra levar PMO + descrição à caixa de Entrada). `sel` = "pmo||op".
   const opSel = useMemo(() => ops.find((o) => `${o.pmo}||${o.op}` === sel) ?? null, [ops, sel])
 
+  // Trechos da OP (0184): o seletor destaca os postos de um trecho reaproveitando o esmaecimento da busca de SN.
+  // Depende de `sel` (texto "pmo||op"), não de `opSel`: a tela embutida já nasce com a OP e a lista de OPs
+  // relida não deve zerar o trecho escolhido.
+  const [trechosOp, setTrechosOp] = useState<TrechoDaOp[]>([])
+  const [trechoSel, setTrechoSel] = useState<number | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- trocar de OP zera o trecho escolhido
+    setTrechoSel(null)
+    setTrechosOp([])
+    const [pmoT, opT] = sel.split('||')
+    if (!pmoT || !opT) { setTrechosOp([]); return }
+    let vivo = true
+    fonte.lerTrechosDaOp(pmoT, opT).then((t) => { if (vivo) setTrechosOp(t) }).catch(() => { if (vivo) setTrechosOp([]) })
+    return () => { vivo = false }
+  }, [sel, fonte])
+  const realce = useMemo(() => realceDoTrecho(trechosOp, trechoSel), [trechosOp, trechoSel])
+
   // ===== Onda 3: período + cadência =====
   const dataEfetiva = dataFiltro || ymd(agoraMs) // vazio → hoje (derivado de agoraMs = render-puro)
   // Chave da janela atual: usada pra só mostrar a cadência quando a produção carregada FOR desta janela
@@ -837,7 +857,7 @@ export function FluxoForm({
   const edges = useMemo<Edge[]>(() => {
     return edgesBase.map((e) => {
       const base = { ...((e.data ?? {}) as object), cadencia: cadenciaSeg[e.source], reta: linhaReta }
-      if (!rota) return { ...e, data: base }
+      if (!rota) return realce ? { ...e, data: { ...base, atenuado: !(realce.has(e.source) && realce.has(e.target)) } } : { ...e, data: base }
       const i = rota.ordem.indexOf(e.source)
       const trechoDaRota = i >= 0 && rota.ordem[i + 1] === e.target // aresta é um trecho consecutivo da rota?
       const elem = 2 * i + 1 // aresta = elemento ímpar na sequência intercalada
@@ -845,7 +865,7 @@ export function FluxoForm({
       const animando = trechoDaRota && elem === rotaPasso - 1 // só a recém-revelada anima; as demais ficam fixas
       return { ...e, data: { ...base, emRota: revelado, animarRota: animando, atenuado: !revelado } }
     })
-  }, [edgesBase, rota, rotaPasso, cadenciaSeg, linhaReta])
+  }, [edgesBase, rota, rotaPasso, cadenciaSeg, linhaReta, realce])
 
   // Sincroniza os nós com o domínio (badges/estado) preservando a posição arrastada pelo usuário.
   useEffect(() => {
@@ -864,10 +884,8 @@ export function FluxoForm({
         data: {
           ...n.data,
           selecionado: aberto === n.id,
-          // Só a Entrada carrega PMO/OP + descrição da OP (o card mostra; o domínio não tem esse dado).
-          ...(n.id === ENTRADA ? { pmo: opSel?.pmo, op: opSel?.op, descricao: opSel?.descricao } : {}),
-          // A Saída (card Finalizadas) leva PMO e OP: o estoque do Compels e a fila do Compels são consultados com eles.
-          ...(n.id === SAIDA ? { pmo: opSel?.pmo, op: opSel?.op } : {}),
+          // PMO/OP em todos os nós (o card do posto mostra a linha da PRT; a Entrada leva ainda a descrição).
+          ...dadosPmoOpDoNo(n.id, opSel),
           // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
           ...(rota ? (() => {
             const idx = rota.ordem.indexOf(n.id)
@@ -875,12 +893,14 @@ export function FluxoForm({
             const animando = idx >= 0 && (2 * idx) === rotaPasso - 1 // só o card recém-revelado faz o giro
             return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !revelado, animarRota: animando }
           })() : {}),
+          // Trecho escolhido (sem busca de SN): os postos dele ficam, os outros esmaecem. Entrada/Saída/Manutenção não mudam.
+          ...(!rota && realce && !n.data.ehEntrada && !n.data.ehSaida && !n.data.ehManutencao ? { foraRota: !realce.has(n.id) } : {}),
           // Contagens do período no card quando o filtro está aplicado (senão o card mostra o total/macro).
           ...(periodo ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0, periodoRegistros: periodo[n.id]?.registros ?? 0 } : {}),
         } satisfies FluxoNodePayload,
       }))
     })
-  }, [dom, aberto, opSel, sel, rota, rotaPasso, periodo, setNodes])
+  }, [dom, aberto, opSel, sel, rota, rotaPasso, periodo, realce, setNodes])
 
   // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 20s.
   // PERF: pula o tick quando a aba não está visível (Page Visibility) — evita que abas de Fluxo em 2º
@@ -1372,6 +1392,8 @@ export function FluxoForm({
         {buscou && !carregando && nodes.length === 0 && (
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
         )}
+
+        <SeletorTrecho trechos={trechosOp} valor={trechoSel} onChange={setTrechoSel} />
 
         <div ref={canvasRef} className={`fluxo-canvas w-full overflow-hidden bg-neutral-100 ${
           modoTv ? 'fixed inset-0 z-50 h-dvh' : 'relative h-[70vh] rounded-lg border border-border'

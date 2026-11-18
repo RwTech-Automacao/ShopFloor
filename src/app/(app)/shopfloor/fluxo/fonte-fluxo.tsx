@@ -8,6 +8,7 @@ import {
 import { buscarHistoricoSN, carregarDefeitosDaOp, carregarResumoDefeitos } from '@/modules/shopfloor/application/pesquisa-actions'
 import { carregarDashboard } from '@/modules/shopfloor/application/dashboard-actions'
 import { lerEstoqueCompelsAction, lerPendenteCompelsAction } from '@/modules/shopfloor/application/estoque-compels-actions'
+import { lerTrechosDaOpAction } from '@/modules/shopfloor/application/estrutura-actions'
 
 /**
  * De ONDE o Fluxo da OP busca os dados. A tela (e os componentes dentro dela) chamam `useFonteFluxo()`
@@ -35,12 +36,14 @@ export interface FonteFluxo {
   carregarDashboard: typeof carregarDashboard
   lerEstoqueCompels: typeof lerEstoqueCompelsAction
   lerPendenteCompels: typeof lerPendenteCompelsAction
+  lerTrechosDaOp: typeof lerTrechosDaOpAction
 }
 
 export const fonteReal: FonteFluxo = {
   carregarFluxo, fluxoPeriodo, rotaSn, detalhePosto, historicoPosto, producaoPeriodo, burninDetalhe,
   embalagemCaixas, snsManutencao, opsComBipes, buscarHistoricoSN, carregarDefeitosDaOp, carregarResumoDefeitos,
   carregarDashboard, lerEstoqueCompels: lerEstoqueCompelsAction, lerPendenteCompels: lerPendenteCompelsAction,
+  lerTrechosDaOp: lerTrechosDaOpAction,
 }
 
 const Contexto = createContext<FonteFluxo>(fonteReal)

@@ -211,5 +211,88 @@ describe('ClienteCompels', () => {
     const { buscar } = fingirCompels({ '/itemMovimento/findFilter': () => json({ data: [] }) })
     expect(await new ClienteCompels(config, tokenFixo(), buscar).consultarSaldoItem('ZZZ')).toBeNull()
   })
-})
 
+  it('lerDescendentes: varre os números seguintes da mesma principal e devolve só quem descende da raiz', async () => {
+    const LISTA: Record<number, Record<string, unknown>> = {
+      8682: { id: 2, numero: 8682, status: 'Em Processo', nivel: 2, ordemProducaoMaeNumero: 8681, ordemProducaoPrincipalNumero: 8681 },
+      8683: { id: 3, numero: 8683, status: 'Em Processo', nivel: 3, ordemProducaoMaeNumero: 8682, ordemProducaoPrincipalNumero: 8681 },
+      8684: { id: 4, numero: 8684, status: 'Em Processo', nivel: 4, ordemProducaoMaeNumero: 8683, ordemProducaoPrincipalNumero: 8681 },
+      8685: { id: 5, numero: 8685, status: 'Aberta', nivel: 2, ordemProducaoMaeNumero: 8681, ordemProducaoPrincipalNumero: 8681 },
+      8686: { id: 6, numero: 8686, status: 'Aberta', nivel: 1, ordemProducaoMaeNumero: null, ordemProducaoPrincipalNumero: null },
+    }
+    const COD: Record<string, string> = { '2': 'PMOF52', '3': 'PRT706', '4': 'PRT705', '5': 'PMOF51', '6': 'OUTRA' }
+    const { buscar } = fingirCompels({
+      '/ordemProducaoSimples/findAllFilter': () => json({ data: [] }),
+    })
+    const buscarComArvore = (async (url: string | URL | Request, init: RequestInit = {}) => {
+      const u = String(url).replace('https://api.erpeasy.compels.net', '')
+      const corpo = init.body as URLSearchParams | undefined
+      if (u.startsWith('/ordemProducaoSimples/findAllFilter')) {
+        const n = Number(JSON.parse(corpo!.get('filtro')!).numero)
+        return json({ data: LISTA[n] ? [LISTA[n]] : [] })
+      }
+      if (u.startsWith('/ordemProducaoSimples/findById')) {
+        return json({ data: { composicaoProduto: { item: { codigo: COD[corpo!.get('id')!], descricao: 'X' } } } })
+      }
+      return buscar(url, init)
+    }) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscarComArvore)
+    const desc = await c.lerDescendentes(8682)
+    expect(desc.map((n) => [n.numero, n.codigo])).toEqual([[8683, 'PRT706'], [8684, 'PRT705']])
+    expect(await c.lerNoOp(9999)).toBeNull()
+  })
+
+  it('listarOpsAtivas: pagina de 100 em 100 até o totalCount, com o filtro das situações ativas', async () => {
+    const linha = (n: number) => ({ id: n, numero: n, status: 'Aberta', nivel: 1, composicaoProduto: { item: { codigo: `PMO${n}`, descricao: '' } } })
+    const paginas: Record<string, unknown> = {
+      '1': { success: true, totalCount: 150, data: Array.from({ length: 100 }, (_, i) => linha(i + 1)) },
+      '2': { success: true, totalCount: 150, data: [...Array.from({ length: 50 }, (_, i) => linha(i + 101))] },
+    }
+    const corpos: URLSearchParams[] = []
+    const buscar = (async (_url: string | URL | Request, init: RequestInit = {}) => {
+      const corpo = new URLSearchParams(String(init.body))
+      corpos.push(corpo)
+      return json(paginas[corpo.get('page') ?? ''] ?? { data: [] })
+    }) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar, () => Date.UTC(2026, 10, 18))
+    const ops = await c.listarOpsAtivas()
+    expect(ops).toHaveLength(150)
+    expect(corpos.map((x) => [x.get('page'), x.get('start'), x.get('limit'), x.get('sortFilter')])).toEqual([['1', '0', '100', 'null'], ['2', '100', '100', 'null']])
+    expect(JSON.parse(corpos[0]!.get('filtro')!).statusList).toEqual(['Aberta', 'Planejada', 'Empenhada', 'Em Processo'])
+  })
+
+  it('listarOpsAtivas: linha ilegível é erro (não inativa OP por causa de linha que não deu para ler)', async () => {
+    const buscar = (async () => json({ success: true, totalCount: 2, data: [{ id: 1, numero: 1, composicaoProduto: { item: { codigo: 'A' } } }, { numero: 999 }] })) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await expect(c.listarOpsAtivas()).rejects.toThrow(/1 linha/)
+  })
+
+  it('listarOpsAtivas: linha repetida entre páginas não mascara OP faltando (conta únicas)', async () => {
+    const linha = (n: number) => ({ id: n, numero: n, composicaoProduto: { item: { codigo: `P${n}` } } })
+    const paginas: Record<string, unknown> = {
+      '1': { success: true, totalCount: 101, data: Array.from({ length: 100 }, (_, i) => linha(i + 1)) },
+      '2': { success: true, totalCount: 101, data: [linha(1)] },
+    }
+    const buscar = (async (_u: string | URL | Request, init: RequestInit = {}) =>
+      json(paginas[new URLSearchParams(String(init.body)).get('page') ?? ''] ?? { data: [] })) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await expect(c.listarOpsAtivas()).rejects.toThrow(/100 de 101/)
+  })
+
+  it('listarOpsAtivas: lista que para antes do totalCount é erro (não pode inativar o resto)', async () => {
+    const buscar = (async () => json({ success: true, totalCount: 500, data: [] })) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await expect(c.listarOpsAtivas()).rejects.toThrow()
+  })
+
+  it('listarOpsAtivas: sem totalCount e páginas sempre cheias, para no limite e é erro (nunca grava lista cortada)', async () => {
+    let chamadas = 0
+    const buscar = (async () => {
+      chamadas++
+      return json({ success: true, data: Array.from({ length: 100 }, (_, i) => ({ id: i, numero: i, composicaoProduto: { item: { codigo: 'X' } } })) })
+    }) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await expect(c.listarOpsAtivas()).rejects.toThrow('passou de 5000 linhas')
+    expect(chamadas).toBe(50)
+  })
+})

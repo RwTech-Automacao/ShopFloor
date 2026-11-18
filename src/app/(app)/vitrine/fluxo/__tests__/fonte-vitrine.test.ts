@@ -13,6 +13,9 @@ vi.mock('@/modules/shopfloor/application/dashboard-actions', () => ({ carregarDa
 vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({
   lerEstoqueCompelsAction: proibida, lerPendenteCompelsAction: proibida,
 }))
+vi.mock('@/modules/shopfloor/application/estrutura-actions', () => ({
+  lerTrechosCompelsAction: proibida, lerTrechosDaOpAction: proibida,
+}))
 
 const { criarFonteVitrine, relogioDoLaco, MINUTOS_SIMULADOS_POR_SEGUNDO } = await import('../fonte-vitrine')
 const { T_INICIO_LACO, T_FIM_LACO, PMO_DEMO, OP_DEMO, QTD_DEMO } = await import('@/modules/vitrine/domain/op-demo')
@@ -56,6 +59,7 @@ describe('fonte da vitrine', () => {
     const est = await fonte.lerEstoqueCompels(P)
     expect(est.tipo).toBe('ok')
     expect(await fonte.lerPendenteCompels(P, O)).toBeNull()
+    expect(await fonte.lerTrechosDaOp(P, O)).toEqual([]) // a OP da vitrine não tem trechos
     expect(proibida).not.toHaveBeenCalled()
   })
 

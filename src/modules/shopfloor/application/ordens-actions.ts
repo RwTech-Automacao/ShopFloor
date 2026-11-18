@@ -7,10 +7,12 @@ import { registrarLog } from '@/modules/logs/application/registrar-log'
 import { ehReativacaoManual, finalizadaPorDoCadastro } from '../domain/finalizacao'
 import { validarOrdem } from '../domain/validar-ordem'
 import { mensagemOpDuplicada } from '../domain/op-unica'
+import { mensagemErroDeTrecho } from '../domain/erros-trecho'
 import { parseReceitaPorPosto, receitaParaLinhas } from '../domain/receita-posto'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-posto'
 import { postoAlmoxarifadoPadrao, rotaDaEdicao, rotaPadraoOpNova } from '../domain/rota-op-nova'
 import { mapaPostoPerfil } from '../infra/postos-repository'
+import { ordemTemTrechos } from '../infra/estrutura-repository'
 import { faixasDe, faixasIguais, lerFaixasDoFormulario, type FaixaSN } from '../domain/faixas-sn'
 import {
   criarOrdem,
@@ -30,7 +32,7 @@ import {
  * (ou no PMO/OP antigo). A tela pergunta e reenvia com `confirmar_fora_faixa=1`. É aviso, não trava.
  */
 export type ResultadoOrdem =
-  | { ok: true; id?: string; pmo?: string; op?: string }
+  | { ok: true; id?: string; pmo?: string; op?: string; aviso?: string }
   | { ok: false; erro: string; confirmarForaDaFaixa?: number }
 
 const SEM_PERMISSAO = 'Você não tem permissão para gerenciar ordens de produção.'
@@ -191,6 +193,22 @@ export async function editarOrdemAction(
       return { ok: false, erro: 'Não foi possível salvar a OP.' }
     }
   }
+  // Trava dos trechos (0184): o compels_op de cada trecho veio do espelho do Compels para ESTA PMO/OP. Trocar a PMO
+  // ou o número deixaria a OP apontando PRTs de outra produção, então a troca é recusada enquanto houver trechos.
+  // Com trechos, a PMO também não pode ficar sem faixa de SN: sem sn_ini o trigger da 0181 apagaria TODAS as faixas
+  // da OP, as próprias das PRTs junto. A checagem vem antes de qualquer escrita.
+  let temTrechos: boolean
+  try {
+    temTrechos = await ordemTemTrechos(id)
+  } catch {
+    return { ok: false, erro: 'Não foi possível salvar a OP.' }
+  }
+  if (temTrechos && (dados.pmo !== base.pmo || dados.op !== base.op)) {
+    return { ok: false, erro: 'Esta OP tem trechos do Compels: não é possível trocar a PMO nem o número da OP.' }
+  }
+  if (temTrechos && (faixas.length === 0 || dados.sn_ini === '' || dados.sn_fim === '')) {
+    return { ok: false, erro: 'Esta OP tem trechos do Compels: a faixa de SN da PMO não pode ficar vazia.' }
+  }
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).
   const emUso = await buscarOpEmUso(dados.op, id)
   if (emUso) return { ok: false, erro: mensagemOpDuplicada(emUso) }
@@ -217,7 +235,8 @@ export async function editarOrdemAction(
     if (trocouOp || !faixasIguais(faixasGravadas, faixas)) {
       let fora: number
       try {
-        fora = await contarSnsForaDasFaixas(base.pmo, base.op, trocouOp ? null : faixas)
+        // As faixas próprias das PRTs entram na conta: os SNs delas são da OP, não estão "fora".
+        fora = await contarSnsForaDasFaixas(base.pmo, base.op, trocouOp ? null : [...faixas, ...(base.faixasPrt ?? [])])
       } catch {
         return { ok: false, erro: 'Não foi possível salvar a OP.' }
       }
@@ -229,6 +248,8 @@ export async function editarOrdemAction(
     await atualizarOrdem(id, dados, postos, receita, burnin.rows, faixas)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
+    const doTrecho = mensagemErroDeTrecho(e)
+    if (doTrecho) return { ok: false, erro: doTrecho }
     return { ok: false, erro: 'Não foi possível salvar a OP.' }
   }
 

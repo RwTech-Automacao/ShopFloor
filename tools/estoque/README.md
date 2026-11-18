@@ -202,3 +202,17 @@ carrega a data, e é aqui que está o **motivo**:
 
 O que **não** está no log: a lista do que continua pendente. Isso é a tela de pendências
 (**Análise → Estoque pendente**), que mostra linha por linha com o motivo da última tentativa.
+
+## Espelho das OPs do Compels (cadastro de OP)
+
+O cadastro de OP (Ordens → Nova OP) lê a cópia das OPs ativas do Compels em `sf_compels_ops`. Quem atualiza é
+este cron, de 10 em 10 minutos, com o mesmo `~/.estoque-cron-header`. Horário em UTC: 10:00–21:59 = 07:00–18:59 BRT,
+seg–sex (dentro da janela do RDS ligado).
+
+```
+*/10 10-21 * * 1-5 flock -n $HOME/.espelho-ops.lock curl -fsS -m 120 -X POST -H @$HOME/.estoque-cron-header http://127.0.0.1:3000/api/compels/espelho-ops >> $HOME/espelho-ops.log 2>&1
+```
+
+Confira com `tail ~/espelho-ops.log` (recebe só o JSON do curl): uma linha JSON por rodada (`lidas`, `novas`, `atualizadas`, `inativadas`).
+As linhas de texto `[espelho-ops] ...` (o que a rodada fez e os avisos) saem no log do pm2 (`pm2 logs`), não nesse arquivo.
+Um `302`/HTML no log quer dizer que a rota não está liberada no `middleware.ts`.
