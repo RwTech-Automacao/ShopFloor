@@ -26,7 +26,9 @@
 --    preserva os trechos), sf_ultima_op_da_pmo (leitura: os postos da última OP da PMO, para copiar).
 --
 -- ORDEM DE DEPLOY: migração ANTES do app (o app novo chama as funções novas). Aplicada fora de ordem no RDS (que
--- está na 0188): só cria objetos novos, colunas anuláveis e triggers em sf_registros.
+-- está na 0190): cria objetos novos, colunas anuláveis e triggers em sf_registros, e apaga os objetos da receita
+-- de 13/11 (sf_salvar_estrutura, sf_estrutura_trechos, sf_estruturas) — no RDS eles não existem, então o drop
+-- não faz nada.
 -- Rollback: docs/operacao/estrutura-op/rollback-0184.sql. Idempotente (psql -1 -v ON_ERROR_STOP=1 -f).
 
 -- a versão de 13/11 (receita por PMO) nunca foi para produção; se algum banco local a tiver, ela sai aqui
@@ -262,7 +264,10 @@ declare
   v_atualizadas int;
   v_inativadas int;
 begin
-  if jsonb_typeof(p_ops) is distinct from 'array' or jsonb_array_length(p_ops) = 0 then
+  -- separado de propósito: o OR do plpgsql não garante a ordem, e jsonb_array_length num objeto dá erro
+  if jsonb_typeof(p_ops) is distinct from 'array' then
+    raise exception 'LISTA_VAZIA';
+  elsif jsonb_array_length(p_ops) = 0 then
     raise exception 'LISTA_VAZIA';
   end if;
   with dados as (
@@ -299,5 +304,163 @@ end
 $func$;
 revoke all on function public.sf_compels_ops_sincronizar(jsonb) from public, anon, authenticated;
 grant execute on function public.sf_compels_ops_sincronizar(jsonb) to service_role;
+
+-- ---------- cadastro da OP nova numa transação: OP + trechos + postos + faixas + componentes + burn-in ----------
+create or replace function public.sf_cadastrar_op(p jsonb)
+returns uuid language plpgsql security definer set search_path = public as $func$
+declare
+  v_id uuid;
+  o jsonb := coalesce(p->'ordem', '{}'::jsonb);
+  v_trechos jsonb := coalesce(p->'trechos', '[]'::jsonb);
+  v_pmo_seq int;
+  v_primeira jsonb;
+  v_rep text;
+begin
+  if not (select tem_permissao('shopfloor', 'administrar')) then raise exception 'sem permissão'; end if;
+  if jsonb_array_length(v_trechos) = 0 then raise exception 'SEM_TRECHO'; end if;
+  select max((x->>'seq')::int) into v_pmo_seq from jsonb_array_elements(v_trechos) x;
+  if (select count(*) from jsonb_array_elements(v_trechos) x where x->>'tipo' = 'pmo') <> 1
+     or (select x->>'tipo' from jsonb_array_elements(v_trechos) x where (x->>'seq')::int = v_pmo_seq limit 1) <> 'pmo' then
+    raise exception 'PMO_NAO_E_ULTIMO';
+  end if;
+  select btrim(x->>'codigo') into v_rep from jsonb_array_elements(v_trechos) x
+   where jsonb_array_length(coalesce(x->'postos', '[]'::jsonb)) = 0 order by (x->>'seq')::int limit 1;
+  if v_rep is not null then raise exception 'TRECHO_SEM_POSTO:%', v_rep; end if;
+  select pp into v_rep from jsonb_array_elements(v_trechos) x, jsonb_array_elements_text(x->'postos') pp
+   group by pp having count(*) > 1 order by pp limit 1;
+  if v_rep is not null then raise exception 'POSTO_REPETIDO:%', v_rep; end if;
+  select btrim(x->>'codigo') into v_rep from jsonb_array_elements(v_trechos) x
+   where (x->>'tipo' = 'pmo' or x->>'sn_modo' = 'proprio') and jsonb_array_length(coalesce(x->'faixas', '[]'::jsonb)) = 0
+   order by (x->>'seq')::int limit 1;
+  if v_rep is not null then raise exception 'TRECHO_SEM_FAIXA:%', v_rep; end if;
+  select x->'faixas'->0 into v_primeira from jsonb_array_elements(v_trechos) x where x->>'tipo' = 'pmo';
+
+  insert into sf_ordens (pmo, op, cliente, qtd, descricao, acp, status, sn_ini, sn_fim, embalagem_individual, placas_por_painel)
+  values (btrim(o->>'pmo'), btrim(o->>'op'), btrim(coalesce(o->>'cliente', '')), nullif(o->>'qtd', '')::int,
+          coalesce(o->>'descricao', ''), coalesce(o->>'acp', ''), 'ATIVA',
+          btrim(v_primeira->>'sn_ini'), btrim(v_primeira->>'sn_fim'),
+          coalesce((o->>'embalagem_individual')::boolean, false), coalesce((o->>'placas_por_painel')::int, 1))
+  returning id into v_id;
+
+  insert into sf_ordem_trechos (ordem_id, seq, codigo, tipo, posto_conclui, sn_modo, estoque, compels_op)
+  select v_id, (x->>'seq')::int, btrim(x->>'codigo'), x->>'tipo',
+         x->'postos'->>(jsonb_array_length(x->'postos') - 1),
+         case when x->>'tipo' = 'pmo' then 'mesmo' else coalesce(x->>'sn_modo', 'mesmo') end,
+         case when x->>'tipo' = 'pmo' then 'PA' else 'EINTER' end,
+         nullif(btrim(coalesce(x->>'compels_op', '')), '')
+    from jsonb_array_elements(v_trechos) x;
+
+  insert into sf_ordem_postos (ordem_id, posto, ordem, trecho_seq)
+  select v_id, pp.posto, (row_number() over (order by (x->>'seq')::int, pp.ord) - 1)::int, (x->>'seq')::int
+    from jsonb_array_elements(v_trechos) x
+   cross join lateral jsonb_array_elements_text(x->'postos') with ordinality pp(posto, ord);
+
+  -- o trigger da 0181 já pôs a faixa 1 pelo sn_ini/sn_fim: a lista inteira a substitui (PMO primeiro)
+  delete from sf_ordem_faixas where ordem_id = v_id;
+  insert into sf_ordem_faixas (ordem_id, seq, sn_ini, sn_fim, trecho_seq)
+  select v_id, row_number() over (order by (x->>'tipo' <> 'pmo'), (x->>'seq')::int, ff.ord),
+         btrim(ff.f->>'sn_ini'), btrim(ff.f->>'sn_fim'), (x->>'seq')::int
+    from jsonb_array_elements(v_trechos) x
+   cross join lateral jsonb_array_elements(
+           case when x->>'tipo' = 'pmo' or x->>'sn_modo' = 'proprio' then coalesce(x->'faixas', '[]'::jsonb)
+                else '[]'::jsonb end) with ordinality ff(f, ord);
+
+  insert into sf_ordem_componentes (ordem_id, posto, pmo_componente)
+  select distinct v_id, c->>'posto', btrim(c->>'pmo')
+    from jsonb_array_elements(coalesce(p->'componentes', '[]'::jsonb)) c
+   where exists (select 1 from sf_ordem_postos op where op.ordem_id = v_id and op.posto = c->>'posto');
+  insert into sf_ordem_burnin (ordem_id, posto, tempo_min)
+  select distinct on (b->>'posto') v_id, b->>'posto', (b->>'tempo_min')::int
+    from jsonb_array_elements(coalesce(p->'burnin', '[]'::jsonb)) b
+   where exists (select 1 from sf_ordem_postos op where op.ordem_id = v_id and op.posto = b->>'posto');
+  return v_id;
+end
+$func$;
+revoke all on function public.sf_cadastrar_op(jsonb) from public, anon;
+grant execute on function public.sf_cadastrar_op(jsonb) to authenticated, service_role;
+
+-- ---------- edição: regrava a rota preservando o trecho de cada posto ----------
+create or replace function public.sf_ordem_regravar_postos(p_ordem_id uuid, p_postos text[])
+returns void language plpgsql security definer set search_path = public as $func$
+declare
+  v_pmo_seq int;
+  v_antigos jsonb;
+  v_vazio text;
+begin
+  if not (select tem_permissao('shopfloor', 'administrar')) then raise exception 'sem permissão'; end if;
+  select seq into v_pmo_seq from sf_ordem_trechos where ordem_id = p_ordem_id and tipo = 'pmo';
+  select coalesce(jsonb_object_agg(posto, trecho_seq), '{}'::jsonb) into v_antigos
+    from sf_ordem_postos where ordem_id = p_ordem_id;
+  delete from sf_ordem_postos where ordem_id = p_ordem_id;
+  insert into sf_ordem_postos (ordem_id, posto, ordem, trecho_seq)
+  select p_ordem_id, x.posto, (x.ord - 1)::int, coalesce((v_antigos->>x.posto)::int, v_pmo_seq)
+    from unnest(coalesce(p_postos, '{}'::text[])) with ordinality x(posto, ord);
+  select ot.codigo into v_vazio from sf_ordem_trechos ot
+   where ot.ordem_id = p_ordem_id
+     and not exists (select 1 from sf_ordem_postos p where p.ordem_id = ot.ordem_id and p.trecho_seq = ot.seq)
+   order by ot.seq limit 1;
+  if v_vazio is not null then raise exception 'TRECHO_SEM_POSTO:%', v_vazio; end if;
+  update sf_ordem_trechos ot
+     set posto_conclui = (select p.posto from sf_ordem_postos p
+                           where p.ordem_id = ot.ordem_id and p.trecho_seq = ot.seq order by p.ordem desc limit 1)
+   where ot.ordem_id = p_ordem_id;
+end
+$func$;
+revoke all on function public.sf_ordem_regravar_postos(uuid, text[]) from public, anon;
+grant execute on function public.sf_ordem_regravar_postos(uuid, text[]) to authenticated, service_role;
+
+-- ---------- edição: regrava as faixas da PMO; as próprias das PRTs ficam (depois) ----------
+create or replace function public.sf_ordem_regravar_faixas(p_ordem_id uuid, p_faixas jsonb)
+returns void language plpgsql security definer set search_path = public as $func$
+declare
+  v_pmo_seq int;
+  v_prt jsonb;
+begin
+  if not (select tem_permissao('shopfloor', 'administrar')) then raise exception 'sem permissão'; end if;
+  select seq into v_pmo_seq from sf_ordem_trechos where ordem_id = p_ordem_id and tipo = 'pmo';
+  select coalesce(jsonb_agg(jsonb_build_object('sn_ini', f.sn_ini, 'sn_fim', f.sn_fim, 'trecho_seq', f.trecho_seq) order by f.seq), '[]'::jsonb)
+    into v_prt
+    from sf_ordem_faixas f
+   where f.ordem_id = p_ordem_id and f.trecho_seq is not null and f.trecho_seq is distinct from v_pmo_seq;
+  delete from sf_ordem_faixas where ordem_id = p_ordem_id;
+  insert into sf_ordem_faixas (ordem_id, seq, sn_ini, sn_fim, trecho_seq)
+  select p_ordem_id, row_number() over (order by z.grupo, z.ord), z.sn_ini, z.sn_fim, z.trecho_seq
+    from (
+      select 1 as grupo, a.ord, btrim(a.f->>'sn_ini') as sn_ini, btrim(a.f->>'sn_fim') as sn_fim, v_pmo_seq as trecho_seq
+        from jsonb_array_elements(case when jsonb_typeof(p_faixas) = 'array' then p_faixas else '[]'::jsonb end)
+             with ordinality a(f, ord)
+      union all
+      select 2, b.ord, b.f->>'sn_ini', b.f->>'sn_fim', (b.f->>'trecho_seq')::int
+        from jsonb_array_elements(v_prt) with ordinality b(f, ord)
+    ) z;
+end
+$func$;
+revoke all on function public.sf_ordem_regravar_faixas(uuid, jsonb) from public, anon;
+grant execute on function public.sf_ordem_regravar_faixas(uuid, jsonb) to authenticated, service_role;
+
+-- ---------- a última OP da PMO (para a OP nova copiar os postos) — leitura com a RLS de quem chama ----------
+create or replace function public.sf_ultima_op_da_pmo(p_pmo text)
+returns jsonb language sql stable security invoker set search_path = public as $func$
+  with alvo as (
+    select o.* from sf_ordens o
+     where o.pmo = p_pmo or left(o.pmo, length(p_pmo) + 1) = p_pmo || '_'
+     order by (o.pmo = p_pmo) desc, o.created_at desc, o.id
+     limit 1
+  )
+  select jsonb_build_object(
+    'op', a.op, 'cliente', a.cliente, 'descricao', a.descricao,
+    'placas_por_painel', a.placas_por_painel, 'embalagem_individual', a.embalagem_individual,
+    'postos', coalesce((select jsonb_agg(jsonb_build_object('posto', p.posto, 'trecho_codigo', t.codigo) order by p.ordem)
+                          from sf_ordem_postos p
+                          left join sf_ordem_trechos t on t.ordem_id = p.ordem_id and t.seq = p.trecho_seq
+                         where p.ordem_id = a.id), '[]'::jsonb),
+    'componentes', coalesce((select jsonb_agg(jsonb_build_object('posto', c.posto, 'pmo', c.pmo_componente) order by c.posto, c.pmo_componente)
+                               from sf_ordem_componentes c where c.ordem_id = a.id), '[]'::jsonb),
+    'burnin', coalesce((select jsonb_agg(jsonb_build_object('posto', b.posto, 'tempo_min', b.tempo_min) order by b.posto)
+                          from sf_ordem_burnin b where b.ordem_id = a.id), '[]'::jsonb))
+    from alvo a
+$func$;
+revoke all on function public.sf_ultima_op_da_pmo(text) from public, anon;
+grant execute on function public.sf_ultima_op_da_pmo(text) to authenticated, service_role;
 
 notify pgrst, 'reload schema';

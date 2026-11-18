@@ -10,11 +10,13 @@ for _ in $(seq 1 30); do docker exec "$NOME" pg_isready -U postgres >/dev/null 2
 docker cp supabase/tests/estrutura_op_esquema.sql "$NOME":/tmp/esquema.sql
 docker cp supabase/migrations/0184_estrutura_op.sql "$NOME":/tmp/0184.sql
 docker cp supabase/tests/estrutura_op_prova.sql "$NOME":/tmp/prova.sql
+docker cp supabase/tests/cadastro_op_prova.sql "$NOME":/tmp/cadastro.sql
 docker cp docs/operacao/estrutura-op/rollback-0184.sql "$NOME":/tmp/rollback.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -1 -f /tmp/0184.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -1 -f /tmp/0184.sql   # idempotente
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/prova.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/cadastro.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -1 -f /tmp/rollback.sql
 docker exec "$NOME" psql -U postgres -tAq -c "select count(*) from information_schema.tables where table_name in ('sf_estruturas','sf_estrutura_trechos','sf_ordem_trechos','sf_compels_ops')" | grep -qx 0 || { echo "rollback não removeu as tabelas"; exit 1; }
 docker exec "$NOME" psql -U postgres -tAq -c "select count(*) from information_schema.columns where column_name = 'trecho_seq'" | grep -qx 0 || { echo "rollback não removeu trecho_seq"; exit 1; }
