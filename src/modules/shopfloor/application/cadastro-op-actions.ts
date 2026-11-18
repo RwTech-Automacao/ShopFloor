@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { fixarAlmoxarifado, trechosDoEspelho, validarCadastro, type CadastroOp, type UltimaOp } from '../domain/cadastro-op'
+import { erroSufixoOp, fixarAlmoxarifado, trechosDoEspelho, validarCadastro, type CadastroOp, type UltimaOp } from '../domain/cadastro-op'
 import { mensagemErroDeTrecho } from '../domain/erros-trecho'
 import { mensagemOpDuplicada } from '../domain/op-unica'
 import { postoAlmoxarifadoPadrao } from '../domain/rota-op-nova'
@@ -49,9 +49,8 @@ export async function cadastrarOpAction(c: CadastroOp): Promise<ResultadoCadastr
 
   if (c.modo === 'compels') {
     const base = trechos.at(-1)?.compelsOp ?? ''
-    const opNum = c.op.trim()
-    const opOk = base !== '' && (opNum === base || (opNum.startsWith(`${base}_`) && /^[A-Za-z0-9]{1,10}$/.test(opNum.slice(base.length + 1))))
-    if (!opOk) return { ok: false, erro: `O número da OP tem que ser o da OP do Compels (${base}) ou ele com sufixo (ex.: ${base}_F).` }
+    const erroOp = erroSufixoOp(base, c.op)
+    if (erroOp) return { ok: false, erro: erroOp }
     let esperado: ReturnType<typeof trechosDoEspelho> = []
     try {
       const espelho = await listarEspelho()
@@ -98,8 +97,10 @@ export async function cadastrarOpAction(c: CadastroOp): Promise<ResultadoCadastr
   return { ok: true, id, pmo: limpo.pmo, op: limpo.op }
 }
 
-/** Os postos (com o trecho), componentes e burn-in da última OP da PMO. Sem permissão ou erro: null. */
-export async function ultimaOpDaPmoAction(pmo: string): Promise<UltimaOp | null> {
-  if (!(await sessaoAdmin())) return null
-  try { return await ultimaOpDaPmo(String(pmo ?? '').trim()) } catch { return null }
+export type ResultadoUltimaOp = { ok: true; ultima: UltimaOp | null } | { ok: false; erro: string }
+
+/** Os postos (com o trecho), componentes e burn-in da última OP da PMO. ultima null = a PMO ainda não tem OP; falha = ok:false. */
+export async function ultimaOpDaPmoAction(pmo: string): Promise<ResultadoUltimaOp> {
+  if (!(await sessaoAdmin())) return { ok: false, erro: SEM_PERMISSAO }
+  try { return { ok: true, ultima: await ultimaOpDaPmo(String(pmo ?? '').trim()) } } catch { return { ok: false, erro: 'Não foi possível ler a última OP desta PMO.' } }
 }

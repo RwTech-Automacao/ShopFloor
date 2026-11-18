@@ -215,3 +215,14 @@ export function validarCadastro(c: CadastroOp): { ok: true } | { ok: false; erro
   }
   return { ok: true }
 }
+
+/**
+ * No modo Compels o número da OP é o da OP do Compels (`base`) ou ele com sufixo `_` + 1–10 letras/dígitos.
+ * Devolve a mensagem em PT-BR quando não vale, ou null. Usada pela tela e pela action.
+ */
+export function erroSufixoOp(base: string, op: string): string | null {
+  const b = base.trim()
+  const n = op.trim()
+  const ok = b !== '' && (n === b || (n.startsWith(`${b}_`) && /^[A-Za-z0-9]{1,10}$/.test(n.slice(b.length + 1))))
+  return ok ? null : `O número da OP tem que ser o da OP do Compels (${b}) ou ele com sufixo (ex.: ${b}_F).`
+}

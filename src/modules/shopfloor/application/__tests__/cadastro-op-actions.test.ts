@@ -127,11 +127,15 @@ describe('cadastrarOpAction', () => {
 })
 
 describe('ultimaOpDaPmoAction', () => {
-  it('lê a última OP; sem permissão ou erro = null', async () => {
+  it('lê a última OP; PMO sem OP = null; erro e falta de permissão = ok:false', async () => {
     m.ultimaOpDaPmo.mockResolvedValueOnce({ op: '8476' })
-    expect(await ultimaOpDaPmoAction(' PMOC14 ')).toEqual({ op: '8476' })
+    expect(await ultimaOpDaPmoAction(' PMOC14 ')).toEqual({ ok: true, ultima: { op: '8476' } })
     expect(m.ultimaOpDaPmo).toHaveBeenCalledWith('PMOC14')
+    m.ultimaOpDaPmo.mockResolvedValueOnce(null)
+    expect(await ultimaOpDaPmoAction('PMOC14')).toEqual({ ok: true, ultima: null })
+    m.ultimaOpDaPmo.mockRejectedValueOnce(new Error('boom'))
+    expect(await ultimaOpDaPmoAction('PMOC14')).toMatchObject({ ok: false })
     m.podeNoModulo.mockReturnValue(false)
-    expect(await ultimaOpDaPmoAction('PMOC14')).toBeNull()
+    expect(await ultimaOpDaPmoAction('PMOC14')).toMatchObject({ ok: false })
   })
 })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useId, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cadastrarOpAction, ultimaOpDaPmoAction } from '@/modules/shopfloor/application/cadastro-op-actions'
 import {
-  distribuirPostos, fixarAlmoxarifado, moverPostoEntreTrechos, opsDaPmo, pmosDoEspelho, rotuloPmo, rotuloTrecho,
+  distribuirPostos, erroSufixoOp, fixarAlmoxarifado, moverPostoEntreTrechos, opsDaPmo, pmosDoEspelho, rotuloPmo, rotuloTrecho,
   trechoManual, trechosDoEspelho, ultimaLeitura, validarCadastro,
   type CadastroOp, type OpEspelho, type SnModo, type TrechoCadastro, type UltimaOp,
 } from '@/modules/shopfloor/domain/cadastro-op'
@@ -40,6 +40,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   const [anterior, setAnterior] = useState<UltimaOp | null>(null)
   // A lista de OPs só aparece depois da última OP da PMO chegar: escolher a OP antes copiaria postos vazios.
   const [carregando, setCarregando] = useState(false)
+  const [erroUltima, setErroUltima] = useState(false)
+  const idBase = useId()
   const [opEscolhida, setOpEscolhida] = useState<number | null>(null)
   const [trechos, setTrechos] = useState<TrechoCadastro[]>([])
   const [op, setOp] = useState('')
@@ -52,21 +54,41 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
 
   const termo = busca.trim().toUpperCase()
   const achadas = termo === '' ? [] : pmos.filter((p) => p.pmo.toUpperCase().includes(termo)).slice(0, 8)
+  const escolhida = pmo !== null && termo === pmo
   const exata = pmos.some((p) => p.pmo.toUpperCase() === termo)
   const nPainel = Number.isInteger(Number(placasPorPainel)) && Number(placasPorPainel) >= 1 ? Number(placasPorPainel) : 1
+  const baseOp = trechos.at(-1)?.compelsOp ?? ''
+  const erroOp = modo === 'compels' && trechos.length > 0 ? erroSufixoOp(baseOp, op) : null
   const usados = new Set(trechos.flatMap((t) => t.postos))
   const disponiveis = postos.filter((p) => !usados.has(p))
 
   // Trocar de PMO antes da resposta chegar: a resposta antiga é descartada.
   const pedido = useRef(0)
 
+  function digitarBusca(valor: string) {
+    setBusca(valor)
+    if (pmo !== null && valor.trim().toUpperCase() !== pmo) {
+      // outra busca: o que era da PMO anterior (trechos, OP escolhida, resposta em voo) não vale mais
+      pedido.current++
+      setPmo(null); setModo(null); setAnterior(null); setErroUltima(false); setCarregando(false)
+      setOpEscolhida(null); setTrechos([])
+    }
+  }
+
   async function escolherPmo(codigo: string, m: 'compels' | 'manual') {
-    setPmo(codigo); setModo(m); setOpEscolhida(null); setTrechos([]); setCarregando(true)
+    if (codigo === pmo && m === modo) return // o mesmo PMO de novo não apaga o que já foi editado
+    setPmo(codigo); setModo(m); setOpEscolhida(null); setTrechos([]); setCarregando(true); setErroUltima(false)
     const meu = ++pedido.current
     let ultima: UltimaOp | null = null
-    try { ultima = await ultimaOpDaPmoAction(codigo) } catch { toast.error('Não foi possível ler a última OP desta PMO.', TOAST) }
+    let falhou = false
+    try {
+      const r = await ultimaOpDaPmoAction(codigo)
+      if (r.ok) ultima = r.ultima
+      else { falhou = true; toast.error(r.erro, TOAST) }
+    } catch { falhou = true; toast.error('Não foi possível ler a última OP desta PMO.', TOAST) }
     if (meu !== pedido.current) return
     setAnterior(ultima)
+    setErroUltima(falhou)
     setCarregando(false)
     setCliente(ultima?.cliente ?? ''); setDescricao(ultima?.descricao ?? '')
     setPlacasPorPainel(String(ultima?.placasPorPainel ?? 1)); setEmbalagemIndividual(ultima?.embalagemIndividual ?? false)
@@ -107,22 +129,23 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
         <Label htmlFor="busca-pmo">PMO *</Label>
-        <Input id="busca-pmo" value={busca} autoComplete="off" onChange={(e) => setBusca(e.target.value)} placeholder="Digite a PMO" />
+        <Input id="busca-pmo" value={busca} autoComplete="off" onChange={(e) => digitarBusca(e.target.value)} placeholder="Digite a PMO" />
         <p className="text-xs text-muted-foreground">
           {leitura ? `Última leitura do Compels: ${dataHora(leitura)}` : 'O espelho do Compels ainda não foi lido.'}
         </p>
         <div className="flex flex-col gap-1">
-          {achadas.map((p) => (
+          {!escolhida && achadas.map((p) => (
             <Button key={p.pmo} type="button" variant="outline" className="justify-start" onClick={() => { setBusca(p.pmo); void escolherPmo(p.pmo, 'compels') }}>
               {rotuloPmo(p)}
             </Button>
           ))}
-          {termo !== '' && !exata && (
+          {termo !== '' && !exata && !escolhida && (
             <Button type="button" variant="ghost" className="justify-start" onClick={() => void escolherPmo(termo, 'manual')}>
               {`Usar ${termo} (cadastro manual)`}
             </Button>
           )}
         </div>
+        {carregando && <p className="text-sm text-muted-foreground" role="status">Carregando…</p>}
         {modo === 'manual' && <p className="text-sm text-amber-700 dark:text-amber-500">Não está no Compels — cadastro manual</p>}
       </section>
 
@@ -145,7 +168,10 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="op">Nº OP *</Label>
-              <Input id="op" value={op} onChange={(e) => setOp(e.target.value)} />
+              <Input id="op" value={op} onChange={(e) => setOp(e.target.value)} aria-invalid={erroOp ? true : undefined} aria-describedby="op-ajuda" />
+              <p id="op-ajuda" className={erroOp ? 'text-xs text-red-600' : 'text-xs text-muted-foreground'}>
+                {erroOp ?? (modo === 'compels' && opEscolhida !== null ? `Pode acrescentar sufixo: ${opEscolhida}_F` : '')}
+              </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="cliente">Cliente *</Label>
@@ -175,16 +201,18 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
           </section>
 
           <p className="text-xs text-muted-foreground">
-            {anterior ? `Postos copiados da OP ${anterior.op} — confira.` : 'Primeira OP desta PMO: monte os postos de cada trecho.'}
+            {anterior ? `Postos copiados da OP ${anterior.op} — confira.`
+              : erroUltima ? 'Não foi possível ler a última OP desta PMO — monte os postos.'
+              : 'Primeira OP desta PMO: monte os postos de cada trecho.'}
           </p>
 
           <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {trechos.map((t, ti) => {
               const fixo = t.tipo === 'pmo' ? almox : null
               return (
-                <div key={t.seq} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+                <section key={t.seq} aria-labelledby={`${idBase}-t${t.seq}`} className="flex flex-col gap-3 rounded-lg border border-border p-3">
                   <div>
-                    <h3 className="text-sm font-semibold">{rotuloTrecho(t)}</h3>
+                    <h3 id={`${idBase}-t${t.seq}`} className="text-sm font-semibold">{rotuloTrecho(t)}</h3>
                     {t.compelsOp && <p className="text-xs text-muted-foreground">{`${t.quantidade ?? '—'} un · ${t.situacao || '—'}`}</p>}
                   </div>
                   <ol className="flex flex-col gap-1">
@@ -203,7 +231,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
                             )}
                             <button type="button" aria-label={`Subir ${p}`} className="text-muted-foreground hover:text-foreground" disabled={i === 0}
                               onClick={() => mudarTrecho(t.seq, (x) => ({ ...x, postos: moverPostoNaRota(x.postos, i, -1, fixo) }))}><ArrowUp className="size-4" /></button>
-                            <button type="button" aria-label={`Descer ${p}`} className="text-muted-foreground hover:text-foreground"
+                            <button type="button" aria-label={`Descer ${p}`} className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                              disabled={i === t.postos.length - 1 || t.postos[i + 1] === fixo}
                               onClick={() => mudarTrecho(t.seq, (x) => ({ ...x, postos: moverPostoNaRota(x.postos, i, 1, fixo) }))}><ArrowDown className="size-4" /></button>
                             <button type="button" aria-label={`Remover ${p}`} className="text-muted-foreground hover:text-red-600"
                               onClick={() => mudarTrecho(t.seq, (x) => ({ ...x, postos: x.postos.filter((y) => y !== p) }))}><X className="size-4" /></button>
@@ -217,7 +246,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
                   </ol>
                   {disponiveis.length > 0 && (
                     <Select value="" onValueChange={(p) => p && mudarTrecho(t.seq, (x) => ({ ...x, postos: [...x.postos, p] }))}>
-                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="+ Adicionar posto" /></SelectTrigger>
+                      <SelectTrigger className="h-8 text-xs" aria-label={`Adicionar posto em ${rotuloTrecho(t)}`}><SelectValue placeholder="+ Adicionar posto" /></SelectTrigger>
                       <SelectContent>{disponiveis.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
                     </Select>
                   )}
@@ -237,13 +266,13 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
                       setFaixas={(f: FaixaSN[]) => mudarTrecho(t.seq, (x) => ({ ...x, faixas: f }))}
                       qtd={t.tipo === 'pmo' ? qtd : String(t.quantidade ?? '')} nPainel={t.tipo === 'pmo' ? nPainel : 1} />
                   )}
-                </div>
+                </section>
               )
             })}
           </section>
 
           <div className="flex justify-end">
-            <Button type="button" onClick={salvar} disabled={salvando} className="bg-enterplak hover:bg-enterplak-700">
+            <Button type="button" onClick={salvar} disabled={salvando || !!erroOp} className="bg-enterplak hover:bg-enterplak-700">
               {salvando ? 'Salvando…' : 'Salvar OP'}
             </Button>
           </div>

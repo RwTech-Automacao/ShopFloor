@@ -26,11 +26,11 @@ const montar = () => render(<NovaOpCliente espelho={ESPELHO} postos={POSTOS} pos
 
 beforeEach(() => {
   vi.clearAllMocks()
-  acoes.ultimaOpDaPmoAction.mockResolvedValue({
+  acoes.ultimaOpDaPmoAction.mockResolvedValue({ ok: true, ultima: {
     op: '8476', cliente: 'LINCE', descricao: 'PLACA X', placasPorPainel: 1, embalagemIndividual: false,
     postos: [{ posto: 'SPI', trechoCodigo: 'PRT410' }, { posto: 'Inspeção PTH', trechoCodigo: 'PRT420' }, { posto: 'Teste', trechoCodigo: null }, { posto: 'Almoxarifado', trechoCodigo: null }],
     componentes: [], burnin: [],
-  })
+  } })
   acoes.cadastrarOpAction.mockResolvedValue({ ok: true, id: 'u1', pmo: 'PMOC14', op: '8498' })
 })
 
@@ -82,14 +82,14 @@ describe('Nova OP', () => {
     expect(acoes.cadastrarOpAction).not.toHaveBeenCalled()
   })
   it('as setas entre trechos só aparecem nos postos da ponta (nunca no meio)', async () => {
-    acoes.ultimaOpDaPmoAction.mockResolvedValue({
+    acoes.ultimaOpDaPmoAction.mockResolvedValue({ ok: true, ultima: {
       op: '8476', cliente: 'LINCE', descricao: 'PLACA X', placasPorPainel: 1, embalagemIndividual: false,
       postos: [
         { posto: 'SPI', trechoCodigo: 'PRT410' }, { posto: 'Inspeção AOI TOP', trechoCodigo: 'PRT410' }, { posto: 'Inspeção PTH', trechoCodigo: 'PRT410' },
         { posto: 'Teste', trechoCodigo: null }, { posto: 'Almoxarifado', trechoCodigo: null },
       ],
       componentes: [], burnin: [],
-    })
+    } })
     montar()
     fireEvent.change(screen.getByLabelText('PMO *'), { target: { value: 'PMOC14' } })
     fireEvent.click(screen.getByRole('button', { name: 'PMOC14 — PLACA X · 1 OP aberta' }))
@@ -115,5 +115,70 @@ describe('Nova OP', () => {
     expect(seta('Mover Inspeção AOI TOP para o trecho seguinte')).toBeTruthy()
     expect(seta('Mover Inspeção PTH para o trecho anterior')).toBeTruthy()
     expect(seta('Mover Inspeção PTH para o trecho seguinte')).toBeTruthy()
+  })
+
+  const abrir = async () => {
+    fireEvent.change(screen.getByLabelText('PMO *'), { target: { value: 'PMOC14' } })
+    fireEvent.click(screen.getByRole('button', { name: 'PMOC14 — PLACA X · 1 OP aberta' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^OP 8498/ }))
+    await screen.findByText('Postos copiados da OP 8476 — confira.')
+  }
+
+  it('sufixo da OP: dica, erro inline e Salvar travado', async () => {
+    montar()
+    await abrir()
+    expect(screen.getByText('Pode acrescentar sufixo: 8498_F')).toBeTruthy()
+    const salvar = screen.getByRole('button', { name: 'Salvar OP' }) as HTMLButtonElement
+    expect(salvar.disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText('Nº OP *'), { target: { value: '8498_F' } })
+    expect(salvar.disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText('Nº OP *'), { target: { value: '8499' } })
+    expect(screen.getByText(/ou ele com sufixo \(ex\.: 8498_F\)/)).toBeTruthy()
+    expect(salvar.disabled).toBe(true)
+  })
+
+  it('depois de escolher a PMO some a sugestão; digitar outra coisa limpa trechos; clicar de novo não apaga edições', async () => {
+    montar()
+    await abrir()
+    expect(screen.queryByRole('button', { name: 'PMOC14 — PLACA X · 1 OP aberta' })).toBeNull()
+    fireEvent.change(screen.getByLabelText('Cliente *'), { target: { value: 'EDITADO' } })
+    fireEvent.change(screen.getByLabelText('PMO *'), { target: { value: 'PMOC1' } })
+    expect(screen.queryAllByRole('heading', { level: 3 })).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'PMOC14 — PLACA X · 1 OP aberta' })).toBeTruthy()
+  })
+
+  it('falha ao ler a última OP não diz "Primeira OP"', async () => {
+    acoes.ultimaOpDaPmoAction.mockResolvedValue({ ok: false, erro: 'x' })
+    montar()
+    fireEvent.change(screen.getByLabelText('PMO *'), { target: { value: 'PMOC14' } })
+    fireEvent.click(screen.getByRole('button', { name: 'PMOC14 — PLACA X · 1 OP aberta' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^OP 8498/ }))
+    expect(await screen.findByText('Não foi possível ler a última OP desta PMO — monte os postos.')).toBeTruthy()
+    expect(screen.queryByText(/Primeira OP/)).toBeNull()
+  })
+
+  it('mostra Carregando… enquanto a última OP não chega', async () => {
+    let resolver: (v: unknown) => void = () => {}
+    acoes.ultimaOpDaPmoAction.mockReturnValue(new Promise((r) => { resolver = r }))
+    montar()
+    fireEvent.change(screen.getByLabelText('PMO *'), { target: { value: 'PMOC14' } })
+    fireEvent.click(screen.getByRole('button', { name: 'PMOC14 — PLACA X · 1 OP aberta' }))
+    expect(screen.getByText('Carregando…')).toBeTruthy()
+    resolver({ ok: true, ultima: null })
+    await waitFor(() => expect(screen.queryByText('Carregando…')).toBeNull())
+  })
+
+  it('Descer fica desabilitado no último posto e antes do Almoxarifado', async () => {
+    montar()
+    await abrir()
+    expect((screen.getByRole('button', { name: 'Descer Teste' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Descer SPI' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('cada trecho é uma região nomeada e o select de adicionar posto tem nome', async () => {
+    montar()
+    await abrir()
+    expect(screen.getByRole('region', { name: 'PRT410 (8500)' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Adicionar posto em PMOC14 (8498)' })).toBeTruthy()
   })
 })

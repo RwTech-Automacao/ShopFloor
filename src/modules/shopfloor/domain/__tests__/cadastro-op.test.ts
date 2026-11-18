@@ -115,3 +115,15 @@ describe('validarCadastro', () => {
     expect(validarCadastro(cad(trechos((x) => (x.seq === 1 ? { snModo: 'proprio', faixas: [{ sn_ini: 'A001', sn_fim: 'A010' }, { sn_ini: 'A005', sn_fim: 'A020' }] } : {}))))).toEqual({ ok: false, erro: 'A faixa 2 de PRT410 (8500) se sobrepõe à faixa 1 de PRT410 (8500).' })
   })
 })
+
+describe('erroSufixoOp', () => {
+  it('aceita a base e base_sufixo; recusa o resto', async () => {
+    const { erroSufixoOp } = await import('../cadastro-op')
+    expect(erroSufixoOp('8498', '8498')).toBeNull()
+    expect(erroSufixoOp('8498', ' 8498_F ')).toBeNull()
+    expect(erroSufixoOp('8498', '8499')).toMatch(/ex\.: 8498_F/)
+    expect(erroSufixoOp('8498', '8498_')).not.toBeNull()
+    expect(erroSufixoOp('8498', '8498_ab cd')).not.toBeNull()
+    expect(erroSufixoOp('', '8498')).not.toBeNull()
+  })
+})
