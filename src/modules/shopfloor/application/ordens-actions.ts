@@ -159,6 +159,7 @@ export async function criarOrdemAction(
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'criar', descricao: `OP ${dados.pmo}/${dados.op} criada`, dados: { ...dados, faixas } })
   revalidatePath('/shopfloor/ordens')
+  revalidatePath('/shopfloor/ordens-nova')
   return { ok: true, id, pmo: dados.pmo, op: dados.op }
 }
 
@@ -255,6 +256,7 @@ export async function editarOrdemAction(
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados: { ...dados, faixas } })
   revalidatePath('/shopfloor/ordens')
+  revalidatePath('/shopfloor/ordens-nova')
   return { ok: true, id, pmo: dados.pmo, op: dados.op }
 }
 
@@ -290,5 +292,6 @@ export async function excluirOrdemAction(id: string): Promise<ResultadoOrdem> {
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'excluir', descricao: `OP ${base.pmo}/${base.op} excluída` })
   revalidatePath('/shopfloor/ordens')
+  revalidatePath('/shopfloor/ordens-nova')
   return { ok: true }
 }

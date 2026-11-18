@@ -22,7 +22,7 @@ export default async function NovaOpPage() {
         <h2 className="text-lg font-semibold text-tinta">Nova OP</h2>
         <p className="text-sm text-muted-foreground">
           Escolha a PMO e a OP do Compels: as OPs filhas (PRTs) entram como trechos da mesma OP.{' '}
-          <Link href="/shopfloor/ordens" className="underline">Voltar às ordens</Link>
+          <Link href="/shopfloor/ordens-nova" className="underline">Voltar às ordens</Link>
         </p>
       </div>
       <NovaOpCliente espelho={espelho} postos={chaves} postosPerfil={postosPerfil} clientesExistentes={clientes} />

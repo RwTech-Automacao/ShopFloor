@@ -121,7 +121,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
       const r = await cadastrarOpAction(c)
       if (!r.ok) { toast.error(r.erro, TOAST); return }
       toast.success('OP criada', { ...TOAST, description: `${r.pmo}/${r.op}` })
-      router.push('/shopfloor/ordens')
+      router.push('/shopfloor/ordens-nova')
     })
   }
 

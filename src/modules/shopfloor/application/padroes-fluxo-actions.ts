@@ -35,6 +35,7 @@ export async function salvarPadraoAction(dados: {
     return { ok: false, erro: 'Erro ao salvar o padrão.' }
   }
   revalidatePath('/shopfloor/ordens')
+  revalidatePath('/shopfloor/ordens-nova')
   return { ok: true }
 }
 
@@ -49,5 +50,6 @@ export async function excluirPadraoAction(id: string): Promise<Resultado> {
     return { ok: false, erro: 'Erro ao excluir o padrão.' }
   }
   revalidatePath('/shopfloor/ordens')
+  revalidatePath('/shopfloor/ordens-nova')
   return { ok: true }
 }
