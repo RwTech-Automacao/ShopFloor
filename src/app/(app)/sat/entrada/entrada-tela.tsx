@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { consultarNsAction, registrarNfAction } from '@/modules/sat/application/actions'
 import type { ResultadoConsultaNs } from '@/modules/sat/application/consultar-ns'
-import { ITENS_JUNTO, type ItemJunto, type NotaInput, type SituacaoNf } from '@/modules/sat/domain/entrada'
+import {
+  ITENS_JUNTO, motivosQueExigemTexto, validarMotivos, type ItemJunto, type NotaInput, type SituacaoNf,
+} from '@/modules/sat/domain/entrada'
 import { normalizarNs } from '@/modules/sat/domain/numero-serie'
 import type { MotivoNf } from '@/modules/sat/infra/repository'
 import { cn } from '@/lib/utils'
@@ -139,6 +141,7 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
   const [valor, setValor] = useState('')
   const [situacao, setSituacao] = useState<SituacaoNf>('aprovada')
   const [escolhidos, setEscolhidos] = useState<string[]>([])
+  const [outro, setOutro] = useState('')
   const [ns, setNs] = useState('')
   const [lista, setLista] = useState<Relogio[]>([])
   const [salva, setSalva] = useState<{ numero: string; n: number; id: string } | null>(null)
@@ -193,9 +196,11 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
 
   const registrar = () => {
     if (lista.length === 0) return
+    const m = validarMotivos(situacao, escolhidos, outro, motivosQueExigemTexto(motivos))
+    if (!m.ok) { toast.error(m.erro); return }
     const input: NotaInput = {
       cnpj: emp.cnpj, empresa: emp.empresa, negocianteCodigo: emp.negocianteCodigo, numero, valor, situacao,
-      motivos: escolhidos,
+      motivos: escolhidos, motivoOutro: m.motivoOutro,
       relogios: lista.map((r) => ({
         ns: r.consulta.ns.escrito, produto: r.produto, itensJunto: r.itensJunto, itensJuntoOutros: r.itensJuntoOutros,
         locacao: r.locacao,
@@ -212,6 +217,7 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
       setValor('')
       setSituacao('aprovada')
       setEscolhidos([])
+      setOutro('')
       setNs('')
       setLista([])
       chaves.current.clear()
@@ -243,8 +249,8 @@ export function EntradaTela({ motivos }: { motivos: MotivoNf[] }) {
         </div>
         <AvisoEmpresa buscando={emp.buscando} origem={emp.origem} />
         <SituacaoNfCampos
-          nome="situacao-entrada" situacao={situacao} motivos={escolhidos} opcoes={motivos}
-          onSituacao={setSituacao} onMotivos={setEscolhidos}
+          nome="situacao-entrada" situacao={situacao} motivos={escolhidos} outro={outro} opcoes={motivos}
+          onSituacao={setSituacao} onMotivos={setEscolhidos} onOutro={setOutro}
         />
       </Secao>
 
