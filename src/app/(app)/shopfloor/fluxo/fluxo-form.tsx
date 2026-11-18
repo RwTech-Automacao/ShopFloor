@@ -744,6 +744,7 @@ export function FluxoForm({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- trocar de OP zera o trecho escolhido
     setTrechoSel(null)
+    setTrechosOp([])
     const [pmoT, opT] = sel.split('||')
     if (!pmoT || !opT) { setTrechosOp([]); return }
     let vivo = true
@@ -892,8 +893,8 @@ export function FluxoForm({
             const animando = idx >= 0 && (2 * idx) === rotaPasso - 1 // só o card recém-revelado faz o giro
             return { emRota: revelado && n.id !== rota.atual, atualRota: revelado && n.id === rota.atual, foraRota: !revelado, animarRota: animando }
           })() : {}),
-          // Trecho escolhido (sem busca de SN): os postos dele ficam, os outros esmaecem. Entrada/Saída não mudam.
-          ...(!rota && realce && !n.data.ehEntrada && !n.data.ehSaida ? { foraRota: !realce.has(n.id) } : {}),
+          // Trecho escolhido (sem busca de SN): os postos dele ficam, os outros esmaecem. Entrada/Saída/Manutenção não mudam.
+          ...(!rota && realce && !n.data.ehEntrada && !n.data.ehSaida && !n.data.ehManutencao ? { foraRota: !realce.has(n.id) } : {}),
           // Contagens do período no card quando o filtro está aplicado (senão o card mostra o total/macro).
           ...(periodo ? { mostrarPeriodo: true, periodoAprovadas: periodo[n.id]?.aprovadas ?? 0, periodoReprovadas: periodo[n.id]?.reprovadas ?? 0, periodoRegistros: periodo[n.id]?.registros ?? 0 } : {}),
         } satisfies FluxoNodePayload,
