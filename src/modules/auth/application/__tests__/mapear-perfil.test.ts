@@ -29,7 +29,7 @@ describe('mapearPerfil', () => {
     expect(perfil.permissoes.administrar).toBe(false)
   })
 
-  it('sem perfil_permissao, porModulo fica vazio para os 4 módulos', () => {
+  it('sem perfil_permissao, porModulo fica vazio para os 5 módulos', () => {
     const perfil = mapearPerfil({
       id: 'p1',
       nome: 'Recebimento',
@@ -44,7 +44,7 @@ describe('mapearPerfil', () => {
       pode_lancar: false,
       sistema: true,
     })
-    expect(perfil.porModulo).toEqual({ recebimento: {}, shopfloor: {}, setup: {}, sistema: {} })
+    expect(perfil.porModulo).toEqual({ recebimento: {}, shopfloor: {}, setup: {}, sistema: {}, vitrine: {}, faturamento: {}, sat: {} })
     expect(podeNoModulo(perfil, 'recebimento', 'visualizar')).toBe(false)
   })
 

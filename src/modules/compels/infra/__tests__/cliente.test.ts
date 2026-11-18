@@ -187,6 +187,26 @@ describe('ClienteCompels', () => {
     expect(chamadas[0]!.init.method ?? 'GET').toBe('GET')
   })
 
+  it('negociantes pelo CPF/CNPJ: GET negociante/list com o filtro da grade em JSON (só leitura)', async () => {
+    const resposta = { results: [{ codigo: 'C0001', cpfCnpj: '12.345.678/0001-90', nome: 'CLIENTE FICTICIO', inativo: false }] }
+    const { buscar, chamadas } = fingirCompels({ '/negociante/list': () => json(resposta) })
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    expect(await c.buscarNegociantes('12.345.678/0001-90')).toEqual(resposta)
+    const u = new URL(`https://x${chamadas[0]!.url}`)
+    expect(u.pathname).toBe('/negociante/list')
+    expect(u.searchParams.get('sortFilter')).toBe('[]')
+    // o Compels (Tomcat) responde 400 a `[ ] { }` crus na URL: tudo codificado, como a tela manda (sortFilter=%5B%5D)
+    expect(chamadas[0]!.url).toContain('sortFilter=%5B%5D')
+    expect(chamadas[0]!.url).not.toMatch(/[[\]{}"]/)
+    expect(u.searchParams.get('true')).toBe('1')
+    expect(u.searchParams.get('offset')).toBe('0')
+    expect(u.searchParams.get('limit')).toBe('50')
+    expect(JSON.parse(u.searchParams.get('filter')!)).toMatchObject({ cpfCnpj: '12.345.678/0001-90', situacao: 'ATIVO', codigo: '', nome: '' })
+    expect(chamadas[0]!.url).toContain(`filter=${encodeURIComponent('{"codigo":""')}`)
+    expect(chamadas[0]!.init.method ?? 'GET').toBe('GET')
+    expect((chamadas[0]!.init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+  })
+
   it('item que não veio na resposta: null (não zero)', async () => {
     const { buscar } = fingirCompels({ '/itemMovimento/findFilter': () => json({ data: [] }) })
     expect(await new ClienteCompels(config, tokenFixo(), buscar).consultarSaldoItem('ZZZ')).toBeNull()

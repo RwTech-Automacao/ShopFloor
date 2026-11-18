@@ -1,5 +1,6 @@
 'use client'
 
+import { useFonteFluxo } from './fonte-fluxo'
 import { memo, useEffect, useRef, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
@@ -51,6 +52,7 @@ const cacheEstoque = new Map<string, { ate: number; resultado: EstoqueCompels }>
  * estoque PRÓPRIO do item em TODOS os estoques do Compels: contexto, não a conferência do que esta OP deu entrada.
  */
 function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCompels | 'carregando' | null {
+  const fonte = useFonteFluxo()
   const [estado, setEstado] = useState<EstoqueCompels | 'carregando' | null>(() => {
     if (!pmo) return null
     const guardado = cacheEstoque.get(pmo)
@@ -63,7 +65,7 @@ function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCom
     const ler = (forcar: boolean) => {
       const guardado = cacheEstoque.get(pmo)
       if (!forcar && guardado && guardado.ate > Date.now()) return
-      lerEstoqueCompelsAction(pmo)
+      fonte.lerEstoqueCompels(pmo)
         .then((r) => {
           cacheEstoque.set(pmo, { ate: Date.now() + (r.tipo === 'indisponivel' ? 15_000 : CACHE_ESTOQUE_MS), resultado: r })
           if (vivo) setEstado(r)
@@ -73,7 +75,7 @@ function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCom
     ler(false)
     const id = setInterval(() => { if (!document.hidden) ler(true) }, INTERVALO_ESTOQUE_MS)
     return () => { vivo = false; clearInterval(id) }
-  }, [pmo])
+  }, [fonte, pmo])
 
   // Mudou a contagem do Fluxo (entrou peça no estoque, chegou peça na porta): relê já, sem esperar o intervalo.
   const primeira = useRef(true)
@@ -81,14 +83,14 @@ function useEstoqueCompels(pmo: string | undefined, gatilho: string): EstoqueCom
     if (primeira.current) { primeira.current = false; return }
     if (!pmo) return
     let vivo = true
-    lerEstoqueCompelsAction(pmo)
+    fonte.lerEstoqueCompels(pmo)
       .then((r) => {
         cacheEstoque.set(pmo, { ate: Date.now() + CACHE_ESTOQUE_MS, resultado: r })
         if (vivo) setEstado(r)
       })
       .catch(() => {})
     return () => { vivo = false }
-  }, [pmo, gatilho])
+  }, [fonte, pmo, gatilho])
 
   return pmo ? estado : null
 }
@@ -98,19 +100,20 @@ const INTERVALO_PENDENTE_MS = 10_000
 
 /** Peças que o Almoxarifado já deu entrada e que a fila ainda não entregou ao Compels (com o motivo). */
 function usePendenteCompels(pmo: string | undefined, op: string | undefined, ligado: boolean, gatilho: string): ResumoPendenteOp | null {
+  const fonte = useFonteFluxo()
   const [resumo, setResumo] = useState<ResumoPendenteOp | null>(null)
   useEffect(() => {
     if (!ligado || !pmo || !op) return
     let vivo = true
     const ler = () => {
-      lerPendenteCompelsAction(pmo, op)
+      fonte.lerPendenteCompels(pmo, op)
         .then((r) => { if (vivo) setResumo(r) })
         .catch(() => { if (vivo) setResumo(null) })
     }
     ler()
     const id = setInterval(ler, INTERVALO_PENDENTE_MS)
     return () => { vivo = false; clearInterval(id) }
-  }, [pmo, op, ligado, gatilho]) // gatilho: a contagem do Fluxo mudou → relê na hora
+  }, [fonte, pmo, op, ligado, gatilho]) // gatilho: a contagem do Fluxo mudou → relê na hora
   return ligado && pmo && op ? resumo : null
 }
 
@@ -141,9 +144,9 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
   const estoque = useEstoqueCompels(pmo, gatilho)
   const pendente = usePendenteCompels(pmo, op, temAlmox, gatilho)
   const fila = pendente?.pecas ?? 0
-  const comAlmox = temAlmox && ((aguardando ?? 0) > 0 || fila > 0)
-
   const ok = estoque !== null && estoque !== 'carregando' && estoque.tipo === 'ok'
+  const vendido = ok ? (estoque.vendidoEmNf ?? 0) : 0
+  const comAlmox = (temAlmox && ((aguardando ?? 0) > 0 || fila > 0)) || vendido > 0
   let valorEstoque: React.ReactNode = '—'
   let dicaEstoque = `Estoque de ${pmo} no Compels: produto acabado (PA) + intermediário (EINTER).`
   if (estoque === 'carregando') valorEstoque = '…'
@@ -158,9 +161,9 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
 
   const total = !comAlmox
     ? valorEstoque
-    : ok ? formatarQuantidade(estoque.disponivel + (aguardando ?? 0) + fila) : valorEstoque
+    : ok ? formatarQuantidade(estoque.disponivel + (aguardando ?? 0) + fila - vendido) : valorEstoque
   const dicaTotal = comAlmox
-    ? 'Em estoque no Compels + aguardando o Almoxarifado + na fila do Compels.'
+    ? `Em estoque no Compels + aguardando o Almoxarifado + na fila do Compels${vendido > 0 ? ' − já vendido em NF sem baixa' : ''}.`
     : dicaEstoque
 
   return (
@@ -169,12 +172,14 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
       {comAlmox && (
         <>
           <LinhaResumo sub rotulo="Em estoque" valor={valorEstoque} dica={dicaEstoque} />
-          <LinhaResumo
-            sub
-            rotulo="Aguard. Almoxarifado"
-            valor={aguardando}
-            dica={`${aguardando} peça(s) que passaram por todos os postos e esperam dar entrada no estoque.`}
-          />
+          {temAlmox && (
+            <LinhaResumo
+              sub
+              rotulo="Aguard. Almoxarifado"
+              valor={aguardando}
+              dica={`${aguardando} peça(s) que passaram por todos os postos e esperam dar entrada no estoque.`}
+            />
+          )}
           {/* Fila em 0: a linha não aparece (nada esperando para chegar ao Compels). */}
           {fila > 0 && (
             <LinhaResumo
@@ -183,6 +188,15 @@ function ResumoFinalizadas({ pmo, op, aguardando, finalizadas }: { pmo: string; 
               valor={fila}
               alerta
               dica={`${fila} peça(s) já deram entrada no Almoxarifado e ainda não chegaram ao Compels. ${pendente?.rotulo ?? ''}${pendente?.motivo ? ` · ${pendente.motivo}` : ''}`}
+            />
+          )}
+          {vendido > 0 && (
+            <LinhaResumo
+              sub
+              rotulo="Vendido em NF"
+              valor={`−${formatarQuantidade(vendido)}`}
+              alerta
+              dica={`${formatarQuantidade(vendido)} peça(s) de ${pmo} já faturadas em NF de saída ainda sem baixa no Compels. Saem do total; a baixa automática baixa a nota quando houver saldo.`}
             />
           )}
         </>

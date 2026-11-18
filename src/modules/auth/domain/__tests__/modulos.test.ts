@@ -2,13 +2,25 @@ import { describe, it, expect } from 'vitest'
 import { MODULOS, PERMISSOES_POR_MODULO } from '../modulos'
 
 describe('MODULOS', () => {
-  it('contém os 4 módulos do catálogo', () => {
+  it('contém os 7 módulos do catálogo', () => {
     const chaves = MODULOS.map((m) => m.chave)
-    expect(chaves).toEqual(['recebimento', 'shopfloor', 'setup', 'sistema'])
+    expect(chaves).toEqual(['recebimento', 'shopfloor', 'setup', 'sistema', 'vitrine', 'faturamento', 'sat'])
   })
 })
 
 describe('PERMISSOES_POR_MODULO', () => {
+  it('sat tem visualizar, registrar_entrada, aprovar_nf, associar_os e administrar', () => {
+    expect(PERMISSOES_POR_MODULO.sat).toEqual(['visualizar', 'registrar_entrada', 'aprovar_nf', 'associar_os', 'administrar'])
+  })
+
+  it('faturamento tem visualizar e baixar', () => {
+    expect(PERMISSOES_POR_MODULO.faturamento).toEqual(['visualizar', 'baixar'])
+  })
+
+  it('vitrine só tem visualizar', () => {
+    expect(PERMISSOES_POR_MODULO.vitrine).toEqual(['visualizar'])
+  })
+
   it('shopfloor expõe lancar', () => {
     expect(PERMISSOES_POR_MODULO.shopfloor).toContain('lancar')
   })

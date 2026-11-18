@@ -1,5 +1,7 @@
 'use client'
 
+import type { PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
+import { useFonteFluxo } from './fonte-fluxo'
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ReactFlow, Background, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance, type FitViewOptions } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -10,7 +12,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { carregarFluxo, detalhePosto, snsManutencao, burninDetalhe, embalagemCaixas, historicoPosto, producaoPeriodo, rotaSn, fluxoPeriodo, opsComBipes, type PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaixa, PassagemDoPosto, ProducaoBucket } from '@/modules/shopfloor/infra/fluxo-repository'
 import { dadosPmoOpDoNo } from './dados-pmo-op-do-no'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo, ordenarOpsPorBipes } from '@/modules/shopfloor/domain/fluxo-op'
@@ -203,6 +204,7 @@ function ListaSns({ titulo, itens, carregando, onSn, limite = Infinity }: { titu
 /** Histórico do posto (acordeon): fecha por padrão; ao abrir, carrega 100 do banco e vai buscando
  *  +100 conforme rola (server-side, não puxa tudo). Uma linha por passagem, mais recente primeiro. */
 function HistoricoPosto({ pmo, op, posto, onSn }: { pmo: string; op: string; posto: string; onSn: (sn: string) => void }) {
+  const fonte = useFonteFluxo()
   const [aberto, setAberto] = useState(false)
   const [linhas, setLinhas] = useState<PassagemDoPosto[]>([])
   const [temMais, setTemMais] = useState(false)
@@ -214,7 +216,7 @@ function HistoricoPosto({ pmo, op, posto, onSn }: { pmo: string; op: string; pos
     setAberto(novo)
     if (novo && !carregou) {
       start(async () => {
-        const r = await historicoPosto(pmo, op, posto, 0)
+        const r = await fonte.historicoPosto(pmo, op, posto, 0)
         if (!r.ok) { toast.error(r.erro); return }
         setLinhas(r.linhas); setTemMais(r.temMais); setCarregou(true)
       })
@@ -223,7 +225,7 @@ function HistoricoPosto({ pmo, op, posto, onSn }: { pmo: string; op: string; pos
   function mais() {
     if (carregando || !temMais) return
     start(async () => {
-      const r = await historicoPosto(pmo, op, posto, linhas.length)
+      const r = await fonte.historicoPosto(pmo, op, posto, linhas.length)
       if (!r.ok) { toast.error(r.erro); return }
       setLinhas((p) => [...p, ...r.linhas]); setTemMais(r.temMais)
     })
@@ -321,6 +323,7 @@ function niceCeil(v: number): number {
 /** Gráfico de produção do posto por período (peças × dia/hora) — LINHA + área, com grade e eixos.
  *  Carrega ao abrir o posto; segue o filtro (janela por hora) ou o macro (por dia, desde o início ali). */
 function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op: string; posto: string; ini: string | null; fim: string | null; bucket: 'dia' | 'hora' }) {
+  const fonte = useFonteFluxo()
   const [dados, setDados] = useState<ProducaoBucket[]>([])
   const [carregou, setCarregou] = useState(false)
   const [carregando, start] = useTransition()
@@ -332,12 +335,12 @@ function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op
     let vivo = true
     setCarregou(false) // eslint-disable-line react-hooks/set-state-in-effect
     start(async () => {
-      const r = await producaoPeriodo(pmo, op, posto, ini, fim, bucket)
+      const r = await fonte.producaoPeriodo(pmo, op, posto, ini, fim, bucket)
       if (!vivo) return
       if (r.ok) { setDados(r.linhas); setCarregou(true) }
     })
     return () => { vivo = false }
-  }, [pmo, op, posto, ini, fim, bucket])
+  }, [fonte, pmo, op, posto, ini, fim, bucket])
   useEffect(() => {
     const el = boxRef.current
     if (!el) return
@@ -483,6 +486,7 @@ export function FluxoForm({
   ocultarSeletor,
   modoTv = false,
   embed = false,
+  intervaloAtualizacaoMs = 20_000,
 }: {
   ops: OpItem[]
   ordensDashboard: OrdemPesquisa[]
@@ -494,7 +498,10 @@ export function FluxoForm({
   /** Marca que a tela roda dentro do iframe do Dashboard (passada SEMPRE pela página do embed,
    *  independente de `?modo=tv`); hoje só decide o esconder-no-hover dos três controles. */
   embed?: boolean
+  /** De quanto em quanto a tela relê o fluxo (padrão 20 s; a Vitrine usa menos para as peças andarem). */
+  intervaloAtualizacaoMs?: number
 }) {
+  const fonte = useFonteFluxo()
   // `sel` = "pmo||op" (a chave da OP escolhida). Com `opFixa`, já nasce escolhida.
   const [sel, setSel] = useState(opFixa ? `${opFixa.pmo}||${opFixa.op}` : '')
   const [dom, setDom] = useState<FluxoNodePos[]>([])
@@ -581,25 +588,25 @@ export function FluxoForm({
     startSns(async () => {
       if (id === MANUTENCAO) {
         // Manutenção é ramo: só "agora" = peças travadas (último bipe reprovado), coerente com o badge.
-        const r = await snsManutencao(pmo, op)
+        const r = await fonte.snsManutencao(pmo, op)
         if (r.ok) setListas({ agora: r.sns, historico: [] })
         else toast.error(r.erro)
       } else {
-        const r = await detalhePosto(pmo, op, id)
+        const r = await fonte.detalhePosto(pmo, op, id)
         if (!r.ok) { toast.error(r.erro); return }
         setListas({ agora: r.agora, historico: r.historico })
         // Burn-in: cozinhando (ciclo aberto) + eventos de entrada e saída separados.
         if (recurso === 'burnin') {
-          const b = await burninDetalhe(pmo, op, id)
+          const b = await fonte.burninDetalhe(pmo, op, id)
           if (b.ok) setBurnin(b.detalhe)
         } else if (recurso === 'caixa') {
           // Embalagem: cada peça + em qual caixa está.
-          const c = await embalagemCaixas(pmo, op, id)
+          const c = await fonte.embalagemCaixas(pmo, op, id)
           if (c.ok) setCaixas(c.itens)
         }
       }
     })
-  }, [aberto, dom])
+  }, [fonte, aberto, dom])
 
   const onNodeClick = useCallback<NodeMouseHandler>((_, node) => abrir(node.id), [abrir])
 
@@ -645,7 +652,7 @@ export function FluxoForm({
     // padrão do domínio + enquadramento automático), não o que alguém arrastou naquela máquina.
     layoutRef.current = embed ? new Map() : lerLayout(pmo, op)
     startCarregar(async () => {
-      const r = await carregarFluxo(pmo, op)
+      const r = await fonte.carregarFluxo(pmo, op)
       if (!r.ok) { toast.error(r.erro); return }
       setDom(r.nodes)
       setEdgesBase(paraEdges(r.edges, r.nodes))
@@ -653,7 +660,7 @@ export function FluxoForm({
       setAtualizadoMs(Date.now())
       setBuscou(true)
     })
-  }, [embed])
+  }, [fonte, embed])
 
   const escolher = useCallback((v: string) => {
     setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
@@ -784,9 +791,9 @@ export function FluxoForm({
     const { pmo, op } = ctx.current
     if (!pmo || !op) return
     let vivo = true
-    fluxoPeriodo(pmo, op, faixas).then((r) => { if (vivo && r.ok) { setPeriodo(r.postos); setPeriodoChave(chaveJanela) } }).catch(() => {})
+    fonte.fluxoPeriodo(pmo, op, faixas).then((r) => { if (vivo && r.ok) { setPeriodo(r.postos); setPeriodoChave(chaveJanela) } }).catch(() => {})
     return () => { vivo = false }
-  }, [buscou, filtroAplicado, sel, faixas, chaveJanela])
+  }, [fonte, buscou, filtroAplicado, sel, faixas, chaveJanela])
 
   // Busca de SN: realça a rota da peça no canvas (estilo n8n). `realce` = nós a acender; `atual` = posição.
   const buscarRota = () => {
@@ -795,7 +802,7 @@ export function FluxoForm({
     if (!sn) { setRota(null); return } // Ver sem SN → volta o fluxo normal/total
     if (!pmo || !op) return
     startRota(async () => {
-      const r = await rotaSn(pmo, op, sn)
+      const r = await fonte.rotaSn(pmo, op, sn)
       if (!r.ok) { toast.error(r.erro); return }
       if (r.postos.length === 0) { toast.error('Este SN não passou por esta OP.'); setRota(null); return }
       // Concluiu (r.atual null) → destaca a caixa "Finalizadas" (SAÍDA) SE ela existe (OP com qtd);
@@ -882,7 +889,7 @@ export function FluxoForm({
     const { pmo, op } = ctx.current
     let vivo = true
     const atualizar = async () => {
-      const r = await carregarFluxo(pmo, op)
+      const r = await fonte.carregarFluxo(pmo, op)
       if (vivo && r.ok) {
         setDom(r.nodes)
         setEdgesBase(paraEdges(r.edges, r.nodes))
@@ -890,15 +897,15 @@ export function FluxoForm({
         setAtualizadoMs(Date.now())
       }
       if (filtroAplicadoRef.current) { // só recarrega o período quando o filtro está aplicado (senão macro)
-        const rp = await fluxoPeriodo(pmo, op, faixasRef.current) // produção do período + cadência
+        const rp = await fonte.fluxoPeriodo(pmo, op, faixasRef.current) // produção do período + cadência
         if (vivo && rp.ok) setPeriodo(rp.postos)
       }
     }
-    const t = setInterval(() => { if (!document.hidden) void atualizar() }, 20_000)
+    const t = setInterval(() => { if (!document.hidden) void atualizar() }, intervaloAtualizacaoMs)
     const onVis = () => { if (!document.hidden) void atualizar() } // voltou pra aba → atualiza já
     document.addEventListener('visibilitychange', onVis)
     return () => { vivo = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
-  }, [buscou, sel])
+  }, [fonte, intervaloAtualizacaoMs, buscou, sel])
 
   const detalhe = aberto ? dom.find((n) => n.id === aberto)?.data : undefined
   // Postos da OP em ordem (sem Manutenção nem as caixas Entrada/Saída) — pra timeline e % de progresso.
@@ -1115,13 +1122,13 @@ export function FluxoForm({
       if (criadoAte) { const t = Date.parse(`${criadoAte}T00:00:00`); if (!Number.isNaN(t)) fim = new Date(t + 86400000).toISOString() }
     }
     let cancelado = false
-    opsComBipes(ini, fim).then((bipes) => {
+    fonte.opsComBipes(ini, fim).then((bipes) => {
       if (cancelado) return
       if (bipes === null && chavePeriodoOps !== 'tudo') toast.error('Não foi possível filtrar as OPs por período. Mostrando todas.')
       setBipesPeriodo({ chave: chavePeriodoOps, bipes })
     })
     return () => { cancelado = true }
-  }, [chavePeriodoOps, filtroData, criadoDe, criadoAte])
+  }, [fonte, chavePeriodoOps, filtroData, criadoDe, criadoAte])
   const bipesDaVez = bipesPeriodo?.chave === chavePeriodoOps ? bipesPeriodo.bipes : null
   const carregandoOps = !semPeriodo && bipesPeriodo?.chave !== chavePeriodoOps
   const opsComBipe = !semPeriodo && !carregandoOps ? bipesDaVez : null
@@ -1241,7 +1248,7 @@ export function FluxoForm({
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
                   <span className="relative inline-flex size-2 rounded-full bg-green-500" />
                 </span>
-                Ao vivo · atualiza a cada 15s
+                Ao vivo · atualiza a cada {Math.round(intervaloAtualizacaoMs / 1000)}s
               </span>
             )}
             {buscou && (

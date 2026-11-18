@@ -32,6 +32,7 @@ import {
   Table2,
   History,
   Workflow,
+  Sparkles,
   ScrollText,
   Info,
   ChevronDown,
@@ -49,6 +50,9 @@ import {
   ChartColumn,
   FileText,
   Network,
+  Receipt,
+  PackageOpen,
+  Headset,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -102,6 +106,22 @@ const SHOPFLOOR: FolhaModular[] = [
   { chave: 'registros', rotulo: 'Registros', href: '/shopfloor/registros', icone: History, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
   { chave: 'op-estruturas', rotulo: 'Estruturas', href: '/shopfloor/estruturas', icone: Network, modulo: 'shopfloor', perm: 'administrar' },
+]
+
+// Vitrine do marketing: o Fluxo da OP com uma produção fictícia (sem banco). Grupo próprio no menu.
+const VITRINE: FolhaModular[] = [
+  { chave: 'vitrine-fluxo', rotulo: 'Fluxo da OP', href: '/vitrine/fluxo', icone: Sparkles, modulo: 'vitrine', perm: 'visualizar' },
+]
+
+// Faturamento: baixa de NF de saída no Compels com fila de prioridade. Grupo próprio no menu.
+const FATURAMENTO: FolhaModular[] = [
+  { chave: 'fat-baixa-nf', rotulo: 'Baixa de NF', href: '/faturamento/baixa-nf', icone: Receipt, modulo: 'faturamento', perm: 'visualizar' },
+]
+
+// SAT: entrada de equipamento que volta do cliente (FO-161). Grupo próprio no menu.
+const SAT: FolhaModular[] = [
+  { chave: 'sat-entrada', rotulo: 'Entrada de equipamento', href: '/sat/entrada', icone: PackageOpen, modulo: 'sat', perm: 'registrar_entrada' },
+  { chave: 'sat-equipamentos', rotulo: 'Equipamentos', href: '/sat/equipamentos', icone: Wrench, modulo: 'sat', perm: 'visualizar' },
 ]
 
 const SETUP: FolhaModular[] = [
@@ -226,6 +246,10 @@ export function AppShell({
   const shopfloorAtivo = pathname.startsWith('/shopfloor')
   const [shopfloorAberto, setShopfloorAberto] = useState(shopfloorAtivo)
   const setupVisivel = SETUP.filter(pode)
+  const vitrineVisivel = VITRINE.filter(pode)
+  const faturamentoVisivel = FATURAMENTO.filter(pode)
+  const satVisivel = SAT.filter(pode)
+  const [satAberto, setSatAberto] = useState(pathname.startsWith('/sat'))
   const setupAtivo = pathname.startsWith('/setup')
   // Nome diferente do `setupAberto`/`setSetupAberto` do modo quiosque (mais abaixo)
   // para não colidir com esse estado já existente.
@@ -240,7 +264,7 @@ export function AppShell({
   const [configSetupAberto, setConfigSetupAberto] = useState(configSetupAtivo)
 
   const tituloPagina =
-    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...CONFIG_TODOS, AJUDA, PERFIL]
+    [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...VITRINE, ...FATURAMENTO, ...SAT, ...CONFIG_TODOS, AJUDA, PERFIL]
       .filter((i) => ehAtivo(pathname, i.href))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
@@ -397,6 +421,57 @@ export function AppShell({
                 ))}
               </div>
             )}
+          </>
+        )}
+
+        {faturamentoVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('Faturamento')}
+            {faturamentoVisivel.map((i) => (
+              <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                <i.icone className="size-[18px] shrink-0" />
+                {i.rotulo}
+              </Link>
+            ))}
+          </>
+        )}
+
+        {satVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('SAT')}
+            <button
+              type="button"
+              onClick={() => setSatAberto((v) => !v)}
+              className={cn(linkClasse(false), 'w-full justify-between')}
+            >
+              <span className="flex items-center gap-3">
+                <Headset className="size-[18px] shrink-0" />
+                SAT
+              </span>
+              <ChevronDown className={cn('size-4 transition-transform', satAberto && 'rotate-180')} />
+            </button>
+            {satAberto && (
+              <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
+                {satVisivel.map((i) => (
+                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                    <i.icone className="size-[18px] shrink-0" />
+                    {i.rotulo}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {vitrineVisivel.length > 0 && (
+          <>
+            {rotuloGrupo('Vitrine')}
+            {vitrineVisivel.map((i) => (
+              <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                <i.icone className="size-[18px] shrink-0" />
+                {i.rotulo}
+              </Link>
+            ))}
           </>
         )}
 

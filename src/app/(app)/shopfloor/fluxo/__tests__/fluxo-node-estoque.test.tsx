@@ -13,6 +13,15 @@ const { lerEstoqueCompelsAction, lerPendenteCompelsAction } = vi.hoisted(() => (
   lerEstoqueCompelsAction: vi.fn(),
   lerPendenteCompelsAction: vi.fn(),
 }))
+// A fonte de dados do Fluxo (fonte-fluxo) importa TODAS as actions; aqui só o estoque importa.
+vi.mock('@/modules/shopfloor/application/fluxo-actions', () => ({
+  carregarFluxo: vi.fn(), fluxoPeriodo: vi.fn(), rotaSn: vi.fn(), detalhePosto: vi.fn(), historicoPosto: vi.fn(),
+  producaoPeriodo: vi.fn(), burninDetalhe: vi.fn(), embalagemCaixas: vi.fn(), snsManutencao: vi.fn(), opsComBipes: vi.fn(),
+}))
+vi.mock('@/modules/shopfloor/application/pesquisa-actions', () => ({
+  buscarHistoricoSN: vi.fn(), carregarDefeitosDaOp: vi.fn(), carregarResumoDefeitos: vi.fn(),
+}))
+vi.mock('@/modules/shopfloor/application/dashboard-actions', () => ({ carregarDashboard: vi.fn() }))
 vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({ lerEstoqueCompelsAction, lerPendenteCompelsAction }))
 
 const { FluxoNode } = await import('../fluxo-node')
@@ -80,6 +89,22 @@ describe('card Finalizadas com o Almoxarifado no fim da rota', () => {
     await waitFor(() => expect(valorDe('Em estoque')).toBe('indisponível'))
     expect(valorDe('Total disponível')).toBe('indisponível')
     expect(valorDe('Aguard. Almoxarifado')).toBe('5')
+  })
+})
+
+describe('card Finalizadas com venda em NF sem baixa', () => {
+  it('o vendido em NF sai do total e aparece numa linha própria', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue({ ...OK, vendidoEmNf: 73 })
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMONF1', op: '9001', aguardandoAlmoxarifado: 20 }) } as never))
+    await waitFor(() => expect(valorDe('Vendido em NF')).toBe('−73'))
+    expect(valorDe('Total disponível')).toBe('1.120') // 1.173 + 20 − 73
+  })
+
+  it('OP sem Almoxarifado: total = estoque − vendido, sem a linha de aguardando', async () => {
+    lerEstoqueCompelsAction.mockResolvedValue({ ...OK, vendidoEmNf: 173 })
+    render(createElement(FluxoNode, { data: saida({ pmo: 'PMONF2', op: '9002' }) } as never))
+    await waitFor(() => expect(valorDe('Total disponível')).toBe('1.000'))
+    expect(screen.queryByText('Aguard. Almoxarifado')).toBeNull()
   })
 })
 

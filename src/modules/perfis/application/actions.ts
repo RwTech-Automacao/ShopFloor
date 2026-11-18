@@ -1,5 +1,6 @@
 'use server'
 
+import { flagsLegadas } from '../domain/regras-perfil'
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo, type Modulo, type Permissao } from '@/modules/auth/domain/perfil'
@@ -60,21 +61,9 @@ function lerGrants(formData: FormData): Grant[] {
   return grants
 }
 
-// Os pode_* seguem como colunas derivadas (usadas pelo RLS): cada uma vira
-// true se a permissão correspondente foi concedida em QUALQUER módulo (OR).
+// Os pode_* seguem como colunas derivadas (usadas pelo RLS) — regra em `flagsLegadas` (a Vitrine não liga).
 function calcularFlags(grants: Grant[]): Omit<DadosPerfil, 'nome'> {
-  const concedida = (permissao: Permissao) => grants.some((g) => g.permissao === permissao)
-  return {
-    pode_visualizar: concedida('visualizar'),
-    pode_importar: concedida('importar'),
-    pode_editar: concedida('editar'),
-    pode_finalizar: concedida('finalizar'),
-    pode_editar_finalizado: concedida('editar_finalizado'),
-    pode_excluir: concedida('excluir'),
-    pode_gerar_etiqueta: concedida('gerar_etiqueta'),
-    pode_administrar: concedida('administrar'),
-    pode_lancar: concedida('lancar'),
-  }
+  return flagsLegadas(grants)
 }
 
 export async function salvarPerfil(

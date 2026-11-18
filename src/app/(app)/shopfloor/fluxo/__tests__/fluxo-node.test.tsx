@@ -14,8 +14,18 @@ vi.mock('@xyflow/react', () => ({
 vi.mock('@/modules/shopfloor/application/estrutura-actions', () => ({ lerTrechosCompelsAction: vi.fn(async () => []) }))
 
 // O card Concluído consulta o estoque do Compels por uma server action; aqui ela não importa.
+// A fonte de dados do Fluxo (fonte-fluxo) importa TODAS as actions; aqui só o estoque importa.
+vi.mock('@/modules/shopfloor/application/fluxo-actions', () => ({
+  carregarFluxo: vi.fn(), fluxoPeriodo: vi.fn(), rotaSn: vi.fn(), detalhePosto: vi.fn(), historicoPosto: vi.fn(),
+  producaoPeriodo: vi.fn(), burninDetalhe: vi.fn(), embalagemCaixas: vi.fn(), snsManutencao: vi.fn(), opsComBipes: vi.fn(),
+}))
+vi.mock('@/modules/shopfloor/application/pesquisa-actions', () => ({
+  buscarHistoricoSN: vi.fn(), carregarDefeitosDaOp: vi.fn(), carregarResumoDefeitos: vi.fn(),
+}))
+vi.mock('@/modules/shopfloor/application/dashboard-actions', () => ({ carregarDashboard: vi.fn() }))
 vi.mock('@/modules/shopfloor/application/estoque-compels-actions', () => ({
   lerEstoqueCompelsAction: vi.fn(async () => ({ tipo: 'nao_configurado' })),
+  lerPendenteCompelsAction: vi.fn(async () => null),
 }))
 
 const { FluxoNode } = await import('../fluxo-node')

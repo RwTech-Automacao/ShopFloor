@@ -4,6 +4,7 @@ vi.mock('server-only', () => ({}))
 
 import {
   buscarEstoqueCompels,
+  buscarSaldoPa,
   limparEstoqueCompelsParaTeste,
   TTL_FALHA_MS,
   TTL_OK_MS,
@@ -81,5 +82,44 @@ describe('buscarEstoqueCompels', () => {
     const consultar = vi.fn()
     expect(await buscarEstoqueCompels('  ', { cliente: { consultarSaldoPorEstoque: consultar } })).toEqual({ tipo: 'nao_encontrado' })
     expect(consultar).not.toHaveBeenCalled()
+  })
+})
+
+describe('vendido em NF sem baixa', () => {
+  const notas = [
+    { id: 1, numero: 74202, empresa: { id: 133 }, dataHoraEmissao: '2025-07-25 10:00:00' }, // a antiga também conta
+    { id: 2, numero: 80, empresa: { id: 133 }, dataHoraEmissao: '2026-11-18 10:00:00' },
+  ]
+  const itens = {
+    1: [{ itemNotaICMS: { quantidadeInterna: 99, numeroItemPedidoVenda: 'PRT446' } }],
+    2: [{ itemNotaICMS: { quantidadeInterna: 5, numeroItemPedidoVenda: 'PRT446' } }, { itemNotaICMS: { quantidadeInterna: 7, numeroItemPedidoVenda: 'OUTRO' } }],
+  } as Record<number, unknown[]>
+  const cliente = () => ({
+    consultarSaldoPorEstoque: vi.fn(async () => SALDO),
+    listarNfsPendentes: vi.fn(async () => notas),
+    itensDaNf: vi.fn(async (id: number) => ({ proprias: itens[id] ?? [] })),
+  })
+
+  it('sem data de corte: soma TODAS as pendentes, só do código consultado (COMPELS_BAIXA_NF_DESDE não existe mais)', async () => {
+    vi.stubEnv('COMPELS_BAIXA_NF_DESDE', '2026-11-17')
+    const r = await buscarEstoqueCompels('PRT446_', { cliente: cliente(), agora: () => 1_000 })
+    expect(r).toMatchObject({ tipo: 'ok', disponivel: 28, vendidoEmNf: 104 })
+    vi.unstubAllEnvs()
+  })
+})
+
+describe('buscarSaldoPa', () => {
+  it('saldo do item no PA, com o mesmo cache do card do Fluxo (uma consulta só)', async () => {
+    const consultar = vi.fn(async () => SALDO)
+    const deps = { cliente: { consultarSaldoPorEstoque: consultar }, agora: () => 1_000 }
+    expect(await buscarSaldoPa('PRT446', deps)).toBe(20)
+    await buscarEstoqueCompels('PRT446', deps)
+    expect(await buscarSaldoPa('prt446', deps)).toBe(20)
+    expect(consultar).toHaveBeenCalledTimes(1)
+  })
+
+  it('item sem saldo = 0; Compels fora = null (a tela não inventa a falta)', async () => {
+    expect(await buscarSaldoPa('ZZZ', { cliente: { consultarSaldoPorEstoque: async () => [] }, agora: () => 1_000 })).toBe(0)
+    expect(await buscarSaldoPa('YYY', { cliente: { consultarSaldoPorEstoque: async () => { throw new Error('fora') } }, agora: () => 1_000 })).toBeNull()
   })
 })
