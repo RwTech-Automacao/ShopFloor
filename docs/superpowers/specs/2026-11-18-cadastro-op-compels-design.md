@@ -50,8 +50,12 @@ No Compels uma produção é uma **cadeia de OPs** (ex.: 8498 PMOC14 ← 8499 PR
 
 ## Compels (só leitura)
 
-- Lista de OPs ativas: `ordemProducaoSimples/findAllFilter` (o mesmo da busca de OP), filtrando pela situação. **O
-  formato do filtro de situação precisa de um HAR** da lista de OPs do Compels filtrada por "Aberta".
+- Lista de OPs ativas: `POST ordemProducaoSimples/findAllFilter` (form: `sortFilter=null`, `filtro=<json>`, `page`,
+  `start`, `limit`), o mesmo filtro da busca de OP com `"statusList":["Aberta","Planejada","Empenhada","Em Processo"]`
+  (HAR de 18/11; as outras situações são "Produzida" e "Cancelada") e a janela de datas da tela (último ano). Resposta
+  `{success, totalCount, data:[…]}`: pagina até `totalCount`. Campos usados por linha: `numero`, `id`, `status`, `nivel`,
+  `ordemProducaoMaeNumero`, `ordemProducaoPrincipalNumero`, `quantidade`, `quantidadeProduzida`, `dataDocumento`,
+  `composicaoProduto.item.codigo`/`descricao`, `negociante.codigo`.
 - Árvore: `ordemProducaoMaeNumero`/`ordemProducaoPrincipalNumero`/`nivel` da lista (já lidos por `lerNoOp`).
 - Compels fora: o cadastro usa o último espelho e mostra a hora da última leitura.
 
