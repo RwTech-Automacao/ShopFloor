@@ -25,17 +25,17 @@ export interface OpEspelhoLida {
 /** Uma OP do espelho como a tela lê de `sf_compels_ops`: + se ainda está na lista de ativas e a hora da leitura. */
 export type OpEspelho = OpEspelhoLida & { ativa: boolean; lidoEm: string }
 
-const UM_ANO_MS = 365 * 24 * 60 * 60 * 1000
+const TRES_ANOS_MS = 3 * 365 * 24 * 60 * 60 * 1000
 const dataIso = (ms: number) => new Date(ms).toISOString().slice(0, 10) + 'T00:00:00'
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 const texto = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 
-/** O filtro da busca de OP (o mesmo de `ClienteCompels.buscarOp`) sem número, só as situações ativas, último ano. */
+/** O filtro da busca de OP (o mesmo de `ClienteCompels.buscarOp`) sem número, só as situações ativas, janela de 3 anos (a mesma da busca de OP). */
 export function filtroOpsAtivas(agoraMs: number): Record<string, unknown> {
   return {
     numero: '', codigoNegociante: null, nomeNegociante: null, cpfCnpjNegociante: null,
     clientePedido: '', item: '', linha: '', tipoPropriedade: null, statusList: [...SITUACOES_ATIVAS],
-    selecionarPor: 'Data Documento', dataInicial: dataIso(agoraMs - UM_ANO_MS), dataFinal: dataIso(agoraMs),
+    selecionarPor: 'Data Documento', dataInicial: dataIso(agoraMs - TRES_ANOS_MS), dataFinal: dataIso(agoraMs),
     numeroPedido: '', centroCusto: '', listarPendentes: false, prototipo: false, etapa: '',
     selecionarOPPor: 'op', observacao: '', nivel: '', responsavelCriacao: '', responsavelAlteracao: '',
     situacaoId: null, semVinculoComSolicitacaoInternaCompra: false,

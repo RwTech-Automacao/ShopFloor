@@ -367,7 +367,7 @@ export class ClienteCompels {
   }
 
   /**
-   * As OPs ATIVAS (Aberta/Planejada/Empenhada/Em Processo) do último ano, pela lista da tela de OPs (HAR 18/11):
+   * As OPs ATIVAS (Aberta/Planejada/Empenhada/Em Processo) dos últimos 3 anos, pela lista da tela de OPs (HAR 18/11):
    * `POST ordemProducaoSimples/findAllFilter` paginado até o `totalCount`. Só leitura — é o espelho do cadastro de OP.
    * Lista que acaba antes do total é erro: o espelho inativa quem não veio, então lista incompleta nunca é gravada.
    */
@@ -394,7 +394,13 @@ export class ClienteCompels {
     // Mais de maxPaginas páginas cheias sem chegar ao fim: também é lista incompleta.
     if (!chegouAoFim) throw new RespostaInesperada(`lista de OPs ativas passou de ${maxPaginas * limite} linhas`)
     if (total !== null && brutas.length < total) throw new RespostaInesperada(`lista de OPs ativas incompleta (${brutas.length} de ${total})`)
-    return brutas.map(opDaLinhaLista).filter((o): o is OpEspelhoLida => o !== null)
+    const lidas = brutas.map(opDaLinhaLista)
+    const ilegiveis = lidas.filter((o) => o === null).length
+    // Linha que não deu para ler = rodada pulada: gravar sem ela inativaria uma OP que continua ativa.
+    if (ilegiveis > 0) throw new RespostaInesperada(`${ilegiveis} linha(s) da lista de OPs ativas não puderam ser lidas`)
+    const unicas = [...new Map((lidas as OpEspelhoLida[]).map((o) => [o.numero, o])).values()]
+    if (total !== null && unicas.length < total) throw new RespostaInesperada(`lista de OPs ativas incompleta (${unicas.length} de ${total})`)
+    return unicas
   }
 
   /**

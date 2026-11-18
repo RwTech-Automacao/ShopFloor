@@ -246,7 +246,7 @@ describe('ClienteCompels', () => {
     const linha = (n: number) => ({ id: n, numero: n, status: 'Aberta', nivel: 1, composicaoProduto: { item: { codigo: `PMO${n}`, descricao: '' } } })
     const paginas: Record<string, unknown> = {
       '1': { success: true, totalCount: 150, data: Array.from({ length: 100 }, (_, i) => linha(i + 1)) },
-      '2': { success: true, totalCount: 150, data: [...Array.from({ length: 49 }, (_, i) => linha(i + 101)), { numero: 999 }] },
+      '2': { success: true, totalCount: 150, data: [...Array.from({ length: 50 }, (_, i) => linha(i + 101))] },
     }
     const corpos: URLSearchParams[] = []
     const buscar = (async (_url: string | URL | Request, init: RequestInit = {}) => {
@@ -256,9 +256,27 @@ describe('ClienteCompels', () => {
     }) as unknown as typeof fetch
     const c = new ClienteCompels(config, tokenFixo(), buscar, () => Date.UTC(2026, 10, 18))
     const ops = await c.listarOpsAtivas()
-    expect(ops).toHaveLength(149) // a linha sem código é descartada
+    expect(ops).toHaveLength(150)
     expect(corpos.map((x) => [x.get('page'), x.get('start'), x.get('limit'), x.get('sortFilter')])).toEqual([['1', '0', '100', 'null'], ['2', '100', '100', 'null']])
     expect(JSON.parse(corpos[0]!.get('filtro')!).statusList).toEqual(['Aberta', 'Planejada', 'Empenhada', 'Em Processo'])
+  })
+
+  it('listarOpsAtivas: linha ilegível é erro (não inativa OP por causa de linha que não deu para ler)', async () => {
+    const buscar = (async () => json({ success: true, totalCount: 2, data: [{ id: 1, numero: 1, composicaoProduto: { item: { codigo: 'A' } } }, { numero: 999 }] })) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await expect(c.listarOpsAtivas()).rejects.toThrow(/1 linha/)
+  })
+
+  it('listarOpsAtivas: linha repetida entre páginas não mascara OP faltando (conta únicas)', async () => {
+    const linha = (n: number) => ({ id: n, numero: n, composicaoProduto: { item: { codigo: `P${n}` } } })
+    const paginas: Record<string, unknown> = {
+      '1': { success: true, totalCount: 101, data: Array.from({ length: 100 }, (_, i) => linha(i + 1)) },
+      '2': { success: true, totalCount: 101, data: [linha(1)] },
+    }
+    const buscar = (async (_u: string | URL | Request, init: RequestInit = {}) =>
+      json(paginas[new URLSearchParams(String(init.body)).get('page') ?? ''] ?? { data: [] })) as unknown as typeof fetch
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await expect(c.listarOpsAtivas()).rejects.toThrow(/100 de 101/)
   })
 
   it('listarOpsAtivas: lista que para antes do totalCount é erro (não pode inativar o resto)', async () => {

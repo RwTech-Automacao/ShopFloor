@@ -26,12 +26,12 @@ describe('opDaLinhaLista', () => {
 })
 
 describe('filtroOpsAtivas', () => {
-  it('mesmo filtro da busca de OP, sem número, com as 4 situações ativas e o último ano', () => {
+  it('mesmo filtro da busca de OP, sem número, com as 4 situações ativas e a janela de 3 anos', () => {
     const f = filtroOpsAtivas(Date.UTC(2026, 10, 18))
     expect(f.numero).toBe('')
     expect(f.statusList).toEqual(['Aberta', 'Planejada', 'Empenhada', 'Em Processo'])
     expect(SITUACOES_ATIVAS).toEqual(['Aberta', 'Planejada', 'Empenhada', 'Em Processo'])
-    expect(f.dataInicial).toBe('2025-11-18T00:00:00')
+    expect(f.dataInicial).toBe('2023-11-19T00:00:00')
     expect(f.dataFinal).toBe('2026-11-18T00:00:00')
     expect(f.selecionarOPPor).toBe('op')
   })

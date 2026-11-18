@@ -213,5 +213,6 @@ seg–sex (dentro da janela do RDS ligado).
 */10 10-21 * * 1-5 flock -n $HOME/.espelho-ops.lock curl -fsS -m 120 -X POST -H @$HOME/.estoque-cron-header http://127.0.0.1:3000/api/compels/espelho-ops >> $HOME/espelho-ops.log 2>&1
 ```
 
-Confira com `tail ~/espelho-ops.log`: uma linha JSON por rodada (`lidas`, `novas`, `atualizadas`, `inativadas`).
+Confira com `tail ~/espelho-ops.log` (recebe só o JSON do curl): uma linha JSON por rodada (`lidas`, `novas`, `atualizadas`, `inativadas`).
+As linhas de texto `[espelho-ops] ...` (o que a rodada fez e os avisos) saem no log do pm2 (`pm2 logs`), não nesse arquivo.
 Um `302`/HTML no log quer dizer que a rota não está liberada no `middleware.ts`.
