@@ -16,7 +16,7 @@ export interface OpEspelhoLida {
   quantidadeProduzida: number
   maeNumero: number | null
   principalNumero: number | null
-  /** `negociante.codigo` do Compels. */
+  /** Lido da lista: `negociante.codigo` do Compels; a sincronização troca pelo nome do cliente (fantasia → razão social). */
   cliente: string
   /** AAAA-MM-DD, ou null. */
   dataDocumento: string | null
