@@ -66,6 +66,31 @@ describe('cadastrarOpAction', () => {
     expect(await cadastrarOpAction(cad())).toEqual({ ok: false, erro: 'Os trechos não batem com o Compels. Recarregue a página e escolha a OP de novo.' })
     expect(m.cadastrarOp).not.toHaveBeenCalled()
   })
+  it('Compels: o número da OP é o da PMO do espelho, com ou sem sufixo _XX', async () => {
+    const MSG = 'O número da OP tem que ser o da OP do Compels (8498) ou ele com sufixo (ex.: 8498_F).'
+    expect(await cadastrarOpAction(cad({ op: '9999' }))).toEqual({ ok: false, erro: MSG })
+    expect(await cadastrarOpAction(cad({ op: '8498_' }))).toEqual({ ok: false, erro: MSG })
+    expect(await cadastrarOpAction(cad({ op: '8498_F-1' }))).toEqual({ ok: false, erro: MSG })
+    expect(m.cadastrarOp).not.toHaveBeenCalled()
+    expect(await cadastrarOpAction(cad({ op: ' 8498_F ' }))).toMatchObject({ ok: true, op: '8498_F' })
+  })
+  it('Compels: o PMO tem que ser o código da PMO no espelho', async () => {
+    const r = await cadastrarOpAction(cad({ pmo: 'PMOXXX' }))
+    expect(r.ok).toBe(false)
+    expect(m.cadastrarOp).not.toHaveBeenCalled()
+  })
+  it('Compels: OP que saiu da lista ativa do espelho não pode ser cadastrada', async () => {
+    m.listarEspelho.mockResolvedValue([{ ...op(8498, 'PMOC14', 1, null), ativa: false }, op(8500, 'PRT410', 2, 8498)])
+    expect(await cadastrarOpAction(cad())).toEqual({ ok: false, erro: 'A OP 8498 não está mais ativa no Compels.' })
+    expect(m.cadastrarOp).not.toHaveBeenCalled()
+  })
+  it('Compels: seq e tipo dos trechos também têm que bater', async () => {
+    const c = cad()
+    const msg = { ok: false, erro: 'Os trechos não batem com o Compels. Recarregue a página e escolha a OP de novo.' }
+    expect(await cadastrarOpAction({ ...c, trechos: [{ ...c.trechos[0]!, seq: 7 }, c.trechos[1]!] })).toEqual(msg)
+    expect(await cadastrarOpAction({ ...c, trechos: [{ ...c.trechos[0]!, tipo: 'pmo' }, c.trechos[1]!] })).toEqual(msg)
+    expect(m.cadastrarOp).not.toHaveBeenCalled()
+  })
   it('validação do domínio', async () => {
     expect(await cadastrarOpAction(cad({ cliente: '' }))).toEqual({ ok: false, erro: 'Informe o cliente.' })
   })

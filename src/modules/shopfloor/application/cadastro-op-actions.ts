@@ -48,17 +48,22 @@ export async function cadastrarOpAction(c: CadastroOp): Promise<ResultadoCadastr
   })), almox)
 
   if (c.modo === 'compels') {
-    const pmo = trechos.at(-1)
-    let esperado: { codigo: string; compelsOp: string | null }[] = []
+    const base = trechos.at(-1)?.compelsOp ?? ''
+    const opNum = c.op.trim()
+    const opOk = base !== '' && (opNum === base || (opNum.startsWith(`${base}_`) && /^[A-Za-z0-9]{1,10}$/.test(opNum.slice(base.length + 1))))
+    if (!opOk) return { ok: false, erro: `O número da OP tem que ser o da OP do Compels (${base}) ou ele com sufixo (ex.: ${base}_F).` }
+    let esperado: ReturnType<typeof trechosDoEspelho> = []
     try {
       const espelho = await listarEspelho()
-      const opPmo = espelho.find((o) => String(o.numero) === pmo?.compelsOp && o.codigo === c.pmo.trim())
+      const opPmo = espelho.find((o) => String(o.numero) === base && o.codigo === c.pmo.trim())
+      if (opPmo && !opPmo.ativa) return { ok: false, erro: `A OP ${base} não está mais ativa no Compels.` }
       if (opPmo) esperado = trechosDoEspelho(opPmo, espelho)
     } catch {
       return { ok: false, erro: 'Não foi possível ler o espelho do Compels agora.' }
     }
     const bate = esperado.length === trechos.length &&
-      esperado.every((t, i) => t.codigo === trechos[i]!.codigo && t.compelsOp === trechos[i]!.compelsOp)
+      esperado.every((t, i) => t.codigo === trechos[i]!.codigo && t.compelsOp === trechos[i]!.compelsOp &&
+        t.seq === trechos[i]!.seq && t.tipo === trechos[i]!.tipo)
     if (!bate) return { ok: false, erro: 'Os trechos não batem com o Compels. Recarregue a página e escolha a OP de novo.' }
   } else if (trechos.length !== 1 || trechos[0]!.tipo !== 'pmo' || trechos[0]!.compelsOp !== null) {
     return { ok: false, erro: 'Cadastro manual tem um trecho só, sem OP do Compels.' }
