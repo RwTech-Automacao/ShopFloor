@@ -98,7 +98,6 @@ export function OrdemForm({
   pmosExistentes,
   clientesExistentes,
   dadosPorPmo,
-  situacaoEstruturaPorPmo = {},
 }: {
   postos: string[]
   postosPerfil: Record<string, PerfilPosto>
@@ -107,7 +106,6 @@ export function OrdemForm({
   pmosExistentes: string[]
   clientesExistentes: string[]
   dadosPorPmo: Record<string, { cliente: string; descricao: string }>
-  situacaoEstruturaPorPmo?: Record<string, 'rascunho' | 'ativa'>
 }) {
   const ehEdicao = ordem !== undefined
   const perfilDo = (p: string) => postosPerfil[p] ?? PERFIL_PADRAO
@@ -337,18 +335,6 @@ export function OrdemForm({
                   const dados = dadosPorPmo[novo.trim()]
                   if (dados) { setCliente(dados.cliente); setDescricao(dados.descricao); setModoNovoCliente(false) }
                 }} required />
-                {pmo.trim() !== '' && (() => {
-                  const base = pmo.trim().replace(/_[A-Za-z]*$/, '')
-                  const s = situacaoEstruturaPorPmo[base]
-                  if (s === 'ativa') return <p className="text-xs text-muted-foreground">Esta PMO tem estrutura ativa: as PRTs serão apontadas no Compels pelo ShopFloor.</p>
-                  if (s === 'rascunho') return <p className="text-xs text-amber-700">A estrutura desta PMO está em rascunho: ative-a em Estruturas para valer nesta OP.</p>
-                  return (
-                    <p className="text-xs text-muted-foreground">
-                      Esta PMO não tem estrutura — as PRTs não serão apontadas pelo ShopFloor.{' '}
-                      <a className="underline" href={`/shopfloor/estruturas?pmo=${encodeURIComponent(base)}`}>Cadastrar estrutura</a>
-                    </p>
-                  )
-                })()}
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="op">Nº OP *</Label>

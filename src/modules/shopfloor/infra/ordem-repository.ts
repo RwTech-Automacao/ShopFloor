@@ -1,6 +1,6 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
-import { faixasDoBanco, type FaixaSN } from '@/modules/shopfloor/domain/faixas-sn'
+import { faixasDaPmoDoBanco, type FaixaSN } from '@/modules/shopfloor/domain/faixas-sn'
 
 export interface PostoRow {
   chave: string
@@ -28,8 +28,10 @@ export interface OrdemRow {
   sf_ordem_postos: { posto: string; ordem: number }[]
   sf_ordem_componentes: { posto: string; pmo_componente: string }[]
   sf_ordem_burnin: { posto: string; tempo_min: number }[]
-  /** Faixas de SN (0181); ausente/vazio = só sn_ini/sn_fim. */
-  sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string }[] | null
+  /** Faixas de SN (0181); ausente/vazio = só sn_ini/sn_fim. trecho_seq (0184): de qual trecho é a faixa. */
+  sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string; trecho_seq?: number | null }[] | null
+  /** Trechos do Compels (0184); vazio = OP antiga. */
+  sf_ordem_trechos?: { seq: number; tipo: string }[] | null
 }
 
 export interface DadosOrdem {
@@ -66,7 +68,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,placas_por_painel,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),sf_ordem_faixas(seq,sn_ini,sn_fim)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,placas_por_painel,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),sf_ordem_faixas(seq,sn_ini,sn_fim,trecho_seq),sf_ordem_trechos(seq,tipo)')
     .order('pmo')
     .order('op')
   if (error) throw error
@@ -116,22 +118,25 @@ export async function criarOrdem(dados: DadosOrdem, postos: string[], receita: {
   return id
 }
 
-/** Atualiza a OP e RESSINCRONIZA a aplicabilidade, a receita e as faixas de SN (apaga e reinsere). */
-export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[], faixas: FaixaSN[]): Promise<void> {
-  const supabase = await createServerSupabase()
-  const { error } = await supabase
-    .from('sf_ordens')
-    .update({ ...dados, updated_at: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw error
-  const { error: eDel } = await supabase.from('sf_ordem_postos').delete().eq('ordem_id', id)
-  if (eDel) throw eDel
-  if (postos.length > 0) {
-    const { error: eIns } = await supabase
-      .from('sf_ordem_postos')
-      .insert(postos.map((posto, i) => ({ ordem_id: id, posto, ordem: i })))
-    if (eIns) throw eIns
-  }
+type Supa = Awaited<ReturnType<typeof createServerSupabase>>
+
+/**
+ * O trecho que ficaria sem posto com a rota nova (a mesma regra da sf_ordem_regravar_postos, 0184): cada posto mantém o
+ * trecho que tinha; posto novo vai para o trecho da PMO. Devolve o código do primeiro trecho vazio, ou null.
+ */
+export function trechoQueFicariaSemPosto(
+  postos: string[],
+  antigos: { posto: string; trecho_seq: number | null }[],
+  trechos: { seq: number; codigo: string; tipo: string }[],
+): string | null {
+  const pmoSeq = trechos.find((t) => t.tipo === 'pmo')?.seq ?? null
+  const trechoDe = new Map(antigos.map((a) => [a.posto, a.trecho_seq]))
+  const usados = new Set(postos.map((p) => trechoDe.get(p) ?? pmoSeq))
+  return [...trechos].sort((x, y) => x.seq - y.seq).find((t) => !usados.has(t.seq))?.codigo ?? null
+}
+
+/** Apaga e reinsere a receita de integração e os tempos de Burn-in da OP. */
+async function regravarReceitaEBurnin(supabase: Supa, id: string, receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[]): Promise<void> {
   const { error: eDelC } = await supabase.from('sf_ordem_componentes').delete().eq('ordem_id', id)
   if (eDelC) throw eDelC
   if (receita.length > 0) {
@@ -148,7 +153,59 @@ export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: stri
       .insert(burnin.map((b) => ({ ordem_id: id, posto: b.posto, tempo_min: b.tempo_min })))
     if (eInsB) throw eInsB
   }
-  await gravarFaixas(supabase, id, faixas)
+}
+
+async function regravarPostos(supabase: Supa, id: string, postos: string[]): Promise<void> {
+  // A rota pela sf_ordem_regravar_postos (0184): mantém o trecho de cada posto e recalcula o posto que conclui.
+  const { error } = await supabase.rpc('sf_ordem_regravar_postos', { p_ordem_id: id, p_postos: postos })
+  if (error) throw error
+}
+
+async function regravarFaixas(supabase: Supa, id: string, faixas: FaixaSN[]): Promise<void> {
+  // Só as faixas da PMO: as próprias das PRTs ficam (sf_ordem_regravar_faixas, 0184).
+  const { error } = await supabase.rpc('sf_ordem_regravar_faixas', { p_ordem_id: id, p_faixas: faixas })
+  if (error) throw error
+}
+
+async function gravarDadosDaOp(supabase: Supa, id: string, dados: DadosOrdem): Promise<void> {
+  const { error } = await supabase
+    .from('sf_ordens')
+    .update({ ...dados, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+/**
+ * Atualiza a OP e RESSINCRONIZA a rota, a receita, o burn-in e as faixas de SN.
+ *
+ * OP com trechos do Compels (0184): as funções que podem RECUSAR (faixas, depois postos) vêm ANTES de qualquer outra
+ * escrita, e a sf_ordens por último. Assim uma recusa não deixa nada pela metade, e o trigger da 0181 (que apaga TODAS
+ * as faixas, as próprias das PRTs junto, quando sn_ini fica vazio) nunca roda antes da checagem — a action já recusa a
+ * PMO sem faixa, e com faixa o trigger só reescreve a seq 1 (que é a primeira da PMO). O trecho que ficaria sem posto é
+ * conferido aqui antes da primeira escrita (a mesma regra da função), pois a recusa da função chegaria depois das faixas.
+ *
+ * OP antiga (sem trechos): a ordem de antes — a sf_ordens primeiro (a duplicidade de PMO/OP para logo de cara).
+ */
+export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[], faixas: FaixaSN[]): Promise<void> {
+  const supabase = await createServerSupabase()
+  const { data: trechos, error: eT } = await supabase.from('sf_ordem_trechos').select('seq,codigo,tipo').eq('ordem_id', id)
+  if (eT) throw eT
+  const lista = (trechos ?? []) as { seq: number; codigo: string; tipo: string }[]
+  if (lista.length === 0) {
+    await gravarDadosDaOp(supabase, id, dados)
+    await regravarPostos(supabase, id, postos)
+    await regravarReceitaEBurnin(supabase, id, receita, burnin)
+    await regravarFaixas(supabase, id, faixas)
+    return
+  }
+  const { data: antigos, error: eA } = await supabase.from('sf_ordem_postos').select('posto,trecho_seq').eq('ordem_id', id)
+  if (eA) throw eA
+  const vazio = trechoQueFicariaSemPosto(postos, (antigos ?? []) as { posto: string; trecho_seq: number | null }[], lista)
+  if (vazio) throw new Error(`TRECHO_SEM_POSTO:${vazio}`)
+  await regravarFaixas(supabase, id, faixas)
+  await regravarPostos(supabase, id, postos)
+  await regravarReceitaEBurnin(supabase, id, receita, burnin)
+  await gravarDadosDaOp(supabase, id, dados)
 }
 
 export async function excluirOrdem(id: string): Promise<void> {
@@ -200,11 +257,14 @@ export async function buscarOrdemBase(id: string): Promise<OrdemBase | null> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('pmo,op,status,placas_por_painel,sn_ini,sn_fim,sf_ordem_faixas(seq,sn_ini,sn_fim)')
+    .select('pmo,op,status,placas_por_painel,sn_ini,sn_fim,sf_ordem_faixas(seq,sn_ini,sn_fim,trecho_seq),sf_ordem_trechos(seq,tipo)')
     .eq('id', id)
     .single()
   if (error) return null
-  const r = data as unknown as OrdemBase & { sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string }[] | null }
+  const r = data as unknown as OrdemBase & {
+    sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string; trecho_seq?: number | null }[] | null
+    sf_ordem_trechos?: { seq: number; tipo: string }[] | null
+  }
   return {
     pmo: r.pmo,
     op: r.op,
@@ -212,7 +272,7 @@ export async function buscarOrdemBase(id: string): Promise<OrdemBase | null> {
     placas_por_painel: r.placas_por_painel,
     sn_ini: r.sn_ini,
     sn_fim: r.sn_fim,
-    faixas: faixasDoBanco(r.sf_ordem_faixas),
+    faixas: faixasDaPmoDoBanco(r.sf_ordem_faixas, r.sf_ordem_trechos),
   }
 }
 

@@ -49,7 +49,6 @@ import {
   Server,
   ChartColumn,
   FileText,
-  Network,
   Receipt,
   PackageOpen,
   Headset,
@@ -105,7 +104,6 @@ const SHOPFLOOR: FolhaModular[] = [
   { chave: 'fluxo', rotulo: 'Fluxo', href: '/shopfloor/fluxo', icone: Workflow, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'registros', rotulo: 'Registros', href: '/shopfloor/registros', icone: History, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
-  { chave: 'op-estruturas', rotulo: 'Estruturas', href: '/shopfloor/estruturas', icone: Network, modulo: 'shopfloor', perm: 'administrar' },
 ]
 
 // Vitrine do marketing: o Fluxo da OP com uma produção fictícia (sem banco). Grupo próprio no menu.

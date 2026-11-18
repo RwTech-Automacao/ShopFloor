@@ -37,6 +37,18 @@ export function faixasDoBanco(rows: { seq: number; sn_ini: string; sn_fim: strin
   return [...(rows ?? [])].sort((a, b) => a.seq - b.seq).map((r) => ({ sn_ini: r.sn_ini, sn_fim: r.sn_fim }))
 }
 
+/**
+ * As faixas da PMO (0184): numa OP com trechos, só as do trecho 'pmo' (as próprias das PRTs ficam de fora — a
+ * edição da OP não as mostra nem as regrava); em OP antiga (trecho_seq null), todas.
+ */
+export function faixasDaPmoDoBanco(
+  rows: { seq: number; sn_ini: string; sn_fim: string; trecho_seq?: number | null }[] | null | undefined,
+  trechos: { seq: number; tipo: string }[] | null | undefined,
+): FaixaSN[] {
+  const pmoSeq = (trechos ?? []).find((t) => t.tipo === 'pmo')?.seq ?? null
+  return faixasDoBanco((rows ?? []).filter((r) => r.trecho_seq == null || r.trecho_seq === pmoSeq))
+}
+
 /** O SN cai em alguma faixa da OP? OP sem faixa → false. */
 export function serieNasFaixas(o: ComFaixas, serie: string): boolean {
   return faixasDe(o).some((f) => serieDentroDaFaixa(f.sn_ini, f.sn_fim, serie))

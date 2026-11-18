@@ -1,6 +1,5 @@
 'use server'
 
-import { aplicarEstruturaNaOp } from './aplicar-estrutura'
 import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
@@ -158,9 +157,8 @@ export async function criarOrdemAction(
   }
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'criar', descricao: `OP ${dados.pmo}/${dados.op} criada`, dados: { ...dados, faixas } })
-  const avisoEstrutura = await aplicarEstruturaNaOp(id, dados.pmo, dados.op, postos, { criacao: true })
   revalidatePath('/shopfloor/ordens')
-  return { ok: true, id, pmo: dados.pmo, op: dados.op, ...(avisoEstrutura ? { aviso: avisoEstrutura } : {}) }
+  return { ok: true, id, pmo: dados.pmo, op: dados.op }
 }
 
 export async function editarOrdemAction(
@@ -194,14 +192,21 @@ export async function editarOrdemAction(
       return { ok: false, erro: 'Não foi possível salvar a OP.' }
     }
   }
-  // Trava da estrutura (0184): os trechos copiados são da receita da PMO gravada. Trocar a PMO deixaria a OP
-  // apontando PRTs de outro produto no Compels, então a troca é recusada enquanto houver trechos.
-  if (dados.pmo !== base.pmo) {
-    try {
-      if (await ordemTemTrechos(id)) return { ok: false, erro: 'Esta OP já tem estrutura aplicada: não é possível trocar a PMO.' }
-    } catch {
-      return { ok: false, erro: 'Não foi possível salvar a OP.' }
-    }
+  // Trava dos trechos (0184): o compels_op de cada trecho veio do espelho do Compels para ESTA PMO/OP. Trocar a PMO
+  // ou o número deixaria a OP apontando PRTs de outra produção, então a troca é recusada enquanto houver trechos.
+  // Com trechos, a PMO também não pode ficar sem faixa de SN: sem sn_ini o trigger da 0181 apagaria TODAS as faixas
+  // da OP, as próprias das PRTs junto. A checagem vem antes de qualquer escrita.
+  let temTrechos: boolean
+  try {
+    temTrechos = await ordemTemTrechos(id)
+  } catch {
+    return { ok: false, erro: 'Não foi possível salvar a OP.' }
+  }
+  if (temTrechos && (dados.pmo !== base.pmo || dados.op !== base.op)) {
+    return { ok: false, erro: 'Esta OP tem trechos do Compels: não é possível trocar a PMO nem o número da OP.' }
+  }
+  if (temTrechos && (faixas.length === 0 || dados.sn_ini === '' || dados.sn_fim === '')) {
+    return { ok: false, erro: 'Esta OP tem trechos do Compels: a faixa de SN da PMO não pode ficar vazia.' }
   }
   // OP única global: o número não pode colidir com OUTRA OP (exclui a própria).
   const emUso = await buscarOpEmUso(dados.op, id)
@@ -241,13 +246,17 @@ export async function editarOrdemAction(
     await atualizarOrdem(id, dados, postos, receita, burnin.rows, faixas)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
+    const msg = String((e as { message?: unknown } | null)?.message ?? '')
+    const semPosto = /^TRECHO_SEM_POSTO:(.+)$/.exec(msg)
+    if (semPosto) return { ok: false, erro: `O trecho ${semPosto[1]} ficaria sem posto.` }
+    const semFaixa = /^TRECHO_SEM_FAIXA:(.+)$/.exec(msg)
+    if (semFaixa) return { ok: false, erro: `O trecho ${semFaixa[1]} ficaria sem faixa de SN.` }
     return { ok: false, erro: 'Não foi possível salvar a OP.' }
   }
 
   await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados: { ...dados, faixas } })
-  const avisoEstrutura = await aplicarEstruturaNaOp(id, dados.pmo, dados.op, postos, { criacao: false, refazerTodas: dados.pmo !== base.pmo || dados.op !== base.op })
   revalidatePath('/shopfloor/ordens')
-  return { ok: true, id, pmo: dados.pmo, op: dados.op, ...(avisoEstrutura ? { aviso: avisoEstrutura } : {}) }
+  return { ok: true, id, pmo: dados.pmo, op: dados.op }
 }
 
 /** A OP já tem lançamentos? Consulta leve (um HEAD count) para a tela travar as placas por painel; erro/sem permissão = false (o servidor trava de verdade ao salvar). */

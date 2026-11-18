@@ -281,4 +281,28 @@ begin
   select count(*) into n from sf_ordem_faixas where ordem_id = v_id;
   if n <> 1 then raise exception 'caso J falhou (contagem: %)', n; end if;
 end $$;
+-- K) Task 5: a edição na ordem do app (faixas, postos, e a sf_ordens por último) mantém a faixa própria da PRT,
+--    inclusive com o trigger da 0181 reescrevendo a seq 1. E o porquê da ordem: sn_ini vazio apaga TODAS as faixas.
+do $$
+declare v_id uuid; v text;
+begin
+  v_id := sf_cadastrar_op('{"ordem":{"pmo":"PMOK","op":"9800","cliente":"C","qtd":5,"placas_por_painel":1},"trechos":[{"seq":1,"codigo":"PRTK","tipo":"prt","sn_modo":"proprio","postos":["SPI"],"faixas":[{"sn_ini":"K1","sn_fim":"K9"}]},{"seq":2,"codigo":"PMOK","tipo":"pmo","postos":["Teste","Almoxarifado"],"faixas":[{"sn_ini":"1","sn_fim":"5"}]}]}'::jsonb);
+  perform sf_ordem_regravar_faixas(v_id, '[{"sn_ini":"10","sn_fim":"50"}]'::jsonb);
+  perform sf_ordem_regravar_postos(v_id, array['SPI','Teste','Embalagem','Almoxarifado']);
+  update sf_ordens set sn_ini = '10', sn_fim = '50' where id = v_id;
+  select string_agg(seq || ':' || sn_ini || '-' || sn_fim || ':' || trecho_seq, ',' order by seq) into v from sf_ordem_faixas where ordem_id = v_id;
+  if v is distinct from '1:10-50:2,2:K1-K9:1' then raise exception 'caso K falhou (faixas depois da edição: %)', v; end if;
+  -- recusa (PMO sem faixa) antes da sf_ordens: nada muda
+  begin
+    perform sf_ordem_regravar_faixas(v_id, '[]'::jsonb);
+    raise exception 'caso K falhou (faixa vazia passou)';
+  exception when others then
+    if sqlerrm <> 'TRECHO_SEM_FAIXA:PMOK' then raise exception 'caso K falhou (faixa vazia: %)', sqlerrm; end if;
+  end;
+  select string_agg(seq || ':' || sn_ini || '-' || sn_fim || ':' || trecho_seq, ',' order by seq) into v from sf_ordem_faixas where ordem_id = v_id;
+  if v is distinct from '1:10-50:2,2:K1-K9:1' then raise exception 'caso K falhou (recusa mexeu: %)', v; end if;
+  -- o perigo que a ordem evita: gravar sn_ini vazio na sf_ordens apaga até a faixa da PRT (trigger da 0181)
+  update sf_ordens set sn_ini = '', sn_fim = '' where id = v_id;
+  if exists (select 1 from sf_ordem_faixas where ordem_id = v_id) then raise exception 'caso K: o trigger da 0181 mudou (revisar a ordem do atualizarOrdem)'; end if;
+end $$;
 \echo 'PROVA CADASTRO OK'

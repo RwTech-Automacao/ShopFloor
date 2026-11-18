@@ -13,6 +13,8 @@ vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async
 vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: vi.fn(() => true) }))
 vi.mock('@/modules/logs/application/registrar-log', () => ({ registrarLog: vi.fn(async () => undefined) }))
 vi.mock('../../infra/postos-repository', () => ({ mapaPostoPerfil: vi.fn(async () => ({})) }))
+// Edição de OP sem trechos do Compels (0184).
+vi.mock('../../infra/estrutura-repository', () => ({ ordemTemTrechos: vi.fn(async () => false) }))
 vi.mock('../../infra/ordem-repository', () => ({
   criarOrdem: m.criarOrdem,
   atualizarOrdem: m.atualizarOrdem,
