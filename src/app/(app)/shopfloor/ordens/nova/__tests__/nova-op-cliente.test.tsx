@@ -67,7 +67,7 @@ describe('Nova OP', () => {
     const enviado = acoes.cadastrarOpAction.mock.calls[0]![0]
     expect(enviado).toMatchObject({ modo: 'compels', pmo: 'PMOC14', op: '8498', cliente: 'LINCE', qtd: 10 })
     expect(enviado.trechos.map((t: { postos: string[] }) => t.postos)).toEqual([['SPI'], ['Inspeção PTH'], ['Teste', 'Almoxarifado']])
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/shopfloor/ordens'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/shopfloor/ordens-nova'))
   })
 
   it('erro de validação aparece sem chamar o servidor', async () => {

@@ -52,6 +52,7 @@ import {
   Receipt,
   PackageOpen,
   Headset,
+  FilePlus2,
   type LucideIcon,
 } from 'lucide-react'
 import { sair } from '@/modules/auth/application/actions'
@@ -98,12 +99,14 @@ export const RECEBIMENTO: FolhaModular[] = [
   { chave: 'exportar-fotos', rotulo: 'Exportar Fotos', href: '/recebimento/exportar-fotos', icone: ImageDown, modulo: 'recebimento', perm: 'administrar' },
 ]
 
-const SHOPFLOOR: FolhaModular[] = [
+export const SHOPFLOOR: FolhaModular[] = [
   { chave: 'operar', rotulo: 'Operação', href: '/shopfloor/operar', icone: Cog, modulo: 'shopfloor', perm: 'lancar' },
   { chave: 'analisar', rotulo: 'Análise', href: '/shopfloor/analisar', icone: LineChart, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'fluxo', rotulo: 'Fluxo', href: '/shopfloor/fluxo', icone: Workflow, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'registros', rotulo: 'Registros', href: '/shopfloor/registros', icone: History, modulo: 'shopfloor', perm: 'visualizar' },
   { chave: 'op-ordens', rotulo: 'Ordens de Produção', href: '/shopfloor/ordens', icone: FileStack, modulo: 'shopfloor', perm: 'administrar' },
+  // Só para os liberados (NOVA_OP_LIBERADA_PARA): a prop `novaOpMenu` filtra; ver `itemAtivo`.
+  { chave: 'op-ordens-nova', rotulo: 'Ordens de Produção (nova)', href: '/shopfloor/ordens-nova', icone: FilePlus2, modulo: 'shopfloor', perm: 'administrar' },
 ]
 
 // Vitrine do marketing: o Fluxo da OP com uma produção fictícia (sem banco). Grupo próprio no menu.
@@ -182,6 +185,19 @@ function ehAtivo(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + '/')
 }
 
+/** Itens do grupo Fluxo de Processos; o "(nova)" só aparece para os liberados. */
+export function itensShopfloor(pode: (i: FolhaModular) => boolean, novaOpMenu: boolean): FolhaModular[] {
+  return SHOPFLOOR.filter(pode).filter((i) => i.chave !== 'op-ordens-nova' || novaOpMenu)
+}
+
+/** A tela de cadastro novo (/shopfloor/ordens/nova) pertence ao item "(nova)", não ao "Ordens de Produção" antigo. */
+export function itemAtivo(pathname: string, item: { chave: string; href: string }): boolean {
+  const noCadastroNovo = ehAtivo(pathname, '/shopfloor/ordens/nova')
+  if (item.chave === 'op-ordens') return ehAtivo(pathname, item.href) && !noCadastroNovo
+  if (item.chave === 'op-ordens-nova') return ehAtivo(pathname, item.href) || noCadastroNovo
+  return ehAtivo(pathname, item.href)
+}
+
 export function AppShell({
   nome,
   email,
@@ -190,6 +206,7 @@ export function AppShell({
   exportarFotosVisivel,
   alertasLiberado,
   alertasMenu,
+  novaOpMenu,
   children,
 }: {
   nome: string
@@ -202,6 +219,8 @@ export function AppShell({
   alertasLiberado: boolean
   /** O item Alertas de cada módulo tem a própria liberação (ShopFloor × Recebimento × SAT). */
   alertasMenu: { shopfloor: boolean; recebimento: boolean; sat: boolean }
+  /** Item "Ordens de Produção (nova)": só para os liberados em NOVA_OP_LIBERADA_PARA (calculado no servidor). */
+  novaOpMenu: boolean
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -248,7 +267,7 @@ export function AppShell({
   const temConfig = configTopo.length + configRec.length + configSf.length + configSetup.length + configBase.length > 0
   const recebimentoAtivo = pathname.startsWith('/recebimento')
   const [recAberto, setRecAberto] = useState(recebimentoAtivo)
-  const shopfloorVisivel = SHOPFLOOR.filter(pode)
+  const shopfloorVisivel = itensShopfloor(pode, novaOpMenu)
   const shopfloorAtivo = pathname.startsWith('/shopfloor')
   const [shopfloorAberto, setShopfloorAberto] = useState(shopfloorAtivo)
   const setupVisivel = SETUP.filter(pode)
@@ -271,7 +290,7 @@ export function AppShell({
 
   const tituloPagina =
     [HOME, ...RECEBIMENTO, ...SHOPFLOOR, ...SETUP, ...VITRINE, ...FATURAMENTO, ...SAT, ...CONFIG_TODOS, AJUDA, PERFIL]
-      .filter((i) => ehAtivo(pathname, i.href))
+      .filter((i) => itemAtivo(pathname, i))
       .sort((a, b) => b.href.length - a.href.length)[0]?.rotulo ?? 'ShopFloor'
 
   const fechaMobile = () => setMobileAberto(false)
@@ -393,7 +412,7 @@ export function AppShell({
             {shopfloorAberto && (
               <div className="mt-1 space-y-1 border-l border-border pl-3 ml-4">
                 {shopfloorVisivel.map((i) => (
-                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
+                  <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(itemAtivo(pathname, i))}>
                     <i.icone className="size-[18px] shrink-0" />
                     {i.rotulo}
                   </Link>

@@ -96,6 +96,7 @@ export async function cadastrarOpAction(c: CadastroOp): Promise<ResultadoCadastr
     dados: { modo: limpo.modo, trechos: limpo.trechos.map((t) => ({ codigo: t.codigo, compelsOp: t.compelsOp, snModo: t.snModo, postos: t.postos, faixas: t.faixas })) },
   })
   revalidatePath('/shopfloor/ordens')
+  revalidatePath('/shopfloor/ordens-nova')
   return { ok: true, id, pmo: limpo.pmo, op: limpo.op }
 }
 
