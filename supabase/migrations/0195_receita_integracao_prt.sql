@@ -21,6 +21,9 @@
 -- 3. sf_cancelar_lancamento (vigente: 0165): recusa cancelar um bipe de SN que é placa de uma integração ATIVA na
 --    mesma OP: PLACA_INTEGRADA:<placa>|<produto>|<código>. Sem isso, o gestor apagava o registro que fez a placa da PRT
 --    "terminar o trecho" com a placa já montada no produto. Fica DEPOIS do LIFO: as recusas de antes não mudam.
+--    A CORRIDA: o cancelamento trava a linha do registro (FOR UPDATE) antes de conferir, e a sf_integrar trava o
+--    registro do fim do trecho (FOR SHARE) antes de conferir a PRT. Em READ COMMITTED, quem chega depois espera e
+--    relê; sem isso, as duas podiam gravar (a integração vendo o Aprovado que o cancelamento ia apagar).
 -- sf_ordem_componentes não muda: pmo_componente passa a poder guardar o código de uma PRT da própria OP.
 --
 -- ORDEM DE DEPLOY: migração ANTES do app (o app novo manda a placa da PRT com o código dela e traduz os erros novos).
@@ -128,6 +131,18 @@ begin
       -- 0195: a placa da PRT que é da própria OP tem que ter terminado o trecho: registro na própria PMO/OP, no posto
       -- que conclui o trecho, Aprovado se o gate do perfil do posto é 'aprovado' (senão basta o registro)
       if cardinality(v_prts) > 0 then
+        -- a corrida com o cancelamento (sf_cancelar_lancamento): o registro do fim do trecho fica travado em FOR SHARE
+        -- até o fim da transação. O cancelamento trava a mesma linha em FOR UPDATE antes de conferir PLACA_INTEGRADA:
+        -- quem chega depois espera, e a leitura seguinte (outro comando, outro snapshot) já vê o que o outro gravou.
+        perform 1
+        from sf_registros r
+        join sf_ordem_trechos t on t.ordem_id = v_ordem_id and t.tipo = 'prt' and t.sn_modo = 'proprio'
+                               and r.posto = t.posto_conclui
+        join jsonb_array_elements(p_placas) x on lower(trim(t.codigo)) = lower(trim(coalesce(x->>'pmo','')))
+                                             and btrim(coalesce(x->>'op','')) = btrim(p_op)
+                                             and r.numero_serie_norm = coalesce(x->>'sn_norm','')
+        where r.pmo = p_pmo and r.op = p_op
+        for share of r;
         select x.e->>'sn', ot.codigo, ot.posto_conclui into v_prt_placa, v_prt_codigo, v_prt_posto
         from jsonb_array_elements(p_placas) with ordinality x(e, n)
         cross join lateral (
@@ -590,6 +605,14 @@ begin
 
   -- 0195: SN que é placa de uma integração ATIVA nesta OP não se cancela: o registro faz parte do que a Integração
   -- conferiu (a placa da PRT terminou o trecho). Desfaz-se a integração antes.
+  -- A linha do registro é travada (FOR UPDATE) ANTES da conferência: a sf_integrar trava o registro do fim do trecho
+  -- em FOR SHARE, então uma integração em andamento faz esta esperar e a conferência abaixo já a vê gravada. O
+  -- advisory 'sf_integracao' NÃO é pego aqui: a sf_cancelar_integracao o pega antes da trava da OP, e a ordem
+  -- invertida poderia travar as duas.
+  perform 1 from public.sf_registros where id = p_id for update;
+  if not found then
+    raise exception 'NAO_ENCONTRADO';
+  end if;
   select i.placa_sn, g.produto_sn, g.codigo into v_int_placa, v_int_produto, v_int_codigo
   from public.sf_integracao_itens i
   join public.sf_integracoes g on g.id = i.integracao_id and g.status = 'ATIVA'

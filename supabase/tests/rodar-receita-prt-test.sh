@@ -52,6 +52,42 @@ cmp -s "$TMPD/defs-antes.txt" "$TMPD/defs-0195.txt" && { echo "a 0195 não mudou
 P -f /tmp/teste.sql
 P -f /tmp/cadastro.sql   # a prova do cadastro da 0184 continua valendo na sf_cadastrar_op da 0195
 
+# ---------- a corrida entre a Integração e o cancelamento: duas sessões de verdade ----------
+# A060 e A061 terminaram a PRT410 (Aprovado no fim do trecho) na PMOE/9100, cuja receita é [PRT410].
+P -c "insert into sf_registros (posto, pmo, op, status, numero_serie, numero_serie_norm, data_hora) values
+  ('Inspeção AOI TOP', 'PMOE', '9100', 'Aprovado', 'A060', 'A060', clock_timestamp()),
+  ('Inspeção AOI TOP', 'PMOE', '9100', 'Aprovado', 'A061', 'A061', clock_timestamp())"
+P -c "delete from sf_ordem_componentes where ordem_id = (select id from sf_ordens where pmo = 'PMOE' and op = '9100');
+      insert into sf_ordem_componentes (ordem_id, posto, pmo_componente) select id, 'Integração', 'PRT410' from sf_ordens where pmo = 'PMOE' and op = '9100'"
+INTEG() { echo "select sf_integrar('F', 'C', 'PMOE', '9100', '$1', '$1', '', false, '[{\"pmo\":\"PRT410\",\"op\":\"9100\",\"sn\":\"$2\",\"sn_norm\":\"$2\"}]'::jsonb, 'Integração')"; }
+CANC() { echo "select sf_cancelar_lancamento((select id from sf_registros where pmo = 'PMOE' and op = '9100' and numero_serie_norm = '$1' and posto = 'Inspeção AOI TOP'), 'corrida')"; }
+segura() { # roda $1 numa sessão que segura a transação por 4 s
+  docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "begin" -c "$1" -c "select pg_sleep(4)" -c "commit" >"$TMPD/segura.out" 2>&1 &
+  sleep 1.5
+}
+# 1) a integração em andamento (sem commit): o cancelamento espera por ela e, depois, recusa com PLACA_INTEGRADA
+segura "$(INTEG 170 A060)"
+if docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -c "$(CANC A060)" >/dev/null 2>"$TMPD/c1"; then
+  echo "o cancelamento apagou o fim do trecho de uma placa sendo integrada"; exit 1
+fi
+wait
+grep -q '"ok": true\|"ok":true' "$TMPD/segura.out" || { cat "$TMPD/segura.out"; echo "a integração da corrida 1 não passou"; exit 1; }
+grep -q "PLACA_INTEGRADA:A060|170|" "$TMPD/c1" || { cat "$TMPD/c1"; exit 1; }
+# a prova de que é a trava: com lock_timeout, o cancelamento nem chega a conferir enquanto a integração não termina
+segura "$(INTEG 171 A061)"
+if docker exec "$NOME" psql -U postgres -q -c "set lock_timeout = '700ms'" -c "$(CANC A061)" >/dev/null 2>"$TMPD/c2"; then echo "cancelamento não esperou a integração"; exit 1; fi
+grep -q "lock timeout" "$TMPD/c2" || { cat "$TMPD/c2"; exit 1; }
+wait
+# 2) o cancelamento em andamento (sem commit): a integração espera por ele e, depois, recusa com PLACA_PRT_INCOMPLETA
+P -c "insert into sf_registros (posto, pmo, op, status, numero_serie, numero_serie_norm, data_hora) values
+  ('Inspeção AOI TOP', 'PMOE', '9100', 'Aprovado', 'A062', 'A062', clock_timestamp())"
+segura "$(CANC A062)"
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -tAq -c "$(INTEG 172 A062)" >"$TMPD/i1" 2>&1 || { cat "$TMPD/i1"; exit 1; }
+wait
+grep -q "PLACA_PRT_INCOMPLETA" "$TMPD/i1" || { cat "$TMPD/i1"; echo "a integração aceitou a placa cujo fim do trecho estava sendo cancelado"; exit 1; }
+grep -qi "error" "$TMPD/segura.out" && { cat "$TMPD/segura.out"; echo "o cancelamento da corrida 2 falhou"; exit 1; }
+echo "CORRIDA OK"
+
 P -1 -f /tmp/rollback.sql
 P -1 -f /tmp/rollback.sql   # rollback idempotente
 Q -c "$DEFS" > "$TMPD/defs-rollback.txt"
