@@ -112,11 +112,12 @@ export interface SfIntegrarArgs {
 
 export async function chamarSfIntegrar(
   args: SfIntegrarArgs,
-): Promise<{ ok: boolean; erro?: string; codigo?: string; placa?: string; pmo?: string; posto?: string }> {
+): Promise<{ ok: boolean; erro?: string; codigo?: string; placa?: string; pmo?: string; posto?: string; prt?: string }> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase.rpc('sf_integrar', args)
   if (error) return { ok: false, erro: 'ERRO_INTERNO' }
-  return data as { ok: boolean; erro?: string; codigo?: string; placa?: string; pmo?: string; posto?: string }
+  // PLACA_PRT_INCOMPLETA (0195) traz placa, prt e posto
+  return data as { ok: boolean; erro?: string; codigo?: string; placa?: string; pmo?: string; posto?: string; prt?: string }
 }
 
 export async function chamarSfCancelarIntegracao(

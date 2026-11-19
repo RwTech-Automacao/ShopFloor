@@ -7,7 +7,8 @@ import { mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
 
 /**
  * Os editores por posto da OP, divididos entre o cadastro antigo (OrdemForm), a Nova OP e a edição de OP com trechos:
- * a receita de um posto de Integração (as PMOs de placa que ele integra) e o tempo mínimo de um posto de Burn-in.
+ * a receita de um posto de Integração (as PMOs de placa que ele integra e, na OP com trechos, as PRTs de série própria
+ * dela, 0195) e o tempo mínimo de um posto de Burn-in.
  */
 
 /** Tempo mínimo de Burn-in de um posto (hhh:mm, com a máscara do campo). */
@@ -33,11 +34,14 @@ export function ReceitaIntegracao({
   receita,
   setReceita,
   pmosDisponiveis,
+  prtsDisponiveis = [],
 }: {
   posto: string
   receita: string[]
   setReceita: (r: string[]) => void
   pmosDisponiveis: string[]
+  /** PRTs desta OP (série própria) que ainda não estão na receita (0195). Vazio = o grupo não aparece. */
+  prtsDisponiveis?: string[]
 }) {
   return (
     <div>
@@ -71,12 +75,31 @@ export function ReceitaIntegracao({
           </SelectContent>
         </Select>
       )}
+      {prtsDisponiveis.length > 0 && (
+        <div role="group" aria-label={`PRTs desta OP · ${posto}`} className="mt-2 flex flex-col gap-1">
+          <p className="text-xs font-medium text-muted-foreground">
+            PRTs desta OP <span className="font-normal">· a placa entra quando terminou o trecho da PRT</span>
+          </p>
+          <Select value="" onValueChange={(p) => p && setReceita([...receita, p])}>
+            <SelectTrigger className="h-9" aria-label={`Adicionar PRT desta OP à receita de ${posto}`}>
+              <SelectValue placeholder="+ Adicionar PRT desta OP" />
+            </SelectTrigger>
+            <SelectContent>
+              {prtsDisponiveis.map((p) => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
     </div>
   )
 }
 
+const mesmo = (a: string, b: string) => a.trim().toUpperCase() === b.trim().toUpperCase()
+
 /** As receitas dos postos de Integração de uma lista de postos (um bloco por posto, na ordem da rota). */
-export function ReceitasDosPostos({ postos, ehIntegracao, receita, setReceita, pmosExistentes, pmoDaOp }: {
+export function ReceitasDosPostos({ postos, ehIntegracao, receita, setReceita, pmosExistentes, pmoDaOp, prtsDaOp = [] }: {
   postos: string[]
   ehIntegracao: (posto: string) => boolean
   receita: Record<string, string[]>
@@ -84,20 +107,26 @@ export function ReceitasDosPostos({ postos, ehIntegracao, receita, setReceita, p
   pmosExistentes: string[]
   /** A PMO da própria OP não entra na receita dela. */
   pmoDaOp: string
+  /** As PRTs desta OP com série própria (0195): o grupo "PRTs desta OP". Elas não se oferecem como PMO. */
+  prtsDaOp?: string[]
 }) {
   const integracao = postos.filter(ehIntegracao)
   if (integracao.length === 0) return null
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-3">
-      {integracao.map((posto) => (
-        <ReceitaIntegracao
-          key={posto}
-          posto={posto}
-          receita={receita[posto] ?? []}
-          setReceita={(lista) => setReceita((prev) => ({ ...prev, [posto]: lista }))}
-          pmosDisponiveis={pmosExistentes.filter((p) => p !== pmoDaOp && !(receita[posto] ?? []).includes(p))}
-        />
-      ))}
+      {integracao.map((posto) => {
+        const atual = receita[posto] ?? []
+        return (
+          <ReceitaIntegracao
+            key={posto}
+            posto={posto}
+            receita={atual}
+            setReceita={(lista) => setReceita((prev) => ({ ...prev, [posto]: lista }))}
+            pmosDisponiveis={pmosExistentes.filter((p) => p !== pmoDaOp && !atual.includes(p) && !prtsDaOp.some((x) => mesmo(x, p)))}
+            prtsDisponiveis={prtsDaOp.filter((p) => !atual.some((x) => mesmo(x, p)))}
+          />
+        )
+      })}
     </div>
   )
 }

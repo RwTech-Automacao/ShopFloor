@@ -1,5 +1,5 @@
 /**
- * Erros das funções de trecho do banco (0184: sf_cadastrar_op e as sf_ordem_regravar_*) em PT-BR. Um lugar só, para
+ * Erros das funções de trecho do banco (0184: sf_cadastrar_op e as sf_ordem_regravar_*; 0194; 0195) em PT-BR. Um lugar só, para
  * o cadastro e a edição de OP falarem igual. Fora desses códigos: null (quem chama decide a mensagem genérica).
  */
 export function mensagemErroDeTrecho(e: unknown): string | null {
@@ -17,7 +17,7 @@ export function mensagemErroDeTrecho(e: unknown): string | null {
   if (msg === 'QTD_INVALIDA') return 'A quantidade tem que ser um número inteiro, sem sinal.'
   if (msg === 'PLACAS_INVALIDAS') return 'Placas por painel tem que ser um número inteiro maior que zero.'
   if (msg === 'PLACAS_COM_REGISTROS') return 'Esta OP já tem registros: placas por painel não pode mais mudar. Recarregue a página.'
-  const m = /^(TRECHO_SEM_POSTO|POSTO_REPETIDO|TRECHO_SEM_FAIXA|SN_MODO_INVALIDO|FAIXA_INVALIDA|FAIXA_SOBREPOSTA|POSTO_COM_REGISTROS|PRT_COM_HISTORICO|PRT_FAIXA_COM_HISTORICO):(.+)$/.exec(msg)
+  const m = /^(TRECHO_SEM_POSTO|POSTO_REPETIDO|TRECHO_SEM_FAIXA|SN_MODO_INVALIDO|FAIXA_INVALIDA|FAIXA_SOBREPOSTA|POSTO_COM_REGISTROS|PRT_COM_HISTORICO|PRT_FAIXA_COM_HISTORICO|RECEITA_PRT_INVALIDA):(.+)$/.exec(msg)
   if (m?.[1] === 'TRECHO_SEM_POSTO') return `O trecho ${m[2]} ficaria sem posto.`
   if (m?.[1] === 'POSTO_REPETIDO') return `O posto "${m[2]}" está em mais de um trecho.`
   if (m?.[1] === 'TRECHO_SEM_FAIXA') return `O trecho ${m[2]} ficaria sem faixa de SN.`
@@ -27,5 +27,7 @@ export function mensagemErroDeTrecho(e: unknown): string | null {
   if (m?.[1] === 'POSTO_COM_REGISTROS') return `O posto "${m[2]}" já tem registros nesta OP e não pode trocar de trecho.`
   if (m?.[1] === 'PRT_COM_HISTORICO') return `${m[2]} já tem peças bipadas ou apontadas no Compels: não dá para trocar o posto final nem a série desse trecho.`
   if (m?.[1] === 'PRT_FAIXA_COM_HISTORICO') return `${m[2]} já tem peças bipadas ou apontadas no Compels: a faixa nova tem que continuar cobrindo os SNs já usados.`
+  // 0195 (sf_cadastrar_op e sf_ordem_regravar_trechos)
+  if (m?.[1] === 'RECEITA_PRT_INVALIDA') return `${m[2]} não pode estar na receita da Integração: só entra PRT desta OP com série própria.`
   return null
 }

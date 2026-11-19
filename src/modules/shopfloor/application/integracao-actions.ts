@@ -9,6 +9,8 @@ import { validarItensIntegracao, type PlacaIntegracao } from '../domain/integrac
 import { postoAnteriorNaSequencia } from '../domain/postos'
 import { perfilPrecisaAprovado, PERFIL_PADRAO } from '../domain/perfil-posto'
 import { resolverPlaca } from '../domain/integracao-matching'
+import { mensagemPlacaPrtIncompleta } from '../domain/receita-prt'
+import { listarPrtsDeSeriePropria } from '../infra/estrutura-repository'
 import { carregarOrdem, listarFaixasOrdens, listarOrdensParaLancamento } from '../infra/lancamento-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import { mensagemPecaAvancou } from '@/modules/shopfloor/domain/integracao-cancelamento'
@@ -111,6 +113,9 @@ export async function integrar(
     if (r.erro === 'PLACA_FORA_DA_RECEITA') {
       return { ok: false, erro: `A placa de PMO ${r.pmo ?? ''} não faz parte da receita deste produto.` }
     }
+    if (r.erro === 'PLACA_PRT_INCOMPLETA') {
+      return { ok: false, erro: mensagemPlacaPrtIncompleta(r.placa ?? '', r.prt ?? '', r.posto ?? '') }
+    }
     if (r.erro === 'SEQUENCIA') {
       return { ok: false, erro: `Não é possível integrar: o produto ainda não passou por ${r.posto ?? 'um posto anterior do fluxo'}.` }
     }
@@ -158,7 +163,16 @@ export async function resolverPlacaIntegracaoAction(
   if (vinc.length > 0) {
     return { ok: false, erro: `Placa já vinculada à integração ${vinc[0]!.codigo}.` }
   }
-  const r = resolverPlaca(receita, faixas, limparSerie(sn))
+  // 0195: as PRTs de série própria da OP do produto (só se há receita: receita vazia aceita qualquer placa)
+  let prts: { codigo: string; faixas: { sn_ini: string; sn_fim: string }[] }[] = []
+  if (receita.length > 0) {
+    try {
+      prts = await listarPrtsDeSeriePropria(pmo, op)
+    } catch {
+      return { ok: false, erro: MENSAGENS.ERRO_INTERNO! }
+    }
+  }
+  const r = resolverPlaca(receita, faixas, limparSerie(sn), { op, prts })
   if (r.ok) return { ok: true, pmo: paraReceita(r.pmo), op: r.op }
   if (r.erro === 'AMBIGUO') {
     // Ambíguo: devolve os candidatos (PMO na caixa da receita) pro operador escolher.
