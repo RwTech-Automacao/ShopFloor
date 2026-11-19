@@ -76,4 +76,22 @@ describe('lerPecasParadasTela', () => {
     ])
     expect(sns).toHaveLength(1003)
   })
+  it('função apagada mas ainda no cache (42883): também cai na paginação, com os mesmos argumentos', async () => {
+    const { sb, chamadas } = sbFake((c) => {
+      if (c.fn === 'sf_pecas_paradas_json') return { data: null, error: { code: '42883', message: 'function does not exist' } }
+      return { data: [linha('b1')], error: null }
+    })
+    const sns = await lerPecasParadasTela(OPCOES, AGORA, sb)
+    expect(chamadas[1]).toEqual({
+      fn: 'sf_pecas_paradas',
+      args: { p_corte: '2026-11-18T12:00:00.000Z', p_situacao: 'ativas', p_pmos: null },
+      range: [0, 999],
+    })
+    expect(sns.map((s) => s.numeroSerie)).toEqual(['b1'])
+  })
+
+  it('resposta sem erro que não é lista vira exceção (não some como "nenhuma peça parada")', async () => {
+    const { sb } = sbFake(() => ({ data: null, error: null }))
+    await expect(lerPecasParadasTela(OPCOES, AGORA, sb)).rejects.toThrow('resposta ilegível')
+  })
 })

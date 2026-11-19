@@ -1,4 +1,8 @@
 -- =============================================================
+-- ROLLBACK: reaplicar 0188 e 0180 (voltam alerta_travados_sns e sf_pecas_paradas), `drop function if exists
+-- sf_pecas_paradas_json(timestamptz, text, text[]);` e `notify pgrst, 'reload schema';`. O app cai sozinho na
+-- paginação antiga (PGRST202/42883).
+--
 -- PEÇAS PARADAS: DESEMPENHO (tela /shopfloor/analisar/parados e o alerta "parado/travado"). Pedido de 19/11/2026:
 -- a tela demora a abrir. MESMO RESULTADO linha a linha (provado na massa de volume por
 -- supabase/tests/rodar-parados-medir.sh, que compara a saída da 0188/0180 com a desta, e pelos testes do

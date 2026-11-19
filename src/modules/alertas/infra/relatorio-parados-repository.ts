@@ -11,7 +11,9 @@ const PAGINA = 1000
 const LIMITE_SNS = 50_000
 
 /** PostgREST: função fora do cache de esquema (a migração 0193 ainda não rodou). */
-const FUNCAO_INEXISTENTE = 'PGRST202'
+// PGRST202: a função não está no cache do PostgREST. 42883: está no cache, mas foi apagada do banco (rollback sem
+// notify pgrst). Nos dois casos a tela cai na paginação antiga.
+const FUNCAO_INEXISTENTE = new Set(['PGRST202', '42883'])
 
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -58,8 +60,11 @@ export async function lerPecasParadasTela(
   const corte = o.horas === null ? agora : corteDeExpediente(agora, o.horas * 60, o.turnos)
   const args = { p_corte: corte.toISOString(), p_situacao: o.situacao, p_pmos: o.pmos.length > 0 ? o.pmos : null }
   const { data, error } = await cliente.rpc('sf_pecas_paradas_json', args)
-  if (!error) return lerPecasParadas(Array.isArray(data) ? data.slice(0, LIMITE_SNS) : [])
-  if (error.code !== FUNCAO_INEXISTENTE) throw new Error(`sf_pecas_paradas_json: ${error.message}`)
+  if (!error) {
+    if (!Array.isArray(data)) throw new Error('sf_pecas_paradas_json: resposta ilegível (não é uma lista)')
+    return lerPecasParadas(data.slice(0, LIMITE_SNS))
+  }
+  if (!FUNCAO_INEXISTENTE.has(error.code ?? '')) throw new Error(`sf_pecas_paradas_json: ${error.message}`)
 
   // Paginado: a função devolve numa ordem fixa (mais antiga primeiro, desempate PMO/OP/SN), então as páginas não
   // se sobrepõem.
