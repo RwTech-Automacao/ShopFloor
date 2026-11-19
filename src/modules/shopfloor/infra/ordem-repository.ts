@@ -170,9 +170,24 @@ async function regravarFaixas(supabase: Supa, id: string, faixas: FaixaSN[]): Pr
 /** Um trecho na edição por trecho (0194): os postos em ordem, a série e as faixas (PMO e PRT com série própria). */
 export interface TrechoEdicao { seq: number; postos: string[]; sn_modo: 'mesmo' | 'proprio'; faixas: FaixaSN[] }
 
-async function regravarTrechos(supabase: Supa, id: string, trechos: TrechoEdicao[]): Promise<void> {
-  // Rota, série e faixas de todos os trechos numa transação (sf_ordem_regravar_trechos, 0194), com as travas do histórico.
-  const { error } = await supabase.rpc('sf_ordem_regravar_trechos', { p_ordem_id: id, p_trechos: trechos })
+/**
+ * A OP inteira numa transação só (sf_ordem_regravar_trechos, 0194): rota, série e faixas de cada trecho, receita,
+ * Burn-in e os dados da OP — travada contra o bipe e com as travas do histórico. PMO e número não vão: não mudam.
+ */
+async function regravarTrechos(
+  supabase: Supa, id: string, trechos: TrechoEdicao[], dados: DadosOrdem,
+  receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[],
+): Promise<void> {
+  const { error } = await supabase.rpc('sf_ordem_regravar_trechos', {
+    p_ordem_id: id,
+    p_trechos: trechos,
+    p_ordem: {
+      cliente: dados.cliente, qtd: dados.qtd, descricao: dados.descricao, acp: dados.acp, status: dados.status,
+      embalagem_individual: dados.embalagem_individual, placas_por_painel: dados.placas_por_painel,
+    },
+    p_componentes: receita,
+    p_burnin: burnin,
+  })
   if (error) throw error
 }
 
@@ -193,8 +208,9 @@ async function gravarDadosDaOp(supabase: Supa, id: string, dados: DadosOrdem): P
  * PMO sem faixa, e com faixa o trigger só reescreve a seq 1 (que é a primeira da PMO). O trecho que ficaria sem posto é
  * conferido aqui antes da primeira escrita (a mesma regra da função), pois a recusa da função chegaria depois das faixas.
  *
- * Com `trechos` (a página de edição de OP com trechos): a rota, a série e as faixas de cada trecho vão de uma vez pela
- * sf_ordem_regravar_trechos (0194), que pode recusar e por isso vem antes de tudo; depois receita/burn-in e a sf_ordens.
+ * Com `trechos` (a página de edição de OP com trechos): TUDO vai numa chamada só, a sf_ordem_regravar_trechos (0194) —
+ * rota, série e faixas de cada trecho, receita, Burn-in e os dados da OP, numa transação: recusa ou falha não deixa
+ * nada pela metade.
  *
  * OP antiga (sem trechos): a ordem de antes — a sf_ordens primeiro (a duplicidade de PMO/OP para logo de cara).
  */
@@ -205,9 +221,7 @@ export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: stri
   const lista = (trechos ?? []) as { seq: number; codigo: string; tipo: string }[]
   if (trechosEdicao) {
     if (lista.length === 0) throw new Error('OP_SEM_TRECHOS')
-    await regravarTrechos(supabase, id, trechosEdicao)
-    await regravarReceitaEBurnin(supabase, id, receita, burnin)
-    await gravarDadosDaOp(supabase, id, dados)
+    await regravarTrechos(supabase, id, trechosEdicao, dados, receita, burnin)
     return
   }
   if (lista.length === 0) {

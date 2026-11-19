@@ -11,9 +11,11 @@ const m = vi.hoisted(() => ({
   ordemTemTrechos: vi.fn<(id: string) => Promise<boolean>>(async () => true),
   contarSnsForaDasFaixas: vi.fn<(pmo: string, op: string, f: unknown) => Promise<number>>(async () => 0),
   listarRotaGravada: vi.fn<(id: string) => Promise<string[]>>(async () => ['SPI', 'Teste', 'Almoxarifado']),
+  novaOpLiberada: vi.fn<(email: string) => boolean>(() => true),
 }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
-vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ perfil: {} })) }))
+vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: vi.fn(async () => ({ email: 'gestor@x', perfil: {} })) }))
+vi.mock('../liberacao-nova-op', () => ({ novaOpLiberada: (e: string) => m.novaOpLiberada(e) }))
 vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: vi.fn(() => true) }))
 vi.mock('@/modules/logs/application/registrar-log', () => ({ registrarLog: vi.fn(async () => undefined) }))
 vi.mock('../../infra/postos-repository', () => ({ mapaPostoPerfil: vi.fn(async () => ({ Almoxarifado: { recurso: 'almoxarifado' } })) }))
@@ -55,6 +57,7 @@ beforeEach(() => {
   m.buscarOrdemBase.mockResolvedValue(BASE)
   m.ordemTemTrechos.mockResolvedValue(true)
   m.listarRotaGravada.mockResolvedValue(['SPI', 'Teste', 'Almoxarifado'])
+  m.novaOpLiberada.mockReturnValue(true)
 })
 
 describe('editarOrdemAction com a edição por trecho (0194)', () => {
@@ -95,7 +98,7 @@ describe('editarOrdemAction com a edição por trecho (0194)', () => {
   })
 
   it('posto fora do catálogo e JSON inválido são recusados antes de gravar', async () => {
-    expect(await editarOrdemAction(undefined, formulario([{ seq: 1, postos: ['Fantasma'] }]))).toEqual({ ok: false, erro: 'Posto desconhecido: Fantasma.' })
+    expect(await editarOrdemAction(undefined, formulario([{ seq: 1, postos: ['Fantasma'], sn_modo: 'mesmo' }]))).toEqual({ ok: false, erro: 'Posto desconhecido: Fantasma.' })
     const fd = formulario(); fd.set('trechos', '{x')
     expect(await editarOrdemAction(undefined, fd)).toEqual({ ok: false, erro: 'Trechos inválidos.' })
     expect(await editarOrdemAction(undefined, formulario([]))).toEqual({ ok: false, erro: 'Trechos inválidos.' })
@@ -105,6 +108,26 @@ describe('editarOrdemAction com a edição por trecho (0194)', () => {
   it('o Almoxarifado gravado não pode sair da rota', async () => {
     const trechos = [TRECHOS[0], { ...TRECHOS[1], postos: ['Inspeção PTH', 'Teste'] }]
     expect(await editarOrdemAction(undefined, formulario(trechos))).toMatchObject({ ok: false })
+    expect(m.atualizarOrdem).not.toHaveBeenCalled()
+  })
+
+  it('a edição por trecho exige a liberação da tela nova (pelo e-mail da sessão)', async () => {
+    m.novaOpLiberada.mockReturnValue(false)
+    expect(await editarOrdemAction(undefined, formulario())).toEqual({ ok: false, erro: 'Você não tem permissão para gerenciar ordens de produção.' })
+    expect(m.novaOpLiberada).toHaveBeenCalledWith('gestor@x')
+    expect(m.atualizarOrdem).not.toHaveBeenCalled()
+    // a edição de sempre (sem `trechos`) não depende da liberação
+    m.novaOpLiberada.mockClear()
+    const fd = formulario(); fd.delete('trechos')
+    expect(await editarOrdemAction(undefined, fd)).not.toEqual({ ok: false, erro: 'Você não tem permissão para gerenciar ordens de produção.' })
+    expect(m.novaOpLiberada).not.toHaveBeenCalled()
+  })
+
+  it('série ausente ou inválida é recusada (nunca vira "mesma série" calada)', async () => {
+    const sem = [{ seq: 1, postos: ['SPI'], faixas: [] }, TRECHOS[1]]
+    expect(await editarOrdemAction(undefined, formulario(sem))).toEqual({ ok: false, erro: 'Série inválida no trecho 1: escolha "mesma série da PMO" ou "série própria".' })
+    const outra = [{ ...TRECHOS[0], sn_modo: 'outra' }, TRECHOS[1]]
+    expect(await editarOrdemAction(undefined, formulario(outra))).toMatchObject({ ok: false, erro: expect.stringMatching(/^Série inválida no trecho 1/) })
     expect(m.atualizarOrdem).not.toHaveBeenCalled()
   })
 
