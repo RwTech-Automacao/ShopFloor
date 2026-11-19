@@ -82,3 +82,20 @@ describe('linha da PRT no card do posto', () => {
     }
   })
 })
+
+describe('linha embaixo do nome do posto', () => {
+  it('mostra o trecho do posto no lugar do perfil', () => {
+    render(createElement(FluxoNode, { id: 'SPI', data: posto('SPI', { trechoDoPosto: 'PRT410 (8500)', temStatus: true }) } as never))
+    expect(screen.getByText('PRT410 (8500)')).toBeTruthy()
+    expect(screen.queryByText('teste/inspeção')).toBeNull()
+  })
+  it('OP sem trechos: sem linha de perfil', () => {
+    render(createElement(FluxoNode, { id: 'Montagem', data: posto('Montagem') } as never))
+    expect(screen.queryByText('passagem')).toBeNull()
+    expect(screen.queryByText('teste/inspeção')).toBeNull()
+  })
+  it('Manutenção continua dizendo "em manutenção"', () => {
+    render(createElement(FluxoNode, { id: 'Manutenção', data: posto('Manutenção', { ehManutencao: true, recurso: 'manutencao' }) } as never))
+    expect(screen.getByText('em manutenção')).toBeTruthy()
+  })
+})

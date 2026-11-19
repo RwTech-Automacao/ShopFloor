@@ -26,7 +26,7 @@ import { HelperLines, getHelperLines } from '@/shared/ui/fluxo/helper-lines'
 import { ControlesCanvas } from '@/shared/ui/fluxo/controles-canvas'
 import { classeSoNoHover, controlesSoNoHover } from '@/shared/lib/modo-tv'
 import { SeletorTrecho } from './seletor-trecho'
-import { realceDoTrecho, type TrechoDaOp } from '@/modules/shopfloor/domain/trechos-op'
+import { realceDoTrecho, rotuloTrechoDaOp, type TrechoDaOp } from '@/modules/shopfloor/domain/trechos-op'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
 const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
@@ -752,6 +752,12 @@ export function FluxoForm({
     return () => { vivo = false }
   }, [sel, fonte])
   const realce = useMemo(() => realceDoTrecho(trechosOp, trechoSel), [trechosOp, trechoSel])
+  // Posto → rótulo do trecho dele (ex. "PRT410 (8500)"), para a linha embaixo do nome no card.
+  const trechoPorPosto = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const t of trechosOp) for (const p of t.postos) m.set(p, rotuloTrechoDaOp(t))
+    return m
+  }, [trechosOp])
 
   // ===== Onda 3: período + cadência =====
   const dataEfetiva = dataFiltro || ymd(agoraMs) // vazio → hoje (derivado de agoraMs = render-puro)
@@ -886,6 +892,7 @@ export function FluxoForm({
           selecionado: aberto === n.id,
           // PMO/OP em todos os nós (o card do posto mostra a linha da PRT; a Entrada leva ainda a descrição).
           ...dadosPmoOpDoNo(n.id, opSel),
+          ...(trechoPorPosto.has(n.id) && !n.data.ehEntrada && !n.data.ehSaida ? { trechoDoPosto: trechoPorPosto.get(n.id) } : {}),
           // Busca de SN: realce da rota (vinho, preenchendo card a card por `rotaPasso`). Sem rota → undefined.
           ...(rota ? (() => {
             const idx = rota.ordem.indexOf(n.id)
@@ -900,7 +907,7 @@ export function FluxoForm({
         } satisfies FluxoNodePayload,
       }))
     })
-  }, [dom, aberto, opSel, sel, rota, rotaPasso, periodo, realce, setNodes])
+  }, [dom, aberto, opSel, sel, rota, rotaPasso, periodo, realce, trechoPorPosto, setNodes])
 
   // Tempo real: enquanto uma OP está aberta, re-busca o fluxo (números + linhas "andando") a cada 20s.
   // PERF: pula o tick quando a aba não está visível (Page Visibility) — evita que abas de Fluxo em 2º

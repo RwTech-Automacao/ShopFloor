@@ -23,6 +23,8 @@ export interface FluxoNodePayload extends FluxoNodeData {
   periodoAprovadas?: number // aprovadas na janela do filtro (posto com status)
   periodoReprovadas?: number // reprovadas na janela do filtro (posto com status)
   periodoRegistros?: number // bipes na janela do filtro (posto de passagem usa isto)
+  /** OP com trechos (0184): o trecho a que o posto pertence, ex. "PRT410 (8500)". Fica embaixo do nome do posto. */
+  trechoDoPosto?: string
 }
 
 /** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus).
@@ -362,9 +364,10 @@ function FluxoNodeBase({ data }: NodeProps) {
         <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo} ${temSub ? (d.concluido || d.ehManutencao ? 'rounded-xl' : 'rounded-t-xl') : 'rounded-xl'}`}>
           <div className="min-w-0 flex-1 text-left">
             <p className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">{d.posto}</p>
-            <p className="text-xs text-muted-foreground">
-              {d.ehManutencao ? 'em manutenção' : d.temStatus ? 'teste/inspeção' : 'passagem'}
-            </p>
+            {/* Embaixo do nome: o trecho (PRT/PMO) do posto na OP com trechos; "em manutenção" no card da Manutenção. */}
+            {(d.ehManutencao || d.trechoDoPosto) && (
+              <p className="truncate text-xs text-muted-foreground">{d.ehManutencao ? 'em manutenção' : d.trechoDoPosto}</p>
+            )}
           </div>
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
             {iconeDo(d)}
