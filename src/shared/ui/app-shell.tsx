@@ -647,7 +647,7 @@ export function AppShell({
   )
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background print:block print:h-auto print:overflow-visible">
+    <div className="flex h-dvh overflow-clip bg-background print:block print:h-auto print:overflow-visible">
       <KioskGuard />
       <KioskExitDialog aberto={exitAberto} onFechar={() => setExitAberto(false)} />
       {podeConfig && <KioskSetupDialog aberto={setupAberto} onFechar={() => setSetupAberto(false)} />}
