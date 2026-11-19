@@ -44,8 +44,8 @@ describe('sem a linha do Compels no card do posto', () => {
 
 describe('linha embaixo do nome do posto', () => {
   it('mostra o trecho do posto no lugar do perfil', () => {
-    render(createElement(FluxoNode, { id: 'SPI', data: posto('SPI', { trechoDoPosto: 'PRT410 (8500)', temStatus: true }) } as never))
-    expect(screen.getByText('PRT410 (8500)')).toBeTruthy()
+    render(createElement(FluxoNode, { id: 'SPI', data: posto('SPI', { trechoDoPosto: 'PRT410', temStatus: true }) } as never))
+    expect(screen.getByText('PRT410')).toBeTruthy()
     expect(screen.queryByText('teste/inspeção')).toBeNull()
   })
   it('OP sem trechos: sem linha de perfil', () => {

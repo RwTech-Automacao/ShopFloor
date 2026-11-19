@@ -26,7 +26,7 @@ import { HelperLines, getHelperLines } from '@/shared/ui/fluxo/helper-lines'
 import { ControlesCanvas } from '@/shared/ui/fluxo/controles-canvas'
 import { classeSoNoHover, controlesSoNoHover } from '@/shared/lib/modo-tv'
 import { SeletorTrecho } from './seletor-trecho'
-import { realceDoTrecho, rotuloTrechoDaOp, type TrechoDaOp } from '@/modules/shopfloor/domain/trechos-op'
+import { realceDoTrecho, type TrechoDaOp } from '@/modules/shopfloor/domain/trechos-op'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
 const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
@@ -752,10 +752,10 @@ export function FluxoForm({
     return () => { vivo = false }
   }, [sel, fonte])
   const realce = useMemo(() => realceDoTrecho(trechosOp, trechoSel), [trechosOp, trechoSel])
-  // Posto → rótulo do trecho dele (ex. "PRT410 (8500)"), para a linha embaixo do nome no card.
+  // Posto → código do trecho dele (ex. "PRT410"), para a linha embaixo do nome no card.
   const trechoPorPosto = useMemo(() => {
     const m = new Map<string, string>()
-    for (const t of trechosOp) for (const p of t.postos) m.set(p, rotuloTrechoDaOp(t))
+    for (const t of trechosOp) for (const p of t.postos) m.set(p, t.codigo)
     return m
   }, [trechosOp])
 

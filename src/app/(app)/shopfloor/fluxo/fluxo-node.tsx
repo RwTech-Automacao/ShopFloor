@@ -21,7 +21,7 @@ export interface FluxoNodePayload extends FluxoNodeData {
   periodoAprovadas?: number // aprovadas na janela do filtro (posto com status)
   periodoReprovadas?: number // reprovadas na janela do filtro (posto com status)
   periodoRegistros?: number // bipes na janela do filtro (posto de passagem usa isto)
-  /** OP com trechos (0184): o trecho a que o posto pertence, ex. "PRT410 (8500)". Fica embaixo do nome do posto. */
+  /** OP com trechos (0184): o trecho a que o posto pertence, ex. "PRT410". Fica embaixo do nome do posto. */
   trechoDoPosto?: string
 }
 
