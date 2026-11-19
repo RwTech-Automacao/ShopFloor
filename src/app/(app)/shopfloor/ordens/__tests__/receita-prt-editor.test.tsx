@@ -80,7 +80,10 @@ describe('edição de OP com trechos: PRTs desta OP na receita', () => {
     editar()
     fireEvent.change(screen.getByRole('combobox', { name: 'Adicionar PRT desta OP à receita de Integração' }), { target: { value: 'PRT410' } })
     expect(screen.getByRole('button', { name: 'Remover PRT410' })).toBeTruthy()
-    expect(screen.queryByRole('group', { name: 'PRTs desta OP · Integração' })).toBeNull()
+    // o grupo e a ajuda continuam na tela, sem a lista
+    const grupo = screen.getByRole('group', { name: 'PRTs desta OP · Integração' })
+    expect(within(grupo).getByText('Todas as PRTs desta OP já estão na receita.')).toBeTruthy()
+    expect(screen.queryByRole('combobox', { name: 'Adicionar PRT desta OP à receita de Integração' })).toBeNull()
     fireEvent.change(screen.getByRole('combobox', { name: 'Adicionar PMO à receita de Integração' }), { target: { value: 'PMOX' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(acoes.editarOrdemAction).toHaveBeenCalledTimes(1))
@@ -89,7 +92,7 @@ describe('edição de OP com trechos: PRTs desta OP na receita', () => {
   })
 
   it('a PRT que passa para a mesma série da PMO sai da receita ao salvar, com aviso', async () => {
-    editar({ receita: { Integração: ['PRT410', 'PMOX'] } })
+    editar({ receita: { Integração: ['PRT410', 'PMOX'] }, pmosExistentes: ['PMOC14', 'PMOX'] })
     const prt = screen.getByRole('region', { name: 'PRT410 (8499)' })
     fireEvent.click(within(prt).getByLabelText('Mesma série da PMO'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
@@ -98,6 +101,28 @@ describe('edição de OP com trechos: PRTs desta OP na receita', () => {
     expect(toast.warning).toHaveBeenCalledWith(
       'PRT410 saiu da receita da Integração: ela não é mais uma PRT de série própria desta OP.', expect.anything())
     expect(screen.queryByRole('button', { name: 'Remover PRT410' })).toBeNull()
+  })
+
+  it('salvar recusado: a receita na tela não muda e não há aviso', async () => {
+    acoes.editarOrdemAction.mockResolvedValue({ ok: false, erro: 'Não foi possível salvar a OP.' })
+    editar({ receita: { Integração: ['PRT410', 'PMOX'] }, pmosExistentes: ['PMOC14', 'PMOX'] })
+    fireEvent.click(within(screen.getByRole('region', { name: 'PRT410 (8499)' })).getByLabelText('Mesma série da PMO'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(acoes.editarOrdemAction).toHaveBeenCalledTimes(1))
+    // o servidor recebeu a receita limpa, mas a tela só muda quando o salvamento acontece
+    expect(enviado()).toEqual({ Integração: ['PMOX'] })
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(toast.warning).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Remover PRT410' })).toBeTruthy()
+  })
+
+  it('a PRT de mesma série que também é PMO de uma OP cadastrada fica na receita, sem aviso', async () => {
+    editar({ receita: { Integração: ['PRT410'] } }) // PRT410 está em pmosExistentes (OP separada)
+    fireEvent.click(within(screen.getByRole('region', { name: 'PRT410 (8499)' })).getByLabelText('Mesma série da PMO'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(acoes.editarOrdemAction).toHaveBeenCalledTimes(1))
+    expect(enviado()).toEqual({ Integração: ['PRT410'] })
+    expect(toast.warning).not.toHaveBeenCalled()
   })
 
   it('OP sem PRT de série própria: sem o grupo, e a receita de PMOs sai como antes', async () => {

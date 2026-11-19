@@ -2,9 +2,9 @@
 # Testes SQL da 0195 (receita da Integração com PRT da estrutura) num Postgres descartável.
 # Uso: supabase/tests/rodar-receita-prt-test.sh
 # Monta o esquema mínimo da 0184 (estrutura_op_esquema.sql) + o da Integração (receita_prt_esquema.sql), a 0184 real,
-# a sf_sn_na_faixa real da 0129 (extraída do arquivo), a 0194 e a 0066 (a sf_integrar vigente), e aplica a 0195 DUAS
-# vezes (idempotência). Depois o rollback (duas vezes), que tem que devolver as três funções ao texto anterior, e a
-# 0195 de novo. A prova do cadastro da 0184 (cadastro_op_prova.sql) roda contra a sf_cadastrar_op da 0195.
+# a sf_sn_na_faixa real da 0129 (extraída do arquivo), a 0194, a 0066 (a sf_integrar vigente) e a sf_cancelar_lancamento
+# da 0165 (extraída), e aplica a 0195 DUAS vezes (idempotência). Depois o rollback (duas vezes), que tem que devolver
+# as quatro funções ao texto anterior, e a 0195 de novo. A prova do cadastro da 0184 (cadastro_op_prova.sql) roda contra a sf_cadastrar_op da 0195.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 NOME=pg-receita-prt-test
@@ -19,6 +19,12 @@ awk -v f="create or replace function public.sf_sn_na_faixa(" '
   dentro && $0 == "end $func$;" { exit }' supabase/migrations/0129_sf_almoxarifado_entrada.sql > "$TMPD/sf_sn_na_faixa.sql"
 [ -s "$TMPD/sf_sn_na_faixa.sql" ] || { echo "sf_sn_na_faixa não encontrada na 0129"; exit 1; }
 docker cp "$TMPD/sf_sn_na_faixa.sql" "$NOME":/tmp/sf_sn_na_faixa.sql
+awk -v f="create or replace function public.sf_cancelar_lancamento(" '
+  index($0, f) == 1 { dentro = 1 }
+  dentro { print }
+  dentro && $0 == "$func$;" { exit }' supabase/migrations/0165_placas_almoxarifado.sql > "$TMPD/cancelar.sql"
+[ -s "$TMPD/cancelar.sql" ] || { echo "sf_cancelar_lancamento não encontrada na 0165"; exit 1; }
+docker cp "$TMPD/cancelar.sql" "$NOME":/tmp/cancelar.sql
 docker cp supabase/tests/estrutura_op_esquema.sql "$NOME":/tmp/esquema.sql
 docker cp supabase/tests/receita_prt_esquema.sql "$NOME":/tmp/esquema-integracao.sql
 docker cp supabase/migrations/0184_estrutura_op.sql "$NOME":/tmp/0184.sql
@@ -36,7 +42,8 @@ P -f /tmp/sf_sn_na_faixa.sql
 P -1 -f /tmp/0184.sql
 P -1 -f /tmp/0194.sql
 P -1 -f /tmp/0066.sql
-DEFS="select string_agg(pg_get_functiondef(p.oid), E'\n' order by p.proname) from pg_proc p where p.proname in ('sf_integrar','sf_cadastrar_op','sf_ordem_regravar_trechos')"
+P -1 -f /tmp/cancelar.sql   # a sf_cancelar_lancamento vigente (0165)
+DEFS="select string_agg(pg_get_functiondef(p.oid), E'\n' order by p.proname) from pg_proc p where p.proname in ('sf_integrar','sf_cadastrar_op','sf_ordem_regravar_trechos','sf_cancelar_lancamento')"
 Q -c "$DEFS" > "$TMPD/defs-antes.txt"
 P -1 -f /tmp/0195.sql
 P -1 -f /tmp/0195.sql   # idempotente

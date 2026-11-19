@@ -48,6 +48,27 @@ export async function ehUltimoBipe(
   return ultimo?.id === id
 }
 
+/**
+ * 0195: a integração ATIVA em que o SN entrou como placa, nesta OP (a mesma checagem da sf_cancelar_lancamento).
+ * null = não é placa integrada. Erro de leitura sobe (a tela trava, fail-closed).
+ */
+export async function placaIntegradaAtiva(
+  op: string, numeroSerieNorm: string,
+): Promise<{ placa: string; produto: string; codigo: string } | null> {
+  if (numeroSerieNorm === '') return null
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_integracao_itens')
+    .select('placa_sn,sf_integracoes!inner(codigo,produto_sn,status)')
+    .eq('placa_sn_norm', numeroSerieNorm)
+    .eq('placa_op', op)
+    .eq('sf_integracoes.status', 'ATIVA')
+    .limit(1)
+  if (error) throw error
+  const row = (data ?? [])[0] as unknown as { placa_sn: string; sf_integracoes: { codigo: string; produto_sn: string } } | undefined
+  return row ? { placa: row.placa_sn, produto: row.sf_integracoes.produto_sn, codigo: row.sf_integracoes.codigo } : null
+}
+
 export async function chamarSfCancelar(
   id: string, motivo: string,
 ): Promise<{ ok: true } | { ok: false; erro: string }> {

@@ -1,29 +1,31 @@
 -- 0195: RECEITA DA INTEGRAÇÃO COM PRT DA ESTRUTURA — a receita de um posto de Integração pode citar uma PRT da própria
--- OP (trecho 'prt' da 0184), e o bipe aceita a placa que já terminou o trecho dela.
+-- OP com série própria (trecho 'prt' da 0184, sn_modo 'proprio'), e o bipe aceita a placa que já terminou o trecho dela.
 -- Spec: docs/superpowers/specs/2026-11-19-receita-integracao-prt-design.md (aprovada em 19/11).
 --
 -- 1. sf_integrar (a versão vigente é a da 0066): muda SÓ a conferência da receita. Assinatura, permissão, travas,
 --    sequência, duplicidade e as gravações ficam idênticas. Cada placa chega como {pmo, op, sn, sn_norm}, com o `pmo` =
 --    o item da receita em que o app a encaixou (integracao-panel/resolverPlacaIntegracaoAction). Então:
---    * item da receita que NÃO é PRT da própria OP: a regra de sempre (o pmo da placa está na receita). Cobre a PRT
---      cadastrada como OP separada (ex.: 8683 PRT706), cuja placa leva o código da PRT.
---    * item que É PRT da própria OP (trecho tipo 'prt' da ordem do produto, mesmo código, sem diferenciar maiúsculas):
---      vale SÓ a regra da PRT — a placa tem que ser da própria OP (op da placa = op do produto; outra OP com a mesma
---      PRT é "fora da receita") e ter registro no posto_conclui do trecho na própria PMO/OP: Aprovado se o perfil do
---      posto tem status (sf_posto_perfis.tem_status), qualquer registro se o posto é de passagem. Senão:
---      PLACA_PRT_INCOMPLETA {placa, prt, posto}.
---    * receita vazia aceita qualquer placa; receita sem PRT da própria OP se comporta exatamente como antes.
--- 2. sf_cadastrar_op (0184) e sf_ordem_regravar_trechos (0194): recusam, antes de gravar, um item da receita que é o
---    código de um trecho PRT da OP sem série própria: RECEITA_PRT_INVALIDA:<codigo> (só os itens de postos da rota, os
---    únicos que a função grava). Código que não é trecho da OP segue como PMO, como hoje. O resto das duas funções é o
---    texto da versão vigente.
+--    * item que NÃO é PRT de série própria da própria OP (inclusive a PRT de mesma série): a regra de sempre (o pmo da
+--      placa está na receita). Cobre a PRT cadastrada como OP separada (ex.: 8683 PRT706).
+--    * item que É PRT de série própria da própria OP (trecho 'prt', sn_modo 'proprio', mesmo código sem diferenciar
+--      maiúsculas) aceita a placa por QUALQUER uma de duas regras:
+--      (a) placa da própria OP (op da placa = op do produto) que terminou o trecho: registro no posto_conclui do trecho
+--          na própria PMO/OP, Aprovado se o gate do perfil do posto é 'aprovado' (o mesmo critério do
+--          perfilPrecisaAprovado do app), qualquer registro se não é. Senão: PLACA_PRT_INCOMPLETA {placa, prt, posto};
+--      (b) placa de uma OP SEPARADA cujo pmo é aquele código (existe sf_ordens com esse pmo e a op da placa), pela
+--          regra da PMO. Placa de OUTRA OP que só tem a mesma PRT como trecho (pmo dela é outro) fica fora da receita.
+--    * receita vazia aceita qualquer placa; receita sem PRT de série própria da própria OP se comporta como antes.
+-- 2. sf_cadastrar_op (0184) e sf_ordem_regravar_trechos (0194): recusam, antes de gravar, um item da receita (de posto
+--    da rota) que é o código de um trecho PRT da OP sem série própria e que NÃO é a PMO de nenhuma OP cadastrada (essa
+--    segue valendo como PMO, regra 1): RECEITA_PRT_INVALIDA:<codigo>. O resto das duas funções é o texto vigente.
+-- 3. sf_cancelar_lancamento (vigente: 0165): recusa cancelar um bipe de SN que é placa de uma integração ATIVA na
+--    mesma OP: PLACA_INTEGRADA:<placa>|<produto>|<código>. Sem isso, o gestor apagava o registro que fez a placa da PRT
+--    "terminar o trecho" com a placa já montada no produto. Fica DEPOIS do LIFO: as recusas de antes não mudam.
 -- sf_ordem_componentes não muda: pmo_componente passa a poder guardar o código de uma PRT da própria OP.
 --
--- ORDEM DE DEPLOY: migração ANTES do app (o app novo manda a placa da PRT com o código dela e traduz o erro novo).
--- Depende de: 0062 (sf_posto_perfis), 0066, 0184, 0194.
--- Idempotente (create or replace). Rollback: docs/operacao/estrutura-op/rollback-0195.sql.
-
-begin;
+-- ORDEM DE DEPLOY: migração ANTES do app (o app novo manda a placa da PRT com o código dela e traduz os erros novos).
+-- Depende de: 0062 (sf_posto_perfis), 0066, 0165, 0184, 0194.
+-- Idempotente (create or replace; psql -1 -v ON_ERROR_STOP=1 -f). Rollback: docs/operacao/estrutura-op/rollback-0195.sql.
 
 -- ---------- sf_integrar: o texto da 0066 com a conferência da receita da 0195 (mesma assinatura → replace puro) ----------
 create or replace function public.sf_integrar(
@@ -51,7 +53,7 @@ declare
   v_receita    text[];
   v_placa_fora text;
   v_prev_ok    boolean;
-  v_prts       text[];  -- 0195: os itens da receita que são PRT da própria OP (minúsculos)
+  v_prts       text[];  -- 0195: os itens da receita que são PRT de série própria da própria OP (minúsculos)
   v_prt_placa  text;
   v_prt_codigo text;
   v_prt_posto  text;
@@ -105,39 +107,47 @@ begin
     select array_agg(lower(trim(pmo_componente))) into v_receita
     from sf_ordem_componentes where ordem_id = v_ordem_id and posto = p_posto;
     if v_receita is not null and array_length(v_receita, 1) > 0 then
-      -- 0195: item da receita que é trecho PRT da própria OP vale só pela regra da PRT (abaixo)
+      -- 0195: os itens da receita que são PRT de série própria da própria OP
       select coalesce(array_agg(distinct lower(trim(ot.codigo))), '{}'::text[]) into v_prts
       from sf_ordem_trechos ot
-      where ot.ordem_id = v_ordem_id and ot.tipo = 'prt' and lower(trim(ot.codigo)) = any (v_receita);
-      -- fora da receita: pmo fora dela, ou PRT da própria OP vinda de outra OP
+      where ot.ordem_id = v_ordem_id and ot.tipo = 'prt' and ot.sn_modo = 'proprio'
+        and lower(trim(ot.codigo)) = any (v_receita);
+      -- fora da receita: pmo fora dela, ou item PRT com placa de outra OP que não é uma OP separada daquele código
       select x->>'pmo' into v_placa_fora
       from jsonb_array_elements(p_placas) x
       where lower(trim(coalesce(x->>'pmo',''))) <> all (v_receita)
-         or (lower(trim(coalesce(x->>'pmo',''))) = any (v_prts) and btrim(coalesce(x->>'op','')) <> btrim(p_op))
+         or (lower(trim(coalesce(x->>'pmo',''))) = any (v_prts)
+             and btrim(coalesce(x->>'op','')) <> btrim(p_op)
+             and not exists (select 1 from sf_ordens o2
+                              where lower(trim(o2.pmo)) = lower(trim(coalesce(x->>'pmo','')))
+                                and o2.op = btrim(coalesce(x->>'op',''))))
       limit 1;
       if v_placa_fora is not null then
         return jsonb_build_object('ok', false, 'erro', 'PLACA_FORA_DA_RECEITA', 'pmo', v_placa_fora);
       end if;
-      -- 0195: a placa da PRT tem que ter terminado o trecho: registro na própria PMO/OP, no posto que conclui o
-      -- trecho, Aprovado se o perfil do posto tem status (posto de passagem: basta o registro)
+      -- 0195: a placa da PRT que é da própria OP tem que ter terminado o trecho: registro na própria PMO/OP, no posto
+      -- que conclui o trecho, Aprovado se o gate do perfil do posto é 'aprovado' (senão basta o registro)
       if cardinality(v_prts) > 0 then
         select x.e->>'sn', ot.codigo, ot.posto_conclui into v_prt_placa, v_prt_codigo, v_prt_posto
         from jsonb_array_elements(p_placas) with ordinality x(e, n)
         cross join lateral (
           select t.codigo, t.posto_conclui from sf_ordem_trechos t
-          where t.ordem_id = v_ordem_id and t.tipo = 'prt' and lower(trim(t.codigo)) = lower(trim(coalesce(x.e->>'pmo','')))
+          where t.ordem_id = v_ordem_id and t.tipo = 'prt' and t.sn_modo = 'proprio'
+            and lower(trim(t.codigo)) = lower(trim(coalesce(x.e->>'pmo','')))
           order by t.seq limit 1
         ) ot
-        where not exists (
+        where btrim(coalesce(x.e->>'op','')) = btrim(p_op)
+          and not exists (
           select 1
           from sf_ordem_trechos t
           join sf_registros r on r.pmo = p_pmo and r.op = p_op and r.posto = t.posto_conclui
                              and r.numero_serie_norm = coalesce(x.e->>'sn_norm','')
           left join sf_postos s on s.chave = t.posto_conclui
           left join sf_posto_perfis pe on pe.chave = s.perfil
-          where t.ordem_id = v_ordem_id and t.tipo = 'prt' and lower(trim(t.codigo)) = lower(trim(coalesce(x.e->>'pmo','')))
+          where t.ordem_id = v_ordem_id and t.tipo = 'prt' and t.sn_modo = 'proprio'
+            and lower(trim(t.codigo)) = lower(trim(coalesce(x.e->>'pmo','')))
             and coalesce(x.e->>'sn_norm','') <> ''
-            and (not coalesce(pe.tem_status, false) or lower(r.status) = 'aprovado')
+            and (coalesce(pe.gate, '') <> 'aprovado' or lower(r.status) = 'aprovado')
         )
         order by x.n
         limit 1;
@@ -205,7 +215,8 @@ begin
    where (x->>'tipo' = 'pmo' or x->>'sn_modo' = 'proprio') and jsonb_array_length(coalesce(x->'faixas', '[]'::jsonb)) = 0
    order by (x->>'seq')::int limit 1;
   if v_rep is not null then raise exception 'TRECHO_SEM_FAIXA:%', v_rep; end if;
-  -- 0195: PRT da própria OP na receita só com série própria (item de posto da rota: o único que é gravado)
+  -- 0195: PRT da própria OP na receita só com série própria (item de posto da rota: o único que é gravado), a não
+  -- ser que o código seja também a PMO de uma OP cadastrada (aí vale como PMO)
   select btrim(c->>'pmo') into v_rep
     from jsonb_array_elements(coalesce(p->'componentes', '[]'::jsonb)) c
     join jsonb_array_elements(v_trechos) x
@@ -213,6 +224,7 @@ begin
    where coalesce(x->>'sn_modo', 'mesmo') <> 'proprio'
      and exists (select 1 from jsonb_array_elements(v_trechos) y, jsonb_array_elements_text(y->'postos') pp
                   where pp = c->>'posto')
+     and not exists (select 1 from sf_ordens o2 where lower(btrim(o2.pmo)) = lower(btrim(c->>'pmo')))
    order by (x->>'seq')::int limit 1;
   if v_rep is not null then raise exception 'RECEITA_PRT_INVALIDA:%', v_rep; end if;
   select x->'faixas'->0 into v_primeira from jsonb_array_elements(v_trechos) x where x->>'tipo' = 'pmo';
@@ -431,13 +443,15 @@ begin
     end if;
   end loop;
 
-  -- 0195: PRT da própria OP na receita só com série própria (a série NOVA; item de posto da rota nova: o único gravado)
+  -- 0195: PRT da própria OP na receita só com série própria (a série NOVA; item de posto da rota nova: o único gravado),
+  -- a não ser que o código seja também a PMO de uma OP cadastrada (aí vale como PMO)
   select btrim(c->>'pmo') into v_rep
     from jsonb_array_elements(v_comp) c
     join jsonb_to_recordset(v_t) t2(seq int, codigo text, tipo text, sn_modo text)
       on t2.tipo = 'prt' and lower(btrim(t2.codigo)) = lower(btrim(coalesce(c->>'pmo', '')))
    where t2.sn_modo <> 'proprio'
      and exists (select 1 from jsonb_to_recordset(v_p) p(posto text) where p.posto = c->>'posto')
+     and not exists (select 1 from sf_ordens o2 where lower(btrim(o2.pmo)) = lower(btrim(c->>'pmo')))
    order by t2.seq limit 1;
   if v_rep is not null then raise exception 'RECEITA_PRT_INVALIDA:%', v_rep; end if;
 
@@ -487,6 +501,160 @@ $func$;
 revoke all on function public.sf_ordem_regravar_trechos(uuid, jsonb, jsonb, jsonb, jsonb) from public, anon;
 grant execute on function public.sf_ordem_regravar_trechos(uuid, jsonb, jsonb, jsonb, jsonb) to authenticated, service_role;
 
-commit;
+-- ---------- sf_cancelar_lancamento: o texto da 0165 com a recusa PLACA_INTEGRADA ----------
+-- Sem revoke/grant, como na 0133/0156/0165: mexer na ACL dela mudaria quem pode chamar.
+create or replace function public.sf_cancelar_lancamento(p_id uuid, p_motivo text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $func$
+declare
+  v_pmo text; v_op text; v_snnorm text; v_posto text; v_numero_caixa text;
+  v_recurso text; v_ultimo uuid;
+  v_cx record;
+  v_pecas int;  -- 0165: as placas da linha cancelada (sf_registros.pecas, 0161)
+  v_int_placa text; v_int_produto text; v_int_codigo text;  -- 0195
+begin
+  -- Gate por MÓDULO (2-arg), igual ao podeNoModulo('shopfloor','administrar') da UI/action —
+  -- assim quem vê o botão passa na RPC (o 1-arg global divergia do gate da tela).
+  if not tem_permissao('shopfloor', 'administrar') then
+    raise exception 'SEM_PERMISSAO';
+  end if;
+  if coalesce(trim(p_motivo), '') = '' then
+    raise exception 'MOTIVO_OBRIGATORIO';
+  end if;
+
+  select pmo, op, numero_serie_norm, posto, coalesce(numero_caixa, ''), pecas
+    into v_pmo, v_op, v_snnorm, v_posto, v_numero_caixa, v_pecas
+  from public.sf_registros
+  where id = p_id;
+  if not found then
+    raise exception 'NAO_ENCONTRADO';
+  end if;
+  -- 0156: LINHA DE LOTE NÃO SE CANCELA SOZINHA (ver o cabeçalho da 0156, regra 7). O lote é um gesto: as
+  -- N linhas e UM envio. Cancelar uma linha aqui apagaria uma peça sem reverter nada na fila (o alvo
+  -- calculado abaixo é o SN, e o envio do lote tem o rótulo como alvo), e o Compels ficaria com uma peça
+  -- a mais, calado. Quem desfaz é a sf_cancelar_lote_almoxarifado ("Cancelar o lote inteiro").
+  if exists (
+    select 1 from public.sf_registros r
+      join public.sf_estoque_envios e on e.id = r.envio_id
+     where r.id = p_id and e.tipo = 'lote'
+  ) then
+    raise exception 'CANCELE_O_LOTE';
+  end if;
+
+  -- Serializa com o lançamento da mesma OP (o "último bipe" não muda no meio da checagem).
+  -- É também o que serializa com a sf_cancelar_caixa_almoxarifado (0131), que pega a MESMA trava
+  -- primeiro: dois cancelamentos da mesma OP não calculam a chave do estorno ao mesmo tempo.
+  perform pg_advisory_xact_lock(hashtext(v_pmo || '/' || v_op)::bigint);
+
+  -- Escopo: bloqueia postos com efeito colateral em outra tabela (recurso nulo = permitido).
+  -- 'caixa' saiu da lista: o efeito colateral em sf_caixas é desfeito aqui embaixo.
+  select p.recurso into v_recurso
+  from public.sf_postos po
+  join public.sf_posto_perfis p on p.chave = po.perfil
+  where po.chave = v_posto;
+  if v_recurso in ('nqa', 'integracao') then
+    raise exception 'POSTO_NAO_CANCELAVEL';
+  end if;
+
+  -- Burn-in (sf_burnin, 0069) e embalagem (sf_fechar_caixa, 0070) usam lock POR POSTO; o lock
+  -- por-OP acima não serializa com eles. Pega também o lock por-posto pra o cancelamento não correr
+  -- junto com um bipe de entrada/saída do burn-in nem com um fechamento de caixa (que reescreveria
+  -- os numero_caixa embaixo da gente). Ordem OP→posto sempre (nenhuma função pega posto→OP), então
+  -- não há deadlock.
+  if v_recurso in ('burnin', 'caixa') then
+    perform pg_advisory_xact_lock(hashtext(v_pmo || '/' || v_op || '/' || v_posto)::bigint);
+  end if;
+
+  -- Almoxarifado: a MESMA trava por bipe que a 0129 e a 0131 usam ('sf_almox/<pmo>/<op>/<posto>/<a
+  -- identidade do bipe>'). Sem ela, um rebipe da mesma caixa poderia estar inserindo as N linhas e a
+  -- linha da fila enquanto este cancelamento ajusta a quantidade do envio pendente — e o número que
+  -- fosse pro ERP não seria de nenhum dos dois gestos. Ordem OP → bipe, a mesma das outras duas.
+  if v_recurso = 'almoxarifado' then
+    perform pg_advisory_xact_lock(
+      hashtext('sf_almox/' || v_pmo || '/' || v_op || '/' || v_posto || '/'
+               || coalesce(nullif(v_numero_caixa, ''), v_snnorm))::bigint);
+  end if;
+
+  -- LIFO: só o bipe mais recente do SN nesta OP.
+  select id into v_ultimo
+  from public.sf_registros
+  where pmo = v_pmo and op = v_op and numero_serie_norm = v_snnorm
+  order by data_hora desc, id desc
+  limit 1;
+  if v_ultimo is distinct from p_id then
+    raise exception 'NAO_E_ULTIMO';
+  end if;
+
+  -- 0195: SN que é placa de uma integração ATIVA nesta OP não se cancela: o registro faz parte do que a Integração
+  -- conferiu (a placa da PRT terminou o trecho). Desfaz-se a integração antes.
+  select i.placa_sn, g.produto_sn, g.codigo into v_int_placa, v_int_produto, v_int_codigo
+  from public.sf_integracao_itens i
+  join public.sf_integracoes g on g.id = i.integracao_id and g.status = 'ATIVA'
+  where i.placa_sn_norm = v_snnorm and i.placa_op = v_op and v_snnorm <> ''
+  order by g.data_hora desc
+  limit 1;
+  if v_int_codigo is not null then
+    raise exception 'PLACA_INTEGRADA:%|%|%', v_int_placa, v_int_produto, v_int_codigo;
+  end if;
+
+  -- Move: guarda a linha inteira na auditoria e apaga da tabela viva.
+  -- A auditoria é gravada ANTES da reabertura de propósito: o `dados` guarda o numero_caixa que a
+  -- peça REALMENTE tinha no momento do cancelamento (o código final, se a caixa estava fechada).
+  insert into public.sf_registros_cancelados
+    (id_original, pmo, op, numero_serie_norm, posto, dados, motivo, cancelado_por)
+  select id, pmo, op, numero_serie_norm, posto, to_jsonb(r), p_motivo, auth.uid()
+  from public.sf_registros r
+  where id = p_id;
+
+  delete from public.sf_registros where id = p_id;
+
+  -- Embalagem: se a caixa da peça já estava FECHADA, reabre (inverso do sf_fechar_caixa).
+  if v_recurso = 'caixa' and v_numero_caixa <> '' then
+    -- Acha a caixa pelo código final (fechada) ou pelo marcador (aberta). O `<> ''` acima é o que
+    -- impede casar com o codigo='' das caixas abertas.
+    select c.id, c.seq, c.codigo, c.fechada into v_cx
+    from public.sf_caixas c
+    where c.pmo = v_pmo and c.op = v_op and c.posto = v_posto
+      and c.revisao = 0
+      and (c.codigo = v_numero_caixa or 'CX[' || c.seq || ']' = v_numero_caixa)
+    limit 1;
+
+    if found and v_cx.fechada then
+      -- Volta as peças que sobraram pro marcador (o fechamento conta por ele).
+      update public.sf_registros
+         set numero_caixa = 'CX[' || v_cx.seq || ']'
+       where pmo = v_pmo and op = v_op and posto = v_posto and numero_caixa = v_cx.codigo;
+      -- ultima=false: se era a última da OP, o operador reconfere o "Última caixa" ao fechar de novo
+      -- (senão a OP continuaria "concluída" com uma caixa aberta pendente).
+      update public.sf_caixas
+         set fechada = false, codigo = '', qtd = 0, ultima = false, fechada_em = null
+       where id = v_cx.id;
+    end if;
+    -- Peça de uma montagem APOSENTADA (código com R) não chega aqui: depois da reprova o último bipe
+    -- dela é o do NQA, e o LIFO já barrou com NAO_E_ULTIMO. Se chegasse, o filtro de revisao acima não
+    -- acharia caixa e nada seria reaberto — o histórico fica como está.
+  end if;
+
+  -- ---------- A FILA DE ENVIO AO ERP (Fase 2) ----------
+  -- A linha cancelada era uma entrada de estoque: UM painel (`pecas` placas; 0165) deixou de estar no
+  -- estoque, e o Compels tem que ficar sabendo — a não ser que a entrada nem tenha saído daqui ainda NEM SIDO TOCADA por
+  -- uma rodada de envio (linha limpa), caso em que o certo é corrigir/cancelar o envio pendente e não
+  -- mandar uma entrada e uma saída que nunca precisaram existir. Na linha TOCADA (reservada, tentada,
+  -- ou com estorno) não dá pra corrigir: a carga dela já pode ter saído com o número antigo, então ela
+  -- é estornada mesmo sem estar `ok`. Quem decide isso é a sf_estoque_reverter (0132); aqui só se diz
+  -- o que foi desfeito.
+  --
+  -- Na mesma transação do delete, pelo mesmo motivo do bipe: se o delete vingasse e a reversão não, a
+  -- peça sairia do ShopFloor e continuaria no ERP para sempre, calada.
+  if v_recurso = 'almoxarifado' then
+    -- 0165: a quantidade revertida são as placas da linha cancelada (era o `1` fixo de uma peça).
+    perform sf_estoque_reverter(v_pmo, v_op, v_posto,
+                                coalesce(nullif(v_numero_caixa, ''), v_snnorm), v_pecas);
+  end if;
+end
+$func$;
 
 notify pgrst, 'reload schema';

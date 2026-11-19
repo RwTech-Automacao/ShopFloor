@@ -42,3 +42,14 @@ describe('ehEntradaDeCaixaAlmoxarifado', () => {
     expect(ehEntradaDeCaixaAlmoxarifado('nenhum', 'CX[3][14]8498-PMOC14')).toBe(false)
   })
 })
+
+describe('placa integrada (0195)', () => {
+  it('lê o erro do banco e monta a mensagem', async () => {
+    const { placaIntegradaDoErro, mensagemPlacaIntegrada } = await import('../cancelamento')
+    const e = placaIntegradaDoErro('PLACA_INTEGRADA:A001|110|INT-20261119-101010-ABCD')
+    expect(e).toEqual({ placa: 'A001', produto: '110', codigo: 'INT-20261119-101010-ABCD' })
+    expect(mensagemPlacaIntegrada(e!.placa, e!.produto, e!.codigo))
+      .toBe('A placa A001 está integrada no produto 110 (INT-20261119-101010-ABCD). Desfaça a integração antes.')
+    expect(placaIntegradaDoErro('NAO_E_ULTIMO')).toBeNull()
+  })
+})

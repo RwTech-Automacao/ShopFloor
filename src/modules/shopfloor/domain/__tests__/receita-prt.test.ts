@@ -33,6 +33,12 @@ describe('limparReceitaPrt', () => {
     expect(out.receita).toEqual({ Integração: ['PRT706', 'PMOX'] })
     expect(out.removidas).toEqual(['PRT999'])
   })
+  it('a PRT de mesma série que também é PMO de uma OP cadastrada fica (vale como PMO), sem aviso', () => {
+    const r = { Integração: ['PRT420', 'PMOX'] }
+    const out = limparReceitaPrt(r, TRECHOS, ['PRT420'], ['PRT420', 'PMOX'])
+    expect(out.receita).toBe(r)
+    expect(out.removidas).toEqual([])
+  })
   it('código que a tela nunca viu como PRT segue como PMO', () => {
     expect(limparReceitaPrt({ Integração: ['PMOVELHA'] }, TRECHOS, [], []).removidas).toEqual([])
   })

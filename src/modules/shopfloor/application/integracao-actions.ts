@@ -163,9 +163,11 @@ export async function resolverPlacaIntegracaoAction(
   if (vinc.length > 0) {
     return { ok: false, erro: `Placa já vinculada à integração ${vinc[0]!.codigo}.` }
   }
-  // 0195: as PRTs de série própria da OP do produto (só se há receita: receita vazia aceita qualquer placa)
+  // 0195: as faixas das PRTs de série própria da OP do produto, lidas SÓ quando a receita cita uma delas (receita só
+  // de PMOs não ganha consulta nem ponto de falha novo)
+  const prtsProprias = (ordem.prtsProprias ?? []).map((c) => c.trim().toLowerCase())
   let prts: { codigo: string; faixas: { sn_ini: string; sn_fim: string }[] }[] = []
-  if (receita.length > 0) {
+  if (receita.some((c) => prtsProprias.includes(c.trim().toLowerCase()))) {
     try {
       prts = await listarPrtsDeSeriePropria(pmo, op)
     } catch {

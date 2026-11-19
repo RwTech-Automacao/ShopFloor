@@ -6,10 +6,13 @@ import {
   postoCancelavel,
   ehEntradaDeCaixaAlmoxarifado,
   ehEntradaDeLoteAlmoxarifado,
+  mensagemPlacaIntegrada,
+  placaIntegradaDoErro,
 } from '../domain/cancelamento'
 import {
   lerRegistroParaCancelar,
   ehUltimoBipe,
+  placaIntegradaAtiva,
   chamarSfCancelar,
   chamarSfCancelarCaixa,
   contarPecasDaEntradaDeCaixa,
@@ -71,6 +74,9 @@ export async function cancelavelInfo(id: string): Promise<CancelavelInfo> {
     if (!(await ehUltimoBipe(reg.pmo, reg.op, reg.numeroSerieNorm, id))) {
       return { podeCancelar: false, motivo: 'Só o bipe mais recente deste SN pode ser cancelado — cancele o mais recente primeiro.' }
     }
+    // 0195: placa numa integração ATIVA (ex.: a placa da PRT que terminou o trecho) não se cancela por aqui
+    const integrada = await placaIntegradaAtiva(reg.op, reg.numeroSerieNorm)
+    if (integrada) return { podeCancelar: false, motivo: mensagemPlacaIntegrada(integrada.placa, integrada.produto, integrada.codigo) }
     // Entrada de LOTE (0156): fail-closed de propósito — se não der pra saber se é lote, não oferece
     // o cancelamento da linha avulsa (que a RPC recusaria com CANCELE_O_LOTE de qualquer jeito).
     if (ehEntradaDeLoteAlmoxarifado(perfil?.recurso, reg.envioId)) {
@@ -168,6 +174,8 @@ export async function cancelarLoteAlmoxarifado(
  * ela existe pra matar.
  */
 function mensagemErroRpc(msg: string, fallback: string): string {
+  const integrada = placaIntegradaDoErro(msg)
+  if (integrada) return mensagemPlacaIntegrada(integrada.placa, integrada.produto, integrada.codigo)
   if (msg.includes('NAO_E_ULTIMO')) return 'Só o bipe mais recente do SN pode ser cancelado — cancele o mais recente primeiro.'
   if (msg.includes('POSTO_NAO_CANCELAVEL')) return 'Este posto não pode ser cancelado por aqui.'
   if (msg.includes('NAO_E_ENTRADA_DE_CAIXA')) return 'Este registro não é uma entrada de caixa — use Cancelar lançamento.'

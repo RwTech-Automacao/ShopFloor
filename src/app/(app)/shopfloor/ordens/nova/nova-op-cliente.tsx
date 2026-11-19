@@ -207,10 +207,10 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     // a mesma conferência do servidor (lerBurnin): o tempo tem que ser hhh:mm
     const tb = parseTempoBurninPorPosto(JSON.stringify(temposDaRota(rota, tempos, ehBurnin)), rota.filter(ehBurnin))
     if (!tb.ok) { toast.error(erroTempoBurnin(tb.posto), TOAST); return }
-    // 0195: a PRT que perdeu a série própria ou saiu da estrutura sai da receita (o banco a recusaria), com aviso
+    // 0195: a PRT que perdeu a série própria ou saiu da estrutura sai da receita gravada (o banco a recusaria). A tela
+    // só muda, com o aviso, quando o cadastro acontece de fato.
     const limpa = limparReceitaPrt(receita, trechos, prtsVistas, pmosExistentes)
     const aviso = avisoReceitaPrtLimpa(limpa.removidas)
-    if (aviso) { setReceita(limpa.receita); toast.warning(aviso, TOAST) }
     const c: CadastroOp = {
       modo, pmo, op: op.trim(), cliente: cliente.trim(), descricao: descricao.trim(),
       qtd: qtd.trim() === '' || Number.isNaN(Number(qtd)) ? null : Number(qtd), acp: acp.trim(),
@@ -222,6 +222,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     startSalvar(async () => {
       const r = await cadastrarOpAction(c)
       if (!r.ok) { toast.error(r.erro, TOAST); return }
+      if (aviso) { setReceita(limpa.receita); toast.warning(aviso, TOAST) }
       toast.success('OP criada', { ...TOAST, description: `${r.pmo}/${r.op}` })
       router.push('/shopfloor/ordens-nova')
     })

@@ -146,10 +146,10 @@ export function EditarOpCliente({
     const rota = rotaDosTrechos(trechos)
     const t = parseTempoBurninPorPosto(JSON.stringify(temposDaRota(rota, tempos, ehBurnin)), rota.filter(ehBurnin))
     if (!t.ok) { toast.error(erroTempoBurnin(t.posto), TOAST); return }
-    // 0195: a PRT que perdeu a série própria sai da receita (o banco a recusaria), com aviso
+    // 0195: a PRT que perdeu a série própria sai da receita gravada (o banco a recusaria). A tela só muda, com o
+    // aviso, quando o salvamento acontece de fato.
     const limpa = limparReceitaPrt(receita, trechos, codigosPrt(trechosIniciais), pmosExistentes)
     const aviso = avisoReceitaPrtLimpa(limpa.removidas)
-    if (aviso) { setReceita(limpa.receita); toast.warning(aviso, TOAST) }
     startSalvar(async () => {
       let r: ResultadoOrdem = await editarOrdemAction(undefined, formulario(false, limpa.receita))
       if (!r.ok && r.confirmarForaDaFaixa) {
@@ -158,6 +158,7 @@ export function EditarOpCliente({
         r = await editarOrdemAction(undefined, formulario(true, limpa.receita))
       }
       if (!r.ok) { toast.error(r.erro, TOAST); return }
+      if (aviso) { setReceita(limpa.receita); toast.warning(aviso, TOAST) }
       toast.success('OP editada', { ...TOAST, description: `${ordem.pmo}/${ordem.op}` })
       if (r.aviso) toast.warning(r.aviso, TOAST)
       router.push('/shopfloor/ordens-nova')

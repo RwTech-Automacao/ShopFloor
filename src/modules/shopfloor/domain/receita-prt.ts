@@ -29,9 +29,9 @@ export function codigosPrt(trechos: TrechoReceita[]): string[] {
  * Tira da receita as PRTs que não podem mais estar nela (a gravação as recusaria, RECEITA_PRT_INVALIDA):
  * - a PRT da OP que agora tem a mesma série da PMO;
  * - a PRT que saiu da estrutura: um código de `conhecidas` (PRTs que a tela já viu nesta OP) que não é mais PRT de
- *   série própria dela, a não ser que seja também uma PMO que pode entrar na receita (`pmosValidas`), que aí segue
- *   como PMO.
- * O resto da receita (as PMOs) não muda. `removidas`: os códigos tirados, sem repetir, para o aviso.
+ *   série própria dela.
+ * Nunca sai um código que é também a PMO de uma OP cadastrada (`pmosValidas`): ele segue valendo como PMO (a OP
+ * separada da PRT), no banco e no bipe. O resto da receita não muda. `removidas`: os códigos tirados, sem repetir.
  */
 export function limparReceitaPrt(
   receita: Record<string, string[]>,
@@ -45,9 +45,8 @@ export function limparReceitaPrt(
   const pmos = new Set(pmosValidas.map(norm))
   const sai = (c: string) => {
     const k = norm(c)
-    if (validas.has(k)) return false
-    if (prtsDaOp.has(k)) return true
-    return vistas.has(k) && !pmos.has(k)
+    if (validas.has(k) || pmos.has(k)) return false
+    return prtsDaOp.has(k) || vistas.has(k)
   }
   const removidas: string[] = []
   const out: Record<string, string[]> = {}

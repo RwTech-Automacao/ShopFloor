@@ -35,13 +35,16 @@ export function ReceitaIntegracao({
   setReceita,
   pmosDisponiveis,
   prtsDisponiveis = [],
+  temPrts = prtsDisponiveis.length > 0,
 }: {
   posto: string
   receita: string[]
   setReceita: (r: string[]) => void
   pmosDisponiveis: string[]
-  /** PRTs desta OP (série própria) que ainda não estão na receita (0195). Vazio = o grupo não aparece. */
+  /** PRTs desta OP (série própria) que ainda não estão na receita (0195). */
   prtsDisponiveis?: string[]
+  /** A OP tem PRT de série própria: o grupo "PRTs desta OP" (com a ajuda) fica visível mesmo com todas já na receita. */
+  temPrts?: boolean
 }) {
   return (
     <div>
@@ -75,21 +78,25 @@ export function ReceitaIntegracao({
           </SelectContent>
         </Select>
       )}
-      {prtsDisponiveis.length > 0 && (
+      {temPrts && (
         <div role="group" aria-label={`PRTs desta OP · ${posto}`} className="mt-2 flex flex-col gap-1">
           <p className="text-xs font-medium text-muted-foreground">
             PRTs desta OP <span className="font-normal">· a placa entra quando terminou o trecho da PRT</span>
           </p>
-          <Select value="" onValueChange={(p) => p && setReceita([...receita, p])}>
-            <SelectTrigger className="h-9" aria-label={`Adicionar PRT desta OP à receita de ${posto}`}>
-              <SelectValue placeholder="+ Adicionar PRT desta OP" />
-            </SelectTrigger>
-            <SelectContent>
-              {prtsDisponiveis.map((p) => (
-                <SelectItem key={p} value={p}>{p}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {prtsDisponiveis.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Todas as PRTs desta OP já estão na receita.</p>
+          ) : (
+            <Select value="" onValueChange={(p) => p && setReceita([...receita, p])}>
+              <SelectTrigger className="h-9" aria-label={`Adicionar PRT desta OP à receita de ${posto}`}>
+                <SelectValue placeholder="+ Adicionar PRT desta OP" />
+              </SelectTrigger>
+              <SelectContent>
+                {prtsDisponiveis.map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       )}
     </div>
@@ -124,6 +131,7 @@ export function ReceitasDosPostos({ postos, ehIntegracao, receita, setReceita, p
             setReceita={(lista) => setReceita((prev) => ({ ...prev, [posto]: lista }))}
             pmosDisponiveis={pmosExistentes.filter((p) => p !== pmoDaOp && !atual.includes(p) && !prtsDaOp.some((x) => mesmo(x, p)))}
             prtsDisponiveis={prtsDaOp.filter((p) => !atual.some((x) => mesmo(x, p)))}
+            temPrts={prtsDaOp.length > 0}
           />
         )
       })}

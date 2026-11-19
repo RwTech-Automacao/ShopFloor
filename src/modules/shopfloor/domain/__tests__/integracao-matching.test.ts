@@ -50,8 +50,16 @@ describe('resolverPlaca com PRT da própria OP na receita (0195)', () => {
   it('encaixa a placa no item da PRT com a OP do produto (o código como está na receita)', () => {
     expect(resolverPlaca(['prt410'], [OP_PRODUTO, ...FAIXAS], 'A010', DA_OP)).toEqual({ ok: true, pmo: 'PRT410', op: '9100' })
   })
-  it('a OP separada com o código da PRT não vale pela regra da PMO quando a PRT é da própria OP', () => {
-    expect(resolverPlaca(['PRT410'], [OUTRA_PRT, OP_PRODUTO], 'A010', DA_OP)).toEqual({ ok: true, pmo: 'PRT410', op: '9100' })
+  it('a OP separada com o código da PRT continua valendo pela regra da PMO (as duas regras valem)', () => {
+    const separada = F('PRT410', '8683', 'Z001', 'Z050')
+    expect(resolverPlaca(['PRT410'], [separada, OP_PRODUTO], 'Z010', DA_OP)).toEqual({ ok: true, pmo: 'PRT410', op: '8683' })
+    expect(resolverPlaca(['PRT410'], [OUTRA_PRT, OP_PRODUTO], 'A010', DA_OP)).toEqual({
+      ok: false, erro: 'AMBIGUO', candidatos: [{ pmo: 'PRT410', op: '9100' }, { pmo: 'PRT410', op: '8683' }],
+    })
+  })
+  it('outra OP que só tem a mesma PRT como trecho (pmo dela é outro) não encaixa', () => {
+    const outraOp: FaixaOp = { ...F('PMOF', '9200', '200', '299'), faixas: [{ sn_ini: '200', sn_fim: '299' }, { sn_ini: 'F001', sn_fim: 'F050' }] }
+    expect(resolverPlaca(['PRT410'], [OP_PRODUTO, outraOp], 'F010', DA_OP)).toEqual({ ok: false, erro: 'FORA_RECEITA' })
   })
   it('receita só com a PRT: SN de outra PMO fica fora (não libera qualquer PMO)', () => {
     expect(resolverPlaca(['PRT410'], [OP_PRODUTO, ...FAIXAS], 'B7601', DA_OP)).toEqual({ ok: false, erro: 'FORA_RECEITA' })

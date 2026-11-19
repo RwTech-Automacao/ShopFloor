@@ -22,8 +22,8 @@ export type ResolucaoPlaca =
 
 /**
  * As PRTs de série própria da OP do produto (0195), cada uma com as faixas do trecho dela. Um item da receita com o
- * código de uma delas vale SÓ pela regra da PRT: a placa da própria OP (`op`) com o SN numa faixa do trecho. A
- * sf_integrar confere depois se ela terminou o trecho.
+ * código de uma delas aceita, além da regra da PMO de sempre (a placa de uma OP SEPARADA cujo pmo é aquele código), a
+ * placa da própria OP (`op`) com o SN numa faixa do trecho. A sf_integrar confere depois se ela terminou o trecho.
  */
 export interface PrtsDaOp {
   op: string
@@ -35,21 +35,19 @@ const chave = (s: string) => s.trim().toLowerCase()
 /**
  * Acha a OP/PMO de uma placa pelo SN bipado: dentro de uma faixa da OP E com a PMO na receita do produto.
  * Se mais de uma OP da receita contém o SN → AMBIGUO + a lista de candidatos (o operador escolhe).
- * Com `daOp` (0195): item da receita que é PRT de série própria da OP do produto encaixa a placa com o SN numa faixa
- * do trecho dela, como {pmo: código da PRT, op: a OP do produto}; esse item não vale pela regra da PMO. Receita sem
- * PRT da OP: exatamente o comportamento de antes.
+ * Com `daOp` (0195): o item da receita que é PRT de série própria da OP do produto também encaixa a placa com o SN
+ * numa faixa do trecho dela, como {pmo: código da PRT, op: a OP do produto}. Receita sem PRT da OP: exatamente o
+ * comportamento de antes.
  */
 export function resolverPlaca(receita: string[], faixas: FaixaOp[], sn: string, daOp?: PrtsDaOp): ResolucaoPlaca {
-  const prtsDaOp = new Set((daOp?.prts ?? []).map((p) => chave(p.codigo)))
-  const receitaPrt = receita.filter((c) => prtsDaOp.has(chave(c)))
+  const receitaPrt = receita.filter((c) => (daOp?.prts ?? []).some((p) => chave(p.codigo) === chave(c)))
   if (receitaPrt.length === 0) return resolverPorPmo(receita, faixas, sn)
 
-  const receitaPmo = receita.filter((c) => !prtsDaOp.has(chave(c)))
   const naPrt = daOp!.prts.filter((p) =>
     receitaPrt.some((c) => chave(c) === chave(p.codigo)) && serieNasFaixas({ sn_ini: '', sn_fim: '', faixas: p.faixas }, sn))
   const comFaixa = faixas.filter((f) => serieNasFaixas(f, sn))
-  // receita só de PRTs: nenhuma PMO vale (a receita vazia de PMO NÃO libera qualquer uma)
-  const naReceita = receitaPmo.length === 0 ? [] : comFaixa.filter((f) => receitaPermite(receitaPmo, f.pmo))
+  // a regra da PMO de sempre, com a receita inteira (a OP separada de uma PRT entra por aqui)
+  const naReceita = comFaixa.filter((f) => receitaPermite(receita, f.pmo))
   const candidatos: CandidatoPlaca[] = [
     ...naPrt.map((p) => ({ pmo: p.codigo, op: daOp!.op })),
     ...naReceita.map((f) => ({ pmo: f.pmo, op: f.op })),

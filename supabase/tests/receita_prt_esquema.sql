@@ -37,3 +37,11 @@ create table public.sf_integracao_itens (
 -- as colunas da OP que a sf_ordem_regravar_trechos grava (0145/0148)
 alter table public.sf_ordens add column if not exists reaberta_manual boolean not null default false,
   add column if not exists updated_at timestamptz;
+-- o que a sf_cancelar_lancamento (0165) toca no caminho de um posto comum: a auditoria, auth.uid() e o envio do lote
+create schema if not exists auth;
+create or replace function auth.uid() returns uuid language sql stable as $f$ select null::uuid $f$;
+alter table public.sf_registros add column envio_id uuid, add column numero_caixa text;
+create table public.sf_registros_cancelados (
+  id uuid primary key default gen_random_uuid(), id_original uuid not null, pmo text not null, op text not null,
+  numero_serie_norm text not null, posto text not null, dados jsonb not null, motivo text not null, cancelado_por uuid,
+  cancelado_em timestamptz not null default now());

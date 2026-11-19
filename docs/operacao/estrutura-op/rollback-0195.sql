@@ -1,11 +1,16 @@
--- Rollback da 0195 (receita da Integração com PRT da estrutura). Devolve as três funções que a 0195 redefiniu ao texto
--- da versão anterior: sf_integrar (0066), sf_cadastrar_op (0184) e sf_ordem_regravar_trechos (0194).
--- O app que manda a placa da PRT com o código dela (e traduz PLACA_PRT_INCOMPLETA / RECEITA_PRT_INVALIDA) tem que sair
--- ANTES. Os itens de receita com o código de uma PRT da própria OP (sf_ordem_componentes) NÃO são apagados: com a
--- sf_integrar antiga eles voltam a ser lidos como PMO (o app antigo nunca encaixa a placa da PRT neles, então a
--- Integração dessas OPs fica sem placa possível para esse item). Para tirá-los, rode antes, à mão, depois de conferir:
---   delete from sf_ordem_componentes c using sf_ordem_trechos t
---    where t.ordem_id = c.ordem_id and t.tipo = 'prt' and lower(btrim(t.codigo)) = lower(btrim(c.pmo_componente));
+-- Rollback da 0195 (receita da Integração com PRT da estrutura). Devolve as quatro funções que a 0195 redefiniu ao
+-- texto da versão anterior: sf_integrar (0066), sf_cadastrar_op (0184), sf_ordem_regravar_trechos (0194) e
+-- sf_cancelar_lancamento (0165).
+-- O app que manda a placa da PRT com o código dela (e traduz PLACA_PRT_INCOMPLETA / RECEITA_PRT_INVALIDA /
+-- PLACA_INTEGRADA) tem que sair ANTES. Os itens de receita com o código de uma PRT de série própria da própria OP
+-- (sf_ordem_componentes) NÃO são apagados: com a sf_integrar antiga eles voltam a ser lidos como PMO. Para ver quais
+-- são antes de decidir o que fazer com eles:
+--   select o.pmo, o.op, c.posto, c.pmo_componente
+--     from sf_ordem_componentes c
+--     join sf_ordem_trechos t on t.ordem_id = c.ordem_id
+--     join sf_ordens o on o.id = c.ordem_id
+--    where t.tipo = 'prt' and t.sn_modo = 'proprio' and lower(btrim(t.codigo)) = lower(btrim(c.pmo_componente))
+--    order by o.pmo, o.op, c.posto;
 -- Idempotente: psql -1 -v ON_ERROR_STOP=1 -f docs/operacao/estrutura-op/rollback-0195.sql
 
 -- ---------- sf_integrar: unicidade do produto POR POSTO (mesma assinatura → replace puro) ----------
@@ -410,5 +415,147 @@ end
 $func$;
 revoke all on function public.sf_ordem_regravar_trechos(uuid, jsonb, jsonb, jsonb, jsonb) from public, anon;
 grant execute on function public.sf_ordem_regravar_trechos(uuid, jsonb, jsonb, jsonb, jsonb) to authenticated, service_role;
+
+-- ---------- sf_cancelar_lancamento como a 0165 a deixou (sem revoke/grant, como na 0165) ----------
+create or replace function public.sf_cancelar_lancamento(p_id uuid, p_motivo text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $func$
+declare
+  v_pmo text; v_op text; v_snnorm text; v_posto text; v_numero_caixa text;
+  v_recurso text; v_ultimo uuid;
+  v_cx record;
+  v_pecas int;  -- 0165: as placas da linha cancelada (sf_registros.pecas, 0161)
+begin
+  -- Gate por MÓDULO (2-arg), igual ao podeNoModulo('shopfloor','administrar') da UI/action —
+  -- assim quem vê o botão passa na RPC (o 1-arg global divergia do gate da tela).
+  if not tem_permissao('shopfloor', 'administrar') then
+    raise exception 'SEM_PERMISSAO';
+  end if;
+  if coalesce(trim(p_motivo), '') = '' then
+    raise exception 'MOTIVO_OBRIGATORIO';
+  end if;
+
+  select pmo, op, numero_serie_norm, posto, coalesce(numero_caixa, ''), pecas
+    into v_pmo, v_op, v_snnorm, v_posto, v_numero_caixa, v_pecas
+  from public.sf_registros
+  where id = p_id;
+  if not found then
+    raise exception 'NAO_ENCONTRADO';
+  end if;
+  -- 0156: LINHA DE LOTE NÃO SE CANCELA SOZINHA (ver o cabeçalho da 0156, regra 7). O lote é um gesto: as
+  -- N linhas e UM envio. Cancelar uma linha aqui apagaria uma peça sem reverter nada na fila (o alvo
+  -- calculado abaixo é o SN, e o envio do lote tem o rótulo como alvo), e o Compels ficaria com uma peça
+  -- a mais, calado. Quem desfaz é a sf_cancelar_lote_almoxarifado ("Cancelar o lote inteiro").
+  if exists (
+    select 1 from public.sf_registros r
+      join public.sf_estoque_envios e on e.id = r.envio_id
+     where r.id = p_id and e.tipo = 'lote'
+  ) then
+    raise exception 'CANCELE_O_LOTE';
+  end if;
+
+  -- Serializa com o lançamento da mesma OP (o "último bipe" não muda no meio da checagem).
+  -- É também o que serializa com a sf_cancelar_caixa_almoxarifado (0131), que pega a MESMA trava
+  -- primeiro: dois cancelamentos da mesma OP não calculam a chave do estorno ao mesmo tempo.
+  perform pg_advisory_xact_lock(hashtext(v_pmo || '/' || v_op)::bigint);
+
+  -- Escopo: bloqueia postos com efeito colateral em outra tabela (recurso nulo = permitido).
+  -- 'caixa' saiu da lista: o efeito colateral em sf_caixas é desfeito aqui embaixo.
+  select p.recurso into v_recurso
+  from public.sf_postos po
+  join public.sf_posto_perfis p on p.chave = po.perfil
+  where po.chave = v_posto;
+  if v_recurso in ('nqa', 'integracao') then
+    raise exception 'POSTO_NAO_CANCELAVEL';
+  end if;
+
+  -- Burn-in (sf_burnin, 0069) e embalagem (sf_fechar_caixa, 0070) usam lock POR POSTO; o lock
+  -- por-OP acima não serializa com eles. Pega também o lock por-posto pra o cancelamento não correr
+  -- junto com um bipe de entrada/saída do burn-in nem com um fechamento de caixa (que reescreveria
+  -- os numero_caixa embaixo da gente). Ordem OP→posto sempre (nenhuma função pega posto→OP), então
+  -- não há deadlock.
+  if v_recurso in ('burnin', 'caixa') then
+    perform pg_advisory_xact_lock(hashtext(v_pmo || '/' || v_op || '/' || v_posto)::bigint);
+  end if;
+
+  -- Almoxarifado: a MESMA trava por bipe que a 0129 e a 0131 usam ('sf_almox/<pmo>/<op>/<posto>/<a
+  -- identidade do bipe>'). Sem ela, um rebipe da mesma caixa poderia estar inserindo as N linhas e a
+  -- linha da fila enquanto este cancelamento ajusta a quantidade do envio pendente — e o número que
+  -- fosse pro ERP não seria de nenhum dos dois gestos. Ordem OP → bipe, a mesma das outras duas.
+  if v_recurso = 'almoxarifado' then
+    perform pg_advisory_xact_lock(
+      hashtext('sf_almox/' || v_pmo || '/' || v_op || '/' || v_posto || '/'
+               || coalesce(nullif(v_numero_caixa, ''), v_snnorm))::bigint);
+  end if;
+
+  -- LIFO: só o bipe mais recente do SN nesta OP.
+  select id into v_ultimo
+  from public.sf_registros
+  where pmo = v_pmo and op = v_op and numero_serie_norm = v_snnorm
+  order by data_hora desc, id desc
+  limit 1;
+  if v_ultimo is distinct from p_id then
+    raise exception 'NAO_E_ULTIMO';
+  end if;
+
+  -- Move: guarda a linha inteira na auditoria e apaga da tabela viva.
+  -- A auditoria é gravada ANTES da reabertura de propósito: o `dados` guarda o numero_caixa que a
+  -- peça REALMENTE tinha no momento do cancelamento (o código final, se a caixa estava fechada).
+  insert into public.sf_registros_cancelados
+    (id_original, pmo, op, numero_serie_norm, posto, dados, motivo, cancelado_por)
+  select id, pmo, op, numero_serie_norm, posto, to_jsonb(r), p_motivo, auth.uid()
+  from public.sf_registros r
+  where id = p_id;
+
+  delete from public.sf_registros where id = p_id;
+
+  -- Embalagem: se a caixa da peça já estava FECHADA, reabre (inverso do sf_fechar_caixa).
+  if v_recurso = 'caixa' and v_numero_caixa <> '' then
+    -- Acha a caixa pelo código final (fechada) ou pelo marcador (aberta). O `<> ''` acima é o que
+    -- impede casar com o codigo='' das caixas abertas.
+    select c.id, c.seq, c.codigo, c.fechada into v_cx
+    from public.sf_caixas c
+    where c.pmo = v_pmo and c.op = v_op and c.posto = v_posto
+      and c.revisao = 0
+      and (c.codigo = v_numero_caixa or 'CX[' || c.seq || ']' = v_numero_caixa)
+    limit 1;
+
+    if found and v_cx.fechada then
+      -- Volta as peças que sobraram pro marcador (o fechamento conta por ele).
+      update public.sf_registros
+         set numero_caixa = 'CX[' || v_cx.seq || ']'
+       where pmo = v_pmo and op = v_op and posto = v_posto and numero_caixa = v_cx.codigo;
+      -- ultima=false: se era a última da OP, o operador reconfere o "Última caixa" ao fechar de novo
+      -- (senão a OP continuaria "concluída" com uma caixa aberta pendente).
+      update public.sf_caixas
+         set fechada = false, codigo = '', qtd = 0, ultima = false, fechada_em = null
+       where id = v_cx.id;
+    end if;
+    -- Peça de uma montagem APOSENTADA (código com R) não chega aqui: depois da reprova o último bipe
+    -- dela é o do NQA, e o LIFO já barrou com NAO_E_ULTIMO. Se chegasse, o filtro de revisao acima não
+    -- acharia caixa e nada seria reaberto — o histórico fica como está.
+  end if;
+
+  -- ---------- A FILA DE ENVIO AO ERP (Fase 2) ----------
+  -- A linha cancelada era uma entrada de estoque: UM painel (`pecas` placas; 0165) deixou de estar no
+  -- estoque, e o Compels tem que ficar sabendo — a não ser que a entrada nem tenha saído daqui ainda NEM SIDO TOCADA por
+  -- uma rodada de envio (linha limpa), caso em que o certo é corrigir/cancelar o envio pendente e não
+  -- mandar uma entrada e uma saída que nunca precisaram existir. Na linha TOCADA (reservada, tentada,
+  -- ou com estorno) não dá pra corrigir: a carga dela já pode ter saído com o número antigo, então ela
+  -- é estornada mesmo sem estar `ok`. Quem decide isso é a sf_estoque_reverter (0132); aqui só se diz
+  -- o que foi desfeito.
+  --
+  -- Na mesma transação do delete, pelo mesmo motivo do bipe: se o delete vingasse e a reversão não, a
+  -- peça sairia do ShopFloor e continuaria no ERP para sempre, calada.
+  if v_recurso = 'almoxarifado' then
+    -- 0165: a quantidade revertida são as placas da linha cancelada (era o `1` fixo de uma peça).
+    perform sf_estoque_reverter(v_pmo, v_op, v_posto,
+                                coalesce(nullif(v_numero_caixa, ''), v_snnorm), v_pecas);
+  end if;
+end
+$func$;
 
 notify pgrst, 'reload schema';

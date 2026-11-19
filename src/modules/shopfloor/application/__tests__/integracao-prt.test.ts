@@ -16,6 +16,9 @@ const repo = vi.hoisted(() => ({
   chamarSfCancelarIntegracao: vi.fn(),
 }))
 vi.mock('../../infra/integracao-repository', () => repo)
+// a leitura das faixas das PRTs (0195), espiada: receita só de PMOs não pode chamá-la
+const estrutura = vi.hoisted(() => ({ listarPrtsDeSeriePropria: vi.fn() }))
+vi.mock('../../infra/estrutura-repository', () => estrutura)
 
 /** Supabase de mentira para `sf_ordens`: aplica os `eq` pedidos e devolve as linhas com os embeds prontos. */
 let ordens: Record<string, unknown>[] = []
@@ -64,7 +67,9 @@ const opSimples = (pmo: string, op: string, ini: string, fim: string) => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  ordens = [opComTrechos(['PRT410', 'PMOX']), opSimples('PMOX', '7000', 'X100', 'X199'), opSimples('PRT410', '8683', 'A001', 'A050')]
+  // a OP separada da PRT410 (pmo = código da PRT) com faixa própria Z001–Z050
+  ordens = [opComTrechos(['PRT410', 'PMOX']), opSimples('PMOX', '7000', 'X100', 'X199'), opSimples('PRT410', '8683', 'Z001', 'Z050')]
+  estrutura.listarPrtsDeSeriePropria.mockResolvedValue([{ codigo: 'PRT410', faixas: [{ sn_ini: 'A001', sn_fim: 'A050' }] }])
 })
 
 describe('Integração por bipe com PRT da própria OP na receita (0195)', () => {
@@ -74,10 +79,25 @@ describe('Integração por bipe com PRT da própria OP na receita (0195)', () =>
   it('a PMO da receita continua encaixando como antes', async () => {
     expect(await resolverPlacaIntegracaoAction('PMOE', '9100', 'Integração', 'X150')).toEqual({ ok: true, pmo: 'PMOX', op: '7000' })
   })
-  it('PRT com a mesma série não é PRT de receita: segue como código comum (fora)', async () => {
+  it('a OP separada com o mesmo código da PRT de série própria continua valendo', async () => {
+    expect(await resolverPlacaIntegracaoAction('PMOE', '9100', 'Integração', 'Z010')).toEqual({ ok: true, pmo: 'PRT410', op: '8683' })
+  })
+  it('receita só de PMOs não lê as PRTs (nenhuma consulta nova)', async () => {
+    ordens[0] = opComTrechos(['PMOX'])
+    expect(await resolverPlacaIntegracaoAction('PMOE', '9100', 'Integração', 'X150')).toEqual({ ok: true, pmo: 'PMOX', op: '7000' })
+    expect(estrutura.listarPrtsDeSeriePropria).not.toHaveBeenCalled()
+  })
+  it('receita que cita a PRT de série própria lê as faixas dela', async () => {
+    await resolverPlacaIntegracaoAction('PMOE', '9100', 'Integração', 'A010')
+    expect(estrutura.listarPrtsDeSeriePropria).toHaveBeenCalledWith('PMOE', '9100')
+  })
+  it('PRT com a mesma série na receita no momento do bipe: segue como PMO (só a OP separada dela encaixa)', async () => {
     ordens[0] = opComTrechos(['PRT420'])
+    ordens.push(opSimples('PRT420', '8684', 'W001', 'W050'))
     expect(await resolverPlacaIntegracaoAction('PMOE', '9100', 'Integração', '150'))
       .toEqual({ ok: false, erro: 'Essa placa não faz parte da receita deste produto.' })
+    expect(await resolverPlacaIntegracaoAction('PMOE', '9100', 'Integração', 'W010')).toEqual({ ok: true, pmo: 'PRT420', op: '8684' })
+    expect(estrutura.listarPrtsDeSeriePropria).not.toHaveBeenCalled()
   })
   it('a recusa do banco de placa que não terminou a PRT vira a mensagem em PT-BR', async () => {
     repo.chamarSfIntegrar.mockResolvedValue({ ok: false, erro: 'PLACA_PRT_INCOMPLETA', placa: 'A010', prt: 'PRT410', posto: 'Inspeção AOI TOP' })
