@@ -226,7 +226,7 @@ function lerTrechosDaOp(pmo: string, op: string, forcar: boolean): Promise<Resum
 }
 
 /** Trechos (PRTs) da OP, com cache por OP no módulo: os N cards de posto dividem uma só consulta. Relê a cada 30 s. */
-function useTrechosCompels(pmo: string | undefined, op: string | undefined): ResumoTrecho[] {
+export function useTrechosCompels(pmo: string | undefined, op: string | undefined): ResumoTrecho[] {
   const [trechos, setTrechos] = useState<ResumoTrecho[]>([])
   useEffect(() => {
     if (!pmo || !op) return

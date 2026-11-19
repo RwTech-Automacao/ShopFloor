@@ -63,7 +63,7 @@ describe('FluxoForm — seletor de trecho', () => {
     await waitFor(() => expect(card('SPI')).not.toBeNull())
     expect(card('Teste')?.className).not.toContain('opacity-30')
 
-    fireEvent.click(screen.getByRole('button', { name: 'PRT410 (8500)' }))
+    fireEvent.click(screen.getByRole('button', { name: /^PRT410 \(8500\)/ }))
     await waitFor(() => expect(card('Teste')?.className).toContain('opacity-30'))
     expect(card('SPI')?.className).not.toContain('opacity-30')
 

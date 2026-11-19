@@ -23,3 +23,26 @@ describe('SeletorTrecho', () => {
     expect(container.textContent).toBe('')
   })
 })
+
+describe('SeletorTrecho — números', () => {
+  const P = new Map([
+    [1, { concluidas: 152, quantidade: 500, reprovadas: 3, apontadas: 0, naFila: 152 }],
+    [2, { concluidas: 40, quantidade: 500, reprovadas: 0, apontadas: 40, naFila: 0 }],
+    [3, { concluidas: 1200, quantidade: 1500, reprovadas: 7, apontadas: null, naFila: null }],
+  ])
+  it('cada botão mostra concluídas/quantidade e a fila do Compels quando há', () => {
+    render(<SeletorTrecho trechos={T} valor={null} onChange={() => {}} progresso={P} />)
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Todos', 'PRT410 (8500) · 152/500 · fila 152', 'PRT420 (8499) · 40/500', 'PMOC14 (8498) · 1.200/1.500',
+    ])
+    expect(screen.queryByTestId('resumo-trecho')).toBeNull() // "Todos": sem resumo
+  })
+  it('resumo do trecho PRT escolhido: concluídas, reprovadas, apontadas e fila', () => {
+    render(<SeletorTrecho trechos={T} valor={1} onChange={() => {}} progresso={P} />)
+    expect(screen.getByTestId('resumo-trecho').textContent).toBe('Concluídas 152 · Reprovadas 3 · Apontadas no Compels 0 · Na fila 152')
+  })
+  it('resumo do PMO: só concluídas e reprovadas', () => {
+    render(<SeletorTrecho trechos={T} valor={3} onChange={() => {}} progresso={P} />)
+    expect(screen.getByTestId('resumo-trecho').textContent).toBe('Concluídas 1.200 · Reprovadas 7')
+  })
+})

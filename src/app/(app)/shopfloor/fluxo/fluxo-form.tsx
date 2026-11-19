@@ -16,7 +16,8 @@ import type { OpItem, SnDoPosto, BurninEmAndamento, BurninDetalhe, EmbalagemCaix
 import { dadosPmoOpDoNo } from './dados-pmo-op-do-no'
 import { MANUTENCAO, ENTRADA, SAIDA, type FluxoNodePos, type FluxoEdge, type PassagemPosto, faixaDoRotulo, ordenarOpsPorBipes } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarDuracao } from '@/modules/shopfloor/domain/burnin'
-import { FluxoNode, type FluxoNodePayload } from './fluxo-node'
+import { FluxoNode, useTrechosCompels, type FluxoNodePayload } from './fluxo-node'
+import { MolduraTrechoNode, type MolduraTrechoPayload } from './moldura-trecho'
 import { DefeitosLista } from './defeitos-lista'
 import { DashboardForm } from '../analisar/dashboard/dashboard-form'
 import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
@@ -26,7 +27,7 @@ import { HelperLines, getHelperLines } from '@/shared/ui/fluxo/helper-lines'
 import { ControlesCanvas } from '@/shared/ui/fluxo/controles-canvas'
 import { classeSoNoHover, controlesSoNoHover } from '@/shared/lib/modo-tv'
 import { SeletorTrecho } from './seletor-trecho'
-import { realceDoTrecho, type TrechoDaOp } from '@/modules/shopfloor/domain/trechos-op'
+import { realceDoTrecho, progressoDosTrechos, moldurasDosTrechos, type TrechoDaOp, type ContagemDoPosto } from '@/modules/shopfloor/domain/trechos-op'
 
 /** Posições salvas por OP (layout do usuário) — nesta máquina. */
 const chaveLayout = (pmo: string, op: string) => `sf:fluxo:pos:${pmo}:${op}`
@@ -572,7 +573,7 @@ export function FluxoForm({
     return () => clearInterval(t)
   }, [])
 
-  const nodeTypes = useMemo<NodeTypes>(() => ({ fluxo: FluxoNode }), [])
+  const nodeTypes = useMemo<NodeTypes>(() => ({ fluxo: FluxoNode, moldura: MolduraTrechoNode }), [])
   const edgeTypes = useMemo(() => ({ floating: FloatingEdge }), [])
 
   const abrir = useCallback((id: string) => {
@@ -752,6 +753,19 @@ export function FluxoForm({
     return () => { vivo = false }
   }, [sel, fonte])
   const realce = useMemo(() => realceDoTrecho(trechosOp, trechoSel), [trechosOp, trechoSel])
+  // Números dos botões de trecho: contagens dos cards + o resumo do Compels (sf_resumo_trechos_op, o mesmo cache
+  // dos cards). Só com 2+ trechos — OP comum e a vitrine (sem trechos) não fazem a consulta.
+  const [pmoTr, opTr] = trechosOp.length >= 2 ? sel.split('||') : []
+  const compelsTrechos = useTrechosCompels(pmoTr, opTr)
+  const progressoTrechos = useMemo(() => {
+    if (trechosOp.length < 2) return undefined
+    const postos = new Map<string, ContagemDoPosto>()
+    for (const n of dom) {
+      if (n.id === ENTRADA || n.id === SAIDA || n.id === MANUTENCAO) continue
+      postos.set(n.id, { passou: n.data.passou, reprovadas: n.data.reprovadas })
+    }
+    return progressoDosTrechos(trechosOp, postos, compelsTrechos, qtd)
+  }, [trechosOp, dom, compelsTrechos, qtd])
 
   // ===== Onda 3: período + cadência =====
   const dataEfetiva = dataFiltro || ymd(agoraMs) // vazio → hoje (derivado de agoraMs = render-puro)
@@ -1090,6 +1104,39 @@ export function FluxoForm({
   //     prop `fitView` do <ReactFlow> enquadra só na primeira montagem, quando ainda não há card
   //     nenhum. A chave é só a lista de ids: o refresh de 20s muda os NÚMEROS dos cards, e
   //     enquadrar a cada 20s faria o fluxo pular na TV sem motivo.
+  // ===== Trechos: moldura no desenho + enquadrar o trecho escolhido =====
+  // As molduras são nós à parte (fora do estado `nodes`: não entram no layout salvo, nas linhas-guia nem na
+  // chave do embed). Recalculadas das posições atuais: arrastar, "Reorganizar" e o layout salvo movem a moldura.
+  const molduras = useMemo<Node[]>(() => {
+    const caixas = nodes.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, largura: n.measured?.width, altura: n.measured?.height }))
+    return moldurasDosTrechos(trechosOp, caixas, new Set([ENTRADA, SAIDA, MANUTENCAO])).map((m) => ({
+      id: `moldura-trecho:${m.seq}`,
+      type: 'moldura',
+      position: { x: m.x, y: m.y },
+      style: { pointerEvents: 'none' },
+      width: m.largura,
+      height: m.altura,
+      zIndex: -1,
+      selectable: false,
+      draggable: false,
+      focusable: false,
+      data: { rotulo: m.rotulo, escolhido: trechoSel === m.seq, apagado: trechoSel !== null && trechoSel !== m.seq } satisfies MolduraTrechoPayload,
+    }))
+  }, [nodes, trechosOp, trechoSel])
+  const nodesComMolduras = useMemo(() => (molduras.length ? [...molduras, ...nodes] : nodes), [molduras, nodes])
+  // Escolher um trecho enquadra os postos dele; "Todos" volta ao desenho inteiro. Sem animação para quem pediu
+  // menos movimento no sistema.
+  const escolherTrecho = useCallback((seq: number | null) => {
+    setTrechoSel(seq)
+    let menosMovimento = false
+    try { menosMovimento = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false } catch { /* sem matchMedia */ }
+    const duration = menosMovimento ? 0 : 300
+    const t = seq === null ? undefined : trechosOp.find((x) => x.seq === seq)
+    const ids = t ? t.postos.filter((p) => nodes.some((n) => n.id === p)) : []
+    if (ids.length > 0) enquadrar({ nodes: ids.map((id) => ({ id })), padding: 0.2, duration })
+    else enquadrar({ duration })
+  }, [enquadrar, nodes, trechosOp])
+
   const chaveNos = useMemo(() => nodes.map((n) => n.id).join('|'), [nodes])
   useEffect(() => {
     if (!embed || !chaveNos) return
@@ -1393,7 +1440,7 @@ export function FluxoForm({
           <p className="text-sm text-muted-foreground">Esta OP não tem postos no fluxo.</p>
         )}
 
-        <SeletorTrecho trechos={trechosOp} valor={trechoSel} onChange={setTrechoSel} />
+        <SeletorTrecho trechos={trechosOp} valor={trechoSel} onChange={escolherTrecho} progresso={progressoTrechos} />
 
         <div ref={canvasRef} className={`fluxo-canvas w-full overflow-hidden bg-neutral-100 ${
           modoTv ? 'fixed inset-0 z-50 h-dvh' : 'relative h-[70vh] rounded-lg border border-border'
@@ -1408,7 +1455,7 @@ export function FluxoForm({
             </div>
           )}
           <ReactFlow
-            nodes={nodes}
+            nodes={nodesComMolduras}
             edges={edges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
