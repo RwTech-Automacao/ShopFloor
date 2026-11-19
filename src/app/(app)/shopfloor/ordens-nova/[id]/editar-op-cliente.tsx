@@ -12,7 +12,10 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { editarOrdemAction, type ResultadoOrdem } from '@/modules/shopfloor/application/ordens-actions'
 import { fixarAlmoxarifado, moverPostoEntreTrechos, validarCadastro, type TrechoCadastro } from '@/modules/shopfloor/domain/cadastro-op'
-import { faixasDaPmo, postosGravados, postosParaAdicionar, rotaDosTrechos, trechosParaGravar } from '@/modules/shopfloor/domain/edicao-op-trechos'
+import {
+  erroTempoBurnin, faixasDaPmo, postosParaAdicionar, receitaDaRota, rotaDosTrechos, temposDaRota, trechosParaGravar,
+} from '@/modules/shopfloor/domain/edicao-op-trechos'
+import { parseTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { postoAlmoxarifadoPadrao } from '@/modules/shopfloor/domain/rota-op-nova'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
@@ -21,6 +24,7 @@ import type { ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import type { ResumoTrecho } from '@/modules/shopfloor/infra/estrutura-repository'
 import { BarraFixa, CamposQuantidade, CorrenteTrechos, ResumoRota, nPainelDe, paineisFecham, plural } from '../../ordens/corrente-trechos'
+import { ReceitasDosPostos, TempoBurninCampo } from '../../ordens/editores-posto'
 
 const TOAST = { position: 'bottom-center' as const }
 /** Tempo mínimo de Burn-in de um posto de Burn-in que entra na rota pela edição (o mesmo padrão do cadastro antigo). */
@@ -58,7 +62,8 @@ function SituacaoPrt({ t, resumo }: { t: TrechoCadastro; resumo: ResumoTrecho[] 
 }
 
 export function EditarOpCliente({
-  ordem, trechos: trechosIniciais, resumo, postos, postosPerfil, clientesExistentes, temRegistros, receita, tempoBurnin,
+  ordem, trechos: trechosIniciais, resumo, postos, postosPerfil, clientesExistentes, temRegistros, receita: receitaInicial,
+  tempoBurnin, pmosExistentes = [],
 }: {
   ordem: OrdemEdicao
   trechos: TrechoCadastro[]
@@ -69,9 +74,11 @@ export function EditarOpCliente({
   clientesExistentes: string[]
   /** A OP já tem lançamentos: as placas por painel ficam travadas (o servidor confere de novo). */
   temRegistros: boolean
-  /** Receita da Integração e tempos de Burn-in gravados: a página não os edita, só os devolve. */
+  /** Receita da Integração e tempos de Burn-in gravados (editáveis por posto, como no cadastro antigo). */
   receita: ReceitaPorPosto
   tempoBurnin: TempoBurninPorPosto
+  /** PMOs que podem entrar na receita de um posto de Integração. */
+  pmosExistentes?: string[]
 }) {
   const router = useRouter()
   const idBase = useId()
@@ -81,8 +88,11 @@ export function EditarOpCliente({
   const almox = postoAlmoxarifadoPadrao(postos, perfilDo)
   // Fixo no fim da PMO só quando a rota GRAVADA já o tem (a mesma regra do servidor, rotaDaEdicao).
   const almoxFixo = almox !== null && trechosIniciais.some((t) => t.postos.includes(almox)) ? almox : null
-  // Os postos da rota gravada (posto de Burn-in novo ganha o tempo padrão).
-  const [gravados] = useState(() => postosGravados(trechosIniciais))
+  const ehIntegracao = (p: string) => perfilDo(p).recurso === 'integracao'
+  const ehBurnin = (p: string) => perfilDo(p).recurso === 'burnin'
+  const [receita, setReceita] = useState<ReceitaPorPosto>(receitaInicial)
+  const [tempos, setTempos] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries(tempoBurnin).map(([p, min]) => [p, minutosParaTempo(min)])))
 
   const [trechos, setTrechos] = useState<TrechoCadastro[]>(trechosIniciais)
   const [cliente, setCliente] = useState(ordem.cliente)
@@ -102,12 +112,6 @@ export function EditarOpCliente({
 
   function formulario(confirmarForaDaFaixa: boolean): FormData {
     const rota = rotaDosTrechos(trechos)
-    const tempos: Record<string, string> = {}
-    for (const p of rota) {
-      if (perfilDo(p).recurso !== 'burnin') continue
-      if (tempoBurnin[p] !== undefined) tempos[p] = minutosParaTempo(tempoBurnin[p]!)
-      else if (!gravados.has(p)) tempos[p] = BURNIN_PADRAO
-    }
     const fd = new FormData()
     fd.set('id', ordem.id)
     // PMO e número: os gravados (a action recusa a troca numa OP com trechos).
@@ -121,8 +125,8 @@ export function EditarOpCliente({
     if (embalagemIndividual) fd.set('embalagem_individual', 'on')
     fd.set('placas_por_painel', temRegistros ? String(ordem.placasPorPainel) : placasPorPainel.trim())
     fd.set('fluxo', JSON.stringify(rota))
-    fd.set('componentes', JSON.stringify(receita))
-    fd.set('tempo_burnin', JSON.stringify(tempos))
+    fd.set('componentes', JSON.stringify(receitaDaRota(rota, receita, ehIntegracao)))
+    fd.set('tempo_burnin', JSON.stringify(temposDaRota(rota, tempos, ehBurnin)))
     fd.set('faixas', JSON.stringify(faixasDaPmo(trechos)))
     // A edição por trecho (0194): rota, série e faixas de cada trecho, gravadas numa transação só.
     fd.set('trechos', JSON.stringify(trechosParaGravar(trechos)))
@@ -137,6 +141,10 @@ export function EditarOpCliente({
       embalagemIndividual, placasPorPainel: Number(placasPorPainel), trechos, componentes: [], burnin: [],
     })
     if (!v.ok) { toast.error(v.erro, TOAST); return }
+    // a mesma conferência do servidor (lerBurnin): o tempo tem que ser hhh:mm
+    const rota = rotaDosTrechos(trechos)
+    const t = parseTempoBurninPorPosto(JSON.stringify(temposDaRota(rota, tempos, ehBurnin)), rota.filter(ehBurnin))
+    if (!t.ok) { toast.error(erroTempoBurnin(t.posto), TOAST); return }
     startSalvar(async () => {
       let r: ResultadoOrdem = await editarOrdemAction(undefined, formulario(false))
       if (!r.ok && r.confirmarForaDaFaixa) {
@@ -221,6 +229,17 @@ export function EditarOpCliente({
           moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almoxFixo))}
           opcoesAdicionar={(t) => postosParaAdicionar(postos, trechos, t, almox)}
           situacao={(t) => <SituacaoPrt t={t} resumo={resumo} />}
+          extraPosto={(p) => ehBurnin(p) && (
+            <TempoBurninCampo valor={tempos[p] ?? ''} rotulo={`Tempo mínimo de Burn-in em ${p}`}
+              setValor={(v) => setTempos((prev) => ({ ...prev, [p]: v }))} />
+          )}
+          aoAdicionarPosto={(p) => {
+            if (ehBurnin(p) && (tempos[p] ?? '') === '') setTempos((prev) => ({ ...prev, [p]: BURNIN_PADRAO }))
+          }}
+          rodapeTrecho={(t) => (
+            <ReceitasDosPostos postos={t.postos} ehIntegracao={ehIntegracao} receita={receita} setReceita={setReceita}
+              pmosExistentes={pmosExistentes} pmoDaOp={ordem.pmo} />
+          )}
           avisoVazio="Nenhum posto neste trecho. Traga postos com ← → ou adicione um: o trecho não pode ficar vazio." />
       </section>
 

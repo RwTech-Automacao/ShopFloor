@@ -47,6 +47,9 @@ export function CorrenteTrechos({
   subtitulo,
   situacao,
   avisoVazio = 'Nenhum posto neste trecho. Traga postos com ← → ou adicione um.',
+  extraPosto,
+  rodapeTrecho,
+  aoAdicionarPosto,
 }: {
   trechos: TrechoCadastro[]
   /** Posto Almoxarifado: fica fixo no fim do trecho da PMO. */
@@ -69,6 +72,12 @@ export function CorrenteTrechos({
   /** Bloco extra no cabeçalho do trecho (ex.: o que já foi apontado no Compels). */
   situacao?: (t: TrechoCadastro) => ReactNode
   avisoVazio?: string
+  /** Editor ao lado do posto (ex.: o tempo mínimo do Burn-in). */
+  extraPosto?: (posto: string) => ReactNode
+  /** Bloco no pé da coluna do trecho, antes da série (ex.: a receita dos postos de Integração). */
+  rodapeTrecho?: (t: TrechoCadastro) => ReactNode
+  /** Avisado quando um posto entra pelo "Adicionar posto" (ex.: o Burn-in ganha o tempo padrão). */
+  aoAdicionarPosto?: (posto: string) => void
 }) {
   // Número de cada posto na rota inteira: a contagem continua de um trecho para o outro.
   const inicioDoTrecho = trechos.map((_, i) => trechos.slice(0, i).reduce((a, t) => a + t.postos.length, 0))
@@ -108,6 +117,7 @@ export function CorrenteTrechos({
                     <li key={p} className="flex flex-wrap items-center gap-x-1 gap-y-0.5 rounded-md border border-border bg-background py-1 pr-1 pl-2 text-sm">
                       <span className="w-6 shrink-0 text-xs font-semibold text-muted-foreground tabular-nums">{inicio + i + 1}</span>
                       <span className="min-w-0 flex-1 basis-20 break-words">{p}</span>
+                      {extraPosto?.(p)}
                       {p !== fixo && (
                         <span className="ml-auto flex items-center">
                           {moverEntreTrechos && ti > 0 && i === 0 && (
@@ -132,11 +142,16 @@ export function CorrenteTrechos({
                 </ol>
               )}
               {disponiveis.length > 0 && (
-                <Select value="" onValueChange={(p) => p && mudarTrecho(t.seq, (x) => ({ ...x, postos: [...x.postos, p] }))}>
+                <Select value="" onValueChange={(p) => {
+                  if (!p) return
+                  mudarTrecho(t.seq, (x) => ({ ...x, postos: [...x.postos, p] }))
+                  aoAdicionarPosto?.(p)
+                }}>
                   <SelectTrigger className="h-8 text-xs" aria-label={`Adicionar posto em ${rotuloTrecho(t)}`}><SelectValue placeholder="Adicionar posto" /></SelectTrigger>
                   <SelectContent>{disponiveis.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
                 </Select>
               )}
+              {rodapeTrecho?.(t)}
               {t.tipo === 'prt' && (snModoEditavel ? (
                 <fieldset className="mt-auto flex flex-col gap-1 border-t border-border pt-3 text-sm">
                   <legend className="sr-only">{`Série de ${rotuloTrecho(t)}`}</legend>

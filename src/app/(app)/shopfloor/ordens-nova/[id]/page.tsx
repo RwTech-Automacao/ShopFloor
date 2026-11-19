@@ -39,6 +39,7 @@ export default async function EditarOpPage({ params }: { params: Promise<{ id: s
   ])
   const chaves = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const clientes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()
+  const pmos = [...new Set(ordens.map((o) => o.pmo))].sort()
   const trechos = trechosDaOpGravada(ordem.sf_ordem_trechos, ordem.sf_ordem_postos, ordem.sf_ordem_faixas ?? [], espelho)
 
   return (
@@ -63,6 +64,7 @@ export default async function EditarOpPage({ params }: { params: Promise<{ id: s
         temRegistros={registros > 0}
         receita={agruparReceitaPorPosto(ordem.sf_ordem_componentes)}
         tempoBurnin={agruparTempoBurninPorPosto(ordem.sf_ordem_burnin)}
+        pmosExistentes={pmos}
       />
     </div>
   )

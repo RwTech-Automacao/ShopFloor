@@ -17,6 +17,11 @@ import {
 import { postoAlmoxarifadoPadrao } from '@/modules/shopfloor/domain/rota-op-nova'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { BarraFixa, CamposQuantidade, CorrenteTrechos, ResumoRota, nPainelDe, paineisFecham } from '../corrente-trechos'
+import { ReceitasDosPostos, TempoBurninCampo } from '../editores-posto'
+import { erroTempoBurnin, receitaDaRota, rotaDosTrechos, temposDaRota } from '@/modules/shopfloor/domain/edicao-op-trechos'
+import { parseTempoBurninPorPosto, temposParaLinhas } from '@/modules/shopfloor/domain/burnin-posto'
+import { receitaParaLinhas } from '@/modules/shopfloor/domain/receita-posto'
+import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
 
 const TOAST = { position: 'bottom-center' as const }
 const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
@@ -60,11 +65,23 @@ function Passo({ id, n, titulo, estado, resumo, acao, children }: {
   )
 }
 
-export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistentes }: {
+/** Tempo mínimo de um posto de Burn-in que entra na rota (o mesmo padrão do cadastro antigo). */
+const BURNIN_PADRAO = '6:00'
+
+/** Receita (linhas da última OP) → por posto, sem repetir. */
+function receitaDasLinhas(linhas: { posto: string; pmo: string }[]): Record<string, string[]> {
+  const r: Record<string, string[]> = {}
+  for (const l of linhas) if (!(r[l.posto] ??= []).includes(l.pmo)) r[l.posto]!.push(l.pmo)
+  return r
+}
+
+export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistentes, pmosExistentes = [] }: {
   espelho: OpEspelho[]
   postos: string[]
   postosPerfil: Record<string, PerfilPosto>
   clientesExistentes: string[]
+  /** PMOs que podem entrar na receita de um posto de Integração. */
+  pmosExistentes?: string[]
 }) {
   const router = useRouter()
   const [salvando, startSalvar] = useTransition()
@@ -93,6 +110,11 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   const [acp, setAcp] = useState('')
   const [placasPorPainel, setPlacasPorPainel] = useState('1')
   const [embalagemIndividual, setEmbalagemIndividual] = useState(false)
+  // Receita da Integração e tempo de Burn-in por posto: começam com os da última OP da PMO e se editam na rota
+  const [receita, setReceita] = useState<Record<string, string[]>>({})
+  const [tempos, setTempos] = useState<Record<string, string>>({})
+  const ehIntegracao = (p: string) => (postosPerfil[p] ?? PERFIL_PADRAO).recurso === 'integracao'
+  const ehBurnin = (p: string) => (postosPerfil[p] ?? PERFIL_PADRAO).recurso === 'burnin'
 
   const termo = busca.trim().toUpperCase()
   const achadas = termo === '' ? [] : pmos.filter((p) => p.pmo.toUpperCase().includes(termo)).slice(0, 8)
@@ -154,6 +176,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     setCliente(ultima?.cliente ?? ''); setDescricao(ultima?.descricao ?? '')
     setPlacasPorPainel(String(ultima?.placasPorPainel ?? 1)); setEmbalagemIndividual(ultima?.embalagemIndividual ?? false)
     setOp(''); setQtd(''); setAcp('')
+    setReceita(receitaDasLinhas(ultima?.componentes ?? []))
+    setTempos(Object.fromEntries((ultima?.burnin ?? []).map((b) => [b.posto, minutosParaTempo(b.tempo_min)])))
     if (m === 'manual') setTrechos(distribuirPostos([trechoManual(codigo)], ultima?.postos ?? [], almox))
   }
 
@@ -173,11 +197,15 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
 
   function salvar() {
     if (!pmo || !modo) return
+    const rota = rotaDosTrechos(trechos)
+    // a mesma conferência do servidor (lerBurnin): o tempo tem que ser hhh:mm
+    const tb = parseTempoBurninPorPosto(JSON.stringify(temposDaRota(rota, tempos, ehBurnin)), rota.filter(ehBurnin))
+    if (!tb.ok) { toast.error(erroTempoBurnin(tb.posto), TOAST); return }
     const c: CadastroOp = {
       modo, pmo, op: op.trim(), cliente: cliente.trim(), descricao: descricao.trim(),
       qtd: qtd.trim() === '' || Number.isNaN(Number(qtd)) ? null : Number(qtd), acp: acp.trim(),
       embalagemIndividual, placasPorPainel: Number(placasPorPainel), trechos,
-      componentes: anterior?.componentes ?? [], burnin: anterior?.burnin ?? [],
+      componentes: receitaParaLinhas(receitaDaRota(rota, receita, ehIntegracao)), burnin: temposParaLinhas(tb.tempos),
     }
     const v = validarCadastro(c)
     if (!v.ok) { toast.error(v.erro, TOAST); return }
@@ -370,6 +398,17 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
         {trechos.length > 0 && (
           <CorrenteTrechos trechos={trechos} almox={almox} idBase={idBase} qtd={qtd} nPainel={nPainel}
             mudarTrecho={mudarTrecho} opcoesAdicionar={() => disponiveis}
+            extraPosto={(p) => ehBurnin(p) && (
+              <TempoBurninCampo valor={tempos[p] ?? ''} rotulo={`Tempo mínimo de Burn-in em ${p}`}
+                setValor={(v) => setTempos((prev) => ({ ...prev, [p]: v }))} />
+            )}
+            aoAdicionarPosto={(p) => {
+              if (ehBurnin(p) && (tempos[p] ?? '') === '') setTempos((prev) => ({ ...prev, [p]: BURNIN_PADRAO }))
+            }}
+            rodapeTrecho={(t) => (
+              <ReceitasDosPostos postos={t.postos} ehIntegracao={ehIntegracao} receita={receita} setReceita={setReceita}
+                pmosExistentes={pmosExistentes} pmoDaOp={pmo ?? ''} />
+            )}
             moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almox))} />
         )}
       </Passo>

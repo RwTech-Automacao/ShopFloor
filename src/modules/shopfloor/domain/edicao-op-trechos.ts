@@ -77,3 +77,16 @@ export function rotaDosTrechos(trechos: TrechoCadastro[]): string[] {
 export function faixasDaPmo(trechos: TrechoCadastro[]): FaixaSN[] {
   return trechos.find((t) => t.tipo === 'pmo')?.faixas ?? []
 }
+
+/** A receita só dos postos de Integração da rota, sem lista vazia (o que vai para sf_ordem_componentes). */
+export function receitaDaRota(rota: string[], receita: Record<string, string[]>, ehIntegracao: (posto: string) => boolean): Record<string, string[]> {
+  return Object.fromEntries(rota.filter((p) => ehIntegracao(p) && (receita[p]?.length ?? 0) > 0).map((p) => [p, receita[p]!]))
+}
+
+/** Os tempos de Burn-in (hhh:mm) só dos postos de Burn-in da rota, sem campo vazio. */
+export function temposDaRota(rota: string[], tempos: Record<string, string>, ehBurnin: (posto: string) => boolean): Record<string, string> {
+  return Object.fromEntries(rota.filter((p) => ehBurnin(p) && (tempos[p] ?? '').trim() !== '').map((p) => [p, tempos[p]!.trim()]))
+}
+
+/** A mensagem do servidor (editarOrdemAction) para tempo de Burn-in que não é hhh:mm. */
+export const erroTempoBurnin = (posto: string) => `Tempo mínimo de Burn-in inválido no posto ${posto} (use hhh:mm).`

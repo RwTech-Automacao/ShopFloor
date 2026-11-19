@@ -164,7 +164,8 @@ describe('Editar OP com trechos', () => {
     })
     expect(JSON.parse(fd.fluxo as string)).toEqual(['SPI', 'Inspeção AOI TOP', 'Inspeção PTH', 'Teste', 'Almoxarifado'])
     expect(JSON.parse(fd.faixas as string)).toEqual([{ sn_ini: '1001', sn_fim: '1010' }])
-    expect(JSON.parse(fd.componentes as string)).toEqual({ Teste: ['PMOX'] })
+    // receita só de posto de Integração (Teste não é): a mesma filtragem do servidor
+    expect(JSON.parse(fd.componentes as string)).toEqual({})
     expect(fd.confirmar_fora_faixa).toBeUndefined()
     await waitFor(() => expect(push).toHaveBeenCalledWith('/shopfloor/ordens-nova'))
   })

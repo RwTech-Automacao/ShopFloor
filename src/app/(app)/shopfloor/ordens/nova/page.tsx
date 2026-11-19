@@ -16,6 +16,7 @@ export default async function NovaOpPage() {
   const [espelho, postos, postosPerfil, ordens] = await Promise.all([listarEspelho(), listarPostos(), mapaPostoPerfil(), listarOrdens()])
   const chaves = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const clientes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()
+  const pmos = [...new Set(ordens.map((o) => o.pmo))].sort()
   return (
     <div className="flex min-h-full flex-col gap-4">
       <div>
@@ -25,7 +26,7 @@ export default async function NovaOpPage() {
           <Link href="/shopfloor/ordens-nova" className="underline">Voltar às ordens</Link>
         </p>
       </div>
-      <NovaOpCliente espelho={espelho} postos={chaves} postosPerfil={postosPerfil} clientesExistentes={clientes} />
+      <NovaOpCliente espelho={espelho} postos={chaves} postosPerfil={postosPerfil} clientesExistentes={clientes} pmosExistentes={pmos} />
     </div>
   )
 }
