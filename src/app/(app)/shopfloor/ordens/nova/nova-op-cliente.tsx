@@ -92,6 +92,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   // Passo concluído vira resumo; "Trocar" reabre só aquele passo.
   const [trocandoPmo, setTrocandoPmo] = useState(false)
   const [trocandoOp, setTrocandoOp] = useState(false)
+  const [dadosOk, setDadosOk] = useState(false)
   const [trechos, setTrechos] = useState<TrechoCadastro[]>([])
   const [op, setOp] = useState('')
   const [cliente, setCliente] = useState('')
@@ -108,6 +109,9 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   const nPainel = Number.isInteger(Number(placasPorPainel)) && Number(placasPorPainel) >= 1 ? Number(placasPorPainel) : 1
   const baseOp = trechos.at(-1)?.compelsOp ?? ''
   const erroOp = modo === 'compels' && trechos.length > 0 ? erroSufixoOp(baseOp, op) : null
+  const paineisFecham = nPainel <= 1 || qtd.trim() === '' || paineisDasPlacas(Number(qtd), nPainel) !== null
+  const dadosValidos = op.trim() !== '' && !erroOp && cliente.trim() !== '' && paineisFecham
+  const passo3Fechado = dadosOk && dadosValidos
   const usados = new Set(trechos.flatMap((t) => t.postos))
   const disponiveis = postos.filter((p) => !usados.has(p))
   const opsAbertas = modo === 'compels' && pmo ? opsDaPmo(espelho, pmo) : []
@@ -138,7 +142,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
       // outra busca: o que era da PMO anterior (trechos, OP escolhida, resposta em voo) não vale mais
       pedido.current++
       setPmo(null); setModo(null); setAnterior(null); setErroUltima(false); setCarregando(false)
-      setOpEscolhida(null); setTrocandoOp(false); setTrechos([])
+      setOpEscolhida(null); setTrocandoOp(false); setTrechos([]); setDadosOk(false)
     }
   }
 
@@ -146,7 +150,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     setTrocandoPmo(false)
     focoPendente.current = 'trocar-pmo'
     if (codigo === pmo && m === modo) return // o mesmo PMO de novo não apaga o que já foi editado
-    setPmo(codigo); setModo(m); setOpEscolhida(null); setTrocandoOp(false); setTrechos([]); setCarregando(true); setErroUltima(false)
+    setPmo(codigo); setModo(m); setOpEscolhida(null); setTrocandoOp(false); setTrechos([]); setDadosOk(false); setCarregando(true); setErroUltima(false)
     const meu = ++pedido.current
     let ultima: UltimaOp | null = null
     let falhou = false
@@ -166,7 +170,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   }
 
   function escolherOp(o: OpEspelho) {
-    setTrocandoOp(false)
+    setTrocandoOp(false); setDadosOk(false)
     focoPendente.current = 'trocar-op'
     if (o.numero === opEscolhida) return // a mesma OP de novo não apaga o que já foi editado
     setOpEscolhida(o.numero)
@@ -313,9 +317,21 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
       </Passo>
 
       {/* 3 · Dados da OP */}
-      <Passo id={`${idBase}-p3`} n={3} titulo="Dados da OP" estado={trechos.length > 0 ? 'ativo' : 'pendente'}
-        resumo={trechos.length === 0 && <p className="text-xs text-muted-foreground">{aguardando}</p>}>
-        {trechos.length > 0 && (
+      <Passo id={`${idBase}-p3`} n={3} titulo="Dados da OP"
+        estado={passo3Fechado ? 'feito' : trechos.length > 0 ? 'ativo' : 'pendente'}
+        resumo={trechos.length === 0
+          ? <p className="text-xs text-muted-foreground">{aguardando}</p>
+          : passo3Fechado && (
+            <p className="truncate text-sm font-medium text-foreground">
+              {[`OP ${op.trim()}`, cliente.trim(), qtd.trim() !== '' ? `${qtd.trim()} un` : null,
+                nPainel > 1 ? `${nPainel} placas por painel` : null,
+                embalagemIndividual ? 'embalagem individual' : 'caixa coletiva'].filter(Boolean).join(' · ')}
+            </p>
+          )}
+        acao={passo3Fechado && (
+          <Button type="button" variant="ghost" size="sm" onClick={() => setDadosOk(false)}>Editar</Button>
+        )}>
+        {trechos.length > 0 && !passo3Fechado && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="op">Nº OP *</Label>
@@ -364,6 +380,12 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
               <input type="checkbox" checked={embalagemIndividual} onChange={(e) => setEmbalagemIndividual(e.target.checked)} className="mt-0.5 size-4 accent-enterplak" />
               <span>Embalagem <b>individual</b> — 1 produto por caixa (deixe desmarcado para caixa coletiva).</span>
             </label>
+            <div className="flex items-center justify-end gap-3 sm:col-span-2 lg:col-span-3">
+              {!dadosValidos && <p className="text-xs text-muted-foreground">Preencha o Nº da OP e o cliente para confirmar.</p>}
+              <Button type="button" variant="outline" size="sm" disabled={!dadosValidos} onClick={() => setDadosOk(true)}>
+                Confirmar dados
+              </Button>
+            </div>
           </div>
         )}
       </Passo>

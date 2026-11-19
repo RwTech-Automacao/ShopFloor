@@ -709,7 +709,7 @@ export function AppShell({
 
         {/* pb inclui --kb-inset: quando o teclado virtual (Windows) abre, o conteúdo ganha espaço
             de rolagem e o campo focado (ex.: filtro de defeito do acordeão) sobe acima do teclado. */}
-        <main className="flex-1 overflow-y-auto p-4 pb-[calc(1rem+var(--kb-inset,0px))] scroll-pb-[var(--kb-inset,0px)] sm:p-6 sm:pb-[calc(1.5rem+var(--kb-inset,0px))] lg:p-8 lg:pb-[calc(2rem+var(--kb-inset,0px))] print:overflow-visible print:!p-0">
+        <main className="relative flex-1 overflow-y-auto p-4 pb-[calc(1rem+var(--kb-inset,0px))] scroll-pb-[var(--kb-inset,0px)] sm:p-6 sm:pb-[calc(1.5rem+var(--kb-inset,0px))] lg:p-8 lg:pb-[calc(2rem+var(--kb-inset,0px))] print:overflow-visible print:!p-0">
           {children}
         </main>
       </div>
