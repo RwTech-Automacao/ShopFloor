@@ -9,8 +9,6 @@ import {
 import type { FluxoNodeData } from '@/modules/shopfloor/domain/fluxo-op'
 import { formatarQuantidade, type EstoqueCompels } from '@/modules/shopfloor/domain/estoque-compels'
 import { lerEstoqueCompelsAction, lerPendenteCompelsAction } from '@/modules/shopfloor/application/estoque-compels-actions'
-import { lerTrechosCompelsAction } from '@/modules/shopfloor/application/estrutura-actions'
-import type { ResumoTrecho } from '@/modules/shopfloor/infra/estrutura-repository'
 import type { ResumoPendenteOp } from '@/modules/shopfloor/domain/estoque-pendente'
 
 export interface FluxoNodePayload extends FluxoNodeData {
@@ -23,6 +21,8 @@ export interface FluxoNodePayload extends FluxoNodeData {
   periodoAprovadas?: number // aprovadas na janela do filtro (posto com status)
   periodoReprovadas?: number // reprovadas na janela do filtro (posto com status)
   periodoRegistros?: number // bipes na janela do filtro (posto de passagem usa isto)
+  /** OP com trechos (0184): o trecho a que o posto pertence, ex. "PRT410". Fica embaixo do nome do posto. */
+  trechoDoPosto?: string
 }
 
 /** Ícone por tipo de posto (recurso do perfil; teste/inspeção caem no ClipboardCheck via temStatus).
@@ -209,40 +209,8 @@ function iconeDo(d: FluxoNodePayload) {
   return iconePorRecurso(d.recurso, d.temStatus, 'size-5')
 }
 
-/** Os trechos mudam devagar (o envio ao Compels é por cron): o card relê a cada 30 s, e o cache vale o mesmo. */
-const INTERVALO_TRECHOS_MS = 30_000
-const CACHE_TRECHOS_MS = 30_000
-const cacheTrechos = new Map<string, { ate: number; promessa: Promise<ResumoTrecho[]> }>()
-/** Só para os testes: zera o cache por OP. */
-export function limparCacheTrechosParaTeste() { cacheTrechos.clear() }
-
-function lerTrechosDaOp(pmo: string, op: string, forcar: boolean): Promise<ResumoTrecho[]> {
-  const chave = `${pmo}|${op}`
-  const g = cacheTrechos.get(chave)
-  if (!forcar && g && g.ate > Date.now()) return g.promessa
-  const promessa = lerTrechosCompelsAction(pmo, op).catch(() => [] as ResumoTrecho[])
-  cacheTrechos.set(chave, { ate: Date.now() + CACHE_TRECHOS_MS, promessa })
-  return promessa
-}
-
-/** Trechos (PRTs) da OP, com cache por OP no módulo: os N cards de posto dividem uma só consulta. Relê a cada 30 s. */
-function useTrechosCompels(pmo: string | undefined, op: string | undefined): ResumoTrecho[] {
-  const [trechos, setTrechos] = useState<ResumoTrecho[]>([])
-  useEffect(() => {
-    if (!pmo || !op) return
-    let vivo = true
-    const ler = (forcar: boolean) => { lerTrechosDaOp(pmo, op, forcar).then((r) => { if (vivo) setTrechos(r) }) }
-    ler(false)
-    const id = setInterval(() => { if (!document.hidden) ler(false) }, INTERVALO_TRECHOS_MS)
-    return () => { vivo = false; clearInterval(id) }
-  }, [pmo, op])
-  return pmo && op ? trechos : []
-}
-
 function FluxoNodeBase({ data }: NodeProps) {
   const d = data as unknown as FluxoNodePayload
-  const trechos = useTrechosCompels(!d.ehEntrada && !d.ehSaida ? d.pmo : undefined, !d.ehEntrada && !d.ehSaida ? d.op : undefined)
-  const trecho = trechos.find((t) => t.posto === d.posto)
 
   // Realce da busca de SN (estilo n8n): contorno VINHO GIRANDO em volta do card (overlay .fluxo-borda-rota);
   // posição atual ganha um anel extra; fora da rota esmaece.
@@ -362,9 +330,10 @@ function FluxoNodeBase({ data }: NodeProps) {
         <div className={`flex h-14 items-center gap-2 border-2 bg-card pl-6 pr-3 transition-colors ${bordaTopo} ${temSub ? (d.concluido || d.ehManutencao ? 'rounded-xl' : 'rounded-t-xl') : 'rounded-xl'}`}>
           <div className="min-w-0 flex-1 text-left">
             <p className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">{d.posto}</p>
-            <p className="text-xs text-muted-foreground">
-              {d.ehManutencao ? 'em manutenção' : d.temStatus ? 'teste/inspeção' : 'passagem'}
-            </p>
+            {/* Embaixo do nome: o trecho (PRT/PMO) do posto na OP com trechos; "em manutenção" no card da Manutenção. */}
+            {(d.ehManutencao || d.trechoDoPosto) && (
+              <p className="truncate text-xs text-muted-foreground">{d.ehManutencao ? 'em manutenção' : d.trechoDoPosto}</p>
+            )}
           </div>
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-enterplak/10 text-enterplak">
             {iconeDo(d)}
@@ -429,16 +398,6 @@ function FluxoNodeBase({ data }: NodeProps) {
           </div>
         )}
 
-        {trecho && (
-          <div className="flex items-center justify-between gap-2 border-t border-border bg-card px-3 py-1 text-xs text-muted-foreground"
-               title={trecho.motivo ?? undefined}>
-            <span><span aria-hidden>└</span> <span>{trecho.compelsOp ? `${trecho.codigo} → Compels ${trecho.compelsOp}` : `${trecho.codigo} → sem OP no Compels`}</span></span>
-            <span className="flex items-center gap-1">
-              <span>{`apontadas ${formatarQuantidade(trecho.apontadas)} · na fila ${formatarQuantidade(trecho.naFila)}`}</span>
-              {trecho.naFila > 0 && trecho.motivo && <AlertTriangle aria-label="atenção" className="size-3.5 text-amber-600" />}
-            </span>
-          </div>
-        )}
       </div>
 
       {!d.ehManutencao && <Handle type="source" position={Position.Right} />}
