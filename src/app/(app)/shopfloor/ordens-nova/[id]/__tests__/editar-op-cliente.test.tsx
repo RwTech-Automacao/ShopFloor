@@ -75,14 +75,12 @@ describe('Editar OP com trechos', () => {
     const prt410 = within(trechoRegiao('PRT410 (8500)'))
     expect(prt410.getByText('No Compels: 4 apontadas · 2 na fila')).toBeTruthy()
     expect(prt410.getByText('Pendência: Sem saldo do componente')).toBeTruthy()
-    expect(prt410.getByText('Série própria')).toBeTruthy()
-    // a faixa própria da PRT é só leitura (o banco não a regrava); a da PMO é editável
-    expect(prt410.getByText('P001 – P010')).toBeTruthy()
-    expect(prt410.queryByRole('textbox')).toBeNull()
+    // série e faixas editáveis em todo trecho (o banco recusa o que mudaria o histórico)
+    expect((prt410.getByRole('radio', { name: 'Série própria' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('SN inicial *', { selector: '#t1_sn_ini' }) as HTMLInputElement).value).toBe('P001')
     expect(within(trechoRegiao('PRT420 (8499)')).getByText('No Compels: 1 apontada · 0 na fila')).toBeTruthy()
-    expect(within(trechoRegiao('PRT420 (8499)')).getByText('Mesma série da PMO')).toBeTruthy()
-    expect((screen.getByLabelText('SN inicial *') as HTMLInputElement).value).toBe('1001')
-    expect(screen.queryByRole('radio')).toBeNull()
+    expect((within(trechoRegiao('PRT420 (8499)')).getByRole('radio', { name: 'Mesma série da PMO' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('SN inicial *', { selector: '#sn_ini' }) as HTMLInputElement).value).toBe('1001')
     expect(screen.getByTestId('resumo-rota').textContent).toBe('3 trechos · 5 postos')
   })
 
@@ -91,29 +89,71 @@ describe('Editar OP com trechos', () => {
     expect(screen.getAllByText('Não foi possível ler a situação no Compels.')).toHaveLength(2)
   })
 
-  it('posto não troca de trecho na edição: sem setas ← →; subir/descer dentro do trecho continua', () => {
+  it('as setas ← → só aparecem nas pontas dos trechos, e o Almoxarifado não se move', () => {
     montar()
-    expect(screen.queryByRole('button', { name: /para o trecho (anterior|seguinte)/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Descer SPI' }))
-    expect(postosDo('PRT410 (8500)').map((li) => li.textContent)).toEqual(['1Inspeção AOI TOP', '2SPI'])
-    // o Almoxarifado fecha a PMO: sem controles, e Teste não desce para depois dele
+    const seta = (nome: string) => screen.queryByRole('button', { name: nome })
+    expect(seta('Mover SPI para o trecho anterior')).toBeNull()
+    expect(seta('Mover SPI para o trecho seguinte')).toBeNull()
+    expect(seta('Mover Inspeção AOI TOP para o trecho seguinte')).toBeTruthy()
+    expect(seta('Mover Inspeção PTH para o trecho anterior')).toBeTruthy()
+    expect(seta('Mover Inspeção PTH para o trecho seguinte')).toBeTruthy()
+    expect(seta('Mover Teste para o trecho anterior')).toBeTruthy()
+    expect(seta('Mover Teste para o trecho seguinte')).toBeNull()
+    expect(seta('Mover Almoxarifado para o trecho anterior')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Remover Almoxarifado' })).toBeNull()
     expect((screen.getByRole('button', { name: 'Descer Teste' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('adicionar: só a PMO recebe posto novo; o tirado de uma PRT só volta para ela', () => {
+  it('mover na ponta passa o posto para o vizinho, renumera e vai no salvar por trecho', async () => {
     montar()
-    expect(within(trechoRegiao('PRT410 (8500)')).queryByRole('combobox', { name: /Adicionar posto/ })).toBeNull()
-    expect(screen.getByRole('combobox', { name: 'Adicionar posto em PMOC14 (8498)' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Remover SPI' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mover Inspeção AOI TOP para o trecho seguinte' }))
+    expect(postosDo('PRT410 (8500)').map((li) => li.textContent)).toEqual(['1SPI'])
+    expect(postosDo('PRT420 (8499)').map((li) => li.textContent)).toEqual(['2Inspeção AOI TOP', '3Inspeção PTH'])
+    fireEvent.click(screen.getByRole('button', { name: 'Mover Teste para o trecho anterior' }))
+    expect(postosDo('PRT420 (8499)').map((li) => li.textContent)).toEqual(['2Inspeção AOI TOP', '3Inspeção PTH', '4Teste'])
+    expect(postosDo('PMOC14 (8498)').map((li) => li.textContent)).toEqual(['5Almoxarifado'])
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(acoes.editarOrdemAction).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(enviado().trechos as string).map((t: { postos: string[] }) => t.postos)).toEqual([
+      ['SPI'], ['Inspeção AOI TOP', 'Inspeção PTH', 'Teste'], ['Almoxarifado'],
+    ])
+  })
+
+  it('PRT troca para série própria, preenche a faixa e ela vai no salvar', async () => {
+    montar()
+    fireEvent.click(within(trechoRegiao('PRT420 (8499)')).getByRole('radio', { name: 'Série própria' }))
+    fireEvent.change(screen.getByLabelText('SN inicial *', { selector: '#t2_sn_ini' }), { target: { value: 'Q01' } })
+    fireEvent.change(screen.getByLabelText('SN final *', { selector: '#t2_sn_fim' }), { target: { value: 'Q10' } })
+    fireEvent.change(screen.getByLabelText('SN final *', { selector: '#t1_sn_fim' }), { target: { value: 'P020' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(acoes.editarOrdemAction).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(enviado().trechos as string)).toEqual([
+      { seq: 1, postos: ['SPI', 'Inspeção AOI TOP'], sn_modo: 'proprio', faixas: [{ sn_ini: 'P001', sn_fim: 'P020' }] },
+      { seq: 2, postos: ['Inspeção PTH'], sn_modo: 'proprio', faixas: [{ sn_ini: 'Q01', sn_fim: 'Q10' }] },
+      { seq: 3, postos: ['Teste', 'Almoxarifado'], sn_modo: 'mesmo', faixas: [{ sn_ini: '1001', sn_fim: '1010' }] },
+    ])
+  })
+
+  it('faixa de PRT sobreposta à da PMO é recusada na tela', async () => {
+    montar()
+    fireEvent.change(screen.getByLabelText('SN inicial *', { selector: '#t1_sn_ini' }), { target: { value: '1005' } })
+    fireEvent.change(screen.getByLabelText('SN final *', { selector: '#t1_sn_fim' }), { target: { value: '1020' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    const { toast } = await import('sonner')
+    expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/se sobrepõe/), expect.anything())
+    expect(acoes.editarOrdemAction).not.toHaveBeenCalled()
+  })
+
+  it('adicionar: qualquer posto fora da rota em qualquer trecho', () => {
+    montar()
     expect(screen.getByRole('combobox', { name: 'Adicionar posto em PRT410 (8500)' })).toBeTruthy()
-    expect(within(trechoRegiao('PRT420 (8499)')).queryByRole('combobox')).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Adicionar posto em PMOC14 (8498)' })).toBeTruthy()
   })
 
   it('salvar manda a rota inteira, as faixas da PMO e os dados; PMO/OP sempre os gravados', async () => {
     montar({ receita: { Teste: ['PMOX'] }, tempoBurnin: {} })
     fireEvent.change(screen.getByLabelText('Cliente *'), { target: { value: 'NOVO CLIENTE ' } })
-    fireEvent.change(screen.getByLabelText('SN final *'), { target: { value: '1010' } })
+    fireEvent.change(screen.getByLabelText('SN final *', { selector: '#sn_fim' }), { target: { value: '1010' } })
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(acoes.editarOrdemAction).toHaveBeenCalledTimes(1))

@@ -1,11 +1,9 @@
 /**
- * EDIÇÃO DE OP COM TRECHOS (0184). Regras puras da página /shopfloor/ordens-nova/[id].
+ * EDIÇÃO DE OP COM TRECHOS (0184/0194). Regras puras da página /shopfloor/ordens-nova/[id].
  *
- * A gravação é a de sempre (editarOrdemAction → atualizarOrdem): a rota vai como uma lista só e a
- * sf_ordem_regravar_postos devolve CADA POSTO AO TRECHO QUE ELE TINHA no banco; posto que não estava na OP entra no
- * trecho da PMO. As faixas regravadas são só as da PMO (as próprias das PRTs ficam como estão) e o sn_modo não muda.
- * Por isso a tela não move posto entre trechos, não edita a faixa nem a série das PRTs, e só oferece em cada trecho
- * os postos que o banco gravaria nele.
+ * A página grava a OP inteira por trecho (sf_ordem_regravar_trechos, 0194): a rota de cada trecho, a série das PRTs e
+ * as faixas de todos. O banco recusa o que mudaria o histórico (posto com registro trocando de trecho; PRT já bipada ou
+ * apontada trocando o posto final ou a série, ou com faixa que deixa SN usado de fora) — a tela só mostra a mensagem.
  */
 import type { OpEspelho } from '@/modules/compels/domain/espelho-ops'
 import { faixasDaPmoDoBanco, faixasDoBanco, type FaixaSN } from './faixas-sn'
@@ -51,29 +49,23 @@ export function trechosDaOpGravada(
   })
 }
 
-/** Posto → seq do trecho em que ele está GRAVADO (a base da sf_ordem_regravar_postos). */
-export function trechoGravadoDosPostos(trechos: TrechoCadastro[]): Record<string, number> {
-  const m: Record<string, number> = {}
-  for (const t of trechos) for (const p of t.postos) m[p] = t.seq
-  return m
+/** Os postos que já estão na rota gravada (posto de Burn-in que entra pela edição ganha o tempo padrão). */
+export function postosGravados(trechos: TrechoCadastro[]): Set<string> {
+  return new Set(trechos.flatMap((t) => t.postos))
 }
 
-/**
- * Os postos que podem entrar no trecho `seq`: fora da rota atual e que o banco gravaria NESTE trecho — o que já era
- * dele (tirado e trazido de volta) ou, no trecho da PMO, posto que não estava na OP. O Almoxarifado nunca entra numa
- * PRT (ele fecha a rota no trecho da PMO).
- */
-export function postosParaAdicionar(
-  catalogo: string[],
-  trechos: TrechoCadastro[],
-  gravado: Record<string, number>,
-  seq: number,
-  almoxarifado: string | null,
-): string[] {
-  const pmoSeq = trechos.find((t) => t.tipo === 'pmo')?.seq
-  const ehPrt = trechos.find((t) => t.seq === seq)?.tipo === 'prt'
-  const usados = new Set(trechos.flatMap((t) => t.postos))
-  return catalogo.filter((p) => !usados.has(p) && (gravado[p] ?? pmoSeq) === seq && !(ehPrt && p === almoxarifado))
+/** Postos que o "Adicionar posto" do trecho oferece: os fora da rota; o Almoxarifado nunca numa PRT. */
+export function postosParaAdicionar(catalogo: string[], trechos: TrechoCadastro[], t: TrechoCadastro, almoxarifado: string | null): string[] {
+  const usados = new Set(trechos.flatMap((x) => x.postos))
+  return catalogo.filter((p) => !usados.has(p) && !(t.tipo === 'prt' && p === almoxarifado))
+}
+
+/** O que vai no campo `trechos` da edição: rota, série e faixas por trecho (PRT 'mesmo' sem faixa; PMO sempre 'mesmo'). */
+export function trechosParaGravar(trechos: TrechoCadastro[]): { seq: number; postos: string[]; sn_modo: SnModo; faixas: FaixaSN[] }[] {
+  return trechos.map((t) => {
+    const snModo: SnModo = t.tipo === 'pmo' ? 'mesmo' : t.snModo
+    return { seq: t.seq, postos: t.postos, sn_modo: snModo, faixas: t.tipo === 'pmo' || snModo === 'proprio' ? t.faixas : [] }
+  })
 }
 
 /** A rota inteira na ordem dos trechos: é o `fluxo` que a edição grava. */

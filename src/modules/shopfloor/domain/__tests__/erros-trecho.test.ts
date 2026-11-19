@@ -10,6 +10,17 @@ describe('mensagemErroDeTrecho', () => {
     expect(mensagemErroDeTrecho({ message: 'POSTO_REPETIDO:Teste' })).toBe('O posto "Teste" está em mais de um trecho.')
     expect(mensagemErroDeTrecho(new Error('TRECHO_SEM_FAIXA:PRT410'))).toBe('O trecho PRT410 ficaria sem faixa de SN.')
   })
+  it('traduz os códigos da edição por trecho (0194)', () => {
+    expect(mensagemErroDeTrecho({ message: 'POSTO_COM_REGISTROS:SPI' })).toBe('O posto "SPI" já tem registros nesta OP e não pode trocar de trecho.')
+    expect(mensagemErroDeTrecho({ message: 'PRT_COM_HISTORICO:PRT410' })).toMatch(/^PRT410 já tem peças .* posto final nem a série/)
+    expect(mensagemErroDeTrecho({ message: 'PRT_FAIXA_COM_HISTORICO:PRT410' })).toMatch(/^PRT410 já tem peças .* SNs já usados\.$/)
+    expect(mensagemErroDeTrecho({ message: 'FAIXA_SOBREPOSTA:PMOC14' })).toBe('Uma faixa de SN do trecho PMOC14 se sobrepõe a outra faixa da OP.')
+    expect(mensagemErroDeTrecho({ message: 'FAIXA_INVALIDA:PRT410' })).toMatch(/^Faixa de SN inválida no trecho PRT410/)
+    expect(mensagemErroDeTrecho({ message: 'SN_MODO_INVALIDO:PRT410' })).toBe('Série inválida no trecho PRT410.')
+    expect(mensagemErroDeTrecho({ message: 'ALMOXARIFADO_FORA_DO_FIM' })).toBe('O Almoxarifado tem que ser o último posto do trecho da PMO.')
+    expect(mensagemErroDeTrecho({ message: 'TRECHOS_DIFERENTES' })).toMatch(/^Os trechos da tela não batem/)
+    expect(mensagemErroDeTrecho({ message: 'OP_SEM_TRECHOS' })).toBe('Esta OP não tem trechos do Compels.')
+  })
   it('o resto não é erro de trecho', () => {
     expect(mensagemErroDeTrecho({ code: '23505', message: 'duplicate' })).toBeNull()
     expect(mensagemErroDeTrecho(new Error('rede'))).toBeNull()

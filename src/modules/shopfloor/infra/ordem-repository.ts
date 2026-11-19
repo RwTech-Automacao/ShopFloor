@@ -167,6 +167,15 @@ async function regravarFaixas(supabase: Supa, id: string, faixas: FaixaSN[]): Pr
   if (error) throw error
 }
 
+/** Um trecho na edição por trecho (0194): os postos em ordem, a série e as faixas (PMO e PRT com série própria). */
+export interface TrechoEdicao { seq: number; postos: string[]; sn_modo: 'mesmo' | 'proprio'; faixas: FaixaSN[] }
+
+async function regravarTrechos(supabase: Supa, id: string, trechos: TrechoEdicao[]): Promise<void> {
+  // Rota, série e faixas de todos os trechos numa transação (sf_ordem_regravar_trechos, 0194), com as travas do histórico.
+  const { error } = await supabase.rpc('sf_ordem_regravar_trechos', { p_ordem_id: id, p_trechos: trechos })
+  if (error) throw error
+}
+
 async function gravarDadosDaOp(supabase: Supa, id: string, dados: DadosOrdem): Promise<void> {
   const { error } = await supabase
     .from('sf_ordens')
@@ -184,13 +193,23 @@ async function gravarDadosDaOp(supabase: Supa, id: string, dados: DadosOrdem): P
  * PMO sem faixa, e com faixa o trigger só reescreve a seq 1 (que é a primeira da PMO). O trecho que ficaria sem posto é
  * conferido aqui antes da primeira escrita (a mesma regra da função), pois a recusa da função chegaria depois das faixas.
  *
+ * Com `trechos` (a página de edição de OP com trechos): a rota, a série e as faixas de cada trecho vão de uma vez pela
+ * sf_ordem_regravar_trechos (0194), que pode recusar e por isso vem antes de tudo; depois receita/burn-in e a sf_ordens.
+ *
  * OP antiga (sem trechos): a ordem de antes — a sf_ordens primeiro (a duplicidade de PMO/OP para logo de cara).
  */
-export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[], faixas: FaixaSN[]): Promise<void> {
+export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[], faixas: FaixaSN[], trechosEdicao?: TrechoEdicao[]): Promise<void> {
   const supabase = await createServerSupabase()
   const { data: trechos, error: eT } = await supabase.from('sf_ordem_trechos').select('seq,codigo,tipo').eq('ordem_id', id)
   if (eT) throw eT
   const lista = (trechos ?? []) as { seq: number; codigo: string; tipo: string }[]
+  if (trechosEdicao) {
+    if (lista.length === 0) throw new Error('OP_SEM_TRECHOS')
+    await regravarTrechos(supabase, id, trechosEdicao)
+    await regravarReceitaEBurnin(supabase, id, receita, burnin)
+    await gravarDadosDaOp(supabase, id, dados)
+    return
+  }
   if (lista.length === 0) {
     await gravarDadosDaOp(supabase, id, dados)
     await regravarPostos(supabase, id, postos)

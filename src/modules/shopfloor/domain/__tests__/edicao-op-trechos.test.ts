@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { faixasDaPmo, postosParaAdicionar, rotaDosTrechos, trechoGravadoDosPostos, trechosDaOpGravada } from '../edicao-op-trechos'
+import { faixasDaPmo, postosGravados, postosParaAdicionar, rotaDosTrechos, trechosDaOpGravada, trechosParaGravar } from '../edicao-op-trechos'
 import type { OpEspelho } from '../cadastro-op'
 
 const TRECHOS = [
@@ -38,13 +38,21 @@ describe('edição de OP com trechos', () => {
     expect(trechosDaOpGravada(TRECHOS, POSTOS, [])[2]!.faixas).toEqual([{ sn_ini: '', sn_fim: '' }])
   })
 
-  it('adicionar: cada trecho só oferece o que o banco gravaria nele', () => {
-    const gravado = trechoGravadoDosPostos(trechos)
+  it('adicionar: qualquer posto fora da rota, em qualquer trecho; o Almoxarifado nunca numa PRT', () => {
     const semSpi = trechos.map((t) => (t.seq === 1 ? { ...t, postos: [] } : t))
+    const semAlmox = semSpi.map((t) => (t.tipo === 'pmo' ? { ...t, postos: ['Teste', 'Embalagem'] } : t))
     const catalogo = ['SPI', 'Inspeção PTH', 'Teste', 'Embalagem', 'Almoxarifado', 'Burn-in']
-    // SPI foi tirado da PRT410: só volta para ela; posto que não estava na OP só entra na PMO
-    expect(postosParaAdicionar(catalogo, semSpi, gravado, 1, 'Almoxarifado')).toEqual(['SPI'])
-    expect(postosParaAdicionar(catalogo, semSpi, gravado, 2, 'Almoxarifado')).toEqual([])
-    expect(postosParaAdicionar(catalogo, semSpi, gravado, 3, 'Almoxarifado')).toEqual(['Burn-in'])
+    expect(postosParaAdicionar(catalogo, semAlmox, semAlmox[1]!, 'Almoxarifado')).toEqual(['SPI', 'Burn-in'])
+    expect(postosParaAdicionar(catalogo, semAlmox, semAlmox[2]!, 'Almoxarifado')).toEqual(['SPI', 'Almoxarifado', 'Burn-in'])
+    expect(postosGravados(trechos).has('Teste')).toBe(true)
+  })
+
+  it('para gravar: PMO sempre "mesmo" com as faixas; PRT "mesmo" sem faixa', () => {
+    const editados = trechos.map((t) => (t.seq === 2 ? { ...t, faixas: [{ sn_ini: 'X', sn_fim: 'Y' }] } : t))
+    expect(trechosParaGravar(editados)).toEqual([
+      { seq: 1, postos: ['SPI'], sn_modo: 'proprio', faixas: [{ sn_ini: 'P001', sn_fim: 'P010' }] },
+      { seq: 2, postos: ['Inspeção PTH'], sn_modo: 'mesmo', faixas: [] },
+      { seq: 3, postos: ['Teste', 'Embalagem', 'Almoxarifado'], sn_modo: 'mesmo', faixas: [{ sn_ini: '1001', sn_fim: '1010' }] },
+    ])
   })
 })

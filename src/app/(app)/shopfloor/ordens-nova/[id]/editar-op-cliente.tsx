@@ -11,8 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { editarOrdemAction, type ResultadoOrdem } from '@/modules/shopfloor/application/ordens-actions'
-import { fixarAlmoxarifado, validarCadastro, type TrechoCadastro } from '@/modules/shopfloor/domain/cadastro-op'
-import { faixasDaPmo, postosParaAdicionar, rotaDosTrechos, trechoGravadoDosPostos } from '@/modules/shopfloor/domain/edicao-op-trechos'
+import { fixarAlmoxarifado, moverPostoEntreTrechos, validarCadastro, type TrechoCadastro } from '@/modules/shopfloor/domain/cadastro-op'
+import { faixasDaPmo, postosGravados, postosParaAdicionar, rotaDosTrechos, trechosParaGravar } from '@/modules/shopfloor/domain/edicao-op-trechos'
 import { postoAlmoxarifadoPadrao } from '@/modules/shopfloor/domain/rota-op-nova'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
@@ -81,8 +81,8 @@ export function EditarOpCliente({
   const almox = postoAlmoxarifadoPadrao(postos, perfilDo)
   // Fixo no fim da PMO só quando a rota GRAVADA já o tem (a mesma regra do servidor, rotaDaEdicao).
   const almoxFixo = almox !== null && trechosIniciais.some((t) => t.postos.includes(almox)) ? almox : null
-  // O trecho em que cada posto está gravado: a sf_ordem_regravar_postos o devolve sempre para lá.
-  const [gravado] = useState(() => trechoGravadoDosPostos(trechosIniciais))
+  // Os postos da rota gravada (posto de Burn-in novo ganha o tempo padrão).
+  const [gravados] = useState(() => postosGravados(trechosIniciais))
 
   const [trechos, setTrechos] = useState<TrechoCadastro[]>(trechosIniciais)
   const [cliente, setCliente] = useState(ordem.cliente)
@@ -106,7 +106,7 @@ export function EditarOpCliente({
     for (const p of rota) {
       if (perfilDo(p).recurso !== 'burnin') continue
       if (tempoBurnin[p] !== undefined) tempos[p] = minutosParaTempo(tempoBurnin[p]!)
-      else if (!(p in gravado)) tempos[p] = BURNIN_PADRAO
+      else if (!gravados.has(p)) tempos[p] = BURNIN_PADRAO
     }
     const fd = new FormData()
     fd.set('id', ordem.id)
@@ -124,6 +124,8 @@ export function EditarOpCliente({
     fd.set('componentes', JSON.stringify(receita))
     fd.set('tempo_burnin', JSON.stringify(tempos))
     fd.set('faixas', JSON.stringify(faixasDaPmo(trechos)))
+    // A edição por trecho (0194): rota, série e faixas de cada trecho, gravadas numa transação só.
+    fd.set('trechos', JSON.stringify(trechosParaGravar(trechos)))
     if (confirmarForaDaFaixa) fd.set('confirmar_fora_faixa', '1')
     return fd
   }
@@ -209,17 +211,17 @@ export function EditarOpCliente({
         <div>
           <h3 id={`${idBase}-rota`} className="text-sm font-semibold">Rota e faixas</h3>
           <p className="text-xs text-muted-foreground">
-            Na edição, cada posto continua no trecho em que foi gravado; posto novo entra no trecho da PMO. A série e as faixas
-            próprias das PRTs não mudam por aqui.
+            Use ← → nas pontas para passar um posto de um trecho para o vizinho. O que já andou não muda de dono: posto com
+            registros não troca de trecho, e uma PRT já bipada ou apontada no Compels não troca o posto final nem a série
+            (a faixa dela só pode crescer).
           </p>
         </div>
         <CorrenteTrechos trechos={trechos} almox={almoxFixo} idBase={idBase} qtd={qtd} nPainel={nPainel}
           mudarTrecho={mudarTrecho}
-          opcoesAdicionar={(t) => postosParaAdicionar(postos, trechos, gravado, t.seq, almox)}
-          snModoEditavel={false}
-          faixasEditaveis={(t) => t.tipo === 'pmo'}
+          moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almoxFixo))}
+          opcoesAdicionar={(t) => postosParaAdicionar(postos, trechos, t, almox)}
           situacao={(t) => <SituacaoPrt t={t} resumo={resumo} />}
-          avisoVazio="Nenhum posto neste trecho. Adicione um: o trecho não pode ficar vazio." />
+          avisoVazio="Nenhum posto neste trecho. Traga postos com ← → ou adicione um: o trecho não pode ficar vazio." />
       </section>
 
       <BarraFixa resumo={<ResumoRota trechos={trechos} />}>
