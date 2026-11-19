@@ -1,7 +1,8 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import { mapaPostoPerfil } from './postos-repository'
-import { postoPendenteDePeca, MANUTENCAO, type FluxoAgregado, type PassagemPosto, type BipePeca } from '../domain/fluxo-op'
+import { postoPendenteDePeca, terminouTrechoProprio, finsDeTrechosProprios, MANUTENCAO, type FluxoAgregado, type PassagemPosto, type BipePeca, type FimTrechoProprio } from '../domain/fluxo-op'
+import { perfilPrecisaAprovado, type PerfilPosto } from '../domain/perfil-posto'
 import { pareaBurnin, estaAberto, type RegistroBurnin } from '../domain/burnin'
 import { snsNaoIniciadosDasFaixas } from '../domain/grade'
 import { faixasDe, faixasDoBanco } from '../domain/faixas-sn'
@@ -20,6 +21,13 @@ export interface BurninDetalhe {
 }
 /** Peça embalada + a caixa em que está (nó Embalagem). */
 export interface EmbalagemCaixa { sn: string; caixa: string }
+
+/** Os trechos da OP como o embed `sf_ordem_trechos(tipo,sn_modo,posto_conclui)` devolve (vazio na OP sem trechos). */
+type TrechoRow = { tipo: string; sn_modo: string; posto_conclui: string }
+/** Fins de trecho PRT de série própria da OP (0196), com o gate do perfil de cada posto. */
+function finsDaOrdem(trechos: TrechoRow[] | null | undefined, perfis: Record<string, PerfilPosto>): FimTrechoProprio[] {
+  return finsDeTrechosProprios(trechos, (p) => (perfis[p] ? perfilPrecisaAprovado(perfis[p]) : false))
+}
 
 /** Todas as OPs (pra escolher no seletor do Fluxo). */
 export async function listarOrdens(): Promise<OpItem[]> {
@@ -52,7 +60,7 @@ export async function carregarFluxoOp(
 
   const { data: ordem, error: e1 } = await supabase
     .from('sf_ordens')
-    .select('qtd,embalagem_individual,sf_ordem_postos(posto,ordem)')
+    .select('qtd,embalagem_individual,sf_ordem_postos(posto,ordem),sf_ordem_trechos(tipo,sn_modo,posto_conclui)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
@@ -85,6 +93,9 @@ export async function carregarFluxoOp(
   // coluna a mais em milhares de linhas sem ninguém usar.
   const contarCaixas = postos.some((p) => (recurso[p] ?? 'nenhum') === 'almoxarifado') && !embalagemIndividual
 
+  // Placa de PRT com série própria que terminou o trecho: terminada para a OP (0196) — fora da fila e das iniciadas.
+  const fins = finsDaOrdem((ordem as { sf_ordem_trechos?: TrechoRow[] | null } | null)?.sf_ordem_trechos, perfis)
+
   // WIP de cada nó = "pendentes no posto" (a fila): peça aprovada avança pro próximo posto.
   const { pendentes, iniciadas, finalizadas, caixasPorPosto } = await contarPendentesPorPosto(
     pmo,
@@ -93,6 +104,7 @@ export async function carregarFluxoOp(
     (p) => exigeManutencao[p] ?? false,
     (p) => recurso[p] ?? 'nenhum',
     contarCaixas,
+    fins,
   )
   // Caixa de Entrada = placas que ainda não começaram (qtd, em placas − placas com algum registro). Só se a OP tem qtd.
   const naoIniciadas = qtd != null ? Math.max(0, qtd - iniciadas) : null
@@ -146,6 +158,8 @@ async function contarPendentesPorPosto(
   recurso: (p: string) => string,
   // `false` (o caso comum) nem pede a coluna numero_caixa: OP sem almoxarifado não paga por ela.
   contarCaixas = false,
+  // Fins de trecho PRT de série própria (0196): a placa que terminou o trecho não entra em conta nenhuma.
+  fins: FimTrechoProprio[] = [],
 ): Promise<{ pendentes: Record<string, number>; iniciadas: number; finalizadas: number; caixasPorPosto: Record<string, number> }> {
   const supabase = await createServerSupabase()
   const PAGINA = 1000
@@ -192,6 +206,8 @@ async function contarPendentesPorPosto(
   const concluidas: { numero_serie_norm: string; pecas: number }[] = []
   const todas: { numero_serie_norm: string; pecas: number }[] = []
   for (const [chave, regs] of porPeca) {
+    // Terminou o trecho da PRT de série própria: terminada para a OP — nem fila, nem iniciada, nem finalizada.
+    if (terminouTrechoProprio(regs, postos, fins)) continue
     const peca = { numero_serie_norm: chave, pecas: pecasDaPeca.get(chave) ?? 1 }
     todas.push(peca)
     const pend = postoPendenteDePeca(regs, postos, exige, recurso)
@@ -242,7 +258,7 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
   // ordem dos postos + flags do perfil (pra decidir a fila de cada peça)
   const { data: ordemRow, error: eo } = await supabase
     .from('sf_ordens')
-    .select('sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_faixas(seq,sn_ini,sn_fim)')
+    .select('sn_ini,sn_fim,sf_ordem_postos(posto,ordem),sf_ordem_faixas(seq,sn_ini,sn_fim),sf_ordem_trechos(tipo,sn_modo,posto_conclui)')
     .eq('pmo', pmo)
     .eq('op', op)
     .maybeSingle()
@@ -253,6 +269,7 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
   const perfis = await mapaPostoPerfil()
   const exige = (p: string) => perfis[p]?.exigeManutencao ?? false
   const recursoDe = (p: string) => perfis[p]?.recurso ?? 'nenhum'
+  const fins = finsDaOrdem((ordemRow as { sf_ordem_trechos?: TrechoRow[] | null } | null)?.sf_ordem_trechos, perfis)
 
   const PAGINA = 1000
   const linhas: { numero_serie: string; numero_serie_norm: string; status: string; posto: string; posto_retorno: string | null; data_hora: string; id: number }[] = []
@@ -282,6 +299,7 @@ export async function carregarDetalhePosto(pmo: string, op: string, posto: strin
   }
   const agora: SnDoPosto[] = []
   for (const { sn, regs } of porPeca.values()) {
+    if (terminouTrechoProprio(regs, postos, fins)) continue // terminou o trecho da PRT de série própria (0196)
     const pend = postoPendenteDePeca(regs, postos, exige, recursoDe)
     if (pend && pend.toLowerCase() === alvo) agora.push({ sn, status: '', vezes: 1 }) // pendente: sem resultado aqui ainda
   }
@@ -488,7 +506,7 @@ export async function rotaDoSn(pmo: string, op: string, snNorm: string): Promise
   // ordem dos postos + flags do perfil (mesma base do detalhe do posto)
   const { data: ordemRow, error: eo } = await supabase
     .from('sf_ordens')
-    .select('sf_ordem_postos(posto,ordem)')
+    .select('sf_ordem_postos(posto,ordem),sf_ordem_trechos(tipo,sn_modo,posto_conclui)')
     .eq('pmo', pmo).eq('op', op)
     .maybeSingle()
   if (eo) throw eo
@@ -521,7 +539,9 @@ export async function rotaDoSn(pmo: string, op: string, snNorm: string): Promise
     const k = l.posto.toLowerCase()
     if (!vistos.has(k)) { vistos.add(k); postos.push(canonizar(l.posto)) }
   }
-  const atualBruto = postoPendenteDePeca(bipes, postosOrd, exige, recursoDe)
+  // Terminou o trecho da PRT de série própria (0196): não aguarda em posto nenhum.
+  const fins = finsDaOrdem((ordemRow as { sf_ordem_trechos?: TrechoRow[] | null } | null)?.sf_ordem_trechos, perfis)
+  const atualBruto = terminouTrechoProprio(bipes, postosOrd, fins) ? null : postoPendenteDePeca(bipes, postosOrd, exige, recursoDe)
   const atual = atualBruto ? canonizar(atualBruto) : null // MANUTENCAO/postos → grafia canônica do canvas
   return { postos, atual }
 }

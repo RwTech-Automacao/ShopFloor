@@ -443,6 +443,17 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0193.sql
 docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0193.sql   # de novo: idempotente
 echo "0193 (peças paradas: desempenho): ok"
 
+# ---------- 0196: placa de PRT com série própria que terminou o trecho não fica parada ----------
+# O teste aplica a 0196 (\i) dentro da transação dele (foto da 0193, migração, regra) e desfaz a massa no fim.
+docker cp supabase/tests/parados_prt_fim_esquema.sql "$NOME":/tmp/esquema_prt_fim.sql
+docker cp supabase/migrations/0196_prt_fim_trecho_terminado.sql "$NOME":/tmp/0196.sql
+docker cp supabase/tests/parados_prt_fim_test.sql "$NOME":/tmp/teste_prt_fim.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/esquema_prt_fim.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_prt_fim.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0196.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0196.sql   # de novo: idempotente
+echo "0196 (PRT de série própria no fim do trecho): ok"
+
 # ---------- 0192 (entrada no SAT vira regra dos Alertas) ----------
 # As migrações do SAT (0186, 0187, 0190) entram aqui, na mesma base: a 0192 lê o histórico da nota (sat_historico)
 # e o teste registra/corrige/troca NF pelas funções de verdade. O _stubs.sql já tem usuarios/tem_permissao/sf_*;

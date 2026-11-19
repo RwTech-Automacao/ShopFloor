@@ -6,6 +6,8 @@
 # Também PROVA que a migração nova devolve EXATAMENTE as mesmas linhas que a 0188 na massa (alerta_travados_sns em
 # vários cortes/filtros e sf_pecas_paradas nas três situações), e mede como a tela chama: role authenticated, com a
 # permissão no `teste.perms`, e a paginação de 1000 em 1000 do PostgREST (cada página roda a função de novo).
+#   PARADOS_ANTES=supabase/migrations/0193_parados_desempenho.sql PARADOS_MIGRACAO=supabase/migrations/0196_....sql
+#     → o "antes" passa a ser 0188/0180 + PARADOS_ANTES (ex.: a 0193 vigente), e a prova compara a nova com ela.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 NOVA="${PARADOS_MIGRACAO:-supabase/migrations/0193_parados_desempenho.sql}"
@@ -17,7 +19,7 @@ trap 'docker rm -f "$NOME" >/dev/null 2>&1 || true; rm -rf "$TMPD"' EXIT
 for _ in $(seq 1 30); do docker exec "$NOME" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
 sleep 1
 psqlx() { docker exec -i "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
-for F in _stubs alertas_travados_esquema alertas_ficha_esquema parados_posto_pendente_esquema alertas_travados_massa parados_medir_massa; do
+for F in _stubs alertas_travados_esquema alertas_ficha_esquema parados_posto_pendente_esquema parados_prt_fim_esquema alertas_travados_massa parados_medir_massa; do
   docker cp "supabase/tests/$F.sql" "$NOME":/tmp/$F.sql
 done
 docker cp supabase/migrations/0188_parados_caixa_aberta_fora_rota.sql "$NOME":/tmp/0188.sql
@@ -26,6 +28,7 @@ psqlx -f /tmp/_stubs.sql
 psqlx -f /tmp/alertas_travados_esquema.sql
 psqlx -f /tmp/alertas_ficha_esquema.sql
 psqlx -f /tmp/parados_posto_pendente_esquema.sql
+psqlx -f /tmp/parados_prt_fim_esquema.sql   # trechos da OP + gate do perfil (0196); vazios, não mudam a 0188/0193
 # Os índices de PRODUÇÃO que tocam o caminho (0028, 0058, 0091, 0095, 0100, 0160); o esquema mínimo só tem parte.
 psqlx -c "create index if not exists sf_registros_sn_norm on public.sf_registros (numero_serie_norm)" \
       -c "create index if not exists sf_registros_data_hora on public.sf_registros (data_hora desc)" \
@@ -34,6 +37,10 @@ psqlx -c "create index if not exists sf_registros_sn_norm on public.sf_registros
       -c "create unique index if not exists sf_caixas_pmo_op_posto_seq_revisao_key on public.sf_caixas (pmo, op, posto, seq, revisao)"
 psqlx -1 -f /tmp/0188.sql
 psqlx -1 -f /tmp/0180.sql
+if [ -n "${PARADOS_ANTES:-}" ]; then
+  docker cp "$PARADOS_ANTES" "$NOME":/tmp/antes.sql
+  psqlx -1 -f /tmp/antes.sql
+fi
 # PECAS = peças por OP (padrão 1000 = ~850 mil registros, 8x produção; PECAS=150 ≈ o volume de produção).
 docker exec "$NOME" sed -i "s/generate_series(1, 1000) s/generate_series(1, ${PECAS:-1000}) s/" /tmp/alertas_travados_massa.sql
 psqlx -f /tmp/alertas_travados_massa.sql
@@ -125,7 +132,7 @@ select '   linhas tela: ativas=' || (select count(*) from public.sf_pecas_parada
 SQL
 }
 
-echo "######## ANTES (0188 + 0180)"
+echo "######## ANTES (0188 + 0180${PARADOS_ANTES:+ + $PARADOS_ANTES})"
 medir "antes"
 plano() {
   [ "${PLANO:-}" = "1" ] || return 0

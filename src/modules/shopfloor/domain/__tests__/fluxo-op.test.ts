@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { construirFluxo, numerarPassagens, postoPendenteDePeca, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca, faixaDoRotulo, ordenarOpsPorBipes } from '../fluxo-op'
+import { construirFluxo, numerarPassagens, postoPendenteDePeca, terminouTrechoProprio, finsDeTrechosProprios, formatarRelogio, MANUTENCAO, ENTRADA, SAIDA, type FluxoAgregado, type RegistroPassagem, type BipePeca, faixaDoRotulo, ordenarOpsPorBipes } from '../fluxo-op'
 
 const zero = (posto: string): FluxoAgregado => ({ posto, wip: 0, registros: 0, aprovadas: 0, reprovadas: 0, retestes: 0, aprovadosPrimeira: 0, reprovadosSemReteste: 0 })
 
@@ -455,5 +455,48 @@ describe('ordenarOpsPorBipes', () => {
 
   it('sem nenhum bipe, a ordem original fica igual', () => {
     expect(ordenarOpsPorBipes(lista, {}).map((o) => o.op)).toEqual(['1', '2', '3', '4'])
+  })
+})
+
+describe('terminouTrechoProprio / finsDeTrechosProprios (0196)', () => {
+  const postos = ['SPI', 'AOI', 'Montagem', 'Teste']
+  const fins = [
+    { posto: 'AOI', precisaAprovado: true },
+    { posto: 'Montagem', precisaAprovado: false },
+  ]
+  const b = (posto: string, status = '', postoRetorno?: string): BipePeca => ({ posto, status, postoRetorno })
+
+  it('aprovada no fim do trecho que exige Aprovado: terminou', () => {
+    expect(terminouTrechoProprio([b('SPI', 'Aprovado'), b('AOI', 'Aprovado')], postos, fins)).toBe(true)
+  })
+  it('reprovada no fim, ou sem Aprovado num posto que exige: não terminou', () => {
+    expect(terminouTrechoProprio([b('SPI', 'Aprovado'), b('AOI', 'Reprovado')], postos, fins)).toBe(false)
+    expect(terminouTrechoProprio([b('SPI', 'Aprovado'), b('AOI', '')], postos, fins)).toBe(false)
+  })
+  it('reprovou e foi aprovada no fim: vale o último registro', () => {
+    expect(terminouTrechoProprio([b('AOI', 'Reprovado'), b('Manutenção'), b('AOI', 'Aprovado')], postos, fins)).toBe(true)
+  })
+  it('fim de trecho em posto de passagem: registro sem status basta', () => {
+    expect(terminouTrechoProprio([b('Montagem')], postos, fins)).toBe(true)
+  })
+  it('no meio do trecho, em Manutenção ou com posto de retorno: não terminou', () => {
+    expect(terminouTrechoProprio([b('SPI', 'Aprovado')], postos, fins)).toBe(false)
+    expect(terminouTrechoProprio([b('AOI', 'Reprovado'), b('Manutenção')], postos, fins)).toBe(false)
+    expect(terminouTrechoProprio([b('AOI', 'Aprovado', 'Teste,NQA')], postos, fins)).toBe(false)
+  })
+  it('bipe fora da rota depois do fim do trecho não conta (a placa integrada noutra OP)', () => {
+    expect(terminouTrechoProprio([b('AOI', 'Aprovado'), b('Integração', 'Aprovado')], postos, fins)).toBe(true)
+  })
+  it('sem fins (OP sem trechos ou PRT de série "mesmo"): nunca', () => {
+    expect(terminouTrechoProprio([b('AOI', 'Aprovado')], postos, [])).toBe(false)
+  })
+  it('finsDeTrechosProprios: só PRT de série própria, com o gate do posto', () => {
+    const trechos = [
+      { tipo: 'prt', sn_modo: 'proprio', posto_conclui: 'AOI' },
+      { tipo: 'prt', sn_modo: 'mesmo', posto_conclui: 'Montagem' },
+      { tipo: 'pmo', sn_modo: 'mesmo', posto_conclui: 'Teste' },
+    ]
+    expect(finsDeTrechosProprios(trechos, (p) => p === 'AOI')).toEqual([{ posto: 'AOI', precisaAprovado: true }])
+    expect(finsDeTrechosProprios(null, () => true)).toEqual([])
   })
 })

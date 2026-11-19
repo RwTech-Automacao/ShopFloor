@@ -266,6 +266,50 @@ export function postoPendenteDePeca(
 }
 
 /**
+ * O último posto de um trecho PRT de série PRÓPRIA (0184: `sf_ordem_trechos.posto_conclui` com tipo 'prt' e
+ * sn_modo 'proprio') e se ele exige Aprovado (gate do perfil, `perfilPrecisaAprovado`).
+ */
+export interface FimTrechoProprio { posto: string; precisaAprovado: boolean }
+
+/** Os fins de trecho que contam para `terminouTrechoProprio`: só PRT de série própria. OP sem trechos → []. */
+export function finsDeTrechosProprios(
+  trechos: { tipo: string; sn_modo: string; posto_conclui: string }[] | null | undefined,
+  precisaAprovado: (posto: string) => boolean,
+): FimTrechoProprio[] {
+  return (trechos ?? [])
+    .filter((t) => t.tipo === 'prt' && t.sn_modo === 'proprio' && t.posto_conclui)
+    .map((t) => ({ posto: t.posto_conclui, precisaAprovado: precisaAprovado(t.posto_conclui) }))
+}
+
+/**
+ * A placa de PRT com série própria TERMINOU o trecho dela → está terminada para a OP: não fica pendente em posto
+ * nenhum, não conta no WIP nem nas iniciadas (mesma regra da 0196 nas Peças paradas). Puro.
+ * O último registro é o mesmo que `postoPendenteDePeca` usa (só postos da OP + Manutenção); ele tem que estar no
+ * fim de um trecho PRT de série própria, sem `postoRetorno`, e ser Aprovado se o posto exige Aprovado (senão, não
+ * ser reprovação). PRT de série 'mesmo' e OP sem trechos: `fins` vazio → sempre false.
+ */
+export function terminouTrechoProprio(
+  registrosCrono: BipePeca[],
+  postosOrdenados: string[],
+  fins: FimTrechoProprio[],
+): boolean {
+  if (fins.length === 0) return false
+  const doFluxo = new Set(postosOrdenados.map((p) => p.toLowerCase()))
+  const manut = MANUTENCAO.toLowerCase()
+  let ultimo: BipePeca | undefined
+  for (let i = registrosCrono.length - 1; i >= 0; i--) {
+    const p = registrosCrono[i]!.posto.toLowerCase()
+    if (doFluxo.has(p) || p === manut) { ultimo = registrosCrono[i]; break }
+  }
+  if (!ultimo) return false
+  if (ultimo.postoRetorno && ultimo.postoRetorno.trim() !== '') return false
+  const fim = fins.find((f) => f.posto.toLowerCase() === ultimo!.posto.toLowerCase())
+  if (!fim) return false
+  const st = ultimo.status.trim().toLowerCase()
+  return fim.precisaAprovado ? st === 'aprovado' : st !== 'reprovado'
+}
+
+/**
  * O ÚLTIMO posto da rota é o Almoxarifado (perfil de recurso `almoxarifado`)? Decide pelo perfil, nunca
  * pelo nome do posto. Almoxarifado no meio da rota, lista vazia ou recurso desconhecido: false.
  */
