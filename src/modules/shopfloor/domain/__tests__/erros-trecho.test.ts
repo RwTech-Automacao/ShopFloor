@@ -20,6 +20,11 @@ describe('mensagemErroDeTrecho', () => {
     expect(mensagemErroDeTrecho({ message: 'ALMOXARIFADO_FORA_DO_FIM' })).toBe('O Almoxarifado tem que ser o último posto do trecho da PMO.')
     expect(mensagemErroDeTrecho({ message: 'TRECHOS_DIFERENTES' })).toMatch(/^Os trechos da tela não batem/)
     expect(mensagemErroDeTrecho({ message: 'OP_SEM_TRECHOS' })).toBe('Esta OP não tem trechos do Compels.')
+    expect(mensagemErroDeTrecho({ message: 'ALMOXARIFADO_REPETIDO' })).toBe('A rota só pode ter um posto de Almoxarifado.')
+    expect(mensagemErroDeTrecho({ message: 'CLIENTE_VAZIO' })).toBe('Informe o cliente.')
+    expect(mensagemErroDeTrecho({ message: 'QTD_INVALIDA' })).toMatch(/^A quantidade tem que ser/)
+    expect(mensagemErroDeTrecho({ message: 'PLACAS_INVALIDAS' })).toMatch(/^Placas por painel tem que ser/)
+    expect(mensagemErroDeTrecho({ message: 'PLACAS_COM_REGISTROS' })).toMatch(/^Esta OP já tem registros/)
   })
   it('o resto não é erro de trecho', () => {
     expect(mensagemErroDeTrecho({ code: '23505', message: 'duplicate' })).toBeNull()

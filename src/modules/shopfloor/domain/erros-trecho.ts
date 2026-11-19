@@ -12,6 +12,11 @@ export function mensagemErroDeTrecho(e: unknown): string | null {
   if (msg === 'OP_SEM_TRECHOS') return 'Esta OP não tem trechos do Compels.'
   if (msg === 'OP_INEXISTENTE') return 'OP não encontrada.'
   if (msg === 'ALMOXARIFADO_FORA_DO_FIM') return 'O Almoxarifado tem que ser o último posto do trecho da PMO.'
+  if (msg === 'ALMOXARIFADO_REPETIDO') return 'A rota só pode ter um posto de Almoxarifado.'
+  if (msg === 'CLIENTE_VAZIO') return 'Informe o cliente.'
+  if (msg === 'QTD_INVALIDA') return 'A quantidade tem que ser um número inteiro, sem sinal.'
+  if (msg === 'PLACAS_INVALIDAS') return 'Placas por painel tem que ser um número inteiro maior que zero.'
+  if (msg === 'PLACAS_COM_REGISTROS') return 'Esta OP já tem registros: placas por painel não pode mais mudar. Recarregue a página.'
   const m = /^(TRECHO_SEM_POSTO|POSTO_REPETIDO|TRECHO_SEM_FAIXA|SN_MODO_INVALIDO|FAIXA_INVALIDA|FAIXA_SOBREPOSTA|POSTO_COM_REGISTROS|PRT_COM_HISTORICO|PRT_FAIXA_COM_HISTORICO):(.+)$/.exec(msg)
   if (m?.[1] === 'TRECHO_SEM_POSTO') return `O trecho ${m[2]} ficaria sem posto.`
   if (m?.[1] === 'POSTO_REPETIDO') return `O posto "${m[2]}" está em mais de um trecho.`
