@@ -65,4 +65,20 @@ describe('cadeia de PRTs na lista nova', () => {
     expect(screen.getAllByRole('button', { name: /PRTs da OP/ })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: /OP 8400/ })).toBeNull()
   })
+  it('busca só com números olha só o número da OP e das PRTs, não a descrição', () => {
+    const comDescricao = { ...view('c', '9400'), descricao: 'PLACA PMOC14 (referência da rota 8498)' }
+    render(<OrdensLista cadeiaPrt {...{ ...props, views: [view('a', '8498', cadeia), view('b', '8400'), comDescricao] }} />)
+    buscar('8498')
+    expect(screen.getByText(/Mostrando 1 de 3/)).toBeTruthy()
+    buscar('410')
+    expect(screen.getByText(/Mostrando 0 de 3/)).toBeTruthy()
+    buscar('rota 8498')
+    expect(screen.getByText(/Mostrando 1 de 3/)).toBeTruthy()
+  })
+  it('a lista antiga segue buscando na descrição também com números', () => {
+    const comDescricao = { ...view('c', '9400'), descricao: 'referência da rota 8498' }
+    render(<OrdensLista {...{ ...props, views: [view('a', '8498', cadeia), comDescricao] }} />)
+    buscar('8498')
+    expect(screen.getByText(/Mostrando 2 de 2/)).toBeTruthy()
+  })
 })
