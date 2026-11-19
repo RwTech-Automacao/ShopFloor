@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Pencil, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Plus } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,9 +16,17 @@ import { FluxoBotao } from './fluxo-botao'
 
 const TODOS = '__todos__'
 
+type Prt = NonNullable<OrdemView['prts']>[number]
+
+/** A PRT casa com a busca pelo código ou pelo número da OP dela no Compels. */
+function prtCasa(p: Prt, q: string): boolean {
+  return q !== '' && (p.codigo.toLowerCase().includes(q) || (p.compelsOp ?? '').toLowerCase().includes(q))
+}
+
 export function OrdensLista({
   novaOpHref,
   editarTrechosBase,
+  cadeiaPrt,
   views,
   chavesPostos,
   postosPerfil,
@@ -31,6 +39,8 @@ export function OrdensLista({
   novaOpHref?: string
   /** Base da página de edição de OP com trechos (`<base>/<id>`); sem ela, toda OP edita no modal. */
   editarTrechosBase?: string
+  /** Lista nova: a busca também casa com a OP no Compels e o código das PRTs, e a OP com PRTs mostra a cadeia (seta). */
+  cadeiaPrt?: boolean
   views: OrdemView[]
   chavesPostos: string[]
   postosPerfil: Record<string, PerfilPosto>
@@ -42,6 +52,8 @@ export function OrdensLista({
   const [cliente, setCliente] = useState(TODOS)
   const [status, setStatus] = useState(TODOS)
   const [busca, setBusca] = useState('')
+  // abre/fecha manual da cadeia, por OP; zera quando a busca muda (aí vale a abertura automática)
+  const [manual, setManual] = useState<Record<string, boolean>>({})
 
   const clientes = useMemo(() => [...new Set(views.map((v) => v.cliente))].sort(), [views])
 
@@ -52,10 +64,13 @@ export function OrdensLista({
       const finalizada = v.status.toUpperCase() === 'FINALIZADA'
       if (status === 'ATIVA' && finalizada) return false
       if (status === 'FINALIZADA' && !finalizada) return false
-      if (q !== '' && !`${v.pmo} ${v.op} ${v.descricao}`.toLowerCase().includes(q)) return false
+      if (q !== '' && !`${v.pmo} ${v.op} ${v.descricao}`.toLowerCase().includes(q)) {
+        if (!(cadeiaPrt && (v.prts ?? []).some((p) => prtCasa(p, q)))) return false
+      }
       return true
     })
-  }, [views, cliente, status, busca])
+  }, [views, cliente, status, busca, cadeiaPrt])
+  const q = busca.trim().toLowerCase()
 
   return (
     <div className="flex flex-col gap-3">
@@ -97,7 +112,7 @@ export function OrdensLista({
           <Input
             id="buscaOp"
             value={busca}
-            onChange={(e) => setBusca(e.target.value)}
+            onChange={(e) => { setBusca(e.target.value); setManual({}) }}
             placeholder="PMO, OP ou descrição…"
             autoComplete="off"
           />
@@ -122,10 +137,42 @@ export function OrdensLista({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtradas.map((o) => (
+            {filtradas.map((o) => {
+              const prts = cadeiaPrt ? (o.prts ?? []) : []
+              const aberta = manual[o.id] ?? prts.some((p) => prtCasa(p, q))
+              return (
               <TableRow key={o.id}>
                 <TableCell className="font-medium">{o.pmo}</TableCell>
-                <TableCell>{o.op}</TableCell>
+                <TableCell>
+                  {prts.length > 0 ? (
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-expanded={aberta}
+                          aria-label={`${aberta ? 'Esconder' : 'Mostrar'} PRTs da OP ${o.op}`}
+                          onClick={() => setManual((m) => ({ ...m, [o.id]: !aberta }))}
+                          className="inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+                        >
+                          {aberta ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                        </button>
+                        <span>{o.op}</span>
+                        {!aberta && <span className="text-xs text-muted-foreground">{`+${prts.length} PRT${prts.length === 1 ? '' : 's'}`}</span>}
+                      </div>
+                      {aberta && (
+                        <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                          {prts.map((p, i) => (
+                            <li key={`${p.codigo}-${i}`} data-testid="linha-prt" style={{ paddingLeft: `${(i + 1) * 0.75}rem` }}
+                                className={prtCasa(p, q) ? 'font-semibold text-primary' : undefined}>
+                              <span aria-hidden className="text-muted-foreground/60">└</span>{' '}
+                              <span>{p.compelsOp ?? 'sem OP no Compels'}</span>{'  '}<span>{p.codigo}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : o.op}
+                </TableCell>
                 <TableCell>{o.cliente}</TableCell>
                 <TableCell className="max-w-[240px] truncate">{o.descricao || '—'}</TableCell>
                 <TableCell>{o.status.toUpperCase() === 'FINALIZADA' ? 'Finalizada' : 'Ativa'}</TableCell>
@@ -145,7 +192,8 @@ export function OrdensLista({
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+              )
+            })}
             {filtradas.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
