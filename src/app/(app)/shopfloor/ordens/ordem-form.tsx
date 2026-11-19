@@ -53,6 +53,8 @@ export interface OrdemView {
   tempoBurninPorPosto: TempoBurninPorPosto
   /** OP com trechos do Compels (0184): na lista nova, edita na página própria em vez do modal. */
   temTrechos?: boolean
+  /** PRTs da OP na ordem da cadeia (da mãe para as filhas), só na lista nova: código e OP no Compels. */
+  prts?: { codigo: string; compelsOp: string | null }[]
 }
 
 export interface PadraoFluxo {

@@ -9,5 +9,5 @@ export default async function OrdensNovaPage() {
   if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar') || !novaOpLiberada(sessao.email)) {
     return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
   }
-  return <OrdensConteudo novaOpHref="/shopfloor/ordens/nova" editarTrechosBase="/shopfloor/ordens-nova" />
+  return <OrdensConteudo novaOpHref="/shopfloor/ordens/nova" editarTrechosBase="/shopfloor/ordens-nova" cadeiaPrt />
 }

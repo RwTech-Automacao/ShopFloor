@@ -31,7 +31,7 @@ export interface OrdemRow {
   /** Faixas de SN (0181); ausente/vazio = só sn_ini/sn_fim. trecho_seq (0184): de qual trecho é a faixa. */
   sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string; trecho_seq?: number | null }[] | null
   /** Trechos do Compels (0184); vazio = OP antiga. */
-  sf_ordem_trechos?: { seq: number; tipo: string }[] | null
+  sf_ordem_trechos?: { seq: number; tipo: string; codigo?: string; compels_op?: string | null }[] | null
 }
 
 export interface DadosOrdem {
@@ -68,7 +68,7 @@ export async function listarOrdens(): Promise<OrdemRow[]> {
   const supabase = await createServerSupabase()
   const { data, error } = await supabase
     .from('sf_ordens')
-    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,placas_por_painel,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),sf_ordem_faixas(seq,sn_ini,sn_fim,trecho_seq),sf_ordem_trechos(seq,tipo)')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,placas_por_painel,created_at,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),sf_ordem_faixas(seq,sn_ini,sn_fim,trecho_seq),sf_ordem_trechos(seq,tipo,codigo,compels_op)')
     .order('pmo')
     .order('op')
   if (error) throw error

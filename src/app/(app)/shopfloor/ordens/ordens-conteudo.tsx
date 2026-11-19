@@ -7,11 +7,19 @@ import { faixasDaPmoDoBanco } from '@/modules/shopfloor/domain/faixas-sn'
 import type { OrdemView } from './ordem-form'
 import { OrdensLista } from './ordens-lista'
 
+/** PRTs da OP da mãe para as filhas: o trecho de maior seq vem primeiro (a PMO é o último trecho e fica de fora). */
+function prtsDaCadeia(trechos: { seq: number; tipo: string; codigo?: string; compels_op?: string | null }[] | null | undefined) {
+  return (trechos ?? [])
+    .filter((t) => t.tipo === 'prt')
+    .sort((a, b) => b.seq - a.seq)
+    .map((t) => ({ codigo: t.codigo ?? '', compelsOp: t.compels_op ?? null }))
+}
+
 /**
  * Lista de OPs compartilhada entre /shopfloor/ordens (cadastro antigo) e /shopfloor/ordens-nova (botão para a tela nova
  * e, com `editarTrechosBase`, a OP com trechos editada em `${editarTrechosBase}/<id>`). A permissão é checada por quem chama.
  */
-export async function OrdensConteudo({ novaOpHref, editarTrechosBase }: { novaOpHref?: string; editarTrechosBase?: string }) {
+export async function OrdensConteudo({ novaOpHref, editarTrechosBase, cadeiaPrt }: { novaOpHref?: string; editarTrechosBase?: string; cadeiaPrt?: boolean }) {
   const [ordens, postos, padroes, postosPerfil] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil()])
   const chavesPostos = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const views: OrdemView[] = ordens.map((o) => ({
@@ -32,6 +40,7 @@ export async function OrdensConteudo({ novaOpHref, editarTrechosBase }: { novaOp
     receitaPorPosto: agruparReceitaPorPosto(o.sf_ordem_componentes),
     tempoBurninPorPosto: agruparTempoBurninPorPosto(o.sf_ordem_burnin),
     temTrechos: (o.sf_ordem_trechos?.length ?? 0) > 0,
+    ...(cadeiaPrt ? { prts: prtsDaCadeia(o.sf_ordem_trechos) } : {}),
   }))
   const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
   const clientesExistentes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()
@@ -53,7 +62,7 @@ export async function OrdensConteudo({ novaOpHref, editarTrechosBase }: { novaOp
         <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
       </div>
 
-      <OrdensLista novaOpHref={novaOpHref} editarTrechosBase={editarTrechosBase} views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+      <OrdensLista cadeiaPrt={cadeiaPrt} novaOpHref={novaOpHref} editarTrechosBase={editarTrechosBase} views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
     </div>
   )
 }
