@@ -21,6 +21,7 @@ import { ReceitasDosPostos, TempoBurninCampo } from '../editores-posto'
 import { erroTempoBurnin, receitaDaRota, rotaDosTrechos, temposDaRota } from '@/modules/shopfloor/domain/edicao-op-trechos'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '@/modules/shopfloor/domain/burnin-posto'
 import { receitaParaLinhas } from '@/modules/shopfloor/domain/receita-posto'
+import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, prtsDeMesmaSerie, prtsDeSeriePropria } from '@/modules/shopfloor/domain/receita-prt'
 import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
 
 const TOAST = { position: 'bottom-center' as const }
@@ -112,6 +113,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   const [embalagemIndividual, setEmbalagemIndividual] = useState(false)
   // Receita da Integração e tempo de Burn-in por posto: começam com os da última OP da PMO e se editam na rota
   const [receita, setReceita] = useState<Record<string, string[]>>({})
+  // 0195: as PRTs que a tela já viu nesta PMO (as da última OP e as das OPs escolhidas): a que sai da estrutura sai da receita
+  const [prtsVistas, setPrtsVistas] = useState<string[]>([])
   const [tempos, setTempos] = useState<Record<string, string>>({})
   const ehIntegracao = (p: string) => (postosPerfil[p] ?? PERFIL_PADRAO).recurso === 'integracao'
   const ehBurnin = (p: string) => (postosPerfil[p] ?? PERFIL_PADRAO).recurso === 'burnin'
@@ -177,6 +180,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     setPlacasPorPainel(String(ultima?.placasPorPainel ?? 1)); setEmbalagemIndividual(ultima?.embalagemIndividual ?? false)
     setOp(''); setQtd(''); setAcp('')
     setReceita(receitaDasLinhas(ultima?.componentes ?? []))
+    setPrtsVistas([...new Set((ultima?.postos ?? []).map((p) => p.trechoCodigo?.trim() ?? '').filter((c) => c !== '' && c !== codigo.trim()))])
     setTempos(Object.fromEntries((ultima?.burnin ?? []).map((b) => [b.posto, minutosParaTempo(b.tempo_min)])))
     if (m === 'manual') setTrechos(distribuirPostos([trechoManual(codigo)], ultima?.postos ?? [], almox))
   }
@@ -189,7 +193,9 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     setOp(String(o.numero)); setQtd(String(o.quantidade))
     // cliente e descrição vêm sempre do Compels (padronizar); o resto continua copiado da última OP
     setCliente(o.cliente); setDescricao(o.descricao)
-    setTrechos(distribuirPostos(trechosDoEspelho(o, espelho), anterior?.postos ?? [], almox))
+    const novos = distribuirPostos(trechosDoEspelho(o, espelho), anterior?.postos ?? [], almox)
+    setTrechos(novos)
+    setPrtsVistas((v) => [...new Set([...v, ...codigosPrt(novos)])])
   }
 
   const mudarTrecho = (seq: number, f: (t: TrechoCadastro) => TrechoCadastro) =>
@@ -201,17 +207,22 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     // a mesma conferência do servidor (lerBurnin): o tempo tem que ser hhh:mm
     const tb = parseTempoBurninPorPosto(JSON.stringify(temposDaRota(rota, tempos, ehBurnin)), rota.filter(ehBurnin))
     if (!tb.ok) { toast.error(erroTempoBurnin(tb.posto), TOAST); return }
+    // 0195: a PRT que perdeu a série própria ou saiu da estrutura sai da receita gravada (o banco a recusaria). A tela
+    // só muda, com o aviso, quando o cadastro acontece de fato.
+    const limpa = limparReceitaPrt(receita, trechos, prtsVistas, pmosExistentes)
+    const aviso = avisoReceitaPrtLimpa(limpa.removidas)
     const c: CadastroOp = {
       modo, pmo, op: op.trim(), cliente: cliente.trim(), descricao: descricao.trim(),
       qtd: qtd.trim() === '' || Number.isNaN(Number(qtd)) ? null : Number(qtd), acp: acp.trim(),
       embalagemIndividual, placasPorPainel: Number(placasPorPainel), trechos,
-      componentes: receitaParaLinhas(receitaDaRota(rota, receita, ehIntegracao)), burnin: temposParaLinhas(tb.tempos),
+      componentes: receitaParaLinhas(receitaDaRota(rota, limpa.receita, ehIntegracao)), burnin: temposParaLinhas(tb.tempos),
     }
     const v = validarCadastro(c)
     if (!v.ok) { toast.error(v.erro, TOAST); return }
     startSalvar(async () => {
       const r = await cadastrarOpAction(c)
       if (!r.ok) { toast.error(r.erro, TOAST); return }
+      if (aviso) { setReceita(limpa.receita); toast.warning(aviso, TOAST) }
       toast.success('OP criada', { ...TOAST, description: `${r.pmo}/${r.op}` })
       router.push('/shopfloor/ordens-nova')
     })
@@ -407,7 +418,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
             }}
             rodapeTrecho={(t) => (
               <ReceitasDosPostos postos={t.postos} ehIntegracao={ehIntegracao} receita={receita} setReceita={setReceita}
-                pmosExistentes={pmosExistentes} pmoDaOp={pmo ?? ''} />
+                pmosExistentes={pmosExistentes} pmoDaOp={pmo ?? ''} prtsDaOp={prtsDeSeriePropria(trechos)}
+                prtsMesmaSerie={prtsDeMesmaSerie(trechos)} />
             )}
             moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almox))} />
         )}

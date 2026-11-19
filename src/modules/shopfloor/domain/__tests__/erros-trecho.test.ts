@@ -26,6 +26,10 @@ describe('mensagemErroDeTrecho', () => {
     expect(mensagemErroDeTrecho({ message: 'PLACAS_INVALIDAS' })).toMatch(/^Placas por painel tem que ser/)
     expect(mensagemErroDeTrecho({ message: 'PLACAS_COM_REGISTROS' })).toMatch(/^Esta OP já tem registros/)
   })
+  it('traduz a recusa de PRT na receita (0195)', () => {
+    expect(mensagemErroDeTrecho({ message: 'RECEITA_PRT_INVALIDA:PRT420' }))
+      .toBe('PRT420 não pode estar na receita da Integração: só entra PRT desta OP com série própria.')
+  })
   it('o resto não é erro de trecho', () => {
     expect(mensagemErroDeTrecho({ code: '23505', message: 'duplicate' })).toBeNull()
     expect(mensagemErroDeTrecho(new Error('rede'))).toBeNull()

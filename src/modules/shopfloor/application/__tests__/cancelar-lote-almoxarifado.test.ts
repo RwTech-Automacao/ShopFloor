@@ -32,6 +32,7 @@ function mocks(o: Opcoes = {}) {
   vi.doMock('@/modules/shopfloor/infra/cancelamento-repository', () => ({
     lerRegistroParaCancelar: async () => (o.registro === undefined ? LINHA_DE_LOTE : o.registro),
     ehUltimoBipe: async () => true,
+    placaIntegradaAtiva: async () => null,
     chamarSfCancelar,
     chamarSfCancelarCaixa: async () => ({ ok: true, canceladas: 0 }),
     contarPecasDaEntradaDeCaixa: async () => 0,

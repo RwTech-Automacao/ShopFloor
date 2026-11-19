@@ -42,3 +42,17 @@ export function ehEntradaDeLoteAlmoxarifado(
 ): boolean {
   return (recurso ?? '').trim() === 'almoxarifado' && (envioId ?? '').trim() !== ''
 }
+
+/**
+ * 0195: a placa que está numa integração ATIVA não tem bipe cancelável (a sf_cancelar_lancamento recusa com
+ * PLACA_INTEGRADA:<placa>|<produto>|<código>). Desfaz-se a integração antes.
+ */
+export function mensagemPlacaIntegrada(placa: string, produto: string, codigo: string): string {
+  return `A placa ${placa} está integrada no produto ${produto} (${codigo}). Desfaça a integração antes.`
+}
+
+/** Lê o PLACA_INTEGRADA da mensagem do banco; null se não for ele. */
+export function placaIntegradaDoErro(msg: string): { placa: string; produto: string; codigo: string } | null {
+  const m = /PLACA_INTEGRADA:([^|]*)\|([^|]*)\|([^\s]*)/.exec(msg)
+  return m ? { placa: m[1]!, produto: m[2]!, codigo: m[3]! } : null
+}

@@ -21,6 +21,7 @@ import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perf
 import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
 import type { ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
+import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, prtsDeMesmaSerie, prtsDeSeriePropria } from '@/modules/shopfloor/domain/receita-prt'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import type { ResumoTrecho } from '@/modules/shopfloor/infra/estrutura-repository'
 import { BarraFixa, CamposQuantidade, CorrenteTrechos, ResumoRota, nPainelDe, paineisFecham, plural } from '../../ordens/corrente-trechos'
@@ -110,7 +111,7 @@ export function EditarOpCliente({
   const mudarTrecho = (seq: number, f: (t: TrechoCadastro) => TrechoCadastro) =>
     setTrechos((ts) => fixarAlmoxarifado(ts.map((t) => (t.seq === seq ? f(t) : t)), almoxFixo))
 
-  function formulario(confirmarForaDaFaixa: boolean): FormData {
+  function formulario(confirmarForaDaFaixa: boolean, receitaGravar: ReceitaPorPosto): FormData {
     const rota = rotaDosTrechos(trechos)
     const fd = new FormData()
     fd.set('id', ordem.id)
@@ -125,7 +126,7 @@ export function EditarOpCliente({
     if (embalagemIndividual) fd.set('embalagem_individual', 'on')
     fd.set('placas_por_painel', temRegistros ? String(ordem.placasPorPainel) : placasPorPainel.trim())
     fd.set('fluxo', JSON.stringify(rota))
-    fd.set('componentes', JSON.stringify(receitaDaRota(rota, receita, ehIntegracao)))
+    fd.set('componentes', JSON.stringify(receitaDaRota(rota, receitaGravar, ehIntegracao)))
     fd.set('tempo_burnin', JSON.stringify(temposDaRota(rota, tempos, ehBurnin)))
     fd.set('faixas', JSON.stringify(faixasDaPmo(trechos)))
     // A edição por trecho (0194): rota, série e faixas de cada trecho, gravadas numa transação só.
@@ -145,14 +146,19 @@ export function EditarOpCliente({
     const rota = rotaDosTrechos(trechos)
     const t = parseTempoBurninPorPosto(JSON.stringify(temposDaRota(rota, tempos, ehBurnin)), rota.filter(ehBurnin))
     if (!t.ok) { toast.error(erroTempoBurnin(t.posto), TOAST); return }
+    // 0195: a PRT que perdeu a série própria sai da receita gravada (o banco a recusaria). A tela só muda, com o
+    // aviso, quando o salvamento acontece de fato.
+    const limpa = limparReceitaPrt(receita, trechos, codigosPrt(trechosIniciais), pmosExistentes)
+    const aviso = avisoReceitaPrtLimpa(limpa.removidas)
     startSalvar(async () => {
-      let r: ResultadoOrdem = await editarOrdemAction(undefined, formulario(false))
+      let r: ResultadoOrdem = await editarOrdemAction(undefined, formulario(false, limpa.receita))
       if (!r.ok && r.confirmarForaDaFaixa) {
         // Aviso, não trava: a OP já tem SNs que ficariam fora das faixas novas. Confirmou → reenvia com a confirmação.
         if (!(await confirmar({ titulo: r.erro, rotuloConfirmar: 'Salvar mesmo assim' }))) return
-        r = await editarOrdemAction(undefined, formulario(true))
+        r = await editarOrdemAction(undefined, formulario(true, limpa.receita))
       }
       if (!r.ok) { toast.error(r.erro, TOAST); return }
+      if (aviso) { setReceita(limpa.receita); toast.warning(aviso, TOAST) }
       toast.success('OP editada', { ...TOAST, description: `${ordem.pmo}/${ordem.op}` })
       if (r.aviso) toast.warning(r.aviso, TOAST)
       router.push('/shopfloor/ordens-nova')
@@ -238,7 +244,8 @@ export function EditarOpCliente({
           }}
           rodapeTrecho={(t) => (
             <ReceitasDosPostos postos={t.postos} ehIntegracao={ehIntegracao} receita={receita} setReceita={setReceita}
-              pmosExistentes={pmosExistentes} pmoDaOp={ordem.pmo} />
+              pmosExistentes={pmosExistentes} pmoDaOp={ordem.pmo} prtsDaOp={prtsDeSeriePropria(trechos)}
+              prtsMesmaSerie={prtsDeMesmaSerie(trechos)} />
           )}
           avisoVazio="Nenhum posto neste trecho. Traga postos com ← → ou adicione um: o trecho não pode ficar vazio." />
       </section>

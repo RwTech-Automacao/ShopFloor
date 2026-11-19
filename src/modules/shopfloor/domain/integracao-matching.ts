@@ -21,10 +21,44 @@ export type ResolucaoPlaca =
   | { ok: false; erro: 'AMBIGUO'; candidatos: CandidatoPlaca[] }
 
 /**
+ * As PRTs de série própria da OP do produto (0195), cada uma com as faixas do trecho dela. Um item da receita com o
+ * código de uma delas aceita, além da regra da PMO de sempre (a placa de uma OP SEPARADA cujo pmo é aquele código), a
+ * placa da própria OP (`op`) com o SN numa faixa do trecho. A sf_integrar confere depois se ela terminou o trecho.
+ */
+export interface PrtsDaOp {
+  op: string
+  prts: { codigo: string; faixas: FaixaSN[] }[]
+}
+
+const chave = (s: string) => s.trim().toLowerCase()
+
+/**
  * Acha a OP/PMO de uma placa pelo SN bipado: dentro de uma faixa da OP E com a PMO na receita do produto.
  * Se mais de uma OP da receita contém o SN → AMBIGUO + a lista de candidatos (o operador escolhe).
+ * Com `daOp` (0195): o item da receita que é PRT de série própria da OP do produto também encaixa a placa com o SN
+ * numa faixa do trecho dela, como {pmo: código da PRT, op: a OP do produto}. Receita sem PRT da OP: exatamente o
+ * comportamento de antes.
  */
-export function resolverPlaca(receita: string[], faixas: FaixaOp[], sn: string): ResolucaoPlaca {
+export function resolverPlaca(receita: string[], faixas: FaixaOp[], sn: string, daOp?: PrtsDaOp): ResolucaoPlaca {
+  const receitaPrt = receita.filter((c) => (daOp?.prts ?? []).some((p) => chave(p.codigo) === chave(c)))
+  if (receitaPrt.length === 0) return resolverPorPmo(receita, faixas, sn)
+
+  const naPrt = daOp!.prts.filter((p) =>
+    receitaPrt.some((c) => chave(c) === chave(p.codigo)) && serieNasFaixas({ sn_ini: '', sn_fim: '', faixas: p.faixas }, sn))
+  const comFaixa = faixas.filter((f) => serieNasFaixas(f, sn))
+  // a regra da PMO de sempre, com a receita inteira (a OP separada de uma PRT entra por aqui)
+  const naReceita = comFaixa.filter((f) => receitaPermite(receita, f.pmo))
+  const candidatos: CandidatoPlaca[] = [
+    ...naPrt.map((p) => ({ pmo: p.codigo, op: daOp!.op })),
+    ...naReceita.map((f) => ({ pmo: f.pmo, op: f.op })),
+  ]
+  if (candidatos.length === 0) return { ok: false, erro: naPrt.length === 0 && comFaixa.length === 0 ? 'SEM_OP' : 'FORA_RECEITA' }
+  if (candidatos.length > 1) return { ok: false, erro: 'AMBIGUO', candidatos }
+  return { ok: true, ...candidatos[0]! }
+}
+
+/** A regra de sempre (só PMO). */
+function resolverPorPmo(receita: string[], faixas: FaixaOp[], sn: string): ResolucaoPlaca {
   const comFaixa = faixas.filter((f) => serieNasFaixas(f, sn))
   if (comFaixa.length === 0) return { ok: false, erro: 'SEM_OP' }
   const naReceita = comFaixa.filter((f) => receitaPermite(receita, f.pmo))

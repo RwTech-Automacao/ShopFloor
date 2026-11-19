@@ -155,6 +155,8 @@ export interface OrdemLancamentoLista {
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
+  /** Os códigos das PRTs de série própria da OP (0195): a Integração só lê as faixas delas se a receita citar uma. */
+  prtsProprias?: string[]
 }
 
 /**
@@ -197,12 +199,13 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     sf_ordem_componentes: { posto: string; pmo_componente: string }[]
     sf_ordem_burnin: { posto: string; tempo_min: number }[]
     sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string }[] | null
+    sf_ordem_trechos?: { codigo: string; tipo: string; sn_modo: string }[] | null
   }[] = []
   for (let i = 0; ; i++) {
     const { data, error } = await supabase
       .from('sf_ordens')
       .select(
-        `cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),${FAIXAS}`,
+        `cliente,pmo,op,descricao,qtd,sn_ini,sn_fim,embalagem_individual,status,sf_ordem_postos(posto,ordem),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),${FAIXAS},sf_ordem_trechos(codigo,tipo,sn_modo)`,
       )
       .order('cliente')
       .order('pmo')
@@ -227,6 +230,7 @@ export async function listarOrdensParaLancamento(): Promise<OrdemLancamentoLista
     postos: [...r.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((p) => p.posto),
     receitaPorPosto: agruparReceitaPorPosto(r.sf_ordem_componentes),
     tempoBurninPorPosto: agruparTempoBurninPorPosto(r.sf_ordem_burnin),
+    prtsProprias: (r.sf_ordem_trechos ?? []).filter((t) => t.tipo === 'prt' && t.sn_modo === 'proprio').map((t) => t.codigo),
   }))
 }
 

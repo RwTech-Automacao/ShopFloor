@@ -1,6 +1,7 @@
 import 'server-only'
 import { createServerSupabase } from '@/shared/lib/supabase/server'
 import type { TrechoDaOp } from '../domain/trechos-op'
+import { faixasDoBanco, type FaixaSN } from '../domain/faixas-sn'
 
 /** Trechos da OP (0184): leitura para a edição de OP e para o Fluxo. */
 
@@ -49,4 +50,24 @@ export async function listarTrechosDaOp(pmo: string, op: string): Promise<Trecho
     seq: t.seq, codigo: t.codigo, tipo: t.tipo, compelsOp: t.compels_op,
     postos: postos.filter((p) => p.trecho_seq === t.seq).map((p) => p.posto),
   }))
+}
+
+/**
+ * As PRTs de série própria da OP (0195), cada uma com as faixas do trecho dela: a Integração encaixa a placa da PRT
+ * da receita por elas. OP sem trechos ou inexistente: vazio. Erro de leitura sobe.
+ */
+export async function listarPrtsDeSeriePropria(pmo: string, op: string): Promise<{ codigo: string; faixas: FaixaSN[] }[]> {
+  const sb = await createServerSupabase()
+  const { data, error } = await sb.from('sf_ordens')
+    .select('sf_ordem_trechos(seq,codigo,tipo,sn_modo),sf_ordem_faixas(seq,sn_ini,sn_fim,trecho_seq)')
+    .eq('pmo', pmo).eq('op', op)
+  if (error) throw new Error(`PRTs da OP: ${error.message}`)
+  const d = ((data ?? []) as {
+    sf_ordem_trechos?: { seq: number; codigo: string; tipo: string; sn_modo: string }[] | null
+    sf_ordem_faixas?: { seq: number; sn_ini: string; sn_fim: string; trecho_seq: number | null }[] | null
+  }[])[0]
+  return [...(d?.sf_ordem_trechos ?? [])]
+    .filter((t) => t.tipo === 'prt' && t.sn_modo === 'proprio')
+    .sort((a, b) => a.seq - b.seq)
+    .map((t) => ({ codigo: t.codigo, faixas: faixasDoBanco((d?.sf_ordem_faixas ?? []).filter((f) => f.trecho_seq === t.seq)) }))
 }
