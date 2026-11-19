@@ -125,15 +125,55 @@ describe('edição de OP com trechos: PRTs desta OP na receita', () => {
     expect(toast.warning).not.toHaveBeenCalled()
   })
 
-  it('OP sem PRT de série própria: sem o grupo, e a receita de PMOs sai como antes', async () => {
+  it('OP só com PRTs de mesma série: o grupo mostra as PRTs apagadas, com a dica, sem lista para escolher', async () => {
     editar({ trechos: [{ ...TRECHOS[0]!, snModo: 'mesmo', faixas: [] }, TRECHOS[1]!, TRECHOS[2]!], receita: { Integração: ['PMOX'] } })
-    expect(screen.queryByRole('group', { name: /PRTs desta OP/ })).toBeNull()
+    const grupo = screen.getByRole('group', { name: 'PRTs desta OP · Integração' })
+    const apagadas = within(grupo).getAllByRole('listitem')
+    expect(apagadas.map((li) => li.getAttribute('data-apagada'))).toEqual(['true', 'true'])
+    expect(apagadas.map((li) => li.textContent)).toEqual([
+      'PRT410Para usar na receita, cadastre esta PRT com série própria.',
+      'PRT420Para usar na receita, cadastre esta PRT com série própria.',
+    ])
+    expect(within(grupo).queryByRole('combobox')).toBeNull()
+    expect(within(grupo).queryByRole('button')).toBeNull()
+    expect(within(grupo).queryByText('Todas as PRTs desta OP já estão na receita.')).toBeNull()
     // sem PRT de série própria, o código continua oferecido como PMO (como antes)
     expect(opcoes('Adicionar PMO à receita de Integração')).toEqual(['PRT410'])
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(acoes.editarOrdemAction).toHaveBeenCalledTimes(1))
     expect(enviado()).toEqual({ Integração: ['PMOX'] })
     expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('PRT de série própria e de mesma série juntas: só a de série própria é selecionável', () => {
+    editar()
+    const grupo = screen.getByRole('group', { name: 'PRTs desta OP · Integração' })
+    expect(opcoes('Adicionar PRT desta OP à receita de Integração')).toEqual(['PRT410'])
+    const apagadas = within(grupo).getAllByRole('listitem')
+    expect(apagadas).toHaveLength(1)
+    expect(apagadas[0]!.textContent).toBe('PRT420Para usar na receita, cadastre esta PRT com série própria.')
+    expect(apagadas[0]!.getAttribute('data-apagada')).toBe('true')
+  })
+
+  it('sem PMO para adicionar: avisa em vez de sumir com a lista', () => {
+    editar({ receita: { Integração: ['PMOX'] } }) // PMOX já está; PRT410 é PRT desta OP, não PMO
+    expect(screen.queryByRole('combobox', { name: 'Adicionar PMO à receita de Integração' })).toBeNull()
+    expect(screen.getByText('Nenhuma outra PMO cadastrada.')).toBeTruthy()
+  })
+
+  it('OP sem PRT nenhuma: sem o grupo', () => {
+    editar({ trechos: [TRECHOS[2]!] })
+    expect(screen.queryByRole('group', { name: /PRTs desta OP/ })).toBeNull()
+  })
+})
+
+describe('ReceitaIntegracao no modal antigo (sem as props novas)', () => {
+  it('sem PMO disponível a lista some, sem aviso nem grupo de PRTs (como antes)', async () => {
+    const { ReceitaIntegracao } = await import('../editores-posto')
+    render(<ReceitaIntegracao posto="Integração" receita={['PMOX']} setReceita={() => {}} pmosDisponiveis={[]} />)
+    expect(screen.queryByText('Nenhuma outra PMO cadastrada.')).toBeNull()
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByRole('group')).toBeNull()
   })
 })
 

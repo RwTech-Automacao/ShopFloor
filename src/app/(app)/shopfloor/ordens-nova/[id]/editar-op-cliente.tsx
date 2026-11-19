@@ -21,7 +21,7 @@ import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perf
 import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
 import type { ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
-import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, prtsDeSeriePropria } from '@/modules/shopfloor/domain/receita-prt'
+import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, prtsDeMesmaSerie, prtsDeSeriePropria } from '@/modules/shopfloor/domain/receita-prt'
 import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import type { ResumoTrecho } from '@/modules/shopfloor/infra/estrutura-repository'
 import { BarraFixa, CamposQuantidade, CorrenteTrechos, ResumoRota, nPainelDe, paineisFecham, plural } from '../../ordens/corrente-trechos'
@@ -244,7 +244,8 @@ export function EditarOpCliente({
           }}
           rodapeTrecho={(t) => (
             <ReceitasDosPostos postos={t.postos} ehIntegracao={ehIntegracao} receita={receita} setReceita={setReceita}
-              pmosExistentes={pmosExistentes} pmoDaOp={ordem.pmo} prtsDaOp={prtsDeSeriePropria(trechos)} />
+              pmosExistentes={pmosExistentes} pmoDaOp={ordem.pmo} prtsDaOp={prtsDeSeriePropria(trechos)}
+              prtsMesmaSerie={prtsDeMesmaSerie(trechos)} />
           )}
           avisoVazio="Nenhum posto neste trecho. Traga postos com ← → ou adicione um: o trecho não pode ficar vazio." />
       </section>

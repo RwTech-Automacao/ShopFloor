@@ -21,7 +21,7 @@ import { ReceitasDosPostos, TempoBurninCampo } from '../editores-posto'
 import { erroTempoBurnin, receitaDaRota, rotaDosTrechos, temposDaRota } from '@/modules/shopfloor/domain/edicao-op-trechos'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '@/modules/shopfloor/domain/burnin-posto'
 import { receitaParaLinhas } from '@/modules/shopfloor/domain/receita-posto'
-import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, prtsDeSeriePropria } from '@/modules/shopfloor/domain/receita-prt'
+import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, prtsDeMesmaSerie, prtsDeSeriePropria } from '@/modules/shopfloor/domain/receita-prt'
 import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
 
 const TOAST = { position: 'bottom-center' as const }
@@ -418,7 +418,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
             }}
             rodapeTrecho={(t) => (
               <ReceitasDosPostos postos={t.postos} ehIntegracao={ehIntegracao} receita={receita} setReceita={setReceita}
-                pmosExistentes={pmosExistentes} pmoDaOp={pmo ?? ''} prtsDaOp={prtsDeSeriePropria(trechos)} />
+                pmosExistentes={pmosExistentes} pmoDaOp={pmo ?? ''} prtsDaOp={prtsDeSeriePropria(trechos)}
+                prtsMesmaSerie={prtsDeMesmaSerie(trechos)} />
             )}
             moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almox))} />
         )}

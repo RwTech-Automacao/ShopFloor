@@ -20,6 +20,18 @@ export function prtsDeSeriePropria(trechos: TrechoReceita[]): string[] {
   return out
 }
 
+/** As PRTs da OP com a mesma série da PMO (não entram na receita; a tela as mostra apagadas), sem repetir. */
+export function prtsDeMesmaSerie(trechos: TrechoReceita[]): string[] {
+  const proprias = new Set(prtsDeSeriePropria(trechos).map(norm))
+  const out: string[] = []
+  for (const t of trechos) {
+    if (t.tipo !== 'prt' || t.snModo === 'proprio') continue
+    const c = t.codigo.trim()
+    if (c !== '' && !proprias.has(norm(c)) && !out.some((x) => norm(x) === norm(c))) out.push(c)
+  }
+  return out
+}
+
 /** Os códigos de todas as PRTs dos trechos (qualquer série). */
 export function codigosPrt(trechos: TrechoReceita[]): string[] {
   return trechos.filter((t) => t.tipo === 'prt').map((t) => t.codigo.trim()).filter((c) => c !== '')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, mensagemPlacaPrtIncompleta, prtsDeSeriePropria } from '../receita-prt'
+import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, mensagemPlacaPrtIncompleta, prtsDeMesmaSerie, prtsDeSeriePropria } from '../receita-prt'
 
 const T = (codigo: string, tipo: 'prt' | 'pmo', snModo: 'mesmo' | 'proprio' = 'mesmo') => ({ codigo, tipo, snModo })
 const TRECHOS = [T('PRT410', 'prt', 'proprio'), T('PRT420', 'prt', 'mesmo'), T('PRT430', 'prt', 'proprio'), T('PMOC14', 'pmo')]
@@ -13,6 +13,10 @@ describe('prtsDeSeriePropria', () => {
     expect(prtsDeSeriePropria([T('PMOC14', 'pmo')])).toEqual([])
     expect(prtsDeSeriePropria([T('PRT420', 'prt'), T('PMOC14', 'pmo')])).toEqual([])
     expect(codigosPrt(TRECHOS)).toEqual(['PRT410', 'PRT420', 'PRT430'])
+  })
+  it('prtsDeMesmaSerie: as PRTs com a série da PMO, sem repetir', () => {
+    expect(prtsDeMesmaSerie(TRECHOS)).toEqual(['PRT420'])
+    expect(prtsDeMesmaSerie([T('PMOC14', 'pmo')])).toEqual([])
   })
 })
 
