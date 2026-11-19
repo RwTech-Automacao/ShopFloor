@@ -432,6 +432,17 @@ docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0188.sql  
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_caixa_aberta.sql
 echo "0188 (caixa aberta / fora da rota): ok"
 
+# ---------- 0193: peças paradas — desempenho (mesmo resultado da 0188/0180) + sf_pecas_paradas_json ----------
+# O teste aplica a 0193 (\i) DENTRO da transação da prova: foto antes, migração, foto depois, com now() fixo.
+# Depois mais duas aplicações como transação única (-1): idempotente. (O teste da 0180 não roda de novo: as
+# expectativas dele são de antes do posto pendente da 0183; a prova da 0193 é a igualdade com a 0188.)
+docker cp supabase/migrations/0193_parados_desempenho.sql "$NOME":/tmp/0193.sql
+docker cp supabase/tests/parados_desempenho_test.sql "$NOME":/tmp/teste_parados_desempenho.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_parados_desempenho.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0193.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0193.sql   # de novo: idempotente
+echo "0193 (peças paradas: desempenho): ok"
+
 # ---------- 0192 (entrada no SAT vira regra dos Alertas) ----------
 # As migrações do SAT (0186, 0187, 0190) entram aqui, na mesma base: a 0192 lê o histórico da nota (sat_historico)
 # e o teste registra/corrige/troca NF pelas funções de verdade. O _stubs.sql já tem usuarios/tem_permissao/sf_*;

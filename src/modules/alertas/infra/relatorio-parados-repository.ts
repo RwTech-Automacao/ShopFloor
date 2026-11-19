@@ -10,6 +10,9 @@ const PAGINA = 1000
 /** Teto de segurança da tela (50 páginas). Mais peças paradas que isso é caso de investigar à parte. */
 const LIMITE_SNS = 50_000
 
+/** PostgREST: função fora do cache de esquema (a migração 0193 ainda não rodou). */
+const FUNCAO_INEXISTENTE = 'PGRST202'
+
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -43,23 +46,30 @@ export interface OpcoesLeituraParados {
 /**
  * As peças paradas há mais de `horas` (sf_pecas_paradas, 0180), SN a SN, com a SESSÃO do usuário. O corte é
  * calculado como no avaliador do alerta: `corteDeExpediente(agora, horas * 60, turnos)`.
+ *
+ * Uma chamada só (sf_pecas_paradas_json, 0193): a lista inteira num jsonb, que o max-rows do PostgREST não corta.
+ * Antes eram páginas de 1000, e cada página recalculava a função inteira. Se a 0193 ainda não estiver no banco
+ * (função fora do cache do PostgREST), cai na paginação antiga: mesmas linhas.
  */
 export async function lerPecasParadasTela(
   o: OpcoesLeituraParados, agora: Date = new Date(), sb?: SupabaseClient,
 ): Promise<SnParadoTela[]> {
   const cliente = sb ?? (await createServerSupabase())
   const corte = o.horas === null ? agora : corteDeExpediente(agora, o.horas * 60, o.turnos)
-  // Paginado: o PostgREST corta cada resposta no max-rows (1000). A função devolve numa ordem fixa (mais antiga
-  // primeiro, desempate PMO/OP/SN), então as páginas não se sobrepõem.
+  const args = { p_corte: corte.toISOString(), p_situacao: o.situacao, p_pmos: o.pmos.length > 0 ? o.pmos : null }
+  const { data, error } = await cliente.rpc('sf_pecas_paradas_json', args)
+  if (!error) return lerPecasParadas(Array.isArray(data) ? data.slice(0, LIMITE_SNS) : [])
+  if (error.code !== FUNCAO_INEXISTENTE) throw new Error(`sf_pecas_paradas_json: ${error.message}`)
+
+  // Paginado: a função devolve numa ordem fixa (mais antiga primeiro, desempate PMO/OP/SN), então as páginas não
+  // se sobrepõem.
   const linhas: unknown[] = []
   for (let de = 0; de < LIMITE_SNS; de += PAGINA) {
-    const { data, error } = await cliente
-      .rpc('sf_pecas_paradas', { p_corte: corte.toISOString(), p_situacao: o.situacao, p_pmos: o.pmos.length > 0 ? o.pmos : null })
-      .range(de, de + PAGINA - 1)
-    if (error) throw new Error(`sf_pecas_paradas: ${error.message}`)
-    const pagina = (data ?? []) as unknown[]
-    linhas.push(...pagina)
-    if (pagina.length < PAGINA) break
+    const { data: pagina, error: erro } = await cliente.rpc('sf_pecas_paradas', args).range(de, de + PAGINA - 1)
+    if (erro) throw new Error(`sf_pecas_paradas: ${erro.message}`)
+    const lidas = (pagina ?? []) as unknown[]
+    linhas.push(...lidas)
+    if (lidas.length < PAGINA) break
   }
   return lerPecasParadas(linhas)
 }
