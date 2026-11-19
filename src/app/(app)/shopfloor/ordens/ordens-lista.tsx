@@ -18,9 +18,16 @@ const TODOS = '__todos__'
 
 type Prt = NonNullable<OrdemView['prts']>[number]
 
-/** A PRT casa com a busca pelo código ou pelo número da OP dela no Compels. */
+/** Busca só com dígitos (ex.: "8498"): na lista nova, procura só no número da OP e no das PRTs, não na descrição. */
+function soNumero(q: string): boolean {
+  return /^\d+$/.test(q)
+}
+
+/** A PRT casa com a busca pelo código ou pelo número da OP dela no Compels (só pelo número, se a busca é numérica). */
 function prtCasa(p: Prt, q: string): boolean {
-  return q !== '' && (p.codigo.toLowerCase().includes(q) || (p.compelsOp ?? '').toLowerCase().includes(q))
+  if (q === '') return false
+  const op = (p.compelsOp ?? '').toLowerCase()
+  return soNumero(q) ? op.includes(q) : p.codigo.toLowerCase().includes(q) || op.includes(q)
 }
 
 export function OrdensLista({
@@ -64,7 +71,9 @@ export function OrdensLista({
       const finalizada = v.status.toUpperCase() === 'FINALIZADA'
       if (status === 'ATIVA' && finalizada) return false
       if (status === 'FINALIZADA' && !finalizada) return false
-      if (q !== '' && !`${v.pmo} ${v.op} ${v.descricao}`.toLowerCase().includes(q)) {
+      if (q !== '' && cadeiaPrt && soNumero(q)) {
+        if (!v.op.toLowerCase().includes(q) && !(v.prts ?? []).some((p) => prtCasa(p, q))) return false
+      } else if (q !== '' && !`${v.pmo} ${v.op} ${v.descricao}`.toLowerCase().includes(q)) {
         if (!(cadeiaPrt && (v.prts ?? []).some((p) => prtCasa(p, q)))) return false
       }
       return true
