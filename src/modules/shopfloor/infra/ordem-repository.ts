@@ -167,6 +167,30 @@ async function regravarFaixas(supabase: Supa, id: string, faixas: FaixaSN[]): Pr
   if (error) throw error
 }
 
+/** Um trecho na edição por trecho (0194): os postos em ordem, a série e as faixas (PMO e PRT com série própria). */
+export interface TrechoEdicao { seq: number; postos: string[]; sn_modo: 'mesmo' | 'proprio'; faixas: FaixaSN[] }
+
+/**
+ * A OP inteira numa transação só (sf_ordem_regravar_trechos, 0194): rota, série e faixas de cada trecho, receita,
+ * Burn-in e os dados da OP — travada contra o bipe e com as travas do histórico. PMO e número não vão: não mudam.
+ */
+async function regravarTrechos(
+  supabase: Supa, id: string, trechos: TrechoEdicao[], dados: DadosOrdem,
+  receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[],
+): Promise<void> {
+  const { error } = await supabase.rpc('sf_ordem_regravar_trechos', {
+    p_ordem_id: id,
+    p_trechos: trechos,
+    p_ordem: {
+      cliente: dados.cliente, qtd: dados.qtd, descricao: dados.descricao, acp: dados.acp, status: dados.status,
+      embalagem_individual: dados.embalagem_individual, placas_por_painel: dados.placas_por_painel,
+    },
+    p_componentes: receita,
+    p_burnin: burnin,
+  })
+  if (error) throw error
+}
+
 async function gravarDadosDaOp(supabase: Supa, id: string, dados: DadosOrdem): Promise<void> {
   const { error } = await supabase
     .from('sf_ordens')
@@ -184,13 +208,22 @@ async function gravarDadosDaOp(supabase: Supa, id: string, dados: DadosOrdem): P
  * PMO sem faixa, e com faixa o trigger só reescreve a seq 1 (que é a primeira da PMO). O trecho que ficaria sem posto é
  * conferido aqui antes da primeira escrita (a mesma regra da função), pois a recusa da função chegaria depois das faixas.
  *
+ * Com `trechos` (a página de edição de OP com trechos): TUDO vai numa chamada só, a sf_ordem_regravar_trechos (0194) —
+ * rota, série e faixas de cada trecho, receita, Burn-in e os dados da OP, numa transação: recusa ou falha não deixa
+ * nada pela metade.
+ *
  * OP antiga (sem trechos): a ordem de antes — a sf_ordens primeiro (a duplicidade de PMO/OP para logo de cara).
  */
-export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[], faixas: FaixaSN[]): Promise<void> {
+export async function atualizarOrdem(id: string, dados: DadosOrdem, postos: string[], receita: { posto: string; pmo: string }[], burnin: { posto: string; tempo_min: number }[], faixas: FaixaSN[], trechosEdicao?: TrechoEdicao[]): Promise<void> {
   const supabase = await createServerSupabase()
   const { data: trechos, error: eT } = await supabase.from('sf_ordem_trechos').select('seq,codigo,tipo').eq('ordem_id', id)
   if (eT) throw eT
   const lista = (trechos ?? []) as { seq: number; codigo: string; tipo: string }[]
+  if (trechosEdicao) {
+    if (lista.length === 0) throw new Error('OP_SEM_TRECHOS')
+    await regravarTrechos(supabase, id, trechosEdicao, dados, receita, burnin)
+    return
+  }
   if (lista.length === 0) {
     await gravarDadosDaOp(supabase, id, dados)
     await regravarPostos(supabase, id, postos)
@@ -300,4 +333,24 @@ export async function listarRotaGravada(id: string): Promise<string[]> {
   const { data, error } = await supabase.from('sf_ordem_postos').select('posto,ordem').eq('ordem_id', id).order('ordem')
   if (error) throw error
   return ((data ?? []) as { posto: string }[]).map((r) => r.posto)
+}
+
+/** A OP inteira para a página de edição de OP com trechos (0184): dados, rota, trechos, faixas, receita e burn-in. */
+export interface OrdemComTrechosRow extends Omit<OrdemRow, 'sf_ordem_postos' | 'sf_ordem_trechos'> {
+  sf_ordem_postos: { posto: string; ordem: number; trecho_seq: number | null }[]
+  sf_ordem_trechos: { seq: number; codigo: string; tipo: 'prt' | 'pmo'; compels_op: string | null; sn_modo: 'mesmo' | 'proprio' }[]
+}
+
+/** Uma OP pelo id, com os trechos. Inexistente: null; erro de leitura lança. */
+export async function buscarOrdemComTrechos(id: string): Promise<OrdemComTrechosRow | null> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_ordens')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,placas_por_painel,created_at,sf_ordem_postos(posto,ordem,trecho_seq),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),sf_ordem_faixas(seq,sn_ini,sn_fim,trecho_seq),sf_ordem_trechos(seq,codigo,tipo,compels_op,sn_modo)')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const r = data as unknown as OrdemComTrechosRow
+  return { ...r, sf_ordem_postos: r.sf_ordem_postos ?? [], sf_ordem_trechos: r.sf_ordem_trechos ?? [] }
 }

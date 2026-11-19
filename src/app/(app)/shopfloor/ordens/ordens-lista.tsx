@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,6 +18,7 @@ const TODOS = '__todos__'
 
 export function OrdensLista({
   novaOpHref,
+  editarTrechosBase,
   views,
   chavesPostos,
   postosPerfil,
@@ -28,6 +29,8 @@ export function OrdensLista({
 }: {
   /** Destino do botão Nova OP (tela nova, só para os liberados); sem ele, o cadastro antigo (OrdemForm). */
   novaOpHref?: string
+  /** Base da página de edição de OP com trechos (`<base>/<id>`); sem ela, toda OP edita no modal. */
+  editarTrechosBase?: string
   views: OrdemView[]
   chavesPostos: string[]
   postosPerfil: Record<string, PerfilPosto>
@@ -131,7 +134,13 @@ export function OrdensLista({
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                     <FluxoBotao pmo={o.pmo} op={o.op} postos={o.postos} />
-                    <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} ordem={o} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+                    {editarTrechosBase && o.temTrechos ? (
+                      <Link href={`${editarTrechosBase}/${o.id}`} aria-label="Editar OP" className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}>
+                        <Pencil className="size-4" />
+                      </Link>
+                    ) : (
+                      <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} ordem={o} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+                    )}
                     <ExcluirOrdemBotao id={o.id} rotulo={`${o.pmo}/${o.op}`} />
                   </div>
                 </TableCell>

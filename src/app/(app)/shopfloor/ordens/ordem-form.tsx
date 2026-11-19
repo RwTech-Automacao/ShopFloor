@@ -23,7 +23,8 @@ import {
   opTemRegistrosAction,
 } from '@/modules/shopfloor/application/ordens-actions'
 import { salvarPadraoAction, excluirPadraoAction } from '@/modules/shopfloor/application/padroes-fluxo-actions'
-import { minutosParaTempo, mascararTempoFiltro } from '@/modules/shopfloor/domain/tempo-burnin'
+import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
+import { ReceitaIntegracao, TempoBurninCampo } from './editores-posto'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { ehReativacaoManual } from '@/modules/shopfloor/domain/finalizacao'
 import { coagirReceitaPadrao, type ReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
@@ -51,6 +52,8 @@ export interface OrdemView {
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
+  /** OP com trechos do Compels (0184): na lista nova, edita na página própria em vez do modal. */
+  temTrechos?: boolean
 }
 
 export interface PadraoFluxo {
@@ -481,17 +484,7 @@ export function OrdemForm({
                     <span className="w-5 text-center text-xs font-medium text-enterplak">{i + 1}</span>
                     <span className="flex-1">{posto}</span>
                     {perfilDo(posto).recurso === 'burnin' && (
-                      <span className="flex items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground">mín.</span>
-                        <Input
-                          value={tempoBurnin[posto] ?? ''}
-                          onChange={(e) => setTempoBurnin((prev) => ({ ...prev, [posto]: mascararTempoFiltro(e.target.value) }))}
-                          inputMode="numeric"
-                          placeholder="hhh:mm"
-                          className="h-7 w-20 text-sm"
-                          autoComplete="off"
-                        />
-                      </span>
+                      <TempoBurninCampo valor={tempoBurnin[posto] ?? ''} setValor={(v) => setTempoBurnin((prev) => ({ ...prev, [posto]: v }))} />
                     )}
                     {posto === almoxFixo ? (
                       <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Posto obrigatório: fecha a rota da OP">
@@ -682,53 +675,6 @@ export function FaixasSn({
           <Plus className="size-3.5" /> Adicionar faixa
         </Button>
       </div>
-    </div>
-  )
-}
-
-function ReceitaIntegracao({
-  posto,
-  receita,
-  setReceita,
-  pmosDisponiveis,
-}: {
-  posto: string
-  receita: string[]
-  setReceita: (r: string[]) => void
-  pmosDisponiveis: string[]
-}) {
-  return (
-    <div>
-      <p className="mb-2 text-sm font-medium">
-        Receita · {posto}{' '}
-        <span className="font-normal text-muted-foreground">· PMOs de placa que compõem este produto</span>
-      </p>
-      {receita.length > 0 ? (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {receita.map((c) => (
-            <span key={c} className="inline-flex items-center gap-1 rounded-full border border-border bg-accent px-2.5 py-1 text-xs">
-              {c}
-              <button type="button" aria-label={`Remover ${c}`} onClick={() => setReceita(receita.filter((x) => x !== c))} className="text-muted-foreground hover:text-red-600">
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="mb-2 text-xs text-muted-foreground">Sem receita: a Integração aceita placas de qualquer PMO.</p>
-      )}
-      {pmosDisponiveis.length > 0 && (
-        <Select value="" onValueChange={(p) => p && setReceita([...receita, p])}>
-          <SelectTrigger className="h-9">
-            <SelectValue placeholder="+ Adicionar PMO à receita" />
-          </SelectTrigger>
-          <SelectContent>
-            {pmosDisponiveis.map((p) => (
-              <SelectItem key={p} value={p}>{p}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
     </div>
   )
 }

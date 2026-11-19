@@ -13,6 +13,7 @@ import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-pos
 import { postoAlmoxarifadoPadrao, rotaDaEdicao, rotaPadraoOpNova } from '../domain/rota-op-nova'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import { ordemTemTrechos } from '../infra/estrutura-repository'
+import { novaOpLiberada } from './liberacao-nova-op'
 import { faixasDe, faixasIguais, lerFaixasDoFormulario, type FaixaSN } from '../domain/faixas-sn'
 import {
   criarOrdem,
@@ -25,6 +26,7 @@ import {
   listarRotaGravada,
   contarSnsForaDasFaixas,
   type DadosOrdem,
+  type TrechoEdicao,
 } from '../infra/ordem-repository'
 
 /**
@@ -96,6 +98,36 @@ async function lerPostos(fd: FormData): Promise<string[]> {
     }
   }
   return fluxo
+}
+
+/**
+ * Edição por trecho (0194, página de edição de OP com trechos): o campo `trechos` = JSON
+ * [{seq, postos, sn_modo, faixas}] com todos os trechos. Ausente = a edição de sempre (`fluxo` + `faixas`).
+ * Postos fora do catálogo são recusados (não descartados: sumir com um posto mudaria o trecho calado).
+ */
+async function lerTrechos(fd: FormData): Promise<{ ok: true; trechos: TrechoEdicao[] | null } | { ok: false; erro: string }> {
+  const bruto = fd.get('trechos')
+  if (bruto === null) return { ok: true, trechos: null }
+  const invalido = { ok: false as const, erro: 'Trechos inválidos.' }
+  let lista: unknown
+  try { lista = JSON.parse(String(bruto)) } catch { return invalido }
+  if (!Array.isArray(lista) || lista.length === 0) return invalido
+  const catalogo = new Set((await listarPostos()).map((p) => p.chave))
+  const trechos: TrechoEdicao[] = []
+  for (const item of lista) {
+    const t = item as { seq?: unknown; postos?: unknown; sn_modo?: unknown; faixas?: unknown }
+    if (!Number.isInteger(t.seq) || !Array.isArray(t.postos) || (t.faixas !== undefined && !Array.isArray(t.faixas))) return invalido
+    const postos = t.postos.map((p) => String(p).trim()).filter((p) => p !== '')
+    const desconhecido = postos.find((p) => !catalogo.has(p))
+    if (desconhecido) return { ok: false, erro: `Posto desconhecido: ${desconhecido}.` }
+    const faixas = ((t.faixas as unknown[] | undefined) ?? []).map((f) => {
+      const x = f as { sn_ini?: unknown; sn_fim?: unknown }
+      return { sn_ini: String(x?.sn_ini ?? '').trim(), sn_fim: String(x?.sn_fim ?? '').trim() }
+    })
+    if (t.sn_modo !== 'mesmo' && t.sn_modo !== 'proprio') return { ok: false, erro: `Série inválida no trecho ${t.seq as number}: escolha "mesma série da PMO" ou "série própria".` }
+    trechos.push({ seq: t.seq as number, postos, sn_modo: t.sn_modo, faixas })
+  }
+  return { ok: true, trechos: [...trechos].sort((a, b) => a.seq - b.seq) }
 }
 
 /** Receita por posto vinda do form; mantém só postos de Integração (perfil) do fluxo. */
@@ -180,7 +212,21 @@ export async function editarOrdemAction(
   // Fail-closed: sem ler a OP gravada não dá para aplicar as travas (buscarOrdemBase devolve null em qualquer erro de leitura).
   if (!base) return { ok: false, erro: 'OP não encontrada.' }
   if (ehReativacaoManual(base.status, dados.status)) dados.reaberta_manual = true
-  const faixas = lerFaixas(formData)
+  // A edição por trecho é a da tela nova: a mesma liberação da Nova OP (NOVA_OP_LIBERADA_PARA em produção).
+  if (formData.has('trechos') && !novaOpLiberada(sessao.email)) return { ok: false, erro: SEM_PERMISSAO }
+  const porTrecho = await lerTrechos(formData)
+  if (!porTrecho.ok) return porTrecho
+  // Na edição por trecho, as faixas da PMO são as do último trecho (a PMO): uma fonte só para a sf_ordens e a função.
+  const trechosEdicao = porTrecho.trechos
+  const faixas = trechosEdicao ? trechosEdicao.at(-1)!.faixas : lerFaixas(formData)
+  if (trechosEdicao) {
+    dados.sn_ini = faixas[0]?.sn_ini ?? ''
+    dados.sn_fim = faixas[0]?.sn_fim ?? ''
+  }
+  // As faixas próprias das PRTs depois da edição (as gravadas, ou as que a edição por trecho manda).
+  const faixasPrtNovas = trechosEdicao
+    ? trechosEdicao.slice(0, -1).filter((t) => t.sn_modo === 'proprio').flatMap((t) => t.faixas)
+    : base.faixasPrt ?? []
   const v = validarOrdem({ pmo: dados.pmo, op: dados.op, cliente: dados.cliente, snIni: dados.sn_ini, snFim: dados.sn_fim, qtd: dados.qtd, placasPorPainel: dados.placas_por_painel, faixas })
   if (!v.ok) return v
   // Trava: com registros, mudar as placas por painel faria o histórico (`pecas` gravada com o N
@@ -204,6 +250,7 @@ export async function editarOrdemAction(
   } catch {
     return { ok: false, erro: 'Não foi possível salvar a OP.' }
   }
+  if (trechosEdicao && !temTrechos) return { ok: false, erro: 'Esta OP não tem trechos do Compels.' }
   if (temTrechos && (dados.pmo !== base.pmo || dados.op !== base.op)) {
     return { ok: false, erro: 'Esta OP tem trechos do Compels: não é possível trocar a PMO nem o número da OP.' }
   }
@@ -221,9 +268,11 @@ export async function editarOrdemAction(
   } catch {
     return { ok: false, erro: 'Não foi possível salvar a OP.' }
   }
-  const rota = rotaDaEdicao(rotaGravada, await lerPostos(formData), await postoAlmoxarifado())
+  const rotaNova = trechosEdicao ? trechosEdicao.flatMap((t) => t.postos) : await lerPostos(formData)
+  const rota = rotaDaEdicao(rotaGravada, rotaNova, await postoAlmoxarifado())
   if (!rota.ok) return rota
-  const postos = rota.rota
+  // Por trecho, a ordem é a dos trechos (o Almoxarifado no fim da PMO é conferido pela própria função, 0194).
+  const postos = trechosEdicao ? rotaNova : rota.rota
   const receita = await lerReceita(formData, postos)
   const burnin = await lerBurnin(formData, postos)
   if (!burnin.ok) return { ok: false, erro: burnin.erro }
@@ -233,11 +282,12 @@ export async function editarOrdemAction(
   if (formData.get('confirmar_fora_faixa') !== '1') {
     const trocouOp = dados.pmo !== base.pmo || dados.op !== base.op
     const faixasGravadas = faixasDe({ sn_ini: base.sn_ini ?? '', sn_fim: base.sn_fim ?? '', faixas: base.faixas })
-    if (trocouOp || !faixasIguais(faixasGravadas, faixas)) {
+    const mudouPrt = !faixasIguais(base.faixasPrt ?? [], faixasPrtNovas)
+    if (trocouOp || !faixasIguais(faixasGravadas, faixas) || mudouPrt) {
       let fora: number
       try {
         // As faixas próprias das PRTs entram na conta: os SNs delas são da OP, não estão "fora".
-        fora = await contarSnsForaDasFaixas(base.pmo, base.op, trocouOp ? null : [...faixas, ...(base.faixasPrt ?? [])])
+        fora = await contarSnsForaDasFaixas(base.pmo, base.op, trocouOp ? null : [...faixas, ...faixasPrtNovas])
       } catch {
         return { ok: false, erro: 'Não foi possível salvar a OP.' }
       }
@@ -246,7 +296,7 @@ export async function editarOrdemAction(
   }
 
   try {
-    await atualizarOrdem(id, dados, postos, receita, burnin.rows, faixas)
+    await atualizarOrdem(id, dados, postos, receita, burnin.rows, faixas, trechosEdicao ?? undefined)
   } catch (e) {
     if (ehDuplicidade(e)) return { ok: false, erro: 'Já existe uma OP com esse PMO e número.' }
     const doTrecho = mensagemErroDeTrecho(e)
@@ -254,7 +304,7 @@ export async function editarOrdemAction(
     return { ok: false, erro: 'Não foi possível salvar a OP.' }
   }
 
-  await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados: { ...dados, faixas } })
+  await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados: { ...dados, faixas, ...(trechosEdicao ? { trechos: trechosEdicao } : {}) } })
   revalidatePath('/shopfloor/ordens')
   revalidatePath('/shopfloor/ordens-nova')
   return { ok: true, id, pmo: dados.pmo, op: dados.op }

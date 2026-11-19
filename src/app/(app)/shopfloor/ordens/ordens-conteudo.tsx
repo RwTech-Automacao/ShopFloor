@@ -7,8 +7,11 @@ import { faixasDaPmoDoBanco } from '@/modules/shopfloor/domain/faixas-sn'
 import type { OrdemView } from './ordem-form'
 import { OrdensLista } from './ordens-lista'
 
-/** Lista de OPs compartilhada entre /shopfloor/ordens (cadastro antigo) e /shopfloor/ordens-nova (botão para a tela nova). A permissão é checada por quem chama. */
-export async function OrdensConteudo({ novaOpHref }: { novaOpHref?: string }) {
+/**
+ * Lista de OPs compartilhada entre /shopfloor/ordens (cadastro antigo) e /shopfloor/ordens-nova (botão para a tela nova
+ * e, com `editarTrechosBase`, a OP com trechos editada em `${editarTrechosBase}/<id>`). A permissão é checada por quem chama.
+ */
+export async function OrdensConteudo({ novaOpHref, editarTrechosBase }: { novaOpHref?: string; editarTrechosBase?: string }) {
   const [ordens, postos, padroes, postosPerfil] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil()])
   const chavesPostos = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const views: OrdemView[] = ordens.map((o) => ({
@@ -28,6 +31,7 @@ export async function OrdensConteudo({ novaOpHref }: { novaOpHref?: string }) {
     postos: [...o.sf_ordem_postos].sort((a, b) => a.ordem - b.ordem).map((x) => x.posto),
     receitaPorPosto: agruparReceitaPorPosto(o.sf_ordem_componentes),
     tempoBurninPorPosto: agruparTempoBurninPorPosto(o.sf_ordem_burnin),
+    temTrechos: (o.sf_ordem_trechos?.length ?? 0) > 0,
   }))
   const pmosExistentes = [...new Set(ordens.map((o) => o.pmo))].sort()
   const clientesExistentes = [...new Set(ordens.map((o) => o.cliente))].filter((c) => c.trim() !== '').sort()
@@ -49,7 +53,7 @@ export async function OrdensConteudo({ novaOpHref }: { novaOpHref?: string }) {
         <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
       </div>
 
-      <OrdensLista novaOpHref={novaOpHref} views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+      <OrdensLista novaOpHref={novaOpHref} editarTrechosBase={editarTrechosBase} views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
     </div>
   )
 }

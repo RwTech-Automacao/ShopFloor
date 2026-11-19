@@ -112,6 +112,36 @@ describe('atualizarOrdem numa OP com trechos', () => {
   })
 })
 
+describe('atualizarOrdem com a edição por trecho (0194)', () => {
+  const TRECHOS = [
+    { seq: 1, postos: ['SPI'], sn_modo: 'proprio' as const, faixas: [{ sn_ini: 'P001', sn_fim: 'P099' }] },
+    { seq: 2, postos: ['Inspeção AOI TOP', 'Teste', 'Almoxarifado'], sn_modo: 'mesmo' as const, faixas: [{ sn_ini: '200', sn_fim: '299' }] },
+  ]
+  it('UMA chamada grava tudo (rota, série, faixas, receita, Burn-in e dados): nenhuma outra escrita', async () => {
+    const receita = [{ posto: 'Teste', pmo: 'PMOZ' }]
+    const burnin = [{ posto: 'Teste', tempo_min: 360 }]
+    await atualizarOrdem('id-1', dados('200', '299'), ['SPI', 'Inspeção AOI TOP', 'Teste', 'Almoxarifado'], receita, burnin, [{ sn_ini: '200', sn_fim: '299' }], TRECHOS)
+    expect(db.log.filter((l) => !l.startsWith('select'))).toEqual(['rpc sf_ordem_regravar_trechos'])
+    expect(rpc).toHaveBeenCalledWith('sf_ordem_regravar_trechos', {
+      p_ordem_id: 'id-1',
+      p_trechos: TRECHOS,
+      p_ordem: { cliente: 'C', qtd: 10, descricao: '', acp: '', status: 'ATIVA', embalagem_individual: false, placas_por_painel: 1 },
+      p_componentes: receita,
+      p_burnin: burnin,
+    })
+  })
+  it('falha no meio (a RPC recusa ou o banco erra): nada mais é gravado', async () => {
+    rpc.mockImplementationOnce(async (nome: string) => { db.log.push(`rpc ${nome}`); return { data: null, error: { message: 'POSTO_COM_REGISTROS:SPI' } } as never })
+    await expect(atualizarOrdem('id-1', dados('200', '299'), [], [], [], [], TRECHOS)).rejects.toMatchObject({ message: 'POSTO_COM_REGISTROS:SPI' })
+    expect(db.log.filter((l) => !l.startsWith('select'))).toEqual(['rpc sf_ordem_regravar_trechos'])
+  })
+  it('OP sem trechos não aceita a edição por trecho', async () => {
+    db.trechos = []
+    await expect(atualizarOrdem('id-1', dados('1', '9'), [], [], [], [], TRECHOS)).rejects.toThrow('OP_SEM_TRECHOS')
+    expect(db.log.every((l) => l.startsWith('select'))).toBe(true)
+  })
+})
+
 describe('atualizarOrdem numa OP antiga (sem trechos)', () => {
   it('a sf_ordens primeiro (como antes), depois postos e faixas pelas funções', async () => {
     db.trechos = []
