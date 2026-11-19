@@ -51,6 +51,8 @@ export interface OrdemView {
   postos: string[]
   receitaPorPosto: ReceitaPorPosto
   tempoBurninPorPosto: TempoBurninPorPosto
+  /** OP com trechos do Compels (0184): na lista nova, edita na página própria em vez do modal. */
+  temTrechos?: boolean
 }
 
 export interface PadraoFluxo {

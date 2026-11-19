@@ -1,35 +1,27 @@
 'use client'
 
-import { Fragment, useId, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
-import { placasDosPaineis, paineisDasPlacas } from '@/modules/shopfloor/domain/placas-por-painel'
+import { useId, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cadastrarOpAction, ultimaOpDaPmoAction } from '@/modules/shopfloor/application/cadastro-op-actions'
 import {
-  distribuirPostos, erroSufixoOp, fixarAlmoxarifado, moverPostoEntreTrechos, opsDaPmo, pmosDoEspelho, rotuloPmo, rotuloTrecho,
+  distribuirPostos, erroSufixoOp, fixarAlmoxarifado, moverPostoEntreTrechos, opsDaPmo, pmosDoEspelho, rotuloPmo,
   trechoManual, trechosDoEspelho, ultimaLeitura, validarCadastro,
-  type CadastroOp, type OpEspelho, type SnModo, type TrechoCadastro, type UltimaOp,
+  type CadastroOp, type OpEspelho, type TrechoCadastro, type UltimaOp,
 } from '@/modules/shopfloor/domain/cadastro-op'
-import { moverPostoNaRota, postoAlmoxarifadoPadrao } from '@/modules/shopfloor/domain/rota-op-nova'
+import { postoAlmoxarifadoPadrao } from '@/modules/shopfloor/domain/rota-op-nova'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
-import type { FaixaSN } from '@/modules/shopfloor/domain/faixas-sn'
-import { FaixasSn } from '../ordem-form'
+import { BarraFixa, CamposQuantidade, CorrenteTrechos, ResumoRota, nPainelDe, paineisFecham } from '../corrente-trechos'
 
 const TOAST = { position: 'bottom-center' as const }
 const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 /** '2026-11-10' → '10/11/2026' sem passar por Date (que trocaria o dia pelo fuso). */
 const dataCurta = (d: string | null) => (d ? d.slice(0, 10).split('-').reverse().join('/') : '—')
-const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`
-
-const ICONE = 'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40'
 
 type EstadoPasso = 'pendente' | 'ativo' | 'feito'
 
@@ -106,19 +98,15 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   const achadas = termo === '' ? [] : pmos.filter((p) => p.pmo.toUpperCase().includes(termo)).slice(0, 8)
   const escolhida = pmo !== null && termo === pmo
   const exata = pmos.some((p) => p.pmo.toUpperCase() === termo)
-  const nPainel = Number.isInteger(Number(placasPorPainel)) && Number(placasPorPainel) >= 1 ? Number(placasPorPainel) : 1
+  const nPainel = nPainelDe(placasPorPainel)
   const baseOp = trechos.at(-1)?.compelsOp ?? ''
   const erroOp = modo === 'compels' && trechos.length > 0 ? erroSufixoOp(baseOp, op) : null
-  const paineisFecham = nPainel <= 1 || qtd.trim() === '' || paineisDasPlacas(Number(qtd), nPainel) !== null
-  const dadosValidos = op.trim() !== '' && !erroOp && cliente.trim() !== '' && paineisFecham
+  const dadosValidos = op.trim() !== '' && !erroOp && cliente.trim() !== '' && paineisFecham(qtd, nPainel)
   const passo3Fechado = dadosOk && dadosValidos
   const usados = new Set(trechos.flatMap((t) => t.postos))
   const disponiveis = postos.filter((p) => !usados.has(p))
   const opsAbertas = modo === 'compels' && pmo ? opsDaPmo(espelho, pmo) : []
   const opAtual = opsAbertas.find((o) => o.numero === opEscolhida) ?? null
-  const totalPostos = trechos.reduce((a, t) => a + t.postos.length, 0)
-  // Número de cada posto na rota inteira: a contagem continua de um trecho para o outro.
-  const inicioDoTrecho = trechos.map((_, i) => trechos.slice(0, i).reduce((a, t) => a + t.postos.length, 0))
 
   const pmoFeita = pmo !== null && !trocandoPmo
   const opFeita = modo === 'manual' || (opEscolhida !== null && !trocandoOp && !carregando)
@@ -345,29 +333,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
               <Input id="cliente" list="clientes-existentes" value={cliente} onChange={(e) => setCliente(e.target.value)} />
               <datalist id="clientes-existentes">{clientesExistentes.map((c) => <option key={c} value={c} />)}</datalist>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="qtd">Quantidade</Label>
-              <Input id="qtd" inputMode="numeric" value={qtd} onChange={(e) => setQtd(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="placas_por_painel">Placas por painel</Label>
-              <Input id="placas_por_painel" inputMode="numeric" value={placasPorPainel} onChange={(e) => setPlacasPorPainel(e.target.value)} />
-              <p className="text-xs text-muted-foreground">Use quando a etiqueta é por painel: cada bipe conta como N placas.</p>
-            </div>
-            {nPainel > 1 && (
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="paineis">Painéis</Label>
-                <Input
-                  id="paineis" inputMode="numeric"
-                  value={qtd.trim() === '' ? '' : String(paineisDasPlacas(Number(qtd), nPainel) ?? '')}
-                  onChange={(e) => setQtd(e.target.value.trim() === '' || Number.isNaN(Number(e.target.value)) ? '' : String(placasDosPaineis(Number(e.target.value), nPainel)))}
-                />
-                {qtd.trim() !== '' && paineisDasPlacas(Number(qtd), nPainel) === null && (
-                  <p className="text-xs text-destructive">{qtd} placas não fecham em painéis de {nPainel}. Ajuste a quantidade ou os painéis.</p>
-                )}
-                <p className="text-xs text-muted-foreground">A faixa de SN conta painéis (um SN por painel).</p>
-              </div>
-            )}
+            <CamposQuantidade qtd={qtd} setQtd={setQtd} placasPorPainel={placasPorPainel} setPlacasPorPainel={setPlacasPorPainel} />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="descricao">Descrição</Label>
               <Input id="descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
@@ -402,108 +368,19 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
             </p>
           )}>
         {trechos.length > 0 && (
-          <div className="flex flex-col gap-1 lg:flex-row lg:items-stretch lg:gap-0 lg:overflow-x-auto lg:pb-1">
-            {trechos.map((t, ti) => {
-              const fixo = t.tipo === 'pmo' ? almox : null
-              const inicio = inicioDoTrecho[ti]!
-              return (
-                <Fragment key={t.seq}>
-                  {ti > 0 && (
-                    <div aria-hidden className="flex shrink-0 items-center justify-center text-muted-foreground lg:w-6">
-                      <ChevronDown className="size-5 lg:hidden" />
-                      <ChevronRight className="hidden size-5 lg:block" />
-                    </div>
-                  )}
-                  <section aria-labelledby={`${idBase}-t${t.seq}`}
-                    className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-3 lg:flex-[1_0_14rem]">
-                    <header className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <h4 id={`${idBase}-t${t.seq}`} className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{rotuloTrecho(t)}</h4>
-                        <Badge variant={t.tipo === 'pmo' ? 'default' : 'secondary'}>{t.tipo === 'pmo' ? 'PMO' : 'PRT'}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {[t.compelsOp && `${t.quantidade ?? '—'} un · ${t.situacao || '—'}`, plural(t.postos.length, 'posto', 'postos')].filter(Boolean).join(' · ')}
-                      </p>
-                    </header>
-                    {t.postos.length === 0 ? (
-                      <p className="rounded-md border border-dashed border-border px-2 py-3 text-center text-xs text-muted-foreground">
-                        Nenhum posto neste trecho. Traga postos com ← → ou adicione um.
-                      </p>
-                    ) : (
-                      <ol className="flex flex-col gap-1">
-                        {t.postos.map((p, i) => (
-                          <li key={p} className="flex flex-wrap items-center gap-x-1 gap-y-0.5 rounded-md border border-border bg-background py-1 pr-1 pl-2 text-sm">
-                            <span className="w-6 shrink-0 text-xs font-semibold text-muted-foreground tabular-nums">{inicio + i + 1}</span>
-                            <span className="min-w-0 flex-1 basis-20 break-words">{p}</span>
-                            {p !== fixo && (
-                              <span className="ml-auto flex items-center">
-                                {ti > 0 && i === 0 && (
-                                  <button type="button" aria-label={`Mover ${p} para o trecho anterior`} className={ICONE}
-                                    onClick={() => setTrechos((ts) => moverPostoEntreTrechos(ts, t.seq, p, -1, almox))}><ArrowLeft className="size-4" /></button>
-                                )}
-                                {ti < trechos.length - 1 && i === t.postos.length - 1 && (
-                                  <button type="button" aria-label={`Mover ${p} para o trecho seguinte`} className={ICONE}
-                                    onClick={() => setTrechos((ts) => moverPostoEntreTrechos(ts, t.seq, p, 1, almox))}><ArrowRight className="size-4" /></button>
-                                )}
-                                <button type="button" aria-label={`Subir ${p}`} className={ICONE} disabled={i === 0}
-                                  onClick={() => mudarTrecho(t.seq, (x) => ({ ...x, postos: moverPostoNaRota(x.postos, i, -1, fixo) }))}><ArrowUp className="size-4" /></button>
-                                <button type="button" aria-label={`Descer ${p}`} className={ICONE}
-                                  disabled={i === t.postos.length - 1 || t.postos[i + 1] === fixo}
-                                  onClick={() => mudarTrecho(t.seq, (x) => ({ ...x, postos: moverPostoNaRota(x.postos, i, 1, fixo) }))}><ArrowDown className="size-4" /></button>
-                                <button type="button" aria-label={`Remover ${p}`} className={cn(ICONE, 'hover:text-red-600')}
-                                  onClick={() => mudarTrecho(t.seq, (x) => ({ ...x, postos: x.postos.filter((y) => y !== p) }))}><X className="size-4" /></button>
-                              </span>
-                            )}
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                    {disponiveis.length > 0 && (
-                      <Select value="" onValueChange={(p) => p && mudarTrecho(t.seq, (x) => ({ ...x, postos: [...x.postos, p] }))}>
-                        <SelectTrigger className="h-8 text-xs" aria-label={`Adicionar posto em ${rotuloTrecho(t)}`}><SelectValue placeholder="Adicionar posto" /></SelectTrigger>
-                        <SelectContent>{disponiveis.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-                      </Select>
-                    )}
-                    {t.tipo === 'prt' && (
-                      <fieldset className="mt-auto flex flex-col gap-1 border-t border-border pt-3 text-sm">
-                        <legend className="sr-only">{`Série de ${rotuloTrecho(t)}`}</legend>
-                        {(['mesmo', 'proprio'] as SnModo[]).map((modoSn) => (
-                          <label key={modoSn} className="flex items-center gap-2">
-                            <input type="radio" name={`sn_modo_${t.seq}`} checked={t.snModo === modoSn} className="size-4 accent-enterplak"
-                              onChange={() => mudarTrecho(t.seq, (x) => ({ ...x, snModo: modoSn, faixas: modoSn === 'proprio' ? [{ sn_ini: '', sn_fim: '' }] : [] }))} />
-                            {modoSn === 'mesmo' ? 'Mesma série da PMO' : 'Série própria'}
-                          </label>
-                        ))}
-                      </fieldset>
-                    )}
-                    {(t.tipo === 'pmo' || t.snModo === 'proprio') && (
-                      <div className={cn('flex flex-col gap-2', t.tipo === 'pmo' && 'mt-auto border-t border-border pt-3')}>
-                        <p className="text-xs font-medium text-muted-foreground">Faixas de série</p>
-                        <FaixasSn faixas={t.faixas} idBase={t.tipo === 'pmo' ? '' : `t${t.seq}_`}
-                          setFaixas={(f: FaixaSN[]) => mudarTrecho(t.seq, (x) => ({ ...x, faixas: f }))}
-                          qtd={t.tipo === 'pmo' ? qtd : String(t.quantidade ?? '')} nPainel={t.tipo === 'pmo' ? nPainel : 1} />
-                      </div>
-                    )}
-                  </section>
-                </Fragment>
-              )
-            })}
-          </div>
+          <CorrenteTrechos trechos={trechos} almox={almox} idBase={idBase} qtd={qtd} nPainel={nPainel}
+            mudarTrecho={mudarTrecho} opcoesAdicionar={() => disponiveis}
+            moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almox))} />
         )}
       </Passo>
 
       {/* Barra fixa: resumo da rota e as ações */}
-      <div className="sticky -bottom-4 z-10 -mx-4 -mb-4 mt-auto flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-card px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6 lg:-bottom-8 lg:-mx-8 lg:-mb-8 lg:px-8">
-        <p className="min-w-0 flex-1 text-sm text-muted-foreground" data-testid="resumo-rota">
-          {trechos.length > 0
-            ? <><span className="font-medium text-foreground">{plural(trechos.length, 'trecho', 'trechos')}</span>{` · ${plural(totalPostos, 'posto', 'postos')}`}</>
-            : 'Escolha a PMO e a OP para montar a rota.'}
-        </p>
+      <BarraFixa resumo={trechos.length > 0 ? <ResumoRota trechos={trechos} /> : 'Escolha a PMO e a OP para montar a rota.'}>
         <Link href="/shopfloor/ordens-nova" className={buttonVariants({ variant: 'ghost' })}>Cancelar</Link>
         <Button type="button" onClick={salvar} disabled={salvando || !!erroOp || trechos.length === 0} className="bg-enterplak hover:bg-enterplak-700">
           {salvando ? 'Salvando…' : 'Salvar OP'}
         </Button>
-      </div>
+      </BarraFixa>
     </div>
   )
 }

@@ -35,5 +35,6 @@ describe('páginas de ordens', () => {
     const el = await OrdensNovaPage()
     expect(el.type).toBe(OrdensConteudo)
     expect(el.props.novaOpHref).toBe('/shopfloor/ordens/nova')
+    expect(el.props.editarTrechosBase).toBe('/shopfloor/ordens-nova')
   })
 })

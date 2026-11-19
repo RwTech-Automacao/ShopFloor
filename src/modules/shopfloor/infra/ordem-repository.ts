@@ -301,3 +301,23 @@ export async function listarRotaGravada(id: string): Promise<string[]> {
   if (error) throw error
   return ((data ?? []) as { posto: string }[]).map((r) => r.posto)
 }
+
+/** A OP inteira para a página de edição de OP com trechos (0184): dados, rota, trechos, faixas, receita e burn-in. */
+export interface OrdemComTrechosRow extends Omit<OrdemRow, 'sf_ordem_postos' | 'sf_ordem_trechos'> {
+  sf_ordem_postos: { posto: string; ordem: number; trecho_seq: number | null }[]
+  sf_ordem_trechos: { seq: number; codigo: string; tipo: 'prt' | 'pmo'; compels_op: string | null; sn_modo: 'mesmo' | 'proprio' }[]
+}
+
+/** Uma OP pelo id, com os trechos. Inexistente: null; erro de leitura lança. */
+export async function buscarOrdemComTrechos(id: string): Promise<OrdemComTrechosRow | null> {
+  const supabase = await createServerSupabase()
+  const { data, error } = await supabase
+    .from('sf_ordens')
+    .select('id,pmo,op,cliente,qtd,descricao,acp,status,sn_ini,sn_fim,embalagem_individual,placas_por_painel,created_at,sf_ordem_postos(posto,ordem,trecho_seq),sf_ordem_componentes(posto,pmo_componente),sf_ordem_burnin(posto,tempo_min),sf_ordem_faixas(seq,sn_ini,sn_fim,trecho_seq),sf_ordem_trechos(seq,codigo,tipo,compels_op,sn_modo)')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const r = data as unknown as OrdemComTrechosRow
+  return { ...r, sf_ordem_postos: r.sf_ordem_postos ?? [], sf_ordem_trechos: r.sf_ordem_trechos ?? [] }
+}
