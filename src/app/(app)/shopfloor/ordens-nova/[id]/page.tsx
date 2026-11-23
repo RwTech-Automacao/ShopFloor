@@ -7,7 +7,6 @@ import { buscarOrdemComTrechos, contarRegistros, listarOrdens, listarPostos } fr
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarEspelho } from '@/modules/shopfloor/infra/espelho-ops-repository'
 import { resumoTrechosDaOp } from '@/modules/shopfloor/infra/estrutura-repository'
-import { novaOpLiberada } from '@/modules/shopfloor/application/liberacao-nova-op'
 import { trechosDaOpGravada } from '@/modules/shopfloor/domain/edicao-op-trechos'
 import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import { agruparTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
@@ -18,7 +17,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** Edição de OP com trechos do Compels (0184). OP sem trechos segue no cadastro antigo (modal da lista). */
 export default async function EditarOpPage({ params }: { params: Promise<{ id: string }> }) {
   const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar') || !novaOpLiberada(sessao.email)) {
+  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
     return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
   }
   const { id } = await params

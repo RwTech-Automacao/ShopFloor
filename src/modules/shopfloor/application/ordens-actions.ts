@@ -13,7 +13,6 @@ import { parseTempoBurninPorPosto, temposParaLinhas } from '../domain/burnin-pos
 import { postoAlmoxarifadoPadrao, rotaDaEdicao, rotaPadraoOpNova } from '../domain/rota-op-nova'
 import { mapaPostoPerfil } from '../infra/postos-repository'
 import { ordemTemTrechos } from '../infra/estrutura-repository'
-import { novaOpLiberada } from './liberacao-nova-op'
 import { faixasDe, faixasIguais, lerFaixasDoFormulario, type FaixaSN } from '../domain/faixas-sn'
 import {
   criarOrdem,
@@ -212,8 +211,6 @@ export async function editarOrdemAction(
   // Fail-closed: sem ler a OP gravada não dá para aplicar as travas (buscarOrdemBase devolve null em qualquer erro de leitura).
   if (!base) return { ok: false, erro: 'OP não encontrada.' }
   if (ehReativacaoManual(base.status, dados.status)) dados.reaberta_manual = true
-  // A edição por trecho é a da tela nova: a mesma liberação da Nova OP (NOVA_OP_LIBERADA_PARA em produção).
-  if (formData.has('trechos') && !novaOpLiberada(sessao.email)) return { ok: false, erro: SEM_PERMISSAO }
   const porTrecho = await lerTrechos(formData)
   if (!porTrecho.ok) return porTrecho
   // Na edição por trecho, as faixas da PMO são as do último trecho (a PMO): uma fonte só para a sf_ordens e a função.

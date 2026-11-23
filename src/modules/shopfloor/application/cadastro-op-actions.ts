@@ -12,7 +12,6 @@ import { cadastrarOp, ultimaOpDaPmo } from '../infra/cadastro-op-repository'
 import { listarEspelho } from '../infra/espelho-ops-repository'
 import { buscarOpEmUso, listarPostos } from '../infra/ordem-repository'
 import { mapaPostoPerfil } from '../infra/postos-repository'
-import { novaOpLiberada } from './liberacao-nova-op'
 
 export type ResultadoCadastro = { ok: true; id: string; pmo: string; op: string } | { ok: false; erro: string }
 
@@ -20,8 +19,7 @@ const SEM_PERMISSAO = 'Você não tem permissão para gerenciar ordens de produ�
 
 async function sessaoAdmin() {
   const s = await getSessao()
-  // além de administrar, a tela Nova OP está liberada só para quem está em NOVA_OP_LIBERADA_PARA (em produção)
-  return s && podeNoModulo(s.perfil, 'shopfloor', 'administrar') && novaOpLiberada(s.email) ? s : null
+  return s && podeNoModulo(s.perfil, 'shopfloor', 'administrar') ? s : null
 }
 
 function mensagemDoBanco(e: unknown): string {

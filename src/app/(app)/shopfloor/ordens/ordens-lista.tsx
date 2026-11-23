@@ -31,7 +31,6 @@ function prtCasa(p: Prt, q: string): boolean {
 }
 
 export function OrdensLista({
-  novaOpHref,
   editarTrechosBase,
   cadeiaPrt,
   views,
@@ -42,8 +41,6 @@ export function OrdensLista({
   clientesExistentes,
   dadosPorPmo,
 }: {
-  /** Destino do botão Nova OP (tela nova, só para os liberados); sem ele, o cadastro antigo (OrdemForm). */
-  novaOpHref?: string
   /** Base da página de edição de OP com trechos (`<base>/<id>`); sem ela, toda OP edita no modal. */
   editarTrechosBase?: string
   /** Lista nova: a busca também casa com a OP no Compels e o código das PRTs, e a OP com PRTs mostra a cadeia (seta). */
@@ -84,13 +81,9 @@ export function OrdensLista({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex justify-end">
-        {novaOpHref ? (
-          <Link href={novaOpHref} className={buttonVariants({ className: 'bg-enterplak hover:bg-enterplak-700' })}>
-            <Plus className="size-4" /> Nova OP
-          </Link>
-        ) : (
-          <OrdemForm postos={chavesPostos} postosPerfil={postosPerfil} padroesExistentes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
-        )}
+        <Link href="/shopfloor/ordens/nova" className={buttonVariants({ className: 'bg-enterplak hover:bg-enterplak-700' })}>
+          <Plus className="size-4" /> Nova OP
+        </Link>
       </div>
 
       {/* Filtros */}

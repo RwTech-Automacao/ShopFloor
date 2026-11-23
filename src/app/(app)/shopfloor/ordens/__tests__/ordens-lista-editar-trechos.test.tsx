@@ -16,7 +16,7 @@ const props = { chavesPostos: [], postosPerfil: {}, padroes: [], pmosExistentes:
 
 describe('editar OP na lista', () => {
   it('na lista nova, OP com trechos abre a página própria; sem trechos segue no modal', () => {
-    render(<OrdensLista novaOpHref="/shopfloor/ordens/nova" editarTrechosBase="/shopfloor/ordens-nova" {...props} />)
+    render(<OrdensLista editarTrechosBase="/shopfloor/ordens-nova" {...props} />)
     expect(screen.getByRole('link', { name: 'Editar OP' }).getAttribute('href')).toBe('/shopfloor/ordens-nova/a')
     expect(screen.getByText('Modal 8400')).toBeTruthy()
     expect(screen.queryByText('Modal 8498')).toBeNull()
