@@ -42,8 +42,11 @@ export interface EnvioEstoqueReservado {
   pmo: string
   op: string
   posto: string
-  /** 'lote' (0156): o lote do NQA individual, uma linha com a quantidade do lote. */
-  tipo: 'caixa' | 'serie' | 'lote'
+  /**
+   * 'lote' (0156): o lote do NQA individual, uma linha com a quantidade do lote. 'grupo_prt' (0197): as placas de uma
+   * PRT da OP juntadas pela `sf_prt_agrupar` numa linha só (a placa avulsa de PRT não é mais reservada).
+   */
+  tipo: 'caixa' | 'serie' | 'lote' | 'grupo_prt'
   /** O que o coletor leu: código da caixa ou a série crua (no lote, o rótulo LOTE[...][N]). */
   bipe: string
   /** Série normalizada; vazia no bipe de caixa. */

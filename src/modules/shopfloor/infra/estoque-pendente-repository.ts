@@ -143,6 +143,9 @@ export async function listarEstoquePendente(
     .select(COLUNAS)
     .eq('ok', false)
     .is('cancelado_em', null)
+    // 0197: a placa de PRT que já está num grupo não é pendência própria — o grupo (uma linha, a quantidade de todas)
+    // é o que vai ao Compels e é ele que aparece. Sem isto a fila mostraria as mesmas placas duas vezes.
+    .is('grupo_id', null)
   if (filtro) consulta = consulta.eq('pmo', filtro.pmo).eq('op', filtro.op)
   const { data, error } = await consulta
     // ACIONABILIDADE ANTES DA DATA. Ordenar só por `criado_em desc` esconde exatamente quem a tela

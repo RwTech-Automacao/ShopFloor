@@ -27,7 +27,8 @@ const LIMITE_ERRO = 500
 
 const OPERACOES: readonly EnvioEstoqueReservado['operacao'][] = ['entrada', 'estorno']
 // 'lote' (0156): o lote do NQA individual vai ao Compels numa linha só, com a quantidade do lote.
-const TIPOS: readonly EnvioEstoqueReservado['tipo'][] = ['caixa', 'serie', 'lote']
+// 'grupo_prt' (0197): as placas de uma PRT da OP, juntadas pela sf_prt_agrupar.
+const TIPOS: readonly EnvioEstoqueReservado['tipo'][] = ['caixa', 'serie', 'lote', 'grupo_prt']
 
 function ehOperacao(v: unknown): v is EnvioEstoqueReservado['operacao'] {
   return typeof v === 'string' && (OPERACOES as readonly string[]).includes(v)
@@ -219,6 +220,19 @@ export function criarRepositorioEstoqueEnvios(
     },
   }
   return repo
+}
+
+/**
+ * O AGRUPAMENTO DAS PRTs (0197): a placa de PRT não vai sozinha ao Compels. A `sf_prt_agrupar` junta as placas
+ * pendentes de cada OP/PRT numa linha de grupo quando o trecho fecha, a OP finaliza ou a caixa da PMO está esperando
+ * na fila — o cron chama isto no começo de cada rodada, para o grupo sair na mesma rodada. Devolve quantos grupos
+ * nasceram; erro do banco sobe (a rota loga e entrega o resto da fila assim mesmo).
+ */
+export async function agruparPrtPendentes(sb: SupabaseClient = createServiceSupabase()): Promise<number> {
+  const { data, error } = await sb.rpc('sf_prt_agrupar', {})
+  if (error) throw new Error(`sf_prt_agrupar: ${error.message}`)
+  const n = Number(data ?? 0)
+  return Number.isFinite(n) ? n : 0
 }
 
 /**

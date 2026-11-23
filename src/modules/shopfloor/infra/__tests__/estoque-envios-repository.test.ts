@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 vi.mock('server-only', () => ({}))
 vi.mock('@/shared/lib/supabase/service', () => ({ createServiceSupabase: () => null }))
 
-import { criarFilhaAtual, criarRepositorioEstoqueEnvios, criarTrocarOpDaLinha, lerEnvioEstoque } from '../estoque-envios-repository'
+import { agruparPrtPendentes, criarFilhaAtual, criarRepositorioEstoqueEnvios, criarTrocarOpDaLinha, lerEnvioEstoque } from '../estoque-envios-repository'
 import type { EnvioEstoqueReservado } from '../../application/enviar-estoque'
 
 interface Chamada {
@@ -120,6 +120,27 @@ const ENVIO: EnvioEstoqueReservado = {
   tentativas: 2,
   criadoEm: LINHA_RPC.criado_em,
 }
+
+describe('grupo de PRT (0197)', () => {
+  it('a linha de grupo reservada é lida (não é ilegível), com a quantidade do grupo', () => {
+    const l = lerEnvioEstoque({
+      ...LINHA_RPC, id: 'g1', chave: 'PRT/ord-1/PRT446/G1', pmo: 'PRT446', op: '8649', posto: 'Inspeção AOI TOP',
+      tipo: 'grupo_prt', bipe: 'GRUPO[G1][12]', serie_norm: '', quantidade: 12,
+    })
+    expect(l).toMatchObject({ tipo: 'grupo_prt', quantidade: 12, chave: 'PRT/ord-1/PRT446/G1' })
+  })
+
+  it('agruparPrtPendentes chama a sf_prt_agrupar e devolve quantos grupos nasceram', async () => {
+    const { sb, rpcs } = sbFalso({ rpc: () => ({ data: 2, error: null }) })
+    expect(await agruparPrtPendentes(sb)).toBe(2)
+    expect(rpcs).toEqual([{ nome: 'sf_prt_agrupar', args: {} }])
+  })
+
+  it('agruparPrtPendentes: erro do banco sobe (quem chama loga e segue)', async () => {
+    const { sb } = sbFalso({ rpc: () => ({ data: null, error: { message: 'function sf_prt_agrupar() does not exist' } }) })
+    await expect(agruparPrtPendentes(sb)).rejects.toThrow('sf_prt_agrupar')
+  })
+})
 
 describe('lerEnvioEstoque', () => {
   it('lê a linha da reserva e converte os nomes das colunas', () => {

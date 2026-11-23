@@ -1,6 +1,6 @@
 import { entregarEstoquePendente } from '@/modules/shopfloor/application/enviar-estoque'
 import { criarPortaCompels } from '@/modules/shopfloor/infra/compels'
-import { criarRepositorioEstoqueEnvios } from '@/modules/shopfloor/infra/estoque-envios-repository'
+import { agruparPrtPendentes, criarRepositorioEstoqueEnvios } from '@/modules/shopfloor/infra/estoque-envios-repository'
 /**
  * A comparação em tempo constante do cron dos Alertas, reaproveitada de propósito: é exatamente a
  * mesma pergunta (um segredo de crontab que chega num cabeçalho `Bearer`), a função não tem nada de
@@ -88,6 +88,15 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const repo = criarRepositorioEstoqueEnvios()
+    // 0197: junta as placas de PRT em grupos ANTES de reservar (o grupo que nasce agora já sai nesta rodada). Falhar
+    // aqui não derruba a entrega: o resto da fila não depende do agrupamento, e as placas esperam a próxima rodada.
+    try {
+      const grupos = await agruparPrtPendentes()
+      if (grupos > 0) console.log(`${TAG} ${agoraLegivel()} ${grupos} grupo(s) de PRT criado(s) para o Compels`)
+    } catch (e) {
+      console.error(`${TAG} ${agoraLegivel()} agrupar as PRTs falhou (a fila segue sem os grupos novos):`,
+        e instanceof Error ? e.message : String(e))
+    }
     const resumo = await entregarEstoquePendente(criarPortaCompels(), repo)
     const linha = `${TAG} ${agoraLegivel()} rodada: ${resumo.enviados} enviado(s), ${resumo.falhas} falha(s), ${resumo.aguardando} aguardando`
     // A rodada COM falha sai na mesma saída (stderr) em que o motivo de cada falha acabou de ser
