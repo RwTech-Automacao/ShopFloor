@@ -176,6 +176,13 @@ describe('a leitura da tela não esconde quem precisa de gente', () => {
     expect(c.filtros).toEqual([['eq', 'ok', false], ['is', 'cancelado_em', null], ['is', 'grupo_id', null]])
   })
 
+  it('0197: a linha de grupo de PRT é lida como grupo_prt (e não como caixa)', async () => {
+    const { sb } = sbFalso(() => ({ data: [bruta({ tipo: 'grupo_prt', bipe: 'GRUPO[G1][3]', alvo: 'GRUPO[G1][3]' })], error: null }))
+    createServerSupabase.mockResolvedValue(sb)
+    const { linhas } = await listarEstoquePendente(50)
+    expect(linhas[0]?.tipo).toBe('grupo_prt')
+  })
+
   it('0197: a placa de PRT que já está num grupo não entra (o grupo aparece por ela; sem isso a fila contaria 2x)', async () => {
     const { sb, chamadas } = sbFalso(() => ({ data: [], error: null }))
     createServerSupabase.mockResolvedValue(sb)

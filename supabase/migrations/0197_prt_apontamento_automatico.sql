@@ -21,7 +21,8 @@
 --           enviadas) >= sf_ordens.qtd (qtd vazia: não vale);
 --        b. OP FINALIZADA: upper(btrim(sf_ordens.status)) = 'FINALIZADA' (o valor da 0145 e da edição manual);
 --        c. PMO ESPERANDO: há linha da PMO da mesma OP na fila (ordem_id null, pmo/op = os da OP, entrada, não ok, não
---           cancelada) — aponta o que a PRT já tem para a caixa não travar por falta de saldo.
+--           cancelada) MAIS NOVA que o último grupo vivo da PRT — aponta o que a PRT já tem para a caixa não travar por
+--           falta de saldo, uma vez por caixa (a caixa presa não gera um grupo a cada rodada).
 --      Grupos da mesma OP nascem na ordem do trecho (seq: SMT antes de PTH), com criado_em crescente
 --      (clock_timestamp), que é a ordem da reserva.
 --      TRAVA: pg_advisory_xact_lock(hashtext('PRT-GRUPO/<ordem_id>/<codigo>')) — a sf_prt_agrupar e o desfazer do bipe
@@ -39,7 +40,10 @@
 --   5. ESTORNO: placa removida ANTES de agrupar → cancela, como antes. Placa de um grupo AINDA INTOCADO (não ok, nenhuma
 --      tentativa, sem reserva viva) → o grupo é DESFEITO (cancelado, as placas soltas) e a placa cancelada; a próxima
 --      rodada reagrupa o que sobrou, se o gatilho ainda valer. Placa de grupo TOCADO ou ENVIADO → estorno ligado à
---      PLACA (entrada_id), como antes; ele espera a placa ficar ok (quando o grupo chegar) e segue manual no adaptador.
+--      PLACA (entrada_id), na op do GRUPO (quem levou a placa ao Compels); ele espera a placa ficar ok (quando o grupo
+--      chegar) e segue manual no adaptador. O estoque do estorno vem da placa (trigger da 0175), o mesmo do grupo.
+--      Ao desmontar um grupo, a placa dele que já tinha estorno (grupo tocado que voltou a intocado: a rodada só
+--      esperou) é cancelada junto com o estorno pendente dela — nada saiu ao ERP, e sem isso as duas ficavam órfãs.
 --
 -- Esquema: sf_ordens.apontar_prt; sf_estoque_envios.grupo_id (FK para a própria tabela) + índice; o CHECK de tipo
 -- ganha 'grupo_prt'; CHECK sf_estoque_envios_grupo_coerente.
@@ -165,6 +169,8 @@ declare
   v_g record;
   v_ent record;
   v_tocada boolean;
+  v_op text;
+  v_membros uuid[];
 begin
   if old.numero_serie_norm = '' or old.status ilike 'reprov%' then
     return old;
@@ -213,13 +219,24 @@ begin
     -- 0197: placa num grupo. Grupo intocado (não ok, nenhuma tentativa, sem reserva viva) → desfaz o grupo (cancela e
     -- solta as placas; a próxima rodada reagrupa) e a placa segue a regra de sempre. Grupo tocado ou enviado → a placa
     -- conta como tocada: estorno ligado a ela.
+    v_op := v_ent.op;
     if v_ent.grupo_id is not null then
       if not v_g.ok and v_g.tentativas = 0
          and (v_g.reservado_em is null or v_g.reservado_em < now() - interval '15 minutes') then
-        update public.sf_estoque_envios set grupo_id = null where grupo_id = v_g.id;
+        v_membros := array(select m.id from public.sf_estoque_envios m where m.grupo_id = v_g.id);
+        update public.sf_estoque_envios set grupo_id = null where id = any (v_membros);
         update public.sf_estoque_envios set cancelado_em = coalesce(cancelado_em, now()) where id = v_g.id;
+        -- a placa do grupo que já tinha estorno (o grupo foi tocado e voltou a intocado: a rodada só esperou, nada foi
+        -- ao ERP) não fica órfã na fila: ela e o estorno pendente dela são cancelados (nunca saíram)
+        update public.sf_estoque_envios s set cancelado_em = now()
+         where s.operacao = 'estorno' and s.entrada_id = any (v_membros) and not s.ok and s.cancelado_em is null;
+        update public.sf_estoque_envios m set cancelado_em = now()
+         where m.id = any (v_membros) and m.id <> v_ent.id and not m.ok and m.cancelado_em is null
+           and m.estornado >= m.quantidade;
       else
         v_tocada := true;
+        -- quem levou a placa ao Compels (ou vai levar) é o GRUPO: o estorno sai na op dele (a filha atual do trecho)
+        v_op := v_g.op;
       end if;
     end if;
     -- ainda na fila e ninguém mexeu → cancela (não se estorna o que não saiu)
@@ -233,7 +250,7 @@ begin
       (chave, operacao, pmo, op, posto, tipo, bipe, serie_norm, quantidade, estoque, ordem_id, entrada_id, criado_em)
     values
       (public.sf_trecho_chave(t.ordem_id, v_ent.pmo, v_ent.posto, v_ent.alvo, 'estorno'), 'estorno',
-       v_ent.pmo, v_ent.op, v_ent.posto, v_ent.tipo, v_ent.bipe, v_ent.serie_norm,
+       v_ent.pmo, v_op, v_ent.posto, v_ent.tipo, v_ent.bipe, v_ent.serie_norm,
        v_ent.quantidade - v_ent.estornado, v_ent.estoque, t.ordem_id, v_ent.id, clock_timestamp());
     update public.sf_estoque_envios set estornado = quantidade where id = v_ent.id;
   end loop;
@@ -275,10 +292,16 @@ begin
           and (select coalesce(sum(e.quantidade - e.estornado), 0) from public.sf_estoque_envios e
                 where e.ordem_id = t.ordem_id and e.pmo = t.codigo and e.operacao = 'entrada'
                   and e.tipo <> 'grupo_prt' and e.cancelado_em is null) >= t.qtd)
-      -- c. a PMO da mesma OP esperando na fila
+      -- c. a PMO da mesma OP esperando na fila — uma linha da PMO MAIS NOVA que o último grupo vivo desta PRT (sem
+      --    grupo: qualquer uma). Sem isto uma caixa PRESA (OP não liberada, sem configuração, 5 tentativas, erro
+      --    permanente) gerava um grupo minúsculo a cada rodada.
       or exists (select 1 from public.sf_estoque_envios p
                   where p.ordem_id is null and p.pmo = t.pmo and p.op = t.op and p.operacao = 'entrada'
-                    and not p.ok and p.cancelado_em is null);
+                    and not p.ok and p.cancelado_em is null
+                    and p.criado_em > coalesce((select max(g.criado_em) from public.sf_estoque_envios g
+                                                 where g.ordem_id = t.ordem_id and g.pmo = t.codigo
+                                                   and g.tipo = 'grupo_prt' and g.cancelado_em is null),
+                                               '-infinity'::timestamptz));
     continue when not v_vale;
     -- as placas pendentes sem grupo, travadas (relidas depois da trava: o que outra rodada agrupou não vem)
     v_ids := array(
@@ -402,7 +425,7 @@ begin
            coalesce((select sum(case when e.operacao = 'estorno' then -e.quantidade else e.quantidade end)
                        from public.sf_estoque_envios e
                       where e.ordem_id = o.id and e.pmo = ot.codigo and e.ok and e.grupo_id is null), 0)::int,
-           coalesce((select sum(e.quantidade)
+           coalesce((select sum(e.quantidade - e.estornado)  -- 0197: a placa estornada na fila não conta
                        from public.sf_estoque_envios e
                       where e.ordem_id = o.id and e.pmo = ot.codigo and e.operacao = 'entrada'
                         and not e.ok and e.cancelado_em is null and e.grupo_id is null), 0)::int,

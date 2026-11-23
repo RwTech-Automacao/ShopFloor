@@ -133,7 +133,12 @@ begin
   perform pg_temp.confere('resumo depois do envio', r.apontadas || '/' || r.na_fila, '3/0');
 
   -- ---------- placa removida DEPOIS de enviada: estorno (manual) ligado à placa ----------
+  -- (a placa ficou com uma op velha: a do Compels é a do GRUPO, que foi quem levou a placa)
+  update sf_estoque_envios set op = 'velha' where grupo_id = g and serie_norm = '2';
   perform pg_temp.tira('Inspeção AOI TOP', 'PMON1', '9601', '2');
+  perform pg_temp.confere('estorno com a op do grupo',
+    (select s.op || '|' || s.estoque from sf_estoque_envios s join sf_estoque_envios m on m.id = s.entrada_id
+      where s.operacao = 'estorno' and m.ordem_id = v and m.serie_norm = '2'), '9602|EINTER');
   perform pg_temp.confere('placa estornada', pg_temp.placas(v, 'PRTN1S'), '1=ok,2=estornada,3=ok');
   perform pg_temp.confere('estorno',
     (select count(*)::text from sf_estoque_envios s join sf_estoque_envios m on m.id = s.entrada_id
@@ -226,6 +231,72 @@ begin
   update sf_ordens set status = 'FINALIZADA' where id = v;
   perform sf_prt_agrupar();
   perform pg_temp.confere('OP finalizada', pg_temp.grupos(v, 'PRTN3S'), 'G1:4:9622:EINTER:fila:4');
+end $$;
+
+-- ======================= 4b. PMO PRESA NÃO GERA GRUPO A CADA RODADA =======================
+select pg_temp.cadastra('PMON6', '9651', '100', $j$[
+  {"seq":1,"codigo":"PRTN6S","tipo":"prt","compels_op":"9652","postos":["SPI","Inspeção AOI TOP"],"faixas":[]},
+  {"seq":2,"codigo":"PMON6","tipo":"pmo","compels_op":"9651","postos":["Teste","Almoxarifado"],"faixas":[{"sn_ini":"1","sn_fim":"99"}]}]$j$);
+do $$
+declare v uuid := pg_temp.op('PMON6', '9651');
+begin
+  -- a caixa da PMO presa na fila (5 tentativas, erro permanente)
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, quantidade, tentativas, erro, criado_em)
+  values ('ALMOX/PMON6/9651/Almoxarifado/CX1/E1', 'PMON6', '9651', 'Almoxarifado', 'caixa', 'CX1', 1, 5, 'preso', clock_timestamp());
+  perform pg_temp.bipa('Inspeção AOI TOP', 'PMON6', '9651', '1');
+  perform sf_prt_agrupar();
+  perform pg_temp.confere('PMO presa: 1º grupo', pg_temp.grupos(v, 'PRTN6S'), 'G1:1:9652:EINTER:fila:1');
+  -- rodadas seguintes, com bipes novos: a mesma caixa presa não gera grupo de novo
+  perform pg_temp.bipa('Inspeção AOI TOP', 'PMON6', '9651', '2');
+  perform sf_prt_agrupar();
+  perform pg_temp.bipa('Inspeção AOI TOP', 'PMON6', '9651', '3');
+  perform sf_prt_agrupar();
+  perform pg_temp.confere('PMO presa: nada de grupo minúsculo', pg_temp.grupos(v, 'PRTN6S'), 'G1:1:9652:EINTER:fila:1');
+  perform pg_temp.confere('PMO presa: placas esperando', pg_temp.placas(v, 'PRTN6S'), '1=grupo,2=fila,3=fila');
+  -- uma caixa NOVA da PMO (mais nova que o último grupo): agrupa o que tem
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, quantidade, criado_em)
+  values ('ALMOX/PMON6/9651/Almoxarifado/CX2/E1', 'PMON6', '9651', 'Almoxarifado', 'caixa', 'CX2', 1, clock_timestamp());
+  perform sf_prt_agrupar();
+  perform pg_temp.confere('caixa nova: grupo novo', pg_temp.grupos(v, 'PRTN6S'), 'G1:1:9652:EINTER:fila:1,G2:2:9652:EINTER:fila:2');
+end $$;
+
+-- ======================= 4c. DESMONTAR GRUPO COM PLACA JÁ ESTORNADA (nunca enviada): nada fica órfão =======================
+select pg_temp.cadastra('PMON7', '9661', '100', $j$[
+  {"seq":1,"codigo":"PRTN7S","tipo":"prt","compels_op":"9662","postos":["SPI","Inspeção AOI TOP"],"faixas":[]},
+  {"seq":2,"codigo":"PMON7","tipo":"pmo","compels_op":"9661","postos":["Teste","Almoxarifado"],"faixas":[{"sn_ini":"1","sn_fim":"99"}]}]$j$);
+do $$
+declare v uuid := pg_temp.op('PMON7', '9661'); r record;
+begin
+  insert into sf_estoque_envios (chave, pmo, op, posto, tipo, bipe, quantidade, criado_em)
+  values ('ALMOX/PMON7/9661/Almoxarifado/CX1/E1', 'PMON7', '9661', 'Almoxarifado', 'caixa', 'CX1', 1, clock_timestamp());
+  perform pg_temp.bipa('Inspeção AOI TOP', 'PMON7', '9661', 'p1');
+  perform pg_temp.bipa('Inspeção AOI TOP', 'PMON7', '9661', 'p2');
+  perform sf_prt_agrupar();
+  perform pg_temp.confere('N7 grupo', pg_temp.grupos(v, 'PRTN7S'), 'G1:2:9662:EINTER:fila:2');
+  -- uma rodada pega o grupo (tocado) e, enquanto isso, a p1 sai: estorno ligado a ela
+  update sf_estoque_envios set tentativas = 1, reservado_em = now() where chave = 'PRT/' || v::text || '/PRTN7S/G1';
+  perform pg_temp.tira('Inspeção AOI TOP', 'PMON7', '9661', 'p1');
+  perform pg_temp.confere('p1 estornada no grupo tocado', pg_temp.placas(v, 'PRTN7S'), 'p1=estornada,p2=grupo');
+  -- a rodada só ESPEROU (aguardar: nada foi ao ERP, a tentativa volta): o grupo fica intocado de novo
+  update sf_estoque_envios set tentativas = 0, reservado_em = null where chave = 'PRT/' || v::text || '/PRTN7S/G1';
+  -- a p2 sai: o grupo é desmontado; a p1 (estornada, nunca enviada) e o estorno dela são cancelados
+  perform pg_temp.tira('Inspeção AOI TOP', 'PMON7', '9661', 'p2');
+  perform pg_temp.confere('N7 desmontado', pg_temp.grupos(v, 'PRTN7S'), 'G1:2:9662:EINTER:cancelado:0');
+  perform pg_temp.confere('N7 placas canceladas', pg_temp.placas(v, 'PRTN7S'), 'p1=cancelada,p2=cancelada');
+  perform pg_temp.confere('N7 estorno da p1 cancelado',
+    (select count(*)::text from sf_estoque_envios where ordem_id = v and operacao = 'estorno' and not ok and cancelado_em is null), '0');
+  select * into r from sf_resumo_trechos_op('PMON7', '9661');
+  perform pg_temp.confere('N7 resumo', r.apontadas || '/' || r.na_fila, '0/0');
+end $$;
+
+-- o na_fila desconta o estornado da placa ainda na fila (a tocada da OP antiga: 1 placa, estornada)
+do $$
+declare r record;
+begin
+  update sf_estoque_envios set estornado = quantidade where pmo = 'PRTANT' and serie_norm = '3';
+  select * into r from sf_resumo_trechos_op('PMOANTIGA', '9500');
+  perform pg_temp.confere('na_fila desconta o estornado', r.na_fila::text, '0');
+  update sf_estoque_envios set estornado = 0 where pmo = 'PRTANT' and serie_norm = '3';
 end $$;
 
 -- ======================= 5. EDIÇÃO DA OP: o grupo não é "SN fora da faixa" =======================

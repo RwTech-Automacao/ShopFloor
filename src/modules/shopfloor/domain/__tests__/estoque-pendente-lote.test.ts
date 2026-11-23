@@ -26,4 +26,9 @@ describe('rotuloTipoGrupo (0156: envio de lote)', () => {
   it('lote sem linha: só "lote do NQA"', () => {
     expect(rotuloTipoGrupo(grupo('lote'))).toBe('lote do NQA')
   })
+
+  it('grupo de PRT (0197) tem rótulo próprio, com a quantidade do grupo', () => {
+    expect(rotuloTipoGrupo(grupo('grupo_prt', [{ operacao: 'entrada', quantidade: 12 }]))).toBe('PRT (grupo) · 12 peças')
+    expect(rotuloTipoGrupo(grupo('grupo_prt'))).toBe('PRT (grupo)')
+  })
 })

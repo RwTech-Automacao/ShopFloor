@@ -13,6 +13,15 @@
 -- FICAM (inofensivos sem as funções novas, e o que impede a 0197 reaplicada de mexer de novo): sf_ordens.apontar_prt
 -- (com os valores de hoje; a OP antiga continua false, mas o enfileirar antigo não a lê), sf_estoque_envios.grupo_id
 -- (+ FK e índice) e o 'grupo_prt' no CHECK de tipo. As linhas de PRT canceladas na 0197 continuam canceladas.
+--
+-- ATENÇÃO, rollback seguido de REAPLICAÇÃO da 0197: entre os dois, o enfileirar antigo volta a pôr na fila as placas de
+-- PRT das OPs antigas (apontar_prt = false). A 0197 reaplicada NÃO as cancela (o cancelamento só roda na primeira
+-- aplicação, junto com a criação da coluna) e o agrupar não as pega (OP desligada): elas ficam paradas na fila. Para
+-- ver e cancelar as intocadas à mão depois da reaplicação:
+--   update sf_estoque_envios e set cancelado_em = now()
+--    where e.ordem_id is not null and e.operacao = 'entrada' and not e.ok and e.cancelado_em is null
+--      and e.tentativas = 0 and e.reservado_em is null and e.estornado = 0 and e.grupo_id is null
+--      and exists (select 1 from sf_ordens o where o.id = e.ordem_id and not o.apontar_prt);
 -- Idempotente: psql -1 -v ON_ERROR_STOP=1 -f docs/operacao/estrutura-op/rollback-0197.sql
 
 do $rb$
