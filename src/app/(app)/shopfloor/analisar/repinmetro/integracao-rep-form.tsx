@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
+import { useCarga } from '@/shared/ui/use-carga'
 import { Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -74,7 +75,8 @@ export function IntegracaoRepForm({ modelos }: { modelos: string[] }) {
   const [modelo, setModelo] = useState('') // '' = todos os modelos (só na busca pelo REP)
   const [termo, setTermo] = useState('')
   const [resultado, setResultado] = useState<{ por: Por; termo: string; integracoes: IntegracaoRep[] } | null>(null)
-  const [buscando, startBusca] = useTransition()
+  // Sem transição: uma busca pendente em `startTransition(async)` prendia os cliques no menu (ver use-carga.ts).
+  const [buscando, executar] = useCarga()
 
   function onBuscar() {
     if (buscando) return
@@ -82,11 +84,11 @@ export function IntegracaoRepForm({ modelos }: { modelos: string[] }) {
       toast.error('Bipe ou digite o número de série.')
       return
     }
-    startBusca(async () => {
-      const r = await buscarIntegracaoRepinmetro(por, termo, por === 'rep' ? modelo : '')
-      if (r.ok) setResultado({ por, termo: termo.trim(), integracoes: r.integracoes })
-      else toast.error(r.erro)
-    })
+    executar(
+      () => buscarIntegracaoRepinmetro(por, termo, por === 'rep' ? modelo : ''),
+      (r) => { if (r.ok) setResultado({ por, termo: termo.trim(), integracoes: r.integracoes }); else toast.error(r.erro) },
+      () => toast.error('Não foi possível buscar. Tente de novo.'),
+    )
   }
 
   function trocarPor(novo: Por) {

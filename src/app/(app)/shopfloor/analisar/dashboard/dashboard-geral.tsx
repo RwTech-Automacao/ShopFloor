@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import {
 } from '@/modules/shopfloor/domain/dashboard'
 import { capitalizarDescricaoDefeito, separarCodigoDefeito } from '@/modules/shopfloor/domain/defeito'
 import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
+import { useCarga } from '@/shared/ui/use-carga'
 import { PainelDashboard } from './dashboard-painel'
 
 const TODOS = '__todos__'
@@ -34,17 +35,22 @@ export function DashboardGeral({ ordens, postos, colaboradores }: {
   const [pagina, setPagina] = useState(0)
   const [dados, setDados] = useState<DadosDashboard | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [carregando, start] = useTransition()
+  // Carga SEM transição: o carregamento das agregações demora segundos e, com `startTransition(async)`, prendia
+  // qualquer clique no menu/abas até terminar (ver use-carga.ts).
+  const [carregando, executar] = useCarga()
 
   // Recarrega a cada mudança de filtro ou de página. O filtro entra na dependência como JSON porque é
   // um objeto novo a cada render — comparar por referência recarregaria sempre.
   const chave = JSON.stringify(filtro)
   useEffect(() => {
-    start(async () => {
-      const r = await carregarDashboardGeral(filtro, pagina)
-      if (r.ok) { setDados(r.dados); setErro(null) }
-      else { setDados(null); setErro(r.erro); toast.error(r.erro) }
-    })
+    executar(
+      () => carregarDashboardGeral(filtro, pagina),
+      (r) => {
+        if (r.ok) { setDados(r.dados); setErro(null) }
+        else { setDados(null); setErro(r.erro); toast.error(r.erro) }
+      },
+      () => { setDados(null); setErro('Não foi possível carregar o dashboard.'); toast.error('Não foi possível carregar o dashboard.') },
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `chave` já representa o filtro inteiro
   }, [chave, pagina])
 

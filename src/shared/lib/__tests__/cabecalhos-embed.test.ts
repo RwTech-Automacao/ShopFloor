@@ -50,4 +50,11 @@ describe("headers() do next.config", () => {
     expect(v).toHaveLength(2);
     expect(v[0]).toBe("frame-ancestors 'self'");
   });
+  it("streaming: X-Accel-Buffering: no em todas as rotas (o nginx não segura o loading.tsx)", async () => {
+    vi.resetModules();
+    const cfg = (await import("../../../../next.config")).default;
+    const regras = await cfg.headers!();
+    const geral = regras.find((r) => r.source === "/:path*");
+    expect(geral?.headers).toContainEqual({ key: "X-Accel-Buffering", value: "no" });
+  });
 });
