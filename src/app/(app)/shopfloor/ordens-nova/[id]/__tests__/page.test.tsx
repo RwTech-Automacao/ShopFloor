@@ -2,15 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 const getSessao = vi.fn()
-const novaOpLiberada = vi.fn()
+const podeNoModulo = vi.fn()
 const repo = vi.hoisted(() => ({ buscarOrdemComTrechos: vi.fn(), contarRegistros: vi.fn(), listarOrdens: vi.fn(), listarPostos: vi.fn() }))
 const notFound = vi.hoisted(() => vi.fn(() => { throw new Error('NOT_FOUND') }))
 const redirect = vi.hoisted(() => vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) }))
 vi.mock('next/navigation', () => ({ notFound, redirect }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: () => getSessao() }))
-vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: () => true }))
+vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: (...a: unknown[]) => podeNoModulo(...a) }))
 vi.mock('@/shared/ui/sem-permissao', () => ({ SemPermissao: () => null }))
-vi.mock('@/modules/shopfloor/application/liberacao-nova-op', () => ({ novaOpLiberada: (e: string) => novaOpLiberada(e) }))
 vi.mock('@/modules/shopfloor/infra/ordem-repository', () => repo)
 vi.mock('@/modules/shopfloor/infra/postos-repository', () => ({ mapaPostoPerfil: vi.fn().mockResolvedValue({}) }))
 vi.mock('@/modules/shopfloor/infra/espelho-ops-repository', () => ({ listarEspelho: vi.fn().mockRejectedValue(new Error('x')) }))
@@ -33,7 +32,7 @@ const abrir = (id = ID) => EditarOpPage({ params: Promise.resolve({ id }) })
 beforeEach(() => {
   vi.clearAllMocks()
   getSessao.mockResolvedValue({ email: 'a@x', perfil: {} })
-  novaOpLiberada.mockReturnValue(true)
+  podeNoModulo.mockReturnValue(true)
   repo.buscarOrdemComTrechos.mockResolvedValue(ORDEM)
   repo.contarRegistros.mockResolvedValue(3)
   repo.listarOrdens.mockResolvedValue([{ cliente: 'LINCE' }, { cliente: '' }])
@@ -41,8 +40,8 @@ beforeEach(() => {
 })
 
 describe('página de edição de OP com trechos', () => {
-  it('quem não está liberado para a tela nova não entra', async () => {
-    novaOpLiberada.mockReturnValue(false)
+  it('quem não administra o ShopFloor não entra (e basta administrar: sem trava por e-mail)', async () => {
+    podeNoModulo.mockReturnValue(false)
     expect((await abrir()).type).toBe(SemPermissao)
     expect(repo.buscarOrdemComTrechos).not.toHaveBeenCalled()
   })

@@ -4,7 +4,6 @@ import { AppShell } from '@/shared/ui/app-shell'
 import { KioskProvider } from '@/shared/ui/kiosk/kiosk-context'
 import { TecladoProvider } from '@/shared/ui/teclado-provider'
 import { modoStorageFotos } from '@/modules/recebimento/infra/armazenamento'
-import { novaOpLiberada } from '@/modules/shopfloor/application/liberacao-nova-op'
 import { alertasDisponiveis, alertasMenuPorModulo } from '@/modules/alertas/application/liberacao'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +21,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         exportarFotosVisivel={modoStorageFotos() === 'supabase'}
         alertasLiberado={alertasDisponiveis(sessao)}
         alertasMenu={alertasMenuPorModulo(sessao.email)}
-        novaOpMenu={novaOpLiberada(sessao.email)}
       >
         {children}
       </AppShell>

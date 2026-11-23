@@ -1,13 +1,6 @@
-import { getSessao } from '@/modules/auth/application/get-sessao'
-import { podeNoModulo } from '@/modules/auth/domain/perfil'
-import { SemPermissao } from '@/shared/ui/sem-permissao'
-import { OrdensConteudo } from './ordens-conteudo'
+import { redirect } from 'next/navigation'
 
-export default async function OrdensPage() {
-  const sessao = await getSessao()
-  if (!sessao || !podeNoModulo(sessao.perfil, 'shopfloor', 'administrar')) {
-    return <SemPermissao descricao="Você não tem permissão para gerenciar ordens de produção." />
-  }
-  // Sempre o cadastro antigo (OrdemForm); a tela nova fica em /shopfloor/ordens-nova.
-  return <OrdensConteudo />
+/** A tela antiga saiu: links salvos e alertas que apontam para cá seguem para a lista de Ordens de Produção. */
+export default function OrdensPage() {
+  redirect('/shopfloor/ordens-nova')
 }

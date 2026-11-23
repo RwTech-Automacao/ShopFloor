@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 const getSessao = vi.fn()
-const novaOpLiberada = vi.fn()
+const podeNoModulo = vi.fn()
+const redirect = vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) })
+vi.mock('next/navigation', () => ({ redirect: (u: string) => redirect(u) }))
 vi.mock('@/modules/auth/application/get-sessao', () => ({ getSessao: () => getSessao() }))
-vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: () => true }))
+vi.mock('@/modules/auth/domain/perfil', () => ({ podeNoModulo: (...a: unknown[]) => podeNoModulo(...a) }))
 vi.mock('@/shared/ui/sem-permissao', () => ({ SemPermissao: () => null }))
-vi.mock('@/modules/shopfloor/application/liberacao-nova-op', () => ({ novaOpLiberada: (e: string) => novaOpLiberada(e) }))
 vi.mock('../ordens-conteudo', () => ({ OrdensConteudo: () => null }))
 
 import OrdensPage from '../page'
@@ -15,26 +16,27 @@ import { OrdensConteudo } from '../ordens-conteudo'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
 
 beforeEach(() => {
+  vi.clearAllMocks()
   getSessao.mockResolvedValue({ email: 'a@x', perfil: {} })
+  podeNoModulo.mockReturnValue(true)
 })
 
 describe('páginas de ordens', () => {
-  it('a antiga renderiza o cadastro antigo (sem href) mesmo para liberado', async () => {
-    novaOpLiberada.mockReturnValue(true)
-    const el = await OrdensPage()
-    expect(el.type).toBe(OrdensConteudo)
-    expect(el.props.novaOpHref).toBeUndefined()
+  it('a rota antiga redireciona para a tela nova', () => {
+    expect(() => OrdensPage()).toThrow('REDIRECT:/shopfloor/ordens-nova')
+    expect(redirect).toHaveBeenCalledWith('/shopfloor/ordens-nova')
   })
-  it('a nova recusa quem não está liberado', async () => {
-    novaOpLiberada.mockReturnValue(false)
-    const el = await OrdensNovaPage()
-    expect(el.type).toBe(SemPermissao)
+  it('a nova recusa quem não administra o ShopFloor', async () => {
+    podeNoModulo.mockReturnValue(false)
+    expect((await OrdensNovaPage()).type).toBe(SemPermissao)
+    getSessao.mockResolvedValue(null)
+    expect((await OrdensNovaPage()).type).toBe(SemPermissao)
   })
-  it('a nova, liberado: Nova OP aponta para /shopfloor/ordens/nova', async () => {
-    novaOpLiberada.mockReturnValue(true)
+  it('a nova abre para todo administrador, sem olhar o e-mail', async () => {
+    getSessao.mockResolvedValue({ email: 'qualquer@x', perfil: {} })
     const el = await OrdensNovaPage()
     expect(el.type).toBe(OrdensConteudo)
-    expect(el.props.novaOpHref).toBe('/shopfloor/ordens/nova')
     expect(el.props.editarTrechosBase).toBe('/shopfloor/ordens-nova')
+    expect(podeNoModulo).toHaveBeenCalledWith({}, 'shopfloor', 'administrar')
   })
 })

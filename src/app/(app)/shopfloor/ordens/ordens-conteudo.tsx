@@ -16,10 +16,10 @@ function prtsDaCadeia(trechos: { seq: number; tipo: string; codigo?: string; com
 }
 
 /**
- * Lista de OPs compartilhada entre /shopfloor/ordens (cadastro antigo) e /shopfloor/ordens-nova (botão para a tela nova
- * e, com `editarTrechosBase`, a OP com trechos editada em `${editarTrechosBase}/<id>`). A permissão é checada por quem chama.
+ * Lista de OPs de /shopfloor/ordens-nova: "Nova OP" leva ao cadastro em passos e, com `editarTrechosBase`, a OP com
+ * trechos é editada em `${editarTrechosBase}/<id>` (a sem trechos, no modal). A permissão é checada por quem chama.
  */
-export async function OrdensConteudo({ novaOpHref, editarTrechosBase, cadeiaPrt }: { novaOpHref?: string; editarTrechosBase?: string; cadeiaPrt?: boolean }) {
+export async function OrdensConteudo({ editarTrechosBase, cadeiaPrt }: { editarTrechosBase?: string; cadeiaPrt?: boolean }) {
   const [ordens, postos, padroes, postosPerfil] = await Promise.all([listarOrdens(), listarPostos(), listarPadroes(), mapaPostoPerfil()])
   const chavesPostos = postos.map((p) => p.chave).filter((c) => c !== 'Manutenção')
   const views: OrdemView[] = ordens.map((o) => ({
@@ -62,7 +62,7 @@ export async function OrdensConteudo({ novaOpHref, editarTrechosBase, cadeiaPrt 
         <p className="text-sm text-muted-foreground">{views.length} OP(s) cadastrada(s)</p>
       </div>
 
-      <OrdensLista cadeiaPrt={cadeiaPrt} novaOpHref={novaOpHref} editarTrechosBase={editarTrechosBase} views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
+      <OrdensLista cadeiaPrt={cadeiaPrt} editarTrechosBase={editarTrechosBase} views={views} chavesPostos={chavesPostos} postosPerfil={postosPerfil} padroes={padroes} pmosExistentes={pmosExistentes} clientesExistentes={clientesExistentes} dadosPorPmo={dadosPorPmo} />
     </div>
   )
 }
