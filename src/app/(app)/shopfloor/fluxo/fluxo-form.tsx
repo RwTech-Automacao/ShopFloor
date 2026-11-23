@@ -2,7 +2,8 @@
 
 import type { PeriodoContagem } from '@/modules/shopfloor/application/fluxo-actions'
 import { useFonteFluxo } from './fonte-fluxo'
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCarga } from '@/shared/ui/use-carga'
 import { ReactFlow, Background, Panel, useNodesState, type Node, type Edge, type NodeChange, type NodeTypes, type NodeMouseHandler, type ReactFlowInstance, type FitViewOptions } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { X, Maximize2, Minimize2, RotateCcw, Search, SlidersHorizontal, Bug, MonitorPlay, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, Play, ChevronsUpDown, Spline, CornerDownRight } from 'lucide-react'
@@ -211,14 +212,14 @@ function HistoricoPosto({ pmo, op, posto, onSn }: { pmo: string; op: string; pos
   const [linhas, setLinhas] = useState<PassagemDoPosto[]>([])
   const [temMais, setTemMais] = useState(false)
   const [carregou, setCarregou] = useState(false)
-  const [carregando, start] = useTransition()
+  // Sem transição: a carga pendente não pode prender o clique no menu (ver `useCarga`).
+  const [carregando, executar] = useCarga()
 
   function alternar() {
     const novo = !aberto
     setAberto(novo)
     if (novo && !carregou) {
-      start(async () => {
-        const r = await fonte.historicoPosto(pmo, op, posto, 0)
+      executar(() => fonte.historicoPosto(pmo, op, posto, 0), (r) => {
         if (!r.ok) { toast.error(r.erro); return }
         setLinhas(r.linhas); setTemMais(r.temMais); setCarregou(true)
       })
@@ -226,8 +227,7 @@ function HistoricoPosto({ pmo, op, posto, onSn }: { pmo: string; op: string; pos
   }
   function mais() {
     if (carregando || !temMais) return
-    start(async () => {
-      const r = await fonte.historicoPosto(pmo, op, posto, linhas.length)
+    executar(() => fonte.historicoPosto(pmo, op, posto, linhas.length), (r) => {
       if (!r.ok) { toast.error(r.erro); return }
       setLinhas((p) => [...p, ...r.linhas]); setTemMais(r.temMais)
     })
@@ -328,7 +328,7 @@ function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op
   const fonte = useFonteFluxo()
   const [dados, setDados] = useState<ProducaoBucket[]>([])
   const [carregou, setCarregou] = useState(false)
-  const [carregando, start] = useTransition()
+  const [carregando, executar] = useCarga()
   const boxRef = useRef<HTMLDivElement>(null)
   const [larg, setLarg] = useState(600) // largura medida (pra o SVG 1:1 não distorcer texto/linha)
   const [hover, setHover] = useState<number | null>(null) // índice do ponto sob o mouse (tooltip)
@@ -336,13 +336,12 @@ function GraficoProducao({ pmo, op, posto, ini, fim, bucket }: { pmo: string; op
     if (!pmo || !op || !posto) return
     let vivo = true
     setCarregou(false) // eslint-disable-line react-hooks/set-state-in-effect
-    start(async () => {
-      const r = await fonte.producaoPeriodo(pmo, op, posto, ini, fim, bucket)
+    executar(() => fonte.producaoPeriodo(pmo, op, posto, ini, fim, bucket), (r) => {
       if (!vivo) return
       if (r.ok) { setDados(r.linhas); setCarregou(true) }
     })
     return () => { vivo = false }
-  }, [fonte, pmo, op, posto, ini, fim, bucket])
+  }, [fonte, executar, pmo, op, posto, ini, fim, bucket])
   useEffect(() => {
     const el = boxRef.current
     if (!el) return
@@ -514,8 +513,11 @@ export function FluxoForm({
   const [burnin, setBurnin] = useState<BurninDetalhe>(BURNIN_VAZIO)
   const [caixas, setCaixas] = useState<EmbalagemCaixa[]>([])
   const [snAberto, setSnAberto] = useState<string | null>(null) // linha do tempo do produto
-  const [carregando, startCarregar] = useTransition()
-  const [carregandoSns, startSns] = useTransition()
+  // Cargas SEM transição (perf/fluxo-carga-sem-transicao): com `startTransition(async)` pendente, o
+  // clique no menu (navegação do <Link>, que também é transição) ficava preso até a carga voltar.
+  // `useCarga` também descarta resposta fora de ordem: só a última chamada de cada uma é aplicada.
+  const [carregando, executarCarregar] = useCarga()
+  const [carregandoSns, executarSns] = useCarga()
   const ctx = useRef<{ pmo: string; op: string }>({ pmo: '', op: '' })
   // Nós gerenciados pelo React Flow (arrastáveis). A posição do usuário é preservada entre atualizações.
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
@@ -540,7 +542,7 @@ export function FluxoForm({
   // rota do SN buscado: `ordem` = postos na ordem cronológica (+ atual no fim) pra revelar UM A UM.
   const [rota, setRota] = useState<{ ordem: string[]; atual: string | null } | null>(null)
   const [rotaPasso, setRotaPasso] = useState(0) // quantos cards da rota já foram revelados (preenche 1 a cada 0,30s)
-  const [, startRota] = useTransition()
+  const [, executarRota] = useCarga()
   const [defeitosAberto, setDefeitosAberto] = useState(false) // painel de Defeitos da OP (dentro do Fluxo)
   // Modo Apresentação (playlist de slides OP+view em tela cheia).
   const [playlist, setPlaylist] = useState<Slide[]>([])
@@ -587,28 +589,39 @@ export function FluxoForm({
     if (aberto === id) return
     const { pmo, op } = ctx.current
     const recurso = dom.find((n) => n.id === id)?.data.recurso
-    startSns(async () => {
+    // Busca tudo primeiro e aplica de uma vez no fim (a lista já ficava em "Carregando…" até a última
+    // chamada voltar). Trocar de posto no meio descarta a resposta do posto anterior.
+    type DetalheCarregado =
+      | { erro: string }
+      | { listas: Listas; burnin?: BurninDetalhe; caixas?: EmbalagemCaixa[] }
+    const buscar = async (): Promise<DetalheCarregado> => {
       if (id === MANUTENCAO) {
         // Manutenção é ramo: só "agora" = peças travadas (último bipe reprovado), coerente com o badge.
         const r = await fonte.snsManutencao(pmo, op)
-        if (r.ok) setListas({ agora: r.sns, historico: [] })
-        else toast.error(r.erro)
-      } else {
-        const r = await fonte.detalhePosto(pmo, op, id)
-        if (!r.ok) { toast.error(r.erro); return }
-        setListas({ agora: r.agora, historico: r.historico })
-        // Burn-in: cozinhando (ciclo aberto) + eventos de entrada e saída separados.
-        if (recurso === 'burnin') {
-          const b = await fonte.burninDetalhe(pmo, op, id)
-          if (b.ok) setBurnin(b.detalhe)
-        } else if (recurso === 'caixa') {
-          // Embalagem: cada peça + em qual caixa está.
-          const c = await fonte.embalagemCaixas(pmo, op, id)
-          if (c.ok) setCaixas(c.itens)
-        }
+        return r.ok ? { listas: { agora: r.sns, historico: [] } } : { erro: r.erro }
       }
+      const r = await fonte.detalhePosto(pmo, op, id)
+      if (!r.ok) return { erro: r.erro }
+      const listas: Listas = { agora: r.agora, historico: r.historico }
+      // Burn-in: cozinhando (ciclo aberto) + eventos de entrada e saída separados.
+      if (recurso === 'burnin') {
+        const b = await fonte.burninDetalhe(pmo, op, id)
+        return b.ok ? { listas, burnin: b.detalhe } : { listas }
+      }
+      if (recurso === 'caixa') {
+        // Embalagem: cada peça + em qual caixa está.
+        const c = await fonte.embalagemCaixas(pmo, op, id)
+        return c.ok ? { listas, caixas: c.itens } : { listas }
+      }
+      return { listas }
+    }
+    executarSns(buscar, (d) => {
+      if ('erro' in d) { toast.error(d.erro); return }
+      setListas(d.listas)
+      if (d.burnin) setBurnin(d.burnin)
+      if (d.caixas) setCaixas(d.caixas)
     })
-  }, [fonte, aberto, dom])
+  }, [fonte, aberto, dom, executarSns])
 
   const onNodeClick = useCallback<NodeMouseHandler>((_, node) => abrir(node.id), [abrir])
 
@@ -653,8 +666,7 @@ export function FluxoForm({
     // NO EMBED IGNORA O ARRANJO SALVO: o que vale na TV é a melhor visualização possível (arranjo
     // padrão do domínio + enquadramento automático), não o que alguém arrastou naquela máquina.
     layoutRef.current = embed ? new Map() : lerLayout(pmo, op)
-    startCarregar(async () => {
-      const r = await fonte.carregarFluxo(pmo, op)
+    executarCarregar(() => fonte.carregarFluxo(pmo, op), (r) => {
       if (!r.ok) { toast.error(r.erro); return }
       setDom(r.nodes)
       setEdgesBase(paraEdges(r.edges, r.nodes))
@@ -662,7 +674,7 @@ export function FluxoForm({
       setAtualizadoMs(Date.now())
       setBuscou(true)
     })
-  }, [fonte, embed])
+  }, [fonte, embed, executarCarregar])
 
   const escolher = useCallback((v: string) => {
     setSel(v); setBuscou(false); setAberto(null); setListas(LISTAS_VAZIAS); setBurnin(BURNIN_VAZIO)
@@ -826,8 +838,7 @@ export function FluxoForm({
     const { pmo, op } = ctx.current
     if (!sn) { setRota(null); return } // Ver sem SN → volta o fluxo normal/total
     if (!pmo || !op) return
-    startRota(async () => {
-      const r = await fonte.rotaSn(pmo, op, sn)
+    executarRota(() => fonte.rotaSn(pmo, op, sn), (r) => {
       if (!r.ok) { toast.error(r.erro); return }
       if (r.postos.length === 0) { toast.error('Este SN não passou por esta OP.'); setRota(null); return }
       // Concluiu (r.atual null) → destaca a caixa "Finalizadas" (SAÍDA) SE ela existe (OP com qtd);

@@ -1,7 +1,8 @@
 'use client'
 
 import { useFonteFluxo } from './fonte-fluxo'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useCarga } from '@/shared/ui/use-carga'
 import { AlertTriangle, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import type { DefeitoDaOp, ResumoDefeito } from '@/modules/shopfloor/infra/pesquisa-repository'
@@ -45,7 +46,8 @@ export function DefeitosLista({
   const [buscou, setBuscou] = useState(false)
   const [postoFiltro, setPostoFiltro] = useState('') // '' = todos
   const [abertos, setAbertos] = useState<Set<string>>(new Set()) // códigos com o acordeon aberto
-  const [carregando, startCarregar] = useTransition()
+  // Sem transição: a carga pendente não pode prender o clique no menu (ver `useCarga`).
+  const [carregando, executar] = useCarga()
 
   useEffect(() => {
     if (!pmo || !op) return
@@ -55,26 +57,29 @@ export function DefeitosLista({
 
     // Lista e ranking vêm juntos: são a mesma foto do mesmo instante (senão o "campeão da hora"
     // pisca em cima de uma lista de outro momento).
-    const atualizar = async (primeira: boolean) => {
+    const buscar = () => {
       const desde = new Date(Date.now() - JANELA_MIN * 60_000).toISOString()
-      const [rLista, rResumo] = await Promise.all([
+      return Promise.all([
         fonte.carregarDefeitosDaOp(pmo, op, 0, postoFiltro, LINHAS_MAX, desde),
         fonte.carregarResumoDefeitos(pmo, op, postoFiltro),
       ])
+    }
+    const aplicar = (primeira: boolean) => ([rLista, rResumo]: Awaited<ReturnType<typeof buscar>>) => {
       if (!vivo) return
       // Erro só incomoda na 1ª carga: no polling (a cada 15s) um toast por falha viraria spam na TV.
       if (rLista.ok) { setLinhas(rLista.linhas); setBuscou(true) } else if (primeira) toast.error(rLista.erro)
       if (rResumo.ok) setResumo(rResumo.resumo)
     }
+    const atualizar = async (primeira: boolean) => { aplicar(primeira)(await buscar()) }
 
-    startCarregar(async () => { await atualizar(true) })
+    executar(buscar, aplicar(true))
     // Defeito novo aparece sozinho. PERF: pula o tick com a aba escondida (Page Visibility) — igual
     // ao canvas do Fluxo, pra painel em 2º plano não martelar o banco; ao voltar, atualiza na hora.
     const t = setInterval(() => { if (!document.hidden) void atualizar(false) }, INTERVALO_MS)
     const onVis = () => { if (!document.hidden) void atualizar(false) }
     document.addEventListener('visibilitychange', onVis)
     return () => { vivo = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
-  }, [fonte, pmo, op, postoFiltro])
+  }, [fonte, executar, pmo, op, postoFiltro])
 
   // Um card por DEFEITO: as peças que deram o mesmo defeito viram ocorrências dentro dele.
   const grupos = useMemo(

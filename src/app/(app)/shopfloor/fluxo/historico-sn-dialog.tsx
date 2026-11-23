@@ -1,7 +1,8 @@
 'use client'
 
 import { useFonteFluxo } from './fonte-fluxo'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useCarga } from '@/shared/ui/use-carga'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import type { RegistroHistorico } from '@/modules/shopfloor/infra/pesquisa-repository'
@@ -71,15 +72,13 @@ export function HistoricoSnDialog({
 }) {
   const fonte = useFonteFluxo()
   const [registros, setRegistros] = useState<RegistroHistorico[] | null>(null)
-  const [carregando, startBusca] = useTransition()
+  // Sem transição: a carga pendente não pode prender o clique no menu (ver `useCarga`).
+  const [carregando, executar] = useCarga()
 
   useEffect(() => {
     if (sn === null) return
-    startBusca(async () => {
-      const r = await fonte.buscarHistoricoSN(sn)
-      setRegistros(r.ok ? r.registros : [])
-    })
-  }, [fonte, sn])
+    executar(() => fonte.buscarHistoricoSN(sn), (r) => setRegistros(r.ok ? r.registros : []))
+  }, [fonte, executar, sn])
 
   const passos = useMemo<Passo[]>(() => {
     if (!registros) return []
