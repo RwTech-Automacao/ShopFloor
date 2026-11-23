@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { IndicadorLinkPendente } from '@/shared/ui/indicador-link-pendente'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
@@ -366,6 +367,7 @@ export function AppShell({
         <Link href={HOME.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, HOME.href))}>
           <HOME.icone className="size-[18px] shrink-0" />
           {HOME.rotulo}
+          <IndicadorLinkPendente className="ml-auto" />
         </Link>
 
         {recebimentoVisivel.length > 0 && (
@@ -388,6 +390,7 @@ export function AppShell({
                   <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                     <i.icone className="size-[18px] shrink-0" />
                     {i.rotulo}
+                    <IndicadorLinkPendente className="ml-auto" />
                   </Link>
                 ))}
               </div>
@@ -415,6 +418,7 @@ export function AppShell({
                   <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(itemAtivo(pathname, i))}>
                     <i.icone className="size-[18px] shrink-0" />
                     {i.rotulo}
+                    <IndicadorLinkPendente className="ml-auto" />
                   </Link>
                 ))}
               </div>
@@ -442,6 +446,7 @@ export function AppShell({
                   <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                     <i.icone className="size-[18px] shrink-0" />
                     {i.rotulo}
+                    <IndicadorLinkPendente className="ml-auto" />
                   </Link>
                 ))}
               </div>
@@ -456,6 +461,7 @@ export function AppShell({
               <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                 <i.icone className="size-[18px] shrink-0" />
                 {i.rotulo}
+                <IndicadorLinkPendente className="ml-auto" />
               </Link>
             ))}
           </>
@@ -481,6 +487,7 @@ export function AppShell({
                   <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                     <i.icone className="size-[18px] shrink-0" />
                     {i.rotulo}
+                    <IndicadorLinkPendente className="ml-auto" />
                   </Link>
                 ))}
               </div>
@@ -495,6 +502,7 @@ export function AppShell({
               <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                 <i.icone className="size-[18px] shrink-0" />
                 {i.rotulo}
+                <IndicadorLinkPendente className="ml-auto" />
               </Link>
             ))}
           </>
@@ -519,6 +527,7 @@ export function AppShell({
                   <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                     <i.icone className="size-[18px] shrink-0" />
                     {i.rotulo}
+                    <IndicadorLinkPendente className="ml-auto" />
                   </Link>
                 ))}
 
@@ -541,6 +550,7 @@ export function AppShell({
                           <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                             <i.icone className="size-[18px] shrink-0" />
                             {i.rotulo}
+                            <IndicadorLinkPendente className="ml-auto" />
                           </Link>
                         ))}
                       </div>
@@ -567,6 +577,7 @@ export function AppShell({
                           <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                             <i.icone className="size-[18px] shrink-0" />
                             {i.rotulo}
+                            <IndicadorLinkPendente className="ml-auto" />
                           </Link>
                         ))}
                       </div>
@@ -593,6 +604,7 @@ export function AppShell({
                           <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                             <i.icone className="size-[18px] shrink-0" />
                             {i.rotulo}
+                            <IndicadorLinkPendente className="ml-auto" />
                           </Link>
                         ))}
                       </div>
@@ -604,6 +616,7 @@ export function AppShell({
                   <Link key={i.chave} href={i.href} onClick={fechaMobile} className={linkClasse(ehAtivo(pathname, i.href))}>
                     <i.icone className="size-[18px] shrink-0" />
                     {i.rotulo}
+                    <IndicadorLinkPendente className="ml-auto" />
                   </Link>
                 ))}
               </div>

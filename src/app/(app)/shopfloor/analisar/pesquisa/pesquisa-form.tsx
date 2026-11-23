@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCarga } from '@/shared/ui/use-carga'
 import { FilterX, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -42,7 +43,8 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   // --- busca por SN ---
   const [sn, setSn] = useState('')
   const [registros, setRegistros] = useState<RegistroHistorico[] | null>(null)
-  const [buscando, startBusca] = useTransition()
+  // Sem transição: uma busca pendente em `startTransition(async)` prendia os cliques no menu (ver use-carga.ts).
+  const [buscando, executarBusca] = useCarga()
 
   // --- grade ---
   const [cliente, setCliente] = useState('')
@@ -55,7 +57,7 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
   const [totalPaginas, setTotalPaginas] = useState(1)
   const [total, setTotal] = useState(0)
   const [caixa, setCaixa] = useState('')
-  const [carregando, startGrade] = useTransition()
+  const [carregando, executarGrade] = useCarga()
 
   const resumoPorPosto = useMemo(() => new Map((resumo ?? []).map((r) => [r.posto, r])), [resumo])
 
@@ -201,11 +203,11 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
 
   function onBuscar() {
     if (sn.trim() === '' || buscando) return
-    startBusca(async () => {
-      const r = await buscarHistoricoSN(sn)
-      if (r.ok) setRegistros(r.registros)
-      else toast.error(r.erro)
-    })
+    executarBusca(
+      () => buscarHistoricoSN(sn),
+      (r) => { if (r.ok) setRegistros(r.registros); else toast.error(r.erro) },
+      () => toast.error('Não foi possível buscar. Tente de novo.'),
+    )
   }
 
   function abrirGrade(opSel: string, pag = 1) {
@@ -213,21 +215,24 @@ export function PesquisaForm({ ordens }: { ordens: OrdemPesquisa[] }) {
     if (opSel !== op) trocarOp(chave)
     setOp(opSel)
     setCaixa('')
-    startGrade(async () => {
-      const r = await carregarGrade(pmo, opSel, pag)
-      if (chaveAtual.current !== chave) return // trocou de OP no meio: descarta a resposta velha
-      if (r.ok) {
-        setColunas(r.colunas)
-        setResumo(r.resumo)
-        setLinhas(r.linhas)
-        setPagina(r.pagina)
-        setTotalPaginas(r.totalPaginas)
-        setTotal(r.total)
-      } else {
-        setLinhas(null); setResumo(null)
-        toast.error(r.erro)
-      }
-    })
+    executarGrade(
+      () => carregarGrade(pmo, opSel, pag),
+      (r) => {
+        if (chaveAtual.current !== chave) return // trocou de OP no meio: descarta a resposta velha
+        if (r.ok) {
+          setColunas(r.colunas)
+          setResumo(r.resumo)
+          setLinhas(r.linhas)
+          setPagina(r.pagina)
+          setTotalPaginas(r.totalPaginas)
+          setTotal(r.total)
+        } else {
+          setLinhas(null); setResumo(null)
+          toast.error(r.erro)
+        }
+      },
+      () => { setLinhas(null); setResumo(null); toast.error('Não foi possível carregar a grade.') },
+    )
   }
 
   function fmtData(iso: string) {

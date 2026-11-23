@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useCarga } from '@/shared/ui/use-carga'
 import { Printer, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -20,7 +21,8 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
   const [buscou, setBuscou] = useState(false)
   const [abertos, setAbertos] = useState<Set<string>>(new Set())
   const [folha, setFolha] = useState<Folha | null>(null)
-  const [carregando, startCarregar] = useTransition()
+  // Sem transição: uma carga pendente em `startTransition(async)` prendia os cliques no menu (ver use-carga.ts).
+  const [carregando, executar] = useCarga()
   const [gerando, startGerar] = useTransition()
 
   const ordem = ops.find((o) => `${o.pmo}||${o.op}` === sel)
@@ -34,12 +36,15 @@ export function CaixasForm({ ops }: { ops: OpComCaixa[] }) {
     setBuscou(false)
     const [pmo, op] = v.split('||')
     if (!pmo || !op) return
-    startCarregar(async () => {
-      const r = await caixasDaOp(pmo, op)
-      if (!r.ok) { toast.error(r.erro); return }
-      setCaixas(r.caixas)
-      setBuscou(true)
-    })
+    executar(
+      () => caixasDaOp(pmo, op),
+      (r) => {
+        if (!r.ok) { toast.error(r.erro); return }
+        setCaixas(r.caixas)
+        setBuscou(true)
+      },
+      () => toast.error('Não foi possível carregar as caixas.'),
+    )
   }
 
   /** A coluna QTD da folha/CSV numera os SNs (um por painel): a base são os painéis das caixas

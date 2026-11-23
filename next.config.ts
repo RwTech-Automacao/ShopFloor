@@ -15,7 +15,15 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/:path*",
-        headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'self'" }],
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+          // O nginx da Lightsail guarda a resposta em buffer por padrão (proxy_buffering on) e segura o
+          // streaming: o "Carregando…" do loading.tsx e o resto da tela chegariam juntos, no fim. Com este
+          // cabeçalho o nginx repassa cada pedaço assim que o Next manda (docs do Next: guides/streaming,
+          // "Reverse proxies"; guides/self-hosting, "Streaming and Suspense"). Não mexe no buffer do
+          // CABEÇALHO (proxy_buffer_size, deploy/aws/nginx-conf.d/shopfloor-buffers.conf).
+          { key: "X-Accel-Buffering", value: "no" },
+        ],
       },
       {
         source: "/embed/:path*",

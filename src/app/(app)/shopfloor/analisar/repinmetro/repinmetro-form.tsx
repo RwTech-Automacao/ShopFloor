@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
+import { useCarga } from '@/shared/ui/use-carga'
 import { Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -74,15 +75,16 @@ export function RepinmetroForm({ modelos }: { modelos: string[] }) {
   const [sn, setSn] = useState('')
   const [modelo, setModelo] = useState('') // '' = todos os modelos
   const [logs, setLogs] = useState<LogRepinmetro[] | null>(null)
-  const [buscando, startBusca] = useTransition()
+  // Sem transição: uma busca pendente em `startTransition(async)` prendia os cliques no menu (ver use-carga.ts).
+  const [buscando, executar] = useCarga()
 
   function onBuscar() {
     if (buscando) return // busca vazia é permitida (traz todos — modo estudo/teste)
-    startBusca(async () => {
-      const r = await buscarLogsRepinmetro(sn, modelo)
-      if (r.ok) setLogs(r.logs)
-      else toast.error(r.erro)
-    })
+    executar(
+      () => buscarLogsRepinmetro(sn, modelo),
+      (r) => { if (r.ok) setLogs(r.logs); else toast.error(r.erro) },
+      () => toast.error('Não foi possível buscar. Tente de novo.'),
+    )
   }
 
   return (

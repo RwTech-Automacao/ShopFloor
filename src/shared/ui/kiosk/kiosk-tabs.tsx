@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { IndicadorLinkPendente } from '@/shared/ui/indicador-link-pendente'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useKiosk } from './kiosk-context'
@@ -22,11 +23,12 @@ export function KioskTabs() {
             key={t.href}
             href={t.href}
             className={cn(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+              '-mb-px inline-flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors',
               ativa ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
             )}
           >
             {t.rotulo}
+            <IndicadorLinkPendente />
           </Link>
         )
       })}

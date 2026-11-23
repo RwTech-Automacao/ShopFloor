@@ -2,7 +2,7 @@
 
 import type { ItemDashboard } from '@/modules/shopfloor/application/dashboard-actions'
 import { useFonteFluxo } from '../../fluxo/fonte-fluxo'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { OrdemPesquisa } from '@/modules/shopfloor/infra/pesquisa-repository'
+import { useCarga } from '@/shared/ui/use-carga'
 
 export function DashboardForm({ ordens, opInicial }: { ordens: OrdemPesquisa[]; opInicial?: { cliente: string; pmo: string; op: string } }) {
   const fonte = useFonteFluxo()
@@ -20,17 +21,19 @@ export function DashboardForm({ ordens, opInicial }: { ordens: OrdemPesquisa[]; 
   const [ate, setAte] = useState('')
   const [itens, setItens] = useState<ItemDashboard[] | null>(null)
   const [total, setTotal] = useState<number | null>(null)
-  const [carregando, startTransition] = useTransition()
+  // Sem transição: uma carga pendente em `startTransition(async)` prendia os cliques no menu (ver use-carga.ts).
+  const [carregando, executar] = useCarga()
 
   // OP inicial (usado no modo apresentação do Fluxo): pré-seleciona e carrega direto.
   useEffect(() => {
     if (!opInicial) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- pré-seleciona a OP passada e carrega
     setCliente(opInicial.cliente); setPmo(opInicial.pmo); setOp(opInicial.op)
-    startTransition(async () => {
-      const r = await fonte.carregarDashboard(opInicial.pmo, opInicial.op, '', '')
-      if (r.ok) { setItens(r.itens); setTotal(r.total) } else toast.error(r.erro)
-    })
+    executar(
+      () => fonte.carregarDashboard(opInicial.pmo, opInicial.op, '', ''),
+      (r) => { if (r.ok) { setItens(r.itens); setTotal(r.total) } else toast.error(r.erro) },
+      () => toast.error('Não foi possível carregar o dashboard.'),
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reage só à OP inicial (campos primitivos)
   }, [opInicial?.cliente, opInicial?.pmo, opInicial?.op])
 
@@ -41,16 +44,19 @@ export function DashboardForm({ ordens, opInicial }: { ordens: OrdemPesquisa[]; 
   function atualizar(opSel?: string) {
     const alvo = opSel ?? op
     if (!alvo) return
-    startTransition(async () => {
-      const r = await fonte.carregarDashboard(pmo, alvo, de, ate)
-      if (r.ok) {
-        setItens(r.itens)
-        setTotal(r.total)
-      } else {
-        setItens(null)
-        toast.error(r.erro)
-      }
-    })
+    executar(
+      () => fonte.carregarDashboard(pmo, alvo, de, ate),
+      (r) => {
+        if (r.ok) {
+          setItens(r.itens)
+          setTotal(r.total)
+        } else {
+          setItens(null)
+          toast.error(r.erro)
+        }
+      },
+      () => { setItens(null); toast.error('Não foi possível carregar o dashboard.') },
+    )
   }
 
   return (
