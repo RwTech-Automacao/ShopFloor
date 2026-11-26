@@ -469,4 +469,255 @@ create trigger sat_os_garantia after update of garantia on public.sat_os
   for each row when (old.garantia is distinct from new.garantia)
   execute function public.sat__ordem_na_garantia_da_planilha();
 
+
+-- ---------- manutenção (sat.manutencao) ----------
+-- A OS travada e conferida para lançar na manutenção (uso interno): permissão, existe, está em manutenção.
+create or replace function public.sat__ordem_para_manutencao(p_ordem uuid)
+returns sat_ordens
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_o sat_ordens;
+begin
+  if not tem_permissao('sat', 'manutencao') then raise exception 'SEM_PERMISSAO'; end if;
+  select * into v_o from sat_ordens o where o.id = p_ordem for update;
+  if not found then raise exception 'ORDEM_NAO_ENCONTRADA'; end if;
+  if v_o.etapa <> 'em_manutencao' then raise exception 'ETAPA_NAO_PERMITE'; end if;
+  return v_o;
+end
+$func$;
+revoke all on function public.sat__ordem_para_manutencao(uuid) from public, anon, authenticated;
+
+-- Disponível → em manutenção; o técnico é quem abriu.
+create or replace function public.sat_ordem_iniciar_manutencao(p_ordem uuid)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_o    sat_ordens;
+  v_nome text;
+begin
+  if not tem_permissao('sat', 'manutencao') then raise exception 'SEM_PERMISSAO'; end if;
+  select * into v_o from sat_ordens o where o.id = p_ordem for update;
+  if not found then raise exception 'ORDEM_NAO_ENCONTRADA'; end if;
+  if v_o.etapa <> 'disponivel' then raise exception 'ETAPA_NAO_PERMITE'; end if;
+  v_nome := sat__nome_usuario();
+  update sat_ordens set tecnico = auth.uid(), tecnico_nome = v_nome where id = p_ordem;
+  perform sat__ordem_mudar_etapa(p_ordem, 'em_manutencao', 'etapa', jsonb_build_object('tecnico', v_nome));
+  return jsonb_build_object('numero', v_o.numero, 'etapa', 'em_manutencao');
+end
+$func$;
+revoke all on function public.sat_ordem_iniciar_manutencao(uuid) from public, anon;
+grant execute on function public.sat_ordem_iniciar_manutencao(uuid) to authenticated, service_role;
+
+-- Defeito da lista (ativo) + solução em texto. O mesmo defeito não entra duas vezes na manutenção da OS.
+create or replace function public.sat_ordem_defeito_adicionar(p_ordem uuid, p_defeito uuid, p_solucao text)
+returns uuid
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_o    sat_ordens;
+  v_desc text;
+  v_sol  text := btrim(coalesce(p_solucao, ''));
+  v_id   uuid;
+begin
+  v_o := sat__ordem_para_manutencao(p_ordem);
+  select d.descricao into v_desc from sat_defeitos d where d.id = p_defeito and d.ativo;
+  if v_desc is null then raise exception 'DEFEITO_INVALIDO'; end if;
+  if v_sol = '' then raise exception 'SOLUCAO_OBRIGATORIA'; end if;
+  if length(v_sol) > 2000 then raise exception 'TEXTO_LONGO'; end if;
+  if exists (select 1 from sat_ordem_defeitos x
+              where x.ordem_id = p_ordem and x.defeito_id = p_defeito and x.origem = 'manutencao') then
+    raise exception 'DEFEITO_REPETIDO';
+  end if;
+  insert into sat_ordem_defeitos (ordem_id, defeito_id, defeito_descricao, origem, solucao, usuario, usuario_nome)
+  values (p_ordem, p_defeito, v_desc, 'manutencao', v_sol, auth.uid(), sat__nome_usuario())
+  returning id into v_id;
+  perform sat__ordem_evento(p_ordem, 'defeito', jsonb_build_object('acao', 'incluido', 'defeito', v_desc, 'solucao', v_sol));
+  return v_id;
+end
+$func$;
+revoke all on function public.sat_ordem_defeito_adicionar(uuid, uuid, text) from public, anon;
+grant execute on function public.sat_ordem_defeito_adicionar(uuid, uuid, text) to authenticated, service_role;
+
+create or replace function public.sat_ordem_defeito_remover(p_item uuid)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_x sat_ordem_defeitos;
+  v_o sat_ordens;
+begin
+  if not tem_permissao('sat', 'manutencao') then raise exception 'SEM_PERMISSAO'; end if;
+  select * into v_x from sat_ordem_defeitos x where x.id = p_item and x.origem = 'manutencao';
+  if not found then raise exception 'ITEM_NAO_ENCONTRADO'; end if;
+  v_o := sat__ordem_para_manutencao(v_x.ordem_id);
+  delete from sat_ordem_defeitos where id = p_item;
+  perform sat__ordem_evento(v_x.ordem_id, 'defeito',
+    jsonb_build_object('acao', 'removido', 'defeito', v_x.defeito_descricao, 'solucao', v_x.solucao));
+end
+$func$;
+revoke all on function public.sat_ordem_defeito_remover(uuid) from public, anon;
+grant execute on function public.sat_ordem_defeito_remover(uuid) to authenticated, service_role;
+
+-- Peça trocada: código do item do Compels (maiúsculo), descrição e quantidade. Mesmo código não entra duas vezes
+-- (remove e lança de novo com a quantidade certa).
+create or replace function public.sat_ordem_peca_adicionar(p_ordem uuid, p_codigo text, p_descricao text, p_quantidade numeric)
+returns uuid
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_o      sat_ordens;
+  v_codigo text := upper(btrim(coalesce(p_codigo, '')));
+  v_desc   text := btrim(coalesce(p_descricao, ''));
+  v_id     uuid;
+begin
+  v_o := sat__ordem_para_manutencao(p_ordem);
+  if v_codigo !~ '^[A-Z0-9][A-Z0-9_.-]{0,59}$' then raise exception 'CODIGO_INVALIDO'; end if;
+  if length(v_desc) > 300 then raise exception 'TEXTO_LONGO'; end if;
+  if p_quantidade is null or p_quantidade <= 0 or p_quantidade > 9999 then raise exception 'QUANTIDADE_INVALIDA'; end if;
+  if exists (select 1 from sat_ordem_pecas x where x.ordem_id = p_ordem and x.codigo = v_codigo and x.situacao = 'trocada') then
+    raise exception 'PECA_REPETIDA';
+  end if;
+  insert into sat_ordem_pecas (ordem_id, codigo, descricao, quantidade, usuario, usuario_nome)
+  values (p_ordem, v_codigo, v_desc, p_quantidade, auth.uid(), sat__nome_usuario())
+  returning id into v_id;
+  perform sat__ordem_evento(p_ordem, 'peca',
+    jsonb_build_object('acao', 'incluida', 'codigo', v_codigo, 'descricao', v_desc, 'quantidade', p_quantidade));
+  return v_id;
+end
+$func$;
+revoke all on function public.sat_ordem_peca_adicionar(uuid, text, text, numeric) from public, anon;
+grant execute on function public.sat_ordem_peca_adicionar(uuid, text, text, numeric) to authenticated, service_role;
+
+create or replace function public.sat_ordem_peca_remover(p_item uuid)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_x sat_ordem_pecas;
+  v_o sat_ordens;
+begin
+  if not tem_permissao('sat', 'manutencao') then raise exception 'SEM_PERMISSAO'; end if;
+  select * into v_x from sat_ordem_pecas x where x.id = p_item;
+  if not found then raise exception 'ITEM_NAO_ENCONTRADO'; end if;
+  v_o := sat__ordem_para_manutencao(v_x.ordem_id);
+  delete from sat_ordem_pecas where id = p_item;
+  perform sat__ordem_evento(v_x.ordem_id, 'peca',
+    jsonb_build_object('acao', 'removida', 'codigo', v_x.codigo, 'descricao', v_x.descricao, 'quantidade', v_x.quantidade));
+end
+$func$;
+revoke all on function public.sat_ordem_peca_remover(uuid) from public, anon;
+grant execute on function public.sat_ordem_peca_remover(uuid) to authenticated, service_role;
+
+-- Laudo (até 4000). Texto igual ao gravado não grava nada.
+create or replace function public.sat_ordem_laudo_salvar(p_ordem uuid, p_laudo text)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_o     sat_ordens;
+  v_laudo text := btrim(coalesce(p_laudo, ''));
+begin
+  v_o := sat__ordem_para_manutencao(p_ordem);
+  if length(v_laudo) > 4000 then raise exception 'TEXTO_LONGO'; end if;
+  if v_laudo = v_o.laudo then return; end if;
+  update sat_ordens set laudo = v_laudo, atualizado_em = now() where id = p_ordem;
+  perform sat__ordem_evento(p_ordem, 'laudo', jsonb_build_object('laudo', v_laudo));
+end
+$func$;
+revoke all on function public.sat_ordem_laudo_salvar(uuid, text) from public, anon;
+grant execute on function public.sat_ordem_laudo_salvar(uuid, text) to authenticated, service_role;
+
+-- Troca de NS: p = {ns, modelo, sequencia} (o par já normalizado pelo app, como na entrada). O antigo fica em
+-- sat_ordem_ns e a busca acha a OS pelos dois.
+create or replace function public.sat_ordem_trocar_ns(p_ordem uuid, p jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_o   sat_ordens;
+  v_ns  text := btrim(coalesce(p->>'ns', ''));
+  v_mod text := nullif(btrim(coalesce(p->>'modelo', '')), '');
+  v_seq text := nullif(btrim(coalesce(p->>'sequencia', '')), '');
+begin
+  v_o := sat__ordem_para_manutencao(p_ordem);
+  if v_ns = '' then raise exception 'NS_OBRIGATORIO'; end if;
+  if length(v_ns) > 200 then raise exception 'TEXTO_LONGO'; end if;
+  if upper(v_ns) = upper(v_o.ns_atual)
+     or (v_seq is not null and v_seq = v_o.sequencia and v_mod is not distinct from v_o.modelo) then
+    raise exception 'NADA_A_MUDAR';
+  end if;
+  insert into sat_ordem_ns (ordem_id, ns_antigo, modelo_antigo, sequencia_antigo, ns_novo, modelo_novo, sequencia_novo,
+                            usuario, usuario_nome)
+  values (p_ordem, v_o.ns_atual, v_o.modelo, v_o.sequencia, v_ns, v_mod, v_seq, auth.uid(), sat__nome_usuario());
+  update sat_ordens set ns_atual = v_ns, modelo = v_mod, sequencia = v_seq, atualizado_em = now() where id = p_ordem;
+  perform sat__ordem_evento(p_ordem, 'ns', jsonb_build_object('ns_antigo', v_o.ns_atual, 'ns_novo', v_ns));
+  return jsonb_build_object('ns_antigo', v_o.ns_atual, 'ns_novo', v_ns);
+end
+$func$;
+revoke all on function public.sat_ordem_trocar_ns(uuid, jsonb) from public, anon;
+grant execute on function public.sat_ordem_trocar_ns(uuid, jsonb) to authenticated, service_role;
+
+-- Em manutenção → qualidade. Nesta entrega só EM GARANTIA (fora da garantia passa pelo orçamento, entrega 2).
+create or replace function public.sat_ordem_enviar_qualidade(p_ordem uuid)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_o        sat_ordens;
+  v_defeitos int;
+  v_pecas    int;
+begin
+  v_o := sat__ordem_para_manutencao(p_ordem);
+  if v_o.tipo is null then raise exception 'GARANTIA_INDEFINIDA'; end if;
+  if v_o.tipo <> 'em_garantia' then raise exception 'FORA_DA_GARANTIA'; end if;
+  select count(*) into v_defeitos from sat_ordem_defeitos x where x.ordem_id = p_ordem and x.origem = 'manutencao';
+  if v_defeitos = 0 then raise exception 'SEM_DEFEITO'; end if;
+  if btrim(v_o.laudo) = '' then raise exception 'SEM_LAUDO'; end if;
+  select count(*) into v_pecas from sat_ordem_pecas x where x.ordem_id = p_ordem and x.situacao = 'trocada';
+  perform sat__ordem_mudar_etapa(p_ordem, 'qualidade', 'etapa',
+    jsonb_build_object('defeitos', v_defeitos, 'pecas', v_pecas));
+  return jsonb_build_object('numero', v_o.numero, 'etapa', 'qualidade');
+end
+$func$;
+revoke all on function public.sat_ordem_enviar_qualidade(uuid) from public, anon;
+grant execute on function public.sat_ordem_enviar_qualidade(uuid) to authenticated, service_role;
+
 notify pgrst, 'reload schema';

@@ -244,3 +244,140 @@ begin
   reset role;
   raise notice 'garantia pelo ticket: ok';
 end $t$;
+
+-- 7. Manutenção: permissão, etapa, defeitos, peças, laudo, troca de NS e envio para a qualidade.
+insert into sat_defeitos (codigo_compels, descricao) values ('T1', 'Não liga'), ('T2', 'Display apagado');
+insert into sat_defeitos (codigo_compels, descricao, ativo) values ('T3', 'Defeito antigo', false);
+
+do $t$
+declare
+  v_os    uuid := (select id from sat_ordens where modelo = '610' and sequencia = '3');   -- em garantia, disponível
+  v_fora  uuid := (select id from sat_ordens where modelo = '610' and sequencia = '1');   -- fora da garantia
+  v_pend  uuid := (select id from sat_ordens where modelo = '611' and sequencia = '1');   -- nota pendente
+  v_d1    uuid := (select id from sat_defeitos where codigo_compels = 'T1');
+  v_d3    uuid := (select id from sat_defeitos where codigo_compels = 'T3');
+  v_item  uuid;
+  v_peca  uuid;
+  r       jsonb;
+begin
+  set local role authenticated;
+
+  -- sem sat.manutencao
+  perform set_config('teste.perms', 'sat.visualizar,sat.administrar', false);
+  begin perform sat_ordem_iniciar_manutencao(v_os); raise exception 'FALHOU: iniciar sem permissão';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+
+  perform set_config('teste.perms', 'sat.visualizar,sat.manutencao', false);
+  -- nota pendente não abre manutenção; OS inexistente
+  begin perform sat_ordem_iniciar_manutencao(v_pend); raise exception 'FALHOU: iniciou com nota pendente';
+  exception when raise_exception then if sqlerrm <> 'ETAPA_NAO_PERMITE' then raise; end if; end;
+  begin perform sat_ordem_iniciar_manutencao(gen_random_uuid()); raise exception 'FALHOU: iniciou OS inexistente';
+  exception when raise_exception then if sqlerrm <> 'ORDEM_NAO_ENCONTRADA' then raise; end if; end;
+  -- disponível ainda não aceita defeito
+  begin perform sat_ordem_defeito_adicionar(v_os, v_d1, 'troca'); raise exception 'FALHOU: defeito antes de iniciar';
+  exception when raise_exception then if sqlerrm <> 'ETAPA_NAO_PERMITE' then raise; end if; end;
+
+  r := sat_ordem_iniciar_manutencao(v_os);
+  if (select etapa || '|' || tecnico_nome from sat_ordens where id = v_os) <> 'em_manutencao|Sérgio SAT' then
+    raise exception 'FALHOU: iniciar manutenção %', r;
+  end if;
+
+  -- defeitos
+  begin perform sat_ordem_defeito_adicionar(v_os, v_d3, 'x'); raise exception 'FALHOU: defeito inativo';
+  exception when raise_exception then if sqlerrm <> 'DEFEITO_INVALIDO' then raise; end if; end;
+  begin perform sat_ordem_defeito_adicionar(v_os, v_d1, '   '); raise exception 'FALHOU: solução vazia';
+  exception when raise_exception then if sqlerrm <> 'SOLUCAO_OBRIGATORIA' then raise; end if; end;
+  begin perform sat_ordem_defeito_adicionar(v_os, v_d1, repeat('x', 2001)); raise exception 'FALHOU: solução longa';
+  exception when raise_exception then if sqlerrm <> 'TEXTO_LONGO' then raise; end if; end;
+  v_item := sat_ordem_defeito_adicionar(v_os, v_d1, '  Trocada a fonte  ');
+  begin perform sat_ordem_defeito_adicionar(v_os, v_d1, 'de novo'); raise exception 'FALHOU: defeito repetido';
+  exception when raise_exception then if sqlerrm <> 'DEFEITO_REPETIDO' then raise; end if; end;
+  if (select defeito_descricao || '|' || solucao || '|' || origem from sat_ordem_defeitos where id = v_item)
+     <> 'Não liga|Trocada a fonte|manutencao' then
+    raise exception 'FALHOU: defeito gravado errado';
+  end if;
+  perform sat_ordem_defeito_remover(v_item);
+  if exists (select 1 from sat_ordem_defeitos where id = v_item) then raise exception 'FALHOU: remover defeito'; end if;
+  v_item := sat_ordem_defeito_adicionar(v_os, v_d1, 'Trocada a fonte');
+
+  -- peças
+  begin perform sat_ordem_peca_adicionar(v_os, 'prt 1', 'x', 1); raise exception 'FALHOU: código com espaço';
+  exception when raise_exception then if sqlerrm <> 'CODIGO_INVALIDO' then raise; end if; end;
+  begin perform sat_ordem_peca_adicionar(v_os, 'PMOE74', 'x', 0); raise exception 'FALHOU: quantidade zero';
+  exception when raise_exception then if sqlerrm <> 'QUANTIDADE_INVALIDA' then raise; end if; end;
+  v_peca := sat_ordem_peca_adicionar(v_os, ' pmoe74 ', ' Módulo Camabio com cabo ', 1);
+  begin perform sat_ordem_peca_adicionar(v_os, 'PMOE74', '', 2); raise exception 'FALHOU: peça repetida';
+  exception when raise_exception then if sqlerrm <> 'PECA_REPETIDA' then raise; end if; end;
+  if (select codigo || '|' || descricao || '|' || quantidade::text || '|' || situacao from sat_ordem_pecas where id = v_peca)
+     <> 'PMOE74|Módulo Camabio com cabo|1.000|trocada' then
+    raise exception 'FALHOU: peça gravada errada';
+  end if;
+  perform sat_ordem_peca_adicionar(v_os, 'PRT706', 'Placa', 1);
+  perform sat_ordem_peca_remover((select id from sat_ordem_pecas where ordem_id = v_os and codigo = 'PRT706'));
+  if exists (select 1 from sat_ordem_pecas where ordem_id = v_os and codigo = 'PRT706') then raise exception 'FALHOU: remover peça'; end if;
+  begin perform sat_ordem_peca_remover(gen_random_uuid()); raise exception 'FALHOU: remover peça inexistente';
+  exception when raise_exception then if sqlerrm <> 'ITEM_NAO_ENCONTRADO' then raise; end if; end;
+
+  -- sem laudo não vai para a qualidade
+  begin perform sat_ordem_enviar_qualidade(v_os); raise exception 'FALHOU: enviou sem laudo';
+  exception when raise_exception then if sqlerrm <> 'SEM_LAUDO' then raise; end if; end;
+  begin perform sat_ordem_laudo_salvar(v_os, repeat('x', 4001)); raise exception 'FALHOU: laudo longo';
+  exception when raise_exception then if sqlerrm <> 'TEXTO_LONGO' then raise; end if; end;
+  perform sat_ordem_laudo_salvar(v_os, '  Fonte queimada; trocado o módulo.  ');
+  perform sat_ordem_laudo_salvar(v_os, 'Fonte queimada; trocado o módulo.');   -- igual: não grava histórico de novo
+  if (select laudo from sat_ordens where id = v_os) <> 'Fonte queimada; trocado o módulo.' then raise exception 'FALHOU: laudo'; end if;
+  if (select count(*) from sat_ordem_historico where ordem_id = v_os and evento = 'laudo') <> 1 then
+    raise exception 'FALHOU: laudo igual gravou histórico';
+  end if;
+
+  -- troca de NS
+  begin perform sat_ordem_trocar_ns(v_os, '{"ns": "  "}'::jsonb); raise exception 'FALHOU: NS vazio';
+  exception when raise_exception then if sqlerrm <> 'NS_OBRIGATORIO' then raise; end if; end;
+  begin perform sat_ordem_trocar_ns(v_os, '{"ns": "610-3", "modelo": "610", "sequencia": "3"}'::jsonb);
+    raise exception 'FALHOU: troca para o mesmo NS';
+  exception when raise_exception then if sqlerrm <> 'NADA_A_MUDAR' then raise; end if; end;
+  r := sat_ordem_trocar_ns(v_os, '{"ns": "610-99", "modelo": "610", "sequencia": "99"}'::jsonb);
+  if (select ns_atual || '|' || modelo || '|' || sequencia from sat_ordens where id = v_os) <> '610-99|610|99'
+     or not exists (select 1 from sat_ordem_ns where ordem_id = v_os and ns_antigo = '610-3' and sequencia_antigo = '3'
+                      and ns_novo = '610-99' and sequencia_novo = '99') then
+    raise exception 'FALHOU: troca de NS %', r;
+  end if;
+
+  -- fora da garantia não vai para a qualidade nesta entrega
+  reset role;
+  update sat_ordens set etapa = 'em_manutencao' where id = v_fora;
+  insert into sat_ordem_defeitos (ordem_id, defeito_id, defeito_descricao, origem, solucao)
+  values (v_fora, v_d1, 'Não liga', 'manutencao', 'x');
+  update sat_ordens set laudo = 'ok' where id = v_fora;
+  set local role authenticated;
+  begin perform sat_ordem_enviar_qualidade(v_fora); raise exception 'FALHOU: fora da garantia foi para a qualidade';
+  exception when raise_exception then if sqlerrm <> 'FORA_DA_GARANTIA' then raise; end if; end;
+  reset role;
+  update sat_ordens set tipo = null where id = v_fora;
+  set local role authenticated;
+  begin perform sat_ordem_enviar_qualidade(v_fora); raise exception 'FALHOU: garantia indefinida foi para a qualidade';
+  exception when raise_exception then if sqlerrm <> 'GARANTIA_INDEFINIDA' then raise; end if; end;
+  reset role;
+  update sat_ordens set tipo = 'em_garantia' where id = v_fora;
+  delete from sat_ordem_defeitos where ordem_id = v_fora;
+  set local role authenticated;
+  begin perform sat_ordem_enviar_qualidade(v_fora); raise exception 'FALHOU: enviou sem defeito';
+  exception when raise_exception then if sqlerrm <> 'SEM_DEFEITO' then raise; end if; end;
+
+  -- em garantia, com defeito e laudo: vai
+  r := sat_ordem_enviar_qualidade(v_os);
+  if (select etapa from sat_ordens where id = v_os) <> 'qualidade' then raise exception 'FALHOU: não foi para a qualidade %', r; end if;
+  begin perform sat_ordem_peca_adicionar(v_os, 'PMOE12', 'Kit sensor', 1); raise exception 'FALHOU: peça depois da qualidade';
+  exception when raise_exception then if sqlerrm <> 'ETAPA_NAO_PERMITE' then raise; end if; end;
+  reset role;
+
+  -- histórico: iniciar, defeitos (+/-), peças (+/-), laudo, NS e o envio
+  if (select string_agg(evento || coalesce(':' || etapa_para, ''), ',' order by seq)
+        from sat_ordem_historico where ordem_id = v_os and seq >= (select min(seq) from sat_ordem_historico h2
+                                                                     where h2.ordem_id = v_os and h2.etapa_para = 'em_manutencao'))
+     <> 'etapa:em_manutencao,defeito,defeito,defeito,peca,peca,peca,laudo,ns,etapa:qualidade' then
+    raise exception 'FALHOU: eventos da manutenção %', (select string_agg(evento, ',' order by seq) from sat_ordem_historico where ordem_id = v_os);
+  end if;
+  update sat_ordens set etapa = 'disponivel', tipo = 'fora_garantia', laudo = '' where id = v_fora;
+  raise notice 'manutenção: ok';
+end $t$;
