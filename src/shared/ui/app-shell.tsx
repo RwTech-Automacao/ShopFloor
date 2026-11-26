@@ -117,10 +117,12 @@ const FATURAMENTO: FolhaModular[] = [
   { chave: 'fat-baixa-nf', rotulo: 'Baixa de NF', href: '/faturamento/baixa-nf', icone: Receipt, modulo: 'faturamento', perm: 'visualizar' },
 ]
 
-// SAT: entrada de equipamento que volta do cliente (FO-161). Grupo próprio no menu. Os Alertas do SAT moram aqui
-// (o SAT não tem Configurações próprias), com `sat.administrar` e a trava ALERTAS_SAT_LIBERADO_PARA.
+// SAT: entrada de equipamento que volta do cliente (FO-161) e a ordem de serviço de cada relógio. Grupo próprio no
+// menu. Os Alertas do SAT moram aqui (o SAT não tem Configurações próprias), com `sat.administrar` e a trava
+// ALERTAS_SAT_LIBERADO_PARA.
 export const SAT: FolhaModular[] = [
   { chave: 'sat-entrada', rotulo: 'Entrada de equipamento', href: '/sat/entrada', icone: PackageOpen, modulo: 'sat', perm: 'registrar_entrada' },
+  { chave: 'sat-ordens', rotulo: 'Ordens de serviço', href: '/sat/ordens', icone: ClipboardList, modulo: 'sat', perm: 'visualizar' },
   { chave: 'sat-equipamentos', rotulo: 'Equipamentos', href: '/sat/equipamentos', icone: Wrench, modulo: 'sat', perm: 'visualizar' },
   { chave: 'sat-alertas', rotulo: 'Alertas', href: '/sat/alertas', icone: BellRing, modulo: 'sat', perm: 'administrar' },
 ]
