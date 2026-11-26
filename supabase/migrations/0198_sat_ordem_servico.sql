@@ -195,9 +195,9 @@ as $func$
            when g ~ 'GARANTIA' then 'em_garantia'
            else null
          end
-    from (select upper(translate(coalesce(p_garantia, ''),
+    from (select regexp_replace(btrim(upper(translate(coalesce(p_garantia, ''),
                                  'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ',
-                                 'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC')) as g) x
+                                 'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC'))), '\s+', ' ', 'g') as g) x
 $func$;
 revoke all on function public.sat__tipo_da_garantia(text) from public, anon, authenticated;
 
@@ -311,5 +311,162 @@ begin
   end loop;
 end
 $backfill$;
+
+-- =============================================================
+-- PARTE B — a etapa segue a NF; o tipo segue a garantia do ticket
+-- =============================================================
+
+-- ---------- mudar a etapa (uso interno): trava a OS, grava etapa e histórico ----------
+create or replace function public.sat__ordem_mudar_etapa(p_ordem uuid, p_para text, p_evento text, p_dados jsonb)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_de text;
+begin
+  select o.etapa into v_de from sat_ordens o where o.id = p_ordem for update;
+  if not found then raise exception 'ORDEM_NAO_ENCONTRADA'; end if;
+  if v_de = p_para then raise exception 'NADA_A_MUDAR'; end if;
+  update sat_ordens set etapa = p_para, etapa_desde = now(), atualizado_em = now() where id = p_ordem;
+  insert into sat_ordem_historico (ordem_id, evento, etapa_de, etapa_para, dados, usuario, usuario_nome)
+  values (p_ordem, p_evento, v_de, p_para, coalesce(p_dados, '{}'::jsonb), auth.uid(), sat__nome_usuario());
+end
+$func$;
+revoke all on function public.sat__ordem_mudar_etapa(uuid, text, text, jsonb) from public, anon, authenticated;
+
+-- ---------- a NF muda (sat_corrigir_nf / sat_trocar_nf, que já existem) → a OS acompanha ----------
+-- Aprovada: nota_pendente → disponivel. Reprovada: disponivel → nota_pendente. Quem já abriu a manutenção fica.
+-- Empresa/CNPJ da nota trocada vão para a OS (em qualquer etapa).
+create or replace function public.sat__ordem_na_mudanca_nf()
+returns trigger
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  r       record;
+  v_de    text;
+  v_para  text;
+  v_dados jsonb;
+begin
+  update sat_ordens o set cliente = new.empresa, cnpj = new.cnpj, atualizado_em = now()
+    from sat_entradas e
+   where e.nf_id = new.id and o.entrada_id = e.id
+     and (o.cliente, o.cnpj) is distinct from (new.empresa, new.cnpj);
+
+  if new.situacao is not distinct from old.situacao then return null; end if;
+  v_de   := case when new.situacao = 'aprovada' then 'nota_pendente' else 'disponivel' end;
+  v_para := case when new.situacao = 'aprovada' then 'disponivel' else 'nota_pendente' end;
+  v_dados := jsonb_build_object('nf', new.numero, 'nf_de', old.numero, 'nf_situacao', new.situacao,
+                                'motivos', to_jsonb(new.motivos));
+  for r in select o.id from sat_ordens o join sat_entradas e on e.id = o.entrada_id
+            where e.nf_id = new.id and o.etapa = v_de
+            order by o.criado_em, o.id loop
+    perform sat__ordem_mudar_etapa(r.id, v_para, 'etapa', v_dados);
+  end loop;
+  return null;
+end
+$func$;
+revoke all on function public.sat__ordem_na_mudanca_nf() from public, anon, authenticated;
+
+drop trigger if exists sat_nfs_ordem on public.sat_nfs;
+create trigger sat_nfs_ordem after update of situacao, empresa, cnpj, numero on public.sat_nfs
+  for each row execute function public.sat__ordem_na_mudanca_nf();
+
+-- ---------- garantia/ticket: recalcula enquanto a OS não passou da manutenção ----------
+-- Remanufatura e retorno de peça (escolhidos à mão, entrega 4) não voltam a ser garantia.
+create or replace function public.sat__ordem_recalcular_garantia(p_ordem uuid)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_o        sat_ordens;
+  v_ticket   uuid;
+  v_num      text;
+  v_garantia text;
+  v_tipo     text;
+begin
+  select * into v_o from sat_ordens o where o.id = p_ordem for update;
+  if not found or v_o.etapa not in ('recebido', 'nota_pendente', 'disponivel', 'em_manutencao') then return; end if;
+  select e.os_id, coalesce(e.os_numero, ''), coalesce(s.garantia, '')
+    into v_ticket, v_num, v_garantia
+    from sat_entradas e left join sat_os s on s.id = e.os_id
+   where e.id = v_o.entrada_id;
+  v_garantia := coalesce(v_garantia, '');
+  v_num := coalesce(v_num, '');
+  v_tipo := case when v_o.tipo in ('remanufatura', 'retorno_peca') then v_o.tipo else sat__tipo_da_garantia(v_garantia) end;
+  if (v_ticket, v_num, v_garantia, v_tipo) is not distinct from
+     (v_o.ticket_os_id, v_o.ticket_numero, v_o.garantia, v_o.tipo) then
+    return;
+  end if;
+  update sat_ordens set ticket_os_id = v_ticket, ticket_numero = v_num, garantia = v_garantia, tipo = v_tipo,
+                        atualizado_em = now()
+   where id = p_ordem;
+  insert into sat_ordem_historico (ordem_id, evento, dados, usuario, usuario_nome)
+  values (p_ordem, 'garantia',
+          jsonb_build_object('ticket_de', v_o.ticket_numero, 'ticket_para', v_num,
+                             'garantia_de', v_o.garantia, 'garantia_para', v_garantia,
+                             'tipo_de', v_o.tipo, 'tipo_para', v_tipo),
+          auth.uid(), coalesce(nullif(sat__nome_usuario(), ''), 'planilha'));
+end
+$func$;
+revoke all on function public.sat__ordem_recalcular_garantia(uuid) from public, anon, authenticated;
+
+create or replace function public.sat__ordem_na_troca_de_ticket()
+returns trigger
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_id uuid;
+begin
+  select o.id into v_id from sat_ordens o where o.entrada_id = new.id;
+  if v_id is not null then perform sat__ordem_recalcular_garantia(v_id); end if;
+  return null;
+end
+$func$;
+revoke all on function public.sat__ordem_na_troca_de_ticket() from public, anon, authenticated;
+
+drop trigger if exists sat_entradas_ticket on public.sat_entradas;
+create trigger sat_entradas_ticket after update of os_id on public.sat_entradas
+  for each row when (old.os_id is distinct from new.os_id)
+  execute function public.sat__ordem_na_troca_de_ticket();
+
+create or replace function public.sat__ordem_na_garantia_da_planilha()
+returns trigger
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  r record;
+begin
+  for r in select o.id from sat_ordens o where o.ticket_os_id = new.id loop
+    perform sat__ordem_recalcular_garantia(r.id);
+  end loop;
+  return null;
+end
+$func$;
+revoke all on function public.sat__ordem_na_garantia_da_planilha() from public, anon, authenticated;
+
+drop trigger if exists sat_os_garantia on public.sat_os;
+create trigger sat_os_garantia after update of garantia on public.sat_os
+  for each row when (old.garantia is distinct from new.garantia)
+  execute function public.sat__ordem_na_garantia_da_planilha();
 
 notify pgrst, 'reload schema';

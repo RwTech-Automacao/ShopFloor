@@ -58,6 +58,8 @@ begin
      or sat__tipo_da_garantia('sem garantia') is distinct from 'fora_garantia'
      or sat__tipo_da_garantia('Fora da garantia') is distinct from 'fora_garantia'
      or sat__tipo_da_garantia('NÃO') is distinct from 'fora_garantia'
+     or sat__tipo_da_garantia('SEM  GARANTIA') is distinct from 'fora_garantia'
+     or sat__tipo_da_garantia('  fora   da  garantia ') is distinct from 'fora_garantia'
      or sat__tipo_da_garantia('') is not null
      or sat__tipo_da_garantia(null) is not null
      or sat__tipo_da_garantia('verificar') is not null then
@@ -149,4 +151,96 @@ begin
   end;
   reset role;
   raise notice 'RLS: ok';
+end $t$;
+
+-- 5. NF corrigida/trocada move a OS: reprovada → aprovada leva nota_pendente → disponivel; aprovada → reprovada
+--    devolve só quem ainda está disponível (a OS em manutenção não se mexe). Cliente/CNPJ seguem a nota trocada.
+do $t$
+declare
+  v_nf   uuid;
+  v_os   uuid;
+  v_cfop uuid := (select id from sat_motivos_nf where texto = 'CFOP errado');
+begin
+  select e.nf_id, o.id into v_nf, v_os from sat_ordens o join sat_entradas e on e.id = o.entrada_id
+   where o.modelo = '611' and o.sequencia = '1';
+
+  set local role authenticated;
+  perform set_config('teste.perms', 'sat.visualizar,sat.aprovar_nf', false);
+  perform sat_corrigir_nf(v_nf, 'aprovada', '{}'::uuid[], '');
+  reset role;
+  if (select etapa from sat_ordens where id = v_os) <> 'disponivel' then raise exception 'FALHOU: corrigir não liberou a OS'; end if;
+  if not exists (select 1 from sat_ordem_historico h where h.ordem_id = v_os and h.evento = 'etapa'
+                    and h.etapa_de = 'nota_pendente' and h.etapa_para = 'disponivel'
+                    and h.dados->>'nf_situacao' = 'aprovada' and h.usuario_nome = 'Sérgio SAT') then
+    raise exception 'FALHOU: histórico da liberação pela NF';
+  end if;
+
+  set local role authenticated;
+  perform sat_corrigir_nf(v_nf, 'reprovada', array[v_cfop], '');
+  reset role;
+  if (select etapa from sat_ordens where id = v_os) <> 'nota_pendente' then raise exception 'FALHOU: reprovar não voltou a OS'; end if;
+
+  set local role authenticated;
+  perform sat_trocar_nf(v_nf, jsonb_build_object('numero', 'NF-OS-2B', 'cnpj', '98765432000110', 'empresa', 'Cliente Novo',
+                                                 'situacao', 'aprovada'));
+  reset role;
+  if (select etapa || '|' || cliente || '|' || cnpj from sat_ordens where id = v_os) <> 'disponivel|Cliente Novo|98.765.432/0001-10' then
+    raise exception 'FALHOU: trocar NF (etapa/cliente/cnpj) %', (select row_to_json(o) from sat_ordens o where id = v_os);
+  end if;
+
+  -- em manutenção não volta
+  update sat_ordens set etapa = 'em_manutencao' where id = v_os;
+  set local role authenticated;
+  perform sat_corrigir_nf(v_nf, 'reprovada', array[v_cfop], '');
+  reset role;
+  if (select etapa from sat_ordens where id = v_os) <> 'em_manutencao' then raise exception 'FALHOU: OS em manutenção voltou'; end if;
+  update sat_ordens set etapa = 'nota_pendente' where id = v_os;
+  raise notice 'etapa pela NF: ok';
+end $t$;
+
+-- 6. Garantia: a planilha muda a garantia do ticket → o tipo acompanha (com histórico 'garantia');
+--    o técnico troca o ticket → idem; OS na qualidade não muda mais.
+do $t$
+declare v_os uuid; v_os2 uuid; v_ent uuid;
+begin
+  select o.id, o.entrada_id into v_os, v_ent from sat_ordens o where o.modelo = '610' and o.sequencia = '3';
+  select o.id into v_os2 from sat_ordens o where o.modelo = '610' and o.sequencia = '1';
+
+  -- o cron da planilha não tem usuário: sem auth.uid() o histórico diz 'planilha'
+  perform set_config('teste.uid', '', false);
+  set role service_role;
+  perform sat_sincronizar_planilha($j$[
+    {"chave": "T-OS-1", "numero": "900", "garantia": "SEM GARANTIA"},
+    {"chave": "T-OS-3", "numero": "902", "data": "2026-11-03", "solucao": "Envio ao SAT", "garantia": "GARANTIA",
+     "itens": [{"chave": "o3", "ns": "610-3", "modelo": "610", "sequencia": "3"}]}
+  ]$j$);
+  reset role;
+  if (select tipo from sat_ordens where id = v_os2) is distinct from 'fora_garantia' then
+    raise exception 'FALHOU: garantia da planilha não mudou o tipo';
+  end if;
+  if not exists (select 1 from sat_ordem_historico h where h.ordem_id = v_os2 and h.evento = 'garantia'
+                    and h.dados->>'tipo_de' = 'em_garantia' and h.dados->>'tipo_para' = 'fora_garantia'
+                    and h.usuario_nome = 'planilha') then
+    raise exception 'FALHOU: histórico da garantia pela planilha';
+  end if;
+  perform set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
+
+  set local role authenticated;
+  perform set_config('teste.perms', 'sat.visualizar,sat.associar_os', false);
+  perform sat_associar_os(v_ent, (select id from sat_os where chave = 'T-OS-3'));
+  reset role;
+  if (select tipo || '|' || ticket_numero || '|' || garantia from sat_ordens where id = v_os) <> 'em_garantia|902|GARANTIA' then
+    raise exception 'FALHOU: trocar o ticket não trouxe a garantia';
+  end if;
+
+  update sat_ordens set etapa = 'qualidade' where id = v_os;
+  set role service_role;
+  perform sat_sincronizar_planilha($j$[{"chave": "T-OS-3", "numero": "902", "garantia": "SEM GARANTIA"}]$j$);
+  reset role;
+  if (select tipo from sat_ordens where id = v_os) <> 'em_garantia' then raise exception 'FALHOU: OS na qualidade mudou de tipo'; end if;
+  update sat_ordens set etapa = 'disponivel' where id = v_os;
+  set role service_role;
+  perform sat_sincronizar_planilha($j$[{"chave": "T-OS-3", "numero": "902", "garantia": "GARANTIA"}]$j$);
+  reset role;
+  raise notice 'garantia pelo ticket: ok';
 end $t$;
