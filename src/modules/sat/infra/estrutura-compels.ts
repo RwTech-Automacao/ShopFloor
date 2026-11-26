@@ -44,7 +44,8 @@ export function leiturasDoCompels(
   }
   return {
     /** A árvore do produto; `null` = o item não tem estrutura no Compels. */
-    async estrutura(codigo: string): Promise<NoEstrutura[] | null> {
+    async estrutura(codigoBruto: string): Promise<NoEstrutura[] | null> {
+      const codigo = codigoBruto.trim().toUpperCase() // a chave do cache só aceita maiúsculas
       const r = await lerComCache(`estrutura:${codigo}`, async () => {
         const c = exigir()
         const id = idDaComposicao(await c.composicaoDoItem(codigo))
