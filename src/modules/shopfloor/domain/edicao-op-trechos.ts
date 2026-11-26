@@ -7,7 +7,7 @@
  */
 import type { OpEspelho } from '@/modules/compels/domain/espelho-ops'
 import { faixasDaPmoDoBanco, faixasDoBanco, type FaixaSN } from './faixas-sn'
-import type { SnModo, TipoTrecho, TrechoCadastro } from './cadastro-op'
+import { chaveTrecho, trechosDoEspelho, type SnModo, type TipoTrecho, type TrechoCadastro } from './cadastro-op'
 
 export interface TrechoGravado { seq: number; codigo: string; tipo: TipoTrecho; compels_op: string | null; sn_modo: SnModo }
 export interface PostoGravado { posto: string; ordem: number; trecho_seq: number | null }
@@ -60,12 +60,51 @@ export function postosParaAdicionar(catalogo: string[], trechos: TrechoCadastro[
   return catalogo.filter((p) => !usados.has(p) && !(t.tipo === 'prt' && p === almoxarifado))
 }
 
-/** O que vai no campo `trechos` da edição: rota, série e faixas por trecho (PRT 'mesmo' sem faixa; PMO sempre 'mesmo'). */
-export function trechosParaGravar(trechos: TrechoCadastro[]): { seq: number; postos: string[]; sn_modo: SnModo; faixas: FaixaSN[] }[] {
+/** Um trecho no campo `trechos` da edição. seq null = PRT incluída de novo (0199): vai com codigo + compels_op. */
+export type TrechoParaGravar = {
+  seq: number | null; postos: string[]; sn_modo: SnModo; faixas: FaixaSN[]; codigo?: string; compels_op?: string | null
+}
+
+/**
+ * O que vai no campo `trechos` da edição, na ordem da tela: rota, série e faixas por trecho (PRT 'mesmo' sem faixa; PMO
+ * sempre 'mesmo'). A PRT incluída nesta edição vai sem seq, com o código e a OP do Compels (o banco a numera).
+ */
+export function trechosParaGravar(trechos: TrechoCadastro[]): TrechoParaGravar[] {
   return trechos.map((t) => {
     const snModo: SnModo = t.tipo === 'pmo' ? 'mesmo' : t.snModo
-    return { seq: t.seq, postos: t.postos, sn_modo: snModo, faixas: t.tipo === 'pmo' || snModo === 'proprio' ? t.faixas : [] }
+    const base = { postos: t.postos, sn_modo: snModo, faixas: t.tipo === 'pmo' || snModo === 'proprio' ? t.faixas : [] }
+    return t.incluida ? { seq: null, codigo: t.codigo, compels_op: t.compelsOp, ...base } : { seq: t.seq, ...base }
   })
+}
+
+/** A cadeia inteira do Compels da OP gravada (pela OP do trecho da PMO no espelho); [] se ela não está no espelho. */
+export function cadeiaDaOp(trechos: TrechoCadastro[], espelho: OpEspelho[]): TrechoCadastro[] {
+  const pmo = trechos.find((t) => t.tipo === 'pmo')
+  if (!pmo?.compelsOp) return []
+  const codigo = pmo.codigo.trim().toUpperCase()
+  const opPmo = espelho.find((o) => String(o.numero) === pmo.compelsOp && o.codigo.trim().toUpperCase() === codigo)
+  return opPmo ? trechosDoEspelho(opPmo, espelho) : []
+}
+
+/** As PRTs da cadeia que não são trecho da OP (ignoradas no cadastro), na ordem da cadeia. */
+export function prtsForaDaOp(trechos: TrechoCadastro[], cadeia: TrechoCadastro[]): TrechoCadastro[] {
+  const tem = new Set(trechos.map(chaveTrecho))
+  return cadeia.filter((c) => c.tipo === 'prt' && !tem.has(chaveTrecho(c)))
+}
+
+/**
+ * Inclui de novo a PRT da cadeia: entra SEM posto (os postos vêm com ← → dos vizinhos ou por "Adicionar posto"), no
+ * lugar dela na cadeia — antes do primeiro trecho que vem depois dela no Compels, e sempre antes da PMO. seq negativo só
+ * para a tela (o banco numera ao gravar). Fora da cadeia ou já na OP: igual.
+ */
+export function incluirPrt(trechos: TrechoCadastro[], cadeia: TrechoCadastro[], prt: TrechoCadastro): TrechoCadastro[] {
+  const posicao = (t: TrechoCadastro) => cadeia.findIndex((c) => chaveTrecho(c) === chaveTrecho(t))
+  const k = posicao(prt)
+  if (k < 0 || prt.tipo !== 'prt' || trechos.some((t) => chaveTrecho(t) === chaveTrecho(prt))) return trechos
+  const nova: TrechoCadastro = { ...prt, seq: -(k + 1), incluida: true, snModo: 'mesmo', postos: [], faixas: [] }
+  const depois = trechos.findIndex((t) => t.tipo === 'pmo' || posicao(t) > k)
+  const at = depois < 0 ? trechos.length : depois
+  return [...trechos.slice(0, at), nova, ...trechos.slice(at)]
 }
 
 /** A rota inteira na ordem dos trechos: é o `fluxo` que a edição grava. */
