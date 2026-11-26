@@ -18,6 +18,17 @@ describe('mensagemDoErro', () => {
       expect(mensagemDoErro(c)).not.toBe('Não foi possível concluir. Tente de novo.')
     }
   })
+  it('traduz os códigos da ordem de serviço (0198)', () => {
+    expect(mensagemDoErro('ETAPA_NAO_PERMITE')).toBe('A OS não está na etapa certa para isso. Recarregue a página.')
+    expect(mensagemDoErro('FORA_DA_GARANTIA')).toBe('OS fora da garantia: o orçamento ainda não está no ShopFloor.')
+    expect(mensagemDoErro('SEM_LAUDO')).toBe('Escreva o laudo antes de enviar para a qualidade.')
+    expect(mensagemDoErro('PECA_REPETIDA')).toBe('Essa peça já está nesta OS — remova e lance de novo com a quantidade certa.')
+    for (const c of ['ORDEM_NAO_ENCONTRADA', 'ETAPA_INVALIDA', 'DEFEITO_INVALIDO', 'DEFEITO_REPETIDO', 'SOLUCAO_OBRIGATORIA',
+      'TEXTO_LONGO', 'CODIGO_INVALIDO', 'QUANTIDADE_INVALIDA', 'ITEM_NAO_ENCONTRADO', 'SEM_DEFEITO',
+      'GARANTIA_INDEFINIDA', 'MOTIVO_CORRECAO_OBRIGATORIO', 'CHAVE_INVALIDA', 'CACHE_GRANDE']) {
+      expect(mensagemDoErro(c)).not.toBe('Não foi possível concluir. Tente de novo.')
+    }
+  })
   it('os erros do cadastro de motivos saíram', () => {
     expect(mensagemDoErro('TEXTO_INVALIDO')).toBe('Não foi possível concluir. Tente de novo.')
     expect(mensagemDoErro('MOTIVO_NAO_ENCONTRADO')).toBe('Não foi possível concluir. Tente de novo.')
