@@ -52,3 +52,22 @@ export function PrtsIgnoradas({ ignoradas, aoDesfazer }: { ignoradas: PrtIgnorad
     </ul>
   )
 }
+
+/** Edição: as PRTs da cadeia do Compels que ficaram fora da OP, cada uma com "Incluir de novo". */
+export function PrtsForaDaOp({ prts, aoIncluir }: { prts: TrechoCadastro[]; aoIncluir: (t: TrechoCadastro) => void }) {
+  if (prts.length === 0) return null
+  return (
+    <ul aria-label="PRTs fora desta OP" className="flex flex-col gap-1">
+      {prts.map((t) => (
+        <li key={`${t.codigo}|${t.compelsOp ?? ''}`} className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-sm">
+          <span className="font-medium text-muted-foreground">{rotuloTrecho(t)}</span>
+          <Badge variant="outline">Ignorada</Badge>
+          <Button type="button" variant="outline" size="sm" className="ml-auto" aria-label={`Incluir ${rotuloTrecho(t)} de novo`}
+            onClick={() => aoIncluir(t)}>
+            Incluir de novo
+          </Button>
+        </li>
+      ))}
+    </ul>
+  )
+}

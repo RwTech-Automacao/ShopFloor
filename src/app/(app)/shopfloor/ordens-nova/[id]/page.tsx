@@ -7,7 +7,7 @@ import { buscarOrdemComTrechos, contarRegistros, listarOrdens, listarPostos } fr
 import { mapaPostoPerfil } from '@/modules/shopfloor/infra/postos-repository'
 import { listarEspelho } from '@/modules/shopfloor/infra/espelho-ops-repository'
 import { resumoTrechosDaOp } from '@/modules/shopfloor/infra/estrutura-repository'
-import { trechosDaOpGravada } from '@/modules/shopfloor/domain/edicao-op-trechos'
+import { cadeiaDaOp, trechosDaOpGravada } from '@/modules/shopfloor/domain/edicao-op-trechos'
 import { agruparReceitaPorPosto } from '@/modules/shopfloor/domain/receita-posto'
 import { agruparTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { EditarOpCliente } from './editar-op-cliente'
@@ -64,6 +64,7 @@ export default async function EditarOpPage({ params }: { params: Promise<{ id: s
         receita={agruparReceitaPorPosto(ordem.sf_ordem_componentes)}
         tempoBurnin={agruparTempoBurninPorPosto(ordem.sf_ordem_burnin)}
         pmosExistentes={pmos}
+        cadeia={cadeiaDaOp(trechos, espelho)}
       />
     </div>
   )

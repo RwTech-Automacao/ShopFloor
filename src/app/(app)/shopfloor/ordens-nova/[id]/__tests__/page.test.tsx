@@ -63,5 +63,7 @@ describe('página de edição de OP com trechos', () => {
     expect(p.postos).toEqual(['Teste'])
     expect(p.clientesExistentes).toEqual(['LINCE'])
     expect((p.trechos as { postos: string[] }[])[0]!.postos).toEqual(['Teste'])
+    // sem espelho, sem cadeia: nada para incluir de novo
+    expect(p.cadeia).toEqual([])
   })
 })
