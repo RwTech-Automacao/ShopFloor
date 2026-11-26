@@ -460,3 +460,51 @@ begin
   reset role;
   raise notice 'correção, busca, mais usadas e cache: ok';
 end $t$;
+
+-- 7. Revisão final: OS já em manutenção NÃO é movida pelo gatilho da NF (nem na reprovação nem na aprovação);
+--    o gatilho trava a OS (for update of o) e confere a etapa antes de mover, sem levantar erro.
+do $t$
+declare
+  v_nf   uuid;
+  v_os   uuid;
+  v_cfop uuid := (select id from sat_motivos_nf where texto = 'CFOP errado');
+begin
+  select e.nf_id, o.id into v_nf, v_os from sat_ordens o join sat_entradas e on e.id = o.entrada_id
+   where o.modelo = '611' and o.sequencia = '1';
+  set local role authenticated;
+  perform set_config('teste.perms', 'sat.visualizar,sat.aprovar_nf', false);
+  if (select situacao from sat_nfs where id = v_nf) <> 'aprovada' then
+    perform sat_corrigir_nf(v_nf, 'aprovada', '{}'::uuid[], '');
+  end if;
+  reset role;
+  update sat_ordens set etapa = 'em_manutencao' where id = v_os;
+  set local role authenticated;
+  perform sat_corrigir_nf(v_nf, 'reprovada', array[v_cfop], '');
+  reset role;
+  if (select etapa from sat_ordens where id = v_os) <> 'em_manutencao' then raise exception 'FALHOU: reprovar moveu OS em manutenção'; end if;
+  set local role authenticated;
+  perform sat_corrigir_nf(v_nf, 'aprovada', '{}'::uuid[], '');
+  reset role;
+  if (select etapa from sat_ordens where id = v_os) <> 'em_manutencao' then raise exception 'FALHOU: aprovar moveu OS em manutenção'; end if;
+  if (select pg_get_functiondef('public.sat__ordem_na_mudanca_nf()'::regprocedure)) !~* 'for update of o' then
+    raise exception 'FALHOU: o laço do gatilho da NF não trava a OS';
+  end if;
+  update sat_ordens set etapa = 'nota_pendente' where id = v_os;
+  raise notice 'gatilho da NF respeita OS em manutenção: ok';
+end $t$;
+
+-- 8. Numeração: número >= 10000 não é truncado pelo lpad.
+do $t$
+declare v_ano int := 2099; v_n text;
+begin
+  insert into sat_numeracao (ano, ultimo) values (v_ano, 9999) on conflict (ano) do update set ultimo = 9999;
+  v_n := sat__proximo_numero(v_ano);
+  if v_n <> '10000/99' then raise exception 'FALHOU: 10000 truncado: %', v_n; end if;
+  update sat_numeracao set ultimo = 9998 where ano = v_ano;
+  v_n := sat__proximo_numero(v_ano);
+  if v_n <> '9999/99' then raise exception 'FALHOU: 9999 sem zeros: %', v_n; end if;
+  update sat_numeracao set ultimo = 41 where ano = v_ano;
+  if sat__proximo_numero(v_ano) <> '0042/99' then raise exception 'FALHOU: 0042'; end if;
+  delete from sat_numeracao where ano = v_ano;
+  raise notice 'numeração >= 10000: ok';
+end $t$;

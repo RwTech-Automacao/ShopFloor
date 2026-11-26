@@ -62,4 +62,28 @@ describe('pecasSugeridas', () => {
     expect(r.kits.map((k) => k.codigo)).toEqual(['PMOE12'])
     expect(r.avisos).toEqual(['Não foi possível procurar todos os kits no Compels agora.'])
   })
+
+  it('mais usadas falhando: lista vazia e aviso (não some em silêncio)', async () => {
+    const r = await pecasSugeridas('PMOC31', deps({ maisUsadas: vi.fn(async () => { throw new Error('fora') }) }))
+    expect(r.maisUsadas).toEqual([])
+    expect(r.avisos).toEqual(['Não foi possível ler as peças mais usadas neste modelo agora.'])
+    expect(r.estrutura.length).toBeGreaterThan(0)
+  })
+
+  it('kits conhecidos falhando: aviso, e os pais ainda trazem kits', async () => {
+    const r = await pecasSugeridas('PMOC31', deps({ kitsConhecidos: vi.fn(async () => { throw new Error('fora') }) }))
+    expect(r.kits.map((k) => k.codigo)).toEqual(['PMOE74'])
+    expect(r.avisos).toEqual(['Não foi possível procurar todos os kits no Compels agora.'])
+  })
+
+  it('estrutura de um kit falhando ao julgar: aviso (uma vez só), os outros kits seguem', async () => {
+    const r = await pecasSugeridas('PMOC31', deps({
+      estrutura: vi.fn(async (c: string) => {
+        if (c === 'PMOE74') throw new Error('fora')
+        return c === 'PMOC31' ? PRODUTO : KITS[c] ?? null
+      }),
+    }))
+    expect(r.kits.map((k) => k.codigo)).toEqual(['PMOE12'])
+    expect(r.avisos).toEqual(['Não foi possível procurar todos os kits no Compels agora.'])
+  })
 })

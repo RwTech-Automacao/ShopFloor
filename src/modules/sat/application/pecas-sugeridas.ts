@@ -44,7 +44,10 @@ function semRepetir(camadas: PecaSugerida[][]): PecaSugerida[][] {
 
 export async function pecasSugeridas(produto: string, deps: DepsPecas): Promise<CamadasPecas> {
   const avisos: string[] = []
-  const maisUsadas = await deps.maisUsadas(produto.trim()).catch(() => [] as PecaSugerida[])
+  const maisUsadas = await deps.maisUsadas(produto.trim()).catch(() => {
+    avisos.push('Não foi possível ler as peças mais usadas neste modelo agora.')
+    return [] as PecaSugerida[]
+  })
   const fim = (kits: PecaSugerida[], estrutura: PecaSugerida[]): CamadasPecas => {
     const [a, b, c] = semRepetir([maisUsadas, kits, estrutura])
     return { maisUsadas: a!, kits: b!, estrutura: c!, avisos }
@@ -71,19 +74,23 @@ export async function pecasSugeridas(produto: string, deps: DepsPecas): Promise<
   const trocaveis = pecasTrocaveis(arvore)
   const codigosProduto = codigosDaArvore(arvore)
 
+  const falhas = { pais: false, kits: false, estrutura: false }
   // candidatos a kit: os já usados + os pais PMOE* das peças trocáveis
   const candidatos = new Map<string, string>()
-  for (const k of await deps.kitsConhecidos().catch(() => [] as PecaSugerida[])) {
+  const conhecidos = await deps.kitsConhecidos().catch(() => {
+    falhas.kits = true
+    return [] as PecaSugerida[]
+  })
+  for (const k of conhecidos) {
     if (k.codigo.startsWith('PMOE')) candidatos.set(k.codigo, k.descricao)
   }
-  const falhas = { pais: false }
   const comId = trocaveis.filter((t) => t.itemId !== null).slice(0, MAX_NOS_PARA_PAIS)
   const pais = await emLotes(comId, (t) => deps.paisDoItem(t.itemId!).catch(() => {
     falhas.pais = true
     return [] as PecaSugerida[]
   }))
   for (const p of pais.flat()) if (p.codigo.startsWith('PMOE') && !candidatos.has(p.codigo)) candidatos.set(p.codigo, p.descricao)
-  if (falhas.pais) avisos.push('Não foi possível procurar todos os kits no Compels agora.')
+  if (falhas.pais || falhas.kits) avisos.push('Não foi possível procurar todos os kits no Compels agora.')
   candidatos.delete(codigo)
 
   const avaliar = [...candidatos.keys()].sort().slice(0, MAX_KITS_AVALIADOS)
@@ -92,9 +99,11 @@ export async function pecasSugeridas(produto: string, deps: DepsPecas): Promise<
       const a = await deps.estrutura(k)
       return a !== null && kitServe(a, codigosProduto)
     } catch {
+      falhas.estrutura = true
       return false
     }
   })
+  if (falhas.estrutura && !falhas.pais && !falhas.kits) avisos.push('Não foi possível procurar todos os kits no Compels agora.')
   const kits = avaliar.filter((_, i) => servem[i]).map((k) => ({ codigo: k, descricao: candidatos.get(k) ?? '' }))
   const estrutura = trocaveis.map((t) => ({ codigo: t.codigo, descricao: t.descricao }))
   return fim(kits, estrutura)

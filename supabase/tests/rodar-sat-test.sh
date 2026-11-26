@@ -127,6 +127,14 @@ else
   exit 1
 fi
 
+# ---------- Rollback da 0198: sem gatilhos, sat_registrar_nf não cria OS; reaplicar restaura ----------
+docker cp docs/operacao/sat-ordem-servico/rollback-0198.sql "$NOME":/tmp/rollback-0198.sql
+docker cp supabase/tests/sat_ordem_rollback_test.sql "$NOME":/tmp/teste_rollback.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_rollback.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/rollback-0198.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0198.sql
+echo "rollback da 0198 (idempotente, em transação única): ok"
+
 # ---------- Do zero, como TRANSAÇÃO ÚNICA (como roda no RDS) ----------
 docker exec "$NOME" createdb -U postgres limpo
 docker exec "$NOME" psql -U postgres -d limpo -v ON_ERROR_STOP=1 -q \

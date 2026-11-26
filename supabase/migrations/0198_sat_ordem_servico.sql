@@ -26,6 +26,7 @@
 --   Dev e demo (SQL Editor): cola o arquivo inteiro e roda.
 --   RDS:  PGCLIENTENCODING=UTF8 PGPASSFILE=/dev/null psql -W "<conexão>" \
 --           -1 -v ON_ERROR_STOP=1 -f supabase/migrations/0198_sat_ordem_servico.sql
+--   ROLLBACK (desliga os 4 gatilhos; tabelas e dados ficam): docs/operacao/sat-ordem-servico/rollback-0198.sql
 --
 -- ⚠️ ORDEM DE DEPLOY: esta migração ANTES do app (as telas novas leem as tabelas). O app antigo não as usa.
 -- =============================================================
@@ -215,7 +216,7 @@ begin
   insert into sat_numeracao as s (ano, ultimo) values (p_ano, 1)
   on conflict (ano) do update set ultimo = s.ultimo + 1
   returning s.ultimo into v_n;
-  return lpad(v_n::text, 4, '0') || '/' || lpad((p_ano % 100)::text, 2, '0');
+  return case when v_n < 10000 then lpad(v_n::text, 4, '0') else v_n::text end || '/' || lpad((p_ano % 100)::text, 2, '0');
 end
 $func$;
 revoke all on function public.sat__proximo_numero(int) from public, anon, authenticated;
@@ -367,7 +368,11 @@ begin
                                 'motivos', to_jsonb(new.motivos));
   for r in select o.id from sat_ordens o join sat_entradas e on e.id = o.entrada_id
             where e.nf_id = new.id and o.etapa = v_de
-            order by o.criado_em, o.id loop
+            order by o.criado_em, o.id
+              for update of o loop
+    -- `for update of o` espera quem estiver mexendo na OS (ex.: iniciar a manutenção) e, em READ COMMITTED, reavalia
+    -- o filtro e pula a linha que já saiu de v_de. A conferência abaixo é a rede de segurança: não levanta erro.
+    continue when not exists (select 1 from sat_ordens x where x.id = r.id and x.etapa = v_de);
     perform sat__ordem_mudar_etapa(r.id, v_para, 'etapa', v_dados);
   end loop;
   return null;

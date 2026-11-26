@@ -968,6 +968,12 @@ function configDoAmbiente(env = process.env) {
 //#endregion
 //#region src/modules/sat/domain/defeitos-compels.ts
 const texto = (v) => (typeof v === "string" || typeof v === "number" ? String(v) : "").replace(/\s+/g, " ").trim();
+const inativoNoCompels = (v) => v === true || v === 1 || typeof v === "string" && [
+	"true",
+	"1",
+	"s",
+	"sim"
+].includes(v.trim().toLowerCase());
 function defeitosDaResposta(linhas) {
 	if (linhas.length === 0) throw new RespostaInesperada("nenhum defeito do SAT veio do Compels");
 	const porCodigo = /* @__PURE__ */ new Map();
@@ -977,21 +983,22 @@ function defeitosDaResposta(linhas) {
 		if (codigo === "" || descricao === "") throw new RespostaInesperada(`defeito do SAT sem código ou descrição (campos: ${Object.keys(l).join(", ")})`);
 		if (!porCodigo.has(codigo)) porCodigo.set(codigo, {
 			codigo,
-			descricao: descricao.slice(0, 300)
+			descricao: descricao.slice(0, 300),
+			ativo: !inativoNoCompels(l.inativo)
 		});
 	}
 	return [...porCodigo.values()];
 }
 const sql = (s) => `'${s.replace(/'/g, "''")}'`;
 function sqlDaCargaDeDefeitos(defeitos, quando) {
-	const valores = defeitos.map((d) => `  (${sql(d.codigo)}, ${sql(d.descricao)})`).join(",\n");
+	const valores = defeitos.map((d) => `  (${sql(d.codigo)}, ${sql(d.descricao)}, ${d.ativo})`).join(",\n");
 	return [
 		`-- ${defeitos.length} defeitos lidos do Compels em ${quando.toISOString()} (tools/compels/defeitos-sat.mjs).`,
 		"-- Aplicar com: psql -1 -v ON_ERROR_STOP=1 -f <este arquivo>. Reaplicar não duplica (código do Compels).",
-		"insert into public.sat_defeitos as d (codigo_compels, descricao) values",
+		"insert into public.sat_defeitos as d (codigo_compels, descricao, ativo) values",
 		valores,
-		"on conflict (codigo_compels) do update set descricao = excluded.descricao, atualizado_em = now()",
-		" where d.descricao is distinct from excluded.descricao;",
+		"on conflict (codigo_compels) do update set descricao = excluded.descricao, ativo = excluded.ativo, atualizado_em = now()",
+		" where (d.descricao, d.ativo) is distinct from (excluded.descricao, excluded.ativo);",
 		""
 	].join("\n");
 }

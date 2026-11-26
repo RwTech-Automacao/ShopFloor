@@ -8,9 +8,14 @@ import { RespostaInesperada } from '../../compels/domain/leituras-erp'
 export interface DefeitoCompels {
   codigo: string
   descricao: string
+  /** `ativo = not inativo` do Compels (ausente = ativo). */
+  ativo: boolean
 }
 
 const texto = (v: unknown) => (typeof v === 'string' || typeof v === 'number' ? String(v) : '').replace(/\s+/g, ' ').trim()
+
+const inativoNoCompels = (v: unknown) =>
+  v === true || v === 1 || (typeof v === 'string' && ['true', '1', 's', 'sim'].includes(v.trim().toLowerCase()))
 
 export function defeitosDaResposta(linhas: Record<string, unknown>[]): DefeitoCompels[] {
   if (linhas.length === 0) throw new RespostaInesperada('nenhum defeito do SAT veio do Compels')
@@ -21,7 +26,7 @@ export function defeitosDaResposta(linhas: Record<string, unknown>[]): DefeitoCo
     if (codigo === '' || descricao === '') {
       throw new RespostaInesperada(`defeito do SAT sem código ou descrição (campos: ${Object.keys(l).join(', ')})`)
     }
-    if (!porCodigo.has(codigo)) porCodigo.set(codigo, { codigo, descricao: descricao.slice(0, 300) })
+    if (!porCodigo.has(codigo)) porCodigo.set(codigo, { codigo, descricao: descricao.slice(0, 300), ativo: !inativoNoCompels(l.inativo) })
   }
   return [...porCodigo.values()]
 }
@@ -29,14 +34,14 @@ export function defeitosDaResposta(linhas: Record<string, unknown>[]): DefeitoCo
 const sql = (s: string) => `'${s.replace(/'/g, "''")}'`
 
 export function sqlDaCargaDeDefeitos(defeitos: DefeitoCompels[], quando: Date): string {
-  const valores = defeitos.map((d) => `  (${sql(d.codigo)}, ${sql(d.descricao)})`).join(',\n')
+  const valores = defeitos.map((d) => `  (${sql(d.codigo)}, ${sql(d.descricao)}, ${d.ativo})`).join(',\n')
   return [
     `-- ${defeitos.length} defeitos lidos do Compels em ${quando.toISOString()} (tools/compels/defeitos-sat.mjs).`,
     '-- Aplicar com: psql -1 -v ON_ERROR_STOP=1 -f <este arquivo>. Reaplicar não duplica (código do Compels).',
-    'insert into public.sat_defeitos as d (codigo_compels, descricao) values',
+    'insert into public.sat_defeitos as d (codigo_compels, descricao, ativo) values',
     valores,
-    'on conflict (codigo_compels) do update set descricao = excluded.descricao, atualizado_em = now()',
-    ' where d.descricao is distinct from excluded.descricao;',
+    'on conflict (codigo_compels) do update set descricao = excluded.descricao, ativo = excluded.ativo, atualizado_em = now()',
+    ' where (d.descricao, d.ativo) is distinct from (excluded.descricao, excluded.ativo);',
     '',
   ].join('\n')
 }

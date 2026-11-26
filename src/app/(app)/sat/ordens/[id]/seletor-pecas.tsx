@@ -52,6 +52,13 @@ export function SeletorPecas({ ordemId, onEscolher }: { ordemId: string; onEscol
     if (!r.ok) { setErro(r.erro); setAchados(null); return }
     setAchados(r.valor)
   })
+  const digitar = (valor: string) => {
+    setTermo(valor)
+    if (valor.trim().length < MIN_BUSCA) {
+      seq.current++ // uma resposta ainda em voo é velha: não pode reaparecer
+      setAchados(null)
+    }
+  }
   // Digitar busca sozinho, com atraso e só a partir de 2 caracteres (não martela o Compels a cada tecla).
   useEffect(() => {
     if (termo.trim().length < MIN_BUSCA) return
@@ -75,7 +82,7 @@ export function SeletorPecas({ ordemId, onEscolher }: { ordemId: string; onEscol
       )}
       <div className="flex gap-2">
         <Input aria-label="Buscar item no Compels" placeholder="Buscar item no Compels (código ou descrição)" value={termo}
-          maxLength={60} onChange={(e) => setTermo(e.target.value)} />
+          maxLength={60} onChange={(e) => digitar(e.target.value)} />
         <Button type="button" variant="outline" onClick={() => buscar(termo)} disabled={carregando}>Buscar</Button>
       </div>
       {erro && <p className="text-sm text-destructive">{erro}</p>}
