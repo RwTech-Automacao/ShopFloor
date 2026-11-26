@@ -568,6 +568,27 @@ describe('linhas de PRT (estrutura da OP)', () => {
       expect(trocarOpDaLinha).toHaveBeenCalledWith('id-1', '8649')
     })
 
+    it('GRUPO da PRT (0197): aponta a quantidade do grupo, numa gravação só, com a chave do grupo na marca', async () => {
+      const { erp, buscadas, corpos } = erpQueRegistra()
+      const soma = vi.fn(async () => 0)
+      const porta = criarPortaCompels({
+        env: ENV, erp, base: SEM_BASE, somaEnviada: soma, trocarOpDaLinha: async () => {},
+        ordemDaLinha: async () => ({ op: '8498', integrar: true }), filhaAtual: async () => '8649',
+      })
+      const grupo = linha({
+        id: 'id-g', chave: 'PRT/ord-1/PRT446/G1', pmo: 'PRT446', op: '8649', ordemId: 'ord-1', estoque: 'EINTER',
+        posto: 'Inspeção AOI TOP', tipo: 'grupo_prt', bipe: 'GRUPO[G1][3]', serieNorm: '', quantidade: 3,
+      })
+      expect(await porta(grupo)).toMatchObject({ ok: true })
+      expect(buscadas).toEqual([8649])
+      expect(corpos).toHaveLength(1)
+      const corpo = JSON.parse(corpos[0]!) as Record<string, unknown>
+      expect(Number(corpo.quantidadeProduzida)).toBe(3)
+      expect(corpo.observacao).toBe('ShopFloor PRT/ord-1/PRT446/G1')
+      // o "já mandamos" é o da PRT + filha, sem o próprio grupo (a soma do banco não conta as placas do grupo)
+      expect(soma).toHaveBeenCalledWith('PRT446', '8649', 'id-g')
+    })
+
     it('regravar a op da linha falha: o envio segue para a filha atual (melhor esforço)', async () => {
       const { erp, buscadas } = erpQueRegistra()
       const porta = criarPortaCompels({

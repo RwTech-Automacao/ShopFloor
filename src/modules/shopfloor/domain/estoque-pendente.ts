@@ -46,7 +46,7 @@ export interface LinhaFilaEstoque {
   op: string
   posto: string
   /** 'lote' = o lote do NQA individual confirmado de uma vez (0156): uma linha pra N peças. */
-  tipo: 'caixa' | 'serie' | 'lote'
+  tipo: 'caixa' | 'serie' | 'lote' | 'grupo_prt'
   /** O que o coletor leu: código da caixa ou a série crua. */
   bipe: string
   /** A identidade do bipe (coluna GERADA no banco): série normalizada, senão o código da caixa. */
@@ -140,7 +140,7 @@ export interface GrupoEstoquePendente {
   posto: string
   alvo: string
   /** 'lote' = o lote do NQA individual confirmado de uma vez (0156): uma linha pra N peças. */
-  tipo: 'caixa' | 'serie' | 'lote'
+  tipo: 'caixa' | 'serie' | 'lote' | 'grupo_prt'
   linhas: LinhaEstoquePendente[]
 }
 
@@ -364,6 +364,12 @@ export function agruparEstoquePendente(
 export function rotuloTipoGrupo(g: GrupoEstoquePendente): string {
   if (g.tipo === 'caixa') return 'caixa'
   if (g.tipo === 'serie') return 'peça'
+  if (g.tipo === 'grupo_prt') {
+    // 0197: as placas de uma PRT da OP numa linha só (sf_prt_agrupar)
+    const l = g.linhas.find((x) => x.operacao === 'entrada') ?? g.linhas[0]
+    if (!l || !(l.quantidade > 0)) return 'PRT (grupo)'
+    return `PRT (grupo) · ${l.quantidade === 1 ? '1 peça' : `${l.quantidade} peças`}`
+  }
   const linha = g.linhas.find((l) => l.operacao === 'entrada') ?? g.linhas[0]
   if (!linha || !(linha.quantidade > 0)) return 'lote do NQA'
   return `lote do NQA · ${linha.quantidade === 1 ? '1 peça' : `${linha.quantidade} peças`}`

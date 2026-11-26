@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('server-only', () => ({}))
 
 // vi.mock é içado para o topo do arquivo: os mocks precisam nascer num vi.hoisted.
-const { entregarEstoquePendente, criarRepositorioEstoqueEnvios, repoFalso, portaFalsa, criarPortaCompels } = vi.hoisted(() => {
+const { entregarEstoquePendente, criarRepositorioEstoqueEnvios, agruparPrtPendentes, repoFalso, portaFalsa, criarPortaCompels } = vi.hoisted(() => {
   const repoFalso = { reservarPendentes: vi.fn(), concluirEnvio: vi.fn() }
   const portaFalsa = vi.fn()
   return {
@@ -12,11 +12,12 @@ const { entregarEstoquePendente, criarRepositorioEstoqueEnvios, repoFalso, porta
     portaFalsa,
     criarPortaCompels: vi.fn(() => portaFalsa),
     criarRepositorioEstoqueEnvios: vi.fn(() => repoFalso),
+    agruparPrtPendentes: vi.fn(async () => 0),
     entregarEstoquePendente: vi.fn(async () => ({ enviados: 4, falhas: 1, aguardando: 0 })),
   }
 })
 vi.mock('@/modules/shopfloor/application/enviar-estoque', () => ({ entregarEstoquePendente }))
-vi.mock('@/modules/shopfloor/infra/estoque-envios-repository', () => ({ criarRepositorioEstoqueEnvios }))
+vi.mock('@/modules/shopfloor/infra/estoque-envios-repository', () => ({ criarRepositorioEstoqueEnvios, agruparPrtPendentes }))
 // A porta do Compels é montada POR RODADA (o cache de "OP esperando" vale só dentro dela): a rota tem de
 // pedir uma nova a cada chamada e ligá-la ao laço junto com o repositório.
 vi.mock('@/modules/shopfloor/infra/compels', () => ({ criarPortaCompels }))
@@ -37,6 +38,7 @@ function pedido(cabecalhos: Record<string, string> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   entregarEstoquePendente.mockResolvedValue({ enviados: 4, falhas: 1, aguardando: 0 })
+  agruparPrtPendentes.mockResolvedValue(0)
   vi.stubEnv('ESTOQUE_CRON_SECRET', SEGREDO)
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -102,6 +104,28 @@ describe('POST /api/shopfloor/estoque', () => {
     expect(entregarEstoquePendente).toHaveBeenCalledTimes(1)
     // A porta vem de `criarPortaCompels()`, montada a cada rodada: nenhum modo seco no meio.
     expect(entregarEstoquePendente).toHaveBeenCalledWith(portaFalsa, repoFalso)
+  })
+
+  it('0197: agrupa as placas de PRT ANTES de entregar a fila (o grupo nasce e já sai na mesma rodada)', async () => {
+    const ordem: string[] = []
+    agruparPrtPendentes.mockImplementationOnce(async () => { ordem.push('agrupar'); return 2 })
+    entregarEstoquePendente.mockImplementationOnce(async () => { ordem.push('entregar'); return { enviados: 1, falhas: 0, aguardando: 0 } })
+    const res = await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
+    expect(res.status).toBe(200)
+    expect(ordem).toEqual(['agrupar', 'entregar'])
+    expect(vi.mocked(console.log).mock.calls.map((c) => String(c[0])).join('\n')).toContain('2 grupo(s) de PRT')
+  })
+
+  it('0197: o agrupar falha → loga e a entrega acontece mesmo assim', async () => {
+    agruparPrtPendentes.mockRejectedValueOnce(new Error('function sf_prt_agrupar() does not exist'))
+    entregarEstoquePendente.mockResolvedValueOnce({ enviados: 3, falhas: 0, aguardando: 0 })
+    const res = await POST(pedido({ authorization: `Bearer ${SEGREDO}` }))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ enviados: 3, falhas: 0, aguardando: 0 })
+    expect(entregarEstoquePendente).toHaveBeenCalledTimes(1)
+    const erros = vi.mocked(console.error).mock.calls.map((c) => c.map(String).join(' ')).join('\n')
+    expect(erros).toContain('[estoque]')
+    expect(erros).toContain('sf_prt_agrupar')
   })
 
   it('rodada com falha registra as contagens no log de erro, junto dos motivos do laço', async () => {
