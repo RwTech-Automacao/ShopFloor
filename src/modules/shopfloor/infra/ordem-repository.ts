@@ -167,8 +167,18 @@ async function regravarFaixas(supabase: Supa, id: string, faixas: FaixaSN[]): Pr
   if (error) throw error
 }
 
-/** Um trecho na edição por trecho (0194): os postos em ordem, a série e as faixas (PMO e PRT com série própria). */
-export interface TrechoEdicao { seq: number; postos: string[]; sn_modo: 'mesmo' | 'proprio'; faixas: FaixaSN[] }
+/**
+ * Um trecho na edição por trecho (0194): os postos em ordem, a série e as faixas (PMO e PRT com série própria).
+ * seq null = PRT da cadeia incluída de novo nesta edição (0199): vai com codigo + compels_op, e a lista vai na ordem nova.
+ */
+export interface TrechoEdicao {
+  seq: number | null
+  postos: string[]
+  sn_modo: 'mesmo' | 'proprio'
+  faixas: FaixaSN[]
+  codigo?: string
+  compels_op?: string
+}
 
 /**
  * A OP inteira numa transação só (sf_ordem_regravar_trechos, 0194): rota, série e faixas de cada trecho, receita,
