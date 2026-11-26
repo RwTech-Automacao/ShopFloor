@@ -31,13 +31,32 @@ export function idDaComposicao(resposta: unknown): number | null {
   return typeof id === 'number' && Number.isFinite(id) ? id : null
 }
 
+/**
+ * Normaliza o `children` (raiz ou nível interno) para uma lista de nós, aceitando: array; um nó só (objeto com `item`);
+ * `{children|data: [...]}`; mapa por chave `{ "0": nó, "1": nó }` (objetos com `item`, ou arrays deles). Resto = [].
+ */
+export function filhosDe(v: unknown): unknown[] {
+  if (Array.isArray(v)) return v
+  const o = obj(v)
+  if (!o) return []
+  if ('item' in o) return [v]
+  if (Array.isArray(o.children)) return o.children
+  if (Array.isArray(o.data)) return o.data
+  const saida: unknown[] = []
+  for (const x of Object.values(o)) {
+    if (Array.isArray(x)) saida.push(...x.filter((y) => obj(y) && 'item' in (obj(y) as Obj)))
+    else if (obj(x) && 'item' in (obj(x) as Obj)) saida.push(x)
+  }
+  return saida
+}
+
 function lerNo(v: unknown, profundidade: number): NoEstrutura | null {
   const o = obj(v)
   if (!o || profundidade > PROFUNDIDADE_MAXIMA) return null
   const item = obj(o.item)
   const codigo = txt(item?.codigo).toUpperCase()
   if (codigo === '') return null
-  const filhos = Array.isArray(o.children) ? o.children : []
+  const filhos = filhosDe(o.children)
   return {
     codigo,
     descricao: txt(item?.descricao),
@@ -52,8 +71,9 @@ function lerNo(v: unknown, profundidade: number): NoEstrutura | null {
  */
 export function arvoreDaResposta(resposta: unknown, codigoProduto: string): NoEstrutura[] {
   const r = obj(resposta)
-  if (!r || !Array.isArray(r.children)) throw new RespostaInesperada('estrutura do produto')
-  const nos = r.children.map((f) => lerNo(f, 1)).filter((x): x is NoEstrutura => x !== null)
+  const bruto = r ? (r.children ?? r.data) : undefined
+  if (!r || bruto === undefined || bruto === null) throw new RespostaInesperada('estrutura do produto')
+  const nos = filhosDe(bruto).map((f) => lerNo(f, 1)).filter((x): x is NoEstrutura => x !== null)
   if (nos.length === 1 && nos[0]!.codigo === codigoProduto.trim().toUpperCase()) return nos[0]!.filhos
   return nos
 }

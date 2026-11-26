@@ -49,6 +49,33 @@ describe('arvoreDaResposta', () => {
   it('sem children: resposta inesperada', () => {
     expect(() => arvoreDaResposta({ success: false }, 'PMOC31')).toThrow(/estrutura do produto/)
   })
+  describe('formas de children toleradas (raiz e níveis internos)', () => {
+    const lista = RESPOSTA.children
+    const base = arvoreDaResposta(RESPOSTA, 'PMOC31')
+    const mapa = (ns: unknown[]) => Object.fromEntries(ns.map((n, i) => [String(i), n]))
+    const comInternos = (f: (ns: unknown[]) => unknown) =>
+      lista.map((n) => ({ ...n, children: f(n.children) }))
+    const igual = (resposta: unknown) => {
+      const a = arvoreDaResposta(resposta, 'PMOC31')
+      expect(a).toEqual(base)
+      expect(pecasTrocaveis(a).map((n) => n.codigo)).toEqual(['PMOX01', 'GB001', 'PMOE74', 'FT100'])
+      expect(kitServe(a[0]!.filhos, codigosDaArvore(a))).toBe(true)
+    }
+    it('raiz children como um nó só (objeto)', () => {
+      const a = arvoreDaResposta({ success: true, children: no('PMOX01', 'MODULO BIOMETRICO', 11, [no('CB001', 'CABO FLAT', 12)]) }, 'PMOC31')
+      expect(a.map((n) => n.codigo)).toEqual(['PMOX01'])
+      expect(a[0]!.filhos.map((n) => n.codigo)).toEqual(['CB001'])
+    })
+    it('raiz children como mapa por chave', () => igual({ success: true, children: mapa(lista) }))
+    it('raiz children como { data: [...] }', () => igual({ success: true, children: { data: lista } }))
+    it('raiz em data em vez de children', () => igual({ success: true, data: lista }))
+    it('children internos como objeto/mapa', () => igual({ children: comInternos((ns) => mapa(ns)) }))
+    it('children internos como { data: [...] }', () => igual({ children: comInternos((ns) => ({ data: ns })) }))
+    it('children vazio mas presente é árvore vazia, sem erro', () => {
+      expect(arvoreDaResposta({ children: {} }, 'P')).toEqual([])
+      expect(arvoreDaResposta({ children: [] }, 'P')).toEqual([])
+    })
+  })
   it('nó sem código é ignorado', () => {
     expect(arvoreDaResposta({ children: [{ item: {} }, no('A1', 'X', null)] }, 'P')).toEqual([
       { codigo: 'A1', descricao: 'X', itemId: null, filhos: [] },
