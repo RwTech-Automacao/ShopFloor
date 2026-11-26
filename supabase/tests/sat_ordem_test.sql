@@ -267,6 +267,21 @@ begin
   begin perform sat_ordem_iniciar_manutencao(v_os); raise exception 'FALHOU: iniciar sem permissão';
   exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
 
+  begin perform sat_ordem_defeito_adicionar(v_os, v_d1, 'x'); raise exception 'FALHOU: defeito_adicionar sem permissão';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+  begin perform sat_ordem_defeito_remover(gen_random_uuid()); raise exception 'FALHOU: defeito_remover sem permissão';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+  begin perform sat_ordem_peca_adicionar(v_os, 'ABC', 'x', 1); raise exception 'FALHOU: peca_adicionar sem permissão';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+  begin perform sat_ordem_peca_remover(gen_random_uuid()); raise exception 'FALHOU: peca_remover sem permissão';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+  begin perform sat_ordem_laudo_salvar(v_os, 'x'); raise exception 'FALHOU: laudo sem permissão';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+  begin perform sat_ordem_trocar_ns(v_os, '{"ns":"X"}'::jsonb); raise exception 'FALHOU: trocar_ns sem permissão';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+  begin perform sat_ordem_enviar_qualidade(v_os); raise exception 'FALHOU: enviar sem permissão';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+
   perform set_config('teste.perms', 'sat.visualizar,sat.manutencao', false);
   -- nota pendente não abre manutenção; OS inexistente
   begin perform sat_ordem_iniciar_manutencao(v_pend); raise exception 'FALHOU: iniciou com nota pendente';

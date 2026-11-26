@@ -567,8 +567,9 @@ begin
   if not tem_permissao('sat', 'manutencao') then raise exception 'SEM_PERMISSAO'; end if;
   select * into v_x from sat_ordem_defeitos x where x.id = p_item and x.origem = 'manutencao';
   if not found then raise exception 'ITEM_NAO_ENCONTRADO'; end if;
-  v_o := sat__ordem_para_manutencao(v_x.ordem_id);
-  delete from sat_ordem_defeitos where id = p_item;
+  v_o := sat__ordem_para_manutencao(v_x.ordem_id);   -- trava a OS; quem decide é o delete (remoção concorrente)
+  delete from sat_ordem_defeitos where id = p_item and origem = 'manutencao' returning * into v_x;
+  if not found then raise exception 'ITEM_NAO_ENCONTRADO'; end if;
   perform sat__ordem_evento(v_x.ordem_id, 'defeito',
     jsonb_build_object('acao', 'removido', 'defeito', v_x.defeito_descricao, 'solucao', v_x.solucao));
 end
@@ -625,8 +626,9 @@ begin
   if not tem_permissao('sat', 'manutencao') then raise exception 'SEM_PERMISSAO'; end if;
   select * into v_x from sat_ordem_pecas x where x.id = p_item;
   if not found then raise exception 'ITEM_NAO_ENCONTRADO'; end if;
-  v_o := sat__ordem_para_manutencao(v_x.ordem_id);
-  delete from sat_ordem_pecas where id = p_item;
+  v_o := sat__ordem_para_manutencao(v_x.ordem_id);   -- trava a OS; quem decide é o delete (remoção concorrente)
+  delete from sat_ordem_pecas where id = p_item returning * into v_x;
+  if not found then raise exception 'ITEM_NAO_ENCONTRADO'; end if;
   perform sat__ordem_evento(v_x.ordem_id, 'peca',
     jsonb_build_object('acao', 'removida', 'codigo', v_x.codigo, 'descricao', v_x.descricao, 'quantidade', v_x.quantidade));
 end
