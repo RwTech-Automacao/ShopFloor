@@ -82,11 +82,10 @@ describe('Manutencao', () => {
     await waitFor(() => expect(acoes.enviarQualidadeAction).toHaveBeenCalledWith(OS))
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Enviada para a qualidade.'))
   })
-  it('fora da garantia: avisa que o orçamento ainda não está aqui; erro do banco vira toast', async () => {
-    vi.mocked(acoes.enviarQualidadeAction).mockResolvedValueOnce({ ok: false, erro: 'OS fora da garantia: o orçamento ainda não está no ShopFloor.' })
+  it('fora da garantia: envia para a qualidade como em garantia, sem aviso de bloqueio', async () => {
     render(<Manutencao {...base} tipo="fora_garantia" />)
-    expect(screen.getByText('Fora da garantia: o orçamento e o envio para a qualidade chegam na próxima entrega.')).toBeInTheDocument()
+    expect(screen.queryByText(/Fora da garantia:/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Enviar para a qualidade' }))
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('OS fora da garantia: o orçamento ainda não está no ShopFloor.'))
+    await waitFor(() => expect(acoes.enviarQualidadeAction).toHaveBeenCalledWith(OS))
   })
 })

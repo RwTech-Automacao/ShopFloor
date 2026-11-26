@@ -358,22 +358,24 @@ begin
     raise exception 'FALHOU: troca de NS %', r;
   end if;
 
-  -- fora da garantia não vai para a qualidade nesta entrega
+  -- garantia a definir não vai para a qualidade; fora da garantia vai (a qualidade vem primeiro)
   reset role;
-  update sat_ordens set etapa = 'em_manutencao' where id = v_fora;
+  update sat_ordens set etapa = 'em_manutencao', tipo = null where id = v_fora;
   insert into sat_ordem_defeitos (ordem_id, defeito_id, defeito_descricao, origem, solucao)
   values (v_fora, v_d1, 'Não liga', 'manutencao', 'x');
   update sat_ordens set laudo = 'ok' where id = v_fora;
   set local role authenticated;
-  begin perform sat_ordem_enviar_qualidade(v_fora); raise exception 'FALHOU: fora da garantia foi para a qualidade';
-  exception when raise_exception then if sqlerrm <> 'FORA_DA_GARANTIA' then raise; end if; end;
-  reset role;
-  update sat_ordens set tipo = null where id = v_fora;
-  set local role authenticated;
   begin perform sat_ordem_enviar_qualidade(v_fora); raise exception 'FALHOU: garantia indefinida foi para a qualidade';
   exception when raise_exception then if sqlerrm <> 'GARANTIA_INDEFINIDA' then raise; end if; end;
   reset role;
-  update sat_ordens set tipo = 'em_garantia' where id = v_fora;
+  update sat_ordens set tipo = 'fora_garantia' where id = v_fora;
+  set local role authenticated;
+  r := sat_ordem_enviar_qualidade(v_fora);
+  if (select etapa from sat_ordens where id = v_fora) <> 'qualidade' then
+    raise exception 'FALHOU: fora da garantia não foi para a qualidade %', r;
+  end if;
+  reset role;
+  update sat_ordens set etapa = 'em_manutencao', tipo = 'em_garantia' where id = v_fora;
   delete from sat_ordem_defeitos where ordem_id = v_fora;
   set local role authenticated;
   begin perform sat_ordem_enviar_qualidade(v_fora); raise exception 'FALHOU: enviou sem defeito';

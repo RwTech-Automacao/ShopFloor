@@ -698,7 +698,8 @@ $func$;
 revoke all on function public.sat_ordem_trocar_ns(uuid, jsonb) from public, anon;
 grant execute on function public.sat_ordem_trocar_ns(uuid, jsonb) to authenticated, service_role;
 
--- Em manutenção → qualidade. Nesta entrega só EM GARANTIA (fora da garantia passa pelo orçamento, entrega 2).
+-- Em manutenção → qualidade. Em garantia e fora da garantia (a qualidade vem primeiro; o orçamento corre em paralelo, entrega 2).
+-- Remanufatura e retorno de peça têm caminho próprio (entrega 4).
 create or replace function public.sat_ordem_enviar_qualidade(p_ordem uuid)
 returns jsonb
 language plpgsql
@@ -714,7 +715,7 @@ declare
 begin
   v_o := sat__ordem_para_manutencao(p_ordem);
   if v_o.tipo is null then raise exception 'GARANTIA_INDEFINIDA'; end if;
-  if v_o.tipo <> 'em_garantia' then raise exception 'FORA_DA_GARANTIA'; end if;
+  if v_o.tipo not in ('em_garantia', 'fora_garantia') then raise exception 'ETAPA_NAO_PERMITE'; end if;
   select count(*) into v_defeitos from sat_ordem_defeitos x where x.ordem_id = p_ordem and x.origem = 'manutencao';
   if v_defeitos = 0 then raise exception 'SEM_DEFEITO'; end if;
   if btrim(v_o.laudo) = '' then raise exception 'SEM_LAUDO'; end if;

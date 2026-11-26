@@ -149,15 +149,11 @@ export function Manutencao({ ordemId, etapa, tipo, podeManutencao, defeitos, pec
 
       {editando && (
         <div className="flex flex-col gap-1 border-t pt-2">
-          {tipo !== 'em_garantia' && (
-            <p className="text-sm text-amber-800">
-              {tipo === null
-                ? 'A planilha ainda não diz se esta OS é garantia: confira o ticket do suporte antes de enviar.'
-                : 'Fora da garantia: o orçamento e o envio para a qualidade chegam na próxima entrega.'}
-            </p>
+          {tipo === null && (
+            <p className="text-sm text-amber-800">A planilha ainda não diz se esta OS é garantia: confira o ticket do suporte antes de enviar.</p>
           )}
-          {tipo === 'em_garantia' && defeitos.length === 0 && <p className="text-sm text-amber-800">Falta lançar ao menos um defeito.</p>}
-          {tipo === 'em_garantia' && !laudo.trim() && <p className="text-sm text-amber-800">Falta salvar o laudo.</p>}
+          {tipo !== null && defeitos.length === 0 && <p className="text-sm text-amber-800">Falta lançar ao menos um defeito.</p>}
+          {tipo !== null && !laudo.trim() && <p className="text-sm text-amber-800">Falta salvar o laudo.</p>}
           <div><Button disabled={pendente}
             onClick={() => executar(() => enviarQualidadeAction(ordemId), 'Enviada para a qualidade.')}>Enviar para a qualidade</Button></div>
         </div>

@@ -37,7 +37,6 @@ const MENSAGENS = new Map<string, string>(Object.entries({
   ITEM_NAO_ENCONTRADO: 'Esse lançamento não existe mais. Recarregue a página.',
   SEM_DEFEITO: 'Lance ao menos um defeito antes de enviar para a qualidade.',
   SEM_LAUDO: 'Escreva o laudo antes de enviar para a qualidade.',
-  FORA_DA_GARANTIA: 'OS fora da garantia: o orçamento ainda não está no ShopFloor.',
   GARANTIA_INDEFINIDA: 'A planilha não diz se esta OS é garantia. Confira o ticket do suporte.',
   MOTIVO_CORRECAO_OBRIGATORIO: 'Escreva o motivo da correção (3 a 500 caracteres).',
   CHAVE_INVALIDA: 'Não foi possível guardar a leitura do Compels.',

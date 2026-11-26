@@ -20,7 +20,6 @@ describe('mensagemDoErro', () => {
   })
   it('traduz os códigos da ordem de serviço (0198)', () => {
     expect(mensagemDoErro('ETAPA_NAO_PERMITE')).toBe('A OS não está na etapa certa para isso. Recarregue a página.')
-    expect(mensagemDoErro('FORA_DA_GARANTIA')).toBe('OS fora da garantia: o orçamento ainda não está no ShopFloor.')
     expect(mensagemDoErro('SEM_LAUDO')).toBe('Escreva o laudo antes de enviar para a qualidade.')
     expect(mensagemDoErro('PECA_REPETIDA')).toBe('Essa peça já está nesta OS — remova e lance de novo com a quantidade certa.')
     for (const c of ['ORDEM_NAO_ENCONTRADA', 'ETAPA_INVALIDA', 'DEFEITO_INVALIDO', 'DEFEITO_REPETIDO', 'SOLUCAO_OBRIGATORIA',
