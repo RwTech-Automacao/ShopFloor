@@ -3,8 +3,10 @@ import { notFound } from 'next/navigation'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { ITENS_JUNTO } from '@/modules/sat/domain/entrada'
+import { ordemDaEntrada } from '@/modules/sat/infra/ordens-repository'
 import { lerEntrada, listarMotivos, type HistoricoSat } from '@/modules/sat/infra/repository'
 import { SemPermissao } from '@/shared/ui/sem-permissao'
+import { EtapaOrdem } from '../../etapa-ordem'
 import { StatusNf } from '../../situacao-nf'
 import { dia, quando, reais } from '../../formato'
 import { MudarNf } from './mudar-nf'
@@ -68,7 +70,7 @@ export default async function FichaSatPage({ params }: { params: Promise<{ id: s
   if (!e) notFound()
   const podeNf = podeNoModulo(sessao.perfil, 'sat', 'aprovar_nf')
   const podeOs = podeNoModulo(sessao.perfil, 'sat', 'associar_os')
-  const motivos = podeNf ? await listarMotivos() : []
+  const [motivos, ordem] = await Promise.all([podeNf ? listarMotivos() : Promise.resolve([]), ordemDaEntrada(e.id)])
   const n = e.nota
 
   const itens = e.itensJunto.map((i) => (i === 'outros' ? `Outros: ${e.itensJuntoOutros}` : ITENS_JUNTO.find((x) => x.chave === i)?.rotulo ?? i))
@@ -79,6 +81,11 @@ export default async function FichaSatPage({ params }: { params: Promise<{ id: s
         <Link href="/sat/equipamentos" className="text-sm underline">← Equipamentos</Link>
         <h2 className="text-lg font-semibold text-tinta">Ficha — {e.nsEscrito}</h2>
         <StatusNf situacao={n.situacao} />
+        {ordem && (
+          <Link href={`/sat/ordens/${ordem.id}`} className="flex items-center gap-2 text-sm underline">
+            OS {ordem.numero} <EtapaOrdem etapa={ordem.etapa} />
+          </Link>
+        )}
       </div>
 
       <Secao titulo="Relógio">
