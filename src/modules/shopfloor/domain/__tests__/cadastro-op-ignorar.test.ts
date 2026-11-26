@@ -52,6 +52,40 @@ describe('desfazerIgnorar', () => {
     expect(postos(b.trechos)).toEqual([['PMOC14', ['SPI', 'AOI', 'PTH', 'Teste', 'Almoxarifado']]])
     expect(desfazerIgnorar(desfazerIgnorar(b.trechos, b.ignorada), a.ignorada)).toEqual(T)
   })
+  it('duas "manter" vizinhas, desfeitas na ordem em que foram ignoradas', () => {
+    const a = ignorarPrt(T, 1, 'manter')!
+    const b = ignorarPrt(a.trechos, 2, 'manter')!
+    expect(desfazerIgnorar(desfazerIgnorar(b.trechos, a.ignorada), b.ignorada)).toEqual(T)
+  })
+  it('duas "manter" vizinhas, desfeitas na ordem inversa', () => {
+    const a = ignorarPrt(T, 1, 'manter')!
+    const b = ignorarPrt(a.trechos, 2, 'manter')!
+    expect(desfazerIgnorar(desfazerIgnorar(b.trechos, b.ignorada), a.ignorada)).toEqual(T)
+  })
+  it('"manter" + "tirar", desfeitas nas duas ordens', () => {
+    const a = ignorarPrt(T, 1, 'manter')!
+    const b = ignorarPrt(a.trechos, 2, 'tirar')!
+    expect(postos(b.trechos)).toEqual([['PMOC14', ['SPI', 'AOI', 'Teste', 'Almoxarifado']]])
+    expect(desfazerIgnorar(desfazerIgnorar(b.trechos, a.ignorada), b.ignorada)).toEqual(T)
+    expect(desfazerIgnorar(desfazerIgnorar(b.trechos, b.ignorada), a.ignorada)).toEqual(T)
+    const c = ignorarPrt(T, 1, 'tirar')!
+    const d = ignorarPrt(c.trechos, 2, 'manter')!
+    expect(desfazerIgnorar(desfazerIgnorar(d.trechos, c.ignorada), d.ignorada)).toEqual(T)
+    expect(desfazerIgnorar(desfazerIgnorar(d.trechos, d.ignorada), c.ignorada)).toEqual(T)
+  })
+  it('três PRTs ignoradas, desfeitas com a do meio primeiro', () => {
+    const esp = [op(1, 'PMO', 1, null), op(2, 'PRTC', 2, 1), op(3, 'PRTB', 3, 2), op(4, 'PRTA', 4, 3)]
+    const base = distribuirPostos(trechosDoEspelho(esp[0]!, esp), [
+      { posto: 'P1', trechoCodigo: 'PRTA' }, { posto: 'P2', trechoCodigo: 'PRTB' },
+      { posto: 'P3', trechoCodigo: 'PRTC' }, { posto: 'P4', trechoCodigo: null },
+    ], 'P4')
+    const a = ignorarPrt(base, 1, 'manter')!
+    const b = ignorarPrt(a.trechos, 2, 'manter')!
+    const c = ignorarPrt(b.trechos, 3, 'manter')!
+    expect(postos(c.trechos)).toEqual([['PMO', ['P1', 'P2', 'P3', 'P4']]])
+    expect(desfazerIgnorar(desfazerIgnorar(desfazerIgnorar(c.trechos, b.ignorada), c.ignorada), a.ignorada)).toEqual(base)
+    expect(desfazerIgnorar(desfazerIgnorar(desfazerIgnorar(c.trechos, c.ignorada), a.ignorada), b.ignorada)).toEqual(base)
+  })
   it('a PRT que já está nos trechos não entra de novo', () => {
     const r = ignorarPrt(T, 1, 'tirar')!
     expect(desfazerIgnorar(T, r.ignorada)).toBe(T)

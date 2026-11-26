@@ -29,6 +29,8 @@ export interface TrechoCadastro {
   faixas: FaixaSN[]
   /** Edição: PRT da cadeia incluída de novo nesta edição, ainda não gravada (seq < 0 só enquanto está na tela). */
   incluida?: boolean
+  /** Só na tela: postos que uma PRT ignorada ("manter") trouxe para este trecho; não vai para o servidor. */
+  herdados?: string[]
 }
 
 export interface PostoAnterior { posto: string; trechoCodigo: string | null }
@@ -159,10 +161,17 @@ export function ignorarPrt(
   const t = trechos[i]
   if (!t || t.tipo !== 'prt' || i === trechos.length - 1) return null
   const resto = trechos.filter((_, k) => k !== i)
-  const novos = modo === 'manter'
-    ? resto.map((x, k) => (k === i ? { ...x, postos: [...t.postos, ...x.postos] } : x))
+  // Os postos próprios da PRT; os herdados de uma ignorada anterior "manter" seguem na rota (vão para o trecho seguinte).
+  const { herdados, ...base } = t
+  const herd = new Set(herdados ?? [])
+  const proprios = t.postos.filter((p) => !herd.has(p))
+  const levam = modo === 'manter' ? t.postos : t.postos.filter((p) => herd.has(p))
+  const novos = levam.length
+    ? resto.map((x, k) => (k === i ? { ...x, postos: [...levam, ...x.postos], herdados: [...levam, ...(x.herdados ?? [])] } : x))
     : resto
-  return { trechos: novos, ignorada: { trecho: t, modo } }
+  // O snapshot guarda só os postos PRÓPRIOS da PRT (sem os que uma ignorada anterior "manter" trouxe para ela).
+  const proprio: TrechoCadastro = { ...base, postos: proprios }
+  return { trechos: novos, ignorada: { trecho: proprio, modo } }
 }
 
 /**
@@ -173,7 +182,12 @@ export function desfazerIgnorar(trechos: TrechoCadastro[], ignorada: PrtIgnorada
   const volta = ignorada.trecho
   if (trechos.some((t) => t.seq === volta.seq)) return trechos
   const dela = new Set(volta.postos)
-  const sem = trechos.map((t) => (t.postos.some((p) => dela.has(p)) ? { ...t, postos: t.postos.filter((p) => !dela.has(p)) } : t))
+  const sem = trechos.map((t) => {
+    if (!t.postos.some((p) => dela.has(p)) && !t.herdados?.some((p) => dela.has(p))) return t
+    const { herdados, ...r } = t
+    const h = (herdados ?? []).filter((p) => !dela.has(p))
+    return { ...r, postos: t.postos.filter((p) => !dela.has(p)), ...(h.length ? { herdados: h } : {}) }
+  })
   const k = sem.findIndex((t) => t.seq > volta.seq)
   const at = k < 0 ? sem.length : k
   return [...sem.slice(0, at), volta, ...sem.slice(at)]
@@ -181,7 +195,10 @@ export function desfazerIgnorar(trechos: TrechoCadastro[], ignorada: PrtIgnorada
 
 /** Os trechos como vão para o servidor: seq renumerado 1..n na ordem da rota, sem buraco das PRTs ignoradas. */
 export function trechosParaEnviar(trechos: TrechoCadastro[]): TrechoCadastro[] {
-  return trechos.map((t, i) => (t.seq === i + 1 ? t : { ...t, seq: i + 1 }))
+  return trechos.map((t, i) => {
+    const { herdados: _h, ...r } = t
+    return t.seq === i + 1 && !t.herdados ? t : { ...r, seq: i + 1 }
+  })
 }
 
 export function ignoradasParaEnviar(ignoradas: PrtIgnorada[]): PrtIgnoradaEnvio[] {
