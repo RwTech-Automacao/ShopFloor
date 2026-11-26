@@ -78,11 +78,11 @@ begin
 end $$;
 
 -- OP nova nasce ligada (default)
-select pg_temp.cadastra('PMON1', '9601', '3', $j$[
+select pg_temp.cadastra('PMON1', '9601', '12', $j$[
   {"seq":1,"codigo":"PRTN1S","tipo":"prt","compels_op":"9602","postos":["SPI","Inspeção AOI TOP"],"faixas":[]},
   {"seq":2,"codigo":"PMON1","tipo":"pmo","compels_op":"9601","postos":["Teste","Almoxarifado"],"faixas":[{"sn_ini":"1","sn_fim":"9"}]}]$j$);
 
--- ======================= 2. GATILHO "TRECHO FECHOU" + RESERVA + CONCLUSÃO + SOMA =======================
+-- ======================= 2. GATILHO "MARCO DE 25%" + RESERVA + CONCLUSÃO + SOMA =======================
 do $$
 declare v uuid := pg_temp.op('PMON1', '9601'); g uuid; r record; res text[];
 begin
@@ -90,7 +90,7 @@ begin
   perform pg_temp.bipa('Inspeção AOI TOP', 'PMON1', '9601', '1');
   perform pg_temp.bipa('Inspeção AOI TOP', 'PMON1', '9601', '2');
   perform pg_temp.confere('placas na fila', pg_temp.placas(v, 'PRTN1S'), '1=fila,2=fila');
-  -- sem gatilho: 2 de 3, OP ativa, PMO sem nada na fila
+  -- sem gatilho: 2 de 12 (menos de 25%), OP ativa, PMO sem nada na fila
   perform sf_prt_agrupar();
   perform pg_temp.confere('sem gatilho não agrupa', pg_temp.grupos(v, 'PRTN1S'), '');
   -- a reserva pula as placas
@@ -100,10 +100,10 @@ begin
   select * into r from sf_resumo_trechos_op('PMON1', '9601');
   perform pg_temp.confere('resumo antes do grupo', r.apontadas || '/' || r.na_fila, '0/2');
 
-  -- a 3ª placa fecha o trecho (3 = qtd da OP)
+  -- a 3ª placa bate 25% (3 de 12)
   perform pg_temp.bipa('Inspeção AOI TOP', 'PMON1', '9601', '3');
   perform sf_prt_agrupar();
-  perform pg_temp.confere('trecho fechou', pg_temp.grupos(v, 'PRTN1S'), 'G1:3:9602:EINTER:fila:3');
+  perform pg_temp.confere('marco de 25%', pg_temp.grupos(v, 'PRTN1S'), 'G1:3:9602:EINTER:fila:3');
   perform pg_temp.confere('placas no grupo', pg_temp.placas(v, 'PRTN1S'), '1=grupo,2=grupo,3=grupo');
   select id into g from sf_estoque_envios where chave = 'PRT/' || v::text || '/PRTN1S/G1';
   perform pg_temp.confere('chave/posto/tipo do grupo',
@@ -149,10 +149,34 @@ begin
   if not exists (select 1 from unnest(res) c where c like 'PRT/' || v::text || '/PRTN1S/Inspeção AOI TOP/2/S%') then
     raise exception 'a reserva não pegou o estorno: %', res;
   end if;
-  -- a placa volta: linha nova, e o trecho fecha de novo (2 vivas + 1) -> G2 com 1
+  -- a placa volta: linha nova; as vivas (2 enviadas + 1) passam de novo os 25% que as enviadas (2) não passam -> G2 com 1
   perform pg_temp.bipa('Inspeção AOI TOP', 'PMON1', '9601', '2');
   perform sf_prt_agrupar();
   perform pg_temp.confere('grupo 2', pg_temp.grupos(v, 'PRTN1S'), 'G1:3:9602:EINTER:ok:3,G2:1:9602:EINTER:fila:1');
+end $$;
+
+-- ======================= 2b. MARCOS DE 25% EM SEQUÊNCIA (OP de 10: 3, 5, 8 e 10 placas) + SOBRA DEPOIS DOS 100% =======================
+select pg_temp.cadastra('PMON8', '9671', '10', $j$[
+  {"seq":1,"codigo":"PRTN8S","tipo":"prt","compels_op":"9672","postos":["SPI","Inspeção AOI TOP"],"faixas":[]},
+  {"seq":2,"codigo":"PMON8","tipo":"pmo","compels_op":"9671","postos":["Teste","Almoxarifado"],"faixas":[{"sn_ini":"1","sn_fim":"99"}]}]$j$);
+do $$
+declare v uuid := pg_temp.op('PMON8', '9671'); i int; esperado text[] := array[
+  '', '', 'G1:3', 'G1:3', 'G1:3,G2:2', 'G1:3,G2:2', 'G1:3,G2:2', 'G1:3,G2:2,G3:3', 'G1:3,G2:2,G3:3', 'G1:3,G2:2,G3:3,G4:2',
+  'G1:3,G2:2,G3:3,G4:2,G5:1'];
+begin
+  for i in 1..11 loop
+    perform pg_temp.bipa('Inspeção AOI TOP', 'PMON8', '9671', i::text);
+    perform sf_prt_agrupar();
+    perform pg_temp.confere('marcos, placa ' || i,
+      (select coalesce(string_agg(substring(g.chave from '/(G[0-9]+)$') || ':' || g.quantidade, ',' order by g.criado_em), '')
+         from sf_estoque_envios g where g.ordem_id = v and g.pmo = 'PRTN8S' and g.tipo = 'grupo_prt'),
+      esperado[i]);
+  end loop;
+  -- o grupo enviado conta como passado: mandar os grupos ao Compels não cria grupo novo
+  update sf_estoque_envios set ok = true, enviado_em = now() where ordem_id = v and pmo = 'PRTN8S' and tipo = 'grupo_prt';
+  perform sf_prt_agrupar();
+  perform pg_temp.confere('marcos depois de enviados', pg_temp.grupos(v, 'PRTN8S'),
+    'G1:3:9672:EINTER:ok:3,G2:2:9672:EINTER:ok:2,G3:3:9672:EINTER:ok:3,G4:2:9672:EINTER:ok:2,G5:1:9672:EINTER:ok:1');
 end $$;
 
 -- ======================= 3. GATILHO "PMO ESPERANDO" + ORDEM SMT→PTH + PLACA DE GRUPO NÃO ENVIADO =======================

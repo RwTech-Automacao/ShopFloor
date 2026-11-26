@@ -224,8 +224,8 @@ export function criarRepositorioEstoqueEnvios(
 
 /**
  * O AGRUPAMENTO DAS PRTs (0197): a placa de PRT não vai sozinha ao Compels. A `sf_prt_agrupar` junta as placas
- * pendentes de cada OP/PRT numa linha de grupo quando o trecho fecha, a OP finaliza ou a caixa da PMO está esperando
- * na fila — o cron chama isto no começo de cada rodada, para o grupo sair na mesma rodada. Devolve quantos grupos
+ * pendentes de cada OP/PRT numa linha de grupo quando o trecho passa de um marco (25/50/75/100% da OP), a OP
+ * finaliza ou a caixa da PMO está esperando na fila — o cron chama isto no começo de cada rodada, para o grupo sair na mesma rodada. Devolve quantos grupos
  * nasceram; erro do banco sobe (a rota loga e entrega o resto da fila assim mesmo).
  */
 export async function agruparPrtPendentes(sb: SupabaseClient = createServiceSupabase()): Promise<number> {

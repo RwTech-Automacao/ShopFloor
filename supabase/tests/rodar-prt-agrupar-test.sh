@@ -68,7 +68,7 @@ CONTA="select count(*) filter (where cancelado_em is not null) || '/' || count(*
 ANTES=$(Q -c "$CONTA")
 P -1 -f /tmp/0197.sql
 Q -c "select string_agg(pmo || '=' || apontar_prt, ',' order by pmo) from sf_ordens where pmo like 'PMON%' or pmo = 'PMOANTIGA'" \
-  | grep -qx 'PMOANTIGA=false,PMON1=true,PMON2=true,PMON3=true,PMON4=true,PMON6=true,PMON7=true' || { echo "reaplicar a 0197 mexeu no apontar_prt"; exit 1; }
+  | grep -qx 'PMOANTIGA=false,PMON1=true,PMON2=true,PMON3=true,PMON4=true,PMON6=true,PMON7=true,PMON8=true' || { echo "reaplicar a 0197 mexeu no apontar_prt"; exit 1; }
 [ "$(Q -c "$CONTA")" = "$ANTES" ] || { echo "reaplicar a 0197 cancelou linha"; exit 1; }
 echo "reaplicar a 0197: ok"
 

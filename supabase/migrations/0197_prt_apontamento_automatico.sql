@@ -17,8 +17,10 @@
 --      pendentes sem grupo, UMA linha tipo 'grupo_prt' (quantidade = soma das placas; op = filha ATUAL do trecho;
 --      estoque e posto do trecho; chave PRT/<ordem_id>/<codigo>/G<n>; bipe GRUPO[G<n>][<quantidade>]) e liga as
 --      placas a ela (sf_estoque_envios.grupo_id). O grupo nasce quando o PRIMEIRO destes vale:
---        a. TRECHO FECHOU: placas vivas do trecho (não canceladas, descontado o estornado — na fila, no grupo ou
---           enviadas) >= sf_ordens.qtd (qtd vazia: não vale);
+--        a. MARCO DE 25%: as placas vivas do trecho (não canceladas, descontado o estornado — na fila, no grupo ou
+--           enviadas) passaram de um marco (25%, 50%, 75%, 100% de sf_ordens.qtd) que as já agrupadas/enviadas não
+--           tinham passado — 4*vivas/qtd > 4*agrupadas/qtd (divisão inteira); ou chegaram a 100% (o que sobra depois do
+--           100% vai a cada rodada). qtd vazia: não vale. Arredonda para cima: OP de 10 aponta com 3, 5, 8 e 10;
 --        b. OP FINALIZADA: upper(btrim(sf_ordens.status)) = 'FINALIZADA' (o valor da 0145 e da edição manual);
 --        c. PMO ESPERANDO: há linha da PMO da mesma OP na fila (ordem_id null, pmo/op = os da OP, entrada, não ok, não
 --           cancelada) MAIS NOVA que o último grupo vivo da PRT — aponta o que a PRT já tem para a caixa não travar por
@@ -287,11 +289,16 @@ begin
     v_vale :=
       -- b. OP finalizada
       upper(btrim(coalesce(t.status, ''))) = 'FINALIZADA'
-      -- a. trecho fechou: placas vivas (na fila, no grupo ou enviadas; descontado o estornado) >= qtd da OP
-      or (t.qtd is not null
-          and (select coalesce(sum(e.quantidade - e.estornado), 0) from public.sf_estoque_envios e
+      -- a. marco de 25%: as placas vivas (na fila, no grupo ou enviadas; descontado o estornado) passaram de um marco
+      --    (25/50/75/100% da qtd) que as já agrupadas ou enviadas não tinham passado; ou já chegaram a 100%
+      or (coalesce(t.qtd, 0) > 0
+          -- (divisão inteira: o marco arredonda para cima — OP de 10 aponta com 3, 5, 8 e 10 placas)
+          and (select 4 * sum(e.quantidade - e.estornado) / t.qtd
+                        > 4 * coalesce(sum(e.quantidade - e.estornado) filter (where e.grupo_id is not null or e.ok), 0) / t.qtd
+                      or sum(e.quantidade - e.estornado) >= t.qtd
+                 from public.sf_estoque_envios e
                 where e.ordem_id = t.ordem_id and e.pmo = t.codigo and e.operacao = 'entrada'
-                  and e.tipo <> 'grupo_prt' and e.cancelado_em is null) >= t.qtd)
+                  and e.tipo <> 'grupo_prt' and e.cancelado_em is null))
       -- c. a PMO da mesma OP esperando na fila — uma linha da PMO MAIS NOVA que o último grupo vivo desta PRT (sem
       --    grupo: qualquer uma). Sem isto uma caixa PRESA (OP não liberada, sem configuração, 5 tentativas, erro
       --    permanente) gerava um grupo minúsculo a cada rodada.
