@@ -722,4 +722,127 @@ $func$;
 revoke all on function public.sat_ordem_enviar_qualidade(uuid) from public, anon;
 grant execute on function public.sat_ordem_enviar_qualidade(uuid) to authenticated, service_role;
 
+-- =============================================================
+-- PARTE D — correção de etapa, busca por NS, leituras de apoio e cache do Compels
+-- =============================================================
+
+-- ---------- correção de etapa pelo administrador (sat.administrar), com motivo no histórico ----------
+create or replace function public.sat_ordem_corrigir_etapa(p_ordem uuid, p_etapa text, p_motivo text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+declare
+  v_motivo text := regexp_replace(btrim(coalesce(p_motivo, '')), '\s+', ' ', 'g');
+  v_de     text;
+begin
+  if not tem_permissao('sat', 'administrar') then raise exception 'SEM_PERMISSAO'; end if;
+  if p_etapa is null or p_etapa not in ('recebido', 'nota_pendente', 'disponivel', 'em_manutencao', 'qualidade') then
+    raise exception 'ETAPA_INVALIDA';
+  end if;
+  if length(v_motivo) < 3 or length(v_motivo) > 500 then raise exception 'MOTIVO_CORRECAO_OBRIGATORIO'; end if;
+  select o.etapa into v_de from sat_ordens o where o.id = p_ordem;
+  if not found then raise exception 'ORDEM_NAO_ENCONTRADA'; end if;
+  perform sat__ordem_mudar_etapa(p_ordem, p_etapa, 'correcao_etapa', jsonb_build_object('motivo', v_motivo));
+  return jsonb_build_object('etapa_de', v_de, 'etapa_para', p_etapa);
+end
+$func$;
+revoke all on function public.sat_ordem_corrigir_etapa(uuid, text, text) from public, anon;
+grant execute on function public.sat_ordem_corrigir_etapa(uuid, text, text) to authenticated, service_role;
+
+-- ---------- busca por NS: atual, antigo ou novo (invoker: o RLS de sat.visualizar vale) ----------
+-- Sem modelo, casa só pela sequência (como a busca da entrada).
+create or replace function public.sat_ordens_do_ns(p_modelo text, p_sequencia text)
+returns setof uuid
+language sql
+stable
+set search_path = public
+as $func$
+  select o.id from sat_ordens o
+   where coalesce(p_sequencia, '') <> '' and o.sequencia = p_sequencia
+     and (coalesce(p_modelo, '') = '' or o.modelo = p_modelo)
+  union
+  select n.ordem_id from sat_ordem_ns n
+   where coalesce(p_sequencia, '') <> ''
+     and ((n.sequencia_antigo = p_sequencia and (coalesce(p_modelo, '') = '' or n.modelo_antigo = p_modelo))
+       or (n.sequencia_novo = p_sequencia and (coalesce(p_modelo, '') = '' or n.modelo_novo = p_modelo)))
+$func$;
+revoke all on function public.sat_ordens_do_ns(text, text) from public, anon;
+grant execute on function public.sat_ordens_do_ns(text, text) to authenticated, service_role;
+
+-- ---------- camada 1 da lista de peças: as mais trocadas neste produto (invoker) ----------
+create or replace function public.sat_pecas_mais_usadas(p_produto text, p_limite int)
+returns table (codigo text, descricao text, usos bigint)
+language sql
+stable
+set search_path = public
+as $func$
+  select p.codigo, (array_agg(p.descricao order by p.em desc))[1], count(*)
+    from sat_ordem_pecas p
+    join sat_ordens o on o.id = p.ordem_id
+   where p.situacao = 'trocada'
+     and coalesce(btrim(p_produto), '') <> ''
+     and upper(btrim(o.produto)) = upper(btrim(p_produto))
+   group by p.codigo
+   order by count(*) desc, p.codigo
+   limit least(greatest(coalesce(p_limite, 15), 1), 50)
+$func$;
+revoke all on function public.sat_pecas_mais_usadas(text, int) from public, anon;
+grant execute on function public.sat_pecas_mais_usadas(text, int) to authenticated, service_role;
+
+-- ---------- candidatos da camada 2: kits (PMOE*) já usados em alguma OS (invoker) ----------
+create or replace function public.sat_kits_conhecidos()
+returns table (codigo text, descricao text)
+language sql
+stable
+set search_path = public
+as $func$
+  select p.codigo, (array_agg(p.descricao order by p.em desc))[1]
+    from sat_ordem_pecas p
+   where p.codigo like 'PMOE%'
+   group by p.codigo
+   order by p.codigo
+   limit 200
+$func$;
+revoke all on function public.sat_kits_conhecidos() from public, anon;
+grant execute on function public.sat_kits_conhecidos() to authenticated, service_role;
+
+-- ---------- cache das leituras do Compels (estrutura do produto, pais de item); validade no app (7 dias) ----------
+create table if not exists public.sat_compels_cache (
+  chave   text primary key,
+  dados   jsonb not null,
+  lido_em timestamptz not null default now()
+);
+alter table public.sat_compels_cache enable row level security;
+drop policy if exists sat_compels_cache_select on public.sat_compels_cache;
+create policy sat_compels_cache_select on public.sat_compels_cache
+  for select using ((select tem_permissao('sat', 'visualizar')));
+revoke all on public.sat_compels_cache from public, anon, authenticated;
+grant select on public.sat_compels_cache to authenticated;
+grant select, insert, update, delete on public.sat_compels_cache to service_role;
+
+create or replace function public.sat_compels_cache_gravar(p_chave text, p_dados jsonb)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $func$
+#variable_conflict use_column
+begin
+  if not tem_permissao('sat', 'manutencao') then raise exception 'SEM_PERMISSAO'; end if;
+  if p_chave is null or p_chave !~ '^(estrutura:[A-Z0-9][A-Z0-9_.-]{0,59}|pais:[0-9]{1,18})$' then
+    raise exception 'CHAVE_INVALIDA';
+  end if;
+  if p_dados is null or octet_length(p_dados::text) > 2000000 then raise exception 'CACHE_GRANDE'; end if;
+  insert into sat_compels_cache as c (chave, dados, lido_em) values (p_chave, p_dados, now())
+  on conflict (chave) do update set dados = excluded.dados, lido_em = excluded.lido_em;
+end
+$func$;
+revoke all on function public.sat_compels_cache_gravar(text, jsonb) from public, anon;
+grant execute on function public.sat_compels_cache_gravar(text, jsonb) to authenticated, service_role;
+
 notify pgrst, 'reload schema';

@@ -109,7 +109,7 @@ else
   exit 1
 fi
 
-TABELAS_0198="'sat_defeitos','sat_ordens','sat_ordem_defeitos','sat_ordem_pecas','sat_ordem_ns','sat_ordem_historico'"
+TABELAS_0198="'sat_defeitos','sat_ordens','sat_ordem_defeitos','sat_ordem_pecas','sat_ordem_ns','sat_ordem_historico','sat_compels_cache'"
 POLS_OS=$(sessao <<SQL
 select count(*) from pg_policies
  where tablename in ($TABELAS_0198) and cmd = 'SELECT'
@@ -120,8 +120,8 @@ TOTAL_OS=$(sessao <<SQL
 select count(*) from pg_policies where tablename in ($TABELAS_0198) or tablename = 'sat_numeracao';
 SQL
 )
-if [ "$POLS_OS" = "6" ] && [ "$TOTAL_OS" = "6" ]; then
-  echo "0198: 6 policies de leitura em InitPlan, nenhuma de escrita, sat_numeracao sem policy: ok"
+if [ "$POLS_OS" = "7" ] && [ "$TOTAL_OS" = "7" ]; then
+  echo "0198: 7 policies de leitura em InitPlan, nenhuma de escrita, sat_numeracao sem policy: ok"
 else
   echo "0198: policies FALHARAM (InitPlan=$POLS_OS total=$TOTAL_OS)"
   exit 1

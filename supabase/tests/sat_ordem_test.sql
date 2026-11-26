@@ -396,3 +396,67 @@ begin
   update sat_ordens set etapa = 'disponivel', tipo = 'fora_garantia', laudo = '' where id = v_fora;
   raise notice 'manutenção: ok';
 end $t$;
+
+-- 8. Correção de etapa (sat.administrar), busca por NS (antigo e novo), peças mais usadas, kits e cache.
+do $t$
+declare
+  v_os  uuid := (select id from sat_ordens where ns_atual = '610-99');   -- na qualidade, trocou 610-3 → 610-99
+  v_ids uuid[];
+  r     jsonb;
+begin
+  set local role authenticated;
+
+  perform set_config('teste.perms', 'sat.visualizar,sat.manutencao', false);
+  begin perform sat_ordem_corrigir_etapa(v_os, 'em_manutencao', 'voltou da qualidade'); raise exception 'FALHOU: corrigir sem administrar';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+
+  perform set_config('teste.perms', 'sat.visualizar,sat.administrar', false);
+  begin perform sat_ordem_corrigir_etapa(v_os, 'expedida', 'x x x'); raise exception 'FALHOU: etapa inválida';
+  exception when raise_exception then if sqlerrm <> 'ETAPA_INVALIDA' then raise; end if; end;
+  begin perform sat_ordem_corrigir_etapa(v_os, 'em_manutencao', ' a '); raise exception 'FALHOU: motivo curto';
+  exception when raise_exception then if sqlerrm <> 'MOTIVO_CORRECAO_OBRIGATORIO' then raise; end if; end;
+  begin perform sat_ordem_corrigir_etapa(v_os, 'qualidade', 'mesma etapa'); raise exception 'FALHOU: mesma etapa';
+  exception when raise_exception then if sqlerrm <> 'NADA_A_MUDAR' then raise; end if; end;
+  r := sat_ordem_corrigir_etapa(v_os, 'em_manutencao', '  qualidade achou outro defeito  ');
+  if (select etapa from sat_ordens where id = v_os) <> 'em_manutencao' then raise exception 'FALHOU: correção não mudou a etapa'; end if;
+  if not exists (select 1 from sat_ordem_historico where ordem_id = v_os and evento = 'correcao_etapa'
+                    and etapa_de = 'qualidade' and etapa_para = 'em_manutencao'
+                    and dados->>'motivo' = 'qualidade achou outro defeito') then
+    raise exception 'FALHOU: histórico da correção';
+  end if;
+
+  -- busca: pelo NS novo, pelo antigo e só pela sequência
+  select array_agg(x) into v_ids from sat_ordens_do_ns('610', '99') x;
+  if v_ids is distinct from array[v_os] then raise exception 'FALHOU: busca pelo NS novo %', v_ids; end if;
+  select array_agg(x) into v_ids from sat_ordens_do_ns('610', '3') x;
+  if v_ids is distinct from array[v_os] then raise exception 'FALHOU: busca pelo NS antigo %', v_ids; end if;
+  select array_agg(x) into v_ids from sat_ordens_do_ns(null, '99') x;
+  if v_ids is distinct from array[v_os] then raise exception 'FALHOU: busca só pela sequência %', v_ids; end if;
+  if exists (select 1 from sat_ordens_do_ns('610', '') x) then raise exception 'FALHOU: busca vazia devolveu OS'; end if;
+
+  -- mais usadas no produto (PMOC31) e kits conhecidos
+  if (select array_agg(codigo || ':' || usos) from sat_pecas_mais_usadas('pmoc31', 10)) is distinct from array['PMOE74:1'] then
+    raise exception 'FALHOU: mais usadas %', (select array_agg(codigo || ':' || usos) from sat_pecas_mais_usadas('pmoc31', 10));
+  end if;
+  if exists (select 1 from sat_pecas_mais_usadas('', 10)) then raise exception 'FALHOU: mais usadas sem produto'; end if;
+  if (select array_agg(codigo || '|' || descricao) from sat_kits_conhecidos()) is distinct from array['PMOE74|Módulo Camabio com cabo'] then
+    raise exception 'FALHOU: kits conhecidos';
+  end if;
+
+  -- cache: só com manutenção, chave no formato, grava e regrava
+  begin perform sat_compels_cache_gravar('estrutura:PMOC31', '{"arvore": []}'::jsonb); raise exception 'FALHOU: cache sem manutenção';
+  exception when raise_exception then if sqlerrm <> 'SEM_PERMISSAO' then raise; end if; end;
+  perform set_config('teste.perms', 'sat.visualizar,sat.manutencao', false);
+  begin perform sat_compels_cache_gravar('qualquer coisa', '{}'::jsonb); raise exception 'FALHOU: chave inválida';
+  exception when raise_exception then if sqlerrm <> 'CHAVE_INVALIDA' then raise; end if; end;
+  perform sat_compels_cache_gravar('estrutura:PMOC31', '{"arvore": []}'::jsonb);
+  perform sat_compels_cache_gravar('estrutura:PMOC31', '{"arvore": null}'::jsonb);
+  perform sat_compels_cache_gravar('pais:12345', '[]'::jsonb);
+  if (select dados from sat_compels_cache where chave = 'estrutura:PMOC31') <> '{"arvore": null}'::jsonb then
+    raise exception 'FALHOU: cache não regravou';
+  end if;
+  begin insert into sat_compels_cache (chave, dados) values ('pais:1', '[]'); raise exception 'FALHOU: insert direto no cache';
+  exception when insufficient_privilege then null; end;
+  reset role;
+  raise notice 'correção, busca, mais usadas e cache: ok';
+end $t$;
