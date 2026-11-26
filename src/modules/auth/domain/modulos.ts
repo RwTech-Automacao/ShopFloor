@@ -24,7 +24,8 @@ export const PERMISSOES_POR_MODULO: Record<Modulo, Permissao[]> = {
   // `baixar` = selecionar notas, confirmar a baixa e tirar da fila.
   faturamento: ['visualizar', 'baixar'],
   // `registrar_entrada` = dar entrada na nota e nos relógios; `aprovar_nf` = corrigir/trocar a NF depois da entrada;
-  // `associar_os` = o técnico troca a OS do relógio na ficha; `administrar` = reservado (a tela de motivos saiu
-  // em 17/11; a lista vem por migração).
-  sat: ['visualizar', 'registrar_entrada', 'aprovar_nf', 'associar_os', 'administrar'],
+  // `associar_os` = o técnico troca a OS do relógio na ficha; `manutencao` = abrir a manutenção da ordem de serviço,
+  // lançar defeitos, peças, laudo, troca de NS e mandar para a qualidade; `administrar` = corrigir a etapa da OS
+  // (com motivo) e os Alertas do SAT.
+  sat: ['visualizar', 'registrar_entrada', 'aprovar_nf', 'associar_os', 'manutencao', 'administrar'],
 }

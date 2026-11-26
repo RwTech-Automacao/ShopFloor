@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testes SQL do SAT (migrações 0186, 0187 e 0190) num Postgres descartável (Docker).
+# Testes SQL do SAT (migrações 0186, 0187, 0190 e 0198) num Postgres descartável (Docker).
 # Uso: supabase/tests/rodar-sat-test.sh
 #
 # A 0186 é aplicada de dentro do próprio sat_test.sql (que primeiro cria os stubs de role/RBAC e das tabelas do
@@ -89,6 +89,52 @@ else
   exit 1
 fi
 
+# ---------- 0198 (ordem de serviço, entrega 1): backfill, gatilhos, manutenção ----------
+docker cp supabase/migrations/0198_sat_ordem_servico.sql "$NOME":/tmp/0198.sql
+docker cp supabase/tests/sat_ordem_test.sql "$NOME":/tmp/teste_ordem.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_ordem.sql
+CONTAGEM_OS="select (select count(*) from sat_ordens) || '/' ||
+  (select string_agg(numero || ':' || etapa || ':' || coalesce(tipo, '-'), ',' order by numero) from sat_ordens) || '/' ||
+  (select count(*) from sat_ordem_historico) || '/' || (select string_agg(ano || ':' || ultimo, ',' order by ano) from sat_numeracao) || '/' ||
+  (select md5(string_agg(p.oid::regprocedure::text || md5(p.prosrc), ',' order by p.oid::regprocedure::text))
+     from pg_proc p where p.proname like 'sat\_%');"
+ANTES=$(sessao <<<"$CONTAGEM_OS")
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0198.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0198.sql
+DEPOIS=$(sessao <<<"$CONTAGEM_OS")
+if [ "$ANTES" = "$DEPOIS" ]; then
+  echo "idempotência da 0198 (OS, numeração, histórico e funções intactos): ok"
+else
+  echo "idempotência da 0198 FALHOU (antes=$ANTES depois=$DEPOIS)"
+  exit 1
+fi
+
+TABELAS_0198="'sat_defeitos','sat_ordens','sat_ordem_defeitos','sat_ordem_pecas','sat_ordem_ns','sat_ordem_historico','sat_compels_cache'"
+POLS_OS=$(sessao <<SQL
+select count(*) from pg_policies
+ where tablename in ($TABELAS_0198) and cmd = 'SELECT'
+   and qual like '%SELECT tem_permissao(''sat''::text, ''visualizar''::text)%';
+SQL
+)
+TOTAL_OS=$(sessao <<SQL
+select count(*) from pg_policies where tablename in ($TABELAS_0198) or tablename = 'sat_numeracao';
+SQL
+)
+if [ "$POLS_OS" = "7" ] && [ "$TOTAL_OS" = "7" ]; then
+  echo "0198: 7 policies de leitura em InitPlan, nenhuma de escrita, sat_numeracao sem policy: ok"
+else
+  echo "0198: policies FALHARAM (InitPlan=$POLS_OS total=$TOTAL_OS)"
+  exit 1
+fi
+
+# ---------- Rollback da 0198: sem gatilhos, sat_registrar_nf não cria OS; reaplicar restaura ----------
+docker cp docs/operacao/sat-ordem-servico/rollback-0198.sql "$NOME":/tmp/rollback-0198.sql
+docker cp supabase/tests/sat_ordem_rollback_test.sql "$NOME":/tmp/teste_rollback.sql
+docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_rollback.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/rollback-0198.sql
+docker exec "$NOME" psql -U postgres -1 -v ON_ERROR_STOP=1 -q -f /tmp/0198.sql
+echo "rollback da 0198 (idempotente, em transação única): ok"
+
 # ---------- Do zero, como TRANSAÇÃO ÚNICA (como roda no RDS) ----------
 docker exec "$NOME" createdb -U postgres limpo
 docker exec "$NOME" psql -U postgres -d limpo -v ON_ERROR_STOP=1 -q \
@@ -99,11 +145,13 @@ docker exec "$NOME" psql -U postgres -d limpo -v ON_ERROR_STOP=1 -q \
 docker exec "$NOME" psql -U postgres -d limpo -1 -v ON_ERROR_STOP=1 -q -f /tmp/0186.sql
 docker exec "$NOME" psql -U postgres -d limpo -1 -v ON_ERROR_STOP=1 -q -f /tmp/0187.sql
 docker exec "$NOME" psql -U postgres -d limpo -1 -v ON_ERROR_STOP=1 -q -f /tmp/0190.sql
+docker cp supabase/migrations/0198_sat_ordem_servico.sql "$NOME":/tmp/0198.sql
+docker exec "$NOME" psql -U postgres -d limpo -1 -v ON_ERROR_STOP=1 -q -f /tmp/0198.sql
 LISTA=$(docker exec "$NOME" psql -U postgres -d limpo -qtA -c "select string_agg(texto, '|' order by ordem) from sat_motivos_nf where ativo")
 if [ "$LISTA" != "Sem nota fiscal (só declaração dos Correios)|CFOP errado|Natureza de operação errada|Descrição errada|CNPJ da RW errado na nota|Outro" ]; then
   echo "0190 do zero: lista errada ($LISTA)"
   exit 1
 fi
-echo "0186, 0187 e 0190 do zero, cada uma em transação única: ok"
+echo "0186, 0187, 0190 e 0198 do zero, cada uma em transação única: ok"
 
 echo "SAT OK"

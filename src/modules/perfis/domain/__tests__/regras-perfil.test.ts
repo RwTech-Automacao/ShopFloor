@@ -50,12 +50,14 @@ describe('flagsLegadas', () => {
       { modulo: 'sat', permissao: 'registrar_entrada' },
       { modulo: 'sat', permissao: 'aprovar_nf' },
       { modulo: 'sat', permissao: 'associar_os' },
+      { modulo: 'sat', permissao: 'manutencao' },
       { modulo: 'sat', permissao: 'administrar' },
     ])
     expect(Object.values(f).every((v) => v === false)).toBe(true)
     expect(Object.keys(f)).not.toContain('pode_registrar_entrada')
     expect(Object.keys(f)).not.toContain('pode_aprovar_nf')
     expect(Object.keys(f)).not.toContain('pode_associar_os')
+    expect(Object.keys(f)).not.toContain('pode_manutencao')
   })
   it('administrar no SAT junto com visualizar no ShopFloor liga só pode_visualizar', () => {
     const f = flagsLegadas([
@@ -72,5 +74,10 @@ describe('PERMISSOES', () => {
     const chaves = PERMISSOES.map((p) => p.chave)
     expect(chaves.indexOf('associar_os')).toBe(chaves.indexOf('aprovar_nf') + 1)
     expect(PERMISSOES.find((p) => p.chave === 'associar_os')?.rotulo).toBe('Associar OS')
+  })
+  it('manutencao vem depois de associar_os, com rótulo "Manutenção"', () => {
+    const chaves = PERMISSOES.map((p) => p.chave)
+    expect(chaves.indexOf('manutencao')).toBe(chaves.indexOf('associar_os') + 1)
+    expect(PERMISSOES.find((p) => p.chave === 'manutencao')?.rotulo).toBe('Manutenção')
   })
 })
