@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  desfazerIgnorar, distribuirPostos, erroCadeiaCompels, ignoradasParaEnviar, ignorarPrt, resumoIgnoradas,
+  desfazerIgnorar, distribuirPostos, erroCadeiaCompels, ignoradasParaEnviar, ignorarPrt, moverPostoEntreTrechos, podarHerdados, resumoIgnoradas,
   trechosDoEspelho, trechosParaEnviar, type OpEspelho, type TrechoCadastro,
 } from '../cadastro-op'
 
@@ -136,5 +136,23 @@ describe('resumoIgnoradas', () => {
       .toBe('PRT ignorada: PRT420 (8499) — Manter os postos na rota da OP')
     expect(resumoIgnoradas([{ codigo: 'PRT410', compelsOp: '8500', modo: 'tirar' }, { codigo: 'PRT420', compelsOp: '8499', modo: 'manter' }]))
       .toBe('PRTs ignoradas: PRT410 (8500) — Tirar os postos da rota; PRT420 (8499) — Manter os postos na rota da OP')
+  })
+})
+
+describe('herdados em ações manuais', () => {
+  it('mover o posto herdado para outro trecho tira-o dos herdados do trecho de origem', () => {
+    const r = ignorarPrt(T, 2, 'manter')!
+    const pmo = r.trechos.find((t) => t.tipo === 'pmo')!
+    expect(pmo.herdados).toEqual(['PTH'])
+    const movido = moverPostoEntreTrechos(r.trechos, pmo.seq, 'PTH', -1, 'Almoxarifado')
+    expect(movido.find((t) => t.tipo === 'pmo')!.herdados ?? []).toEqual([])
+    expect(postos(movido)).toEqual([['PRT410', ['SPI', 'AOI', 'PTH']], ['PMOC14', ['Teste', 'Almoxarifado']]])
+  })
+
+  it('podarHerdados tira os herdados que já não estão nos postos', () => {
+    const t: TrechoCadastro = { ...T[2]!, postos: ['PTH', 'Teste'], herdados: ['PTH', 'SPI'] }
+    expect(podarHerdados(t).herdados).toEqual(['PTH'])
+    expect(podarHerdados({ ...t, postos: ['Teste'] }).herdados).toBeUndefined()
+    expect(podarHerdados(T[0]!)).toBe(T[0])
   })
 })

@@ -193,11 +193,20 @@ export function desfazerIgnorar(trechos: TrechoCadastro[], ignorada: PrtIgnorada
   return [...sem.slice(0, at), volta, ...sem.slice(at)]
 }
 
+/** Um posto que saiu do trecho por ação manual deixa de ser "herdado" dele (o Desfazer não pode errar o destino). */
+export function podarHerdados(t: TrechoCadastro): TrechoCadastro {
+  if (!t.herdados) return t
+  const { herdados, ...r } = t
+  const h = herdados.filter((p) => t.postos.includes(p))
+  if (h.length === herdados.length) return t
+  return h.length ? { ...r, herdados: h } : r
+}
+
 /** Os trechos como vão para o servidor: seq renumerado 1..n na ordem da rota, sem buraco das PRTs ignoradas. */
 export function trechosParaEnviar(trechos: TrechoCadastro[]): TrechoCadastro[] {
   return trechos.map((t, i) => {
-    const { herdados: _h, ...r } = t
-    return t.seq === i + 1 && !t.herdados ? t : { ...r, seq: i + 1 }
+    const { herdados, ...r } = t
+    return t.seq === i + 1 && !herdados ? t : { ...r, seq: i + 1 }
   })
 }
 
@@ -274,7 +283,7 @@ export function moverPostoEntreTrechos(
   const j = i + delta
   if (i < 0 || j < 0 || j >= trechos.length || posto === almoxarifado || !trechos[i]!.postos.includes(posto)) return trechos
   return trechos.map((t, k) => {
-    if (k === i) return { ...t, postos: t.postos.filter((p) => p !== posto) }
+    if (k === i) return podarHerdados({ ...t, postos: t.postos.filter((p) => p !== posto) })
     if (k === j) return { ...t, postos: delta === -1 ? [...t.postos, posto] : [posto, ...t.postos] }
     return t
   })

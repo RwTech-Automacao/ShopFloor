@@ -10,14 +10,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cadastrarOpAction, ultimaOpDaPmoAction } from '@/modules/shopfloor/application/cadastro-op-actions'
 import {
-  distribuirPostos, erroSufixoOp, fixarAlmoxarifado, moverPostoEntreTrechos, opsDaPmo, pmosDoEspelho, rotuloPmo,
-  trechoManual, trechosDoEspelho, ultimaLeitura, validarCadastro,
-  type CadastroOp, type OpEspelho, type TrechoCadastro, type UltimaOp,
+  desfazerIgnorar, distribuirPostos, erroSufixoOp, fixarAlmoxarifado, ignoradasParaEnviar, ignorarPrt, moverPostoEntreTrechos,
+  opsDaPmo, pmosDoEspelho, podarHerdados, rotuloPmo, trechoManual, trechosDoEspelho, trechosParaEnviar, ultimaLeitura, validarCadastro,
+  type CadastroOp, type ModoIgnorar, type OpEspelho, type PrtIgnorada, type TrechoCadastro, type UltimaOp,
 } from '@/modules/shopfloor/domain/cadastro-op'
 import { postoAlmoxarifadoPadrao } from '@/modules/shopfloor/domain/rota-op-nova'
 import { PERFIL_PADRAO, type PerfilPosto } from '@/modules/shopfloor/domain/perfil-posto'
 import { BarraFixa, CamposQuantidade, CorrenteTrechos, ResumoRota, nPainelDe, paineisFecham } from '../corrente-trechos'
 import { ReceitasDosPostos, TempoBurninCampo } from '../editores-posto'
+import { IgnorarPrt, PrtsIgnoradas } from '../ignorar-prt'
 import { erroTempoBurnin, receitaDaRota, rotaDosTrechos, temposDaRota } from '@/modules/shopfloor/domain/edicao-op-trechos'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '@/modules/shopfloor/domain/burnin-posto'
 import { receitaParaLinhas } from '@/modules/shopfloor/domain/receita-posto'
@@ -104,6 +105,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
   const [trocandoOp, setTrocandoOp] = useState(false)
   const [dadosOk, setDadosOk] = useState(false)
   const [trechos, setTrechos] = useState<TrechoCadastro[]>([])
+  // PRTs da cadeia que o usuário ignorou (não viram trecho); cada uma guarda o trecho para o Desfazer
+  const [ignoradas, setIgnoradas] = useState<PrtIgnorada[]>([])
   const [op, setOp] = useState('')
   const [cliente, setCliente] = useState('')
   const [descricao, setDescricao] = useState('')
@@ -155,7 +158,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
       // outra busca: o que era da PMO anterior (trechos, OP escolhida, resposta em voo) não vale mais
       pedido.current++
       setPmo(null); setModo(null); setAnterior(null); setErroUltima(false); setCarregando(false)
-      setOpEscolhida(null); setTrocandoOp(false); setTrechos([]); setDadosOk(false)
+      setOpEscolhida(null); setTrocandoOp(false); setTrechos([]); setIgnoradas([]); setDadosOk(false)
     }
   }
 
@@ -163,7 +166,7 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     setTrocandoPmo(false)
     focoPendente.current = 'trocar-pmo'
     if (codigo === pmo && m === modo) return // o mesmo PMO de novo não apaga o que já foi editado
-    setPmo(codigo); setModo(m); setOpEscolhida(null); setTrocandoOp(false); setTrechos([]); setDadosOk(false); setCarregando(true); setErroUltima(false)
+    setPmo(codigo); setModo(m); setOpEscolhida(null); setTrocandoOp(false); setTrechos([]); setIgnoradas([]); setDadosOk(false); setCarregando(true); setErroUltima(false)
     const meu = ++pedido.current
     let ultima: UltimaOp | null = null
     let falhou = false
@@ -195,11 +198,24 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     setCliente(o.cliente); setDescricao(o.descricao)
     const novos = distribuirPostos(trechosDoEspelho(o, espelho), anterior?.postos ?? [], almox)
     setTrechos(novos)
+    setIgnoradas([])
     setPrtsVistas((v) => [...new Set([...v, ...codigosPrt(novos)])])
   }
 
   const mudarTrecho = (seq: number, f: (t: TrechoCadastro) => TrechoCadastro) =>
-    setTrechos((ts) => fixarAlmoxarifado(ts.map((t) => (t.seq === seq ? f(t) : t)), almox))
+    setTrechos((ts) => fixarAlmoxarifado(ts.map((t) => (t.seq === seq ? podarHerdados(f(t)) : t)), almox))
+
+  function ignorar(seq: number, modoIgnorar: ModoIgnorar) {
+    const r = ignorarPrt(trechos, seq, modoIgnorar)
+    if (!r) return
+    setTrechos(fixarAlmoxarifado(r.trechos, almox))
+    setIgnoradas((xs) => [...xs, r.ignorada])
+  }
+
+  function desfazer(ig: PrtIgnorada) {
+    setTrechos((ts) => fixarAlmoxarifado(desfazerIgnorar(ts, ig), almox))
+    setIgnoradas((xs) => xs.filter((x) => x !== ig))
+  }
 
   function salvar() {
     if (!pmo || !modo) return
@@ -214,7 +230,9 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     const c: CadastroOp = {
       modo, pmo, op: op.trim(), cliente: cliente.trim(), descricao: descricao.trim(),
       qtd: qtd.trim() === '' || Number.isNaN(Number(qtd)) ? null : Number(qtd), acp: acp.trim(),
-      embalagemIndividual, placasPorPainel: Number(placasPorPainel), trechos,
+      embalagemIndividual, placasPorPainel: Number(placasPorPainel),
+      // seq 1..n sem o buraco das PRTs ignoradas; elas vão à parte, para o servidor conferir a cadeia e o log
+      trechos: trechosParaEnviar(trechos), ignoradas: ignoradasParaEnviar(ignoradas),
       componentes: receitaParaLinhas(receitaDaRota(rota, limpa.receita, ehIntegracao)), burnin: temposParaLinhas(tb.tempos),
     }
     const v = validarCadastro(c)
@@ -407,21 +425,25 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
             </p>
           )}>
         {trechos.length > 0 && (
-          <CorrenteTrechos trechos={trechos} almox={almox} idBase={idBase} qtd={qtd} nPainel={nPainel}
-            mudarTrecho={mudarTrecho} opcoesAdicionar={() => disponiveis}
-            extraPosto={(p) => ehBurnin(p) && (
-              <TempoBurninCampo valor={tempos[p] ?? ''} rotulo={`Tempo mínimo de Burn-in em ${p}`}
-                setValor={(v) => setTempos((prev) => ({ ...prev, [p]: v }))} />
-            )}
-            aoAdicionarPosto={(p) => {
-              if (ehBurnin(p) && (tempos[p] ?? '') === '') setTempos((prev) => ({ ...prev, [p]: BURNIN_PADRAO }))
-            }}
-            rodapeTrecho={(t) => (
-              <ReceitasDosPostos postos={t.postos} ehIntegracao={ehIntegracao} receita={receita} setReceita={setReceita}
-                pmosExistentes={pmosExistentes} pmoDaOp={pmo ?? ''} prtsDaOp={prtsDeSeriePropria(trechos)}
-                prtsMesmaSerie={prtsDeMesmaSerie(trechos)} />
-            )}
-            moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almox))} />
+          <div className="flex flex-col gap-3">
+            <PrtsIgnoradas ignoradas={ignoradas} aoDesfazer={desfazer} />
+            <CorrenteTrechos trechos={trechos} almox={almox} idBase={idBase} qtd={qtd} nPainel={nPainel}
+              mudarTrecho={mudarTrecho} opcoesAdicionar={() => disponiveis}
+              situacao={(t) => <IgnorarPrt t={t} aoIgnorar={ignorar} />}
+              extraPosto={(p) => ehBurnin(p) && (
+                <TempoBurninCampo valor={tempos[p] ?? ''} rotulo={`Tempo mínimo de Burn-in em ${p}`}
+                  setValor={(v) => setTempos((prev) => ({ ...prev, [p]: v }))} />
+              )}
+              aoAdicionarPosto={(p) => {
+                if (ehBurnin(p) && (tempos[p] ?? '') === '') setTempos((prev) => ({ ...prev, [p]: BURNIN_PADRAO }))
+              }}
+              rodapeTrecho={(t) => (
+                <ReceitasDosPostos postos={t.postos} ehIntegracao={ehIntegracao} receita={receita} setReceita={setReceita}
+                  pmosExistentes={pmosExistentes} pmoDaOp={pmo ?? ''} prtsDaOp={prtsDeSeriePropria(trechos)}
+                  prtsMesmaSerie={prtsDeMesmaSerie(trechos)} />
+              )}
+              moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almox))} />
+          </div>
         )}
       </Passo>
 
