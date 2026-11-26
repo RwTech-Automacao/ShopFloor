@@ -308,3 +308,47 @@ describe('ClienteCompels', () => {
     expect(chamadas).toBe(50)
   })
 })
+describe('ClienteCompels — leituras do SAT (só leitura)', () => {
+  it('defeitos: POST sat/defeito/findAll em formulário, paginado até o totalCount', async () => {
+    const pagina = (n: number, de: number) => Array.from({ length: n }, (_, i) => ({ id: de + i, descricao: `D${de + i}` }))
+    let chamada = 0
+    const { buscar, chamadas } = fingirCompels({
+      '/sat/defeito/findAll': () => json({ data: chamada++ === 0 ? pagina(100, 1) : pagina(5, 101), totalCount: 105 }),
+    })
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    expect(await c.listarDefeitosSat()).toHaveLength(105)
+    expect(chamadas).toHaveLength(2)
+    expect(chamadas[0]!.init.method).toBe('POST')
+    expect(String(chamadas[1]!.init.body)).toBe('page=2&start=100&limit=100')
+  })
+
+  it('estrutura: findByCodigoItem (codigoItem) e findComposicaoByIdEntireTree (id), em formulário', async () => {
+    const { buscar, chamadas } = fingirCompels({
+      '/composicaoProduto/findByCodigoItem': () => json({ data: { id: 5 } }),
+      '/composicaoProduto/findComposicaoByIdEntireTree': () => json({ children: [], success: true }),
+    })
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    expect(await c.composicaoDoItem(' PMOC31 ')).toEqual({ data: { id: 5 } })
+    expect(await c.arvoreDaComposicao(5)).toEqual({ children: [], success: true })
+    expect(String(chamadas[0]!.init.body)).toBe('codigoItem=PMOC31')
+    expect(String(chamadas[1]!.init.body)).toBe('id=5')
+  })
+
+  it('pais: GET composicaoProduto/findParentsByItemId/<id>', async () => {
+    const { buscar, chamadas } = fingirCompels({ '/composicaoProduto/findParentsByItemId/': () => json({ data: [] }) })
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    await c.paisDoItem(123)
+    expect(chamadas[0]!.url).toBe('/composicaoProduto/findParentsByItemId/123')
+    expect(chamadas[0]!.init.method ?? 'GET').toBe('GET')
+  })
+
+  it('busca de itens: itemMovimento/findFilter com o filtro (JSON) no campo filter', async () => {
+    const { buscar, chamadas } = fingirCompels({ '/itemMovimento/findFilter': () => json({ data: [] }) })
+    const c = new ClienteCompels(config, tokenFixo(), buscar)
+    const filtro = { codigo: '', descricao: 'fonte', data: '2026-11-26T00:00:00', exibeItensComSaldoZerado: true }
+    await c.buscarItens(filtro)
+    const corpo = new URLSearchParams(String(chamadas[0]!.init.body))
+    expect(JSON.parse(corpo.get('filter')!)).toEqual(filtro)
+    expect(corpo.get('limit')).toBe('30')
+  })
+})

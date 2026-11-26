@@ -418,4 +418,47 @@ export class ClienteCompels {
     const filtro = encodeURIComponent(JSON.stringify(filtroNegociantePorCodigo(codigo)))
     return this.json(`/negociante/list?sortFilter=${encodeURIComponent('[]')}&filter=${filtro}&true=1&offset=0&limit=50`)
   }
+
+  // ---- SAT (spec 2026-11-26-sat-ordem-servico-design.md): SÓ LEITURA ----
+
+  /** Defeitos cadastrados no SAT do Compels (`POST sat/defeito/findAll`, formulário paginado). Só leitura. */
+  async listarDefeitosSat(): Promise<Record<string, unknown>[]> {
+    const limite = 100
+    const todas: Record<string, unknown>[] = []
+    for (let pagina = 1; pagina <= 20; pagina++) {
+      const resposta = await this.json('/sat/defeito/findAll', this.formulario({
+        page: String(pagina), start: String((pagina - 1) * limite), limit: String(limite),
+      }))
+      const linhas = listaDe(resposta, 'defeitos do SAT')
+      todas.push(...linhas)
+      const total = (resposta as { totalCount?: unknown } | null)?.totalCount
+      if (linhas.length < limite || (typeof total === 'number' && todas.length >= total)) break
+    }
+    return todas
+  }
+
+  /** A composição (estrutura) de um item pelo código (`POST composicaoProduto/findByCodigoItem`). Só leitura. */
+  composicaoDoItem(codigo: string): Promise<unknown> {
+    return this.json('/composicaoProduto/findByCodigoItem', this.formulario({ codigoItem: codigo.trim() }))
+  }
+
+  /** A árvore inteira de uma composição (`POST composicaoProduto/findComposicaoByIdEntireTree`). Só leitura. */
+  arvoreDaComposicao(id: number): Promise<unknown> {
+    return this.json('/composicaoProduto/findComposicaoByIdEntireTree', this.formulario({ id: String(id) }))
+  }
+
+  /** Os itens que usam este item na estrutura (`GET composicaoProduto/findParentsByItemId/<id>`). Só leitura. */
+  paisDoItem(itemId: number): Promise<unknown> {
+    return this.json(`/composicaoProduto/findParentsByItemId/${itemId}`)
+  }
+
+  /**
+   * Busca no cadastro de itens pela tela Movimento de Item (`itemMovimento/findFilter`), a mesma de
+   * `consultarSaldoItem`. Só leitura. O filtro vem pronto (`filtroBuscaItem` no domínio do SAT).
+   */
+  buscarItens(filtro: Record<string, unknown>): Promise<unknown> {
+    return this.json('/itemMovimento/findFilter', this.formulario({
+      filter: JSON.stringify(filtro), page: '1', start: '0', limit: '30',
+    }))
+  }
 }
