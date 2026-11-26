@@ -4,7 +4,10 @@ import { revalidatePath } from 'next/cache'
 import { getSessao } from '@/modules/auth/application/get-sessao'
 import { podeNoModulo } from '@/modules/auth/domain/perfil'
 import { registrarLog } from '@/modules/logs/application/registrar-log'
-import { erroSufixoOp, fixarAlmoxarifado, trechosDoEspelho, validarCadastro, type CadastroOp, type UltimaOp } from '../domain/cadastro-op'
+import {
+  erroCadeiaCompels, erroSufixoOp, fixarAlmoxarifado, resumoIgnoradas, trechosDoEspelho, validarCadastro,
+  type CadastroOp, type PrtIgnoradaEnvio, type UltimaOp,
+} from '../domain/cadastro-op'
 import { mensagemErroDeTrecho } from '../domain/erros-trecho'
 import { mensagemOpDuplicada } from '../domain/op-unica'
 import { postoAlmoxarifadoPadrao } from '../domain/rota-op-nova'
@@ -41,11 +44,15 @@ export async function cadastrarOpAction(c: CadastroOp): Promise<ResultadoCadastr
   const recurso = (p: string): string => perfis[p]?.recurso ?? 'nenhum'
   // o mesmo critério do criarOrdemAction (ordens-actions → postoAlmoxarifado): o perfil decide, não o nome
   const almox = postoAlmoxarifadoPadrao(catalogo.map((p) => p.chave), (p) => perfis[p] ?? { recurso: 'nenhum' })
-  const trechos = fixarAlmoxarifado(c.trechos.map((t) => ({
+  const trechos = fixarAlmoxarifado(c.trechos.map(({ herdados: _herdados, ...t }) => ({
     ...t,
     postos: [...new Set(t.postos.map((p) => p.trim()).filter((p) => chaves.has(p)))],
     faixas: t.tipo === 'prt' && t.snModo === 'mesmo' ? [] : t.faixas,
   })), almox)
+
+  // PRTs da cadeia que ficam fora da OP (não são trecho): conferidas contra o espelho abaixo, como os trechos
+  const ignoradas: PrtIgnoradaEnvio[] = (Array.isArray(c.ignoradas) ? c.ignoradas : [])
+    .map((i) => ({ codigo: String(i?.codigo ?? ''), compelsOp: i?.compelsOp == null ? null : String(i.compelsOp), modo: i?.modo }))
 
   if (c.modo === 'compels') {
     const base = trechos.at(-1)?.compelsOp ?? ''
@@ -60,17 +67,16 @@ export async function cadastrarOpAction(c: CadastroOp): Promise<ResultadoCadastr
     } catch {
       return { ok: false, erro: 'Não foi possível ler o espelho do Compels agora.' }
     }
-    const bate = esperado.length === trechos.length &&
-      esperado.every((t, i) => t.codigo === trechos[i]!.codigo && t.compelsOp === trechos[i]!.compelsOp &&
-        t.seq === trechos[i]!.seq && t.tipo === trechos[i]!.tipo)
-    if (!bate) return { ok: false, erro: 'Os trechos não batem com o Compels. Recarregue a página e escolha a OP de novo.' }
-  } else if (trechos.length !== 1 || trechos[0]!.tipo !== 'pmo' || trechos[0]!.compelsOp !== null) {
+    const erroCadeia = erroCadeiaCompels(esperado, trechos, ignoradas)
+    if (erroCadeia) return { ok: false, erro: erroCadeia }
+  } else if (trechos.length !== 1 || trechos[0]!.tipo !== 'pmo' || trechos[0]!.compelsOp !== null || ignoradas.length > 0) {
     return { ok: false, erro: 'Cadastro manual tem um trecho só, sem OP do Compels.' }
   }
 
   const rota = new Set(trechos.flatMap((t) => t.postos))
   const limpo: CadastroOp = {
     ...c,
+    ignoradas,
     pmo: c.pmo.trim(),
     op: c.op.trim(),
     trechos,
@@ -89,9 +95,16 @@ export async function cadastrarOpAction(c: CadastroOp): Promise<ResultadoCadastr
   } catch (e) {
     return { ok: false, erro: mensagemDoBanco(e) }
   }
+  // a decisão de ignorar fica no log da OP (quem e quando o log já grava): qual PRT e tirar/manter os postos
+  const linhaIgnoradas = resumoIgnoradas(ignoradas)
   await registrarLog({
-    entidade: 'sf_ordem', entidadeId: id, acao: 'criar', descricao: `OP ${limpo.pmo}/${limpo.op} criada (${limpo.modo})`,
-    dados: { modo: limpo.modo, trechos: limpo.trechos.map((t) => ({ codigo: t.codigo, compelsOp: t.compelsOp, snModo: t.snModo, postos: t.postos, faixas: t.faixas })) },
+    entidade: 'sf_ordem', entidadeId: id, acao: 'criar',
+    descricao: `OP ${limpo.pmo}/${limpo.op} criada (${limpo.modo})${linhaIgnoradas ? ` · ${linhaIgnoradas}` : ''}`,
+    dados: {
+      modo: limpo.modo,
+      trechos: limpo.trechos.map((t) => ({ codigo: t.codigo, compelsOp: t.compelsOp, snModo: t.snModo, postos: t.postos, faixas: t.faixas })),
+      prtsIgnoradas: ignoradas.map((i) => ({ codigo: i.codigo, compelsOp: i.compelsOp, modo: i.modo })),
+    },
   })
   revalidatePath('/shopfloor/ordens')
   revalidatePath('/shopfloor/ordens-nova')

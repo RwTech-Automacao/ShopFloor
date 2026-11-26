@@ -149,3 +149,54 @@ describe('permissão da Nova OP', () => {
     expect(m.ultimaOpDaPmo).not.toHaveBeenCalled()
   })
 })
+
+describe('cadastrarOpAction com PRT ignorada', () => {
+  // cadeia PRT410 (nível 3) → PRT420 (nível 2) → PMOC14
+  const CADEIA = [op(8498, 'PMOC14', 1, null), op(8499, 'PRT420', 2, 8498), op(8500, 'PRT410', 3, 8499)]
+  const sem420 = (over: Partial<CadastroOp> = {}): CadastroOp => cad({
+    trechos: [
+      { seq: 1, codigo: 'PRT410', tipo: 'prt', compelsOp: '8500', descricao: '', quantidade: 10, situacao: '', snModo: 'mesmo', postos: ['SPI'], faixas: [] },
+      { seq: 2, codigo: 'PMOC14', tipo: 'pmo', compelsOp: '8498', descricao: '', quantidade: 10, situacao: '', snModo: 'mesmo', postos: ['Inspeção PTH', 'Teste'], faixas: [{ sn_ini: '1001', sn_fim: '1010' }] },
+    ],
+    componentes: [], burnin: [],
+    ignoradas: [{ codigo: 'PRT420', compelsOp: '8499', modo: 'manter' }],
+    ...over,
+  })
+  beforeEach(() => { m.listarEspelho.mockResolvedValue(CADEIA) })
+
+  it('grava a cadeia sem a PRT ignorada e registra no log qual PRT e a escolha', async () => {
+    expect(await cadastrarOpAction(sem420())).toEqual({ ok: true, id: 'uuid-1', pmo: 'PMOC14', op: '8498' })
+    expect(m.cadastrarOp.mock.calls[0]![0].trechos.map((t) => [t.seq, t.codigo])).toEqual([[1, 'PRT410'], [2, 'PMOC14']])
+    expect(m.registrarLog).toHaveBeenCalledWith(expect.objectContaining({
+      acao: 'criar',
+      descricao: 'OP PMOC14/8498 criada (compels) · PRT ignorada: PRT420 (8499) — Manter os postos na rota da OP',
+      dados: expect.objectContaining({ prtsIgnoradas: [{ codigo: 'PRT420', compelsOp: '8499', modo: 'manter' }] }),
+    }))
+  })
+  it('a PRT que falta sem estar nas ignoradas continua recusada', async () => {
+    expect(await cadastrarOpAction(sem420({ ignoradas: [] }))).toEqual({ ok: false, erro: 'Os trechos não batem com o Compels. Recarregue a página e escolha a OP de novo.' })
+    expect(m.cadastrarOp).not.toHaveBeenCalled()
+  })
+  it('a PMO não pode ser ignorada', async () => {
+    const r = await cadastrarOpAction(sem420({ ignoradas: [{ codigo: 'PRT420', compelsOp: '8499', modo: 'manter' }, { codigo: 'PMOC14', compelsOp: '8498', modo: 'tirar' }] }))
+    expect(r).toEqual({ ok: false, erro: 'A OP da PMO não pode ser ignorada.' })
+    expect(m.cadastrarOp).not.toHaveBeenCalled()
+  })
+  it('cadastro manual não tem PRT para ignorar', async () => {
+    const manual = cad({
+      modo: 'manual', pmo: 'PMOZ', op: '9000',
+      trechos: [{ seq: 1, codigo: 'PMOZ', tipo: 'pmo', compelsOp: null, descricao: '', quantidade: null, situacao: '', snModo: 'mesmo', postos: ['Teste'], faixas: [{ sn_ini: '1', sn_fim: '10' }] }],
+      componentes: [], burnin: [],
+      ignoradas: [{ codigo: 'PRT420', compelsOp: '8499', modo: 'tirar' }],
+    })
+    expect(await cadastrarOpAction(manual)).toEqual({ ok: false, erro: 'Cadastro manual tem um trecho só, sem OP do Compels.' })
+  })
+  it('modo inválido e campo herdados do cliente não passam para o servidor', async () => {
+    const c = sem420({ ignoradas: [{ codigo: 'PRT420', compelsOp: '8499', modo: 'apagar' as never }] })
+    expect(await cadastrarOpAction(c)).toMatchObject({ ok: false })
+    const ok = sem420()
+    ok.trechos[0] = { ...ok.trechos[0]!, herdados: ['SPI'] }
+    expect(await cadastrarOpAction(ok)).toMatchObject({ ok: true })
+    expect(m.cadastrarOp.mock.calls.at(-1)![0].trechos.every((t) => !('herdados' in t))).toBe(true)
+  })
+})
