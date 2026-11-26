@@ -38,7 +38,10 @@ de venda** e a **NF**.
 3. **Garantia vem da planilha**, como hoje. Quem decide é o suporte, ao mandar o relógio para a fábrica (ordem:
    repinmetro → NF da revenda para o cliente final → AFD). O ShopFloor não recalcula. O **tipo** da OS nasce da
    garantia (em garantia / fora de garantia) e pode ser mudado para **remanufatura** ou **retorno de peça** na entrada.
-4. **Orçamento depois do conserto.** O SAT conserta e depois orça. Se o cliente reprovar, o SAT **desfaz o conserto**.
+4. **Qualidade primeiro, orçamento em paralelo.** Fora da garantia, depois da manutenção a OS vai para a **qualidade**
+   exatamente como em garantia; o **orçamento corre em paralelo** (o SAT gera e envia enquanto a OS está na qualidade).
+   Se o cliente reprovar o orçamento, o SAT **desfaz o conserto** e a OS vai para pronto para expedição (a partir da
+   qualidade ou depois de aprovada nela). Só "garantia a definir" (tipo vazio) impede o envio para a qualidade.
 5. **Peças trocadas** são registradas na OS com o código do item do Compels. A baixa de estoque **continua pelo pedido
    de venda** no Compels (como hoje). Peças trocadas e depois devolvidas (orçamento reprovado) **ficam no histórico**
    como "devolvida".
@@ -53,9 +56,10 @@ de venda** e a **NF**.
    encontrado (+ solução em texto) e a qualidade usa para reprovar.
 8. **Pagamento (fora da garantia):** o cliente responde por e-mail aprovando ou reprovando, com o print do pagamento.
    O SAT registra a resposta e **anexa o comprovante** na OS. O **fiscal/expedição confirma o pagamento** no ShopFloor.
-   **Fora da garantia só sai com pagamento confirmado.**
-9. **Valor da manutenção** vem do orçamento lançado pelo SAT no ShopFloor *(usuário: "eu acho" — a confirmar)*. **Frete**
-   é cotado pelo SAT no site dos Correios e lançado no orçamento.
+   **Fora da garantia só sai com orçamento aprovado e pagamento confirmado.** "Aguardando aprovação/pagamento" não é
+   mais uma etapa: é o **status do orçamento** mostrado na OS.
+9. **Valor da manutenção** vem do orçamento lançado pelo SAT no ShopFloor, disponível desde o fim da manutenção
+   *(usuário: "eu acho" — a confirmar)*. **Frete** é cotado pelo SAT no site dos Correios e lançado no orçamento.
 10. **Troca de número de série** fica registrada (NS antigo → NS novo) em **qualquer** OS (remanufatura e também
     manutenção). A busca acha o relógio pelos dois.
 11. **Nota pendente** é só uma marcação: o SAT pede a nota nova ao cliente; não se registra o contato.
@@ -80,18 +84,20 @@ Recebido ─┬─ NF aprovada ────────────────�
                                               Disponível para manutenção
                                                                    ▼
                                                            Em manutenção ◄──────────────┐
-                                    ┌──────────── em garantia ────┤                     │
-                                    │                fora da garantia                    │
-                                    │                             ▼                     │
-                                    │       Aguardando aprovação/pagamento               │
-                                    │        │ aprovado            │ reprovado          │
-                                    ▼        ▼                     ▼ (desfaz o conserto) │
-                                        Qualidade ── reprova (defeitos) ────────────────┘
-                                            │ aprova                │
-                                            ▼                       │
-                                  Pronto para expedição ◄───────────┘ (orçamento reprovado não passa pela qualidade)
-                                            ▼   (fora da garantia: só com pagamento confirmado)
-                                         Enviado  → OS fechada
+                                                                   ▼ (garantia ou não)  │
+                                                               Qualidade ── reprova ────┘
+                                                                   │ aprova
+                                                                   ▼
+                                                        Pronto para expedição
+                                                (fora da garantia: só com orçamento aprovado
+                                                 e pagamento confirmado)
+                                                                   ▼
+                                                          Enviado  → OS fechada
+
+Orçamento (só fora da garantia), em paralelo desde o fim da manutenção:
+  gerado/enviado pelo SAT (OS na qualidade) → aprovado + comprovante → pagamento confirmado → libera a expedição
+                                            └→ reprovado → SAT desfaz o conserto → Pronto para expedição
+                                               (de dentro da qualidade ou depois de aprovada nela)
 ```
 
 ### Remanufatura
@@ -108,8 +114,8 @@ Recebido → Análise → **Estoque** (OS fechada).
 | Recebido → Nota pendente / Disponível | automático na entrada | situação da NF (já existe) |
 | Nota pendente → Disponível | `sat.aprovar_nf` (corrigir/trocar NF, já existe) | — |
 | Disponível → Em manutenção | `sat.manutencao` | técnico = usuário logado |
-| Em manutenção → Aguardando aprovação / Qualidade | `sat.manutencao` | defeitos + solução, peças, laudo; fora da garantia: valor da manutenção e do frete |
-| Aguardando → Qualidade (aprovado) / Pronto (reprovado) | `sat.manutencao` | resposta do cliente + comprovante (aprovado) / peças voltam a "devolvida" (reprovado) |
+| Em manutenção → Qualidade | `sat.manutencao` | defeitos + solução, peças, laudo (igual em garantia e fora; bloqueia só se a garantia está a definir) |
+| Orçamento (paralelo): gerar/enviar, aprovado / reprovado | `sat.manutencao` | valor da manutenção e do frete; resposta do cliente + comprovante (aprovado) / reprovado: desfaz o conserto, peças voltam a "devolvida" e a OS vai para Pronto |
 | Qualidade → Pronto / Em manutenção | `sat.qualidade` (tela de tablet) | aprova, ou reprova com 1+ defeitos |
 | (pagamento) | `sat.confirmar_pagamento` (fiscal/expedição) | confirmado por/em |
 | Pronto → Enviado | `sat.expedicao` | código de rastreio, data de saída |
@@ -170,7 +176,7 @@ expedição. O aviso de chegada (regra "Entrada no SAT") continua como está.
 ## Entregas (cada uma testável sozinha)
 
 1. **OS + etapas + fila + ficha + manutenção** (defeitos, peças em 4 camadas, laudo, troca de NS), em garantia.
-2. **Fora da garantia:** orçamento, resposta do cliente com comprovante, confirmação do pagamento.
+2. **Fora da garantia — orçamento paralelo + pagamento:** orçamento gerado/enviado enquanto a OS está na qualidade, resposta do cliente com comprovante, confirmação do pagamento, reprovado desfaz o conserto.
 3. **Qualidade (tablet) + Expedição** (fecha a OS).
 4. **Remanufatura e retorno de peça.**
 5. **Avisos por etapa** (novo tipo de regra nos Alertas).
