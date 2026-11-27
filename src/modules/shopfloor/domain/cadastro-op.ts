@@ -27,6 +27,10 @@ export interface TrechoCadastro {
   postos: string[]
   /** PMO: as faixas da OP. PRT: só com série própria (com 'mesmo' é ignorada). */
   faixas: FaixaSN[]
+  /** Edição: PRT da cadeia incluída de novo nesta edição, ainda não gravada (seq < 0 só enquanto está na tela). */
+  incluida?: boolean
+  /** Só na tela: postos que uma PRT ignorada ("manter") trouxe para este trecho; não vai para o servidor. */
+  herdados?: string[]
 }
 
 export interface PostoAnterior { posto: string; trechoCodigo: string | null }
@@ -55,7 +59,24 @@ export interface CadastroOp {
   trechos: TrechoCadastro[]
   componentes: { posto: string; pmo: string }[]
   burnin: { posto: string; tempo_min: number }[]
+  /** PRTs da cadeia do Compels que ficaram fora da OP (não são trecho) e a escolha de cada uma. */
+  ignoradas?: PrtIgnoradaEnvio[]
 }
+
+/** Ignorar uma PRT: 'tirar' = os postos dela saem da rota; 'manter' = vão para o começo do trecho seguinte. */
+export type ModoIgnorar = 'tirar' | 'manter'
+
+/** A escolha como aparece nos botões, na lista de ignoradas e no log. */
+export const ESCOLHA_IGNORAR: Record<ModoIgnorar, string> = {
+  tirar: 'Tirar os postos da rota',
+  manter: 'Manter os postos na rota da OP',
+}
+
+/** Uma PRT ignorada na tela: o trecho como estava (para o Desfazer) e a escolha. */
+export interface PrtIgnorada { trecho: TrechoCadastro; modo: ModoIgnorar }
+
+/** O que vai para o servidor (e para o log) de cada PRT ignorada. */
+export interface PrtIgnoradaEnvio { codigo: string; compelsOp: string | null; modo: ModoIgnorar }
 
 export interface PmoDoEspelho { pmo: string; descricao: string; abertas: number }
 
@@ -124,6 +145,106 @@ export function rotuloTrecho(t: { codigo: string; compelsOp: string | null }): s
   return t.compelsOp ? `${t.codigo} (${t.compelsOp})` : t.codigo
 }
 
+/** A identidade de um trecho na cadeia do Compels: o código (aparado, maiúsculo) e a OP do Compels. */
+export function chaveTrecho(t: { codigo: string; compelsOp: string | null }): string {
+  return `${norm(t.codigo)}|${t.compelsOp ?? ''}`
+}
+
+/**
+ * Ignora a PRT de `seq`: ela deixa de ser trecho. 'tirar' some com os postos dela; 'manter' os põe no COMEÇO do trecho
+ * seguinte (a ordem da rota não muda; a última PRT antes da PMO passa os postos para a PMO). A PMO nunca: null.
+ */
+export function ignorarPrt(
+  trechos: TrechoCadastro[], seq: number, modo: ModoIgnorar,
+): { trechos: TrechoCadastro[]; ignorada: PrtIgnorada } | null {
+  const i = trechos.findIndex((t) => t.seq === seq)
+  const t = trechos[i]
+  if (!t || t.tipo !== 'prt' || i === trechos.length - 1) return null
+  const resto = trechos.filter((_, k) => k !== i)
+  // Os postos próprios da PRT; os herdados de uma ignorada anterior "manter" seguem na rota (vão para o trecho seguinte).
+  const { herdados, ...base } = t
+  const herd = new Set(herdados ?? [])
+  const proprios = t.postos.filter((p) => !herd.has(p))
+  const levam = modo === 'manter' ? t.postos : t.postos.filter((p) => herd.has(p))
+  const novos = levam.length
+    ? resto.map((x, k) => (k === i ? { ...x, postos: [...levam, ...x.postos], herdados: [...levam, ...(x.herdados ?? [])] } : x))
+    : resto
+  // O snapshot guarda só os postos PRÓPRIOS da PRT (sem os que uma ignorada anterior "manter" trouxe para ela).
+  const proprio: TrechoCadastro = { ...base, postos: proprios }
+  return { trechos: novos, ignorada: { trecho: proprio, modo } }
+}
+
+/**
+ * Desfaz o "ignorar": a PRT volta a ser trecho, no lugar dela na cadeia (pelo seq da tela), com os postos que tinha —
+ * tirados de onde estiverem agora. Já presente: igual.
+ */
+export function desfazerIgnorar(trechos: TrechoCadastro[], ignorada: PrtIgnorada): TrechoCadastro[] {
+  const volta = ignorada.trecho
+  if (trechos.some((t) => t.seq === volta.seq)) return trechos
+  const dela = new Set(volta.postos)
+  const sem = trechos.map((t) => {
+    if (!t.postos.some((p) => dela.has(p)) && !t.herdados?.some((p) => dela.has(p))) return t
+    const { herdados, ...r } = t
+    const h = (herdados ?? []).filter((p) => !dela.has(p))
+    return { ...r, postos: t.postos.filter((p) => !dela.has(p)), ...(h.length ? { herdados: h } : {}) }
+  })
+  const k = sem.findIndex((t) => t.seq > volta.seq)
+  const at = k < 0 ? sem.length : k
+  return [...sem.slice(0, at), volta, ...sem.slice(at)]
+}
+
+/** Um posto que saiu do trecho por ação manual deixa de ser "herdado" dele (o Desfazer não pode errar o destino). */
+export function podarHerdados(t: TrechoCadastro): TrechoCadastro {
+  if (!t.herdados) return t
+  const { herdados, ...r } = t
+  const h = herdados.filter((p) => t.postos.includes(p))
+  if (h.length === herdados.length) return t
+  return h.length ? { ...r, herdados: h } : r
+}
+
+/** Os trechos como vão para o servidor: seq renumerado 1..n na ordem da rota, sem buraco das PRTs ignoradas. */
+export function trechosParaEnviar(trechos: TrechoCadastro[]): TrechoCadastro[] {
+  return trechos.map((t, i) => {
+    const { herdados, ...r } = t
+    return t.seq === i + 1 && !herdados ? t : { ...r, seq: i + 1 }
+  })
+}
+
+export function ignoradasParaEnviar(ignoradas: PrtIgnorada[]): PrtIgnoradaEnvio[] {
+  return ignoradas.map((i) => ({ codigo: i.trecho.codigo, compelsOp: i.trecho.compelsOp, modo: i.modo }))
+}
+
+/**
+ * O cadastro no modo Compels confere a cadeia: os trechos são os do espelho (`esperado`, de trechosDoEspelho) menos as
+ * PRTs ignoradas, na mesma ordem, com seq 1..n. Ignorada só PRT da cadeia, uma vez, com escolha válida. null = bate.
+ */
+export function erroCadeiaCompels(
+  esperado: TrechoCadastro[], trechos: TrechoCadastro[], ignoradas: PrtIgnoradaEnvio[],
+): string | null {
+  const NAO_BATE = 'Os trechos não batem com o Compels. Recarregue a página e escolha a OP de novo.'
+  const pmo = esperado.find((t) => t.tipo === 'pmo')
+  if (pmo && ignoradas.some((i) => chaveTrecho(i) === chaveTrecho(pmo))) return 'A OP da PMO não pode ser ignorada.'
+  const fora = new Set(ignoradas.map(chaveTrecho))
+  if (fora.size !== ignoradas.length) return NAO_BATE
+  for (const i of ignoradas) {
+    if (i.modo !== 'tirar' && i.modo !== 'manter') return NAO_BATE
+    if (!esperado.some((e) => e.tipo === 'prt' && chaveTrecho(e) === chaveTrecho(i))) return NAO_BATE
+  }
+  const restantes = esperado.filter((e) => !fora.has(chaveTrecho(e)))
+  const bate = restantes.length === trechos.length && restantes.every((e, i) => {
+    const t = trechos[i]!
+    return e.codigo === t.codigo && e.compelsOp === t.compelsOp && e.tipo === t.tipo && t.seq === i + 1
+  })
+  return bate ? null : NAO_BATE
+}
+
+/** A linha do log do cadastro com as PRTs ignoradas e a escolha de cada uma; null sem ignorada. */
+export function resumoIgnoradas(ignoradas: PrtIgnoradaEnvio[]): string | null {
+  if (ignoradas.length === 0) return null
+  const itens = ignoradas.map((i) => `${rotuloTrecho(i)} — ${ESCOLHA_IGNORAR[i.modo]}`)
+  return `${ignoradas.length === 1 ? 'PRT ignorada' : 'PRTs ignoradas'}: ${itens.join('; ')}`
+}
+
 /** O Almoxarifado fecha a rota: fica por último no trecho da PMO e nunca numa PRT. */
 export function fixarAlmoxarifado(trechos: TrechoCadastro[], almoxarifado: string | null): TrechoCadastro[] {
   if (!almoxarifado) return trechos
@@ -162,7 +283,7 @@ export function moverPostoEntreTrechos(
   const j = i + delta
   if (i < 0 || j < 0 || j >= trechos.length || posto === almoxarifado || !trechos[i]!.postos.includes(posto)) return trechos
   return trechos.map((t, k) => {
-    if (k === i) return { ...t, postos: t.postos.filter((p) => p !== posto) }
+    if (k === i) return podarHerdados({ ...t, postos: t.postos.filter((p) => p !== posto) })
     if (k === j) return { ...t, postos: delta === -1 ? [...t.postos, posto] : [posto, ...t.postos] }
     return t
   })

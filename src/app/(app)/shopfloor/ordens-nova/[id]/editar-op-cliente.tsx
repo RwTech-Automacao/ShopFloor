@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { editarOrdemAction, type ResultadoOrdem } from '@/modules/shopfloor/application/ordens-actions'
 import { fixarAlmoxarifado, moverPostoEntreTrechos, validarCadastro, type TrechoCadastro } from '@/modules/shopfloor/domain/cadastro-op'
 import {
-  erroTempoBurnin, faixasDaPmo, postosParaAdicionar, receitaDaRota, rotaDosTrechos, temposDaRota, trechosParaGravar,
+  erroTempoBurnin, faixasDaPmo, incluirPrt, postosParaAdicionar, prtsForaDaOp, receitaDaRota, rotaDosTrechos, temposDaRota,
+  trechosParaGravar,
 } from '@/modules/shopfloor/domain/edicao-op-trechos'
 import { parseTempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-posto'
 import { postoAlmoxarifadoPadrao } from '@/modules/shopfloor/domain/rota-op-nova'
@@ -26,6 +27,7 @@ import type { TempoBurninPorPosto } from '@/modules/shopfloor/domain/burnin-post
 import type { ResumoTrecho } from '@/modules/shopfloor/infra/estrutura-repository'
 import { BarraFixa, CamposQuantidade, CorrenteTrechos, ResumoRota, nPainelDe, paineisFecham, plural } from '../../ordens/corrente-trechos'
 import { ReceitasDosPostos, TempoBurninCampo } from '../../ordens/editores-posto'
+import { PrtsForaDaOp } from '../../ordens/ignorar-prt'
 
 const TOAST = { position: 'bottom-center' as const }
 /** Tempo mínimo de Burn-in de um posto de Burn-in que entra na rota pela edição (o mesmo padrão do cadastro antigo). */
@@ -64,7 +66,7 @@ function SituacaoPrt({ t, resumo }: { t: TrechoCadastro; resumo: ResumoTrecho[] 
 
 export function EditarOpCliente({
   ordem, trechos: trechosIniciais, resumo, postos, postosPerfil, clientesExistentes, temRegistros, receita: receitaInicial,
-  tempoBurnin, pmosExistentes = [],
+  tempoBurnin, pmosExistentes = [], cadeia = [],
 }: {
   ordem: OrdemEdicao
   trechos: TrechoCadastro[]
@@ -80,6 +82,8 @@ export function EditarOpCliente({
   tempoBurnin: TempoBurninPorPosto
   /** PMOs que podem entrar na receita de um posto de Integração. */
   pmosExistentes?: string[]
+  /** A cadeia do Compels da OP (cadeiaDaOp): as PRTs dela que não são trecho podem ser incluídas de novo. */
+  cadeia?: TrechoCadastro[]
 }) {
   const router = useRouter()
   const idBase = useId()
@@ -230,6 +234,7 @@ export function EditarOpCliente({
             (a faixa dela só pode crescer).
           </p>
         </div>
+        <PrtsForaDaOp prts={prtsForaDaOp(trechos, cadeia)} aoIncluir={(t) => setTrechos((ts) => incluirPrt(ts, cadeia, t))} />
         <CorrenteTrechos trechos={trechos} almox={almoxFixo} idBase={idBase} qtd={qtd} nPainel={nPainel}
           mudarTrecho={mudarTrecho}
           moverEntreTrechos={(seq, p, delta) => setTrechos((ts) => moverPostoEntreTrechos(ts, seq, p, delta, almoxFixo))}

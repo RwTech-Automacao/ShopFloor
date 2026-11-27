@@ -103,6 +103,8 @@ async function lerPostos(fd: FormData): Promise<string[]> {
  * Edição por trecho (0194, página de edição de OP com trechos): o campo `trechos` = JSON
  * [{seq, postos, sn_modo, faixas}] com todos os trechos. Ausente = a edição de sempre (`fluxo` + `faixas`).
  * Postos fora do catálogo são recusados (não descartados: sumir com um posto mudaria o trecho calado).
+ * 0199: item com seq null (ou sem seq) = PRT da cadeia incluída de novo, com codigo + compels_op; aí a lista fica na
+ * ordem em que veio (é a ordem nova dos trechos, e o banco confere a cadeia). Sem ele, ordenada por seq, como sempre.
  */
 async function lerTrechos(fd: FormData): Promise<{ ok: true; trechos: TrechoEdicao[] | null } | { ok: false; erro: string }> {
   const bruto = fd.get('trechos')
@@ -114,8 +116,12 @@ async function lerTrechos(fd: FormData): Promise<{ ok: true; trechos: TrechoEdic
   const catalogo = new Set((await listarPostos()).map((p) => p.chave))
   const trechos: TrechoEdicao[] = []
   for (const item of lista) {
-    const t = item as { seq?: unknown; postos?: unknown; sn_modo?: unknown; faixas?: unknown }
-    if (!Number.isInteger(t.seq) || !Array.isArray(t.postos) || (t.faixas !== undefined && !Array.isArray(t.faixas))) return invalido
+    const t = item as { seq?: unknown; codigo?: unknown; compels_op?: unknown; postos?: unknown; sn_modo?: unknown; faixas?: unknown }
+    const incluida = t.seq === null || t.seq === undefined
+    const codigo = typeof t.codigo === 'string' ? t.codigo.trim() : ''
+    const compelsOp = typeof t.compels_op === 'string' ? t.compels_op.trim() : ''
+    if (incluida ? codigo === '' || compelsOp === '' : !Number.isInteger(t.seq)) return invalido
+    if (!Array.isArray(t.postos) || (t.faixas !== undefined && !Array.isArray(t.faixas))) return invalido
     const postos = t.postos.map((p) => String(p).trim()).filter((p) => p !== '')
     const desconhecido = postos.find((p) => !catalogo.has(p))
     if (desconhecido) return { ok: false, erro: `Posto desconhecido: ${desconhecido}.` }
@@ -123,10 +129,13 @@ async function lerTrechos(fd: FormData): Promise<{ ok: true; trechos: TrechoEdic
       const x = f as { sn_ini?: unknown; sn_fim?: unknown }
       return { sn_ini: String(x?.sn_ini ?? '').trim(), sn_fim: String(x?.sn_fim ?? '').trim() }
     })
-    if (t.sn_modo !== 'mesmo' && t.sn_modo !== 'proprio') return { ok: false, erro: `Série inválida no trecho ${t.seq as number}: escolha "mesma série da PMO" ou "série própria".` }
-    trechos.push({ seq: t.seq as number, postos, sn_modo: t.sn_modo, faixas })
+    if (t.sn_modo !== 'mesmo' && t.sn_modo !== 'proprio') return { ok: false, erro: `Série inválida no trecho ${incluida ? codigo : t.seq as number}: escolha "mesma série da PMO" ou "série própria".` }
+    trechos.push(incluida
+      ? { seq: null, codigo, compels_op: compelsOp, postos, sn_modo: t.sn_modo, faixas }
+      : { seq: t.seq as number, postos, sn_modo: t.sn_modo, faixas })
   }
-  return { ok: true, trechos: [...trechos].sort((a, b) => a.seq - b.seq) }
+  if (trechos.some((t) => t.seq === null)) return { ok: true, trechos }
+  return { ok: true, trechos: [...trechos].sort((a, b) => (a.seq as number) - (b.seq as number)) }
 }
 
 /** Receita por posto vinda do form; mantém só postos de Integração (perfil) do fluxo. */
@@ -301,7 +310,14 @@ export async function editarOrdemAction(
     return { ok: false, erro: 'Não foi possível salvar a OP.' }
   }
 
-  await registrarLog({ entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada`, dados: { ...dados, faixas, ...(trechosEdicao ? { trechos: trechosEdicao } : {}) } })
+  // 0199: a PRT incluída de novo fica no log da OP (quem e quando o log já grava)
+  const incluidas = (trechosEdicao ?? []).filter((t) => t.seq === null).map((t) => ({ codigo: t.codigo ?? '', compelsOp: t.compels_op ?? null }))
+  const linhaIncluidas = incluidas.length === 0 ? ''
+    : ` · ${incluidas.length === 1 ? 'PRT incluída de novo' : 'PRTs incluídas de novo'}: ${incluidas.map((i) => `${i.codigo} (${i.compelsOp})`).join(', ')}`
+  await registrarLog({
+    entidade: 'sf_ordem', entidadeId: id, acao: 'alterar_campo', descricao: `OP ${dados.pmo}/${dados.op} editada${linhaIncluidas}`,
+    dados: { ...dados, faixas, ...(trechosEdicao ? { trechos: trechosEdicao } : {}), ...(incluidas.length > 0 ? { prtsIncluidas: incluidas } : {}) },
+  })
   revalidatePath('/shopfloor/ordens')
   revalidatePath('/shopfloor/ordens-nova')
   return { ok: true, id, pmo: dados.pmo, op: dados.op }
