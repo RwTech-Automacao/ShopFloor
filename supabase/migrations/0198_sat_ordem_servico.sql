@@ -4,12 +4,12 @@
 --  plano docs/superpowers/plans/2026-11-26-sat-ordem-servico-entrega-1.md)
 --
 -- A OS deixa de existir no Compels e passa a existir SÓ aqui: uma por relógio (`sat_entradas`), criada pelo banco
--- na entrada (gatilho `sat_entradas_ordem`) e, nesta migração, para as entradas que já existem (backfill, na ordem
--- em que chegaram). Nenhuma função da entrada (0187/0190) é reescrita: a OS se move por gatilhos.
+-- na entrada (gatilho `sat_entradas_ordem`). NÃO há backfill: entradas anteriores à 0198 ficam sem OS no ShopFloor — seguem
+-- no Compels até fechar; só as entradas NOVAS ganham OS. Nenhuma função da entrada (0187/0190) é reescrita: a OS se move por gatilhos.
 --
 --   - `sat_numeracao`: o último número usado por ano. A OS é `NNNN/AA`, CONTINUANDO a sequência do Compels.
 --       ⚠️ SEMENTE: 2026 → 396 (última OS do Compels em 26/11/2026 = 0396/26). Se o Compels abrir mais OS até o
---       deploy, TROQUE o 396 abaixo ANTES de aplicar no RDS (o backfill numera na hora). Depois de aplicada, só
+--       deploy, TROQUE o 396 abaixo ANTES de aplicar no RDS (a semente define o próximo número). Depois de aplicada, só
 --       para frente: `update public.sat_numeracao set ultimo = <número> where ano = 2026;`.
 --       Ano sem linha começa em 1 (o Compels não abre mais OS).
 --   - `sat_defeitos`: a lista de defeitos. A carga dos 88 do Compels NÃO está aqui (a migração não fala com o
@@ -298,20 +298,6 @@ revoke all on function public.sat__ordem_na_entrada() from public, anon, authent
 drop trigger if exists sat_entradas_ordem on public.sat_entradas;
 create trigger sat_entradas_ordem after insert on public.sat_entradas
   for each row execute function public.sat__ordem_na_entrada();
-
--- ---------- backfill: as entradas que já existem, na ordem em que chegaram ----------
--- A linha do tempo delas começa no estado ATUAL da NF (a correção antiga da nota não vira etapa).
-do $backfill$
-declare
-  r record;
-begin
-  for r in select e.id from public.sat_entradas e
-            where not exists (select 1 from public.sat_ordens o where o.entrada_id = e.id)
-            order by e.criado_em, e.id loop
-    perform public.sat__criar_ordem(r.id);
-  end loop;
-end
-$backfill$;
 
 -- =============================================================
 -- PARTE B — a etapa segue a NF; o tipo segue a garantia do ticket

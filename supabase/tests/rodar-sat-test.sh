@@ -89,7 +89,7 @@ else
   exit 1
 fi
 
-# ---------- 0198 (ordem de serviço, entrega 1): backfill, gatilhos, manutenção ----------
+# ---------- 0198 (ordem de serviço, entrega 1): sem backfill, gatilhos, manutenção ----------
 docker cp supabase/migrations/0198_sat_ordem_servico.sql "$NOME":/tmp/0198.sql
 docker cp supabase/tests/sat_ordem_test.sql "$NOME":/tmp/teste_ordem.sql
 docker exec "$NOME" psql -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/teste_ordem.sql
