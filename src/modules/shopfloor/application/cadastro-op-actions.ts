@@ -44,11 +44,15 @@ export async function cadastrarOpAction(c: CadastroOp): Promise<ResultadoCadastr
   const recurso = (p: string): string => perfis[p]?.recurso ?? 'nenhum'
   // o mesmo critério do criarOrdemAction (ordens-actions → postoAlmoxarifado): o perfil decide, não o nome
   const almox = postoAlmoxarifadoPadrao(catalogo.map((p) => p.chave), (p) => perfis[p] ?? { recurso: 'nenhum' })
-  const trechos = fixarAlmoxarifado(c.trechos.map(({ herdados: _herdados, ...t }) => ({
+  const trechos = fixarAlmoxarifado(c.trechos.map((t0) => {
+    const t = { ...t0 }
+    delete t.herdados
+    return {
     ...t,
     postos: [...new Set(t.postos.map((p) => p.trim()).filter((p) => chaves.has(p)))],
     faixas: t.tipo === 'prt' && t.snModo === 'mesmo' ? [] : t.faixas,
-  })), almox)
+    }
+  }), almox)
 
   // PRTs da cadeia que ficam fora da OP (não são trecho): conferidas contra o espelho abaixo, como os trechos
   const ignoradas: PrtIgnoradaEnvio[] = (Array.isArray(c.ignoradas) ? c.ignoradas : [])
