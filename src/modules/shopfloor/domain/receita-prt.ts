@@ -85,3 +85,14 @@ export function avisoReceitaPrtLimpa(removidas: string[]): string | null {
 export function mensagemPlacaPrtIncompleta(sn: string, prt: string, posto: string): string {
   return `A placa ${sn} ainda não terminou a ${prt} (falta o posto ${posto}).`
 }
+
+/**
+ * A PRT ignorada na Nova OP deixa de ser trecho: ela sai de toda receita da Integração (senão o servidor recusa a OP com
+ * RECEITA_PRT_INVALIDA). Ao desfazer o ignorar a receita NÃO volta sozinha: quem quiser a PRT na receita a adiciona de novo.
+ * Devolve a mesma referência se nada mudou.
+ */
+export function receitaSemPrt(receita: Record<string, string[]>, codigo: string): Record<string, string[]> {
+  const c = norm(codigo)
+  if (c === '' || !Object.values(receita).some((l) => l.some((x) => norm(x) === c))) return receita
+  return Object.fromEntries(Object.entries(receita).map(([posto, l]) => [posto, l.filter((x) => norm(x) !== c)]))
+}

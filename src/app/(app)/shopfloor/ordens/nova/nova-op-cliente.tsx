@@ -22,7 +22,7 @@ import { IgnorarPrt, PrtsIgnoradas } from '../ignorar-prt'
 import { erroTempoBurnin, receitaDaRota, rotaDosTrechos, temposDaRota } from '@/modules/shopfloor/domain/edicao-op-trechos'
 import { parseTempoBurninPorPosto, temposParaLinhas } from '@/modules/shopfloor/domain/burnin-posto'
 import { receitaParaLinhas } from '@/modules/shopfloor/domain/receita-posto'
-import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, prtsDeMesmaSerie, prtsDeSeriePropria } from '@/modules/shopfloor/domain/receita-prt'
+import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, prtsDeMesmaSerie, prtsDeSeriePropria, receitaSemPrt } from '@/modules/shopfloor/domain/receita-prt'
 import { minutosParaTempo } from '@/modules/shopfloor/domain/tempo-burnin'
 
 const TOAST = { position: 'bottom-center' as const }
@@ -210,6 +210,8 @@ export function NovaOpCliente({ espelho, postos, postosPerfil, clientesExistente
     if (!r) return
     setTrechos(fixarAlmoxarifado(r.trechos, almox))
     setIgnoradas((xs) => [...xs, r.ignorada])
+    // a PRT ignorada não é mais trecho: sai da receita da Integração (desfazer não a devolve)
+    setReceita((rc) => receitaSemPrt(rc, r.ignorada.trecho.codigo))
   }
 
   function desfazer(ig: PrtIgnorada) {

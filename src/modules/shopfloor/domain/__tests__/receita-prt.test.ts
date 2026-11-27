@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, mensagemPlacaPrtIncompleta, prtsDeMesmaSerie, prtsDeSeriePropria } from '../receita-prt'
+import { avisoReceitaPrtLimpa, codigosPrt, limparReceitaPrt, mensagemPlacaPrtIncompleta, prtsDeMesmaSerie, prtsDeSeriePropria, receitaSemPrt } from '../receita-prt'
 
 const T = (codigo: string, tipo: 'prt' | 'pmo', snModo: 'mesmo' | 'proprio' = 'mesmo') => ({ codigo, tipo, snModo })
 const TRECHOS = [T('PRT410', 'prt', 'proprio'), T('PRT420', 'prt', 'mesmo'), T('PRT430', 'prt', 'proprio'), T('PMOC14', 'pmo')]
@@ -57,5 +57,17 @@ describe('mensagens', () => {
   it('placa que não terminou a PRT', () => {
     expect(mensagemPlacaPrtIncompleta('A001', 'PRT410', 'Inspeção AOI TOP'))
       .toBe('A placa A001 ainda não terminou a PRT410 (falta o posto Inspeção AOI TOP).')
+  })
+})
+
+describe('receitaSemPrt', () => {
+  it('tira a PRT ignorada de todo posto, sem mexer nas outras', () => {
+    const r = { Integracao: ['PMO1', 'prt420 ', 'PRT410'], Outro: ['PRT420'] }
+    expect(receitaSemPrt(r, 'PRT420')).toEqual({ Integracao: ['PMO1', 'PRT410'], Outro: [] })
+  })
+  it('sem a PRT na receita devolve a mesma referência', () => {
+    const r = { Integracao: ['PMO1'] }
+    expect(receitaSemPrt(r, 'PRT420')).toBe(r)
+    expect(receitaSemPrt(r, '')).toBe(r)
   })
 })
