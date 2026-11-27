@@ -36,6 +36,8 @@ describe('mensagemErroDeTrecho', () => {
     expect(mensagemErroDeTrecho({ message: 'PRT_INCLUIDA_REPETIDA:PRT420' })).toBe('PRT420 já é um trecho desta OP.')
     expect(mensagemErroDeTrecho({ message: 'PRT_INCLUIDA_COM_REGISTROS:PRT420' }))
       .toBe('PRT420 não pode voltar com esses postos: algum deles já tem peças bipadas nesta OP.')
+    expect(mensagemErroDeTrecho({ message: 'PRT_INCLUIDA_JA_APONTADA:PRT420' }))
+      .toBe('A PRT PRT420 já tem apontamento no Compels (feito à mão); incluí-la de novo apontaria em dobro.')
   })
   it('o resto não é erro de trecho', () => {
     expect(mensagemErroDeTrecho({ code: '23505', message: 'duplicate' })).toBeNull()

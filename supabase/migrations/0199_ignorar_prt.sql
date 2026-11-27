@@ -14,6 +14,7 @@
 --      20 níveis, a mesma regra do trechosDoEspelho) e o código bate — PRT_INCLUIDA_FORA_DA_CADEIA:<codigo>;
 --   4. o código ou a OP do Compels dela ainda não é trecho da OP (nem vem duas vezes) — PRT_INCLUIDA_REPETIDA:<codigo>;
 --   5. nenhum posto dela tem registro (bipe) nesta OP — PRT_INCLUIDA_COM_REGISTROS:<codigo>;
+--   5b. a OP dela no Compels não tem produção apontada (quantidade_produzida = 0) — PRT_INCLUIDA_JA_APONTADA:<codigo>;
 --   6. renumera os trechos pela posição na entrada (sf_ordem_trechos.seq e o trecho_seq de sf_ordem_postos e
 --      sf_ordem_faixas; o seq do trecho não é gravado em mais lugar nenhum — a fila de PRT liga pelo código), grava a
 --      PRT incluída (tipo 'prt', série 'mesmo', estoque EINTER) e devolve a entrada com os seqs novos.
@@ -104,6 +105,14 @@ begin
    order by i limit 1;
   if v_rep is not null then raise exception 'PRT_INCLUIDA_COM_REGISTROS:%', v_rep; end if;
 
+  -- 5b. sem apontamento à mão no Compels: se a OP da PRT já tem produção apontada, incluí-la de novo apontaria em dobro
+  select btrim(x->>'codigo') into v_rep
+    from jsonb_array_elements(p_entrada) with ordinality e(x, i)
+   where coalesce(x->>'seq', '') = ''
+     and exists (select 1 from sf_compels_ops c where c.numero = btrim(x->>'compels_op')::int and c.quantidade_produzida > 0)
+   order by i limit 1;
+  if v_rep is not null then raise exception 'PRT_INCLUIDA_JA_APONTADA:%', v_rep; end if;
+
   -- 6. renumera pela posição na entrada (em dois passos: a PK (ordem_id, seq) não aceita troca no meio) e grava a PRT
   update sf_ordem_trechos set seq = seq + 100000 where ordem_id = p_ordem_id;
   update sf_ordem_trechos ot set seq = m.nova
@@ -119,8 +128,10 @@ begin
             from jsonb_array_elements(p_entrada) with ordinality e(x, i) where coalesce(e.x->>'seq', '') <> '') m
    where f.ordem_id = p_ordem_id and f.trecho_seq = m.velha;
   -- posto_conclui fica vazio só até a regravação, logo adiante na mesma transação, gravar o último posto do trecho
+  -- o código gravado é o OFICIAL do espelho (a grafia do Compels), não o que o cliente mandou
   insert into sf_ordem_trechos (ordem_id, seq, codigo, tipo, posto_conclui, sn_modo, estoque, compels_op)
-  select p_ordem_id, e.i::int, btrim(e.x->>'codigo'), 'prt', '', 'mesmo', 'EINTER', btrim(e.x->>'compels_op')
+  select p_ordem_id, e.i::int, coalesce((select btrim(c.codigo) from sf_compels_ops c where c.numero = btrim(e.x->>'compels_op')::int), btrim(e.x->>'codigo')),
+         'prt', '', 'mesmo', 'EINTER', btrim(e.x->>'compels_op')
     from jsonb_array_elements(p_entrada) with ordinality e(x, i)
    where coalesce(e.x->>'seq', '') = '';
   return (select jsonb_agg(e.x || jsonb_build_object('seq', e.i) order by e.i)

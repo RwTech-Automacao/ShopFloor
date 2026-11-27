@@ -142,6 +142,10 @@ begin
   perform pg_temp.recusa(v, format('[%s,%s,%s,%s]', ok1, nova, nova, ok2), 'PRT_INCLUIDA_REPETIDA:PRTK2');
   -- a regravação de sempre recusa depois da renumeração, e a renumeração volta junto
   perform pg_temp.recusa(v, format('[%s,{"codigo":"PRTK2","compels_op":"9821","postos":[]},%s]', ok1, ok2), 'TRECHO_SEM_POSTO:PRTK2');
+  -- a OP da PRT no Compels já tem produção apontada à mão: incluir de novo apontaria em dobro
+  update sf_compels_ops set quantidade_produzida = 3 where numero = 9821;
+  perform pg_temp.recusa(v, format('[%s,%s,%s]', ok1, nova, ok2), 'PRT_INCLUIDA_JA_APONTADA:PRTK2');
+  update sf_compels_ops set quantidade_produzida = 0 where numero = 9821;
   -- com bipe num posto que passaria a ser da PRT incluída
   insert into sf_registros (posto, pmo, op, status, numero_serie, numero_serie_norm) values ('Inspeção PTH', 'PMOK', '9820', 'Aprovado', '1', '1');
   perform pg_temp.recusa(v, format('[%s,%s,%s]', ok1, nova, ok2), 'PRT_INCLUIDA_COM_REGISTROS:PRTK2');
@@ -152,10 +156,10 @@ declare v uuid := pg_temp.op('PMOK', '9820');
 begin
   perform pg_temp.rt(v, $j$[
     {"seq":1,"postos":["SPI","Inspeção AOI TOP"],"sn_modo":"mesmo"},
-    {"codigo":"PRTK2","compels_op":"9821","postos":["Montagem PTH"],"sn_modo":"mesmo"},
+    {"codigo":"  prtk2 ","compels_op":" 9821 ","postos":["Montagem PTH"],"sn_modo":"mesmo"},
     {"seq":2,"postos":["Inspeção PTH","Teste","Almoxarifado"],"faixas":[{"sn_ini":"1","sn_fim":"5"}]}
   ]$j$);
-  perform pg_temp.confere('incluir só com o posto sem bipe', pg_temp.estado(v),
+  perform pg_temp.confere('incluir só com o posto sem bipe (código canônico do espelho, não o digitado)', pg_temp.estado(v),
     'SPI:0:1,Inspeção AOI TOP:1:1,Montagem PTH:2:2,Inspeção PTH:3:3,Teste:4:3,Almoxarifado:5:3'
     || ' | 1:PRTK1:9822:Inspeção AOI TOP:mesmo,2:PRTK2:9821:Montagem PTH:mesmo,3:PMOK:9820:Almoxarifado:mesmo | 1:1-5:3 | 1-5');
 end $$;
