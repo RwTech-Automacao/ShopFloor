@@ -1,5 +1,5 @@
 -- Testes da 0198 (SAT: ordem de serviço, entrega 1). Roda DEPOIS do sat_motivos_test.sql, na mesma base: as entradas
--- que os testes anteriores deixaram são as "entradas antigas" do backfill. Dados SINTÉTICOS.
+-- que os testes anteriores deixaram são as "entradas antigas" (sem OS: a 0198 não faz backfill). Dados SINTÉTICOS.
 -- Runner: supabase/tests/rodar-sat-test.sh
 
 select set_config('teste.uid', '00000000-0000-0000-0000-000000000001', false);
@@ -8,45 +8,25 @@ create temp table antes_os as select count(*) as entradas from sat_entradas;
 \i /tmp/0198.sql
 grant all on all tables in schema public to anon, authenticated;
 
--- 1. Backfill: uma OS por entrada antiga, numeradas na ordem de chegada a partir de 0397/AA (2026) ou 0001/AA
---    (outro ano: sem semente); etapa pela NF; duas linhas de histórico por OS.
+-- 1. Sem backfill: aplicar a 0198 NÃO cria OS para as entradas que já existiam (ficam no Compels até fechar);
+--    a semente da numeração fica intacta e nada entra no histórico.
 do $t$
 declare
-  v_n        int := (select entradas from antes_os);
-  v_ano      int := extract(year from now() at time zone 'America/Sao_Paulo')::int;
-  v_primeiro int;
-  v_nums     text[];
-  i          int;
+  v_n   int := (select entradas from antes_os);
+  v_ano int := extract(year from now() at time zone 'America/Sao_Paulo')::int;
 begin
-  v_primeiro := case when v_ano = 2026 then 397 else 1 end;
   if v_n = 0 then raise exception 'FALHOU: os testes anteriores não deixaram entradas'; end if;
-  if (select count(*) from sat_ordens) <> v_n then
-    raise exception 'FALHOU: backfill criou % OS para % entradas', (select count(*) from sat_ordens), v_n;
+  if (select count(*) from sat_ordens) <> 0 then
+    raise exception 'FALHOU: a 0198 criou % OS para entradas antigas (não há backfill)', (select count(*) from sat_ordens);
   end if;
-  select array_agg(o.numero order by e.criado_em, e.id) into v_nums
-    from sat_ordens o join sat_entradas e on e.id = o.entrada_id;
-  for i in 1 .. v_n loop
-    if v_nums[i] <> lpad((v_primeiro + i - 1)::text, 4, '0') || '/' || lpad((v_ano % 100)::text, 2, '0') then
-      raise exception 'FALHOU: numeração do backfill %', v_nums;
-    end if;
-  end loop;
-  if (select ultimo from sat_numeracao where ano = v_ano) <> v_primeiro + v_n - 1 then
-    raise exception 'FALHOU: sat_numeracao não andou';
+  if (select count(*) from sat_ordem_historico) <> 0 then raise exception 'FALHOU: histórico sem OS'; end if;
+  if (select ultimo from sat_numeracao where ano = 2026) is distinct from 396 then
+    raise exception 'FALHOU: semente 2026 deveria continuar em 396';
   end if;
-  if exists (select 1 from sat_ordens o join sat_entradas e on e.id = o.entrada_id join sat_nfs n on n.id = e.nf_id
-              where o.etapa <> case when n.situacao = 'aprovada' then 'disponivel' else 'nota_pendente' end) then
-    raise exception 'FALHOU: etapa do backfill não segue a NF';
+  if v_ano <> 2026 and exists (select 1 from sat_numeracao where ano = v_ano) then
+    raise exception 'FALHOU: numeração do ano % andou sem OS', v_ano;
   end if;
-  if exists (select 1 from sat_ordens o where o.origem <> 'shopfloor' or o.ns_atual = '') then
-    raise exception 'FALHOU: origem/NS do backfill';
-  end if;
-  if (select count(*) from sat_ordem_historico) <> 2 * v_n then raise exception 'FALHOU: histórico do backfill'; end if;
-  if exists (select 1 from sat_ordem_historico h where h.evento <> 'etapa'
-                or not ((h.etapa_de is null and h.etapa_para = 'recebido')
-                        or (h.etapa_de = 'recebido' and h.etapa_para in ('disponivel', 'nota_pendente')))) then
-    raise exception 'FALHOU: linhas do histórico do backfill';
-  end if;
-  raise notice 'backfill: ok';
+  raise notice 'sem backfill: ok';
 end $t$;
 
 -- 2. Garantia da planilha → tipo.
@@ -79,7 +59,7 @@ select sat_sincronizar_planilha($j$[
 reset role;
 
 do $t$
-declare r jsonb; v_antes int := (select count(*) from sat_ordens); v_o sat_ordens;
+declare r jsonb; v_antes int := (select count(*) from sat_ordens); v_o sat_ordens; v_ano int; v_esp text;
 begin
   set local role authenticated;
   perform set_config('teste.perms', 'sat.visualizar,sat.registrar_entrada', false);
@@ -102,6 +82,14 @@ begin
   end if;
   if (select tipo from sat_ordens where sequencia = '3' and modelo = '610') is not null then
     raise exception 'FALHOU: OS sem ticket devia ter garantia a definir';
+  end if;
+  -- a 1ª OS da base continua a semente (0397/26 em 2026; 0001/AA em outro ano), na ordem de chegada
+  if v_antes = 0 then
+    v_ano := extract(year from now() at time zone 'America/Sao_Paulo')::int;
+    v_esp := case when v_ano = 2026 then '0397/26' else '0001/' || lpad((v_ano % 100)::text, 2, '0') end;
+    if (select min(o.numero) from sat_ordens o) is distinct from v_esp then
+      raise exception 'FALHOU: a 1ª OS não continua a semente (esperava %)', v_esp;
+    end if;
   end if;
   -- números seguidos, na ordem dos relógios
   if (select array_agg(split_part(numero, '/', 1)::int order by split_part(numero, '/', 1)::int)
